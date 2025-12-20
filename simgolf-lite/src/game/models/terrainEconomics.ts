@@ -1,40 +1,19 @@
 import type { Terrain } from "./types";
+import { BALANCE } from "../balance/balanceConfig";
 
 // Capital expense: build costs per tile
 export const TERRAIN_BUILD_COST: Record<Terrain, number> = {
-  rough: 10,
-  deep_rough: 25,
-  fairway: 120,
-  green: 300,
-  sand: 80,
-  water: 200,
-  tee: 150,
-  path: 40,
+  ...BALANCE.terrain.buildCost,
 };
 
 // Partial refunds when reverting/tearing down (fun + experimentation)
 export const TERRAIN_SALVAGE_VALUE: Record<Terrain, number> = {
-  rough: 0,
-  // Most construction cost is unrecoverable; refunds are intentionally low (20–40% max)
-  deep_rough: 6, // 25 build → 24%
-  fairway: 36, // 120 build → 30%
-  green: 20, // 300 build → ~7% (minimal salvage)
-  sand: 24, // 80 build → 30%
-  water: 10, // 200 build → 5% (minimal salvage)
-  tee: 45, // 150 build → 30%
-  path: 12, // 40 build → 30%
+  ...BALANCE.terrain.salvageValue,
 };
 
 // Opex pressure / maintenance burden (greens wear fastest)
 export const TERRAIN_MAINT_WEIGHT: Record<Terrain, number> = {
-  rough: 0.3,
-  deep_rough: 0.6,
-  fairway: 1.0,
-  green: 2.5,
-  sand: 1.2,
-  water: 0.6,
-  tee: 1.0,
-  path: 0.4,
+  ...BALANCE.terrain.maintWeight,
 };
 
 export interface TerrainChangeCost {

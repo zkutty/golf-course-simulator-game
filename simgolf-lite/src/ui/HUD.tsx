@@ -7,6 +7,7 @@ import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
 import { computeCourseRatingAndSlope } from "../game/sim/courseRating";
 import { isCoursePlayable } from "../game/sim/isCoursePlayable";
 import type { LegacyState } from "../utils/legacy";
+import { BALANCE } from "../game/balance/balanceConfig";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -195,13 +196,16 @@ export function HUD(props: {
   }, [world.loans]);
 
   const bridgeEligible =
-    world.reputation >= 15 &&
+    world.reputation >= BALANCE.loans.bridge.repMin &&
     (playable || validHoles >= 6) &&
     !hasActiveBridge &&
-    world.week - (world.lastBridgeLoanWeek ?? -999) >= 8;
+    world.week - (world.lastBridgeLoanWeek ?? -999) >= BALANCE.loans.bridgeCooldownWeeks;
 
   const expansionEligible =
-    world.reputation >= 50 && validHoles >= 9 && (world.lastWeekProfit ?? 0) > 0 && !hasActiveExpansion;
+    world.reputation >= BALANCE.loans.expansion.repMin &&
+    validHoles >= BALANCE.loans.expansion.minValidHoles &&
+    (world.lastWeekProfit ?? 0) > 0 &&
+    !hasActiveExpansion;
 
   return (
     <div
@@ -927,10 +931,11 @@ export function HUD(props: {
                     textAlign: "left",
                   }}
                 >
-                  Bridge Loan — $25,000 • 18% APR • 26w{" "}
+                  Bridge Loan — ${BALANCE.loans.bridge.maxPrincipal.toLocaleString()} •{" "}
+                  {Math.round(BALANCE.loans.bridge.apr * 100)}% APR • {BALANCE.loans.bridge.termWeeks}w{" "}
                   {!bridgeEligible && (
                     <span style={{ fontWeight: 500, color: "#777" }}>
-                      (need rep ≥ 15, ≥6 valid holes or playable, and 8-week cooldown)
+                      (need rep ≥ {BALANCE.loans.bridge.repMin}, ≥{BALANCE.loans.bridge.minValidHolesAlt} valid holes or playable, and {BALANCE.loans.bridgeCooldownWeeks}-week cooldown)
                     </span>
                   )}
                 </button>
@@ -949,10 +954,11 @@ export function HUD(props: {
                     textAlign: "left",
                   }}
                 >
-                  Expansion Loan — $150,000 • 12% APR • 104w{" "}
+                  Expansion Loan — ${BALANCE.loans.expansion.maxPrincipal.toLocaleString()} •{" "}
+                  {Math.round(BALANCE.loans.expansion.apr * 100)}% APR • {BALANCE.loans.expansion.termWeeks}w{" "}
                   {!expansionEligible && (
                     <span style={{ fontWeight: 500, color: "#777" }}>
-                      (need rep ≥ 50, 9 valid holes, and last week profit &gt; 0)
+                      (need rep ≥ {BALANCE.loans.expansion.repMin}, {BALANCE.loans.expansion.minValidHoles} valid holes, and last week profit &gt; 0)
                     </span>
                   )}
                 </button>

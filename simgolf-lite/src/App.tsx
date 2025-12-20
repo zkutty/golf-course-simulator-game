@@ -13,6 +13,7 @@ import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
 import { createLoan } from "./game/sim/loans";
 import { isCoursePlayable } from "./game/sim/isCoursePlayable";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
+import { BALANCE } from "./game/balance/balanceConfig";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -98,9 +99,9 @@ export default function App() {
   }, [course]);
 
   const eligibleBridge = useMemo(() => {
-    const repOk = world.reputation >= 15;
-    const holesOk = isCoursePlayable(course) || validHolesCount >= 6;
-    const cooldownOk = world.week - (world.lastBridgeLoanWeek ?? -999) >= 8;
+    const repOk = world.reputation >= BALANCE.loans.bridge.repMin;
+    const holesOk = isCoursePlayable(course) || validHolesCount >= BALANCE.loans.bridge.minValidHolesAlt;
+    const cooldownOk = world.week - (world.lastBridgeLoanWeek ?? -999) >= BALANCE.loans.bridgeCooldownWeeks;
     const hasActiveBridge = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
     return repOk && holesOk && cooldownOk && !hasActiveBridge && !world.isBankrupt;
   }, [world.reputation, world.week, world.lastBridgeLoanWeek, world.loans, world.isBankrupt, course, validHolesCount]);
@@ -157,7 +158,13 @@ export default function App() {
     if (!eligibleBridge) return;
     setWorld((w) => {
       if (w.isBankrupt) return w;
-      const loan = createLoan({ kind: "BRIDGE", principal: 25_000, apr: 0.18, termWeeks: 26, idSeed: w.week });
+      const loan = createLoan({
+        kind: "BRIDGE",
+        principal: BALANCE.loans.bridge.maxPrincipal,
+        apr: BALANCE.loans.bridge.apr,
+        termWeeks: BALANCE.loans.bridge.termWeeks,
+        idSeed: w.week,
+      });
       return {
         ...w,
         cash: w.cash + loan.principal,
@@ -169,14 +176,20 @@ export default function App() {
   }
 
   function takeExpansionLoan() {
-    const repOk = world.reputation >= 50;
-    const holesOk = validHolesCount >= 9;
+    const repOk = world.reputation >= BALANCE.loans.expansion.repMin;
+    const holesOk = validHolesCount >= BALANCE.loans.expansion.minValidHoles;
     const cashflowOk = (world.lastWeekProfit ?? 0) > 0;
     const hasActiveExpansion = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "EXPANSION");
     if (world.isBankrupt || !repOk || !holesOk || !cashflowOk || hasActiveExpansion) return;
     setWorld((w) => {
       if (w.isBankrupt) return w;
-      const loan = createLoan({ kind: "EXPANSION", principal: 150_000, apr: 0.12, termWeeks: 104, idSeed: w.week });
+      const loan = createLoan({
+        kind: "EXPANSION",
+        principal: BALANCE.loans.expansion.maxPrincipal,
+        apr: BALANCE.loans.expansion.apr,
+        termWeeks: BALANCE.loans.expansion.termWeeks,
+        idSeed: w.week,
+      });
       return { ...w, cash: w.cash + loan.principal, loans: [...(w.loans ?? []), loan] };
     });
   }

@@ -5,6 +5,7 @@ import { scoreCourseHoles } from "./holes";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { isCoursePlayable } from "./isCoursePlayable";
 import { stepLoanWeek, totalWeeklyPayments } from "./loans";
+import { BALANCE } from "../balance/balanceConfig";
 
 export function tickWeek(
   course: Course,
@@ -21,27 +22,25 @@ export function tickWeek(
   // Visitors driven by demand; add randomness
   const d = dBreak.demandIndex; // ~0..1.2
   const baseVisitors =
-    dBreak.segments?.totalBaseVisitors ?? (120 + Math.round(520 * d)); // 120..~744
-  const visitorNoise = randInt(rng, -40, 40);
-  const visitors = playable ? Math.max(0, baseVisitors + visitorNoise) : randInt(rng, 0, 10);
+    dBreak.segments?.totalBaseVisitors ??
+    (BALANCE.visitors.baseFloor + Math.round(BALANCE.visitors.scale * d));
+  const visitorNoise = randInt(rng, BALANCE.visitors.noiseMin, BALANCE.visitors.noiseMax);
+  const visitors = playable
+    ? Math.max(0, baseVisitors + visitorNoise)
+    : randInt(rng, 0, BALANCE.visitors.testingRoundsMax);
 
   const avgSat = satisfactionScore(course, world); // 0..100
 
   // Revenue: visitors * price, but satisfaction affects repeat visits (baked into rep later)
-  const revenue = playable ? visitors * course.baseGreenFee : visitors * 5; // testing rounds / snacks
+  const revenue = playable ? visitors * course.baseGreenFee : visitors * BALANCE.visitors.testingRoundFee;
 
   // Costs
-  const staffCost = 450 * world.staffLevel;
-  const marketingCost = 300 * world.marketingLevel;
+  const staffCost = BALANCE.ops.staffCostPerLevel * world.staffLevel;
+  const marketingCost = BALANCE.ops.marketingCostPerLevel * world.marketingLevel;
   const maintenanceCost = world.maintenanceBudget;
 
   // Fixed weekly overhead (applies even with 0 visitors)
-  const overhead = {
-    insurance: 140,
-    utilities: 110,
-    admin: 170,
-    baseStaff: 280,
-  };
+  const overhead = { ...BALANCE.overhead };
   const overheadTotal = overhead.insurance + overhead.utilities + overhead.admin + overhead.baseStaff;
 
   const nonLoanCosts = staffCost + marketingCost + maintenanceCost + overheadTotal;
@@ -57,26 +56,39 @@ export function tickWeek(
 
   // Distress / bankruptcy rules
   const nextCashRaw = world.cash + profit;
-  const liquidityTrap = nextCashRaw < -10_000;
+  const liquidityTrap = nextCashRaw < BALANCE.distress.liquidityTrapCash;
   const prevDistress = world.distressWeeks ?? 0;
-  let nextDistress = nextCashRaw < 0 ? Math.min(2, prevDistress + 1) : 0;
-  if (missedLoanPayment) nextDistress = Math.min(2, nextDistress + 1); // shorten distress timer
-  const bankrupt = liquidityTrap || nextDistress >= 2;
+  let nextDistress =
+    nextCashRaw < 0 ? Math.min(BALANCE.distress.weeksToBankrupt, prevDistress + 1) : 0;
+  if (missedLoanPayment) nextDistress = Math.min(BALANCE.distress.weeksToBankrupt, nextDistress + 1); // shorten distress timer
+  const bankrupt = liquidityTrap || nextDistress >= BALANCE.distress.weeksToBankrupt;
 
   // Condition update: maintenance pushes up, wear pushes down
   const totalWeight = course.tiles.reduce((acc, t) => acc + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
   const avgWeight = totalWeight / (course.tiles.length || 1);
   // more visitors + higher-maintenance terrain => more wear
-  const wear = Math.min(0.06, (visitors / 20_000) * avgWeight);
-  const maintEffect = Math.min(0.08, maintenanceCost / 20_000); // diminishing returns
+  const wear = Math.min(
+    BALANCE.condition.wearCap,
+    (visitors / BALANCE.condition.wearDivisor) * avgWeight
+  );
+  const maintEffect = Math.min(
+    BALANCE.condition.maintEffectCap,
+    maintenanceCost / BALANCE.condition.maintEffectDivisor
+  );
   const nextCondition = clamp01(course.condition - wear + maintEffect);
 
   // Reputation update: satisfaction moves it
-  const raw = (avgSat - 60) / 10; // roughly -4..+4
+  const raw =
+    (avgSat - BALANCE.reputation.satPivot) / BALANCE.reputation.satDivisor;
   // Slow recovery vs decline
-  const shaped = raw >= 0 ? raw * 0.55 : raw * 1.05;
+  const shaped =
+    raw >= 0 ? raw * BALANCE.reputation.recoveryMult : raw * BALANCE.reputation.declineMult;
   const unclamped = Math.round(shaped);
-  const repDelta = clamp(unclamped + (missedLoanPayment ? -2 : 0), -2, 2); // inertia cap
+  const repDelta = clamp(
+    unclamped + (missedLoanPayment ? BALANCE.reputation.missedLoanPaymentPenalty : 0),
+    -BALANCE.reputation.capPerWeek,
+    BALANCE.reputation.capPerWeek
+  );
   const nextRep = clamp(world.reputation + repDelta, 0, 100);
   const reputationMomentum =
     repDelta > 0

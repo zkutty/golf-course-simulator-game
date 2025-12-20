@@ -1,4 +1,5 @@
 import type { Loan, LoanKind } from "../models/types";
+import { BALANCE } from "../balance/balanceConfig";
 
 export function computeWeeklyPayment(principal: number, apr: number, termWeeks: number) {
   const r = apr / 52;
@@ -37,7 +38,7 @@ export function stepLoanWeek(loan: Loan, opts: { pay: boolean }): Loan {
 
   if (!opts.pay) {
     // Missed payment: increase APR by +1% (cap), recompute payment on remaining balance/term.
-    const apr = Math.min(0.30, loan.apr + 0.01);
+    const apr = Math.min(BALANCE.loans.aprMax, loan.apr + BALANCE.loans.aprMissedPaymentBump);
     const weeklyPayment = computeWeeklyPayment(loan.balance, apr, loan.weeksRemaining);
     return { ...loan, apr, weeklyPayment, missedPayments: loan.missedPayments + 1 };
   }

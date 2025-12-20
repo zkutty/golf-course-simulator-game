@@ -1,6 +1,7 @@
 import type { Course, World } from "../models/types";
 import { scoreCourseHoles } from "./holes";
 import { computeCourseRatingAndSlope } from "./courseRating";
+import { BALANCE } from "../balance/balanceConfig";
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
@@ -58,7 +59,12 @@ export function demandBreakdown(course: Course, world: World) {
   const courseRating01 = clamp01((rating.courseRating - 66) / 8); // higher-rated courses "unlock" core interest
 
   // Reputation threshold effects on demand (early penalty / late bonus)
-  const repMod = rep < 0.3 ? 0.85 : rep > 0.7 ? 1.08 : 1.0;
+  const repMod =
+    world.reputation < BALANCE.reputation.demandPenaltyThreshold
+      ? BALANCE.reputation.demandPenaltyMult
+      : world.reputation > BALANCE.reputation.demandBonusThreshold
+        ? BALANCE.reputation.demandBonusMult
+        : 1.0;
 
   // Core golfers unlock gradually with reputation + course rating.
   const coreCap = clamp01((world.reputation - 45) / 35) * courseRating01; // starts at 0%
