@@ -157,6 +157,21 @@ export const BALANCE = {
       shortMissMaxProb: 0.22,
       waterPenaltyStrokes: 2.6, // landing in water is brutal
     },
+    landing: {
+      // Terrain penalties (expected strokes added when landing there)
+      penaltyStrokes: {
+        water: 2.6,
+        sand: 0.6,
+        deep_rough: 0.85,
+        rough: 0.2,
+        fairway: 0,
+        green: 0,
+        tee: 0,
+        path: 0,
+      },
+      // Sampling: higher values are more accurate but slower (grid is small, so modest is fine)
+      maxRadiusTiles: 6,
+    },
   },
 
   // Terrain economics
