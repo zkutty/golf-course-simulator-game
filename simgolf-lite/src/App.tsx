@@ -42,6 +42,7 @@ export default function App() {
   } | null>(null);
 
   const [paintError, setPaintError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">("COZY");
 
   const canvasPaneRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
@@ -326,6 +327,7 @@ export default function App() {
           activeHoleIndex={activeHoleIndex}
           activePath={activePath}
           tileSize={tileSize}
+          showGridOverlays={viewMode === "ARCHITECT"}
           editorMode={editorMode}
           wizardStep={wizardStep}
           draftTee={draftTee}
@@ -388,6 +390,8 @@ export default function App() {
         onResetSave={onResetSave}
         simulate={simulate}
         paintError={paintError}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
       />
       </div>
     </div>

@@ -54,6 +54,8 @@ export function HUD(props: {
   onResetSave: () => void;
   simulate: () => void;
   paintError?: string | null;
+  viewMode: "COZY" | "ARCHITECT";
+  setViewMode: (m: "COZY" | "ARCHITECT") => void;
 }) {
   const {
     course,
@@ -90,6 +92,8 @@ export function HUD(props: {
     onResetSave,
     simulate,
     paintError,
+    viewMode,
+    setViewMode,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
@@ -106,7 +110,7 @@ export function HUD(props: {
   const effectivePar =
     holeDef?.parMode === "MANUAL" ? (holeDef.parManual ?? 4) : autoPar ?? 4;
 
-  const tabs: Tab[] = ["Editor", "Metrics", "Results", "Upgrades"];
+  const tabs: Tab[] = viewMode === "ARCHITECT" ? ["Editor", "Metrics", "Results", "Upgrades"] : ["Editor", "Results", "Upgrades"];
   const terrainCounts = useMemo(() => {
     const acc: Partial<Record<Terrain, number>> = {};
     for (const t of course.tiles) acc[t] = (acc[t] ?? 0) + 1;
@@ -118,6 +122,19 @@ export function HUD(props: {
   }, [course.tiles]);
   const avgMaintWeight = totalMaintWeight / totalTiles;
   const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
+
+  const courseVibe = useMemo(() => {
+    const complete = holeSummary.holes.filter((h) => h.isComplete && h.isValid);
+    const avgAest =
+      complete.length === 0
+        ? 0
+        : complete.reduce((a, h) => a + h.aestheticsScore, 0) / complete.length;
+    const quality = holeSummary.courseQuality;
+    if (quality < 35) return "Untamed & punishing";
+    if (quality < 55) return avgAest >= 55 ? "Scrappy but charming" : "Scrappy municipal";
+    if (quality < 75) return avgAest >= 60 ? "Pleasant parkland" : "Playable & simple";
+    return avgAest >= 65 ? "Premium resort vibe" : "Championship-ready";
+  }, [holeSummary]);
 
   return (
     <div
@@ -139,6 +156,23 @@ export function HUD(props: {
             <div style={{ fontSize: 14, fontWeight: 700 }}>SimGolf-lite Tycoon</div>
             <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
           </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {(["COZY", "ARCHITECT"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setViewMode(m)}
+                style={{
+                  padding: "6px 8px",
+                  borderRadius: 999,
+                  border: viewMode === m ? "2px solid #000" : "1px solid #ddd",
+                  background: "#fff",
+                  fontSize: 12,
+                }}
+              >
+                {m === "COZY" ? "Cozy" : "Architect"}
+              </button>
+            ))}
+          </div>
         </div>
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -157,27 +191,35 @@ export function HUD(props: {
               {Math.round(course.condition * 100)}%
             </div>
           </div>
+          {viewMode === "COZY" && (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>Course vibe</div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{courseVibe}</div>
+            </div>
+          )}
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 6, padding: 10, borderBottom: "1px solid #eee" }}>
-        {tabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              flex: 1,
-              padding: "8px 6px",
-              borderRadius: 10,
-              border: tab === t ? "2px solid #000" : "1px solid #ccc",
-              background: "#fff",
-              fontSize: 12,
-            }}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
+      {viewMode === "ARCHITECT" && (
+        <div style={{ display: "flex", gap: 6, padding: 10, borderBottom: "1px solid #eee" }}>
+          {tabs.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              style={{
+                flex: 1,
+                padding: "8px 6px",
+                borderRadius: 10,
+                border: tab === t ? "2px solid #000" : "1px solid #ccc",
+                background: "#fff",
+                fontSize: 12,
+              }}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div style={{ flex: 1, overflow: "auto", padding: 10 }}>
         {tab === "Editor" && (
@@ -187,6 +229,7 @@ export function HUD(props: {
                 <b>Build blocked:</b> {paintError}
               </div>
             )}
+
             <div style={{ marginBottom: 10 }}>
               <div style={{ marginBottom: 8 }}>
                 <b>Editor mode</b>
@@ -255,7 +298,7 @@ export function HUD(props: {
                       ({holeDef?.parMode === "MANUAL" ? "manual" : "auto"})
                     </span>
                   </div>
-                  {activeHole.isComplete && (
+                  {viewMode === "ARCHITECT" && activeHole.isComplete && (
                     <div style={{ marginTop: 6, display: "grid", gap: 2 }}>
                       <div>
                         Playability: <b>{Math.round(activeHole.playabilityScore)}</b>/100
@@ -322,7 +365,8 @@ export function HUD(props: {
               </Section>
             ) : (
               <>
-                <Section title="Par settings (active hole)">
+                {viewMode === "ARCHITECT" && (
+                  <Section title="Par settings (active hole)">
                   <div style={{ display: "flex", gap: 8 }}>
                     <button
                       onClick={() => setActiveHoleParMode("AUTO")}
@@ -377,8 +421,10 @@ export function HUD(props: {
                     </div>
                   )}
                 </Section>
+                )}
 
-                <Section title="Hole list (overall score)">
+                {viewMode === "ARCHITECT" && (
+                  <Section title="Hole list (overall score)">
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "34px 44px 1fr 54px", fontSize: 12, color: "#555" }}>
                       <div>
@@ -431,6 +477,7 @@ export function HUD(props: {
                     * layout issue (tee/green missing). Low overall holes drag down course quality.
                   </div>
                 </Section>
+                )}
 
                 <div style={{ marginBottom: 8 }}>
                   <b>Terrain brush</b>
@@ -563,7 +610,7 @@ export function HUD(props: {
               </Section>
             )}
 
-            {last?.satisfaction && (
+            {viewMode === "ARCHITECT" && last?.satisfaction && (
               <Section title="Satisfaction breakdown">
                 <BreakdownTableDetailed
                   rows={[
@@ -585,7 +632,7 @@ export function HUD(props: {
               </Section>
             )}
 
-            {last?.topIssues && last.topIssues.length > 0 && (
+            {viewMode === "ARCHITECT" && last?.topIssues && last.topIssues.length > 0 && (
               <Section title="Top issues (what to fix next)">
                 <ul style={{ margin: 0, paddingLeft: 16 }}>
                   {last.topIssues.map((t, i) => (
