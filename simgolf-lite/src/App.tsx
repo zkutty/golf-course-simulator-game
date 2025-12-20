@@ -453,6 +453,7 @@ function HoverTooltip(props: {
         </b>
       </div>
       <div>{label}</div>
+      <div style={{ marginTop: 4, opacity: 0.9 }}>Most construction cost is unrecoverable.</div>
       {insufficient && <div style={{ marginTop: 4 }}>Insufficient funds</div>}
     </div>
   );

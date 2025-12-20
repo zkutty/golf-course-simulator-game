@@ -15,13 +15,14 @@ export const TERRAIN_BUILD_COST: Record<Terrain, number> = {
 // Partial refunds when reverting/tearing down (fun + experimentation)
 export const TERRAIN_SALVAGE_VALUE: Record<Terrain, number> = {
   rough: 0,
-  deep_rough: 5,
-  fairway: 40,
-  green: 120,
-  sand: 30,
-  water: 50,
-  tee: 60,
-  path: 15,
+  // Most construction cost is unrecoverable; refunds are intentionally low (20–40% max)
+  deep_rough: 6, // 25 build → 24%
+  fairway: 36, // 120 build → 30%
+  green: 20, // 300 build → ~7% (minimal salvage)
+  sand: 24, // 80 build → 30%
+  water: 10, // 200 build → 5% (minimal salvage)
+  tee: 45, // 150 build → 30%
+  path: 12, // 40 build → 30%
 };
 
 // Opex pressure / maintenance burden (greens wear fastest)
