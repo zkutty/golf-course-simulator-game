@@ -121,6 +121,31 @@ export const BALANCE = {
     },
   },
 
+  golfers: {
+    // Deterministic, tunable golfer profiles for shot-based routing/grading.
+    // Note: yardsPerTile here is the default yard model for the solver; the course also has yardsPerTile.
+    scratch: {
+      yardsPerTile: 10,
+      clubs: [
+        { name: "Driver", carryYards: 280, dispersionTilesBase: 3.5 },
+        { name: "3W", carryYards: 250, dispersionTilesBase: 3.0 },
+        { name: "5I", carryYards: 200, dispersionTilesBase: 2.4 },
+        { name: "7I", carryYards: 170, dispersionTilesBase: 2.0 },
+        { name: "PW", carryYards: 135, dispersionTilesBase: 1.5 },
+      ],
+    },
+    bogey: {
+      yardsPerTile: 10,
+      clubs: [
+        { name: "Driver", carryYards: 220, dispersionTilesBase: 4.2 },
+        { name: "3W", carryYards: 200, dispersionTilesBase: 3.7 },
+        { name: "5I", carryYards: 160, dispersionTilesBase: 3.1 },
+        { name: "7I", carryYards: 140, dispersionTilesBase: 2.6 },
+        { name: "PW", carryYards: 110, dispersionTilesBase: 2.1 },
+      ],
+    },
+  },
+
   // Terrain economics
   terrain: {
     buildCost: {
