@@ -4,6 +4,7 @@ import { demandBreakdown, satisfactionBreakdown, satisfactionScore } from "./sco
 import { scoreCourseHoles } from "./holes";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { isCoursePlayable } from "./isCoursePlayable";
+import { stepLoanWeek, totalWeeklyPayments } from "./loans";
 
 export function tickWeek(
   course: Course,
@@ -43,15 +44,23 @@ export function tickWeek(
   };
   const overheadTotal = overhead.insurance + overhead.utilities + overhead.admin + overhead.baseStaff;
 
-  const costs = staffCost + marketingCost + maintenanceCost + overheadTotal;
+  const nonLoanCosts = staffCost + marketingCost + maintenanceCost + overheadTotal;
+
+  const paymentDue = totalWeeklyPayments(world.loans ?? []);
+  const canPayLoan = world.cash + revenue - nonLoanCosts >= paymentDue;
+  const loanPaid = canPayLoan ? paymentDue : 0;
+  const missedLoanPayment = !canPayLoan && paymentDue > 0;
+  const loans = (world.loans ?? []).map((l) => stepLoanWeek(l, { pay: canPayLoan }));
+
+  const costs = nonLoanCosts + loanPaid;
   const profit = revenue - costs;
 
   // Distress / bankruptcy rules
   const nextCashRaw = world.cash + profit;
   const liquidityTrap = nextCashRaw < -10_000;
   const prevDistress = world.distressWeeks ?? 0;
-  const nextDistress =
-    nextCashRaw < 0 ? Math.min(2, prevDistress + 1) : 0;
+  let nextDistress = nextCashRaw < 0 ? Math.min(2, prevDistress + 1) : 0;
+  if (missedLoanPayment) nextDistress = Math.min(2, nextDistress + 1); // shorten distress timer
   const bankrupt = liquidityTrap || nextDistress >= 2;
 
   // Condition update: maintenance pushes up, wear pushes down
@@ -67,7 +76,7 @@ export function tickWeek(
   // Slow recovery vs decline
   const shaped = raw >= 0 ? raw * 0.55 : raw * 1.05;
   const unclamped = Math.round(shaped);
-  const repDelta = clamp(unclamped, -2, 2); // inertia cap
+  const repDelta = clamp(unclamped + (missedLoanPayment ? -2 : 0), -2, 2); // inertia cap
   const nextRep = clamp(world.reputation + repDelta, 0, 100);
   const reputationMomentum =
     repDelta > 0
@@ -93,6 +102,8 @@ export function tickWeek(
       reputation: nextRep,
       distressWeeks: nextDistress,
       isBankrupt: world.isBankrupt || bankrupt,
+      lastWeekProfit: profit,
+      loans,
     },
     result: {
       visitors,

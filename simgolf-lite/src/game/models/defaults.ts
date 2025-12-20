@@ -27,6 +27,9 @@ export const DEFAULT_WORLD: World = {
   runSeed: 1337,
   distressWeeks: 0,
   isBankrupt: false,
+  lastWeekProfit: 0,
+  lastBridgeLoanWeek: -999,
+  loans: [],
 };
 
 

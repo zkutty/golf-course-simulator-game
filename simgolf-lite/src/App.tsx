@@ -10,6 +10,8 @@ import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
 import { createSoundPlayer } from "./utils/sound";
 import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
+import { createLoan } from "./game/sim/loans";
+import { isCoursePlayable } from "./game/sim/isCoursePlayable";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -50,6 +52,8 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
   const [peakRep, setPeakRep] = useState(DEFAULT_STATE.world.reputation);
+  const [showBridgePrompt, setShowBridgePrompt] = useState(false);
+  const prevDistressRef = useRef(0);
 
   const soundRef = useRef<ReturnType<typeof createSoundPlayer> | null>(null);
   if (!soundRef.current) soundRef.current = createSoundPlayer();
@@ -85,6 +89,30 @@ export default function App() {
     return summary.holes[activeHoleIndex]?.path ?? [];
   }, [course, activeHoleIndex]);
 
+  const validHolesCount = useMemo(() => {
+    const s = scoreCourseHoles(course);
+    return s.holes.filter((h) => h.isComplete && h.isValid).length;
+  }, [course]);
+
+  const eligibleBridge = useMemo(() => {
+    const repOk = world.reputation >= 15;
+    const holesOk = isCoursePlayable(course) || validHolesCount >= 6;
+    const cooldownOk = world.week - (world.lastBridgeLoanWeek ?? -999) >= 8;
+    const hasActiveBridge = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
+    return repOk && holesOk && cooldownOk && !hasActiveBridge && !world.isBankrupt;
+  }, [world.reputation, world.week, world.lastBridgeLoanWeek, world.loans, world.isBankrupt, course, validHolesCount]);
+
+  useEffect(() => {
+    if (world.isBankrupt) return;
+    const prev = prevDistressRef.current;
+    prevDistressRef.current = world.distressWeeks ?? 0;
+    if (prev === 0 && (world.distressWeeks ?? 0) > 0) {
+      // Entering distress: prompt for bridge loan (MVP)
+      if (eligibleBridge) setShowBridgePrompt(true);
+    }
+    if ((world.distressWeeks ?? 0) === 0) setShowBridgePrompt(false);
+  }, [world.distressWeeks, world.isBankrupt, eligibleBridge]);
+
   useEffect(() => {
     if (world.isBankrupt) return;
     setPeakCash((p) => Math.max(p, world.cash));
@@ -94,7 +122,15 @@ export default function App() {
   function restartRun(args: { seed: number }) {
     const seed = args.seed | 0;
     setCourse(DEFAULT_STATE.course);
-    setWorld({ ...DEFAULT_STATE.world, runSeed: seed, distressWeeks: 0, isBankrupt: false });
+    setWorld({
+      ...DEFAULT_STATE.world,
+      runSeed: seed,
+      distressWeeks: 0,
+      isBankrupt: false,
+      loans: [],
+      lastBridgeLoanWeek: -999,
+      lastWeekProfit: 0,
+    });
     setHistory([]);
     setLast(undefined);
     setEditorMode("PAINT");
@@ -109,6 +145,36 @@ export default function App() {
     setFlyoverNonce(0);
     setPeakCash(DEFAULT_STATE.world.cash);
     setPeakRep(DEFAULT_STATE.world.reputation);
+    setShowBridgePrompt(false);
+    prevDistressRef.current = 0;
+  }
+
+  function takeBridgeLoan() {
+    if (!eligibleBridge) return;
+    setWorld((w) => {
+      if (w.isBankrupt) return w;
+      const loan = createLoan({ kind: "BRIDGE", principal: 25_000, apr: 0.18, termWeeks: 26, idSeed: w.week });
+      return {
+        ...w,
+        cash: w.cash + loan.principal,
+        loans: [...(w.loans ?? []), loan],
+        lastBridgeLoanWeek: w.week,
+      };
+    });
+    setShowBridgePrompt(false);
+  }
+
+  function takeExpansionLoan() {
+    const repOk = world.reputation >= 50;
+    const holesOk = validHolesCount >= 9;
+    const cashflowOk = (world.lastWeekProfit ?? 0) > 0;
+    const hasActiveExpansion = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "EXPANSION");
+    if (world.isBankrupt || !repOk || !holesOk || !cashflowOk || hasActiveExpansion) return;
+    setWorld((w) => {
+      if (w.isBankrupt) return w;
+      const loan = createLoan({ kind: "EXPANSION", principal: 150_000, apr: 0.12, termWeeks: 104, idSeed: w.week });
+      return { ...w, cash: w.cash + loan.principal, loans: [...(w.loans ?? []), loan] };
+    });
   }
 
   function applyTileChange(idx: number, next: Terrain, opts?: { silent?: boolean }): boolean {
@@ -384,6 +450,12 @@ export default function App() {
           onRestartSeed={(seed) => restartRun({ seed })}
         />
       )}
+      {showBridgePrompt && (
+        <BridgeLoanPrompt
+          onAccept={takeBridgeLoan}
+          onDecline={() => setShowBridgePrompt(false)}
+        />
+      )}
       <div
         ref={canvasPaneRef}
         style={{
@@ -475,6 +547,8 @@ export default function App() {
         soundEnabled={soundEnabled}
         setSoundEnabled={setSoundEnabled}
         isBankrupt={world.isBankrupt}
+        onTakeBridgeLoan={takeBridgeLoan}
+        onTakeExpansionLoan={takeExpansionLoan}
       />
       </div>
     </div>
@@ -577,6 +651,59 @@ function RunEndModal(props: {
               Restart (seeded)
             </button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BridgeLoanPrompt(props: { onAccept: () => void; onDecline: () => void }) {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.35)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 99998,
+        padding: 16,
+      }}
+    >
+      <div style={{ width: "min(520px, 100%)", background: "#fff", borderRadius: 14, padding: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 6 }}>Distress: take a Bridge Loan?</div>
+        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
+          $25,000 • 18% APR • 26 weeks • amortized weekly payments. Missing payments hurts reputation and worsens terms.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={props.onAccept}
+            style={{
+              flex: 1,
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #000",
+              background: "#000",
+              color: "#fff",
+              fontWeight: 800,
+            }}
+          >
+            Take loan
+          </button>
+          <button
+            onClick={props.onDecline}
+            style={{
+              flex: 1,
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #ddd",
+              background: "#fff",
+              fontWeight: 800,
+            }}
+          >
+            Decline
+          </button>
         </div>
       </div>
     </div>

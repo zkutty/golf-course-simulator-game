@@ -5,6 +5,7 @@ import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
 import { computeCourseRatingAndSlope } from "../game/sim/courseRating";
+import { isCoursePlayable } from "../game/sim/isCoursePlayable";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -62,6 +63,8 @@ export function HUD(props: {
   soundEnabled: boolean;
   setSoundEnabled: (b: boolean) => void;
   isBankrupt: boolean;
+  onTakeBridgeLoan: () => void;
+  onTakeExpansionLoan: () => void;
 }) {
   const {
     course,
@@ -106,6 +109,8 @@ export function HUD(props: {
     soundEnabled,
     setSoundEnabled,
     isBankrupt,
+    onTakeBridgeLoan,
+    onTakeExpansionLoan,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
@@ -169,6 +174,27 @@ export function HUD(props: {
 
     return { vibeLabel, sentiment, stars, avgAest, avgDiff, slope };
   }, [holeSummary, rating.slope]);
+
+  const validHoles = useMemo(() => {
+    return holeSummary.holes.filter((h) => h.isComplete && h.isValid).length;
+  }, [holeSummary]);
+  const playable = useMemo(() => isCoursePlayable(course), [course]);
+
+  const hasActiveBridge = useMemo(() => {
+    return (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
+  }, [world.loans]);
+  const hasActiveExpansion = useMemo(() => {
+    return (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "EXPANSION");
+  }, [world.loans]);
+
+  const bridgeEligible =
+    world.reputation >= 15 &&
+    (playable || validHoles >= 6) &&
+    !hasActiveBridge &&
+    world.week - (world.lastBridgeLoanWeek ?? -999) >= 8;
+
+  const expansionEligible =
+    world.reputation >= 50 && validHoles >= 9 && (world.lastWeekProfit ?? 0) > 0 && !hasActiveExpansion;
 
   return (
     <div
@@ -872,6 +898,77 @@ export function HUD(props: {
                   style={{ width: "100%" }}
                 />
               </label>
+            </Section>
+
+            <Section title="Financing">
+              <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
+                Loans can keep you afloat — but weekly payments are a fixed cost. Missed payments hurt reputation and worsen APR.
+              </div>
+
+              <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+                <button
+                  onClick={onTakeBridgeLoan}
+                  disabled={!bridgeEligible}
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    borderRadius: 10,
+                    border: bridgeEligible ? "1px solid #000" : "1px solid #ccc",
+                    background: bridgeEligible ? "#000" : "#f6f6f6",
+                    color: bridgeEligible ? "#fff" : "#555",
+                    fontWeight: 700,
+                    textAlign: "left",
+                  }}
+                >
+                  Bridge Loan — $25,000 • 18% APR • 26w{" "}
+                  {!bridgeEligible && (
+                    <span style={{ fontWeight: 500, color: "#777" }}>
+                      (need rep ≥ 15, ≥6 valid holes or playable, and 8-week cooldown)
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  onClick={onTakeExpansionLoan}
+                  disabled={!expansionEligible}
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    borderRadius: 10,
+                    border: expansionEligible ? "1px solid #000" : "1px solid #ccc",
+                    background: expansionEligible ? "#000" : "#f6f6f6",
+                    color: expansionEligible ? "#fff" : "#555",
+                    fontWeight: 700,
+                    textAlign: "left",
+                  }}
+                >
+                  Expansion Loan — $150,000 • 12% APR • 104w{" "}
+                  {!expansionEligible && (
+                    <span style={{ fontWeight: 500, color: "#777" }}>
+                      (need rep ≥ 50, 9 valid holes, and last week profit &gt; 0)
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {(world.loans ?? []).length > 0 && (
+                <div style={{ display: "grid", gap: 6, fontSize: 12 }}>
+                  <div style={{ fontWeight: 800 }}>Active loans</div>
+                  {(world.loans ?? [])
+                    .filter((l) => l.status === "ACTIVE")
+                    .map((l) => (
+                      <div key={l.id} style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>
+                          {l.kind} • {Math.round(l.apr * 100)}% • {l.weeksRemaining}w left
+                        </span>
+                        <span>
+                          ${Math.round(l.weeklyPayment).toLocaleString()}/wk • bal $
+                          {Math.round(l.balance).toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              )}
             </Section>
 
             <Section title="Upgrades">

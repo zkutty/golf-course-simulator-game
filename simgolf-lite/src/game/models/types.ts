@@ -52,6 +52,25 @@ export interface World {
   runSeed: number;
   distressWeeks: number; // 0..2 (bankrupt when reaches 2 and still negative)
   isBankrupt: boolean;
+  lastWeekProfit: number;
+  lastBridgeLoanWeek: number; // used to rate-limit bridge loans
+  loans: Loan[];
+}
+
+export type LoanKind = "BRIDGE" | "EXPANSION";
+export type LoanStatus = "ACTIVE" | "PAID" | "DEFAULTED";
+
+export interface Loan {
+  id: string;
+  kind: LoanKind;
+  principal: number;
+  apr: number; // e.g. 0.18
+  termWeeks: number;
+  weeksRemaining: number;
+  weeklyPayment: number;
+  balance: number;
+  status: LoanStatus;
+  missedPayments: number;
 }
 
 export interface DemandBreakdown {
