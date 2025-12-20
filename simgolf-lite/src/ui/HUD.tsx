@@ -700,6 +700,30 @@ export function HUD(props: {
                 <div>Visitors: {last.visitors}</div>
                 <div>Revenue: ${Math.round(last.revenue).toLocaleString()}</div>
                 <div>Costs: ${Math.round(last.costs).toLocaleString()}</div>
+                {last.variableCosts && (
+                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Variable costs</span>
+                      <span>
+                        <b>${Math.round(last.variableCosts.total).toLocaleString()}</b>
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 4, display: "grid", gap: 2 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>Labor (per round)</span>
+                        <span>${Math.round(last.variableCosts.labor).toLocaleString()}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>Consumables</span>
+                        <span>${Math.round(last.variableCosts.consumables).toLocaleString()}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>Merchant fees</span>
+                        <span>${Math.round(last.variableCosts.merchantFees).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {last.overhead && (
                   <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>

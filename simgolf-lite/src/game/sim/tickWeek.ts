@@ -43,6 +43,17 @@ export function tickWeek(
   const overhead = { ...BALANCE.overhead };
   const overheadTotal = overhead.insurance + overhead.utilities + overhead.admin + overhead.baseStaff;
 
+  // Variable costs per round + merchant fees
+  const laborPerRound = Math.max(
+    BALANCE.variableCosts.laborPerRoundMin,
+    BALANCE.variableCosts.laborPerRoundBase -
+      world.staffLevel * BALANCE.variableCosts.laborPerRoundStaffBonusPerLevel
+  );
+  const laborVariable = visitors * laborPerRound;
+  const consumablesVariable = visitors * BALANCE.variableCosts.consumablesPerRound;
+  const merchantFees = revenue * BALANCE.variableCosts.merchantFeeRate;
+  const variableTotal = laborVariable + consumablesVariable + merchantFees;
+
   const nonLoanCosts = staffCost + marketingCost + maintenanceCost + overheadTotal;
 
   const paymentDue = totalWeeklyPayments(world.loans ?? []);
@@ -51,7 +62,7 @@ export function tickWeek(
   const missedLoanPayment = !canPayLoan && paymentDue > 0;
   const loans = (world.loans ?? []).map((l) => stepLoanWeek(l, { pay: canPayLoan }));
 
-  const costs = nonLoanCosts + loanPaid;
+  const costs = nonLoanCosts + variableTotal + loanPaid;
   const profit = revenue - costs;
 
   // Distress / bankruptcy rules
@@ -122,6 +133,12 @@ export function tickWeek(
       revenue,
       costs,
       profit,
+      variableCosts: {
+        labor: laborVariable,
+        consumables: consumablesVariable,
+        merchantFees,
+        total: variableTotal,
+      },
       overhead: { ...overhead, total: overheadTotal },
       avgSatisfaction: avgSat,
       reputationDelta: repDelta,

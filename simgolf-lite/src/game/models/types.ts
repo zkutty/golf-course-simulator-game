@@ -125,6 +125,12 @@ export interface WeekResult {
   revenue: number;
   costs: number;
   profit: number;
+  variableCosts?: {
+    labor: number;
+    consumables: number;
+    merchantFees: number;
+    total: number;
+  };
   overhead?: {
     insurance: number;
     utilities: number;

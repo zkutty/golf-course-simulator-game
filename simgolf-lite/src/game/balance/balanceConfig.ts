@@ -32,6 +32,15 @@ export const BALANCE = {
     marketingCostPerLevel: 300,
   },
 
+  // Variable costs that scale with rounds / revenue (main margin control)
+  variableCosts: {
+    laborPerRoundBase: 8,
+    laborPerRoundStaffBonusPerLevel: 0.45, // reduces labor per round a bit
+    laborPerRoundMin: 5.5,
+    consumablesPerRound: 1.5,
+    merchantFeeRate: 0.03, // fraction of revenue
+  },
+
   // Condition wear & recovery
   condition: {
     wearCap: 0.06,
