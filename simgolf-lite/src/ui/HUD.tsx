@@ -786,6 +786,11 @@ export function HUD(props: {
                 <div>
                   <b>Profit:</b> ${Math.round(last.profit).toLocaleString()}
                 </div>
+                {typeof last.tax === "number" && last.tax > 0 && (
+                  <div style={{ fontSize: 12, color: "#555" }}>
+                    Profit tax: -${Math.round(last.tax).toLocaleString()}
+                  </div>
+                )}
                 <div>Avg satisfaction: {Math.round(last.avgSatisfaction)}/100</div>
                 <div>
                   Reputation Δ: {last.reputationDelta >= 0 ? "+" : ""}

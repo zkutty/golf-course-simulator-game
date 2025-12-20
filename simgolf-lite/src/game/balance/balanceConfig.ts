@@ -95,6 +95,11 @@ export const BALANCE = {
     liquidityTrapCash: -10_000,
   },
 
+  tax: {
+    enabled: true,
+    profitTaxRate: 0.25, // applied only when profit > 0
+  },
+
   // Loans
   loans: {
     aprMax: 0.30,

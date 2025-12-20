@@ -78,7 +78,9 @@ export function tickWeek(
   const loans = (world.loans ?? []).map((l) => stepLoanWeek(l, { pay: canPayLoan }));
 
   const costs = nonLoanCosts + variableTotal + loanPaid;
-  const profit = revenue - costs;
+  const profitPreTax = revenue - costs;
+  const tax = BALANCE.tax.enabled && profitPreTax > 0 ? profitPreTax * BALANCE.tax.profitTaxRate : 0;
+  const profit = profitPreTax - tax;
 
   // Distress / bankruptcy rules
   const nextCashRaw = world.cash + profit;
@@ -171,6 +173,7 @@ export function tickWeek(
       revenue,
       costs,
       profit,
+      tax: tax > 0 ? tax : undefined,
       variableCosts: {
         labor: laborVariable,
         consumables: consumablesVariable,
