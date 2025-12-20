@@ -8,6 +8,7 @@ import { loadGame, resetSave, saveGame } from "./utils/save";
 import { computeTerrainChangeCost } from "./game/models/terrainEconomics";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
+import { createSoundPlayer } from "./utils/sound";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -45,6 +46,11 @@ export default function App() {
   const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">("COZY");
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  const soundRef = useRef<ReturnType<typeof createSoundPlayer> | null>(null);
+  if (!soundRef.current) soundRef.current = createSoundPlayer();
+  const sound = soundRef.current;
 
   const canvasPaneRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
@@ -76,7 +82,7 @@ export default function App() {
     return summary.holes[activeHoleIndex]?.path ?? [];
   }, [course, activeHoleIndex]);
 
-  function applyTileChange(idx: number, next: Terrain): boolean {
+  function applyTileChange(idx: number, next: Terrain, opts?: { silent?: boolean }): boolean {
     const prev = course.tiles[idx];
     const { net, charged, refunded } = computeTerrainChangeCost(prev, next);
     if (net > 0 && world.cash < net) {
@@ -107,12 +113,13 @@ export default function App() {
       },
     }));
     setPaintError(null);
+    if (!opts?.silent) void sound?.playBrush(soundEnabled);
     return true;
   }
 
-  function applyTerrainAt(x: number, y: number, next: Terrain) {
+  function applyTerrainAt(x: number, y: number, next: Terrain, opts?: { silent?: boolean }) {
     const idx = y * course.width + x;
-    applyTileChange(idx, next);
+    applyTileChange(idx, next, opts);
   }
 
   function startWizard() {
@@ -155,8 +162,10 @@ export default function App() {
       holes[activeHoleIndex] = { ...prev, tee: draftTee, green: draftGreen };
       return { ...c, holes };
     });
-    applyTerrainAt(draftTee.x, draftTee.y, "tee");
-    applyTerrainAt(draftGreen.x, draftGreen.y, "green");
+    // Apply as silent terrain changes (avoid double brush clicks), then play confirm chime.
+    applyTerrainAt(draftTee.x, draftTee.y, "tee", { silent: true });
+    applyTerrainAt(draftGreen.x, draftGreen.y, "green", { silent: true });
+    void sound?.playConfirm(soundEnabled);
 
     setActiveHoleIndex((i) => Math.min(8, i + 1));
     setWizardStep("TEE");
@@ -299,6 +308,7 @@ export default function App() {
     setLast(withCap);
     setHistory((h) => [...h.slice(-19), withCap]);
     setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
+    if (result.profit > 0) void sound?.playCashTick(soundEnabled);
   }
 
   return (
@@ -399,6 +409,8 @@ export default function App() {
         animationsEnabled={animationsEnabled}
         setAnimationsEnabled={setAnimationsEnabled}
         onFlyover={() => setFlyoverNonce((n) => n + 1)}
+        soundEnabled={soundEnabled}
+        setSoundEnabled={setSoundEnabled}
       />
       </div>
     </div>

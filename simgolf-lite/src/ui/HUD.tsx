@@ -59,6 +59,8 @@ export function HUD(props: {
   animationsEnabled: boolean;
   setAnimationsEnabled: (b: boolean) => void;
   onFlyover: () => void;
+  soundEnabled: boolean;
+  setSoundEnabled: (b: boolean) => void;
 }) {
   const {
     course,
@@ -100,6 +102,8 @@ export function HUD(props: {
     animationsEnabled,
     setAnimationsEnabled,
     onFlyover,
+    soundEnabled,
+    setSoundEnabled,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
@@ -253,6 +257,14 @@ export function HUD(props: {
                     onChange={(e) => setAnimationsEnabled(e.target.checked)}
                   />
                   Animations
+                </label>
+                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#374151" }}>
+                  <input
+                    type="checkbox"
+                    checked={soundEnabled}
+                    onChange={(e) => setSoundEnabled(e.target.checked)}
+                  />
+                  Sound
                 </label>
               </div>
             </div>
