@@ -190,6 +190,7 @@ export function CanvasCourse(props: {
   activePath?: Point[];
   tileSize: number;
   showGridOverlays: boolean;
+  animationsEnabled: boolean;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
   wizardStep: "TEE" | "GREEN" | "CONFIRM";
   draftTee: Point | null;
@@ -207,6 +208,7 @@ export function CanvasCourse(props: {
     activePath,
     tileSize,
     showGridOverlays,
+    animationsEnabled,
     editorMode,
     wizardStep,
     draftTee,
@@ -218,6 +220,9 @@ export function CanvasCourse(props: {
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
+  const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const isVisibleRef = useRef(true);
   const TILE = tileSize;
   const wPx = course.width * TILE;
   const hPx = course.height * TILE;
@@ -245,13 +250,49 @@ export function CanvasCourse(props: {
     return ctx.createPattern(c, "repeat");
   }, []);
 
+  const waterTiles = useMemo(() => {
+    const pts: Array<{ x: number; y: number; seed: number }> = [];
+    for (let y = 0; y < course.height; y++) {
+      for (let x = 0; x < course.width; x++) {
+        const i = y * course.width + x;
+        if (course.tiles[i] === "water") pts.push({ x, y, seed: i * 17 + 3 });
+      }
+    }
+    return pts;
+  }, [course.tiles, course.width, course.height]);
+
+  const obstaclePhases = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const o of obstacles) {
+      const k = `${o.x},${o.y}`;
+      m.set(k, hash01(o.x * 1337 + o.y * 733 + (o.type === "tree" ? 7 : 11)) * Math.PI * 2);
+    }
+    return m;
+  }, [obstacles]);
+
+  useEffect(() => {
+    const onVis = () => {
+      isVisibleRef.current = document.visibilityState === "visible";
+    };
+    onVis();
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
+    const ctx2: CanvasRenderingContext2D = ctx;
 
-    ctx.clearRect(0, 0, wPx, hPx);
+    // Build static terrain buffer (expensive work done only when course/size changes)
+    const base = document.createElement("canvas");
+    base.width = wPx;
+    base.height = hPx;
+    const bctx = base.getContext("2d");
+    if (!bctx) return;
+
     // Pass 1: textured tiles + lighting
     for (let ty = 0; ty < course.height; ty++) {
       for (let tx = 0; tx < course.width; tx++) {
@@ -259,8 +300,8 @@ export function CanvasCourse(props: {
         const terrain = course.tiles[i];
         const x = tx * TILE;
         const y = ty * TILE;
-        drawTileTexture(ctx, terrain, x, y, TILE, noisePattern, i + course.width * 1000);
-        drawLightingEdges(ctx, x, y, TILE);
+        drawTileTexture(bctx, terrain, x, y, TILE, noisePattern, i + course.width * 1000);
+        drawLightingEdges(bctx, x, y, TILE);
       }
     }
 
@@ -269,174 +310,251 @@ export function CanvasCourse(props: {
       for (let tx = 0; tx < course.width; tx++) {
         const i = ty * course.width + tx;
         const terrain = course.tiles[i];
-        drawSoftEdges(ctx, course, tx * TILE, ty * TILE, TILE, terrain);
+        drawSoftEdges(bctx, course, tx * TILE, ty * TILE, TILE, terrain);
       }
     }
 
-    // Optional grid + analytical overlays (editor-only toggle)
-    if (showGridOverlays) {
-      ctx.globalAlpha = 0.18;
-      ctx.strokeStyle = "rgba(0,0,0,0.65)";
-      for (let x = 0; x <= course.width; x++) {
-        ctx.beginPath();
-        ctx.moveTo(x * TILE, 0);
-        ctx.lineTo(x * TILE, hPx);
-        ctx.stroke();
-      }
-      for (let y = 0; y <= course.height; y++) {
-        ctx.beginPath();
-        ctx.moveTo(0, y * TILE);
-        ctx.lineTo(wPx, y * TILE);
-        ctx.stroke();
-      }
-      ctx.globalAlpha = 1;
-    }
+    baseCanvasRef.current = base;
 
-    // obstacle overlay (above tiles + grid, below hole markers)
-    obstacles.forEach((o) => {
-      const cx = o.x * TILE + TILE / 2;
-      const cy = o.y * TILE + TILE / 2;
+    function drawObstacle(o: Obstacle, timeMs: number) {
+      const cx0 = o.x * TILE + TILE / 2;
+      const cy0 = o.y * TILE + TILE / 2;
+      const phase = obstaclePhases.get(`${o.x},${o.y}`) ?? 0;
+      const t = timeMs * 0.001;
+      const amp = Math.max(0.3, TILE * 0.06);
+      const sway = animationsEnabled ? Math.sin(t * 0.6 + phase) * amp : 0;
+      const cx = cx0 + sway;
+      const cy = cy0;
+
       if (o.type === "tree") {
         // canopy
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = "#14532d";
-        ctx.strokeStyle = "rgba(0,0,0,0.45)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(cx, cy - TILE * 0.08, Math.max(3, TILE * 0.28), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        ctx2.globalAlpha = 0.95;
+        ctx2.fillStyle = "#14532d";
+        ctx2.strokeStyle = "rgba(0,0,0,0.45)";
+        ctx2.lineWidth = 2;
+        ctx2.beginPath();
+        ctx2.arc(cx, cy - TILE * 0.08, Math.max(3, TILE * 0.28), 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.stroke();
         // trunk
-        ctx.fillStyle = "#7c4a03";
-        ctx.globalAlpha = 0.95;
+        ctx2.fillStyle = "#7c4a03";
+        ctx2.globalAlpha = 0.95;
         const tw = Math.max(2, TILE * 0.12);
         const th = Math.max(3, TILE * 0.22);
-        ctx.fillRect(cx - tw / 2, cy + TILE * 0.12, tw, th);
+        ctx2.fillRect(cx - tw / 2, cy + TILE * 0.12, tw, th);
       } else {
         // bush
-        ctx.globalAlpha = 0.9;
-        ctx.fillStyle = "#166534";
-        ctx.strokeStyle = "rgba(0,0,0,0.35)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(cx, cy, Math.max(3, TILE * 0.24), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+        ctx2.globalAlpha = 0.9;
+        ctx2.fillStyle = "#166534";
+        ctx2.strokeStyle = "rgba(0,0,0,0.35)";
+        ctx2.lineWidth = 2;
+        ctx2.beginPath();
+        ctx2.arc(cx, cy, Math.max(3, TILE * 0.24), 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.stroke();
       }
-    });
-    ctx.globalAlpha = 1;
+      ctx2.globalAlpha = 1;
+    }
 
-    // Analytical overlays: holes, lines, best path
-    if (showGridOverlays) {
-      ctx.lineWidth = 2;
-      ctx.font = `${Math.max(10, Math.floor(TILE * 0.55))}px system-ui, sans-serif`;
+    function drawShimmer(timeMs: number) {
+      if (!animationsEnabled || waterTiles.length === 0) return;
+      const t = timeMs * 0.00012; // slow drift
+      ctx2.save();
+      for (const w of waterTiles) {
+        const x = w.x * TILE;
+        const y = w.y * TILE;
+        const p = (hash01(w.seed) - 0.5) * 2;
+        const s = 0.5 + 0.5 * Math.sin(t + w.x * 0.35 + w.y * 0.22 + p);
+        const alpha = 0.05 + 0.06 * s;
+        ctx2.globalAlpha = alpha;
+        // simple moving highlight band within the tile
+        const bandY = y + ((t * 14 + w.x * 2 + w.y) % TILE);
+        ctx2.fillStyle = "rgba(255,255,255,0.9)";
+        ctx2.fillRect(x + 2, bandY, TILE - 4, 1);
+        // faint full-tile glaze
+        ctx2.globalAlpha = alpha * 0.6;
+        ctx2.fillRect(x, y, TILE, TILE);
+      }
+      ctx2.restore();
+      ctx2.globalAlpha = 1;
+    }
+
+    function drawAnalytics() {
+      if (!showGridOverlays) return;
+      // grid
+      ctx2.globalAlpha = 0.18;
+      ctx2.strokeStyle = "rgba(0,0,0,0.65)";
+      for (let x = 0; x <= course.width; x++) {
+        ctx2.beginPath();
+        ctx2.moveTo(x * TILE, 0);
+        ctx2.lineTo(x * TILE, hPx);
+        ctx2.stroke();
+      }
+      for (let y = 0; y <= course.height; y++) {
+        ctx2.beginPath();
+        ctx2.moveTo(0, y * TILE);
+        ctx2.lineTo(wPx, y * TILE);
+        ctx2.stroke();
+      }
+      ctx2.globalAlpha = 1;
+
+      // holes + path
+      ctx2.lineWidth = 2;
+      ctx2.font = `${Math.max(10, Math.floor(TILE * 0.55))}px system-ui, sans-serif`;
       holes.forEach((h, i) => {
         if (!h.tee || !h.green) return;
         const isActive = i === activeHoleIndex;
 
-        // active best-path polyline (dogleg-aware)
         if (isActive && activePath && activePath.length >= 2) {
-          ctx.globalAlpha = 0.85;
-          ctx.strokeStyle = "#facc15"; // amber
-          ctx.lineWidth = Math.max(1, TILE * 0.12);
-          ctx.beginPath();
-          ctx.moveTo(activePath[0].x * TILE + TILE / 2, activePath[0].y * TILE + TILE / 2);
+          ctx2.globalAlpha = 0.85;
+          ctx2.strokeStyle = "#facc15";
+          ctx2.lineWidth = Math.max(1, TILE * 0.12);
+          ctx2.beginPath();
+          ctx2.moveTo(activePath[0].x * TILE + TILE / 2, activePath[0].y * TILE + TILE / 2);
           for (let k = 1; k < activePath.length; k++) {
-            ctx.lineTo(activePath[k].x * TILE + TILE / 2, activePath[k].y * TILE + TILE / 2);
+            ctx2.lineTo(activePath[k].x * TILE + TILE / 2, activePath[k].y * TILE + TILE / 2);
           }
-          ctx.stroke();
-          ctx.globalAlpha = 1;
-          ctx.lineWidth = 2;
+          ctx2.stroke();
+          ctx2.globalAlpha = 1;
+          ctx2.lineWidth = 2;
         }
 
-        // semi-transparent "shot line" tee -> green
-        ctx.globalAlpha = isActive ? 0.6 : 0.35;
-        ctx.strokeStyle = "#111";
-        ctx.beginPath();
-        ctx.moveTo(h.tee.x * TILE + TILE / 2, h.tee.y * TILE + TILE / 2);
-        ctx.lineTo(h.green.x * TILE + TILE / 2, h.green.y * TILE + TILE / 2);
-        ctx.stroke();
+        ctx2.globalAlpha = isActive ? 0.6 : 0.35;
+        ctx2.strokeStyle = "#111";
+        ctx2.beginPath();
+        ctx2.moveTo(h.tee.x * TILE + TILE / 2, h.tee.y * TILE + TILE / 2);
+        ctx2.lineTo(h.green.x * TILE + TILE / 2, h.green.y * TILE + TILE / 2);
+        ctx2.stroke();
 
-        // tee marker (labeled)
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = isActive ? "#000" : "rgba(0,0,0,0.75)";
-        ctx.beginPath();
-        ctx.arc(h.tee.x * TILE + TILE / 2, h.tee.y * TILE + TILE / 2, Math.max(4, TILE * 0.35), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#fff";
-        ctx.fillText(String(i + 1), h.tee.x * TILE + TILE / 2 - 3, h.tee.y * TILE + TILE / 2 + 4);
+        ctx2.globalAlpha = 0.95;
+        ctx2.fillStyle = isActive ? "#000" : "rgba(0,0,0,0.75)";
+        ctx2.beginPath();
+        ctx2.arc(
+          h.tee.x * TILE + TILE / 2,
+          h.tee.y * TILE + TILE / 2,
+          Math.max(4, TILE * 0.35),
+          0,
+          Math.PI * 2
+        );
+        ctx2.fill();
+        ctx2.fillStyle = "#fff";
+        ctx2.fillText(
+          String(i + 1),
+          h.tee.x * TILE + TILE / 2 - 3,
+          h.tee.y * TILE + TILE / 2 + 4
+        );
 
-        // green marker (labeled)
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = isActive ? "#1b5e20" : "rgba(27,94,32,0.78)";
-        ctx.beginPath();
-        ctx.arc(h.green.x * TILE + TILE / 2, h.green.y * TILE + TILE / 2, Math.max(4, TILE * 0.35), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#fff";
-        ctx.fillText(String(i + 1), h.green.x * TILE + TILE / 2 - 3, h.green.y * TILE + TILE / 2 + 4);
+        ctx2.globalAlpha = 0.95;
+        ctx2.fillStyle = isActive ? "#1b5e20" : "rgba(27,94,32,0.78)";
+        ctx2.beginPath();
+        ctx2.arc(
+          h.green.x * TILE + TILE / 2,
+          h.green.y * TILE + TILE / 2,
+          Math.max(4, TILE * 0.35),
+          0,
+          Math.PI * 2
+        );
+        ctx2.fill();
+        ctx2.fillStyle = "#fff";
+        ctx2.fillText(
+          String(i + 1),
+          h.green.x * TILE + TILE / 2 - 3,
+          h.green.y * TILE + TILE / 2 + 4
+        );
       });
-      ctx.globalAlpha = 1;
+      ctx2.globalAlpha = 1;
     }
 
-    // draft overlays (wizard) above everything else
-    if (editorMode === "HOLE_WIZARD") {
-      ctx.lineWidth = 3;
+    function drawWizard() {
+      if (editorMode !== "HOLE_WIZARD") return;
+      ctx2.lineWidth = 3;
       if (draftTee && draftGreen) {
-        ctx.globalAlpha = 0.9;
-        ctx.strokeStyle = "#ff6f00";
-        ctx.beginPath();
-        ctx.moveTo(draftTee.x * TILE + TILE / 2, draftTee.y * TILE + TILE / 2);
-        ctx.lineTo(draftGreen.x * TILE + TILE / 2, draftGreen.y * TILE + TILE / 2);
-        ctx.stroke();
-        ctx.globalAlpha = 1;
+        ctx2.globalAlpha = 0.9;
+        ctx2.strokeStyle = "#ff6f00";
+        ctx2.beginPath();
+        ctx2.moveTo(draftTee.x * TILE + TILE / 2, draftTee.y * TILE + TILE / 2);
+        ctx2.lineTo(draftGreen.x * TILE + TILE / 2, draftGreen.y * TILE + TILE / 2);
+        ctx2.stroke();
+        ctx2.globalAlpha = 1;
       }
 
       if (draftTee) {
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = "#ff6f00";
-        ctx.beginPath();
-        ctx.arc(draftTee.x * TILE + TILE / 2, draftTee.y * TILE + TILE / 2, 8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#fff";
-        ctx.fillText("T", draftTee.x * TILE + TILE / 2 - 4, draftTee.y * TILE + TILE / 2 + 4);
-        ctx.globalAlpha = 1;
+        ctx2.globalAlpha = 0.95;
+        ctx2.fillStyle = "#ff6f00";
+        ctx2.beginPath();
+        ctx2.arc(draftTee.x * TILE + TILE / 2, draftTee.y * TILE + TILE / 2, 8, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = "#fff";
+        ctx2.fillText("T", draftTee.x * TILE + TILE / 2 - 4, draftTee.y * TILE + TILE / 2 + 4);
+        ctx2.globalAlpha = 1;
       }
 
       if (draftGreen) {
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = "#ff6f00";
-        ctx.beginPath();
-        ctx.arc(
+        ctx2.globalAlpha = 0.95;
+        ctx2.fillStyle = "#ff6f00";
+        ctx2.beginPath();
+        ctx2.arc(
           draftGreen.x * TILE + TILE / 2,
           draftGreen.y * TILE + TILE / 2,
           8,
           0,
           Math.PI * 2
         );
-        ctx.fill();
-        ctx.fillStyle = "#fff";
-        ctx.fillText(
+        ctx2.fill();
+        ctx2.fillStyle = "#fff";
+        ctx2.fillText(
           "G",
           draftGreen.x * TILE + TILE / 2 - 4,
           draftGreen.y * TILE + TILE / 2 + 4
         );
-        ctx.globalAlpha = 1;
+        ctx2.globalAlpha = 1;
       }
 
-      // small hint (top-left) only when overlays enabled
       if (showGridOverlays) {
-        ctx.globalAlpha = 0.85;
-        ctx.fillStyle = "rgba(0,0,0,0.9)";
+        ctx2.globalAlpha = 0.85;
+        ctx2.fillStyle = "rgba(0,0,0,0.9)";
         const hint =
           wizardStep === "TEE"
             ? `Hole ${activeHoleIndex + 1}: click to place tee`
             : wizardStep === "GREEN"
               ? `Hole ${activeHoleIndex + 1}: click to place green`
               : `Hole ${activeHoleIndex + 1}: confirm or redo`;
-        ctx.fillText(hint, 8, 16);
-        ctx.globalAlpha = 1;
+        ctx2.fillText(hint, 8, 16);
+        ctx2.globalAlpha = 1;
       }
     }
+
+    const render = (timeMs: number) => {
+      if (!canvasRef.current) return;
+      if (!isVisibleRef.current) {
+        rafRef.current = requestAnimationFrame(render);
+        return;
+      }
+      const baseNow = baseCanvasRef.current;
+      if (!baseNow) return;
+      ctx2.clearRect(0, 0, wPx, hPx);
+      ctx2.drawImage(baseNow, 0, 0);
+
+      drawShimmer(timeMs);
+
+      // obstacles always visible; sway only when animations enabled
+      for (const o of obstacles) drawObstacle(o, timeMs);
+
+      drawAnalytics();
+      drawWizard();
+
+      rafRef.current = requestAnimationFrame(render);
+    };
+
+    // Cancel any previous loop and render once or start loop
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    if (animationsEnabled) rafRef.current = requestAnimationFrame(render);
+    else render(0);
+
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    };
   }, [
     course.width,
     course.height,
@@ -453,6 +571,9 @@ export function CanvasCourse(props: {
     draftGreen,
     showGridOverlays,
     activePath,
+    obstaclePhases,
+    animationsEnabled,
+    waterTiles,
   ]);
 
   function getTileFromEvent(e: React.PointerEvent) {

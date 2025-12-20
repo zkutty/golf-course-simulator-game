@@ -56,6 +56,8 @@ export function HUD(props: {
   paintError?: string | null;
   viewMode: "COZY" | "ARCHITECT";
   setViewMode: (m: "COZY" | "ARCHITECT") => void;
+  animationsEnabled: boolean;
+  setAnimationsEnabled: (b: boolean) => void;
 }) {
   const {
     course,
@@ -94,6 +96,8 @@ export function HUD(props: {
     paintError,
     viewMode,
     setViewMode,
+    animationsEnabled,
+    setAnimationsEnabled,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
@@ -194,7 +198,17 @@ export function HUD(props: {
           {viewMode === "COZY" && (
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
               <div style={{ fontSize: 12, color: "#6b7280" }}>Course vibe</div>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{courseVibe}</div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{courseVibe}</div>
+                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#374151" }}>
+                  <input
+                    type="checkbox"
+                    checked={animationsEnabled}
+                    onChange={(e) => setAnimationsEnabled(e.target.checked)}
+                  />
+                  Animations
+                </label>
+              </div>
             </div>
           )}
         </div>
