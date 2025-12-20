@@ -46,6 +46,7 @@ export function tickWeek(
   const dBreak = demandBreakdown(course, world);
   const sBreak = satisfactionBreakdown(course, world);
   const tips = buildExplainabilityTips(holes);
+  const topIssues = buildTopIssues(holes);
 
   return {
     course: { ...course, condition: nextCondition },
@@ -66,6 +67,7 @@ export function tickWeek(
       demand: dBreak,
       satisfaction: sBreak,
       tips,
+      topIssues,
       maintenancePressure: { totalWeight, avgWeight, wear },
     },
   };
@@ -131,6 +133,74 @@ function buildExplainabilityTips(holes: ReturnType<typeof scoreCourseHoles>) {
   if (avgAest < 45) tips.push("Aesthetics is low: add water/sand near fairway edges (not directly on the tee→green line).");
 
   return tips.slice(0, 3);
+}
+
+function buildTopIssues(holes: ReturnType<typeof scoreCourseHoles>) {
+  const issues: string[] = [];
+
+  const incomplete = holes.holes.filter((h) => !h.isComplete).length;
+  if (incomplete > 0) issues.push(`You have ${incomplete} incomplete holes — place tee + green for each hole.`);
+
+  const blocked = holes.holes.filter(
+    (h) => h.isComplete && !h.isValid && h.issues.some((m) => m.includes("No playable route"))
+  );
+  for (const h of blocked.slice(0, 2)) {
+    issues.push(
+      `Hole ${h.holeIndex + 1}: route is blocked (no playable path) — reduce water blocking or add a fairway corridor.`
+    );
+  }
+
+  const completeValid = holes.holes.filter((h) => h.isComplete && h.isValid);
+  const worst = completeValid.slice().sort((a, b) => a.overallHoleScore - b.overallHoleScore).slice(0, 3);
+
+  for (const h of worst) {
+    const s = h.corridor.samples || 1;
+    const waterFrac = h.corridor.water / s;
+    const sandFrac = h.corridor.sand / s;
+    const roughFrac = h.corridor.rough / s;
+    const deepRoughFrac = h.corridor.deep_rough / s;
+    const holeNo = h.holeIndex + 1;
+
+    if (waterFrac >= 0.12) {
+      issues.push(`Hole ${holeNo}: water sits on the playable path — move it off the corridor or add a safe dogleg.`);
+      continue;
+    }
+    if (deepRoughFrac >= 0.18) {
+      issues.push(`Hole ${holeNo}: deep rough is on the playable path — carve a fairway line (keep deep rough off-path).`);
+      continue;
+    }
+    if (roughFrac + deepRoughFrac >= 0.65) {
+      issues.push(`Hole ${holeNo}: too much rough on the playable path — paint fairway along the route.`);
+      continue;
+    }
+    if (sandFrac >= 0.14) {
+      issues.push(`Hole ${holeNo}: lots of sand on the playable path — shift bunkers to the sides for aesthetics without punishment.`);
+      continue;
+    }
+  }
+
+  // Par distribution sanity (encourage variety)
+  const pars = completeValid.map((h) => h.par);
+  if (pars.length >= 6) {
+    const counts = new Map<number, number>();
+    for (const p of pars) counts.set(p, (counts.get(p) ?? 0) + 1);
+    const distinct = counts.size;
+    const maxCount = Math.max(...counts.values());
+    if (distinct === 1 || maxCount >= 7) {
+      const common = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      issues.push(`Par variety is low (mostly par ${common}) — mix in shorter and longer holes to improve variety.`);
+    }
+  }
+
+  // De-duplicate and cap
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const s of issues) {
+    if (seen.has(s)) continue;
+    seen.add(s);
+    deduped.push(s);
+  }
+  return deduped.slice(0, 3);
 }
 
 

@@ -35,6 +35,7 @@ export interface Course {
   tiles: Terrain[]; // length = width * height
   holes: Hole[]; // 9 or 18 (MVP: 9)
   obstacles: Obstacle[]; // overlay layer (not terrain)
+  yardsPerTile: number; // distance model (default 10)
   name: string;
   baseGreenFee: number; // dollars
   condition: number; // 0..1 (maintenance affects this)
@@ -56,13 +57,38 @@ export interface DemandBreakdown {
   priceAttractiveness: number; // 0..100
   marketing: number; // 0..100
   staff: number; // 0..100
+  weights: {
+    courseQuality: number;
+    condition: number;
+    reputation: number;
+    priceAttractiveness: number;
+    marketing: number;
+    staff: number;
+  };
+  contributions: {
+    courseQuality: number;
+    condition: number;
+    reputation: number;
+    priceAttractiveness: number;
+    marketing: number;
+    staff: number;
+  };
   demandIndex: number; // 0..1.2-ish
 }
 
 export interface SatisfactionBreakdown {
   playability: number; // 0..100 (hole-based)
+  difficulty: number; // 0..100 (higher = harder)
+  aesthetics: number; // 0..100
   condition: number; // 0..100
   staff: number; // 0..100
+  weights: {
+    playability: number;
+    aesthetics: number;
+    difficultyEase: number; // uses (100 - difficulty)
+    condition: number;
+    staff: number;
+  };
   satisfaction: number; // 0..100
 }
 
@@ -77,6 +103,7 @@ export interface WeekResult {
   demand?: DemandBreakdown;
   satisfaction?: SatisfactionBreakdown;
   tips?: string[];
+  topIssues?: string[];
   capitalSpending?: {
     spent: number; // total positive charges since last week tick
     refunded: number; // total refunds since last week tick

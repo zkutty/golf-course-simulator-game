@@ -4,6 +4,7 @@ import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
+import { computeCourseRatingAndSlope } from "../game/sim/courseRating";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -22,6 +23,7 @@ export function HUD(props: {
   course: Course;
   world: World;
   last?: WeekResult;
+  prev?: WeekResult;
   selected: Terrain;
   setSelected: (t: Terrain) => void;
   setGreenFee: (n: number) => void;
@@ -57,6 +59,7 @@ export function HUD(props: {
     course,
     world,
     last,
+    prev,
     selected,
     setSelected,
     setGreenFee,
@@ -114,6 +117,7 @@ export function HUD(props: {
     return course.tiles.reduce((sum, t) => sum + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
   }, [course.tiles]);
   const avgMaintWeight = totalMaintWeight / totalTiles;
+  const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
 
   return (
     <div
@@ -461,6 +465,22 @@ export function HUD(props: {
               <div>Variety: {Math.round(holeSummary.variety)}/100</div>
               <div>Price attractiveness: {price}/100</div>
               <div>Demand index: {liveDemand.demandIndex.toFixed(2)}</div>
+              <div style={{ marginTop: 8 }}>
+                <span
+                  title={
+                    "Course Rating ≈ expected scratch score (18 holes).\n" +
+                    "Slope measures how much harder the course is for bogey golfers vs scratch.\n" +
+                    "We scale slope so a ~20-stroke bogey-scratch spread maps to 113 (average), clamped 55–155."
+                  }
+                  style={{ cursor: "help" }}
+                >
+                  Course Rating: <b>{rating.courseRating.toFixed(1)}</b> • Slope: <b>{rating.slope}</b>
+                </span>
+              </div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>
+                Scratch: {rating.expectedScratchScore.toFixed(1)} • Bogey: {rating.expectedBogeyScore.toFixed(1)} •
+                yards/tile: {course.yardsPerTile}
+              </div>
               <div style={{ marginTop: 8, fontSize: 12, color: "#444" }}>
                 Layout issues: {holeSummary.holes.filter((h) => h.isComplete && !h.isValid).length} /{" "}
                 {course.holes.length}
@@ -516,33 +536,64 @@ export function HUD(props: {
 
             {last?.demand && (
               <Section title="Demand breakdown">
-                <BreakdownTable
+                <BreakdownTableDetailed
                   rows={[
-                    ["Course quality", last.demand.courseQuality],
-                    ["Condition", last.demand.condition],
-                    ["Reputation", last.demand.reputation],
-                    ["Price", last.demand.priceAttractiveness],
-                    ["Marketing", last.demand.marketing],
-                    ["Staff", last.demand.staff],
+                    [
+                      "Course quality",
+                      last.demand.courseQuality,
+                      last.demand.weights.courseQuality,
+                      last.demand.contributions.courseQuality,
+                    ],
+                    ["Condition", last.demand.condition, last.demand.weights.condition, last.demand.contributions.condition],
+                    ["Reputation", last.demand.reputation, last.demand.weights.reputation, last.demand.contributions.reputation],
+                    ["Price", last.demand.priceAttractiveness, last.demand.weights.priceAttractiveness, last.demand.contributions.priceAttractiveness],
+                    ["Marketing", last.demand.marketing, last.demand.weights.marketing, last.demand.contributions.marketing],
+                    ["Staff", last.demand.staff, last.demand.weights.staff, last.demand.contributions.staff],
                   ]}
                 />
                 <div style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
                   DemandIndex: {last.demand.demandIndex.toFixed(2)} → base visitors:{" "}
                   {120 + Math.round(520 * last.demand.demandIndex)}
                 </div>
+                {prev?.demand && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
+                    Δ DemandIndex vs last week: {(last.demand.demandIndex - prev.demand.demandIndex).toFixed(2)}
+                  </div>
+                )}
               </Section>
             )}
 
             {last?.satisfaction && (
               <Section title="Satisfaction breakdown">
-                <BreakdownTable
+                <BreakdownTableDetailed
                   rows={[
-                    ["Playability", last.satisfaction.playability],
-                    ["Condition", last.satisfaction.condition],
-                    ["Staff", last.satisfaction.staff],
-                    ["Total", last.satisfaction.satisfaction],
+                    ["Playability", last.satisfaction.playability, last.satisfaction.weights.playability, last.satisfaction.weights.playability * (last.satisfaction.playability / 100)],
+                    ["Aesthetics", last.satisfaction.aesthetics, last.satisfaction.weights.aesthetics, last.satisfaction.weights.aesthetics * (last.satisfaction.aesthetics / 100)],
+                    ["Difficulty (ease)", 100 - last.satisfaction.difficulty, last.satisfaction.weights.difficultyEase, last.satisfaction.weights.difficultyEase * ((100 - last.satisfaction.difficulty) / 100)],
+                    ["Condition", last.satisfaction.condition, last.satisfaction.weights.condition, last.satisfaction.weights.condition * (last.satisfaction.condition / 100)],
+                    ["Staff", last.satisfaction.staff, last.satisfaction.weights.staff, last.satisfaction.weights.staff * (last.satisfaction.staff / 100)],
                   ]}
                 />
+                <div style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
+                  Satisfaction: <b>{last.satisfaction.satisfaction}</b>/100
+                </div>
+                {prev?.satisfaction && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
+                    Δ Satisfaction vs last week: {last.satisfaction.satisfaction - prev.satisfaction.satisfaction}
+                  </div>
+                )}
+              </Section>
+            )}
+
+            {last?.topIssues && last.topIssues.length > 0 && (
+              <Section title="Top issues (what to fix next)">
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  {last.topIssues.map((t, i) => (
+                    <li key={i} style={{ marginBottom: 6 }}>
+                      {t}
+                    </li>
+                  ))}
+                </ul>
               </Section>
             )}
 
@@ -794,15 +845,33 @@ export function HUD(props: {
   );
 }
 
-function BreakdownTable(props: { rows: Array<[string, number]> }) {
+function BreakdownTableDetailed(props: {
+  rows: Array<[label: string, value: number, weight: number, contribution01: number]>;
+}) {
   return (
-    <div style={{ display: "grid", gap: 4 }}>
-      {props.rows.map(([k, v]) => (
-        <div key={k} style={{ display: "flex", justifyContent: "space-between" }}>
-          <span>{k}</span>
-          <span>
-            <b>{v}</b>
-          </span>
+    <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+      {props.rows.map(([label, value, weight, contrib]) => (
+        <div
+          key={label}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto",
+            gap: 8,
+            alignItems: "baseline",
+          }}
+        >
+          <div>
+            {label}{" "}
+            <span style={{ color: "#6b7280", fontSize: 12 }}>
+              ({Math.round(weight * 100)}%)
+            </span>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <b>{value}</b>{" "}
+            <span style={{ color: "#6b7280", fontSize: 12 }}>
+              (+{(contrib * 100).toFixed(1)})
+            </span>
+          </div>
         </div>
       ))}
     </div>

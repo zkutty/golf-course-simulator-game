@@ -5,6 +5,23 @@ function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
 }
 
+export const DEMAND_WEIGHTS = {
+  courseQuality: 0.28,
+  condition: 0.22,
+  reputation: 0.22,
+  priceAttractiveness: 0.16,
+  marketing: 0.06,
+  staff: 0.06,
+} as const;
+
+export const SATISFACTION_WEIGHTS = {
+  playability: 0.32,
+  aesthetics: 0.18,
+  difficultyEase: 0.12, // uses (100 - difficulty)
+  condition: 0.28,
+  staff: 0.10,
+} as const;
+
 export function courseQuality(course: Course): number {
   // Hole-based quality (0..1)
   const s = scoreCourseHoles(course);
@@ -27,13 +44,22 @@ export function demandBreakdown(course: Course, world: World) {
   const marketing = Math.min(1, world.marketingLevel * 0.12); // 0..0.6
   const staff = Math.min(1, world.staffLevel * 0.1); // 0..0.5
 
+  const contributions = {
+    courseQuality: DEMAND_WEIGHTS.courseQuality * q,
+    condition: DEMAND_WEIGHTS.condition * cond,
+    reputation: DEMAND_WEIGHTS.reputation * rep,
+    priceAttractiveness: DEMAND_WEIGHTS.priceAttractiveness * price,
+    marketing: DEMAND_WEIGHTS.marketing * marketing,
+    staff: DEMAND_WEIGHTS.staff * staff,
+  };
+
   const base =
-    0.28 * q +
-    0.22 * cond +
-    0.22 * rep +
-    0.16 * price +
-    0.06 * marketing +
-    0.06 * staff;
+    contributions.courseQuality +
+    contributions.condition +
+    contributions.reputation +
+    contributions.priceAttractiveness +
+    contributions.marketing +
+    contributions.staff;
 
   const demand = Math.max(0, Math.min(1.2, base));
 
@@ -44,6 +70,8 @@ export function demandBreakdown(course: Course, world: World) {
     priceAttractiveness: Math.round(price * 100),
     marketing: Math.round(marketing * 100),
     staff: Math.round(staff * 100),
+    weights: { ...DEMAND_WEIGHTS },
+    contributions,
     demandIndex: demand,
   };
 }
@@ -53,28 +81,44 @@ export function demandIndex(course: Course, world: World): number {
 }
 
 export function satisfactionScore(course: Course, world: World): number {
-  const q = courseQuality(course);
-  const cond = course.condition;
-  const staff = Math.min(1, world.staffLevel * 0.12);
-
-  // 0..100
-  const s = 100 * (0.45 * q + 0.45 * cond + 0.1 * staff);
-  return Math.max(0, Math.min(100, s));
+  return satisfactionBreakdown(course, world).satisfaction;
 }
 
 export function satisfactionBreakdown(course: Course, world: World) {
-  const playability = courseQuality(course); // 0..1
-  const cond = course.condition; // 0..1
-  const staff = Math.min(1, world.staffLevel * 0.12);
+  const holeSummary = scoreCourseHoles(course);
+  const complete = holeSummary.holes.filter((h) => h.isComplete && h.isValid);
 
-  const s = 100 * (0.45 * playability + 0.45 * cond + 0.1 * staff);
-  const sat = Math.max(0, Math.min(100, s));
+  const playability =
+    complete.length === 0
+      ? 0
+      : complete.reduce((a, h) => a + h.playabilityScore, 0) / complete.length;
+  const difficulty =
+    complete.length === 0
+      ? 100
+      : complete.reduce((a, h) => a + h.difficultyScore, 0) / complete.length;
+  const aesthetics =
+    complete.length === 0
+      ? 0
+      : complete.reduce((a, h) => a + h.aestheticsScore, 0) / complete.length;
+
+  const condition = 100 * course.condition; // 0..100
+  const staff = 100 * Math.min(1, world.staffLevel * 0.12); // 0..100
+
+  const sat =
+    SATISFACTION_WEIGHTS.playability * playability +
+    SATISFACTION_WEIGHTS.aesthetics * aesthetics +
+    SATISFACTION_WEIGHTS.difficultyEase * (100 - difficulty) +
+    SATISFACTION_WEIGHTS.condition * condition +
+    SATISFACTION_WEIGHTS.staff * staff;
 
   return {
-    playability: Math.round(playability * 100),
-    condition: Math.round(cond * 100),
-    staff: Math.round(staff * 100),
-    satisfaction: Math.round(sat),
+    playability: Math.round(playability),
+    difficulty: Math.round(difficulty),
+    aesthetics: Math.round(aesthetics),
+    condition: Math.round(condition),
+    staff: Math.round(staff),
+    weights: { ...SATISFACTION_WEIGHTS },
+    satisfaction: Math.round(Math.max(0, Math.min(100, sat))),
   };
 }
 

@@ -12,6 +12,7 @@ export const DEFAULT_COURSE: Course = {
     name: `Hole ${i + 1}`,
   })),
   obstacles: [],
+  yardsPerTile: 10,
   baseGreenFee: 65,
   condition: 0.75,
 };

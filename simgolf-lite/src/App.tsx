@@ -357,6 +357,7 @@ export default function App() {
         course={course}
         world={world}
         last={last}
+        prev={history.length >= 2 ? history[history.length - 2] : undefined}
         selected={selected}
         setSelected={setSelected}
         setGreenFee={(n) => setCourse((c) => ({ ...c, baseGreenFee: n }))}
