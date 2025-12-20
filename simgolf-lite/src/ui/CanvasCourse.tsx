@@ -39,10 +39,11 @@ function drawTileTexture(
   y: number,
   size: number,
   noise: CanvasPattern | null,
+  mow: CanvasPattern | null,
   seed: number
 ) {
   // Subtle per-tile variation
-  const v = (hash01(seed) - 0.5) * 0.22;
+  const v = (hash01(seed) - 0.5) * 0.12;
   ctx.fillStyle = shadeHex(COLORS[terrain], v);
   ctx.fillRect(x, y, size, size);
 
@@ -63,10 +64,16 @@ function drawTileTexture(
     ctx.globalAlpha = 0.22;
     ctx.fillStyle = "rgba(120,80,20,0.25)";
     // speckles
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 8; i++) {
       const sx = x + hash01(seed + i * 11) * size;
       const sy = y + hash01(seed + i * 17) * size;
       ctx.fillRect(sx, sy, 1, 1);
+    }
+    // grain glaze (continuous pattern)
+    if (noise) {
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = noise;
+      ctx.fillRect(x, y, size, size);
     }
     ctx.globalAlpha = 1;
     return;
@@ -104,13 +111,18 @@ function drawTileTexture(
     ctx.globalAlpha = 1;
   }
 
-  // mowing lines for fairway/green (very subtle)
-  if (terrain === "fairway" || terrain === "green") {
-    ctx.globalAlpha = 0.06;
-    ctx.fillStyle = "rgba(255,255,255,0.7)";
-    const stripe = Math.max(2, Math.floor(size / 3));
-    if ((seed & 1) === 0) ctx.fillRect(x, y, size, stripe);
-    else ctx.fillRect(x, y + size - stripe, size, stripe);
+  // mowing banding for fairway (continuous diagonal pattern, very subtle)
+  if (mow && terrain === "fairway") {
+    ctx.globalAlpha = 0.045;
+    ctx.fillStyle = mow;
+    ctx.fillRect(x, y, size, size);
+    ctx.globalAlpha = 1;
+  }
+  // greens: even more subtle
+  if (mow && terrain === "green") {
+    ctx.globalAlpha = 0.028;
+    ctx.fillStyle = mow;
+    ctx.fillRect(x, y, size, size);
     ctx.globalAlpha = 1;
   }
 }
@@ -141,7 +153,7 @@ function drawSoftEdges(
   const e = at(1, 0);
   const wv = at(-1, 0);
 
-  ctx.globalAlpha = 0.14;
+  ctx.globalAlpha = 0.10;
   if (n && n !== terrain) {
     ctx.fillStyle = COLORS[n];
     ctx.fillRect(x, y, size, t);
@@ -164,7 +176,7 @@ function drawSoftEdges(
 function drawLightingEdges(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
   // Simple top-left light source: highlight TL edges, shade BR edges.
   ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.12;
+  ctx.globalAlpha = 0.05;
   ctx.strokeStyle = "rgba(255,255,255,0.9)";
   ctx.beginPath();
   ctx.moveTo(x + 0.5, y + size - 0.5);
@@ -172,7 +184,7 @@ function drawLightingEdges(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.lineTo(x + size - 0.5, y + 0.5);
   ctx.stroke();
 
-  ctx.globalAlpha = 0.10;
+  ctx.globalAlpha = 0.04;
   ctx.strokeStyle = "rgba(0,0,0,0.9)";
   ctx.beginPath();
   ctx.moveTo(x + 0.5, y + size - 0.5);
@@ -180,6 +192,16 @@ function drawLightingEdges(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.lineTo(x + size - 0.5, y + 0.5);
   ctx.stroke();
   ctx.globalAlpha = 1;
+}
+
+function drawDirectionalLight(ctx: CanvasRenderingContext2D, w: number, h: number) {
+  // Very subtle whole-canvas light gradient (top-left bright, bottom-right darker).
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, "rgba(255,255,255,0.06)");
+  g.addColorStop(0.55, "rgba(255,255,255,0)");
+  g.addColorStop(1, "rgba(0,0,0,0.08)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, w, h);
 }
 
 export function CanvasCourse(props: {
@@ -250,6 +272,26 @@ export function CanvasCourse(props: {
     return ctx.createPattern(c, "repeat");
   }, []);
 
+  const mowPattern = useMemo(() => {
+    const c = document.createElement("canvas");
+    const s = 64;
+    c.width = s;
+    c.height = s;
+    const ctx = c.getContext("2d");
+    if (!ctx) return null;
+    ctx.clearRect(0, 0, s, s);
+    // diagonal banding
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.lineWidth = 2;
+    for (let i = -s; i < s * 2; i += 10) {
+      ctx.beginPath();
+      ctx.moveTo(i, s);
+      ctx.lineTo(i + s, 0);
+      ctx.stroke();
+    }
+    return ctx.createPattern(c, "repeat");
+  }, []);
+
   const waterTiles = useMemo(() => {
     const pts: Array<{ x: number; y: number; seed: number }> = [];
     for (let y = 0; y < course.height; y++) {
@@ -293,14 +335,23 @@ export function CanvasCourse(props: {
     const bctx = base.getContext("2d");
     if (!bctx) return;
 
-    // Pass 1: textured tiles + lighting
+    // Pass 1: textured tiles + per-tile micro-lighting
     for (let ty = 0; ty < course.height; ty++) {
       for (let tx = 0; tx < course.width; tx++) {
         const i = ty * course.width + tx;
         const terrain = course.tiles[i];
         const x = tx * TILE;
         const y = ty * TILE;
-        drawTileTexture(bctx, terrain, x, y, TILE, noisePattern, i + course.width * 1000);
+        drawTileTexture(
+          bctx,
+          terrain,
+          x,
+          y,
+          TILE,
+          noisePattern,
+          mowPattern,
+          i + course.width * 1000
+        );
         drawLightingEdges(bctx, x, y, TILE);
       }
     }
@@ -312,6 +363,15 @@ export function CanvasCourse(props: {
         const terrain = course.tiles[i];
         drawSoftEdges(bctx, course, tx * TILE, ty * TILE, TILE, terrain);
       }
+    }
+
+    // Pass 3: global light + tiny “glaze” noise to reduce checkerboard feel
+    drawDirectionalLight(bctx, wPx, hPx);
+    if (noisePattern) {
+      bctx.globalAlpha = 0.04;
+      bctx.fillStyle = noisePattern;
+      bctx.fillRect(0, 0, wPx, hPx);
+      bctx.globalAlpha = 1;
     }
 
     baseCanvasRef.current = base;
@@ -562,6 +622,7 @@ export function CanvasCourse(props: {
     hPx,
     imageData,
     noisePattern,
+    mowPattern,
     holes,
     obstacles,
     activeHoleIndex,
