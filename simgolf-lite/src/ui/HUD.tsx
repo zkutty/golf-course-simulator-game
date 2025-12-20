@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Course, Point, Terrain, WeekResult, World } from "../game/models/types";
+import type { Course, ObstacleType, Point, Terrain, WeekResult, World } from "../game/models/types";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
@@ -8,6 +8,7 @@ import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
 const TERRAIN: Terrain[] = [
   "fairway",
   "rough",
+  "deep_rough",
   "sand",
   "water",
   "green",
@@ -25,9 +26,11 @@ export function HUD(props: {
   setSelected: (t: Terrain) => void;
   setGreenFee: (n: number) => void;
   setMaintenance: (n: number) => void;
-  editorMode: "PAINT" | "HOLE_WIZARD";
-  setEditorMode: (m: "PAINT" | "HOLE_WIZARD") => void;
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
+  setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE") => void;
   startWizard: () => void;
+  obstacleType: ObstacleType;
+  setObstacleType: (t: ObstacleType) => void;
   activeHoleIndex: number;
   setActiveHoleIndex: (n: number) => void;
   wizardStep: "TEE" | "GREEN" | "CONFIRM";
@@ -61,6 +64,8 @@ export function HUD(props: {
     editorMode,
     setEditorMode,
     startWizard,
+    obstacleType,
+    setObstacleType,
     activeHoleIndex,
     setActiveHoleIndex,
     wizardStep,
@@ -113,31 +118,40 @@ export function HUD(props: {
   return (
     <div
       style={{
-        width: 360,
+        width: "100%",
         height: "100%",
         fontFamily: "system-ui, sans-serif",
         display: "flex",
         flexDirection: "column",
-        border: "1px solid #ddd",
-        borderRadius: 10,
+        border: "none",
+        borderRadius: 0,
         overflow: "hidden",
         background: "#fff",
       }}
     >
       <div style={{ padding: 12, borderBottom: "1px solid #eee" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <h3 style={{ margin: 0 }}>SimGolf-lite Tycoon</h3>
-          <div style={{ fontSize: 12, color: "#555" }}>Week {world.week}</div>
+          <div style={{ display: "grid", gap: 2 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>SimGolf-lite Tycoon</div>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
+          </div>
         </div>
-        <div style={{ marginTop: 8, display: "grid", gap: 2, fontSize: 12, color: "#333" }}>
-          <div>
-            <b>Cash:</b> ${Math.round(world.cash).toLocaleString()}
+        <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>Cash</div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>
+              ${Math.round(world.cash).toLocaleString()}
+            </div>
           </div>
-          <div>
-            <b>Reputation:</b> {world.reputation}/100
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>Reputation</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{world.reputation}/100</div>
           </div>
-          <div>
-            <b>Condition:</b> {Math.round(course.condition * 100)}%
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+            <div style={{ fontSize: 12, color: "#6b7280" }}>Condition</div>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>
+              {Math.round(course.condition * 100)}%
+            </div>
           </div>
         </div>
       </div>
@@ -200,6 +214,19 @@ export function HUD(props: {
                 >
                   Hole Wizard
                 </button>
+                <button
+                  onClick={() => setEditorMode("OBSTACLE")}
+                  style={{
+                    flex: 1,
+                    padding: "8px 6px",
+                    borderRadius: 10,
+                    border: editorMode === "OBSTACLE" ? "2px solid #000" : "1px solid #ccc",
+                    background: "#fff",
+                    fontSize: 12,
+                  }}
+                >
+                  Obstacles
+                </button>
               </div>
 
               {activeHole && (
@@ -208,16 +235,17 @@ export function HUD(props: {
                     <b>Hole {activeHoleIndex + 1}</b>:{" "}
                     {activeHole.isComplete ? (
                       <>
-                        score {Math.round(activeHole.score)}/100 • par {activeHole.par} • dist{" "}
-                        {activeHole.distance.toFixed(1)}
+                        score {Math.round(activeHole.score)}/100 • par {activeHole.par} • eff{" "}
+                        {activeHole.effectiveDistance.toFixed(0)}
                       </>
                     ) : (
                       <>place tee + green</>
                     )}
                   </div>
                   <div style={{ marginTop: 4, color: "#444" }}>
-                    Distance:{" "}
-                    {distanceTiles != null ? `${distanceTiles.toFixed(1)} tiles` : "—"} • Par:{" "}
+                    Straight dist:{" "}
+                    {distanceTiles != null ? `${distanceTiles.toFixed(1)} tiles` : "—"} • Effective dist:{" "}
+                    {activeHole.isComplete ? `${activeHole.effectiveDistance.toFixed(0)} tiles` : "—"} • Par:{" "}
                     {effectivePar}{" "}
                     <span style={{ color: "#777" }}>
                       ({holeDef?.parMode === "MANUAL" ? "manual" : "auto"})
@@ -263,6 +291,29 @@ export function HUD(props: {
                 <div style={{ fontSize: 12, color: "#666" }}>
                   Draft: tee {draftTee ? `(${draftTee.x},${draftTee.y})` : "—"} • green{" "}
                   {draftGreen ? `(${draftGreen.x},${draftGreen.y})` : "—"}
+                </div>
+              </Section>
+            ) : editorMode === "OBSTACLE" ? (
+              <Section title="Place obstacle">
+                <div style={{ color: "#444" }}>
+                  Click on the canvas to place/remove an obstacle (does not change terrain).
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  {(["tree", "bush"] as const).map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setObstacleType(t)}
+                      style={{
+                        flex: 1,
+                        padding: 10,
+                        borderRadius: 10,
+                        border: obstacleType === t ? "2px solid #000" : "1px solid #ccc",
+                        background: "#fff",
+                      }}
+                    >
+                      {t}
+                    </button>
+                  ))}
                 </div>
               </Section>
             ) : (
@@ -364,7 +415,7 @@ export function HUD(props: {
                         </div>
                         <div>{h.isComplete ? h.par : "—"}</div>
                         <div style={{ color: "#555" }}>
-                          {h.isComplete ? `${h.distance.toFixed(1)} tiles` : "missing tee/green"}
+                          {h.isComplete ? `${h.effectiveDistance.toFixed(0)} tiles` : "missing tee/green"}
                         </div>
                         <div style={{ textAlign: "right" }}>
                           <b>{Math.round(h.overallHoleScore)}</b>

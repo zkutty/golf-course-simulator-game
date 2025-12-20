@@ -11,6 +11,7 @@ export const DEFAULT_COURSE: Course = {
     parMode: "AUTO" as const,
     name: `Hole ${i + 1}`,
   })),
+  obstacles: [],
   baseGreenFee: 65,
   condition: 0.75,
 };

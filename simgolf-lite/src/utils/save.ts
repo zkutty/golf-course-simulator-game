@@ -30,7 +30,7 @@ export function loadGame(): { course: Course; world: World; history?: WeekResult
     const parsed = JSON.parse(raw) as Partial<SaveV1>;
     if (parsed.schemaVersion !== SCHEMA_VERSION) return null;
     if (!parsed.course || !parsed.world) return null;
-    // Basic forwards safety: if holes missing, fall back to defaults.
+    // Basic forwards safety: if holes/obstacles missing, fall back to defaults.
     const course: Course = {
       ...DEFAULT_COURSE,
       ...(parsed.course as Course),
@@ -40,6 +40,7 @@ export function loadGame(): { course: Course; world: World; history?: WeekResult
           ...h,
           parMode: (h as any).parMode ?? "AUTO",
         })) ?? DEFAULT_COURSE.holes,
+      obstacles: (parsed.course as Course).obstacles ?? DEFAULT_COURSE.obstacles,
     };
     const world: World = { ...DEFAULT_WORLD, ...(parsed.world as World) };
     const history = parsed.history ?? undefined;

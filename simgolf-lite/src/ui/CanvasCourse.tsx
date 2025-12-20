@@ -1,11 +1,10 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import type { Course, Hole, Point, Terrain } from "../game/models/types";
-
-const TILE = 20;
+import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/types";
 
 const COLORS: Record<Terrain, string> = {
   fairway: "#4caf50",
   rough: "#2e7d32",
+  deep_rough: "#14532d",
   sand: "#d8c37a",
   water: "#2196f3",
   green: "#66bb6a",
@@ -16,8 +15,11 @@ const COLORS: Record<Terrain, string> = {
 export function CanvasCourse(props: {
   course: Course;
   holes: Hole[];
+  obstacles: Obstacle[];
   activeHoleIndex: number;
-  editorMode: "PAINT" | "HOLE_WIZARD";
+  activePath?: Point[];
+  tileSize: number;
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
   wizardStep: "TEE" | "GREEN" | "CONFIRM";
   draftTee: Point | null;
   draftGreen: Point | null;
@@ -29,7 +31,10 @@ export function CanvasCourse(props: {
   const {
     course,
     holes,
+    obstacles,
     activeHoleIndex,
+    activePath,
+    tileSize,
     editorMode,
     wizardStep,
     draftTee,
@@ -41,6 +46,7 @@ export function CanvasCourse(props: {
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
+  const TILE = tileSize;
   const wPx = course.width * TILE;
   const hPx = course.height * TILE;
 
@@ -80,12 +86,61 @@ export function CanvasCourse(props: {
     }
     ctx.globalAlpha = 1;
 
+    // obstacle overlay (above tiles + grid, below hole markers)
+    obstacles.forEach((o) => {
+      const cx = o.x * TILE + TILE / 2;
+      const cy = o.y * TILE + TILE / 2;
+      if (o.type === "tree") {
+        // canopy
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = "#14532d";
+        ctx.strokeStyle = "rgba(0,0,0,0.45)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy - TILE * 0.08, Math.max(3, TILE * 0.28), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        // trunk
+        ctx.fillStyle = "#7c4a03";
+        ctx.globalAlpha = 0.95;
+        const tw = Math.max(2, TILE * 0.12);
+        const th = Math.max(3, TILE * 0.22);
+        ctx.fillRect(cx - tw / 2, cy + TILE * 0.12, tw, th);
+      } else {
+        // bush
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = "#166534";
+        ctx.strokeStyle = "rgba(0,0,0,0.35)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(3, TILE * 0.24), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    });
+    ctx.globalAlpha = 1;
+
     // hole overlays (above tiles + grid)
     ctx.lineWidth = 2;
     ctx.font = "12px system-ui, sans-serif";
     holes.forEach((h, i) => {
       if (!h.tee || !h.green) return;
       const isActive = i === activeHoleIndex;
+
+      // active best-path polyline (dogleg-aware)
+      if (isActive && activePath && activePath.length >= 2) {
+        ctx.globalAlpha = 0.85;
+        ctx.strokeStyle = "#facc15"; // amber
+        ctx.lineWidth = Math.max(1, TILE * 0.12);
+        ctx.beginPath();
+        ctx.moveTo(activePath[0].x * TILE + TILE / 2, activePath[0].y * TILE + TILE / 2);
+        for (let k = 1; k < activePath.length; k++) {
+          ctx.lineTo(activePath[k].x * TILE + TILE / 2, activePath[k].y * TILE + TILE / 2);
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = 2;
+      }
 
       // semi-transparent "shot line" tee -> green
       ctx.globalAlpha = isActive ? 0.6 : 0.35;
@@ -187,6 +242,7 @@ export function CanvasCourse(props: {
     hPx,
     imageData,
     holes,
+    obstacles,
     activeHoleIndex,
     editorMode,
     wizardStep,
@@ -227,7 +283,7 @@ export function CanvasCourse(props: {
   }
 
   return (
-    <div style={{ border: "1px solid #ddd", display: "inline-block" }}>
+    <div style={{ display: "inline-block" }}>
       <canvas
         ref={canvasRef}
         width={wPx}
@@ -238,7 +294,7 @@ export function CanvasCourse(props: {
           lastHoverIdxRef.current = null;
           onLeave?.();
         }}
-        style={{ touchAction: "none", cursor: cursor ?? "crosshair" }}
+        style={{ touchAction: "none", cursor: cursor ?? "crosshair", display: "block" }}
       />
     </div>
   );

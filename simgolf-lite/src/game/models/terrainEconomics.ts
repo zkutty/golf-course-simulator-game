@@ -3,6 +3,7 @@ import type { Terrain } from "./types";
 // Capital expense: build costs per tile
 export const TERRAIN_BUILD_COST: Record<Terrain, number> = {
   rough: 10,
+  deep_rough: 25,
   fairway: 120,
   green: 300,
   sand: 80,
@@ -14,6 +15,7 @@ export const TERRAIN_BUILD_COST: Record<Terrain, number> = {
 // Partial refunds when reverting/tearing down (fun + experimentation)
 export const TERRAIN_SALVAGE_VALUE: Record<Terrain, number> = {
   rough: 0,
+  deep_rough: 5,
   fairway: 40,
   green: 120,
   sand: 30,
@@ -25,6 +27,7 @@ export const TERRAIN_SALVAGE_VALUE: Record<Terrain, number> = {
 // Opex pressure / maintenance burden (greens wear fastest)
 export const TERRAIN_MAINT_WEIGHT: Record<Terrain, number> = {
   rough: 0.3,
+  deep_rough: 0.6,
   fairway: 1.0,
   green: 2.5,
   sand: 1.2,

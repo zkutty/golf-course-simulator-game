@@ -105,7 +105,7 @@ function buildExplainabilityTips(holes: ReturnType<typeof scoreCourseHoles>) {
       tips.push(`Hole ${holeNo}: the tee→green line is mostly rough — paint a fairway corridor.`);
       continue;
     }
-    if (h.difficultyScore >= 78 && h.distance >= 28 && waterFrac + sandFrac >= 0.08) {
+    if (h.difficultyScore >= 78 && h.effectiveDistance >= 28 && waterFrac + sandFrac >= 0.08) {
       tips.push(`Hole ${holeNo}: long + hazard-heavy — feels unfair; reduce hazards or shorten it.`);
       continue;
     }

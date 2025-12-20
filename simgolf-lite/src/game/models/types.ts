@@ -1,6 +1,7 @@
 export type Terrain =
   | "fairway"
   | "rough"
+  | "deep_rough"
   | "sand"
   | "water"
   | "green"
@@ -20,11 +21,20 @@ export interface Hole {
   name?: string;
 }
 
+export type ObstacleType = "tree" | "bush";
+
+export interface Obstacle {
+  x: number;
+  y: number;
+  type: ObstacleType;
+}
+
 export interface Course {
   width: number;
   height: number;
   tiles: Terrain[]; // length = width * height
   holes: Hole[]; // 9 or 18 (MVP: 9)
+  obstacles: Obstacle[]; // overlay layer (not terrain)
   name: string;
   baseGreenFee: number; // dollars
   condition: number; // 0..1 (maintenance affects this)

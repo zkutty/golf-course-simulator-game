@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CanvasCourse } from "./ui/CanvasCourse";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE } from "./game/gameState";
@@ -6,8 +6,10 @@ import type { Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
 import { loadGame, resetSave, saveGame } from "./utils/save";
 import { computeTerrainChangeCost } from "./game/models/terrainEconomics";
+import type { ObstacleType } from "./game/models/types";
+import { scoreCourseHoles } from "./game/sim/holes";
 
-type EditorMode = "PAINT" | "HOLE_WIZARD";
+type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
 
 export default function App() {
@@ -22,6 +24,7 @@ export default function App() {
   const [wizardStep, setWizardStep] = useState<WizardStep>("TEE");
   const [draftTee, setDraftTee] = useState<Point | null>(null);
   const [draftGreen, setDraftGreen] = useState<Point | null>(null);
+  const [obstacleType, setObstacleType] = useState<ObstacleType>("tree");
 
   const [capital, setCapital] = useState(() => ({
     spent: 0,
@@ -39,6 +42,36 @@ export default function App() {
   } | null>(null);
 
   const [paintError, setPaintError] = useState<string | null>(null);
+
+  const canvasPaneRef = useRef<HTMLDivElement | null>(null);
+  const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    const el = canvasPaneRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      setPaneSize({ width: r.width, height: r.height });
+    });
+    ro.observe(el);
+    const r = el.getBoundingClientRect();
+    setPaneSize({ width: r.width, height: r.height });
+    return () => ro.disconnect();
+  }, []);
+
+  const tileSize = useMemo(() => {
+    // Fit the entire course without scroll, maintain aspect ratio.
+    const w = Math.max(0, paneSize.width);
+    const h = Math.max(0, paneSize.height);
+    if (w === 0 || h === 0) return 16;
+    const size = Math.floor(Math.min(w / course.width, h / course.height));
+    return Math.max(4, Math.min(40, size));
+  }, [paneSize.width, paneSize.height, course.width, course.height]);
+
+  const activePath = useMemo(() => {
+    const summary = scoreCourseHoles(course);
+    return summary.holes[activeHoleIndex]?.path ?? [];
+  }, [course, activeHoleIndex]);
 
   function applyTileChange(idx: number, next: Terrain): boolean {
     const prev = course.tiles[idx];
@@ -131,6 +164,17 @@ export default function App() {
   function handleCanvasClick(x: number, y: number) {
     if (editorMode === "PAINT") {
       applyTerrainAt(x, y, selected);
+      return;
+    }
+    if (editorMode === "OBSTACLE") {
+      setCourse((c) => {
+        const existingIdx = c.obstacles.findIndex((o) => o.x === x && o.y === y);
+        const obstacles =
+          existingIdx >= 0
+            ? c.obstacles.filter((_, i) => i !== existingIdx)
+            : [...c.obstacles, { x, y, type: obstacleType }];
+        return { ...c, obstacles };
+      });
       return;
     }
     // HOLE_WIZARD
@@ -234,6 +278,7 @@ export default function App() {
     setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
     setHover(null);
     setPaintError(null);
+    setObstacleType("tree");
   }
 
   function simulate() {
@@ -257,18 +302,30 @@ export default function App() {
     <div
       style={{
         height: "100vh",
-        display: "flex",
-        gap: 16,
-        padding: 16,
-        boxSizing: "border-box",
+        width: "100vw",
+        display: "grid",
+        gridTemplateColumns: "7fr 3fr",
         overflow: "hidden",
       }}
     >
-      <div style={{ flex: 1, overflow: "auto" }}>
+      <div
+        ref={canvasPaneRef}
+        style={{
+          position: "relative",
+          overflow: "hidden",
+          background: "#0b1220",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <CanvasCourse
           course={course}
           holes={course.holes}
+          obstacles={course.obstacles}
           activeHoleIndex={activeHoleIndex}
+          activePath={activePath}
+          tileSize={tileSize}
           editorMode={editorMode}
           wizardStep={wizardStep}
           draftTee={draftTee}
@@ -295,6 +352,7 @@ export default function App() {
           />
         )}
       </div>
+      <div style={{ overflow: "hidden", borderLeft: "1px solid rgba(17,24,39,0.12)" }}>
       <HUD
         course={course}
         world={world}
@@ -306,6 +364,8 @@ export default function App() {
         editorMode={editorMode}
         setEditorMode={setEditorMode}
         startWizard={startWizard}
+        obstacleType={obstacleType}
+        setObstacleType={setObstacleType}
         activeHoleIndex={activeHoleIndex}
         setActiveHoleIndex={setActiveHoleIndex}
         wizardStep={wizardStep}
@@ -328,6 +388,7 @@ export default function App() {
         simulate={simulate}
         paintError={paintError}
       />
+      </div>
     </div>
   );
 }

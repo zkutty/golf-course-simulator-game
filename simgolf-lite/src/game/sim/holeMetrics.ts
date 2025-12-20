@@ -6,6 +6,10 @@ export function computeHoleDistanceTiles(tee: Point, green: Point) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+export function computePathDistanceTiles(path: Point[]) {
+  return Math.max(0, path.length - 1);
+}
+
 // Thresholds:
 // <=14 => par 3
 // 15–30 => par 4

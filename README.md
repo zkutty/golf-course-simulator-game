@@ -14,4 +14,9 @@ Then open `http://localhost:5173/`.
 
 ## Project layout
 
-- `simgolf-lite/`: the playable web prototype (course painter, hole layout wizard, weekly sim)
+- `simgolf-lite/`: the playable web prototype:
+  - canvas course painter + terrain build economics (capex + salvage)
+  - 9-hole setup wizard
+  - deep rough + tree/bush obstacle overlay
+  - dogleg-aware pathfinding (“effective distance”) + route visualization
+  - weekly sim + breakdowns + tips
