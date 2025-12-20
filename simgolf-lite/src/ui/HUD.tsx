@@ -638,6 +638,34 @@ export function HUD(props: {
                 <div>Visitors: {last.visitors}</div>
                 <div>Revenue: ${Math.round(last.revenue).toLocaleString()}</div>
                 <div>Costs: ${Math.round(last.costs).toLocaleString()}</div>
+                {last.overhead && (
+                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Overhead (fixed)</span>
+                      <span>
+                        <b>${Math.round(last.overhead.total).toLocaleString()}</b>
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 4, display: "grid", gap: 2 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>Insurance</span>
+                        <span>${Math.round(last.overhead.insurance).toLocaleString()}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>Utilities</span>
+                        <span>${Math.round(last.overhead.utilities).toLocaleString()}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>Admin</span>
+                        <span>${Math.round(last.overhead.admin).toLocaleString()}</span>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>Base staff</span>
+                        <span>${Math.round(last.overhead.baseStaff).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <b>Profit:</b> ${Math.round(last.profit).toLocaleString()}
                 </div>

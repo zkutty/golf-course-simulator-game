@@ -30,7 +30,16 @@ export function tickWeek(
   const marketingCost = 300 * world.marketingLevel;
   const maintenanceCost = world.maintenanceBudget;
 
-  const costs = staffCost + marketingCost + maintenanceCost;
+  // Fixed weekly overhead (applies even with 0 visitors)
+  const overhead = {
+    insurance: 140,
+    utilities: 110,
+    admin: 170,
+    baseStaff: 280,
+  };
+  const overheadTotal = overhead.insurance + overhead.utilities + overhead.admin + overhead.baseStaff;
+
+  const costs = staffCost + marketingCost + maintenanceCost + overheadTotal;
   const profit = revenue - costs;
 
   // Condition update: maintenance pushes up, wear pushes down
@@ -67,6 +76,7 @@ export function tickWeek(
       revenue,
       costs,
       profit,
+      overhead: { ...overhead, total: overheadTotal },
       avgSatisfaction: avgSat,
       reputationDelta: repDelta,
       visitorNoise,

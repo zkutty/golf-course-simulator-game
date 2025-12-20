@@ -97,6 +97,13 @@ export interface WeekResult {
   revenue: number;
   costs: number;
   profit: number;
+  overhead?: {
+    insurance: number;
+    utilities: number;
+    admin: number;
+    baseStaff: number;
+    total: number;
+  };
   avgSatisfaction: number; // 0..100
   reputationDelta: number; // signed
   visitorNoise: number; // signed
