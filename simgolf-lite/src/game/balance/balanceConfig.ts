@@ -49,6 +49,17 @@ export const BALANCE = {
     maintEffectDivisor: 20_000,
   },
 
+  // Required maintenance model
+  requiredMaintenance: {
+    base: 400,
+    perVisitorK: 0.08,
+    // If budget < required, add extra wear and reputation penalty
+    wearShortfallMult: 0.06, // extra wear (0..this) at 100% shortfall
+    repPenaltyPer1000: 0.6, // up to ~-2 via rep cap
+    // If budget > required, only a fraction of the excess counts for recovery
+    excessEffectiveness: 0.25,
+  },
+
   // Reputation dynamics
   reputation: {
     satPivot: 60,

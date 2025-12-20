@@ -138,6 +138,11 @@ export interface WeekResult {
     baseStaff: number;
     total: number;
   };
+  maintenance?: {
+    required: number;
+    budget: number;
+    shortfall: number; // positive if under, negative if over
+  };
   avgSatisfaction: number; // 0..100
   reputationDelta: number; // signed
   reputationMomentum?: string;

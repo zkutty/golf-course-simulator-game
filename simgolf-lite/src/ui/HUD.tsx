@@ -752,6 +752,27 @@ export function HUD(props: {
                     </div>
                   </div>
                 )}
+                {last.maintenance && (
+                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Required maintenance</span>
+                      <span>
+                        <b>${Math.round(last.maintenance.required).toLocaleString()}</b>
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+                      <span>Budget</span>
+                      <span>${Math.round(last.maintenance.budget).toLocaleString()}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
+                      <span>{last.maintenance.shortfall > 0 ? "Shortfall" : "Excess"}</span>
+                      <span>
+                        {last.maintenance.shortfall > 0 ? "-" : "+"}$
+                        {Math.round(Math.abs(last.maintenance.shortfall)).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                )}
                 <div>
                   <b>Profit:</b> ${Math.round(last.profit).toLocaleString()}
                 </div>

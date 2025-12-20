@@ -29,7 +29,7 @@ export function tickWeek(
     ? Math.max(0, baseVisitors + visitorNoise)
     : randInt(rng, 0, BALANCE.visitors.testingRoundsMax);
 
-  const avgSat = satisfactionScore(course, world); // 0..100
+  const avgSatBase = satisfactionScore(course, world); // 0..100
 
   // Revenue: visitors * price, but satisfaction affects repeat visits (baked into rep later)
   const revenue = playable ? visitors * course.baseGreenFee : visitors * BALANCE.visitors.testingRoundFee;
@@ -42,6 +42,14 @@ export function tickWeek(
   // Fixed weekly overhead (applies even with 0 visitors)
   const overhead = { ...BALANCE.overhead };
   const overheadTotal = overhead.insurance + overhead.utilities + overhead.admin + overhead.baseStaff;
+
+  // Required maintenance grows with traffic and premium turf mix.
+  const totalWeight0 = course.tiles.reduce((acc, t) => acc + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
+  const avgWeight0 = totalWeight0 / (course.tiles.length || 1);
+  const requiredMaintenance =
+    BALANCE.requiredMaintenance.base +
+    visitors * avgWeight0 * BALANCE.requiredMaintenance.perVisitorK;
+  const maintShortfall = requiredMaintenance - maintenanceCost; // >0 underfunded
 
   // Variable costs per round + merchant fees
   const laborPerRound = Math.max(
@@ -75,28 +83,46 @@ export function tickWeek(
   const bankrupt = liquidityTrap || nextDistress >= BALANCE.distress.weeksToBankrupt;
 
   // Condition update: maintenance pushes up, wear pushes down
-  const totalWeight = course.tiles.reduce((acc, t) => acc + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
-  const avgWeight = totalWeight / (course.tiles.length || 1);
+  const totalWeight = totalWeight0;
+  const avgWeight = avgWeight0;
   // more visitors + higher-maintenance terrain => more wear
-  const wear = Math.min(
-    BALANCE.condition.wearCap,
-    (visitors / BALANCE.condition.wearDivisor) * avgWeight
-  );
+  const wearBase = (visitors / BALANCE.condition.wearDivisor) * avgWeight;
+  const wearShortfall =
+    maintShortfall > 0
+      ? BALANCE.requiredMaintenance.wearShortfallMult *
+        Math.min(1, maintShortfall / Math.max(1, requiredMaintenance))
+      : 0;
+  const wear = Math.min(BALANCE.condition.wearCap, wearBase + wearShortfall);
+
+  // Maintenance recovery uses required baseline plus diminishing returns on excess.
+  const effectiveMaintSpend =
+    maintenanceCost <= requiredMaintenance
+      ? maintenanceCost
+      : requiredMaintenance +
+        (maintenanceCost - requiredMaintenance) * BALANCE.requiredMaintenance.excessEffectiveness;
   const maintEffect = Math.min(
     BALANCE.condition.maintEffectCap,
-    maintenanceCost / BALANCE.condition.maintEffectDivisor
+    effectiveMaintSpend / BALANCE.condition.maintEffectDivisor
   );
   const nextCondition = clamp01(course.condition - wear + maintEffect);
 
+  // Satisfaction penalty if maintenance is underfunded
+  const satPenalty =
+    maintShortfall > 0 ? Math.min(12, (maintShortfall / Math.max(1, requiredMaintenance)) * 12) : 0;
+  const avgSat = Math.max(0, Math.min(100, avgSatBase - satPenalty));
+
   // Reputation update: satisfaction moves it
-  const raw =
-    (avgSat - BALANCE.reputation.satPivot) / BALANCE.reputation.satDivisor;
+  const raw = (avgSat - BALANCE.reputation.satPivot) / BALANCE.reputation.satDivisor;
   // Slow recovery vs decline
   const shaped =
     raw >= 0 ? raw * BALANCE.reputation.recoveryMult : raw * BALANCE.reputation.declineMult;
   const unclamped = Math.round(shaped);
+  const maintRepPenalty =
+    maintShortfall > 0 ? -Math.round((maintShortfall / 1000) * BALANCE.requiredMaintenance.repPenaltyPer1000) : 0;
   const repDelta = clamp(
-    unclamped + (missedLoanPayment ? BALANCE.reputation.missedLoanPaymentPenalty : 0),
+    unclamped +
+      (missedLoanPayment ? BALANCE.reputation.missedLoanPaymentPenalty : 0) +
+      maintRepPenalty,
     -BALANCE.reputation.capPerWeek,
     BALANCE.reputation.capPerWeek
   );
@@ -140,6 +166,7 @@ export function tickWeek(
         total: variableTotal,
       },
       overhead: { ...overhead, total: overheadTotal },
+      maintenance: { required: requiredMaintenance, budget: maintenanceCost, shortfall: maintShortfall },
       avgSatisfaction: avgSat,
       reputationDelta: repDelta,
       reputationMomentum,
