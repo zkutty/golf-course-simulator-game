@@ -146,6 +146,11 @@ export const BALANCE = {
     },
   },
 
+  shots: {
+    utilizationThreshold: 0.9, // beyond this, dispersion ramps up
+    dispersionRamp: 2.2, // multiplier slope vs utilization over threshold
+  },
+
   // Terrain economics
   terrain: {
     buildCost: {
