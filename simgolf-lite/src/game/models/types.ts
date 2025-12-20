@@ -122,6 +122,8 @@ export interface SatisfactionBreakdown {
 
 export interface WeekResult {
   visitors: number;
+  turnaways?: number;
+  capacity?: number;
   revenue: number;
   costs: number;
   profit: number;

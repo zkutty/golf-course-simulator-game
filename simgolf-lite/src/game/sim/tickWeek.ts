@@ -25,9 +25,16 @@ export function tickWeek(
     dBreak.segments?.totalBaseVisitors ??
     (BALANCE.visitors.baseFloor + Math.round(BALANCE.visitors.scale * d));
   const visitorNoise = randInt(rng, BALANCE.visitors.noiseMin, BALANCE.visitors.noiseMax);
-  const visitors = playable
+  const demandVisitors = playable
     ? Math.max(0, baseVisitors + visitorNoise)
     : randInt(rng, 0, BALANCE.visitors.testingRoundsMax);
+
+  // Capacity constraint: weekly rounds capped by playable holes
+  const holeSummary0 = scoreCourseHoles(course);
+  const playableHoles = holeSummary0.holes.filter((h) => h.isComplete && h.isValid).length;
+  const capacity = playableHoles * BALANCE.capacity.roundsPerPlayableHolePerWeek;
+  const visitors = playable ? Math.min(demandVisitors, capacity) : demandVisitors;
+  const turnaways = playable ? Math.max(0, demandVisitors - capacity) : 0;
 
   const avgSatBase = satisfactionScore(course, world); // 0..100
 
@@ -119,10 +126,13 @@ export function tickWeek(
   const unclamped = Math.round(shaped);
   const maintRepPenalty =
     maintShortfall > 0 ? -Math.round((maintShortfall / 1000) * BALANCE.requiredMaintenance.repPenaltyPer1000) : 0;
+  const soldOutBonus =
+    turnaways > 0 && avgSat >= BALANCE.capacity.soldOutSatMin ? BALANCE.capacity.soldOutRepBonus : 0;
   const repDelta = clamp(
     unclamped +
       (missedLoanPayment ? BALANCE.reputation.missedLoanPaymentPenalty : 0) +
-      maintRepPenalty,
+      maintRepPenalty +
+      soldOutBonus,
     -BALANCE.reputation.capPerWeek,
     BALANCE.reputation.capPerWeek
   );
@@ -134,7 +144,7 @@ export function tickWeek(
         ? "Reputation slipping"
         : "Reputation steady";
 
-  const holes = scoreCourseHoles(course);
+  const holes = holeSummary0;
   const sBreak = satisfactionBreakdown(course, world);
   const tips = buildExplainabilityTips(holes);
   if (!playable) {
@@ -156,6 +166,8 @@ export function tickWeek(
     },
     result: {
       visitors,
+      capacity: playable ? capacity : undefined,
+      turnaways: turnaways > 0 ? turnaways : undefined,
       revenue,
       costs,
       profit,

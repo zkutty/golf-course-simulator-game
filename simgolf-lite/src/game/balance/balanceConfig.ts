@@ -11,6 +11,12 @@ export const BALANCE = {
     testingRoundFee: 5,
   },
 
+  capacity: {
+    roundsPerPlayableHolePerWeek: 300,
+    soldOutRepBonus: 1,
+    soldOutSatMin: 75,
+  },
+
   // Course validity gate
   coursePlayable: {
     minValidHoles: 9,

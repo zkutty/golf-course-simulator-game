@@ -698,6 +698,16 @@ export function HUD(props: {
             {last && (
               <Section title="Last week">
                 <div>Visitors: {last.visitors}</div>
+                {typeof last.capacity === "number" && (
+                  <div style={{ fontSize: 12, color: "#555" }}>
+                    Capacity: {last.capacity}{" "}
+                    {typeof last.turnaways === "number" && last.turnaways > 0 && (
+                      <>
+                        • Turned away: <b>{last.turnaways}</b>
+                      </>
+                    )}
+                  </div>
+                )}
                 <div>Revenue: ${Math.round(last.revenue).toLocaleString()}</div>
                 <div>Costs: ${Math.round(last.costs).toLocaleString()}</div>
                 {last.variableCosts && (
