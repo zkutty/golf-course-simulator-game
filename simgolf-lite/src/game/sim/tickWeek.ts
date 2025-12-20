@@ -55,8 +55,18 @@ export function tickWeek(
   const nextCondition = clamp01(course.condition - wear + maintEffect);
 
   // Reputation update: satisfaction moves it
-  const repDelta = Math.round((avgSat - 60) / 10); // -? .. +?
+  const raw = (avgSat - 60) / 10; // roughly -4..+4
+  // Slow recovery vs decline
+  const shaped = raw >= 0 ? raw * 0.55 : raw * 1.05;
+  const unclamped = Math.round(shaped);
+  const repDelta = clamp(unclamped, -2, 2); // inertia cap
   const nextRep = clamp(world.reputation + repDelta, 0, 100);
+  const reputationMomentum =
+    repDelta > 0
+      ? "Reputation improving slowly"
+      : repDelta < 0
+        ? "Reputation slipping"
+        : "Reputation steady";
 
   const holes = scoreCourseHoles(course);
   const sBreak = satisfactionBreakdown(course, world);
@@ -82,6 +92,7 @@ export function tickWeek(
       overhead: { ...overhead, total: overheadTotal },
       avgSatisfaction: avgSat,
       reputationDelta: repDelta,
+      reputationMomentum,
       visitorNoise,
       demand: dBreak,
       satisfaction: sBreak,

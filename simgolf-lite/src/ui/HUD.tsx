@@ -674,6 +674,9 @@ export function HUD(props: {
                   Reputation Δ: {last.reputationDelta >= 0 ? "+" : ""}
                   {last.reputationDelta}
                 </div>
+                {last.reputationMomentum && (
+                  <div style={{ fontSize: 12, color: "#555" }}>{last.reputationMomentum}</div>
+                )}
                 <div>
                   Noise: {last.visitorNoise >= 0 ? "+" : ""}
                   {last.visitorNoise} visitors

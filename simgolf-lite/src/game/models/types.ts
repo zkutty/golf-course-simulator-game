@@ -111,6 +111,7 @@ export interface WeekResult {
   };
   avgSatisfaction: number; // 0..100
   reputationDelta: number; // signed
+  reputationMomentum?: string;
   visitorNoise: number; // signed
   demand?: DemandBreakdown;
   satisfaction?: SatisfactionBreakdown;

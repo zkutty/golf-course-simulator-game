@@ -57,6 +57,9 @@ export function demandBreakdown(course: Course, world: World) {
   const rating = computeCourseRatingAndSlope(course);
   const courseRating01 = clamp01((rating.courseRating - 66) / 8); // higher-rated courses "unlock" core interest
 
+  // Reputation threshold effects on demand (early penalty / late bonus)
+  const repMod = rep < 0.3 ? 0.85 : rep > 0.7 ? 1.08 : 1.0;
+
   // Core golfers unlock gradually with reputation + course rating.
   const coreCap = clamp01((world.reputation - 45) / 35) * courseRating01; // starts at 0%
   const coreShare = clamp01(coreCap * 0.45); // cap at 45% of demand mix
@@ -65,7 +68,7 @@ export function demandBreakdown(course: Course, world: World) {
   // Segment preferences:
   // - Casual: likes ease, condition, fair prices; dislikes punishing setups (captured via ease).
   // - Core: likes aesthetics + variety + a bit of challenge; less price-sensitive.
-  const casualIndex = clamp01(
+  const casualIndexBase = clamp01(
     0.33 * q +
       0.26 * cond +
       0.14 * rep +
@@ -75,7 +78,7 @@ export function demandBreakdown(course: Course, world: World) {
       0.01 * staff
   ) * 1.15; // allow slight >1
 
-  const coreIndex = clamp01(
+  const coreIndexBase = clamp01(
     0.26 * q +
       0.18 * cond +
       0.18 * rep +
@@ -86,6 +89,8 @@ export function demandBreakdown(course: Course, world: World) {
       0.05 * staff +
       0.03 * price
   ) * 1.15;
+  const casualIndex = Math.min(1.2, casualIndexBase * repMod);
+  const coreIndex = Math.min(1.2, coreIndexBase * repMod);
 
   const contributions = {
     courseQuality: DEMAND_WEIGHTS.courseQuality * q,
@@ -125,8 +130,8 @@ export function demandBreakdown(course: Course, world: World) {
     contributions,
     demandIndex: demand,
     segments: {
-      casual: { share: casualShare, demandIndex: Math.min(1.2, casualIndex), baseVisitors: baseVisitorsCasual },
-      core: { share: coreShare, demandIndex: Math.min(1.2, coreIndex), baseVisitors: baseVisitorsCore, cap: coreCap },
+      casual: { share: casualShare, demandIndex: casualIndex, baseVisitors: baseVisitorsCasual },
+      core: { share: coreShare, demandIndex: coreIndex, baseVisitors: baseVisitorsCore, cap: coreCap },
       totalBaseVisitors,
     },
   };
