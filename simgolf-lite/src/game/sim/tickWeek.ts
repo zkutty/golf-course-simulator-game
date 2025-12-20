@@ -3,6 +3,7 @@ import { mulberry32, randInt } from "../../utils/rng";
 import { demandBreakdown, demandIndex, satisfactionBreakdown, satisfactionScore } from "./score";
 import { scoreCourseHoles } from "./holes";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
+import { isCoursePlayable } from "./isCoursePlayable";
 
 export function tickWeek(
   course: Course,
@@ -11,16 +12,18 @@ export function tickWeek(
 ): { world: World; course: Course; result: WeekResult } {
   const rng = mulberry32(seed + world.week);
 
+  const playable = isCoursePlayable(course);
+
   // Visitors driven by demand; add randomness
   const d = demandIndex(course, world); // ~0..1.2
   const baseVisitors = 120 + Math.round(520 * d); // 120..~744
   const visitorNoise = randInt(rng, -40, 40);
-  const visitors = Math.max(0, baseVisitors + visitorNoise);
+  const visitors = playable ? Math.max(0, baseVisitors + visitorNoise) : randInt(rng, 0, 10);
 
   const avgSat = satisfactionScore(course, world); // 0..100
 
   // Revenue: visitors * price, but satisfaction affects repeat visits (baked into rep later)
-  const revenue = visitors * course.baseGreenFee;
+  const revenue = playable ? visitors * course.baseGreenFee : visitors * 5; // testing rounds / snacks
 
   // Costs
   const staffCost = 450 * world.staffLevel;
@@ -46,6 +49,9 @@ export function tickWeek(
   const dBreak = demandBreakdown(course, world);
   const sBreak = satisfactionBreakdown(course, world);
   const tips = buildExplainabilityTips(holes);
+  if (!playable) {
+    tips.unshift("Course not playable yet → visitors are limited to testing rounds. Finish 9 valid holes, keep condition/playability up.");
+  }
   const topIssues = buildTopIssues(holes);
 
   return {
