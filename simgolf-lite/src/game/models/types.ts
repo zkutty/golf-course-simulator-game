@@ -74,6 +74,11 @@ export interface DemandBreakdown {
     staff: number;
   };
   demandIndex: number; // 0..1.2-ish
+  segments?: {
+    casual: { share: number; demandIndex: number; baseVisitors: number };
+    core: { share: number; demandIndex: number; baseVisitors: number; cap: number };
+    totalBaseVisitors: number;
+  };
 }
 
 export interface SatisfactionBreakdown {

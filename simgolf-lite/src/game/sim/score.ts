@@ -1,5 +1,6 @@
 import type { Course, World } from "../models/types";
 import { scoreCourseHoles } from "./holes";
+import { computeCourseRatingAndSlope } from "./courseRating";
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
@@ -36,13 +37,55 @@ export function priceAttractiveness(course: Course): number {
 }
 
 export function demandBreakdown(course: Course, world: World) {
-  const q = courseQuality(course); // 0..1
+  const holeSummary = scoreCourseHoles(course);
+  const q = clamp01(holeSummary.courseQuality / 100); // 0..1
   const cond = course.condition; // 0..1
   const rep = world.reputation / 100; // 0..1
   const price = priceAttractiveness(course); // 0..1
 
   const marketing = Math.min(1, world.marketingLevel * 0.12); // 0..0.6
   const staff = Math.min(1, world.staffLevel * 0.1); // 0..0.5
+
+  const complete = holeSummary.holes.filter((h) => h.isComplete && h.isValid);
+  const avgDiff =
+    complete.length === 0 ? 100 : complete.reduce((a, h) => a + h.difficultyScore, 0) / complete.length;
+  const avgAest =
+    complete.length === 0 ? 0 : complete.reduce((a, h) => a + h.aestheticsScore, 0) / complete.length;
+  const variety = clamp01(holeSummary.variety / 100);
+
+  const ease = clamp01((100 - avgDiff) / 100);
+  const rating = computeCourseRatingAndSlope(course);
+  const courseRating01 = clamp01((rating.courseRating - 66) / 8); // higher-rated courses "unlock" core interest
+
+  // Core golfers unlock gradually with reputation + course rating.
+  const coreCap = clamp01((world.reputation - 45) / 35) * courseRating01; // starts at 0%
+  const coreShare = clamp01(coreCap * 0.45); // cap at 45% of demand mix
+  const casualShare = 1 - coreShare;
+
+  // Segment preferences:
+  // - Casual: likes ease, condition, fair prices; dislikes punishing setups (captured via ease).
+  // - Core: likes aesthetics + variety + a bit of challenge; less price-sensitive.
+  const casualIndex = clamp01(
+    0.33 * q +
+      0.26 * cond +
+      0.14 * rep +
+      0.17 * price +
+      0.08 * ease +
+      0.01 * marketing +
+      0.01 * staff
+  ) * 1.15; // allow slight >1
+
+  const coreIndex = clamp01(
+    0.26 * q +
+      0.18 * cond +
+      0.18 * rep +
+      0.07 * clamp01(avgAest / 100) +
+      0.07 * variety +
+      0.07 * clamp01(avgDiff / 100) +
+      0.05 * marketing +
+      0.05 * staff +
+      0.03 * price
+  ) * 1.15;
 
   const contributions = {
     courseQuality: DEMAND_WEIGHTS.courseQuality * q,
@@ -61,7 +104,15 @@ export function demandBreakdown(course: Course, world: World) {
     contributions.marketing +
     contributions.staff;
 
-  const demand = Math.max(0, Math.min(1.2, base));
+  const blended = casualShare * casualIndex + coreShare * coreIndex;
+  const demand = Math.max(0, Math.min(1.2, blended * 1.05 + base * 0.05)); // keep legacy weights barely influential
+
+  const floor = 120;
+  const floorCasual = Math.round(floor * casualShare);
+  const floorCore = floor - floorCasual;
+  const baseVisitorsCasual = floorCasual + Math.round(520 * casualIndex * casualShare);
+  const baseVisitorsCore = floorCore + Math.round(520 * coreIndex * coreShare);
+  const totalBaseVisitors = baseVisitorsCasual + baseVisitorsCore;
 
   return {
     courseQuality: Math.round(q * 100),
@@ -73,6 +124,11 @@ export function demandBreakdown(course: Course, world: World) {
     weights: { ...DEMAND_WEIGHTS },
     contributions,
     demandIndex: demand,
+    segments: {
+      casual: { share: casualShare, demandIndex: Math.min(1.2, casualIndex), baseVisitors: baseVisitorsCasual },
+      core: { share: coreShare, demandIndex: Math.min(1.2, coreIndex), baseVisitors: baseVisitorsCore, cap: coreCap },
+      totalBaseVisitors,
+    },
   };
 }
 

@@ -1,6 +1,6 @@
 import type { Course, WeekResult, World } from "../models/types";
 import { mulberry32, randInt } from "../../utils/rng";
-import { demandBreakdown, demandIndex, satisfactionBreakdown, satisfactionScore } from "./score";
+import { demandBreakdown, satisfactionBreakdown, satisfactionScore } from "./score";
 import { scoreCourseHoles } from "./holes";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { isCoursePlayable } from "./isCoursePlayable";
@@ -14,9 +14,13 @@ export function tickWeek(
 
   const playable = isCoursePlayable(course);
 
+  // Demand breakdown drives visitors (now potentially segmented)
+  const dBreak = demandBreakdown(course, world);
+
   // Visitors driven by demand; add randomness
-  const d = demandIndex(course, world); // ~0..1.2
-  const baseVisitors = 120 + Math.round(520 * d); // 120..~744
+  const d = dBreak.demandIndex; // ~0..1.2
+  const baseVisitors =
+    dBreak.segments?.totalBaseVisitors ?? (120 + Math.round(520 * d)); // 120..~744
   const visitorNoise = randInt(rng, -40, 40);
   const visitors = playable ? Math.max(0, baseVisitors + visitorNoise) : randInt(rng, 0, 10);
 
@@ -55,7 +59,6 @@ export function tickWeek(
   const nextRep = clamp(world.reputation + repDelta, 0, 100);
 
   const holes = scoreCourseHoles(course);
-  const dBreak = demandBreakdown(course, world);
   const sBreak = satisfactionBreakdown(course, world);
   const tips = buildExplainabilityTips(holes);
   if (!playable) {

@@ -700,8 +700,31 @@ export function HUD(props: {
                 />
                 <div style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
                   DemandIndex: {last.demand.demandIndex.toFixed(2)} → base visitors:{" "}
-                  {120 + Math.round(520 * last.demand.demandIndex)}
+                  {last.demand.segments?.totalBaseVisitors ?? 120 + Math.round(520 * last.demand.demandIndex)}
                 </div>
+                {last.demand.segments && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#444", display: "grid", gap: 4 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Casual</span>
+                      <span>
+                        {Math.round(last.demand.segments.casual.share * 100)}% • idx{" "}
+                        {last.demand.segments.casual.demandIndex.toFixed(2)} • base{" "}
+                        {last.demand.segments.casual.baseVisitors}
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Core</span>
+                      <span>
+                        {Math.round(last.demand.segments.core.share * 100)}% • idx{" "}
+                        {last.demand.segments.core.demandIndex.toFixed(2)} • base{" "}
+                        {last.demand.segments.core.baseVisitors}{" "}
+                        <span style={{ color: "#6b7280" }}>
+                          (cap {Math.round(last.demand.segments.core.cap * 100)}%)
+                        </span>
+                      </span>
+                    </div>
+                  </div>
+                )}
                 {prev?.demand && (
                   <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
                     Δ DemandIndex vs last week: {(last.demand.demandIndex - prev.demand.demandIndex).toFixed(2)}
