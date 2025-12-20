@@ -314,6 +314,111 @@ function drawDirectionalLight(ctx: CanvasRenderingContext2D, w: number, h: numbe
   ctx.fillRect(0, 0, w, h);
 }
 
+function drawGreenTargetTreatment(
+  ctx: CanvasRenderingContext2D,
+  course: Course,
+  tileSize: number
+) {
+  // Adds: subtle radial gradient on greens + 1-tile collar/fringe around greens.
+  const w = course.width;
+  const h = course.height;
+  const T = tileSize;
+  const collarColor = "rgba(140, 255, 160, 0.10)";
+  const collarDark = "rgba(0,0,0,0.06)";
+  const ringAlpha = 0.08;
+  const ringW = Math.max(1, Math.min(6, Math.floor(T * 0.18)));
+
+  const isGrassNoGreen = (t: Terrain) =>
+    t === "fairway" || t === "rough" || t === "deep_rough";
+
+  const at = (x: number, y: number): Terrain | null => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return null;
+    return course.tiles[y * w + x];
+  };
+
+  const drawCollarOnNeighbor = (nx: number, ny: number, side: "N" | "S" | "E" | "W") => {
+    const nt = at(nx, ny);
+    if (!nt || !isGrassNoGreen(nt)) return;
+    const px = nx * T;
+    const py = ny * T;
+    const t = Math.max(1, Math.min(8, Math.floor(T * 0.22)));
+    ctx.save();
+    let g: CanvasGradient;
+    if (side === "N") {
+      g = ctx.createLinearGradient(0, py, 0, py + t);
+      g.addColorStop(0, collarColor);
+      g.addColorStop(1, "rgba(140, 255, 160, 0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(px, py, T, t);
+    } else if (side === "S") {
+      g = ctx.createLinearGradient(0, py + T - t, 0, py + T);
+      g.addColorStop(0, "rgba(140, 255, 160, 0)");
+      g.addColorStop(1, collarColor);
+      ctx.fillStyle = g;
+      ctx.fillRect(px, py + T - t, T, t);
+    } else if (side === "W") {
+      g = ctx.createLinearGradient(px, 0, px + t, 0);
+      g.addColorStop(0, collarColor);
+      g.addColorStop(1, "rgba(140, 255, 160, 0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(px, py, t, T);
+    } else {
+      g = ctx.createLinearGradient(px + T - t, 0, px + T, 0);
+      g.addColorStop(0, "rgba(140, 255, 160, 0)");
+      g.addColorStop(1, collarColor);
+      ctx.fillStyle = g;
+      ctx.fillRect(px + T - t, py, t, T);
+    }
+    // tiny dark rim for separation
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = collarDark;
+    if (side === "N") ctx.fillRect(px, py, T, 1);
+    if (side === "S") ctx.fillRect(px, py + T - 1, T, 1);
+    if (side === "W") ctx.fillRect(px, py, 1, T);
+    if (side === "E") ctx.fillRect(px + T - 1, py, 1, T);
+    ctx.restore();
+  };
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (course.tiles[i] !== "green") continue;
+      const px = x * T;
+      const py = y * T;
+      const cx = px + T / 2;
+      const cy = py + T / 2;
+
+      // Radial gradient "target" look
+      ctx.save();
+      const rg = ctx.createRadialGradient(cx, cy, Math.max(1, T * 0.12), cx, cy, T * 0.62);
+      rg.addColorStop(0, "rgba(255,255,255,0.18)");
+      rg.addColorStop(0.55, "rgba(255,255,255,0.04)");
+      rg.addColorStop(1, "rgba(0,0,0,0.06)");
+      ctx.fillStyle = rg;
+      ctx.fillRect(px, py, T, T);
+      ctx.restore();
+
+      // Inner ring near edges (helps greens read as a “target”)
+      ctx.save();
+      ctx.globalAlpha = ringAlpha;
+      ctx.strokeStyle = "rgba(255,255,255,0.85)";
+      ctx.lineWidth = ringW;
+      ctx.strokeRect(px + ringW / 2, py + ringW / 2, T - ringW, T - ringW);
+      ctx.restore();
+
+      // Collar/fringe on adjacent grass tiles
+      const n = at(x, y - 1);
+      const s = at(x, y + 1);
+      const wv = at(x - 1, y);
+      const e = at(x + 1, y);
+      if (n && n !== "green") drawCollarOnNeighbor(x, y - 1, "S");
+      if (s && s !== "green") drawCollarOnNeighbor(x, y + 1, "N");
+      if (wv && wv !== "green") drawCollarOnNeighbor(x - 1, y, "E");
+      if (e && e !== "green") drawCollarOnNeighbor(x + 1, y, "W");
+    }
+  }
+}
+
 export function CanvasCourse(props: {
   course: Course;
   holes: Hole[];
@@ -422,6 +527,11 @@ export function CanvasCourse(props: {
     return m;
   }, [obstacles]);
 
+  const flagPhases = useMemo(() => {
+    // deterministic per-hole phase so flags don't all flutter in sync
+    return holes.map((_, i) => hash01(991 + i * 101) * Math.PI * 2);
+  }, [holes]);
+
   useEffect(() => {
     const onVis = () => {
       isVisibleRef.current = document.visibilityState === "visible";
@@ -474,6 +584,9 @@ export function CanvasCourse(props: {
         drawSoftEdges(bctx, course, tx * TILE, ty * TILE, TILE, terrain);
       }
     }
+
+    // Pass 2.5: greens read as intentional targets (fringe/collar + subtle radial gradient)
+    drawGreenTargetTreatment(bctx, course, TILE);
 
     // Pass 3: global light + tiny “glaze” noise to reduce checkerboard feel
     drawDirectionalLight(bctx, wPx, hPx);
@@ -694,6 +807,83 @@ export function CanvasCourse(props: {
       }
     }
 
+    function drawFlags(timeMs: number) {
+      // Flags should add charm in COZY mode; keep them readable at different tile sizes.
+      const flutter = animationsEnabled && !showGridOverlays;
+      const t = timeMs * 0.001;
+      const poleH = Math.max(6, TILE * 0.75);
+      const poleW = Math.max(1, Math.min(2.5, TILE * 0.08));
+      const flagW = Math.max(6, Math.min(16, TILE * 0.55));
+      const flagH = Math.max(4, Math.min(12, TILE * 0.35));
+      const baseYOff = TILE * 0.18;
+
+      for (let i = 0; i < holes.length; i++) {
+        const g = holes[i]?.green;
+        if (!g) continue;
+        const cx = g.x * TILE + TILE / 2;
+        const cy = g.y * TILE + TILE / 2;
+        const phase = flagPhases[i] ?? 0;
+        const flutterAmt = flutter ? Math.sin(t * 2.2 + phase) * (Math.max(0.6, TILE * 0.05)) : 0;
+        const tipLift = flutter ? Math.cos(t * 2.0 + phase) * (Math.max(0.4, TILE * 0.03)) : 0;
+
+        const poleTopX = cx;
+        const poleTopY = cy - poleH / 2 - baseYOff;
+        const poleBotY = cy + poleH / 2 - baseYOff;
+
+        // little shadow for readability
+        ctx2.save();
+        ctx2.globalAlpha = 0.22;
+        ctx2.fillStyle = "rgba(0,0,0,0.9)";
+        ctx2.beginPath();
+        ctx2.ellipse(cx + 1, poleBotY + 3, Math.max(2, TILE * 0.22), Math.max(1.5, TILE * 0.12), 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.restore();
+
+        // pole
+        ctx2.save();
+        ctx2.lineWidth = poleW;
+        ctx2.strokeStyle = "rgba(20,20,20,0.9)";
+        ctx2.beginPath();
+        ctx2.moveTo(poleTopX, poleTopY);
+        ctx2.lineTo(poleTopX, poleBotY);
+        ctx2.stroke();
+        ctx2.restore();
+
+        // flag cloth (small triangle with tiny flutter)
+        const fx0 = poleTopX;
+        const fy0 = poleTopY + poleW; // attach point
+        const fx1 = fx0 + flagW + flutterAmt;
+        const fy1 = fy0 + flagH / 2 + tipLift;
+        const fx2 = fx0;
+        const fy2 = fy0 + flagH;
+
+        ctx2.save();
+        ctx2.fillStyle = "rgba(220,38,38,0.92)"; // red
+        ctx2.strokeStyle = "rgba(0,0,0,0.35)";
+        ctx2.lineWidth = Math.max(1, TILE * 0.06);
+        ctx2.beginPath();
+        ctx2.moveTo(fx0, fy0);
+        ctx2.quadraticCurveTo((fx0 + fx1) / 2, (fy0 + fy1) / 2 + tipLift, fx1, fy1);
+        ctx2.lineTo(fx2, fy2);
+        ctx2.closePath();
+        ctx2.fill();
+        ctx2.stroke();
+        ctx2.restore();
+
+        // tiny pin/marker dot at green center
+        ctx2.save();
+        ctx2.globalAlpha = 0.9;
+        ctx2.fillStyle = "rgba(255,255,255,0.9)";
+        ctx2.strokeStyle = "rgba(0,0,0,0.35)";
+        ctx2.lineWidth = 1;
+        ctx2.beginPath();
+        ctx2.arc(cx, cy, Math.max(1.5, TILE * 0.12), 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.stroke();
+        ctx2.restore();
+      }
+    }
+
     const render = (timeMs: number) => {
       if (!canvasRef.current) return;
       if (!isVisibleRef.current) {
@@ -709,6 +899,9 @@ export function CanvasCourse(props: {
 
       // obstacles always visible; sway only when animations enabled
       for (const o of obstacles) drawObstacle(o, timeMs);
+
+      // greens as targets: small flags (flutter in COZY)
+      drawFlags(timeMs);
 
       drawAnalytics();
       drawWizard();
