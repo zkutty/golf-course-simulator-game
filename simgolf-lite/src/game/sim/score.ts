@@ -31,10 +31,26 @@ export function courseQuality(course: Course): number {
 }
 
 export function priceAttractiveness(course: Course): number {
-  // Sweet spot roughly 50–90 for MVP; penalize extremes.
+  // Back-compat fallback (used when World isn't available).
   const p = course.baseGreenFee;
-  const penalty = Math.min(1, Math.abs(p - 70) / 60); // 0 at 70, 1 at +/-60
-  return 1 - penalty; // 0..1
+  const penalty = Math.min(1, Math.abs(p - 70) / 60);
+  return 1 - penalty;
+}
+
+export function priceAttractivenessWithContext(course: Course, world: World): number {
+  // Harsher elasticity above market, especially at low reputation.
+  const p = course.baseGreenFee;
+  const market = BALANCE.pricing.marketPrice;
+  const base = priceAttractiveness(course);
+  if (p <= market) return base;
+
+  const over = (p - market) / market; // 0..+
+  let mult = 1.0;
+  if (world.reputation < BALANCE.pricing.repDiscountThreshold) mult *= BALANCE.pricing.lowRepPriceMult;
+  if (world.reputation > BALANCE.pricing.repPremiumThreshold) mult *= BALANCE.pricing.highRepPriceMult;
+
+  const harsh = Math.pow(over, BALANCE.pricing.highPriceHardness) * 0.9 * mult;
+  return Math.max(0, Math.min(1, base - harsh));
 }
 
 export function demandBreakdown(course: Course, world: World) {
@@ -42,7 +58,7 @@ export function demandBreakdown(course: Course, world: World) {
   const q = clamp01(holeSummary.courseQuality / 100); // 0..1
   const cond = course.condition; // 0..1
   const rep = world.reputation / 100; // 0..1
-  const price = priceAttractiveness(course); // 0..1
+  const price = priceAttractivenessWithContext(course, world); // 0..1
 
   const marketing = Math.min(1, world.marketingLevel * 0.12); // 0..0.6
   const staff = Math.min(1, world.staffLevel * 0.1); // 0..0.5

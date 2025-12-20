@@ -11,6 +11,15 @@ export const BALANCE = {
     testingRoundFee: 5,
   },
 
+  pricing: {
+    marketPrice: 80,
+    highPriceHardness: 2.2, // exponent for above-market penalty
+    repPremiumThreshold: 85,
+    repDiscountThreshold: 70,
+    lowRepPriceMult: 1.55, // harsher above-market penalty when rep < threshold
+    highRepPriceMult: 0.85, // slightly softer above-market penalty when rep > threshold
+  },
+
   capacity: {
     roundsPerPlayableHolePerWeek: 300,
     soldOutRepBonus: 1,
