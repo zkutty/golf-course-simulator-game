@@ -1,73 +1,41 @@
-# React + TypeScript + Vite
+# SimGolf-lite Tycoon (web)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Canvas-based course editor + simple tycoon sim loop inspired by SimGolf.
 
-Currently, two official plugins are available:
+## Run
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Open `http://localhost:5173/`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## What you can do
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- **Paint a course** on a tile grid (terrain types: rough/fairway/green/sand/water/tee/path).
+- **Lay out 9 holes**:
+  - **Hole Setup Wizard**: click tee → click green → confirm → auto-advance to next hole.
+  - Tee/green markers + shot lines are drawn on the canvas.
+- **Per-hole ratings** (0–100):
+  - Playability, Difficulty, Aesthetics, Overall (plus layout issue flags if tee/green missing).
+  - Hole list shows which hole is dragging down the course.
+- **Weekly simulation**:
+  - Demand, satisfaction, visitors, revenue/costs/profit, condition wear, reputation changes.
+  - Deterministic “why people like/don’t like it” tips based on worst holes.
+- **Save / Load / Reset** (localStorage, schema versioned).
+- **Upgrades**: Staff + Marketing (costs cash; influences demand/satisfaction).
+- **Terrain economics (capex + opex)**:
+  - Painting tiles is a **capital expense** (delta-based build cost minus salvage).
+  - Reverting to rough refunds salvage.
+  - Painting is blocked if you don’t have enough cash (hover tooltip previews cost/refund).
+  - Terrain types contribute differently to **weekly wear** (greens wear fastest).
+  - Results show **capital spending** breakdown; Metrics show terrain mix + maintenance burden.
+
+## Useful code pointers
+
+- **Game models**: `src/game/models/*`
+- **Hole scoring + ratings**: `src/game/sim/holes.ts`, `src/game/sim/holeMetrics.ts`
+- **Weekly sim tick**: `src/game/sim/tickWeek.ts`
+- **Terrain economics**: `src/game/models/terrainEconomics.ts`
+- **UI**: `src/ui/HUD.tsx`, `src/ui/CanvasCourse.tsx`

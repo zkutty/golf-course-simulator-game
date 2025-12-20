@@ -1,4 +1,5 @@
 import type { Course, Hole, Point, Terrain } from "../models/types";
+import { computeAutoPar, computeHoleDistanceTiles } from "./holeMetrics";
 
 export interface HoleScore {
   holeIndex: number;
@@ -6,6 +7,10 @@ export interface HoleScore {
   isValid: boolean;
   par: number;
   distance: number; // tiles (euclidean)
+  playabilityScore: number; // 0..100
+  difficultyScore: number; // 0..100
+  aestheticsScore: number; // 0..100
+  overallHoleScore: number; // 0..100
   corridor: {
     samples: number;
     fairway: number;
@@ -16,8 +21,9 @@ export interface HoleScore {
     tee: number;
     path: number;
   };
-  score: number; // 0..100
-  issues: string[];
+  score: number; // alias for overallHoleScore (0..100)
+  layoutIssues: string[];
+  issues: string[]; // includes layout + quality warnings
 }
 
 export interface CourseHoleSummary {
@@ -33,16 +39,11 @@ function clamp(x: number, a: number, b: number) {
 }
 
 function dist(a: Point, b: Point) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
+  return computeHoleDistanceTiles(a, b);
 }
 
 export function derivePar(distanceTiles: number) {
-  // Very rough tile-distance par mapping for MVP.
-  if (distanceTiles < 12) return 3;
-  if (distanceTiles < 20) return 4;
-  return 5;
+  return computeAutoPar(distanceTiles);
 }
 
 function inBounds(course: Course, p: Point) {
@@ -75,12 +76,17 @@ export function sampleLine(a: Point, b: Point, samples = 13): Point[] {
 export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleScore {
   const issues: string[] = [];
   if (!hole.tee || !hole.green) {
+    const par = hole.parMode === "MANUAL" ? (hole.parManual ?? 4) : 4;
     return {
       holeIndex,
       isComplete: false,
       isValid: false,
-      par: hole.par ?? 4,
+      par,
       distance: 0,
+      playabilityScore: 0,
+      difficultyScore: 0,
+      aestheticsScore: 0,
+      overallHoleScore: 0,
       corridor: {
         samples: 0,
         fairway: 0,
@@ -92,6 +98,7 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
         path: 0,
       },
       score: 0,
+      layoutIssues: ["Missing tee/green placement"],
       issues: ["Missing tee/green placement"],
     };
   }
@@ -99,12 +106,15 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
   const tee = hole.tee;
   const green = hole.green;
 
+  const layoutIssues: string[] = [];
   if (!inBounds(course, tee)) issues.push("Tee is out of bounds");
   if (!inBounds(course, green)) issues.push("Green is out of bounds");
   if (tee.x === green.x && tee.y === green.y) issues.push("Tee and green overlap");
+  for (const msg of issues) layoutIssues.push(msg);
 
   const distance = dist(tee, green);
-  const par = hole.par ?? derivePar(distance);
+  const par =
+    hole.parMode === "MANUAL" ? (hole.parManual ?? 4) : computeAutoPar(distance);
 
   const teeTile = inBounds(course, tee) ? tileAt(course, tee) : "rough";
   const greenTile = inBounds(course, green) ? tileAt(course, green) : "rough";
@@ -137,21 +147,77 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
   const fairwayFrac = corridorCounts.fairway / s;
   const roughFrac = corridorCounts.rough / s;
   const pathFrac = corridorCounts.path / s;
+  const onHazardFrac = waterFrac + sandFrac;
 
   if (waterFrac > 0.25) issues.push("Lots of water on main line");
   if (roughFrac > 0.7) issues.push("Mostly rough on main line");
 
-  // Quality scoring (0..100)
-  // - reward fairway/path, mild reward for "some" hazards, heavy penalty for excessive water/sand
-  // - reward reasonable distances / variety handled at course level
-  let score = 70;
-  score += 30 * fairwayFrac;
-  score += 10 * pathFrac;
-  score -= 80 * waterFrac;
-  score -= 35 * sandFrac;
-  score -= (teeTile === "water" || teeTile === "sand") ? 20 : 0;
-  score -= (greenTile === "water" || greenTile === "sand") ? 20 : 0;
-  score = clamp(score, 0, 100);
+  // "Near corridor" sampling (3x3 around each on-line point) for aesthetics.
+  const nearCounts = pts.reduce(
+    (acc, p) => {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const q = { x: p.x + dx, y: p.y + dy };
+          if (!inBounds(course, q)) continue;
+          // exclude on-line points; we already track hazards directly on the line separately
+          if (dx === 0 && dy === 0) continue;
+          const t = tileAt(course, q);
+          acc[t] += 1;
+          acc.samples += 1;
+        }
+      }
+      return acc;
+    },
+    {
+      samples: 0,
+      fairway: 0,
+      rough: 0,
+      sand: 0,
+      water: 0,
+      green: 0,
+      tee: 0,
+      path: 0,
+    }
+  );
+  const ns = nearCounts.samples || 1;
+  const nearWaterFrac = nearCounts.water / ns;
+  const nearSandFrac = nearCounts.sand / ns;
+
+  // Per-hole ratings (0..100)
+  // Playability: reward fairway/path; penalize rough/hazards on the main line; harsh penalties for hazards at endpoints.
+  let playabilityScore =
+    90 +
+    35 * fairwayFrac +
+    10 * pathFrac -
+    70 * roughFrac -
+    130 * waterFrac -
+    55 * sandFrac;
+  if (teeTile === "water" || teeTile === "sand") playabilityScore -= 25;
+  if (greenTile === "water" || greenTile === "sand") playabilityScore -= 25;
+  playabilityScore = clamp(playabilityScore, 0, 100);
+
+  // Difficulty: hazards and distance increase it (higher = harder).
+  const distNorm = clamp(distance / 40, 0, 1); // 40 tiles ~= "long"
+  let difficultyScore = 20 + 65 * (0.85 * waterFrac + 0.55 * sandFrac + 0.25 * roughFrac) + 35 * distNorm;
+  if (teeTile === "water" || teeTile === "sand") difficultyScore += 10;
+  if (greenTile === "water" || greenTile === "sand") difficultyScore += 10;
+  difficultyScore = clamp(difficultyScore, 0, 100);
+
+  // Aesthetics: reward "scenic" hazards near the corridor, but penalize hazards directly on it.
+  let aestheticsScore =
+    55 +
+    75 * (nearWaterFrac + 0.6 * nearSandFrac) -
+    120 * (waterFrac + 0.6 * sandFrac);
+  // A small bonus for some contrast, but don't reward excessive hazards.
+  aestheticsScore += 10 * clamp(nearWaterFrac, 0, 0.12) / 0.12;
+  aestheticsScore = clamp(aestheticsScore, 0, 100);
+
+  // Overall: weighted towards playability, then aesthetics, and lightly penalize excessive difficulty.
+  let overallHoleScore = 0.6 * playabilityScore + 0.25 * aestheticsScore + 0.15 * (100 - difficultyScore);
+  // Extra penalty if corridor is mostly hazards.
+  overallHoleScore -= 30 * clamp(onHazardFrac - 0.25, 0, 1);
+  overallHoleScore = clamp(overallHoleScore, 0, 100);
+  const score = overallHoleScore; // legacy alias used by existing aggregation
 
   const isValid = issues.length === 0;
 
@@ -161,8 +227,13 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
     isValid,
     par,
     distance,
+    playabilityScore,
+    difficultyScore,
+    aestheticsScore,
+    overallHoleScore,
     corridor: corridorCounts,
     score,
+    layoutIssues,
     issues,
   };
 }
@@ -171,7 +242,7 @@ export function scoreCourseHoles(course: Course): CourseHoleSummary {
   const holes = course.holes.map((h, i) => scoreHole(course, h, i));
   const scored = holes.filter((h) => h.isComplete);
   const holeQualityAvg =
-    scored.length === 0 ? 0 : scored.reduce((acc, h) => acc + h.score, 0) / scored.length;
+    scored.length === 0 ? 0 : scored.reduce((acc, h) => acc + h.overallHoleScore, 0) / scored.length;
 
   // Variety: reward mix of par 3/4/5 (or derived lengths if par missing)
   const parCounts = new Map<number, number>();

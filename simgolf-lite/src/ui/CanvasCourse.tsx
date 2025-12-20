@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
-import type { Course, Hole, Terrain } from "../game/models/types";
+import type { Course, Hole, Point, Terrain } from "../game/models/types";
 
 const TILE = 20;
 
@@ -15,17 +15,32 @@ const COLORS: Record<Terrain, string> = {
 
 export function CanvasCourse(props: {
   course: Course;
-  selected: Terrain;
   holes: Hole[];
-  mode: "paint" | "tee" | "green";
   activeHoleIndex: number;
-  onPaint: (idx: number, t: Terrain) => void;
-  onPlaceTee: (holeIndex: number, x: number, y: number) => void;
-  onPlaceGreen: (holeIndex: number, x: number, y: number) => void;
+  editorMode: "PAINT" | "HOLE_WIZARD";
+  wizardStep: "TEE" | "GREEN" | "CONFIRM";
+  draftTee: Point | null;
+  draftGreen: Point | null;
+  onClickTile: (x: number, y: number) => void;
+  onHoverTile?: (h: { idx: number; x: number; y: number; clientX: number; clientY: number }) => void;
+  onLeave?: () => void;
+  cursor?: string;
 }) {
-  const { course, selected, holes, mode, activeHoleIndex, onPaint, onPlaceTee, onPlaceGreen } =
-    props;
+  const {
+    course,
+    holes,
+    activeHoleIndex,
+    editorMode,
+    wizardStep,
+    draftTee,
+    draftGreen,
+    onClickTile,
+    onHoverTile,
+    onLeave,
+    cursor,
+  } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lastHoverIdxRef = useRef<number | null>(null);
   const wPx = course.width * TILE;
   const hPx = course.height * TILE;
 
@@ -48,36 +63,6 @@ export function CanvasCourse(props: {
       }
     }
 
-    // hole overlays
-    ctx.globalAlpha = 0.95;
-    ctx.lineWidth = 2;
-    ctx.font = "12px system-ui, sans-serif";
-    holes.forEach((h, i) => {
-      if (!h.tee || !h.green) return;
-      const isActive = i === activeHoleIndex;
-      // line tee -> green
-      ctx.strokeStyle = isActive ? "#111" : "rgba(0,0,0,0.35)";
-      ctx.beginPath();
-      ctx.moveTo(h.tee.x * TILE + TILE / 2, h.tee.y * TILE + TILE / 2);
-      ctx.lineTo(h.green.x * TILE + TILE / 2, h.green.y * TILE + TILE / 2);
-      ctx.stroke();
-
-      // tee marker
-      ctx.fillStyle = isActive ? "#000" : "rgba(0,0,0,0.55)";
-      ctx.beginPath();
-      ctx.arc(h.tee.x * TILE + TILE / 2, h.tee.y * TILE + TILE / 2, 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.fillText(String(i + 1), h.tee.x * TILE + TILE / 2 - 3, h.tee.y * TILE + TILE / 2 + 4);
-
-      // green marker
-      ctx.fillStyle = isActive ? "#1b5e20" : "rgba(27,94,32,0.6)";
-      ctx.beginPath();
-      ctx.arc(h.green.x * TILE + TILE / 2, h.green.y * TILE + TILE / 2, 6, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    ctx.globalAlpha = 1;
-
     // grid lines
     ctx.globalAlpha = 0.2;
     ctx.strokeStyle = "#000";
@@ -94,16 +79,151 @@ export function CanvasCourse(props: {
       ctx.stroke();
     }
     ctx.globalAlpha = 1;
-  }, [course.width, course.height, wPx, hPx, imageData, holes, activeHoleIndex]);
 
-  function handlePointer(e: React.PointerEvent) {
+    // hole overlays (above tiles + grid)
+    ctx.lineWidth = 2;
+    ctx.font = "12px system-ui, sans-serif";
+    holes.forEach((h, i) => {
+      if (!h.tee || !h.green) return;
+      const isActive = i === activeHoleIndex;
+
+      // semi-transparent "shot line" tee -> green
+      ctx.globalAlpha = isActive ? 0.6 : 0.35;
+      ctx.strokeStyle = "#111";
+      ctx.beginPath();
+      ctx.moveTo(h.tee.x * TILE + TILE / 2, h.tee.y * TILE + TILE / 2);
+      ctx.lineTo(h.green.x * TILE + TILE / 2, h.green.y * TILE + TILE / 2);
+      ctx.stroke();
+
+      // tee marker (labeled)
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = isActive ? "#000" : "rgba(0,0,0,0.75)";
+      ctx.beginPath();
+      ctx.arc(h.tee.x * TILE + TILE / 2, h.tee.y * TILE + TILE / 2, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.fillText(
+        String(i + 1),
+        h.tee.x * TILE + TILE / 2 - 3,
+        h.tee.y * TILE + TILE / 2 + 4
+      );
+
+      // green marker (labeled)
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = isActive ? "#1b5e20" : "rgba(27,94,32,0.78)";
+      ctx.beginPath();
+      ctx.arc(h.green.x * TILE + TILE / 2, h.green.y * TILE + TILE / 2, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.fillText(
+        String(i + 1),
+        h.green.x * TILE + TILE / 2 - 3,
+        h.green.y * TILE + TILE / 2 + 4
+      );
+    });
+    ctx.globalAlpha = 1;
+
+    // draft overlays (wizard) above everything else
+    if (editorMode === "HOLE_WIZARD") {
+      ctx.lineWidth = 3;
+      if (draftTee && draftGreen) {
+        ctx.globalAlpha = 0.9;
+        ctx.strokeStyle = "#ff6f00";
+        ctx.beginPath();
+        ctx.moveTo(draftTee.x * TILE + TILE / 2, draftTee.y * TILE + TILE / 2);
+        ctx.lineTo(draftGreen.x * TILE + TILE / 2, draftGreen.y * TILE + TILE / 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
+      if (draftTee) {
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = "#ff6f00";
+        ctx.beginPath();
+        ctx.arc(draftTee.x * TILE + TILE / 2, draftTee.y * TILE + TILE / 2, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.fillText("T", draftTee.x * TILE + TILE / 2 - 4, draftTee.y * TILE + TILE / 2 + 4);
+        ctx.globalAlpha = 1;
+      }
+
+      if (draftGreen) {
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = "#ff6f00";
+        ctx.beginPath();
+        ctx.arc(
+          draftGreen.x * TILE + TILE / 2,
+          draftGreen.y * TILE + TILE / 2,
+          8,
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.fillText(
+          "G",
+          draftGreen.x * TILE + TILE / 2 - 4,
+          draftGreen.y * TILE + TILE / 2 + 4
+        );
+        ctx.globalAlpha = 1;
+      }
+
+      // small hint (top-left)
+      ctx.globalAlpha = 0.85;
+      ctx.fillStyle = "#000";
+      const hint =
+        wizardStep === "TEE"
+          ? `Hole ${activeHoleIndex + 1}: click to place tee`
+          : wizardStep === "GREEN"
+            ? `Hole ${activeHoleIndex + 1}: click to place green`
+            : `Hole ${activeHoleIndex + 1}: confirm or redo`;
+      ctx.fillText(hint, 8, 16);
+      ctx.globalAlpha = 1;
+    }
+  }, [
+    course.width,
+    course.height,
+    wPx,
+    hPx,
+    imageData,
+    holes,
+    activeHoleIndex,
+    editorMode,
+    wizardStep,
+    draftTee,
+    draftGreen,
+  ]);
+
+  function getTileFromEvent(e: React.PointerEvent) {
     const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
     const x = Math.floor((e.clientX - rect.left) / TILE);
     const y = Math.floor((e.clientY - rect.top) / TILE);
     if (x < 0 || y < 0 || x >= course.width || y >= course.height) return;
-    if (mode === "paint") onPaint(y * course.width + x, selected);
-    if (mode === "tee") onPlaceTee(activeHoleIndex, x, y);
-    if (mode === "green") onPlaceGreen(activeHoleIndex, x, y);
+    const idx = y * course.width + x;
+    return { x, y, idx };
+  }
+
+  function handlePointerDown(e: React.PointerEvent) {
+    const t = getTileFromEvent(e);
+    if (!t) return;
+    onClickTile(t.x, t.y);
+  }
+
+  function handlePointerMove(e: React.PointerEvent) {
+    const t = getTileFromEvent(e);
+    if (!t) return;
+
+    // Hover events only when tile changes
+    if (onHoverTile && lastHoverIdxRef.current !== t.idx) {
+      lastHoverIdxRef.current = t.idx;
+      onHoverTile({ idx: t.idx, x: t.x, y: t.y, clientX: e.clientX, clientY: e.clientY });
+    } else if (onHoverTile) {
+      // Same tile; update tooltip position cheaply
+      onHoverTile({ idx: t.idx, x: t.x, y: t.y, clientX: e.clientX, clientY: e.clientY });
+    }
+
+    // Drag painting only in PAINT mode
+    if (editorMode === "PAINT" && e.buttons === 1) onClickTile(t.x, t.y);
   }
 
   return (
@@ -112,9 +232,13 @@ export function CanvasCourse(props: {
         ref={canvasRef}
         width={wPx}
         height={hPx}
-        onPointerDown={(e) => handlePointer(e)}
-        onPointerMove={(e) => (e.buttons === 1 ? handlePointer(e) : undefined)}
-        style={{ touchAction: "none", cursor: "crosshair" }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => {
+          lastHoverIdxRef.current = null;
+          onLeave?.();
+        }}
+        style={{ touchAction: "none", cursor: cursor ?? "crosshair" }}
       />
     </div>
   );

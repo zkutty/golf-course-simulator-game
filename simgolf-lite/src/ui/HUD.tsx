@@ -1,6 +1,9 @@
-import type { Course, Terrain, WeekResult, World } from "../game/models/types";
-import { priceAttractiveness } from "../game/sim/score";
+import { useMemo, useState } from "react";
+import type { Course, Point, Terrain, WeekResult, World } from "../game/models/types";
+import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
+import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
+import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -12,6 +15,8 @@ const TERRAIN: Terrain[] = [
   "path",
 ];
 
+type Tab = "Editor" | "Metrics" | "Results" | "Upgrades";
+
 export function HUD(props: {
   course: Course;
   world: World;
@@ -20,10 +25,19 @@ export function HUD(props: {
   setSelected: (t: Terrain) => void;
   setGreenFee: (n: number) => void;
   setMaintenance: (n: number) => void;
-  mode: "paint" | "tee" | "green";
-  setMode: (m: "paint" | "tee" | "green") => void;
+  editorMode: "PAINT" | "HOLE_WIZARD";
+  setEditorMode: (m: "PAINT" | "HOLE_WIZARD") => void;
+  startWizard: () => void;
   activeHoleIndex: number;
   setActiveHoleIndex: (n: number) => void;
+  wizardStep: "TEE" | "GREEN" | "CONFIRM";
+  draftTee: Point | null;
+  draftGreen: Point | null;
+  onWizardConfirm: () => void;
+  onWizardRedo: () => void;
+  onWizardNextHole: () => void;
+  setActiveHoleParMode: (m: "AUTO" | "MANUAL") => void;
+  setActiveHoleParManual: (p: 3 | 4 | 5) => void;
   onUpgradeStaff: () => void;
   onUpgradeMarketing: () => void;
   staffUpgradeCost: number | null;
@@ -34,6 +48,7 @@ export function HUD(props: {
   onLoad: () => void;
   onResetSave: () => void;
   simulate: () => void;
+  paintError?: string | null;
 }) {
   const {
     course,
@@ -43,10 +58,19 @@ export function HUD(props: {
     setSelected,
     setGreenFee,
     setMaintenance,
-    mode,
-    setMode,
+    editorMode,
+    setEditorMode,
+    startWizard,
     activeHoleIndex,
     setActiveHoleIndex,
+    wizardStep,
+    draftTee,
+    draftGreen,
+    onWizardConfirm,
+    onWizardRedo,
+    onWizardNextHole,
+    setActiveHoleParMode,
+    setActiveHoleParManual,
     onUpgradeStaff,
     onUpgradeMarketing,
     staffUpgradeCost,
@@ -57,363 +81,664 @@ export function HUD(props: {
     onLoad,
     onResetSave,
     simulate,
+    paintError,
   } = props;
 
-  const holeSummary = scoreCourseHoles(course);
-  const price = Math.round(priceAttractiveness(course) * 100);
+  const [tab, setTab] = useState<Tab>("Editor");
+
+  const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
+  const price = useMemo(() => Math.round(priceAttractiveness(course) * 100), [course]);
+  const liveDemand = useMemo(() => demandBreakdown(course, world), [course, world]);
   const activeHole = holeSummary.holes[activeHoleIndex];
+  const wizardCanConfirm = editorMode === "HOLE_WIZARD" && wizardStep === "CONFIRM" && !!draftTee && !!draftGreen;
+  const holeDef = course.holes[activeHoleIndex];
+  const distanceTiles =
+    holeDef?.tee && holeDef?.green ? computeHoleDistanceTiles(holeDef.tee, holeDef.green) : null;
+  const autoPar = distanceTiles != null ? computeAutoPar(distanceTiles) : null;
+  const effectivePar =
+    holeDef?.parMode === "MANUAL" ? (holeDef.parManual ?? 4) : autoPar ?? 4;
+
+  const tabs: Tab[] = ["Editor", "Metrics", "Results", "Upgrades"];
+  const terrainCounts = useMemo(() => {
+    const acc: Partial<Record<Terrain, number>> = {};
+    for (const t of course.tiles) acc[t] = (acc[t] ?? 0) + 1;
+    return acc;
+  }, [course.tiles]);
+  const totalTiles = course.tiles.length || 1;
+  const totalMaintWeight = useMemo(() => {
+    return course.tiles.reduce((sum, t) => sum + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
+  }, [course.tiles]);
+  const avgMaintWeight = totalMaintWeight / totalTiles;
 
   return (
-    <div style={{ width: 340, fontFamily: "system-ui, sans-serif" }}>
-      <h3 style={{ margin: "0 0 8px" }}>SimGolf-lite Tycoon</h3>
-
-      <div
-        style={{
-          padding: 10,
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          marginBottom: 10,
-        }}
-      >
-        <div>
-          <b>Week:</b> {world.week}
+    <div
+      style={{
+        width: 360,
+        height: "100%",
+        fontFamily: "system-ui, sans-serif",
+        display: "flex",
+        flexDirection: "column",
+        border: "1px solid #ddd",
+        borderRadius: 10,
+        overflow: "hidden",
+        background: "#fff",
+      }}
+    >
+      <div style={{ padding: 12, borderBottom: "1px solid #eee" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <h3 style={{ margin: 0 }}>SimGolf-lite Tycoon</h3>
+          <div style={{ fontSize: 12, color: "#555" }}>Week {world.week}</div>
         </div>
-        <div>
-          <b>Cash:</b> ${Math.round(world.cash).toLocaleString()}
-        </div>
-        <div>
-          <b>Reputation:</b> {world.reputation}/100
-        </div>
-        <div>
-          <b>Course condition:</b> {Math.round(course.condition * 100)}%
+        <div style={{ marginTop: 8, display: "grid", gap: 2, fontSize: 12, color: "#333" }}>
+          <div>
+            <b>Cash:</b> ${Math.round(world.cash).toLocaleString()}
+          </div>
+          <div>
+            <b>Reputation:</b> {world.reputation}/100
+          </div>
+          <div>
+            <b>Condition:</b> {Math.round(course.condition * 100)}%
+          </div>
         </div>
       </div>
 
-      <div
-        style={{
-          padding: 10,
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          marginBottom: 10,
-        }}
-      >
-        <div style={{ marginBottom: 8 }}>
-          <b>Editor</b>
-        </div>
-
-        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-          {(["paint", "tee", "green"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              style={{
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: mode === m ? "2px solid #000" : "1px solid #ccc",
-                background: "#fff",
-              }}
-            >
-              {m === "paint" ? "Paint" : m === "tee" ? "Place tee" : "Place green"}
-            </button>
-          ))}
-        </div>
-
-        <label style={{ display: "block", marginBottom: 10 }}>
-          Hole #
-          <select
-            value={activeHoleIndex}
-            onChange={(e) => setActiveHoleIndex(Number(e.target.value))}
-            style={{ width: "100%", padding: 6, borderRadius: 8, border: "1px solid #ccc" }}
+      <div style={{ display: "flex", gap: 6, padding: 10, borderBottom: "1px solid #eee" }}>
+        {tabs.map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            style={{
+              flex: 1,
+              padding: "8px 6px",
+              borderRadius: 10,
+              border: tab === t ? "2px solid #000" : "1px solid #ccc",
+              background: "#fff",
+              fontSize: 12,
+            }}
           >
-            {course.holes.map((_, i) => (
-              <option key={i} value={i}>
-                {i + 1}
-              </option>
-            ))}
-          </select>
-        </label>
+            {t}
+          </button>
+        ))}
+      </div>
 
-        {activeHole && (
-          <div style={{ marginBottom: 10, fontSize: 12, color: "#222" }}>
-            <div>
-              <b>Hole {activeHoleIndex + 1}</b>:{" "}
-              {activeHole.isComplete ? (
-                <>
-                  score {Math.round(activeHole.score)}/100 • par {activeHole.par} • dist{" "}
-                  {activeHole.distance.toFixed(1)}
-                </>
-              ) : (
-                <>place tee + green</>
-              )}
-            </div>
-            {activeHole.issues.length > 0 && (
-              <div style={{ marginTop: 4, color: "#a40000" }}>
-                {activeHole.issues.slice(0, 2).join(" • ")}
+      <div style={{ flex: 1, overflow: "auto", padding: 10 }}>
+        {tab === "Editor" && (
+          <>
+            {paintError && (
+              <div style={{ marginBottom: 10, padding: 10, borderRadius: 10, border: "1px solid #f0b4b4", background: "#fff5f5", color: "#a40000", fontSize: 12 }}>
+                <b>Build blocked:</b> {paintError}
               </div>
             )}
-          </div>
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ marginBottom: 8 }}>
+                <b>Editor mode</b>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                <button
+                  onClick={() => setEditorMode("PAINT")}
+                  style={{
+                    flex: 1,
+                    padding: "8px 6px",
+                    borderRadius: 10,
+                    border: editorMode === "PAINT" ? "2px solid #000" : "1px solid #ccc",
+                    background: "#fff",
+                    fontSize: 12,
+                  }}
+                >
+                  Paint
+                </button>
+                <button
+                  onClick={startWizard}
+                  style={{
+                    flex: 1,
+                    padding: "8px 6px",
+                    borderRadius: 10,
+                    border: editorMode === "HOLE_WIZARD" ? "2px solid #000" : "1px solid #ccc",
+                    background: "#fff",
+                    fontSize: 12,
+                  }}
+                >
+                  Hole Wizard
+                </button>
+              </div>
+
+              {activeHole && (
+                <div style={{ fontSize: 12, color: "#222" }}>
+                  <div>
+                    <b>Hole {activeHoleIndex + 1}</b>:{" "}
+                    {activeHole.isComplete ? (
+                      <>
+                        score {Math.round(activeHole.score)}/100 • par {activeHole.par} • dist{" "}
+                        {activeHole.distance.toFixed(1)}
+                      </>
+                    ) : (
+                      <>place tee + green</>
+                    )}
+                  </div>
+                  <div style={{ marginTop: 4, color: "#444" }}>
+                    Distance:{" "}
+                    {distanceTiles != null ? `${distanceTiles.toFixed(1)} tiles` : "—"} • Par:{" "}
+                    {effectivePar}{" "}
+                    <span style={{ color: "#777" }}>
+                      ({holeDef?.parMode === "MANUAL" ? "manual" : "auto"})
+                    </span>
+                  </div>
+                  {activeHole.isComplete && (
+                    <div style={{ marginTop: 6, display: "grid", gap: 2 }}>
+                      <div>
+                        Playability: <b>{Math.round(activeHole.playabilityScore)}</b>/100
+                      </div>
+                      <div>
+                        Difficulty: <b>{Math.round(activeHole.difficultyScore)}</b>/100
+                      </div>
+                      <div>
+                        Aesthetics: <b>{Math.round(activeHole.aestheticsScore)}</b>/100
+                      </div>
+                      <div>
+                        Overall: <b>{Math.round(activeHole.overallHoleScore)}</b>/100
+                      </div>
+                    </div>
+                  )}
+                  {activeHole.issues.length > 0 && (
+                    <div style={{ marginTop: 4, color: "#a40000" }}>
+                      {activeHole.issues.slice(0, 2).join(" • ")}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {editorMode === "HOLE_WIZARD" ? (
+              <Section title="Hole Setup Wizard">
+                <div>
+                  <b>Hole {activeHoleIndex + 1} of 9</b>
+                </div>
+                <div style={{ color: "#444" }}>
+                  {wizardStep === "TEE"
+                    ? "Click on the canvas to place the tee."
+                    : wizardStep === "GREEN"
+                      ? "Click on the canvas to place the green."
+                      : "Confirm to save this hole, or redo to try again."}
+                </div>
+                <div style={{ fontSize: 12, color: "#666" }}>
+                  Draft: tee {draftTee ? `(${draftTee.x},${draftTee.y})` : "—"} • green{" "}
+                  {draftGreen ? `(${draftGreen.x},${draftGreen.y})` : "—"}
+                </div>
+              </Section>
+            ) : (
+              <>
+                <Section title="Par settings (active hole)">
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => setActiveHoleParMode("AUTO")}
+                      style={{
+                        flex: 1,
+                        padding: 10,
+                        borderRadius: 10,
+                        border: holeDef?.parMode === "AUTO" ? "2px solid #000" : "1px solid #ccc",
+                        background: "#fff",
+                      }}
+                    >
+                      Auto
+                    </button>
+                    <button
+                      onClick={() => setActiveHoleParMode("MANUAL")}
+                      style={{
+                        flex: 1,
+                        padding: 10,
+                        borderRadius: 10,
+                        border:
+                          holeDef?.parMode === "MANUAL" ? "2px solid #000" : "1px solid #ccc",
+                        background: "#fff",
+                      }}
+                    >
+                      Manual
+                    </button>
+                  </div>
+
+                  {holeDef?.parMode === "MANUAL" && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      {([3, 4, 5] as const).map((p) => (
+                        <button
+                          key={p}
+                          onClick={() => setActiveHoleParManual(p)}
+                          style={{
+                            flex: 1,
+                            padding: 10,
+                            borderRadius: 10,
+                            border: (holeDef.parManual ?? 4) === p ? "2px solid #000" : "1px solid #ccc",
+                            background: "#fff",
+                          }}
+                        >
+                          Par {p}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {holeDef?.parMode === "AUTO" && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: "#555" }}>
+                      Auto par thresholds: ≤14 → 3, 15–30 → 4, 31+ → 5
+                    </div>
+                  )}
+                </Section>
+
+                <Section title="Hole list (overall score)">
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "34px 44px 1fr 54px", fontSize: 12, color: "#555" }}>
+                      <div>
+                        <b>#</b>
+                      </div>
+                      <div>
+                        <b>Par</b>
+                      </div>
+                      <div>
+                        <b>Dist</b>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <b>Overall</b>
+                      </div>
+                    </div>
+                    {holeSummary.holes.slice(0, 9).map((h) => (
+                      <button
+                        key={h.holeIndex}
+                        onClick={() => {
+                          setActiveHoleIndex(h.holeIndex);
+                        }}
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "34px 44px 1fr 54px",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "8px 8px",
+                          borderRadius: 10,
+                          border: h.holeIndex === activeHoleIndex ? "2px solid #000" : "1px solid #ddd",
+                          background: "#fff",
+                          textAlign: "left",
+                          fontSize: 12,
+                        }}
+                      >
+                        <div>
+                          {h.holeIndex + 1}
+                          {!h.isComplete && <span style={{ color: "#a40000" }}> *</span>}
+                        </div>
+                        <div>{h.isComplete ? h.par : "—"}</div>
+                        <div style={{ color: "#555" }}>
+                          {h.isComplete ? `${h.distance.toFixed(1)} tiles` : "missing tee/green"}
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <b>{Math.round(h.overallHoleScore)}</b>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
+                    * layout issue (tee/green missing). Low overall holes drag down course quality.
+                  </div>
+                </Section>
+
+                <div style={{ marginBottom: 8 }}>
+                  <b>Terrain brush</b>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {TERRAIN.map((t) => (
+                    <button
+                      key={t}
+                      onClick={() => setSelected(t)}
+                      style={{
+                        padding: "6px 8px",
+                        borderRadius: 8,
+                        border: selected === t ? "2px solid #000" : "1px solid #ccc",
+                        background: "#fff",
+                        fontSize: 12,
+                      }}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
         )}
 
-        <div style={{ marginBottom: 8 }}>
-          <b>Paint terrain</b>
-        </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {TERRAIN.map((t) => (
+        {tab === "Metrics" && (
+          <>
+            <Section title="Course metrics">
+              <div>Course quality: {Math.round(holeSummary.courseQuality)}/100</div>
+              <div>Hole quality avg: {Math.round(holeSummary.holeQualityAvg)}/100</div>
+              <div>Variety: {Math.round(holeSummary.variety)}/100</div>
+              <div>Price attractiveness: {price}/100</div>
+              <div>Demand index: {liveDemand.demandIndex.toFixed(2)}</div>
+              <div style={{ marginTop: 8, fontSize: 12, color: "#444" }}>
+                Layout issues: {holeSummary.holes.filter((h) => h.isComplete && !h.isValid).length} /{" "}
+                {course.holes.length}
+              </div>
+            </Section>
+            <Section title="Terrain mix + maintenance burden">
+              <div>
+                Estimated maintenance weight: <b>{avgMaintWeight.toFixed(2)}</b> avg •{" "}
+                <span style={{ color: "#555" }}>{Math.round(totalMaintWeight).toLocaleString()} total</span>
+              </div>
+              <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                {(Object.keys(terrainCounts) as Terrain[])
+                  .sort((a, b) => (terrainCounts[b] ?? 0) - (terrainCounts[a] ?? 0))
+                  .map((t) => {
+                    const n = terrainCounts[t] ?? 0;
+                    const pct = (100 * n) / totalTiles;
+                    return (
+                      <div key={t} style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>{t}</span>
+                        <span style={{ color: "#555" }}>
+                          {pct.toFixed(1)}% ({n})
+                        </span>
+                      </div>
+                    );
+                  })}
+              </div>
+            </Section>
+          </>
+        )}
+
+        {tab === "Results" && (
+          <>
+            {!last && <div style={{ color: "#555", fontSize: 13 }}>Simulate a week to see results.</div>}
+            {last && (
+              <Section title="Last week">
+                <div>Visitors: {last.visitors}</div>
+                <div>Revenue: ${Math.round(last.revenue).toLocaleString()}</div>
+                <div>Costs: ${Math.round(last.costs).toLocaleString()}</div>
+                <div>
+                  <b>Profit:</b> ${Math.round(last.profit).toLocaleString()}
+                </div>
+                <div>Avg satisfaction: {Math.round(last.avgSatisfaction)}/100</div>
+                <div>
+                  Reputation Δ: {last.reputationDelta >= 0 ? "+" : ""}
+                  {last.reputationDelta}
+                </div>
+                <div>
+                  Noise: {last.visitorNoise >= 0 ? "+" : ""}
+                  {last.visitorNoise} visitors
+                </div>
+              </Section>
+            )}
+
+            {last?.demand && (
+              <Section title="Demand breakdown">
+                <BreakdownTable
+                  rows={[
+                    ["Course quality", last.demand.courseQuality],
+                    ["Condition", last.demand.condition],
+                    ["Reputation", last.demand.reputation],
+                    ["Price", last.demand.priceAttractiveness],
+                    ["Marketing", last.demand.marketing],
+                    ["Staff", last.demand.staff],
+                  ]}
+                />
+                <div style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
+                  DemandIndex: {last.demand.demandIndex.toFixed(2)} → base visitors:{" "}
+                  {120 + Math.round(520 * last.demand.demandIndex)}
+                </div>
+              </Section>
+            )}
+
+            {last?.satisfaction && (
+              <Section title="Satisfaction breakdown">
+                <BreakdownTable
+                  rows={[
+                    ["Playability", last.satisfaction.playability],
+                    ["Condition", last.satisfaction.condition],
+                    ["Staff", last.satisfaction.staff],
+                    ["Total", last.satisfaction.satisfaction],
+                  ]}
+                />
+              </Section>
+            )}
+
+            {last?.tips && last.tips.length > 0 && (
+              <Section title="Why people like / don’t like it">
+                <ul style={{ margin: 0, paddingLeft: 16 }}>
+                  {last.tips.map((t, i) => (
+                    <li key={i} style={{ marginBottom: 4 }}>
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
+
+            {last?.capitalSpending && (
+              <Section title="Capital spending (terrain builds)">
+                <div>
+                  Spent: <b>${Math.round(last.capitalSpending.spent).toLocaleString()}</b> • Refunded:{" "}
+                  <b>${Math.round(last.capitalSpending.refunded).toLocaleString()}</b> • Net:{" "}
+                  <b>${Math.round(last.capitalSpending.net).toLocaleString()}</b>
+                </div>
+                <div style={{ marginTop: 8, display: "grid", gap: 4, fontSize: 12 }}>
+                  {Object.entries(last.capitalSpending.byTerrainSpent)
+                    .filter(([, v]) => (v ?? 0) > 0)
+                    .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+                    .map(([t, v]) => (
+                      <div key={t} style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span>{t}</span>
+                        <span>
+                          ${Math.round(v ?? 0).toLocaleString()}{" "}
+                          <span style={{ color: "#777" }}>
+                            ({last.capitalSpending!.byTerrainTiles[t as Terrain] ?? 0} tiles)
+                          </span>
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </Section>
+            )}
+
+            {last?.maintenancePressure && (
+              <Section title="Maintenance pressure">
+                <div>
+                  Avg terrain weight: <b>{last.maintenancePressure.avgWeight.toFixed(2)}</b> • Wear this
+                  week: <b>{Math.round(last.maintenancePressure.wear * 100)}%</b>
+                </div>
+              </Section>
+            )}
+
+          </>
+        )}
+
+        {tab === "Upgrades" && (
+          <>
+            <Section title="Business">
+              <label style={{ display: "block", marginBottom: 12 }}>
+                Green fee (${course.baseGreenFee})
+                <input
+                  type="range"
+                  min={20}
+                  max={150}
+                  value={course.baseGreenFee}
+                  onChange={(e) => setGreenFee(Number(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+              </label>
+
+              <label style={{ display: "block" }}>
+                Maintenance budget (${world.maintenanceBudget}/wk)
+                <input
+                  type="range"
+                  min={0}
+                  max={5000}
+                  step={50}
+                  value={world.maintenanceBudget}
+                  onChange={(e) => setMaintenance(Number(e.target.value))}
+                  style={{ width: "100%" }}
+                />
+              </label>
+            </Section>
+
+            <Section title="Upgrades">
+              <div style={{ display: "grid", gap: 8 }}>
+                <button
+                  onClick={onUpgradeStaff}
+                  disabled={!canUpgradeStaff}
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    borderRadius: 10,
+                    border: "1px solid #ccc",
+                    background: canUpgradeStaff ? "#fff" : "#f6f6f6",
+                  }}
+                >
+                  Staff level: {world.staffLevel}/5{" "}
+                  {staffUpgradeCost != null
+                    ? `(Buy: $${staffUpgradeCost.toLocaleString()})`
+                    : "(Max)"}
+                </button>
+                <button
+                  onClick={onUpgradeMarketing}
+                  disabled={!canUpgradeMarketing}
+                  style={{
+                    width: "100%",
+                    padding: 10,
+                    borderRadius: 10,
+                    border: "1px solid #ccc",
+                    background: canUpgradeMarketing ? "#fff" : "#f6f6f6",
+                  }}
+                >
+                  Marketing level: {world.marketingLevel}/5{" "}
+                  {marketingUpgradeCost != null
+                    ? `(Buy: $${marketingUpgradeCost.toLocaleString()})`
+                    : "(Max)"}
+                </button>
+              </div>
+            </Section>
+          </>
+        )}
+      </div>
+
+      {editorMode === "HOLE_WIZARD" && (
+        <div
+          style={{
+            padding: 10,
+            borderTop: "1px solid #eee",
+            background: "#fff",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
+            <div>
+              <b>Hole {activeHoleIndex + 1} / 9</b>
+            </div>
+            <div style={{ color: "#555" }}>
+              {wizardStep === "TEE"
+                ? "Click to place tee"
+                : wizardStep === "GREEN"
+                  ? "Click to place green"
+                  : "Confirm / redo"}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
             <button
-              key={t}
-              onClick={() => setSelected(t)}
+              onClick={onWizardConfirm}
+              disabled={!wizardCanConfirm}
               style={{
-                padding: "6px 8px",
-                borderRadius: 8,
-                border: selected === t ? "2px solid #000" : "1px solid #ccc",
+                flex: 1,
+                padding: 10,
+                borderRadius: 10,
+                border: wizardCanConfirm ? "1px solid #000" : "1px solid #ccc",
+                background: wizardCanConfirm ? "#000" : "#f6f6f6",
+                color: wizardCanConfirm ? "#fff" : "#555",
+                fontWeight: 600,
+              }}
+            >
+              Confirm
+            </button>
+            <button
+              onClick={onWizardRedo}
+              style={{
+                flex: 1,
+                padding: 10,
+                borderRadius: 10,
+                border: "1px solid #ccc",
                 background: "#fff",
               }}
             >
-              {t}
+              Redo
             </button>
-          ))}
-        </div>
-      </div>
-
-      <div
-        style={{
-          padding: 10,
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          marginBottom: 10,
-        }}
-      >
-        <div style={{ marginBottom: 8 }}>
-          <b>Course metrics</b>
-        </div>
-        <div>Course quality: {Math.round(holeSummary.courseQuality)}/100</div>
-        <div>Hole quality avg: {Math.round(holeSummary.holeQualityAvg)}/100</div>
-        <div>Variety: {Math.round(holeSummary.variety)}/100</div>
-        <div>Price attractiveness: {price}/100</div>
-        <div style={{ marginTop: 8, fontSize: 12, color: "#444" }}>
-          Layout issues: {holeSummary.holes.filter((h) => h.isComplete && !h.isValid).length} /{" "}
-          {course.holes.length}
-        </div>
-      </div>
-
-      <div
-        style={{
-          padding: 10,
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          marginBottom: 10,
-        }}
-      >
-        <div style={{ marginBottom: 8 }}>
-          <b>Business</b>
-        </div>
-
-        <label style={{ display: "block", marginBottom: 8 }}>
-          Green fee (${course.baseGreenFee})
-          <input
-            type="range"
-            min={20}
-            max={150}
-            value={course.baseGreenFee}
-            onChange={(e) => setGreenFee(Number(e.target.value))}
-            style={{ width: "100%" }}
-          />
-        </label>
-
-        <label style={{ display: "block" }}>
-          Maintenance budget (${world.maintenanceBudget}/wk)
-          <input
-            type="range"
-            min={0}
-            max={5000}
-            step={50}
-            value={world.maintenanceBudget}
-            onChange={(e) => setMaintenance(Number(e.target.value))}
-            style={{ width: "100%" }}
-          />
-        </label>
-      </div>
-
-      <div
-        style={{
-          padding: 10,
-          border: "1px solid #ddd",
-          borderRadius: 8,
-          marginBottom: 10,
-        }}
-      >
-        <div style={{ marginBottom: 8 }}>
-          <b>Upgrades</b>
-        </div>
-        <div style={{ display: "grid", gap: 8 }}>
-          <button
-            onClick={onUpgradeStaff}
-            disabled={!canUpgradeStaff}
-            style={{
-              width: "100%",
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid #ccc",
-              background: canUpgradeStaff ? "#fff" : "#f6f6f6",
-            }}
-          >
-            Staff level: {world.staffLevel}/5{" "}
-            {staffUpgradeCost != null ? `(Buy: $${staffUpgradeCost.toLocaleString()})` : "(Max)"}
-          </button>
-          <button
-            onClick={onUpgradeMarketing}
-            disabled={!canUpgradeMarketing}
-            style={{
-              width: "100%",
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid #ccc",
-              background: canUpgradeMarketing ? "#fff" : "#f6f6f6",
-            }}
-          >
-            Marketing level: {world.marketingLevel}/5{" "}
-            {marketingUpgradeCost != null
-              ? `(Buy: $${marketingUpgradeCost.toLocaleString()})`
-              : "(Max)"}
-          </button>
-        </div>
-      </div>
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <button
-          onClick={onSave}
-          style={{
-            flex: 1,
-            padding: 10,
-            borderRadius: 10,
-            border: "1px solid #ccc",
-            background: "#fff",
-          }}
-        >
-          Save
-        </button>
-        <button
-          onClick={onLoad}
-          style={{
-            flex: 1,
-            padding: 10,
-            borderRadius: 10,
-            border: "1px solid #ccc",
-            background: "#fff",
-          }}
-        >
-          Load
-        </button>
-        <button
-          onClick={onResetSave}
-          style={{
-            flex: 1,
-            padding: 10,
-            borderRadius: 10,
-            border: "1px solid #ccc",
-            background: "#fff",
-          }}
-        >
-          Reset
-        </button>
-      </div>
-
-      <button
-        onClick={simulate}
-        style={{
-          width: "100%",
-          padding: 10,
-          borderRadius: 10,
-          border: "1px solid #000",
-          background: "#000",
-          color: "#fff",
-        }}
-      >
-        Simulate week
-      </button>
-
-      {last && (
-        <div
-          style={{
-            marginTop: 10,
-            padding: 10,
-            border: "1px solid #ddd",
-            borderRadius: 8,
-          }}
-        >
-          <div style={{ marginBottom: 6 }}>
-            <b>Last week results</b>
+            <button
+              onClick={onWizardNextHole}
+              style={{
+                flex: 1,
+                padding: 10,
+                borderRadius: 10,
+                border: "1px solid #ccc",
+                background: "#fff",
+              }}
+            >
+              Next hole
+            </button>
           </div>
-          <div>Visitors: {last.visitors}</div>
-          <div>Revenue: ${Math.round(last.revenue).toLocaleString()}</div>
-          <div>Costs: ${Math.round(last.costs).toLocaleString()}</div>
-          <div>
-            <b>Profit:</b> ${Math.round(last.profit).toLocaleString()}
-          </div>
-          <div>Avg satisfaction: {Math.round(last.avgSatisfaction)}/100</div>
-          <div>
-            Reputation Δ: {last.reputationDelta >= 0 ? "+" : ""}
-            {last.reputationDelta}
-          </div>
-          <div>
-            Noise: {last.visitorNoise >= 0 ? "+" : ""}
-            {last.visitorNoise} visitors
-          </div>
-
-          {last.demand && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ marginBottom: 6 }}>
-                <b>Demand breakdown</b>
-              </div>
-              <BreakdownTable
-                rows={[
-                  ["Course quality", last.demand.courseQuality],
-                  ["Condition", last.demand.condition],
-                  ["Reputation", last.demand.reputation],
-                  ["Price", last.demand.priceAttractiveness],
-                  ["Marketing", last.demand.marketing],
-                  ["Staff", last.demand.staff],
-                ]}
-              />
-              <div style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
-                DemandIndex: {last.demand.demandIndex.toFixed(2)} → base visitors:{" "}
-                {120 + Math.round(520 * last.demand.demandIndex)}
-              </div>
-            </div>
-          )}
-
-          {last.satisfaction && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ marginBottom: 6 }}>
-                <b>Satisfaction breakdown</b>
-              </div>
-              <BreakdownTable
-                rows={[
-                  ["Playability", last.satisfaction.playability],
-                  ["Condition", last.satisfaction.condition],
-                  ["Staff", last.satisfaction.staff],
-                  ["Total", last.satisfaction.satisfaction],
-                ]}
-              />
-            </div>
-          )}
-
-          {last.tips && last.tips.length > 0 && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ marginBottom: 6 }}>
-                <b>Advisor tips</b>
-              </div>
-              <ul style={{ margin: 0, paddingLeft: 16 }}>
-                {last.tips.map((t, i) => (
-                  <li key={i} style={{ marginBottom: 4 }}>
-                    {t}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
         </div>
       )}
+
+      <div
+        style={{
+          padding: 10,
+          borderTop: "1px solid #eee",
+          background: "#fff",
+        }}
+      >
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <button
+            onClick={onSave}
+            style={{
+              flex: 1,
+              padding: 10,
+              borderRadius: 10,
+              border: "1px solid #ccc",
+              background: "#fff",
+            }}
+          >
+            Save
+          </button>
+          <button
+            onClick={onLoad}
+            style={{
+              flex: 1,
+              padding: 10,
+              borderRadius: 10,
+              border: "1px solid #ccc",
+              background: "#fff",
+            }}
+          >
+            Load
+          </button>
+          <button
+            onClick={onResetSave}
+            style={{
+              flex: 1,
+              padding: 10,
+              borderRadius: 10,
+              border: "1px solid #ccc",
+              background: "#fff",
+            }}
+          >
+            Reset
+          </button>
+        </div>
+
+        <button
+          onClick={simulate}
+          style={{
+            width: "100%",
+            padding: 12,
+            borderRadius: 12,
+            border: "1px solid #000",
+            background: "#000",
+            color: "#fff",
+            fontWeight: 600,
+          }}
+        >
+          Simulate week
+        </button>
+      </div>
     </div>
   );
 }
@@ -429,6 +754,24 @@ function BreakdownTable(props: { rows: Array<[string, number]> }) {
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function Section(props: { title: string; children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        padding: 10,
+        border: "1px solid #ddd",
+        borderRadius: 10,
+        marginBottom: 10,
+      }}
+    >
+      <div style={{ marginBottom: 8 }}>
+        <b>{props.title}</b>
+      </div>
+      <div style={{ display: "grid", gap: 4, fontSize: 13 }}>{props.children}</div>
     </div>
   );
 }

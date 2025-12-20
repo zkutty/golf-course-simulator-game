@@ -15,7 +15,8 @@ export interface Point {
 export interface Hole {
   tee: Point | null;
   green: Point | null;
-  par?: number;
+  parMode: "AUTO" | "MANUAL";
+  parManual?: 3 | 4 | 5;
   name?: string;
 }
 
@@ -66,6 +67,18 @@ export interface WeekResult {
   demand?: DemandBreakdown;
   satisfaction?: SatisfactionBreakdown;
   tips?: string[];
+  capitalSpending?: {
+    spent: number; // total positive charges since last week tick
+    refunded: number; // total refunds since last week tick
+    net: number; // spent - refunded
+    byTerrainSpent: Partial<Record<Terrain, number>>; // charges attributed to target terrain
+    byTerrainTiles: Partial<Record<Terrain, number>>; // tiles changed into terrain (count)
+  };
+  maintenancePressure?: {
+    totalWeight: number;
+    avgWeight: number;
+    wear: number; // 0..1 applied this week
+  };
 }
 
 

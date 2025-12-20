@@ -8,6 +8,7 @@ export const DEFAULT_COURSE: Course = {
   holes: Array.from({ length: 9 }, (_, i) => ({
     tee: { x: 3, y: 2 + i * 2 },
     green: { x: 32, y: 2 + i * 2 },
+    parMode: "AUTO" as const,
     name: `Hole ${i + 1}`,
   })),
   baseGreenFee: 65,

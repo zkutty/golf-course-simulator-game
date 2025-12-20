@@ -34,7 +34,12 @@ export function loadGame(): { course: Course; world: World; history?: WeekResult
     const course: Course = {
       ...DEFAULT_COURSE,
       ...(parsed.course as Course),
-      holes: (parsed.course as Course).holes ?? DEFAULT_COURSE.holes,
+      holes:
+        (parsed.course as Course).holes?.map((h, i) => ({
+          ...DEFAULT_COURSE.holes[i],
+          ...h,
+          parMode: (h as any).parMode ?? "AUTO",
+        })) ?? DEFAULT_COURSE.holes,
     };
     const world: World = { ...DEFAULT_WORLD, ...(parsed.world as World) };
     const history = parsed.history ?? undefined;
