@@ -24,6 +24,9 @@ export const DEFAULT_WORLD: World = {
   staffLevel: 1,
   marketingLevel: 0,
   maintenanceBudget: 900,
+  runSeed: 1337,
+  distressWeeks: 0,
+  isBankrupt: false,
 };
 
 

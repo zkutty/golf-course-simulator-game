@@ -9,6 +9,7 @@ import { computeTerrainChangeCost } from "./game/models/terrainEconomics";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
 import { createSoundPlayer } from "./utils/sound";
+import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -47,6 +48,8 @@ export default function App() {
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
+  const [peakRep, setPeakRep] = useState(DEFAULT_STATE.world.reputation);
 
   const soundRef = useRef<ReturnType<typeof createSoundPlayer> | null>(null);
   if (!soundRef.current) soundRef.current = createSoundPlayer();
@@ -82,7 +85,34 @@ export default function App() {
     return summary.holes[activeHoleIndex]?.path ?? [];
   }, [course, activeHoleIndex]);
 
+  useEffect(() => {
+    if (world.isBankrupt) return;
+    setPeakCash((p) => Math.max(p, world.cash));
+    setPeakRep((p) => Math.max(p, world.reputation));
+  }, [world.cash, world.reputation, world.isBankrupt]);
+
+  function restartRun(args: { seed: number }) {
+    const seed = args.seed | 0;
+    setCourse(DEFAULT_STATE.course);
+    setWorld({ ...DEFAULT_STATE.world, runSeed: seed, distressWeeks: 0, isBankrupt: false });
+    setHistory([]);
+    setLast(undefined);
+    setEditorMode("PAINT");
+    setActiveHoleIndex(0);
+    setWizardStep("TEE");
+    setDraftTee(null);
+    setDraftGreen(null);
+    setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
+    setHover(null);
+    setPaintError(null);
+    setObstacleType("tree");
+    setFlyoverNonce(0);
+    setPeakCash(DEFAULT_STATE.world.cash);
+    setPeakRep(DEFAULT_STATE.world.reputation);
+  }
+
   function applyTileChange(idx: number, next: Terrain, opts?: { silent?: boolean }): boolean {
+    if (world.isBankrupt) return false;
     const prev = course.tiles[idx];
     const { net, charged, refunded } = computeTerrainChangeCost(prev, next);
     if (net > 0 && world.cash < net) {
@@ -97,7 +127,10 @@ export default function App() {
       tiles[idx] = next;
       return { ...c, tiles };
     });
-    setWorld((w) => ({ ...w, cash: w.cash - net }));
+    setWorld((w) => {
+      const nextCash = w.cash - net;
+      return { ...w, cash: nextCash, isBankrupt: w.isBankrupt || nextCash < -10_000 };
+    });
 
     // Track capital spending since last simulate
     setCapital((c) => ({
@@ -141,6 +174,7 @@ export default function App() {
   }
 
   function confirmWizard() {
+    if (world.isBankrupt) return;
     if (!draftTee || !draftGreen) return;
 
     // Two tile changes: tee + green. Check combined affordability.
@@ -174,6 +208,7 @@ export default function App() {
   }
 
   function handleCanvasClick(x: number, y: number) {
+    if (world.isBankrupt) return;
     if (editorMode === "PAINT") {
       applyTerrainAt(x, y, selected);
       return;
@@ -243,21 +278,31 @@ export default function App() {
   function onUpgradeStaff() {
     if (staffUpgradeCost == null) return;
     setWorld((w) => {
+      if (w.isBankrupt) return w;
       if (w.staffLevel >= 5) return w;
       if (w.cash < staffUpgradeCost) return w;
-      return { ...w, cash: w.cash - staffUpgradeCost, staffLevel: w.staffLevel + 1 };
+      const nextCash = w.cash - staffUpgradeCost;
+      return {
+        ...w,
+        cash: nextCash,
+        staffLevel: w.staffLevel + 1,
+        isBankrupt: w.isBankrupt || nextCash < -10_000,
+      };
     });
   }
 
   function onUpgradeMarketing() {
     if (marketingUpgradeCost == null) return;
     setWorld((w) => {
+      if (w.isBankrupt) return w;
       if (w.marketingLevel >= 5) return w;
       if (w.cash < marketingUpgradeCost) return w;
+      const nextCash = w.cash - marketingUpgradeCost;
       return {
         ...w,
-        cash: w.cash - marketingUpgradeCost,
+        cash: nextCash,
         marketingLevel: w.marketingLevel + 1,
+        isBankrupt: w.isBankrupt || nextCash < -10_000,
       };
     });
   }
@@ -291,10 +336,13 @@ export default function App() {
     setHover(null);
     setPaintError(null);
     setObstacleType("tree");
+    setPeakCash(DEFAULT_STATE.world.cash);
+    setPeakRep(DEFAULT_STATE.world.reputation);
   }
 
   function simulate() {
-    const { course: c2, world: w2, result } = tickWeek(course, world, 1337);
+    if (world.isBankrupt) return;
+    const { course: c2, world: w2, result } = tickWeek(course, world, world.runSeed);
     const cap = {
       spent: capital.spent,
       refunded: capital.refunded,
@@ -311,6 +359,9 @@ export default function App() {
     if (result.profit > 0) void sound?.playCashTick(soundEnabled);
   }
 
+  const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
+  const weeksSurvived = Math.max(0, world.week - 1);
+
   return (
     <div
       style={{
@@ -321,6 +372,18 @@ export default function App() {
         overflow: "hidden",
       }}
     >
+      {world.isBankrupt && (
+        <RunEndModal
+          weeksSurvived={weeksSurvived}
+          peakCash={peakCash}
+          peakRep={peakRep}
+          courseRating={rating.courseRating}
+          slope={rating.slope}
+          seed={world.runSeed}
+          onRestartNew={() => restartRun({ seed: (Date.now() % 1_000_000) | 0 })}
+          onRestartSeed={(seed) => restartRun({ seed })}
+        />
+      )}
       <div
         ref={canvasPaneRef}
         style={{
@@ -411,7 +474,110 @@ export default function App() {
         onFlyover={() => setFlyoverNonce((n) => n + 1)}
         soundEnabled={soundEnabled}
         setSoundEnabled={setSoundEnabled}
+        isBankrupt={world.isBankrupt}
       />
+      </div>
+    </div>
+  );
+}
+
+function RunEndModal(props: {
+  weeksSurvived: number;
+  peakCash: number;
+  peakRep: number;
+  courseRating: number;
+  slope: number;
+  seed: number;
+  onRestartNew: () => void;
+  onRestartSeed: (seed: number) => void;
+}) {
+  const [seed, setSeed] = useState(props.seed);
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 99999,
+        padding: 16,
+      }}
+    >
+      <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: 14, padding: 16 }}>
+        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>Run ended: Bankruptcy</div>
+        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
+          You can restart and try a new plan. Same seed gives a comparable “challenge run”.
+        </div>
+
+        <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Weeks survived</span>
+            <b>{props.weeksSurvived}</b>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Peak reputation</span>
+            <b>{props.peakRep}</b>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Peak cash</span>
+            <b>${Math.round(props.peakCash).toLocaleString()}</b>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Course rating / slope</span>
+            <b>
+              {props.courseRating.toFixed(1)} / {Math.round(props.slope)}
+            </b>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+          <button
+            onClick={props.onRestartNew}
+            style={{
+              width: "100%",
+              padding: 12,
+              borderRadius: 12,
+              border: "1px solid #000",
+              background: "#000",
+              color: "#fff",
+              fontWeight: 700,
+            }}
+          >
+            Restart (new run)
+          </button>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <label style={{ flex: 1, fontSize: 12, color: "#374151" }}>
+              Seed
+              <input
+                type="number"
+                value={seed}
+                onChange={(e) => setSeed(Number(e.target.value))}
+                style={{
+                  width: "100%",
+                  marginTop: 4,
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  border: "1px solid #ddd",
+                }}
+              />
+            </label>
+            <button
+              onClick={() => props.onRestartSeed(seed | 0)}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid #ddd",
+                background: "#fff",
+                fontWeight: 700,
+              }}
+            >
+              Restart (seeded)
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

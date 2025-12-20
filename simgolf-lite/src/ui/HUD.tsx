@@ -61,6 +61,7 @@ export function HUD(props: {
   onFlyover: () => void;
   soundEnabled: boolean;
   setSoundEnabled: (b: boolean) => void;
+  isBankrupt: boolean;
 }) {
   const {
     course,
@@ -104,6 +105,7 @@ export function HUD(props: {
     onFlyover,
     soundEnabled,
     setSoundEnabled,
+    isBankrupt,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
@@ -206,6 +208,21 @@ export function HUD(props: {
             ))}
           </div>
         </div>
+        {isBankrupt && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: 10,
+              borderRadius: 12,
+              border: "1px solid #f0b4b4",
+              background: "#fff5f5",
+              color: "#7a0000",
+              fontSize: 12,
+            }}
+          >
+            <b>Bankrupt.</b> This run has ended — restart to continue.
+          </div>
+        )}
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
             <div style={{ fontSize: 12, color: "#6b7280" }}>Cash</div>
@@ -293,7 +310,15 @@ export function HUD(props: {
         </div>
       )}
 
-      <div style={{ flex: 1, overflow: "auto", padding: 10 }}>
+      <div
+        style={{
+          flex: 1,
+          overflow: "auto",
+          padding: 10,
+          pointerEvents: isBankrupt ? "none" : "auto",
+          opacity: isBankrupt ? 0.55 : 1,
+        }}
+      >
         {tab === "Editor" && (
           <>
             {paintError && (
@@ -895,6 +920,8 @@ export function HUD(props: {
             padding: 10,
             borderTop: "1px solid #eee",
             background: "#fff",
+            pointerEvents: isBankrupt ? "none" : "auto",
+            opacity: isBankrupt ? 0.55 : 1,
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
@@ -958,6 +985,8 @@ export function HUD(props: {
           padding: 10,
           borderTop: "1px solid #eee",
           background: "#fff",
+          pointerEvents: isBankrupt ? "none" : "auto",
+          opacity: isBankrupt ? 0.55 : 1,
         }}
       >
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
@@ -1001,17 +1030,18 @@ export function HUD(props: {
 
         <button
           onClick={simulate}
+          disabled={isBankrupt}
           style={{
             width: "100%",
             padding: 12,
             borderRadius: 12,
-            border: "1px solid #000",
-            background: "#000",
-            color: "#fff",
+            border: isBankrupt ? "1px solid #ccc" : "1px solid #000",
+            background: isBankrupt ? "#f6f6f6" : "#000",
+            color: isBankrupt ? "#666" : "#fff",
             fontWeight: 600,
           }}
         >
-          Simulate week
+          {isBankrupt ? "Run ended" : "Simulate week"}
         </button>
       </div>
     </div>

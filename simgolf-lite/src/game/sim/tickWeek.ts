@@ -46,6 +46,14 @@ export function tickWeek(
   const costs = staffCost + marketingCost + maintenanceCost + overheadTotal;
   const profit = revenue - costs;
 
+  // Distress / bankruptcy rules
+  const nextCashRaw = world.cash + profit;
+  const liquidityTrap = nextCashRaw < -10_000;
+  const prevDistress = world.distressWeeks ?? 0;
+  const nextDistress =
+    nextCashRaw < 0 ? Math.min(2, prevDistress + 1) : 0;
+  const bankrupt = liquidityTrap || nextDistress >= 2;
+
   // Condition update: maintenance pushes up, wear pushes down
   const totalWeight = course.tiles.reduce((acc, t) => acc + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
   const avgWeight = totalWeight / (course.tiles.length || 1);
@@ -81,8 +89,10 @@ export function tickWeek(
     world: {
       ...world,
       week: world.week + 1,
-      cash: world.cash + profit,
+      cash: nextCashRaw,
       reputation: nextRep,
+      distressWeeks: nextDistress,
+      isBankrupt: world.isBankrupt || bankrupt,
     },
     result: {
       visitors,

@@ -48,6 +48,10 @@ export interface World {
   staffLevel: number; // 0..5
   marketingLevel: number; // 0..5
   maintenanceBudget: number; // dollars per week
+  // Run state
+  runSeed: number;
+  distressWeeks: number; // 0..2 (bankrupt when reaches 2 and still negative)
+  isBankrupt: boolean;
 }
 
 export interface DemandBreakdown {
