@@ -129,18 +129,40 @@ export function HUD(props: {
   const avgMaintWeight = totalMaintWeight / totalTiles;
   const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
 
-  const courseVibe = useMemo(() => {
+  const vibe = useMemo(() => {
     const complete = holeSummary.holes.filter((h) => h.isComplete && h.isValid);
     const avgAest =
       complete.length === 0
         ? 0
         : complete.reduce((a, h) => a + h.aestheticsScore, 0) / complete.length;
-    const quality = holeSummary.courseQuality;
-    if (quality < 35) return "Untamed & punishing";
-    if (quality < 55) return avgAest >= 55 ? "Scrappy but charming" : "Scrappy municipal";
-    if (quality < 75) return avgAest >= 60 ? "Pleasant parkland" : "Playable & simple";
-    return avgAest >= 65 ? "Premium resort vibe" : "Championship-ready";
-  }, [holeSummary]);
+    const avgDiff =
+      complete.length === 0
+        ? 0
+        : complete.reduce((a, h) => a + h.difficultyScore, 0) / complete.length;
+    const slope = rating.slope ?? 113;
+
+    // Vibe label (game-y, not dashboard-y) derived from difficulty/aesthetics/slope.
+    let vibeLabel = "Everyday Parkland";
+    if (slope >= 145 || avgDiff >= 78) vibeLabel = "Punishing Links";
+    else if (slope >= 132 || avgDiff >= 62) vibeLabel = "Championship Test";
+    else if (avgAest >= 75 && slope < 132) vibeLabel = "Resort Lakeside";
+    else if (slope <= 110 && avgDiff <= 42) vibeLabel = "Beginner-friendly Parkland";
+
+    // Golfer sentiment: simple + live (leans on overall courseQuality as a proxy).
+    const q = holeSummary.courseQuality;
+    let sentiment: "Positive" | "Mixed" | "Negative" = "Mixed";
+    if (q >= 70 && slope <= 140) sentiment = "Positive";
+    else if (q < 52 || slope >= 150) sentiment = "Negative";
+
+    const stars =
+      sentiment === "Positive"
+        ? "★★★★☆"
+        : sentiment === "Mixed"
+          ? "★★★☆☆"
+          : "★★☆☆☆";
+
+    return { vibeLabel, sentiment, stars, avgAest, avgDiff, slope };
+  }, [holeSummary, rating.slope]);
 
   return (
     <div
@@ -198,10 +220,19 @@ export function HUD(props: {
             </div>
           </div>
           {viewMode === "COZY" && (
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>Course vibe</div>
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{courseVibe}</div>
+            <div style={{ display: "grid", gap: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>Vibe</div>
+                <div style={{ fontSize: 13, fontWeight: 800 }}>{vibe.vibeLabel}</div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>Golfer sentiment</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ fontSize: 12, letterSpacing: 1, color: "#111" }}>{vibe.stars}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#111" }}>{vibe.sentiment}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "flex-end" }}>
                 <button
                   onClick={onFlyover}
                   style={{
