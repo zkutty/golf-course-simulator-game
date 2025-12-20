@@ -5,6 +5,11 @@ export const DEFAULT_COURSE: Course = {
   width: 36,
   height: 24,
   tiles: Array.from({ length: 36 * 24 }, () => "rough" as Terrain),
+  holes: Array.from({ length: 9 }, (_, i) => ({
+    tee: { x: 3, y: 2 + i * 2 },
+    green: { x: 32, y: 2 + i * 2 },
+    name: `Hole ${i + 1}`,
+  })),
   baseGreenFee: 65,
   condition: 0.75,
 };
