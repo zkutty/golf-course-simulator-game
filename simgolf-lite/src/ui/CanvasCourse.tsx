@@ -437,6 +437,7 @@ export function CanvasCourse(props: {
   onHoverTile?: (h: { idx: number; x: number; y: number; clientX: number; clientY: number }) => void;
   onLeave?: () => void;
   cursor?: string;
+  flagColor?: string;
 }) {
   const {
     course,
@@ -456,6 +457,7 @@ export function CanvasCourse(props: {
     onHoverTile,
     onLeave,
     cursor,
+    flagColor,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
@@ -975,7 +977,7 @@ export function CanvasCourse(props: {
         const fy2 = fy0 + flagH;
 
         ctx2.save();
-        ctx2.fillStyle = "rgba(220,38,38,0.92)"; // red
+        ctx2.fillStyle = flagColor ?? "rgba(220,38,38,0.92)";
         ctx2.strokeStyle = "rgba(0,0,0,0.35)";
         ctx2.lineWidth = Math.max(1, TILE * 0.06);
         ctx2.beginPath();

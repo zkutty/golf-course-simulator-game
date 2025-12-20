@@ -6,6 +6,7 @@ import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetric
 import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
 import { computeCourseRatingAndSlope } from "../game/sim/courseRating";
 import { isCoursePlayable } from "../game/sim/isCoursePlayable";
+import type { LegacyState } from "../utils/legacy";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -65,6 +66,9 @@ export function HUD(props: {
   isBankrupt: boolean;
   onTakeBridgeLoan: () => void;
   onTakeExpansionLoan: () => void;
+  legacy: LegacyState;
+  onUnlockFlagColor: (color: "BLUE" | "GOLD", cost: number) => void;
+  onSelectFlagColor: (rgba: string) => void;
 }) {
   const {
     course,
@@ -111,6 +115,9 @@ export function HUD(props: {
     isBankrupt,
     onTakeBridgeLoan,
     onTakeExpansionLoan,
+    legacy,
+    onUnlockFlagColor,
+    onSelectFlagColor,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
@@ -969,6 +976,85 @@ export function HUD(props: {
                     ))}
                 </div>
               )}
+            </Section>
+
+            <Section title="Unlocks (cosmetic)">
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
+                <span style={{ color: "#555" }}>Legacy points</span>
+                <b>{legacy.legacyPoints}</b>
+              </div>
+              <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
+                Earn points on bankruptcy based on weeks survived + peak reputation. Purely cosmetic.
+              </div>
+
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <b>Flag color: Blue</b>{" "}
+                    <span style={{ color: "#6b7280" }}>(cost 3)</span>
+                  </div>
+                  {legacy.unlocked.FLAG_BLUE ? (
+                    <button
+                      onClick={() => onSelectFlagColor("rgba(37,99,235,0.92)")}
+                      style={{ padding: "6px 10px", borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
+                    >
+                      Use
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onUnlockFlagColor("BLUE", 3)}
+                      disabled={legacy.legacyPoints < 3}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 10,
+                        border: legacy.legacyPoints >= 3 ? "1px solid #000" : "1px solid #ccc",
+                        background: legacy.legacyPoints >= 3 ? "#000" : "#f6f6f6",
+                        color: legacy.legacyPoints >= 3 ? "#fff" : "#555",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Unlock
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <b>Flag color: Gold</b>{" "}
+                    <span style={{ color: "#6b7280" }}>(cost 5)</span>
+                  </div>
+                  {legacy.unlocked.FLAG_GOLD ? (
+                    <button
+                      onClick={() => onSelectFlagColor("rgba(245,158,11,0.92)")}
+                      style={{ padding: "6px 10px", borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
+                    >
+                      Use
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => onUnlockFlagColor("GOLD", 5)}
+                      disabled={legacy.legacyPoints < 5}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 10,
+                        border: legacy.legacyPoints >= 5 ? "1px solid #000" : "1px solid #ccc",
+                        background: legacy.legacyPoints >= 5 ? "#000" : "#f6f6f6",
+                        color: legacy.legacyPoints >= 5 ? "#fff" : "#555",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Unlock
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ marginTop: 6, fontSize: 12, color: "#555" }}>
+                  Current flag:{" "}
+                  <span style={{ padding: "2px 8px", borderRadius: 999, border: "1px solid #ddd" }}>
+                    <span style={{ color: legacy.selected.flagColor }}>●</span> active
+                  </span>
+                </div>
+              </div>
             </Section>
 
             <Section title="Upgrades">

@@ -12,6 +12,7 @@ import { createSoundPlayer } from "./utils/sound";
 import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
 import { createLoan } from "./game/sim/loans";
 import { isCoursePlayable } from "./game/sim/isCoursePlayable";
+import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -54,6 +55,8 @@ export default function App() {
   const [peakRep, setPeakRep] = useState(DEFAULT_STATE.world.reputation);
   const [showBridgePrompt, setShowBridgePrompt] = useState(false);
   const prevDistressRef = useRef(0);
+  const [legacy, setLegacy] = useState(() => loadLegacy());
+  const legacyAwardedRef = useRef(false);
 
   const soundRef = useRef<ReturnType<typeof createSoundPlayer> | null>(null);
   if (!soundRef.current) soundRef.current = createSoundPlayer();
@@ -147,6 +150,7 @@ export default function App() {
     setPeakRep(DEFAULT_STATE.world.reputation);
     setShowBridgePrompt(false);
     prevDistressRef.current = 0;
+    legacyAwardedRef.current = false;
   }
 
   function takeBridgeLoan() {
@@ -428,6 +432,21 @@ export default function App() {
   const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
   const weeksSurvived = Math.max(0, world.week - 1);
 
+  useEffect(() => {
+    if (!world.isBankrupt) return;
+    if (legacyAwardedRef.current) return;
+    legacyAwardedRef.current = true;
+    const awardId = `${world.runSeed}:${weeksSurvived}:${peakRep}`;
+    const earned = legacyAwardForRun({ weeksSurvived, peakRep });
+    if (earned <= 0) return;
+    setLegacy((s) => {
+      if (s.lastAwardId === awardId) return s; // prevent double-award across reloads
+      const next = { ...s, legacyPoints: s.legacyPoints + earned, lastAwardId: awardId };
+      saveLegacy(next);
+      return next;
+    });
+  }, [world.isBankrupt, weeksSurvived, peakRep]);
+
   return (
     <div
       style={{
@@ -493,6 +512,7 @@ export default function App() {
                 })()
               : "crosshair"
           }
+          flagColor={legacy.selected.flagColor}
         />
         {hover && editorMode === "PAINT" && (
           <HoverTooltip
@@ -549,6 +569,29 @@ export default function App() {
         isBankrupt={world.isBankrupt}
         onTakeBridgeLoan={takeBridgeLoan}
         onTakeExpansionLoan={takeExpansionLoan}
+        legacy={legacy}
+        onUnlockFlagColor={(color, cost) => {
+          setLegacy((s) => {
+            if (s.legacyPoints < cost) return s;
+            const next = {
+              ...s,
+              legacyPoints: s.legacyPoints - cost,
+              unlocked: {
+                ...s.unlocked,
+                [color === "BLUE" ? "FLAG_BLUE" : "FLAG_GOLD"]: true,
+              },
+            };
+            saveLegacy(next);
+            return next;
+          });
+        }}
+        onSelectFlagColor={(rgba) => {
+          setLegacy((s) => {
+            const next = { ...s, selected: { ...s.selected, flagColor: rgba } };
+            saveLegacy(next);
+            return next;
+          });
+        }}
       />
       </div>
     </div>
