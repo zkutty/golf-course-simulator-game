@@ -468,6 +468,26 @@ export function CanvasCourse(props: {
   const flyoverRef = useRef<null | { from: { panX: number; panY: number; zoom: number }; to: { panX: number; panY: number; zoom: number }; t0: number; dur: number }>(null);
   const panStateRef = useRef<null | { startX: number; startY: number; startPanX: number; startPanY: number; active: boolean; panIntent: boolean; moved: boolean; downTile: { x: number; y: number } | null }>(null);
   const lastFocusKeyRef = useRef<string>("");
+  const ambientRef = useRef<{
+    nextBirdAt: number;
+    birdSeq: number;
+    birds: Array<{
+      id: number;
+      t0: number;
+      dur: number;
+      x0: number;
+      y0: number;
+      x1: number;
+      y1: number;
+      scale: number;
+      phase: number;
+    }>;
+    cart: null | {
+      t0: number;
+      dur: number;
+      pathPx: Array<{ x: number; y: number }>;
+    };
+  }>({ nextBirdAt: 0, birdSeq: 1, birds: [], cart: null });
   const TILE = tileSize;
   const wPx = course.width * TILE;
   const hPx = course.height * TILE;
@@ -551,6 +571,10 @@ export function CanvasCourse(props: {
 
   function easeInOutCubic(t: number) {
     return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  function randRange(seed: number, a: number, b: number) {
+    return a + (b - a) * hash01(seed);
   }
 
   function clampCamera(cam: { panX: number; panY: number; zoom: number }) {
@@ -977,6 +1001,121 @@ export function CanvasCourse(props: {
       }
     }
 
+    function drawAmbientLife(timeMs: number) {
+      // COZY-only ambient layer; keep frequency low and visuals subtle.
+      if (showGridOverlays) return;
+      if (!animationsEnabled) return;
+
+      const now = timeMs;
+      const amb = ambientRef.current;
+      if (amb.nextBirdAt === 0) {
+        amb.nextBirdAt = now + randRange(123, 20_000, 40_000);
+      }
+
+      // Spawn bird occasionally (max 2 concurrent)
+      if (now >= amb.nextBirdAt && amb.birds.length < 2) {
+        const id = amb.birdSeq++;
+        const seed = 9000 + id * 101;
+        const dir = hash01(seed) < 0.5 ? -1 : 1;
+        const margin = TILE * 2.5;
+        const y = randRange(seed + 1, hPx * 0.12, hPx * 0.72);
+        const y2 = y + randRange(seed + 2, -TILE * 0.8, TILE * 0.8);
+        const x0 = dir > 0 ? -margin : wPx + margin;
+        const x1 = dir > 0 ? wPx + margin : -margin;
+        const dur = randRange(seed + 3, 9_000, 14_000);
+        const scale = randRange(seed + 4, 0.65, 1.1);
+        const phase = randRange(seed + 5, 0, Math.PI * 2);
+
+        amb.birds.push({ id, t0: now, dur, x0, y0: y, x1, y1: y2, scale, phase });
+        amb.nextBirdAt = now + randRange(seed + 6, 20_000, 40_000);
+
+        // Rare cart spawn if a playable path exists (very rare)
+        if (!amb.cart && activePath && activePath.length > 10 && hash01(seed + 7) < 0.10) {
+          const pathPx = activePath.map((p) => ({ x: p.x * TILE + TILE / 2, y: p.y * TILE + TILE / 2 }));
+          amb.cart = { t0: now, dur: randRange(seed + 8, 8_000, 12_000), pathPx };
+        }
+      }
+
+      // Draw birds
+      const still: typeof amb.birds = [];
+      for (const b of amb.birds) {
+        const t = (now - b.t0) / b.dur;
+        if (t >= 1) continue;
+        const e = easeInOutCubic(Math.max(0, Math.min(1, t)));
+        const x = b.x0 + (b.x1 - b.x0) * e;
+        const y = b.y0 + (b.y1 - b.y0) * e + Math.sin(now * 0.002 + b.phase) * (TILE * 0.15);
+        const fade = t < 0.12 ? t / 0.12 : t > 0.88 ? (1 - t) / 0.12 : 1;
+        const a = 0.22 * fade;
+
+        ctx2.save();
+        ctx2.globalAlpha = a;
+        ctx2.translate(x, y);
+        ctx2.scale(b.scale, b.scale);
+        ctx2.strokeStyle = "rgba(10,10,10,0.95)";
+        ctx2.lineWidth = Math.max(1, TILE * 0.06);
+        // Simple bird silhouette: two arcs (like a tiny "m")
+        const wing = Math.max(4, TILE * 0.6);
+        const flap = Math.sin(now * 0.008 + b.phase) * (TILE * 0.18);
+        ctx2.beginPath();
+        ctx2.arc(-wing * 0.35, 0, wing * 0.55, Math.PI * 0.1, Math.PI * 0.9);
+        ctx2.arc(wing * 0.35, 0, wing * 0.55, Math.PI * 0.1, Math.PI * 0.9);
+        ctx2.stroke();
+        // tiny flap hint
+        ctx2.globalAlpha = a * 0.7;
+        ctx2.beginPath();
+        ctx2.moveTo(-wing * 0.35, 0);
+        ctx2.lineTo(-wing * 0.35, -flap);
+        ctx2.moveTo(wing * 0.35, 0);
+        ctx2.lineTo(wing * 0.35, -flap);
+        ctx2.stroke();
+        ctx2.restore();
+
+        still.push(b);
+      }
+      amb.birds = still;
+
+      // Draw cart (very rare, subtle)
+      if (amb.cart) {
+        const c = amb.cart;
+        const t = (now - c.t0) / c.dur;
+        if (t >= 1) {
+          amb.cart = null;
+        } else if (c.pathPx.length >= 2) {
+          const e = easeInOutCubic(Math.max(0, Math.min(1, t)));
+          const idx = e * (c.pathPx.length - 1);
+          const i0 = Math.floor(idx);
+          const i1 = Math.min(c.pathPx.length - 1, i0 + 1);
+          const f = idx - i0;
+          const p0 = c.pathPx[i0];
+          const p1 = c.pathPx[i1];
+          const x = p0.x + (p1.x - p0.x) * f;
+          const y = p0.y + (p1.y - p0.y) * f;
+          const ang = Math.atan2(p1.y - p0.y, p1.x - p0.x);
+
+          ctx2.save();
+          ctx2.globalAlpha = 0.24;
+          ctx2.translate(x, y);
+          ctx2.rotate(ang);
+          const bw = Math.max(6, TILE * 0.55);
+          const bh = Math.max(3, TILE * 0.28);
+          ctx2.fillStyle = "rgba(20,20,20,0.9)";
+          ctx2.fillRect(-bw * 0.5, -bh * 0.5, bw, bh);
+          ctx2.fillStyle = "rgba(255,255,255,0.75)";
+          ctx2.fillRect(-bw * 0.1, -bh * 0.45, bw * 0.3, bh * 0.3);
+          // wheels
+          ctx2.fillStyle = "rgba(0,0,0,0.9)";
+          const r = Math.max(1.2, TILE * 0.10);
+          ctx2.beginPath();
+          ctx2.arc(-bw * 0.3, -bh * 0.55, r, 0, Math.PI * 2);
+          ctx2.arc(bw * 0.3, -bh * 0.55, r, 0, Math.PI * 2);
+          ctx2.arc(-bw * 0.3, bh * 0.55, r, 0, Math.PI * 2);
+          ctx2.arc(bw * 0.3, bh * 0.55, r, 0, Math.PI * 2);
+          ctx2.fill();
+          ctx2.restore();
+        }
+      }
+    }
+
     const render = (timeMs: number) => {
       if (!canvasRef.current) return;
       if (!isVisibleRef.current) {
@@ -1015,6 +1154,9 @@ export function CanvasCourse(props: {
 
       // greens as targets: small flags (flutter in COZY)
       drawFlags(timeMs);
+
+      // ambient life layer (COZY)
+      drawAmbientLife(timeMs);
 
       drawAnalytics();
       drawWizard();
