@@ -12,6 +12,7 @@ export interface ShotEval {
   expectedCarryPenalty: number;
   expectedShotCost: number;
   debug: string[];
+  isValid: boolean;
 }
 
 function distTiles(a: Point, b: Point) {
@@ -50,6 +51,7 @@ export function evalShotBase(args: {
     expectedLandingPenalty,
     expectedCarryPenalty,
     expectedShotCost,
+    isValid: true,
     debug: [
       `d=${dYards.toFixed(0)}y`,
       `club=${club.name}(${club.carryYards}y)`,

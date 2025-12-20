@@ -149,6 +149,14 @@ export const BALANCE = {
   shots: {
     utilizationThreshold: 0.9, // beyond this, dispersion ramps up
     dispersionRamp: 2.2, // multiplier slope vs utilization over threshold
+    water: {
+      carryBufferYards: 10,
+      maxExpectedShotsToGreen: 6,
+      // Short-miss logic (lands along shot line)
+      shortMissUtilStart: 0.92,
+      shortMissMaxProb: 0.22,
+      waterPenaltyStrokes: 2.6, // landing in water is brutal
+    },
   },
 
   // Terrain economics
