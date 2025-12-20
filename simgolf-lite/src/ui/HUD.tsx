@@ -58,6 +58,7 @@ export function HUD(props: {
   setViewMode: (m: "COZY" | "ARCHITECT") => void;
   animationsEnabled: boolean;
   setAnimationsEnabled: (b: boolean) => void;
+  onFlyover: () => void;
 }) {
   const {
     course,
@@ -98,6 +99,7 @@ export function HUD(props: {
     setViewMode,
     animationsEnabled,
     setAnimationsEnabled,
+    onFlyover,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
@@ -200,6 +202,19 @@ export function HUD(props: {
               <div style={{ fontSize: 12, color: "#6b7280" }}>Course vibe</div>
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>{courseVibe}</div>
+                <button
+                  onClick={onFlyover}
+                  style={{
+                    padding: "6px 10px",
+                    borderRadius: 999,
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  Flyover
+                </button>
                 <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#374151" }}>
                   <input
                     type="checkbox"

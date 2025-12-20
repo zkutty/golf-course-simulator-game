@@ -428,6 +428,7 @@ export function CanvasCourse(props: {
   tileSize: number;
   showGridOverlays: boolean;
   animationsEnabled: boolean;
+  flyoverNonce: number;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
   wizardStep: "TEE" | "GREEN" | "CONFIRM";
   draftTee: Point | null;
@@ -446,6 +447,7 @@ export function CanvasCourse(props: {
     tileSize,
     showGridOverlays,
     animationsEnabled,
+    flyoverNonce,
     editorMode,
     wizardStep,
     draftTee,
@@ -459,7 +461,13 @@ export function CanvasCourse(props: {
   const lastHoverIdxRef = useRef<number | null>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const rafRef = useRef<number | null>(null);
+  const renderRef = useRef<null | ((t: number) => void)>(null);
   const isVisibleRef = useRef(true);
+  const camRef = useRef({ panX: 0, panY: 0, zoom: 1 });
+  const camAnimRef = useRef<null | { from: { panX: number; panY: number; zoom: number }; to: { panX: number; panY: number; zoom: number }; t0: number; dur: number }>(null);
+  const flyoverRef = useRef<null | { from: { panX: number; panY: number; zoom: number }; to: { panX: number; panY: number; zoom: number }; t0: number; dur: number }>(null);
+  const panStateRef = useRef<null | { startX: number; startY: number; startPanX: number; startPanY: number; active: boolean; panIntent: boolean; moved: boolean; downTile: { x: number; y: number } | null }>(null);
+  const lastFocusKeyRef = useRef<string>("");
   const TILE = tileSize;
   const wPx = course.width * TILE;
   const hPx = course.height * TILE;
@@ -540,6 +548,91 @@ export function CanvasCourse(props: {
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
+
+  function easeInOutCubic(t: number) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  function clampCamera(cam: { panX: number; panY: number; zoom: number }) {
+    const z = cam.zoom;
+    const sw = wPx;
+    const sh = hPx;
+    const worldW = wPx;
+    const worldH = hPx;
+    const scaledW = worldW * z;
+    const scaledH = worldH * z;
+
+    // If scaled world is smaller than viewport, center it.
+    let minX: number;
+    let maxX: number;
+    if (scaledW <= sw) {
+      minX = maxX = (sw - scaledW) / 2;
+    } else {
+      minX = sw - scaledW;
+      maxX = 0;
+    }
+
+    let minY: number;
+    let maxY: number;
+    if (scaledH <= sh) {
+      minY = maxY = (sh - scaledH) / 2;
+    } else {
+      minY = sh - scaledH;
+      maxY = 0;
+    }
+
+    cam.panX = Math.max(minX, Math.min(maxX, cam.panX));
+    cam.panY = Math.max(minY, Math.min(maxY, cam.panY));
+    return cam;
+  }
+
+  function cameraSetTransform(ctx: CanvasRenderingContext2D) {
+    const cam = camRef.current;
+    ctx.setTransform(cam.zoom, 0, 0, cam.zoom, cam.panX, cam.panY);
+  }
+
+  function screenToWorldPx(clientX: number, clientY: number) {
+    const c = canvasRef.current;
+    if (!c) return { x: 0, y: 0 };
+    const rect = c.getBoundingClientRect();
+    const sx = clientX - rect.left;
+    const sy = clientY - rect.top;
+    const cam = camRef.current;
+    return { x: (sx - cam.panX) / cam.zoom, y: (sy - cam.panY) / cam.zoom };
+  }
+
+  function startCameraAnim(to: { panX: number; panY: number; zoom: number }, dur = 650) {
+    const from = { ...camRef.current };
+    camAnimRef.current = { from, to: clampCamera({ ...to }), t0: performance.now(), dur };
+  }
+
+  function focusOnPoints(points: Array<{ x: number; y: number }>) {
+    if (points.length === 0) return;
+    const sw = wPx;
+    const sh = hPx;
+    const minZoom = 0.6;
+    const maxZoom = 3.0;
+
+    let minX = points[0].x;
+    let maxX = points[0].x;
+    let minY = points[0].y;
+    let maxY = points[0].y;
+    for (const p of points) {
+      minX = Math.min(minX, p.x);
+      maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y);
+      maxY = Math.max(maxY, p.y);
+    }
+    const bboxW = Math.max(1, maxX - minX);
+    const bboxH = Math.max(1, maxY - minY);
+    const pad = Math.max(TILE * 3, 28);
+    const z = Math.max(minZoom, Math.min(maxZoom, Math.min(sw / (bboxW + pad * 2), sh / (bboxH + pad * 2))));
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const panX = sw / 2 - cx * z;
+    const panY = sh / 2 - cy * z;
+    startCameraAnim({ panX, panY, zoom: z }, 700);
+  }
 
   useEffect(() => {
     const c = canvasRef.current;
@@ -892,7 +985,27 @@ export function CanvasCourse(props: {
       }
       const baseNow = baseCanvasRef.current;
       if (!baseNow) return;
+      // Update camera animations (focus / flyover)
+      const cam = camRef.current;
+      const now = timeMs;
+      const stepAnim = (a: typeof camAnimRef.current) => {
+        if (!a) return false;
+        const t = Math.max(0, Math.min(1, (now - a.t0) / a.dur));
+        const e = easeInOutCubic(t);
+        cam.zoom = a.from.zoom + (a.to.zoom - a.from.zoom) * e;
+        cam.panX = a.from.panX + (a.to.panX - a.from.panX) * e;
+        cam.panY = a.from.panY + (a.to.panY - a.from.panY) * e;
+        clampCamera(cam);
+        return t < 1;
+      };
+      const stillFocusing = stepAnim(camAnimRef.current);
+      if (!stillFocusing) camAnimRef.current = null;
+      const stillFly = stepAnim(flyoverRef.current);
+      if (!stillFly) flyoverRef.current = null;
+
+      ctx2.setTransform(1, 0, 0, 1, 0, 0);
       ctx2.clearRect(0, 0, wPx, hPx);
+      cameraSetTransform(ctx2);
       ctx2.drawImage(baseNow, 0, 0);
 
       drawShimmer(timeMs);
@@ -905,18 +1018,27 @@ export function CanvasCourse(props: {
 
       drawAnalytics();
       drawWizard();
+      ctx2.setTransform(1, 0, 0, 1, 0, 0);
 
-      rafRef.current = requestAnimationFrame(render);
+      const shouldContinue =
+        animationsEnabled ||
+        camAnimRef.current != null ||
+        flyoverRef.current != null ||
+        (panStateRef.current?.active ?? false);
+      if (shouldContinue) rafRef.current = requestAnimationFrame(render);
+      else rafRef.current = null;
     };
+    renderRef.current = render;
 
     // Cancel any previous loop and render once or start loop
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     if (animationsEnabled) rafRef.current = requestAnimationFrame(render);
-    else render(0);
+    else render(performance.now());
 
     return () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
+      renderRef.current = null;
     };
   }, [
     course.width,
@@ -938,25 +1060,115 @@ export function CanvasCourse(props: {
     obstaclePhases,
     animationsEnabled,
     waterTiles,
+    flyoverNonce,
   ]);
 
+  // Focus camera when active hole changes or gets tee/green set (cinematic selection)
+  useEffect(() => {
+    if (panStateRef.current?.active) return;
+    const h = holes[activeHoleIndex];
+    const pts: Array<{ x: number; y: number }> = [];
+    const toWorldCenter = (p: Point) => ({ x: p.x * TILE + TILE / 2, y: p.y * TILE + TILE / 2 });
+    if (h?.tee) pts.push(toWorldCenter(h.tee));
+    if (h?.green) pts.push(toWorldCenter(h.green));
+    if (!h?.tee && draftTee) pts.push(toWorldCenter(draftTee));
+    if (!h?.green && draftGreen) pts.push(toWorldCenter(draftGreen));
+    if (pts.length === 0) return;
+
+    const key = `${activeHoleIndex}:${pts.map((p) => `${Math.round(p.x)}:${Math.round(p.y)}`).join("|")}`;
+    if (key === lastFocusKeyRef.current) return;
+    lastFocusKeyRef.current = key;
+    focusOnPoints(pts);
+    if (rafRef.current == null && renderRef.current) {
+      rafRef.current = requestAnimationFrame(renderRef.current);
+    }
+  }, [activeHoleIndex, holes, TILE, draftTee, draftGreen]);
+
+  // Start flyover when nonce changes (COZY button)
+  useEffect(() => {
+    if (flyoverNonce === 0) return;
+    // Cancel any ongoing focus; flyover takes over.
+    camAnimRef.current = null;
+    const sw = wPx;
+    const sh = hPx;
+    const minZoom = 0.7;
+    const maxZoom = 1.6;
+    const z = Math.max(minZoom, Math.min(maxZoom, Math.min(1.2, Math.max(0.95, camRef.current.zoom))));
+
+    const from = { ...camRef.current };
+    // Sweep from current view towards the opposite side of the course (deterministic, feels "guided").
+    const currentCenterWorldX = (sw / 2 - from.panX) / from.zoom;
+    const currentCenterWorldY = (sh / 2 - from.panY) / from.zoom;
+    const targetWorldX = currentCenterWorldX < wPx / 2 ? wPx * 0.82 : wPx * 0.18;
+    const targetWorldY = currentCenterWorldY < hPx / 2 ? hPx * 0.78 : hPx * 0.22;
+    const endPanX = sw / 2 - targetWorldX * z;
+    const endPanY = sh / 2 - targetWorldY * z;
+    flyoverRef.current = {
+      from,
+      to: clampCamera({ panX: endPanX, panY: endPanY, zoom: z }),
+      t0: performance.now(),
+      dur: 10_000,
+    };
+
+    if (rafRef.current == null && renderRef.current) {
+      rafRef.current = requestAnimationFrame(renderRef.current);
+    }
+  }, [flyoverNonce, wPx, hPx]);
+
   function getTileFromEvent(e: React.PointerEvent) {
-    const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
-    const x = Math.floor((e.clientX - rect.left) / TILE);
-    const y = Math.floor((e.clientY - rect.top) / TILE);
+    const wp = screenToWorldPx(e.clientX, e.clientY);
+    const x = Math.floor(wp.x / TILE);
+    const y = Math.floor(wp.y / TILE);
     if (x < 0 || y < 0 || x >= course.width || y >= course.height) return;
     const idx = y * course.width + x;
     return { x, y, idx };
   }
 
   function handlePointerDown(e: React.PointerEvent) {
+    // Cancel cinematic motions on user input.
+    camAnimRef.current = null;
+    flyoverRef.current = null;
+
     const t = getTileFromEvent(e);
-    if (!t) return;
-    onClickTile(t.x, t.y);
+    const canvas = e.currentTarget;
+    canvas.setPointerCapture?.(e.pointerId);
+
+    const panIntent = (!showGridOverlays && e.button === 0) || e.button === 1 || e.button === 2;
+    panStateRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPanX: camRef.current.panX,
+      startPanY: camRef.current.panY,
+      active: false,
+      panIntent,
+      moved: false,
+      downTile: t ? { x: t.x, y: t.y } : null,
+    };
+
+    // Preserve editor feel: in ARCHITECT/PAINT, immediate click + drag paint.
+    if (showGridOverlays && editorMode === "PAINT" && e.button === 0 && t) {
+      onClickTile(t.x, t.y);
+    }
   }
 
   function handlePointerMove(e: React.PointerEvent) {
     const t = getTileFromEvent(e);
+    const ps = panStateRef.current;
+
+    // Pan when dragging (COZY: left-drag; ARCHITECT: middle/right-drag)
+    if (ps && ps.panIntent && (e.buttons & 1 || e.buttons & 2 || e.buttons & 4)) {
+      const dx = e.clientX - ps.startX;
+      const dy = e.clientY - ps.startY;
+      if (!ps.moved && Math.hypot(dx, dy) > 3) ps.moved = true;
+      if (ps.moved) {
+        ps.active = true;
+        camRef.current.panX = ps.startPanX + dx;
+        camRef.current.panY = ps.startPanY + dy;
+        clampCamera(camRef.current);
+        if (rafRef.current == null && renderRef.current) rafRef.current = requestAnimationFrame(renderRef.current);
+      }
+    }
+
     if (!t) return;
 
     // Hover events only when tile changes
@@ -969,7 +1181,52 @@ export function CanvasCourse(props: {
     }
 
     // Drag painting only in PAINT mode
-    if (editorMode === "PAINT" && e.buttons === 1) onClickTile(t.x, t.y);
+    if (showGridOverlays && editorMode === "PAINT" && e.buttons === 1) onClickTile(t.x, t.y);
+  }
+
+  function handlePointerUp(e: React.PointerEvent) {
+    const ps = panStateRef.current;
+    panStateRef.current = null;
+    if (!ps) return;
+    // If we weren't panning and this was a simple click, treat as a click interaction.
+    if (!ps.moved && e.button === 0) {
+      const t = getTileFromEvent(e);
+      if (t) onClickTile(t.x, t.y);
+    }
+  }
+
+  function handleWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    // User input cancels cinematic motions.
+    camAnimRef.current = null;
+    flyoverRef.current = null;
+
+    const cam = camRef.current;
+    const wp = screenToWorldPx(e.clientX, e.clientY);
+    const minZoom = 0.6;
+    const maxZoom = 3.0;
+    const factor = Math.exp(-e.deltaY * 0.001);
+    const nextZoom = Math.max(minZoom, Math.min(maxZoom, cam.zoom * factor));
+    if (Math.abs(nextZoom - cam.zoom) < 0.0001) return;
+
+    // Zoom around cursor
+    const c = canvasRef.current;
+    if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    cam.zoom = nextZoom;
+    cam.panX = sx - wp.x * cam.zoom;
+    cam.panY = sy - wp.y * cam.zoom;
+    clampCamera(cam);
+
+    if (renderRef.current) {
+      // For responsiveness, render immediately; loop continues only if needed.
+      renderRef.current(performance.now());
+      if (rafRef.current == null && (animationsEnabled || camAnimRef.current || flyoverRef.current)) {
+        rafRef.current = requestAnimationFrame(renderRef.current);
+      }
+    }
   }
 
   return (
@@ -980,6 +1237,9 @@ export function CanvasCourse(props: {
         height={hPx}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onWheel={handleWheel}
+        onContextMenu={(e) => e.preventDefault()}
         onPointerLeave={() => {
           lastHoverIdxRef.current = null;
           onLeave?.();
