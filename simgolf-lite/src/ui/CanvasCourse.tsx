@@ -32,6 +32,17 @@ function shadeHex(hex: string, amt: number) {
   return `rgb(${f(r * k)},${f(g * k)},${f(b * k)})`;
 }
 
+function rgbaHex(hex: string, alpha: number, shadeAmt = 0) {
+  // shadeAmt: -1..+1, alpha: 0..1
+  const c = hex.replace("#", "");
+  const r0 = parseInt(c.slice(0, 2), 16);
+  const g0 = parseInt(c.slice(2, 4), 16);
+  const b0 = parseInt(c.slice(4, 6), 16);
+  const f = (v: number) => Math.max(0, Math.min(255, Math.round(v)));
+  const k = shadeAmt >= 0 ? 1 + shadeAmt * 0.22 : 1 + shadeAmt * 0.35;
+  return `rgba(${f(r0 * k)},${f(g0 * k)},${f(b0 * k)},${Math.max(0, Math.min(1, alpha))})`;
+}
+
 function drawTileTexture(
   ctx: CanvasRenderingContext2D,
   terrain: Terrain,
@@ -135,8 +146,9 @@ function drawSoftEdges(
   size: number,
   terrain: Terrain
 ) {
-  // Blend with neighbors by painting thin translucent strips.
-  const t = Math.max(1, Math.min(6, Math.floor(size * 0.18)));
+  // Blend with neighbors by painting thin alpha gradients along shared borders.
+  // Keep it cheap: no autotiling, just border gradients for prioritized pairs.
+  const t = Math.max(1, Math.min(8, Math.floor(size * 0.24)));
   const w = course.width;
   const h = course.height;
   const ix = x / size;
@@ -153,24 +165,122 @@ function drawSoftEdges(
   const e = at(1, 0);
   const wv = at(-1, 0);
 
-  ctx.globalAlpha = 0.10;
+  const isGrass = (t: Terrain) => t === "fairway" || t === "rough" || t === "deep_rough" || t === "green";
+  const basePairAlpha = (a: Terrain, b: Terrain) => {
+    // Prioritize: fairway↔rough, green↔fairway/rough, sand↔grass, water↔grass.
+    if (a === b) return 0;
+    if (isGrass(a) && isGrass(b)) {
+      const aGrass = a;
+      const bGrass = b;
+      if (
+        (aGrass === "fairway" && (bGrass === "rough" || bGrass === "deep_rough")) ||
+        (bGrass === "fairway" && (aGrass === "rough" || aGrass === "deep_rough"))
+      )
+        return 0.10;
+      if (
+        (aGrass === "green" && (bGrass === "fairway" || bGrass === "rough" || bGrass === "deep_rough")) ||
+        (bGrass === "green" && (aGrass === "fairway" || aGrass === "rough" || aGrass === "deep_rough"))
+      )
+        return 0.12;
+      // other grass transitions: very subtle
+      return 0.06;
+    }
+    if ((a === "sand" && isGrass(b)) || (b === "sand" && isGrass(a))) return 0.12;
+    if ((a === "water" && isGrass(b)) || (b === "water" && isGrass(a))) return 0.12;
+    // other transitions: skip (avoid smearing tees/paths)
+    return 0;
+  };
+
+  const drawBorderGradient = (
+    neighbor: Terrain,
+    side: "N" | "S" | "E" | "W"
+  ) => {
+    const a = basePairAlpha(terrain, neighbor);
+    if (a <= 0) return;
+    ctx.save();
+    let g: CanvasGradient;
+    const c0 = rgbaHex(COLORS[neighbor], a, -0.03);
+    const c1 = rgbaHex(COLORS[neighbor], 0, -0.03);
+    if (side === "N") {
+      g = ctx.createLinearGradient(0, y, 0, y + t);
+      g.addColorStop(0, c0);
+      g.addColorStop(1, c1);
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, size, t);
+    } else if (side === "S") {
+      g = ctx.createLinearGradient(0, y + size - t, 0, y + size);
+      g.addColorStop(0, c1);
+      g.addColorStop(1, c0);
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y + size - t, size, t);
+    } else if (side === "W") {
+      g = ctx.createLinearGradient(x, 0, x + t, 0);
+      g.addColorStop(0, c0);
+      g.addColorStop(1, c1);
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, t, size);
+    } else {
+      g = ctx.createLinearGradient(x + size - t, 0, x + size, 0);
+      g.addColorStop(0, c1);
+      g.addColorStop(1, c0);
+      ctx.fillStyle = g;
+      ctx.fillRect(x + size - t, y, t, size);
+    }
+    ctx.restore();
+  };
+
+  const drawWaterShore = (neighbor: Terrain, side: "N" | "S" | "E" | "W") => {
+    if (terrain !== "water") return;
+    if (neighbor === "water") return;
+    // Only shore against land-ish tiles (avoid weird shore against path/tee).
+    if (!(isGrass(neighbor) || neighbor === "sand")) return;
+    ctx.save();
+    const a = 0.16; // shoreline darkening intensity
+    let g: CanvasGradient;
+    if (side === "N") {
+      g = ctx.createLinearGradient(0, y, 0, y + t);
+      g.addColorStop(0, `rgba(0,0,0,${a})`);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, size, t);
+    } else if (side === "S") {
+      g = ctx.createLinearGradient(0, y + size - t, 0, y + size);
+      g.addColorStop(0, "rgba(0,0,0,0)");
+      g.addColorStop(1, `rgba(0,0,0,${a})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y + size - t, size, t);
+    } else if (side === "W") {
+      g = ctx.createLinearGradient(x, 0, x + t, 0);
+      g.addColorStop(0, `rgba(0,0,0,${a})`);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, t, size);
+    } else {
+      g = ctx.createLinearGradient(x + size - t, 0, x + size, 0);
+      g.addColorStop(0, "rgba(0,0,0,0)");
+      g.addColorStop(1, `rgba(0,0,0,${a})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(x + size - t, y, t, size);
+    }
+    ctx.restore();
+  };
+
   if (n && n !== terrain) {
-    ctx.fillStyle = COLORS[n];
-    ctx.fillRect(x, y, size, t);
+    drawBorderGradient(n, "N");
+    drawWaterShore(n, "N");
   }
   if (s && s !== terrain) {
-    ctx.fillStyle = COLORS[s];
-    ctx.fillRect(x, y + size - t, size, t);
+    drawBorderGradient(s, "S");
+    drawWaterShore(s, "S");
   }
   if (wv && wv !== terrain) {
-    ctx.fillStyle = COLORS[wv];
-    ctx.fillRect(x, y, t, size);
+    drawBorderGradient(wv, "W");
+    drawWaterShore(wv, "W");
   }
   if (e && e !== terrain) {
-    ctx.fillStyle = COLORS[e];
-    ctx.fillRect(x + size - t, y, t, size);
+    drawBorderGradient(e, "E");
+    drawWaterShore(e, "E");
   }
-  ctx.globalAlpha = 1;
 }
 
 function drawLightingEdges(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
