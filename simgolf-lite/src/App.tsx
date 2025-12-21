@@ -71,6 +71,9 @@ export default function App() {
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
+    // When starting in the StartMenu, the canvas pane doesn't exist yet.
+    // Re-run this effect when we enter the game so the canvas can size correctly.
+    if (screen !== "game") return;
     const el = canvasPaneRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
@@ -81,7 +84,7 @@ export default function App() {
     const r = el.getBoundingClientRect();
     setPaneSize({ width: r.width, height: r.height });
     return () => ro.disconnect();
-  }, []);
+  }, [screen]);
 
   const tileSize = useMemo(() => {
     // Fit the entire course without scroll, maintain aspect ratio.
