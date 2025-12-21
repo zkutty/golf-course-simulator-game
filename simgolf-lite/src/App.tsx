@@ -4,7 +4,7 @@ import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE } from "./game/gameState";
 import type { Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
-import { loadGame, resetSave, saveGame } from "./utils/save";
+import { hasSavedGame, loadGame, resetSave, saveGame } from "./utils/save";
 import { computeTerrainChangeCost } from "./game/models/terrainEconomics";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
@@ -15,11 +15,13 @@ import { isCoursePlayable } from "./game/sim/isCoursePlayable";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { BALANCE } from "./game/balance/balanceConfig";
 import { GameBackground } from "./ui/gameui";
+import { StartMenu } from "./ui/StartMenu";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
 
 export default function App() {
+  const [screen, setScreen] = useState<"menu" | "game">("menu");
   const [course, setCourse] = useState(DEFAULT_STATE.course);
   const [world, setWorld] = useState(DEFAULT_STATE.world);
   const [selected, setSelected] = useState<Terrain>("fairway");
@@ -156,6 +158,33 @@ export default function App() {
     setShowBridgePrompt(false);
     prevDistressRef.current = 0;
     legacyAwardedRef.current = false;
+  }
+
+  const canLoadFromMenu = useMemo(() => {
+    try {
+      return hasSavedGame() && loadGame() != null;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  function applyLoadedGame(loaded: NonNullable<ReturnType<typeof loadGame>>) {
+    setCourse(loaded.course);
+    setWorld(loaded.world);
+    setHistory(loaded.history ?? []);
+    setLast(loaded.history?.[loaded.history.length - 1]);
+  }
+
+  function newGameFromMenu() {
+    restartRun({ seed: (Date.now() % 1_000_000) | 0 });
+    setScreen("game");
+  }
+
+  function loadFromMenu() {
+    const loaded = loadGame();
+    if (!loaded) return;
+    applyLoadedGame(loaded);
+    setScreen("game");
   }
 
   function takeBridgeLoan() {
@@ -401,11 +430,7 @@ export default function App() {
   function onLoad() {
     const loaded = loadGame();
     if (!loaded) return;
-    setCourse(loaded.course);
-    setWorld(loaded.world);
-    setHistory(loaded.history ?? []);
-    const lastResult = loaded.history?.[loaded.history.length - 1];
-    setLast(lastResult);
+    applyLoadedGame(loaded);
   }
 
   function onResetSave() {
@@ -463,6 +488,10 @@ export default function App() {
       return next;
     });
   }, [world.isBankrupt, weeksSurvived, peakRep]);
+
+  if (screen === "menu") {
+    return <StartMenu canLoad={canLoadFromMenu} onNewGame={newGameFromMenu} onLoadGame={loadFromMenu} />;
+  }
 
   return (
     <div className="cc-app">

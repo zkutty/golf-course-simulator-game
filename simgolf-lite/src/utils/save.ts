@@ -55,4 +55,8 @@ export function resetSave() {
   localStorage.removeItem(KEY);
 }
 
+export function hasSavedGame() {
+  return localStorage.getItem(KEY) != null;
+}
+
 
