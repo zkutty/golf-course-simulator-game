@@ -21,6 +21,8 @@ import { useAudio } from "./audio/AudioProvider";
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
 
+const STRIKE_SFX = "/audio/ball-strike.mp3";
+
 export default function App() {
   const [screen, setScreen] = useState<"menu" | "game">("menu");
   const [course, setCourse] = useState(DEFAULT_STATE.course);
@@ -206,14 +208,14 @@ export default function App() {
 
   function newGameFromMenu() {
     void audio.unlock();
-    void audio.playSfx("/audio/ball-strike.mp3");
+    void audio.playSfx(STRIKE_SFX);
     restartRun({ seed: (Date.now() % 1_000_000) | 0 });
     setScreen("game");
   }
 
   function loadFromMenu() {
     void audio.unlock();
-    void audio.playSfx("/audio/ball-strike.mp3");
+    void audio.playSfx(STRIKE_SFX);
     const loaded = loadGame();
     if (!loaded) return;
     applyLoadedGame(loaded);
@@ -504,7 +506,7 @@ export default function App() {
   function simulate() {
     if (world.isBankrupt) return;
     void audio.unlock();
-    if (soundEnabled) void audio.playSfx("/audio/ball-strike.mp3");
+    if (soundEnabled) void audio.playSfx(STRIKE_SFX);
     const { course: c2, world: w2, result } = tickWeek(course, world, world.runSeed);
     const cap = {
       spent: capital.spent,
@@ -558,7 +560,7 @@ export default function App() {
         }
         onButtonClick={() => {
           void audio.unlock();
-          if (soundEnabled) void audio.playSfx("/audio/ball-strike.mp3");
+          if (soundEnabled) void audio.playSfx(STRIKE_SFX);
         }}
       />
     );
