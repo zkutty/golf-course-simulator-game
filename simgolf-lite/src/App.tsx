@@ -15,6 +15,7 @@ import { isCoursePlayable } from "./game/sim/isCoursePlayable";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { BALANCE } from "./game/balance/balanceConfig";
 import { GameUIDemo } from "./ui/gameui";
+import { GameHeader } from "./ui/gameui";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -491,15 +492,58 @@ export default function App() {
   }
 
   return (
-    <div
-      style={{
-        height: "100vh",
-        width: "100vw",
-        display: "grid",
-        gridTemplateColumns: "7fr 3fr",
-        overflow: "hidden",
-      }}
-    >
+    <div style={{ height: "100vh", width: "100vw", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <GameHeader
+        cash={world.cash}
+        reputation={world.reputation}
+        condition={course.condition}
+        title="CourseCraft"
+        subtitle={`Week ${world.week} • Build • Route • Manage`}
+        rightSlot={
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              onClick={() => setShowGameUiDemo(true)}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 999,
+                border: "1px solid rgba(0,0,0,0.10)",
+                background: "rgba(255,255,255,0.75)",
+                fontSize: 12,
+                fontWeight: 900,
+                cursor: "pointer",
+              }}
+            >
+              🎮 Demo
+            </button>
+            {(["COZY", "ARCHITECT"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setViewMode(m)}
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 999,
+                  border: viewMode === m ? "2px solid rgba(0,0,0,0.75)" : "1px solid rgba(0,0,0,0.10)",
+                  background: "rgba(255,255,255,0.75)",
+                  fontSize: 12,
+                  fontWeight: 900,
+                  cursor: "pointer",
+                }}
+              >
+                {m === "COZY" ? "Cozy" : "Architect"}
+              </button>
+            ))}
+          </div>
+        }
+      />
+      <div
+        style={{
+          flex: 1,
+          width: "100%",
+          display: "grid",
+          gridTemplateColumns: "7fr 3fr",
+          overflow: "hidden",
+        }}
+      >
       {world.isBankrupt && (
         <RunEndModal
           weeksSurvived={weeksSurvived}
@@ -641,6 +685,7 @@ export default function App() {
         setShowShotPlan={setShowShotPlan}
         onShowGameUiDemo={() => setShowGameUiDemo(true)}
       />
+      </div>
       </div>
     </div>
   );
