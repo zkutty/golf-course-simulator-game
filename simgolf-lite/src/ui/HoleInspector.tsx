@@ -5,7 +5,7 @@ interface HoleInspectorProps {
   evaluation: HoleEvaluation;
   showFixOverlay: boolean;
   setShowFixOverlay: (show: boolean) => void;
-  onFitHole?: () => void;
+  onFitHole?: (preset?: "fit" | "tee" | "landing" | "green") => void;
 }
 
 export function HoleInspector({
@@ -41,24 +41,68 @@ export function HoleInspector({
         color: "#333",
       }}
     >
-      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: "#1a1a1a" }}>Hole {holeIndex + 1}</h2>
         {onFitHole && (
-          <button
-            onClick={onFitHole}
-            style={{
-              padding: "6px 12px",
-              fontSize: 12,
-              borderRadius: 4,
-              border: "1px solid #ddd",
-              background: "#fff",
-              cursor: "pointer",
-              fontWeight: 500,
-            }}
-            title="Fit Hole (F)"
-          >
-            Fit Hole
-          </button>
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            <button
+              onClick={() => onFitHole("fit")}
+              style={{
+                padding: "6px 10px",
+                fontSize: 11,
+                borderRadius: 4,
+                border: "1px solid #ddd",
+                background: "#fff",
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+              title="Fit Hole (F)"
+            >
+              Fit
+            </button>
+            <button
+              onClick={() => onFitHole("tee")}
+              style={{
+                padding: "6px 10px",
+                fontSize: 11,
+                borderRadius: 4,
+                border: "1px solid #ddd",
+                background: "#fff",
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+            >
+              Tee
+            </button>
+            <button
+              onClick={() => onFitHole("landing")}
+              style={{
+                padding: "6px 10px",
+                fontSize: 11,
+                borderRadius: 4,
+                border: "1px solid #ddd",
+                background: "#fff",
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+            >
+              Landing
+            </button>
+            <button
+              onClick={() => onFitHole("green")}
+              style={{
+                padding: "6px 10px",
+                fontSize: 11,
+                borderRadius: 4,
+                border: "1px solid #ddd",
+                background: "#fff",
+                cursor: "pointer",
+                fontWeight: 500,
+              }}
+            >
+              Green
+            </button>
+          </div>
         )}
       </div>
 

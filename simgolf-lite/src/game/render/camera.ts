@@ -129,6 +129,95 @@ export function computeHoleBoundingBox(
 }
 
 /**
+ * Compute zoom preset for specific hole regions
+ */
+export function computeZoomPreset(
+  preset: "fit" | "tee" | "landing" | "green",
+  course: Course,
+  hole: Hole,
+  holeIndex: number,
+  canvasWidth: number,
+  canvasHeight: number
+): CameraState | null {
+  if (!hole.tee || !hole.green) return null;
+
+  const tee = hole.tee;
+  const green = hole.green;
+  
+  const straightDistYards = Math.sqrt((tee.x - green.x) ** 2 + (tee.y - green.y) ** 2) * course.yardsPerTile;
+
+  let bbox: BoundingBox;
+  
+  if (preset === "fit") {
+    const result = computeHoleBoundingBox(course, hole, holeIndex, 0);
+    if (!result) return null;
+    bbox = result;
+  } else if (preset === "tee") {
+    // Bbox around tee + first 60-90 yards
+    const first90YardsTiles = Math.min(90 / course.yardsPerTile, straightDistYards / course.yardsPerTile * 0.4);
+    const dirX = (green.x - tee.x) / straightDistYards * course.yardsPerTile;
+    const dirY = (green.y - tee.y) / straightDistYards * course.yardsPerTile;
+    const endpoint = { x: tee.x + dirX * first90YardsTiles, y: tee.y + dirY * first90YardsTiles };
+    bbox = {
+      minX: Math.min(tee.x, endpoint.x) - 3,
+      minY: Math.min(tee.y, endpoint.y) - 3,
+      maxX: Math.max(tee.x, endpoint.x) + 3,
+      maxY: Math.max(tee.y, endpoint.y) + 3,
+    };
+  } else if (preset === "landing") {
+    // First-shot landing band (35-50% distance)
+    const startT = 0.35;
+    const endT = 0.50;
+    const startP = { x: tee.x + (green.x - tee.x) * startT, y: tee.y + (green.y - tee.y) * startT };
+    const endP = { x: tee.x + (green.x - tee.x) * endT, y: tee.y + (green.y - tee.y) * endT };
+    bbox = {
+      minX: Math.min(startP.x, endP.x) - 8, // 8 tiles = ~80 yards buffer
+      minY: Math.min(startP.y, endP.y) - 8,
+      maxX: Math.max(startP.x, endP.x) + 8,
+      maxY: Math.max(startP.y, endP.y) + 8,
+    };
+  } else { // green
+    // Green + 30 yards
+    const thirtyYardsTiles = 30 / course.yardsPerTile;
+    bbox = {
+      minX: green.x - thirtyYardsTiles,
+      minY: green.y - thirtyYardsTiles,
+      maxX: green.x + thirtyYardsTiles,
+      maxY: green.y + thirtyYardsTiles,
+    };
+  }
+
+  // Compute angle
+  const dx = green.x - tee.x;
+  const dy = green.y - tee.y;
+  const angleRad = Math.atan2(dx, -dy);
+  const rotationDeg = (angleRad * 180) / Math.PI;
+
+  // Center
+  const centerX = (bbox.minX + bbox.maxX) / 2;
+  const centerY = (bbox.minY + bbox.maxY) / 2;
+
+  // Auto-fit zoom
+  const bboxWidth = bbox.maxX - bbox.minX;
+  const bboxHeight = bbox.maxY - bbox.minY;
+  const angleRadAbs = Math.abs(angleRad);
+  const rotatedWidth = bboxWidth * Math.abs(Math.cos(angleRadAbs)) + bboxHeight * Math.abs(Math.sin(angleRadAbs));
+  const rotatedHeight = bboxWidth * Math.abs(Math.sin(angleRadAbs)) + bboxHeight * Math.abs(Math.cos(angleRadAbs));
+  const scaleX = canvasWidth / (rotatedWidth || 1);
+  const scaleY = canvasHeight / (rotatedHeight || 1);
+  let zoom = Math.min(scaleX, scaleY) * 0.9;
+  zoom = Math.max(0.3, Math.min(5.0, zoom));
+
+  return {
+    mode: "hole",
+    center: { x: centerX, y: centerY },
+    zoom,
+    rotationDeg,
+    bounds: bbox,
+  };
+}
+
+/**
  * Compute camera state for hole edit mode with auto-fit to bounding box
  */
 export function computeHoleCamera(

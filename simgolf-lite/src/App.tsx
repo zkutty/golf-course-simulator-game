@@ -20,7 +20,7 @@ import { useAudio } from "./audio/AudioProvider";
 import { HoleInspector } from "./ui/HoleInspector";
 import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState } from "./game/render/camera";
-import { computeHoleCamera } from "./game/render/camera";
+import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -153,24 +153,15 @@ export default function App() {
     setHoleEditCamera(camera);
   }
 
-  function fitHole() {
+  function fitHole(preset: "fit" | "tee" | "landing" | "green" = "fit") {
     if (holeEditMode !== "hole") return;
     const hole = course.holes[activeHoleIndex];
     if (!hole.tee || !hole.green) return;
     
-    // Recompute camera with auto-fit
-    const camera = computeHoleCamera(
-      hole.tee,
-      hole.green,
-      0.12,
-      null, // auto-fit
-      paneSize.width,
-      paneSize.height,
-      course,
-      hole,
-      activeHoleIndex
-    );
-    setHoleEditCamera(camera);
+    const camera = computeZoomPreset(preset, course, hole, activeHoleIndex, paneSize.width, paneSize.height);
+    if (camera) {
+      setHoleEditCamera(camera);
+    }
   }
 
   function exitHoleEditMode() {
