@@ -11,6 +11,7 @@ import { BALANCE } from "../game/balance/balanceConfig";
 import logoCourseCraft from "../assets/branding/logo-coursecraft.svg";
 import paperTex from "../assets/textures/paper.svg";
 import { IconCash, IconCondition, IconHoles, IconReputation } from "@/assets/icons";
+import { GameButton } from "@/ui/gameui";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -433,7 +434,15 @@ export function HUD(props: {
       </div>
 
       {viewMode === "ARCHITECT" && (
-        <div style={{ display: "flex", gap: 6, padding: 10, borderBottom: "1px solid #eee" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 6,
+            padding: 10,
+            borderBottom: "1px solid rgba(0,0,0,0.06)",
+            background: "rgba(255,255,255,0.35)",
+          }}
+        >
           {tabs.map((t) => (
             <button
               key={t}
@@ -441,10 +450,12 @@ export function HUD(props: {
               style={{
                 flex: 1,
                 padding: "8px 6px",
-                borderRadius: 10,
-                border: tab === t ? "2px solid #000" : "1px solid #ccc",
-                background: "#fff",
+                borderRadius: 999,
+                border: tab === t ? "2px solid rgba(0,0,0,0.75)" : "1px solid rgba(0,0,0,0.10)",
+                background: tab === t ? "var(--cc-grass)" : "rgba(255,255,255,0.75)",
+                color: tab === t ? "#fff" : "#3d4a3e",
                 fontSize: 12,
+                fontWeight: 900,
               }}
             >
               {t}
@@ -1384,66 +1395,33 @@ export function HUD(props: {
       <div
         style={{
           padding: 10,
-          borderTop: "1px solid #eee",
-          background: "#fff",
+          borderTop: "1px solid rgba(0,0,0,0.06)",
+          background: "rgba(255,255,255,0.35)",
           pointerEvents: isBankrupt ? "none" : "auto",
           opacity: isBankrupt ? 0.55 : 1,
         }}
       >
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-          <button
-            onClick={onSave}
-            style={{
-              flex: 1,
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid #ccc",
-              background: "#fff",
-            }}
-          >
-            Save
-          </button>
-          <button
-            onClick={onLoad}
-            style={{
-              flex: 1,
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid #ccc",
-              background: "#fff",
-            }}
-          >
-            Load
-          </button>
-          <button
-            onClick={onResetSave}
-            style={{
-              flex: 1,
-              padding: 10,
-              borderRadius: 10,
-              border: "1px solid #ccc",
-              background: "#fff",
-            }}
-          >
-            Reset
-          </button>
+          <GameButton variant="secondary" size="md" onClick={onSave} style={{ flex: 1, borderRadius: 16 }}>
+            💾 Save
+          </GameButton>
+          <GameButton variant="secondary" size="md" onClick={onLoad} style={{ flex: 1, borderRadius: 16 }}>
+            📁 Load
+          </GameButton>
+          <GameButton variant="secondary" size="md" onClick={onResetSave} style={{ flex: 1, borderRadius: 16 }}>
+            ↺ Reset
+          </GameButton>
         </div>
 
-        <button
+        <GameButton
           onClick={simulate}
           disabled={isBankrupt}
-          style={{
-            width: "100%",
-            padding: 12,
-            borderRadius: 12,
-            border: isBankrupt ? "1px solid #ccc" : "1px solid #000",
-            background: isBankrupt ? "#f6f6f6" : "#000",
-            color: isBankrupt ? "#666" : "#fff",
-            fontWeight: 600,
-          }}
+          variant="primary"
+          size="lg"
+          style={{ width: "100%", borderRadius: 18 }}
         >
-          {isBankrupt ? "Run ended" : "Simulate week"}
-        </button>
+          {isBankrupt ? "Run ended" : "⏩ Simulate week"}
+        </GameButton>
       </div>
     </div>
   );
