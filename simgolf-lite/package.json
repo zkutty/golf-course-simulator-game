@@ -11,6 +11,7 @@
     "tune": "vite build --ssr src/game/tuning/tuneCli.ts --outDir tune-dist --emptyOutDir --minify false && node tune-dist/tuneCli.js"
   },
   "dependencies": {
+    "pixi.js": "^8.14.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

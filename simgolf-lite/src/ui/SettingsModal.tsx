@@ -5,6 +5,8 @@ export interface SettingsModalProps {
   onClose: () => void;
   audioVolumes: { music: number; ambience: number };
   onAudioVolumesChange: (volumes: { music?: number; ambience?: number }) => void;
+  renderer: "canvas" | "pixi";
+  onRendererChange: (renderer: "canvas" | "pixi") => void;
 }
 
 export function SettingsModal(props: SettingsModalProps) {
@@ -122,6 +124,48 @@ export function SettingsModal(props: SettingsModalProps) {
                 WebkitAppearance: "none",
               }}
             />
+          </div>
+        </div>
+
+        {/* Renderer section */}
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontFamily: "var(--font-heading)", fontSize: 18, fontWeight: 700, color: "#3d4a3e", marginBottom: 16 }}>
+            Renderer
+          </div>
+
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <button
+              onClick={() => props.onRendererChange("canvas")}
+              style={{
+                padding: "8px 16px",
+                borderRadius: 6,
+                border: `2px solid ${props.renderer === "canvas" ? "#3d4a3e" : "rgba(0,0,0,0.2)"}`,
+                background: props.renderer === "canvas" ? "#3d4a3e" : "#fff",
+                color: props.renderer === "canvas" ? "#fff" : "#3d4a3e",
+                fontWeight: props.renderer === "canvas" ? 600 : 400,
+                cursor: "pointer",
+                fontFamily: "var(--font-body)",
+                fontSize: 14,
+              }}
+            >
+              Canvas
+            </button>
+            <button
+              onClick={() => props.onRendererChange("pixi")}
+              style={{
+                padding: "8px 16px",
+                borderRadius: 6,
+                border: `2px solid ${props.renderer === "pixi" ? "#3d4a3e" : "rgba(0,0,0,0.2)"}`,
+                background: props.renderer === "pixi" ? "#3d4a3e" : "#fff",
+                color: props.renderer === "pixi" ? "#fff" : "#3d4a3e",
+                fontWeight: props.renderer === "pixi" ? 600 : 400,
+                cursor: "pointer",
+                fontFamily: "var(--font-body)",
+                fontSize: 14,
+              }}
+            >
+              Pixi
+            </button>
           </div>
         </div>
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CanvasCourse } from "./ui/CanvasCourse";
+import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE } from "./game/gameState";
 import type { Point, Terrain, WeekResult } from "./game/models/types";
@@ -67,6 +68,15 @@ export default function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showShotPlan, setShowShotPlan] = useState(true);
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
+  const [renderer, setRenderer] = useState<"canvas" | "pixi">(() => {
+    const saved = localStorage.getItem("coursecraft_renderer");
+    return (saved === "pixi" || saved === "canvas") ? saved : "canvas";
+  });
+
+  const handleRendererChange = (newRenderer: "canvas" | "pixi") => {
+    setRenderer(newRenderer);
+    localStorage.setItem("coursecraft_renderer", newRenderer);
+  };
   const [peakRep, setPeakRep] = useState(DEFAULT_STATE.world.reputation);
   const [showBridgePrompt, setShowBridgePrompt] = useState(false);
   const prevDistressRef = useRef(0);
@@ -977,6 +987,8 @@ export default function App() {
             ambienceVolume: volumes.ambience,
           })
         }
+        renderer={renderer}
+        onRendererChange={handleRendererChange}
         onButtonClick={() => {
           void audio.unlock();
           if (soundEnabled) void audio.playSfx(STRIKE_SFX);
@@ -1009,35 +1021,67 @@ export default function App() {
       )}
         <div className="cc-course-frame">
           <div ref={canvasPaneRef} className="cc-course-pane">
-            <CanvasCourse
-              course={course}
-              holes={course.holes}
-              obstacles={course.obstacles}
-              activeHoleIndex={activeHoleIndex}
-              activePath={activePath}
-              activeShotPlan={activeShotPlan}
-              tileSize={tileSize}
-              showGridOverlays={viewMode === "ARCHITECT"}
-              animationsEnabled={animationsEnabled}
-              flyoverNonce={flyoverNonce}
-              showShotPlan={showShotPlan}
-              editorMode={editorMode}
-              wizardStep={wizardStep}
-              draftTee={draftTee}
-              draftGreen={draftGreen}
-              onClickTile={handleCanvasClick}
-              selectedTerrain={selected}
-              worldCash={world.cash}
-              flagColor={legacy.selected.flagColor}
-              cameraState={holeEditCamera}
-              showFixOverlay={showFixOverlay}
-              failingCorridorSegments={failingCorridorSegments}
-              showObstacles={showObstacles}
-              onCameraUpdate={(camera) => {
-                holeEditCameraManualRef.current = true;
-                setHoleEditCamera(camera);
-              }}
-            />
+            {renderer === "canvas" ? (
+              <CanvasCourse
+                course={course}
+                holes={course.holes}
+                obstacles={course.obstacles}
+                activeHoleIndex={activeHoleIndex}
+                activePath={activePath}
+                activeShotPlan={activeShotPlan}
+                tileSize={tileSize}
+                showGridOverlays={viewMode === "ARCHITECT"}
+                animationsEnabled={animationsEnabled}
+                flyoverNonce={flyoverNonce}
+                showShotPlan={showShotPlan}
+                editorMode={editorMode}
+                wizardStep={wizardStep}
+                draftTee={draftTee}
+                draftGreen={draftGreen}
+                onClickTile={handleCanvasClick}
+                selectedTerrain={selected}
+                worldCash={world.cash}
+                flagColor={legacy.selected.flagColor}
+                cameraState={holeEditCamera}
+                showFixOverlay={showFixOverlay}
+                failingCorridorSegments={failingCorridorSegments}
+                showObstacles={showObstacles}
+                onCameraUpdate={(camera) => {
+                  holeEditCameraManualRef.current = true;
+                  setHoleEditCamera(camera);
+                }}
+              />
+            ) : (
+              <PixiStage
+                course={course}
+                holes={course.holes}
+                obstacles={course.obstacles}
+                activeHoleIndex={activeHoleIndex}
+                activePath={activePath}
+                activeShotPlan={activeShotPlan}
+                tileSize={tileSize}
+                showGridOverlays={viewMode === "ARCHITECT"}
+                animationsEnabled={animationsEnabled}
+                flyoverNonce={flyoverNonce}
+                showShotPlan={showShotPlan}
+                editorMode={editorMode}
+                wizardStep={wizardStep}
+                draftTee={draftTee}
+                draftGreen={draftGreen}
+                onClickTile={handleCanvasClick}
+                selectedTerrain={selected}
+                worldCash={world.cash}
+                flagColor={legacy.selected.flagColor}
+                cameraState={holeEditCamera}
+                showFixOverlay={showFixOverlay}
+                failingCorridorSegments={failingCorridorSegments}
+                showObstacles={showObstacles}
+                onCameraUpdate={(camera) => {
+                  holeEditCameraManualRef.current = true;
+                  setHoleEditCamera(camera);
+                }}
+              />
+            )}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
             {holeEditMode === "hole" && course.holes[activeHoleIndex]?.tee && course.holes[activeHoleIndex]?.green && (
               <HoleMinimap

@@ -10,6 +10,8 @@ export interface StartMenuProps {
   audioVolumes: { music: number; ambience: number };
   onAudioVolumesChange: (volumes: { music?: number; ambience?: number }) => void;
   onButtonClick?: () => void;
+  renderer: "canvas" | "pixi";
+  onRendererChange: (renderer: "canvas" | "pixi") => void;
 }
 
 export function StartMenu(props: StartMenuProps) {
@@ -168,12 +170,14 @@ export function StartMenu(props: StartMenuProps) {
         </div>
       </div>
 
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        audioVolumes={props.audioVolumes}
-        onAudioVolumesChange={props.onAudioVolumesChange}
-      />
+        <SettingsModal
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          audioVolumes={props.audioVolumes}
+          onAudioVolumesChange={props.onAudioVolumesChange}
+          renderer={props.renderer}
+          onRendererChange={props.onRendererChange}
+        />
     </div>
   );
 }
