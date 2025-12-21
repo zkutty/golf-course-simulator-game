@@ -1,4 +1,6 @@
 import type { HoleEvaluation } from "../game/eval/evaluateHole";
+import type { Course, Hole } from "../game/models/types";
+import { computeHoleTerrainStats } from "../game/eval/terrainStats";
 
 interface HoleInspectorProps {
   holeIndex: number;
@@ -6,6 +8,9 @@ interface HoleInspectorProps {
   showFixOverlay: boolean;
   setShowFixOverlay: (show: boolean) => void;
   onFitHole?: (preset?: "fit" | "tee" | "landing" | "green") => void;
+  course: Course;
+  hole: Hole;
+  onSetHoleIndex?: (index: number) => void;
 }
 
 export function HoleInspector({
@@ -14,9 +19,19 @@ export function HoleInspector({
   showFixOverlay,
   setShowFixOverlay,
   onFitHole,
+  course,
+  hole,
+  onSetHoleIndex,
 }: HoleInspectorProps) {
   const { scratchShotsToGreen, bogeyShotsToGreen, autoPar, reachableInTwo, effectiveDistanceYards, issues } =
     evaluation;
+
+  const terrainStats = computeHoleTerrainStats(course, hole, holeIndex);
+  
+  // Get straight distance (for display)
+  const straightDistYards = hole.tee && hole.green
+    ? Math.sqrt((hole.tee.x - hole.green.x) ** 2 + (hole.tee.y - hole.green.y) ** 2) * course.yardsPerTile
+    : 0;
 
   const groupedIssues = {
     bad: issues.filter((i) => i.severity === "bad"),
@@ -106,6 +121,39 @@ export function HoleInspector({
         )}
       </div>
 
+      {/* Hole Index / Stroke Index */}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>Hole Index / Stroke Index</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 13 }}>Hole {holeIndex + 1}</span>
+          {onSetHoleIndex && (
+            <input
+              type="number"
+              min={1}
+              max={18}
+              value={hole.holeIndex ?? holeIndex + 1}
+              onChange={(e) => {
+                const val = parseInt(e.target.value, 10);
+                if (!isNaN(val) && val >= 1 && val <= 18) {
+                  // Update hole index in course
+                  onSetHoleIndex(val - 1);
+                }
+              }}
+              style={{
+                width: 60,
+                padding: "4px 6px",
+                fontSize: 12,
+                border: "1px solid #ddd",
+                borderRadius: 4,
+              }}
+            />
+          )}
+          <span style={{ fontSize: 11, color: "#888" }}>
+            (defaults to array position)
+          </span>
+        </div>
+      </div>
+
       {/* Key Stats */}
       <div
         style={{
@@ -124,6 +172,16 @@ export function HoleInspector({
           <div>
             <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Effective Distance</div>
             <div style={{ fontSize: 18, fontWeight: 600 }}>{effectiveDistanceYards.toFixed(0)} yds</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
+          <div>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Straight Distance</div>
+            <div style={{ fontSize: 14, fontWeight: 500 }}>{straightDistYards.toFixed(0)} yds</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Elevation Change</div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: "#888" }}>—</div>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -151,6 +209,29 @@ export function HoleInspector({
           <div style={{ fontSize: 12, fontWeight: 500, color: isPlayable ? "#2d7a2d" : "#c33" }}>
             {isPlayable ? "✓ Playable" : "✗ Not Playable"}
           </div>
+        </div>
+      </div>
+
+      {/* Terrain Composition Stats */}
+      <div
+        style={{
+          marginBottom: 20,
+          padding: 12,
+          backgroundColor: "rgba(255, 255, 255, 0.7)",
+          borderRadius: 6,
+          border: "1px solid rgba(0, 0, 0, 0.1)",
+        }}
+      >
+        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 600 }}>Terrain Composition</h3>
+        
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 6 }}>Total Hole Area</div>
+          <TerrainPercentages composition={terrainStats.total} />
+        </div>
+        
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 6 }}>Corridor Area</div>
+          <TerrainPercentages composition={terrainStats.corridor} />
         </div>
       </div>
 
@@ -252,6 +333,88 @@ export function HoleInspector({
           {groupedIssues.info.map((issue, idx) => (
             <IssueCard key={idx} issue={issue} />
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TerrainPercentages({ composition }: { composition: { [key: string]: number } }) {
+  const terrainTypes: Array<{ key: string; label: string }> = [
+    { key: "fairway", label: "Fairway" },
+    { key: "rough", label: "Rough" },
+    { key: "deep_rough", label: "Deep Rough" },
+    { key: "sand", label: "Sand" },
+    { key: "water", label: "Water" },
+    { key: "green", label: "Green" },
+    { key: "tee", label: "Tee" },
+    { key: "path", label: "Path" },
+  ];
+
+  if (composition.total === 0) {
+    return <div style={{ fontSize: 12, color: "#888" }}>No area</div>;
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 4 }}>
+      {terrainTypes
+        .filter((t) => composition[t.key] > 0)
+        .map((t) => {
+          const pct = (composition[t.key] / composition.total) * 100;
+          return (
+            <div key={t.key} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+              <div style={{ width: 80, textAlign: "left" }}>{t.label}:</div>
+              <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    height: 8,
+                    backgroundColor: "#e5e5e5",
+                    borderRadius: 4,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${pct}%`,
+                      height: "100%",
+                      backgroundColor: pct > 50 ? "#5dbb6a" : pct > 25 ? "#4fa64f" : "#888",
+                      transition: "width 0.2s",
+                    }}
+                  />
+                </div>
+                <div style={{ width: 45, textAlign: "right", fontWeight: 500 }}>
+                  {pct.toFixed(1)}%
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      {composition.other > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+          <div style={{ width: 80, textAlign: "left" }}>Other:</div>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
+            <div
+              style={{
+                flex: 1,
+                height: 8,
+                backgroundColor: "#e5e5e5",
+                borderRadius: 4,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  width: `${(composition.other / composition.total) * 100}%`,
+                  height: "100%",
+                  backgroundColor: "#aaa",
+                }}
+              />
+            </div>
+            <div style={{ width: 45, textAlign: "right", fontWeight: 500 }}>
+              {((composition.other / composition.total) * 100).toFixed(1)}%
+            </div>
+          </div>
         </div>
       )}
     </div>

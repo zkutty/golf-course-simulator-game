@@ -804,6 +804,19 @@ export default function App() {
                   showFixOverlay={showFixOverlay}
                   setShowFixOverlay={setShowFixOverlay}
                   onFitHole={fitHole}
+                  course={course}
+                  hole={course.holes[activeHoleIndex]}
+                  onSetHoleIndex={(newIndex: number) => {
+                    // Update hole.holeIndex in course
+                    setCourse((c) => {
+                      const holes = c.holes.slice();
+                      holes[activeHoleIndex] = {
+                        ...holes[activeHoleIndex],
+                        holeIndex: newIndex,
+                      };
+                      return { ...c, holes };
+                    });
+                  }}
                 />
               </div>
               {holeEditMode === "hole" && course.holes[activeHoleIndex]?.tee && course.holes[activeHoleIndex]?.green && (

@@ -19,6 +19,7 @@ export interface Hole {
   parMode: "AUTO" | "MANUAL";
   parManual?: 3 | 4 | 5;
   name?: string;
+  holeIndex?: number; // Stroke index (1-18, defaults to array index + 1)
 }
 
 export type ObstacleType = "tree" | "bush" | "rock";
