@@ -461,8 +461,18 @@ export function HUD(props: {
         {tab === "Editor" && (
           <>
             {paintError && (
-              <div style={{ marginBottom: 10, padding: 10, borderRadius: 10, border: "1px solid #f0b4b4", background: "#fff5f5", color: "#a40000", fontSize: 12 }}>
-                <b>Build blocked:</b> {paintError}
+              <div
+                style={{
+                  marginBottom: 10,
+                  padding: 10,
+                  borderRadius: 10,
+                  border: paintError.startsWith("Game") ? "1px solid #b4d4b4" : "1px solid #f0b4b4",
+                  background: paintError.startsWith("Game") ? "#f5fff5" : "#fff5f5",
+                  color: paintError.startsWith("Game") ? "#00a400" : "#a40000",
+                  fontSize: 12,
+                }}
+              >
+                {paintError.startsWith("Game") ? null : <b>Build blocked:</b>} {paintError}
               </div>
             )}
 

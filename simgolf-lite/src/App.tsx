@@ -437,13 +437,27 @@ export default function App() {
   }
 
   function onSave() {
+    console.log("[Save] Saving game...", { course: course.name, worldWeek: world.week, historyLength: history.length });
     saveGame({ course, world, history });
+    console.log("[Save] Game saved successfully");
+    // Show visual feedback
+    setPaintError("Game saved!");
+    setTimeout(() => setPaintError(null), 2000);
   }
 
   function onLoad() {
+    console.log("[Load] Attempting to load game...");
     const loaded = loadGame();
-    if (!loaded) return;
+    if (!loaded) {
+      console.warn("[Load] No saved game found");
+      setPaintError("No saved game found");
+      setTimeout(() => setPaintError(null), 2000);
+      return;
+    }
+    console.log("[Load] Game loaded successfully", { course: loaded.course.name, worldWeek: loaded.world.week });
     applyLoadedGame(loaded);
+    setPaintError("Game loaded!");
+    setTimeout(() => setPaintError(null), 2000);
   }
 
   function onResetSave() {
