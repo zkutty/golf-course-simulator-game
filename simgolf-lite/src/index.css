@@ -11,11 +11,20 @@
   --cc-muted: #6b7a5f;
   --cc-ink: #111827;
 
+  /* UI tokens */
+  --ui-bg: var(--cc-parchment);
+  --ui-panel: rgba(255, 255, 255, 0.72);
+  --ui-panel-weak: rgba(255, 255, 255, 0.35);
+  --ui-shadow: 0 22px 55px rgba(0, 0, 0, 0.16);
+  --ui-shadow-soft: 0 12px 28px rgba(0, 0, 0, 0.10);
+  --ui-muted: #6b7280;
+  --ui-accent: var(--cc-forest);
+
   font-family: var(--font-body);
   line-height: 1.4;
   font-weight: 400;
   color: var(--cc-ink);
-  background: var(--cc-parchment);
+  background: var(--ui-bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

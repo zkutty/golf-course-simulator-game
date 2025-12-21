@@ -1,0 +1,75 @@
+.cc-app {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--ui-bg);
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+.cc-main {
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
+  gap: 14px;
+  align-items: stretch;
+}
+
+/* Course "clubhouse frame" */
+.cc-course-frame {
+  position: relative;
+  border-radius: 22px;
+  padding: 12px;
+  overflow: hidden;
+  background: radial-gradient(120% 110% at 50% 45%, rgba(255, 255, 255, 0.55) 0%, rgba(235, 227, 213, 0.65) 55%, rgba(61, 74, 62, 0.18) 100%);
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.cc-course-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* subtle edge vignette + soft inner highlight */
+  background:
+    radial-gradient(120% 110% at 50% 45%, rgba(0, 0, 0, 0.00) 55%, rgba(0, 0, 0, 0.16) 100%),
+    linear-gradient(180deg, rgba(255,255,255,0.25), rgba(255,255,255,0.00) 42%);
+  mix-blend-mode: multiply;
+}
+
+.cc-course-pane {
+  position: relative;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Sidebar "clubhouse card" */
+.cc-sidebar-frame {
+  height: 100%;
+  border-radius: 22px;
+  overflow: hidden;
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.14);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* Small-screen fallback: stack */
+@media (max-width: 980px) {
+  .cc-app {
+    padding: 10px;
+  }
+  .cc-main {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) minmax(260px, 360px);
+  }
+}
+
+

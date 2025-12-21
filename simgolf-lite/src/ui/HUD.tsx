@@ -222,7 +222,7 @@ export function HUD(props: {
       style={{
         width: "100%",
         height: "100%",
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: "var(--font-body)",
         display: "flex",
         flexDirection: "column",
         border: "none",
@@ -235,7 +235,7 @@ export function HUD(props: {
         backgroundSize: viewMode === "COZY" ? "320px 320px" : undefined,
       }}
     >
-      <div style={{ padding: 12, borderBottom: "1px solid #eee" }}>
+      <div style={{ padding: 12, borderBottom: "1px solid rgba(0,0,0,0.06)", background: "rgba(255,255,255,0.22)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <img

@@ -14,8 +14,7 @@ import { createLoan } from "./game/sim/loans";
 import { isCoursePlayable } from "./game/sim/isCoursePlayable";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { BALANCE } from "./game/balance/balanceConfig";
-import { GameUIDemo } from "./ui/gameui";
-import { GameHeader } from "./ui/gameui";
+import { GameBackground, GameUIDemo } from "./ui/gameui";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -492,59 +491,10 @@ export default function App() {
   }
 
   return (
-    <div style={{ height: "100vh", width: "100vw", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-      <GameHeader
-        cash={world.cash}
-        reputation={world.reputation}
-        condition={course.condition}
-        title="CourseCraft"
-        subtitle={`Week ${world.week} • Build • Route • Manage`}
-        rightSlot={
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button
-              onClick={() => setShowGameUiDemo(true)}
-              style={{
-                padding: "8px 10px",
-                borderRadius: 999,
-                border: "1px solid rgba(0,0,0,0.10)",
-                background: "rgba(255,255,255,0.75)",
-                fontSize: 12,
-                fontWeight: 900,
-                cursor: "pointer",
-              }}
-            >
-              🎮 Demo
-            </button>
-            {(["COZY", "ARCHITECT"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setViewMode(m)}
-                style={{
-                  padding: "8px 10px",
-                  borderRadius: 999,
-                  border: viewMode === m ? "2px solid rgba(0,0,0,0.75)" : "1px solid rgba(0,0,0,0.10)",
-                  background: "rgba(255,255,255,0.75)",
-                  fontSize: 12,
-                  fontWeight: 900,
-                  cursor: "pointer",
-                }}
-              >
-                {m === "COZY" ? "Cozy" : "Architect"}
-              </button>
-            ))}
-          </div>
-        }
-      />
-      <div
-        style={{
-          flex: 1,
-          width: "100%",
-          display: "grid",
-          gridTemplateColumns: "7fr 3fr",
-          overflow: "hidden",
-        }}
-      >
-      {world.isBankrupt && (
+    <div className="cc-app">
+      <GameBackground />
+      <div className="cc-main">
+        {world.isBankrupt && (
         <RunEndModal
           weeksSurvived={weeksSurvived}
           peakCash={peakCash}
@@ -556,64 +506,52 @@ export default function App() {
           onRestartSeed={(seed) => restartRun({ seed })}
         />
       )}
-      {showBridgePrompt && (
+        {showBridgePrompt && (
         <BridgeLoanPrompt
           onAccept={takeBridgeLoan}
           onDecline={() => setShowBridgePrompt(false)}
         />
       )}
-      <div
-        ref={canvasPaneRef}
-        style={{
-          position: "relative",
-          overflow: "hidden",
-          background: "#0b1220",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <CanvasCourse
-          course={course}
-          holes={course.holes}
-          obstacles={course.obstacles}
-          activeHoleIndex={activeHoleIndex}
-          activePath={activePath}
-          activeShotPlan={activeShotPlan}
-          tileSize={tileSize}
-          showGridOverlays={viewMode === "ARCHITECT"}
-          animationsEnabled={animationsEnabled}
-          flyoverNonce={flyoverNonce}
-          showShotPlan={showShotPlan}
-          editorMode={editorMode}
-          wizardStep={wizardStep}
-          draftTee={draftTee}
-          draftGreen={draftGreen}
-          onClickTile={handleCanvasClick}
-          onHoverTile={(h) => setHover(h)}
-          onLeave={() => setHover(null)}
-          cursor={
-            hover && editorMode === "PAINT"
-              ? (() => {
-                  const prev = course.tiles[hover.idx];
-                  const cost = computeTerrainChangeCost(prev, selected);
-                  return cost.net > 0 && world.cash < cost.net ? "not-allowed" : "crosshair";
-                })()
-              : "crosshair"
-          }
-          flagColor={legacy.selected.flagColor}
-        />
-        {hover && editorMode === "PAINT" && (
-          <HoverTooltip
-            hover={hover}
-            prev={course.tiles[hover.idx]}
-            next={selected}
-            cash={world.cash}
-          />
-        )}
-      </div>
-      <div style={{ overflow: "hidden", borderLeft: "1px solid rgba(17,24,39,0.12)" }}>
-      <HUD
+        <div className="cc-course-frame">
+          <div ref={canvasPaneRef} className="cc-course-pane">
+            <CanvasCourse
+              course={course}
+              holes={course.holes}
+              obstacles={course.obstacles}
+              activeHoleIndex={activeHoleIndex}
+              activePath={activePath}
+              activeShotPlan={activeShotPlan}
+              tileSize={tileSize}
+              showGridOverlays={viewMode === "ARCHITECT"}
+              animationsEnabled={animationsEnabled}
+              flyoverNonce={flyoverNonce}
+              showShotPlan={showShotPlan}
+              editorMode={editorMode}
+              wizardStep={wizardStep}
+              draftTee={draftTee}
+              draftGreen={draftGreen}
+              onClickTile={handleCanvasClick}
+              onHoverTile={(h) => setHover(h)}
+              onLeave={() => setHover(null)}
+              cursor={
+                hover && editorMode === "PAINT"
+                  ? (() => {
+                      const prev = course.tiles[hover.idx];
+                      const cost = computeTerrainChangeCost(prev, selected);
+                      return cost.net > 0 && world.cash < cost.net ? "not-allowed" : "crosshair";
+                    })()
+                  : "crosshair"
+              }
+              flagColor={legacy.selected.flagColor}
+            />
+            {hover && editorMode === "PAINT" && (
+              <HoverTooltip hover={hover} prev={course.tiles[hover.idx]} next={selected} cash={world.cash} />
+            )}
+          </div>
+        </div>
+
+        <div className="cc-sidebar-frame">
+          <HUD
         course={course}
         world={world}
         last={last}
@@ -685,7 +623,7 @@ export default function App() {
         setShowShotPlan={setShowShotPlan}
         onShowGameUiDemo={() => setShowGameUiDemo(true)}
       />
-      </div>
+        </div>
       </div>
     </div>
   );
