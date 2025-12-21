@@ -69,7 +69,7 @@ export default function App() {
   const sound = soundRef.current;
 
   // Audio system for ambient + music
-  const audio = useAudio(screen, soundEnabled);
+  const audio = useAudio(screen, soundEnabled, viewMode);
 
   const canvasPaneRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
@@ -461,7 +461,7 @@ export default function App() {
 
   function simulate() {
     if (world.isBankrupt) return;
-    if (soundEnabled) audio.playButtonClick();
+    if (soundEnabled) void audio.playButtonClick();
     const { course: c2, world: w2, result } = tickWeek(course, world, world.runSeed);
     const cap = {
       spent: capital.spent,
@@ -507,7 +507,7 @@ export default function App() {
         onAudioVolumesChange={audio.setVolumes}
         autoplayBlocked={audio.autoplayBlocked}
         onEnableAudio={audio.enableAudio}
-        onButtonClick={() => soundEnabled && audio.playButtonClick()}
+        onButtonClick={() => soundEnabled && void audio.playButtonClick()}
       />
     );
   }

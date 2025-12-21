@@ -59,6 +59,19 @@ class AudioPlayer {
     this.buttonClickAudio.preload = "auto";
     this.buttonClickAudio.src = "/audio/ball-strike.mp3";
     this.buttonClickAudio.volume = 0.6;
+    this.buttonClickAudio.onerror = (e) => {
+      console.error("[Audio] Button click audio file error:", this.buttonClickAudio?.src, e);
+      console.error("[Audio] Error details:", {
+        code: this.buttonClickAudio?.error?.code,
+        message: this.buttonClickAudio?.error?.message,
+      });
+    };
+    this.buttonClickAudio.onloadeddata = () => {
+      console.log("[Audio] Button click audio file loaded, readyState:", this.buttonClickAudio?.readyState);
+    };
+    this.buttonClickAudio.oncanplaythrough = () => {
+      console.log("[Audio] Button click audio can play through");
+    };
 
     // Handle volume changes
     this.updateVolumes();
@@ -84,28 +97,52 @@ class AudioPlayer {
   }
 
   async enable(): Promise<void> {
-    if (this.isEnabled) return;
+    if (this.isEnabled) {
+      console.log("[Audio] Already enabled");
+      return;
+    }
+    console.log("[Audio] Enabling audio context...");
     this.isEnabled = true;
 
-    // Try to play both to "unlock" audio context
+    // Try to play all audio elements to "unlock" audio context
     try {
       if (this.ambienceAudio) {
         this.ambienceAudio.volume = 0;
-        await this.ambienceAudio.play().catch(() => {});
-        this.ambienceAudio.pause();
+        try {
+          await this.ambienceAudio.play();
+          this.ambienceAudio.pause();
+        } catch (e) {
+          // Ignore - this is just to unlock audio context
+        }
         this.ambienceAudio.currentTime = 0;
       }
       if (this.musicAudio) {
         this.musicAudio.volume = 0;
-        await this.musicAudio.play().catch(() => {});
-        this.musicAudio.pause();
+        try {
+          await this.musicAudio.play();
+          this.musicAudio.pause();
+        } catch (e) {
+          // Ignore - this is just to unlock audio context
+        }
         this.musicAudio.currentTime = 0;
       }
+      if (this.buttonClickAudio) {
+        this.buttonClickAudio.volume = 0;
+        try {
+          await this.buttonClickAudio.play();
+          this.buttonClickAudio.pause();
+        } catch (e) {
+          // Ignore - this is just to unlock audio context
+        }
+        this.buttonClickAudio.currentTime = 0;
+        this.buttonClickAudio.volume = 0.6; // Restore button click volume
+      }
     } catch (e) {
-      console.warn("Audio enable failed:", e);
+      console.warn("[Audio] Enable failed:", e);
     }
 
     this.updateVolumes();
+    console.log("[Audio] Audio context enabled, volumes:", this.volumes);
   }
 
   private async fadeIn(audio: HTMLAudioElement, targetVolume: number): Promise<void> {
@@ -157,7 +194,10 @@ class AudioPlayer {
   }
 
   async setMusic(path: string | null): Promise<void> {
-    if (!this.isEnabled) return;
+    // Auto-enable if not already enabled
+    if (!this.isEnabled) {
+      await this.enable();
+    }
     if (path === this.musicPath) return;
 
     const oldMusic = this.musicAudio;
@@ -175,10 +215,18 @@ class AudioPlayer {
       this.musicAudio.src = path;
       this.musicAudio.volume = 0;
       try {
+        // Add error handler to detect missing files
+        this.musicAudio.onerror = (e) => {
+          console.error("[Audio] Music file error:", path, e);
+        };
+        this.musicAudio.onloadeddata = () => {
+          console.log("[Audio] Music file loaded:", path);
+        };
         await this.musicAudio.play();
         await this.fadeIn(this.musicAudio, this.volumes.music);
+        console.log("[Audio] Music playing:", path);
       } catch (e) {
-        console.warn("Failed to play music:", e);
+        console.warn("[Audio] Failed to play music:", path, e);
         // If music fails, start ambience as fallback
         await this.setAmbience(true);
       }
@@ -191,20 +239,65 @@ class AudioPlayer {
   }
 
   async setAmbience(play: boolean): Promise<void> {
-    if (!this.isEnabled) return;
-    if (!this.ambienceAudio) return;
+    // Auto-enable if not already enabled
+    if (!this.isEnabled) {
+      await this.enable();
+    }
+    if (!this.ambienceAudio) {
+      console.warn("[Audio] Ambience audio element not available");
+      return;
+    }
 
     if (play && this.ambienceAudio.paused) {
+      // Make sure the file is loaded
+      if (this.ambienceAudio.readyState < 2) {
+        console.log("[Audio] Ambience not ready, waiting...");
+        await new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error("Ambience load timeout"));
+          }, 5000);
+          const onCanPlay = () => {
+            clearTimeout(timeout);
+            this.ambienceAudio!.removeEventListener("canplaythrough", onCanPlay);
+            this.ambienceAudio!.removeEventListener("error", onError);
+            resolve();
+          };
+          const onError = () => {
+            clearTimeout(timeout);
+            this.ambienceAudio!.removeEventListener("canplaythrough", onCanPlay);
+            this.ambienceAudio!.removeEventListener("error", onError);
+            reject(new Error("Ambience load error"));
+          };
+          this.ambienceAudio!.addEventListener("canplaythrough", onCanPlay);
+          this.ambienceAudio!.addEventListener("error", onError);
+        }).catch((e) => {
+          console.warn("[Audio] Ambience load wait failed:", e);
+        });
+      }
+      
       // Fade in ambience
       this.ambienceAudio.volume = 0;
       try {
+        this.ambienceAudio.onerror = (e) => {
+          console.error("[Audio] Ambience file error:", this.ambienceAudio?.src, e);
+          console.error("[Audio] Error details:", {
+            code: this.ambienceAudio?.error?.code,
+            message: this.ambienceAudio?.error?.message,
+          });
+        };
+        this.ambienceAudio.onloadeddata = () => {
+          console.log("[Audio] Ambience file loaded:", this.ambienceAudio?.src, "readyState:", this.ambienceAudio?.readyState);
+        };
+        console.log("[Audio] Starting ambience playback, readyState:", this.ambienceAudio.readyState);
         await this.ambienceAudio.play();
         await this.fadeIn(this.ambienceAudio, this.volumes.ambience);
+        console.log("[Audio] Ambience playing at volume:", this.volumes.ambience);
       } catch (e) {
-        console.warn("Failed to play ambience:", e);
+        console.warn("[Audio] Failed to play ambience:", e);
       }
     } else if (!play && !this.ambienceAudio.paused) {
       // Fade out ambience
+      console.log("[Audio] Fading out ambience");
       await this.fadeOut(this.ambienceAudio);
     }
   }
@@ -215,13 +308,39 @@ class AudioPlayer {
     }
   }
 
-  playButtonClick(): void {
-    if (!this.isEnabled || !this.buttonClickAudio) return;
+  async playButtonClick(): Promise<void> {
+    if (!this.buttonClickAudio) {
+      console.warn("[Audio] Button click audio element not available");
+      return;
+    }
+    
+    // Enable audio if not already enabled (allows button clicks to unlock audio)
+    if (!this.isEnabled) {
+      console.log("[Audio] Enabling audio via button click");
+      await this.enable();
+    }
+    
+    // Make sure volume is set (don't rely on initial setting)
+    this.buttonClickAudio.volume = 0.6;
+    
     // Reset to start and play
-    this.buttonClickAudio.currentTime = 0;
-    this.buttonClickAudio.play().catch((e) => {
-      console.warn("Failed to play button click:", e);
-    });
+    try {
+      this.buttonClickAudio.currentTime = 0;
+      console.log("[Audio] Playing button click sound, volume:", this.buttonClickAudio.volume);
+      await this.buttonClickAudio.play();
+      console.log("[Audio] Button click sound playing successfully");
+    } catch (e) {
+      console.warn("[Audio] Failed to play button click:", e);
+      // Try once more after a tiny delay (sometimes helps with browser audio context)
+      setTimeout(() => {
+        if (this.buttonClickAudio) {
+          this.buttonClickAudio.currentTime = 0;
+          this.buttonClickAudio.play().catch((err) => {
+            console.warn("[Audio] Retry also failed:", err);
+          });
+        }
+      }, 50);
+    }
   }
 
   dispose(): void {
@@ -240,14 +359,14 @@ class AudioPlayer {
   }
 }
 
-export function useAudio(screen: "menu" | "game", audioEnabled: boolean) {
+export function useAudio(screen: "menu" | "game", audioEnabled: boolean, viewMode: "COZY" | "ARCHITECT" = "COZY") {
   const playerRef = useRef<AudioPlayer | null>(null);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [userInteracted, setUserInteracted] = useState(false);
 
   if (!playerRef.current) {
     playerRef.current = new AudioPlayer();
-    playerRef.current.setAmbiencePath("/audio/course-ambiance.wav");
+    playerRef.current.setAmbiencePath("/audio/course-ambiance.mp3");
   }
 
   const player = playerRef.current;
@@ -300,16 +419,33 @@ export function useAudio(screen: "menu" | "game", audioEnabled: boolean) {
     }
 
     // Only play audio if user has interacted (or autoplay is allowed)
-    if (!userInteracted && autoplayBlocked) return;
+    if (!userInteracted && autoplayBlocked) {
+      console.log("[Audio] Waiting for user interaction before playing music");
+      return;
+    }
 
+    console.log(`[Audio] Setting music for screen: ${screen}, viewMode: ${viewMode}, userInteracted: ${userInteracted}`);
     if (screen === "menu") {
-      player.setMusic("/audio/menu-theme.mp3");
+      player.setMusic("/audio/menu-theme.mp3").catch((e) => {
+        console.error("[Audio] Failed to set menu music:", e);
+      });
       // Ambience will be stopped automatically when music starts
     } else if (screen === "game") {
-      player.setMusic("/audio/design-loop.mp3");
-      // Ambience will be stopped automatically when music starts
+      if (viewMode === "COZY") {
+        // COZY mode: ambiance only, no music
+        player.setMusic(null);
+        player.setAmbience(true).catch((e) => {
+          console.error("[Audio] Failed to set ambience:", e);
+        });
+      } else {
+        // ARCHITECT mode: music track
+        player.setMusic("/audio/design-loop-1.mp3").catch((e) => {
+          console.error("[Audio] Failed to set game music:", e);
+        });
+        // Ambience will be stopped automatically when music starts
+      }
     }
-  }, [screen, audioEnabled, userInteracted, autoplayBlocked, player]);
+  }, [screen, viewMode, audioEnabled, userInteracted, autoplayBlocked, player]);
 
   // Cleanup
   useEffect(() => {
@@ -326,7 +462,12 @@ export function useAudio(screen: "menu" | "game", audioEnabled: boolean) {
     if (screen === "menu") {
       player.setMusic("/audio/menu-theme.mp3");
     } else if (screen === "game") {
-      player.setMusic("/audio/design-loop.mp3");
+      if (viewMode === "COZY") {
+        player.setMusic(null);
+        player.setAmbience(true);
+      } else {
+        player.setMusic("/audio/design-loop-1.mp3");
+      }
     }
   };
 
@@ -335,6 +476,6 @@ export function useAudio(screen: "menu" | "game", audioEnabled: boolean) {
     getVolumes: () => player.getVolumes(),
     autoplayBlocked: autoplayBlocked && !userInteracted,
     enableAudio,
-    playButtonClick: () => player.playButtonClick(),
+    playButtonClick: () => void player.playButtonClick(),
   };
 }
