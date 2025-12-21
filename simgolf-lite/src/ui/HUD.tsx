@@ -10,6 +10,7 @@ import type { LegacyState } from "../utils/legacy";
 import { BALANCE } from "../game/balance/balanceConfig";
 import logoCourseCraft from "../assets/branding/logo-coursecraft.svg";
 import paperTex from "../assets/textures/paper.svg";
+import { IconCash, IconCondition, IconHoles, IconReputation } from "@/assets/icons";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -293,7 +294,7 @@ export function HUD(props: {
                   alignItems: "center",
                 }}
               >
-                <div style={{ fontSize: 18 }}>🪙</div>
+                <IconCash size={22} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>CASH</div>
                   <div style={{ fontSize: 18, fontWeight: 800 }}>${Math.round(world.cash).toLocaleString()}</div>
@@ -310,7 +311,7 @@ export function HUD(props: {
                   alignItems: "center",
                 }}
               >
-                <div style={{ fontSize: 18 }}>⭐</div>
+                <IconReputation size={22} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>REPUTATION</div>
                   <div style={{ fontSize: 16, fontWeight: 800 }}>{world.reputation}/100</div>
@@ -327,7 +328,7 @@ export function HUD(props: {
                   alignItems: "center",
                 }}
               >
-                <div style={{ fontSize: 18 }}>🌿</div>
+                <IconCondition size={22} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>CONDITION</div>
                   <div style={{ fontSize: 16, fontWeight: 800 }}>{Math.round(course.condition * 100)}%</div>
@@ -344,7 +345,7 @@ export function HUD(props: {
                   alignItems: "center",
                 }}
               >
-                <div style={{ fontSize: 18 }}>⛳</div>
+                <IconHoles size={22} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>HOLES OPEN</div>
                   <div style={{ fontSize: 16, fontWeight: 800 }}>{validHoles}/9</div>
