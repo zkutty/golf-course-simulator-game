@@ -541,13 +541,16 @@ export function HUD(props: {
                     )}
                   </div>
                   <div style={{ marginTop: 4, color: "#444" }}>
-                    Straight dist:{" "}
-                    {distanceTiles != null ? `${distanceTiles.toFixed(1)} tiles` : "—"} • Effective dist:{" "}
-                    {activeHole.isComplete ? `${activeHole.effectiveDistance.toFixed(0)} tiles` : "—"} • Par:{" "}
-                    {effectivePar}{" "}
-                    <span style={{ color: "#777" }}>
-                      ({holeDef?.parMode === "MANUAL" ? "manual" : "auto"})
-                    </span>
+                    Straight:{" "}
+                    {distanceTiles != null
+                      ? `${Math.round(distanceTiles * course.yardsPerTile)} yds (${distanceTiles.toFixed(1)} tiles)`
+                      : "—"}{" "}
+                    • Effective:{" "}
+                    {activeHole.isComplete
+                      ? `${Math.round(activeHole.effectiveDistance * course.yardsPerTile)} yds (${activeHole.effectiveDistance.toFixed(1)} tiles)`
+                      : "—"}{" "}
+                    • Par: {effectivePar}{" "}
+                    <span style={{ color: "#777" }}>({holeDef?.parMode === "MANUAL" ? "manual" : "auto"})</span>
                   </div>
                   {activeHole.isComplete && Number.isFinite(activeHole.scratchShotsToGreen) && (
                     <div style={{ marginTop: 4, color: "#444" }}>
@@ -719,7 +722,7 @@ export function HUD(props: {
                         <b>Par</b>
                       </div>
                       <div>
-                        <b>Dist</b>
+                        <b>Dist (yds)</b>
                       </div>
                       <div style={{ textAlign: "right" }}>
                         <b>Overall</b>
@@ -750,7 +753,9 @@ export function HUD(props: {
                         </div>
                         <div>{h.isComplete ? h.par : "—"}</div>
                         <div style={{ color: "#555" }}>
-                          {h.isComplete ? `${h.effectiveDistance.toFixed(0)} tiles` : "missing tee/green"}
+                          {h.isComplete
+                            ? `${Math.round(h.effectiveDistance * course.yardsPerTile)} yds`
+                            : "missing tee/green"}
                         </div>
                         <div style={{ textAlign: "right" }}>
                           <b>{Math.round(h.overallHoleScore)}</b>

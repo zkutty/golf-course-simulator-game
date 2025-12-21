@@ -1,5 +1,5 @@
 import type { Course, Hole, Obstacle, Point, Terrain } from "../models/types";
-import { computeHoleDistanceTiles } from "./holeMetrics";
+import { computeHoleDistanceTiles, computePathDistanceTiles } from "./holeMetrics";
 import { BALANCE } from "../balance/balanceConfig";
 import { getGolferProfile } from "./golferProfiles";
 import type { ShotPlanStep } from "./shots/solveShotsToGreen";
@@ -168,7 +168,7 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
     }
   }
   if (poly.length === 0) poly.push(tee, green);
-  const effectiveDistance = Math.max(0, poly.length - 1);
+  const effectiveDistance = computePathDistanceTiles(poly);
 
   const teeTile = inBounds(course, tee) ? tileAt(course, tee) : "rough";
   const greenTile = inBounds(course, green) ? tileAt(course, green) : "rough";

@@ -16,6 +16,7 @@ import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { BALANCE } from "./game/balance/balanceConfig";
 import { GameBackground } from "./ui/gameui";
 import { StartMenu } from "./ui/StartMenu";
+import { useAudio } from "./audio/useAudio";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -66,6 +67,9 @@ export default function App() {
   const soundRef = useRef<ReturnType<typeof createSoundPlayer> | null>(null);
   if (!soundRef.current) soundRef.current = createSoundPlayer();
   const sound = soundRef.current;
+
+  // Audio system for ambient + music
+  const audio = useAudio(screen, soundEnabled);
 
   const canvasPaneRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
@@ -457,6 +461,7 @@ export default function App() {
 
   function simulate() {
     if (world.isBankrupt) return;
+    if (soundEnabled) audio.playButtonClick();
     const { course: c2, world: w2, result } = tickWeek(course, world, world.runSeed);
     const cap = {
       spent: capital.spent,
@@ -493,7 +498,18 @@ export default function App() {
   }, [world.isBankrupt, weeksSurvived, peakRep]);
 
   if (screen === "menu") {
-    return <StartMenu canLoad={canLoadFromMenu} onNewGame={newGameFromMenu} onLoadGame={loadFromMenu} />;
+    return (
+      <StartMenu
+        canLoad={canLoadFromMenu}
+        onNewGame={newGameFromMenu}
+        onLoadGame={loadFromMenu}
+        audioVolumes={audio.getVolumes()}
+        onAudioVolumesChange={audio.setVolumes}
+        autoplayBlocked={audio.autoplayBlocked}
+        onEnableAudio={audio.enableAudio}
+        onButtonClick={() => soundEnabled && audio.playButtonClick()}
+      />
+    );
   }
 
   return (

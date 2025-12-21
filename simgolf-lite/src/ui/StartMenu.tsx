@@ -1,11 +1,17 @@
 import { useMemo, useState } from "react";
 import { MenuButton } from "./MenuButton";
 import { StartMenuBackground } from "./StartMenuBackground";
+import { SettingsModal } from "./SettingsModal";
 
 export interface StartMenuProps {
   canLoad: boolean;
   onNewGame: () => void;
   onLoadGame: () => void;
+  audioVolumes: { music: number; ambience: number };
+  onAudioVolumesChange: (volumes: { music?: number; ambience?: number }) => void;
+  autoplayBlocked?: boolean;
+  onEnableAudio?: () => void;
+  onButtonClick?: () => void;
 }
 
 export function StartMenu(props: StartMenuProps) {
@@ -122,21 +128,38 @@ export function StartMenu(props: StartMenuProps) {
 
           {/* Buttons */}
           <div style={{ display: "grid", gap: 14, width: "min(420px, 100%)", margin: "0 auto" }}>
-            <MenuButton variant="primary" icon="⛳" onClick={props.onNewGame}>
+            <MenuButton
+              variant="primary"
+              icon="⛳"
+              onClick={() => {
+                props.onButtonClick?.();
+                props.onNewGame();
+              }}
+            >
               New Game
             </MenuButton>
 
             <MenuButton
               variant="secondary"
               icon="📁"
-              onClick={props.onLoadGame}
+              onClick={() => {
+                if (props.canLoad) props.onButtonClick?.();
+                props.onLoadGame();
+              }}
               disabled={!props.canLoad}
               subtitle={loadSubtitle}
             >
               Load Game
             </MenuButton>
 
-            <MenuButton variant="secondary" icon="⚙️" onClick={() => setSettingsOpen(true)}>
+            <MenuButton
+              variant="secondary"
+              icon="⚙️"
+              onClick={() => {
+                props.onButtonClick?.();
+                setSettingsOpen(true);
+              }}
+            >
               Settings
             </MenuButton>
           </div>
@@ -147,56 +170,14 @@ export function StartMenu(props: StartMenuProps) {
         </div>
       </div>
 
-      {/* Settings modal (stub) */}
-      {settingsOpen && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-            zIndex: 999,
-          }}
-          onClick={() => setSettingsOpen(false)}
-        >
-          <div
-            style={{
-              width: "min(520px, 100%)",
-              borderRadius: 18,
-              background: "rgba(255,255,255,0.92)",
-              border: "1px solid rgba(0,0,0,0.12)",
-              boxShadow: "0 22px 55px rgba(0,0,0,0.22)",
-              padding: 16,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontFamily: "var(--font-heading)", fontSize: 20, fontWeight: 800, color: "#3d4a3e" }}>
-              Settings
-            </div>
-            <div style={{ marginTop: 8, color: "#6b7280", fontSize: 13 }}>
-              Settings UI is a stub for now. Next we can add sound/animations/default view mode, etc.
-            </div>
-            <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setSettingsOpen(false)}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 999,
-                  border: "1px solid rgba(0,0,0,0.12)",
-                  background: "rgba(255,255,255,0.9)",
-                  fontWeight: 900,
-                  cursor: "pointer",
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        audioVolumes={props.audioVolumes}
+        onAudioVolumesChange={props.onAudioVolumesChange}
+        autoplayBlocked={props.autoplayBlocked}
+        onEnableAudio={props.onEnableAudio}
+      />
     </div>
   );
 }

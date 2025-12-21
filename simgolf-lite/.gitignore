@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Audio files
+public/audio/*.mp3
+public/audio/*.wav
+public/audio/*.ogg
