@@ -5,6 +5,7 @@ interface HoleInspectorProps {
   evaluation: HoleEvaluation;
   showFixOverlay: boolean;
   setShowFixOverlay: (show: boolean) => void;
+  onFitHole?: () => void;
 }
 
 export function HoleInspector({
@@ -12,6 +13,7 @@ export function HoleInspector({
   evaluation,
   showFixOverlay,
   setShowFixOverlay,
+  onFitHole,
 }: HoleInspectorProps) {
   const { scratchShotsToGreen, bogeyShotsToGreen, autoPar, reachableInTwo, effectiveDistanceYards, issues } =
     evaluation;
@@ -39,8 +41,25 @@ export function HoleInspector({
         color: "#333",
       }}
     >
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: "#1a1a1a" }}>Hole {holeIndex + 1}</h2>
+        {onFitHole && (
+          <button
+            onClick={onFitHole}
+            style={{
+              padding: "6px 12px",
+              fontSize: 12,
+              borderRadius: 4,
+              border: "1px solid #ddd",
+              background: "#fff",
+              cursor: "pointer",
+              fontWeight: 500,
+            }}
+            title="Fit Hole (F)"
+          >
+            Fit Hole
+          </button>
+        )}
       </div>
 
       {/* Key Stats */}

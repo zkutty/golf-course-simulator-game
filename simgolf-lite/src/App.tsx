@@ -138,8 +138,38 @@ export default function App() {
     }
     setActiveHoleIndex(holeIndex);
     setHoleEditMode("hole");
-    // Compute camera state
-    const camera = computeHoleCamera(hole.tee, hole.green, 16, 3.0, paneSize.width, paneSize.height);
+    // Compute camera state with auto-fit (zoom = null)
+    const camera = computeHoleCamera(
+      hole.tee,
+      hole.green,
+      0.12, // 12% padding (will be applied in computeHoleBoundingBox)
+      null, // null = auto-fit
+      paneSize.width,
+      paneSize.height,
+      course,
+      hole,
+      holeIndex
+    );
+    setHoleEditCamera(camera);
+  }
+
+  function fitHole() {
+    if (holeEditMode !== "hole") return;
+    const hole = course.holes[activeHoleIndex];
+    if (!hole.tee || !hole.green) return;
+    
+    // Recompute camera with auto-fit
+    const camera = computeHoleCamera(
+      hole.tee,
+      hole.green,
+      0.12,
+      null, // auto-fit
+      paneSize.width,
+      paneSize.height,
+      course,
+      hole,
+      activeHoleIndex
+    );
     setHoleEditCamera(camera);
   }
 
@@ -154,16 +184,28 @@ export default function App() {
     enterHoleEditMode(nextIndex);
   }
 
-  // Update camera when pane size changes in hole edit mode
+  // Update camera when pane size changes in hole edit mode (re-fit)
   useEffect(() => {
     if (holeEditMode === "hole") {
       const hole = course.holes[activeHoleIndex];
       if (hole.tee && hole.green) {
-        const camera = computeHoleCamera(hole.tee, hole.green, 16, 3.0, paneSize.width, paneSize.height);
+        // Preserve current zoom if camera exists, otherwise auto-fit
+        const currentZoom = holeEditCamera?.zoom ?? null;
+        const camera = computeHoleCamera(
+          hole.tee,
+          hole.green,
+          0.12,
+          currentZoom, // preserve zoom if exists
+          paneSize.width,
+          paneSize.height,
+          course,
+          hole,
+          activeHoleIndex
+        );
         setHoleEditCamera(camera);
       }
     }
-  }, [paneSize.width, paneSize.height, holeEditMode, activeHoleIndex]);
+  }, [paneSize.width, paneSize.height, holeEditMode, activeHoleIndex, course]);
 
   // Keyboard shortcuts for hole edit mode
   useEffect(() => {
@@ -177,6 +219,15 @@ export default function App() {
       } else if (e.key === "]" && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         navigateHole(1);
+      } else if (e.key === "f" || e.key === "F") {
+        // Fit Hole shortcut (only when not in input/textarea)
+        if (
+          !(e.target instanceof HTMLInputElement) &&
+          !(e.target instanceof HTMLTextAreaElement)
+        ) {
+          e.preventDefault();
+          fitHole();
+        }
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -759,6 +810,7 @@ export default function App() {
                   evaluation={evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex)}
                   showFixOverlay={showFixOverlay}
                   setShowFixOverlay={setShowFixOverlay}
+                  onFitHole={fitHole}
                 />
               </div>
             </div>
