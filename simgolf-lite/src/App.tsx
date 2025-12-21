@@ -14,7 +14,7 @@ import { createLoan } from "./game/sim/loans";
 import { isCoursePlayable } from "./game/sim/isCoursePlayable";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { BALANCE } from "./game/balance/balanceConfig";
-import { GameBackground, GameUIDemo } from "./ui/gameui";
+import { GameBackground } from "./ui/gameui";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -54,7 +54,6 @@ export default function App() {
   const [flyoverNonce, setFlyoverNonce] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showShotPlan, setShowShotPlan] = useState(true);
-  const [showGameUiDemo, setShowGameUiDemo] = useState(false);
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
   const [peakRep, setPeakRep] = useState(DEFAULT_STATE.world.reputation);
   const [showBridgePrompt, setShowBridgePrompt] = useState(false);
@@ -465,31 +464,6 @@ export default function App() {
     });
   }, [world.isBankrupt, weeksSurvived, peakRep]);
 
-  if (showGameUiDemo) {
-    return (
-      <div style={{ height: "100vh", width: "100vw", overflow: "hidden" }}>
-        <GameUIDemo />
-        <button
-          onClick={() => setShowGameUiDemo(false)}
-          style={{
-            position: "fixed",
-            top: 12,
-            right: 12,
-            zIndex: 999999,
-            padding: "10px 12px",
-            borderRadius: 999,
-            border: "1px solid rgba(0,0,0,0.12)",
-            background: "rgba(255,255,255,0.9)",
-            fontWeight: 800,
-            cursor: "pointer",
-          }}
-        >
-          ← Back to game
-        </button>
-      </div>
-    );
-  }
-
   return (
     <div className="cc-app">
       <GameBackground />
@@ -621,7 +595,6 @@ export default function App() {
         }}
         showShotPlan={showShotPlan}
         setShowShotPlan={setShowShotPlan}
-        onShowGameUiDemo={() => setShowGameUiDemo(true)}
       />
         </div>
       </div>
