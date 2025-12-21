@@ -38,12 +38,14 @@ export function HUD(props: {
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
   setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE") => void;
   startWizard: () => void;
+  startPlaceTee?: () => void;
+  startPlaceGreen?: () => void;
   obstacleType: ObstacleType;
   setObstacleType: (t: ObstacleType) => void;
   activeHoleIndex: number;
   setActiveHoleIndex: (n: number) => void;
   onEnterHoleEditMode?: (holeIndex: number) => void;
-  wizardStep: "TEE" | "GREEN" | "CONFIRM";
+  wizardStep: "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
   draftTee: Point | null;
   draftGreen: Point | null;
   onWizardConfirm: () => void;
@@ -90,6 +92,8 @@ export function HUD(props: {
     editorMode,
     setEditorMode,
     startWizard,
+    startPlaceTee,
+    startPlaceGreen,
     obstacleType,
     setObstacleType,
     activeHoleIndex,
@@ -625,14 +629,46 @@ export function HUD(props: {
                 <div>
                   <b>Hole {activeHoleIndex + 1} of 9</b>
                 </div>
-                <div style={{ color: "#444" }}>
-                  {wizardStep === "TEE"
-                    ? "Click on the canvas to place the tee."
-                    : wizardStep === "GREEN"
-                      ? "Click on the canvas to place the green."
+                <div style={{ display: "flex", gap: 6, marginTop: 8, marginBottom: 8 }}>
+                  <button
+                    onClick={startPlaceTee}
+                    style={{
+                      flex: 1,
+                      padding: "8px 12px",
+                      borderRadius: 6,
+                      border: wizardStep === "TEE" || wizardStep === "MOVE_TEE" ? "2px solid #000" : "1px solid #ccc",
+                      background: wizardStep === "TEE" || wizardStep === "MOVE_TEE" ? "#e8f5e9" : "#fff",
+                      fontSize: 12,
+                      fontWeight: wizardStep === "TEE" || wizardStep === "MOVE_TEE" ? 600 : 400,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {course.holes[activeHoleIndex]?.tee ? "Move Tee" : "Place Tee"}
+                  </button>
+                  <button
+                    onClick={startPlaceGreen}
+                    style={{
+                      flex: 1,
+                      padding: "8px 12px",
+                      borderRadius: 6,
+                      border: wizardStep === "GREEN" || wizardStep === "MOVE_GREEN" ? "2px solid #000" : "1px solid #ccc",
+                      background: wizardStep === "GREEN" || wizardStep === "MOVE_GREEN" ? "#e8f5e9" : "#fff",
+                      fontSize: 12,
+                      fontWeight: wizardStep === "GREEN" || wizardStep === "MOVE_GREEN" ? 600 : 400,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {course.holes[activeHoleIndex]?.green ? "Move Green" : "Place Green"}
+                  </button>
+                </div>
+                <div style={{ color: "#444", fontSize: 12, marginTop: 8 }}>
+                  {wizardStep === "TEE" || wizardStep === "MOVE_TEE"
+                    ? "Click on the canvas to set tee position"
+                    : wizardStep === "GREEN" || wizardStep === "MOVE_GREEN"
+                      ? "Click on the canvas to set green position"
                       : "Confirm to save this hole, or redo to try again."}
                 </div>
-                <div style={{ fontSize: 12, color: "#666" }}>
+                <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
                   Draft: tee {draftTee ? `(${draftTee.x},${draftTee.y})` : "—"} • green{" "}
                   {draftGreen ? `(${draftGreen.x},${draftGreen.y})` : "—"}
                 </div>

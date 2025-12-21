@@ -144,56 +144,68 @@ export function computeZoomPreset(
 
   const tee = hole.tee;
   const green = hole.green;
-  
-  const straightDistYards = Math.sqrt((tee.x - green.x) ** 2 + (tee.y - green.y) ** 2) * course.yardsPerTile;
 
   let bbox: BoundingBox;
   
+  let centerX: number;
+  let centerY: number;
+
   if (preset === "fit") {
     const result = computeHoleBoundingBox(course, hole, holeIndex, 0);
     if (!result) return null;
     bbox = result;
+    centerX = (bbox.minX + bbox.maxX) / 2;
+    centerY = (bbox.minY + bbox.maxY) / 2;
   } else if (preset === "tee") {
-    // Bbox around tee + first 60-90 yards
-    const first90YardsTiles = Math.min(90 / course.yardsPerTile, straightDistYards / course.yardsPerTile * 0.4);
-    const dirX = (green.x - tee.x) / straightDistYards * course.yardsPerTile;
-    const dirY = (green.y - tee.y) / straightDistYards * course.yardsPerTile;
-    const endpoint = { x: tee.x + dirX * first90YardsTiles, y: tee.y + dirY * first90YardsTiles };
+    // Center on tee with tight zoom
+    const paddingTiles = 8; // ~80 yards buffer
     bbox = {
-      minX: Math.min(tee.x, endpoint.x) - 3,
-      minY: Math.min(tee.y, endpoint.y) - 3,
-      maxX: Math.max(tee.x, endpoint.x) + 3,
-      maxY: Math.max(tee.y, endpoint.y) + 3,
+      minX: tee.x - paddingTiles,
+      minY: tee.y - paddingTiles,
+      maxX: tee.x + paddingTiles,
+      maxY: tee.y + paddingTiles,
     };
+    centerX = tee.x;
+    centerY = tee.y;
   } else if (preset === "landing") {
-    // First-shot landing band (35-50% distance)
-    const startT = 0.35;
-    const endT = 0.50;
-    const startP = { x: tee.x + (green.x - tee.x) * startT, y: tee.y + (green.y - tee.y) * startT };
-    const endP = { x: tee.x + (green.x - tee.x) * endT, y: tee.y + (green.y - tee.y) * endT };
+    // Use shot plan to find actual first landing zone
+    const score = scoreHole(course, hole, holeIndex);
+    let landingPoint: Point;
+    if (score.shotPlan && score.shotPlan.length > 0) {
+      // First shot's landing point
+      landingPoint = score.shotPlan[0].to;
+    } else {
+      // Fallback: 35-50% along straight line
+      const midT = 0.425;
+      landingPoint = {
+        x: tee.x + (green.x - tee.x) * midT,
+        y: tee.y + (green.y - tee.y) * midT,
+      };
+    }
+    const paddingTiles = 10; // ~100 yards buffer
     bbox = {
-      minX: Math.min(startP.x, endP.x) - 8, // 8 tiles = ~80 yards buffer
-      minY: Math.min(startP.y, endP.y) - 8,
-      maxX: Math.max(startP.x, endP.x) + 8,
-      maxY: Math.max(startP.y, endP.y) + 8,
+      minX: landingPoint.x - paddingTiles,
+      minY: landingPoint.y - paddingTiles,
+      maxX: landingPoint.x + paddingTiles,
+      maxY: landingPoint.y + paddingTiles,
     };
+    centerX = landingPoint.x;
+    centerY = landingPoint.y;
   } else { // green
-    // Green + 30 yards
-    const thirtyYardsTiles = 30 / course.yardsPerTile;
+    // Center on green with tight zoom
+    const paddingTiles = 8; // ~80 yards buffer
     bbox = {
-      minX: green.x - thirtyYardsTiles,
-      minY: green.y - thirtyYardsTiles,
-      maxX: green.x + thirtyYardsTiles,
-      maxY: green.y + thirtyYardsTiles,
+      minX: green.x - paddingTiles,
+      minY: green.y - paddingTiles,
+      maxX: green.x + paddingTiles,
+      maxY: green.y + paddingTiles,
     };
+    centerX = green.x;
+    centerY = green.y;
   }
 
   // No rotation - keep it straight
   const rotationDeg = 0;
-
-  // Center
-  const centerX = (bbox.minX + bbox.maxX) / 2;
-  const centerY = (bbox.minY + bbox.maxY) / 2;
 
   // Auto-fit zoom (no rotation calculation needed)
   const bboxWidth = bbox.maxX - bbox.minX;

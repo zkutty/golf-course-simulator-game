@@ -22,9 +22,10 @@ import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
 import { HoleMinimap } from "./ui/HoleMinimap";
+import { generateWildLand } from "./game/gen/generateWildLand";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
-type WizardStep = "TEE" | "GREEN" | "CONFIRM";
+type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
 type ViewMode = "global" | "hole";
 
 const STRIKE_SFX = "/audio/ball-strike.mp3";
@@ -63,6 +64,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">("COZY");
   const [holeEditMode, setHoleEditMode] = useState<ViewMode>("global"); // "global" or "hole"
   const [holeEditCamera, setHoleEditCamera] = useState<CameraState | null>(null);
+  const holeEditCameraManualRef = useRef(false); // Track if camera was manually set
   const [showFixOverlay, setShowFixOverlay] = useState(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
@@ -149,22 +151,23 @@ export default function App() {
     }
     setActiveHoleIndex(holeIndex);
     setHoleEditMode("hole");
+    holeEditCameraManualRef.current = false; // Reset manual flag on entry
     // Compute camera state with auto-fit (zoom = null)
     // Convert 12% of viewport to approximate tiles for padding
     const paddingPercent = 0.12;
     const paddingTiles = Math.max(2, Math.min(paneSize.width, paneSize.height) * paddingPercent / (tileSize || 16));
-        const camera = computeHoleCamera(
-          hole.tee,
-          hole.green,
-          paddingTiles,
-          null, // null = auto-fit
-          paneSize.width,
-          paneSize.height,
-          course,
-          hole,
-          holeIndex,
-          tileSize
-        );
+    const camera = computeHoleCamera(
+      hole.tee,
+      hole.green,
+      paddingTiles,
+      null, // null = auto-fit
+      paneSize.width,
+      paneSize.height,
+      course,
+      hole,
+      holeIndex,
+      tileSize
+    );
     setHoleEditCamera(camera);
   }
 
@@ -175,6 +178,7 @@ export default function App() {
     
     const camera = computeZoomPreset(preset, course, hole, activeHoleIndex, paneSize.width, paneSize.height, tileSize);
     if (camera) {
+      holeEditCameraManualRef.current = true; // Mark as manually set
       setHoleEditCamera(camera);
     }
   }
@@ -191,8 +195,9 @@ export default function App() {
   }
 
   // Update camera when pane size changes in hole edit mode (re-fit)
+  // Only auto-fit on initial entry or pane size change, not when manually set
   useEffect(() => {
-    if (holeEditMode === "hole") {
+    if (holeEditMode === "hole" && !holeEditCameraManualRef.current) {
       const hole = course.holes[activeHoleIndex];
       if (hole.tee && hole.green && paneSize.width > 0 && paneSize.height > 0) {
         // Preserve current zoom if camera exists, otherwise auto-fit
@@ -215,7 +220,7 @@ export default function App() {
         setHoleEditCamera(camera);
       }
     }
-  }, [paneSize.width, paneSize.height, tileSize, holeEditMode, activeHoleIndex, course, holeEditCamera]);
+  }, [paneSize.width, paneSize.height, tileSize, holeEditMode, activeHoleIndex, course]);
 
   // Keyboard shortcuts for hole edit mode
   useEffect(() => {
@@ -285,7 +290,27 @@ export default function App() {
 
   function restartRun(args: { seed: number }) {
     const seed = args.seed | 0;
-    setCourse(DEFAULT_STATE.course);
+    
+    // Generate wild land terrain using the seed
+    const generatedTiles = generateWildLand(
+      DEFAULT_STATE.course.width,
+      DEFAULT_STATE.course.height,
+      seed
+    );
+    
+    // Create new course with generated terrain and no holes/obstacles
+    const newCourse = {
+      ...DEFAULT_STATE.course,
+      tiles: generatedTiles,
+      holes: Array.from({ length: 9 }, () => ({
+        tee: null,
+        green: null,
+        parMode: "AUTO" as const,
+      })),
+      obstacles: [],
+    };
+    
+    setCourse(newCourse);
     setWorld({
       ...DEFAULT_STATE.world,
       runSeed: seed,
@@ -499,15 +524,58 @@ export default function App() {
 
   function startWizard() {
     setEditorMode("HOLE_WIZARD");
-    setWizardStep("TEE");
-    setDraftTee(null);
-    setDraftGreen(null);
+    const hole = course.holes[activeHoleIndex];
+    // If tee exists, start in MOVE_TEE mode; otherwise TEE mode
+    if (hole.tee) {
+      setWizardStep("MOVE_TEE");
+      setDraftTee(hole.tee);
+      setDraftGreen(hole.green);
+    } else {
+      setWizardStep("TEE");
+      setDraftTee(null);
+      setDraftGreen(null);
+    }
+  }
+  
+  function startPlaceTee() {
+    setEditorMode("HOLE_WIZARD");
+    const hole = course.holes[activeHoleIndex];
+    if (hole.tee) {
+      setWizardStep("MOVE_TEE");
+      setDraftTee(hole.tee);
+      setDraftGreen(hole.green);
+    } else {
+      setWizardStep("TEE");
+      setDraftTee(null);
+      setDraftGreen(hole.green);
+    }
+  }
+  
+  function startPlaceGreen() {
+    setEditorMode("HOLE_WIZARD");
+    const hole = course.holes[activeHoleIndex];
+    if (hole.green) {
+      setWizardStep("MOVE_GREEN");
+      setDraftTee(hole.tee);
+      setDraftGreen(hole.green);
+    } else {
+      setWizardStep("GREEN");
+      setDraftTee(hole.tee);
+      setDraftGreen(null);
+    }
   }
 
   function redoWizard() {
-    setWizardStep("TEE");
-    setDraftTee(null);
-    setDraftGreen(null);
+    const hole = course.holes[activeHoleIndex];
+    if (hole.tee) {
+      setWizardStep("MOVE_TEE");
+      setDraftTee(hole.tee);
+      setDraftGreen(hole.green);
+    } else {
+      setWizardStep("TEE");
+      setDraftTee(null);
+      setDraftGreen(null);
+    }
   }
 
   function nextHoleWizard() {
@@ -515,13 +583,60 @@ export default function App() {
     redoWizard();
   }
 
-  function confirmWizard() {
+  function moveMarker(markerType: "tee" | "green", newPos: Point) {
     if (world.isBankrupt) return;
-    if (!draftTee || !draftGreen) return;
+    
+    const hole = course.holes[activeHoleIndex];
+    if (!hole) return;
+    
+    // Get old position
+    const oldPos = markerType === "tee" ? hole.tee : hole.green;
+    if (!oldPos) return; // Can't move if it doesn't exist
+    
+    // Check if position changed
+    if (oldPos.x === newPos.x && oldPos.y === newPos.y) return; // No change
+    
+    // Calculate cost: remove old marker, place new marker
+    const oldIdx = oldPos.y * course.width + oldPos.x;
+    const newIdx = newPos.y * course.width + newPos.x;
+    const oldTerrain = course.tiles[oldIdx];
+    const newTerrain = course.tiles[newIdx];
+    
+    // Cost to remove old marker (revert to rough, get salvage)
+    const removeCost = computeTerrainChangeCost(oldTerrain, "rough"); // Reverting to rough
+    // Cost to place new marker
+    const placeCost = computeTerrainChangeCost(newTerrain, markerType);
+    const totalNet = placeCost.net + removeCost.net; // removeCost.net is negative (refund), so this is correct
+    
+    if (totalNet > 0 && world.cash < totalNet) {
+      setPaintError(`Insufficient funds to move ${markerType}: need $${Math.ceil(totalNet).toLocaleString()}`);
+      return;
+    }
+    
+    // Update hole
+    setCourse((c) => {
+      const holes = c.holes.slice();
+      const prev = holes[activeHoleIndex];
+      if (markerType === "tee") {
+        holes[activeHoleIndex] = { ...prev, tee: newPos };
+      } else {
+        holes[activeHoleIndex] = { ...prev, green: newPos };
+      }
+      return { ...c, holes };
+    });
+    
+    // Apply terrain changes: remove old, place new
+    applyTerrainAt(oldPos.x, oldPos.y, "rough", { silent: true }); // Revert old position
+    applyTerrainAt(newPos.x, newPos.y, markerType, { silent: true }); // Place new marker
+    void sound?.playConfirm(soundEnabled);
+  }
+
+  function confirmWizardWithValues(tee: Point, green: Point) {
+    if (world.isBankrupt) return;
 
     // Two tile changes: tee + green. Check combined affordability.
-    const teeIdx = draftTee.y * course.width + draftTee.x;
-    const greenIdx = draftGreen.y * course.width + draftGreen.x;
+    const teeIdx = tee.y * course.width + tee.x;
+    const greenIdx = green.y * course.width + green.x;
     const teePrev = course.tiles[teeIdx];
     const greenPrev = course.tiles[greenIdx];
     const teeCost = computeTerrainChangeCost(teePrev, "tee");
@@ -535,12 +650,12 @@ export default function App() {
     setCourse((c) => {
       const holes = c.holes.slice();
       const prev = holes[activeHoleIndex] ?? { tee: null, green: null };
-      holes[activeHoleIndex] = { ...prev, tee: draftTee, green: draftGreen };
+      holes[activeHoleIndex] = { ...prev, tee, green };
       return { ...c, holes };
     });
     // Apply as silent terrain changes (avoid double brush clicks), then play confirm chime.
-    applyTerrainAt(draftTee.x, draftTee.y, "tee", { silent: true });
-    applyTerrainAt(draftGreen.x, draftGreen.y, "green", { silent: true });
+    applyTerrainAt(tee.x, tee.y, "tee", { silent: true });
+    applyTerrainAt(green.x, green.y, "green", { silent: true });
     void sound?.playConfirm(soundEnabled);
 
     setActiveHoleIndex((i) => Math.min(8, i + 1));
@@ -549,10 +664,49 @@ export default function App() {
     setDraftGreen(null);
   }
 
+  function confirmWizard() {
+    if (!draftTee || !draftGreen) return;
+    confirmWizardWithValues(draftTee, draftGreen);
+  }
+
   function handleCanvasClick(x: number, y: number) {
     if (world.isBankrupt) return;
     // Unlock audio on first canvas interaction
     void audio.unlock();
+    
+    // Check bounds (only for marker placement, not for painting which supports infinite canvas)
+    if (editorMode === "HOLE_WIZARD" && (x < 0 || y < 0 || x >= course.width || y >= course.height)) {
+      setPaintError("Cannot place markers outside course bounds");
+      return;
+    }
+    
+    // Check if clicking on existing tee/green marker (direct interaction)
+    // Only check if not already in HOLE_WIZARD mode (to avoid conflicts)
+    if (editorMode !== "HOLE_WIZARD") {
+      // Check for tee markers (within course bounds)
+      if (x >= 0 && y >= 0 && x < course.width && y < course.height) {
+        for (let i = 0; i < course.holes.length; i++) {
+          const hole = course.holes[i];
+          if (hole.tee && hole.tee.x === x && hole.tee.y === y) {
+            setActiveHoleIndex(i);
+            setEditorMode("HOLE_WIZARD");
+            setWizardStep("MOVE_TEE");
+            setDraftTee({ x, y });
+            setDraftGreen(hole.green);
+            return;
+          }
+          if (hole.green && hole.green.x === x && hole.green.y === y) {
+            setActiveHoleIndex(i);
+            setEditorMode("HOLE_WIZARD");
+            setWizardStep("MOVE_GREEN");
+            setDraftTee(hole.tee);
+            setDraftGreen({ x, y });
+            return;
+          }
+        }
+      }
+    }
+    
     if (editorMode === "PAINT") {
       applyTerrainAt(x, y, selected);
       return;
@@ -569,18 +723,74 @@ export default function App() {
       return;
     }
     // HOLE_WIZARD
-    if (wizardStep === "TEE") {
-      setDraftTee({ x, y });
-      setDraftGreen(null);
-      setWizardStep("GREEN");
+    if (wizardStep === "TEE" || wizardStep === "MOVE_TEE") {
+      // Validate: cannot place on water and must be in bounds
+      if (x < 0 || y < 0 || x >= course.width || y >= course.height) {
+        setPaintError("Cannot place tee outside course bounds");
+        return;
+      }
+      const terrain = course.tiles[y * course.width + x];
+      if (terrain === "water") {
+        setPaintError("Cannot place tee on water");
+        return;
+      }
+      
+      const newTee = { x, y };
+      setDraftTee(newTee);
+      
+      // If moving tee, keep existing green and update immediately
+      if (wizardStep === "MOVE_TEE") {
+        const hole = course.holes[activeHoleIndex];
+        const existingGreen = hole.green;
+        if (existingGreen) {
+          // Update tee position immediately, keep green
+          moveMarker("tee", newTee);
+          // If green exists, move to GREEN step for potential green move
+          setWizardStep("GREEN");
+          setDraftGreen(existingGreen);
+        } else {
+          // No green yet, move to GREEN step to place it
+          setWizardStep("GREEN");
+          setDraftGreen(null);
+        }
+      } else {
+        // Placing new tee, clear green
+        setDraftGreen(null);
+        setWizardStep("GREEN");
+      }
       return;
     }
-    if (wizardStep === "GREEN") {
-      setDraftGreen({ x, y });
-      setWizardStep("CONFIRM");
+    if (wizardStep === "GREEN" || wizardStep === "MOVE_GREEN") {
+      // Validate: cannot place on water and must be in bounds
+      if (x < 0 || y < 0 || x >= course.width || y >= course.height) {
+        setPaintError("Cannot place green outside course bounds");
+        return;
+      }
+      const terrain = course.tiles[y * course.width + x];
+      if (terrain === "water") {
+        setPaintError("Cannot place green on water");
+        return;
+      }
+      
+      const newDraftGreen = { x, y };
+      setDraftGreen(newDraftGreen);
+      
+      // If moving green, update immediately and stay on same hole
+      if (wizardStep === "MOVE_GREEN") {
+        moveMarker("green", newDraftGreen);
+        // Reset wizard state, stay on same hole
+        setWizardStep("TEE");
+        setDraftTee(null);
+        setDraftGreen(null);
+      } else {
+        // Placing new green, auto-confirm and move to next hole
+        if (draftTee) {
+          confirmWizardWithValues(draftTee, newDraftGreen);
+        }
+      }
       return;
     }
-    // CONFIRM step: ignore clicks (use Redo/Confirm)
+    // CONFIRM step: ignore clicks (shouldn't reach here with auto-advance, but keep for safety)
   }
 
   function setActiveHoleParMode(mode: "AUTO" | "MANUAL") {
@@ -677,8 +887,30 @@ export default function App() {
 
   function onResetSave() {
     resetSave();
-    setCourse(DEFAULT_STATE.course);
-    setWorld(DEFAULT_STATE.world);
+    // Generate new terrain with a new seed
+    const newSeed = Date.now();
+    const generatedTiles = generateWildLand(
+      DEFAULT_STATE.course.width,
+      DEFAULT_STATE.course.height,
+      newSeed
+    );
+    
+    const newCourse = {
+      ...DEFAULT_STATE.course,
+      tiles: generatedTiles,
+      holes: Array.from({ length: 9 }, () => ({
+        tee: null,
+        green: null,
+        parMode: "AUTO" as const,
+      })),
+      obstacles: [],
+    };
+    
+    setCourse(newCourse);
+    setWorld({
+      ...DEFAULT_STATE.world,
+      runSeed: newSeed,
+    });
     setHistory([]);
     setLast(undefined);
     setEditorMode("PAINT");
@@ -813,6 +1045,10 @@ export default function App() {
               cameraState={holeEditCamera}
               showFixOverlay={showFixOverlay}
               failingCorridorSegments={failingCorridorSegments}
+              onCameraUpdate={(camera) => {
+                holeEditCameraManualRef.current = true;
+                setHoleEditCamera(camera);
+              }}
             />
             {hover && editorMode === "PAINT" && (
               <HoverTooltip hover={hover} prev={course.tiles[hover.idx]} next={selected} cash={world.cash} />
@@ -922,6 +1158,12 @@ export default function App() {
                     });
                   }}
                   onSmartPaintFairway={smartPaintFairway}
+                  editorMode={editorMode}
+                  setEditorMode={setEditorMode}
+                  selectedTerrain={selected}
+                  setSelected={setSelected}
+                  obstacleType={obstacleType}
+                  setObstacleType={setObstacleType}
                 />
               </div>
             </div>
@@ -938,6 +1180,8 @@ export default function App() {
         editorMode={editorMode}
         setEditorMode={setEditorMode}
         startWizard={startWizard}
+        startPlaceTee={startPlaceTee}
+        startPlaceGreen={startPlaceGreen}
         obstacleType={obstacleType}
         setObstacleType={setObstacleType}
         activeHoleIndex={activeHoleIndex}

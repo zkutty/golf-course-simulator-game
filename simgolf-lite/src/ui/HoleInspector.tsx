@@ -1,5 +1,5 @@
 import type { HoleEvaluation } from "../game/eval/evaluateHole";
-import type { Course, Hole } from "../game/models/types";
+import type { Course, Hole, Terrain, ObstacleType } from "../game/models/types";
 import { computeHoleTerrainStats, type TerrainComposition } from "../game/eval/terrainStats";
 
 interface HoleInspectorProps {
@@ -12,6 +12,13 @@ interface HoleInspectorProps {
   hole: Hole;
   onSetHoleIndex?: (index: number) => void;
   onSmartPaintFairway?: (widthYards: number) => void;
+  // Editor tools props
+  editorMode?: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
+  setEditorMode?: (mode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE") => void;
+  selectedTerrain?: Terrain;
+  setSelected?: (terrain: Terrain) => void;
+  obstacleType?: ObstacleType;
+  setObstacleType?: (type: ObstacleType) => void;
 }
 
 export function HoleInspector({
@@ -24,6 +31,12 @@ export function HoleInspector({
   hole,
   onSetHoleIndex,
   onSmartPaintFairway,
+  editorMode = "PAINT",
+  setEditorMode,
+  selectedTerrain = "fairway",
+  setSelected,
+  obstacleType = "tree",
+  setObstacleType,
 }: HoleInspectorProps) {
   const { scratchShotsToGreen, bogeyShotsToGreen, autoPar, reachableInTwo, effectiveDistanceYards, issues } =
     evaluation;
@@ -247,6 +260,92 @@ export function HoleInspector({
         <div>
           <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 6 }}>Corridor Area</div>
           <TerrainPercentages composition={terrainStats.corridor} />
+        </div>
+      </div>
+
+      {/* Editor Tools */}
+      <div style={{ marginBottom: 16, padding: 12, backgroundColor: "rgba(255, 255, 255, 0.7)", borderRadius: 6, border: "1px solid rgba(0, 0, 0, 0.1)" }}>
+        <h3 style={{ margin: "0 0 8px 0", fontSize: 13, fontWeight: 600 }}>Editor Tools</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {setEditorMode && (
+            <>
+              <div style={{ display: "flex", gap: 4 }}>
+                <button
+                  onClick={() => setEditorMode("PAINT")}
+                  style={{
+                    flex: 1,
+                    padding: "6px 8px",
+                    fontSize: 11,
+                    borderRadius: 4,
+                    border: "1px solid #ddd",
+                    background: editorMode === "PAINT" ? "#e8f5e9" : "#fff",
+                    cursor: "pointer",
+                    fontWeight: editorMode === "PAINT" ? 600 : 400,
+                  }}
+                >
+                  Paint
+                </button>
+                <button
+                  onClick={() => setEditorMode("OBSTACLE")}
+                  style={{
+                    flex: 1,
+                    padding: "6px 8px",
+                    fontSize: 11,
+                    borderRadius: 4,
+                    border: "1px solid #ddd",
+                    background: editorMode === "OBSTACLE" ? "#e8f5e9" : "#fff",
+                    cursor: "pointer",
+                    fontWeight: editorMode === "OBSTACLE" ? 600 : 400,
+                  }}
+                >
+                  Obstacle
+                </button>
+              </div>
+              {editorMode === "OBSTACLE" && setObstacleType && (
+                <div style={{ display: "flex", gap: 4, fontSize: 10 }}>
+                  {(["tree", "bush", "rock"] as const).map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setObstacleType(type)}
+                      style={{
+                        flex: 1,
+                        padding: "4px 6px",
+                        fontSize: 10,
+                        borderRadius: 3,
+                        border: "1px solid #ddd",
+                        background: obstacleType === type ? "#e3f2fd" : "#fff",
+                        cursor: "pointer",
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {type}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {editorMode === "PAINT" && setSelected && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4, fontSize: 10 }}>
+                  {(["fairway", "rough", "deep_rough", "sand", "water", "green", "tee", "path"] as const).map((terrain) => (
+                    <button
+                      key={terrain}
+                      onClick={() => setSelected(terrain as Terrain)}
+                      style={{
+                        padding: "4px 6px",
+                        fontSize: 10,
+                        borderRadius: 3,
+                        border: "1px solid #ddd",
+                        background: selectedTerrain === terrain ? "#e8f5e9" : "#fff",
+                        cursor: "pointer",
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {terrain.replace("_", " ")}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 

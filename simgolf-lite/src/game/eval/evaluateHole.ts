@@ -411,34 +411,83 @@ export function evaluateHole(course: Course, hole: Hole, holeIndex: number): Hol
   }
 
   // Rule 9: DOGLEG_INDICATOR
-  if (walkableRoute && walkableRoute.length > 2) {
-    // Compute total turning angle
-    let totalTurn = 0;
-    for (let i = 1; i < walkableRoute.length - 1; i++) {
-      const p1 = walkableRoute[i - 1];
-      const p2 = walkableRoute[i];
-      const p3 = walkableRoute[i + 1];
-      const a1 = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-      const a2 = Math.atan2(p3.y - p2.y, p3.x - p2.x);
-      let turn = Math.abs(a2 - a1);
-      if (turn > Math.PI) turn = 2 * Math.PI - turn;
-      totalTurn += turn * (180 / Math.PI);
-    }
+  // Calculate dogleg based on shot plan: angle from tee to first landing vs landing to green
+  // Only calculate dogleg if the hole requires multiple shots (has a real landing zone before the green)
+  if (score.shotPlan && score.shotPlan.length > 1) {
+    // Multi-shot hole: check angle between first shot and second shot
+    const firstShot = score.shotPlan[0];
+    const secondShot = score.shotPlan[1];
+    const landingPoint = firstShot.to;
+    
+    // Check if landing point is actually on/near the green (one-shot hole that solver split into steps)
+    const distToGreen = Math.sqrt((landingPoint.x - green.x) ** 2 + (landingPoint.y - green.y) ** 2);
+    
+    // Only calculate dogleg if landing is not at green (i.e., it's a true multi-shot hole)
+    if (distToGreen >= 2) {
+      // Calculate angle from tee to landing point
+      const dx1 = landingPoint.x - tee.x;
+      const dy1 = landingPoint.y - tee.y;
+      const angle1 = Math.atan2(dy1, dx1);
+      
+      // Calculate angle from landing point to next target (second shot destination)
+      const nextTarget = secondShot.to;
+      const dx2 = nextTarget.x - landingPoint.x;
+      const dy2 = nextTarget.y - landingPoint.y;
+      const angle2 = Math.atan2(dy2, dx2);
+      
+      // Calculate the turn angle (difference between the two directions)
+      let doglegDeg = Math.abs(angle2 - angle1) * (180 / Math.PI);
+      // Normalize to 0-180 degrees
+      if (doglegDeg > 180) doglegDeg = 360 - doglegDeg;
+      
+      if (doglegDeg > CONFIG.doglegTurnInfoDeg) {
+        issues.push({
+          severity: "info",
+          code: "DOGLEG_INDICATOR",
+          title: "Dogleg Hole",
+          detail: `Hole turns ${doglegDeg.toFixed(0)}° at landing zone`,
+          suggestedFixes: ["Ensure landing zone at corner", "Widen fairway at turn"],
+        });
 
-    if (totalTurn > CONFIG.doglegTurnInfoDeg) {
-      issues.push({
-        severity: "info",
-        code: "DOGLEG_INDICATOR",
-        title: "Dogleg Hole",
-        detail: `Hole has significant turns (${totalTurn.toFixed(0)}° total)`,
-        suggestedFixes: ["Ensure landing zone at corner", "Widen fairway at turn"],
-      });
-
-      // If dogleg increases par significantly, upgrade to warn
-      if (score.scratchShotsToGreen > 4.5 && totalTurn > CONFIG.doglegTurnInfoDeg * 1.5) {
-        issues[issues.length - 1].severity = "warn";
+        // If dogleg increases par significantly, upgrade to warn
+        if (score.scratchShotsToGreen > 4.5 && doglegDeg > CONFIG.doglegTurnInfoDeg * 1.5) {
+          issues[issues.length - 1].severity = "warn";
+        }
       }
     }
+    // If distToGreen < 2, landing is at green, so it's effectively a one-shot hole - skip dogleg calculation
+  } else if (score.shotPlan && score.shotPlan.length === 1) {
+    // Single-shot hole: check if the shot goes directly to green (straight shot, no dogleg)
+    const firstShot = score.shotPlan[0];
+    const landingPoint = firstShot.to;
+    const distToGreen = Math.sqrt((landingPoint.x - green.x) ** 2 + (landingPoint.y - green.y) ** 2);
+    
+    // If landing is not at green, there might be a dogleg even in one shot (unlikely but possible)
+    if (distToGreen >= 2) {
+      // Calculate angle from tee to landing vs landing to green
+      const dx1 = landingPoint.x - tee.x;
+      const dy1 = landingPoint.y - tee.y;
+      const angle1 = Math.atan2(dy1, dx1);
+      
+      const dx2 = green.x - landingPoint.x;
+      const dy2 = green.y - landingPoint.y;
+      const angle2 = Math.atan2(dy2, dx2);
+      
+      let doglegDeg = Math.abs(angle2 - angle1) * (180 / Math.PI);
+      if (doglegDeg > 180) doglegDeg = 360 - doglegDeg;
+      
+      // For single-shot holes, only flag significant doglegs (likely means shot was forced around obstacle)
+      if (doglegDeg > CONFIG.doglegTurnInfoDeg * 1.5) {
+        issues.push({
+          severity: "info",
+          code: "DOGLEG_INDICATOR",
+          title: "Dogleg Hole",
+          detail: `Hole turns ${doglegDeg.toFixed(0)}° at landing zone`,
+          suggestedFixes: ["Ensure landing zone at corner", "Widen fairway at turn"],
+        });
+      }
+    }
+    // If distToGreen < 2, it's a straight shot to green - no dogleg
   }
 
   return {

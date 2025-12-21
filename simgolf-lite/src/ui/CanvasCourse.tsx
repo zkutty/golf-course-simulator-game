@@ -598,7 +598,7 @@ export function CanvasCourse(props: {
   flyoverNonce: number;
   showShotPlan: boolean;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
-  wizardStep: "TEE" | "GREEN" | "CONFIRM";
+  wizardStep: "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
   draftTee: Point | null;
   draftGreen: Point | null;
   onClickTile: (x: number, y: number) => void;
@@ -609,6 +609,7 @@ export function CanvasCourse(props: {
   cameraState?: CameraState | null; // Optional hole edit mode camera
   showFixOverlay?: boolean; // Show corridor/layup zone overlays
   failingCorridorSegments?: Point[]; // Failing corridor segments for overlay
+  onCameraUpdate?: (camera: CameraState) => void; // Callback to update hole edit camera
 }) {
   const {
     course,
@@ -634,6 +635,7 @@ export function CanvasCourse(props: {
     cameraState,
     showFixOverlay: _showFixOverlay = false,
     failingCorridorSegments = [],
+    onCameraUpdate,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
@@ -1712,6 +1714,17 @@ export function CanvasCourse(props: {
     const wp = screenToWorldPx(e.clientX, e.clientY);
     const x = Math.floor(wp.x / TILE);
     const y = Math.floor(wp.y / TILE);
+    
+    // In hole edit mode with infinite canvas, allow coordinates outside bounds
+    if (cameraState && cameraState.mode === "hole") {
+      // Always return coordinates (infinite canvas)
+      const idx = x >= 0 && y >= 0 && x < course.width && y < course.height
+        ? y * course.width + x
+        : -1; // Use -1 for out-of-bounds tiles
+      return { x, y, idx };
+    }
+    
+    // Normal mode: check bounds
     if (x < 0 || y < 0 || x >= course.width || y >= course.height) return;
     const idx = y * course.width + x;
     return { x, y, idx };
@@ -1726,7 +1739,17 @@ export function CanvasCourse(props: {
     const canvas = e.currentTarget;
     canvas.setPointerCapture?.(e.pointerId);
 
-    const panIntent = (!showGridOverlays && e.button === 0) || e.button === 1 || e.button === 2;
+    // In hole edit mode, allow pan with left-click (unless in paint mode with overlay shown)
+    // Otherwise, use middle/right mouse buttons for pan
+    const isHoleEditMode = cameraState && cameraState.mode === "hole";
+    const panIntent = (isHoleEditMode && editorMode !== "PAINT" && e.button === 0) ||
+                      (!showGridOverlays && e.button === 0) || 
+                      e.button === 1 || 
+                      e.button === 2;
+    
+    // Store initial camera state for hole edit mode pan
+    const startCameraState = isHoleEditMode && cameraState ? { ...cameraState } : null;
+    
     panStateRef.current = {
       startX: e.clientX,
       startY: e.clientY,
@@ -1737,8 +1760,12 @@ export function CanvasCourse(props: {
       moved: false,
       downTile: t ? { x: t.x, y: t.y } : null,
     };
+    
+    // Store hole edit camera state for panning
+    (panStateRef.current as any).startCameraState = startCameraState;
 
     // Preserve editor feel: in ARCHITECT/PAINT, immediate click + drag paint.
+    // But in hole edit mode, only paint if grid overlays are shown (ARCHITECT mode)
     if (showGridOverlays && editorMode === "PAINT" && e.button === 0 && t) {
       onClickTile(t.x, t.y);
     }
@@ -1748,17 +1775,40 @@ export function CanvasCourse(props: {
     const t = getTileFromEvent(e);
     const ps = panStateRef.current;
 
-    // Pan when dragging (COZY: left-drag; ARCHITECT: middle/right-drag)
+    // Pan when dragging
     if (ps && ps.panIntent && (e.buttons & 1 || e.buttons & 2 || e.buttons & 4)) {
       const dx = e.clientX - ps.startX;
       const dy = e.clientY - ps.startY;
       if (!ps.moved && Math.hypot(dx, dy) > 3) ps.moved = true;
       if (ps.moved) {
         ps.active = true;
-        camRef.current.panX = ps.startPanX + dx;
-        camRef.current.panY = ps.startPanY + dy;
-        clampCamera(camRef.current);
-        if (rafRef.current == null && renderRef.current) rafRef.current = requestAnimationFrame(renderRef.current);
+        
+        // Handle hole edit mode camera panning
+        if (cameraState && cameraState.mode === "hole" && onCameraUpdate) {
+          const startState = (ps as any).startCameraState;
+          if (startState) {
+            // Convert screen delta to world delta
+            const invZoom = 1 / startState.zoom;
+            const worldDx = (-dx * invZoom) / tileSize;
+            const worldDy = (-dy * invZoom) / tileSize;
+            
+            const newCamera: CameraState = {
+              ...startState,
+              center: {
+                x: startState.center.x + worldDx,
+                y: startState.center.y + worldDy,
+              },
+            };
+            onCameraUpdate(newCamera);
+            if (rafRef.current == null && renderRef.current) rafRef.current = requestAnimationFrame(renderRef.current);
+          }
+        } else {
+          // Normal mode panning
+          camRef.current.panX = ps.startPanX + dx;
+          camRef.current.panY = ps.startPanY + dy;
+          clampCamera(camRef.current);
+          if (rafRef.current == null && renderRef.current) rafRef.current = requestAnimationFrame(renderRef.current);
+        }
       }
     }
 
@@ -1773,8 +1823,10 @@ export function CanvasCourse(props: {
       onHoverTile({ idx: t.idx, x: t.x, y: t.y, clientX: e.clientX, clientY: e.clientY });
     }
 
-    // Drag painting only in PAINT mode
-    if (showGridOverlays && editorMode === "PAINT" && e.buttons === 1) onClickTile(t.x, t.y);
+    // Drag painting in PAINT mode (works in both modes)
+    if (editorMode === "PAINT" && e.buttons === 1 && t) {
+      onClickTile(t.x, t.y);
+    }
   }
 
   function handlePointerUp(e: React.PointerEvent) {
@@ -1793,6 +1845,36 @@ export function CanvasCourse(props: {
     // User input cancels cinematic motions.
     camAnimRef.current = null;
     flyoverRef.current = null;
+
+    // Handle hole edit mode zoom
+    if (cameraState && cameraState.mode === "hole" && onCameraUpdate) {
+      const delta = -e.deltaY * 0.001;
+      const zoomFactor = 1 + delta;
+      const newZoom = Math.max(0.5, Math.min(10.0, cameraState.zoom * zoomFactor));
+      
+      // Zoom towards mouse position
+      const rect = canvasRef.current!.getBoundingClientRect();
+      const screenPoint = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const worldPoint = cameraScreenToWorld(screenPoint, cameraState, tileSize, wPx, hPx);
+      
+      // Calculate new center so the world point under mouse stays fixed
+      const zoomRatio = newZoom / cameraState.zoom;
+      const newCenterX = cameraState.center.x - (worldPoint.x - cameraState.center.x) * (zoomRatio - 1);
+      const newCenterY = cameraState.center.y - (worldPoint.y - cameraState.center.y) * (zoomRatio - 1);
+      
+      const newCamera: CameraState = {
+        ...cameraState,
+        zoom: newZoom,
+        center: {
+          x: newCenterX,
+          y: newCenterY,
+        },
+      };
+      
+      onCameraUpdate(newCamera);
+      if (rafRef.current == null && renderRef.current) rafRef.current = requestAnimationFrame(renderRef.current);
+      return;
+    }
 
     const cam = camRef.current;
     const wp = screenToWorldPx(e.clientX, e.clientY);
