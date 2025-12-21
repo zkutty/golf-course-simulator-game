@@ -4,6 +4,7 @@ import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { CameraState } from "../game/render/camera";
 import { screenToWorld as cameraScreenToWorld, applyCameraTransform } from "../game/render/camera";
 import { getObstacleSprite, preloadObstacleSprites } from "../render/iconSprites";
+import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 
 const COLORS: Record<Terrain, string> = {
   fairway: "#4fa64f",
@@ -602,14 +603,14 @@ export function CanvasCourse(props: {
   draftTee: Point | null;
   draftGreen: Point | null;
   onClickTile: (x: number, y: number) => void;
-  onHoverTile?: (h: { idx: number; x: number; y: number; clientX: number; clientY: number }) => void;
-  onLeave?: () => void;
-  cursor?: string;
+  selectedTerrain?: Terrain; // For cursor calculation
+  worldCash?: number; // For cursor calculation
   flagColor?: string;
   cameraState?: CameraState | null; // Optional hole edit mode camera
   showFixOverlay?: boolean; // Show corridor/layup zone overlays
   failingCorridorSegments?: Point[]; // Failing corridor segments for overlay
   onCameraUpdate?: (camera: CameraState) => void; // Callback to update hole edit camera
+  showObstacles?: boolean; // Show/hide obstacles layer (default true)
 }) {
   const {
     course,
@@ -628,18 +629,19 @@ export function CanvasCourse(props: {
     draftTee,
     draftGreen,
     onClickTile,
-    onHoverTile,
-    onLeave,
-    cursor,
+    selectedTerrain,
+    worldCash,
     flagColor,
     cameraState,
     showFixOverlay: _showFixOverlay = false,
     failingCorridorSegments = [],
     onCameraUpdate,
+    showObstacles = true,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const hoverTileRef = useRef<{ idx: number; x: number; y: number; clientX: number; clientY: number } | null>(null);
   const rafRef = useRef<number | null>(null);
   const renderRef = useRef<null | ((t: number) => void)>(null);
   const isVisibleRef = useRef(true);
@@ -942,6 +944,12 @@ export function CanvasCourse(props: {
       const t = timeMs * 0.001;
       const amp = Math.max(0.3, TILE * 0.06);
       const sway = animationsEnabled && o.type !== "rock" ? Math.sin(t * 0.6 + phase) * amp : 0;
+      
+      // Add deterministic jitter for organic look (based on position + type)
+      const jitterSeed = o.x * 1337 + o.y * 733 + (o.type === "tree" ? 7 : o.type === "bush" ? 11 : 13);
+      const jitterScale = 0.92 + (hash01(jitterSeed) * 0.14); // 0.92 to 1.06
+      const jitterRotation = (hash01(jitterSeed + 1000) - 0.5) * 12; // -6° to +6°
+      
       const cx = cx0 + sway;
       const cy = cy0;
 
@@ -952,9 +960,15 @@ export function CanvasCourse(props: {
       
       // Check if sprite is available (already loaded)
       if (sprite) {
-        // Draw sprite with subtle shadow and 10% padding
+        // Draw sprite with subtle shadow, jitter, and 10% padding
         ctx2.save();
         ctx2.globalAlpha = 0.95;
+        
+        // Apply jitter: translate to center, rotate, scale, then translate back
+        ctx2.translate(cx, cy);
+        ctx2.rotate((jitterRotation * Math.PI) / 180);
+        ctx2.scale(jitterScale, jitterScale);
+        ctx2.translate(-cx, -cy);
         
         // Subtle shadow
         ctx2.shadowColor = "rgba(0, 0, 0, 0.25)";
@@ -982,6 +996,13 @@ export function CanvasCourse(props: {
         
         ctx2.save();
         ctx2.globalAlpha = 0.95;
+        
+        // Apply jitter: translate to center, rotate, scale, then translate back
+        ctx2.translate(cx, cy);
+        ctx2.rotate((jitterRotation * Math.PI) / 180);
+        ctx2.scale(jitterScale, jitterScale);
+        ctx2.translate(-cx, -cy);
+        
         ctx2.shadowColor = "rgba(0, 0, 0, 0.25)";
         ctx2.shadowBlur = 2;
         ctx2.shadowOffsetX = 1;
@@ -1016,7 +1037,14 @@ export function CanvasCourse(props: {
           });
       }
 
-      // Fallback: draw primitive placeholder while sprite loads
+      // Fallback: draw primitive placeholder while sprite loads (with jitter)
+      ctx2.save();
+      // Apply jitter: translate to center, rotate, scale, then translate back
+      ctx2.translate(cx, cy);
+      ctx2.rotate((jitterRotation * Math.PI) / 180);
+      ctx2.scale(jitterScale, jitterScale);
+      ctx2.translate(-cx, -cy);
+      
       if (o.type === "tree") {
         // canopy
         ctx2.globalAlpha = 0.95;
@@ -1062,6 +1090,7 @@ export function CanvasCourse(props: {
         ctx2.ellipse(cx - rw * 0.25, cy - rh * 0.25, rw * 0.35, rh * 0.28, 0, 0, Math.PI * 2);
         ctx2.fill();
       }
+      ctx2.restore(); // Restore jitter transform
       ctx2.globalAlpha = 1;
     }
 
@@ -1216,6 +1245,267 @@ export function CanvasCourse(props: {
         ctx2.fillStyle = "rgba(250,204,21,0.95)";
       }
 
+      ctx2.restore();
+    }
+
+    /**
+     * Calculate suggested par from distance in yards
+     * Based on typical golf hole distances:
+     * - Par 3: < 250 yards
+     * - Par 4: 250-450 yards
+     * - Par 5: > 450 yards
+     */
+    function getSuggestedPar(distanceYards: number): 3 | 4 | 5 {
+      if (distanceYards < 250) return 3;
+      if (distanceYards < 450) return 4;
+      return 5;
+    }
+
+    /**
+     * Calculate distance between two points in tiles and yards
+     */
+    function calculateDistance(from: Point, to: Point): { tiles: number; yards: number } {
+      const dx = to.x - from.x;
+      const dy = to.y - from.y;
+      const tiles = Math.sqrt(dx * dx + dy * dy);
+      const yards = tiles * course.yardsPerTile;
+      return { tiles, yards };
+    }
+
+    function drawDistancePreview() {
+      // Only show in green or tee placement mode
+      const isGreenPlacement = wizardStep === "GREEN" || wizardStep === "MOVE_GREEN";
+      const isTeePlacement = wizardStep === "TEE" || wizardStep === "MOVE_TEE";
+      
+      if (!isGreenPlacement && !isTeePlacement) return;
+      
+      const hover = hoverTileRef.current;
+      if (!hover) return;
+
+      // For green placement: line from tee to hover
+      // For tee placement: line from green to hover (if green exists)
+      let fromPoint: Point | null = null;
+      let previewMode: "green" | "tee" = "green";
+      
+      const hole = holes[activeHoleIndex];
+      if (isGreenPlacement) {
+        // Use tee from hole or draftTee
+        fromPoint = hole?.tee || draftTee;
+        previewMode = "green";
+      } else if (isTeePlacement) {
+        // Use green from hole or draftGreen
+        fromPoint = hole?.green || draftGreen;
+        previewMode = "tee";
+      }
+      
+      if (!fromPoint) {
+        // No reference point, can't show preview
+        return;
+      }
+
+      // Check if hover is valid (within reasonable bounds for rendering)
+      const hoverInBounds = hover.x >= -1 && hover.y >= -1 && hover.x <= course.width && hover.y <= course.height;
+      
+      // Check if hover is on water (invalid for green placement)
+      const isWater = hoverInBounds && hover.x >= 0 && hover.y >= 0 && hover.x < course.width && hover.y < course.height && getTerrainAt(hover.x, hover.y) === "water";
+      const isValid = !(isWater && previewMode === "green");
+
+      // Convert world coordinates to screen (context already has transform applied)
+      // We need to draw before transform reset, so use world coords
+      const fromScreen = { x: fromPoint.x * TILE + TILE / 2, y: fromPoint.y * TILE + TILE / 2 };
+      const toScreen = { x: hover.x * TILE + TILE / 2, y: hover.y * TILE + TILE / 2 };
+
+      // Draw line (rubber-band style) - context already has camera transform
+      ctx2.save();
+      ctx2.strokeStyle = isValid ? "rgba(100, 150, 255, 0.6)" : "rgba(255, 100, 100, 0.6)";
+      ctx2.lineWidth = 2;
+      ctx2.setLineDash([4, 4]);
+      ctx2.beginPath();
+      ctx2.moveTo(fromScreen.x, fromScreen.y);
+      ctx2.lineTo(toScreen.x, toScreen.y);
+      ctx2.stroke();
+      ctx2.setLineDash([]);
+      
+      // Draw circle at hover point
+      ctx2.fillStyle = isValid ? "rgba(100, 150, 255, 0.8)" : "rgba(255, 100, 100, 0.8)";
+      ctx2.strokeStyle = isValid ? "rgba(100, 150, 255, 1)" : "rgba(255, 100, 100, 1)";
+      ctx2.lineWidth = 2;
+      ctx2.beginPath();
+      ctx2.arc(toScreen.x, toScreen.y, Math.max(4, TILE * 0.15), 0, Math.PI * 2);
+      ctx2.fill();
+      ctx2.stroke();
+      
+      ctx2.restore();
+    }
+
+    function drawDistancePreviewTooltip() {
+      // Only show in green or tee placement mode
+      const isGreenPlacement = wizardStep === "GREEN" || wizardStep === "MOVE_GREEN";
+      const isTeePlacement = wizardStep === "TEE" || wizardStep === "MOVE_TEE";
+      
+      if (!isGreenPlacement && !isTeePlacement) return;
+      
+      const hover = hoverTileRef.current;
+      if (!hover) return;
+
+      // For green placement: line from tee to hover
+      // For tee placement: line from green to hover (if green exists)
+      let fromPoint: Point | null = null;
+      let previewMode: "green" | "tee" = "green";
+      
+      const hole = holes[activeHoleIndex];
+      if (isGreenPlacement) {
+        fromPoint = hole?.tee || draftTee;
+        previewMode = "green";
+      } else if (isTeePlacement) {
+        fromPoint = hole?.green || draftGreen;
+        previewMode = "tee";
+      }
+      
+      if (!fromPoint) {
+        // No reference point, show hint
+        const hintX = Math.max(12, Math.min(wPx - 200, hover.clientX));
+        const hintY = Math.max(12, Math.min(hPx - 30, hover.clientY + 20));
+        ctx2.save();
+        ctx2.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx2.fillText("Place tee first to see distance", hintX, hintY);
+        ctx2.restore();
+        return;
+      }
+
+      // Check if hover is valid
+      const hoverInBounds = hover.x >= -1 && hover.y >= -1 && hover.x <= course.width && hover.y <= course.height;
+      if (!hoverInBounds) return;
+      
+      // Calculate distance
+      const dist = calculateDistance(fromPoint, { x: hover.x, y: hover.y });
+      const roundedYards = Math.round(dist.yards / 5) * 5; // Round to nearest 5 yards
+      
+      // Check if hover is on water (invalid for green placement)
+      const isWater = hover.x >= 0 && hover.y >= 0 && hover.x < course.width && hover.y < course.height && getTerrainAt(hover.x, hover.y) === "water";
+      const isValid = !(isWater && previewMode === "green");
+      
+      // Handle edge case: tee == hover
+      if (dist.tiles < 0.1) {
+        // Show 0 yards tooltip
+        const tooltipText = "0 yds (0.0 tiles)";
+        const tooltipX = Math.max(12, Math.min(wPx - 150, hover.clientX));
+        const tooltipY = Math.max(12, Math.min(hPx - 30, hover.clientY + 20));
+        
+        ctx2.save();
+        ctx2.fillStyle = "rgba(0, 0, 0, 0.85)";
+        ctx2.strokeStyle = "rgba(255, 255, 255, 0.3)";
+        ctx2.lineWidth = 1;
+        ctx2.font = "12px system-ui, sans-serif";
+        ctx2.textAlign = "left";
+        ctx2.textBaseline = "top";
+        
+        const padding = 6;
+        const textWidth = ctx2.measureText(tooltipText).width;
+        const tooltipWidth = textWidth + padding * 2;
+        const tooltipHeight = 16 + padding * 2;
+        
+        ctx2.fillRect(tooltipX - padding, tooltipY - padding, tooltipWidth, tooltipHeight);
+        ctx2.strokeRect(tooltipX - padding, tooltipY - padding, tooltipWidth, tooltipHeight);
+        ctx2.fillStyle = "rgba(255, 255, 255, 0.95)";
+        ctx2.fillText(tooltipText, tooltipX, tooltipY);
+        ctx2.restore();
+        return;
+      }
+
+      const suggestedPar = getSuggestedPar(roundedYards);
+      const tooltipText = isValid 
+        ? `${roundedYards} yds (${dist.tiles.toFixed(1)} tiles)\nPar ${suggestedPar}`
+        : `${roundedYards} yds (${dist.tiles.toFixed(1)} tiles)\nInvalid (water)`;
+      
+      // Position tooltip near cursor, clamped to viewport
+      // Use clientX/clientY from hover (already in screen coords)
+      const tooltipPadding = 12;
+      const tooltipX = Math.max(tooltipPadding, Math.min(wPx - 150, hover.clientX));
+      const tooltipY = Math.max(tooltipPadding, Math.min(hPx - 60, hover.clientY + 20));
+      
+      ctx2.save();
+      ctx2.fillStyle = "rgba(0, 0, 0, 0.85)";
+      ctx2.strokeStyle = "rgba(255, 255, 255, 0.3)";
+      ctx2.lineWidth = 1;
+      ctx2.font = "12px system-ui, sans-serif";
+      ctx2.textAlign = "left";
+      ctx2.textBaseline = "top";
+      
+      // Measure text
+      const lines = tooltipText.split("\n");
+      const lineHeight = 16;
+      const padding = 6;
+      const maxWidth = Math.max(...lines.map(l => ctx2.measureText(l).width));
+      const tooltipWidth = maxWidth + padding * 2;
+      const tooltipHeight = lines.length * lineHeight + padding * 2;
+      
+      // Draw background
+      ctx2.fillRect(tooltipX - padding, tooltipY - padding, tooltipWidth, tooltipHeight);
+      ctx2.strokeRect(tooltipX - padding, tooltipY - padding, tooltipWidth, tooltipHeight);
+      
+      // Draw text
+      ctx2.fillStyle = isValid ? "rgba(255, 255, 255, 0.95)" : "rgba(255, 200, 200, 0.95)";
+      lines.forEach((line, i) => {
+        ctx2.fillText(line, tooltipX, tooltipY + i * lineHeight);
+      });
+      
+      ctx2.restore();
+    }
+
+    function drawPaintHoverTooltip() {
+      // Show hover tooltip for paint mode
+      if (editorMode !== "PAINT" || !selectedTerrain || worldCash === undefined) return;
+      
+      const hover = hoverTileRef.current;
+      if (!hover || hover.idx < 0) return;
+      
+      const prev = course.tiles[hover.idx];
+      const cost = computeTerrainChangeCost(prev, selectedTerrain);
+      const canAfford = cost.net <= 0 || worldCash >= cost.net;
+      
+      // Build tooltip text
+      const lines: string[] = [];
+      if (cost.net > 0) {
+        lines.push(`Cost: $${Math.ceil(cost.net).toLocaleString()}`);
+        if (!canAfford) {
+          lines.push("Insufficient funds");
+        }
+      } else if (cost.net < 0) {
+        lines.push(`Refund: $${Math.ceil(-cost.net).toLocaleString()}`);
+      }
+      
+      if (lines.length === 0) return;
+      
+      const tooltipText = lines.join("\n");
+      const tooltipX = Math.max(12, Math.min(wPx - 150, hover.clientX));
+      const tooltipY = Math.max(12, Math.min(hPx - 60, hover.clientY + 20));
+      
+      ctx2.save();
+      ctx2.fillStyle = "rgba(0, 0, 0, 0.85)";
+      ctx2.strokeStyle = "rgba(255, 255, 255, 0.3)";
+      ctx2.lineWidth = 1;
+      ctx2.font = "12px system-ui, sans-serif";
+      ctx2.textAlign = "left";
+      ctx2.textBaseline = "top";
+      
+      const lineHeight = 16;
+      const padding = 6;
+      const textLines = tooltipText.split("\n");
+      const maxWidth = Math.max(...textLines.map(l => ctx2.measureText(l).width));
+      const tooltipWidth = maxWidth + padding * 2;
+      const tooltipHeight = textLines.length * lineHeight + padding * 2;
+      
+      // Draw background
+      ctx2.fillRect(tooltipX - padding, tooltipY - padding, tooltipWidth, tooltipHeight);
+      ctx2.strokeRect(tooltipX - padding, tooltipY - padding, tooltipWidth, tooltipHeight);
+      
+      // Draw text
+      ctx2.fillStyle = canAfford ? "rgba(255, 255, 255, 0.95)" : "rgba(255, 200, 200, 0.95)";
+      textLines.forEach((line, i) => {
+        ctx2.fillText(line, tooltipX, tooltipY + i * lineHeight);
+      });
+      
       ctx2.restore();
     }
 
@@ -1572,26 +1862,28 @@ export function CanvasCourse(props: {
 
       drawShimmer(timeMs);
 
-      // obstacles always visible; sway only when animations enabled
-      // In infinite mode, only draw obstacles in visible range
-      if (cameraState && cameraState.mode === "hole") {
-        const invZoom = 1 / (cameraState.zoom || 1);
-        const visibleWidthTiles = (wPx * invZoom) / TILE + 2;
-        const visibleHeightTiles = (hPx * invZoom) / TILE + 2;
-        const centerX = cameraState.center.x;
-        const centerY = cameraState.center.y;
-        const minTileX = Math.floor(centerX - visibleWidthTiles / 2);
-        const maxTileX = Math.ceil(centerX + visibleWidthTiles / 2);
-        const minTileY = Math.floor(centerY - visibleHeightTiles / 2);
-        const maxTileY = Math.ceil(centerY + visibleHeightTiles / 2);
-        
-        for (const o of obstacles) {
-          if (o.x >= minTileX && o.x <= maxTileX && o.y >= minTileY && o.y <= maxTileY) {
-            drawObstacle(o, timeMs);
+      // obstacles (only if showObstacles is true)
+      if (showObstacles) {
+        // In infinite mode, only draw obstacles in visible range
+        if (cameraState && cameraState.mode === "hole") {
+          const invZoom = 1 / (cameraState.zoom || 1);
+          const visibleWidthTiles = (wPx * invZoom) / TILE + 2;
+          const visibleHeightTiles = (hPx * invZoom) / TILE + 2;
+          const centerX = cameraState.center.x;
+          const centerY = cameraState.center.y;
+          const minTileX = Math.floor(centerX - visibleWidthTiles / 2);
+          const maxTileX = Math.ceil(centerX + visibleWidthTiles / 2);
+          const minTileY = Math.floor(centerY - visibleHeightTiles / 2);
+          const maxTileY = Math.ceil(centerY + visibleHeightTiles / 2);
+          
+          for (const o of obstacles) {
+            if (o.x >= minTileX && o.x <= maxTileX && o.y >= minTileY && o.y <= maxTileY) {
+              drawObstacle(o, timeMs);
+            }
           }
+        } else {
+          for (const o of obstacles) drawObstacle(o, timeMs);
         }
-      } else {
-        for (const o of obstacles) drawObstacle(o, timeMs);
       }
 
       // greens as targets: small flags (flutter in COZY)
@@ -1606,9 +1898,18 @@ export function CanvasCourse(props: {
       // fix overlay (failing corridor segments)
       drawFixOverlay();
 
+      // distance preview (placement mode) - draw before resetting transform
+      drawDistancePreview();
+
       drawAnalytics();
       drawWizard();
+      
+      // Reset transform before drawing tooltip (needs screen coords)
       ctx2.setTransform(1, 0, 0, 1, 0, 0);
+      
+      // Draw tooltips (after transform reset, using screen coordinates)
+      drawDistancePreviewTooltip();
+      drawPaintHoverTooltip();
 
       const shouldContinue =
         animationsEnabled ||
@@ -1812,16 +2113,16 @@ export function CanvasCourse(props: {
       }
     }
 
-    if (!t) return;
-
-    // Hover events only when tile changes
-    if (onHoverTile && lastHoverIdxRef.current !== t.idx) {
-      lastHoverIdxRef.current = t.idx;
-      onHoverTile({ idx: t.idx, x: t.x, y: t.y, clientX: e.clientX, clientY: e.clientY });
-    } else if (onHoverTile) {
-      // Same tile; update tooltip position cheaply
-      onHoverTile({ idx: t.idx, x: t.x, y: t.y, clientX: e.clientX, clientY: e.clientY });
+    // Track hover tile for rendering (no React state updates - performance critical)
+    const prevHover = hoverTileRef.current;
+    hoverTileRef.current = t ? { idx: t.idx, x: t.x, y: t.y, clientX: e.clientX, clientY: e.clientY } : null;
+    
+    // Trigger canvas redraw if hover tile changed (for tooltip/preview updates)
+    if ((prevHover?.x !== hoverTileRef.current?.x || prevHover?.y !== hoverTileRef.current?.y) && renderRef.current && rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(renderRef.current);
     }
+    
+    if (!t) return;
 
     // Drag painting in PAINT mode (works in both modes)
     if (editorMode === "PAINT" && e.buttons === 1 && t) {
@@ -1917,9 +2218,28 @@ export function CanvasCourse(props: {
         onContextMenu={(e) => e.preventDefault()}
         onPointerLeave={() => {
           lastHoverIdxRef.current = null;
-          onLeave?.();
+          hoverTileRef.current = null;
+          // Hover cleared
+          if (renderRef.current && rafRef.current == null) {
+            rafRef.current = requestAnimationFrame(renderRef.current);
+          }
         }}
-        style={{ touchAction: "none", cursor: cursor ?? "crosshair", display: "block" }}
+        style={{
+          touchAction: "none",
+          cursor: (() => {
+            // Calculate cursor style based on hover tile (no React state)
+            if (editorMode === "PAINT" && selectedTerrain && worldCash !== undefined) {
+              const hover = hoverTileRef.current;
+              if (hover && hover.idx >= 0) {
+                const prev = course.tiles[hover.idx];
+                const cost = computeTerrainChangeCost(prev, selectedTerrain);
+                return cost.net > 0 && worldCash < cost.net ? "not-allowed" : "crosshair";
+              }
+            }
+            return "crosshair";
+          })(),
+          display: "block",
+        }}
       />
     </div>
   );

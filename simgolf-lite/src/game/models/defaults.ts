@@ -1,13 +1,14 @@
 import type { Course, Terrain, World } from "./types";
+import { COURSE_WIDTH, COURSE_HEIGHT } from "./constants";
 
 export const DEFAULT_COURSE: Course = {
   name: "West Village Municipal",
-  width: 36,
-  height: 24,
-  tiles: Array.from({ length: 36 * 24 }, () => "rough" as Terrain),
+  width: COURSE_WIDTH,
+  height: COURSE_HEIGHT,
+  tiles: Array.from({ length: COURSE_WIDTH * COURSE_HEIGHT }, () => "rough" as Terrain),
   holes: Array.from({ length: 9 }, (_, i) => ({
-    tee: { x: 3, y: 2 + i * 2 },
-    green: { x: 32, y: 2 + i * 2 },
+    tee: null,
+    green: null,
     parMode: "AUTO" as const,
     name: `Hole ${i + 1}`,
   })),

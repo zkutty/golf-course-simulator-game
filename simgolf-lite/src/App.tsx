@@ -22,7 +22,8 @@ import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
 import { HoleMinimap } from "./ui/HoleMinimap";
-import { generateWildLand } from "./game/gen/generateWildLand";
+import { generateWildLandWithObstacles } from "./game/gen/generateWildLand";
+import { COURSE_WIDTH, COURSE_HEIGHT } from "./game/models/constants";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -52,15 +53,10 @@ export default function App() {
     byTerrainTiles: {} as Partial<Record<Terrain, number>>,
   }));
 
-  const [hover, setHover] = useState<{
-    idx: number;
-    x: number;
-    y: number;
-    clientX: number;
-    clientY: number;
-  } | null>(null);
+  // Hover state moved to refs in canvas component to avoid React re-renders
 
   const [paintError, setPaintError] = useState<string | null>(null);
+  const [showObstacles, setShowObstacles] = useState(true);
   const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">("COZY");
   const [holeEditMode, setHoleEditMode] = useState<ViewMode>("global"); // "global" or "hole"
   const [holeEditCamera, setHoleEditCamera] = useState<CameraState | null>(null);
@@ -291,14 +287,15 @@ export default function App() {
   function restartRun(args: { seed: number }) {
     const seed = args.seed | 0;
     
-    // Generate wild land terrain using the seed
-    const generatedTiles = generateWildLand(
-      DEFAULT_STATE.course.width,
-      DEFAULT_STATE.course.height,
-      seed
+    // Generate wild land terrain and obstacles using the seed
+    const { tiles: generatedTiles, obstacles: generatedObstacles } = generateWildLandWithObstacles(
+      COURSE_WIDTH,
+      COURSE_HEIGHT,
+      seed,
+      [] // No reserved zones for new games (no holes placed yet)
     );
     
-    // Create new course with generated terrain and no holes/obstacles
+    // Create new course with generated terrain and obstacles, no holes
     const newCourse = {
       ...DEFAULT_STATE.course,
       tiles: generatedTiles,
@@ -307,7 +304,7 @@ export default function App() {
         green: null,
         parMode: "AUTO" as const,
       })),
-      obstacles: [],
+      obstacles: generatedObstacles,
     };
     
     setCourse(newCourse);
@@ -328,7 +325,6 @@ export default function App() {
     setDraftTee(null);
     setDraftGreen(null);
     setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
-    setHover(null);
     setPaintError(null);
     setObstacleType("tree");
     setFlyoverNonce(0);
@@ -887,12 +883,13 @@ export default function App() {
 
   function onResetSave() {
     resetSave();
-    // Generate new terrain with a new seed
+    // Generate new terrain and obstacles with a new seed
     const newSeed = Date.now();
-    const generatedTiles = generateWildLand(
-      DEFAULT_STATE.course.width,
-      DEFAULT_STATE.course.height,
-      newSeed
+    const { tiles: generatedTiles, obstacles: generatedObstacles } = generateWildLandWithObstacles(
+      COURSE_WIDTH,
+      COURSE_HEIGHT,
+      newSeed,
+      [] // No reserved zones for reset (no holes placed yet)
     );
     
     const newCourse = {
@@ -903,7 +900,7 @@ export default function App() {
         green: null,
         parMode: "AUTO" as const,
       })),
-      obstacles: [],
+      obstacles: generatedObstacles,
     };
     
     setCourse(newCourse);
@@ -919,7 +916,6 @@ export default function App() {
     setDraftTee(null);
     setDraftGreen(null);
     setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
-    setHover(null);
     setPaintError(null);
     setObstacleType("tree");
     setPeakCash(DEFAULT_STATE.world.cash);
@@ -1030,29 +1026,19 @@ export default function App() {
               draftTee={draftTee}
               draftGreen={draftGreen}
               onClickTile={handleCanvasClick}
-              onHoverTile={(h) => setHover(h)}
-              onLeave={() => setHover(null)}
-              cursor={
-                hover && editorMode === "PAINT"
-                  ? (() => {
-                      const prev = course.tiles[hover.idx];
-                      const cost = computeTerrainChangeCost(prev, selected);
-                      return cost.net > 0 && world.cash < cost.net ? "not-allowed" : "crosshair";
-                    })()
-                  : "crosshair"
-              }
+              selectedTerrain={selected}
+              worldCash={world.cash}
               flagColor={legacy.selected.flagColor}
               cameraState={holeEditCamera}
               showFixOverlay={showFixOverlay}
               failingCorridorSegments={failingCorridorSegments}
+              showObstacles={showObstacles}
               onCameraUpdate={(camera) => {
                 holeEditCameraManualRef.current = true;
                 setHoleEditCamera(camera);
               }}
             />
-            {hover && editorMode === "PAINT" && (
-              <HoverTooltip hover={hover} prev={course.tiles[hover.idx]} next={selected} cash={world.cash} />
-            )}
+            {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
             {holeEditMode === "hole" && course.holes[activeHoleIndex]?.tee && course.holes[activeHoleIndex]?.green && (
               <HoleMinimap
                 course={course}
@@ -1213,6 +1199,8 @@ export default function App() {
         onFlyover={() => setFlyoverNonce((n) => n + 1)}
         soundEnabled={soundEnabled}
         setSoundEnabled={setSoundEnabled}
+        showObstacles={showObstacles}
+        setShowObstacles={setShowObstacles}
         isBankrupt={world.isBankrupt}
         onTakeBridgeLoan={takeBridgeLoan}
         onTakeExpansionLoan={takeExpansionLoan}
@@ -1404,44 +1392,4 @@ function BridgeLoanPrompt(props: { onAccept: () => void; onDecline: () => void }
   );
 }
 
-function HoverTooltip(props: {
-  hover: { idx: number; x: number; y: number; clientX: number; clientY: number };
-  prev: Terrain;
-  next: Terrain;
-  cash: number;
-}) {
-  const { net } = computeTerrainChangeCost(props.prev, props.next);
-  const label =
-    net > 0
-      ? `Build cost: $${Math.ceil(net).toLocaleString()}`
-      : net < 0
-        ? `Refund: +$${Math.ceil(-net).toLocaleString()}`
-        : "No cost";
-  const insufficient = net > 0 && props.cash < net;
-  return (
-    <div
-      style={{
-        position: "fixed",
-        left: props.hover.clientX + 12,
-        top: props.hover.clientY + 12,
-        padding: "6px 8px",
-        borderRadius: 8,
-        background: insufficient ? "rgba(160,0,0,0.9)" : "rgba(0,0,0,0.85)",
-        color: "#fff",
-        fontSize: 12,
-        pointerEvents: "none",
-        zIndex: 9999,
-        maxWidth: 220,
-      }}
-    >
-      <div>
-        <b>
-          {props.prev} → {props.next}
-        </b>
-      </div>
-      <div>{label}</div>
-      <div style={{ marginTop: 4, opacity: 0.9 }}>Most construction cost is unrecoverable.</div>
-      {insufficient && <div style={{ marginTop: 4 }}>Insufficient funds</div>}
-    </div>
-  );
-}
+// HoverTooltip removed - now rendered on canvas for performance

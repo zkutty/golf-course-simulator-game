@@ -71,6 +71,8 @@ export function HUD(props: {
   onFlyover: () => void;
   soundEnabled: boolean;
   setSoundEnabled: (b: boolean) => void;
+  showObstacles?: boolean;
+  setShowObstacles?: (b: boolean) => void;
   isBankrupt: boolean;
   onTakeBridgeLoan: () => void;
   onTakeExpansionLoan: () => void;
@@ -125,6 +127,8 @@ export function HUD(props: {
     onFlyover,
     soundEnabled,
     setSoundEnabled,
+    showObstacles,
+    setShowObstacles,
     isBankrupt,
     onTakeBridgeLoan,
     onTakeExpansionLoan,
@@ -415,6 +419,16 @@ export function HUD(props: {
                   />
                   Sound
                 </label>
+                {setShowObstacles && (
+                  <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#374151" }}>
+                    <input
+                      type="checkbox"
+                      checked={showObstacles ?? true}
+                      onChange={(e) => setShowObstacles(e.target.checked)}
+                    />
+                    Obstacles
+                  </label>
+                )}
               </div>
             </div>
           )}
