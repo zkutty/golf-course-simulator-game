@@ -8,6 +8,7 @@ import { computeCourseRatingAndSlope } from "../game/sim/courseRating";
 import { isCoursePlayable } from "../game/sim/isCoursePlayable";
 import type { LegacyState } from "../utils/legacy";
 import { BALANCE } from "../game/balance/balanceConfig";
+import logoCourseCraft from "../assets/branding/logo-coursecraft.svg";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -226,10 +227,19 @@ export function HUD(props: {
       }}
     >
       <div style={{ padding: 12, borderBottom: "1px solid #eee" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-          <div style={{ display: "grid", gap: 2 }}>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>SimGolf-lite Tycoon</div>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <img
+              src={logoCourseCraft}
+              alt="CourseCraft"
+              style={{ height: 44, width: "auto", objectFit: "contain" }}
+            />
+            <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
+              <div style={{ fontSize: 12, letterSpacing: "0.08em", color: "#6b7a5f" }}>
+                Design &amp; run your course
+              </div>
+            </div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             {(["COZY", "ARCHITECT"] as const).map((m) => (
