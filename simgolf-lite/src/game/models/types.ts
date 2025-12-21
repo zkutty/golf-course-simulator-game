@@ -21,7 +21,7 @@ export interface Hole {
   name?: string;
 }
 
-export type ObstacleType = "tree" | "bush";
+export type ObstacleType = "tree" | "bush" | "rock";
 
 export interface Obstacle {
   x: number;

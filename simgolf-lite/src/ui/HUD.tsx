@@ -10,7 +10,7 @@ import type { LegacyState } from "../utils/legacy";
 import { BALANCE } from "../game/balance/balanceConfig";
 import logoCourseCraft from "../assets/branding/logo-coursecraft.svg";
 import paperTex from "../assets/textures/paper.svg";
-import { IconCash, IconCondition, IconHoles, IconReputation } from "@/assets/icons";
+import { IconBush, IconCash, IconCondition, IconHoles, IconReputation, IconRock, IconTree } from "@/assets/icons";
 import { GameButton } from "@/ui/gameui";
 
 const TERRAIN: Terrain[] = [
@@ -643,7 +643,7 @@ export function HUD(props: {
                   Click on the canvas to place/remove an obstacle (does not change terrain).
                 </div>
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  {(["tree", "bush"] as const).map((t) => (
+                  {(["tree", "bush", "rock"] as const).map((t) => (
                     <button
                       key={t}
                       onClick={() => setObstacleType(t)}
@@ -655,7 +655,10 @@ export function HUD(props: {
                         background: "#fff",
                       }}
                     >
-                      {t}
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        {t === "tree" ? <IconTree size={22} /> : t === "bush" ? <IconBush size={22} /> : <IconRock size={22} />}
+                        <span style={{ textTransform: "capitalize" }}>{t}</span>
+                      </span>
                     </button>
                   ))}
                 </div>

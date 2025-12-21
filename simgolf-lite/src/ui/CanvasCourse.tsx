@@ -729,7 +729,7 @@ export function CanvasCourse(props: {
       const phase = obstaclePhases.get(`${o.x},${o.y}`) ?? 0;
       const t = timeMs * 0.001;
       const amp = Math.max(0.3, TILE * 0.06);
-      const sway = animationsEnabled ? Math.sin(t * 0.6 + phase) * amp : 0;
+      const sway = animationsEnabled && o.type !== "rock" ? Math.sin(t * 0.6 + phase) * amp : 0;
       const cx = cx0 + sway;
       const cy = cy0;
 
@@ -749,7 +749,7 @@ export function CanvasCourse(props: {
         const tw = Math.max(2, TILE * 0.12);
         const th = Math.max(3, TILE * 0.22);
         ctx2.fillRect(cx - tw / 2, cy + TILE * 0.12, tw, th);
-      } else {
+      } else if (o.type === "bush") {
         // bush
         ctx2.globalAlpha = 0.9;
         ctx2.fillStyle = "#166534";
@@ -759,6 +759,24 @@ export function CanvasCourse(props: {
         ctx2.arc(cx, cy, Math.max(3, TILE * 0.24), 0, Math.PI * 2);
         ctx2.fill();
         ctx2.stroke();
+      } else {
+        // rock
+        ctx2.globalAlpha = 0.95;
+        ctx2.fillStyle = "#a09f93";
+        ctx2.strokeStyle = "rgba(0,0,0,0.35)";
+        ctx2.lineWidth = 2;
+        const rw = Math.max(6, TILE * 0.46);
+        const rh = Math.max(5, TILE * 0.34);
+        ctx2.beginPath();
+        ctx2.ellipse(cx, cy + TILE * 0.05, rw, rh, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.stroke();
+        // highlight
+        ctx2.globalAlpha = 0.35;
+        ctx2.fillStyle = "#d9d8cc";
+        ctx2.beginPath();
+        ctx2.ellipse(cx - rw * 0.25, cy - rh * 0.25, rw * 0.35, rh * 0.28, 0, 0, Math.PI * 2);
+        ctx2.fill();
       }
       ctx2.globalAlpha = 1;
     }
