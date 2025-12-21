@@ -9,6 +9,7 @@ import { isCoursePlayable } from "../game/sim/isCoursePlayable";
 import type { LegacyState } from "../utils/legacy";
 import { BALANCE } from "../game/balance/balanceConfig";
 import logoCourseCraft from "../assets/branding/logo-coursecraft.svg";
+import paperTex from "../assets/textures/paper.svg";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -223,7 +224,11 @@ export function HUD(props: {
         border: "none",
         borderRadius: 0,
         overflow: "hidden",
-        background: "#fff",
+        background:
+          viewMode === "COZY"
+            ? `url(${paperTex}), #f6f4ef`
+            : "#fff",
+        backgroundSize: viewMode === "COZY" ? "320px 320px" : undefined,
       }}
     >
       <div style={{ padding: 12, borderBottom: "1px solid #eee" }}>
