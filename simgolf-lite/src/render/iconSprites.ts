@@ -42,61 +42,77 @@ function renderIconToImage(
       tempDiv.style.position = "absolute";
       tempDiv.style.left = "-9999px";
       tempDiv.style.top = "-9999px";
+      tempDiv.style.visibility = "hidden";
       document.body.appendChild(tempDiv);
 
       // Render React component to DOM
       const root: Root = createRoot(tempDiv);
       root.render(React.createElement(IconComponent, { size: sizePx }));
 
-      // Wait for next tick to ensure React has rendered
-      setTimeout(() => {
-        try {
-          const svgElement = tempDiv.querySelector("svg");
-          if (!svgElement) {
-            document.body.removeChild(tempDiv);
+      // Wait for React to render using requestAnimationFrame (more reliable than setTimeout)
+      const checkForSVG = () => {
+        const svgElement = tempDiv.querySelector("svg");
+        if (svgElement) {
+          try {
+            // Get SVG string from the rendered element
+            const svgString = svgElement.outerHTML;
+
+            // Clean up
             root.unmount();
-            reject(new Error("Icon component did not render SVG element"));
-            return;
+            document.body.removeChild(tempDiv);
+
+            // Ensure it's a valid SVG string
+            if (!svgString.trim().startsWith("<svg")) {
+              reject(new Error("Icon component did not render valid SVG"));
+              return;
+            }
+
+            // Create blob URL
+            const blob = new Blob([svgString], { type: "image/svg+xml" });
+            const url = URL.createObjectURL(blob);
+
+            // Load into Image
+            const img = new Image();
+            img.onload = () => {
+              // Store loaded image in cache (replacing the promise)
+              spriteCache.set(cacheKey, img);
+              URL.revokeObjectURL(url);
+              resolve(img);
+            };
+            img.onerror = (err) => {
+              URL.revokeObjectURL(url);
+              reject(new Error(`Failed to load icon sprite: ${err}`));
+            };
+            img.src = url;
+          } catch (err) {
+            if (document.body.contains(tempDiv)) {
+              document.body.removeChild(tempDiv);
+            }
+            root.unmount();
+            reject(err);
           }
+        } else {
+          // Not ready yet, check again on next frame
+          requestAnimationFrame(checkForSVG);
+        }
+      };
 
-          // Get SVG string from the rendered element
-          const svgString = svgElement.outerHTML;
+      // Start checking after React has a chance to render
+      requestAnimationFrame(() => {
+        requestAnimationFrame(checkForSVG);
+      });
 
-          // Clean up
-          root.unmount();
-          document.body.removeChild(tempDiv);
-
-          // Ensure it's a valid SVG string
-          if (!svgString.trim().startsWith("<svg")) {
-            reject(new Error("Icon component did not render valid SVG"));
-            return;
-          }
-
-          // Create blob URL
-          const blob = new Blob([svgString], { type: "image/svg+xml" });
-          const url = URL.createObjectURL(blob);
-
-          // Load into Image
-          const img = new Image();
-          img.onload = () => {
-            // Store loaded image in cache (replacing the promise)
-            spriteCache.set(cacheKey, img);
-            URL.revokeObjectURL(url);
-            resolve(img);
-          };
-          img.onerror = (err) => {
-            URL.revokeObjectURL(url);
-            reject(new Error(`Failed to load icon sprite: ${err}`));
-          };
-          img.src = url;
-        } catch (err) {
+      // Timeout fallback after 2 seconds
+      setTimeout(() => {
+        const svgElement = tempDiv.querySelector("svg");
+        if (!svgElement) {
           if (document.body.contains(tempDiv)) {
             document.body.removeChild(tempDiv);
           }
           root.unmount();
-          reject(err);
+          reject(new Error("Icon component did not render SVG element within timeout"));
         }
-      }, 0);
+      }, 2000);
     } catch (err) {
       reject(err);
     }

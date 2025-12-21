@@ -3,7 +3,7 @@ import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/type
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { CameraState } from "../game/render/camera";
 import { screenToWorld as cameraScreenToWorld, applyCameraTransform } from "../game/render/camera";
-import { getObstacleSprite } from "../render/iconSprites";
+import { getObstacleSprite, preloadObstacleSprites } from "../render/iconSprites";
 
 const COLORS: Record<Terrain, string> = {
   fairway: "#4fa64f",
@@ -510,6 +510,16 @@ export function CanvasCourse(props: {
   const wPx = course.width * TILE;
   const hPx = course.height * TILE;
 
+  // Preload obstacle sprites when tileSize changes
+  useEffect(() => {
+    const spriteSize = Math.round(TILE * 1.1);
+    // Preload common sizes around current tileSize (for zoom scenarios)
+    const sizesToPreload = [spriteSize, Math.round(spriteSize * 0.8), Math.round(spriteSize * 1.2)];
+    preloadObstacleSprites(sizesToPreload).catch((err) => {
+      console.warn("Failed to preload obstacle sprites:", err);
+    });
+  }, [TILE]);
+
   const imageData = useMemo(() => {
     return course.tiles.map((t) => COLORS[t]);
   }, [course.tiles]);
@@ -817,9 +827,13 @@ export function CanvasCourse(props: {
         spriteOrPromise
           .then((loadedSprite) => {
             obstacleSpriteCacheRef.current.set(spriteKey, loadedSprite);
-            // Trigger re-render by invalidating the render loop
+            // Trigger re-render by calling render function
             if (renderRef.current) {
               renderRef.current(performance.now());
+            }
+            // Also ensure animation loop continues
+            if (rafRef.current === null && animationsEnabled && renderRef.current) {
+              rafRef.current = requestAnimationFrame(renderRef.current);
             }
           })
           .catch((err) => {
