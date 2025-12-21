@@ -8,5 +8,6 @@ export { IconRock } from "./IconRock";
 export { IconSand } from "./IconSand";
 export { IconTree } from "./IconTree";
 export { IconWater } from "./IconWater";
+export { LogoCourseCraft } from "./LogoCourseCraft";
 
 

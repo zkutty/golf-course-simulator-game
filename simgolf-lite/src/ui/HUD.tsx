@@ -9,9 +9,8 @@ import { computeCourseRatingAndSlope } from "../game/sim/courseRating";
 import { isCoursePlayable } from "../game/sim/isCoursePlayable";
 import type { LegacyState } from "../utils/legacy";
 import { BALANCE } from "../game/balance/balanceConfig";
-import logoCourseCraft from "../assets/branding/logo-coursecraft.svg";
 import paperTex from "../assets/textures/paper.svg";
-import { IconBush, IconCash, IconCondition, IconHoles, IconReputation, IconRock, IconTree } from "@/assets/icons";
+import { IconBush, IconCash, IconCondition, IconHoles, IconReputation, IconRock, IconTree, LogoCourseCraft } from "@/assets/icons";
 import { GameButton } from "@/ui/gameui";
 
 const TERRAIN: Terrain[] = [
@@ -238,11 +237,7 @@ export function HUD(props: {
       <div style={{ padding: 12, borderBottom: "1px solid rgba(0,0,0,0.06)", background: "rgba(255,255,255,0.22)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <img
-              src={logoCourseCraft}
-              alt="CourseCraft"
-              style={{ height: 44, width: "auto", objectFit: "contain" }}
-            />
+            <LogoCourseCraft height={44} />
             <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
               <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
               <div style={{ fontSize: 12, letterSpacing: "0.08em", color: "var(--cc-muted)" }}>
