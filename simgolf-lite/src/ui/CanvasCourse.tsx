@@ -3,6 +3,7 @@ import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/type
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { CameraState } from "../game/render/camera";
 import { screenToWorld as cameraScreenToWorld, applyCameraTransform } from "../game/render/camera";
+import { getObstacleSprite } from "../render/iconSprites";
 
 const COLORS: Record<Terrain, string> = {
   fairway: "#4fa64f",
@@ -501,6 +502,10 @@ export function CanvasCourse(props: {
       pathPx: Array<{ x: number; y: number }>;
     };
   }>({ nextBirdAt: 0, birdSeq: 1, birds: [], cart: null });
+
+  // Cache for loaded obstacle sprites (by type and size)
+  const obstacleSpriteCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+
   const TILE = tileSize;
   const wPx = course.width * TILE;
   const hPx = course.height * TILE;
@@ -755,6 +760,74 @@ export function CanvasCourse(props: {
       const cx = cx0 + sway;
       const cy = cy0;
 
+      // Try to use SVG sprite icon
+      const spriteSize = Math.round(TILE * 1.1); // 10% padding
+      const spriteKey = `${o.type}-${spriteSize}`;
+      let sprite = obstacleSpriteCacheRef.current.get(spriteKey);
+      
+      // Check if sprite is available (already loaded)
+      if (sprite) {
+        // Draw sprite with subtle shadow and 10% padding
+        ctx2.save();
+        ctx2.globalAlpha = 0.95;
+        
+        // Subtle shadow
+        ctx2.shadowColor = "rgba(0, 0, 0, 0.25)";
+        ctx2.shadowBlur = 2;
+        ctx2.shadowOffsetX = 1;
+        ctx2.shadowOffsetY = 1;
+        
+        const drawWidth = TILE * 1.1;
+        const drawHeight = TILE * 1.1;
+        const drawX = cx - drawWidth / 2;
+        const drawY = cy - drawHeight / 2;
+        
+        ctx2.drawImage(sprite, drawX, drawY, drawWidth, drawHeight);
+        
+        ctx2.restore();
+        return;
+      }
+
+      // Fallback: try to get sprite (may be loading)
+      const spriteOrPromise = getObstacleSprite(o.type, spriteSize);
+      if (spriteOrPromise instanceof HTMLImageElement) {
+        // Just loaded, cache it
+        obstacleSpriteCacheRef.current.set(spriteKey, spriteOrPromise);
+        sprite = spriteOrPromise;
+        
+        ctx2.save();
+        ctx2.globalAlpha = 0.95;
+        ctx2.shadowColor = "rgba(0, 0, 0, 0.25)";
+        ctx2.shadowBlur = 2;
+        ctx2.shadowOffsetX = 1;
+        ctx2.shadowOffsetY = 1;
+        
+        const drawWidth = TILE * 1.1;
+        const drawHeight = TILE * 1.1;
+        const drawX = cx - drawWidth / 2;
+        const drawY = cy - drawHeight / 2;
+        
+        ctx2.drawImage(sprite, drawX, drawY, drawWidth, drawHeight);
+        ctx2.restore();
+        return;
+      }
+
+      if (spriteOrPromise instanceof Promise) {
+        // Sprite is loading, cache the promise and draw fallback for now
+        spriteOrPromise
+          .then((loadedSprite) => {
+            obstacleSpriteCacheRef.current.set(spriteKey, loadedSprite);
+            // Trigger re-render by invalidating the render loop
+            if (renderRef.current) {
+              renderRef.current(performance.now());
+            }
+          })
+          .catch((err) => {
+            console.warn(`Failed to load obstacle sprite for ${o.type}:`, err);
+          });
+      }
+
+      // Fallback: draw primitive placeholder while sprite loads
       if (o.type === "tree") {
         // canopy
         ctx2.globalAlpha = 0.95;
