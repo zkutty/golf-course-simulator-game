@@ -779,6 +779,7 @@ export default function App() {
         setObstacleType={setObstacleType}
         activeHoleIndex={activeHoleIndex}
         setActiveHoleIndex={setActiveHoleIndex}
+        onEnterHoleEditMode={enterHoleEditMode}
         wizardStep={wizardStep}
         draftTee={draftTee}
         draftGreen={draftGreen}

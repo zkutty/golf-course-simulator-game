@@ -42,6 +42,7 @@ export function HUD(props: {
   setObstacleType: (t: ObstacleType) => void;
   activeHoleIndex: number;
   setActiveHoleIndex: (n: number) => void;
+  onEnterHoleEditMode?: (holeIndex: number) => void;
   wizardStep: "TEE" | "GREEN" | "CONFIRM";
   draftTee: Point | null;
   draftGreen: Point | null;
@@ -93,6 +94,7 @@ export function HUD(props: {
     setObstacleType,
     activeHoleIndex,
     setActiveHoleIndex,
+    onEnterHoleEditMode,
     wizardStep,
     draftTee,
     draftGreen,
@@ -724,7 +726,7 @@ export function HUD(props: {
                 {viewMode === "ARCHITECT" && (
                   <Section title="Hole list (overall score)">
                   <div style={{ display: "grid", gap: 6 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "34px 44px 1fr 54px", fontSize: 12, color: "#555" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "34px 44px 1fr 54px 70px", fontSize: 12, color: "#555" }}>
                       <div>
                         <b>#</b>
                       </div>
@@ -737,30 +739,43 @@ export function HUD(props: {
                       <div style={{ textAlign: "right" }}>
                         <b>Overall</b>
                       </div>
+                      <div style={{ textAlign: "center" }}>
+                        <b>Edit</b>
+                      </div>
                     </div>
                     {holeSummary.holes.slice(0, 9).map((h) => (
-                      <button
+                      <div
                         key={h.holeIndex}
-                        onClick={() => {
-                          setActiveHoleIndex(h.holeIndex);
-                        }}
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "34px 44px 1fr 54px",
+                          gridTemplateColumns: "34px 44px 1fr 54px 70px",
                           alignItems: "center",
                           gap: 6,
                           padding: "8px 8px",
                           borderRadius: 10,
                           border: h.holeIndex === activeHoleIndex ? "2px solid #000" : "1px solid #ddd",
                           background: "#fff",
-                          textAlign: "left",
                           fontSize: 12,
                         }}
                       >
-                        <div>
+                        <button
+                          onClick={() => {
+                            setActiveHoleIndex(h.holeIndex);
+                          }}
+                          style={{
+                            textAlign: "left",
+                            border: "none",
+                            background: "transparent",
+                            cursor: "pointer",
+                            fontSize: 12,
+                            padding: 0,
+                            display: "flex",
+                            alignItems: "center",
+                          }}
+                        >
                           {h.holeIndex + 1}
                           {!h.isComplete && <span style={{ color: "#a40000" }}> *</span>}
-                        </div>
+                        </button>
                         <div>{h.isComplete ? h.par : "—"}</div>
                         <div style={{ color: "#555" }}>
                           {h.isComplete
@@ -770,7 +785,32 @@ export function HUD(props: {
                         <div style={{ textAlign: "right" }}>
                           <b>{Math.round(h.overallHoleScore)}</b>
                         </div>
-                      </button>
+                        <div style={{ display: "flex", justifyContent: "center" }}>
+                          {onEnterHoleEditMode && course.holes[h.holeIndex]?.tee && course.holes[h.holeIndex]?.green ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                audio.unlock();
+                                audio.playSfx("/audio/ball-strike.mp3");
+                                onEnterHoleEditMode(h.holeIndex);
+                              }}
+                              style={{
+                                padding: "4px 10px",
+                                fontSize: 11,
+                                borderRadius: 4,
+                                border: "1px solid #ddd",
+                                background: "#fff",
+                                cursor: "pointer",
+                                fontWeight: 500,
+                              }}
+                            >
+                              Edit
+                            </button>
+                          ) : (
+                            <span style={{ fontSize: 11, color: "#999" }}>—</span>
+                          )}
+                        </div>
+                      </div>
                     ))}
                   </div>
                   <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
