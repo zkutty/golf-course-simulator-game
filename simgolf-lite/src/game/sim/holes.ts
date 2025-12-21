@@ -1,15 +1,23 @@
 import type { Course, Hole, Obstacle, Point, Terrain } from "../models/types";
-import { computeAutoPar, computeHoleDistanceTiles } from "./holeMetrics";
-import { findBestPlayablePath } from "./pathfind";
+import { computeHoleDistanceTiles } from "./holeMetrics";
+import { BALANCE } from "../balance/balanceConfig";
+import { getGolferProfile } from "./golferProfiles";
+import type { ShotPlanStep } from "./shots/solveShotsToGreen";
+import { solveShotsToGreen } from "./shots/solveShotsToGreen";
 
 export interface HoleScore {
   holeIndex: number;
   isComplete: boolean;
   isValid: boolean;
   par: number;
+  autoPar: number;
+  scratchShotsToGreen: number; // expected strokes to reach green (ex-putting)
+  bogeyShotsToGreen: number;
+  reachableInTwo: boolean;
   straightDistance: number; // tiles (euclidean)
   effectiveDistance: number; // tiles (path length)
-  path: Point[]; // best playable route (empty if not complete/invalid)
+  path: Point[]; // visualization polyline (shot plan sampled points)
+  shotPlan: ShotPlanStep[];
   playabilityScore: number; // 0..100
   difficultyScore: number; // 0..100
   aestheticsScore: number; // 0..100
@@ -46,8 +54,9 @@ function dist(a: Point, b: Point) {
   return computeHoleDistanceTiles(a, b);
 }
 
-export function derivePar(distanceTiles: number) {
-  return computeAutoPar(distanceTiles);
+function deriveAutoParFromShots(shotsToGreen: number): 3 | 4 | 5 {
+  const p = Math.round(shotsToGreen + 2);
+  return clamp(p, 3, 5) as 3 | 4 | 5;
 }
 
 function inBounds(course: Course, p: Point) {
@@ -86,9 +95,14 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
       isComplete: false,
       isValid: false,
       par,
+      autoPar: 4,
+      scratchShotsToGreen: Infinity,
+      bogeyShotsToGreen: Infinity,
+      reachableInTwo: false,
       straightDistance: 0,
       effectiveDistance: 0,
       path: [],
+      shotPlan: [],
       playabilityScore: 0,
       difficultyScore: 0,
       aestheticsScore: 0,
@@ -120,52 +134,49 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
   for (const msg of issues) layoutIssues.push(msg);
 
   const straightDistance = dist(tee, green);
-  const pathResult = findBestPlayablePath(course, tee, green);
-  const path = pathResult?.path ?? [];
-  const effectiveDistance = pathResult?.steps ?? 0;
-  const par =
-    hole.parMode === "MANUAL" ? (hole.parManual ?? 4) : computeAutoPar(effectiveDistance);
+  const scratch = getGolferProfile("SCRATCH", course);
+  const bogey = getGolferProfile("BOGEY", course);
+  const scratchSolve = solveShotsToGreen({ course, tee, green, golfer: scratch });
+  const bogeySolve = solveShotsToGreen({ course, tee, green, golfer: bogey });
 
-  if (!pathResult) {
-    const msg = "No playable route from tee to green (blocked)";
-    issues.push(msg);
-    layoutIssues.push(msg);
-    return {
-      holeIndex,
-      isComplete: true,
-      isValid: false,
-      par,
-      straightDistance,
-      effectiveDistance: 0,
-      path: [],
-      playabilityScore: 0,
-      difficultyScore: 100,
-      aestheticsScore: 0,
-      overallHoleScore: 0,
-      corridor: {
-        samples: 0,
-        fairway: 0,
-        rough: 0,
-        deep_rough: 0,
-        sand: 0,
-        water: 0,
-        green: 0,
-        tee: 0,
-        path: 0,
-      },
-      score: 0,
-      layoutIssues,
-      issues,
-    };
+  const scratchShotsToGreen = scratchSolve.expectedShotsToGreen;
+  const bogeyShotsToGreen = bogeySolve.expectedShotsToGreen;
+  const reachable = scratchSolve.reachable;
+
+  const minDistOk = straightDistance * scratch.yardsPerTile >= BALANCE.shots.hole.minHoleDistanceYards;
+  const maxOk = reachable && scratchShotsToGreen <= BALANCE.shots.water.maxExpectedShotsToGreen;
+
+  const autoPar = reachable ? deriveAutoParFromShots(scratchShotsToGreen) : 4;
+  const par = hole.parMode === "MANUAL" ? (hole.parManual ?? autoPar) : autoPar;
+  const reachableInTwo =
+    reachable && scratchShotsToGreen <= BALANCE.shots.hole.reachableInTwoThreshold;
+
+  if (!minDistOk) issues.push("Hole too short (tee too close to green)");
+  if (!reachable) issues.push("Green unreachable with club-based shot planning");
+  if (reachable && !maxOk) issues.push("Routing is too costly (forced penalties / no safe layup)");
+
+  const shotPlan = scratchSolve.plan;
+  const poly: Point[] = [];
+  for (const s of shotPlan) {
+    const pts = sampleLine(s.from, s.to, 9);
+    for (const p of pts) {
+      if (poly.length === 0) poly.push(p);
+      else {
+        const last = poly[poly.length - 1];
+        if (last.x !== p.x || last.y !== p.y) poly.push(p);
+      }
+    }
   }
+  if (poly.length === 0) poly.push(tee, green);
+  const effectiveDistance = Math.max(0, poly.length - 1);
 
   const teeTile = inBounds(course, tee) ? tileAt(course, tee) : "rough";
   const greenTile = inBounds(course, green) ? tileAt(course, green) : "rough";
   if (teeTile === "water" || teeTile === "sand") issues.push("Tee on hazard");
   if (greenTile === "water" || greenTile === "sand") issues.push("Green on hazard");
 
-  // Evaluate "corridor" along the chosen playable path (dogleg-aware).
-  const pts = path;
+  // Evaluate "corridor" along the chosen shot plan polyline.
+  const pts = poly;
   const corridorCounts = pts.reduce(
     (acc, p) => {
       const t = tileAt(course, p);
@@ -255,12 +266,14 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
   playabilityScore -= 5 * obstacleStats.bushNear;
   playabilityScore = clamp(playabilityScore, 0, 100);
 
-  // Difficulty: hazards and distance increase it (higher = harder).
+  // Difficulty: hazards, distance, and expected shots increase it (higher = harder).
   const distNorm = clamp(effectiveDistance / 40, 0, 1); // 40 tiles ~= "long"
+  const shotsNorm = reachable ? clamp((scratchShotsToGreen - 2) / 3, 0, 1) : 1;
   let difficultyScore =
     20 +
     65 * (0.85 * waterFrac + 0.55 * sandFrac + 0.25 * roughFrac + 0.45 * deepRoughFrac) +
-    35 * distNorm;
+    28 * distNorm +
+    38 * shotsNorm;
   if (teeTile === "water" || teeTile === "sand") difficultyScore += 10;
   if (greenTile === "water" || greenTile === "sand") difficultyScore += 10;
   // Obstacles near/on the corridor raise difficulty (trees more than bushes)
@@ -296,16 +309,21 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
   overallHoleScore = clamp(overallHoleScore, 0, 100);
   const score = overallHoleScore; // legacy alias used by existing aggregation
 
-  const isValid = issues.length === 0;
+  const isValid = issues.length === 0 && maxOk && minDistOk;
 
   return {
     holeIndex,
     isComplete: true,
     isValid,
     par,
+    autoPar,
+    scratchShotsToGreen,
+    bogeyShotsToGreen,
+    reachableInTwo,
     straightDistance,
     effectiveDistance,
-    path,
+    path: poly,
+    shotPlan,
     playabilityScore,
     difficultyScore,
     aestheticsScore,

@@ -157,6 +157,10 @@ export const BALANCE = {
       shortMissMaxProb: 0.22,
       waterPenaltyStrokes: 2.6, // landing in water is brutal
     },
+    hole: {
+      minHoleDistanceYards: 90,
+      reachableInTwoThreshold: 2.3,
+    },
     landing: {
       // Terrain penalties (expected strokes added when landing there)
       penaltyStrokes: {
