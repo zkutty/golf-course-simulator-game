@@ -21,6 +21,7 @@ import { HoleInspector } from "./ui/HoleInspector";
 import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
+import { HoleMinimap } from "./ui/HoleMinimap";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -741,6 +742,7 @@ export default function App() {
                 height: "100%",
                 backgroundColor: "rgba(255, 248, 235, 0.98)",
                 borderRadius: 8,
+                position: "relative",
               }}
             >
               <div
@@ -804,6 +806,23 @@ export default function App() {
                   onFitHole={fitHole}
                 />
               </div>
+              {holeEditMode === "hole" && course.holes[activeHoleIndex]?.tee && course.holes[activeHoleIndex]?.green && (
+                <HoleMinimap
+                  course={course}
+                  hole={course.holes[activeHoleIndex]}
+                  cameraState={holeEditCamera}
+                  tileSize={tileSize}
+                  onCenter={(center: Point) => {
+                    if (holeEditCamera) {
+                      const newCamera: CameraState = {
+                        ...holeEditCamera,
+                        center,
+                      };
+                      setHoleEditCamera(newCamera);
+                    }
+                  }}
+                />
+              )}
             </div>
           ) : (
             <HUD
