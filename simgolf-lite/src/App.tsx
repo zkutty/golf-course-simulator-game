@@ -136,6 +136,28 @@ export default function App() {
     setPeakRep((p) => Math.max(p, world.reputation));
   }, [world.cash, world.reputation, world.isBankrupt]);
 
+  // Handle audio based on screen and view mode
+  useEffect(() => {
+    if (!soundEnabled) {
+      audio.setMusic(null);
+      audio.setAmbience(null);
+      return;
+    }
+
+    if (screen === "menu") {
+      audio.setMusic("/audio/menu-theme.mp3");
+      audio.setAmbience(null);
+    } else if (screen === "game") {
+      if (viewMode === "COZY") {
+        audio.setMusic(null);
+        audio.setAmbience("/audio/course-ambiance.mp3");
+      } else {
+        audio.setMusic("/audio/design-loop-1.mp3");
+        audio.setAmbience(null);
+      }
+    }
+  }, [screen, viewMode, soundEnabled, audio]);
+
   function restartRun(args: { seed: number }) {
     const seed = args.seed | 0;
     setCourse(DEFAULT_STATE.course);
