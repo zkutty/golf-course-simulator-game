@@ -17,9 +17,14 @@ import { BALANCE } from "./game/balance/balanceConfig";
 import { GameBackground } from "./ui/gameui";
 import { StartMenu } from "./ui/StartMenu";
 import { useAudio } from "./audio/AudioProvider";
+import { HoleInspector } from "./ui/HoleInspector";
+import { evaluateHole } from "./game/eval/evaluateHole";
+import type { CameraState } from "./game/render/camera";
+import { computeHoleCamera } from "./game/render/camera";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
+type ViewMode = "global" | "hole";
 
 const STRIKE_SFX = "/audio/ball-strike.mp3";
 
@@ -55,6 +60,9 @@ export default function App() {
 
   const [paintError, setPaintError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">("COZY");
+  const [holeEditMode, setHoleEditMode] = useState<ViewMode>("global"); // "global" or "hole"
+  const [holeEditCamera, setHoleEditCamera] = useState<CameraState | null>(null);
+  const [showFixOverlay, setShowFixOverlay] = useState(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -120,6 +128,60 @@ export default function App() {
     const hasActiveBridge = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
     return repOk && holesOk && cooldownOk && !hasActiveBridge && !world.isBankrupt;
   }, [world.reputation, world.week, world.lastBridgeLoanWeek, world.loans, world.isBankrupt, course, validHolesCount]);
+
+  // Hole edit mode functions
+  function enterHoleEditMode(holeIndex: number) {
+    const hole = course.holes[holeIndex];
+    if (!hole.tee || !hole.green) {
+      // Cannot enter hole edit mode without tee and green
+      return;
+    }
+    setActiveHoleIndex(holeIndex);
+    setHoleEditMode("hole");
+    // Compute camera state
+    const camera = computeHoleCamera(hole.tee, hole.green, 16, 3.0, paneSize.width, paneSize.height);
+    setHoleEditCamera(camera);
+  }
+
+  function exitHoleEditMode() {
+    setHoleEditMode("global");
+    setHoleEditCamera(null);
+    setShowFixOverlay(false);
+  }
+
+  function navigateHole(delta: number) {
+    const nextIndex = (activeHoleIndex + delta + 9) % 9;
+    enterHoleEditMode(nextIndex);
+  }
+
+  // Update camera when pane size changes in hole edit mode
+  useEffect(() => {
+    if (holeEditMode === "hole") {
+      const hole = course.holes[activeHoleIndex];
+      if (hole.tee && hole.green) {
+        const camera = computeHoleCamera(hole.tee, hole.green, 16, 3.0, paneSize.width, paneSize.height);
+        setHoleEditCamera(camera);
+      }
+    }
+  }, [paneSize.width, paneSize.height, holeEditMode, activeHoleIndex]);
+
+  // Keyboard shortcuts for hole edit mode
+  useEffect(() => {
+    if (holeEditMode !== "hole") return;
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        exitHoleEditMode();
+      } else if (e.key === "[" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        navigateHole(-1);
+      } else if (e.key === "]" && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        navigateHole(1);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [holeEditMode, activeHoleIndex]);
 
   useEffect(() => {
     if (world.isBankrupt) return;
@@ -619,6 +681,8 @@ export default function App() {
                   : "crosshair"
               }
               flagColor={legacy.selected.flagColor}
+              cameraState={holeEditCamera}
+              showFixOverlay={showFixOverlay}
             />
             {hover && editorMode === "PAINT" && (
               <HoverTooltip hover={hover} prev={course.tiles[hover.idx]} next={selected} cash={world.cash} />
@@ -627,7 +691,79 @@ export default function App() {
         </div>
 
         <div className="cc-sidebar-frame">
-          <HUD
+          {holeEditMode === "hole" ? (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                height: "100%",
+                backgroundColor: "rgba(255, 248, 235, 0.98)",
+                borderRadius: 8,
+              }}
+            >
+              <div
+                style={{
+                  padding: 12,
+                  borderBottom: "1px solid rgba(0,0,0,0.1)",
+                  display: "flex",
+                  gap: 8,
+                  flexShrink: 0,
+                }}
+              >
+                <button
+                  onClick={exitHoleEditMode}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 6,
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Exit
+                </button>
+                <button
+                  onClick={() => navigateHole(-1)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 6,
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  ← Prev
+                </button>
+                <button
+                  onClick={() => navigateHole(1)}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 6,
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  Next →
+                </button>
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+                <HoleInspector
+                  holeIndex={activeHoleIndex}
+                  evaluation={evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex)}
+                  showFixOverlay={showFixOverlay}
+                  setShowFixOverlay={setShowFixOverlay}
+                />
+              </div>
+            </div>
+          ) : (
+            <HUD
         course={course}
         world={world}
         last={last}
@@ -698,6 +834,7 @@ export default function App() {
         showShotPlan={showShotPlan}
         setShowShotPlan={setShowShotPlan}
       />
+          )}
         </div>
       </div>
     </div>

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
+import type { CameraState } from "../game/render/camera";
+import { screenToWorld as cameraScreenToWorld, applyCameraTransform } from "../game/render/camera";
 
 const COLORS: Record<Terrain, string> = {
   fairway: "#4fa64f",
@@ -441,6 +443,8 @@ export function CanvasCourse(props: {
   onLeave?: () => void;
   cursor?: string;
   flagColor?: string;
+  cameraState?: CameraState | null; // Optional hole edit mode camera
+  showFixOverlay?: boolean; // Show corridor/layup zone overlays
 }) {
   const {
     course,
@@ -463,6 +467,8 @@ export function CanvasCourse(props: {
     onLeave,
     cursor,
     flagColor,
+    cameraState,
+    showFixOverlay: _showFixOverlay = false,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
@@ -618,8 +624,14 @@ export function CanvasCourse(props: {
   }
 
   function cameraSetTransform(ctx: CanvasRenderingContext2D) {
-    const cam = camRef.current;
-    ctx.setTransform(cam.zoom, 0, 0, cam.zoom, cam.panX, cam.panY);
+    if (cameraState && cameraState.mode === "hole") {
+      // Use hole edit mode camera with rotation
+      applyCameraTransform(ctx, cameraState, tileSize, wPx, hPx);
+    } else {
+      // Use default pan/zoom camera
+      const cam = camRef.current;
+      ctx.setTransform(cam.zoom, 0, 0, cam.zoom, cam.panX, cam.panY);
+    }
   }
 
   function screenToWorldPx(clientX: number, clientY: number) {
@@ -628,8 +640,18 @@ export function CanvasCourse(props: {
     const rect = c.getBoundingClientRect();
     const sx = clientX - rect.left;
     const sy = clientY - rect.top;
-    const cam = camRef.current;
-    return { x: (sx - cam.panX) / cam.zoom, y: (sy - cam.panY) / cam.zoom };
+
+    if (cameraState && cameraState.mode === "hole") {
+      // Use hole edit mode camera transform (includes rotation)
+      // cameraScreenToWorld returns tile coordinates, convert to pixel coordinates
+      const screenPoint = { x: sx, y: sy };
+      const worldPoint = cameraScreenToWorld(screenPoint, cameraState, tileSize, wPx, hPx);
+      return { x: worldPoint.x * tileSize, y: worldPoint.y * tileSize };
+    } else {
+      // Use default pan/zoom camera
+      const cam = camRef.current;
+      return { x: (sx - cam.panX) / cam.zoom, y: (sy - cam.panY) / cam.zoom };
+    }
   }
 
   function startCameraAnim(to: { panX: number; panY: number; zoom: number }, dur = 650) {
