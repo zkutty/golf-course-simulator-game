@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useAudio } from "../audio/AudioProvider";
 import type { Course, ObstacleType, Point, Terrain, WeekResult, World } from "../game/models/types";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
@@ -130,6 +131,7 @@ export function HUD(props: {
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
+  const audio = useAudio();
 
   const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
   const price = useMemo(() => Math.round(priceAttractiveness(course) * 100), [course]);
@@ -431,7 +433,10 @@ export function HUD(props: {
           {tabs.map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => {
+                void audio.unlock();
+                setTab(t);
+              }}
               style={{
                 flex: 1,
                 padding: "8px 6px",

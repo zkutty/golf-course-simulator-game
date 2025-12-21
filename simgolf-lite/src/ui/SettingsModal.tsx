@@ -5,8 +5,6 @@ export interface SettingsModalProps {
   onClose: () => void;
   audioVolumes: { music: number; ambience: number };
   onAudioVolumesChange: (volumes: { music?: number; ambience?: number }) => void;
-  autoplayBlocked?: boolean;
-  onEnableAudio?: () => void;
 }
 
 export function SettingsModal(props: SettingsModalProps) {
@@ -65,36 +63,6 @@ export function SettingsModal(props: SettingsModalProps) {
             Audio
           </div>
 
-          {props.autoplayBlocked && props.onEnableAudio && (
-            <div
-              style={{
-                padding: 12,
-                borderRadius: 8,
-                background: "rgba(255, 193, 7, 0.15)",
-                border: "1px solid rgba(255, 193, 7, 0.3)",
-                marginBottom: 16,
-                fontSize: 13,
-                color: "#856404",
-              }}
-            >
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>Audio blocked by browser</div>
-              <button
-                onClick={props.onEnableAudio}
-                style={{
-                  marginTop: 8,
-                  padding: "8px 16px",
-                  borderRadius: 6,
-                  border: "1px solid rgba(255, 193, 7, 0.4)",
-                  background: "rgba(255, 193, 7, 0.2)",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  color: "#856404",
-                }}
-              >
-                Click to enable sound
-              </button>
-            </div>
-          )}
 
           {/* Music volume */}
           <div style={{ marginBottom: 20 }}>

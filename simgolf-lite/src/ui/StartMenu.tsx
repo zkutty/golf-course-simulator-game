@@ -9,8 +9,6 @@ export interface StartMenuProps {
   onLoadGame: () => void;
   audioVolumes: { music: number; ambience: number };
   onAudioVolumesChange: (volumes: { music?: number; ambience?: number }) => void;
-  autoplayBlocked?: boolean;
-  onEnableAudio?: () => void;
   onButtonClick?: () => void;
 }
 
@@ -175,8 +173,6 @@ export function StartMenu(props: StartMenuProps) {
         onClose={() => setSettingsOpen(false)}
         audioVolumes={props.audioVolumes}
         onAudioVolumesChange={props.onAudioVolumesChange}
-        autoplayBlocked={props.autoplayBlocked}
-        onEnableAudio={props.onEnableAudio}
       />
     </div>
   );

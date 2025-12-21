@@ -16,7 +16,7 @@ import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { BALANCE } from "./game/balance/balanceConfig";
 import { GameBackground } from "./ui/gameui";
 import { StartMenu } from "./ui/StartMenu";
-import { useAudio } from "./audio/useAudio";
+import { useAudio } from "./audio/AudioProvider";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM";
@@ -68,8 +68,8 @@ export default function App() {
   if (!soundRef.current) soundRef.current = createSoundPlayer();
   const sound = soundRef.current;
 
-  // Audio system for ambient + music
-  const audio = useAudio(screen, soundEnabled, viewMode);
+  // Audio system
+  const audio = useAudio();
 
   const canvasPaneRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
@@ -183,11 +183,15 @@ export default function App() {
   }
 
   function newGameFromMenu() {
+    void audio.unlock();
+    void audio.playSfx("/audio/ball-strike.mp3");
     restartRun({ seed: (Date.now() % 1_000_000) | 0 });
     setScreen("game");
   }
 
   function loadFromMenu() {
+    void audio.unlock();
+    void audio.playSfx("/audio/ball-strike.mp3");
     const loaded = loadGame();
     if (!loaded) return;
     applyLoadedGame(loaded);
@@ -332,6 +336,8 @@ export default function App() {
 
   function handleCanvasClick(x: number, y: number) {
     if (world.isBankrupt) return;
+    // Unlock audio on first canvas interaction
+    void audio.unlock();
     if (editorMode === "PAINT") {
       applyTerrainAt(x, y, selected);
       return;
@@ -461,7 +467,8 @@ export default function App() {
 
   function simulate() {
     if (world.isBankrupt) return;
-    if (soundEnabled) void audio.playButtonClick();
+    void audio.unlock();
+    if (soundEnabled) void audio.playSfx("/audio/ball-strike.mp3");
     const { course: c2, world: w2, result } = tickWeek(course, world, world.runSeed);
     const cap = {
       spent: capital.spent,
@@ -503,11 +510,20 @@ export default function App() {
         canLoad={canLoadFromMenu}
         onNewGame={newGameFromMenu}
         onLoadGame={loadFromMenu}
-        audioVolumes={audio.getVolumes()}
-        onAudioVolumesChange={audio.setVolumes}
-        autoplayBlocked={audio.autoplayBlocked}
-        onEnableAudio={audio.enableAudio}
-        onButtonClick={() => soundEnabled && void audio.playButtonClick()}
+        audioVolumes={{
+          music: audio.getVolumes().musicVolume,
+          ambience: audio.getVolumes().ambienceVolume,
+        }}
+        onAudioVolumesChange={(volumes) =>
+          audio.setVolumes({
+            musicVolume: volumes.music,
+            ambienceVolume: volumes.ambience,
+          })
+        }
+        onButtonClick={() => {
+          void audio.unlock();
+          if (soundEnabled) void audio.playSfx("/audio/ball-strike.mp3");
+        }}
       />
     );
   }
