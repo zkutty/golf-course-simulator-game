@@ -2,11 +2,20 @@
   --font-heading: "Merriweather", Georgia, serif;
   --font-body: "Nunito", system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
 
+  /* CourseCraft palette */
+  --cc-grass: #8bc573;
+  --cc-forest: #5c8a4e;
+  --cc-sand: #d4b876;
+  --cc-water: #6b9ebf;
+  --cc-parchment: #ebe3d5;
+  --cc-muted: #6b7a5f;
+  --cc-ink: #111827;
+
   font-family: var(--font-body);
   line-height: 1.4;
   font-weight: 400;
-  color: #111827;
-  background: #f3f4f6;
+  color: var(--cc-ink);
+  background: var(--cc-parchment);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;

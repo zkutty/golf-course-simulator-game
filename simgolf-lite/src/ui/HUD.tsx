@@ -227,7 +227,7 @@ export function HUD(props: {
         overflow: "hidden",
         background:
           viewMode === "COZY"
-            ? `url(${paperTex}), #f6f4ef`
+            ? `url(${paperTex}), var(--cc-parchment)`
             : "#fff",
         backgroundSize: viewMode === "COZY" ? "320px 320px" : undefined,
       }}
@@ -242,7 +242,7 @@ export function HUD(props: {
             />
             <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
               <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
-              <div style={{ fontSize: 12, letterSpacing: "0.08em", color: "#6b7a5f" }}>
+              <div style={{ fontSize: 12, letterSpacing: "0.08em", color: "var(--cc-muted)" }}>
                 Design &amp; run your course
               </div>
             </div>
