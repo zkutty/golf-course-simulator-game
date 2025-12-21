@@ -275,22 +275,93 @@ export function HUD(props: {
           </div>
         )}
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>Cash</div>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>
-              ${Math.round(world.cash).toLocaleString()}
+          {viewMode === "COZY" ? (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  padding: 12,
+                  borderRadius: 14,
+                  background: "rgba(255,255,255,0.65)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ fontSize: 18 }}>🪙</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>CASH</div>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>${Math.round(world.cash).toLocaleString()}</div>
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  padding: 12,
+                  borderRadius: 14,
+                  background: "rgba(255,255,255,0.65)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ fontSize: 18 }}>⭐</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>REPUTATION</div>
+                  <div style={{ fontSize: 16, fontWeight: 800 }}>{world.reputation}/100</div>
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  padding: 12,
+                  borderRadius: 14,
+                  background: "rgba(255,255,255,0.65)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ fontSize: 18 }}>🌿</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>CONDITION</div>
+                  <div style={{ fontSize: 16, fontWeight: 800 }}>{Math.round(course.condition * 100)}%</div>
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  padding: 12,
+                  borderRadius: 14,
+                  background: "rgba(255,255,255,0.65)",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ fontSize: 18 }}>⛳</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>HOLES OPEN</div>
+                  <div style={{ fontSize: 16, fontWeight: 800 }}>{validHoles}/9</div>
+                </div>
+              </div>
             </div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>Reputation</div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>{world.reputation}/100</div>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-            <div style={{ fontSize: 12, color: "#6b7280" }}>Condition</div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>
-              {Math.round(course.condition * 100)}%
-            </div>
-          </div>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>Cash</div>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>${Math.round(world.cash).toLocaleString()}</div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>Reputation</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{world.reputation}/100</div>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>Condition</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{Math.round(course.condition * 100)}%</div>
+              </div>
+            </>
+          )}
           {viewMode === "COZY" && (
             <div style={{ display: "grid", gap: 6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
