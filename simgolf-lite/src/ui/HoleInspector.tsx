@@ -1,6 +1,6 @@
 import type { HoleEvaluation } from "../game/eval/evaluateHole";
 import type { Course, Hole } from "../game/models/types";
-import { computeHoleTerrainStats } from "../game/eval/terrainStats";
+import { computeHoleTerrainStats, type TerrainComposition } from "../game/eval/terrainStats";
 
 interface HoleInspectorProps {
   holeIndex: number;
@@ -339,8 +339,8 @@ export function HoleInspector({
   );
 }
 
-function TerrainPercentages({ composition }: { composition: { [key: string]: number } }) {
-  const terrainTypes: Array<{ key: string; label: string }> = [
+function TerrainPercentages({ composition }: { composition: TerrainComposition }) {
+  const terrainTypes: Array<{ key: keyof TerrainComposition; label: string }> = [
     { key: "fairway", label: "Fairway" },
     { key: "rough", label: "Rough" },
     { key: "deep_rough", label: "Deep Rough" },
@@ -358,7 +358,7 @@ function TerrainPercentages({ composition }: { composition: { [key: string]: num
   return (
     <div style={{ display: "grid", gap: 4 }}>
       {terrainTypes
-        .filter((t) => composition[t.key] > 0)
+        .filter((t) => t.key !== "total" && t.key !== "other" && composition[t.key] > 0)
         .map((t) => {
           const pct = (composition[t.key] / composition.total) * 100;
           return (
