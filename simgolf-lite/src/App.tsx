@@ -52,6 +52,7 @@ export default function App() {
   const [animationsEnabled, setAnimationsEnabled] = useState(true);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [showShotPlan, setShowShotPlan] = useState(true);
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
   const [peakRep, setPeakRep] = useState(DEFAULT_STATE.world.reputation);
   const [showBridgePrompt, setShowBridgePrompt] = useState(false);
@@ -88,10 +89,12 @@ export default function App() {
     return Math.max(4, Math.min(40, size));
   }, [paneSize.width, paneSize.height, course.width, course.height]);
 
-  const activePath = useMemo(() => {
-    const summary = scoreCourseHoles(course);
-    return summary.holes[activeHoleIndex]?.path ?? [];
-  }, [course, activeHoleIndex]);
+  const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
+  const activePath = useMemo(() => holeSummary.holes[activeHoleIndex]?.path ?? [], [holeSummary, activeHoleIndex]);
+  const activeShotPlan = useMemo(
+    () => holeSummary.holes[activeHoleIndex]?.shotPlan ?? [],
+    [holeSummary, activeHoleIndex]
+  );
 
   const validHolesCount = useMemo(() => {
     const s = scoreCourseHoles(course);
@@ -505,10 +508,12 @@ export default function App() {
           obstacles={course.obstacles}
           activeHoleIndex={activeHoleIndex}
           activePath={activePath}
+          activeShotPlan={activeShotPlan}
           tileSize={tileSize}
           showGridOverlays={viewMode === "ARCHITECT"}
           animationsEnabled={animationsEnabled}
           flyoverNonce={flyoverNonce}
+          showShotPlan={showShotPlan}
           editorMode={editorMode}
           wizardStep={wizardStep}
           draftTee={draftTee}
@@ -605,6 +610,8 @@ export default function App() {
             return next;
           });
         }}
+        showShotPlan={showShotPlan}
+        setShowShotPlan={setShowShotPlan}
       />
       </div>
     </div>

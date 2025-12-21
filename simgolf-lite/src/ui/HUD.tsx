@@ -70,6 +70,8 @@ export function HUD(props: {
   legacy: LegacyState;
   onUnlockFlagColor: (color: "BLUE" | "GOLD", cost: number) => void;
   onSelectFlagColor: (rgba: string) => void;
+  showShotPlan: boolean;
+  setShowShotPlan: (b: boolean) => void;
 }) {
   const {
     course,
@@ -119,6 +121,8 @@ export function HUD(props: {
     legacy,
     onUnlockFlagColor,
     onSelectFlagColor,
+    showShotPlan,
+    setShowShotPlan,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
@@ -410,14 +414,29 @@ export function HUD(props: {
                 </button>
               </div>
 
+              {viewMode === "ARCHITECT" && (
+                <div style={{ marginTop: -2, marginBottom: 10, fontSize: 12, color: "#374151" }}>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={showShotPlan}
+                      onChange={(e) => setShowShotPlan(e.target.checked)}
+                    />
+                    Show shot plan overlay
+                  </label>
+                </div>
+              )}
+
               {activeHole && (
                 <div style={{ fontSize: 12, color: "#222" }}>
                   <div>
                     <b>Hole {activeHoleIndex + 1}</b>:{" "}
                     {activeHole.isComplete ? (
                       <>
-                        score {Math.round(activeHole.score)}/100 • par {activeHole.par} • eff{" "}
-                        {activeHole.effectiveDistance.toFixed(0)}
+                        score {Math.round(activeHole.score)}/100 • par {activeHole.par}{" "}
+                        <span style={{ color: "#6b7280" }}>
+                          {Number.isFinite(activeHole.autoPar) ? ` (auto ${activeHole.autoPar})` : ""}
+                        </span>
                       </>
                     ) : (
                       <>place tee + green</>
@@ -432,6 +451,21 @@ export function HUD(props: {
                       ({holeDef?.parMode === "MANUAL" ? "manual" : "auto"})
                     </span>
                   </div>
+                  {activeHole.isComplete && Number.isFinite(activeHole.scratchShotsToGreen) && (
+                    <div style={{ marginTop: 4, color: "#444" }}>
+                      Scratch to green: <b>{activeHole.scratchShotsToGreen.toFixed(2)}</b> • Bogey:{" "}
+                      <b>{Number.isFinite(activeHole.bogeyShotsToGreen) ? activeHole.bogeyShotsToGreen.toFixed(2) : "—"}</b>
+                      {activeHole.autoPar === 5 && (
+                        <span style={{ color: "#6b7280" }}>
+                          {" "}
+                          • Reachable in two:{" "}
+                          <b style={{ color: activeHole.reachableInTwo ? "#065f46" : "#7a0000" }}>
+                            {activeHole.reachableInTwo ? "Yes" : "No"}
+                          </b>
+                        </span>
+                      )}
+                    </div>
+                  )}
                   {viewMode === "ARCHITECT" && activeHole.isComplete && (
                     <div style={{ marginTop: 6, display: "grid", gap: 2 }}>
                       <div>
@@ -451,6 +485,22 @@ export function HUD(props: {
                   {activeHole.issues.length > 0 && (
                     <div style={{ marginTop: 4, color: "#a40000" }}>
                       {activeHole.issues.slice(0, 2).join(" • ")}
+                    </div>
+                  )}
+                  {viewMode === "ARCHITECT" && activeHole.isComplete && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
+                      {activeHole.autoPar === 5 &&
+                        !activeHole.reachableInTwo &&
+                        Number.isFinite(activeHole.scratchShotsToGreen) && (
+                          <div>
+                            Par 5 not reachable in two: scratch needs ~{activeHole.scratchShotsToGreen.toFixed(2)} shots to reach green.
+                          </div>
+                        )}
+                      {activeHole.shotPlan && activeHole.shotPlan.length >= 3 && (
+                        <div style={{ marginTop: 4 }}>
+                          Layup preferred: optimal route is {activeHole.shotPlan.length} shots to reach green (hazard/dispersion risk makes aggression costly).
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

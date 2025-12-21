@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/types";
+import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 
 const COLORS: Record<Terrain, string> = {
   fairway: "#4fa64f",
@@ -425,10 +426,12 @@ export function CanvasCourse(props: {
   obstacles: Obstacle[];
   activeHoleIndex: number;
   activePath?: Point[];
+  activeShotPlan?: ShotPlanStep[];
   tileSize: number;
   showGridOverlays: boolean;
   animationsEnabled: boolean;
   flyoverNonce: number;
+  showShotPlan: boolean;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
   wizardStep: "TEE" | "GREEN" | "CONFIRM";
   draftTee: Point | null;
@@ -445,10 +448,12 @@ export function CanvasCourse(props: {
     obstacles,
     activeHoleIndex,
     activePath,
+    activeShotPlan,
     tileSize,
     showGridOverlays,
     animationsEnabled,
     flyoverNonce,
+    showShotPlan,
     editorMode,
     wizardStep,
     draftTee,
@@ -867,6 +872,51 @@ export function CanvasCourse(props: {
       ctx2.globalAlpha = 1;
     }
 
+    function drawShotPlanOverlay() {
+      if (!showGridOverlays || !showShotPlan) return;
+      if (!activeShotPlan || activeShotPlan.length === 0) return;
+
+      ctx2.save();
+      ctx2.globalAlpha = 0.9;
+      ctx2.strokeStyle = "rgba(250,204,21,0.85)"; // amber
+      ctx2.lineWidth = Math.max(1, TILE * 0.10);
+      ctx2.fillStyle = "rgba(250,204,21,0.95)";
+      ctx2.font = `${Math.max(10, Math.floor(TILE * 0.48))}px system-ui, sans-serif`;
+
+      for (let i = 0; i < activeShotPlan.length; i++) {
+        const s = activeShotPlan[i];
+        const x0 = s.from.x * TILE + TILE / 2;
+        const y0 = s.from.y * TILE + TILE / 2;
+        const x1 = s.to.x * TILE + TILE / 2;
+        const y1 = s.to.y * TILE + TILE / 2;
+        const mx = (x0 + x1) / 2;
+        const my = (y0 + y1) / 2;
+        const vx = x1 - x0;
+        const vy = y1 - y0;
+        const len = Math.max(1, Math.hypot(vx, vy));
+        const nx = -vy / len;
+        const ny = vx / len;
+        const bend = Math.min(TILE * 1.0, len * 0.12);
+        const cx = mx + nx * bend;
+        const cy = my + ny * bend;
+
+        ctx2.beginPath();
+        ctx2.moveTo(x0, y0);
+        ctx2.quadraticCurveTo(cx, cy, x1, y1);
+        ctx2.stroke();
+
+        // landing marker + step number
+        ctx2.beginPath();
+        ctx2.arc(x1, y1, Math.max(2, TILE * 0.16), 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.fillStyle = "#111";
+        ctx2.fillText(String(i + 1), x1 + 3, y1 - 3);
+        ctx2.fillStyle = "rgba(250,204,21,0.95)";
+      }
+
+      ctx2.restore();
+    }
+
     function drawWizard() {
       if (editorMode !== "HOLE_WIZARD") return;
       ctx2.lineWidth = 3;
@@ -1159,6 +1209,9 @@ export function CanvasCourse(props: {
 
       // ambient life layer (COZY)
       drawAmbientLife(timeMs);
+
+      // shot plan visualization (Architect)
+      drawShotPlanOverlay();
 
       drawAnalytics();
       drawWizard();
