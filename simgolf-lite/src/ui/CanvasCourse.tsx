@@ -446,6 +446,7 @@ export function CanvasCourse(props: {
   flagColor?: string;
   cameraState?: CameraState | null; // Optional hole edit mode camera
   showFixOverlay?: boolean; // Show corridor/layup zone overlays
+  failingCorridorSegments?: Point[]; // Failing corridor segments for overlay
 }) {
   const {
     course,
@@ -470,6 +471,7 @@ export function CanvasCourse(props: {
     flagColor,
     cameraState,
     showFixOverlay: _showFixOverlay = false,
+    failingCorridorSegments = [],
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
@@ -1044,6 +1046,22 @@ export function CanvasCourse(props: {
       ctx2.restore();
     }
 
+    function drawFixOverlay() {
+      if (!_showFixOverlay || failingCorridorSegments.length === 0) return;
+
+      ctx2.save();
+      ctx2.globalAlpha = 0.4;
+      ctx2.fillStyle = "rgba(255, 165, 0, 0.6)"; // Orange overlay for failing segments
+
+      for (const p of failingCorridorSegments) {
+        const x = p.x * TILE;
+        const y = p.y * TILE;
+        ctx2.fillRect(x, y, TILE, TILE);
+      }
+
+      ctx2.restore();
+    }
+
     function drawWizard() {
       if (editorMode !== "HOLE_WIZARD") return;
       ctx2.lineWidth = 3;
@@ -1340,6 +1358,9 @@ export function CanvasCourse(props: {
       // shot plan visualization (Architect)
       drawShotPlanOverlay();
 
+      // fix overlay (failing corridor segments)
+      drawFixOverlay();
+
       drawAnalytics();
       drawWizard();
       ctx2.setTransform(1, 0, 0, 1, 0, 0);
@@ -1385,6 +1406,11 @@ export function CanvasCourse(props: {
     animationsEnabled,
     waterTiles,
     flyoverNonce,
+    showShotPlan,
+    activeShotPlan,
+    _showFixOverlay,
+    failingCorridorSegments,
+    cameraState,
   ]);
 
   // Focus camera when active hole changes or gets tee/green set (cinematic selection)

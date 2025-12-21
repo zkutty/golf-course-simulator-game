@@ -1,6 +1,7 @@
 import type { Course, Hole, Obstacle, Point, Terrain } from "../models/types";
 import { findBestPlayablePath } from "../sim/pathfind";
 import { sampleLine, scoreHole } from "../sim/holes";
+import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../models/terrainEconomics";
 
 export interface HoleIssue {
   severity: "info" | "warn" | "bad";
@@ -8,6 +9,13 @@ export interface HoleIssue {
   title: string;
   detail: string;
   suggestedFixes: string[];
+  // Metadata for enhanced warnings
+  metadata?: {
+    currentValue?: number;
+    targetValue?: number;
+    costEstimate?: number;
+    failingSegments?: Point[]; // Corridor points where terrain != fairway
+  };
 }
 
 export interface HoleEvaluation {
@@ -335,12 +343,44 @@ export function evaluateHole(course: Course, hole: Hole, holeIndex: number): Hol
   const fairwayPct = sampledPts.length > 0 ? fairwayCount / sampledPts.length : 0;
 
   if (fairwayPct < CONFIG.fairwayCoverageWarnPct) {
+    // Find failing corridor segments (non-fairway tiles in corridor)
+    const failingSegments: Point[] = [];
+    for (const p of corridorLine) {
+      const terrain = tileAt(course, p);
+      if (terrain !== "fairway" && terrain !== null) {
+        failingSegments.push(p);
+      }
+    }
+
+    // Estimate cost: assume converting non-fairway corridor tiles to fairway
+    // Use a simplified estimate: count failing tiles and use average cost
+    let costEstimate = 0;
+    for (const p of failingSegments) {
+      const terrain = tileAt(course, p);
+      if (terrain && terrain !== "fairway") {
+        // Estimate: build cost of fairway minus salvage of current terrain
+        const buildCost = TERRAIN_BUILD_COST.fairway;
+        const salvage = TERRAIN_SALVAGE_VALUE[terrain] ?? 0;
+        costEstimate += Math.max(0, buildCost - salvage);
+      }
+    }
+
     issues.push({
       severity: "warn",
       code: "FAIRWAY_CONTINUITY",
       title: "Insufficient Fairway Coverage",
-      detail: `Only ${(fairwayPct * 100).toFixed(0)}% of corridor is fairway`,
-      suggestedFixes: ["Paint fairway along main line"],
+      detail: `Only ${(fairwayPct * 100).toFixed(0)}% of corridor is fairway (target: ${(CONFIG.fairwayCoverageWarnPct * 100).toFixed(0)}%)`,
+      suggestedFixes: [
+        "Paint fairway along centerline",
+        "Increase fairway width +5y",
+        "Increase fairway width +10y",
+      ],
+      metadata: {
+        currentValue: fairwayPct,
+        targetValue: CONFIG.fairwayCoverageWarnPct,
+        costEstimate: Math.ceil(costEstimate),
+        failingSegments,
+      },
     });
   }
 

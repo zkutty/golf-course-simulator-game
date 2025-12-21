@@ -117,6 +117,16 @@ export default function App() {
     [holeSummary, activeHoleIndex]
   );
 
+  // Extract failing corridor segments for overlay
+  const activeHoleEvaluation = useMemo(
+    () => evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex),
+    [course, activeHoleIndex]
+  );
+  const failingCorridorSegments = useMemo(() => {
+    const fairwayIssue = activeHoleEvaluation.issues.find((i) => i.code === "FAIRWAY_CONTINUITY");
+    return fairwayIssue?.metadata?.failingSegments ?? [];
+  }, [activeHoleEvaluation]);
+
   const validHolesCount = useMemo(() => {
     const s = scoreCourseHoles(course);
     return s.holes.filter((h) => h.isComplete && h.isValid).length;
@@ -409,6 +419,74 @@ export default function App() {
   function applyTerrainAt(x: number, y: number, next: Terrain, opts?: { silent?: boolean }) {
     const idx = y * course.width + x;
     applyTileChange(idx, next, opts);
+  }
+
+  // Smart fairway painting: paint fairway along centerline with specified width in yards
+  function smartPaintFairway(widthYards: number) {
+    if (world.isBankrupt) return;
+    const hole = course.holes[activeHoleIndex];
+    if (!hole.tee || !hole.green) return;
+
+    // Use the active path if available, otherwise use straight line from tee to green
+    const centerline = activePath.length >= 2 ? activePath : [hole.tee, hole.green];
+    
+    // Convert width from yards to tiles (half-width for radius)
+    const radiusTiles = (widthYards / 2) / course.yardsPerTile;
+    
+    // Collect all tiles to paint (avoid duplicates)
+    const tilesToPaint = new Set<string>();
+    const tilesToPaintData: Array<{ x: number; y: number; prev: Terrain }> = [];
+
+    // Sample points along centerline and paint in circles
+    for (let i = 0; i < centerline.length; i++) {
+      const center = centerline[i];
+      const r2 = radiusTiles * radiusTiles;
+      
+      // Iterate over a square grid and check if point is within circle
+      for (let dy = -Math.ceil(radiusTiles); dy <= Math.ceil(radiusTiles); dy++) {
+        for (let dx = -Math.ceil(radiusTiles); dx <= Math.ceil(radiusTiles); dx++) {
+          if (dx * dx + dy * dy > r2) continue;
+          
+          const x = center.x + dx;
+          const y = center.y + dy;
+          
+          // Skip out of bounds
+          if (x < 0 || y < 0 || x >= course.width || y >= course.height) continue;
+          
+          // Skip if already collected
+          const key = `${x},${y}`;
+          if (tilesToPaint.has(key)) continue;
+          
+          const idx = y * course.width + x;
+          const prev = course.tiles[idx];
+          
+          // Don't overwrite green, tee, or water (preserve important features)
+          if (prev === "green" || prev === "tee" || prev === "water") continue;
+          
+          tilesToPaint.add(key);
+          tilesToPaintData.push({ x, y, prev });
+        }
+      }
+    }
+
+    // Calculate total cost
+    let totalNet = 0;
+    for (const tile of tilesToPaintData) {
+      const cost = computeTerrainChangeCost(tile.prev, "fairway");
+      totalNet += cost.net;
+    }
+
+    // Check affordability
+    if (totalNet > 0 && world.cash < totalNet) {
+      setPaintError(`Insufficient funds: need $${Math.ceil(totalNet).toLocaleString()} to paint fairway`);
+      return;
+    }
+
+    // Apply all changes (use silent for all but the last one to avoid sound spam)
+    for (let i = 0; i < tilesToPaintData.length; i++) {
+      const tile = tilesToPaintData[i];
+      applyTerrainAt(tile.x, tile.y, "fairway", { silent: i < tilesToPaintData.length - 1 });
+    }
   }
 
   function startWizard() {
@@ -726,6 +804,7 @@ export default function App() {
               flagColor={legacy.selected.flagColor}
               cameraState={holeEditCamera}
               showFixOverlay={showFixOverlay}
+              failingCorridorSegments={failingCorridorSegments}
             />
             {hover && editorMode === "PAINT" && (
               <HoverTooltip hover={hover} prev={course.tiles[hover.idx]} next={selected} cash={world.cash} />
@@ -800,7 +879,7 @@ export default function App() {
               <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
                 <HoleInspector
                   holeIndex={activeHoleIndex}
-                  evaluation={evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex)}
+                  evaluation={activeHoleEvaluation}
                   showFixOverlay={showFixOverlay}
                   setShowFixOverlay={setShowFixOverlay}
                   onFitHole={fitHole}
@@ -817,6 +896,7 @@ export default function App() {
                       return { ...c, holes };
                     });
                   }}
+                  onSmartPaintFairway={smartPaintFairway}
                 />
               </div>
               {holeEditMode === "hole" && course.holes[activeHoleIndex]?.tee && course.holes[activeHoleIndex]?.green && (

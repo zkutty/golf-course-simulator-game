@@ -11,6 +11,7 @@ interface HoleInspectorProps {
   course: Course;
   hole: Hole;
   onSetHoleIndex?: (index: number) => void;
+  onSmartPaintFairway?: (widthYards: number) => void;
 }
 
 export function HoleInspector({
@@ -22,6 +23,7 @@ export function HoleInspector({
   course,
   hole,
   onSetHoleIndex,
+  onSmartPaintFairway,
 }: HoleInspectorProps) {
   const { scratchShotsToGreen, bogeyShotsToGreen, autoPar, reachableInTwo, effectiveDistanceYards, issues } =
     evaluation;
@@ -40,6 +42,19 @@ export function HoleInspector({
   };
 
   const isPlayable = issues.filter((i) => i.code === "BLOCKED_ROUTE" || i.code === "MISSING_MARKERS").length === 0;
+
+  function handleIssueAction(action: string, issueCode: string) {
+    if (issueCode === "FAIRWAY_CONTINUITY" && onSmartPaintFairway) {
+      if (action.includes("+5y")) {
+        onSmartPaintFairway(5);
+      } else if (action.includes("+10y")) {
+        onSmartPaintFairway(10);
+      } else if (action.includes("Paint fairway along centerline")) {
+        // Default width: 30 yards (15 each side)
+        onSmartPaintFairway(30);
+      }
+    }
+  }
 
   return (
     <div
@@ -289,7 +304,7 @@ export function HoleInspector({
             <span style={{ fontSize: 16 }}>●</span> Critical Issues
           </h3>
           {groupedIssues.bad.map((issue, idx) => (
-            <IssueCard key={idx} issue={issue} />
+            <IssueCard key={idx} issue={issue} onAction={handleIssueAction} />
           ))}
         </div>
       )}
@@ -310,7 +325,7 @@ export function HoleInspector({
             <span style={{ fontSize: 16 }}>●</span> Warnings
           </h3>
           {groupedIssues.warn.map((issue, idx) => (
-            <IssueCard key={idx} issue={issue} />
+            <IssueCard key={idx} issue={issue} onAction={handleIssueAction} />
           ))}
         </div>
       )}
@@ -331,7 +346,7 @@ export function HoleInspector({
             <span style={{ fontSize: 16 }}>●</span> Notes
           </h3>
           {groupedIssues.info.map((issue, idx) => (
-            <IssueCard key={idx} issue={issue} />
+            <IssueCard key={idx} issue={issue} onAction={handleIssueAction} />
           ))}
         </div>
       )}
@@ -421,7 +436,24 @@ function TerrainPercentages({ composition }: { composition: TerrainComposition }
   );
 }
 
-function IssueCard({ issue }: { issue: { severity: "info" | "warn" | "bad"; code: string; title: string; detail: string; suggestedFixes: string[] } }) {
+interface IssueCardProps {
+  issue: {
+    severity: "info" | "warn" | "bad";
+    code: string;
+    title: string;
+    detail: string;
+    suggestedFixes: string[];
+    metadata?: {
+      currentValue?: number;
+      targetValue?: number;
+      costEstimate?: number;
+      failingSegments?: Array<{ x: number; y: number }>;
+    };
+  };
+  onAction?: (action: string, issueCode: string) => void;
+}
+
+function IssueCard({ issue, onAction }: IssueCardProps) {
   const bgColor =
     issue.severity === "bad"
       ? "rgba(204, 51, 51, 0.08)"
@@ -435,6 +467,8 @@ function IssueCard({ issue }: { issue: { severity: "info" | "warn" | "bad"; code
         ? "rgba(214, 125, 0, 0.3)"
         : "rgba(43, 123, 187, 0.3)";
 
+  const isFairwayIssue = issue.code === "FAIRWAY_CONTINUITY";
+
   return (
     <div
       style={{
@@ -447,14 +481,54 @@ function IssueCard({ issue }: { issue: { severity: "info" | "warn" | "bad"; code
     >
       <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 13 }}>{issue.title}</div>
       <div style={{ fontSize: 12, color: "#555", marginBottom: 8, lineHeight: 1.4 }}>{issue.detail}</div>
+      
+      {/* Enhanced metadata display for FAIRWAY_CONTINUITY */}
+      {isFairwayIssue && issue.metadata && (
+        <div style={{ marginBottom: 8, fontSize: 11, color: "#666" }}>
+          {issue.metadata.currentValue != null && issue.metadata.targetValue != null && (
+            <div style={{ marginBottom: 4 }}>
+              Current: {(issue.metadata.currentValue * 100).toFixed(1)}% | Target: {(issue.metadata.targetValue * 100).toFixed(0)}%
+            </div>
+          )}
+          {issue.metadata.costEstimate != null && issue.metadata.costEstimate > 0 && (
+            <div style={{ marginBottom: 4, fontWeight: 500 }}>
+              Est. cost: ${issue.metadata.costEstimate.toLocaleString()}
+            </div>
+          )}
+        </div>
+      )}
+
       {issue.suggestedFixes.length > 0 && (
         <div>
           <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 4 }}>Suggested fixes:</div>
-          <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12, color: "#555", lineHeight: 1.5 }}>
-            {issue.suggestedFixes.map((fix, idx) => (
-              <li key={idx}>{fix}</li>
-            ))}
-          </ul>
+          {isFairwayIssue && onAction ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              {issue.suggestedFixes.map((fix, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => onAction(fix, issue.code)}
+                  style={{
+                    padding: "6px 10px",
+                    fontSize: 11,
+                    borderRadius: 4,
+                    border: "1px solid #ddd",
+                    background: "#fff",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    fontWeight: 500,
+                  }}
+                >
+                  {fix}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12, color: "#555", lineHeight: 1.5 }}>
+              {issue.suggestedFixes.map((fix, idx) => (
+                <li key={idx}>{fix}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
     </div>
