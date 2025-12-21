@@ -150,17 +150,21 @@ export default function App() {
     setActiveHoleIndex(holeIndex);
     setHoleEditMode("hole");
     // Compute camera state with auto-fit (zoom = null)
-    const camera = computeHoleCamera(
-      hole.tee,
-      hole.green,
-      0.12, // 12% padding (will be applied in computeHoleBoundingBox)
-      null, // null = auto-fit
-      paneSize.width,
-      paneSize.height,
-      course,
-      hole,
-      holeIndex
-    );
+    // Convert 12% of viewport to approximate tiles for padding
+    const paddingPercent = 0.12;
+    const paddingTiles = Math.max(2, Math.min(paneSize.width, paneSize.height) * paddingPercent / (tileSize || 16));
+        const camera = computeHoleCamera(
+          hole.tee,
+          hole.green,
+          paddingTiles,
+          null, // null = auto-fit
+          paneSize.width,
+          paneSize.height,
+          course,
+          hole,
+          holeIndex,
+          tileSize
+        );
     setHoleEditCamera(camera);
   }
 
@@ -169,7 +173,7 @@ export default function App() {
     const hole = course.holes[activeHoleIndex];
     if (!hole.tee || !hole.green) return;
     
-    const camera = computeZoomPreset(preset, course, hole, activeHoleIndex, paneSize.width, paneSize.height);
+    const camera = computeZoomPreset(preset, course, hole, activeHoleIndex, paneSize.width, paneSize.height, tileSize);
     if (camera) {
       setHoleEditCamera(camera);
     }
@@ -190,24 +194,28 @@ export default function App() {
   useEffect(() => {
     if (holeEditMode === "hole") {
       const hole = course.holes[activeHoleIndex];
-      if (hole.tee && hole.green) {
+      if (hole.tee && hole.green && paneSize.width > 0 && paneSize.height > 0) {
         // Preserve current zoom if camera exists, otherwise auto-fit
         const currentZoom = holeEditCamera?.zoom ?? null;
+        // Convert 12% of viewport to approximate tiles for padding
+        const paddingPercent = 0.12;
+        const paddingTiles = Math.max(2, Math.min(paneSize.width, paneSize.height) * paddingPercent / (tileSize || 16));
         const camera = computeHoleCamera(
           hole.tee,
           hole.green,
-          0.12,
+          paddingTiles,
           currentZoom, // preserve zoom if exists
           paneSize.width,
           paneSize.height,
           course,
           hole,
-          activeHoleIndex
+          activeHoleIndex,
+          tileSize
         );
         setHoleEditCamera(camera);
       }
     }
-  }, [paneSize.width, paneSize.height, holeEditMode, activeHoleIndex, course]);
+  }, [paneSize.width, paneSize.height, tileSize, holeEditMode, activeHoleIndex, course, holeEditCamera]);
 
   // Keyboard shortcuts for hole edit mode
   useEffect(() => {
@@ -809,6 +817,23 @@ export default function App() {
             {hover && editorMode === "PAINT" && (
               <HoverTooltip hover={hover} prev={course.tiles[hover.idx]} next={selected} cash={world.cash} />
             )}
+            {holeEditMode === "hole" && course.holes[activeHoleIndex]?.tee && course.holes[activeHoleIndex]?.green && (
+              <HoleMinimap
+                course={course}
+                hole={course.holes[activeHoleIndex]}
+                cameraState={holeEditCamera}
+                tileSize={tileSize}
+                onCenter={(center: Point) => {
+                  if (holeEditCamera) {
+                    const newCamera: CameraState = {
+                      ...holeEditCamera,
+                      center,
+                    };
+                    setHoleEditCamera(newCamera);
+                  }
+                }}
+              />
+            )}
           </div>
         </div>
 
@@ -899,23 +924,6 @@ export default function App() {
                   onSmartPaintFairway={smartPaintFairway}
                 />
               </div>
-              {holeEditMode === "hole" && course.holes[activeHoleIndex]?.tee && course.holes[activeHoleIndex]?.green && (
-                <HoleMinimap
-                  course={course}
-                  hole={course.holes[activeHoleIndex]}
-                  cameraState={holeEditCamera}
-                  tileSize={tileSize}
-                  onCenter={(center: Point) => {
-                    if (holeEditCamera) {
-                      const newCamera: CameraState = {
-                        ...holeEditCamera,
-                        center,
-                      };
-                      setHoleEditCamera(newCamera);
-                    }
-                  }}
-                />
-              )}
             </div>
           ) : (
             <HUD

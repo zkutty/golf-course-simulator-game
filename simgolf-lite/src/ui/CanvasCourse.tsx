@@ -287,6 +287,168 @@ function drawSoftEdges(
   }
 }
 
+// Helper for infinite canvas: draw soft edges for a single tile
+function drawSoftEdgesForTile(
+  ctx: CanvasRenderingContext2D,
+  tx: number,
+  ty: number,
+  size: number,
+  terrain: Terrain,
+  getTerrainAt: (x: number, y: number) => Terrain
+) {
+  const t = Math.max(1, Math.min(8, Math.floor(size * 0.24)));
+  const x = tx * size;
+  const y = ty * size;
+
+  const n = getTerrainAt(tx, ty - 1);
+  const s = getTerrainAt(tx, ty + 1);
+  const e = getTerrainAt(tx + 1, ty);
+  const wv = getTerrainAt(tx - 1, ty);
+
+  const isGrass = (t: Terrain) => t === "fairway" || t === "rough" || t === "deep_rough" || t === "green";
+  const basePairAlpha = (a: Terrain, b: Terrain) => {
+    if (a === b) return 0;
+    if (isGrass(a) && isGrass(b)) {
+      const aGrass = a;
+      const bGrass = b;
+      if (
+        (aGrass === "fairway" && (bGrass === "rough" || bGrass === "deep_rough")) ||
+        (bGrass === "fairway" && (aGrass === "rough" || aGrass === "deep_rough"))
+      )
+        return 0.10;
+      if (
+        (aGrass === "green" && (bGrass === "fairway" || bGrass === "rough" || bGrass === "deep_rough")) ||
+        (bGrass === "green" && (aGrass === "fairway" || aGrass === "rough" || aGrass === "deep_rough"))
+      )
+        return 0.12;
+      return 0.06;
+    }
+    if ((a === "sand" && isGrass(b)) || (b === "sand" && isGrass(a))) return 0.12;
+    if ((a === "water" && isGrass(b)) || (b === "water" && isGrass(a))) return 0.12;
+    return 0;
+  };
+
+  const drawBorderGradient = (neighbor: Terrain, side: "N" | "S" | "E" | "W") => {
+    const a = basePairAlpha(terrain, neighbor);
+    if (a <= 0) return;
+    ctx.save();
+    let g: CanvasGradient;
+    const c0 = rgbaHex(COLORS[neighbor], a, -0.03);
+    const c1 = rgbaHex(COLORS[neighbor], 0, -0.03);
+    if (side === "N") {
+      g = ctx.createLinearGradient(0, y, 0, y + t);
+      g.addColorStop(0, c0);
+      g.addColorStop(1, c1);
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, size, t);
+    } else if (side === "S") {
+      g = ctx.createLinearGradient(0, y + size - t, 0, y + size);
+      g.addColorStop(0, c1);
+      g.addColorStop(1, c0);
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y + size - t, size, t);
+    } else if (side === "W") {
+      g = ctx.createLinearGradient(x, 0, x + t, 0);
+      g.addColorStop(0, c0);
+      g.addColorStop(1, c1);
+      ctx.fillStyle = g;
+      ctx.fillRect(x, y, t, size);
+    } else {
+      g = ctx.createLinearGradient(x + size - t, 0, x + size, 0);
+      g.addColorStop(0, c1);
+      g.addColorStop(1, c0);
+      ctx.fillStyle = g;
+      ctx.fillRect(x + size - t, y, t, size);
+    }
+    ctx.restore();
+  };
+
+  if (n && n !== terrain) drawBorderGradient(n, "N");
+  if (s && s !== terrain) drawBorderGradient(s, "S");
+  if (wv && wv !== terrain) drawBorderGradient(wv, "W");
+  if (e && e !== terrain) drawBorderGradient(e, "E");
+}
+
+// Helper for infinite canvas: draw green treatment for a single tile
+function drawGreenForTile(
+  ctx: CanvasRenderingContext2D,
+  tx: number,
+  ty: number,
+  size: number,
+  getTerrainAt: (x: number, y: number) => Terrain
+) {
+  const x = tx * size;
+  const y = ty * size;
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const T = size;
+  const collarColor = "rgba(140, 255, 160, 0.10)";
+  const ringW = Math.max(1, Math.min(6, Math.floor(T * 0.18)));
+
+  const isGrassNoGreen = (t: Terrain) =>
+    t === "fairway" || t === "rough" || t === "deep_rough";
+
+  // Radial gradient
+  ctx.save();
+  const rg = ctx.createRadialGradient(cx, cy, Math.max(1, T * 0.12), cx, cy, T * 0.62);
+  rg.addColorStop(0, "rgba(255,255,255,0.18)");
+  rg.addColorStop(0.55, "rgba(255,255,255,0.04)");
+  rg.addColorStop(1, "rgba(0,0,0,0.06)");
+  ctx.fillStyle = rg;
+  ctx.fillRect(x, y, T, T);
+  ctx.restore();
+
+  // Inner ring
+  ctx.save();
+  ctx.globalAlpha = 0.08;
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = ringW;
+  ctx.strokeRect(x + ringW / 2, y + ringW / 2, T - ringW, T - ringW);
+  ctx.restore();
+
+  // Collar/fringe on adjacent grass tiles
+  const drawCollar = (nx: number, ny: number, side: "N" | "S" | "E" | "W") => {
+    const nt = getTerrainAt(nx, ny);
+    if (!nt || !isGrassNoGreen(nt)) return;
+    const npx = nx * T;
+    const npy = ny * T;
+    const t = Math.max(1, Math.min(8, Math.floor(T * 0.22)));
+    ctx.save();
+    let g: CanvasGradient;
+    if (side === "N") {
+      g = ctx.createLinearGradient(0, npy, 0, npy + t);
+      g.addColorStop(0, collarColor);
+      g.addColorStop(1, "rgba(140, 255, 160, 0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(npx, npy, T, t);
+    } else if (side === "S") {
+      g = ctx.createLinearGradient(0, npy + T - t, 0, npy + T);
+      g.addColorStop(0, "rgba(140, 255, 160, 0)");
+      g.addColorStop(1, collarColor);
+      ctx.fillStyle = g;
+      ctx.fillRect(npx, npy + T - t, T, t);
+    } else if (side === "W") {
+      g = ctx.createLinearGradient(npx, 0, npx + t, 0);
+      g.addColorStop(0, collarColor);
+      g.addColorStop(1, "rgba(140, 255, 160, 0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(npx, npy, t, T);
+    } else {
+      g = ctx.createLinearGradient(npx + T - t, 0, npx + T, 0);
+      g.addColorStop(0, "rgba(140, 255, 160, 0)");
+      g.addColorStop(1, collarColor);
+      ctx.fillStyle = g;
+      ctx.fillRect(npx + T - t, npy, t, T);
+    }
+    ctx.restore();
+  };
+
+  if (getTerrainAt(tx, ty - 1) !== "green") drawCollar(tx, ty - 1, "S");
+  if (getTerrainAt(tx, ty + 1) !== "green") drawCollar(tx, ty + 1, "N");
+  if (getTerrainAt(tx - 1, ty) !== "green") drawCollar(tx - 1, ty, "E");
+  if (getTerrainAt(tx + 1, ty) !== "green") drawCollar(tx + 1, ty, "W");
+}
+
 function drawLightingEdges(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
   // Simple top-left light source: highlight TL edges, shade BR edges.
   ctx.lineWidth = 1;
@@ -511,6 +673,15 @@ export function CanvasCourse(props: {
   const TILE = tileSize;
   const wPx = course.width * TILE;
   const hPx = course.height * TILE;
+  
+  // Helper function to get terrain at any coordinate (infinite canvas support)
+  const getTerrainAt = (x: number, y: number): Terrain => {
+    if (x >= 0 && y >= 0 && x < course.width && y < course.height) {
+      return course.tiles[y * course.width + x];
+    }
+    // Outside bounds = rough terrain
+    return "rough";
+  };
 
   // Preload obstacle sprites when tileSize changes
   useEffect(() => {
@@ -1342,12 +1513,84 @@ export function CanvasCourse(props: {
       ctx2.setTransform(1, 0, 0, 1, 0, 0);
       ctx2.clearRect(0, 0, wPx, hPx);
       cameraSetTransform(ctx2);
-      ctx2.drawImage(baseNow, 0, 0);
+      
+      // In hole edit mode, render infinite canvas dynamically
+      if (cameraState && cameraState.mode === "hole") {
+        // Calculate visible tile range based on camera transform
+        // Get world coordinates of screen corners
+        const invZoom = 1 / (cameraState.zoom || 1);
+        const visibleWidthTiles = (wPx * invZoom) / TILE + 2; // +2 for padding
+        const visibleHeightTiles = (hPx * invZoom) / TILE + 2;
+        const centerX = cameraState.center.x;
+        const centerY = cameraState.center.y;
+        const minTileX = Math.floor(centerX - visibleWidthTiles / 2);
+        const maxTileX = Math.ceil(centerX + visibleWidthTiles / 2);
+        const minTileY = Math.floor(centerY - visibleHeightTiles / 2);
+        const maxTileY = Math.ceil(centerY + visibleHeightTiles / 2);
+        
+        // Render visible tiles dynamically
+        for (let ty = minTileY; ty <= maxTileY; ty++) {
+          for (let tx = minTileX; tx <= maxTileX; tx++) {
+            const terrain = getTerrainAt(tx, ty);
+            const x = tx * TILE;
+            const y = ty * TILE;
+            
+            // Draw tile texture
+            drawTileTexture(
+              ctx2,
+              terrain,
+              x,
+              y,
+              TILE,
+              noisePattern,
+              mowPattern,
+              tx * 1000 + ty
+            );
+            
+            // Draw lighting edges
+            drawLightingEdges(ctx2, x, y, TILE);
+            
+            // Draw soft edges for all tiles
+            drawSoftEdgesForTile(ctx2, tx, ty, TILE, terrain, getTerrainAt);
+          }
+        }
+        
+        // Draw greens treatment for visible greens
+        for (let ty = minTileY; ty <= maxTileY; ty++) {
+          for (let tx = minTileX; tx <= maxTileX; tx++) {
+            if (getTerrainAt(tx, ty) === "green") {
+              drawGreenForTile(ctx2, tx, ty, TILE, getTerrainAt);
+            }
+          }
+        }
+      } else {
+        // Normal mode: use pre-rendered base canvas
+        ctx2.drawImage(baseNow, 0, 0);
+      }
 
       drawShimmer(timeMs);
 
       // obstacles always visible; sway only when animations enabled
-      for (const o of obstacles) drawObstacle(o, timeMs);
+      // In infinite mode, only draw obstacles in visible range
+      if (cameraState && cameraState.mode === "hole") {
+        const invZoom = 1 / (cameraState.zoom || 1);
+        const visibleWidthTiles = (wPx * invZoom) / TILE + 2;
+        const visibleHeightTiles = (hPx * invZoom) / TILE + 2;
+        const centerX = cameraState.center.x;
+        const centerY = cameraState.center.y;
+        const minTileX = Math.floor(centerX - visibleWidthTiles / 2);
+        const maxTileX = Math.ceil(centerX + visibleWidthTiles / 2);
+        const minTileY = Math.floor(centerY - visibleHeightTiles / 2);
+        const maxTileY = Math.ceil(centerY + visibleHeightTiles / 2);
+        
+        for (const o of obstacles) {
+          if (o.x >= minTileX && o.x <= maxTileX && o.y >= minTileY && o.y <= maxTileY) {
+            drawObstacle(o, timeMs);
+          }
+        }
+      } else {
+        for (const o of obstacles) drawObstacle(o, timeMs);
+      }
 
       // greens as targets: small flags (flutter in COZY)
       drawFlags(timeMs);

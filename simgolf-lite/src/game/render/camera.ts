@@ -137,7 +137,8 @@ export function computeZoomPreset(
   hole: Hole,
   holeIndex: number,
   canvasWidth: number,
-  canvasHeight: number
+  canvasHeight: number,
+  tileSize?: number // optional tileSize for accurate zoom calculation
 ): CameraState | null {
   if (!hole.tee || !hole.green) return null;
 
@@ -187,26 +188,26 @@ export function computeZoomPreset(
     };
   }
 
-  // Compute angle
-  const dx = green.x - tee.x;
-  const dy = green.y - tee.y;
-  const angleRad = Math.atan2(dx, -dy);
-  const rotationDeg = (angleRad * 180) / Math.PI;
+  // No rotation - keep it straight
+  const rotationDeg = 0;
 
   // Center
   const centerX = (bbox.minX + bbox.maxX) / 2;
   const centerY = (bbox.minY + bbox.maxY) / 2;
 
-  // Auto-fit zoom
+  // Auto-fit zoom (no rotation calculation needed)
   const bboxWidth = bbox.maxX - bbox.minX;
   const bboxHeight = bbox.maxY - bbox.minY;
-  const angleRadAbs = Math.abs(angleRad);
-  const rotatedWidth = bboxWidth * Math.abs(Math.cos(angleRadAbs)) + bboxHeight * Math.abs(Math.sin(angleRadAbs));
-  const rotatedHeight = bboxWidth * Math.abs(Math.sin(angleRadAbs)) + bboxHeight * Math.abs(Math.cos(angleRadAbs));
-  const scaleX = canvasWidth / (rotatedWidth || 1);
-  const scaleY = canvasHeight / (rotatedHeight || 1);
-  let zoom = Math.min(scaleX, scaleY) * 0.9;
-  zoom = Math.max(0.3, Math.min(5.0, zoom));
+  
+  // Zoom calculation: fit bboxWidth tiles into canvasWidth pixels
+  // In the transform, 1 tile = zoom * tileSize pixels, so:
+  // bboxWidth * zoom * tileSize = canvasWidth (with padding)
+  // zoom = (canvasWidth * padding) / (bboxWidth * tileSize)
+  const effectiveTileSize = tileSize ?? 16; // fallback if not provided
+  const scaleX = (canvasWidth * 0.95) / ((bboxWidth || 1) * effectiveTileSize); // 95% for better fill
+  const scaleY = (canvasHeight * 0.95) / ((bboxHeight || 1) * effectiveTileSize);
+  let zoom = Math.min(scaleX, scaleY);
+  zoom = Math.max(0.5, Math.min(10.0, zoom)); // Increased max zoom
 
   return {
     mode: "hole",
@@ -229,13 +230,11 @@ export function computeHoleCamera(
   canvasHeight: number,
   course?: Course,
   hole?: Hole,
-  holeIndex?: number
+  holeIndex?: number,
+  tileSize?: number // optional tileSize for accurate zoom calculation
 ): CameraState {
-  // Compute angle from tee to green (in degrees, 0 = pointing up)
-  const dx = green.x - tee.x;
-  const dy = green.y - tee.y;
-  const angleRad = Math.atan2(dx, -dy); // -dy because canvas y increases downward
-  const rotationDeg = (angleRad * 180) / Math.PI;
+  // No rotation - keep it straight
+  const rotationDeg = 0;
 
   // Try to compute bounding box if we have course/hole data
   let bbox: BoundingBox | null = null;
@@ -263,18 +262,18 @@ export function computeHoleCamera(
     const bboxWidth = bbox.maxX - bbox.minX;
     const bboxHeight = bbox.maxY - bbox.minY;
     
-    // Account for rotation: we need to fit the rotated bbox into the viewport
-    // For simplicity, use the diagonal of the rotated bbox
-    const angleRadAbs = Math.abs(angleRad);
-    const rotatedWidth = bboxWidth * Math.abs(Math.cos(angleRadAbs)) + bboxHeight * Math.abs(Math.sin(angleRadAbs));
-    const rotatedHeight = bboxWidth * Math.abs(Math.sin(angleRadAbs)) + bboxHeight * Math.abs(Math.cos(angleRadAbs));
-    
-    const scaleX = canvasWidth / (rotatedWidth || 1);
-    const scaleY = canvasHeight / (rotatedHeight || 1);
-    finalZoom = Math.min(scaleX, scaleY) * 0.9; // 90% to add a bit of padding
+    // No rotation - simple fit calculation
+    // Zoom calculation: fit bboxWidth tiles into canvasWidth pixels
+    // In the transform, 1 tile = zoom * tileSize pixels, so:
+    // bboxWidth * zoom * tileSize = canvasWidth (with padding)
+    // zoom = (canvasWidth * padding) / (bboxWidth * tileSize)
+    const effectiveTileSize = tileSize ?? 16; // fallback if not provided
+    const scaleX = (canvasWidth * 0.95) / ((bboxWidth || 1) * effectiveTileSize); // 95% padding for better fill
+    const scaleY = (canvasHeight * 0.95) / ((bboxHeight || 1) * effectiveTileSize);
+    finalZoom = Math.min(scaleX, scaleY);
     
     // Clamp zoom to reasonable range
-    finalZoom = Math.max(0.3, Math.min(5.0, finalZoom));
+    finalZoom = Math.max(0.5, Math.min(10.0, finalZoom)); // Increased max zoom
   }
 
   return {
@@ -374,8 +373,11 @@ export function applyCameraTransform(
   // Scale
   ctx.scale(camera.zoom, camera.zoom);
   
-  // Rotate (counter-clockwise, so negate the angle)
-  ctx.rotate((-camera.rotationDeg * Math.PI) / 180);
+  // No rotation in hole edit mode
+  // Rotate (counter-clockwise, so negate the angle) - only if rotationDeg != 0
+  if (camera.rotationDeg !== 0) {
+    ctx.rotate((-camera.rotationDeg * Math.PI) / 180);
+  }
   
   // Translate to camera center (in tile space, scale by tileSize)
   ctx.translate(-camera.center.x * tileSize, -camera.center.y * tileSize);
