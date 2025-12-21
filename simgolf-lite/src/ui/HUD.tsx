@@ -75,6 +75,7 @@ export function HUD(props: {
   onSelectFlagColor: (rgba: string) => void;
   showShotPlan: boolean;
   setShowShotPlan: (b: boolean) => void;
+  onShowGameUiDemo: () => void;
 }) {
   const {
     course,
@@ -126,6 +127,7 @@ export function HUD(props: {
     onSelectFlagColor,
     showShotPlan,
     setShowShotPlan,
+    onShowGameUiDemo,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
@@ -248,6 +250,19 @@ export function HUD(props: {
             </div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
+            <button
+              onClick={onShowGameUiDemo}
+              style={{
+                padding: "6px 8px",
+                borderRadius: 999,
+                border: "1px solid #ddd",
+                background: "#fff",
+                fontSize: 12,
+                fontWeight: 800,
+              }}
+            >
+              🎮 Game UI Demo
+            </button>
             {(["COZY", "ARCHITECT"] as const).map((m) => (
               <button
                 key={m}
