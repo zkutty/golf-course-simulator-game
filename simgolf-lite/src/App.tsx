@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { perfProfiler } from "./utils/performanceProfiler";
 import { CanvasCourse } from "./ui/CanvasCourse";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
@@ -118,7 +119,9 @@ export default function App() {
     return Math.max(4, Math.min(40, size));
   }, [paneSize.width, paneSize.height, course.width, course.height]);
 
-  const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
+  const holeSummary = useMemo(() => {
+    return perfProfiler.measure('scoreCourseHoles', () => scoreCourseHoles(course));
+  }, [course]);
   const activePath = useMemo(() => holeSummary.holes[activeHoleIndex]?.path ?? [], [holeSummary, activeHoleIndex]);
   const activeShotPlan = useMemo(
     () => holeSummary.holes[activeHoleIndex]?.shotPlan ?? [],
@@ -127,7 +130,7 @@ export default function App() {
 
   // Extract failing corridor segments for overlay
   const activeHoleEvaluation = useMemo(
-    () => evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex),
+    () => perfProfiler.measure('evaluateHole', () => evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex)),
     [course, activeHoleIndex]
   );
   const failingCorridorSegments = useMemo(() => {
@@ -136,7 +139,7 @@ export default function App() {
   }, [activeHoleEvaluation]);
 
   const validHolesCount = useMemo(() => {
-    const s = scoreCourseHoles(course);
+    const s = perfProfiler.measure('scoreCourseHoles.validHoles', () => scoreCourseHoles(course));
     return s.holes.filter((h) => h.isComplete && h.isValid).length;
   }, [course]);
 
@@ -1429,7 +1432,7 @@ function BridgeLoanPrompt(props: { onAccept: () => void; onDecline: () => void }
             }}
           >
             Decline
-          </button>
+        </button>
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@ import './index.css'
 import './ui/cozyLayout.css'
 import App from './App.tsx'
 import { AudioProvider } from './audio/AudioProvider.tsx'
+import './utils/enablePerfProfiler' // Auto-enable profiler if flag is set
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

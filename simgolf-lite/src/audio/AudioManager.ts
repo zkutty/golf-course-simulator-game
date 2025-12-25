@@ -1,3 +1,4 @@
+
 const AUDIO_STORAGE_KEY = "coursecraft_audio_volumes";
 
 interface AudioVolumes {
@@ -304,3 +305,4 @@ class AudioManager {
 }
 
 export const audioManager = AudioManager.getInstance();
+

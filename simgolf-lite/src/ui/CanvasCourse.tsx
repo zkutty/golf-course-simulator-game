@@ -5,6 +5,11 @@ import type { CameraState } from "../game/render/camera";
 import { screenToWorld as cameraScreenToWorld, applyCameraTransform } from "../game/render/camera";
 import { getObstacleSprite, preloadObstacleSprites } from "../render/iconSprites";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
+import { perfProfiler } from "../utils/performanceProfiler";
+
+// Feature flag: Enable/disable hover-based distance preview (performance optimization)
+// When disabled, no hover tracking or preview rendering occurs for marker placement
+const ENABLE_HOVER_DISTANCE_PREVIEW = false;
 
 const COLORS: Record<Terrain, string> = {
   fairway: "#4fa64f",
@@ -642,6 +647,18 @@ export function CanvasCourse(props: {
   const lastHoverIdxRef = useRef<number | null>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const hoverTileRef = useRef<{ idx: number; x: number; y: number; clientX: number; clientY: number } | null>(null);
+  
+  // Hover state refs (no React state to avoid high-frequency renders)
+  const hoverWorldPosRef = useRef<{ x: number; y: number } | null>(null);
+  const isHoveringRef = useRef(false);
+  const previewDistanceRef = useRef<number | null>(null);
+  
+  // Dirty flags for rendering optimization
+  const overlayDirtyRef = useRef(false);
+  const courseDirtyRef = useRef(false);
+  const terrainDirtyRef = useRef(false);
+  
+  // Single animation loop refs
   const rafRef = useRef<number | null>(null);
   const renderRef = useRef<null | ((t: number) => void)>(null);
   const isVisibleRef = useRef(true);
@@ -650,6 +667,11 @@ export function CanvasCourse(props: {
   const flyoverRef = useRef<null | { from: { panX: number; panY: number; zoom: number }; to: { panX: number; panY: number; zoom: number }; t0: number; dur: number }>(null);
   const panStateRef = useRef<null | { startX: number; startY: number; startPanX: number; startPanY: number; active: boolean; panIntent: boolean; moved: boolean; downTile: { x: number; y: number } | null }>(null);
   const lastFocusKeyRef = useRef<string>("");
+  
+  // Instrumentation refs
+  const renderCountRef = useRef(0);
+  const pointerMoveCountRef = useRef(0);
+  const lastInstrumentationTimeRef = useRef(performance.now());
   const ambientRef = useRef<{
     nextBirdAt: number;
     birdSeq: number;
@@ -880,62 +902,75 @@ export function CanvasCourse(props: {
   }
 
   useEffect(() => {
-    const c = canvasRef.current;
-    if (!c) return;
-    const ctx = c.getContext("2d");
-    if (!ctx) return;
-    const ctx2: CanvasRenderingContext2D = ctx;
+    perfProfiler.measure('CanvasCourse.buildBaseCanvas', () => {
+      const c = canvasRef.current;
+      if (!c) return;
+      const ctx = c.getContext("2d");
+      if (!ctx) return;
+      const ctx2: CanvasRenderingContext2D = ctx;
 
-    // Build static terrain buffer (expensive work done only when course/size changes)
-    const base = document.createElement("canvas");
-    base.width = wPx;
-    base.height = hPx;
-    const bctx = base.getContext("2d");
-    if (!bctx) return;
+      // Build static terrain buffer (expensive work done only when course/size changes)
+      const base = document.createElement("canvas");
+      base.width = wPx;
+      base.height = hPx;
+      const bctx = base.getContext("2d");
+      if (!bctx) return;
 
-    // Pass 1: textured tiles + per-tile micro-lighting
-    for (let ty = 0; ty < course.height; ty++) {
-      for (let tx = 0; tx < course.width; tx++) {
-        const i = ty * course.width + tx;
-        const terrain = course.tiles[i];
-        const x = tx * TILE;
-        const y = ty * TILE;
-        drawTileTexture(
-          bctx,
-          terrain,
-          x,
-          y,
-          TILE,
-          noisePattern,
-          mowPattern,
-          i + course.width * 1000
-        );
-        drawLightingEdges(bctx, x, y, TILE);
-      }
-    }
+      // Pass 1: textured tiles + per-tile micro-lighting
+      perfProfiler.measure('buildBaseCanvas.pass1_tiles', () => {
+        for (let ty = 0; ty < course.height; ty++) {
+          for (let tx = 0; tx < course.width; tx++) {
+            const i = ty * course.width + tx;
+            const terrain = course.tiles[i];
+            const x = tx * TILE;
+            const y = ty * TILE;
+            drawTileTexture(
+              bctx,
+              terrain,
+              x,
+              y,
+              TILE,
+              noisePattern,
+              mowPattern,
+              i + course.width * 1000
+            );
+            drawLightingEdges(bctx, x, y, TILE);
+          }
+        }
+      });
 
-    // Pass 2: soft edge blending
-    for (let ty = 0; ty < course.height; ty++) {
-      for (let tx = 0; tx < course.width; tx++) {
-        const i = ty * course.width + tx;
-        const terrain = course.tiles[i];
-        drawSoftEdges(bctx, course, tx * TILE, ty * TILE, TILE, terrain);
-      }
-    }
+      // Pass 2: soft edge blending
+      perfProfiler.measure('buildBaseCanvas.pass2_edges', () => {
+        for (let ty = 0; ty < course.height; ty++) {
+          for (let tx = 0; tx < course.width; tx++) {
+            const i = ty * course.width + tx;
+            const terrain = course.tiles[i];
+            drawSoftEdges(bctx, course, tx * TILE, ty * TILE, TILE, terrain);
+          }
+        }
+      });
 
-    // Pass 2.5: greens read as intentional targets (fringe/collar + subtle radial gradient)
-    drawGreenTargetTreatment(bctx, course, TILE);
+      // Pass 2.5: greens read as intentional targets (fringe/collar + subtle radial gradient)
+      perfProfiler.measure('buildBaseCanvas.pass2.5_greens', () => {
+        drawGreenTargetTreatment(bctx, course, TILE);
+      });
 
-    // Pass 3: global light + tiny “glaze” noise to reduce checkerboard feel
-    drawDirectionalLight(bctx, wPx, hPx);
-    if (noisePattern) {
-      bctx.globalAlpha = 0.04;
-      bctx.fillStyle = noisePattern;
-      bctx.fillRect(0, 0, wPx, hPx);
-      bctx.globalAlpha = 1;
-    }
+      // Pass 3: global light + tiny "glaze" noise to reduce checkerboard feel
+      perfProfiler.measure('buildBaseCanvas.pass3_lighting', () => {
+        drawDirectionalLight(bctx, wPx, hPx);
+        if (noisePattern) {
+          bctx.globalAlpha = 0.04;
+          bctx.fillStyle = noisePattern;
+          bctx.fillRect(0, 0, wPx, hPx);
+          bctx.globalAlpha = 1;
+        }
+      });
 
-    baseCanvasRef.current = base;
+      baseCanvasRef.current = base;
+      // Mark terrain as clean after base canvas is built
+      terrainDirtyRef.current = false;
+      courseDirtyRef.current = false;
+    });
 
     function drawObstacle(o: Obstacle, timeMs: number) {
       const cx0 = o.x * TILE + TILE / 2;
@@ -1273,6 +1308,9 @@ export function CanvasCourse(props: {
     }
 
     function drawDistancePreview() {
+      // Feature flag: Disabled for performance
+      if (!ENABLE_HOVER_DISTANCE_PREVIEW) return;
+      
       // Only show in green or tee placement mode
       const isGreenPlacement = wizardStep === "GREEN" || wizardStep === "MOVE_GREEN";
       const isTeePlacement = wizardStep === "TEE" || wizardStep === "MOVE_TEE";
@@ -1339,6 +1377,9 @@ export function CanvasCourse(props: {
     }
 
     function drawDistancePreviewTooltip() {
+      // Feature flag: Disabled for performance
+      if (!ENABLE_HOVER_DISTANCE_PREVIEW) return;
+      
       // Only show in green or tee placement mode
       const isGreenPlacement = wizardStep === "GREEN" || wizardStep === "MOVE_GREEN";
       const isTeePlacement = wizardStep === "TEE" || wizardStep === "MOVE_TEE";
@@ -1777,19 +1818,35 @@ export function CanvasCourse(props: {
     }
 
     const render = (timeMs: number) => {
-      if (!canvasRef.current) return;
-      if (!isVisibleRef.current) {
-        rafRef.current = requestAnimationFrame(render);
-        return;
-      }
-      const baseNow = baseCanvasRef.current;
-      if (!baseNow) return;
+      return perfProfiler.measure('CanvasCourse.render', () => {
+        if (!canvasRef.current) return;
+        if (!isVisibleRef.current) {
+          rafRef.current = requestAnimationFrame(render);
+          return;
+        }
+        const baseNow = baseCanvasRef.current;
+        if (!baseNow) return;
+        
+        // Instrumentation: count renders
+        renderCountRef.current++;
+        const now = performance.now();
+        const timeSinceLastLog = now - lastInstrumentationTimeRef.current;
+        if (timeSinceLastLog >= 5000) { // Log every 5 seconds
+          const renderFps = renderCountRef.current / (timeSinceLastLog / 1000);
+          const pointerMoveFps = pointerMoveCountRef.current / (timeSinceLastLog / 1000);
+          if (renderFps > 30) {
+            console.warn(`[Performance] High render rate: ${renderFps.toFixed(1)} fps (${renderCountRef.current} renders), ${pointerMoveFps.toFixed(1)} pointer moves/sec`);
+          }
+          renderCountRef.current = 0;
+          pointerMoveCountRef.current = 0;
+          lastInstrumentationTimeRef.current = now;
+        }
+      
       // Update camera animations (focus / flyover)
       const cam = camRef.current;
-      const now = timeMs;
       const stepAnim = (a: typeof camAnimRef.current) => {
         if (!a) return false;
-        const t = Math.max(0, Math.min(1, (now - a.t0) / a.dur));
+        const t = Math.max(0, Math.min(1, (timeMs - a.t0) / a.dur));
         const e = easeInOutCubic(t);
         cam.zoom = a.from.zoom + (a.to.zoom - a.from.zoom) * e;
         cam.panX = a.from.panX + (a.to.panX - a.from.panX) * e;
@@ -1801,128 +1858,185 @@ export function CanvasCourse(props: {
       if (!stillFocusing) camAnimRef.current = null;
       const stillFly = stepAnim(flyoverRef.current);
       if (!stillFly) flyoverRef.current = null;
-
-      ctx2.setTransform(1, 0, 0, 1, 0, 0);
-      ctx2.clearRect(0, 0, wPx, hPx);
-      cameraSetTransform(ctx2);
       
-      // In hole edit mode, render infinite canvas dynamically
-      if (cameraState && cameraState.mode === "hole") {
-        // Calculate visible tile range based on camera transform
-        // Get world coordinates of screen corners
-        const invZoom = 1 / (cameraState.zoom || 1);
-        const visibleWidthTiles = (wPx * invZoom) / TILE + 2; // +2 for padding
-        const visibleHeightTiles = (hPx * invZoom) / TILE + 2;
-        const centerX = cameraState.center.x;
-        const centerY = cameraState.center.y;
-        const minTileX = Math.floor(centerX - visibleWidthTiles / 2);
-        const maxTileX = Math.ceil(centerX + visibleWidthTiles / 2);
-        const minTileY = Math.floor(centerY - visibleHeightTiles / 2);
-        const maxTileY = Math.ceil(centerY + visibleHeightTiles / 2);
-        
-        // Render visible tiles dynamically
-        for (let ty = minTileY; ty <= maxTileY; ty++) {
-          for (let tx = minTileX; tx <= maxTileX; tx++) {
-            const terrain = getTerrainAt(tx, ty);
-            const x = tx * TILE;
-            const y = ty * TILE;
-            
-            // Draw tile texture
-            drawTileTexture(
-              ctx2,
-              terrain,
-              x,
-              y,
-              TILE,
-              noisePattern,
-              mowPattern,
-              tx * 1000 + ty
-            );
-            
-            // Draw lighting edges
-            drawLightingEdges(ctx2, x, y, TILE);
-            
-            // Draw soft edges for all tiles
-            drawSoftEdgesForTile(ctx2, tx, ty, TILE, terrain, getTerrainAt);
-          }
-        }
-        
-        // Draw greens treatment for visible greens
-        for (let ty = minTileY; ty <= maxTileY; ty++) {
-          for (let tx = minTileX; tx <= maxTileX; tx++) {
-            if (getTerrainAt(tx, ty) === "green") {
-              drawGreenForTile(ctx2, tx, ty, TILE, getTerrainAt);
-            }
-          }
-        }
-      } else {
-        // Normal mode: use pre-rendered base canvas
+      // Check if camera animation changed (requires full redraw)
+      const cameraChanged = stillFocusing || stillFly;
+
+      // Only clear and redraw if needed (dirty flags or camera animation)
+      const needsFullRedraw = courseDirtyRef.current || terrainDirtyRef.current || cameraChanged;
+      const needsOverlayRedraw = overlayDirtyRef.current || cameraChanged;
+
+      if (needsFullRedraw) {
+        ctx2.setTransform(1, 0, 0, 1, 0, 0);
+        ctx2.clearRect(0, 0, wPx, hPx);
+        cameraSetTransform(ctx2);
+      } else if (needsOverlayRedraw) {
+        // Only clear overlay area (save previous frame, then redraw overlay)
+        // For simplicity, we'll still clear full canvas but skip terrain redraw
+        ctx2.setTransform(1, 0, 0, 1, 0, 0);
+        ctx2.clearRect(0, 0, wPx, hPx);
+        cameraSetTransform(ctx2);
+        // Redraw base terrain (cached)
         ctx2.drawImage(baseNow, 0, 0);
+      } else {
+        // Nothing to update, skip render
+        const shouldContinue =
+          animationsEnabled ||
+          camAnimRef.current != null ||
+          flyoverRef.current != null ||
+          (panStateRef.current?.active ?? false) ||
+          overlayDirtyRef.current;
+        if (shouldContinue) rafRef.current = requestAnimationFrame(render);
+        else rafRef.current = null;
+        return;
       }
-
-      drawShimmer(timeMs);
-
-      // obstacles (only if showObstacles is true)
-      if (showObstacles) {
-        // In infinite mode, only draw obstacles in visible range
+      
+      // Draw terrain (only if needed)
+      if (needsFullRedraw || terrainDirtyRef.current) {
+        // In hole edit mode, render infinite canvas dynamically
         if (cameraState && cameraState.mode === "hole") {
-          const invZoom = 1 / (cameraState.zoom || 1);
-          const visibleWidthTiles = (wPx * invZoom) / TILE + 2;
-          const visibleHeightTiles = (hPx * invZoom) / TILE + 2;
-          const centerX = cameraState.center.x;
-          const centerY = cameraState.center.y;
-          const minTileX = Math.floor(centerX - visibleWidthTiles / 2);
-          const maxTileX = Math.ceil(centerX + visibleWidthTiles / 2);
-          const minTileY = Math.floor(centerY - visibleHeightTiles / 2);
-          const maxTileY = Math.ceil(centerY + visibleHeightTiles / 2);
-          
-          for (const o of obstacles) {
-            if (o.x >= minTileX && o.x <= maxTileX && o.y >= minTileY && o.y <= maxTileY) {
-              drawObstacle(o, timeMs);
+          perfProfiler.measure('render.infiniteCanvas', () => {
+            // Calculate visible tile range based on camera transform
+            // Get world coordinates of screen corners
+            const invZoom = 1 / (cameraState.zoom || 1);
+            const visibleWidthTiles = (wPx * invZoom) / TILE + 2; // +2 for padding
+            const visibleHeightTiles = (hPx * invZoom) / TILE + 2;
+            const centerX = cameraState.center.x;
+            const centerY = cameraState.center.y;
+            const minTileX = Math.floor(centerX - visibleWidthTiles / 2);
+            const maxTileX = Math.ceil(centerX + visibleWidthTiles / 2);
+            const minTileY = Math.floor(centerY - visibleHeightTiles / 2);
+            const maxTileY = Math.ceil(centerY + visibleHeightTiles / 2);
+            
+            const tileCount = (maxTileX - minTileX + 1) * (maxTileY - minTileY + 1);
+            if (tileCount > 1000) {
+              console.warn(`[PerfProfiler] Rendering ${tileCount} tiles in infinite canvas mode - this may be slow!`);
             }
-          }
+            
+            // Render visible tiles dynamically
+            for (let ty = minTileY; ty <= maxTileY; ty++) {
+              for (let tx = minTileX; tx <= maxTileX; tx++) {
+                const terrain = getTerrainAt(tx, ty);
+                const x = tx * TILE;
+                const y = ty * TILE;
+                
+                // Draw tile texture
+                drawTileTexture(
+                  ctx2,
+                  terrain,
+                  x,
+                  y,
+                  TILE,
+                  noisePattern,
+                  mowPattern,
+                  tx * 1000 + ty
+                );
+                
+                // Draw lighting edges
+                drawLightingEdges(ctx2, x, y, TILE);
+                
+                // Draw soft edges for all tiles
+                drawSoftEdgesForTile(ctx2, tx, ty, TILE, terrain, getTerrainAt);
+              }
+            }
+            
+            // Draw greens treatment for visible greens
+            for (let ty = minTileY; ty <= maxTileY; ty++) {
+              for (let tx = minTileX; tx <= maxTileX; tx++) {
+                if (getTerrainAt(tx, ty) === "green") {
+                  drawGreenForTile(ctx2, tx, ty, TILE, getTerrainAt);
+                }
+              }
+            }
+          });
         } else {
-          for (const o of obstacles) drawObstacle(o, timeMs);
+          // Normal mode: use pre-rendered base canvas (cached)
+          ctx2.drawImage(baseNow, 0, 0);
         }
+        terrainDirtyRef.current = false;
       }
 
-      // greens as targets: small flags (flutter in COZY)
-      drawFlags(timeMs);
+      // Draw overlays (only if overlay is dirty or full redraw needed)
+      if (needsOverlayRedraw || needsFullRedraw) {
+        perfProfiler.measure('render.overlays', () => {
+          perfProfiler.measure('render.overlays.shimmer', () => drawShimmer(timeMs));
 
-      // ambient life layer (COZY)
-      drawAmbientLife(timeMs);
+          // obstacles (only if showObstacles is true)
+          if (showObstacles) {
+            perfProfiler.measure('render.overlays.obstacles', () => {
+              // In infinite mode, only draw obstacles in visible range
+              if (cameraState && cameraState.mode === "hole") {
+                const invZoom = 1 / (cameraState.zoom || 1);
+                const visibleWidthTiles = (wPx * invZoom) / TILE + 2;
+                const visibleHeightTiles = (hPx * invZoom) / TILE + 2;
+                const centerX = cameraState.center.x;
+                const centerY = cameraState.center.y;
+                const minTileX = Math.floor(centerX - visibleWidthTiles / 2);
+                const maxTileX = Math.ceil(centerX + visibleWidthTiles / 2);
+                const minTileY = Math.floor(centerY - visibleHeightTiles / 2);
+                const maxTileY = Math.ceil(centerY + visibleHeightTiles / 2);
+                
+                for (const o of obstacles) {
+                  if (o.x >= minTileX && o.x <= maxTileX && o.y >= minTileY && o.y <= maxTileY) {
+                    drawObstacle(o, timeMs);
+                  }
+                }
+              } else {
+                for (const o of obstacles) drawObstacle(o, timeMs);
+              }
+            });
+          }
 
-      // shot plan visualization (Architect)
-      drawShotPlanOverlay();
+          // greens as targets: small flags (flutter in COZY)
+          perfProfiler.measure('render.overlays.flags', () => drawFlags(timeMs));
 
-      // fix overlay (failing corridor segments)
-      drawFixOverlay();
+          // ambient life layer (COZY)
+          perfProfiler.measure('render.overlays.ambient', () => drawAmbientLife(timeMs));
 
-      // distance preview (placement mode) - draw before resetting transform
-      drawDistancePreview();
+          // shot plan visualization (Architect)
+          perfProfiler.measure('render.overlays.shotPlan', () => drawShotPlanOverlay());
 
-      drawAnalytics();
-      drawWizard();
-      
-      // Reset transform before drawing tooltip (needs screen coords)
-      ctx2.setTransform(1, 0, 0, 1, 0, 0);
-      
-      // Draw tooltips (after transform reset, using screen coordinates)
-      drawDistancePreviewTooltip();
-      drawPaintHoverTooltip();
+          // fix overlay (failing corridor segments)
+          perfProfiler.measure('render.overlays.fixOverlay', () => drawFixOverlay());
 
-      const shouldContinue =
-        animationsEnabled ||
-        camAnimRef.current != null ||
-        flyoverRef.current != null ||
-        (panStateRef.current?.active ?? false);
-      if (shouldContinue) rafRef.current = requestAnimationFrame(render);
-      else rafRef.current = null;
+          // distance preview (placement mode) - draw before resetting transform
+          perfProfiler.measure('render.overlays.distancePreview', () => drawDistancePreview());
+
+          perfProfiler.measure('render.overlays.analytics', () => drawAnalytics());
+          perfProfiler.measure('render.overlays.wizard', () => drawWizard());
+          
+          // Reset transform before drawing tooltip (needs screen coords)
+          ctx2.setTransform(1, 0, 0, 1, 0, 0);
+          
+          // Draw tooltips (after transform reset, using screen coordinates)
+          perfProfiler.measure('render.overlays.tooltips', () => {
+            drawDistancePreviewTooltip();
+            drawPaintHoverTooltip();
+          });
+        });
+        
+        // Reset overlay dirty flag
+        overlayDirtyRef.current = false;
+      }
+
+        const shouldContinue =
+          animationsEnabled ||
+          camAnimRef.current != null ||
+          flyoverRef.current != null ||
+          (panStateRef.current?.active ?? false) ||
+          overlayDirtyRef.current;
+        if (shouldContinue) rafRef.current = requestAnimationFrame(render);
+        else rafRef.current = null;
+      });
     };
     renderRef.current = render;
 
     // Cancel any previous loop and render once or start loop
+    // Ensure only one RAF loop exists
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    // Mark terrain dirty when course changes
+    terrainDirtyRef.current = true;
+    courseDirtyRef.current = true;
     if (animationsEnabled) rafRef.current = requestAnimationFrame(render);
     else render(performance.now());
 
@@ -2073,6 +2187,10 @@ export function CanvasCourse(props: {
   }
 
   function handlePointerMove(e: React.PointerEvent) {
+    // Instrumentation: count pointer move events
+    pointerMoveCountRef.current++;
+    perfProfiler.logEvent('pointermove');
+    
     const t = getTileFromEvent(e);
     const ps = panStateRef.current;
 
@@ -2101,25 +2219,82 @@ export function CanvasCourse(props: {
               },
             };
             onCameraUpdate(newCamera);
-            if (rafRef.current == null && renderRef.current) rafRef.current = requestAnimationFrame(renderRef.current);
+            // Mark overlay as dirty instead of triggering immediate render
+            overlayDirtyRef.current = true;
+            if (rafRef.current == null && renderRef.current) {
+              rafRef.current = requestAnimationFrame(renderRef.current);
+            }
           }
         } else {
           // Normal mode panning
           camRef.current.panX = ps.startPanX + dx;
           camRef.current.panY = ps.startPanY + dy;
           clampCamera(camRef.current);
-          if (rafRef.current == null && renderRef.current) rafRef.current = requestAnimationFrame(renderRef.current);
+          // Mark overlay as dirty instead of triggering immediate render
+          overlayDirtyRef.current = true;
+          if (rafRef.current == null && renderRef.current) {
+            rafRef.current = requestAnimationFrame(renderRef.current);
+          }
         }
       }
     }
 
-    // Track hover tile for rendering (no React state updates - performance critical)
-    const prevHover = hoverTileRef.current;
-    hoverTileRef.current = t ? { idx: t.idx, x: t.x, y: t.y, clientX: e.clientX, clientY: e.clientY } : null;
-    
-    // Trigger canvas redraw if hover tile changed (for tooltip/preview updates)
-    if ((prevHover?.x !== hoverTileRef.current?.x || prevHover?.y !== hoverTileRef.current?.y) && renderRef.current && rafRef.current == null) {
-      rafRef.current = requestAnimationFrame(renderRef.current);
+    // Track hover state in refs (no React state updates - performance critical)
+    const needsHoverTracking = ENABLE_HOVER_DISTANCE_PREVIEW || (editorMode === "PAINT" && selectedTerrain);
+    if (needsHoverTracking) {
+      const prevHover = hoverTileRef.current;
+      const wasHovering = isHoveringRef.current;
+      
+      if (t) {
+        hoverTileRef.current = { idx: t.idx, x: t.x, y: t.y, clientX: e.clientX, clientY: e.clientY };
+        hoverWorldPosRef.current = { x: t.x, y: t.y };
+        isHoveringRef.current = true;
+        
+        // Calculate preview distance if needed
+        if (ENABLE_HOVER_DISTANCE_PREVIEW) {
+          const hole = holes[activeHoleIndex];
+          const fromPoint = (wizardStep === "GREEN" || wizardStep === "MOVE_GREEN") 
+            ? (hole?.tee || draftTee)
+            : (wizardStep === "TEE" || wizardStep === "MOVE_TEE")
+            ? (hole?.green || draftGreen)
+            : null;
+          
+          if (fromPoint) {
+            const dx = t.x - fromPoint.x;
+            const dy = t.y - fromPoint.y;
+            previewDistanceRef.current = Math.sqrt(dx * dx + dy * dy) * course.yardsPerTile;
+          } else {
+            previewDistanceRef.current = null;
+          }
+        }
+        
+        // Mark overlay dirty if hover changed (only update overlay, not full render)
+        if (prevHover?.x !== t.x || prevHover?.y !== t.y || !wasHovering) {
+          overlayDirtyRef.current = true;
+          // Ensure render loop is running
+          if (rafRef.current == null && renderRef.current) {
+            rafRef.current = requestAnimationFrame(renderRef.current);
+          }
+        }
+      } else {
+        hoverTileRef.current = null;
+        hoverWorldPosRef.current = null;
+        isHoveringRef.current = false;
+        previewDistanceRef.current = null;
+        // Mark overlay dirty to clear hover visuals
+        if (wasHovering) {
+          overlayDirtyRef.current = true;
+          if (rafRef.current == null && renderRef.current) {
+            rafRef.current = requestAnimationFrame(renderRef.current);
+          }
+        }
+      }
+    } else {
+      // Clear hover tracking when not needed
+      hoverTileRef.current = null;
+      hoverWorldPosRef.current = null;
+      isHoveringRef.current = false;
+      previewDistanceRef.current = null;
     }
     
     if (!t) return;
@@ -2218,10 +2393,17 @@ export function CanvasCourse(props: {
         onContextMenu={(e) => e.preventDefault()}
         onPointerLeave={() => {
           lastHoverIdxRef.current = null;
-          hoverTileRef.current = null;
-          // Hover cleared
-          if (renderRef.current && rafRef.current == null) {
-            rafRef.current = requestAnimationFrame(renderRef.current);
+          if (ENABLE_HOVER_DISTANCE_PREVIEW || editorMode === "PAINT") {
+            hoverTileRef.current = null;
+            hoverWorldPosRef.current = null;
+            isHoveringRef.current = false;
+            previewDistanceRef.current = null;
+            // Mark overlay dirty to clear hover visuals
+            overlayDirtyRef.current = true;
+            // Ensure render loop is running
+            if (renderRef.current && rafRef.current == null) {
+              rafRef.current = requestAnimationFrame(renderRef.current);
+            }
           }
         }}
         style={{
