@@ -12,6 +12,9 @@ interface PerfStats {
   drawFrames: number;
   terrainLayerRebuilds: number;
   obstacleLayerRebuilds: number;
+  reducerDispatches: number;
+  canvasRenderCount: number;
+  pixiRenderCount: number;
   lastResetTime: number;
 }
 
@@ -21,6 +24,9 @@ const stats: PerfStats = {
   drawFrames: 0,
   terrainLayerRebuilds: 0,
   obstacleLayerRebuilds: 0,
+  reducerDispatches: 0,
+  canvasRenderCount: 0,
+  pixiRenderCount: 0,
   lastResetTime: performance.now(),
 };
 
@@ -34,8 +40,11 @@ function startLogging() {
     const elapsed = (performance.now() - stats.lastResetTime) / 1000;
     if (elapsed > 0) {
       console.log("[PERF]", {
+        analyzeHoleCallsPerSec: (stats.evaluateHoleCalls / elapsed).toFixed(1),
+        reducerDispatchesPerSec: (stats.reducerDispatches / elapsed).toFixed(1),
+        canvasRendersPerSec: (stats.canvasRenderCount / elapsed).toFixed(1),
+        pixiRendersPerSec: (stats.pixiRenderCount / elapsed).toFixed(1),
         reactRendersPerSec: (stats.reactRenders / elapsed).toFixed(1),
-        evaluateHolePerSec: (stats.evaluateHoleCalls / elapsed).toFixed(1),
         drawFramesPerSec: (stats.drawFrames / elapsed).toFixed(1),
         terrainRebuilds: stats.terrainLayerRebuilds,
         obstacleRebuilds: stats.obstacleLayerRebuilds,
@@ -44,6 +53,9 @@ function startLogging() {
       stats.reactRenders = 0;
       stats.evaluateHoleCalls = 0;
       stats.drawFrames = 0;
+      stats.reducerDispatches = 0;
+      stats.canvasRenderCount = 0;
+      stats.pixiRenderCount = 0;
       stats.lastResetTime = performance.now();
     }
   }, 1000);
@@ -82,6 +94,18 @@ export function logObstacleLayerRebuild(durationMs: number) {
     stats.obstacleLayerRebuilds++;
     console.log(`[PERF] rebuildObstacleLayer took ${durationMs.toFixed(2)}ms`);
   }
+}
+
+export function logReducerDispatch() {
+  if (DEBUG_PERF) stats.reducerDispatches++;
+}
+
+export function logCanvasRender() {
+  if (DEBUG_PERF) stats.canvasRenderCount++;
+}
+
+export function logPixiRender() {
+  if (DEBUG_PERF) stats.pixiRenderCount++;
 }
 
 /**

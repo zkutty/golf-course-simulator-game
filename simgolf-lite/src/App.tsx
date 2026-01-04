@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { perfProfiler } from "./utils/performanceProfiler";
 import { CanvasCourse } from "./ui/CanvasCourse";
 import "./ui/cozyLayout.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
-import { DEFAULT_STATE } from "./game/gameState";
+import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import type { Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, loadGame, resetSave, saveGame } from "./utils/save";
@@ -27,6 +27,9 @@ import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
 import { HoleMinimap } from "./ui/HoleMinimap";
 import { generateWildLandWithObstacles } from "./game/gen/generateWildLand";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "./game/models/constants";
+import { applyAction } from "./core/reducer";
+import type { Action } from "./core/actions";
+import { DEBUG_PERF, logReducerDispatch, logEvaluateHole } from "./utils/performance";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -36,9 +39,34 @@ const STRIKE_SFX = "/audio/ball-strike.mp3";
 
 export default function App() {
   const [screen, setScreen] = useState<"menu" | "game">("menu");
-  const [course, setCourse] = useState(DEFAULT_STATE.course);
-  const [world, setWorld] = useState(DEFAULT_STATE.world);
+  const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
+  const { course, world } = gameState;
   const [selected, setSelected] = useState<Terrain>("fairway");
+
+  // Dispatch function for actions
+  const dispatch = useCallback((action: Action) => {
+    // Log reducer dispatch count (only for mutations, not UI-only actions)
+    if (DEBUG_PERF && (action.type !== "SET_MODE" && action.type !== "SET_ACTIVE_HOLE" && action.type !== "SET_BRUSH")) {
+      logReducerDispatch();
+    }
+    setGameState((prevState) => applyAction(prevState, action));
+  }, []);
+
+  // Helper functions for non-core mutations (operations not in the action list)
+  // These are used for mutations that don't affect terrain/markers/obstacles/core economy
+  const setCourse = useCallback((updater: (c: typeof course) => typeof course) => {
+    setGameState((prevState) => ({
+      ...prevState,
+      course: updater(prevState.course),
+    }));
+  }, []);
+  
+  const setWorld = useCallback((updater: (w: typeof world) => typeof world) => {
+    setGameState((prevState) => ({
+      ...prevState,
+      world: updater(prevState.world),
+    }));
+  }, []);
   const [last, setLast] = useState<WeekResult | undefined>(undefined);
   const [history, setHistory] = useState<WeekResult[]>([]);
 
@@ -139,7 +167,11 @@ export default function App() {
       console.log('[Performance] Computing activeHoleEvaluation...');
       const start = performance.now();
       const result = perfProfiler.measure('evaluateHole', () => evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex));
-      console.log('[Performance] activeHoleEvaluation computed in', performance.now() - start, 'ms');
+      const duration = performance.now() - start;
+      console.log('[Performance] activeHoleEvaluation computed in', duration, 'ms');
+      if (DEBUG_PERF) {
+        logEvaluateHole(duration);
+      }
       return result;
     },
     [course, activeHoleIndex]
@@ -334,8 +366,7 @@ export default function App() {
       obstacles: generatedObstacles,
     };
     
-    setCourse(newCourse);
-    setWorld({
+    const newWorld = {
       ...DEFAULT_STATE.world,
       runSeed: seed,
       distressWeeks: 0,
@@ -343,7 +374,9 @@ export default function App() {
       loans: [],
       lastBridgeLoanWeek: -999,
       lastWeekProfit: 0,
-    });
+    };
+    
+    dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
     setHistory([]);
     setLast(undefined);
     setEditorMode("PAINT");
@@ -371,8 +404,7 @@ export default function App() {
   }, []);
 
   function applyLoadedGame(loaded: NonNullable<ReturnType<typeof loadGame>>) {
-    setCourse(loaded.course);
-    setWorld(loaded.world);
+    dispatch({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
     setHistory(loaded.history ?? []);
     setLast(loaded.history?.[loaded.history.length - 1]);
   }
@@ -443,18 +475,16 @@ export default function App() {
     }
     if (prev === next) return true;
 
-    // Apply tile + cash
-    setCourse((c) => {
-      const tiles = c.tiles.slice();
-      tiles[idx] = next;
-      return { ...c, tiles };
-    });
-    setWorld((w) => {
-      const nextCash = w.cash - net;
-      return { ...w, cash: nextCash, isBankrupt: w.isBankrupt || nextCash < -10_000 };
+    const x = idx % course.width;
+    const y = Math.floor(idx / course.width);
+    
+    // Dispatch PAINT_TILES action
+    dispatch({
+      type: "PAINT_TILES",
+      tiles: [{ x, y, terrain: next }],
     });
 
-    // Track capital spending since last simulate
+    // Track capital spending since last simulate (separate from game state)
     setCapital((c) => ({
       spent: c.spent + charged,
       refunded: c.refunded + refunded,
@@ -636,21 +666,13 @@ export default function App() {
       return;
     }
     
-    // Update hole
-    setCourse((c) => {
-      const holes = c.holes.slice();
-      const prev = holes[activeHoleIndex];
-      if (markerType === "tee") {
-        holes[activeHoleIndex] = { ...prev, tee: newPos };
-      } else {
-        holes[activeHoleIndex] = { ...prev, green: newPos };
-      }
-      return { ...c, holes };
-    });
+    // Dispatch MOVE_TEE or MOVE_GREEN action
+    if (markerType === "tee") {
+      dispatch({ type: "MOVE_TEE", holeIndex: activeHoleIndex, position: newPos, oldPosition: oldPos });
+    } else {
+      dispatch({ type: "MOVE_GREEN", holeIndex: activeHoleIndex, position: newPos, oldPosition: oldPos });
+    }
     
-    // Apply terrain changes: remove old, place new
-    applyTerrainAt(oldPos.x, oldPos.y, "rough", { silent: true }); // Revert old position
-    applyTerrainAt(newPos.x, newPos.y, markerType, { silent: true }); // Place new marker
     void sound?.playConfirm(soundEnabled);
   }
 
@@ -670,15 +692,9 @@ export default function App() {
       return;
     }
 
-    setCourse((c) => {
-      const holes = c.holes.slice();
-      const prev = holes[activeHoleIndex] ?? { tee: null, green: null };
-      holes[activeHoleIndex] = { ...prev, tee, green };
-      return { ...c, holes };
-    });
-    // Apply as silent terrain changes (avoid double brush clicks), then play confirm chime.
-    applyTerrainAt(tee.x, tee.y, "tee", { silent: true });
-    applyTerrainAt(green.x, green.y, "green", { silent: true });
+    // Dispatch PLACE_TEE and PLACE_GREEN actions
+    dispatch({ type: "PLACE_TEE", holeIndex: activeHoleIndex, position: tee });
+    dispatch({ type: "PLACE_GREEN", holeIndex: activeHoleIndex, position: green });
     void sound?.playConfirm(soundEnabled);
 
     setActiveHoleIndex((i) => Math.min(8, i + 1));
@@ -735,14 +751,12 @@ export default function App() {
       return;
     }
     if (editorMode === "OBSTACLE") {
-      setCourse((c) => {
-        const existingIdx = c.obstacles.findIndex((o) => o.x === x && o.y === y);
-        const obstacles =
-          existingIdx >= 0
-            ? c.obstacles.filter((_, i) => i !== existingIdx)
-            : [...c.obstacles, { x, y, type: obstacleType }];
-        return { ...c, obstacles };
-      });
+      const existingIdx = course.obstacles.findIndex((o) => o.x === x && o.y === y);
+      if (existingIdx >= 0) {
+        dispatch({ type: "REMOVE_OBSTACLE", x, y });
+      } else {
+        dispatch({ type: "PLACE_OBSTACLE", x, y, obstacleType });
+      }
       return;
     }
     // HOLE_WIZARD
@@ -930,11 +944,12 @@ export default function App() {
       obstacles: generatedObstacles,
     };
     
-    setCourse(newCourse);
-    setWorld({
+    const newWorld = {
       ...DEFAULT_STATE.world,
       runSeed: newSeed,
-    });
+    };
+    
+    dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
     setHistory([]);
     setLast(undefined);
     setEditorMode("PAINT");
@@ -961,8 +976,7 @@ export default function App() {
       byTerrainSpent: capital.byTerrainSpent,
       byTerrainTiles: capital.byTerrainTiles,
     };
-    setCourse(c2);
-    setWorld(w2);
+    dispatch({ type: "SIMULATE_WEEK", course: c2, world: w2 });
     const withCap: WeekResult = { ...result, capitalSpending: cap };
     setLast(withCap);
     setHistory((h) => [...h.slice(-19), withCap]);
