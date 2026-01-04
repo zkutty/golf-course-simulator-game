@@ -710,14 +710,15 @@ export function CanvasCourse(props: {
   };
 
   // Preload obstacle sprites when tileSize changes
-  useEffect(() => {
-    const spriteSize = Math.round(TILE * 1.1);
-    // Preload common sizes around current tileSize (for zoom scenarios)
-    const sizesToPreload = [spriteSize, Math.round(spriteSize * 0.8), Math.round(spriteSize * 1.2)];
-    preloadObstacleSprites(sizesToPreload).catch((err) => {
-      console.warn("Failed to preload obstacle sprites:", err);
-    });
-  }, [TILE]);
+  // DISABLED: SVG sprite loading causes severe performance issues
+  // useEffect(() => {
+  //   const spriteSize = Math.round(TILE * 1.1);
+  //   // Preload common sizes around current tileSize (for zoom scenarios)
+  //   const sizesToPreload = [spriteSize, Math.round(spriteSize * 0.8), Math.round(spriteSize * 1.2)];
+  //   preloadObstacleSprites(sizesToPreload).catch((err) => {
+  //     console.warn("Failed to preload obstacle sprites:", err);
+  //   });
+  // }, [TILE]);
 
   const imageData = useMemo(() => {
     return course.tiles.map((t) => COLORS[t]);
@@ -902,12 +903,13 @@ export function CanvasCourse(props: {
   }
 
   useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    const ctx2: CanvasRenderingContext2D = ctx;
+
     perfProfiler.measure('CanvasCourse.buildBaseCanvas', () => {
-      const c = canvasRef.current;
-      if (!c) return;
-      const ctx = c.getContext("2d");
-      if (!ctx) return;
-      const ctx2: CanvasRenderingContext2D = ctx;
 
       // Build static terrain buffer (expensive work done only when course/size changes)
       const base = document.createElement("canvas");
@@ -1962,30 +1964,31 @@ export function CanvasCourse(props: {
           perfProfiler.measure('render.overlays.shimmer', () => drawShimmer(timeMs));
 
           // obstacles (only if showObstacles is true)
-          if (showObstacles) {
-            perfProfiler.measure('render.overlays.obstacles', () => {
-              // In infinite mode, only draw obstacles in visible range
-              if (cameraState && cameraState.mode === "hole") {
-                const invZoom = 1 / (cameraState.zoom || 1);
-                const visibleWidthTiles = (wPx * invZoom) / TILE + 2;
-                const visibleHeightTiles = (hPx * invZoom) / TILE + 2;
-                const centerX = cameraState.center.x;
-                const centerY = cameraState.center.y;
-                const minTileX = Math.floor(centerX - visibleWidthTiles / 2);
-                const maxTileX = Math.ceil(centerX + visibleWidthTiles / 2);
-                const minTileY = Math.floor(centerY - visibleHeightTiles / 2);
-                const maxTileY = Math.ceil(centerY + visibleHeightTiles / 2);
-                
-                for (const o of obstacles) {
-                  if (o.x >= minTileX && o.x <= maxTileX && o.y >= minTileY && o.y <= maxTileY) {
-                    drawObstacle(o, timeMs);
-                  }
-                }
-              } else {
-                for (const o of obstacles) drawObstacle(o, timeMs);
-              }
-            });
-          }
+          // DISABLED: SVG sprite loading causes severe performance issues
+          // if (showObstacles) {
+          //   perfProfiler.measure('render.overlays.obstacles', () => {
+          //     // In infinite mode, only draw obstacles in visible range
+          //     if (cameraState && cameraState.mode === "hole") {
+          //       const invZoom = 1 / (cameraState.zoom || 1);
+          //       const visibleWidthTiles = (wPx * invZoom) / TILE + 2;
+          //       const visibleHeightTiles = (hPx * invZoom) / TILE + 2;
+          //       const centerX = cameraState.center.x;
+          //       const centerY = cameraState.center.y;
+          //       const minTileX = Math.floor(centerX - visibleWidthTiles / 2);
+          //       const maxTileX = Math.ceil(centerX + visibleWidthTiles / 2);
+          //       const minTileY = Math.floor(centerY - visibleHeightTiles / 2);
+          //       const maxTileY = Math.ceil(centerY + visibleHeightTiles / 2);
+          //
+          //       for (const o of obstacles) {
+          //         if (o.x >= minTileX && o.x <= maxTileX && o.y >= minTileY && o.y <= maxTileY) {
+          //           drawObstacle(o, timeMs);
+          //         }
+          //       }
+          //     } else {
+          //       for (const o of obstacles) drawObstacle(o, timeMs);
+          //     }
+          //   });
+          // }
 
           // greens as targets: small flags (flutter in COZY)
           perfProfiler.measure('render.overlays.flags', () => drawFlags(timeMs));

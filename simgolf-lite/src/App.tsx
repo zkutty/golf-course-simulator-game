@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { perfProfiler } from "./utils/performanceProfiler";
 import { CanvasCourse } from "./ui/CanvasCourse";
+import "./ui/cozyLayout.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE } from "./game/gameState";
@@ -64,7 +65,7 @@ export default function App() {
   const [holeEditCamera, setHoleEditCamera] = useState<CameraState | null>(null);
   const holeEditCameraManualRef = useRef(false); // Track if camera was manually set
   const [showFixOverlay, setShowFixOverlay] = useState(false);
-  const [animationsEnabled, setAnimationsEnabled] = useState(true);
+  const [animationsEnabled, setAnimationsEnabled] = useState(false);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [showShotPlan, setShowShotPlan] = useState(true);
@@ -120,7 +121,11 @@ export default function App() {
   }, [paneSize.width, paneSize.height, course.width, course.height]);
 
   const holeSummary = useMemo(() => {
-    return perfProfiler.measure('scoreCourseHoles', () => scoreCourseHoles(course));
+    console.log('[Performance] Computing holeSummary...');
+    const start = performance.now();
+    const result = perfProfiler.measure('scoreCourseHoles', () => scoreCourseHoles(course));
+    console.log('[Performance] holeSummary computed in', performance.now() - start, 'ms');
+    return result;
   }, [course]);
   const activePath = useMemo(() => holeSummary.holes[activeHoleIndex]?.path ?? [], [holeSummary, activeHoleIndex]);
   const activeShotPlan = useMemo(
@@ -130,7 +135,13 @@ export default function App() {
 
   // Extract failing corridor segments for overlay
   const activeHoleEvaluation = useMemo(
-    () => perfProfiler.measure('evaluateHole', () => evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex)),
+    () => {
+      console.log('[Performance] Computing activeHoleEvaluation...');
+      const start = performance.now();
+      const result = perfProfiler.measure('evaluateHole', () => evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex));
+      console.log('[Performance] activeHoleEvaluation computed in', performance.now() - start, 'ms');
+      return result;
+    },
     [course, activeHoleIndex]
   );
   const failingCorridorSegments = useMemo(() => {
@@ -139,9 +150,8 @@ export default function App() {
   }, [activeHoleEvaluation]);
 
   const validHolesCount = useMemo(() => {
-    const s = perfProfiler.measure('scoreCourseHoles.validHoles', () => scoreCourseHoles(course));
-    return s.holes.filter((h) => h.isComplete && h.isValid).length;
-  }, [course]);
+    return holeSummary.holes.filter((h) => h.isComplete && h.isValid).length;
+  }, [holeSummary]);
 
   const eligibleBridge = useMemo(() => {
     const repOk = world.reputation >= BALANCE.loans.bridge.repMin;
@@ -229,7 +239,7 @@ export default function App() {
         setHoleEditCamera(camera);
       }
     }
-  }, [paneSize.width, paneSize.height, tileSize, holeEditMode, activeHoleIndex, course]);
+  }, [paneSize.width, paneSize.height, tileSize, holeEditMode, activeHoleIndex]);
 
   // Keyboard shortcuts for hole edit mode
   useEffect(() => {
@@ -298,15 +308,19 @@ export default function App() {
   }, [screen, viewMode, soundEnabled, audio]);
 
   function restartRun(args: { seed: number }) {
+    console.log('[Performance] Starting new game...');
     const seed = args.seed | 0;
-    
+
     // Generate wild land terrain and obstacles using the seed
+    console.log('[Performance] Generating wild land...');
+    const start = performance.now();
     const { tiles: generatedTiles, obstacles: generatedObstacles } = generateWildLandWithObstacles(
       COURSE_WIDTH,
       COURSE_HEIGHT,
       seed,
       [] // No reserved zones for new games (no holes placed yet)
     );
+    console.log('[Performance] Wild land generated in', performance.now() - start, 'ms');
     
     // Create new course with generated terrain and obstacles, no holes
     const newCourse = {

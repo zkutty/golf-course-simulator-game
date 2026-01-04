@@ -1,9 +1,5 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
+/* Removed default Vite styles that conflict with game layout */
+/* #root styles are now in index.css */
 
 .logo {
   height: 6em;

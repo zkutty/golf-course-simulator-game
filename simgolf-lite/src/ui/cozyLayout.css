@@ -62,7 +62,7 @@
 }
 
 /* Small-screen fallback: stack */
-@media (max-width: 980px) {
+@media (max-width: 768px) {
   .cc-app {
     padding: 10px;
   }
