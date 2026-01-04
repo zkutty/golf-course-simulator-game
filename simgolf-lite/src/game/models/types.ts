@@ -16,6 +16,7 @@ export interface Point {
 export interface Hole {
   tee: Point | null;
   green: Point | null;
+  waypoints?: Point[]; // Optional waypoints for dog legs (between tee and green)
   parMode: "AUTO" | "MANUAL";
   parManual?: 3 | 4 | 5;
   name?: string;

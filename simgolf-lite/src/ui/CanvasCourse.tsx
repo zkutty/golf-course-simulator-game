@@ -1570,44 +1570,70 @@ export function CanvasCourse(props: {
 
     function drawWizard() {
       if (editorMode !== "HOLE_WIZARD") return;
+      ctx2.font = `${Math.max(10, Math.floor(TILE * 0.55))}px system-ui, sans-serif`;
       ctx2.lineWidth = 3;
+      
+      // Draw black line connecting tee and green (through waypoints if any)
       if (draftTee && draftGreen) {
+        const hole = holes[activeHoleIndex];
+        const waypoints = hole?.waypoints || [];
+        
         ctx2.globalAlpha = 0.9;
-        ctx2.strokeStyle = "#ff6f00";
+        ctx2.strokeStyle = "#000";
         ctx2.beginPath();
         ctx2.moveTo(draftTee.x * TILE + TILE / 2, draftTee.y * TILE + TILE / 2);
+        
+        // Draw through waypoints
+        for (const wp of waypoints) {
+          ctx2.lineTo(wp.x * TILE + TILE / 2, wp.y * TILE + TILE / 2);
+        }
+        
+        // Draw to green
         ctx2.lineTo(draftGreen.x * TILE + TILE / 2, draftGreen.y * TILE + TILE / 2);
         ctx2.stroke();
         ctx2.globalAlpha = 1;
+        
+        // Draw waypoint markers
+        for (const wp of waypoints) {
+          ctx2.globalAlpha = 0.95;
+          ctx2.fillStyle = "#666";
+          ctx2.beginPath();
+          ctx2.arc(wp.x * TILE + TILE / 2, wp.y * TILE + TILE / 2, Math.max(3, TILE * 0.25), 0, Math.PI * 2);
+          ctx2.fill();
+          ctx2.globalAlpha = 1;
+        }
       }
+
+      const holeNumber = String(activeHoleIndex + 1);
+      const numberWidth = ctx2.measureText(holeNumber).width;
 
       if (draftTee) {
         ctx2.globalAlpha = 0.95;
-        ctx2.fillStyle = "#ff6f00";
+        ctx2.fillStyle = "#000";
         ctx2.beginPath();
-        ctx2.arc(draftTee.x * TILE + TILE / 2, draftTee.y * TILE + TILE / 2, 8, 0, Math.PI * 2);
+        ctx2.arc(draftTee.x * TILE + TILE / 2, draftTee.y * TILE + TILE / 2, Math.max(4, TILE * 0.35), 0, Math.PI * 2);
         ctx2.fill();
         ctx2.fillStyle = "#fff";
-        ctx2.fillText("T", draftTee.x * TILE + TILE / 2 - 4, draftTee.y * TILE + TILE / 2 + 4);
+        ctx2.fillText(holeNumber, draftTee.x * TILE + TILE / 2 - numberWidth / 2, draftTee.y * TILE + TILE / 2 + 4);
         ctx2.globalAlpha = 1;
       }
 
       if (draftGreen) {
         ctx2.globalAlpha = 0.95;
-        ctx2.fillStyle = "#ff6f00";
+        ctx2.fillStyle = "#1b5e20";
         ctx2.beginPath();
         ctx2.arc(
           draftGreen.x * TILE + TILE / 2,
           draftGreen.y * TILE + TILE / 2,
-          8,
+          Math.max(4, TILE * 0.35),
           0,
           Math.PI * 2
         );
         ctx2.fill();
         ctx2.fillStyle = "#fff";
         ctx2.fillText(
-          "G",
-          draftGreen.x * TILE + TILE / 2 - 4,
+          holeNumber,
+          draftGreen.x * TILE + TILE / 2 - numberWidth / 2,
           draftGreen.y * TILE + TILE / 2 + 4
         );
         ctx2.globalAlpha = 1;
@@ -2078,9 +2104,12 @@ export function CanvasCourse(props: {
   ]);
 
   // Focus camera when active hole changes or gets tee/green set (cinematic selection)
+  // Skip zoom when placing tee (when we have draftTee but the hole doesn't have a tee yet)
   useEffect(() => {
     if (panStateRef.current?.active) return;
     const h = holes[activeHoleIndex];
+    // Don't zoom when placing tee in wizard mode (we have draftTee but the hole doesn't have a tee yet)
+    if (editorMode === "HOLE_WIZARD" && draftTee && !h?.tee) return;
     const pts: Array<{ x: number; y: number }> = [];
     const toWorldCenter = (p: Point) => ({ x: p.x * TILE + TILE / 2, y: p.y * TILE + TILE / 2 });
     if (h?.tee) pts.push(toWorldCenter(h.tee));
@@ -2096,7 +2125,7 @@ export function CanvasCourse(props: {
     if (rafRef.current == null && renderRef.current) {
       rafRef.current = requestAnimationFrame(renderRef.current);
     }
-  }, [activeHoleIndex, holes, TILE, draftTee, draftGreen]);
+  }, [activeHoleIndex, holes, TILE, draftTee, draftGreen, editorMode, wizardStep]);
 
   // Start flyover when nonce changes (COZY button)
   useEffect(() => {

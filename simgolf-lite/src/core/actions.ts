@@ -22,6 +22,9 @@ export type MarkerMutationAction =
   | { type: "MOVE_TEE"; holeIndex: number; position: Point; oldPosition: Point }
   | { type: "PLACE_GREEN"; holeIndex: number; position: Point }
   | { type: "MOVE_GREEN"; holeIndex: number; position: Point; oldPosition: Point }
+  | { type: "ADD_WAYPOINT"; holeIndex: number; position: Point; segmentIndex: number }
+  | { type: "UPDATE_WAYPOINT"; holeIndex: number; waypointIndex: number; position: Point }
+  | { type: "REMOVE_WAYPOINT"; holeIndex: number; waypointIndex: number }
   | { type: "NEW_GAME"; course: Course; world: World }
   | { type: "LOAD_GAME"; course: Course; world: World };
 
@@ -41,5 +44,5 @@ export type UIAction =
   | { type: "SET_BRUSH"; terrain: Terrain };
 
 // Union of all actions
-export type Action = TerrainMutationAction | ObstacleMutationAction | UIAction;
+export type Action = TerrainMutationAction | ObstacleMutationAction | MarkerMutationAction | UIAction;
 

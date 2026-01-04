@@ -248,6 +248,65 @@ export function applyAction(state: GameState, action: Action): GameState {
       break;
     }
 
+    case "ADD_WAYPOINT": {
+      const hole = state.course.holes[action.holeIndex];
+      if (!hole) break;
+
+      const newHoles = state.course.holes.slice();
+      const waypoints = hole.waypoints ? [...hole.waypoints] : [];
+      waypoints.splice(action.segmentIndex, 0, action.position);
+      newHoles[action.holeIndex] = { ...hole, waypoints };
+
+      newState = {
+        ...newState,
+        course: {
+          ...state.course,
+          holes: newHoles,
+        },
+      };
+      markersVersion++;
+      break;
+    }
+
+    case "UPDATE_WAYPOINT": {
+      const hole = state.course.holes[action.holeIndex];
+      if (!hole || !hole.waypoints || action.waypointIndex < 0 || action.waypointIndex >= hole.waypoints.length) break;
+
+      const newHoles = state.course.holes.slice();
+      const waypoints = [...hole.waypoints];
+      waypoints[action.waypointIndex] = action.position;
+      newHoles[action.holeIndex] = { ...hole, waypoints };
+
+      newState = {
+        ...newState,
+        course: {
+          ...state.course,
+          holes: newHoles,
+        },
+      };
+      markersVersion++;
+      break;
+    }
+
+    case "REMOVE_WAYPOINT": {
+      const hole = state.course.holes[action.holeIndex];
+      if (!hole || !hole.waypoints || action.waypointIndex < 0 || action.waypointIndex >= hole.waypoints.length) break;
+
+      const newHoles = state.course.holes.slice();
+      const waypoints = hole.waypoints.filter((_, i) => i !== action.waypointIndex);
+      newHoles[action.holeIndex] = { ...hole, waypoints: waypoints.length > 0 ? waypoints : undefined };
+
+      newState = {
+        ...newState,
+        course: {
+          ...state.course,
+          holes: newHoles,
+        },
+      };
+      markersVersion++;
+      break;
+    }
+
     case "NEW_GAME":
     case "LOAD_GAME": {
       newState = {
