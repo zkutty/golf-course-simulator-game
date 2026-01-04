@@ -2074,6 +2074,7 @@ export function CanvasCourse(props: {
     _showFixOverlay,
     failingCorridorSegments,
     cameraState,
+    showObstacles,
   ]);
 
   // Focus camera when active hole changes or gets tee/green set (cinematic selection)
