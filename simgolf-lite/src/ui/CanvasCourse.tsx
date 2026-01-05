@@ -6,6 +6,13 @@ import { screenToWorld as cameraScreenToWorld, applyCameraTransform } from "../g
 import { getObstacleSprite, preloadObstacleSprites } from "../render/iconSprites";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { perfProfiler } from "../utils/performanceProfiler";
+import {
+  worldToIsometric,
+  getIsometricDrawOrder,
+  getIsometricTileCorners,
+  getHeightAt,
+  DEFAULT_ISOMETRIC_CONFIG
+} from "../game/render/isometric";
 
 // Feature flag: Enable/disable hover-based distance preview (performance optimization)
 // When disabled, no hover tracking or preview rendering occurs for marker placement
@@ -486,6 +493,100 @@ function drawDirectionalLight(ctx: CanvasRenderingContext2D, w: number, h: numbe
   ctx.fillRect(0, 0, w, h);
 }
 
+/**
+ * Draw a single tile in isometric view
+ */
+function drawIsometricTile(
+  ctx: CanvasRenderingContext2D,
+  terrain: Terrain,
+  tileX: number,
+  tileY: number,
+  tileSize: number,
+  height: number,
+  noise: CanvasPattern | null,
+  mow: CanvasPattern | null,
+  seed: number
+) {
+  // Get the four corners of the isometric tile
+  const corners = getIsometricTileCorners(tileX, tileY, tileSize, height, DEFAULT_ISOMETRIC_CONFIG);
+
+  // Draw the tile as a diamond/parallelogram
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(corners[0].x, corners[0].y); // top
+  ctx.lineTo(corners[1].x, corners[1].y); // right
+  ctx.lineTo(corners[2].x, corners[2].y); // bottom
+  ctx.lineTo(corners[3].x, corners[3].y); // left
+  ctx.closePath();
+
+  // Base terrain color with subtle variation
+  const v = (hash01(seed) - 0.5) * 0.12;
+  ctx.fillStyle = shadeHex(COLORS[terrain], v);
+  ctx.fill();
+
+  // Add terrain-specific texture
+  if (terrain === "water") {
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  } else if (terrain === "sand") {
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = "rgba(120,80,20,0.25)";
+    ctx.fill();
+    if (noise) {
+      ctx.globalAlpha = 0.08;
+      ctx.fillStyle = noise;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  } else {
+    // grass-like noise overlay
+    if (noise) {
+      const alpha =
+        terrain === "green"
+          ? 0.08
+          : terrain === "fairway"
+            ? 0.12
+            : terrain === "rough"
+              ? 0.16
+              : terrain === "deep_rough"
+                ? 0.2
+                : terrain === "tee"
+                  ? 0.12
+                  : 0.12;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = noise;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Height-based shading for depth perception
+  if (height !== 0) {
+    const shadeFactor = height * 0.05; // Adjust multiplier for shading intensity
+    if (shadeFactor > 0) {
+      // Higher elevations get slight brightening
+      ctx.globalAlpha = Math.min(0.15, Math.abs(shadeFactor));
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.fill();
+    } else {
+      // Lower elevations get darkening
+      ctx.globalAlpha = Math.min(0.15, Math.abs(shadeFactor));
+      ctx.fillStyle = "rgba(0,0,0,0.8)";
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Outline for clarity (subtle)
+  ctx.strokeStyle = "rgba(0,0,0,0.1)";
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 function drawGreenTargetTreatment(
   ctx: CanvasRenderingContext2D,
   course: Course,
@@ -616,6 +717,7 @@ export function CanvasCourse(props: {
   failingCorridorSegments?: Point[]; // Failing corridor segments for overlay
   onCameraUpdate?: (camera: CameraState) => void; // Callback to update hole edit camera
   showObstacles?: boolean; // Show/hide obstacles layer (default true)
+  renderingViewMode?: "topdown" | "isometric"; // Rendering view mode
 }) {
   const {
     course,
@@ -642,6 +744,7 @@ export function CanvasCourse(props: {
     failingCorridorSegments = [],
     onCameraUpdate,
     showObstacles = true,
+    renderingViewMode = "topdown",
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
@@ -920,42 +1023,76 @@ export function CanvasCourse(props: {
 
       // Pass 1: textured tiles + per-tile micro-lighting
       perfProfiler.measure('buildBaseCanvas.pass1_tiles', () => {
-        for (let ty = 0; ty < course.height; ty++) {
-          for (let tx = 0; tx < course.width; tx++) {
-            const i = ty * course.width + tx;
+        if (renderingViewMode === "isometric") {
+          // Isometric rendering: draw in back-to-front order
+          const drawOrder = getIsometricDrawOrder(course.width, course.height);
+
+          // Center the isometric view on canvas
+          bctx.save();
+          bctx.translate(wPx / 2, hPx / 4);
+
+          for (const i of drawOrder) {
+            const tx = i % course.width;
+            const ty = Math.floor(i / course.width);
             const terrain = course.tiles[i];
-            const x = tx * TILE;
-            const y = ty * TILE;
-            drawTileTexture(
+            const height = getHeightAt(course.heightMap, course.width, course.height, tx, ty);
+
+            drawIsometricTile(
               bctx,
               terrain,
-              x,
-              y,
+              tx,
+              ty,
               TILE,
+              height,
               noisePattern,
               mowPattern,
               i + course.width * 1000
             );
-            drawLightingEdges(bctx, x, y, TILE);
+          }
+
+          bctx.restore();
+        } else {
+          // Top-down rendering: normal grid order
+          for (let ty = 0; ty < course.height; ty++) {
+            for (let tx = 0; tx < course.width; tx++) {
+              const i = ty * course.width + tx;
+              const terrain = course.tiles[i];
+              const x = tx * TILE;
+              const y = ty * TILE;
+              drawTileTexture(
+                bctx,
+                terrain,
+                x,
+                y,
+                TILE,
+                noisePattern,
+                mowPattern,
+                i + course.width * 1000
+              );
+              drawLightingEdges(bctx, x, y, TILE);
+            }
           }
         }
       });
 
-      // Pass 2: soft edge blending
-      perfProfiler.measure('buildBaseCanvas.pass2_edges', () => {
-        for (let ty = 0; ty < course.height; ty++) {
-          for (let tx = 0; tx < course.width; tx++) {
-            const i = ty * course.width + tx;
-            const terrain = course.tiles[i];
-            drawSoftEdges(bctx, course, tx * TILE, ty * TILE, TILE, terrain);
+      // Pass 2 and 2.5: soft edge blending and green treatment (top-down only)
+      if (renderingViewMode !== "isometric") {
+        // Pass 2: soft edge blending
+        perfProfiler.measure('buildBaseCanvas.pass2_edges', () => {
+          for (let ty = 0; ty < course.height; ty++) {
+            for (let tx = 0; tx < course.width; tx++) {
+              const i = ty * course.width + tx;
+              const terrain = course.tiles[i];
+              drawSoftEdges(bctx, course, tx * TILE, ty * TILE, TILE, terrain);
+            }
           }
-        }
-      });
+        });
 
-      // Pass 2.5: greens read as intentional targets (fringe/collar + subtle radial gradient)
-      perfProfiler.measure('buildBaseCanvas.pass2.5_greens', () => {
-        drawGreenTargetTreatment(bctx, course, TILE);
-      });
+        // Pass 2.5: greens read as intentional targets (fringe/collar + subtle radial gradient)
+        perfProfiler.measure('buildBaseCanvas.pass2.5_greens', () => {
+          drawGreenTargetTreatment(bctx, course, TILE);
+        });
+      }
 
       // Pass 3: global light + tiny "glaze" noise to reduce checkerboard feel
       perfProfiler.measure('buildBaseCanvas.pass3_lighting', () => {

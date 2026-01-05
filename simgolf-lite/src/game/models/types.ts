@@ -41,6 +41,7 @@ export interface Course {
   name: string;
   baseGreenFee: number; // dollars
   condition: number; // 0..1 (maintenance affects this)
+  heightMap?: number[]; // optional elevation data (length = width * height, values in tiles/units)
 }
 
 export interface World {

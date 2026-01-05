@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { MenuButton } from "./MenuButton";
 import { StartMenuBackground } from "./StartMenuBackground";
 import { SettingsModal } from "./SettingsModal";
+import type { ViewMode } from "../game/render/isometric";
 
 export interface StartMenuProps {
   canLoad: boolean;
@@ -12,6 +13,8 @@ export interface StartMenuProps {
   onButtonClick?: () => void;
   renderer: "canvas" | "pixi";
   onRendererChange: (renderer: "canvas" | "pixi") => void;
+  renderingViewMode?: ViewMode;
+  onRenderingViewModeChange?: (viewMode: ViewMode) => void;
 }
 
 export function StartMenu(props: StartMenuProps) {
@@ -177,6 +180,8 @@ export function StartMenu(props: StartMenuProps) {
           onAudioVolumesChange={props.onAudioVolumesChange}
           renderer={props.renderer}
           onRendererChange={props.onRendererChange}
+          renderingViewMode={props.renderingViewMode}
+          onRenderingViewModeChange={props.onRenderingViewModeChange}
         />
     </div>
   );

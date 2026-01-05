@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import type { ViewMode } from "../game/render/isometric";
 
 export interface SettingsModalProps {
   open: boolean;
@@ -7,6 +8,8 @@ export interface SettingsModalProps {
   onAudioVolumesChange: (volumes: { music?: number; ambience?: number }) => void;
   renderer: "canvas" | "pixi";
   onRendererChange: (renderer: "canvas" | "pixi") => void;
+  renderingViewMode?: ViewMode;
+  onRenderingViewModeChange?: (viewMode: ViewMode) => void;
 }
 
 export function SettingsModal(props: SettingsModalProps) {
@@ -168,6 +171,53 @@ export function SettingsModal(props: SettingsModalProps) {
             </button>
           </div>
         </div>
+
+        {/* View Mode section (only for canvas renderer) */}
+        {props.renderer === "canvas" && props.onRenderingViewModeChange && (
+          <div style={{ marginBottom: 32 }}>
+            <div style={{ fontFamily: "var(--font-heading)", fontSize: 18, fontWeight: 700, color: "#3d4a3e", marginBottom: 16 }}>
+              View Mode
+            </div>
+
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <button
+                onClick={() => props.onRenderingViewModeChange!("topdown")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: `2px solid ${props.renderingViewMode === "topdown" ? "#3d4a3e" : "rgba(0,0,0,0.2)"}`,
+                  background: props.renderingViewMode === "topdown" ? "#3d4a3e" : "#fff",
+                  color: props.renderingViewMode === "topdown" ? "#fff" : "#3d4a3e",
+                  fontWeight: props.renderingViewMode === "topdown" ? 600 : 400,
+                  cursor: "pointer",
+                  fontFamily: "var(--font-body)",
+                  fontSize: 14,
+                }}
+              >
+                Top-Down
+              </button>
+              <button
+                onClick={() => props.onRenderingViewModeChange!("isometric")}
+                style={{
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  border: `2px solid ${props.renderingViewMode === "isometric" ? "#3d4a3e" : "rgba(0,0,0,0.2)"}`,
+                  background: props.renderingViewMode === "isometric" ? "#3d4a3e" : "#fff",
+                  color: props.renderingViewMode === "isometric" ? "#fff" : "#3d4a3e",
+                  fontWeight: props.renderingViewMode === "isometric" ? 600 : 400,
+                  cursor: "pointer",
+                  fontFamily: "var(--font-body)",
+                  fontSize: 14,
+                }}
+              >
+                Isometric
+              </button>
+            </div>
+            <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", fontFamily: "var(--font-body)" }}>
+              Isometric view provides a 3D-like perspective with elevation visualization
+            </div>
+          </div>
+        )}
 
         {/* Close button */}
         <div style={{ display: "flex", justifyContent: "flex-end" }}>

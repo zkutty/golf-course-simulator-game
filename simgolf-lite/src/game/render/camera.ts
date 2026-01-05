@@ -1,6 +1,7 @@
 import type { Point, Course, Hole } from "../models/types";
 import { sampleLine } from "../sim/holes";
 import { scoreHole } from "../sim/holes";
+import type { ViewMode } from "./isometric";
 
 export interface CameraState {
   mode: "global" | "hole";
@@ -8,6 +9,7 @@ export interface CameraState {
   center: Point; // world coordinates (tile space)
   zoom: number;
   rotationDeg: number; // rotation in degrees (0 = no rotation, positive = clockwise)
+  viewMode?: ViewMode; // rendering view mode (topdown or isometric)
   bounds?: {
     minX: number;
     minY: number;

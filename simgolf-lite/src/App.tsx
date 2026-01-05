@@ -107,6 +107,17 @@ export default function App() {
     setRenderer(newRenderer);
     localStorage.setItem("coursecraft_renderer", newRenderer);
   };
+
+  const [renderingViewMode, setRenderingViewMode] = useState<"topdown" | "isometric">(() => {
+    const saved = localStorage.getItem("coursecraft_rendering_view_mode");
+    return (saved === "topdown" || saved === "isometric") ? saved : "topdown";
+  });
+
+  const handleRenderingViewModeChange = (newMode: "topdown" | "isometric") => {
+    setRenderingViewMode(newMode);
+    localStorage.setItem("coursecraft_rendering_view_mode", newMode);
+  };
+
   const [peakRep, setPeakRep] = useState(DEFAULT_STATE.world.reputation);
   const [showBridgePrompt, setShowBridgePrompt] = useState(false);
   const prevDistressRef = useRef(0);
@@ -346,14 +357,14 @@ export default function App() {
     // Generate wild land terrain and obstacles using the seed
     console.log('[Performance] Generating wild land...');
     const start = performance.now();
-    const { tiles: generatedTiles, obstacles: generatedObstacles } = generateWildLandWithObstacles(
+    const { tiles: generatedTiles, obstacles: generatedObstacles, heightMap: generatedHeightMap } = generateWildLandWithObstacles(
       COURSE_WIDTH,
       COURSE_HEIGHT,
       seed,
       [] // No reserved zones for new games (no holes placed yet)
     );
     console.log('[Performance] Wild land generated in', performance.now() - start, 'ms');
-    
+
     // Create new course with generated terrain and obstacles, no holes
     const newCourse = {
       ...DEFAULT_STATE.course,
@@ -364,6 +375,7 @@ export default function App() {
         parMode: "AUTO" as const,
       })),
       obstacles: generatedObstacles,
+      heightMap: generatedHeightMap,
     };
     
     const newWorld = {
@@ -926,13 +938,13 @@ export default function App() {
     resetSave();
     // Generate new terrain and obstacles with a new seed
     const newSeed = Date.now();
-    const { tiles: generatedTiles, obstacles: generatedObstacles } = generateWildLandWithObstacles(
+    const { tiles: generatedTiles, obstacles: generatedObstacles, heightMap: generatedHeightMap } = generateWildLandWithObstacles(
       COURSE_WIDTH,
       COURSE_HEIGHT,
       newSeed,
       [] // No reserved zones for reset (no holes placed yet)
     );
-    
+
     const newCourse = {
       ...DEFAULT_STATE.course,
       tiles: generatedTiles,
@@ -942,6 +954,7 @@ export default function App() {
         parMode: "AUTO" as const,
       })),
       obstacles: generatedObstacles,
+      heightMap: generatedHeightMap,
     };
     
     const newWorld = {
@@ -1020,6 +1033,8 @@ export default function App() {
         }
         renderer={renderer}
         onRendererChange={handleRendererChange}
+        renderingViewMode={renderingViewMode}
+        onRenderingViewModeChange={handleRenderingViewModeChange}
         onButtonClick={() => {
           void audio.unlock();
           if (soundEnabled) void audio.playSfx(STRIKE_SFX);
@@ -1077,6 +1092,7 @@ export default function App() {
                 showFixOverlay={showFixOverlay}
                 failingCorridorSegments={failingCorridorSegments}
                 showObstacles={showObstacles}
+                renderingViewMode={renderingViewMode}
                 onCameraUpdate={(camera) => {
                   holeEditCameraManualRef.current = true;
                   setHoleEditCamera(camera);

@@ -1,4 +1,5 @@
 import type { Terrain, Obstacle, ObstacleType } from "../models/types";
+import { generateGolfCourseHeightMap } from "./generateHeightMap";
 
 // Seeded RNG using mulberry32
 class SeededRNG {
@@ -507,9 +508,10 @@ export function generateWildLandWithObstacles(
   height: number,
   seed: number,
   reservedZones: Point[] = []
-): { tiles: Terrain[]; obstacles: Obstacle[] } {
+): { tiles: Terrain[]; obstacles: Obstacle[]; heightMap: number[] } {
   const tiles = generateWildLand(width, height, seed);
   const obstacles = generateObstacles(width, height, tiles, seed, reservedZones);
-  return { tiles, obstacles };
+  const heightMap = generateGolfCourseHeightMap(width, height, seed + 999999);
+  return { tiles, obstacles, heightMap };
 }
 
