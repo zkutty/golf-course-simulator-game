@@ -66,33 +66,75 @@ function drawTileTexture(
   // Subtle per-tile variation
   const v = (hash01(seed) - 0.5) * 0.12;
   ctx.fillStyle = shadeHex(COLORS[terrain], v);
-  ctx.fillRect(x, y, size, size);
+
+  // Subtle rounded corners to hide grid (radius = 8% of tile size, max 3px)
+  const radius = Math.min(3, size * 0.08);
+  if (radius > 0.5 && size > 8) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + size - radius, y);
+    ctx.quadraticCurveTo(x + size, y, x + size, y + radius);
+    ctx.lineTo(x + size, y + size - radius);
+    ctx.quadraticCurveTo(x + size, y + size, x + size - radius, y + size);
+    ctx.lineTo(x + radius, y + size);
+    ctx.quadraticCurveTo(x, y + size, x, y + size - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    ctx.fill();
+  } else {
+    ctx.fillRect(x, y, size, size);
+  }
 
   // Terrain-specific texture pass
   if (terrain === "water") {
-    ctx.globalAlpha = 0.18;
-    ctx.fillStyle = "rgba(255,255,255,0.55)";
-    // simple wave highlights
-    for (let i = 0; i < 2; i++) {
-      const yy = y + (i + 1) * (size / 3) + (hash01(seed + i * 31) - 0.5) * 2;
-      ctx.fillRect(x + 2, yy, size - 4, 1);
+    // Enhanced water with more wave detail
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    // More wave highlights with varying opacity
+    for (let i = 0; i < 3; i++) {
+      const waveOffset = (hash01(seed + i * 31) - 0.5) * 3;
+      const yy = y + (i + 0.5) * (size / 3.5) + waveOffset;
+      const waveAlpha = 0.4 + hash01(seed + i * 37) * 0.3;
+      ctx.globalAlpha = waveAlpha;
+      ctx.fillStyle = `rgba(255,255,255,${waveAlpha})`;
+      ctx.fillRect(x + 2, yy, size - 4, 1.5);
+    }
+
+    // Add shimmer spots
+    if (size > 6) {
+      for (let i = 0; i < 3; i++) {
+        const sx = x + hash01(seed + i * 43) * size;
+        const sy = y + hash01(seed + i * 47) * size;
+        ctx.fillStyle = `rgba(255,255,255,${0.15 + hash01(seed + i * 51) * 0.15})`;
+        ctx.fillRect(sx, sy, 2, 2);
+      }
     }
     ctx.globalAlpha = 1;
     return;
   }
 
   if (terrain === "sand") {
-    ctx.globalAlpha = 0.22;
-    ctx.fillStyle = "rgba(120,80,20,0.25)";
-    // speckles
-    for (let i = 0; i < 8; i++) {
+    // Enhanced sand with more granular detail
+    ctx.globalAlpha = 0.25;
+    ctx.fillStyle = "rgba(120,80,20,0.3)";
+    // More speckles with varying sizes and colors
+    const speckleCount = size > 8 ? 15 : 8;
+    for (let i = 0; i < speckleCount; i++) {
       const sx = x + hash01(seed + i * 11) * size;
       const sy = y + hash01(seed + i * 17) * size;
-      ctx.fillRect(sx, sy, 1, 1);
+      const brightness = hash01(seed + i * 19) > 0.5 ? 1 : 0;
+      if (brightness) {
+        ctx.fillStyle = `rgba(200,170,120,${0.15 + hash01(seed + i * 23) * 0.1})`;
+      } else {
+        ctx.fillStyle = `rgba(100,70,30,${0.15 + hash01(seed + i * 29) * 0.1})`;
+      }
+      const speckleSize = hash01(seed + i * 31) > 0.7 ? 2 : 1;
+      ctx.fillRect(sx, sy, speckleSize, speckleSize);
     }
     // grain glaze (continuous pattern)
     if (noise) {
-      ctx.globalAlpha = 0.08;
+      ctx.globalAlpha = 0.12;
       ctx.fillStyle = noise;
       ctx.fillRect(x, y, size, size);
     }
@@ -112,7 +154,10 @@ function drawTileTexture(
     return;
   }
 
-  // grass-like noise overlay
+  // grass-like noise overlay + grass blade details
+  const isGrassTerrain = terrain === "green" || terrain === "fairway" ||
+                         terrain === "rough" || terrain === "deep_rough" || terrain === "tee";
+
   if (noise) {
     const alpha =
       terrain === "green"
@@ -130,6 +175,25 @@ function drawTileTexture(
     ctx.fillStyle = noise;
     ctx.fillRect(x, y, size, size);
     ctx.globalAlpha = 1;
+  }
+
+  // Add grass blade details for grass terrains
+  if (isGrassTerrain && size > 8) {
+    const bladeCount = terrain === "green" ? 8 : terrain === "fairway" ? 10 : 12;
+    ctx.strokeStyle = `rgba(0,0,0,${terrain === "deep_rough" ? 0.12 : 0.08})`;
+    ctx.lineWidth = 0.5;
+
+    for (let i = 0; i < bladeCount; i++) {
+      const gx = x + hash01(seed + i * 13) * size;
+      const gy = y + hash01(seed + i * 17) * size;
+      const angle = hash01(seed + i * 19) * Math.PI * 2;
+      const len = 1.5 + hash01(seed + i * 23) * 2;
+
+      ctx.beginPath();
+      ctx.moveTo(gx, gy);
+      ctx.lineTo(gx + Math.cos(angle) * len, gy + Math.sin(angle) * len);
+      ctx.stroke();
+    }
   }
 
   // mowing banding for fairway (continuous diagonal pattern, very subtle)
@@ -156,9 +220,9 @@ function drawSoftEdges(
   size: number,
   terrain: Terrain
 ) {
-  // Blend with neighbors by painting thin alpha gradients along shared borders.
-  // Keep it cheap: no autotiling, just border gradients for prioritized pairs.
-  const t = Math.max(1, Math.min(8, Math.floor(size * 0.24)));
+  // Blend with neighbors by painting thick alpha gradients along shared borders.
+  // Enhanced thickness and smoothness for hiding the grid
+  const t = Math.max(1, Math.min(14, Math.floor(size * 0.40)));
   const w = course.width;
   const h = course.height;
   const ix = x / size;
@@ -178,6 +242,7 @@ function drawSoftEdges(
   const isGrass = (t: Terrain) => t === "fairway" || t === "rough" || t === "deep_rough" || t === "green";
   const basePairAlpha = (a: Terrain, b: Terrain) => {
     // Prioritize: fairway↔rough, green↔fairway/rough, sand↔grass, water↔grass.
+    // Enhanced alpha values for more visible blending
     if (a === b) return 0;
     if (isGrass(a) && isGrass(b)) {
       const aGrass = a;
@@ -186,17 +251,17 @@ function drawSoftEdges(
         (aGrass === "fairway" && (bGrass === "rough" || bGrass === "deep_rough")) ||
         (bGrass === "fairway" && (aGrass === "rough" || aGrass === "deep_rough"))
       )
-        return 0.10;
+        return 0.16;
       if (
         (aGrass === "green" && (bGrass === "fairway" || bGrass === "rough" || bGrass === "deep_rough")) ||
         (bGrass === "green" && (aGrass === "fairway" || aGrass === "rough" || aGrass === "deep_rough"))
       )
-        return 0.12;
-      // other grass transitions: very subtle
-      return 0.06;
+        return 0.18;
+      // other grass transitions: more visible
+      return 0.10;
     }
-    if ((a === "sand" && isGrass(b)) || (b === "sand" && isGrass(a))) return 0.12;
-    if ((a === "water" && isGrass(b)) || (b === "water" && isGrass(a))) return 0.12;
+    if ((a === "sand" && isGrass(b)) || (b === "sand" && isGrass(a))) return 0.18;
+    if ((a === "water" && isGrass(b)) || (b === "water" && isGrass(a))) return 0.18;
     // other transitions: skip (avoid smearing tees/paths)
     return 0;
   };
@@ -210,28 +275,33 @@ function drawSoftEdges(
     ctx.save();
     let g: CanvasGradient;
     const c0 = rgbaHex(COLORS[neighbor], a, -0.03);
+    const cMid = rgbaHex(COLORS[neighbor], a * 0.5, -0.03); // Mid-point color for smoother gradient
     const c1 = rgbaHex(COLORS[neighbor], 0, -0.03);
     if (side === "N") {
       g = ctx.createLinearGradient(0, y, 0, y + t);
       g.addColorStop(0, c0);
+      g.addColorStop(0.5, cMid);
       g.addColorStop(1, c1);
       ctx.fillStyle = g;
       ctx.fillRect(x, y, size, t);
     } else if (side === "S") {
       g = ctx.createLinearGradient(0, y + size - t, 0, y + size);
       g.addColorStop(0, c1);
+      g.addColorStop(0.5, cMid);
       g.addColorStop(1, c0);
       ctx.fillStyle = g;
       ctx.fillRect(x, y + size - t, size, t);
     } else if (side === "W") {
       g = ctx.createLinearGradient(x, 0, x + t, 0);
       g.addColorStop(0, c0);
+      g.addColorStop(0.5, cMid);
       g.addColorStop(1, c1);
       ctx.fillStyle = g;
       ctx.fillRect(x, y, t, size);
     } else {
       g = ctx.createLinearGradient(x + size - t, 0, x + size, 0);
       g.addColorStop(0, c1);
+      g.addColorStop(0.5, cMid);
       g.addColorStop(1, c0);
       ctx.fillStyle = g;
       ctx.fillRect(x + size - t, y, t, size);
@@ -1007,11 +1077,11 @@ export function CanvasCourse(props: {
         ctx2.scale(jitterScale, jitterScale);
         ctx2.translate(-cx, -cy);
         
-        // Subtle shadow
-        ctx2.shadowColor = "rgba(0, 0, 0, 0.25)";
-        ctx2.shadowBlur = 2;
-        ctx2.shadowOffsetX = 1;
-        ctx2.shadowOffsetY = 1;
+        // Enhanced directional shadow (45° from top-right)
+        ctx2.shadowColor = "rgba(0, 0, 0, 0.35)";
+        ctx2.shadowBlur = 4;
+        ctx2.shadowOffsetX = 3;
+        ctx2.shadowOffsetY = 3;
         
         const drawWidth = TILE * 1.1;
         const drawHeight = TILE * 1.1;
@@ -1040,18 +1110,29 @@ export function CanvasCourse(props: {
         ctx2.scale(jitterScale, jitterScale);
         ctx2.translate(-cx, -cy);
         
-        ctx2.shadowColor = "rgba(0, 0, 0, 0.25)";
-        ctx2.shadowBlur = 2;
-        ctx2.shadowOffsetX = 1;
-        ctx2.shadowOffsetY = 1;
-        
+        ctx2.shadowColor = "rgba(0, 0, 0, 0.35)";
+        ctx2.shadowBlur = 4;
+        ctx2.shadowOffsetX = 3;
+        ctx2.shadowOffsetY = 3;
+
         const drawWidth = TILE * 1.1;
         const drawHeight = TILE * 1.1;
         const drawX = cx - drawWidth / 2;
         const drawY = cy - drawHeight / 2;
-        
+
         ctx2.drawImage(sprite, drawX, drawY, drawWidth, drawHeight);
         ctx2.restore();
+
+        // Add ground shadow for trees (ellipse on ground)
+        if (o.type === "tree") {
+          ctx2.save();
+          ctx2.globalAlpha = 0.15;
+          ctx2.fillStyle = "rgba(0, 0, 0, 1)";
+          ctx2.beginPath();
+          ctx2.ellipse(cx + 2, cy + TILE * 0.5, TILE * 0.3, TILE * 0.15, 0, 0, Math.PI * 2);
+          ctx2.fill();
+          ctx2.restore();
+        }
         return;
       }
 

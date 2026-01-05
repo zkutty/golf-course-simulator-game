@@ -53,3 +53,92 @@ body,
 a {
   color: inherit;
 }
+
+/* ===== Polished Button Styles ===== */
+
+button {
+  font-family: var(--font-body);
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Glass morphism style for primary buttons */
+button:not([disabled]) {
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 10px;
+  padding: 10px 20px;
+  color: var(--cc-ink);
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+button:not([disabled]):hover {
+  background: rgba(255, 255, 255, 0.28);
+  transform: translateY(-1px);
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+button:not([disabled]):active {
+  transform: translateY(0);
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+button[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: rgba(200, 200, 200, 0.2);
+  color: var(--ui-muted);
+}
+
+/* Small buttons */
+button.btn-sm {
+  padding: 6px 14px;
+  font-size: 0.9em;
+  border-radius: 8px;
+}
+
+/* Large buttons */
+button.btn-lg {
+  padding: 14px 28px;
+  font-size: 1.1em;
+  border-radius: 12px;
+  font-weight: 700;
+}
+
+/* Accent/primary action buttons */
+button.btn-primary {
+  background: linear-gradient(135deg, rgba(92, 138, 78, 0.9) 0%, rgba(107, 122, 95, 0.9) 100%);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+button.btn-primary:hover {
+  background: linear-gradient(135deg, rgba(92, 138, 78, 1) 0%, rgba(107, 122, 95, 1) 100%);
+  box-shadow:
+    0 6px 18px rgba(92, 138, 78, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* Danger/warning buttons */
+button.btn-danger {
+  background: linear-gradient(135deg, rgba(200, 60, 60, 0.9) 0%, rgba(180, 50, 50, 0.9) 100%);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+button.btn-danger:hover {
+  background: linear-gradient(135deg, rgba(220, 70, 70, 1) 0%, rgba(200, 60, 60, 1) 100%);
+  box-shadow:
+    0 6px 18px rgba(200, 60, 60, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
