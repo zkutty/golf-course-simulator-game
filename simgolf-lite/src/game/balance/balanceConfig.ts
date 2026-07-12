@@ -82,6 +82,10 @@ export const BALANCE = {
     recoveryMult: 0.55,
     declineMult: 1.05,
     capPerWeek: 2,
+    // Live model (ZKU-116): reputation is pulled by the net-promoter balance of
+    // real finished rounds. This scales how far a full day of promoters (or
+    // detractors) can move reputation.
+    npsGain: 2.2,
     demandPenaltyThreshold: 30,
     demandPenaltyMult: 0.85,
     demandBonusThreshold: 70,

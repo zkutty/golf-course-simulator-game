@@ -43,14 +43,14 @@ export const LIVE = {
     puttVarianceBogey: 0.35,
   },
 
-  // Golfers actually simulated & drawn per day. Derived from the demand model,
-  // then clamped into a watchable range (you see every golfer on the course).
+  // Golfers actually simulated & drawn per day. Derived from the blended demand
+  // index, then clamped into a watchable range (you see every golfer on-course).
   volume: {
     minGolfers: 3,
     maxGolfers: 42,
-    // Fraction of the abstract weekly demand potential that becomes a day's
-    // real, on-screen rounds.
-    dailyDemandFraction: 0.03,
+    // Demand index treated as a "full house" — days at or above this fill the
+    // course to maxGolfers. The blended index tops out around 1.2.
+    demandFullHouse: 1.0,
   },
 
   mood: {
@@ -60,5 +60,14 @@ export const LIVE = {
     conditionWeight: 0.25, // course condition contribution
     min: 0,
     max: 1,
+  },
+
+  // Thresholds that turn a finished golfer's mood into a discrete reaction,
+  // aggregated into reputation (ZKU-116).
+  reactions: {
+    promoterMood: 0.8, // at/above this they'd recommend the course
+    detractorMood: 0.45, // at/below this they leave disappointed
+    returnMood: 0.55, // at/above this (after a patience nudge) they'd return
+    returnPatienceNudge: 0.1, // patient golfers forgive a so-so round
   },
 } as const;
