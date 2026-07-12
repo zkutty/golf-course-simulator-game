@@ -15,6 +15,15 @@ versioning follows [SemVer](https://semver.org/).
 - Per-tile elevation: data model with save migration and sculpt economics
   (ZKU-143); rolling generated land rendered with height offsets, NW-sun
   slope shading, and cliff faces (ZKU-144).
+- Free camera: middle/right-drag pan, wheel zoom-to-cursor, WASD/arrow pan,
+  and Q/E 90-degree rotation with an eased tween (ZKU-141).
+- Sculpt editor mode: raise/lower/smooth/level brushes in three sizes with
+  auto-terracing, footprint preview, and earthworks costs (ZKU-145).
+- Elevation-aware gameplay: uphill shots play longer through the whole shot
+  planner, slopes cost walking effort, 2+ step cliffs are impassable, and
+  tee/green sites must be near-flat (ZKU-146).
+- Footprint-based depth sorting for props, golfers, balls, and future
+  buildings; golfers are now properly occluded by trees (ZKU-140).
 - CI pipeline: typecheck, lint (zero errors), tests, and production build on
   every PR and push to main; build artifact uploaded (ZKU-184).
 - GitHub Pages deploy workflow (activates once Pages is enabled with
