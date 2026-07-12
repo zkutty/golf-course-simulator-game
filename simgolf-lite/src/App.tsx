@@ -102,7 +102,7 @@ export default function App() {
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
   const [renderer, setRenderer] = useState<"canvas" | "pixi">(() => {
     const saved = localStorage.getItem("coursecraft_renderer");
-    return (saved === "pixi" || saved === "canvas") ? saved : "canvas";
+    return (saved === "pixi" || saved === "canvas") ? saved : "pixi";
   });
 
   const handleRendererChange = (newRenderer: "canvas" | "pixi") => {
@@ -1133,6 +1133,8 @@ export default function App() {
                 showFixOverlay={showFixOverlay}
                 failingCorridorSegments={failingCorridorSegments}
                 showObstacles={showObstacles}
+                golfersRef={live.golfersRef}
+                liveActive={live.liveActive}
                 onCameraUpdate={(camera) => {
                   holeEditCameraManualRef.current = true;
                   setHoleEditCamera(camera);

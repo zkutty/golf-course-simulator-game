@@ -2,28 +2,51 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import * as PIXI from "pixi.js";
 import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
+import type { GolferRenderData } from "../game/live/types";
 import type { CameraState } from "../game/render/camera";
+import {
+  TILE_H,
+  TILE_W,
+  isoDepth,
+  isoToTile,
+  tileCenterIso,
+  worldToIso,
+  type IsoRotation,
+} from "../game/render/iso";
 import { getObstacleSprite } from "../render/iconSprites";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 
 /**
- * PixiStage — the WebGL renderer for the course (ZKU-138).
+ * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
  *
  * Layer architecture (draw order back → front):
  *
  *   stage
  *   ├─ world                ← camera transform (pan/zoom) is applied HERE and
  *   │  │                      nowhere else; all world-space content lives below
- *   │  ├─ terrain           ← one sprite per tile (chunked in ZKU-142)
- *   │  ├─ terrainDecals     ← tee/green markers, path & corridor overlays
- *   │  ├─ objects           ← obstacles, golfers, ball, props (y-sorted via zIndex)
- *   │  └─ fx                ← transient effects (particles, highlights)
- *   └─ screenOverlay        ← screen-space UI (wizard hover distance line);
+ *   │  ├─ terrain           ← one diamond sprite per tile (chunked in ZKU-142)
+ *   │  ├─ terrainDecals     ← tee/green markers, route/corridor overlays,
+ *   │  │                      hover highlight
+ *   │  ├─ objects           ← obstacles, buildings, props (depth-sorted via
+ *   │  │                      zIndex = isoDepth of the ground anchor)
+ *   │  └─ fx                ← live golfers/balls (dot pass — sprites in M11),
+ *   │                         transient effects
+ *   └─ screenOverlay        ← screen-space UI (wizard distance line);
  *                             does NOT move with the camera
  *
- * Input: pointer events are mapped screen → world through the inverse camera
- * transform (screenToTile), so painting/placement stays exact at any pan/zoom.
- * The projection is still flat top-down; ZKU-139 swaps it to isometric.
+ * Projection: 2:1 dimetric via src/game/render/iso.ts. World-space pixel
+ * coordinates inside `world` are iso projections at natural 64×32 scale; the
+ * camera fits/zooms that plane to the screen. Pointer input is mapped
+ * screen → iso plane → tile via the inverse camera transform + isoToTile, so
+ * picking is exact at any pan/zoom.
+ *
+ * Camera note: with no CameraState (global editing view) the whole course is
+ * auto-fitted. With a hole-edit CameraState we honor `center` and fit
+ * `bounds`; the flat-renderer `zoom` scalar has different units here, so it
+ * is intentionally not reused (free camera control lands in ZKU-141).
+ *
+ * Rotation is plumbed (ROTATION constant) but fixed at 0 until the Q/E
+ * camera controls of ZKU-141.
  */
 
 const COLORS: Record<Terrain, number> = {
@@ -37,13 +60,25 @@ const COLORS: Record<Terrain, number> = {
   path: 0x8f8f8f,
 };
 
-const MARKER_LABEL = "hole-marker";
+// Slightly darker edge tint per tile to keep the grid readable until the
+// M10 art pass replaces flat colors with textures.
+const EDGE_DARKEN = 0.88;
 
-// Dev-only logging, quiet by default (ZKU-85 convention). Flip locally when
-// debugging renderer lifecycle.
+const MARKER_LABEL = "hole-marker";
+const ROUTE_LABEL = "route-overlay";
+const ROTATION: IsoRotation = 0;
+
+// Dev-only logging, quiet by default (ZKU-85 convention).
 const DEV_LOG = false;
 function devLog(...args: unknown[]) {
   if (import.meta.env.DEV && DEV_LOG) console.log("[PixiStage]", ...args);
+}
+
+function darken(color: number, factor: number): number {
+  const r = Math.round(((color >> 16) & 0xff) * factor);
+  const g = Math.round(((color >> 8) & 0xff) * factor);
+  const b = Math.round((color & 0xff) * factor);
+  return (r << 16) | (g << 8) | b;
 }
 
 export interface PixiStageProps {
@@ -71,6 +106,8 @@ export interface PixiStageProps {
   failingCorridorSegments?: Point[];
   onCameraUpdate?: (camera: CameraState) => void;
   showObstacles?: boolean;
+  golfersRef?: React.RefObject<GolferRenderData[]>;
+  liveActive?: boolean;
 }
 
 interface Layers {
@@ -82,15 +119,42 @@ interface Layers {
   screenOverlay: PIXI.Container;
 }
 
+/** Fit zoom for a world-tile bbox projected to the iso plane. */
+function fitZoomForTileBounds(
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+  screenW: number,
+  screenH: number
+): number {
+  const corners = [
+    worldToIso(minX, minY, 0, ROTATION),
+    worldToIso(maxX + 1, minY, 0, ROTATION),
+    worldToIso(maxX + 1, maxY + 1, 0, ROTATION),
+    worldToIso(minX, maxY + 1, 0, ROTATION),
+  ];
+  const xs = corners.map((c) => c.x);
+  const ys = corners.map((c) => c.y);
+  const w = Math.max(...xs) - Math.min(...xs);
+  const h = Math.max(...ys) - Math.min(...ys);
+  if (w <= 0 || h <= 0 || screenW <= 0 || screenH <= 0) return 1;
+  const zoom = Math.min((screenW * 0.95) / w, (screenH * 0.95) / h);
+  return Math.max(0.1, Math.min(8, zoom));
+}
+
 export function PixiStage(props: PixiStageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const layersRef = useRef<Layers | null>(null);
   const [appReady, setAppReady] = useState(false);
 
+  const diamondTextureRef = useRef<PIXI.Texture | null>(null);
   const tileSpritesRef = useRef<PIXI.Sprite[]>([]);
   const obstacleSpritesRef = useRef<Map<string, PIXI.Sprite>>(new Map());
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
+  const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
+  const liveGraphicsRef = useRef<PIXI.Graphics | null>(null);
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
 
@@ -99,6 +163,7 @@ export function PixiStage(props: PixiStageProps) {
     holes,
     obstacles,
     activeHoleIndex,
+    activePath,
     tileSize,
     onClickTile,
     selectedTerrain,
@@ -106,7 +171,13 @@ export function PixiStage(props: PixiStageProps) {
     editorMode,
     wizardStep,
     draftTee,
+    draftGreen,
     cameraState,
+    showShotPlan,
+    showFixOverlay,
+    failingCorridorSegments,
+    golfersRef,
+    liveActive,
   } = props;
 
   // ---------------------------------------------------------------------
@@ -118,48 +189,51 @@ export function PixiStage(props: PixiStageProps) {
     const layers = layersRef.current;
     if (!app || !layers) return;
     const { world } = layers;
-    if (cameraState) {
-      const zoom = cameraState.zoom;
-      world.scale.set(zoom);
-      world.position.set(
-        app.screen.width / 2 - cameraState.center.x * tileSize * zoom,
-        app.screen.height / 2 - cameraState.center.y * tileSize * zoom
-      );
-    } else {
-      world.scale.set(1);
-      world.position.set(0, 0);
-    }
-  }, [cameraState, tileSize]);
+    const sw = app.screen.width;
+    const sh = app.screen.height;
 
-  /** Inverse camera transform: global pointer coords → world tile coords. */
+    let centerTile: Point;
+    let zoom: number;
+    if (cameraState) {
+      centerTile = cameraState.center;
+      const b = cameraState.bounds;
+      zoom = b
+        ? fitZoomForTileBounds(b.minX, b.minY, b.maxX, b.maxY, sw, sh)
+        : fitZoomForTileBounds(0, 0, course.width - 1, course.height - 1, sw, sh);
+    } else {
+      centerTile = { x: course.width / 2, y: course.height / 2 };
+      zoom = fitZoomForTileBounds(0, 0, course.width - 1, course.height - 1, sw, sh);
+    }
+
+    const centerIso = worldToIso(centerTile.x, centerTile.y, 0, ROTATION);
+    world.scale.set(zoom);
+    world.position.set(sw / 2 - centerIso.x * zoom, sh / 2 - centerIso.y * zoom);
+  }, [cameraState, course.width, course.height]);
+
+  /** Inverse camera transform: global pointer coords → integer tile, or null. */
   const screenToTile = useCallback(
     (globalX: number, globalY: number): { x: number; y: number } | null => {
-      const layers = layersRef.current;
-      if (!layers) return null;
-      const { world } = layers;
-      const wx = (globalX - world.position.x) / (tileSize * world.scale.x);
-      const wy = (globalY - world.position.y) / (tileSize * world.scale.y);
-      const x = Math.floor(wx);
-      const y = Math.floor(wy);
-      if (x < 0 || y < 0 || x >= course.width || y >= course.height) return null;
-      return { x, y };
+      const world = layersRef.current?.world;
+      if (!world) return null;
+      const ix = (globalX - world.position.x) / world.scale.x;
+      const iy = (globalY - world.position.y) / world.scale.y;
+      const t = isoToTile(ix, iy, ROTATION);
+      if (t.x < 0 || t.y < 0 || t.x >= course.width || t.y >= course.height) return null;
+      return t;
     },
-    [tileSize, course.width, course.height]
+    [course.width, course.height]
   );
 
-  /** World tile-space point → global screen coords (for screen overlays). */
-  const tileToScreen = useCallback(
-    (tx: number, ty: number): { x: number; y: number } => {
-      const layers = layersRef.current;
-      const world = layers?.world;
-      if (!world) return { x: 0, y: 0 };
-      return {
-        x: world.position.x + tx * tileSize * world.scale.x,
-        y: world.position.y + ty * tileSize * world.scale.y,
-      };
-    },
-    [tileSize]
-  );
+  /** Continuous world tile coords → global screen coords (for screen overlays). */
+  const worldPointToScreen = useCallback((wx: number, wy: number): { x: number; y: number } => {
+    const world = layersRef.current?.world;
+    if (!world) return { x: 0, y: 0 };
+    const p = worldToIso(wx, wy, 0, ROTATION);
+    return {
+      x: world.position.x + p.x * world.scale.x,
+      y: world.position.y + p.y * world.scale.y,
+    };
+  }, []);
 
   // ---------------------------------------------------------------------
   // App lifecycle
@@ -179,8 +253,8 @@ export function PixiStage(props: PixiStageProps) {
       await app.init({
         width,
         height,
-        backgroundColor: 0xf0f0f0,
-        antialias: false,
+        backgroundColor: 0xdfe8d8, // soft parchment-green backdrop
+        antialias: true,
         resolution: window.devicePixelRatio || 1,
         autoDensity: true,
       });
@@ -196,6 +270,14 @@ export function PixiStage(props: PixiStageProps) {
       app.canvas.style.left = "0";
       container.appendChild(app.canvas);
 
+      // Shared white diamond texture, tinted per terrain.
+      const g = new PIXI.Graphics();
+      g.poly([TILE_W / 2, 0, TILE_W, TILE_H / 2, TILE_W / 2, TILE_H, 0, TILE_H / 2]);
+      g.fill(0xffffff);
+      g.stroke({ width: 1, color: 0xffffff, alpha: 0.35 });
+      diamondTextureRef.current = app.renderer.generateTexture(g);
+      g.destroy();
+
       // Build the layer tree (see header comment for architecture).
       const world = new PIXI.Container();
       const terrain = new PIXI.Container();
@@ -208,7 +290,6 @@ export function PixiStage(props: PixiStageProps) {
       world.addChild(terrain, terrainDecals, objects, fx);
       app.stage.addChild(world, screenOverlay);
 
-      // Reliable pointer events across the whole canvas, not just sprites.
       app.stage.eventMode = "static";
       app.stage.hitArea = app.screen;
 
@@ -227,6 +308,9 @@ export function PixiStage(props: PixiStageProps) {
       tileSpritesRef.current = [];
       obstacleSpritesRef.current.clear();
       hoverLineRef.current = null;
+      hoverHighlightRef.current = null;
+      liveGraphicsRef.current = null;
+      diamondTextureRef.current = null;
       if (appRef.current) {
         appRef.current.destroy(true, { children: true, texture: true });
         appRef.current = null;
@@ -238,8 +322,7 @@ export function PixiStage(props: PixiStageProps) {
   useEffect(() => {
     if (!appReady) return;
     const container = containerRef.current;
-    const app = appRef.current;
-    if (!container || !app) return;
+    if (!container) return;
 
     const resize = () => {
       if (!appRef.current || !containerRef.current) return;
@@ -264,44 +347,43 @@ export function PixiStage(props: PixiStageProps) {
   }, [appReady, applyCamera]);
 
   // ---------------------------------------------------------------------
-  // Terrain layer — flat tinted tiles (Texture.WHITE, no texture generation)
+  // Terrain layer — tinted diamond sprites, back-to-front
   // ---------------------------------------------------------------------
 
   useEffect(() => {
     if (!appReady) return;
     const layers = layersRef.current;
-    if (!layers || tileSize <= 0) return;
+    const diamond = diamondTextureRef.current;
+    if (!layers || !diamond) return;
 
     const tileCount = course.width * course.height;
     const sprites = tileSpritesRef.current;
 
-    // (Re)build sprite pool only when the count changes; otherwise update in place.
     if (sprites.length !== tileCount) {
       layers.terrain.removeChildren();
       sprites.forEach((s) => s.destroy());
       sprites.length = 0;
-      for (let i = 0; i < tileCount; i++) {
-        const sprite = new PIXI.Sprite(PIXI.Texture.WHITE);
-        layers.terrain.addChild(sprite);
-        sprites.push(sprite);
+      // Row-major insertion is already back-to-front for rotation 0.
+      for (let y = 0; y < course.height; y++) {
+        for (let x = 0; x < course.width; x++) {
+          const sprite = new PIXI.Sprite(diamond);
+          sprite.anchor.set(0.5, 0);
+          const p = worldToIso(x + 0.5, y, 0, ROTATION); // top corner of tile diamond
+          sprite.position.set(p.x, p.y);
+          layers.terrain.addChild(sprite);
+          sprites.push(sprite);
+        }
       }
-      devLog(`built ${tileCount} tile sprites`);
+      devLog(`built ${tileCount} diamond sprites`);
     }
 
-    for (let y = 0; y < course.height; y++) {
-      for (let x = 0; x < course.width; x++) {
-        const idx = y * course.width + x;
-        const sprite = sprites[idx];
-        sprite.tint = COLORS[course.tiles[idx]];
-        sprite.position.set(x * tileSize, y * tileSize);
-        sprite.width = tileSize;
-        sprite.height = tileSize;
-      }
+    for (let i = 0; i < tileCount; i++) {
+      sprites[i].tint = darken(COLORS[course.tiles[i]], EDGE_DARKEN);
     }
-  }, [appReady, course.tiles, course.width, course.height, tileSize]);
+  }, [appReady, course.tiles, course.width, course.height]);
 
   // ---------------------------------------------------------------------
-  // Objects layer — obstacles (y-sorted)
+  // Objects layer — obstacles, ground-anchored and depth-sorted
   // ---------------------------------------------------------------------
 
   useEffect(() => {
@@ -309,7 +391,6 @@ export function PixiStage(props: PixiStageProps) {
     const layers = layersRef.current;
     if (!layers) return;
 
-    // Clear previous obstacle sprites
     obstacleSpritesRef.current.forEach((sprite) => {
       layers.objects.removeChild(sprite);
       sprite.destroy();
@@ -324,10 +405,14 @@ export function PixiStage(props: PixiStageProps) {
       const key = `${obs.x},${obs.y}`;
       if (obstacleSpritesRef.current.has(key)) return;
       const sprite = new PIXI.Sprite(PIXI.Texture.from(img));
-      sprite.position.set(obs.x * tileSize, obs.y * tileSize);
-      sprite.width = tileSize;
-      sprite.height = tileSize;
-      sprite.zIndex = obs.y; // y-sort within the objects layer
+      // Ground-anchored at the tile center, standing "up" from the diamond.
+      const center = tileCenterIso(obs.x, obs.y, 0, ROTATION);
+      sprite.anchor.set(0.5, 1);
+      sprite.position.set(center.x, center.y + TILE_H / 2);
+      const size = TILE_W * 0.72;
+      sprite.width = size;
+      sprite.height = size;
+      sprite.zIndex = isoDepth(obs.x + 0.5, obs.y + 0.5, 0, ROTATION);
       layersNow.objects.addChild(sprite);
       obstacleSpritesRef.current.set(key, sprite);
     };
@@ -345,7 +430,7 @@ export function PixiStage(props: PixiStageProps) {
   }, [appReady, obstacles, tileSize, props.showObstacles]);
 
   // ---------------------------------------------------------------------
-  // Decals layer — tee/green markers
+  // Decals layer — tee/green markers (incl. wizard drafts) + route overlays
   // ---------------------------------------------------------------------
 
   useEffect(() => {
@@ -359,23 +444,69 @@ export function PixiStage(props: PixiStageProps) {
       c.destroy();
     });
 
-    const drawMarker = (p: Point, fill: number) => {
+    const drawMarker = (p: Point, fill: number, alpha = 1) => {
       const g = new PIXI.Graphics();
-      g.circle(p.x * tileSize + tileSize / 2, p.y * tileSize + tileSize / 2, tileSize * 0.2);
-      g.fill(fill);
-      g.stroke({ width: 2, color: 0xffffff });
+      const c = tileCenterIso(p.x, p.y, 0, ROTATION);
+      g.ellipse(c.x, c.y, TILE_W * 0.18, TILE_H * 0.36);
+      g.fill({ color: fill, alpha });
+      g.stroke({ width: 2, color: 0xffffff, alpha });
       g.label = MARKER_LABEL;
       layers.terrainDecals.addChild(g);
     };
 
     holes.forEach((hole) => {
-      if (hole.tee) drawMarker(hole.tee, 0x000000);
+      if (hole.tee) drawMarker(hole.tee, 0x222222);
       if (hole.green) drawMarker(hole.green, 0x1b5e20);
     });
-  }, [appReady, holes, tileSize]);
+    if (draftTee) drawMarker(draftTee, 0x222222, 0.55);
+    if (draftGreen) drawMarker(draftGreen, 0x1b5e20, 0.55);
+  }, [appReady, holes, draftTee, draftGreen]);
+
+  useEffect(() => {
+    if (!appReady) return;
+    const layers = layersRef.current;
+    if (!layers) return;
+
+    const stale = layers.terrainDecals.children.filter((c) => c.label === ROUTE_LABEL);
+    stale.forEach((c) => {
+      layers.terrainDecals.removeChild(c);
+      c.destroy();
+    });
+
+    // Failing-corridor overlay: red translucent diamonds.
+    if (showFixOverlay && failingCorridorSegments && failingCorridorSegments.length > 0) {
+      const g = new PIXI.Graphics();
+      for (const seg of failingCorridorSegments) {
+        const top = worldToIso(seg.x + 0.5, seg.y, 0, ROTATION);
+        g.poly([
+          top.x, top.y,
+          top.x + TILE_W / 2, top.y + TILE_H / 2,
+          top.x, top.y + TILE_H,
+          top.x - TILE_W / 2, top.y + TILE_H / 2,
+        ]);
+        g.fill({ color: 0xd23b2f, alpha: 0.35 });
+      }
+      g.label = ROUTE_LABEL;
+      layers.terrainDecals.addChild(g);
+    }
+
+    // Active-hole route polyline.
+    if (showShotPlan && activePath && activePath.length > 1) {
+      const g = new PIXI.Graphics();
+      const first = tileCenterIso(activePath[0].x, activePath[0].y, 0, ROTATION);
+      g.moveTo(first.x, first.y);
+      for (let i = 1; i < activePath.length; i++) {
+        const p = tileCenterIso(activePath[i].x, activePath[i].y, 0, ROTATION);
+        g.lineTo(p.x, p.y);
+      }
+      g.stroke({ width: 2, color: 0xffffff, alpha: 0.75 });
+      g.label = ROUTE_LABEL;
+      layers.terrainDecals.addChild(g);
+    }
+  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath]);
 
   // ---------------------------------------------------------------------
-  // Screen overlay — wizard hover distance line (ticker-driven, dirty-flagged)
+  // Ticker pass — hover highlight/line + live golfer dots
   // ---------------------------------------------------------------------
 
   useEffect(() => {
@@ -384,39 +515,95 @@ export function PixiStage(props: PixiStageProps) {
     const layers = layersRef.current;
     if (!app || !layers) return;
 
+    if (!hoverHighlightRef.current) {
+      const g = new PIXI.Graphics();
+      layers.terrainDecals.addChild(g);
+      hoverHighlightRef.current = g;
+    }
     if (!hoverLineRef.current) {
       const line = new PIXI.Graphics();
       layers.screenOverlay.addChild(line);
       hoverLineRef.current = line;
     }
+    if (!liveGraphicsRef.current) {
+      const g = new PIXI.Graphics();
+      layers.fx.addChild(g);
+      liveGraphicsRef.current = g;
+    }
 
-    const updateOverlay = () => {
-      if (!overlayDirtyRef.current) return;
-      overlayDirtyRef.current = false;
-      const line = hoverLineRef.current;
-      if (!line) return;
-      line.clear();
+    const tick = () => {
+      // Hover visuals only redraw when dirty.
+      if (overlayDirtyRef.current) {
+        overlayDirtyRef.current = false;
 
-      const isGreenPlacement = wizardStep === "GREEN" || wizardStep === "MOVE_GREEN";
-      const hover = hoverTileRef.current;
-      if (isGreenPlacement && hover) {
-        const hole = holes[activeHoleIndex];
-        const fromPoint = hole?.tee || draftTee;
-        if (fromPoint) {
-          const from = tileToScreen(fromPoint.x + 0.5, fromPoint.y + 0.5);
-          const to = tileToScreen(hover.x + 0.5, hover.y + 0.5);
-          line.moveTo(from.x, from.y);
-          line.lineTo(to.x, to.y);
-          line.stroke({ width: 2, color: 0x6496ff, alpha: 0.6 });
+        const highlight = hoverHighlightRef.current;
+        const hover = hoverTileRef.current;
+        if (highlight) {
+          highlight.clear();
+          if (hover) {
+            const top = worldToIso(hover.x + 0.5, hover.y, 0, ROTATION);
+            highlight.poly([
+              top.x, top.y,
+              top.x + TILE_W / 2, top.y + TILE_H / 2,
+              top.x, top.y + TILE_H,
+              top.x - TILE_W / 2, top.y + TILE_H / 2,
+            ]);
+            highlight.stroke({ width: 2, color: 0xffffff, alpha: 0.9 });
+          }
+        }
+
+        const line = hoverLineRef.current;
+        if (line) {
+          line.clear();
+          const isGreenPlacement = wizardStep === "GREEN" || wizardStep === "MOVE_GREEN";
+          if (isGreenPlacement && hover) {
+            const hole = holes[activeHoleIndex];
+            const fromPoint = hole?.tee || draftTee;
+            if (fromPoint) {
+              const from = worldPointToScreen(fromPoint.x + 0.5, fromPoint.y + 0.5);
+              const to = worldPointToScreen(hover.x + 0.5, hover.y + 0.5);
+              line.moveTo(from.x, from.y);
+              line.lineTo(to.x, to.y);
+              line.stroke({ width: 2, color: 0x6496ff, alpha: 0.6 });
+            }
+          }
+        }
+      }
+
+      // Live golfers/balls: cheap dot pass, redrawn every frame while active
+      // (character sprites land in M11/ZKU-153).
+      const live = liveGraphicsRef.current;
+      if (live) {
+        live.clear();
+        const list = liveActive ? golfersRef?.current : null;
+        if (list && list.length > 0) {
+          for (const golfer of list) {
+            const c = tileCenterIso(golfer.x, golfer.y, 0, ROTATION);
+            // shadow
+            live.ellipse(c.x, c.y + 3, 7, 3.2);
+            live.fill({ color: 0x000000, alpha: 0.2 });
+            // body
+            live.circle(c.x, c.y - 4, 5.5);
+            live.fill(golfer.color);
+            const moodHue = Math.round(120 * Math.max(0, Math.min(1, golfer.mood)));
+            live.stroke({ width: 1.5, color: `hsl(${moodHue}, 80%, 45%)` });
+            // ball in flight
+            if (golfer.ballX != null && golfer.ballY != null) {
+              const b = tileCenterIso(golfer.ballX, golfer.ballY, 0, ROTATION);
+              live.circle(b.x, b.y - 2, 2.2);
+              live.fill(0xffffff);
+              live.stroke({ width: 0.8, color: 0x555555 });
+            }
+          }
         }
       }
     };
 
-    app.ticker.add(updateOverlay);
+    app.ticker.add(tick);
     return () => {
-      app.ticker.remove(updateOverlay);
+      app.ticker.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, tileToScreen]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
@@ -426,6 +613,18 @@ export function PixiStage(props: PixiStageProps) {
     if (!appReady) return;
     const app = appRef.current;
     if (!app) return;
+
+    const updateCursor = (t: { x: number; y: number } | null) => {
+      const el = containerRef.current;
+      if (!el) return;
+      let cursor = "crosshair";
+      if (t && editorMode === "PAINT" && selectedTerrain && worldCash !== undefined) {
+        const prevTerrain = course.tiles[t.y * course.width + t.x];
+        const cost = computeTerrainChangeCost(prevTerrain, selectedTerrain);
+        if (cost.net > 0 && worldCash < cost.net) cursor = "not-allowed";
+      }
+      el.style.cursor = cursor;
+    };
 
     const handleClick = (e: PIXI.FederatedPointerEvent) => {
       const t = screenToTile(e.global.x, e.global.y);
@@ -440,18 +639,6 @@ export function PixiStage(props: PixiStageProps) {
         overlayDirtyRef.current = true;
         updateCursor(t);
       }
-    };
-
-    const updateCursor = (t: { x: number; y: number } | null) => {
-      const el = containerRef.current;
-      if (!el) return;
-      let cursor = "crosshair";
-      if (t && editorMode === "PAINT" && selectedTerrain && worldCash !== undefined) {
-        const prevTerrain = course.tiles[t.y * course.width + t.x];
-        const cost = computeTerrainChangeCost(prevTerrain, selectedTerrain);
-        if (cost.net > 0 && worldCash < cost.net) cursor = "not-allowed";
-      }
-      el.style.cursor = cursor;
     };
 
     app.stage.on("pointerdown", handleClick);
