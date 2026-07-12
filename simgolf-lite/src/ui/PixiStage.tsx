@@ -10,7 +10,10 @@ import {
   TILE_W,
   isoDepth,
   isoToTile,
+  isoToWorld,
+  nextRotation,
   tileCenterIso,
+  unrotateWorld,
   worldToIso,
   type IsoRotation,
 } from "../game/render/iso";
@@ -47,8 +50,12 @@ import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
  * `bounds`; the flat-renderer `zoom` scalar has different units here, so it
  * is intentionally not reused (free camera control lands in ZKU-141).
  *
- * Rotation is plumbed (ROTATION constant) but fixed at 0 until the Q/E
- * camera controls of ZKU-141.
+ * Camera (ZKU-141): free camera owned by this component — drag-to-pan
+ * (middle/right button), wheel zoom-to-cursor, WASD/arrow pan, Q/E cardinal
+ * rotation with a short rigid screen-space tween that snaps to the true
+ * re-projection on completion. A hole-edit CameraState prop sets the glide
+ * target (center + bounds-fit zoom); user input afterwards adjusts freely
+ * and reports the new center via onCameraUpdate.
  *
  * Elevation (ZKU-144): tile tops are offset by elevation, tinted by a
  * NW-sun slope shade, and exposed south/east cliff faces are drawn as dirt
@@ -73,7 +80,12 @@ const EDGE_DARKEN = 0.88;
 
 const MARKER_LABEL = "hole-marker";
 const ROUTE_LABEL = "route-overlay";
-const ROTATION: IsoRotation = 0;
+
+const MIN_ZOOM = 0.15;
+const MAX_ZOOM = 8;
+const CAMERA_MARGIN_TILES = 6;
+const ROTATE_TWEEN_MS = 250;
+const KEY_PAN_SPEED = 900; // screen px/sec at zoom 1
 
 // Dev-only logging, quiet by default (ZKU-85 convention).
 const DEV_LOG = false;
@@ -149,13 +161,14 @@ function fitZoomForTileBounds(
   maxX: number,
   maxY: number,
   screenW: number,
-  screenH: number
+  screenH: number,
+  rotation: IsoRotation
 ): number {
   const corners = [
-    worldToIso(minX, minY, 0, ROTATION),
-    worldToIso(maxX + 1, minY, 0, ROTATION),
-    worldToIso(maxX + 1, maxY + 1, 0, ROTATION),
-    worldToIso(minX, maxY + 1, 0, ROTATION),
+    worldToIso(minX, minY, 0, rotation),
+    worldToIso(maxX + 1, minY, 0, rotation),
+    worldToIso(maxX + 1, maxY + 1, 0, rotation),
+    worldToIso(minX, maxY + 1, 0, rotation),
   ];
   const xs = corners.map((c) => c.x);
   const ys = corners.map((c) => c.y);
@@ -163,7 +176,7 @@ function fitZoomForTileBounds(
   const h = Math.max(...ys) - Math.min(...ys);
   if (w <= 0 || h <= 0 || screenW <= 0 || screenH <= 0) return 1;
   const zoom = Math.min((screenW * 0.95) / w, (screenH * 0.95) / h);
-  return Math.max(0.1, Math.min(8, zoom));
+  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
 }
 
 export function PixiStage(props: PixiStageProps) {
@@ -175,12 +188,22 @@ export function PixiStage(props: PixiStageProps) {
   const diamondTextureRef = useRef<PIXI.Texture | null>(null);
   const tileSpritesRef = useRef<PIXI.Sprite[]>([]);
   const cliffGraphicsRef = useRef<PIXI.Graphics | null>(null);
+  const builtRotationRef = useRef<IsoRotation | null>(null);
   const obstacleSpritesRef = useRef<Map<string, PIXI.Sprite>>(new Map());
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
   const liveGraphicsRef = useRef<PIXI.Graphics | null>(null);
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
+
+  // Free camera (ZKU-141): current values lerp toward targets each frame.
+  // Center is in world tile coordinates so it survives rotation changes.
+  const [rotation, setRotation] = useState<IsoRotation>(0);
+  const camRef = useRef({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false });
+  const rotTweenRef = useRef<{ start: number; toDeg: number; next: IsoRotation } | null>(null);
+  const keysRef = useRef<Set<string>>(new Set());
+  const lastReportedCenterRef = useRef<Point | null>(null);
+  const lastCameraStateRef = useRef<CameraState | null | undefined>(undefined);
 
   const {
     course,
@@ -208,51 +231,77 @@ export function PixiStage(props: PixiStageProps) {
   // Camera: world container transform + screen↔world mapping
   // ---------------------------------------------------------------------
 
+  const clampCenter = useCallback(
+    (x: number, y: number): Point => ({
+      x: Math.max(-CAMERA_MARGIN_TILES, Math.min(course.width + CAMERA_MARGIN_TILES, x)),
+      y: Math.max(-CAMERA_MARGIN_TILES, Math.min(course.height + CAMERA_MARGIN_TILES, y)),
+    }),
+    [course.width, course.height]
+  );
+
+  /** Push the camera's CURRENT values into the world container transform. */
   const applyCamera = useCallback(() => {
     const app = appRef.current;
     const layers = layersRef.current;
     if (!app || !layers) return;
     const { world } = layers;
-    const sw = app.screen.width;
-    const sh = app.screen.height;
+    const cam = camRef.current;
+    const centerIso = worldToIso(cam.cx, cam.cy, 0, rotation);
+    // Pivot at the camera center so the rotation tween spins around the view
+    // center; position pins the pivot to the screen center.
+    world.pivot.set(centerIso.x, centerIso.y);
+    world.position.set(app.screen.width / 2, app.screen.height / 2);
+    world.scale.set(cam.zoom);
+  }, [rotation]);
 
-    let centerTile: Point;
-    let zoom: number;
-    if (cameraState) {
-      centerTile = cameraState.center;
-      const b = cameraState.bounds;
-      zoom = b
-        ? fitZoomForTileBounds(b.minX, b.minY, b.maxX, b.maxY, sw, sh)
-        : fitZoomForTileBounds(0, 0, course.width - 1, course.height - 1, sw, sh);
-    } else {
-      centerTile = { x: course.width / 2, y: course.height / 2 };
-      zoom = fitZoomForTileBounds(0, 0, course.width - 1, course.height - 1, sw, sh);
-    }
-
-    const centerIso = worldToIso(centerTile.x, centerTile.y, 0, ROTATION);
-    world.scale.set(zoom);
-    world.position.set(sw / 2 - centerIso.x * zoom, sh / 2 - centerIso.y * zoom);
-  }, [cameraState, course.width, course.height]);
+  /** Default whole-course fit (used at init and when no CameraState). */
+  const fitWholeCourse = useCallback(
+    (snap: boolean) => {
+      const app = appRef.current;
+      if (!app) return;
+      const cam = camRef.current;
+      cam.tcx = course.width / 2;
+      cam.tcy = course.height / 2;
+      cam.tzoom = fitZoomForTileBounds(
+        0, 0, course.width - 1, course.height - 1,
+        app.screen.width, app.screen.height, rotation
+      );
+      if (snap) {
+        cam.cx = cam.tcx;
+        cam.cy = cam.tcy;
+        cam.zoom = cam.tzoom;
+      }
+      applyCamera();
+    },
+    [course.width, course.height, rotation, applyCamera]
+  );
 
   /**
    * Inverse camera transform: global pointer coords → integer tile, or null.
    * Elevation-aware: tests elevation levels front-to-back so a raised tile's
    * visible top wins over the tile geometrically behind it at base level.
    */
+  const screenToIsoPlane = useCallback((globalX: number, globalY: number): Point | null => {
+    const world = layersRef.current?.world;
+    if (!world) return null;
+    return {
+      x: (globalX - world.position.x) / world.scale.x + world.pivot.x,
+      y: (globalY - world.position.y) / world.scale.y + world.pivot.y,
+    };
+  }, []);
+
   const screenToTile = useCallback(
     (globalX: number, globalY: number): { x: number; y: number } | null => {
-      const world = layersRef.current?.world;
-      if (!world) return null;
-      const ix = (globalX - world.position.x) / world.scale.x;
-      const iy = (globalY - world.position.y) / world.scale.y;
+      const iso = screenToIsoPlane(globalX, globalY);
+      if (!iso) return null;
       for (let e = ELEVATION_MAX; e >= 0; e--) {
-        const t = isoToTile(ix, iy + e * ELEVATION_STEP_PX, ROTATION);
+        const t = isoToTile(iso.x, iso.y + e * ELEVATION_STEP_PX, rotation);
         if (t.x < 0 || t.y < 0 || t.x >= course.width || t.y >= course.height) continue;
         if (getElevation(course, t.x, t.y) === e) return t;
       }
       return null;
     },
-    [course]
+    [course, rotation, screenToIsoPlane]
   );
 
   /** Continuous world tile coords → global screen coords (for screen overlays). */
@@ -260,13 +309,13 @@ export function PixiStage(props: PixiStageProps) {
     (wx: number, wy: number, elevation = 0): { x: number; y: number } => {
       const world = layersRef.current?.world;
       if (!world) return { x: 0, y: 0 };
-      const p = worldToIso(wx, wy, elevation, ROTATION);
+      const p = worldToIso(wx, wy, elevation, rotation);
       return {
-        x: world.position.x + p.x * world.scale.x,
-        y: world.position.y + p.y * world.scale.y,
+        x: world.position.x + (p.x - world.pivot.x) * world.scale.x,
+        y: world.position.y + (p.y - world.pivot.y) * world.scale.y,
       };
     },
-    []
+    [rotation]
   );
 
   // ---------------------------------------------------------------------
@@ -373,12 +422,233 @@ export function PixiStage(props: PixiStageProps) {
     return () => ro.disconnect();
   }, [appReady, applyCamera]);
 
-  // Apply camera whenever it changes
+  // One-time camera init: snap to a whole-course fit.
   useEffect(() => {
     if (!appReady) return;
-    applyCamera();
-    overlayDirtyRef.current = true;
-  }, [appReady, applyCamera]);
+    const cam = camRef.current;
+    if (!cam.initialized) {
+      cam.initialized = true;
+      fitWholeCourse(true);
+    }
+  }, [appReady, fitWholeCourse]);
+
+  // CameraState prop → glide targets. Skips echoes of centers we reported
+  // ourselves so user pan/zoom isn't fought by the round-trip through App.
+  useEffect(() => {
+    if (!appReady) return;
+    const app = appRef.current;
+    const cam = camRef.current;
+    if (!app || !cam.initialized) return;
+    // Only react to an actual CameraState change; rotation changes re-run
+    // this effect (dep for the bounds fit below) but must not re-target.
+    if (lastCameraStateRef.current === cameraState) return;
+    lastCameraStateRef.current = cameraState;
+
+    if (!cameraState) {
+      fitWholeCourse(false);
+      return;
+    }
+    const reported = lastReportedCenterRef.current;
+    const isEcho =
+      reported &&
+      Math.abs(reported.x - cameraState.center.x) < 1e-6 &&
+      Math.abs(reported.y - cameraState.center.y) < 1e-6;
+    if (isEcho) return;
+
+    cam.tcx = cameraState.center.x;
+    cam.tcy = cameraState.center.y;
+    const b = cameraState.bounds;
+    if (b) {
+      cam.tzoom = fitZoomForTileBounds(
+        b.minX, b.minY, b.maxX, b.maxY,
+        app.screen.width, app.screen.height, rotation
+      );
+    }
+  }, [appReady, cameraState, rotation, fitWholeCourse]);
+
+  // Camera controls: wheel zoom-to-cursor, drag pan, WASD/QE, smoothing.
+  useEffect(() => {
+    if (!appReady) return;
+    const app = appRef.current;
+    const el = containerRef.current;
+    if (!app || !el) return;
+
+    const reportCenter = () => {
+      if (!cameraState || !props.onCameraUpdate) return;
+      const cam = camRef.current;
+      const center = { x: cam.tcx, y: cam.tcy };
+      lastReportedCenterRef.current = center;
+      props.onCameraUpdate({ ...cameraState, center });
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const cam = camRef.current;
+      const rect = el.getBoundingClientRect();
+      const gx = e.clientX - rect.left;
+      const gy = e.clientY - rect.top;
+      const under = screenToIsoPlane(gx, gy); // iso-plane point under cursor
+      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cam.tzoom * Math.exp(-e.deltaY * 0.0012)));
+      if (under && appRef.current) {
+        // Keep the point under the cursor stationary: solve for the center
+        // whose pivot places `under` back at the cursor after the zoom.
+        const sw = appRef.current.screen.width;
+        const sh = appRef.current.screen.height;
+        const pivotX = under.x - (gx - sw / 2) / newZoom;
+        const pivotY = under.y - (gy - sh / 2) / newZoom;
+        const centerTile = isoToWorld(pivotX, pivotY, rotation);
+        const clamped = clampCenter(centerTile.x, centerTile.y);
+        const cam2 = camRef.current;
+        cam2.cx = cam2.tcx = clamped.x;
+        cam2.cy = cam2.tcy = clamped.y;
+        cam2.zoom = cam2.tzoom = newZoom;
+      } else {
+        cam.tzoom = newZoom;
+      }
+      applyCamera();
+      overlayDirtyRef.current = true;
+      reportCenter();
+    };
+
+    // Drag-to-pan with middle or right button (left stays editing).
+    let panState: { gx: number; gy: number; cx: number; cy: number } | null = null;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (e.button !== 1 && e.button !== 2) return;
+      e.preventDefault();
+      const cam = camRef.current;
+      panState = { gx: e.clientX, gy: e.clientY, cx: cam.cx, cy: cam.cy };
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = "grabbing";
+    };
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!panState) return;
+      const cam = camRef.current;
+      const startIso = worldToIso(panState.cx, panState.cy, 0, rotation);
+      const isoX = startIso.x - (e.clientX - panState.gx) / cam.zoom;
+      const isoY = startIso.y - (e.clientY - panState.gy) / cam.zoom;
+      const tile = isoToWorld(isoX, isoY, rotation);
+      const clamped = clampCenter(tile.x, tile.y);
+      cam.cx = cam.tcx = clamped.x;
+      cam.cy = cam.tcy = clamped.y;
+      applyCamera();
+      overlayDirtyRef.current = true;
+    };
+    const handlePointerUp = (e: PointerEvent) => {
+      if (!panState) return;
+      panState = null;
+      el.releasePointerCapture?.(e.pointerId);
+      el.style.cursor = "crosshair";
+      reportCenter();
+    };
+    const handleContextMenu = (e: MouseEvent) => e.preventDefault();
+
+    // Keyboard: WASD/arrows pan (held), Q/E rotate.
+    const isTyping = (t: EventTarget | null) =>
+      t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement ||
+      (t instanceof HTMLElement && t.isContentEditable);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (isTyping(e.target)) return;
+      const k = e.key.toLowerCase();
+      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
+        keysRef.current.add(k);
+        e.preventDefault();
+      } else if ((k === "q" || k === "e") && !e.repeat && !rotTweenRef.current) {
+        rotTweenRef.current = {
+          start: performance.now(),
+          toDeg: k === "e" ? -90 : 90,
+          next: nextRotation(rotation, k === "e" ? 1 : -1),
+        };
+      }
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      keysRef.current.delete(e.key.toLowerCase());
+    };
+    const handleBlur = () => keysRef.current.clear();
+
+    // Per-frame: keyboard pan, target smoothing, rotation tween.
+    const tickCamera = (ticker: PIXI.Ticker) => {
+      const cam = camRef.current;
+      const world = layersRef.current?.world;
+      const dtMs = ticker.deltaMS;
+      let moved = false;
+
+      // Keyboard pan in screen space → iso plane → tile space.
+      const keys = keysRef.current;
+      if (keys.size > 0 && !rotTweenRef.current) {
+        let dx = 0;
+        let dy = 0;
+        if (keys.has("a") || keys.has("arrowleft")) dx -= 1;
+        if (keys.has("d") || keys.has("arrowright")) dx += 1;
+        if (keys.has("w") || keys.has("arrowup")) dy -= 1;
+        if (keys.has("s") || keys.has("arrowdown")) dy += 1;
+        if (dx !== 0 || dy !== 0) {
+          const step = (KEY_PAN_SPEED * dtMs) / 1000 / cam.zoom;
+          const centerIso = worldToIso(cam.tcx, cam.tcy, 0, rotation);
+          const tile = isoToWorld(centerIso.x + dx * step, centerIso.y + dy * step, rotation);
+          const clamped = clampCenter(tile.x, tile.y);
+          cam.tcx = clamped.x;
+          cam.tcy = clamped.y;
+          moved = true;
+        }
+      }
+
+      // Smooth toward targets.
+      const k = 1 - Math.exp(-dtMs / 90);
+      const snap = (a: number, b: number) => (Math.abs(a - b) < 1e-4 ? b : a + (b - a) * k);
+      const ncx = snap(cam.cx, cam.tcx);
+      const ncy = snap(cam.cy, cam.tcy);
+      const nz = snap(cam.zoom, cam.tzoom);
+      if (ncx !== cam.cx || ncy !== cam.cy || nz !== cam.zoom) {
+        cam.cx = ncx;
+        cam.cy = ncy;
+        cam.zoom = nz;
+        moved = true;
+      }
+
+      // Rotation tween: rigid spin around the pivot, then snap to the true
+      // re-projection (effects rebuild via the rotation state change).
+      const tween = rotTweenRef.current;
+      if (tween && world) {
+        const t = Math.min(1, (performance.now() - tween.start) / ROTATE_TWEEN_MS);
+        const ease = t * t * (3 - 2 * t);
+        world.rotation = (tween.toDeg * ease * Math.PI) / 180;
+        if (t >= 1) {
+          rotTweenRef.current = null;
+          world.rotation = 0;
+          setRotation(tween.next);
+        }
+        moved = true;
+      }
+
+      if (moved) {
+        applyCamera();
+        overlayDirtyRef.current = true;
+      }
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    el.addEventListener("pointerdown", handlePointerDown);
+    el.addEventListener("pointermove", handlePointerMove);
+    el.addEventListener("pointerup", handlePointerUp);
+    el.addEventListener("contextmenu", handleContextMenu);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+    app.ticker.add(tickCamera);
+
+    return () => {
+      el.removeEventListener("wheel", handleWheel);
+      el.removeEventListener("pointerdown", handlePointerDown);
+      el.removeEventListener("pointermove", handlePointerMove);
+      el.removeEventListener("pointerup", handlePointerUp);
+      el.removeEventListener("contextmenu", handleContextMenu);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+      app.ticker.remove(tickCamera);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appReady, rotation, cameraState, applyCamera, clampCenter, screenToIsoPlane]);
 
   // ---------------------------------------------------------------------
   // Terrain layer — tinted diamond sprites, back-to-front
@@ -394,36 +664,42 @@ export function PixiStage(props: PixiStageProps) {
     const sprites = tileSpritesRef.current;
     const elev = (x: number, y: number) => getElevation(course, x, y);
 
-    if (sprites.length !== tileCount || !cliffGraphicsRef.current) {
+    // Insertion order must be back-to-front FOR THE CURRENT ROTATION, so the
+    // sprite pool rebuilds when the camera rotates to a new cardinal.
+    if (sprites.length !== tileCount || !cliffGraphicsRef.current || builtRotationRef.current !== rotation) {
       layers.terrain.removeChildren();
       cliffGraphicsRef.current?.destroy();
       sprites.forEach((s) => s.destroy());
-      sprites.length = 0;
+      sprites.length = tileCount;
+      builtRotationRef.current = rotation;
       // Cliff faces render behind all tile tops.
       const cliffs = new PIXI.Graphics();
       layers.terrain.addChild(cliffs);
       cliffGraphicsRef.current = cliffs;
-      // Row-major insertion is already back-to-front for rotation 0.
-      for (let y = 0; y < course.height; y++) {
-        for (let x = 0; x < course.width; x++) {
-          const sprite = new PIXI.Sprite(diamond);
-          sprite.anchor.set(0.5, 0);
-          layers.terrain.addChild(sprite);
-          sprites.push(sprite);
-        }
+      const order: number[] = Array.from({ length: tileCount }, (_, i) => i);
+      order.sort((a, b) => {
+        const da = isoDepth((a % course.width) + 0.5, Math.floor(a / course.width) + 0.5, 0, rotation);
+        const db = isoDepth((b % course.width) + 0.5, Math.floor(b / course.width) + 0.5, 0, rotation);
+        return da - db;
+      });
+      for (const idx of order) {
+        const sprite = new PIXI.Sprite(diamond);
+        sprite.anchor.set(0.5, 0);
+        layers.terrain.addChild(sprite);
+        sprites[idx] = sprite;
       }
-      devLog(`built ${tileCount} diamond sprites`);
+      devLog(`built ${tileCount} diamond sprites (rot ${rotation})`);
     }
 
-    // Tops: position by elevation, tint by terrain color × NW-sun slope shade.
+    // Tops: position by elevation, tint by terrain color × NW-sun slope shade
+    // (the sun is world-fixed; it does not rotate with the camera).
     for (let y = 0; y < course.height; y++) {
       for (let x = 0; x < course.width; x++) {
         const idx = y * course.width + x;
         const sprite = sprites[idx];
         const e = elev(x, y);
-        const p = worldToIso(x + 0.5, y, e, ROTATION); // top corner of tile diamond
+        const p = worldToIso(x + 0.5, y, e, rotation); // top corner of tile diamond
         sprite.position.set(p.x, p.y);
-        // Central-difference surface normal → brightness against a NW sun.
         const dzdx = (elev(x + 1, y) - elev(x - 1, y)) / 2;
         const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
         const slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
@@ -431,34 +707,43 @@ export function PixiStage(props: PixiStageProps) {
       }
     }
 
-    // Cliff faces: exposed south/east drops become vertical dirt quads.
+    // Cliff faces: drops exposed toward the camera become vertical dirt
+    // quads. Which world-neighbors face the camera depends on rotation:
+    // in rotated space the camera-facing edges are +x (screen lower-right)
+    // and +y (screen lower-left).
     const cliffs = cliffGraphicsRef.current;
     if (cliffs) {
       cliffs.clear();
+      const dSE = unrotateWorld(1, 0, rotation); // world offset of screen-lower-right neighbor
+      const dSW = unrotateWorld(0, 1, rotation); // world offset of screen-lower-left neighbor
+      // Shared-edge corners (world coords) between tile (x,y) and neighbor at offset d.
+      const edgeCorners = (x: number, y: number, dx: number, dy: number): [Point, Point] => {
+        if (dx === 1) return [{ x: x + 1, y }, { x: x + 1, y: y + 1 }];
+        if (dx === -1) return [{ x, y }, { x, y: y + 1 }];
+        if (dy === 1) return [{ x, y: y + 1 }, { x: x + 1, y: y + 1 }];
+        return [{ x, y }, { x: x + 1, y }];
+      };
+      const face = (x: number, y: number, d: Point, color: number) => {
+        const e = elev(x, y);
+        const nx = x + d.x;
+        const ny = y + d.y;
+        const ne = nx < 0 || ny < 0 || nx >= course.width || ny >= course.height ? 0 : elev(nx, ny);
+        if (ne >= e || e <= 0) return;
+        const [c1, c2] = edgeCorners(x, y, d.x, d.y);
+        const a = worldToIso(c1.x, c1.y, e, rotation);
+        const b = worldToIso(c2.x, c2.y, e, rotation);
+        const drop = (e - ne) * ELEVATION_STEP_PX;
+        cliffs.poly([a.x, a.y, b.x, b.y, b.x, b.y + drop, a.x, a.y + drop]);
+        cliffs.fill(color);
+      };
       for (let y = 0; y < course.height; y++) {
         for (let x = 0; x < course.width; x++) {
-          const e = elev(x, y);
-          if (e <= 0) continue;
-          const south = y + 1 < course.height ? elev(x, y + 1) : 0;
-          const east = x + 1 < course.width ? elev(x + 1, y) : 0;
-          if (south < e) {
-            const a = worldToIso(x, y + 1, e, ROTATION); // left corner
-            const b = worldToIso(x + 1, y + 1, e, ROTATION); // bottom corner
-            const drop = (e - south) * ELEVATION_STEP_PX;
-            cliffs.poly([a.x, a.y, b.x, b.y, b.x, b.y + drop, a.x, a.y + drop]);
-            cliffs.fill(CLIFF_SW);
-          }
-          if (east < e) {
-            const a = worldToIso(x + 1, y, e, ROTATION); // right corner
-            const b = worldToIso(x + 1, y + 1, e, ROTATION); // bottom corner
-            const drop = (e - east) * ELEVATION_STEP_PX;
-            cliffs.poly([a.x, a.y, b.x, b.y, b.x, b.y + drop, a.x, a.y + drop]);
-            cliffs.fill(CLIFF_SE);
-          }
+          face(x, y, dSW, CLIFF_SW);
+          face(x, y, dSE, CLIFF_SE);
         }
       }
     }
-  }, [appReady, course]);
+  }, [appReady, course, rotation]);
 
   // ---------------------------------------------------------------------
   // Objects layer — obstacles, ground-anchored and depth-sorted
@@ -485,13 +770,13 @@ export function PixiStage(props: PixiStageProps) {
       const sprite = new PIXI.Sprite(PIXI.Texture.from(img));
       // Ground-anchored at the tile center, standing "up" from the diamond.
       const e = getElevation(course, obs.x, obs.y);
-      const center = tileCenterIso(obs.x, obs.y, e, ROTATION);
+      const center = tileCenterIso(obs.x, obs.y, e, rotation);
       sprite.anchor.set(0.5, 1);
       sprite.position.set(center.x, center.y + TILE_H / 2);
       const size = TILE_W * 0.72;
       sprite.width = size;
       sprite.height = size;
-      sprite.zIndex = isoDepth(obs.x + 0.5, obs.y + 0.5, e, ROTATION);
+      sprite.zIndex = isoDepth(obs.x + 0.5, obs.y + 0.5, e, rotation);
       layersNow.objects.addChild(sprite);
       obstacleSpritesRef.current.set(key, sprite);
     };
@@ -506,7 +791,7 @@ export function PixiStage(props: PixiStageProps) {
         });
       }
     });
-  }, [appReady, obstacles, tileSize, props.showObstacles, course]);
+  }, [appReady, obstacles, tileSize, props.showObstacles, course, rotation]);
 
   // ---------------------------------------------------------------------
   // Decals layer — tee/green markers (incl. wizard drafts) + route overlays
@@ -525,7 +810,7 @@ export function PixiStage(props: PixiStageProps) {
 
     const drawMarker = (p: Point, fill: number, alpha = 1) => {
       const g = new PIXI.Graphics();
-      const c = tileCenterIso(p.x, p.y, getElevation(course, p.x, p.y), ROTATION);
+      const c = tileCenterIso(p.x, p.y, getElevation(course, p.x, p.y), rotation);
       g.ellipse(c.x, c.y, TILE_W * 0.18, TILE_H * 0.36);
       g.fill({ color: fill, alpha });
       g.stroke({ width: 2, color: 0xffffff, alpha });
@@ -539,7 +824,7 @@ export function PixiStage(props: PixiStageProps) {
     });
     if (draftTee) drawMarker(draftTee, 0x222222, 0.55);
     if (draftGreen) drawMarker(draftGreen, 0x1b5e20, 0.55);
-  }, [appReady, holes, draftTee, draftGreen, course]);
+  }, [appReady, holes, draftTee, draftGreen, course, rotation]);
 
   useEffect(() => {
     if (!appReady) return;
@@ -556,7 +841,7 @@ export function PixiStage(props: PixiStageProps) {
     if (showFixOverlay && failingCorridorSegments && failingCorridorSegments.length > 0) {
       const g = new PIXI.Graphics();
       for (const seg of failingCorridorSegments) {
-        const top = worldToIso(seg.x + 0.5, seg.y, getElevation(course, seg.x, seg.y), ROTATION);
+        const top = worldToIso(seg.x + 0.5, seg.y, getElevation(course, seg.x, seg.y), rotation);
         g.poly([
           top.x, top.y,
           top.x + TILE_W / 2, top.y + TILE_H / 2,
@@ -573,7 +858,7 @@ export function PixiStage(props: PixiStageProps) {
     if (showShotPlan && activePath && activePath.length > 1) {
       const g = new PIXI.Graphics();
       const pathPoint = (pt: Point) =>
-        tileCenterIso(pt.x, pt.y, getElevation(course, pt.x, pt.y), ROTATION);
+        tileCenterIso(pt.x, pt.y, getElevation(course, pt.x, pt.y), rotation);
       const first = pathPoint(activePath[0]);
       g.moveTo(first.x, first.y);
       for (let i = 1; i < activePath.length; i++) {
@@ -584,7 +869,7 @@ export function PixiStage(props: PixiStageProps) {
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
     }
-  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course]);
+  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, rotation]);
 
   // ---------------------------------------------------------------------
   // Ticker pass — hover highlight/line + live golfer dots
@@ -622,7 +907,7 @@ export function PixiStage(props: PixiStageProps) {
         if (highlight) {
           highlight.clear();
           if (hover) {
-            const top = worldToIso(hover.x + 0.5, hover.y, getElevation(course, hover.x, hover.y), ROTATION);
+            const top = worldToIso(hover.x + 0.5, hover.y, getElevation(course, hover.x, hover.y), rotation);
             highlight.poly([
               top.x, top.y,
               top.x + TILE_W / 2, top.y + TILE_H / 2,
@@ -668,7 +953,7 @@ export function PixiStage(props: PixiStageProps) {
         if (list && list.length > 0) {
           for (const golfer of list) {
             const ge = getElevation(course, Math.floor(golfer.x + 0.5), Math.floor(golfer.y + 0.5));
-            const c = tileCenterIso(golfer.x, golfer.y, ge, ROTATION);
+            const c = tileCenterIso(golfer.x, golfer.y, ge, rotation);
             // shadow
             live.ellipse(c.x, c.y + 3, 7, 3.2);
             live.fill({ color: 0x000000, alpha: 0.2 });
@@ -680,7 +965,7 @@ export function PixiStage(props: PixiStageProps) {
             // ball in flight
             if (golfer.ballX != null && golfer.ballY != null) {
               const be = getElevation(course, Math.floor(golfer.ballX + 0.5), Math.floor(golfer.ballY + 0.5));
-              const b = tileCenterIso(golfer.ballX, golfer.ballY, be, ROTATION);
+              const b = tileCenterIso(golfer.ballX, golfer.ballY, be, rotation);
               live.circle(b.x, b.y - 2, 2.2);
               live.fill(0xffffff);
               live.stroke({ width: 0.8, color: 0x555555 });
@@ -694,7 +979,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
@@ -718,6 +1003,7 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     const handleClick = (e: PIXI.FederatedPointerEvent) => {
+      if (e.button !== 0) return; // middle/right are camera pan, not editing
       const t = screenToTile(e.global.x, e.global.y);
       if (t) onClickTile(t.x, t.y);
     };
