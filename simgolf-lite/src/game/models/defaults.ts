@@ -6,6 +6,7 @@ export const DEFAULT_COURSE: Course = {
   width: COURSE_WIDTH,
   height: COURSE_HEIGHT,
   tiles: Array.from({ length: COURSE_WIDTH * COURSE_HEIGHT }, () => "rough" as Terrain),
+  elevations: Array.from({ length: COURSE_WIDTH * COURSE_HEIGHT }, () => 0),
   holes: Array.from({ length: 9 }, (_, i) => ({
     tee: null,
     green: null,

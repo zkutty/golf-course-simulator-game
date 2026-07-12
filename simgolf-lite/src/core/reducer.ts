@@ -1,6 +1,7 @@
 import type { GameState } from "../game/gameState";
 import type { Action } from "./actions";
-import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
+import { computeElevationChangeCost, computeTerrainChangeCost } from "../game/models/terrainEconomics";
+import { clampElevation } from "../game/models/elevation";
 
 /**
  * Apply an action to the game state. This is the ONLY function that should mutate
@@ -44,6 +45,42 @@ export function applyAction(state: GameState, action: Action): GameState {
       newState = {
         ...newState,
         course: { ...state.course, tiles: newTiles },
+        world: {
+          ...state.world,
+          cash: state.world.cash - cashDelta,
+          isBankrupt: state.world.isBankrupt || (state.world.cash - cashDelta < -10_000),
+        },
+      };
+      terrainVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "SCULPT_TILES": {
+      // Elevation sculpting (ZKU-143): apply clamped integer deltas and
+      // charge earthworks per actually-applied step (no salvage, both
+      // directions cost the same).
+      const prevElev = state.course.elevations ?? new Array(state.course.width * state.course.height).fill(0);
+      const newElevations = prevElev.slice();
+      let cashDelta = 0;
+
+      for (const { x, y, delta } of action.deltas) {
+        if (x < 0 || y < 0 || x >= state.course.width || y >= state.course.height) continue;
+        const idx = y * state.course.width + x;
+        const prev = newElevations[idx] ?? 0;
+        const next = clampElevation(prev + delta);
+        const applied = next - prev;
+        if (applied !== 0) {
+          cashDelta += computeElevationChangeCost(applied).net;
+          newElevations[idx] = next;
+        }
+      }
+
+      if (cashDelta === 0) break; // nothing applied — no state churn
+
+      newState = {
+        ...newState,
+        course: { ...state.course, elevations: newElevations },
         world: {
           ...state.world,
           cash: state.world.cash - cashDelta,

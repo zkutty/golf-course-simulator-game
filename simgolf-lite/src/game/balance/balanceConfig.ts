@@ -201,6 +201,9 @@ export const BALANCE = {
       tee: 45, // 150 build → 30%
       path: 12, // 40 build → 30%
     } satisfies Record<Terrain, number>,
+    // Sculpting: cost per tile per elevation step, charged for raising AND
+    // lowering (earthworks are never refunded).
+    earthworkCostPerStep: 60,
     maintWeight: {
       rough: 0.3,
       deep_rough: 0.6,

@@ -366,7 +366,7 @@ export default function App() {
     // Generate wild land terrain and obstacles using the seed
     console.log('[Performance] Generating wild land...');
     const start = performance.now();
-    const { tiles: generatedTiles, obstacles: generatedObstacles } = generateWildLandWithObstacles(
+    const { tiles: generatedTiles, obstacles: generatedObstacles, elevations: generatedElevations } = generateWildLandWithObstacles(
       COURSE_WIDTH,
       COURSE_HEIGHT,
       seed,
@@ -378,6 +378,7 @@ export default function App() {
     const newCourse = {
       ...DEFAULT_STATE.course,
       tiles: generatedTiles,
+      elevations: generatedElevations,
       holes: Array.from({ length: 9 }, () => ({
         tee: null,
         green: null,
@@ -946,7 +947,7 @@ export default function App() {
     resetSave();
     // Generate new terrain and obstacles with a new seed
     const newSeed = Date.now();
-    const { tiles: generatedTiles, obstacles: generatedObstacles } = generateWildLandWithObstacles(
+    const { tiles: generatedTiles, obstacles: generatedObstacles, elevations: generatedElevations } = generateWildLandWithObstacles(
       COURSE_WIDTH,
       COURSE_HEIGHT,
       newSeed,
@@ -956,6 +957,7 @@ export default function App() {
     const newCourse = {
       ...DEFAULT_STATE.course,
       tiles: generatedTiles,
+      elevations: generatedElevations,
       holes: Array.from({ length: 9 }, () => ({
         tee: null,
         green: null,

@@ -502,14 +502,65 @@ export function generateObstacles(
 /**
  * Generate both terrain and obstacles for a wild piece of land
  */
+/**
+ * Gentle rolling elevation via two octaves of value noise (ZKU-143).
+ * Deterministic from seed; integer steps 0..4 so new land reads as terrain
+ * rather than a billiard table. Water tiles are forced to base level so
+ * lakes sit in depressions once elevation renders (ZKU-144).
+ */
+export function generateElevations(
+  width: number,
+  height: number,
+  seed: number,
+  tiles: Terrain[]
+): number[] {
+  const rng = new SeededRNG((seed ^ 0x5eed) >>> 0);
+
+  // Coarse random lattices for two octaves.
+  const makeLattice = (cell: number) => {
+    const gw = Math.ceil(width / cell) + 2;
+    const gh = Math.ceil(height / cell) + 2;
+    const values = Array.from({ length: gw * gh }, () => rng.next());
+    return { cell, gw, values };
+  };
+  const smooth = (t: number) => t * t * (3 - 2 * t);
+  const sample = (l: { cell: number; gw: number; values: number[] }, x: number, y: number) => {
+    const fx = x / l.cell;
+    const fy = y / l.cell;
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const tx = smooth(fx - x0);
+    const ty = smooth(fy - y0);
+    const v = (gx: number, gy: number) => l.values[gy * l.gw + gx];
+    const a = v(x0, y0) + (v(x0 + 1, y0) - v(x0, y0)) * tx;
+    const b = v(x0, y0 + 1) + (v(x0 + 1, y0 + 1) - v(x0, y0 + 1)) * tx;
+    return a + (b - a) * ty;
+  };
+
+  const octave1 = makeLattice(14); // broad hills
+  const octave2 = makeLattice(6); // local undulation
+
+  const elevations = new Array<number>(width * height).fill(0);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      if (tiles[idx] === "water") continue; // water stays at base level
+      const n = sample(octave1, x, y) * 0.72 + sample(octave2, x, y) * 0.28;
+      elevations[idx] = Math.max(0, Math.min(4, Math.round(n * 4.6 - 0.3)));
+    }
+  }
+  return elevations;
+}
+
 export function generateWildLandWithObstacles(
   width: number,
   height: number,
   seed: number,
   reservedZones: Point[] = []
-): { tiles: Terrain[]; obstacles: Obstacle[] } {
+): { tiles: Terrain[]; obstacles: Obstacle[]; elevations: number[] } {
   const tiles = generateWildLand(width, height, seed);
   const obstacles = generateObstacles(width, height, tiles, seed, reservedZones);
-  return { tiles, obstacles };
+  const elevations = generateElevations(width, height, seed, tiles);
+  return { tiles, obstacles, elevations };
 }
 
