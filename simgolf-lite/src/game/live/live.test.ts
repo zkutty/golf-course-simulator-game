@@ -171,8 +171,8 @@ describe("planDay + volume", () => {
     const course = makeTestCourse();
     const world: World = { ...DEFAULT_WORLD };
     const n = plannedGolfersForDay(course, world);
-    expect(n).toBeGreaterThanOrEqual(3);
-    expect(n).toBeLessThanOrEqual(42);
+    expect(n).toBeGreaterThanOrEqual(6);
+    expect(n).toBeLessThanOrEqual(48);
     const arrivals = planDay(course, world, 123);
     expect(arrivals.length).toBe(n);
     // sorted ascending

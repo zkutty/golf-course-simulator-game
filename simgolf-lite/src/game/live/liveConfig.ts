@@ -45,12 +45,15 @@ export const LIVE = {
 
   // Golfers actually simulated & drawn per day. Derived from the demand model,
   // then clamped into a watchable range (you see every golfer on the course).
+  // Tuned so a decent course feels alive: with rounds ~200 game-min and an
+  // arrival window of ~580 game-min, ~48 golfers/day averages ~15 on the
+  // course at once.
   volume: {
-    minGolfers: 3,
-    maxGolfers: 42,
+    minGolfers: 6,
+    maxGolfers: 48,
     // Fraction of the abstract weekly demand potential that becomes a day's
     // real, on-screen rounds.
-    dailyDemandFraction: 0.03,
+    dailyDemandFraction: 0.08,
   },
 
   mood: {

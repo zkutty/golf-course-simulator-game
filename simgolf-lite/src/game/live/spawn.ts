@@ -6,6 +6,15 @@ import { LIVE } from "./liveConfig";
 import { pickArchetype } from "./archetypes";
 import type { Arrival } from "./types";
 
+// Dev/tuning override: `?livegolfers=N` forces a fixed golfer count per day.
+function debugGolferOverride(): number | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("livegolfers");
+  if (raw == null) return null;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? Math.max(0, Math.min(200, n)) : null;
+}
+
 // How many golfers actually walk the course today. Derived from the existing
 // abstract demand model, then clamped into a watchable range so you see every
 // golfer individually (Sim-Golf style) rather than an aggregate integer.
@@ -13,6 +22,9 @@ export function plannedGolfersForDay(course: Course, world: World): number {
   const summary = scoreCourseHoles(course);
   const validHoles = summary.holes.filter((h) => h.isComplete && h.isValid).length;
   if (validHoles === 0) return 0;
+
+  const override = debugGolferOverride();
+  if (override != null) return override;
 
   const demand = demandBreakdown(course, world);
   const weeklyPotential = demand.segments?.totalBaseVisitors ?? demand.demandIndex * 400;
