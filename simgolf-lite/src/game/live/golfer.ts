@@ -199,15 +199,18 @@ export function advanceGolfer(
       // About to move past this segment. A gate holds the golfer at the tee
       // until the hole ahead has room; waiting slowly sours their mood.
       if (seg.gate && canEnter && !canEnter(seg.holeIndex, g)) {
+        // Only the time past the end of the approach leg counts as queueing —
+        // `remaining` still includes the walking that finished the leg.
+        const waited = remaining - left;
         g.segElapsed = seg.dur;
         g.pos = { ...seg.to };
         g.ball = null;
         g.waiting = true;
         const before = g.waitMinutes;
-        g.waitMinutes += remaining;
+        g.waitMinutes += waited;
         // Impatient golfers sour roughly twice as fast as zen ones.
         const impatience = 1.6 - g.personality.patience;
-        g.mood = clamp01(g.mood + remaining * LIVE.mood.perWaitMinute * impatience);
+        g.mood = clamp01(g.mood + waited * LIVE.mood.perWaitMinute * impatience);
         if (before < 10 && g.waitMinutes >= 10) setThought(g, "⏳ Slow play today…");
         const fuse = waitToleranceMin(g.personality) * 0.75;
         if (before < fuse && g.waitMinutes >= fuse) setThought(g, "😤 This wait is ridiculous.");

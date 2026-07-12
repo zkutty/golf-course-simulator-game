@@ -351,6 +351,24 @@ describe("reactions and leave-early (ZKU-114)", () => {
     expect(live.roundsFinished).toBe(12);
   });
 
+  it("counts only time actually blocked at a gate as waiting, not the approach walk", () => {
+    const course = makeTestCourse();
+    const g = freshGolfer(course);
+    // Synthetic itinerary: a 5-minute gated approach leg, then hole play.
+    const tee = { x: 4, y: 12 };
+    g.segments = [
+      { kind: "walk", from: { x: 0, y: 12 }, to: tee, dur: 5, holeIndex: 0, gate: true },
+      { kind: "pause", from: tee, to: tee, dur: 1, holeIndex: 0 },
+    ];
+    // One 8-minute tick against a full hole: 5 min walking + 3 min queueing.
+    advanceGolfer(g, 8, course.condition, () => false);
+    expect(g.waiting).toBe(true);
+    expect(g.waitMinutes).toBeCloseTo(3, 5);
+    // Subsequent fully-blocked ticks are pure queue time.
+    advanceGolfer(g, 2, course.condition, () => false);
+    expect(g.waitMinutes).toBeCloseTo(5, 5);
+  });
+
   it("thoughts fade after their ttl", () => {
     const course = makeTestCourse();
     const g = freshGolfer(course);
