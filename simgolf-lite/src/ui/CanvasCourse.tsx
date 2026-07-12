@@ -1723,6 +1723,42 @@ export function CanvasCourse(props: {
           ctx2.restore();
         }
       }
+
+      // Thought bubbles (ZKU-114), drawn after all bodies so they sit on top.
+      // Skipped when tiles are too small to read text.
+      if (TILE >= 8) {
+        ctx2.save();
+        ctx2.font = `600 ${Math.max(9, Math.min(12, TILE * 0.8))}px Nunito, system-ui, sans-serif`;
+        ctx2.textBaseline = "middle";
+        for (const g of list) {
+          if (!g.thought) continue;
+          const cx = g.x * TILE + TILE / 2;
+          const cy = g.y * TILE + TILE / 2;
+          const padX = 6;
+          const tw = ctx2.measureText(g.thought).width;
+          const bw = tw + padX * 2;
+          const bh = Math.max(14, TILE * 1.0);
+          const bx = Math.max(2, Math.min(wPx - bw - 2, cx - bw / 2));
+          const by = cy - r - bh - Math.max(4, TILE * 0.3);
+
+          ctx2.beginPath();
+          ctx2.roundRect(bx, by, bw, bh, bh / 2);
+          ctx2.fillStyle = "rgba(255,255,255,0.92)";
+          ctx2.strokeStyle = "rgba(0,0,0,0.25)";
+          ctx2.lineWidth = 1;
+          ctx2.fill();
+          ctx2.stroke();
+          // little tail toward the golfer
+          ctx2.beginPath();
+          ctx2.arc(cx, by + bh + Math.max(2, TILE * 0.12), Math.max(1.5, TILE * 0.1), 0, Math.PI * 2);
+          ctx2.fillStyle = "rgba(255,255,255,0.85)";
+          ctx2.fill();
+
+          ctx2.fillStyle = "#1f2937";
+          ctx2.fillText(g.thought, bx + padX, by + bh / 2 + 0.5);
+        }
+        ctx2.restore();
+      }
     }
 
     function drawFlags(timeMs: number) {

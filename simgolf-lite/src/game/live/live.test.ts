@@ -8,6 +8,13 @@ import { createLiveState, stepLive, avgSatisfactionSoFar, snapshotGolfer } from 
 import { planDay, plannedGolfersForDay } from "./spawn";
 import { commitDay } from "./commitDay";
 import { findWalkPath, pathLength } from "./walkPath";
+import {
+  arrivalMoodShift,
+  effectivePuttVariance,
+  rollPersonality,
+  waitToleranceMin,
+} from "./personality";
+import { mulberry32 } from "../../utils/rng";
 import type { Golfer } from "./types";
 
 // A tiny but valid course: a single wide fairway hole from left to right.
@@ -51,6 +58,7 @@ function freshGolfer(course: Course): Golfer {
     id: 1,
     name: "Test G.",
     archetype: "lowHandicap",
+    personality: rollPersonality("lowHandicap", () => 0.5),
     color: "#fff",
     segments: round.segments,
     segIndex: 0,
@@ -68,8 +76,9 @@ function freshGolfer(course: Course): Golfer {
     waiting: false,
     waitMinutes: 0,
     thought: null,
-    thoughtUntil: 0,
+    thoughtTtl: 0,
     finished: false,
+    leftEarly: false,
     spent: 0,
   };
 }
@@ -276,6 +285,81 @@ describe("tee-time queueing (ZKU-110)", () => {
     // Waiting golfers paid a mood price.
     const anyWait = live.finishedRounds.some((r) => r.mood < 0.7);
     expect(anyWait).toBe(true);
+  });
+});
+
+describe("personality (ZKU-112)", () => {
+  it("rolls deterministic, clamped traits that vary between individuals", () => {
+    const a = rollPersonality("casual", mulberry32(1));
+    const b = rollPersonality("casual", mulberry32(1));
+    const c = rollPersonality("casual", mulberry32(2));
+    expect(a).toEqual(b); // same seed, same golfer
+    expect(a).not.toEqual(c); // different seed, different golfer
+    for (const p of [a, c]) {
+      for (const v of Object.values(p)) {
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThanOrEqual(1);
+      }
+    }
+    // Archetype character survives the jitter.
+    const pro = rollPersonality("pro", mulberry32(3));
+    const junior = rollPersonality("junior", mulberry32(3));
+    expect(pro.skill).toBeGreaterThan(junior.skill);
+    expect(waitToleranceMin(rollPersonality("senior", mulberry32(4)))).toBeGreaterThan(
+      waitToleranceMin(junior)
+    );
+  });
+
+  it("skill sharpens putting; price gouging sours arrival mood", () => {
+    const sharp = effectivePuttVariance(0.35, { ...rollPersonality("pro", mulberry32(1)), skill: 1 });
+    const dull = effectivePuttVariance(0.35, { ...rollPersonality("junior", mulberry32(1)), skill: 0 });
+    expect(sharp).toBeLessThan(dull);
+
+    const cheapskate = { ...rollPersonality("senior", mulberry32(1)), priceSensitivity: 1 };
+    const gouged = arrivalMoodShift({ p: cheapskate, greenFee: 200, reputation: 30, avgDifficulty: 50 });
+    const fair = arrivalMoodShift({ p: cheapskate, greenFee: 40, reputation: 30, avgDifficulty: 50 });
+    expect(gouged).toBeLessThan(fair);
+    expect(gouged).toBeLessThan(0);
+  });
+});
+
+describe("reactions and leave-early (ZKU-114)", () => {
+  it("waiting golfers think about slow play and eventually storm off", () => {
+    const course = makeTestCourse();
+    const world: World = { ...DEFAULT_WORLD };
+    const live = createLiveState(course, world, 0);
+    // Stack everyone on the first minute so the single hole clogs hard.
+    live.arrivals = Array.from({ length: 12 }, () => ({ ...live.arrivals[0], atMinute: 1 }));
+
+    let sawSlowThought = false;
+    let sawLeaver = false;
+    let guard = 0;
+    while (!live.dayOver && guard++ < 100_000) {
+      stepLive(live, course, 1);
+      for (const g of live.golfers) {
+        if (g.thought?.includes("Slow play") || g.thought?.includes("wait is ridiculous"))
+          sawSlowThought = true;
+      }
+      if (live.finishedRounds.some((r) => r.leftEarly)) sawLeaver = true;
+    }
+    expect(sawSlowThought).toBe(true);
+    expect(sawLeaver).toBe(true);
+    // Leavers' cards only contain holes they actually played.
+    const leaver = live.finishedRounds.find((r) => r.leftEarly)!;
+    expect(leaver.holeStrokes.length).toBe(leaver.holesPlayed);
+    // Everyone is accounted for, played or stormed off.
+    expect(live.roundsFinished).toBe(12);
+  });
+
+  it("thoughts fade after their ttl", () => {
+    const course = makeTestCourse();
+    const g = freshGolfer(course);
+    g.thought = "🐦 Birdie!";
+    g.thoughtTtl = 5;
+    advanceGolfer(g, 2, course.condition);
+    expect(g.thought).not.toBeNull();
+    advanceGolfer(g, 4, course.condition);
+    expect(g.thought).toBeNull();
   });
 });
 

@@ -1,4 +1,5 @@
 import type { Point } from "../models/types";
+import type { Personality } from "./personality";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -29,6 +30,7 @@ export interface Golfer {
   id: number;
   name: string;
   archetype: GolferArchetypeName;
+  personality: Personality;
   color: string;
   // Itinerary
   segments: Segment[];
@@ -49,9 +51,10 @@ export interface Golfer {
   mood: number; // 0..1
   waiting: boolean; // held at a tee-time gate right now
   waitMinutes: number; // total game-minutes spent waiting today
-  thought: string | null;
-  thoughtUntil: number; // dayMinute when the thought expires
+  thought: string | null; // visible thought-bubble text
+  thoughtTtl: number; // game-minutes until the thought fades
   finished: boolean;
+  leftEarly: boolean; // stormed off mid-round (patience ran out)
   spent: number; // money spent (green fee + concessions later)
 }
 
@@ -75,9 +78,11 @@ export interface FinishedRound {
   holePar: number[];
   holeStrokes: number[];
   holesPlayed: number;
+  leftEarly: boolean;
 }
 
 export interface LiveState {
+  reputation: number; // snapshot of world.reputation at day start (0..100)
   dayIndex: number; // 0-based day counter within the current week
   dayMinute: number; // current time of day (game-minutes past open)
   golfers: Golfer[]; // active golfers currently on the course
@@ -117,6 +122,7 @@ export interface GolferSnapshot {
   scoreToPar: number;
   mood: number;
   finished: boolean;
+  leftEarly: boolean;
   waiting: boolean;
   waitMinutes: number;
   spent: number;

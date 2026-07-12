@@ -33,12 +33,16 @@ export function GolferInspector(props: {
   const arch = ARCHETYPES[golfer.archetype];
   const played = golfer.holes.filter((h) => h.strokes != null);
   const status = golfer.finished
-    ? "Finished — heading home"
-    : golfer.waiting && golfer.currentHole >= 0
-      ? `Waiting at hole ${golfer.currentHole + 1} tee`
-      : golfer.currentHole >= 0
-        ? `On hole ${golfer.currentHole + 1}`
-        : "Walking the grounds";
+    ? golfer.leftEarly
+      ? "Left early 😠"
+      : "Finished — heading home"
+    : golfer.leftEarly
+      ? "Storming off…"
+      : golfer.waiting && golfer.currentHole >= 0
+        ? `Waiting at hole ${golfer.currentHole + 1} tee`
+        : golfer.currentHole >= 0
+          ? `On hole ${golfer.currentHole + 1}`
+          : "Walking the grounds";
 
   return (
     <div

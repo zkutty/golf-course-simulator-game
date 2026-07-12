@@ -2,8 +2,8 @@ import type { Course, World } from "../models/types";
 import { mulberry32 } from "../../utils/rng";
 import { getGolferProfile } from "../sim/golferProfiles";
 import { ARCHETYPES, golferName } from "./archetypes";
-import { buildGolferRound, entryPoint } from "./golfer";
-import { advanceGolfer } from "./golfer";
+import { abandonRound, advanceGolfer, buildGolferRound, entryPoint } from "./golfer";
+import { arrivalMoodShift, effectivePuttVariance, rollPersonality, waitToleranceMin } from "./personality";
 import { planDay } from "./spawn";
 import { LIVE } from "./liveConfig";
 import type {
@@ -23,6 +23,7 @@ export function createLiveState(
   const seed = (world.runSeed | 0) + dayIndex * 7919;
   const arrivals = planDay(course, world, seed);
   return {
+    reputation: world.reputation,
     dayIndex,
     dayMinute: LIVE.day.openMinute,
     golfers: [],
@@ -45,17 +46,27 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   const profile = getGolferProfile(arch.solverProfile, course);
   const rng = mulberry32(state.seed + id * 131);
   const entry = entryPoint(course);
+  const personality = rollPersonality(arch.name, rng);
   const round = buildGolferRound({
     course,
     profile,
     entry,
     rng,
-    puttVariance: arch.puttVariance,
+    puttVariance: effectivePuttVariance(arch.puttVariance, personality),
   });
+  // First impression (ZKU-112): value for money and difficulty taste.
+  const moodShift = arrivalMoodShift({
+    p: personality,
+    greenFee: course.baseGreenFee,
+    reputation: state.reputation,
+    avgDifficulty: round.avgDifficulty,
+  });
+  const mood = Math.max(LIVE.mood.min, Math.min(LIVE.mood.max, LIVE.mood.start + moodShift));
   return {
     id,
     name: golferName(rng(), rng()),
     archetype: arch.name,
+    personality,
     color: arch.color,
     segments: round.segments,
     segIndex: 0,
@@ -69,12 +80,14 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     currentHole: -1,
     strokes: 0,
     scoreToPar: 0,
-    mood: LIVE.mood.start,
+    mood,
     waiting: false,
     waitMinutes: 0,
-    thought: null,
-    thoughtUntil: 0,
+    thought:
+      moodShift < -0.08 ? "💸 Steep green fee!" : moodShift > 0.04 ? "🤑 What a bargain!" : null,
+    thoughtTtl: 8,
     finished: false,
+    leftEarly: false,
     spent: course.baseGreenFee, // green fee paid on arrival
   };
 }
@@ -132,6 +145,10 @@ export function stepLive(
   const stillPlaying: Golfer[] = [];
   for (const g of state.golfers) {
     advanceGolfer(g, dtMin, course.condition, canEnter);
+    // Out of patience? Storm off to the exit (ZKU-114).
+    if (g.waiting && !g.leftEarly && g.waitMinutes > waitToleranceMin(g.personality)) {
+      abandonRound(g, course);
+    }
     if (g.finished) {
       state.satisfactionSum += g.mood * 100;
       state.roundsFinished++;
@@ -193,6 +210,7 @@ function toFinishedRound(g: Golfer): FinishedRound {
     holePar: g.holePar,
     holeStrokes: g.holeStrokes,
     holesPlayed: g.scoredHoles,
+    leftEarly: g.leftEarly,
   };
 }
 
@@ -210,6 +228,7 @@ export function snapshotGolfer(state: LiveState, id: number): GolferSnapshot | n
       scoreToPar: g.scoreToPar,
       mood: g.mood,
       finished: false,
+      leftEarly: g.leftEarly,
       waiting: g.waiting,
       waitMinutes: g.waitMinutes,
       spent: g.spent,
@@ -231,6 +250,7 @@ export function snapshotGolfer(state: LiveState, id: number): GolferSnapshot | n
       scoreToPar: f.scoreToPar,
       mood: f.mood,
       finished: true,
+      leftEarly: f.leftEarly,
       waiting: false,
       waitMinutes: 0,
       spent: f.spent,

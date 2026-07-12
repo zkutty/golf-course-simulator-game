@@ -4,6 +4,7 @@ import { solveShotsToGreen } from "../sim/shots/solveShotsToGreen";
 import { scoreCourseHoles } from "../sim/holes";
 import { LIVE } from "./liveConfig";
 import { findWalkPath } from "./walkPath";
+import { waitToleranceMin } from "./personality";
 import type { Golfer, Segment } from "./types";
 
 function dist(a: Point, b: Point): number {
@@ -57,6 +58,7 @@ export interface BuiltRound {
   holePar: number[];
   holeStrokes: number[];
   holeNumbers: number[]; // course hole index of each entry above
+  avgDifficulty: number; // 0..100 across the holes they'll play (for preferences)
 }
 
 // Build a golfer's full itinerary across all valid holes, reusing the existing
@@ -74,6 +76,7 @@ export function buildGolferRound(args: {
   const holePar: number[] = [];
   const holeStrokes: number[] = [];
   const holeNumbers: number[] = [];
+  let difficultySum = 0;
 
   let cursor: Point = entry;
 
@@ -124,13 +127,15 @@ export function buildGolferRound(args: {
     holePar.push(par);
     holeStrokes.push(shots + putts);
     holeNumbers.push(i);
+    difficultySum += info.difficultyScore ?? 50;
     cursor = green;
   }
 
   // Walk off to the exit.
   segments.push(...walkSegs(course, cursor, entry, -1, LIVE.pace.interHoleWalkCap));
 
-  return { segments, holePar, holeStrokes, holeNumbers };
+  const avgDifficulty = holePar.length > 0 ? difficultySum / holePar.length : 50;
+  return { segments, holePar, holeStrokes, holeNumbers, avgDifficulty };
 }
 
 export function entryPoint(course: Course): Point {
@@ -149,6 +154,12 @@ function ballArc(from: Point, to: Point, t: number): Point {
   return lerp(from, to, t);
 }
 
+// Show a thought bubble for `ttl` game-minutes (ZKU-114).
+export function setThought(g: Golfer, text: string, ttl = 8): void {
+  g.thought = text;
+  g.thoughtTtl = ttl;
+}
+
 // Advance a single golfer by `dtMin` game-minutes, walking through its segment
 // itinerary. Updates position, ball, running score, and mood. Returns the
 // golfer (mutated in place for the caller's array). `canEnter` is the
@@ -161,15 +172,21 @@ export function advanceGolfer(
   canEnter?: (holeIndex: number, g: Golfer) => boolean
 ): void {
   if (g.finished) return;
+  // Thoughts fade on the game clock, whatever the golfer is doing.
+  if (g.thought) {
+    g.thoughtTtl -= dtMin;
+    if (g.thoughtTtl <= 0) g.thought = null;
+  }
   let remaining = dtMin;
   let guard = 0;
 
   while (remaining > 0 && guard++ < 10_000) {
     if (g.segIndex >= g.segments.length) {
-      finishHole(g, g.segments.length); // score any trailing hole
+      finishHole(g, Infinity); // score any trailing hole
       g.finished = true;
       g.ball = null;
       g.currentHole = -1;
+      if (!g.leftEarly && g.mood >= 0.85) setThought(g, "🤩 What a course!", 12);
       return;
     }
     const seg = g.segments[g.segIndex];
@@ -186,8 +203,14 @@ export function advanceGolfer(
         g.pos = { ...seg.to };
         g.ball = null;
         g.waiting = true;
+        const before = g.waitMinutes;
         g.waitMinutes += remaining;
-        g.mood = clamp01(g.mood + remaining * LIVE.mood.perWaitMinute);
+        // Impatient golfers sour roughly twice as fast as zen ones.
+        const impatience = 1.6 - g.personality.patience;
+        g.mood = clamp01(g.mood + remaining * LIVE.mood.perWaitMinute * impatience);
+        if (before < 10 && g.waitMinutes >= 10) setThought(g, "⏳ Slow play today…");
+        const fuse = waitToleranceMin(g.personality) * 0.75;
+        if (before < fuse && g.waitMinutes >= fuse) setThought(g, "😤 This wait is ridiculous.");
         if (seg.holeIndex >= 0) g.currentHole = seg.holeIndex;
         return;
       }
@@ -219,10 +242,15 @@ export function advanceGolfer(
   }
 }
 
-// Fold all holes with index < upTo that haven't been scored yet into the
-// running scoreToPar, and update mood accordingly.
+// Fold all played holes whose COURSE index is < upTo into the running
+// scoreToPar, and update mood accordingly. (holeNumbers maps played-hole
+// order to course hole indices, so invalid holes in between don't confuse
+// the accounting.)
 function finishHole(g: Golfer, upTo: number, condition = 0.75): void {
-  while (g.scoredHoles < upTo && g.scoredHoles < g.holeStrokes.length) {
+  while (
+    g.scoredHoles < g.holeStrokes.length &&
+    (g.holeNumbers[g.scoredHoles] ?? Infinity) < upTo
+  ) {
     const i = g.scoredHoles;
     const delta = g.holeStrokes[i] - g.holePar[i];
     g.scoreToPar += delta;
@@ -233,7 +261,31 @@ function finishHole(g: Golfer, upTo: number, condition = 0.75): void {
         : LIVE.mood.perStrokeUnderPar * -delta;
     g.mood = clamp01(g.mood + m + (condition - 0.6) * 0.02);
     g.scoredHoles++;
+
+    // Visible reaction to the score (ZKU-114); shabby turf gets its own gripe.
+    if (delta <= -2) setThought(g, "🦅 An eagle!!", 10);
+    else if (delta === -1) setThought(g, "🐦 Birdie!", 8);
+    else if (delta === 2) setThought(g, "😖 Double bogey…", 6);
+    else if (delta > 2) setThought(g, "🤦 Card-wrecker.", 8);
+    else if (condition < 0.4 && i % 3 === 0) setThought(g, "🌾 This turf is shaggy.", 6);
   }
+}
+
+// Patience ran out (ZKU-114): scrap the rest of the round and storm off to the
+// exit. The scorecard is truncated to holes actually played so nothing else
+// folds into the score, and the walk-off ignores tee gates.
+export function abandonRound(g: Golfer, course: Course): void {
+  g.leftEarly = true;
+  g.waiting = false;
+  g.holePar = g.holePar.slice(0, g.scoredHoles);
+  g.holeStrokes = g.holeStrokes.slice(0, g.scoredHoles);
+  g.holeNumbers = g.holeNumbers.slice(0, g.scoredHoles);
+  g.segments = walkSegs(course, g.pos, entryPoint(course), -1, LIVE.pace.interHoleWalkCap);
+  g.segIndex = 0;
+  g.segElapsed = 0;
+  g.ball = null;
+  g.mood = clamp01(g.mood - 0.15);
+  setThought(g, "🤬 Forget it, I'm leaving!", 10);
 }
 
 function clamp01(x: number): number {
