@@ -30,6 +30,8 @@ import { COURSE_WIDTH, COURSE_HEIGHT } from "./game/models/constants";
 import { applyAction } from "./core/reducer";
 import type { Action } from "./core/actions";
 import { DEBUG_PERF, logReducerDispatch, logEvaluateHole } from "./utils/performance";
+import { useLiveSimulation } from "./hooks/useLiveSimulation";
+import { LiveControls } from "./ui/LiveControls";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -119,6 +121,32 @@ export default function App() {
 
   // Audio system
   const audio = useAudio();
+
+  // Real-time "living course" simulation: golfers arrive, play, and pay live.
+  const live = useLiveSimulation({
+    enabled: screen === "game" && !world.isBankrupt,
+    course,
+    world,
+    setWorld,
+    setCourse,
+    onDayCommitted: (result) => {
+      setHistory((h) => [
+        ...h.slice(-19),
+        {
+          visitors: result.rounds,
+          revenue: result.revenue,
+          costs: result.costs,
+          profit: result.profit,
+          avgSatisfaction: result.avgSatisfaction,
+          reputationDelta: result.reputationDelta,
+          visitorNoise: 0,
+        } as WeekResult,
+      ]);
+    },
+    onCashTick: () => {
+      if (soundEnabled) void sound?.playCashTick(soundEnabled);
+    },
+  });
 
   const canvasPaneRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
@@ -1077,6 +1105,8 @@ export default function App() {
                 showFixOverlay={showFixOverlay}
                 failingCorridorSegments={failingCorridorSegments}
                 showObstacles={showObstacles}
+                golfersRef={live.golfersRef}
+                liveActive={live.liveActive}
                 onCameraUpdate={(camera) => {
                   holeEditCameraManualRef.current = true;
                   setHoleEditCamera(camera);
@@ -1131,6 +1161,13 @@ export default function App() {
                 }}
               />
             )}
+            <LiveControls
+              status={live.status}
+              speed={live.speed}
+              onSetSpeed={live.setSpeed}
+              cash={world.cash}
+              reputation={world.reputation}
+            />
           </div>
         </div>
 

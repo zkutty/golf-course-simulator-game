@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test": "vitest run",
     "tune": "vite build --ssr src/game/tuning/tuneCli.ts --outDir tune-dist --emptyOutDir --minify false && node tune-dist/tuneCli.js"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "globals": "^16.5.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^4.1.10"
   }
 }

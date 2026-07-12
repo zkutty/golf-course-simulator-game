@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
+import type { GolferRenderData } from "../game/live/types";
 import type { CameraState } from "../game/render/camera";
 import { screenToWorld as cameraScreenToWorld, applyCameraTransform } from "../game/render/camera";
-import { getObstacleSprite, preloadObstacleSprites } from "../render/iconSprites";
+import { getObstacleSprite } from "../render/iconSprites";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { perfProfiler } from "../utils/performanceProfiler";
 
@@ -616,6 +617,8 @@ export function CanvasCourse(props: {
   failingCorridorSegments?: Point[]; // Failing corridor segments for overlay
   onCameraUpdate?: (camera: CameraState) => void; // Callback to update hole edit camera
   showObstacles?: boolean; // Show/hide obstacles layer (default true)
+  golfersRef?: React.MutableRefObject<GolferRenderData[]>; // live golfers (read per-frame)
+  liveActive?: boolean; // keep the render loop running for the live sim
 }) {
   const {
     course,
@@ -642,6 +645,8 @@ export function CanvasCourse(props: {
     failingCorridorSegments = [],
     onCameraUpdate,
     showObstacles = true,
+    golfersRef,
+    liveActive = false,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
@@ -1653,6 +1658,54 @@ export function CanvasCourse(props: {
       }
     }
 
+    function drawGolfers(timeMs: number) {
+      const list = golfersRef?.current;
+      if (!list || list.length === 0) return;
+      const r = Math.max(2.5, TILE * 0.28); // golfer body radius
+      const ballR = Math.max(1.2, TILE * 0.12);
+      for (const g of list) {
+        const cx = g.x * TILE + TILE / 2;
+        const cy = g.y * TILE + TILE / 2;
+
+        // soft shadow
+        ctx2.save();
+        ctx2.globalAlpha = 0.22;
+        ctx2.fillStyle = "rgba(0,0,0,0.9)";
+        ctx2.beginPath();
+        ctx2.ellipse(cx, cy + r * 0.7, r * 0.9, r * 0.45, 0, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.restore();
+
+        // body dot, tinted by archetype, ringed by mood (green=happy, red=unhappy)
+        const moodHue = Math.round(120 * Math.max(0, Math.min(1, g.mood)));
+        ctx2.save();
+        ctx2.fillStyle = g.color;
+        ctx2.strokeStyle = `hsl(${moodHue}, 80%, 45%)`;
+        ctx2.lineWidth = Math.max(1, TILE * 0.08);
+        ctx2.beginPath();
+        ctx2.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx2.fill();
+        ctx2.stroke();
+        ctx2.restore();
+
+        // ball in flight, with a little visual hop
+        if (g.ballX != null && g.ballY != null) {
+          const bx = g.ballX * TILE + TILE / 2;
+          const by = g.ballY * TILE + TILE / 2;
+          const hop = Math.sin(((timeMs * 0.006) % Math.PI)) * TILE * 0.4;
+          ctx2.save();
+          ctx2.fillStyle = "rgba(255,255,255,0.95)";
+          ctx2.strokeStyle = "rgba(0,0,0,0.4)";
+          ctx2.lineWidth = 1;
+          ctx2.beginPath();
+          ctx2.arc(bx, by - hop, ballR, 0, Math.PI * 2);
+          ctx2.fill();
+          ctx2.stroke();
+          ctx2.restore();
+        }
+      }
+    }
+
     function drawFlags(timeMs: number) {
       // Flags should add charm in COZY mode; keep them readable at different tile sizes.
       const flutter = animationsEnabled && !showGridOverlays;
@@ -1870,6 +1923,10 @@ export function CanvasCourse(props: {
           lastInstrumentationTimeRef.current = now;
         }
       
+      // Keep the overlay repainting every frame while the live sim is running
+      // so golfers/balls animate (base terrain stays cached, so this is cheap).
+      if (liveActive) overlayDirtyRef.current = true;
+
       // Update camera animations (focus / flyover)
       const cam = camRef.current;
       const stepAnim = (a: typeof camAnimRef.current) => {
@@ -1910,6 +1967,7 @@ export function CanvasCourse(props: {
         // Nothing to update, skip render
         const shouldContinue =
           animationsEnabled ||
+          liveActive ||
           camAnimRef.current != null ||
           flyoverRef.current != null ||
           (panStateRef.current?.active ?? false) ||
@@ -2016,6 +2074,13 @@ export function CanvasCourse(props: {
           //   });
           // }
 
+          // Obstacle rendering is currently disabled for performance; keep the
+          // draw routine referenced so it stays available behind the flag.
+          void drawObstacle;
+
+          // living golfers overlay (real-time sim)
+          perfProfiler.measure('render.overlays.golfers', () => drawGolfers(timeMs));
+
           // greens as targets: small flags (flutter in COZY)
           perfProfiler.measure('render.overlays.flags', () => drawFlags(timeMs));
 
@@ -2050,6 +2115,7 @@ export function CanvasCourse(props: {
 
         const shouldContinue =
           animationsEnabled ||
+          liveActive ||
           camAnimRef.current != null ||
           flyoverRef.current != null ||
           (panStateRef.current?.active ?? false) ||
@@ -2066,7 +2132,7 @@ export function CanvasCourse(props: {
     // Mark terrain dirty when course changes
     terrainDirtyRef.current = true;
     courseDirtyRef.current = true;
-    if (animationsEnabled) rafRef.current = requestAnimationFrame(render);
+    if (animationsEnabled || liveActive) rafRef.current = requestAnimationFrame(render);
     else render(performance.now());
 
     return () => {
@@ -2101,6 +2167,7 @@ export function CanvasCourse(props: {
     failingCorridorSegments,
     cameraState,
     showObstacles,
+    liveActive,
   ]);
 
   // Focus camera when active hole changes or gets tee/green set (cinematic selection)
