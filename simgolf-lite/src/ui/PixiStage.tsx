@@ -128,7 +128,8 @@ export interface PixiStageProps {
   animationsEnabled: boolean;
   flyoverNonce: number;
   showShotPlan: boolean;
-  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
+  sculptRadius?: number;
   wizardStep: "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
   draftTee: Point | null;
   draftGreen: Point | null;
@@ -907,14 +908,29 @@ export function PixiStage(props: PixiStageProps) {
         if (highlight) {
           highlight.clear();
           if (hover) {
-            const top = worldToIso(hover.x + 0.5, hover.y, getElevation(course, hover.x, hover.y), rotation);
-            highlight.poly([
-              top.x, top.y,
-              top.x + TILE_W / 2, top.y + TILE_H / 2,
-              top.x, top.y + TILE_H,
-              top.x - TILE_W / 2, top.y + TILE_H / 2,
-            ]);
-            highlight.stroke({ width: 2, color: 0xffffff, alpha: 0.9 });
+            const outlineTile = (tx: number, ty: number, alpha: number) => {
+              const top = worldToIso(tx + 0.5, ty, getElevation(course, tx, ty), rotation);
+              highlight.poly([
+                top.x, top.y,
+                top.x + TILE_W / 2, top.y + TILE_H / 2,
+                top.x, top.y + TILE_H,
+                top.x - TILE_W / 2, top.y + TILE_H / 2,
+              ]);
+              highlight.stroke({ width: 2, color: 0xffffff, alpha });
+            };
+            if (editorMode === "SCULPT" && props.sculptRadius && props.sculptRadius > 1) {
+              // Brush footprint preview (matches brushFootprint in sculpt.ts).
+              const r = props.sculptRadius - 0.5;
+              for (let ty = hover.y - props.sculptRadius; ty <= hover.y + props.sculptRadius; ty++) {
+                for (let tx = hover.x - props.sculptRadius; tx <= hover.x + props.sculptRadius; tx++) {
+                  if (tx < 0 || ty < 0 || tx >= course.width || ty >= course.height) continue;
+                  const d2 = (tx - hover.x) ** 2 + (ty - hover.y) ** 2;
+                  if (d2 <= r * r + 1e-9) outlineTile(tx, ty, tx === hover.x && ty === hover.y ? 0.9 : 0.45);
+                }
+              }
+            } else {
+              outlineTile(hover.x, hover.y, 0.9);
+            }
           }
         }
 
@@ -979,7 +995,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform

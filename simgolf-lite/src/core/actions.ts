@@ -41,7 +41,7 @@ export type EconomyMutationAction =
 
 // UI-only actions (do not affect versions)
 export type UIAction =
-  | { type: "SET_MODE"; mode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" }
+  | { type: "SET_MODE"; mode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" }
   | { type: "SET_ACTIVE_HOLE"; holeIndex: number }
   | { type: "SET_BRUSH"; terrain: Terrain };
 

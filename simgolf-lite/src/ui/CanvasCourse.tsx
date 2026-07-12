@@ -604,7 +604,7 @@ export function CanvasCourse(props: {
   animationsEnabled: boolean;
   flyoverNonce: number;
   showShotPlan: boolean;
-  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
   wizardStep: "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
   draftTee: Point | null;
   draftGreen: Point | null;

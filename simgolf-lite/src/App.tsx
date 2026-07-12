@@ -8,7 +8,8 @@ import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import type { Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, loadGame, resetSave, saveGame } from "./utils/save";
-import { computeTerrainChangeCost } from "./game/models/terrainEconomics";
+import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
+import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
 import { createSoundPlayer } from "./utils/sound";
@@ -33,7 +34,7 @@ import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
 import { LiveControls } from "./ui/LiveControls";
 
-type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
+type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
 type ViewMode = "global" | "hole";
 
@@ -78,6 +79,8 @@ export default function App() {
   const [draftTee, setDraftTee] = useState<Point | null>(null);
   const [draftGreen, setDraftGreen] = useState<Point | null>(null);
   const [obstacleType, setObstacleType] = useState<ObstacleType>("tree");
+  const [sculptBrush, setSculptBrush] = useState<SculptBrush>("raise");
+  const [sculptRadius, setSculptRadius] = useState<SculptRadius>(1);
 
   const [capital, setCapital] = useState(() => ({
     spent: 0,
@@ -767,6 +770,21 @@ export default function App() {
       }
     }
     
+    if (editorMode === "SCULPT") {
+      if (x < 0 || y < 0 || x >= course.width || y >= course.height) return;
+      const deltas = computeSculptDeltas(course, x, y, sculptBrush, sculptRadius);
+      if (deltas.length === 0) return;
+      const cost = sculptSteps(deltas) * ELEVATION_COST_PER_STEP;
+      if (cost > world.cash) {
+        setPaintError(`Not enough cash for earthworks ($${cost.toLocaleString()} needed).`);
+        return;
+      }
+      setPaintError(null);
+      dispatch({ type: "SCULPT_TILES", deltas });
+      if (soundEnabled) void sound?.playBrush(soundEnabled);
+      return;
+    }
+
     if (editorMode === "PAINT") {
       applyTerrainAt(x, y, selected);
       return;
@@ -1137,6 +1155,7 @@ export default function App() {
                 showObstacles={showObstacles}
                 golfersRef={live.golfersRef}
                 liveActive={live.liveActive}
+                sculptRadius={sculptRadius}
                 onCameraUpdate={(camera) => {
                   holeEditCameraManualRef.current = true;
                   setHoleEditCamera(camera);
@@ -1304,6 +1323,10 @@ export default function App() {
         onResetSave={onResetSave}
         simulate={simulate}
         paintError={paintError}
+        sculptBrush={sculptBrush}
+        setSculptBrush={setSculptBrush}
+        sculptRadius={sculptRadius}
+        setSculptRadius={setSculptRadius}
         viewMode={viewMode}
         setViewMode={setViewMode}
         animationsEnabled={animationsEnabled}
