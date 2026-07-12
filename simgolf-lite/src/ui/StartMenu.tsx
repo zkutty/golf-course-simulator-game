@@ -165,7 +165,7 @@ export function StartMenu(props: StartMenuProps) {
           </div>
 
           <div style={{ textAlign: "center", marginTop: 26, fontSize: 12, color: "rgba(255,255,255,0.65)", textShadow: "0 1px 3px rgba(0, 0, 0, 0.3)" }}>
-            v0.1 • A cozy golf management experience
+            v{__APP_VERSION__} • A cozy golf management experience
           </div>
         </div>
       </div>
