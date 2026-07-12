@@ -2,9 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Course, World } from "../game/models/types";
 import { LIVE, type SpeedName } from "../game/live/liveConfig";
 import {
-  avgSatisfactionSoFar,
   createLiveState,
   liveRenderData,
+  reconcileGolfers,
+  roundReactions,
   stepLive,
 } from "../game/live/simulation";
 import { commitDay } from "../game/live/commitDay";
@@ -85,6 +86,26 @@ export function useLiveSimulation(args: {
     onCashRef.current = onCashTick;
   });
 
+  // Detect course *geometry* edits (terrain/holes/obstacles) and re-plan any
+  // golfers already on the course so they don't walk a stale itinerary. The
+  // reducer replaces these arrays on every edit, while daily condition updates
+  // keep the same references — so identity comparison isolates real edits.
+  const geomRef = useRef({ tiles: course.tiles, holes: course.holes, obstacles: course.obstacles });
+  useEffect(() => {
+    const prev = geomRef.current;
+    const changed =
+      prev.tiles !== course.tiles ||
+      prev.holes !== course.holes ||
+      prev.obstacles !== course.obstacles;
+    if (!changed) return;
+    geomRef.current = { tiles: course.tiles, holes: course.holes, obstacles: course.obstacles };
+    const live = liveRef.current;
+    if (enabled && live && live.golfers.length > 0) {
+      reconcileGolfers(live, course);
+      golfersRef.current = liveRenderData(live);
+    }
+  }, [enabled, course]);
+
   const flushCash = useCallback(() => {
     const d = pendingCashRef.current;
     if (d === 0) return;
@@ -110,15 +131,12 @@ export function useLiveSimulation(args: {
   // already banked live), then roll the calendar and start the next day.
   const finishDay = useCallback((live: LiveState) => {
     flushCash();
-    const rounds = live.roundsFinished;
     const revenue = live.greenFeeCollected;
-    const avgSat = avgSatisfactionSoFar(live);
     const { result } = commitDay({
       course: courseRef.current,
       world: worldRef.current,
-      rounds,
       revenue,
-      avgSatisfaction: avgSat,
+      reactions: roundReactions(live),
     });
     result.dayIndex = live.dayIndex;
 

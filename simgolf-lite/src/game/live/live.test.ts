@@ -4,7 +4,14 @@ import { DEFAULT_WORLD } from "../models/defaults";
 import { getGolferProfile } from "../sim/golferProfiles";
 import { scoreCourseHoles } from "../sim/holes";
 import { buildGolferRound, advanceGolfer, entryPoint } from "./golfer";
-import { createLiveState, stepLive, avgSatisfactionSoFar } from "./simulation";
+import {
+  createLiveState,
+  stepLive,
+  avgSatisfactionSoFar,
+  roundReactions,
+  reconcileGolfers,
+} from "./simulation";
+import type { RoundReactions } from "./types";
 import { planDay, plannedGolfersForDay } from "./spawn";
 import { archetypeAppeal, courseProfile } from "./demand";
 import { commitDay } from "./commitDay";
@@ -277,19 +284,100 @@ describe("stepLive", () => {
   });
 });
 
-describe("commitDay", () => {
-  it("applies costs and nudges reputation toward satisfaction", () => {
+describe("commitDay reputation from real reactions (ZKU-116)", () => {
+  function reactions(over: Partial<RoundReactions>): RoundReactions {
+    return {
+      rounds: 20,
+      avgSatisfaction: 70,
+      promoters: 0,
+      detractors: 0,
+      willReturnRate: 0.5,
+      ...over,
+    };
+  }
+
+  it("applies costs and moves reputation with the net-promoter balance", () => {
     const course = makeTestCourse();
     const world: World = { ...DEFAULT_WORLD, reputation: 40 };
-    const highSat = commitDay({ course, world, rounds: 20, revenue: 20 * 65, avgSatisfaction: 90 });
-    expect(highSat.result.costs).toBeGreaterThan(0);
-    expect(highSat.result.reputationDelta).toBeGreaterThan(0);
 
-    const lowSat = commitDay({ course, world, rounds: 20, revenue: 20 * 65, avgSatisfaction: 20 });
-    expect(lowSat.result.reputationDelta).toBeLessThan(0);
+    const happy = commitDay({
+      course,
+      world,
+      revenue: 20 * 65,
+      reactions: reactions({ promoters: 15, detractors: 2, willReturnRate: 0.8 }),
+    });
+    expect(happy.result.costs).toBeGreaterThan(0);
+    expect(happy.result.reputationDelta).toBeGreaterThan(0);
+
+    const unhappy = commitDay({
+      course,
+      world,
+      revenue: 20 * 65,
+      reactions: reactions({ promoters: 1, detractors: 16, willReturnRate: 0.1 }),
+    });
+    expect(unhappy.result.reputationDelta).toBeLessThan(0);
+    expect(unhappy.result.detractors).toBe(16);
 
     // No rounds => no reputation movement.
-    const noPlay = commitDay({ course, world, rounds: 0, revenue: 0, avgSatisfaction: 70 });
+    const noPlay = commitDay({
+      course,
+      world,
+      revenue: 0,
+      reactions: reactions({ rounds: 0, promoters: 0, detractors: 0 }),
+    });
     expect(noPlay.result.reputationDelta).toBe(0);
+  });
+
+  it("aggregates reactions from a simulated day", () => {
+    const course = makeTestCourse();
+    const world: World = { ...DEFAULT_WORLD };
+    const live = createLiveState(course, world, 0);
+    let guard = 0;
+    while (!live.dayOver && guard++ < 100_000) stepLive(live, course, 1);
+
+    const r = roundReactions(live);
+    expect(r.rounds).toBe(live.roundsFinished);
+    expect(r.promoters + r.detractors).toBeLessThanOrEqual(r.rounds);
+    expect(r.willReturnRate).toBeGreaterThanOrEqual(0);
+    expect(r.willReturnRate).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("reconcileGolfers on mid-round edits (ZKU-136)", () => {
+  it("re-plans in-progress golfers and still finishes a coherent round", () => {
+    const course = makeTestCourse();
+    const world: World = { ...DEFAULT_WORLD };
+    const live = createLiveState(course, world, 0);
+
+    // Run until at least one golfer is out on the course.
+    let guard = 0;
+    while (live.golfers.length === 0 && !live.dayOver && guard++ < 100_000) {
+      stepLive(live, course, 1);
+    }
+    expect(live.golfers.length).toBeGreaterThan(0);
+
+    const g = live.golfers[0];
+    const scoredBefore = g.scoredHoles;
+    const parBefore = g.holePar.slice(0, scoredBefore);
+
+    // Edit the course: move the green. Then reconcile.
+    const edited: Course = {
+      ...course,
+      tiles: course.tiles.slice(),
+      holes: course.holes.map((h) => ({ ...h, green: { x: 40, y: 6 } })),
+    };
+    reconcileGolfers(live, edited);
+
+    // Already-scored holes are preserved; the golfer resets onto the new plan.
+    expect(g.holePar.slice(0, scoredBefore)).toEqual(parBefore);
+    expect(g.segIndex).toBe(0);
+    expect(g.ball).toBeNull();
+    expect(live.reconcileEpoch).toBe(1);
+
+    // The round still completes and scores every planned hole.
+    guard = 0;
+    while (!g.finished && guard++ < 100_000) advanceGolfer(g, 2, edited.condition);
+    expect(g.finished).toBe(true);
+    expect(g.scoredHoles).toBe(g.holeStrokes.length);
   });
 });

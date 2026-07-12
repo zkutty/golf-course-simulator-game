@@ -61,4 +61,13 @@ export const LIVE = {
     min: 0,
     max: 1,
   },
+
+  // Thresholds that turn a finished golfer's mood into a discrete reaction,
+  // aggregated into reputation (ZKU-116).
+  reactions: {
+    promoterMood: 0.8, // at/above this they'd recommend the course
+    detractorMood: 0.45, // at/below this they leave disappointed
+    returnMood: 0.55, // at/above this (after a patience nudge) they'd return
+    returnPatienceNudge: 0.1, // patient golfers forgive a so-so round
+  },
 } as const;

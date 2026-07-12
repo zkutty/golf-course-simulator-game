@@ -1,7 +1,7 @@
 import type { Course, World } from "../models/types";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { BALANCE } from "../balance/balanceConfig";
-import type { DayResult } from "./types";
+import type { DayResult, RoundReactions } from "./types";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -16,16 +16,17 @@ const DAYS_PER_WEEK = 7;
 //
 // Green fees are collected live during the day (already added to world.cash by
 // the sim loop), so this only applies the day's COSTS, tax, condition wear vs.
-// maintenance recovery, and a reputation nudge from the real golfers' average
-// satisfaction. It mirrors tickWeek's formulas at a per-day scale.
+// maintenance recovery, and a reputation move driven by the real golfers'
+// observed reactions. Costs mirror tickWeek's formulas at a per-day scale.
 export function commitDay(args: {
   course: Course;
   world: World;
-  rounds: number;
   revenue: number; // green fees already banked today
-  avgSatisfaction: number; // 0..100 from actual finished golfers
+  reactions: RoundReactions; // real observed reactions from finished rounds
 }): { world: World; course: Course; result: DayResult } {
-  const { course, world, rounds, revenue, avgSatisfaction } = args;
+  const { course, world, revenue, reactions } = args;
+  const rounds = reactions.rounds;
+  const avgSatisfaction = reactions.avgSatisfaction;
 
   // ---- Costs (per-day slice of weekly overhead + per-round variable) ----
   const staffCost = (BALANCE.ops.staffCostPerLevel * world.staffLevel) / DAYS_PER_WEEK;
@@ -69,12 +70,15 @@ export function commitDay(args: {
   );
   const nextCondition = clamp01(course.condition - wear + maintEffect);
 
-  // ---- Reputation: nudged by the real average satisfaction (per day) ----
-  const raw = (avgSatisfaction - BALANCE.reputation.satPivot) / BALANCE.reputation.satDivisor;
-  const shaped =
-    raw >= 0 ? raw * BALANCE.reputation.recoveryMult : raw * BALANCE.reputation.declineMult;
+  // ---- Reputation: driven by the day's real net-promoter balance ----
+  // Net promoter score of the golfers who actually finished, nudged by how many
+  // intend to return. Replaces the old abstract satisfaction-pivot formula.
+  const nps = rounds > 0 ? (reactions.promoters - reactions.detractors) / rounds : 0; // -1..1
+  const returnBias = (reactions.willReturnRate - 0.5) * 0.5; // -0.25..0.25
+  const sentiment = clamp(nps + returnBias, -1, 1);
   const dailyRepCap = Math.max(1, BALANCE.reputation.capPerWeek / DAYS_PER_WEEK);
-  const repDelta = rounds > 0 ? clamp(shaped, -dailyRepCap, dailyRepCap) : 0;
+  const repDelta =
+    rounds > 0 ? clamp(sentiment * BALANCE.reputation.npsGain, -dailyRepCap, dailyRepCap) : 0;
   const nextRep = clamp(world.reputation + repDelta, 0, 100);
 
   const nextCashRaw = world.cash - costs; // revenue already banked live
@@ -98,6 +102,9 @@ export function commitDay(args: {
       avgSatisfaction,
       reputationDelta: repDelta,
       conditionDelta: nextCondition - course.condition,
+      promoters: reactions.promoters,
+      detractors: reactions.detractors,
+      willReturnRate: reactions.willReturnRate,
     },
   };
 }

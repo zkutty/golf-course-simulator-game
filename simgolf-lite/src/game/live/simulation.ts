@@ -1,13 +1,14 @@
-import type { Course, World } from "../models/types";
+import type { Course, Point, World } from "../models/types";
 import { mulberry32 } from "../../utils/rng";
 import { getGolferProfile } from "../sim/golferProfiles";
+import { scoreCourseHoles } from "../sim/holes";
 import { ARCHETYPES, golferName } from "./archetypes";
 import { rollPersonality, solverProfileForSkill } from "./personality";
-import { buildGolferRound, entryPoint } from "./golfer";
+import { buildGolferRound, entryPoint, planFromHole } from "./golfer";
 import { advanceGolfer } from "./golfer";
 import { planDay } from "./spawn";
 import { LIVE } from "./liveConfig";
-import type { Arrival, Golfer, GolferRenderData, LiveState } from "./types";
+import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } from "./types";
 
 export function createLiveState(
   course: Course,
@@ -27,8 +28,24 @@ export function createLiveState(
     roundsStarted: 0,
     roundsFinished: 0,
     satisfactionSum: 0,
+    promoters: 0,
+    detractors: 0,
+    willReturnCount: 0,
+    reconcileEpoch: 0,
     dayOver: false,
     seed,
+  };
+}
+
+// Turn a finished golfer's observed round into a discrete reaction. Kept here
+// (not on the golfer) so it reads only final state and stays deterministic.
+function classifyReaction(g: Golfer): { promoter: boolean; detractor: boolean; willReturn: boolean } {
+  const r = LIVE.reactions;
+  const returnScore = g.mood + (g.personality.patience - 0.5) * r.returnPatienceNudge;
+  return {
+    promoter: g.mood >= r.promoterMood,
+    detractor: g.mood <= r.detractorMood,
+    willReturn: returnScore >= r.returnMood,
   };
 }
 
@@ -112,6 +129,10 @@ export function stepLive(
     if (g.finished) {
       state.satisfactionSum += g.mood * 100;
       state.roundsFinished++;
+      const reaction = classifyReaction(g);
+      if (reaction.promoter) state.promoters++;
+      if (reaction.detractor) state.detractors++;
+      if (reaction.willReturn) state.willReturnCount++;
       finishedThisStep++;
     } else {
       stillPlaying.push(g);
@@ -147,4 +168,70 @@ export function liveRenderData(state: LiveState): GolferRenderData[] {
 export function avgSatisfactionSoFar(state: LiveState): number {
   if (state.roundsFinished === 0) return LIVE.mood.start * 100;
   return state.satisfactionSum / state.roundsFinished;
+}
+
+// Aggregate the day's real finished-round reactions for the reputation model.
+export function roundReactions(state: LiveState): RoundReactions {
+  const rounds = state.roundsFinished;
+  return {
+    rounds,
+    avgSatisfaction: avgSatisfactionSoFar(state),
+    promoters: state.promoters,
+    detractors: state.detractors,
+    willReturnRate: rounds > 0 ? state.willReturnCount / rounds : 0,
+  };
+}
+
+// Index of the n-th (0-based) currently-valid, complete hole, or -1 if there
+// are fewer than n+1 of them. Used to find the hole a golfer should resume on.
+function nthValidHoleIndex(course: Course, n: number): number {
+  const summary = scoreCourseHoles(course);
+  let count = 0;
+  for (let i = 0; i < course.holes.length; i++) {
+    const hole = course.holes[i];
+    const info = summary.holes[i];
+    if (!hole.tee || !hole.green || !info?.isComplete || !info?.isValid) continue;
+    if (count === n) return i;
+    count++;
+  }
+  return -1;
+}
+
+// Re-plan every in-progress golfer against an edited course (ZKU-136).
+//
+// Holes already scored are kept as-is; the golfer restarts their current hole
+// on the new terrain, walking from wherever they stand to that hole's tee. This
+// freezes committed history but stops golfers from walking a stale itinerary
+// (e.g. flying over freshly-painted water) for the rest of the round.
+export function reconcileGolfers(state: LiveState, course: Course): void {
+  state.reconcileEpoch++;
+  const exit = entryPoint(course);
+  for (const g of state.golfers) {
+    if (g.finished) continue;
+    // The hole to resume on is the next one not yet folded into the score.
+    const startHole = nthValidHoleIndex(course, g.scoredHoles);
+    if (startHole < 0) continue; // nothing left to play; let them walk off
+
+    const rng = mulberry32(state.seed + g.id * 911 + state.reconcileEpoch * 17);
+    const profile = getGolferProfile(solverProfileForSkill(g.personality.skill), course);
+    const from: Point = { x: g.pos.x, y: g.pos.y };
+    const replanned = planFromHole({
+      course,
+      profile,
+      personality: g.personality,
+      rng,
+      startHole,
+      cursor: from,
+      exit,
+    });
+
+    // Splice: keep scored holes, replace the unplayed tail with the new plan.
+    g.holePar = g.holePar.slice(0, g.scoredHoles).concat(replanned.holePar);
+    g.holeStrokes = g.holeStrokes.slice(0, g.scoredHoles).concat(replanned.holeStrokes);
+    g.segments = replanned.segments;
+    g.segIndex = 0;
+    g.segElapsed = 0;
+    g.ball = null;
+    g.currentHole = startHole;
+  }
 }

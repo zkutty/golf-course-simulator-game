@@ -32,7 +32,8 @@ export interface BuiltRound {
 }
 
 // Build a golfer's full itinerary across all valid holes, reusing the existing
-// Dijkstra shot-planner to decide where each shot lands.
+// Dijkstra shot-planner to decide where each shot lands. Starts from the entry
+// point and walks off to the same exit at the end.
 export function buildGolferRound(args: {
   course: Course;
   profile: GolferProfile;
@@ -40,15 +41,39 @@ export function buildGolferRound(args: {
   rng: () => number;
   personality: Personality;
 }): BuiltRound {
-  const { course, profile, entry, rng, personality } = args;
+  return planFromHole({
+    course: args.course,
+    profile: args.profile,
+    personality: args.personality,
+    rng: args.rng,
+    startHole: 0,
+    cursor: args.entry,
+    exit: args.entry,
+  });
+}
+
+// Plan an itinerary for the valid holes from `startHole` onward, beginning at
+// `cursor` (the golfer's current position) and ending with a walk-off to `exit`.
+// Used both to build a fresh round (from the entry, hole 0) and to re-plan the
+// remainder of a round in progress when the course is edited (ZKU-136).
+export function planFromHole(args: {
+  course: Course;
+  profile: GolferProfile;
+  personality: Personality;
+  rng: () => number;
+  startHole: number;
+  cursor: Point;
+  exit: Point;
+}): BuiltRound {
+  const { course, profile, rng, personality, startHole, exit } = args;
   const summary = scoreCourseHoles(course);
   const segments: Segment[] = [];
   const holePar: number[] = [];
   const holeStrokes: number[] = [];
 
-  let cursor: Point = entry;
+  let cursor: Point = args.cursor;
 
-  for (let i = 0; i < course.holes.length; i++) {
+  for (let i = Math.max(0, startHole); i < course.holes.length; i++) {
     const hole = course.holes[i];
     const info = summary.holes[i];
     if (!hole.tee || !hole.green || !info?.isComplete || !info?.isValid) continue;
@@ -97,7 +122,7 @@ export function buildGolferRound(args: {
   }
 
   // Walk off to the exit.
-  segments.push(walkSeg(cursor, entry, -1, LIVE.pace.interHoleWalkCap));
+  segments.push(walkSeg(cursor, exit, -1, LIVE.pace.interHoleWalkCap));
 
   return { segments, holePar, holeStrokes };
 }
@@ -128,7 +153,8 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
 
   while (remaining > 0 && guard++ < 10_000) {
     if (g.segIndex >= g.segments.length) {
-      finishHole(g, g.segments.length); // score any trailing hole
+      // Fold any hole whose segments we just walked off the end of.
+      while (g.scoredHoles < g.holeStrokes.length) scoreNextHole(g, condition);
       g.finished = true;
       g.ball = null;
       g.currentHole = -1;
@@ -145,9 +171,11 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
       g.segElapsed = 0;
       g.segIndex++;
       // Detect hole completion: we just left a real hole for a different one.
+      // Each boundary scores exactly the next unscored hole, so the fold stays
+      // correct even across invalid-hole gaps or a mid-round re-plan (ZKU-136).
       const next = g.segments[g.segIndex];
       if (seg.holeIndex >= 0 && (!next || next.holeIndex !== seg.holeIndex)) {
-        finishHole(g, seg.holeIndex + 1, condition);
+        scoreNextHole(g, condition);
       }
       continue;
     }
@@ -168,24 +196,23 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
   }
 }
 
-// Fold all holes with index < upTo that haven't been scored yet into the
-// running scoreToPar, and update mood accordingly.
-function finishHole(g: Golfer, upTo: number, condition = 0.75): void {
+// Fold the next unscored hole into the running score and mood. Called once per
+// hole boundary, so exactly one hole is scored per completed hole.
+function scoreNextHole(g: Golfer, condition: number): void {
+  if (g.scoredHoles >= g.holeStrokes.length) return;
+  const i = g.scoredHoles;
+  const delta = g.holeStrokes[i] - g.holePar[i];
+  g.scoreToPar += delta;
+  g.strokes += g.holeStrokes[i];
   // Patient golfers shrug off a bad hole; impatient ones sour faster. Only the
   // downside is dampened — a birdie lifts everyone equally.
   const patienceRelief = 1 - g.personality.patience * 0.5; // 0.5 .. 1.0
-  while (g.scoredHoles < upTo && g.scoredHoles < g.holeStrokes.length) {
-    const i = g.scoredHoles;
-    const delta = g.holeStrokes[i] - g.holePar[i];
-    g.scoreToPar += delta;
-    g.strokes += g.holeStrokes[i];
-    const m =
-      delta > 0
-        ? LIVE.mood.perStrokeOverPar * delta * patienceRelief
-        : LIVE.mood.perStrokeUnderPar * -delta;
-    g.mood = clamp01(g.mood + m + (condition - 0.6) * 0.02);
-    g.scoredHoles++;
-  }
+  const m =
+    delta > 0
+      ? LIVE.mood.perStrokeOverPar * delta * patienceRelief
+      : LIVE.mood.perStrokeUnderPar * -delta;
+  g.mood = clamp01(g.mood + m + (condition - 0.6) * 0.02);
+  g.scoredHoles++;
 }
 
 function clamp01(x: number): number {

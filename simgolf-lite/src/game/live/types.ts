@@ -66,8 +66,23 @@ export interface LiveState {
   roundsStarted: number;
   roundsFinished: number;
   satisfactionSum: number; // sum of finished golfers' mood*100
+  // Real reactions aggregated from finished rounds (ZKU-116).
+  promoters: number; // delighted golfers who'd recommend the course
+  detractors: number; // disappointed golfers who'd warn others off
+  willReturnCount: number; // golfers intending to come back
+  reconcileEpoch: number; // bumped when a mid-round re-plan runs (ZKU-136)
   dayOver: boolean;
   seed: number;
+}
+
+// Aggregated reactions from the golfers who actually finished a round today.
+// Drives reputation instead of an abstract satisfaction formula (ZKU-116).
+export interface RoundReactions {
+  rounds: number;
+  avgSatisfaction: number; // 0..100
+  promoters: number;
+  detractors: number;
+  willReturnRate: number; // 0..1 share intending to return
 }
 
 // Minimal per-golfer data the renderer needs each frame. Read from a ref so
@@ -93,4 +108,8 @@ export interface DayResult {
   avgSatisfaction: number; // 0..100
   reputationDelta: number;
   conditionDelta: number;
+  // Real-reaction detail behind the reputation move (ZKU-116).
+  promoters: number;
+  detractors: number;
+  willReturnRate: number; // 0..1
 }
