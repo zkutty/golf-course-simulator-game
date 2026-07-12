@@ -31,6 +31,7 @@ export function HoleMinimap({
   onCenter,
 }: HoleMinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const transformRef = useRef<{ minX: number; minY: number; scale: number; offsetX: number; offsetY: number } | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -117,7 +118,7 @@ export function HoleMinimap({
     }
 
     // Store transform for click handling
-    (canvas as any).__minimapTransform = { minX, minY, scale, offsetX, offsetY };
+    transformRef.current = { minX, minY, scale, offsetX, offsetY };
   }, [course, hole, cameraState, tileSize]);
 
   const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -128,7 +129,7 @@ export function HoleMinimap({
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    const transform = (canvas as any).__minimapTransform;
+    const transform = transformRef.current;
     if (!transform) return;
 
     // Convert screen coords to world coords

@@ -111,7 +111,7 @@ export function loadGame(): { course: Course; world: World; history?: WeekResult
         (parsed.course as Course).holes?.map((h, i) => ({
           ...DEFAULT_COURSE.holes[i],
           ...h,
-          parMode: (h as any).parMode ?? "AUTO",
+          parMode: h.parMode ?? "AUTO",
         })) ?? DEFAULT_COURSE.holes,
       obstacles: (parsed.course as Course).obstacles ?? DEFAULT_COURSE.obstacles,
       yardsPerTile: (parsed.course as Course).yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,

@@ -2,14 +2,14 @@
  * Debounce utility for performance optimization
  */
 
-export function debounce<T extends (...args: any[]) => void>(
-  func: T,
+export function debounce<Args extends unknown[]>(
+  func: (...args: Args) => void,
   waitMs: number
-): T & { cancel: () => void; flush: () => void } {
+): ((...args: Args) => void) & { cancel: () => void; flush: () => void } {
   let timeoutId: number | null = null;
-  let lastArgs: Parameters<T> | null = null;
-  
-  const debounced = ((...args: Parameters<T>) => {
+  let lastArgs: Args | null = null;
+
+  const debounced = (...args: Args) => {
     lastArgs = args;
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
@@ -19,8 +19,8 @@ export function debounce<T extends (...args: any[]) => void>(
       timeoutId = null;
       lastArgs = null;
     }, waitMs);
-  }) as T & { cancel: () => void; flush: () => void };
-  
+  };
+
   debounced.cancel = () => {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
@@ -28,7 +28,7 @@ export function debounce<T extends (...args: any[]) => void>(
       lastArgs = null;
     }
   };
-  
+
   debounced.flush = () => {
     if (timeoutId !== null && lastArgs !== null) {
       clearTimeout(timeoutId);
@@ -37,10 +37,6 @@ export function debounce<T extends (...args: any[]) => void>(
       lastArgs = null;
     }
   };
-  
+
   return debounced;
 }
-
-
-
-

@@ -670,13 +670,13 @@ export function CanvasCourse(props: {
   const camRef = useRef({ panX: 0, panY: 0, zoom: 1 });
   const camAnimRef = useRef<null | { from: { panX: number; panY: number; zoom: number }; to: { panX: number; panY: number; zoom: number }; t0: number; dur: number }>(null);
   const flyoverRef = useRef<null | { from: { panX: number; panY: number; zoom: number }; to: { panX: number; panY: number; zoom: number }; t0: number; dur: number }>(null);
-  const panStateRef = useRef<null | { startX: number; startY: number; startPanX: number; startPanY: number; active: boolean; panIntent: boolean; moved: boolean; downTile: { x: number; y: number } | null }>(null);
+  const panStateRef = useRef<null | { startX: number; startY: number; startPanX: number; startPanY: number; active: boolean; panIntent: boolean; moved: boolean; downTile: { x: number; y: number } | null; startCameraState?: CameraState | null }>(null);
   const lastFocusKeyRef = useRef<string>("");
   
   // Instrumentation refs
   const renderCountRef = useRef(0);
   const pointerMoveCountRef = useRef(0);
-  const lastInstrumentationTimeRef = useRef(performance.now());
+  const lastInstrumentationTimeRef = useRef(0); // seeded on first frame (render-pure init)
   const ambientRef = useRef<{
     nextBirdAt: number;
     birdSeq: number;
@@ -1911,6 +1911,7 @@ export function CanvasCourse(props: {
         // Instrumentation: count renders
         renderCountRef.current++;
         const now = performance.now();
+        if (lastInstrumentationTimeRef.current === 0) lastInstrumentationTimeRef.current = now;
         const timeSinceLastLog = now - lastInstrumentationTimeRef.current;
         if (timeSinceLastLog >= 5000) { // Log every 5 seconds
           const renderFps = renderCountRef.current / (timeSinceLastLog / 1000);
@@ -2277,13 +2278,30 @@ export function CanvasCourse(props: {
     };
     
     // Store hole edit camera state for panning
-    (panStateRef.current as any).startCameraState = startCameraState;
+    panStateRef.current.startCameraState = startCameraState;
 
     // Preserve editor feel: in ARCHITECT/PAINT, immediate click + drag paint.
     // But in hole edit mode, only paint if grid overlays are shown (ARCHITECT mode)
     if (showGridOverlays && editorMode === "PAINT" && e.button === 0 && t) {
       onClickTile(t.x, t.y);
     }
+  }
+
+  // Imperative cursor update: reads hover refs, so it must run from event
+  // handlers/effects rather than during render (react-hooks/refs).
+  function updatePaintCursor() {
+    const c = canvasRef.current;
+    if (!c) return;
+    let cursor = "crosshair";
+    if (editorMode === "PAINT" && selectedTerrain && worldCash !== undefined) {
+      const hover = hoverTileRef.current;
+      if (hover && hover.idx >= 0) {
+        const prev = course.tiles[hover.idx];
+        const cost = computeTerrainChangeCost(prev, selectedTerrain);
+        if (cost.net > 0 && worldCash < cost.net) cursor = "not-allowed";
+      }
+    }
+    c.style.cursor = cursor;
   }
 
   function handlePointerMove(e: React.PointerEvent) {
@@ -2304,7 +2322,7 @@ export function CanvasCourse(props: {
         
         // Handle hole edit mode camera panning
         if (cameraState && cameraState.mode === "hole" && onCameraUpdate) {
-          const startState = (ps as any).startCameraState;
+          const startState = ps.startCameraState;
           if (startState) {
             // Convert screen delta to world delta
             const invZoom = 1 / startState.zoom;
@@ -2396,6 +2414,8 @@ export function CanvasCourse(props: {
       isHoveringRef.current = false;
       previewDistanceRef.current = null;
     }
+
+    updatePaintCursor();
     
     if (!t) return;
 
@@ -2508,18 +2528,9 @@ export function CanvasCourse(props: {
         }}
         style={{
           touchAction: "none",
-          cursor: (() => {
-            // Calculate cursor style based on hover tile (no React state)
-            if (editorMode === "PAINT" && selectedTerrain && worldCash !== undefined) {
-              const hover = hoverTileRef.current;
-              if (hover && hover.idx >= 0) {
-                const prev = course.tiles[hover.idx];
-                const cost = computeTerrainChangeCost(prev, selectedTerrain);
-                return cost.net > 0 && worldCash < cost.net ? "not-allowed" : "crosshair";
-              }
-            }
-            return "crosshair";
-          })(),
+          // Base cursor only — affordability feedback is applied imperatively
+          // by updatePaintCursor() (hover state lives in refs, not render).
+          cursor: "crosshair",
           display: "block",
         }}
       />

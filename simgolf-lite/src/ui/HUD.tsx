@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useAudio } from "../audio/AudioProvider";
+import { useAudio } from "../audio/audioContext";
 import type { Course, ObstacleType, Point, Terrain, WeekResult, World } from "../game/models/types";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";

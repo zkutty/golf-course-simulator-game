@@ -68,6 +68,8 @@ function createTerrainTexture(app: PIXI.Application, terrain: Terrain, tileSize:
   return texture;
 }
 
+const MARKER_LABEL = "hole-marker";
+
 const DEBUG_PIXI = true; // Set to false once rendering is confirmed
 
 export function PixiStage(props: PixiStageProps) {
@@ -399,18 +401,13 @@ export function PixiStage(props: PixiStageProps) {
     const app = appRef.current;
     const terrainContainer = terrainContainerRef.current;
 
-    // Remove existing markers (marked with _isMarker flag)
-    const toRemove: any[] = [];
-    terrainContainer.children.forEach((child) => {
-      if ((child as any)._isMarker) {
-        toRemove.push(child);
-      }
-    });
+    // Remove existing markers (tagged via Pixi's label property)
+    const toRemove: PIXI.Container[] = terrainContainer.children.filter(
+      (child) => child.label === MARKER_LABEL
+    );
     toRemove.forEach((child) => {
-      if (child instanceof PIXI.Graphics) {
-        child.destroy();
-      }
       terrainContainer.removeChild(child);
+      child.destroy();
     });
 
     // Draw markers
@@ -420,16 +417,16 @@ export function PixiStage(props: PixiStageProps) {
         graphics.circle(hole.tee.x * tileSize + tileSize / 2, hole.tee.y * tileSize + tileSize / 2, tileSize * 0.2);
         graphics.fill(0x000000);
         graphics.stroke({ width: 2, color: 0xffffff });
+        graphics.label = MARKER_LABEL;
         terrainContainer.addChild(graphics);
-        (graphics as any)._isMarker = true;
       }
       if (hole.green) {
         const graphics = new PIXI.Graphics();
         graphics.circle(hole.green.x * tileSize + tileSize / 2, hole.green.y * tileSize + tileSize / 2, tileSize * 0.2);
         graphics.fill(0x1b5e20);
         graphics.stroke({ width: 2, color: 0xffffff });
+        graphics.label = MARKER_LABEL;
         terrainContainer.addChild(graphics);
-        (graphics as any)._isMarker = true;
       }
     });
     
