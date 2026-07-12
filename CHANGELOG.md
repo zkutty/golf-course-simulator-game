@@ -9,6 +9,12 @@ versioning follows [SemVer](https://semver.org/).
 ### Added
 - Isometric projection core (`src/game/render/iso.ts`): 2:1 dimetric
   world↔screen math with cardinal rotation, picking, and depth keys (ZKU-137).
+- Production Pixi renderer: layered scene graph, camera-aware input, clean
+  lifecycle (ZKU-138); the course now renders in isometric with full editor
+  parity and live golfers, and is the default renderer (ZKU-139).
+- Per-tile elevation: data model with save migration and sculpt economics
+  (ZKU-143); rolling generated land rendered with height offsets, NW-sun
+  slope shading, and cliff faces (ZKU-144).
 - CI pipeline: typecheck, lint (zero errors), tests, and production build on
   every PR and push to main; build artifact uploaded (ZKU-184).
 - GitHub Pages deploy workflow (activates once Pages is enabled with
