@@ -1,6 +1,7 @@
-import type { Point } from "../../models/types";
+import type { Course, Point } from "../../models/types";
 import type { ClubSpec, GolferProfile } from "../golferProfiles";
 import { BALANCE } from "../../balance/balanceConfig";
+import { getElevation } from "../../models/elevation";
 
 export interface ShotEval {
   distanceYards: number;
@@ -26,10 +27,23 @@ export function evalShotBase(args: {
   to: Point;
   golfer: GolferProfile;
   club: ClubSpec;
+  // Optional: enables elevation-aware effective distance (ZKU-146). All
+  // production callers pass it; it stays optional so geometry-only tests
+  // and tools keep working.
+  course?: Course;
 }): ShotEval {
-  const { from, to, golfer, club } = args;
+  const { from, to, golfer, club, course } = args;
   const dTiles = distTiles(from, to);
-  const dYards = dTiles * golfer.yardsPerTile;
+  const flatYards = dTiles * golfer.yardsPerTile;
+  // Uphill plays longer, downhill shorter (never below half the flat
+  // distance, so extreme drops can't make shots free).
+  const elevDelta = course
+    ? getElevation(course, to.x, to.y) - getElevation(course, from.x, from.y)
+    : 0;
+  const dYards = Math.max(
+    flatYards * 0.5,
+    flatYards + elevDelta * BALANCE.elevation.shotYardsPerStep
+  );
   const utilization = club.carryYards <= 0 ? 99 : dYards / club.carryYards;
 
   // Dispersion grows as utilization pushes beyond 90% of carry.
@@ -53,7 +67,7 @@ export function evalShotBase(args: {
     expectedShotCost,
     isValid: true,
     debug: [
-      `d=${dYards.toFixed(0)}y`,
+      elevDelta !== 0 ? `d=${dYards.toFixed(0)}y (flat ${flatYards.toFixed(0)}y, elev ${elevDelta > 0 ? "+" : ""}${elevDelta})` : `d=${dYards.toFixed(0)}y`,
       `club=${club.name}(${club.carryYards}y)`,
       `util=${(utilization * 100).toFixed(0)}%`,
       `disp=${dispersionTiles.toFixed(2)} tiles`,

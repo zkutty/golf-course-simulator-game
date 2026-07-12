@@ -47,7 +47,7 @@ export function evalShotWithWaterCarry(args: {
   club: ClubSpec;
 }) {
   const { course, from, to, golfer, club } = args;
-  const base = evalShotBase({ from, to, golfer, club });
+  const base = evalShotBase({ from, to, golfer, club, course });
 
   const line = bresenham(from, to);
   // compute longest contiguous water segment crossed along the shot line (excluding the start tile)

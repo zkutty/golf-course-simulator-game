@@ -10,6 +10,7 @@ import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, loadGame, resetSave, saveGame } from "./utils/save";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
+import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
 import { createSoundPlayer } from "./utils/sound";
@@ -702,6 +703,17 @@ export default function App() {
 
   function confirmWizardWithValues(tee: Point, green: Point) {
     if (world.isBankrupt) return;
+
+    // Elevation check (ZKU-146): tee and green sites must be near-flat
+    // (max 1 step across their 3x3 footprint). Sculpt with Level first.
+    const teeSlope = maxSlopeInRect(course, tee.x - 1, tee.y - 1, tee.x + 1, tee.y + 1);
+    const greenSlope = maxSlopeInRect(course, green.x - 1, green.y - 1, green.x + 1, green.y + 1);
+    if (teeSlope > 1 || greenSlope > 1) {
+      setPaintError(
+        `${teeSlope > 1 ? "Tee" : "Green"} site is too steep — level the ground with the Sculpt tool first.`
+      );
+      return;
+    }
 
     // Two tile changes: tee + green. Check combined affordability.
     const teeIdx = tee.y * course.width + tee.x;
