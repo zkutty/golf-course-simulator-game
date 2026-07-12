@@ -20,6 +20,7 @@ import {
 import { getObstacleSprite } from "../render/iconSprites";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
+import { entityDepth, placeObject } from "../game/render/objectPlacement";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -193,7 +194,9 @@ export function PixiStage(props: PixiStageProps) {
   const obstacleSpritesRef = useRef<Map<string, PIXI.Sprite>>(new Map());
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
-  const liveGraphicsRef = useRef<PIXI.Graphics | null>(null);
+  const golferPoolRef = useRef<
+    Map<number, { holder: PIXI.Container; body: PIXI.Graphics; ball: PIXI.Graphics; lastColor: string; lastMoodBucket: number }>
+  >(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
 
@@ -393,7 +396,7 @@ export function PixiStage(props: PixiStageProps) {
       obstacleSpritesRef.current.clear();
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
-      liveGraphicsRef.current = null;
+      golferPoolRef.current.clear();
       diamondTextureRef.current = null;
       if (appRef.current) {
         appRef.current.destroy(true, { children: true, texture: true });
@@ -769,15 +772,15 @@ export function PixiStage(props: PixiStageProps) {
       const key = `${obs.x},${obs.y}`;
       if (obstacleSpritesRef.current.has(key)) return;
       const sprite = new PIXI.Sprite(PIXI.Texture.from(img));
-      // Ground-anchored at the tile center, standing "up" from the diamond.
+      // Ground-anchored via the shared placement helper (ZKU-140).
       const e = getElevation(course, obs.x, obs.y);
-      const center = tileCenterIso(obs.x, obs.y, e, rotation);
+      const placement = placeObject({ x: obs.x, y: obs.y, w: 1, d: 1 }, e, rotation);
       sprite.anchor.set(0.5, 1);
-      sprite.position.set(center.x, center.y + TILE_H / 2);
+      sprite.position.set(placement.position.x, placement.position.y);
       const size = TILE_W * 0.72;
       sprite.width = size;
       sprite.height = size;
-      sprite.zIndex = isoDepth(obs.x + 0.5, obs.y + 0.5, e, rotation);
+      sprite.zIndex = placement.zIndex;
       layersNow.objects.addChild(sprite);
       obstacleSpritesRef.current.set(key, sprite);
     };
@@ -892,11 +895,7 @@ export function PixiStage(props: PixiStageProps) {
       layers.screenOverlay.addChild(line);
       hoverLineRef.current = line;
     }
-    if (!liveGraphicsRef.current) {
-      const g = new PIXI.Graphics();
-      layers.fx.addChild(g);
-      liveGraphicsRef.current = g;
-    }
+
 
     const tick = () => {
       // Hover visuals only redraw when dirty.
@@ -960,33 +959,69 @@ export function PixiStage(props: PixiStageProps) {
         }
       }
 
-      // Live golfers/balls: cheap dot pass, redrawn every frame while active
-      // (character sprites land in M11/ZKU-153).
-      const live = liveGraphicsRef.current;
-      if (live) {
-        live.clear();
-        const list = liveActive ? golfersRef?.current : null;
-        if (list && list.length > 0) {
-          for (const golfer of list) {
-            const ge = getElevation(course, Math.floor(golfer.x + 0.5), Math.floor(golfer.y + 0.5));
-            const c = tileCenterIso(golfer.x, golfer.y, ge, rotation);
-            // shadow
-            live.ellipse(c.x, c.y + 3, 7, 3.2);
-            live.fill({ color: 0x000000, alpha: 0.2 });
-            // body
-            live.circle(c.x, c.y - 4, 5.5);
-            live.fill(golfer.color);
-            const moodHue = Math.round(120 * Math.max(0, Math.min(1, golfer.mood)));
-            live.stroke({ width: 1.5, color: `hsl(${moodHue}, 80%, 45%)` });
-            // ball in flight
-            if (golfer.ballX != null && golfer.ballY != null) {
-              const be = getElevation(course, Math.floor(golfer.ballX + 0.5), Math.floor(golfer.ballY + 0.5));
-              const b = tileCenterIso(golfer.ballX, golfer.ballY, be, rotation);
-              live.circle(b.x, b.y - 2, 2.2);
-              live.fill(0xffffff);
-              live.stroke({ width: 0.8, color: 0x555555 });
-            }
+      // Live golfers/balls: pooled per-golfer objects in the depth-sorted
+      // objects layer so props occlude them correctly (ZKU-140; character
+      // sprites replace the dots in M11/ZKU-153).
+      const pool = golferPoolRef.current;
+      const list = liveActive ? golfersRef?.current : null;
+      const seen = new Set<number>();
+      if (list) {
+        for (const golfer of list) {
+          seen.add(golfer.id);
+          let entry = pool.get(golfer.id);
+          if (!entry) {
+            const holder = new PIXI.Container();
+            const body = new PIXI.Graphics();
+            const ball = new PIXI.Graphics();
+            ball.circle(0, -2, 2.2);
+            ball.fill(0xffffff);
+            ball.stroke({ width: 0.8, color: 0x555555 });
+            ball.visible = false;
+            holder.addChild(body);
+            layers.objects.addChild(holder, ball);
+            entry = { holder, body, ball, lastColor: "", lastMoodBucket: -1 };
+            pool.set(golfer.id, entry);
           }
+          // Redraw the body only when color or mood bucket changes.
+          const moodBucket = Math.round(Math.max(0, Math.min(1, golfer.mood)) * 10);
+          if (entry.lastColor !== golfer.color || entry.lastMoodBucket !== moodBucket) {
+            entry.lastColor = golfer.color;
+            entry.lastMoodBucket = moodBucket;
+            const body = entry.body;
+            body.clear();
+            body.ellipse(0, 0, 7, 3.2); // ground shadow at the feet
+            body.fill({ color: 0x000000, alpha: 0.2 });
+            body.circle(0, -7, 5.5);
+            body.fill(golfer.color);
+            body.stroke({ width: 1.5, color: `hsl(${moodBucket * 12}, 80%, 45%)` });
+          }
+          const ge = getElevation(course, Math.floor(golfer.x + 0.5), Math.floor(golfer.y + 0.5));
+          const c = tileCenterIso(golfer.x, golfer.y, ge, rotation);
+          entry.holder.position.set(c.x, c.y);
+          // Quantize the depth key so the container only re-sorts when the
+          // golfer crosses a meaningful slice of a tile row, not per frame.
+          const z = Math.round(entityDepth(golfer.x, golfer.y, ge, rotation) * 10) / 10;
+          if (entry.holder.zIndex !== z) entry.holder.zIndex = z;
+
+          if (golfer.ballX != null && golfer.ballY != null) {
+            const be = getElevation(course, Math.floor(golfer.ballX + 0.5), Math.floor(golfer.ballY + 0.5));
+            const b = tileCenterIso(golfer.ballX, golfer.ballY, be, rotation);
+            entry.ball.position.set(b.x, b.y);
+            const bz = Math.round(entityDepth(golfer.ballX, golfer.ballY, be, rotation) * 10) / 10;
+            if (entry.ball.zIndex !== bz) entry.ball.zIndex = bz;
+            entry.ball.visible = true;
+          } else {
+            entry.ball.visible = false;
+          }
+        }
+      }
+      // Retire golfers who finished/left.
+      for (const [id, entry] of pool) {
+        if (!seen.has(id)) {
+          layers.objects.removeChild(entry.holder, entry.ball);
+          entry.holder.destroy({ children: true });
+          entry.ball.destroy();
+          pool.delete(id);
         }
       }
     };
