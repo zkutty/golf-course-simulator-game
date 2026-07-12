@@ -7,6 +7,7 @@ import { buildGolferRound, advanceGolfer, entryPoint } from "./golfer";
 import { createLiveState, stepLive, avgSatisfactionSoFar, snapshotGolfer } from "./simulation";
 import { planDay, plannedGolfersForDay } from "./spawn";
 import { commitDay } from "./commitDay";
+import { findWalkPath, pathLength } from "./walkPath";
 import type { Golfer } from "./types";
 
 // A tiny but valid course: a single wide fairway hole from left to right.
@@ -159,6 +160,54 @@ describe("stepLive", () => {
     expect(totalCash).toBe(planned * course.baseGreenFee);
     expect(live.greenFeeCollected).toBe(planned * course.baseGreenFee);
     expect(avgSatisfactionSoFar(live)).toBeGreaterThan(0);
+  });
+});
+
+describe("findWalkPath", () => {
+  it("routes around water instead of walking through it", () => {
+    const course = makeTestCourse();
+    // Vertical water strip at x=20..21, leaving a gap only at the top (y=0..1).
+    for (let y = 2; y < course.height; y++) {
+      for (const x of [20, 21]) course.tiles[y * course.width + x] = "water";
+    }
+    const from = { x: 4, y: 12 };
+    const to = { x: 50, y: 12 };
+    const pts = findWalkPath(course, from, to);
+    expect(pts.length).toBeGreaterThan(2); // detoured, not a straight beeline
+    // No waypoint sits on a water tile.
+    for (const p of pts) {
+      const t = course.tiles[Math.round(p.y) * course.width + Math.round(p.x)];
+      expect(t).not.toBe("water");
+    }
+    // The detour is meaningfully longer than the beeline (it goes via the gap).
+    expect(pathLength(pts)).toBeGreaterThan(Math.hypot(to.x - from.x, to.y - from.y) + 5);
+  });
+
+  it("falls back to a straight line when fully blocked", () => {
+    const course = makeTestCourse();
+    for (let y = 0; y < course.height; y++) {
+      for (const x of [20, 21]) course.tiles[y * course.width + x] = "water";
+    }
+    const pts = findWalkPath(course, { x: 4, y: 12 }, { x: 50, y: 12 });
+    expect(pts.length).toBe(2); // golfers never get stuck
+  });
+
+  it("keeps golfer rounds walkable end to end on a course with water", () => {
+    const course = makeTestCourse();
+    // Pond in the fairway the shot flies over but a walker must skirt.
+    for (let y = 9; y <= 15; y++) {
+      for (let x = 24; x <= 28; x++) course.tiles[y * course.width + x] = "water";
+    }
+    const g = freshGolfer(course);
+    for (let i = 0; i < 2000 && !g.finished; i++) {
+      advanceGolfer(g, 0.5, course.condition);
+      // Walking golfers must never stand in water.
+      const t = course.tiles[Math.round(g.pos.y) * course.width + Math.round(g.pos.x)];
+      if (!g.ball && t === "water") {
+        throw new Error(`golfer walked into water at ${g.pos.x},${g.pos.y}`);
+      }
+    }
+    expect(g.finished).toBe(true);
   });
 });
 

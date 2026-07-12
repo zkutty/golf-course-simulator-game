@@ -3,6 +3,7 @@ import type { GolferProfile } from "../sim/golferProfiles";
 import { solveShotsToGreen } from "../sim/shots/solveShotsToGreen";
 import { scoreCourseHoles } from "../sim/holes";
 import { LIVE } from "./liveConfig";
+import { findWalkPath } from "./walkPath";
 import type { Golfer, Segment } from "./types";
 
 function dist(a: Point, b: Point): number {
@@ -12,6 +13,33 @@ function dist(a: Point, b: Point): number {
 function walkSeg(from: Point, to: Point, holeIndex: number, cap = Infinity): Segment {
   const d = dist(from, to);
   return { kind: "walk", from, to, holeIndex, dur: Math.min(cap, d * LIVE.pace.walkPerTile) };
+}
+
+// Routed walk: one segment per polyline leg along walkable tiles (around
+// water, preferring short grass / paths). The whole walk is capped at `cap`
+// game-minutes by scaling leg durations, so long detours read as brisk walks
+// rather than stalling the round.
+function walkSegs(
+  course: Course,
+  from: Point,
+  to: Point,
+  holeIndex: number,
+  cap = Infinity
+): Segment[] {
+  const pts = findWalkPath(course, from, to);
+  const legs: Segment[] = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dur = dist(pts[i - 1], pts[i]) * LIVE.pace.walkPerTile;
+    total += dur;
+    legs.push({ kind: "walk", from: pts[i - 1], to: pts[i], holeIndex, dur });
+  }
+  if (legs.length === 0) return [walkSeg(from, to, holeIndex, cap)];
+  if (total > cap && total > 0) {
+    const k = cap / total;
+    for (const leg of legs) leg.dur *= k;
+  }
+  return legs;
 }
 
 function flightSeg(from: Point, to: Point, holeIndex: number): Segment {
@@ -58,8 +86,8 @@ export function buildGolferRound(args: {
     const green = hole.green;
     const par = info.par ?? 4;
 
-    // Walk from wherever we are to this tee.
-    segments.push(walkSeg(cursor, tee, i, LIVE.pace.interHoleWalkCap));
+    // Walk from wherever we are to this tee, along walkable tiles.
+    segments.push(...walkSegs(course, cursor, tee, i, LIVE.pace.interHoleWalkCap));
 
     // Plan the shots to the green and play them out.
     const solved = solveShotsToGreen({ course, tee, green, golfer: profile });
@@ -68,14 +96,14 @@ export function buildGolferRound(args: {
       for (const step of solved.plan) {
         segments.push(pauseSeg(step.from, i, LIVE.pace.swingPause));
         segments.push(flightSeg(step.from, step.to, i));
-        segments.push(walkSeg(step.from, step.to, i));
+        segments.push(...walkSegs(course, step.from, step.to, i));
         shots++;
       }
     } else {
       // Unreachable (e.g. water-blocked): a single frustrated hack straight up.
       segments.push(pauseSeg(tee, i, LIVE.pace.swingPause));
       segments.push(flightSeg(tee, green, i));
-      segments.push(walkSeg(tee, green, i));
+      segments.push(...walkSegs(course, tee, green, i));
       shots = par + 1;
     }
 
@@ -97,7 +125,7 @@ export function buildGolferRound(args: {
   }
 
   // Walk off to the exit.
-  segments.push(walkSeg(cursor, entry, -1, LIVE.pace.interHoleWalkCap));
+  segments.push(...walkSegs(course, cursor, entry, -1, LIVE.pace.interHoleWalkCap));
 
   return { segments, holePar, holeStrokes, holeNumbers };
 }
