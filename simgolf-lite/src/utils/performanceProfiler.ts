@@ -1,9 +1,9 @@
 // Stub performance profiler (profiling removed for performance)
 export const perfProfiler = {
-  measure<T>(name: string, fn: () => T): T {
+  measure<T>(_name: string, fn: () => T): T {
     return fn();
   },
-  logEvent(event: string): void {
+  logEvent(_event: string): void {
     // no-op
   },
   getMetrics() {
