@@ -5,6 +5,10 @@ import { scoreCourseHoles } from "../sim/holes";
 import { LIVE } from "./liveConfig";
 import type { Golfer, Segment } from "./types";
 
+// Optional tile-aware router; returns waypoints from just-after `from` to `to`,
+// or null to fall back to a straight-line walk.
+export type WalkRouter = (from: Point, to: Point) => Point[] | null;
+
 function dist(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -38,12 +42,30 @@ export function buildGolferRound(args: {
   entry: Point;
   rng: () => number;
   puttVariance: number;
+  route?: WalkRouter;
 }): BuiltRound {
-  const { course, profile, entry, rng, puttVariance } = args;
+  const { course, profile, entry, rng, puttVariance, route } = args;
   const summary = scoreCourseHoles(course);
   const segments: Segment[] = [];
   const holePar: number[] = [];
   const holeStrokes: number[] = [];
+
+  // Push a walk from -> to, routed around water when a router is provided,
+  // otherwise a single straight segment (optionally duration-capped).
+  const pushWalk = (from: Point, to: Point, holeIndex: number, cap = Infinity) => {
+    if (route) {
+      const path = route(from, to);
+      if (path && path.length) {
+        let cur = from;
+        for (const wp of path) {
+          segments.push(walkSeg(cur, wp, holeIndex));
+          cur = wp;
+        }
+        return;
+      }
+    }
+    segments.push(walkSeg(from, to, holeIndex, cap));
+  };
 
   let cursor: Point = entry;
 
@@ -56,8 +78,8 @@ export function buildGolferRound(args: {
     const green = hole.green;
     const par = info.par ?? 4;
 
-    // Walk from wherever we are to this tee.
-    segments.push(walkSeg(cursor, tee, i, LIVE.pace.interHoleWalkCap));
+    // Walk from wherever we are to this tee (routed around water).
+    pushWalk(cursor, tee, i, LIVE.pace.interHoleWalkCap);
 
     // Plan the shots to the green and play them out.
     const solved = solveShotsToGreen({ course, tee, green, golfer: profile });
@@ -66,7 +88,7 @@ export function buildGolferRound(args: {
       for (const step of solved.plan) {
         segments.push(pauseSeg(step.from, i, LIVE.pace.swingPause));
         segments.push(flightSeg(step.from, step.to, i));
-        segments.push(walkSeg(step.from, step.to, i));
+        pushWalk(step.from, step.to, i); // walk to the ball, routed around water
         shots++;
       }
     } else {
@@ -93,8 +115,8 @@ export function buildGolferRound(args: {
     cursor = green;
   }
 
-  // Walk off to the exit.
-  segments.push(walkSeg(cursor, entry, -1, LIVE.pace.interHoleWalkCap));
+  // Walk off to the exit (routed around water).
+  pushWalk(cursor, entry, -1, LIVE.pace.interHoleWalkCap);
 
   return { segments, holePar, holeStrokes };
 }

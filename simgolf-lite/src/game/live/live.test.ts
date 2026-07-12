@@ -8,6 +8,7 @@ import { createLiveState, stepLive, avgSatisfactionSoFar } from "./simulation";
 import { planDay, plannedGolfersForDay } from "./spawn";
 import { commitDay } from "./commitDay";
 import { pickGolferAt } from "./pick";
+import { findWalkPath } from "./walkPath";
 import type { Golfer } from "./types";
 
 // A tiny but valid course: a single wide fairway hole from left to right.
@@ -205,6 +206,44 @@ describe("stepLive", () => {
   });
 });
 
+describe("findWalkPath", () => {
+  // A fairway field with an optional vertical water wall at x=10.
+  function fieldWithWall(gapAtY: number | null): Course {
+    const width = 24, height = 16;
+    const tiles: Terrain[] = Array.from({ length: width * height }, () => "fairway" as Terrain);
+    for (let y = 0; y < height; y++) {
+      if (gapAtY != null && y === gapAtY) continue; // leave a passable gap
+      tiles[y * width + 10] = "water";
+    }
+    return { name: "wall", width, height, tiles, holes: [], obstacles: [], yardsPerTile: 10, baseGreenFee: 65, condition: 0.8 };
+  }
+  const isWater = (c: Course, p: { x: number; y: number }) => c.tiles[p.y * c.width + p.x] === "water";
+
+  it("returns a near-straight route on open ground", () => {
+    const c = fieldWithWall(null);
+    c.tiles.fill("fairway"); // remove the wall entirely
+    const path = findWalkPath(c, { x: 2, y: 8 }, { x: 20, y: 8 });
+    expect(path).not.toBeNull();
+    expect(path![path!.length - 1]).toEqual({ x: 20, y: 8 });
+  });
+
+  it("routes around a water wall (through the gap) without stepping on water", () => {
+    const c = fieldWithWall(2); // wall x=10 with a single gap at y=2
+    const path = findWalkPath(c, { x: 4, y: 8 }, { x: 16, y: 8 });
+    expect(path).not.toBeNull();
+    expect(path![path!.length - 1]).toEqual({ x: 16, y: 8 });
+    for (const wp of path!) expect(isWater(c, wp)).toBe(false);
+    // The detour to the gap is longer than a straight shot.
+    expect(path!.length).toBeGreaterThan(1);
+  });
+
+  it("returns null when the target is unreachable (solid water wall)", () => {
+    const c = fieldWithWall(null); // full wall, no gap
+    const path = findWalkPath(c, { x: 4, y: 8 }, { x: 16, y: 8 });
+    expect(path).toBeNull();
+  });
+});
+
 describe("pickGolferAt", () => {
   const golfers = [
     { id: 1, x: 10, y: 10 },
@@ -224,6 +263,26 @@ describe("pickGolferAt", () => {
       { id: 2, x: 11, y: 10 },
     ];
     expect(pickGolferAt(close, 11.4, 10.5)).toBe(2);
+  });
+});
+
+describe("tee-time queueing", () => {
+  it("spaces out backed-up arrivals instead of teeing them all off at once", () => {
+    const course = makeTestCourse();
+    const live = createLiveState(course, { ...DEFAULT_WORLD }, 0);
+    // Force a backlog: 5 golfers all "arriving" at minute 20.
+    live.arrivals = Array.from({ length: 5 }, () => ({ atMinute: 20, archetype: "casual" as const }));
+    live.nextArrivalIdx = 0;
+    live.nextTeeFreeAt = 0;
+    live.dayMinute = 0;
+
+    // Jump to minute 21: despite 5 being due, only one may tee off.
+    stepLive(live, course, 21);
+    expect(live.roundsStarted).toBe(1);
+
+    // Advancing a minute at a time, the rest drain ~one per tee gap.
+    for (let i = 0; i < 45; i++) stepLive(live, course, 1);
+    expect(live.roundsStarted).toBe(5);
   });
 });
 

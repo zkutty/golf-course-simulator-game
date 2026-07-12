@@ -66,6 +66,9 @@ export interface LiveState {
   satisfactionSum: number; // sum of finished golfers' mood*100
   dayOver: boolean;
   seed: number;
+  nextTeeFreeAt: number; // earliest game-minute the next group may tee off
+  // Memoized walking routes (from->to), shared by all golfers spawned this day.
+  walkCache: Map<string, Point[] | null>;
 }
 
 // Minimal per-golfer data the renderer needs each frame. Read from a ref so

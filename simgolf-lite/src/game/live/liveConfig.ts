@@ -19,6 +19,9 @@ export const LIVE = {
     closeMinute: 840, // 14 hours of daylight -> 8:00 PM
     lastArrivalMinute: 600, // no new golfers after this
     firstArrivalMinute: 20,
+    // Minimum game-minutes between successive tee-offs, so arriving golfers
+    // queue at the first tee instead of all starting at once.
+    teeGapMinutes: 7,
   },
 
   // Entry/exit is a point on the left edge of the course where golfers walk in.
