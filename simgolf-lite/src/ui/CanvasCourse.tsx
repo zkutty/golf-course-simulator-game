@@ -619,6 +619,8 @@ export function CanvasCourse(props: {
   showObstacles?: boolean; // Show/hide obstacles layer (default true)
   golfersRef?: React.MutableRefObject<GolferRenderData[]>; // live golfers (read per-frame)
   liveActive?: boolean; // keep the render loop running for the live sim
+  onGolferClick?: (id: number | null) => void; // click hit a golfer (null = clicked empty ground)
+  selectedGolferIdRef?: React.RefObject<number | null>; // highlight this golfer (read per-frame)
 }) {
   const {
     course,
@@ -647,6 +649,8 @@ export function CanvasCourse(props: {
     showObstacles = true,
     golfersRef,
     liveActive = false,
+    onGolferClick,
+    selectedGolferIdRef,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
@@ -1663,9 +1667,24 @@ export function CanvasCourse(props: {
       if (!list || list.length === 0) return;
       const r = Math.max(2.5, TILE * 0.28); // golfer body radius
       const ballR = Math.max(1.2, TILE * 0.12);
+      const selectedId = selectedGolferIdRef?.current ?? null;
       for (const g of list) {
         const cx = g.x * TILE + TILE / 2;
         const cy = g.y * TILE + TILE / 2;
+
+        // selection halo: pulsing ring under the selected golfer
+        if (g.id === selectedId) {
+          const pulse = 1 + 0.15 * Math.sin(timeMs * 0.006);
+          ctx2.save();
+          ctx2.strokeStyle = "rgba(255,255,255,0.95)";
+          ctx2.lineWidth = Math.max(1.5, TILE * 0.1);
+          ctx2.shadowColor = "rgba(255,255,255,0.8)";
+          ctx2.shadowBlur = 6;
+          ctx2.beginPath();
+          ctx2.arc(cx, cy, r * 1.7 * pulse, 0, Math.PI * 2);
+          ctx2.stroke();
+          ctx2.restore();
+        }
 
         // soft shadow
         ctx2.save();
@@ -1703,6 +1722,42 @@ export function CanvasCourse(props: {
           ctx2.stroke();
           ctx2.restore();
         }
+      }
+
+      // Thought bubbles (ZKU-114), drawn after all bodies so they sit on top.
+      // Skipped when tiles are too small to read text.
+      if (TILE >= 8) {
+        ctx2.save();
+        ctx2.font = `600 ${Math.max(9, Math.min(12, TILE * 0.8))}px Nunito, system-ui, sans-serif`;
+        ctx2.textBaseline = "middle";
+        for (const g of list) {
+          if (!g.thought) continue;
+          const cx = g.x * TILE + TILE / 2;
+          const cy = g.y * TILE + TILE / 2;
+          const padX = 6;
+          const tw = ctx2.measureText(g.thought).width;
+          const bw = tw + padX * 2;
+          const bh = Math.max(14, TILE * 1.0);
+          const bx = Math.max(2, Math.min(wPx - bw - 2, cx - bw / 2));
+          const by = cy - r - bh - Math.max(4, TILE * 0.3);
+
+          ctx2.beginPath();
+          ctx2.roundRect(bx, by, bw, bh, bh / 2);
+          ctx2.fillStyle = "rgba(255,255,255,0.92)";
+          ctx2.strokeStyle = "rgba(0,0,0,0.25)";
+          ctx2.lineWidth = 1;
+          ctx2.fill();
+          ctx2.stroke();
+          // little tail toward the golfer
+          ctx2.beginPath();
+          ctx2.arc(cx, by + bh + Math.max(2, TILE * 0.12), Math.max(1.5, TILE * 0.1), 0, Math.PI * 2);
+          ctx2.fillStyle = "rgba(255,255,255,0.85)";
+          ctx2.fill();
+
+          ctx2.fillStyle = "#1f2937";
+          ctx2.fillText(g.thought, bx + padX, by + bh / 2 + 0.5);
+        }
+        ctx2.restore();
       }
     }
 
@@ -2405,12 +2460,38 @@ export function CanvasCourse(props: {
     }
   }
 
+  // Nearest live golfer within pick radius of a screen point, in world px.
+  function hitTestGolfer(clientX: number, clientY: number): number | null {
+    const list = golfersRef?.current;
+    if (!list || list.length === 0) return null;
+    const wp = screenToWorldPx(clientX, clientY);
+    const pickR = Math.max(6, TILE * 0.5); // a bit larger than the drawn dot
+    let best: number | null = null;
+    let bestD = pickR;
+    for (const g of list) {
+      const d = Math.hypot(g.x * TILE + TILE / 2 - wp.x, g.y * TILE + TILE / 2 - wp.y);
+      if (d <= bestD) {
+        bestD = d;
+        best = g.id;
+      }
+    }
+    return best;
+  }
+
   function handlePointerUp(e: React.PointerEvent) {
     const ps = panStateRef.current;
     panStateRef.current = null;
     if (!ps) return;
     // If we weren't panning and this was a simple click, treat as a click interaction.
     if (!ps.moved && e.button === 0) {
+      // Golfer selection wins over tile interaction, except while actively
+      // painting terrain in ARCHITECT mode (clicks must keep painting).
+      const paintingArchitect = showGridOverlays && editorMode === "PAINT";
+      if (onGolferClick && !paintingArchitect) {
+        const id = hitTestGolfer(e.clientX, e.clientY);
+        onGolferClick(id);
+        if (id != null) return;
+      }
       const t = getTileFromEvent(e);
       if (t) onClickTile(t.x, t.y);
     }

@@ -2,11 +2,18 @@ import type { Course, World } from "../models/types";
 import { mulberry32 } from "../../utils/rng";
 import { getGolferProfile } from "../sim/golferProfiles";
 import { ARCHETYPES, golferName } from "./archetypes";
-import { buildGolferRound, entryPoint } from "./golfer";
-import { advanceGolfer } from "./golfer";
+import { abandonRound, advanceGolfer, buildGolferRound, entryPoint } from "./golfer";
+import { arrivalMoodShift, effectivePuttVariance, rollPersonality, waitToleranceMin } from "./personality";
 import { planDay } from "./spawn";
 import { LIVE } from "./liveConfig";
-import type { Arrival, Golfer, GolferRenderData, LiveState } from "./types";
+import type {
+  Arrival,
+  FinishedRound,
+  Golfer,
+  GolferRenderData,
+  GolferSnapshot,
+  LiveState,
+} from "./types";
 
 export function createLiveState(
   course: Course,
@@ -16,9 +23,11 @@ export function createLiveState(
   const seed = (world.runSeed | 0) + dayIndex * 7919;
   const arrivals = planDay(course, world, seed);
   return {
+    reputation: world.reputation,
     dayIndex,
     dayMinute: LIVE.day.openMinute,
     golfers: [],
+    finishedRounds: [],
     arrivals,
     nextArrivalIdx: 0,
     nextGolferId: 1,
@@ -37,17 +46,27 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   const profile = getGolferProfile(arch.solverProfile, course);
   const rng = mulberry32(state.seed + id * 131);
   const entry = entryPoint(course);
+  const personality = rollPersonality(arch.name, rng);
   const round = buildGolferRound({
     course,
     profile,
     entry,
     rng,
-    puttVariance: arch.puttVariance,
+    puttVariance: effectivePuttVariance(arch.puttVariance, personality),
   });
+  // First impression (ZKU-112): value for money and difficulty taste.
+  const moodShift = arrivalMoodShift({
+    p: personality,
+    greenFee: course.baseGreenFee,
+    reputation: state.reputation,
+    avgDifficulty: round.avgDifficulty,
+  });
+  const mood = Math.max(LIVE.mood.min, Math.min(LIVE.mood.max, LIVE.mood.start + moodShift));
   return {
     id,
     name: golferName(rng(), rng()),
     archetype: arch.name,
+    personality,
     color: arch.color,
     segments: round.segments,
     segIndex: 0,
@@ -56,15 +75,20 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     ball: null,
     holePar: round.holePar,
     holeStrokes: round.holeStrokes,
+    holeNumbers: round.holeNumbers,
     scoredHoles: 0,
     currentHole: -1,
     strokes: 0,
     scoreToPar: 0,
-    mood: LIVE.mood.start,
-    thought: null,
-    thoughtUntil: 0,
+    mood,
+    waiting: false,
+    waitMinutes: 0,
+    thought:
+      moodShift < -0.08 ? "💸 Steep green fee!" : moodShift > 0.04 ? "🤑 What a bargain!" : null,
+    thoughtTtl: 8,
     finished: false,
-    spent: 0,
+    leftEarly: false,
+    spent: course.baseGreenFee, // green fee paid on arrival
   };
 }
 
@@ -100,14 +124,36 @@ export function stepLive(
     state.greenFeeCollected += course.baseGreenFee;
   }
 
+  // Tee-time pacing (ZKU-110): a golfer occupies a hole once they're past its
+  // gate (still-approaching and gate-blocked golfers don't count). Capacity is
+  // claimed inside canEnter so earlier-spawned golfers get priority this step.
+  const occupancy = new Map<number, number>();
+  for (const g of state.golfers) {
+    const seg = g.segments[g.segIndex];
+    if (seg && seg.holeIndex >= 0 && !seg.gate) {
+      occupancy.set(seg.holeIndex, (occupancy.get(seg.holeIndex) ?? 0) + 1);
+    }
+  }
+  const canEnter = (holeIndex: number): boolean => {
+    const n = occupancy.get(holeIndex) ?? 0;
+    if (n >= LIVE.pace.holeCapacity) return false;
+    occupancy.set(holeIndex, n + 1);
+    return true;
+  };
+
   // Advance every golfer; retire finished ones.
   const stillPlaying: Golfer[] = [];
   for (const g of state.golfers) {
-    advanceGolfer(g, dtMin, course.condition);
+    advanceGolfer(g, dtMin, course.condition, canEnter);
+    // Out of patience? Storm off to the exit (ZKU-114).
+    if (g.waiting && !g.leftEarly && g.waitMinutes > waitToleranceMin(g.personality)) {
+      abandonRound(g, course);
+    }
     if (g.finished) {
       state.satisfactionSum += g.mood * 100;
       state.roundsFinished++;
       finishedThisStep++;
+      state.finishedRounds.push(toFinishedRound(g));
     } else {
       stillPlaying.push(g);
     }
@@ -124,11 +170,23 @@ export function stepLive(
 
 export function liveRenderData(state: LiveState): GolferRenderData[] {
   const out: GolferRenderData[] = [];
+  // Golfers queued at the same tee stand in a short diagonal line instead of
+  // stacking on one tile (slot = how many earlier waiters share the spot).
+  const queueSlots = new Map<string, number>();
   for (const g of state.golfers) {
+    let qx = 0;
+    let qy = 0;
+    if (g.waiting) {
+      const key = `${Math.round(g.pos.x)},${Math.round(g.pos.y)}`;
+      const slot = queueSlots.get(key) ?? 0;
+      queueSlots.set(key, slot + 1);
+      qx = -0.55 * slot;
+      qy = 0.35 * slot;
+    }
     out.push({
       id: g.id,
-      x: g.pos.x,
-      y: g.pos.y,
+      x: g.pos.x + qx,
+      y: g.pos.y + qy,
       ballX: g.ball ? g.ball.x : null,
       ballY: g.ball ? g.ball.y : null,
       color: g.color,
@@ -137,6 +195,73 @@ export function liveRenderData(state: LiveState): GolferRenderData[] {
     });
   }
   return out;
+}
+
+function toFinishedRound(g: Golfer): FinishedRound {
+  return {
+    id: g.id,
+    name: g.name,
+    archetype: g.archetype,
+    strokes: g.strokes,
+    scoreToPar: g.scoreToPar,
+    mood: g.mood,
+    spent: g.spent,
+    holeNumbers: g.holeNumbers,
+    holePar: g.holePar,
+    holeStrokes: g.holeStrokes,
+    holesPlayed: g.scoredHoles,
+    leftEarly: g.leftEarly,
+  };
+}
+
+// Snapshot a golfer for the inspector UI. Falls back to today's finished
+// rounds so a selected golfer who walks off still shows their final card.
+export function snapshotGolfer(state: LiveState, id: number): GolferSnapshot | null {
+  const g = state.golfers.find((x) => x.id === id);
+  if (g) {
+    return {
+      id: g.id,
+      name: g.name,
+      archetype: g.archetype,
+      currentHole: g.currentHole, // segments already carry the course hole index
+      strokes: g.strokes,
+      scoreToPar: g.scoreToPar,
+      mood: g.mood,
+      finished: false,
+      leftEarly: g.leftEarly,
+      waiting: g.waiting,
+      waitMinutes: g.waitMinutes,
+      spent: g.spent,
+      holes: g.holePar.map((par, i) => ({
+        holeNumber: g.holeNumbers[i],
+        par,
+        strokes: i < g.scoredHoles ? g.holeStrokes[i] : null,
+      })),
+    };
+  }
+  const f = state.finishedRounds.find((x) => x.id === id);
+  if (f) {
+    return {
+      id: f.id,
+      name: f.name,
+      archetype: f.archetype,
+      currentHole: -1,
+      strokes: f.strokes,
+      scoreToPar: f.scoreToPar,
+      mood: f.mood,
+      finished: true,
+      leftEarly: f.leftEarly,
+      waiting: false,
+      waitMinutes: 0,
+      spent: f.spent,
+      holes: f.holePar.map((par, i) => ({
+        holeNumber: f.holeNumbers[i],
+        par,
+        strokes: i < f.holesPlayed ? f.holeStrokes[i] : null,
+      })),
+    };
+  }
+  return null;
 }
 
 export function avgSatisfactionSoFar(state: LiveState): number {

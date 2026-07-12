@@ -5,10 +5,16 @@ import {
   avgSatisfactionSoFar,
   createLiveState,
   liveRenderData,
+  snapshotGolfer,
   stepLive,
 } from "../game/live/simulation";
 import { commitDay } from "../game/live/commitDay";
-import type { DayResult, GolferRenderData, LiveState } from "../game/live/types";
+import type {
+  DayResult,
+  GolferRenderData,
+  GolferSnapshot,
+  LiveState,
+} from "../game/live/types";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
@@ -52,6 +58,7 @@ export function useLiveSimulation(args: {
   const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick } = args;
 
   const [speed, setSpeed] = useState<SpeedName>("paused");
+  const [selectedGolfer, setSelectedGolfer] = useState<GolferSnapshot | null>(null);
   const [status, setStatus] = useState<LiveStatus>({
     speed: "paused",
     dayIndex: 0,
@@ -76,6 +83,7 @@ export function useLiveSimulation(args: {
   const lastStatusAtRef = useRef(0);
   const onDayRef = useRef(onDayCommitted);
   const onCashRef = useRef(onCashTick);
+  const selectedIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     courseRef.current = course;
@@ -93,7 +101,22 @@ export function useLiveSimulation(args: {
     onCashRef.current?.();
   }, [setWorld]);
 
+  // Select a golfer by id (null clears). Snapshot updates immediately, then
+  // refreshes on the throttled status tick while the sim runs.
+  const selectGolfer = useCallback((id: number | null) => {
+    selectedIdRef.current = id;
+    const live = liveRef.current;
+    setSelectedGolfer(id != null && live ? snapshotGolfer(live, id) : null);
+  }, []);
+
   const publishStatus = useCallback((live: LiveState) => {
+    const sel = selectedIdRef.current;
+    setSelectedGolfer((prev) => {
+      if (sel == null) return prev == null ? prev : null;
+      // Keep the last snapshot if the golfer vanished without a finish record
+      // (e.g. day rollover) so the panel doesn't flicker empty.
+      return snapshotGolfer(live, sel) ?? prev;
+    });
     setStatus({
       speed: speedRef.current,
       dayIndex: live.dayIndex,
@@ -198,5 +221,14 @@ export function useLiveSimulation(args: {
 
   const liveActive = speed !== "paused" || status.onCourse > 0;
 
-  return { status, speed, setSpeed, golfersRef, liveActive };
+  return {
+    status,
+    speed,
+    setSpeed,
+    golfersRef,
+    liveActive,
+    selectedGolfer,
+    selectGolfer,
+    selectedIdRef,
+  };
 }

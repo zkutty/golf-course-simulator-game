@@ -4,9 +4,17 @@ import { DEFAULT_WORLD } from "../models/defaults";
 import { getGolferProfile } from "../sim/golferProfiles";
 import { scoreCourseHoles } from "../sim/holes";
 import { buildGolferRound, advanceGolfer, entryPoint } from "./golfer";
-import { createLiveState, stepLive, avgSatisfactionSoFar } from "./simulation";
+import { createLiveState, stepLive, avgSatisfactionSoFar, snapshotGolfer } from "./simulation";
 import { planDay, plannedGolfersForDay } from "./spawn";
 import { commitDay } from "./commitDay";
+import { findWalkPath, pathLength } from "./walkPath";
+import {
+  arrivalMoodShift,
+  effectivePuttVariance,
+  rollPersonality,
+  waitToleranceMin,
+} from "./personality";
+import { mulberry32 } from "../../utils/rng";
 import type { Golfer } from "./types";
 
 // A tiny but valid course: a single wide fairway hole from left to right.
@@ -50,6 +58,7 @@ function freshGolfer(course: Course): Golfer {
     id: 1,
     name: "Test G.",
     archetype: "lowHandicap",
+    personality: rollPersonality("lowHandicap", () => 0.5),
     color: "#fff",
     segments: round.segments,
     segIndex: 0,
@@ -58,14 +67,18 @@ function freshGolfer(course: Course): Golfer {
     ball: null,
     holePar: round.holePar,
     holeStrokes: round.holeStrokes,
+    holeNumbers: round.holeNumbers,
     scoredHoles: 0,
     currentHole: -1,
     strokes: 0,
     scoreToPar: 0,
     mood: 0.7,
+    waiting: false,
+    waitMinutes: 0,
     thought: null,
-    thoughtUntil: 0,
+    thoughtTtl: 0,
     finished: false,
+    leftEarly: false,
     spent: 0,
   };
 }
@@ -158,6 +171,213 @@ describe("stepLive", () => {
     expect(totalCash).toBe(planned * course.baseGreenFee);
     expect(live.greenFeeCollected).toBe(planned * course.baseGreenFee);
     expect(avgSatisfactionSoFar(live)).toBeGreaterThan(0);
+  });
+});
+
+describe("findWalkPath", () => {
+  it("routes around water instead of walking through it", () => {
+    const course = makeTestCourse();
+    // Vertical water strip at x=20..21, leaving a gap only at the top (y=0..1).
+    for (let y = 2; y < course.height; y++) {
+      for (const x of [20, 21]) course.tiles[y * course.width + x] = "water";
+    }
+    const from = { x: 4, y: 12 };
+    const to = { x: 50, y: 12 };
+    const pts = findWalkPath(course, from, to);
+    expect(pts.length).toBeGreaterThan(2); // detoured, not a straight beeline
+    // No waypoint sits on a water tile.
+    for (const p of pts) {
+      const t = course.tiles[Math.round(p.y) * course.width + Math.round(p.x)];
+      expect(t).not.toBe("water");
+    }
+    // The detour is meaningfully longer than the beeline (it goes via the gap).
+    expect(pathLength(pts)).toBeGreaterThan(Math.hypot(to.x - from.x, to.y - from.y) + 5);
+  });
+
+  it("falls back to a straight line when fully blocked", () => {
+    const course = makeTestCourse();
+    for (let y = 0; y < course.height; y++) {
+      for (const x of [20, 21]) course.tiles[y * course.width + x] = "water";
+    }
+    const pts = findWalkPath(course, { x: 4, y: 12 }, { x: 50, y: 12 });
+    expect(pts.length).toBe(2); // golfers never get stuck
+  });
+
+  it("keeps golfer rounds walkable end to end on a course with water", () => {
+    const course = makeTestCourse();
+    // Pond in the fairway the shot flies over but a walker must skirt.
+    for (let y = 9; y <= 15; y++) {
+      for (let x = 24; x <= 28; x++) course.tiles[y * course.width + x] = "water";
+    }
+    const g = freshGolfer(course);
+    for (let i = 0; i < 2000 && !g.finished; i++) {
+      advanceGolfer(g, 0.5, course.condition);
+      // Walking golfers must never stand in water.
+      const t = course.tiles[Math.round(g.pos.y) * course.width + Math.round(g.pos.x)];
+      if (!g.ball && t === "water") {
+        throw new Error(`golfer walked into water at ${g.pos.x},${g.pos.y}`);
+      }
+    }
+    expect(g.finished).toBe(true);
+  });
+});
+
+describe("snapshotGolfer (inspector + scorecard)", () => {
+  it("snapshots an active golfer, hides unplayed holes, and keeps finished rounds", () => {
+    const course = makeTestCourse();
+    const world: World = { ...DEFAULT_WORLD };
+    const live = createLiveState(course, world, 0);
+
+    // Step until at least one golfer is on the course.
+    let guard = 0;
+    while (live.golfers.length === 0 && guard++ < 10_000) stepLive(live, course, 1);
+    const id = live.golfers[0].id;
+
+    const snap = snapshotGolfer(live, id);
+    expect(snap).not.toBeNull();
+    expect(snap!.finished).toBe(false);
+    expect(snap!.holes.length).toBe(1);
+    // Hole not scored yet => strokes hidden.
+    if (live.golfers.find((g) => g.id === id)!.scoredHoles === 0) {
+      expect(snap!.holes[0].strokes).toBeNull();
+    }
+    expect(snap!.spent).toBe(course.baseGreenFee);
+
+    // Run the day out; the golfer must survive as a finished-round snapshot.
+    guard = 0;
+    while (!live.dayOver && guard++ < 100_000) stepLive(live, course, 1);
+    const done = snapshotGolfer(live, id);
+    expect(done).not.toBeNull();
+    expect(done!.finished).toBe(true);
+    expect(done!.holes[0].strokes).toBe(done!.strokes); // single-hole course: all revealed
+    expect(done!.strokes).toBeGreaterThan(0);
+    expect(live.finishedRounds.length).toBe(live.roundsFinished);
+
+    expect(snapshotGolfer(live, 999_999)).toBeNull();
+  });
+});
+
+describe("tee-time queueing (ZKU-110)", () => {
+  it("caps concurrent golfers per hole and makes the rest wait at the tee", () => {
+    const course = makeTestCourse();
+    const world: World = { ...DEFAULT_WORLD };
+    const live = createLiveState(course, world, 0);
+    // Force a morning rush: everyone arrives at the same minute.
+    live.arrivals = live.arrivals.map((a) => ({ ...a, atMinute: 5 }));
+
+    let sawWaiting = false;
+    let guard = 0;
+    while (!live.dayOver && guard++ < 100_000) {
+      stepLive(live, course, 1);
+      // Count golfers actually playing the single hole (past its gate).
+      let playing = 0;
+      for (const g of live.golfers) {
+        const seg = g.segments[g.segIndex];
+        if (seg && seg.holeIndex === 0 && !seg.gate) playing++;
+        if (g.waiting) sawWaiting = true;
+      }
+      expect(playing).toBeLessThanOrEqual(2); // LIVE.pace.holeCapacity
+    }
+
+    expect(live.dayOver).toBe(true); // queue drains; nobody gets stuck
+    expect(live.roundsFinished).toBe(live.arrivals.length);
+    expect(sawWaiting).toBe(true);
+    // Waiting golfers paid a mood price.
+    const anyWait = live.finishedRounds.some((r) => r.mood < 0.7);
+    expect(anyWait).toBe(true);
+  });
+});
+
+describe("personality (ZKU-112)", () => {
+  it("rolls deterministic, clamped traits that vary between individuals", () => {
+    const a = rollPersonality("casual", mulberry32(1));
+    const b = rollPersonality("casual", mulberry32(1));
+    const c = rollPersonality("casual", mulberry32(2));
+    expect(a).toEqual(b); // same seed, same golfer
+    expect(a).not.toEqual(c); // different seed, different golfer
+    for (const p of [a, c]) {
+      for (const v of Object.values(p)) {
+        expect(v).toBeGreaterThanOrEqual(0);
+        expect(v).toBeLessThanOrEqual(1);
+      }
+    }
+    // Archetype character survives the jitter.
+    const pro = rollPersonality("pro", mulberry32(3));
+    const junior = rollPersonality("junior", mulberry32(3));
+    expect(pro.skill).toBeGreaterThan(junior.skill);
+    expect(waitToleranceMin(rollPersonality("senior", mulberry32(4)))).toBeGreaterThan(
+      waitToleranceMin(junior)
+    );
+  });
+
+  it("skill sharpens putting; price gouging sours arrival mood", () => {
+    const sharp = effectivePuttVariance(0.35, { ...rollPersonality("pro", mulberry32(1)), skill: 1 });
+    const dull = effectivePuttVariance(0.35, { ...rollPersonality("junior", mulberry32(1)), skill: 0 });
+    expect(sharp).toBeLessThan(dull);
+
+    const cheapskate = { ...rollPersonality("senior", mulberry32(1)), priceSensitivity: 1 };
+    const gouged = arrivalMoodShift({ p: cheapskate, greenFee: 200, reputation: 30, avgDifficulty: 50 });
+    const fair = arrivalMoodShift({ p: cheapskate, greenFee: 40, reputation: 30, avgDifficulty: 50 });
+    expect(gouged).toBeLessThan(fair);
+    expect(gouged).toBeLessThan(0);
+  });
+});
+
+describe("reactions and leave-early (ZKU-114)", () => {
+  it("waiting golfers think about slow play and eventually storm off", () => {
+    const course = makeTestCourse();
+    const world: World = { ...DEFAULT_WORLD };
+    const live = createLiveState(course, world, 0);
+    // Stack everyone on the first minute so the single hole clogs hard.
+    live.arrivals = Array.from({ length: 12 }, () => ({ ...live.arrivals[0], atMinute: 1 }));
+
+    let sawSlowThought = false;
+    let sawLeaver = false;
+    let guard = 0;
+    while (!live.dayOver && guard++ < 100_000) {
+      stepLive(live, course, 1);
+      for (const g of live.golfers) {
+        if (g.thought?.includes("Slow play") || g.thought?.includes("wait is ridiculous"))
+          sawSlowThought = true;
+      }
+      if (live.finishedRounds.some((r) => r.leftEarly)) sawLeaver = true;
+    }
+    expect(sawSlowThought).toBe(true);
+    expect(sawLeaver).toBe(true);
+    // Leavers' cards only contain holes they actually played.
+    const leaver = live.finishedRounds.find((r) => r.leftEarly)!;
+    expect(leaver.holeStrokes.length).toBe(leaver.holesPlayed);
+    // Everyone is accounted for, played or stormed off.
+    expect(live.roundsFinished).toBe(12);
+  });
+
+  it("counts only time actually blocked at a gate as waiting, not the approach walk", () => {
+    const course = makeTestCourse();
+    const g = freshGolfer(course);
+    // Synthetic itinerary: a 5-minute gated approach leg, then hole play.
+    const tee = { x: 4, y: 12 };
+    g.segments = [
+      { kind: "walk", from: { x: 0, y: 12 }, to: tee, dur: 5, holeIndex: 0, gate: true },
+      { kind: "pause", from: tee, to: tee, dur: 1, holeIndex: 0 },
+    ];
+    // One 8-minute tick against a full hole: 5 min walking + 3 min queueing.
+    advanceGolfer(g, 8, course.condition, () => false);
+    expect(g.waiting).toBe(true);
+    expect(g.waitMinutes).toBeCloseTo(3, 5);
+    // Subsequent fully-blocked ticks are pure queue time.
+    advanceGolfer(g, 2, course.condition, () => false);
+    expect(g.waitMinutes).toBeCloseTo(5, 5);
+  });
+
+  it("thoughts fade after their ttl", () => {
+    const course = makeTestCourse();
+    const g = freshGolfer(course);
+    g.thought = "🐦 Birdie!";
+    g.thoughtTtl = 5;
+    advanceGolfer(g, 2, course.condition);
+    expect(g.thought).not.toBeNull();
+    advanceGolfer(g, 4, course.condition);
+    expect(g.thought).toBeNull();
   });
 });
 

@@ -322,7 +322,7 @@ export function HUD(props: {
                 <IconReputation size={22} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>REPUTATION</div>
-                  <div style={{ fontSize: 16, fontWeight: 800 }}>{world.reputation}/100</div>
+                  <div style={{ fontSize: 16, fontWeight: 800 }}>{Math.round(world.reputation)}/100</div>
                 </div>
               </div>
               <div
@@ -368,7 +368,7 @@ export function HUD(props: {
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <div style={{ fontSize: 12, color: "#6b7280" }}>Reputation</div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>{world.reputation}/100</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{Math.round(world.reputation)}/100</div>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <div style={{ fontSize: 12, color: "#6b7280" }}>Condition</div>
@@ -1050,7 +1050,7 @@ export function HUD(props: {
                 <div>Avg satisfaction: {Math.round(last.avgSatisfaction)}/100</div>
                 <div>
                   Reputation Δ: {last.reputationDelta >= 0 ? "+" : ""}
-                  {last.reputationDelta}
+                  {Number(last.reputationDelta.toFixed(2))}
                 </div>
                 {last.reputationMomentum && (
                   <div style={{ fontSize: 12, color: "#555" }}>{last.reputationMomentum}</div>

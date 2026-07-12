@@ -17,8 +17,10 @@ export const LIVE = {
     openMinute: 0, // 0 == 6:00 AM (display offset applied in UI)
     displayStartHour: 6, // 6 AM
     closeMinute: 840, // 14 hours of daylight -> 8:00 PM
-    lastArrivalMinute: 600, // no new golfers after this
+    lastArrivalMinute: 660, // no new golfers after 5 PM (late 9 still finishes near close)
     firstArrivalMinute: 20,
+    // Arrivals skew toward the morning (rng^bias): 1 = uniform, >1 = earlier.
+    arrivalMorningBias: 1.35,
   },
 
   // Entry/exit is a point on the left edge of the course where golfers walk in.
@@ -35,6 +37,9 @@ export const LIVE = {
     puttPause: 0.3,
     puttFlight: 0.2,
     puttWalk: 0.2,
+    // Tee-time pacing (ZKU-110): how many golfers may be playing a hole at
+    // once. Others hold at the tee until the group ahead clears.
+    holeCapacity: 2,
   },
 
   scoring: {
@@ -43,20 +48,27 @@ export const LIVE = {
     puttVarianceBogey: 0.35,
   },
 
-  // Golfers actually simulated & drawn per day. Derived from the demand model,
-  // then clamped into a watchable range (you see every golfer on the course).
+  // Golfers actually simulated & drawn per day. Driven by the demand index so
+  // reputation/quality/price visibly change how busy the course looks, then
+  // clamped into a watchable range (you see every golfer on the course).
   volume: {
     minGolfers: 3,
     maxGolfers: 42,
-    // Fraction of the abstract weekly demand potential that becomes a day's
-    // real, on-screen rounds.
-    dailyDemandFraction: 0.03,
+    // demandIndex (0..1.2) is normalized into [demandFloor, demandCeil] and
+    // shaped by demandGamma before scaling min..max golfers. The floor sits
+    // near the model's practical minimum so a bad course actually feels dead.
+    demandFloor: 0.45,
+    demandCeil: 1.1,
+    demandGamma: 1.5,
+    // A tiny course can't host a crowd: cap daily golfers per valid hole.
+    perValidHole: 4,
   },
 
   mood: {
     start: 0.7, // neutral-happy on arrival
     perStrokeOverPar: -0.06, // each stroke over par nudges mood down
     perStrokeUnderPar: 0.05,
+    perWaitMinute: -0.004, // waiting at a tee slowly sours the mood (~-0.12/30min)
     conditionWeight: 0.25, // course condition contribution
     min: 0,
     max: 1,
