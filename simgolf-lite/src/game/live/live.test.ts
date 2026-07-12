@@ -65,6 +65,8 @@ function freshGolfer(course: Course): Golfer {
     strokes: 0,
     scoreToPar: 0,
     mood: 0.7,
+    waiting: false,
+    waitMinutes: 0,
     thought: null,
     thoughtUntil: 0,
     finished: false,
@@ -243,6 +245,37 @@ describe("snapshotGolfer (inspector + scorecard)", () => {
     expect(live.finishedRounds.length).toBe(live.roundsFinished);
 
     expect(snapshotGolfer(live, 999_999)).toBeNull();
+  });
+});
+
+describe("tee-time queueing (ZKU-110)", () => {
+  it("caps concurrent golfers per hole and makes the rest wait at the tee", () => {
+    const course = makeTestCourse();
+    const world: World = { ...DEFAULT_WORLD };
+    const live = createLiveState(course, world, 0);
+    // Force a morning rush: everyone arrives at the same minute.
+    live.arrivals = live.arrivals.map((a) => ({ ...a, atMinute: 5 }));
+
+    let sawWaiting = false;
+    let guard = 0;
+    while (!live.dayOver && guard++ < 100_000) {
+      stepLive(live, course, 1);
+      // Count golfers actually playing the single hole (past its gate).
+      let playing = 0;
+      for (const g of live.golfers) {
+        const seg = g.segments[g.segIndex];
+        if (seg && seg.holeIndex === 0 && !seg.gate) playing++;
+        if (g.waiting) sawWaiting = true;
+      }
+      expect(playing).toBeLessThanOrEqual(2); // LIVE.pace.holeCapacity
+    }
+
+    expect(live.dayOver).toBe(true); // queue drains; nobody gets stuck
+    expect(live.roundsFinished).toBe(live.arrivals.length);
+    expect(sawWaiting).toBe(true);
+    // Waiting golfers paid a mood price.
+    const anyWait = live.finishedRounds.some((r) => r.mood < 0.7);
+    expect(anyWait).toBe(true);
   });
 });
 

@@ -70,6 +70,8 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     strokes: 0,
     scoreToPar: 0,
     mood: LIVE.mood.start,
+    waiting: false,
+    waitMinutes: 0,
     thought: null,
     thoughtUntil: 0,
     finished: false,
@@ -109,10 +111,27 @@ export function stepLive(
     state.greenFeeCollected += course.baseGreenFee;
   }
 
+  // Tee-time pacing (ZKU-110): a golfer occupies a hole once they're past its
+  // gate (still-approaching and gate-blocked golfers don't count). Capacity is
+  // claimed inside canEnter so earlier-spawned golfers get priority this step.
+  const occupancy = new Map<number, number>();
+  for (const g of state.golfers) {
+    const seg = g.segments[g.segIndex];
+    if (seg && seg.holeIndex >= 0 && !seg.gate) {
+      occupancy.set(seg.holeIndex, (occupancy.get(seg.holeIndex) ?? 0) + 1);
+    }
+  }
+  const canEnter = (holeIndex: number): boolean => {
+    const n = occupancy.get(holeIndex) ?? 0;
+    if (n >= LIVE.pace.holeCapacity) return false;
+    occupancy.set(holeIndex, n + 1);
+    return true;
+  };
+
   // Advance every golfer; retire finished ones.
   const stillPlaying: Golfer[] = [];
   for (const g of state.golfers) {
-    advanceGolfer(g, dtMin, course.condition);
+    advanceGolfer(g, dtMin, course.condition, canEnter);
     if (g.finished) {
       state.satisfactionSum += g.mood * 100;
       state.roundsFinished++;
@@ -134,11 +153,23 @@ export function stepLive(
 
 export function liveRenderData(state: LiveState): GolferRenderData[] {
   const out: GolferRenderData[] = [];
+  // Golfers queued at the same tee stand in a short diagonal line instead of
+  // stacking on one tile (slot = how many earlier waiters share the spot).
+  const queueSlots = new Map<string, number>();
   for (const g of state.golfers) {
+    let qx = 0;
+    let qy = 0;
+    if (g.waiting) {
+      const key = `${Math.round(g.pos.x)},${Math.round(g.pos.y)}`;
+      const slot = queueSlots.get(key) ?? 0;
+      queueSlots.set(key, slot + 1);
+      qx = -0.55 * slot;
+      qy = 0.35 * slot;
+    }
     out.push({
       id: g.id,
-      x: g.pos.x,
-      y: g.pos.y,
+      x: g.pos.x + qx,
+      y: g.pos.y + qy,
       ballX: g.ball ? g.ball.x : null,
       ballY: g.ball ? g.ball.y : null,
       color: g.color,
@@ -179,6 +210,8 @@ export function snapshotGolfer(state: LiveState, id: number): GolferSnapshot | n
       scoreToPar: g.scoreToPar,
       mood: g.mood,
       finished: false,
+      waiting: g.waiting,
+      waitMinutes: g.waitMinutes,
       spent: g.spent,
       holes: g.holePar.map((par, i) => ({
         holeNumber: g.holeNumbers[i],
@@ -198,6 +231,8 @@ export function snapshotGolfer(state: LiveState, id: number): GolferSnapshot | n
       scoreToPar: f.scoreToPar,
       mood: f.mood,
       finished: true,
+      waiting: false,
+      waitMinutes: 0,
       spent: f.spent,
       holes: f.holePar.map((par, i) => ({
         holeNumber: f.holeNumbers[i],

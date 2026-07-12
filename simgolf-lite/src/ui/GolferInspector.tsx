@@ -34,9 +34,11 @@ export function GolferInspector(props: {
   const played = golfer.holes.filter((h) => h.strokes != null);
   const status = golfer.finished
     ? "Finished — heading home"
-    : golfer.currentHole >= 0
-      ? `On hole ${golfer.currentHole + 1}`
-      : "Walking the grounds";
+    : golfer.waiting && golfer.currentHole >= 0
+      ? `Waiting at hole ${golfer.currentHole + 1} tee`
+      : golfer.currentHole >= 0
+        ? `On hole ${golfer.currentHole + 1}`
+        : "Walking the grounds";
 
   return (
     <div

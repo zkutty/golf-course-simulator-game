@@ -11,6 +11,10 @@ export interface Segment {
   to: Point;
   dur: number; // game-minutes
   holeIndex: number; // hole this segment belongs to (-1 for arrival/exit)
+  // Tee-time gate (ZKU-110): the final approach leg to a hole's tee. A golfer
+  // may not advance past a gate while the hole is at capacity — they hold at
+  // the tee (waiting) until the group ahead clears.
+  gate?: boolean;
 }
 
 export type GolferArchetypeName =
@@ -43,6 +47,8 @@ export interface Golfer {
   strokes: number; // total strokes so far this round
   scoreToPar: number;
   mood: number; // 0..1
+  waiting: boolean; // held at a tee-time gate right now
+  waitMinutes: number; // total game-minutes spent waiting today
   thought: string | null;
   thoughtUntil: number; // dayMinute when the thought expires
   finished: boolean;
@@ -111,6 +117,8 @@ export interface GolferSnapshot {
   scoreToPar: number;
   mood: number;
   finished: boolean;
+  waiting: boolean;
+  waitMinutes: number;
   spent: number;
   holes: { holeNumber: number; par: number; strokes: number | null }[];
 }

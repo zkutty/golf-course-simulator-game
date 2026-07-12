@@ -86,8 +86,11 @@ export function buildGolferRound(args: {
     const green = hole.green;
     const par = info.par ?? 4;
 
-    // Walk from wherever we are to this tee, along walkable tiles.
-    segments.push(...walkSegs(course, cursor, tee, i, LIVE.pace.interHoleWalkCap));
+    // Walk from wherever we are to this tee, along walkable tiles. The final
+    // approach leg is the hole's tee-time gate (ZKU-110).
+    const approach = walkSegs(course, cursor, tee, i, LIVE.pace.interHoleWalkCap);
+    approach[approach.length - 1].gate = true;
+    segments.push(...approach);
 
     // Plan the shots to the green and play them out.
     const solved = solveShotsToGreen({ course, tee, green, golfer: profile });
@@ -148,8 +151,15 @@ function ballArc(from: Point, to: Point, t: number): Point {
 
 // Advance a single golfer by `dtMin` game-minutes, walking through its segment
 // itinerary. Updates position, ball, running score, and mood. Returns the
-// golfer (mutated in place for the caller's array).
-export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void {
+// golfer (mutated in place for the caller's array). `canEnter` is the
+// tee-time gate check (ZKU-110): asked once per hole entry; returning false
+// holds the golfer waiting at the tee and burns the rest of this tick.
+export function advanceGolfer(
+  g: Golfer,
+  dtMin: number,
+  condition: number,
+  canEnter?: (holeIndex: number, g: Golfer) => boolean
+): void {
   if (g.finished) return;
   let remaining = dtMin;
   let guard = 0;
@@ -169,6 +179,19 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
       g.segElapsed += remaining;
       remaining = 0;
     } else {
+      // About to move past this segment. A gate holds the golfer at the tee
+      // until the hole ahead has room; waiting slowly sours their mood.
+      if (seg.gate && canEnter && !canEnter(seg.holeIndex, g)) {
+        g.segElapsed = seg.dur;
+        g.pos = { ...seg.to };
+        g.ball = null;
+        g.waiting = true;
+        g.waitMinutes += remaining;
+        g.mood = clamp01(g.mood + remaining * LIVE.mood.perWaitMinute);
+        if (seg.holeIndex >= 0) g.currentHole = seg.holeIndex;
+        return;
+      }
+      g.waiting = false;
       remaining -= left;
       g.segElapsed = 0;
       g.segIndex++;

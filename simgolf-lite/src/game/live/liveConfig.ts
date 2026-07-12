@@ -37,6 +37,9 @@ export const LIVE = {
     puttPause: 0.3,
     puttFlight: 0.2,
     puttWalk: 0.2,
+    // Tee-time pacing (ZKU-110): how many golfers may be playing a hole at
+    // once. Others hold at the tee until the group ahead clears.
+    holeCapacity: 2,
   },
 
   scoring: {
@@ -65,6 +68,7 @@ export const LIVE = {
     start: 0.7, // neutral-happy on arrival
     perStrokeOverPar: -0.06, // each stroke over par nudges mood down
     perStrokeUnderPar: 0.05,
+    perWaitMinute: -0.004, // waiting at a tee slowly sours the mood (~-0.12/30min)
     conditionWeight: 0.25, // course condition contribution
     min: 0,
     max: 1,
