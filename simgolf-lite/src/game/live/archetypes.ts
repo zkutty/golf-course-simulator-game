@@ -102,19 +102,6 @@ export const ARCHETYPES: Record<GolferArchetypeName, Archetype> = {
   },
 };
 
-const ARCHETYPE_LIST = Object.values(ARCHETYPES);
-
-// Weighted pick of an archetype using a 0..1 random value.
-export function pickArchetype(r: number): Archetype {
-  const total = ARCHETYPE_LIST.reduce((a, x) => a + x.weight, 0);
-  let t = r * total;
-  for (const a of ARCHETYPE_LIST) {
-    t -= a.weight;
-    if (t <= 0) return a;
-  }
-  return ARCHETYPE_LIST[ARCHETYPE_LIST.length - 1];
-}
-
 const FIRST_NAMES = [
   "Alex", "Sam", "Jordan", "Casey", "Riley", "Morgan", "Taylor", "Jamie",
   "Pat", "Drew", "Quinn", "Avery", "Robin", "Chris", "Dana", "Lee",

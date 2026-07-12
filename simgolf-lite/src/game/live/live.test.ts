@@ -6,6 +6,7 @@ import { scoreCourseHoles } from "../sim/holes";
 import { buildGolferRound, advanceGolfer, entryPoint } from "./golfer";
 import { createLiveState, stepLive, avgSatisfactionSoFar } from "./simulation";
 import { planDay, plannedGolfersForDay } from "./spawn";
+import { archetypeAppeal, courseProfile } from "./demand";
 import { commitDay } from "./commitDay";
 import { rollPersonality, type Personality } from "./personality";
 import { ARCHETYPES } from "./archetypes";
@@ -200,6 +201,55 @@ describe("planDay + volume", () => {
     // sorted ascending
     for (let i = 1; i < arrivals.length; i++) {
       expect(arrivals[i].atMinute).toBeGreaterThanOrEqual(arrivals[i - 1].atMinute);
+    }
+  });
+});
+
+describe("personality-driven demand (ZKU-115)", () => {
+  it("derives a course profile from price and reputation", () => {
+    const course = makeTestCourse();
+    const cheap = courseProfile({ ...course, baseGreenFee: 40 }, { ...DEFAULT_WORLD });
+    const dear = courseProfile({ ...course, baseGreenFee: 160 }, { ...DEFAULT_WORLD });
+    expect(cheap.premium).toBeLessThan(0);
+    expect(dear.premium).toBeGreaterThan(0);
+
+    const lowRep = courseProfile(course, { ...DEFAULT_WORLD, reputation: 10 });
+    const highRep = courseProfile(course, { ...DEFAULT_WORLD, reputation: 90 });
+    expect(highRep.prestige).toBeGreaterThan(lowRep.prestige);
+  });
+
+  it("normalises appeal into a distribution that sums to 1", () => {
+    const appeal = archetypeAppeal(courseProfile(makeTestCourse(), { ...DEFAULT_WORLD }));
+    const sum = Object.values(appeal).reduce((a, b) => a + b, 0);
+    expect(sum).toBeCloseTo(1, 5);
+  });
+
+  it("draws more skilled players as reputation rises", () => {
+    const course = makeTestCourse();
+    const low = archetypeAppeal(courseProfile(course, { ...DEFAULT_WORLD, reputation: 15 }));
+    const high = archetypeAppeal(courseProfile(course, { ...DEFAULT_WORLD, reputation: 95 }));
+    // Pros are gated behind reputation; low-rep courses barely see them.
+    expect(high.pro).toBeGreaterThan(low.pro);
+    expect(low.pro).toBeLessThan(0.05);
+  });
+
+  it("repels price-sensitive golfers when the fee is premium", () => {
+    const course = makeTestCourse();
+    const world = { ...DEFAULT_WORLD };
+    const market = archetypeAppeal(courseProfile({ ...course, baseGreenFee: 80 }, world));
+    const pricey = archetypeAppeal(courseProfile({ ...course, baseGreenFee: 200 }, world));
+    // Juniors are the most price-sensitive archetype (prefs.price = -0.4).
+    expect(pricey.junior).toBeLessThan(market.junior);
+  });
+
+  it("scales daily volume with demand and stays in the watchable range", () => {
+    const course = makeTestCourse();
+    const weak = plannedGolfersForDay(course, { ...DEFAULT_WORLD, reputation: 5 });
+    const strong = plannedGolfersForDay(course, { ...DEFAULT_WORLD, reputation: 100 });
+    expect(strong).toBeGreaterThanOrEqual(weak);
+    for (const n of [weak, strong]) {
+      expect(n).toBeGreaterThanOrEqual(3);
+      expect(n).toBeLessThanOrEqual(42);
     }
   });
 });
