@@ -3,6 +3,7 @@ import type { GolferProfile } from "../sim/golferProfiles";
 import { solveShotsToGreen } from "../sim/shots/solveShotsToGreen";
 import { scoreCourseHoles } from "../sim/holes";
 import { LIVE } from "./liveConfig";
+import { mishitChance, puttOutcome, type Personality } from "./personality";
 import type { Golfer, Segment } from "./types";
 
 function dist(a: Point, b: Point): number {
@@ -37,9 +38,9 @@ export function buildGolferRound(args: {
   profile: GolferProfile;
   entry: Point;
   rng: () => number;
-  puttVariance: number;
+  personality: Personality;
 }): BuiltRound {
-  const { course, profile, entry, rng, puttVariance } = args;
+  const { course, profile, entry, rng, personality } = args;
   const summary = scoreCourseHoles(course);
   const segments: Segment[] = [];
   const holePar: number[] = [];
@@ -59,15 +60,19 @@ export function buildGolferRound(args: {
     // Walk from wherever we are to this tee.
     segments.push(walkSeg(cursor, tee, i, LIVE.pace.interHoleWalkCap));
 
-    // Plan the shots to the green and play them out.
+    // Plan the shots to the green and play them out. The planner returns one
+    // optimal line for the profile; personality then adds recovery strokes when
+    // a shot is mishit, so the same hole yields a spread of scores (ZKU-113).
     const solved = solveShotsToGreen({ course, tee, green, golfer: profile });
     let shots = 0;
+    let penalties = 0;
     if (solved.reachable && solved.plan.length > 0) {
       for (const step of solved.plan) {
         segments.push(pauseSeg(step.from, i, LIVE.pace.swingPause));
         segments.push(flightSeg(step.from, step.to, i));
         segments.push(walkSeg(step.from, step.to, i));
         shots++;
+        if (rng() < mishitChance(personality)) penalties++; // sprayed shot
       }
     } else {
       // Unreachable (e.g. water-blocked): a single frustrated hack straight up.
@@ -77,11 +82,9 @@ export function buildGolferRound(args: {
       shots = par + 1;
     }
 
-    // Putting: base putts with skill-based variance.
-    let putts: number = LIVE.scoring.basePutts;
-    const roll = rng();
-    if (roll < puttVariance * 0.5) putts += 1; // 3-putt
-    else if (roll > 1 - puttVariance * 0.5) putts = Math.max(1, putts - 1); // 1-putt
+    // Putting: base 2, adjusted by personality (skill drains more, low
+    // consistency swings both ways).
+    const putts = puttOutcome(personality, rng());
     // A short putting flourish on the green (visuals independent of putt count).
     const near: Point = { x: green.x + 0.6, y: green.y + 0.4 };
     segments.push(pauseSeg(green, i, LIVE.pace.puttPause));
@@ -89,7 +92,7 @@ export function buildGolferRound(args: {
     segments.push(walkSeg(near, green, i, LIVE.pace.puttWalk));
 
     holePar.push(par);
-    holeStrokes.push(shots + putts);
+    holeStrokes.push(shots + penalties + putts);
     cursor = green;
   }
 
@@ -168,6 +171,9 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
 // Fold all holes with index < upTo that haven't been scored yet into the
 // running scoreToPar, and update mood accordingly.
 function finishHole(g: Golfer, upTo: number, condition = 0.75): void {
+  // Patient golfers shrug off a bad hole; impatient ones sour faster. Only the
+  // downside is dampened — a birdie lifts everyone equally.
+  const patienceRelief = 1 - g.personality.patience * 0.5; // 0.5 .. 1.0
   while (g.scoredHoles < upTo && g.scoredHoles < g.holeStrokes.length) {
     const i = g.scoredHoles;
     const delta = g.holeStrokes[i] - g.holePar[i];
@@ -175,7 +181,7 @@ function finishHole(g: Golfer, upTo: number, condition = 0.75): void {
     g.strokes += g.holeStrokes[i];
     const m =
       delta > 0
-        ? LIVE.mood.perStrokeOverPar * delta
+        ? LIVE.mood.perStrokeOverPar * delta * patienceRelief
         : LIVE.mood.perStrokeUnderPar * -delta;
     g.mood = clamp01(g.mood + m + (condition - 0.6) * 0.02);
     g.scoredHoles++;

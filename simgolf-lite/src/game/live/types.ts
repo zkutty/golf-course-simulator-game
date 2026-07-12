@@ -1,4 +1,5 @@
 import type { Point } from "../models/types";
+import type { Personality } from "./personality";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -25,6 +26,7 @@ export interface Golfer {
   id: number;
   name: string;
   archetype: GolferArchetypeName;
+  personality: Personality;
   color: string;
   // Itinerary
   segments: Segment[];

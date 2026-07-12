@@ -7,7 +7,22 @@ import { buildGolferRound, advanceGolfer, entryPoint } from "./golfer";
 import { createLiveState, stepLive, avgSatisfactionSoFar } from "./simulation";
 import { planDay, plannedGolfersForDay } from "./spawn";
 import { commitDay } from "./commitDay";
+import { rollPersonality, type Personality } from "./personality";
+import { ARCHETYPES } from "./archetypes";
+import { mulberry32 } from "../../utils/rng";
 import type { Golfer } from "./types";
+
+// A neutral, middling personality for tests that don't care about spread.
+function testPersonality(over: Partial<Personality> = {}): Personality {
+  return {
+    skill: 0.6,
+    consistency: 0.6,
+    patience: 0.5,
+    spendPropensity: 0.5,
+    prefs: { difficulty: 0, scenery: 0, price: 0 },
+    ...over,
+  };
+}
 
 // A tiny but valid course: a single wide fairway hole from left to right.
 function makeTestCourse(): Course {
@@ -44,12 +59,13 @@ function freshGolfer(course: Course): Golfer {
       let s = 0.5;
       return () => (s = (s * 9301 + 49297) % 1) as number;
     })(),
-    puttVariance: 0.2,
+    personality: testPersonality({ skill: 0.85, consistency: 0.8 }),
   });
   return {
     id: 1,
     name: "Test G.",
     archetype: "lowHandicap",
+    personality: testPersonality({ skill: 0.85, consistency: 0.8 }),
     color: "#fff",
     segments: round.segments,
     segIndex: 0,
@@ -87,13 +103,63 @@ describe("buildGolferRound", () => {
       profile: getGolferProfile("SCRATCH", course),
       entry: entryPoint(course),
       rng: () => 0.5,
-      puttVariance: 0.2,
+      personality: testPersonality(),
     });
     expect(round.segments.length).toBeGreaterThan(0);
     expect(round.holeStrokes.length).toBe(1);
     expect(round.holePar.length).toBe(1);
     // Includes shots to green plus at least one putt.
     expect(round.holeStrokes[0]).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("personality-driven scoring (ZKU-113)", () => {
+  // Total strokes over par for a round planned with a fixed shot model but a
+  // given personality + rng seed. Isolates the personality variance layer.
+  function scoreToPar(course: Course, personality: Personality, seed: number): number {
+    const round = buildGolferRound({
+      course,
+      profile: getGolferProfile("SCRATCH", course),
+      entry: entryPoint(course),
+      rng: mulberry32(seed),
+      personality,
+    });
+    const strokes = round.holeStrokes.reduce((a, b) => a + b, 0);
+    const par = round.holePar.reduce((a, b) => a + b, 0);
+    return strokes - par;
+  }
+
+  it("is deterministic for the same personality and seed", () => {
+    const course = makeTestCourse();
+    const p = testPersonality({ skill: 0.5, consistency: 0.5 });
+    expect(scoreToPar(course, p, 42)).toBe(scoreToPar(course, p, 42));
+  });
+
+  it("produces a spread of scores within one archetype", () => {
+    const course = makeTestCourse();
+    const rng = mulberry32(7);
+    const scores = new Set<number>();
+    for (let i = 0; i < 40; i++) {
+      const p = rollPersonality(ARCHETYPES.casual.personality, rng);
+      scores.add(scoreToPar(course, p, 1000 + i));
+    }
+    // Same archetype, same hole, but not one uniform result.
+    expect(scores.size).toBeGreaterThan(1);
+  });
+
+  it("scores better on average as skill rises", () => {
+    const course = makeTestCourse();
+    const N = 120;
+    const mean = (skill: number, consistency: number) => {
+      let sum = 0;
+      for (let i = 0; i < N; i++) {
+        sum += scoreToPar(course, testPersonality({ skill, consistency }), i * 31 + 5);
+      }
+      return sum / N;
+    };
+    const strong = mean(0.95, 0.9);
+    const weak = mean(0.2, 0.3);
+    expect(strong).toBeLessThan(weak);
   });
 });
 
