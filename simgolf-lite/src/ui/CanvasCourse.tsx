@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef } from "react";
 import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
+import { pickGolferAt } from "../game/live/pick";
 import type { CameraState } from "../game/render/camera";
 import { screenToWorld as cameraScreenToWorld, applyCameraTransform } from "../game/render/camera";
 import { getObstacleSprite } from "../render/iconSprites";
@@ -619,6 +620,8 @@ export function CanvasCourse(props: {
   showObstacles?: boolean; // Show/hide obstacles layer (default true)
   golfersRef?: React.MutableRefObject<GolferRenderData[]>; // live golfers (read per-frame)
   liveActive?: boolean; // keep the render loop running for the live sim
+  onPickGolfer?: (id: number | null) => void; // click-to-select a golfer
+  selectedGolferId?: number | null; // highlight the selected golfer
 }) {
   const {
     course,
@@ -647,6 +650,8 @@ export function CanvasCourse(props: {
     showObstacles = true,
     golfersRef,
     liveActive = false,
+    onPickGolfer,
+    selectedGolferId = null,
   } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const lastHoverIdxRef = useRef<number | null>(null);
@@ -1661,6 +1666,15 @@ export function CanvasCourse(props: {
     function drawGolfers(timeMs: number) {
       const list = golfersRef?.current;
       if (!list || list.length === 0) return;
+
+      // Dev-only test seam: expose golfer world positions + the global camera
+      // transform so the Playwright harness can click a specific golfer.
+      if (import.meta.env.DEV) {
+        const cam = camRef.current;
+        (window as unknown as Record<string, unknown>).__ccGolfers = list.map((g) => ({ id: g.id, x: g.x, y: g.y }));
+        (window as unknown as Record<string, unknown>).__ccCam = { zoom: cam.zoom, panX: cam.panX, panY: cam.panY, tile: TILE };
+      }
+
       const r = Math.max(2.5, TILE * 0.28); // golfer body radius
       const ballR = Math.max(1.2, TILE * 0.12);
       for (const g of list) {
@@ -1687,6 +1701,18 @@ export function CanvasCourse(props: {
         ctx2.fill();
         ctx2.stroke();
         ctx2.restore();
+
+        // selection highlight: a pulsing white ring around the picked golfer
+        if (selectedGolferId != null && g.id === selectedGolferId) {
+          const pulse = 1 + Math.sin(timeMs * 0.006) * 0.12;
+          ctx2.save();
+          ctx2.strokeStyle = "rgba(255,255,255,0.95)";
+          ctx2.lineWidth = Math.max(1.5, TILE * 0.1);
+          ctx2.beginPath();
+          ctx2.arc(cx, cy, r * 1.9 * pulse, 0, Math.PI * 2);
+          ctx2.stroke();
+          ctx2.restore();
+        }
 
         // ball in flight, with a little visual hop
         if (g.ballX != null && g.ballY != null) {
@@ -2168,6 +2194,7 @@ export function CanvasCourse(props: {
     cameraState,
     showObstacles,
     liveActive,
+    selectedGolferId,
   ]);
 
   // Focus camera when active hole changes or gets tee/green set (cinematic selection)
@@ -2411,6 +2438,17 @@ export function CanvasCourse(props: {
     if (!ps) return;
     // If we weren't panning and this was a simple click, treat as a click interaction.
     if (!ps.moved && e.button === 0) {
+      // In the global view, clicking a golfer selects them instead of painting.
+      // Empty-ground clicks fall through to the normal tile handler, so painting
+      // is unaffected.
+      if (onPickGolfer && !cameraState && golfersRef?.current?.length) {
+        const wp = screenToWorldPx(e.clientX, e.clientY);
+        const hit = pickGolferAt(golfersRef.current, wp.x / TILE, wp.y / TILE);
+        if (hit != null) {
+          onPickGolfer(hit);
+          return;
+        }
+      }
       const t = getTileFromEvent(e);
       if (t) onClickTile(t.x, t.y);
     }

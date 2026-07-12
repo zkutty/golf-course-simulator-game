@@ -7,6 +7,7 @@ import { buildGolferRound, advanceGolfer, entryPoint } from "./golfer";
 import { createLiveState, stepLive, avgSatisfactionSoFar } from "./simulation";
 import { planDay, plannedGolfersForDay } from "./spawn";
 import { commitDay } from "./commitDay";
+import { pickGolferAt } from "./pick";
 import type { Golfer } from "./types";
 
 // A tiny but valid course: a single wide fairway hole from left to right.
@@ -33,6 +34,28 @@ function makeTestCourse(): Course {
     baseGreenFee: 65,
     condition: 0.8,
   };
+}
+
+// A wider course with N valid fairway holes laid left-to-right in rows.
+function makeMultiHoleCourse(n: number): Course {
+  const width = 120;
+  const height = 40;
+  const tiles: Terrain[] = Array.from({ length: width * height }, () => "fairway" as Terrain);
+  const set = (x: number, y: number, t: Terrain) => {
+    if (x >= 0 && y >= 0 && x < width && y < height) tiles[y * width + x] = t;
+  };
+  const holes = [];
+  for (let i = 0; i < n; i++) {
+    const row = Math.floor(i / 3);
+    const col = i % 3;
+    const cy = 8 + row * 12;
+    const tx = 6 + col * 38;
+    const gx = tx + 20;
+    set(tx, cy, "tee");
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) set(gx + dx, cy + dy, "green");
+    holes.push({ tee: { x: tx, y: cy }, green: { x: gx, y: cy }, parMode: "AUTO" as const, name: `H${i + 1}` });
+  }
+  return { name: "Multi", width, height, tiles, holes, obstacles: [], yardsPerTile: 10, baseGreenFee: 65, condition: 0.8 };
 }
 
 function freshGolfer(course: Course): Golfer {
@@ -110,6 +133,27 @@ describe("advanceGolfer", () => {
     expect(g.strokes).toBeGreaterThan(0);
   });
 
+  it("progresses through ALL holes of a multi-hole round (not stuck on hole 1)", () => {
+    const course = makeMultiHoleCourse(6);
+    const summary = scoreCourseHoles(course);
+    const validHoles = summary.holes.filter((h) => h.isComplete && h.isValid).length;
+    expect(validHoles).toBe(6);
+
+    const g = freshGolfer(course);
+    expect(g.holeStrokes.length).toBe(6); // itinerary covers every hole
+
+    const holesSeen = new Set<number>();
+    for (let i = 0; i < 800 && !g.finished; i++) {
+      advanceGolfer(g, 1, course.condition);
+      if (g.currentHole >= 0) holesSeen.add(g.currentHole);
+    }
+    expect(g.finished).toBe(true);
+    expect(g.scoredHoles).toBe(6); // every hole scored
+    // The golfer visibly moved through more than just the first hole.
+    expect(holesSeen.size).toBeGreaterThanOrEqual(4);
+    expect(Math.max(...holesSeen)).toBe(5);
+  });
+
   it("shows a ball only while a shot is in flight", () => {
     const course = makeTestCourse();
     const g = freshGolfer(course);
@@ -158,6 +202,28 @@ describe("stepLive", () => {
     expect(totalCash).toBe(planned * course.baseGreenFee);
     expect(live.greenFeeCollected).toBe(planned * course.baseGreenFee);
     expect(avgSatisfactionSoFar(live)).toBeGreaterThan(0);
+  });
+});
+
+describe("pickGolferAt", () => {
+  const golfers = [
+    { id: 1, x: 10, y: 10 },
+    { id: 2, x: 20, y: 12 },
+  ];
+  it("selects the golfer whose tile-center is under the click", () => {
+    // golfer 1 draws centered at (10.5, 10.5)
+    expect(pickGolferAt(golfers, 10.5, 10.5)).toBe(1);
+    expect(pickGolferAt(golfers, 20.6, 12.4)).toBe(2);
+  });
+  it("returns null when the click is beyond the pick radius", () => {
+    expect(pickGolferAt(golfers, 15, 15)).toBe(null);
+  });
+  it("picks the nearest when two are close", () => {
+    const close = [
+      { id: 1, x: 10, y: 10 },
+      { id: 2, x: 11, y: 10 },
+    ];
+    expect(pickGolferAt(close, 11.4, 10.5)).toBe(2);
   });
 });
 
