@@ -6,7 +6,14 @@ import { buildGolferRound, entryPoint } from "./golfer";
 import { advanceGolfer } from "./golfer";
 import { planDay } from "./spawn";
 import { LIVE } from "./liveConfig";
-import type { Arrival, Golfer, GolferRenderData, LiveState } from "./types";
+import type {
+  Arrival,
+  FinishedRound,
+  Golfer,
+  GolferRenderData,
+  GolferSnapshot,
+  LiveState,
+} from "./types";
 
 export function createLiveState(
   course: Course,
@@ -19,6 +26,7 @@ export function createLiveState(
     dayIndex,
     dayMinute: LIVE.day.openMinute,
     golfers: [],
+    finishedRounds: [],
     arrivals,
     nextArrivalIdx: 0,
     nextGolferId: 1,
@@ -56,6 +64,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     ball: null,
     holePar: round.holePar,
     holeStrokes: round.holeStrokes,
+    holeNumbers: round.holeNumbers,
     scoredHoles: 0,
     currentHole: -1,
     strokes: 0,
@@ -64,7 +73,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     thought: null,
     thoughtUntil: 0,
     finished: false,
-    spent: 0,
+    spent: course.baseGreenFee, // green fee paid on arrival
   };
 }
 
@@ -108,6 +117,7 @@ export function stepLive(
       state.satisfactionSum += g.mood * 100;
       state.roundsFinished++;
       finishedThisStep++;
+      state.finishedRounds.push(toFinishedRound(g));
     } else {
       stillPlaying.push(g);
     }
@@ -137,6 +147,66 @@ export function liveRenderData(state: LiveState): GolferRenderData[] {
     });
   }
   return out;
+}
+
+function toFinishedRound(g: Golfer): FinishedRound {
+  return {
+    id: g.id,
+    name: g.name,
+    archetype: g.archetype,
+    strokes: g.strokes,
+    scoreToPar: g.scoreToPar,
+    mood: g.mood,
+    spent: g.spent,
+    holeNumbers: g.holeNumbers,
+    holePar: g.holePar,
+    holeStrokes: g.holeStrokes,
+    holesPlayed: g.scoredHoles,
+  };
+}
+
+// Snapshot a golfer for the inspector UI. Falls back to today's finished
+// rounds so a selected golfer who walks off still shows their final card.
+export function snapshotGolfer(state: LiveState, id: number): GolferSnapshot | null {
+  const g = state.golfers.find((x) => x.id === id);
+  if (g) {
+    return {
+      id: g.id,
+      name: g.name,
+      archetype: g.archetype,
+      currentHole: g.currentHole, // segments already carry the course hole index
+      strokes: g.strokes,
+      scoreToPar: g.scoreToPar,
+      mood: g.mood,
+      finished: false,
+      spent: g.spent,
+      holes: g.holePar.map((par, i) => ({
+        holeNumber: g.holeNumbers[i],
+        par,
+        strokes: i < g.scoredHoles ? g.holeStrokes[i] : null,
+      })),
+    };
+  }
+  const f = state.finishedRounds.find((x) => x.id === id);
+  if (f) {
+    return {
+      id: f.id,
+      name: f.name,
+      archetype: f.archetype,
+      currentHole: -1,
+      strokes: f.strokes,
+      scoreToPar: f.scoreToPar,
+      mood: f.mood,
+      finished: true,
+      spent: f.spent,
+      holes: f.holePar.map((par, i) => ({
+        holeNumber: f.holeNumbers[i],
+        par,
+        strokes: i < f.holesPlayed ? f.holeStrokes[i] : null,
+      })),
+    };
+  }
+  return null;
 }
 
 export function avgSatisfactionSoFar(state: LiveState): number {

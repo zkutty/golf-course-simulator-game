@@ -32,6 +32,7 @@ import type { Action } from "./core/actions";
 import { DEBUG_PERF, logReducerDispatch, logEvaluateHole } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
 import { LiveControls } from "./ui/LiveControls";
+import { GolferInspector } from "./ui/GolferInspector";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -1107,6 +1108,8 @@ export default function App() {
                 showObstacles={showObstacles}
                 golfersRef={live.golfersRef}
                 liveActive={live.liveActive}
+                onGolferClick={live.selectGolfer}
+                selectedGolferIdRef={live.selectedIdRef}
                 onCameraUpdate={(camera) => {
                   holeEditCameraManualRef.current = true;
                   setHoleEditCamera(camera);
@@ -1168,6 +1171,12 @@ export default function App() {
               cash={world.cash}
               reputation={world.reputation}
             />
+            {live.selectedGolfer && (
+              <GolferInspector
+                golfer={live.selectedGolfer}
+                onClose={() => live.selectGolfer(null)}
+              />
+            )}
           </div>
         </div>
 

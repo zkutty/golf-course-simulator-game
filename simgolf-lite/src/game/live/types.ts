@@ -36,6 +36,7 @@ export interface Golfer {
   // Per-hole outcome, precomputed at spawn and revealed as the golfer plays.
   holePar: number[];
   holeStrokes: number[];
+  holeNumbers: number[]; // course hole index for each played hole (skips invalid holes)
   scoredHoles: number; // how many holes have been folded into scoreToPar
   // Progress / outcome
   currentHole: number; // -1 before first hole / after finishing
@@ -53,10 +54,28 @@ export interface Arrival {
   archetype: GolferArchetypeName;
 }
 
+// Immutable record of a completed (or abandoned) round, kept for the rest of
+// the day so the inspector can still show a golfer who walked off, and so the
+// day's results are real observed rounds rather than aggregates.
+export interface FinishedRound {
+  id: number;
+  name: string;
+  archetype: GolferArchetypeName;
+  strokes: number;
+  scoreToPar: number;
+  mood: number; // final mood at walk-off
+  spent: number;
+  holeNumbers: number[];
+  holePar: number[];
+  holeStrokes: number[];
+  holesPlayed: number;
+}
+
 export interface LiveState {
   dayIndex: number; // 0-based day counter within the current week
   dayMinute: number; // current time of day (game-minutes past open)
-  golfers: Golfer[]; // active + recently-finished (kept briefly for display)
+  golfers: Golfer[]; // active golfers currently on the course
+  finishedRounds: FinishedRound[]; // today's completed rounds (reset each day)
   arrivals: Arrival[]; // scheduled, not yet spawned (sorted by atMinute)
   nextArrivalIdx: number;
   nextGolferId: number;
@@ -79,6 +98,21 @@ export interface GolferRenderData {
   color: string;
   mood: number;
   thought: string | null;
+}
+
+// A UI-facing snapshot of one golfer, published on the throttled status tick
+// (never per-frame). `holes` reveals strokes only for holes already played.
+export interface GolferSnapshot {
+  id: number;
+  name: string;
+  archetype: GolferArchetypeName;
+  currentHole: number; // course hole index, -1 while walking in/out
+  strokes: number;
+  scoreToPar: number;
+  mood: number;
+  finished: boolean;
+  spent: number;
+  holes: { holeNumber: number; par: number; strokes: number | null }[];
 }
 
 // Result of committing a finished day into the economy/reputation model.

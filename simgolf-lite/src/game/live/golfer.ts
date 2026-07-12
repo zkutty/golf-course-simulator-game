@@ -28,6 +28,7 @@ export interface BuiltRound {
   segments: Segment[];
   holePar: number[];
   holeStrokes: number[];
+  holeNumbers: number[]; // course hole index of each entry above
 }
 
 // Build a golfer's full itinerary across all valid holes, reusing the existing
@@ -44,6 +45,7 @@ export function buildGolferRound(args: {
   const segments: Segment[] = [];
   const holePar: number[] = [];
   const holeStrokes: number[] = [];
+  const holeNumbers: number[] = [];
 
   let cursor: Point = entry;
 
@@ -90,13 +92,14 @@ export function buildGolferRound(args: {
 
     holePar.push(par);
     holeStrokes.push(shots + putts);
+    holeNumbers.push(i);
     cursor = green;
   }
 
   // Walk off to the exit.
   segments.push(walkSeg(cursor, entry, -1, LIVE.pace.interHoleWalkCap));
 
-  return { segments, holePar, holeStrokes };
+  return { segments, holePar, holeStrokes, holeNumbers };
 }
 
 export function entryPoint(course: Course): Point {

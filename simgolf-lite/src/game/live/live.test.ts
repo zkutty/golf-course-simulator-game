@@ -4,7 +4,7 @@ import { DEFAULT_WORLD } from "../models/defaults";
 import { getGolferProfile } from "../sim/golferProfiles";
 import { scoreCourseHoles } from "../sim/holes";
 import { buildGolferRound, advanceGolfer, entryPoint } from "./golfer";
-import { createLiveState, stepLive, avgSatisfactionSoFar } from "./simulation";
+import { createLiveState, stepLive, avgSatisfactionSoFar, snapshotGolfer } from "./simulation";
 import { planDay, plannedGolfersForDay } from "./spawn";
 import { commitDay } from "./commitDay";
 import type { Golfer } from "./types";
@@ -58,6 +58,7 @@ function freshGolfer(course: Course): Golfer {
     ball: null,
     holePar: round.holePar,
     holeStrokes: round.holeStrokes,
+    holeNumbers: round.holeNumbers,
     scoredHoles: 0,
     currentHole: -1,
     strokes: 0,
@@ -158,6 +159,41 @@ describe("stepLive", () => {
     expect(totalCash).toBe(planned * course.baseGreenFee);
     expect(live.greenFeeCollected).toBe(planned * course.baseGreenFee);
     expect(avgSatisfactionSoFar(live)).toBeGreaterThan(0);
+  });
+});
+
+describe("snapshotGolfer (inspector + scorecard)", () => {
+  it("snapshots an active golfer, hides unplayed holes, and keeps finished rounds", () => {
+    const course = makeTestCourse();
+    const world: World = { ...DEFAULT_WORLD };
+    const live = createLiveState(course, world, 0);
+
+    // Step until at least one golfer is on the course.
+    let guard = 0;
+    while (live.golfers.length === 0 && guard++ < 10_000) stepLive(live, course, 1);
+    const id = live.golfers[0].id;
+
+    const snap = snapshotGolfer(live, id);
+    expect(snap).not.toBeNull();
+    expect(snap!.finished).toBe(false);
+    expect(snap!.holes.length).toBe(1);
+    // Hole not scored yet => strokes hidden.
+    if (live.golfers.find((g) => g.id === id)!.scoredHoles === 0) {
+      expect(snap!.holes[0].strokes).toBeNull();
+    }
+    expect(snap!.spent).toBe(course.baseGreenFee);
+
+    // Run the day out; the golfer must survive as a finished-round snapshot.
+    guard = 0;
+    while (!live.dayOver && guard++ < 100_000) stepLive(live, course, 1);
+    const done = snapshotGolfer(live, id);
+    expect(done).not.toBeNull();
+    expect(done!.finished).toBe(true);
+    expect(done!.holes[0].strokes).toBe(done!.strokes); // single-hole course: all revealed
+    expect(done!.strokes).toBeGreaterThan(0);
+    expect(live.finishedRounds.length).toBe(live.roundsFinished);
+
+    expect(snapshotGolfer(live, 999_999)).toBeNull();
   });
 });
 
