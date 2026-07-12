@@ -17,8 +17,10 @@ export const LIVE = {
     openMinute: 0, // 0 == 6:00 AM (display offset applied in UI)
     displayStartHour: 6, // 6 AM
     closeMinute: 840, // 14 hours of daylight -> 8:00 PM
-    lastArrivalMinute: 600, // no new golfers after this
+    lastArrivalMinute: 660, // no new golfers after 5 PM (late 9 still finishes near close)
     firstArrivalMinute: 20,
+    // Arrivals skew toward the morning (rng^bias): 1 = uniform, >1 = earlier.
+    arrivalMorningBias: 1.35,
   },
 
   // Entry/exit is a point on the left edge of the course where golfers walk in.
@@ -43,14 +45,20 @@ export const LIVE = {
     puttVarianceBogey: 0.35,
   },
 
-  // Golfers actually simulated & drawn per day. Derived from the demand model,
-  // then clamped into a watchable range (you see every golfer on the course).
+  // Golfers actually simulated & drawn per day. Driven by the demand index so
+  // reputation/quality/price visibly change how busy the course looks, then
+  // clamped into a watchable range (you see every golfer on the course).
   volume: {
     minGolfers: 3,
     maxGolfers: 42,
-    // Fraction of the abstract weekly demand potential that becomes a day's
-    // real, on-screen rounds.
-    dailyDemandFraction: 0.03,
+    // demandIndex (0..1.2) is normalized into [demandFloor, demandCeil] and
+    // shaped by demandGamma before scaling min..max golfers. The floor sits
+    // near the model's practical minimum so a bad course actually feels dead.
+    demandFloor: 0.45,
+    demandCeil: 1.1,
+    demandGamma: 1.5,
+    // A tiny course can't host a crowd: cap daily golfers per valid hole.
+    perValidHole: 4,
   },
 
   mood: {
