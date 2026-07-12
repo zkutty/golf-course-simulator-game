@@ -5,6 +5,7 @@ import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
 import type { CameraState } from "../game/render/camera";
 import {
+  ELEVATION_STEP_PX,
   TILE_H,
   TILE_W,
   isoDepth,
@@ -15,6 +16,7 @@ import {
 } from "../game/render/iso";
 import { getObstacleSprite } from "../render/iconSprites";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
+import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -47,6 +49,11 @@ import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
  *
  * Rotation is plumbed (ROTATION constant) but fixed at 0 until the Q/E
  * camera controls of ZKU-141.
+ *
+ * Elevation (ZKU-144): tile tops are offset by elevation, tinted by a
+ * NW-sun slope shade, and exposed south/east cliff faces are drawn as dirt
+ * quads. Picking iterates elevation levels front-to-back so clicking a
+ * raised tile selects it, not the tile geometrically behind it.
  */
 
 const COLORS: Record<Terrain, number> = {
@@ -80,6 +87,22 @@ function darken(color: number, factor: number): number {
   const b = Math.round((color & 0xff) * factor);
   return (r << 16) | (g << 8) | b;
 }
+
+/** Shade a color: factor < 1 darkens, factor > 1 lerps toward white. */
+function shade(color: number, factor: number): number {
+  if (factor <= 1) return darken(color, factor);
+  const t = Math.min(1, factor - 1);
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  const lerp = (c: number) => Math.round(c + (255 - c) * t);
+  return (lerp(r) << 16) | (lerp(g) << 8) | lerp(b);
+}
+
+// Cliff face colors (exposed earth), lit by the fixed NW sun: the SW-facing
+// (screen lower-left) face sits in shadow, the SE-facing face catches more.
+const CLIFF_SW = 0x6b4f33;
+const CLIFF_SE = 0x8a6844;
 
 export interface PixiStageProps {
   course: Course;
@@ -151,6 +174,7 @@ export function PixiStage(props: PixiStageProps) {
 
   const diamondTextureRef = useRef<PIXI.Texture | null>(null);
   const tileSpritesRef = useRef<PIXI.Sprite[]>([]);
+  const cliffGraphicsRef = useRef<PIXI.Graphics | null>(null);
   const obstacleSpritesRef = useRef<Map<string, PIXI.Sprite>>(new Map());
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
@@ -210,30 +234,40 @@ export function PixiStage(props: PixiStageProps) {
     world.position.set(sw / 2 - centerIso.x * zoom, sh / 2 - centerIso.y * zoom);
   }, [cameraState, course.width, course.height]);
 
-  /** Inverse camera transform: global pointer coords → integer tile, or null. */
+  /**
+   * Inverse camera transform: global pointer coords → integer tile, or null.
+   * Elevation-aware: tests elevation levels front-to-back so a raised tile's
+   * visible top wins over the tile geometrically behind it at base level.
+   */
   const screenToTile = useCallback(
     (globalX: number, globalY: number): { x: number; y: number } | null => {
       const world = layersRef.current?.world;
       if (!world) return null;
       const ix = (globalX - world.position.x) / world.scale.x;
       const iy = (globalY - world.position.y) / world.scale.y;
-      const t = isoToTile(ix, iy, ROTATION);
-      if (t.x < 0 || t.y < 0 || t.x >= course.width || t.y >= course.height) return null;
-      return t;
+      for (let e = ELEVATION_MAX; e >= 0; e--) {
+        const t = isoToTile(ix, iy + e * ELEVATION_STEP_PX, ROTATION);
+        if (t.x < 0 || t.y < 0 || t.x >= course.width || t.y >= course.height) continue;
+        if (getElevation(course, t.x, t.y) === e) return t;
+      }
+      return null;
     },
-    [course.width, course.height]
+    [course]
   );
 
   /** Continuous world tile coords → global screen coords (for screen overlays). */
-  const worldPointToScreen = useCallback((wx: number, wy: number): { x: number; y: number } => {
-    const world = layersRef.current?.world;
-    if (!world) return { x: 0, y: 0 };
-    const p = worldToIso(wx, wy, 0, ROTATION);
-    return {
-      x: world.position.x + p.x * world.scale.x,
-      y: world.position.y + p.y * world.scale.y,
-    };
-  }, []);
+  const worldPointToScreen = useCallback(
+    (wx: number, wy: number, elevation = 0): { x: number; y: number } => {
+      const world = layersRef.current?.world;
+      if (!world) return { x: 0, y: 0 };
+      const p = worldToIso(wx, wy, elevation, ROTATION);
+      return {
+        x: world.position.x + p.x * world.scale.x,
+        y: world.position.y + p.y * world.scale.y,
+      };
+    },
+    []
+  );
 
   // ---------------------------------------------------------------------
   // App lifecycle
@@ -358,18 +392,22 @@ export function PixiStage(props: PixiStageProps) {
 
     const tileCount = course.width * course.height;
     const sprites = tileSpritesRef.current;
+    const elev = (x: number, y: number) => getElevation(course, x, y);
 
-    if (sprites.length !== tileCount) {
+    if (sprites.length !== tileCount || !cliffGraphicsRef.current) {
       layers.terrain.removeChildren();
+      cliffGraphicsRef.current?.destroy();
       sprites.forEach((s) => s.destroy());
       sprites.length = 0;
+      // Cliff faces render behind all tile tops.
+      const cliffs = new PIXI.Graphics();
+      layers.terrain.addChild(cliffs);
+      cliffGraphicsRef.current = cliffs;
       // Row-major insertion is already back-to-front for rotation 0.
       for (let y = 0; y < course.height; y++) {
         for (let x = 0; x < course.width; x++) {
           const sprite = new PIXI.Sprite(diamond);
           sprite.anchor.set(0.5, 0);
-          const p = worldToIso(x + 0.5, y, 0, ROTATION); // top corner of tile diamond
-          sprite.position.set(p.x, p.y);
           layers.terrain.addChild(sprite);
           sprites.push(sprite);
         }
@@ -377,10 +415,50 @@ export function PixiStage(props: PixiStageProps) {
       devLog(`built ${tileCount} diamond sprites`);
     }
 
-    for (let i = 0; i < tileCount; i++) {
-      sprites[i].tint = darken(COLORS[course.tiles[i]], EDGE_DARKEN);
+    // Tops: position by elevation, tint by terrain color × NW-sun slope shade.
+    for (let y = 0; y < course.height; y++) {
+      for (let x = 0; x < course.width; x++) {
+        const idx = y * course.width + x;
+        const sprite = sprites[idx];
+        const e = elev(x, y);
+        const p = worldToIso(x + 0.5, y, e, ROTATION); // top corner of tile diamond
+        sprite.position.set(p.x, p.y);
+        // Central-difference surface normal → brightness against a NW sun.
+        const dzdx = (elev(x + 1, y) - elev(x - 1, y)) / 2;
+        const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
+        const slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
+        sprite.tint = shade(darken(COLORS[course.tiles[idx]], EDGE_DARKEN), slopeShade);
+      }
     }
-  }, [appReady, course.tiles, course.width, course.height]);
+
+    // Cliff faces: exposed south/east drops become vertical dirt quads.
+    const cliffs = cliffGraphicsRef.current;
+    if (cliffs) {
+      cliffs.clear();
+      for (let y = 0; y < course.height; y++) {
+        for (let x = 0; x < course.width; x++) {
+          const e = elev(x, y);
+          if (e <= 0) continue;
+          const south = y + 1 < course.height ? elev(x, y + 1) : 0;
+          const east = x + 1 < course.width ? elev(x + 1, y) : 0;
+          if (south < e) {
+            const a = worldToIso(x, y + 1, e, ROTATION); // left corner
+            const b = worldToIso(x + 1, y + 1, e, ROTATION); // bottom corner
+            const drop = (e - south) * ELEVATION_STEP_PX;
+            cliffs.poly([a.x, a.y, b.x, b.y, b.x, b.y + drop, a.x, a.y + drop]);
+            cliffs.fill(CLIFF_SW);
+          }
+          if (east < e) {
+            const a = worldToIso(x + 1, y, e, ROTATION); // right corner
+            const b = worldToIso(x + 1, y + 1, e, ROTATION); // bottom corner
+            const drop = (e - east) * ELEVATION_STEP_PX;
+            cliffs.poly([a.x, a.y, b.x, b.y, b.x, b.y + drop, a.x, a.y + drop]);
+            cliffs.fill(CLIFF_SE);
+          }
+        }
+      }
+    }
+  }, [appReady, course]);
 
   // ---------------------------------------------------------------------
   // Objects layer — obstacles, ground-anchored and depth-sorted
@@ -406,13 +484,14 @@ export function PixiStage(props: PixiStageProps) {
       if (obstacleSpritesRef.current.has(key)) return;
       const sprite = new PIXI.Sprite(PIXI.Texture.from(img));
       // Ground-anchored at the tile center, standing "up" from the diamond.
-      const center = tileCenterIso(obs.x, obs.y, 0, ROTATION);
+      const e = getElevation(course, obs.x, obs.y);
+      const center = tileCenterIso(obs.x, obs.y, e, ROTATION);
       sprite.anchor.set(0.5, 1);
       sprite.position.set(center.x, center.y + TILE_H / 2);
       const size = TILE_W * 0.72;
       sprite.width = size;
       sprite.height = size;
-      sprite.zIndex = isoDepth(obs.x + 0.5, obs.y + 0.5, 0, ROTATION);
+      sprite.zIndex = isoDepth(obs.x + 0.5, obs.y + 0.5, e, ROTATION);
       layersNow.objects.addChild(sprite);
       obstacleSpritesRef.current.set(key, sprite);
     };
@@ -427,7 +506,7 @@ export function PixiStage(props: PixiStageProps) {
         });
       }
     });
-  }, [appReady, obstacles, tileSize, props.showObstacles]);
+  }, [appReady, obstacles, tileSize, props.showObstacles, course]);
 
   // ---------------------------------------------------------------------
   // Decals layer — tee/green markers (incl. wizard drafts) + route overlays
@@ -446,7 +525,7 @@ export function PixiStage(props: PixiStageProps) {
 
     const drawMarker = (p: Point, fill: number, alpha = 1) => {
       const g = new PIXI.Graphics();
-      const c = tileCenterIso(p.x, p.y, 0, ROTATION);
+      const c = tileCenterIso(p.x, p.y, getElevation(course, p.x, p.y), ROTATION);
       g.ellipse(c.x, c.y, TILE_W * 0.18, TILE_H * 0.36);
       g.fill({ color: fill, alpha });
       g.stroke({ width: 2, color: 0xffffff, alpha });
@@ -460,7 +539,7 @@ export function PixiStage(props: PixiStageProps) {
     });
     if (draftTee) drawMarker(draftTee, 0x222222, 0.55);
     if (draftGreen) drawMarker(draftGreen, 0x1b5e20, 0.55);
-  }, [appReady, holes, draftTee, draftGreen]);
+  }, [appReady, holes, draftTee, draftGreen, course]);
 
   useEffect(() => {
     if (!appReady) return;
@@ -477,7 +556,7 @@ export function PixiStage(props: PixiStageProps) {
     if (showFixOverlay && failingCorridorSegments && failingCorridorSegments.length > 0) {
       const g = new PIXI.Graphics();
       for (const seg of failingCorridorSegments) {
-        const top = worldToIso(seg.x + 0.5, seg.y, 0, ROTATION);
+        const top = worldToIso(seg.x + 0.5, seg.y, getElevation(course, seg.x, seg.y), ROTATION);
         g.poly([
           top.x, top.y,
           top.x + TILE_W / 2, top.y + TILE_H / 2,
@@ -493,17 +572,19 @@ export function PixiStage(props: PixiStageProps) {
     // Active-hole route polyline.
     if (showShotPlan && activePath && activePath.length > 1) {
       const g = new PIXI.Graphics();
-      const first = tileCenterIso(activePath[0].x, activePath[0].y, 0, ROTATION);
+      const pathPoint = (pt: Point) =>
+        tileCenterIso(pt.x, pt.y, getElevation(course, pt.x, pt.y), ROTATION);
+      const first = pathPoint(activePath[0]);
       g.moveTo(first.x, first.y);
       for (let i = 1; i < activePath.length; i++) {
-        const p = tileCenterIso(activePath[i].x, activePath[i].y, 0, ROTATION);
+        const p = pathPoint(activePath[i]);
         g.lineTo(p.x, p.y);
       }
       g.stroke({ width: 2, color: 0xffffff, alpha: 0.75 });
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
     }
-  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath]);
+  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course]);
 
   // ---------------------------------------------------------------------
   // Ticker pass — hover highlight/line + live golfer dots
@@ -541,7 +622,7 @@ export function PixiStage(props: PixiStageProps) {
         if (highlight) {
           highlight.clear();
           if (hover) {
-            const top = worldToIso(hover.x + 0.5, hover.y, 0, ROTATION);
+            const top = worldToIso(hover.x + 0.5, hover.y, getElevation(course, hover.x, hover.y), ROTATION);
             highlight.poly([
               top.x, top.y,
               top.x + TILE_W / 2, top.y + TILE_H / 2,
@@ -560,8 +641,16 @@ export function PixiStage(props: PixiStageProps) {
             const hole = holes[activeHoleIndex];
             const fromPoint = hole?.tee || draftTee;
             if (fromPoint) {
-              const from = worldPointToScreen(fromPoint.x + 0.5, fromPoint.y + 0.5);
-              const to = worldPointToScreen(hover.x + 0.5, hover.y + 0.5);
+              const from = worldPointToScreen(
+                fromPoint.x + 0.5,
+                fromPoint.y + 0.5,
+                getElevation(course, fromPoint.x, fromPoint.y)
+              );
+              const to = worldPointToScreen(
+                hover.x + 0.5,
+                hover.y + 0.5,
+                getElevation(course, hover.x, hover.y)
+              );
               line.moveTo(from.x, from.y);
               line.lineTo(to.x, to.y);
               line.stroke({ width: 2, color: 0x6496ff, alpha: 0.6 });
@@ -578,7 +667,8 @@ export function PixiStage(props: PixiStageProps) {
         const list = liveActive ? golfersRef?.current : null;
         if (list && list.length > 0) {
           for (const golfer of list) {
-            const c = tileCenterIso(golfer.x, golfer.y, 0, ROTATION);
+            const ge = getElevation(course, Math.floor(golfer.x + 0.5), Math.floor(golfer.y + 0.5));
+            const c = tileCenterIso(golfer.x, golfer.y, ge, ROTATION);
             // shadow
             live.ellipse(c.x, c.y + 3, 7, 3.2);
             live.fill({ color: 0x000000, alpha: 0.2 });
@@ -589,7 +679,8 @@ export function PixiStage(props: PixiStageProps) {
             live.stroke({ width: 1.5, color: `hsl(${moodHue}, 80%, 45%)` });
             // ball in flight
             if (golfer.ballX != null && golfer.ballY != null) {
-              const b = tileCenterIso(golfer.ballX, golfer.ballY, 0, ROTATION);
+              const be = getElevation(course, Math.floor(golfer.ballX + 0.5), Math.floor(golfer.ballY + 0.5));
+              const b = tileCenterIso(golfer.ballX, golfer.ballY, be, ROTATION);
               live.circle(b.x, b.y - 2, 2.2);
               live.fill(0xffffff);
               live.stroke({ width: 0.8, color: 0x555555 });
@@ -603,7 +694,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
