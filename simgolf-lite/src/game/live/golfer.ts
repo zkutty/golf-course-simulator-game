@@ -6,6 +6,10 @@ import { LIVE } from "./liveConfig";
 import { mishitChance, puttOutcome, type Personality } from "./personality";
 import type { Golfer, Segment } from "./types";
 
+// Optional tile-aware router; returns waypoints from just-after `from` to `to`,
+// or null to fall back to a straight-line walk.
+export type WalkRouter = (from: Point, to: Point) => Point[] | null;
+
 function dist(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
@@ -40,6 +44,7 @@ export function buildGolferRound(args: {
   entry: Point;
   rng: () => number;
   personality: Personality;
+  route?: WalkRouter;
 }): BuiltRound {
   return planFromHole({
     course: args.course,
@@ -49,6 +54,7 @@ export function buildGolferRound(args: {
     startHole: 0,
     cursor: args.entry,
     exit: args.entry,
+    route: args.route,
   });
 }
 
@@ -64,12 +70,30 @@ export function planFromHole(args: {
   startHole: number;
   cursor: Point;
   exit: Point;
+  route?: WalkRouter;
 }): BuiltRound {
-  const { course, profile, rng, personality, startHole, exit } = args;
+  const { course, profile, rng, personality, startHole, exit, route } = args;
   const summary = scoreCourseHoles(course);
   const segments: Segment[] = [];
   const holePar: number[] = [];
   const holeStrokes: number[] = [];
+
+  // Push a walk from -> to, routed around water when a router is provided,
+  // otherwise a single straight segment (optionally duration-capped).
+  const pushWalk = (from: Point, to: Point, holeIndex: number, cap = Infinity) => {
+    if (route) {
+      const path = route(from, to);
+      if (path && path.length) {
+        let cur = from;
+        for (const wp of path) {
+          segments.push(walkSeg(cur, wp, holeIndex));
+          cur = wp;
+        }
+        return;
+      }
+    }
+    segments.push(walkSeg(from, to, holeIndex, cap));
+  };
 
   let cursor: Point = args.cursor;
 
@@ -82,8 +106,8 @@ export function planFromHole(args: {
     const green = hole.green;
     const par = info.par ?? 4;
 
-    // Walk from wherever we are to this tee.
-    segments.push(walkSeg(cursor, tee, i, LIVE.pace.interHoleWalkCap));
+    // Walk from wherever we are to this tee (routed around water).
+    pushWalk(cursor, tee, i, LIVE.pace.interHoleWalkCap);
 
     // Plan the shots to the green and play them out. The planner returns one
     // optimal line for the profile; personality then adds recovery strokes when
@@ -95,7 +119,7 @@ export function planFromHole(args: {
       for (const step of solved.plan) {
         segments.push(pauseSeg(step.from, i, LIVE.pace.swingPause));
         segments.push(flightSeg(step.from, step.to, i));
-        segments.push(walkSeg(step.from, step.to, i));
+        pushWalk(step.from, step.to, i); // walk to the ball, routed around water
         shots++;
         if (rng() < mishitChance(personality)) penalties++; // sprayed shot
       }
@@ -103,7 +127,7 @@ export function planFromHole(args: {
       // Unreachable (e.g. water-blocked): a single frustrated hack straight up.
       segments.push(pauseSeg(tee, i, LIVE.pace.swingPause));
       segments.push(flightSeg(tee, green, i));
-      segments.push(walkSeg(tee, green, i));
+      pushWalk(tee, green, i);
       shots = par + 1;
     }
 
@@ -121,8 +145,8 @@ export function planFromHole(args: {
     cursor = green;
   }
 
-  // Walk off to the exit.
-  segments.push(walkSeg(cursor, exit, -1, LIVE.pace.interHoleWalkCap));
+  // Walk off to the exit (routed around water).
+  pushWalk(cursor, exit, -1, LIVE.pace.interHoleWalkCap);
 
   return { segments, holePar, holeStrokes };
 }

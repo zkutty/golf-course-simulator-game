@@ -71,6 +71,9 @@ export interface LiveState {
   detractors: number; // disappointed golfers who'd warn others off
   willReturnCount: number; // golfers intending to come back
   reconcileEpoch: number; // bumped when a mid-round re-plan runs (ZKU-136)
+  nextTeeFreeAt: number; // earliest game-minute the next group may tee off (ZKU-110)
+  // Memoized walking routes (from->to), shared by all golfers spawned this day (ZKU-107).
+  walkCache: Map<string, Point[] | null>;
   dayOver: boolean;
   seed: number;
 }

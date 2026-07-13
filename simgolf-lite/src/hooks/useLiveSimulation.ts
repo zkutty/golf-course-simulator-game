@@ -14,6 +14,21 @@ import type { DayResult, GolferRenderData, LiveState } from "../game/live/types"
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
 
+export interface SelectedGolferDetail {
+  id: number;
+  name: string;
+  archetype: string;
+  color: string;
+  currentHole: number; // 0-based; -1 before first / after last
+  strokes: number;
+  scoreToPar: number;
+  mood: number;
+  thought: string | null;
+  holePar: number[];
+  holeStrokes: number[];
+  scoredHoles: number;
+}
+
 export interface LiveStatus {
   speed: SpeedName;
   dayIndex: number; // 0..6 within the week
@@ -23,6 +38,30 @@ export interface LiveStatus {
   roundsToday: number;
   greenFeesToday: number;
   lastDay: DayResult | null;
+  selected: SelectedGolferDetail | null;
+}
+
+function buildSelected(
+  live: LiveState | null,
+  id: number | null
+): SelectedGolferDetail | null {
+  if (live == null || id == null) return null;
+  const g = live.golfers.find((x) => x.id === id);
+  if (!g) return null;
+  return {
+    id: g.id,
+    name: g.name,
+    archetype: g.archetype,
+    color: g.color,
+    currentHole: g.currentHole,
+    strokes: g.strokes,
+    scoreToPar: g.scoreToPar,
+    mood: g.mood,
+    thought: g.thought,
+    holePar: g.holePar,
+    holeStrokes: g.holeStrokes,
+    scoredHoles: g.scoredHoles,
+  };
 }
 
 function clockLabel(dayMinute: number): string {
@@ -62,7 +101,9 @@ export function useLiveSimulation(args: {
     roundsToday: 0,
     greenFeesToday: 0,
     lastDay: null,
+    selected: null,
   });
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   // Latest inputs, mirrored into refs so the rAF loop never restarts. Synced in
   // an effect (not during render) per the rules of hooks.
@@ -75,6 +116,7 @@ export function useLiveSimulation(args: {
   const lastTsRef = useRef<number | null>(null);
   const pendingCashRef = useRef(0);
   const lastStatusAtRef = useRef(0);
+  const selectedIdRef = useRef<number | null>(null);
   const onDayRef = useRef(onDayCommitted);
   const onCashRef = useRef(onCashTick);
 
@@ -115,6 +157,12 @@ export function useLiveSimulation(args: {
   }, [setWorld]);
 
   const publishStatus = useCallback((live: LiveState) => {
+    const selected = buildSelected(live, selectedIdRef.current);
+    // The selected golfer finished/left the course — drop the selection.
+    if (selectedIdRef.current != null && selected == null) {
+      selectedIdRef.current = null;
+      setSelectedId(null);
+    }
     setStatus({
       speed: speedRef.current,
       dayIndex: live.dayIndex,
@@ -124,8 +172,15 @@ export function useLiveSimulation(args: {
       roundsToday: live.roundsStarted,
       greenFeesToday: live.greenFeeCollected,
       lastDay: status.lastDay,
+      selected,
     });
   }, [status.lastDay]);
+
+  const selectGolfer = useCallback((id: number | null) => {
+    selectedIdRef.current = id;
+    setSelectedId(id);
+    setStatus((s) => ({ ...s, selected: buildSelected(liveRef.current, id) }));
+  }, []);
 
   // Commit a finished day: apply costs/rep/condition as deltas (green fees were
   // already banked live), then roll the calendar and start the next day.
@@ -194,14 +249,16 @@ export function useLiveSimulation(args: {
           onCashRef.current?.();
         }
         golfersRef.current = liveRenderData(live);
-
-        if (ts - lastStatusAtRef.current >= STATUS_THROTTLE_MS) {
-          lastStatusAtRef.current = ts;
-          flushCash();
-          publishStatus(live);
-        }
-        if (live.dayOver) finishDay(live);
       }
+
+      // Publish status (clock, on-course, selected golfer) on a throttle even
+      // while paused, so the inspector and clock stay responsive.
+      if (ts - lastStatusAtRef.current >= STATUS_THROTTLE_MS) {
+        lastStatusAtRef.current = ts;
+        flushCash();
+        publishStatus(live);
+      }
+      if (live.dayOver) finishDay(live);
 
       rafRef.current = requestAnimationFrame(tick);
     };
@@ -216,5 +273,5 @@ export function useLiveSimulation(args: {
 
   const liveActive = speed !== "paused" || status.onCourse > 0;
 
-  return { status, speed, setSpeed, golfersRef, liveActive };
+  return { status, speed, setSpeed, golfersRef, liveActive, selectGolfer, selectedId };
 }
