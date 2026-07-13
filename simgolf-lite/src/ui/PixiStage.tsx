@@ -12,13 +12,14 @@ import {
   isoToTile,
   isoToWorld,
   nextRotation,
+  rotateWorld,
   tileCenterIso,
   unrotateWorld,
   worldToIso,
   type IsoRotation,
 } from "../game/render/iso";
 import { getObstacleSprite } from "../render/iconSprites";
-import { getPropFrame, loadAtlases, type PropFrame } from "../render/atlas";
+import { getPropFrame, loadAtlases, type PropFrame, type TerrainFrame } from "../render/atlas";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth, placeObject } from "../game/render/objectPlacement";
@@ -79,6 +80,21 @@ const COLORS: Record<Terrain, number> = {
 // Slightly darker edge tint per tile to keep the grid readable until the
 // M10 art pass replaces flat colors with textures.
 const EDGE_DARKEN = 0.88;
+
+// Autotile transition priority (ZKU-148): where two terrains meet, the
+// HIGHER-priority surface "owns" the boundary and spills a scalloped lip
+// onto the lower-priority tile (green edges spill onto fairway, fairway
+// onto rough, sand onto water, ...).
+const TERRAIN_PRIORITY: Record<Terrain, number> = {
+  green: 8,
+  fairway: 7,
+  sand: 6,
+  water: 5,
+  path: 4,
+  tee: 3,
+  rough: 2,
+  deep_rough: 1,
+};
 
 const MARKER_LABEL = "hole-marker";
 const ROUTE_LABEL = "route-overlay";
@@ -180,6 +196,11 @@ interface TerrainChunk {
   minY: number;
   maxX: number;
   maxY: number;
+  /** Animated water tiles in this chunk (ZKU-150): shimmer via throttled
+   * tint oscillation, so static chunk contents stay untouched. */
+  waterSprites: Array<{ sprite: PIXI.Sprite; baseTint: number; phase: number; gx: number; gy: number }>;
+  /** Shore-foam lips on water tiles along land edges, alpha-oscillated. */
+  foamSprites: Array<{ sprite: PIXI.Sprite; phase: number }>;
 }
 
 /** Fit zoom for a world-tile bbox projected to the iso plane. */
@@ -219,11 +240,27 @@ export function PixiStage(props: PixiStageProps) {
   const prevElevationsRef = useRef<number[] | null>(null);
   const builtRotationRef = useRef<IsoRotation | null>(null);
   const chunkRebuildsRef = useRef(0);
-  const obstacleSpritesRef = useRef<Map<string, PIXI.Sprite>>(new Map());
+  const obstacleSpritesRef = useRef<
+    Map<string, { sprite: PIXI.Sprite; shadow: PIXI.Graphics; swayPhase: number | null }>
+  >(new Map());
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
+  const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
+  const waterAnimRef = useRef({ last: 0, wasAnimating: false });
+  const ripplesRef = useRef<Array<{ x: number; y: number; t0: number }>>([]);
+  const rippleGraphicsRef = useRef<PIXI.Graphics | null>(null);
   const golferPoolRef = useRef<
-    Map<number, { holder: PIXI.Container; body: PIXI.Graphics; ball: PIXI.Graphics; lastColor: string; lastMoodBucket: number }>
+    Map<
+      number,
+      {
+        holder: PIXI.Container;
+        body: PIXI.Graphics;
+        ball: PIXI.Graphics;
+        lastColor: string;
+        lastMoodBucket: number;
+        lastBall: { x: number; y: number } | null;
+      }
+    >
   >(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
@@ -457,6 +494,10 @@ export function PixiStage(props: PixiStageProps) {
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
       golferPoolRef.current.clear();
+      flagPoolRef.current.clear();
+      rippleGraphicsRef.current = null;
+      ripplesRef.current = [];
+      waterAnimRef.current = { last: 0, wasAnimating: false };
       diamondTextureRef.current = null;
       if (appRef.current) {
         appRef.current.destroy(true, { children: true, texture: true });
@@ -747,6 +788,8 @@ export function PixiStage(props: PixiStageProps) {
       const y1 = Math.min(h, y0 + CHUNK_TILES);
 
       chunk.container.removeChildren().forEach((c) => c.destroy());
+      chunk.waterSprites = [];
+      chunk.foamSprites = [];
 
       // Cliff faces render behind this chunk's tile tops.
       const cliffs = new PIXI.Graphics();
@@ -776,18 +819,117 @@ export function PixiStage(props: PixiStageProps) {
         face(x, y, dSW, CLIFF_SW);
         face(x, y, dSE, CLIFF_SE);
       }
+      // Screen-edge frame for a world-neighbor offset under the current
+      // rotation (rotated +x = lower-right edge, +y = lower-left, etc.).
+      const edgeFrameFor = (dx: number, dy: number): "edge_ur" | "edge_lr" | "edge_ll" | "edge_ul" => {
+        const r = rotateWorld(dx, dy, rotation);
+        if (r.x === 1) return "edge_lr";
+        if (r.x === -1) return "edge_ul";
+        if (r.y === 1) return "edge_ll";
+        return "edge_ur";
+      };
+      const NEIGHBORS: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+      // Mow stripes (ZKU-149): fairway/green tiles get alternating light/dark
+      // bands oriented along the nearest hole's tee→green axis; fairway far
+      // from any hole falls back to a global diagonal. Pure tint math — no
+      // extra sprites, cached with the chunk.
+      const holeAxes = course.holes
+        .filter((hole) => hole.tee && hole.green)
+        .map((hole) => {
+          const ax = hole.tee!.x;
+          const ay = hole.tee!.y;
+          const dx = hole.green!.x - ax;
+          const dy = hole.green!.y - ay;
+          const len2 = Math.max(1e-6, dx * dx + dy * dy);
+          return { ax, ay, dx, dy, len2 };
+        });
+      const stripeShade = (x: number, y: number): number => {
+        let band: number | null = null;
+        let bestDist = 64; // squared distance gate (~8 tiles from the axis)
+        for (const axis of holeAxes) {
+          const px = x - axis.ax;
+          const py = y - axis.ay;
+          const t = Math.max(0, Math.min(1, (px * axis.dx + py * axis.dy) / axis.len2));
+          const cx2 = px - t * axis.dx;
+          const cy2 = py - t * axis.dy;
+          const d2 = cx2 * cx2 + cy2 * cy2;
+          if (d2 < bestDist) {
+            bestDist = d2;
+            const along = t * Math.sqrt(axis.len2); // tiles along the axis
+            band = Math.floor(along / 1.5) % 2;
+          }
+        }
+        if (band === null) band = ((Math.floor((x - y) / 2) % 2) + 2) % 2; // global diagonal
+        return band === 0 ? 1.035 : 0.965; // subtle per ART_GUIDE
+      };
+
       for (const { x, y } of order) {
-        const sprite = new PIXI.Sprite(diamond);
-        sprite.anchor.set(0.5, 0);
+        const terrain = course.tiles[y * w + x];
         const e = elev(x, y);
         const p = worldToIso(x + 0.5, y, e, rotation);
-        sprite.position.set(p.x, p.y);
         // NW-sun slope shade from central-difference normals (world-fixed sun).
         const dzdx = (elev(x + 1, y) - elev(x - 1, y)) / 2;
         const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
-        const slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
-        sprite.tint = shade(darken(COLORS[course.tiles[y * w + x]], EDGE_DARKEN), slopeShade);
+        let slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
+        if (terrain === "fairway" || terrain === "green") slopeShade *= stripeShade(x, y);
+        const tileTint = shade(darken(COLORS[terrain], EDGE_DARKEN), slopeShade);
+
+        // Base: textured variant by deterministic position hash (kills the
+        // repeating-tile look); flat white diamond when the atlas is absent.
+        const variant = getPropFrame(`diamond${(x * 31 + y * 47) % 3}` as TerrainFrame);
+        const sprite = new PIXI.Sprite(variant ?? diamond);
+        sprite.anchor.set(0.5, 0);
+        sprite.position.set(p.x, p.y);
+        sprite.tint = tileTint;
         chunk.container.addChild(sprite);
+
+        // Animated water registration (ZKU-150): shimmer phase from position
+        // so neighboring tiles never pulse in sync; plus a foam lip along
+        // every land edge (drawn on the water side).
+        if (terrain === "water") {
+          chunk.waterSprites.push({
+            sprite,
+            baseTint: tileTint,
+            phase: ((x * 13 + y * 7) % 32) / 32 * Math.PI * 2,
+            gx: x,
+            gy: y,
+          });
+          for (const [dx, dy] of NEIGHBORS) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+            if (course.tiles[ny * w + nx] === "water") continue;
+            const foamTex = getPropFrame(edgeFrameFor(dx, dy));
+            if (!foamTex) continue;
+            const foam = new PIXI.Sprite(foamTex);
+            foam.anchor.set(0.5, 0);
+            foam.position.set(p.x, p.y);
+            foam.tint = 0xffffff;
+            foam.alpha = 0.26;
+            chunk.container.addChild(foam);
+            chunk.foamSprites.push({ sprite: foam, phase: ((x * 5 + y * 11) % 16) / 16 * Math.PI * 2 });
+          }
+        }
+
+        // Autotile lips: each higher-priority world-neighbor spills a
+        // scalloped, tinted band onto this tile along the shared edge.
+        // Same-elevation only — cliff faces already separate height steps.
+        for (const [dx, dy] of NEIGHBORS) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const nTerrain = course.tiles[ny * w + nx];
+          if (TERRAIN_PRIORITY[nTerrain] <= TERRAIN_PRIORITY[terrain]) continue;
+          if (elev(nx, ny) !== e) continue;
+          const lipTex = getPropFrame(edgeFrameFor(dx, dy));
+          if (!lipTex) continue;
+          const lip = new PIXI.Sprite(lipTex);
+          lip.anchor.set(0.5, 0);
+          lip.position.set(p.x, p.y);
+          lip.tint = shade(darken(COLORS[nTerrain], EDGE_DARKEN), slopeShade);
+          chunk.container.addChild(lip);
+        }
       }
 
       // Culling bounds: projected rect corners + elevation headroom.
@@ -836,7 +978,12 @@ export function PixiStage(props: PixiStageProps) {
       });
       const chunks: TerrainChunk[] = new Array(cols * rows);
       for (const { cx, cy } of chunkOrder) {
-        const chunk: TerrainChunk = { container: new PIXI.Container(), minX: 0, minY: 0, maxX: 0, maxY: 0 };
+        const chunk: TerrainChunk = {
+          container: new PIXI.Container(),
+          minX: 0, minY: 0, maxX: 0, maxY: 0,
+          waterSprites: [],
+          foamSprites: [],
+        };
         layers.terrain.addChild(chunk.container);
         buildChunk(chunk, cx, cy);
         chunks[chunkIndex(cx, cy)] = chunk;
@@ -879,9 +1026,11 @@ export function PixiStage(props: PixiStageProps) {
     const layers = layersRef.current;
     if (!layers) return;
 
-    obstacleSpritesRef.current.forEach((sprite) => {
-      layers.objects.removeChild(sprite);
-      sprite.destroy();
+    obstacleSpritesRef.current.forEach((entry) => {
+      layers.objects.removeChild(entry.sprite);
+      entry.sprite.destroy();
+      entry.shadow.parent?.removeChild(entry.shadow);
+      entry.shadow.destroy();
     });
     obstacleSpritesRef.current.clear();
 
@@ -905,7 +1054,23 @@ export function PixiStage(props: PixiStageProps) {
       sprite.height = tall ? (size * texture.height) / texture.width : size;
       sprite.zIndex = placement.zIndex;
       layersNow.objects.addChild(sprite);
-      obstacleSpritesRef.current.set(key, sprite);
+
+      // Drop shadow (ZKU-151): soft ellipse at the base, offset SE to match
+      // the fixed NW sun; lives in the decal layer under all objects.
+      const shadow = new PIXI.Graphics();
+      const shadowRx = obs.type === "tree" ? 13 : obs.type === "bush" ? 10 : 9;
+      shadow.ellipse(3, 1.5, shadowRx, shadowRx * 0.45);
+      shadow.fill({ color: 0x000000, alpha: 0.18 });
+      shadow.position.set(placement.position.x, placement.position.y - TILE_H / 2 + 1);
+      layersNow.terrainDecals.addChild(shadow);
+
+      obstacleSpritesRef.current.set(key, {
+        sprite,
+        shadow,
+        // Wind sway (ZKU-151): trees only, per-instance phase so canopies
+        // never move in lockstep.
+        swayPhase: obs.type === "tree" ? ((obs.x * 17 + obs.y * 29) % 32) / 32 * Math.PI * 2 : null,
+      });
     };
 
     obstacles.forEach((obs) => {
@@ -955,11 +1120,50 @@ export function PixiStage(props: PixiStageProps) {
       layers.terrainDecals.addChild(g);
     };
 
+    // Tee box (ZKU-149): pad diamond + two tee markers set perpendicular to
+    // the shot direction (toward the green).
+    const drawTee = (tee: Point, green: Point | null, alpha = 1) => {
+      const g = new PIXI.Graphics();
+      const e = getElevation(course, tee.x, tee.y);
+      const c = tileCenterIso(tee.x, tee.y, e, rotation);
+      g.ellipse(c.x, c.y, TILE_W * 0.3, TILE_H * 0.3);
+      g.fill({ color: 0x9a7a58, alpha: 0.9 * alpha });
+      // Perpendicular offset in world space, projected.
+      let px = 0.7;
+      let py = -0.7;
+      if (green) {
+        const dx = green.x - tee.x;
+        const dy = green.y - tee.y;
+        const len = Math.max(1e-6, Math.hypot(dx, dy));
+        px = -dy / len;
+        py = dx / len;
+      }
+      for (const side of [-0.28, 0.28]) {
+        const m = worldToIso(tee.x + 0.5 + px * side, tee.y + 0.5 + py * side, e, rotation);
+        g.circle(m.x, m.y - 2, 2.2);
+        g.fill({ color: 0xe8c15a, alpha });
+        g.stroke({ width: 1, color: 0x6b5426, alpha });
+      }
+      g.label = MARKER_LABEL;
+      layers.terrainDecals.addChild(g);
+    };
+
+    // Cup (ZKU-149): small dark hole with a light rim on the green tile.
+    const drawCup = (green: Point, alpha = 1) => {
+      const g = new PIXI.Graphics();
+      const c = tileCenterIso(green.x, green.y, getElevation(course, green.x, green.y), rotation);
+      g.ellipse(c.x, c.y, 4.5, 2.2);
+      g.fill({ color: 0x1c2b1c, alpha });
+      g.stroke({ width: 1, color: 0xe9efe4, alpha: 0.85 * alpha });
+      g.label = MARKER_LABEL;
+      layers.terrainDecals.addChild(g);
+    };
+
     holes.forEach((hole) => {
-      if (hole.tee) drawMarker(hole.tee, 0x222222);
-      if (hole.green) drawMarker(hole.green, 0x1b5e20);
+      if (hole.tee) drawTee(hole.tee, hole.green);
+      if (hole.green) drawCup(hole.green);
     });
-    if (draftTee) drawMarker(draftTee, 0x222222, 0.55);
+    if (draftTee) drawTee(draftTee, draftGreen, 0.55);
     if (draftGreen) drawMarker(draftGreen, 0x1b5e20, 0.55);
   }, [appReady, holes, draftTee, draftGreen, course, rotation]);
 
@@ -1092,6 +1296,117 @@ export function PixiStage(props: PixiStageProps) {
         }
       }
 
+      // Pin flags (ZKU-149): one pole+flag per placed green, depth-sorted
+      // with the world; the cloth flutters on a time-based wave (static
+      // first frame when animations are off).
+      const flags = flagPoolRef.current;
+      const liveHoles = new Set<number>();
+      const flagColor = props.flagColor ?? "#d9534f";
+      holes.forEach((hole, hi) => {
+        if (!hole.green) return;
+        liveHoles.add(hi);
+        let g = flags.get(hi);
+        if (!g) {
+          g = new PIXI.Graphics();
+          layers.objects.addChild(g);
+          flags.set(hi, g);
+        }
+        const e = getElevation(course, hole.green.x, hole.green.y);
+        const c = tileCenterIso(hole.green.x, hole.green.y, e, rotation);
+        g.position.set(c.x, c.y);
+        const z = entityDepth(hole.green.x + 0.5, hole.green.y + 0.5, e, rotation) + 0.05;
+        if (g.zIndex !== z) g.zIndex = z;
+        const phase = props.animationsEnabled ? performance.now() / 160 + hi * 1.3 : 0;
+        g.clear();
+        // pole
+        g.moveTo(0, 0);
+        g.lineTo(0, -34);
+        g.stroke({ width: 1.5, color: 0xe9efe4 });
+        // cloth: triangle with a fluttering tip
+        const w1 = Math.sin(phase) * 2.2;
+        const w2 = Math.sin(phase + 0.9) * 3.2;
+        g.poly([0, -34, 13, -30.5 + w1, 0, -26]);
+        g.fill(flagColor);
+        g.poly([9, -31.5 + w1 * 0.8, 13, -30.5 + w1, 15.5, -29.5 + w2, 9, -29]);
+        g.fill({ color: flagColor, alpha: 0.85 });
+      });
+      for (const [hi, g] of flags) {
+        if (!liveHoles.has(hi)) {
+          layers.objects.removeChild(g);
+          g.destroy();
+          flags.delete(hi);
+        }
+      }
+
+      // Water shimmer + shore foam (ZKU-150): throttled tint/alpha
+      // oscillation over the chunk-registered water sprites; visible chunks
+      // only; rare bright glints from a positional hash. Snaps back to the
+      // static base when animations are turned off.
+      const waterAnim = waterAnimRef.current;
+      const nowMs = performance.now();
+      if (props.animationsEnabled) {
+        if (nowMs - waterAnim.last > 140) {
+          waterAnim.last = nowMs;
+          waterAnim.wasAnimating = true;
+          const t = nowMs / 1000;
+          const bucket = Math.floor(nowMs / 700);
+          for (const chunk of chunksRef.current) {
+            if (!chunk.container.visible) continue;
+            for (const ws of chunk.waterSprites) {
+              let f = 1 + 0.05 * Math.sin(t * 1.6 + ws.phase);
+              if ((ws.gx * 31 + ws.gy * 57 + bucket) % 89 === 0) f = 1.22; // glint
+              ws.sprite.tint = shade(ws.baseTint, f);
+            }
+            for (const fs of chunk.foamSprites) {
+              fs.sprite.alpha = 0.16 + 0.14 * (0.5 + 0.5 * Math.sin(t * 2.1 + fs.phase));
+            }
+          }
+        }
+      } else if (waterAnim.wasAnimating) {
+        waterAnim.wasAnimating = false;
+        for (const chunk of chunksRef.current) {
+          for (const ws of chunk.waterSprites) ws.sprite.tint = ws.baseTint;
+          for (const fs of chunk.foamSprites) fs.sprite.alpha = 0.26;
+        }
+      }
+
+      // Wind sway (ZKU-151): subtle skew oscillation on tree canopies.
+      if (props.animationsEnabled) {
+        const t = nowMs / 1000;
+        for (const entry of obstacleSpritesRef.current.values()) {
+          if (entry.swayPhase === null) continue;
+          entry.sprite.skew.x = Math.sin(t * 1.1 + entry.swayPhase) * 0.035;
+        }
+      } else {
+        for (const entry of obstacleSpritesRef.current.values()) {
+          if (entry.swayPhase !== null && entry.sprite.skew.x !== 0) entry.sprite.skew.x = 0;
+        }
+      }
+
+      // Splash ripples: expanding rings where a ball landed in water. Kept
+      // on even with animations off — it communicates a penalty event.
+      if (!rippleGraphicsRef.current) {
+        const rg = new PIXI.Graphics();
+        layers.fx.addChild(rg);
+        rippleGraphicsRef.current = rg;
+      }
+      const rg = rippleGraphicsRef.current;
+      rg.clear();
+      if (ripplesRef.current.length > 0) {
+        ripplesRef.current = ripplesRef.current.filter((r) => nowMs - r.t0 < 750);
+        for (const r of ripplesRef.current) {
+          const rt = (nowMs - r.t0) / 750;
+          const c = tileCenterIso(r.x, r.y, 0, rotation); // water is base level
+          const radius = 4 + rt * 12;
+          rg.ellipse(c.x, c.y, radius, radius / 2);
+          rg.stroke({ width: 1.5 * (1 - rt) + 0.5, color: 0xe9f4ff, alpha: 0.8 * (1 - rt) });
+          if (rt < 0.3) {
+            rg.circle(c.x, c.y - 2, 2.5 * (1 - rt / 0.3));
+            rg.fill({ color: 0xffffff, alpha: 0.7 });
+          }
+        }
+      }
+
       // Live golfers/balls: pooled per-golfer objects in the depth-sorted
       // objects layer so props occlude them correctly (ZKU-140; character
       // sprites replace the dots in M11/ZKU-153).
@@ -1112,7 +1427,7 @@ export function PixiStage(props: PixiStageProps) {
             ball.visible = false;
             holder.addChild(body);
             layers.objects.addChild(holder, ball);
-            entry = { holder, body, ball, lastColor: "", lastMoodBucket: -1 };
+            entry = { holder, body, ball, lastColor: "", lastMoodBucket: -1, lastBall: null };
             pool.set(golfer.id, entry);
           }
           // Redraw the body only when color or mood bucket changes.
@@ -1143,7 +1458,21 @@ export function PixiStage(props: PixiStageProps) {
             const bz = Math.round(entityDepth(golfer.ballX, golfer.ballY, be, rotation) * 10) / 10;
             if (entry.ball.zIndex !== bz) entry.ball.zIndex = bz;
             entry.ball.visible = true;
+            entry.lastBall = { x: golfer.ballX, y: golfer.ballY };
           } else {
+            // Ball just came down (ZKU-150): splash ripple if it ended over
+            // water. This is the landing hook ZKU-154's full ball FX extends.
+            if (entry.lastBall) {
+              const tx = Math.floor(entry.lastBall.x + 0.5);
+              const ty = Math.floor(entry.lastBall.y + 0.5);
+              if (
+                tx >= 0 && ty >= 0 && tx < course.width && ty < course.height &&
+                course.tiles[ty * course.width + tx] === "water"
+              ) {
+                ripplesRef.current.push({ x: entry.lastBall.x, y: entry.lastBall.y, t0: performance.now() });
+              }
+              entry.lastBall = null;
+            }
             entry.ball.visible = false;
           }
         }
@@ -1163,7 +1492,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.flagColor]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
