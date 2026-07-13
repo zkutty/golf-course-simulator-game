@@ -185,6 +185,81 @@ function edgeStrip(name, edge) {
   console.log(`wrote ${name}.png`);
 }
 
+// --- Clubhouse (ZKU-152): 3x3-footprint building, 192px-wide canvas ------
+// Iso box: two visible walls + peaked roof, NW-lit per ART_GUIDE. Ground
+// anchor is bottom-center (the footprint's front corner).
+function clubhouse(name) {
+  const CW = 192;
+  const CH = 150;
+  const png = new PNG({ width: CW, height: CH });
+  const putc = (x, y, c, a = 255) => {
+    if (x < 0 || y < 0 || x >= CW || y >= CH) return;
+    const i = (CW * y + x) << 2;
+    png.data[i] = c[0]; png.data[i + 1] = c[1]; png.data[i + 2] = c[2]; png.data[i + 3] = a;
+  };
+  const inQuad = (px, py, q) => {
+    // point-in-convex-quad via cross products
+    let sign = 0;
+    for (let i = 0; i < 4; i++) {
+      const [x1, y1] = q[i];
+      const [x2, y2] = q[(i + 1) % 4];
+      const cr = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1);
+      if (cr !== 0) {
+        if (sign === 0) sign = Math.sign(cr);
+        else if (Math.sign(cr) !== sign) return false;
+      }
+    }
+    return true;
+  };
+  const fillQuad = (q, base, dither) => {
+    const c2 = darken(base, 0.9);
+    for (let y = 0; y < CH; y++) {
+      for (let x = 0; x < CW; x++) {
+        if (!inQuad(x, y, q)) continue;
+        const speck = dither && ((x * 7 + y * 13) % 17 === 0);
+        putc(x, y, speck ? c2 : base);
+      }
+    }
+  };
+  // Geometry (anchor = bottom-center at (96, 148); footprint front corner).
+  // Footprint diamond corners: L(0,100) T(96,52) R(192,100) B(96,148)
+  const wallH = 34;
+  const wall = hex("#e8dfc8");
+  const wallShad = darken(wall, 0.78);
+  // walls drop from the footprint's left/right/bottom corners
+  fillQuad([[0, 100 - wallH], [96, 148 - wallH], [96, 148], [0, 100]], wallShad, true); // SW face (shadow)
+  fillQuad([[96, 148 - wallH], [192, 100 - wallH], [192, 100], [96, 148]], wall, true); // SE face (lit)
+  // roof: peaked along the L→R axis, ridge above the center
+  const roofL = hex("#8a5a3c");
+  const roofR = darken(roofL, 1.18);
+  fillQuad([[0, 100 - wallH], [96, 52 - wallH], [110, 40 - wallH], [14, 88 - wallH]], darken(roofL, 0.85), true);
+  fillQuad([[96, 148 - wallH], [0, 100 - wallH], [14, 88 - wallH], [110, 40 - wallH]], roofL, true);
+  fillQuad([[96, 148 - wallH], [110, 40 - wallH], [192, 100 - wallH], [192, 100 - wallH]], roofR, true);
+  // door on the SE face
+  const door = hex("#5d4330");
+  fillQuad([[128, 118], [142, 111], [142, 91], [128, 98]], door, false);
+  // windows
+  const win = hex("#9cc4d8");
+  fillQuad([[54, 104], [66, 110], [66, 96], [54, 90]], win, false);
+  fillQuad([[156, 104], [168, 98], [168, 84], [156, 90]], win, false);
+  // outline
+  const o = darken(hex("#8a5a3c"), 0.5);
+  for (let y = 0; y < CH; y++) {
+    for (let x = 0; x < CW; x++) {
+      const i = (CW * y + x) << 2;
+      if (png.data[i + 3] > 0) continue;
+      const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= CW || ny >= CH) return false;
+        return png.data[((CW * ny + nx) << 2) + 3] > 0;
+      });
+      if (nb) putc(x, y, o);
+    }
+  }
+  writeFileSync(path.join(OUT, `${name}.png`), PNG.sync.write(png));
+  console.log(`wrote ${name}.png`);
+}
+
 tree("tree", "#3f8a3f", true);
 tree("tree2", "#5aa348", false);
 bush("bush", "#4f9440");
@@ -196,4 +271,5 @@ edgeStrip("edge_ur", "ur");
 edgeStrip("edge_lr", "lr");
 edgeStrip("edge_ll", "ll");
 edgeStrip("edge_ul", "ul");
+clubhouse("clubhouse");
 console.log("done");

@@ -21,7 +21,8 @@ export type TerrainFrame =
   | "edge_lr"
   | "edge_ll"
   | "edge_ul";
-export type AtlasFrame = PropFrame | TerrainFrame;
+export type BuildingFrame = "clubhouse";
+export type AtlasFrame = PropFrame | TerrainFrame | BuildingFrame;
 
 let propsSheet: Spritesheet | null = null;
 let loadAttempted = false;

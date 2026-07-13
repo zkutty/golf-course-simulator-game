@@ -7,6 +7,7 @@ import type { CameraState } from "../game/render/camera";
 import { screenToWorld as cameraScreenToWorld, applyCameraTransform } from "../game/render/camera";
 import { getObstacleSprite } from "../render/iconSprites";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
+import { BUILDING_SPECS } from "../game/models/buildings";
 import { perfProfiler } from "../utils/performanceProfiler";
 
 // Feature flag: Enable/disable hover-based distance preview (performance optimization)
@@ -1732,6 +1733,46 @@ export function CanvasCourse(props: {
       }
     }
 
+    function drawBuildings() {
+      // Buildings block pathfinding, so canvas mode must show them too
+      // (PixiStage draws the real sprites; this is a readable stand-in).
+      for (const b of course.buildings ?? []) {
+        const spec = BUILDING_SPECS[b.type];
+        if (!spec) continue;
+        const x = b.x * TILE;
+        const y = b.y * TILE;
+        const w = spec.w * TILE;
+        const h = spec.d * TILE;
+        const roofH = h * 0.4;
+        ctx2.save();
+        // ground shadow
+        ctx2.globalAlpha = 0.2;
+        ctx2.fillStyle = "#000";
+        ctx2.fillRect(x + 2, y + h - Math.max(3, TILE * 0.12), w - 4, Math.max(3, TILE * 0.12));
+        ctx2.globalAlpha = 1;
+        // walls
+        ctx2.fillStyle = "#ead9b8";
+        ctx2.fillRect(x + 1, y + roofH, w - 2, h - roofH - 1);
+        ctx2.strokeStyle = "rgba(60,40,20,0.55)";
+        ctx2.lineWidth = 1;
+        ctx2.strokeRect(x + 1.5, y + roofH + 0.5, w - 3, h - roofH - 2);
+        // gabled roof
+        ctx2.fillStyle = "#96503b";
+        ctx2.beginPath();
+        ctx2.moveTo(x, y + roofH);
+        ctx2.lineTo(x + w / 2, y);
+        ctx2.lineTo(x + w, y + roofH);
+        ctx2.closePath();
+        ctx2.fill();
+        // door
+        const doorW = Math.max(3, w * 0.16);
+        const doorH = Math.max(4, (h - roofH) * 0.55);
+        ctx2.fillStyle = "#6b4a2f";
+        ctx2.fillRect(x + w / 2 - doorW / 2, y + h - doorH - 1, doorW, doorH);
+        ctx2.restore();
+      }
+    }
+
     function drawFlags(timeMs: number) {
       // Flags should add charm in COZY mode; keep them readable at different tile sizes.
       const flutter = animationsEnabled && !showGridOverlays;
@@ -2104,6 +2145,9 @@ export function CanvasCourse(props: {
           // Obstacle rendering is currently disabled for performance; keep the
           // draw routine referenced so it stays available behind the flag.
           void drawObstacle;
+
+          // buildings (below golfers so people walk "in front")
+          perfProfiler.measure('render.overlays.buildings', () => drawBuildings());
 
           // living golfers overlay (real-time sim)
           perfProfiler.measure('render.overlays.golfers', () => drawGolfers(timeMs));

@@ -1,6 +1,7 @@
 import type { Course, Obstacle, Point, Terrain } from "../models/types";
 import { BALANCE } from "../balance/balanceConfig";
 import { getElevation } from "../models/elevation";
+import { buildingFootprintSet } from "../models/buildings";
 
 export interface PathResult {
   path: Point[]; // includes start and end
@@ -88,6 +89,8 @@ export function findBestPlayablePath(
   if (!inBounds(course, start.x, start.y) || !inBounds(course, goal.x, goal.y)) return null;
 
   const obstacles = course.obstacles ?? [];
+  // Building footprints are impassable on foot (ZKU-152).
+  const blocked = buildingFootprintSet(course);
   const startCost = stepCost(course, obstacles, start.x, start.y);
   const goalCost = stepCost(course, obstacles, goal.x, goal.y);
   if (!Number.isFinite(startCost) || !Number.isFinite(goalCost)) return null;
@@ -164,6 +167,7 @@ export function findBestPlayablePath(
       if (!inBounds(course, nx, ny)) continue;
       const ni = idx(course, nx, ny);
       if (visited[ni]) continue;
+      if (blocked.has(ni)) continue;
       const sc = stepCost(course, obstacles, nx, ny);
       if (!Number.isFinite(sc)) continue;
       // Slopes cost extra to walk; 2+ step cliffs are impassable (ZKU-146).

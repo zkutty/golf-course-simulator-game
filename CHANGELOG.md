@@ -7,6 +7,12 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Real save system: named save slots, three rotating autosaves (one per
+  committed game day), quicksave slot, rename/delete, and export/import as
+  `.coursecraft` files. Saves live in IndexedDB with localStorage fallback;
+  the old single-slot save migrates automatically to a "Migrated save"
+  slot. Slot manager opens from the in-game Save/Load buttons and the
+  title screen's Load Game (ZKU-174).
 - Autotiled terrain transitions and dithered tile texture variants — no
   more hard diamond seams between terrains (ZKU-148).
 - Course dressing: mow stripes along each hole's axis, tee pads with
@@ -14,6 +20,9 @@ versioning follows [SemVer](https://semver.org/).
 - Animated water: shimmer with glints, shore foam, and splash ripples when
   a ball lands in water (ZKU-150).
 - Prop drop shadows and per-tree wind sway (ZKU-151).
+- Buildings: multi-tile structure model with placement validation, golfers
+  path around footprints, and a starter clubhouse auto-placed on new
+  courses (ZKU-152).
 - Isometric projection core (`src/game/render/iso.ts`): 2:1 dimetric
   world↔screen math with cardinal rotation, picking, and depth keys (ZKU-137).
 - Production Pixi renderer: layered scene graph, camera-aware input, clean

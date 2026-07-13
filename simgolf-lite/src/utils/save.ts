@@ -1,7 +1,8 @@
-import type { Course, WeekResult, World, Point, Obstacle } from "../game/models/types";
+import type { Building, Course, WeekResult, World, Point, Obstacle } from "../game/models/types";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { withNormalizedElevations } from "../game/models/elevation";
+import { BUILDING_SPECS } from "../game/models/buildings";
 
 const KEY = "simgolf_lite_save_v1";
 const SCHEMA_VERSION = 1 as const;
@@ -98,39 +99,90 @@ function migrateCourseGrid(oldCourse: Course): Course {
     elevations: newElevations,
     holes: migratedHoles,
     obstacles: migratedObstacles,
+    buildings: (oldCourse.buildings ?? []).filter(
+      (b) => b.x >= 0 && b.y >= 0 && b.x < newWidth && b.y < newHeight
+    ),
   };
 }
 
-export function loadGame(): { course: Course; world: World; history?: WeekResult[] } | null {
-  const raw = localStorage.getItem(KEY);
-  if (!raw) return null;
+export interface SavePayload {
+  course: Course;
+  world: World;
+  history?: WeekResult[];
+}
+
+/**
+ * Keep only well-formed buildings of known types whose footprint fits the
+ * grid — renderers and pathfinding dereference the spec unconditionally, so
+ * a hostile import with a bogus type/position must not survive the load.
+ */
+function sanitizeBuildings(raw: unknown, width: number, height: number): Building[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((b): b is Building => {
+    if (!b || typeof b !== "object") return false;
+    const { type, x, y } = b as Building;
+    const spec =
+      typeof type === "string"
+        ? (BUILDING_SPECS as Record<string, (typeof BUILDING_SPECS)[keyof typeof BUILDING_SPECS] | undefined>)[type]
+        : undefined;
+    if (!spec) return false;
+    if (!Number.isInteger(x) || !Number.isInteger(y)) return false;
+    return x >= 0 && y >= 0 && x + spec.w <= width && y + spec.d <= height;
+  });
+}
+
+/**
+ * Validate + normalize a parsed save of any vintage into a playable
+ * payload, or null if it's unusable. Shared by the legacy single-slot
+ * loader and the slot store / file import (ZKU-174), so every load path
+ * gets the same field-default migrations (elevations, buildings, grid
+ * resize) and can never crash the game on a hostile file.
+ */
+export function normalizeLoadedSave(input: unknown): SavePayload | null {
   try {
-    const parsed = JSON.parse(raw) as Partial<SaveV1>;
+    const parsed = input as Partial<SaveV1>;
+    if (!parsed || typeof parsed !== "object") return null;
     if (parsed.schemaVersion !== SCHEMA_VERSION) return null;
     if (!parsed.course || !parsed.world) return null;
-    
-    // Load the course as-is first
+    const rawCourse = parsed.course as Course;
+    if (!Array.isArray(rawCourse.tiles) || !Array.isArray(rawCourse.holes)) return null;
+
     const loadedCourse: Course = {
       ...DEFAULT_COURSE,
-      ...(parsed.course as Course),
+      ...rawCourse,
       holes:
-        (parsed.course as Course).holes?.map((h, i) => ({
+        rawCourse.holes?.map((h, i) => ({
           ...DEFAULT_COURSE.holes[i],
           ...h,
           parMode: h.parMode ?? "AUTO",
         })) ?? DEFAULT_COURSE.holes,
-      obstacles: (parsed.course as Course).obstacles ?? DEFAULT_COURSE.obstacles,
-      elevations: (parsed.course as Course).elevations ?? [], // normalized to flat below
-      yardsPerTile: (parsed.course as Course).yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
+      obstacles: rawCourse.obstacles ?? DEFAULT_COURSE.obstacles,
+      elevations: rawCourse.elevations ?? [], // normalized to flat below
+      buildings: sanitizeBuildings(
+        rawCourse.buildings,
+        rawCourse.width ?? DEFAULT_COURSE.width,
+        rawCourse.height ?? DEFAULT_COURSE.height
+      ),
+      yardsPerTile: rawCourse.yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
     };
 
     // Migrate if grid size differs, then guarantee a well-formed
     // elevations array (pre-elevation saves load flat — ZKU-143).
     const course = withNormalizedElevations(migrateCourseGrid(loadedCourse));
-    
+
     const world: World = { ...DEFAULT_WORLD, ...(parsed.world as World) };
     const history = parsed.history ?? undefined;
     return { course, world, history };
+  } catch {
+    return null;
+  }
+}
+
+export function loadGame(): SavePayload | null {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return null;
+  try {
+    return normalizeLoadedSave(JSON.parse(raw));
   } catch {
     return null;
   }
