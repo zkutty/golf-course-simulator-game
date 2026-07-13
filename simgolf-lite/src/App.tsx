@@ -7,7 +7,9 @@ import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import type { Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
-import { hasSavedGame, loadGame, resetSave, saveGame } from "./utils/save";
+import { hasSavedGame, resetSave, type SavePayload } from "./utils/save";
+import { autosave } from "./utils/saveStore";
+import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
@@ -94,6 +96,7 @@ export default function App() {
   // Hover state moved to refs in canvas component to avoid React re-renders
 
   const [paintError, setPaintError] = useState<string | null>(null);
+  const [saveModalOpen, setSaveModalOpen] = useState<null | { canSave: boolean }>(null);
   const [showObstacles, setShowObstacles] = useState(true);
   const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">("COZY");
   const [holeEditMode, setHoleEditMode] = useState<ViewMode>("global"); // "global" or "hole"
@@ -146,6 +149,12 @@ export default function App() {
           visitorNoise: 0,
         } as WeekResult,
       ]);
+      // Rotating autosave after every committed game day (ZKU-174). The
+      // setState reader snapshots post-commit state without extra renders.
+      setGameState((current) => {
+        void autosave({ course: current.course, world: current.world });
+        return current;
+      });
     },
     onCashTick: () => {
       if (soundEnabled) void sound?.playCashTick(soundEnabled);
@@ -292,8 +301,6 @@ export default function App() {
         );
         // Legit effect-shaped sync: gated by holeEditCameraManualRef, a mutable
         // flag written from event handlers, so this can't be derived in render.
-        // The camera flow is restructured wholesale in ZKU-141.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setHoleEditCamera(camera);
       }
     }
@@ -424,15 +431,21 @@ export default function App() {
     legacyAwardedRef.current = false;
   }
 
-  const canLoadFromMenu = useMemo(() => {
-    try {
-      return hasSavedGame() && loadGame() != null;
-    } catch {
-      return false;
-    }
-  }, []);
+  const [canLoadFromMenu, setCanLoadFromMenu] = useState(false);
+  useEffect(() => {
+    // Slot store (incl. migrated legacy save) drives the menu's Load button.
+    let alive = true;
+    void import("./utils/saveStore").then(({ listSlots }) =>
+      listSlots().then((slots) => {
+        if (alive) setCanLoadFromMenu(slots.length > 0 || hasSavedGame());
+      })
+    );
+    return () => {
+      alive = false;
+    };
+  }, [screen]);
 
-  function applyLoadedGame(loaded: NonNullable<ReturnType<typeof loadGame>>) {
+  function applyLoadedGame(loaded: SavePayload) {
     dispatch({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
     setHistory(loaded.history ?? []);
     setLast(loaded.history?.[loaded.history.length - 1]);
@@ -447,11 +460,7 @@ export default function App() {
 
   function loadFromMenu() {
     void audio.unlock();
-    void audio.playSfx(STRIKE_SFX);
-    const loaded = loadGame();
-    if (!loaded) return;
-    applyLoadedGame(loaded);
-    setScreen("game");
+    setSaveModalOpen({ canSave: false });
   }
 
   function takeBridgeLoan() {
@@ -954,27 +963,11 @@ export default function App() {
   }
 
   function onSave() {
-    console.log("[Save] Saving game...", { course: course.name, worldWeek: world.week, historyLength: history.length });
-    saveGame({ course, world, history });
-    console.log("[Save] Game saved successfully");
-    // Show visual feedback
-    setPaintError("Game saved!");
-    setTimeout(() => setPaintError(null), 2000);
+    setSaveModalOpen({ canSave: true });
   }
 
   function onLoad() {
-    console.log("[Load] Attempting to load game...");
-    const loaded = loadGame();
-    if (!loaded) {
-      console.warn("[Load] No saved game found");
-      setPaintError("No saved game found");
-      setTimeout(() => setPaintError(null), 2000);
-      return;
-    }
-    console.log("[Load] Game loaded successfully", { course: loaded.course.name, worldWeek: loaded.world.week });
-    applyLoadedGame(loaded);
-    setPaintError("Game loaded!");
-    setTimeout(() => setPaintError(null), 2000);
+    setSaveModalOpen({ canSave: true });
   }
 
   function onResetSave() {
@@ -1056,7 +1049,6 @@ export default function App() {
     // One-shot award on the bankruptcy transition; pairs a localStorage write
     // with the state update, so it belongs in an effect (runs once per run,
     // guarded by legacyAwardedRef — no cascade risk).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLegacy((s) => {
       if (s.lastAwardId === awardId) return s; // prevent double-award across reloads
       const next = { ...s, legacyPoints: s.legacyPoints + earned, lastAwardId: awardId };
@@ -1065,8 +1057,24 @@ export default function App() {
     });
   }, [world.isBankrupt, weeksSurvived, peakRep]);
 
+  const saveLoadModal = (
+    <SaveLoadModal
+      open={saveModalOpen != null}
+      onClose={() => setSaveModalOpen(null)}
+      canSave={saveModalOpen?.canSave ?? false}
+      getPayload={() => ({ course, world, history })}
+      onLoaded={(payload) => {
+        applyLoadedGame(payload);
+        setScreen("game");
+        setPaintError("Game loaded.");
+        setTimeout(() => setPaintError(null), 2000);
+      }}
+    />
+  );
+
   if (screen === "menu") {
     return (
+      <>
       <StartMenu
         canLoad={canLoadFromMenu}
         onNewGame={newGameFromMenu}
@@ -1088,12 +1096,15 @@ export default function App() {
           if (soundEnabled) void audio.playSfx(STRIKE_SFX);
         }}
       />
+      {saveLoadModal}
+      </>
     );
   }
 
   return (
     <div className="cc-app">
       <GameBackground />
+      {saveLoadModal}
       <div className="cc-main">
         {world.isBankrupt && (
         <RunEndModal

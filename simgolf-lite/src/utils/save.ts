@@ -104,37 +104,60 @@ function migrateCourseGrid(oldCourse: Course): Course {
   };
 }
 
-export function loadGame(): { course: Course; world: World; history?: WeekResult[] } | null {
-  const raw = localStorage.getItem(KEY);
-  if (!raw) return null;
+export interface SavePayload {
+  course: Course;
+  world: World;
+  history?: WeekResult[];
+}
+
+/**
+ * Validate + normalize a parsed save of any vintage into a playable
+ * payload, or null if it's unusable. Shared by the legacy single-slot
+ * loader and the slot store / file import (ZKU-174), so every load path
+ * gets the same field-default migrations (elevations, buildings, grid
+ * resize) and can never crash the game on a hostile file.
+ */
+export function normalizeLoadedSave(input: unknown): SavePayload | null {
   try {
-    const parsed = JSON.parse(raw) as Partial<SaveV1>;
+    const parsed = input as Partial<SaveV1>;
+    if (!parsed || typeof parsed !== "object") return null;
     if (parsed.schemaVersion !== SCHEMA_VERSION) return null;
     if (!parsed.course || !parsed.world) return null;
-    
-    // Load the course as-is first
+    const rawCourse = parsed.course as Course;
+    if (!Array.isArray(rawCourse.tiles) || !Array.isArray(rawCourse.holes)) return null;
+
     const loadedCourse: Course = {
       ...DEFAULT_COURSE,
-      ...(parsed.course as Course),
+      ...rawCourse,
       holes:
-        (parsed.course as Course).holes?.map((h, i) => ({
+        rawCourse.holes?.map((h, i) => ({
           ...DEFAULT_COURSE.holes[i],
           ...h,
           parMode: h.parMode ?? "AUTO",
         })) ?? DEFAULT_COURSE.holes,
-      obstacles: (parsed.course as Course).obstacles ?? DEFAULT_COURSE.obstacles,
-      elevations: (parsed.course as Course).elevations ?? [], // normalized to flat below
-      buildings: (parsed.course as Course).buildings ?? [],
-      yardsPerTile: (parsed.course as Course).yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
+      obstacles: rawCourse.obstacles ?? DEFAULT_COURSE.obstacles,
+      elevations: rawCourse.elevations ?? [], // normalized to flat below
+      buildings: rawCourse.buildings ?? [],
+      yardsPerTile: rawCourse.yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
     };
 
     // Migrate if grid size differs, then guarantee a well-formed
     // elevations array (pre-elevation saves load flat — ZKU-143).
     const course = withNormalizedElevations(migrateCourseGrid(loadedCourse));
-    
+
     const world: World = { ...DEFAULT_WORLD, ...(parsed.world as World) };
     const history = parsed.history ?? undefined;
     return { course, world, history };
+  } catch {
+    return null;
+  }
+}
+
+export function loadGame(): SavePayload | null {
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return null;
+  try {
+    return normalizeLoadedSave(JSON.parse(raw));
   } catch {
     return null;
   }
