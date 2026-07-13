@@ -398,7 +398,7 @@ describe("findWalkPath (ZKU-107)", () => {
     return {
       name: "wall", width, height, tiles,
       elevations: Array.from({ length: width * height }, () => 0),
-      holes: [], obstacles: [], yardsPerTile: 10, baseGreenFee: 65, condition: 0.8,
+      holes: [], obstacles: [], buildings: [], yardsPerTile: 10, baseGreenFee: 65, condition: 0.8,
     };
   }
   const isWater = (c: Course, p: { x: number; y: number }) => c.tiles[p.y * c.width + p.x] === "water";
