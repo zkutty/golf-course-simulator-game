@@ -18,6 +18,7 @@ import {
   type IsoRotation,
 } from "../game/render/iso";
 import { getObstacleSprite } from "../render/iconSprites";
+import { getPropFrame, loadAtlases, type PropFrame } from "../render/atlas";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth, placeObject } from "../game/render/objectPlacement";
@@ -405,6 +406,8 @@ export function PixiStage(props: PixiStageProps) {
         app.destroy(true, { children: true, texture: true });
         return;
       }
+
+      await loadAtlases(); // tolerant: missing atlas → procedural fallbacks
 
       app.canvas.style.display = "block";
       app.canvas.style.position = "absolute";
@@ -884,12 +887,12 @@ export function PixiStage(props: PixiStageProps) {
 
     if (!props.showObstacles) return;
 
-    const addSprite = (obs: Obstacle, img: HTMLImageElement) => {
+    const addSprite = (obs: Obstacle, texture: PIXI.Texture, tall: boolean) => {
       const layersNow = layersRef.current;
       if (!layersNow) return;
       const key = `${obs.x},${obs.y}`;
       if (obstacleSpritesRef.current.has(key)) return;
-      const sprite = new PIXI.Sprite(PIXI.Texture.from(img));
+      const sprite = new PIXI.Sprite(texture);
       // Ground-anchored via the shared placement helper (ZKU-140).
       const e = getElevation(course, obs.x, obs.y);
       const placement = placeObject({ x: obs.x, y: obs.y, w: 1, d: 1 }, e, rotation);
@@ -897,19 +900,31 @@ export function PixiStage(props: PixiStageProps) {
       sprite.position.set(placement.position.x, placement.position.y);
       const size = TILE_W * 0.72;
       sprite.width = size;
-      sprite.height = size;
+      // Atlas props keep their authored aspect (trees are taller than wide);
+      // the legacy square icons stay square.
+      sprite.height = tall ? (size * texture.height) / texture.width : size;
       sprite.zIndex = placement.zIndex;
       layersNow.objects.addChild(sprite);
       obstacleSpritesRef.current.set(key, sprite);
     };
 
     obstacles.forEach((obs) => {
+      // Atlas path (ZKU-147): species variant chosen by deterministic
+      // position hash so existing courses diversify with zero data changes.
+      let frame: PropFrame = obs.type;
+      if (obs.type === "tree" && (obs.x * 31 + obs.y * 17) % 2 === 1) frame = "tree2";
+      const atlasTex = getPropFrame(frame);
+      if (atlasTex) {
+        addSprite(obs, atlasTex, true);
+        return;
+      }
+      // Legacy fallback: runtime-rasterized SVG icons.
       const spriteOrPromise = getObstacleSprite(obs.type, tileSize);
       if (spriteOrPromise instanceof HTMLImageElement) {
-        addSprite(obs, spriteOrPromise);
+        addSprite(obs, PIXI.Texture.from(spriteOrPromise), false);
       } else if (spriteOrPromise instanceof Promise) {
         void spriteOrPromise.then((img: HTMLImageElement) => {
-          if (appRef.current) addSprite(obs, img);
+          if (appRef.current) addSprite(obs, PIXI.Texture.from(img), false);
         });
       }
     });
