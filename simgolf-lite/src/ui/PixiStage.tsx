@@ -12,13 +12,14 @@ import {
   isoToTile,
   isoToWorld,
   nextRotation,
+  rotateWorld,
   tileCenterIso,
   unrotateWorld,
   worldToIso,
   type IsoRotation,
 } from "../game/render/iso";
 import { getObstacleSprite } from "../render/iconSprites";
-import { getPropFrame, loadAtlases, type PropFrame } from "../render/atlas";
+import { getPropFrame, loadAtlases, type PropFrame, type TerrainFrame } from "../render/atlas";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth, placeObject } from "../game/render/objectPlacement";
@@ -79,6 +80,21 @@ const COLORS: Record<Terrain, number> = {
 // Slightly darker edge tint per tile to keep the grid readable until the
 // M10 art pass replaces flat colors with textures.
 const EDGE_DARKEN = 0.88;
+
+// Autotile transition priority (ZKU-148): where two terrains meet, the
+// HIGHER-priority surface "owns" the boundary and spills a scalloped lip
+// onto the lower-priority tile (green edges spill onto fairway, fairway
+// onto rough, sand onto water, ...).
+const TERRAIN_PRIORITY: Record<Terrain, number> = {
+  green: 8,
+  fairway: 7,
+  sand: 6,
+  water: 5,
+  path: 4,
+  tee: 3,
+  rough: 2,
+  deep_rough: 1,
+};
 
 const MARKER_LABEL = "hole-marker";
 const ROUTE_LABEL = "route-overlay";
@@ -776,18 +792,54 @@ export function PixiStage(props: PixiStageProps) {
         face(x, y, dSW, CLIFF_SW);
         face(x, y, dSE, CLIFF_SE);
       }
+      // Screen-edge frame for a world-neighbor offset under the current
+      // rotation (rotated +x = lower-right edge, +y = lower-left, etc.).
+      const edgeFrameFor = (dx: number, dy: number): "edge_ur" | "edge_lr" | "edge_ll" | "edge_ul" => {
+        const r = rotateWorld(dx, dy, rotation);
+        if (r.x === 1) return "edge_lr";
+        if (r.x === -1) return "edge_ul";
+        if (r.y === 1) return "edge_ll";
+        return "edge_ur";
+      };
+      const NEIGHBORS: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
       for (const { x, y } of order) {
-        const sprite = new PIXI.Sprite(diamond);
-        sprite.anchor.set(0.5, 0);
+        const terrain = course.tiles[y * w + x];
         const e = elev(x, y);
         const p = worldToIso(x + 0.5, y, e, rotation);
-        sprite.position.set(p.x, p.y);
         // NW-sun slope shade from central-difference normals (world-fixed sun).
         const dzdx = (elev(x + 1, y) - elev(x - 1, y)) / 2;
         const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
         const slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
-        sprite.tint = shade(darken(COLORS[course.tiles[y * w + x]], EDGE_DARKEN), slopeShade);
+        const tileTint = shade(darken(COLORS[terrain], EDGE_DARKEN), slopeShade);
+
+        // Base: textured variant by deterministic position hash (kills the
+        // repeating-tile look); flat white diamond when the atlas is absent.
+        const variant = getPropFrame(`diamond${(x * 31 + y * 47) % 3}` as TerrainFrame);
+        const sprite = new PIXI.Sprite(variant ?? diamond);
+        sprite.anchor.set(0.5, 0);
+        sprite.position.set(p.x, p.y);
+        sprite.tint = tileTint;
         chunk.container.addChild(sprite);
+
+        // Autotile lips: each higher-priority world-neighbor spills a
+        // scalloped, tinted band onto this tile along the shared edge.
+        // Same-elevation only — cliff faces already separate height steps.
+        for (const [dx, dy] of NEIGHBORS) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const nTerrain = course.tiles[ny * w + nx];
+          if (TERRAIN_PRIORITY[nTerrain] <= TERRAIN_PRIORITY[terrain]) continue;
+          if (elev(nx, ny) !== e) continue;
+          const lipTex = getPropFrame(edgeFrameFor(dx, dy));
+          if (!lipTex) continue;
+          const lip = new PIXI.Sprite(lipTex);
+          lip.anchor.set(0.5, 0);
+          lip.position.set(p.x, p.y);
+          lip.tint = shade(darken(COLORS[nTerrain], EDGE_DARKEN), slopeShade);
+          chunk.container.addChild(lip);
+        }
       }
 
       // Culling bounds: projected rect corners + elevation headroom.

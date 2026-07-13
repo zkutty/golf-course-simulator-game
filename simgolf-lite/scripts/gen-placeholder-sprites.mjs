@@ -124,8 +124,76 @@ function rock(name) {
   save(png, name);
 }
 
+// --- Terrain diamond variants (ZKU-148) ---------------------------------
+// Grayscale dithered 64x32 diamonds, tinted at runtime by terrain color ×
+// slope shade — one variant set serves every terrain. Per-terrain override
+// frames (e.g. "diamond_sand_0") can be added later without code changes.
+function diamondVariant(name, seed) {
+  const png = new PNG({ width: 64, height: 32 });
+  for (let y = 0; y < 32; y++) {
+    for (let x = 0; x < 64; x++) {
+      const dx = (x + 0.5 - 32) / 32;
+      const dy = (y + 0.5 - 16) / 16;
+      if (Math.abs(dx) + Math.abs(dy) > 1) continue;
+      // deterministic speckle noise (hand-dithered feel, <=4 value steps)
+      const h = (x * 374761393 + y * 668265263 + seed * 2246822519) >>> 0;
+      const n = ((h ^ (h >> 13)) % 100) / 100;
+      let v = 232;
+      if (n > 0.82) v = 218;
+      else if (n > 0.62) v = 225;
+      else if (n < 0.06) v = 244;
+      // faint edge darkening keeps the tile grid readable
+      if (Math.abs(dx) + Math.abs(dy) > 0.94) v -= 14;
+      put(png, x, y, [v, v, v]);
+    }
+  }
+  writeFileSync(path.join(OUT, `${name}.png`), PNG.sync.write(png));
+  console.log(`wrote ${name}.png`);
+}
+
+// --- Terrain edge-transition strips (ZKU-148) ----------------------------
+// White scalloped bands along one diamond edge, alpha-faded inward; tinted
+// at runtime with the SPILLING (higher-priority) terrain's color and drawn
+// on the lower-priority neighbor. Frames are named by SCREEN edge:
+// ur (upper-right), lr (lower-right), ll (lower-left), ul (upper-left).
+function edgeStrip(name, edge) {
+  const png = new PNG({ width: 64, height: 32 });
+  const DEPTH = 7; // band depth in "diamond units" of 1/16
+  for (let y = 0; y < 32; y++) {
+    for (let x = 0; x < 64; x++) {
+      const dx = (x + 0.5 - 32) / 32; // -1..1
+      const dy = (y + 0.5 - 16) / 16; // -1..1
+      if (Math.abs(dx) + Math.abs(dy) > 1) continue;
+      // Distance from the chosen edge across the diamond (edges of
+      // |dx|+|dy|<=1 satisfy ±dx ± dy = 1).
+      let d;
+      if (edge === "ur") d = 1 - (dx - dy); // top-right edge: dx>=0, dy<=0
+      else if (edge === "lr") d = 1 - (dx + dy); // lower-right: dx>=0, dy>=0
+      else if (edge === "ll") d = 1 - (-dx + dy); // lower-left
+      else d = 1 - (-dx + -dy); // upper-left
+      // scalloped inner boundary: wavy depth along the edge direction
+      const along = edge === "ur" || edge === "ll" ? dx + dy : dx - dy; // -1..1 along the edge
+      const wave = Math.sin(along * Math.PI * 3) * 0.09 + Math.sin(along * Math.PI * 7 + 1.7) * 0.05;
+      const depth = (DEPTH / 16) * (1 + wave);
+      if (d < 0 || d > depth) continue;
+      const t = 1 - d / depth; // 1 at the edge, 0 at the inner boundary
+      const a = t > 0.55 ? 255 : t > 0.25 ? 170 : 90; // stepped alpha, no smooth gradient
+      put(png, x, y, [255, 255, 255], a);
+    }
+  }
+  writeFileSync(path.join(OUT, `${name}.png`), PNG.sync.write(png));
+  console.log(`wrote ${name}.png`);
+}
+
 tree("tree", "#3f8a3f", true);
 tree("tree2", "#5aa348", false);
 bush("bush", "#4f9440");
 rock("rock");
+diamondVariant("diamond0", 1);
+diamondVariant("diamond1", 2);
+diamondVariant("diamond2", 3);
+edgeStrip("edge_ur", "ur");
+edgeStrip("edge_lr", "lr");
+edgeStrip("edge_ll", "ll");
+edgeStrip("edge_ul", "ul");
 console.log("done");

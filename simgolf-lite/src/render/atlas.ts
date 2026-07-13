@@ -13,6 +13,15 @@ import { Assets, Spritesheet, Texture } from "pixi.js";
  */
 
 export type PropFrame = "tree" | "tree2" | "bush" | "rock";
+export type TerrainFrame =
+  | "diamond0"
+  | "diamond1"
+  | "diamond2"
+  | "edge_ur"
+  | "edge_lr"
+  | "edge_ll"
+  | "edge_ul";
+export type AtlasFrame = PropFrame | TerrainFrame;
 
 let propsSheet: Spritesheet | null = null;
 let loadAttempted = false;
@@ -37,7 +46,7 @@ export async function loadAtlases(): Promise<void> {
  * A frame texture, or null when unavailable (caller uses its fallback).
  * Warns once per missing frame in dev.
  */
-export function getPropFrame(name: PropFrame): Texture | null {
+export function getPropFrame(name: AtlasFrame): Texture | null {
   const tex = propsSheet?.textures[name] ?? null;
   if (!tex && import.meta.env.DEV && !warned.has(name)) {
     warned.add(name);
