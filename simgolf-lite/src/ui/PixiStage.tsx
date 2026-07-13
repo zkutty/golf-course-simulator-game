@@ -18,6 +18,7 @@ import {
   type IsoRotation,
 } from "../game/render/iso";
 import { getObstacleSprite } from "../render/iconSprites";
+import { getPropFrame, loadAtlases, type PropFrame } from "../render/atlas";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth, placeObject } from "../game/render/objectPlacement";
@@ -156,6 +157,31 @@ interface Layers {
   screenOverlay: PIXI.Container;
 }
 
+/**
+ * Chunked terrain (ZKU-142): the map is partitioned into CHUNK_TILES²-tile
+ * chunks, each a static container rebuilt only when one of its tiles (or a
+ * bordering tile — shading/cliffs read neighbors) changes, and culled when
+ * outside the viewport. Chunk containers are added to the terrain layer in
+ * back-to-front order for the current rotation.
+ *
+ * Note: the issue offered RenderTexture baking (cacheAsTexture) as an
+ * option; deferred for now — a cached texture goes blurry past its bake
+ * resolution at high zoom, and flat-tinted sprites batch into one draw
+ * call anyway. Revisit with real numbers in ZKU-160 once the M10 art pass
+ * multiplies per-tile sprite count.
+ */
+const CHUNK_TILES = 16;
+const CHUNK_DEBUG = false; // dev flag: chunk borders + rebuild logging
+
+interface TerrainChunk {
+  container: PIXI.Container;
+  /** Iso-plane pixel bounds (elevation headroom included) for culling. */
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
 /** Fit zoom for a world-tile bbox projected to the iso plane. */
 function fitZoomForTileBounds(
   minX: number,
@@ -188,9 +214,11 @@ export function PixiStage(props: PixiStageProps) {
   const [appReady, setAppReady] = useState(false);
 
   const diamondTextureRef = useRef<PIXI.Texture | null>(null);
-  const tileSpritesRef = useRef<PIXI.Sprite[]>([]);
-  const cliffGraphicsRef = useRef<PIXI.Graphics | null>(null);
+  const chunksRef = useRef<TerrainChunk[]>([]);
+  const prevTilesRef = useRef<Terrain[] | null>(null);
+  const prevElevationsRef = useRef<number[] | null>(null);
   const builtRotationRef = useRef<IsoRotation | null>(null);
+  const chunkRebuildsRef = useRef(0);
   const obstacleSpritesRef = useRef<Map<string, PIXI.Sprite>>(new Map());
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
@@ -243,6 +271,33 @@ export function PixiStage(props: PixiStageProps) {
     [course.width, course.height]
   );
 
+  /** Frustum culling: hide chunks whose iso-plane bounds miss the viewport. */
+  const cullChunks = useCallback(() => {
+    const app = appRef.current;
+    const layers = layersRef.current;
+    if (!app || !layers) return;
+    const { world } = layers;
+    // During the rotation tween the transform is a screen-space rotation the
+    // bounds don't model — show everything until it snaps.
+    if (world.rotation !== 0) {
+      for (const chunk of chunksRef.current) chunk.container.visible = true;
+      return;
+    }
+    const halfW = app.screen.width / 2 / world.scale.x;
+    const halfH = app.screen.height / 2 / world.scale.y;
+    const left = world.pivot.x - halfW;
+    const right = world.pivot.x + halfW;
+    const top = world.pivot.y - halfH;
+    const bottom = world.pivot.y + halfH;
+    let visible = 0;
+    for (const chunk of chunksRef.current) {
+      const v = chunk.maxX >= left && chunk.minX <= right && chunk.maxY >= top && chunk.minY <= bottom;
+      chunk.container.visible = v;
+      if (v) visible++;
+    }
+    if (CHUNK_DEBUG) devLog(`chunks visible: ${visible}/${chunksRef.current.length}`);
+  }, []);
+
   /** Push the camera's CURRENT values into the world container transform. */
   const applyCamera = useCallback(() => {
     const app = appRef.current;
@@ -256,7 +311,8 @@ export function PixiStage(props: PixiStageProps) {
     world.pivot.set(centerIso.x, centerIso.y);
     world.position.set(app.screen.width / 2, app.screen.height / 2);
     world.scale.set(cam.zoom);
-  }, [rotation]);
+    cullChunks();
+  }, [rotation, cullChunks]);
 
   /** Default whole-course fit (used at init and when no CameraState). */
   const fitWholeCourse = useCallback(
@@ -351,6 +407,8 @@ export function PixiStage(props: PixiStageProps) {
         return;
       }
 
+      await loadAtlases(); // tolerant: missing atlas → procedural fallbacks
+
       app.canvas.style.display = "block";
       app.canvas.style.position = "absolute";
       app.canvas.style.top = "0";
@@ -392,7 +450,9 @@ export function PixiStage(props: PixiStageProps) {
       cancelled = true;
       setAppReady(false);
       layersRef.current = null;
-      tileSpritesRef.current = [];
+      chunksRef.current = [];
+      prevTilesRef.current = null;
+      prevElevationsRef.current = null;
       obstacleSpritesRef.current.clear();
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
@@ -664,74 +724,38 @@ export function PixiStage(props: PixiStageProps) {
     const diamond = diamondTextureRef.current;
     if (!layers || !diamond) return;
 
-    const tileCount = course.width * course.height;
-    const sprites = tileSpritesRef.current;
+    const w = course.width;
+    const h = course.height;
+    const cols = Math.ceil(w / CHUNK_TILES);
+    const rows = Math.ceil(h / CHUNK_TILES);
     const elev = (x: number, y: number) => getElevation(course, x, y);
 
-    // Insertion order must be back-to-front FOR THE CURRENT ROTATION, so the
-    // sprite pool rebuilds when the camera rotates to a new cardinal.
-    if (sprites.length !== tileCount || !cliffGraphicsRef.current || builtRotationRef.current !== rotation) {
-      layers.terrain.removeChildren();
-      cliffGraphicsRef.current?.destroy();
-      sprites.forEach((s) => s.destroy());
-      sprites.length = tileCount;
-      builtRotationRef.current = rotation;
-      // Cliff faces render behind all tile tops.
+    const dSE = unrotateWorld(1, 0, rotation); // world offset of screen-lower-right neighbor
+    const dSW = unrotateWorld(0, 1, rotation); // world offset of screen-lower-left neighbor
+    const edgeCorners = (x: number, y: number, dx: number, dy: number): [Point, Point] => {
+      if (dx === 1) return [{ x: x + 1, y }, { x: x + 1, y: y + 1 }];
+      if (dx === -1) return [{ x, y }, { x, y: y + 1 }];
+      if (dy === 1) return [{ x, y: y + 1 }, { x: x + 1, y: y + 1 }];
+      return [{ x, y }, { x: x + 1, y }];
+    };
+
+    /** Rebuild one chunk's contents in place (cliffs first, tops in depth order). */
+    const buildChunk = (chunk: TerrainChunk, cx: number, cy: number) => {
+      const x0 = cx * CHUNK_TILES;
+      const y0 = cy * CHUNK_TILES;
+      const x1 = Math.min(w, x0 + CHUNK_TILES);
+      const y1 = Math.min(h, y0 + CHUNK_TILES);
+
+      chunk.container.removeChildren().forEach((c) => c.destroy());
+
+      // Cliff faces render behind this chunk's tile tops.
       const cliffs = new PIXI.Graphics();
-      layers.terrain.addChild(cliffs);
-      cliffGraphicsRef.current = cliffs;
-      const order: number[] = Array.from({ length: tileCount }, (_, i) => i);
-      order.sort((a, b) => {
-        const da = isoDepth((a % course.width) + 0.5, Math.floor(a / course.width) + 0.5, 0, rotation);
-        const db = isoDepth((b % course.width) + 0.5, Math.floor(b / course.width) + 0.5, 0, rotation);
-        return da - db;
-      });
-      for (const idx of order) {
-        const sprite = new PIXI.Sprite(diamond);
-        sprite.anchor.set(0.5, 0);
-        layers.terrain.addChild(sprite);
-        sprites[idx] = sprite;
-      }
-      devLog(`built ${tileCount} diamond sprites (rot ${rotation})`);
-    }
-
-    // Tops: position by elevation, tint by terrain color × NW-sun slope shade
-    // (the sun is world-fixed; it does not rotate with the camera).
-    for (let y = 0; y < course.height; y++) {
-      for (let x = 0; x < course.width; x++) {
-        const idx = y * course.width + x;
-        const sprite = sprites[idx];
-        const e = elev(x, y);
-        const p = worldToIso(x + 0.5, y, e, rotation); // top corner of tile diamond
-        sprite.position.set(p.x, p.y);
-        const dzdx = (elev(x + 1, y) - elev(x - 1, y)) / 2;
-        const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
-        const slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
-        sprite.tint = shade(darken(COLORS[course.tiles[idx]], EDGE_DARKEN), slopeShade);
-      }
-    }
-
-    // Cliff faces: drops exposed toward the camera become vertical dirt
-    // quads. Which world-neighbors face the camera depends on rotation:
-    // in rotated space the camera-facing edges are +x (screen lower-right)
-    // and +y (screen lower-left).
-    const cliffs = cliffGraphicsRef.current;
-    if (cliffs) {
-      cliffs.clear();
-      const dSE = unrotateWorld(1, 0, rotation); // world offset of screen-lower-right neighbor
-      const dSW = unrotateWorld(0, 1, rotation); // world offset of screen-lower-left neighbor
-      // Shared-edge corners (world coords) between tile (x,y) and neighbor at offset d.
-      const edgeCorners = (x: number, y: number, dx: number, dy: number): [Point, Point] => {
-        if (dx === 1) return [{ x: x + 1, y }, { x: x + 1, y: y + 1 }];
-        if (dx === -1) return [{ x, y }, { x, y: y + 1 }];
-        if (dy === 1) return [{ x, y: y + 1 }, { x: x + 1, y: y + 1 }];
-        return [{ x, y }, { x: x + 1, y }];
-      };
+      chunk.container.addChild(cliffs);
       const face = (x: number, y: number, d: Point, color: number) => {
         const e = elev(x, y);
         const nx = x + d.x;
         const ny = y + d.y;
-        const ne = nx < 0 || ny < 0 || nx >= course.width || ny >= course.height ? 0 : elev(nx, ny);
+        const ne = nx < 0 || ny < 0 || nx >= w || ny >= h ? 0 : elev(nx, ny);
         if (ne >= e || e <= 0) return;
         const [c1, c2] = edgeCorners(x, y, d.x, d.y);
         const a = worldToIso(c1.x, c1.y, e, rotation);
@@ -740,14 +764,111 @@ export function PixiStage(props: PixiStageProps) {
         cliffs.poly([a.x, a.y, b.x, b.y, b.x, b.y + drop, a.x, a.y + drop]);
         cliffs.fill(color);
       };
-      for (let y = 0; y < course.height; y++) {
-        for (let x = 0; x < course.width; x++) {
-          face(x, y, dSW, CLIFF_SW);
-          face(x, y, dSE, CLIFF_SE);
-        }
+
+      // Depth-ordered tile list within the chunk.
+      const order: Array<{ x: number; y: number }> = [];
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) order.push({ x, y });
+      order.sort(
+        (a, b) => isoDepth(a.x + 0.5, a.y + 0.5, 0, rotation) - isoDepth(b.x + 0.5, b.y + 0.5, 0, rotation)
+      );
+
+      for (const { x, y } of order) {
+        face(x, y, dSW, CLIFF_SW);
+        face(x, y, dSE, CLIFF_SE);
       }
+      for (const { x, y } of order) {
+        const sprite = new PIXI.Sprite(diamond);
+        sprite.anchor.set(0.5, 0);
+        const e = elev(x, y);
+        const p = worldToIso(x + 0.5, y, e, rotation);
+        sprite.position.set(p.x, p.y);
+        // NW-sun slope shade from central-difference normals (world-fixed sun).
+        const dzdx = (elev(x + 1, y) - elev(x - 1, y)) / 2;
+        const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
+        const slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
+        sprite.tint = shade(darken(COLORS[course.tiles[y * w + x]], EDGE_DARKEN), slopeShade);
+        chunk.container.addChild(sprite);
+      }
+
+      // Culling bounds: projected rect corners + elevation headroom.
+      const corners = [
+        worldToIso(x0, y0, 0, rotation),
+        worldToIso(x1, y0, 0, rotation),
+        worldToIso(x1, y1, 0, rotation),
+        worldToIso(x0, y1, 0, rotation),
+      ];
+      chunk.minX = Math.min(...corners.map((c) => c.x)) - TILE_W / 2;
+      chunk.maxX = Math.max(...corners.map((c) => c.x)) + TILE_W / 2;
+      chunk.minY = Math.min(...corners.map((c) => c.y)) - ELEVATION_MAX * ELEVATION_STEP_PX - TILE_H;
+      chunk.maxY = Math.max(...corners.map((c) => c.y)) + TILE_H;
+
+      if (CHUNK_DEBUG) {
+        const border = new PIXI.Graphics();
+        border.rect(chunk.minX, chunk.minY, chunk.maxX - chunk.minX, chunk.maxY - chunk.minY);
+        border.stroke({ width: 1, color: 0xff00ff, alpha: 0.6 });
+        chunk.container.addChild(border);
+      }
+      chunkRebuildsRef.current++;
+    };
+
+    const chunkIndex = (cx: number, cy: number) => cy * cols + cx;
+    const prevTiles = prevTilesRef.current;
+    const prevElevations = prevElevationsRef.current;
+    const fullRebuild =
+      chunksRef.current.length !== cols * rows ||
+      builtRotationRef.current !== rotation ||
+      !prevTiles ||
+      prevTiles.length !== course.tiles.length;
+
+    if (fullRebuild) {
+      layers.terrain.removeChildren();
+      chunksRef.current.forEach((c) => c.container.destroy({ children: true }));
+      chunksRef.current = [];
+      builtRotationRef.current = rotation;
+
+      // Create chunk containers and add them back-to-front for this rotation.
+      const chunkOrder: Array<{ cx: number; cy: number }> = [];
+      for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) chunkOrder.push({ cx, cy });
+      chunkOrder.sort((a, b) => {
+        const da = isoDepth((a.cx + 0.5) * CHUNK_TILES, (a.cy + 0.5) * CHUNK_TILES, 0, rotation);
+        const db = isoDepth((b.cx + 0.5) * CHUNK_TILES, (b.cy + 0.5) * CHUNK_TILES, 0, rotation);
+        return da - db;
+      });
+      const chunks: TerrainChunk[] = new Array(cols * rows);
+      for (const { cx, cy } of chunkOrder) {
+        const chunk: TerrainChunk = { container: new PIXI.Container(), minX: 0, minY: 0, maxX: 0, maxY: 0 };
+        layers.terrain.addChild(chunk.container);
+        buildChunk(chunk, cx, cy);
+        chunks[chunkIndex(cx, cy)] = chunk;
+      }
+      chunksRef.current = chunks;
+      devLog(`full terrain rebuild: ${cols}x${rows} chunks (rot ${rotation})`);
+    } else {
+      // Incremental: diff tiles+elevations, mark touched chunks (expanded by
+      // one tile — shading and cliff faces read neighboring tiles).
+      const dirty = new Set<number>();
+      for (let i = 0; i < course.tiles.length; i++) {
+        if (course.tiles[i] === prevTiles[i] && (course.elevations?.[i] ?? 0) === (prevElevations?.[i] ?? 0)) {
+          continue;
+        }
+        const x = i % w;
+        const y = Math.floor(i / w);
+        const cx0 = Math.max(0, Math.floor((x - 1) / CHUNK_TILES));
+        const cx1 = Math.min(cols - 1, Math.floor((x + 1) / CHUNK_TILES));
+        const cy0 = Math.max(0, Math.floor((y - 1) / CHUNK_TILES));
+        const cy1 = Math.min(rows - 1, Math.floor((y + 1) / CHUNK_TILES));
+        for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) dirty.add(chunkIndex(cx, cy));
+      }
+      dirty.forEach((ci) => {
+        buildChunk(chunksRef.current[ci], ci % cols, Math.floor(ci / cols));
+      });
+      if (dirty.size > 0) devLog(`rebuilt ${dirty.size} dirty chunk(s), total rebuilds ${chunkRebuildsRef.current}`);
     }
-  }, [appReady, course, rotation]);
+
+    prevTilesRef.current = course.tiles;
+    prevElevationsRef.current = course.elevations;
+    cullChunks();
+  }, [appReady, course, rotation, cullChunks]);
 
   // ---------------------------------------------------------------------
   // Objects layer — obstacles, ground-anchored and depth-sorted
@@ -766,12 +887,12 @@ export function PixiStage(props: PixiStageProps) {
 
     if (!props.showObstacles) return;
 
-    const addSprite = (obs: Obstacle, img: HTMLImageElement) => {
+    const addSprite = (obs: Obstacle, texture: PIXI.Texture, tall: boolean) => {
       const layersNow = layersRef.current;
       if (!layersNow) return;
       const key = `${obs.x},${obs.y}`;
       if (obstacleSpritesRef.current.has(key)) return;
-      const sprite = new PIXI.Sprite(PIXI.Texture.from(img));
+      const sprite = new PIXI.Sprite(texture);
       // Ground-anchored via the shared placement helper (ZKU-140).
       const e = getElevation(course, obs.x, obs.y);
       const placement = placeObject({ x: obs.x, y: obs.y, w: 1, d: 1 }, e, rotation);
@@ -779,19 +900,31 @@ export function PixiStage(props: PixiStageProps) {
       sprite.position.set(placement.position.x, placement.position.y);
       const size = TILE_W * 0.72;
       sprite.width = size;
-      sprite.height = size;
+      // Atlas props keep their authored aspect (trees are taller than wide);
+      // the legacy square icons stay square.
+      sprite.height = tall ? (size * texture.height) / texture.width : size;
       sprite.zIndex = placement.zIndex;
       layersNow.objects.addChild(sprite);
       obstacleSpritesRef.current.set(key, sprite);
     };
 
     obstacles.forEach((obs) => {
+      // Atlas path (ZKU-147): species variant chosen by deterministic
+      // position hash so existing courses diversify with zero data changes.
+      let frame: PropFrame = obs.type;
+      if (obs.type === "tree" && (obs.x * 31 + obs.y * 17) % 2 === 1) frame = "tree2";
+      const atlasTex = getPropFrame(frame);
+      if (atlasTex) {
+        addSprite(obs, atlasTex, true);
+        return;
+      }
+      // Legacy fallback: runtime-rasterized SVG icons.
       const spriteOrPromise = getObstacleSprite(obs.type, tileSize);
       if (spriteOrPromise instanceof HTMLImageElement) {
-        addSprite(obs, spriteOrPromise);
+        addSprite(obs, PIXI.Texture.from(spriteOrPromise), false);
       } else if (spriteOrPromise instanceof Promise) {
         void spriteOrPromise.then((img: HTMLImageElement) => {
-          if (appRef.current) addSprite(obs, img);
+          if (appRef.current) addSprite(obs, PIXI.Texture.from(img), false);
         });
       }
     });
