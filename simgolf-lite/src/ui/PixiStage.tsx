@@ -24,6 +24,7 @@ import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth, placeObject } from "../game/render/objectPlacement";
 import { buildingSpec } from "../game/models/buildings";
+import { getLandTheme } from "../game/models/themes";
 import type { AtlasFrame } from "../render/atlas";
 
 /**
@@ -784,6 +785,10 @@ export function PixiStage(props: PixiStageProps) {
       return [{ x, y }, { x: x + 1, y }];
     };
 
+    // ZKU-166 (theme palettes) — the ONLY theme-aware line in the renderer:
+    // flat tint overrides read from game/models/themes; identity for parkland.
+    const THEMED_COLORS: Record<Terrain, number> = { ...COLORS, ...getLandTheme(course.theme).tileTints };
+
     /** Rebuild one chunk's contents in place (cliffs first, tops in depth order). */
     const buildChunk = (chunk: TerrainChunk, cx: number, cy: number) => {
       const x0 = cx * CHUNK_TILES;
@@ -877,7 +882,7 @@ export function PixiStage(props: PixiStageProps) {
         const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
         let slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
         if (terrain === "fairway" || terrain === "green") slopeShade *= stripeShade(x, y);
-        const tileTint = shade(darken(COLORS[terrain], EDGE_DARKEN), slopeShade);
+        const tileTint = shade(darken(THEMED_COLORS[terrain], EDGE_DARKEN), slopeShade);
 
         // Base: textured variant by deterministic position hash (kills the
         // repeating-tile look); flat white diamond when the atlas is absent.
@@ -931,7 +936,7 @@ export function PixiStage(props: PixiStageProps) {
           const lip = new PIXI.Sprite(lipTex);
           lip.anchor.set(0.5, 0);
           lip.position.set(p.x, p.y);
-          lip.tint = shade(darken(COLORS[nTerrain], EDGE_DARKEN), slopeShade);
+          lip.tint = shade(darken(THEMED_COLORS[nTerrain], EDGE_DARKEN), slopeShade);
           chunk.container.addChild(lip);
         }
       }

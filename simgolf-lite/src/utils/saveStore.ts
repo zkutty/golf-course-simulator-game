@@ -1,4 +1,4 @@
-import type { Course, Difficulty, WeekResult, World } from "../game/models/types";
+import type { Course, Difficulty, LandTheme, WeekResult, World } from "../game/models/types";
 import { normalizeLoadedSave, type SavePayload } from "./save";
 
 /**
@@ -31,6 +31,8 @@ export interface SaveSlotMeta {
   holesOpen: number;
   /** Run difficulty (ZKU-165). Absent on pre-M13 manifests. */
   difficulty?: Difficulty;
+  /** Land theme (ZKU-166). Absent on pre-M13 manifests. */
+  theme?: LandTheme;
 }
 
 export interface SaveFile {
@@ -176,6 +178,7 @@ function metaFor(
     cash: Math.round(payload.world.cash),
     holesOpen,
     difficulty: payload.world.difficulty ?? "normal",
+    theme: payload.course.theme ?? "parkland",
   };
 }
 

@@ -1,4 +1,5 @@
-import type { Terrain, Obstacle, ObstacleType } from "../models/types";
+import type { LandTheme, Terrain, Obstacle, ObstacleType } from "../models/types";
+import { getLandTheme, type ThemeGenConfig } from "../models/themes";
 
 // Seeded RNG using mulberry32
 class SeededRNG {
@@ -24,22 +25,8 @@ class SeededRNG {
   }
 }
 
-// Configuration constants
-const CONFIG = {
-  rough: { min: 0.70, max: 0.80 },
-  deepRough: { min: 0.12, max: 0.20 },
-  sand: { min: 0.02, max: 0.06 },
-  water: { min: 0.03, max: 0.08 },
-} as const;
-
-// Obstacle generation constants
-const OBSTACLE_CONFIG = {
-  density: 0.03, // 3% of tiles
-  treeRatio: 0.55, // 55% of obstacles
-  bushRatio: 0.35, // 35% of obstacles
-  rockRatio: 0.10, // 10% of obstacles
-  minFreeTiles: 0.85, // At least 85% of non-water tiles remain obstacle-free
-} as const;
+// Generation constants now come from the land theme (ZKU-166); parkland is
+// the identity theme carrying the exact values this module shipped with.
 
 interface Point {
   x: number;
@@ -49,7 +36,13 @@ interface Point {
 /**
  * Generate a wild piece of land with natural terrain distribution
  */
-export function generateWildLand(width: number, height: number, seed: number): Terrain[] {
+export function generateWildLand(
+  width: number,
+  height: number,
+  seed: number,
+  theme?: LandTheme
+): Terrain[] {
+  const cfg: ThemeGenConfig = getLandTheme(theme).generation;
   const rng = new SeededRNG(seed);
   const totalTiles = width * height;
   const tiles: Terrain[] = Array.from({ length: totalTiles }, () => "rough");
@@ -85,13 +78,13 @@ export function generateWildLand(width: number, height: number, seed: number): T
     ].filter((p) => isValid(p.x, p.y));
   };
 
-  // Step 1: Generate deep rough clusters (4-10 clusters)
-  const deepRoughClusters = rng.nextInt(4, 10);
+  // Step 1: Generate deep rough clusters
+  const deepRoughClusters = rng.nextInt(cfg.deepRough.clustersMin, cfg.deepRough.clustersMax);
   for (let i = 0; i < deepRoughClusters; i++) {
     // Pick a random seed point
     const seedX = rng.nextInt(2, width - 3);
     const seedY = rng.nextInt(2, height - 3);
-    const clusterSize = rng.nextInt(8, 20);
+    const clusterSize = rng.nextInt(cfg.deepRough.sizeMin, cfg.deepRough.sizeMax);
 
     // Grow cluster using random walk
     const visited = new Set<string>();
@@ -118,15 +111,15 @@ export function generateWildLand(width: number, height: number, seed: number): T
     }
   }
 
-  // Step 2: Generate water bodies (1-2 bodies, connected, away from borders)
-  const waterBodies = rng.nextInt(1, 2);
+  // Step 2: Generate water bodies (connected, away from borders)
+  const waterBodies = rng.nextInt(cfg.water.bodiesMin, cfg.water.bodiesMax);
   const waterBorderMargin = 1; // Keep water 1 tile away from border
 
   for (let i = 0; i < waterBodies; i++) {
     // Pick a seed point away from borders
     const seedX = rng.nextInt(waterBorderMargin + 1, width - waterBorderMargin - 2);
     const seedY = rng.nextInt(waterBorderMargin + 1, height - waterBorderMargin - 2);
-    const targetSize = Math.floor(totalTiles * rng.nextFloat(CONFIG.water.min, CONFIG.water.max) / waterBodies);
+    const targetSize = Math.floor(totalTiles * rng.nextFloat(cfg.water.fracMin, cfg.water.fracMax) / waterBodies);
 
     // Grow water body ensuring connectivity
     const visited = new Set<string>();
@@ -167,8 +160,24 @@ export function generateWildLand(width: number, height: number, seed: number): T
     }
   }
 
-  // Step 3: Generate sand pockets (3-8 small clusters, near water or in rough)
-  const sandPockets = rng.nextInt(3, 8);
+  // Step 2b (links): coastal water band along one map edge, depth varying
+  // per row/column. Gated by theme so identity themes never touch the rng.
+  if (cfg.water.coastalEdge) {
+    const edge = rng.nextInt(0, 3); // 0=N 1=E 2=S 3=W
+    const along = edge === 0 || edge === 2 ? width : height;
+    for (let i = 0; i < along; i++) {
+      const depth = rng.nextInt(1, 3);
+      for (let d = 0; d < depth; d++) {
+        if (edge === 0) setTile(i, d, "water");
+        else if (edge === 2) setTile(i, height - 1 - d, "water");
+        else if (edge === 3) setTile(d, i, "water");
+        else setTile(width - 1 - d, i, "water");
+      }
+    }
+  }
+
+  // Step 3: Generate sand pockets (small clusters, near water or in rough)
+  const sandPockets = rng.nextInt(cfg.sand.pocketsMin, cfg.sand.pocketsMax);
   for (let i = 0; i < sandPockets; i++) {
     // Try to place near water, but fallback to anywhere in rough
     let seedX = rng.nextInt(1, width - 2);
@@ -188,7 +197,7 @@ export function generateWildLand(width: number, height: number, seed: number): T
       attempts++;
     }
 
-    const pocketSize = rng.nextInt(2, 6);
+    const pocketSize = rng.nextInt(cfg.sand.sizeMin, cfg.sand.sizeMax);
     const visited = new Set<string>();
     const queue: Point[] = [{ x: seedX, y: seedY }];
     visited.add(`${seedX},${seedY}`);
@@ -252,15 +261,24 @@ export function generateWildLand(width: number, height: number, seed: number): T
   }
 
   // Step 5: Ensure connectivity - check if water splits the map
-  // Simple check: ensure there's a path from top-left to bottom-right through non-water tiles
+  // Path from the first to the last non-water tile (row-major scan). For
+  // parkland this is exactly the old top-left → bottom-right check, since
+  // its borders are never water; coastal themes may start further in.
+  let startIdx = 0;
+  while (startIdx < tiles.length && tiles[startIdx] === "water") startIdx++;
+  let endIdx = tiles.length - 1;
+  while (endIdx > 0 && tiles[endIdx] === "water") endIdx--;
+  const startPt = { x: startIdx % width, y: Math.floor(startIdx / width) };
+  const endPt = { x: endIdx % width, y: Math.floor(endIdx / width) };
+
   const visited = new Set<string>();
-  const queue: Point[] = [{ x: 0, y: 0 }];
-  visited.add("0,0");
+  const queue: Point[] = [startPt];
+  visited.add(`${startPt.x},${startPt.y}`);
 
   while (queue.length > 0) {
     const current = queue.shift()!;
-    if (current.x === width - 1 && current.y === height - 1) {
-      // Reached bottom-right, map is connected
+    if (current.x === endPt.x && current.y === endPt.y) {
+      // Reached the far corner of land, map is connected
       break;
     }
 
@@ -277,7 +295,7 @@ export function generateWildLand(width: number, height: number, seed: number): T
   }
 
   // If map is split, remove some water tiles to restore connectivity
-  if (!visited.has(`${width - 1},${height - 1}`)) {
+  if (!visited.has(`${endPt.x},${endPt.y}`)) {
     // Find water tiles that block connectivity and convert some to rough
     const waterTiles: Point[] = [];
     for (let y = 0; y < height; y++) {
@@ -312,8 +330,10 @@ export function generateObstacles(
   height: number,
   tiles: Terrain[],
   seed: number,
-  reservedZones: Point[] = [] // Reserved zones (e.g., tee/green positions) where obstacles should not be placed
+  reservedZones: Point[] = [], // Reserved zones (e.g., tee/green positions) where obstacles should not be placed
+  theme?: LandTheme
 ): Obstacle[] {
+  const obstacleCfg = getLandTheme(theme).generation.obstacles;
   const rng = new SeededRNG(seed + 1000000); // Offset seed to ensure different sequence from terrain
   const obstacles: Obstacle[] = [];
   const obstacleSet = new Set<string>(); // Track placed obstacles to avoid duplicates
@@ -389,10 +409,10 @@ export function generateObstacles(
 
   // Calculate target obstacle counts
   const nonWaterTiles = tiles.filter((t) => t !== "water").length;
-  const targetObstacles = Math.floor(nonWaterTiles * OBSTACLE_CONFIG.density);
-  const targetTrees = Math.floor(targetObstacles * OBSTACLE_CONFIG.treeRatio);
-  const targetBushes = Math.floor(targetObstacles * OBSTACLE_CONFIG.bushRatio);
-  const targetRocks = Math.floor(targetObstacles * OBSTACLE_CONFIG.rockRatio);
+  const targetObstacles = Math.floor(nonWaterTiles * obstacleCfg.density);
+  const targetTrees = Math.floor(targetObstacles * obstacleCfg.treeRatio);
+  const targetBushes = Math.floor(targetObstacles * obstacleCfg.bushRatio);
+  const targetRocks = Math.floor(targetObstacles * obstacleCfg.rockRatio);
 
   // Step 1: Generate tree/bush clusters in deep rough
   const treeBushClusters = rng.nextInt(6, 14);
@@ -512,8 +532,10 @@ export function generateElevations(
   width: number,
   height: number,
   seed: number,
-  tiles: Terrain[]
+  tiles: Terrain[],
+  theme?: LandTheme
 ): number[] {
+  const { amplitude, offset, maxStep } = getLandTheme(theme).generation.elevation;
   const rng = new SeededRNG((seed ^ 0x5eed) >>> 0);
 
   // Coarse random lattices for two octaves.
@@ -546,7 +568,7 @@ export function generateElevations(
       const idx = y * width + x;
       if (tiles[idx] === "water") continue; // water stays at base level
       const n = sample(octave1, x, y) * 0.72 + sample(octave2, x, y) * 0.28;
-      elevations[idx] = Math.max(0, Math.min(4, Math.round(n * 4.6 - 0.3)));
+      elevations[idx] = Math.max(0, Math.min(maxStep, Math.round(n * amplitude + offset)));
     }
   }
   return elevations;
@@ -556,11 +578,12 @@ export function generateWildLandWithObstacles(
   width: number,
   height: number,
   seed: number,
-  reservedZones: Point[] = []
+  reservedZones: Point[] = [],
+  theme?: LandTheme
 ): { tiles: Terrain[]; obstacles: Obstacle[]; elevations: number[] } {
-  const tiles = generateWildLand(width, height, seed);
-  const obstacles = generateObstacles(width, height, tiles, seed, reservedZones);
-  const elevations = generateElevations(width, height, seed, tiles);
+  const tiles = generateWildLand(width, height, seed, theme);
+  const obstacles = generateObstacles(width, height, tiles, seed, reservedZones, theme);
+  const elevations = generateElevations(width, height, seed, tiles, theme);
   return { tiles, obstacles, elevations };
 }
 

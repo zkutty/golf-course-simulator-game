@@ -69,6 +69,14 @@ versioning follows [SemVer](https://semver.org/).
   the Monte Carlo tuner). Difficulty is fixed per run, shown as a HUD badge
   and in save-slot metadata; the tuner now reports per-difficulty survival
   curves (ZKU-165).
+- Land themes: parkland, links, and desert. Theme-driven wild-land
+  generation (terrain mix, coastal water edge on links, sand washes and
+  scarce water on desert, obstacle species mix, per-theme elevation
+  character), flat-color palette variants read by the renderer from theme
+  data, and data-driven gameplay flavor (desert water costs 1.5× to build,
+  links deep rough penalizes shots 1.15×). Parkland is the identity theme —
+  bit-identical to pre-theme generation per seed. Theme is recorded on the
+  course, shown in save-slot metadata, and survives save/load (ZKU-166).
 
 ### Fixed
 - All 24 standing ESLint errors: render purity in App/CanvasCourse,

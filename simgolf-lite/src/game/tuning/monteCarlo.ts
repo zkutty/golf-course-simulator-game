@@ -55,7 +55,7 @@ function paintBrush(course: Course, world: World, x: number, y: number, t: Terra
   const idx = y * course.width + x;
   const prev = course.tiles[idx];
   if (prev === t) return { course, world };
-  const { net } = computeTerrainChangeCost(prev, t, getDifficultyProfile(world.difficulty).terrainCostMult);
+  const { net } = computeTerrainChangeCost(prev, t, getDifficultyProfile(world.difficulty).terrainCostMult, course.theme);
   if (net > 0 && world.cash < net) return { course, world };
   const tiles = course.tiles.slice();
   tiles[idx] = t;

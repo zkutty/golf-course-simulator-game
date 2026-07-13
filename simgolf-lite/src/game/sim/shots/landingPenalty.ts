@@ -46,6 +46,9 @@ export function computeExpectedLandingPenalty(args: {
   const probs: Partial<Record<Terrain, number>> = {};
   let expected = 0;
   const pen = BALANCE.shots.landing.penaltyStrokes;
+  // Theme flavor (ZKU-166): links fescue punishes a little harder. Data-only
+  // and neutral (×1) for parkland/desert.
+  const deepRoughMult = BALANCE.themes[course.theme ?? "parkland"].deepRoughPenaltyMult;
 
   if (totalW <= 0) {
     return { expectedPenalty: 0, probs: {} };
@@ -54,7 +57,7 @@ export function computeExpectedLandingPenalty(args: {
   for (const [k, w] of Object.entries(weightByTerrain) as Array<[Terrain, number]>) {
     const p = clamp(w / totalW, 0, 1);
     probs[k] = p;
-    expected += p * (pen[k] ?? 0);
+    expected += p * (pen[k] ?? 0) * (k === "deep_rough" ? deepRoughMult : 1);
   }
 
   return { expectedPenalty: expected, probs };

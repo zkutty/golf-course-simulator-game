@@ -528,7 +528,7 @@ export default function App() {
   function applyTileChange(idx: number, next: Terrain, opts?: { silent?: boolean }): boolean {
     if (world.isBankrupt) return false;
     const prev = course.tiles[idx];
-    const { net, charged, refunded } = computeTerrainChangeCost(prev, next, costMult);
+    const { net, charged, refunded } = computeTerrainChangeCost(prev, next, costMult, course.theme);
     if (net > 0 && world.cash < net) {
       setPaintError(`Insufficient funds: need $${Math.ceil(net).toLocaleString()}`);
       return false;
@@ -618,7 +618,7 @@ export default function App() {
     // Calculate total cost
     let totalNet = 0;
     for (const tile of tilesToPaintData) {
-      const cost = computeTerrainChangeCost(tile.prev, "fairway", costMult);
+      const cost = computeTerrainChangeCost(tile.prev, "fairway", costMult, course.theme);
       totalNet += cost.net;
     }
 
@@ -716,9 +716,9 @@ export default function App() {
     const newTerrain = course.tiles[newIdx];
     
     // Cost to remove old marker (revert to rough, get salvage)
-    const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult); // Reverting to rough
+    const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult, course.theme); // Reverting to rough
     // Cost to place new marker
-    const placeCost = computeTerrainChangeCost(newTerrain, markerType, costMult);
+    const placeCost = computeTerrainChangeCost(newTerrain, markerType, costMult, course.theme);
     const totalNet = placeCost.net + removeCost.net; // removeCost.net is negative (refund), so this is correct
     
     if (totalNet > 0 && world.cash < totalNet) {
@@ -755,8 +755,8 @@ export default function App() {
     const greenIdx = green.y * course.width + green.x;
     const teePrev = course.tiles[teeIdx];
     const greenPrev = course.tiles[greenIdx];
-    const teeCost = computeTerrainChangeCost(teePrev, "tee", costMult);
-    const greenCost = computeTerrainChangeCost(greenPrev, "green", costMult);
+    const teeCost = computeTerrainChangeCost(teePrev, "tee", costMult, course.theme);
+    const greenCost = computeTerrainChangeCost(greenPrev, "green", costMult, course.theme);
     const totalNet = teeCost.net + greenCost.net;
     if (totalNet > 0 && world.cash < totalNet) {
       setPaintError(`Insufficient funds to confirm: need $${Math.ceil(totalNet).toLocaleString()}`);

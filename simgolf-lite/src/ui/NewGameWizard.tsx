@@ -5,6 +5,7 @@ import { SANDBOX_STARTING_CASH } from "../game/models/setup";
 import { DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { generateWildLand } from "../game/gen/generateWildLand";
+import { getLandTheme } from "../game/models/themes";
 import { generateCourseName } from "../utils/courseNames";
 import { StartMenuBackground } from "./StartMenuBackground";
 
@@ -25,7 +26,7 @@ function randomSeed(): number {
 }
 
 // Flat tile colors for the land preview thumbnails (plain rendering until
-// the ZKU-158 minimap snapshot path exists).
+// the ZKU-158 minimap snapshot path exists). Theme tints override these.
 const PREVIEW_COLORS: Record<Terrain, string> = {
   rough: "#8fbf6f",
   deep_rough: "#5c8a4e",
@@ -37,15 +38,29 @@ const PREVIEW_COLORS: Record<Terrain, string> = {
   path: "#c9bda4",
 };
 
+function cssColor(hex: number): string {
+  return `#${hex.toString(16).padStart(6, "0")}`;
+}
+
+function previewPalette(theme: LandTheme): Record<Terrain, string> {
+  const tints = getLandTheme(theme).tileTints;
+  const out = { ...PREVIEW_COLORS };
+  for (const [terrain, hex] of Object.entries(tints) as Array<[Terrain, number]>) {
+    out[terrain] = cssColor(hex);
+  }
+  return out;
+}
+
 function LandPreview(props: {
   seed: number;
+  theme: LandTheme;
   selected: boolean;
   onSelect: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const tiles = useMemo(
-    () => generateWildLand(COURSE_WIDTH, COURSE_HEIGHT, props.seed | 0),
-    [props.seed]
+    () => generateWildLand(COURSE_WIDTH, COURSE_HEIGHT, props.seed | 0, props.theme),
+    [props.seed, props.theme]
   );
 
   useEffect(() => {
@@ -53,14 +68,15 @@ function LandPreview(props: {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    const colors = previewPalette(props.theme);
     const px = 2;
     for (let y = 0; y < COURSE_HEIGHT; y++) {
       for (let x = 0; x < COURSE_WIDTH; x++) {
-        ctx.fillStyle = PREVIEW_COLORS[tiles[y * COURSE_WIDTH + x]] ?? "#8fbf6f";
+        ctx.fillStyle = colors[tiles[y * COURSE_WIDTH + x]] ?? "#8fbf6f";
         ctx.fillRect(x * px, y * px, px, px);
       }
     }
-  }, [tiles]);
+  }, [tiles, props.theme]);
 
   return (
     <button
@@ -305,6 +321,7 @@ export function NewGameWizard(props: {
                   <LandPreview
                     key={`${s}-${i}`}
                     seed={s}
+                    theme={theme}
                     selected={i === selectedSeedIdx}
                     onSelect={() => setSelectedSeedIdx(i)}
                   />

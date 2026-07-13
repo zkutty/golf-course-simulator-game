@@ -190,6 +190,14 @@ export const BALANCE = {
     },
   },
 
+  // Land-theme gameplay flavor (ZKU-166) — data only, no new mechanics.
+  // Parkland is the neutral identity theme.
+  themes: {
+    parkland: { waterBuildCostMult: 1, deepRoughPenaltyMult: 1 },
+    links: { waterBuildCostMult: 1, deepRoughPenaltyMult: 1.15 },
+    desert: { waterBuildCostMult: 1.5, deepRoughPenaltyMult: 1 },
+  },
+
   // Terrain economics
   terrain: {
     buildCost: {

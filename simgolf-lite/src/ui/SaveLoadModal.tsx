@@ -233,7 +233,8 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
               </div>
               <div style={{ fontSize: 12, color: "#6b7280" }}>
                 {slot.courseName} • week {slot.week} • ${slot.cash.toLocaleString()} • {slot.holesOpen}/9 holes
-                {slot.difficulty ? ` • ${slot.difficulty}` : ""} •{" "}
+                {slot.difficulty ? ` • ${slot.difficulty}` : ""}
+                {slot.theme ? ` • ${slot.theme}` : ""} •{" "}
                 {new Date(slot.savedAt).toLocaleString()}
               </div>
             </div>

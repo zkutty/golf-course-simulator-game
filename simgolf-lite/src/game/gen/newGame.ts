@@ -26,7 +26,8 @@ export function createNewGame(
     COURSE_WIDTH,
     COURSE_HEIGHT,
     seed,
-    [] // no reserved zones — holes aren't placed yet
+    [], // no reserved zones — holes aren't placed yet
+    setup.theme
   );
 
   const course: Course = {

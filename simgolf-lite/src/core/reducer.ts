@@ -40,7 +40,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         if (idx >= 0 && idx < newTiles.length) {
           const prev = newTiles[idx];
           if (prev !== terrain) {
-            const cost = computeTerrainChangeCost(prev, terrain, costMult);
+            const cost = computeTerrainChangeCost(prev, terrain, costMult, state.course.theme);
             cashDelta += cost.net;
             newTiles[idx] = terrain;
           }
@@ -105,7 +105,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       if (idx < 0 || idx >= state.course.tiles.length) break;
 
       const prevTerrain = state.course.tiles[idx];
-      const cost = computeTerrainChangeCost(prevTerrain, "tee", costMult);
+      const cost = computeTerrainChangeCost(prevTerrain, "tee", costMult, state.course.theme);
       
       const newTiles = state.course.tiles.slice();
       newTiles[idx] = "tee";
@@ -144,9 +144,9 @@ export function applyAction(state: GameState, action: Action): GameState {
       const newTerrain = state.course.tiles[newIdx];
       
       // Remove old marker (revert to rough)
-      const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult);
+      const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult, state.course.theme);
       // Place new marker
-      const placeCost = computeTerrainChangeCost(newTerrain, "tee", costMult);
+      const placeCost = computeTerrainChangeCost(newTerrain, "tee", costMult, state.course.theme);
       const totalCost = removeCost.net + placeCost.net;
 
       const newTiles = state.course.tiles.slice();
@@ -183,7 +183,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       if (idx < 0 || idx >= state.course.tiles.length) break;
 
       const prevTerrain = state.course.tiles[idx];
-      const cost = computeTerrainChangeCost(prevTerrain, "green", costMult);
+      const cost = computeTerrainChangeCost(prevTerrain, "green", costMult, state.course.theme);
       
       const newTiles = state.course.tiles.slice();
       newTiles[idx] = "green";
@@ -222,9 +222,9 @@ export function applyAction(state: GameState, action: Action): GameState {
       const newTerrain = state.course.tiles[newIdx];
       
       // Remove old marker (revert to rough)
-      const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult);
+      const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult, state.course.theme);
       // Place new marker
-      const placeCost = computeTerrainChangeCost(newTerrain, "green", costMult);
+      const placeCost = computeTerrainChangeCost(newTerrain, "green", costMult, state.course.theme);
       const totalCost = removeCost.net + placeCost.net;
 
       const newTiles = state.course.tiles.slice();
