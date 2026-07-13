@@ -20,7 +20,7 @@ import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
 import { createLoan } from "./game/sim/loans";
 import { isCoursePlayable } from "./game/sim/isCoursePlayable";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
-import { BALANCE } from "./game/balance/balanceConfig";
+import { getEffectiveBalance, terrainCostMult } from "./game/balance/difficulty";
 import { GameBackground } from "./ui/gameui";
 import { StartMenu } from "./ui/StartMenu";
 import { useAudio } from "./audio/audioContext";
@@ -54,6 +54,9 @@ export default function App() {
   const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
   const { course, world } = gameState;
   const [selected, setSelected] = useState<Terrain>("fairway");
+  // Difficulty-resolved balance + terrain cost scaler (ZKU-165).
+  const BALANCE = getEffectiveBalance(world.difficulty);
+  const costMult = terrainCostMult(world.difficulty);
 
   // Dispatch function for actions
   const dispatch = useCallback((action: Action) => {
@@ -229,7 +232,7 @@ export default function App() {
     const cooldownOk = world.week - (world.lastBridgeLoanWeek ?? -999) >= BALANCE.loans.bridgeCooldownWeeks;
     const hasActiveBridge = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
     return repOk && holesOk && cooldownOk && !hasActiveBridge && !world.isBankrupt;
-  }, [world.reputation, world.week, world.lastBridgeLoanWeek, world.loans, world.isBankrupt, course, validHolesCount]);
+  }, [world.reputation, world.week, world.lastBridgeLoanWeek, world.loans, world.isBankrupt, course, validHolesCount, BALANCE]);
 
   // Hole edit mode functions
   function enterHoleEditMode(holeIndex: number) {
@@ -525,7 +528,7 @@ export default function App() {
   function applyTileChange(idx: number, next: Terrain, opts?: { silent?: boolean }): boolean {
     if (world.isBankrupt) return false;
     const prev = course.tiles[idx];
-    const { net, charged, refunded } = computeTerrainChangeCost(prev, next);
+    const { net, charged, refunded } = computeTerrainChangeCost(prev, next, costMult);
     if (net > 0 && world.cash < net) {
       setPaintError(`Insufficient funds: need $${Math.ceil(net).toLocaleString()}`);
       return false;
@@ -615,7 +618,7 @@ export default function App() {
     // Calculate total cost
     let totalNet = 0;
     for (const tile of tilesToPaintData) {
-      const cost = computeTerrainChangeCost(tile.prev, "fairway");
+      const cost = computeTerrainChangeCost(tile.prev, "fairway", costMult);
       totalNet += cost.net;
     }
 
@@ -713,9 +716,9 @@ export default function App() {
     const newTerrain = course.tiles[newIdx];
     
     // Cost to remove old marker (revert to rough, get salvage)
-    const removeCost = computeTerrainChangeCost(oldTerrain, "rough"); // Reverting to rough
+    const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult); // Reverting to rough
     // Cost to place new marker
-    const placeCost = computeTerrainChangeCost(newTerrain, markerType);
+    const placeCost = computeTerrainChangeCost(newTerrain, markerType, costMult);
     const totalNet = placeCost.net + removeCost.net; // removeCost.net is negative (refund), so this is correct
     
     if (totalNet > 0 && world.cash < totalNet) {
@@ -752,8 +755,8 @@ export default function App() {
     const greenIdx = green.y * course.width + green.x;
     const teePrev = course.tiles[teeIdx];
     const greenPrev = course.tiles[greenIdx];
-    const teeCost = computeTerrainChangeCost(teePrev, "tee");
-    const greenCost = computeTerrainChangeCost(greenPrev, "green");
+    const teeCost = computeTerrainChangeCost(teePrev, "tee", costMult);
+    const greenCost = computeTerrainChangeCost(greenPrev, "green", costMult);
     const totalNet = teeCost.net + greenCost.net;
     if (totalNet > 0 && world.cash < totalNet) {
       setPaintError(`Insufficient funds to confirm: need $${Math.ceil(totalNet).toLocaleString()}`);
@@ -818,7 +821,7 @@ export default function App() {
       if (x < 0 || y < 0 || x >= course.width || y >= course.height) return;
       const deltas = computeSculptDeltas(course, x, y, sculptBrush, sculptRadius);
       if (deltas.length === 0) return;
-      const cost = sculptSteps(deltas) * ELEVATION_COST_PER_STEP;
+      const cost = sculptSteps(deltas) * ELEVATION_COST_PER_STEP * costMult;
       if (cost > world.cash) {
         setPaintError(`Not enough cash for earthworks ($${cost.toLocaleString()} needed).`);
         return;

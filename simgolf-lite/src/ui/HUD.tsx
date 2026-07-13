@@ -10,7 +10,7 @@ import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
 import { computeCourseRatingAndSlope } from "../game/sim/courseRating";
 import { isCoursePlayable } from "../game/sim/isCoursePlayable";
 import type { LegacyState } from "../utils/legacy";
-import { BALANCE } from "../game/balance/balanceConfig";
+import { getEffectiveBalance, getDifficultyProfile } from "../game/balance/difficulty";
 import paperTex from "../assets/textures/paper.svg";
 import { IconBush, IconCash, IconCondition, IconHoles, IconReputation, IconRock, IconTree, LogoCourseCraft } from "@/assets/icons";
 import { GameButton } from "@/ui/gameui";
@@ -148,6 +148,8 @@ export function HUD(props: {
 
   const [tab, setTab] = useState<Tab>("Editor");
   const [objectivesOpen, setObjectivesOpen] = useState(false);
+  // Difficulty-resolved balance for loan terms/eligibility (ZKU-165).
+  const BALANCE = getEffectiveBalance(world.difficulty);
   const audio = useAudio();
 
   const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
@@ -274,7 +276,32 @@ export function HUD(props: {
               <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span
+              title={`Difficulty: ${getDifficultyProfile(world.difficulty).label} (fixed for this run)`}
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: "0.06em",
+                padding: "3px 8px",
+                borderRadius: 999,
+                border: "1px solid rgba(0,0,0,0.12)",
+                background:
+                  world.difficulty === "hard"
+                    ? "#fde8e8"
+                    : world.difficulty === "easy"
+                      ? "#e8f5e0"
+                      : "rgba(255,255,255,0.7)",
+                color:
+                  world.difficulty === "hard"
+                    ? "#b91c1c"
+                    : world.difficulty === "easy"
+                      ? "#2f6b33"
+                      : "#6b7280",
+              }}
+            >
+              {getDifficultyProfile(world.difficulty).label.toUpperCase()}
+            </span>
             {(["COZY", "ARCHITECT"] as const).map((m) => (
               <button
                 key={m}

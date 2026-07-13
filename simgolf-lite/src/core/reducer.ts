@@ -3,6 +3,7 @@ import type { Action } from "./actions";
 import { computeElevationChangeCost, computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { clampElevation } from "../game/models/elevation";
 import { hitsLiquidityTrap } from "../game/sim/runState";
+import { terrainCostMult } from "../game/balance/difficulty";
 
 /**
  * Apply an action to the game state. This is the ONLY function that should mutate
@@ -17,6 +18,9 @@ export function applyAction(state: GameState, action: Action): GameState {
   if (action.type === "SET_MODE" || action.type === "SET_ACTIVE_HOLE" || action.type === "SET_BRUSH") {
     return state; // UI-only actions don't mutate state
   }
+
+  // Difficulty-scaled build economics (ZKU-165).
+  const costMult = terrainCostMult(state.world.difficulty);
 
   // Clone state for mutation
   let newState: GameState = { ...state };
@@ -36,7 +40,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         if (idx >= 0 && idx < newTiles.length) {
           const prev = newTiles[idx];
           if (prev !== terrain) {
-            const cost = computeTerrainChangeCost(prev, terrain);
+            const cost = computeTerrainChangeCost(prev, terrain, costMult);
             cashDelta += cost.net;
             newTiles[idx] = terrain;
           }
@@ -72,7 +76,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         const next = clampElevation(prev + delta);
         const applied = next - prev;
         if (applied !== 0) {
-          cashDelta += computeElevationChangeCost(applied).net;
+          cashDelta += computeElevationChangeCost(applied, costMult).net;
           newElevations[idx] = next;
         }
       }
@@ -101,7 +105,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       if (idx < 0 || idx >= state.course.tiles.length) break;
 
       const prevTerrain = state.course.tiles[idx];
-      const cost = computeTerrainChangeCost(prevTerrain, "tee");
+      const cost = computeTerrainChangeCost(prevTerrain, "tee", costMult);
       
       const newTiles = state.course.tiles.slice();
       newTiles[idx] = "tee";
@@ -140,9 +144,9 @@ export function applyAction(state: GameState, action: Action): GameState {
       const newTerrain = state.course.tiles[newIdx];
       
       // Remove old marker (revert to rough)
-      const removeCost = computeTerrainChangeCost(oldTerrain, "rough");
+      const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult);
       // Place new marker
-      const placeCost = computeTerrainChangeCost(newTerrain, "tee");
+      const placeCost = computeTerrainChangeCost(newTerrain, "tee", costMult);
       const totalCost = removeCost.net + placeCost.net;
 
       const newTiles = state.course.tiles.slice();
@@ -179,7 +183,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       if (idx < 0 || idx >= state.course.tiles.length) break;
 
       const prevTerrain = state.course.tiles[idx];
-      const cost = computeTerrainChangeCost(prevTerrain, "green");
+      const cost = computeTerrainChangeCost(prevTerrain, "green", costMult);
       
       const newTiles = state.course.tiles.slice();
       newTiles[idx] = "green";
@@ -218,9 +222,9 @@ export function applyAction(state: GameState, action: Action): GameState {
       const newTerrain = state.course.tiles[newIdx];
       
       // Remove old marker (revert to rough)
-      const removeCost = computeTerrainChangeCost(oldTerrain, "rough");
+      const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult);
       // Place new marker
-      const placeCost = computeTerrainChangeCost(newTerrain, "green");
+      const placeCost = computeTerrainChangeCost(newTerrain, "green", costMult);
       const totalCost = removeCost.net + placeCost.net;
 
       const newTiles = state.course.tiles.slice();

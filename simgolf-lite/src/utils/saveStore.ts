@@ -1,4 +1,4 @@
-import type { Course, WeekResult, World } from "../game/models/types";
+import type { Course, Difficulty, WeekResult, World } from "../game/models/types";
 import { normalizeLoadedSave, type SavePayload } from "./save";
 
 /**
@@ -29,6 +29,8 @@ export interface SaveSlotMeta {
   week: number;
   cash: number;
   holesOpen: number;
+  /** Run difficulty (ZKU-165). Absent on pre-M13 manifests. */
+  difficulty?: Difficulty;
 }
 
 export interface SaveFile {
@@ -173,6 +175,7 @@ function metaFor(
     week: payload.world.week,
     cash: Math.round(payload.world.cash),
     holesOpen,
+    difficulty: payload.world.difficulty ?? "normal",
   };
 }
 

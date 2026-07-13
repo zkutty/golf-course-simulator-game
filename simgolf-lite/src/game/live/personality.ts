@@ -43,13 +43,18 @@ function bell(rng: () => number): number {
   return ((rng() + rng() + rng()) / 3 - 0.5) * 2;
 }
 
-export function rollPersonality(base: PersonalityBaseline, rng: () => number): Personality {
+export function rollPersonality(
+  base: PersonalityBaseline,
+  rng: () => number,
+  // Difficulty knobs (ZKU-165): scale the rolled patience/spend, identity by default.
+  mults: { patience?: number; spend?: number } = {}
+): Personality {
   const s = base.spread;
   return {
     skill: clamp01(base.skill + bell(rng) * s),
     consistency: clamp01(base.consistency + bell(rng) * s),
-    patience: clamp01(base.patience + bell(rng) * s),
-    spendPropensity: clamp01(base.spendPropensity + bell(rng) * s),
+    patience: clamp01((base.patience + bell(rng) * s) * (mults.patience ?? 1)),
+    spendPropensity: clamp01((base.spendPropensity + bell(rng) * s) * (mults.spend ?? 1)),
     prefs: {
       difficulty: clampSigned(base.prefs.difficulty + bell(rng) * s),
       scenery: clampSigned(base.prefs.scenery + bell(rng) * s),

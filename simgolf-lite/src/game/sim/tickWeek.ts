@@ -5,7 +5,7 @@ import { scoreCourseHoles } from "./holes";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { isCoursePlayable } from "./isCoursePlayable";
 import { stepLoanWeek, totalWeeklyPayments } from "./loans";
-import { BALANCE } from "../balance/balanceConfig";
+import { getEffectiveBalance } from "../balance/difficulty";
 import { distressExhausted, hitsLiquidityTrap } from "./runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
 
@@ -15,6 +15,8 @@ export function tickWeek(
   seed = 1234
 ): { world: World; course: Course; result: WeekResult } {
   const rng = mulberry32(seed + world.week);
+  // Difficulty-resolved balance (ZKU-165): identity for normal.
+  const BALANCE = getEffectiveBalance(world.difficulty);
 
   const playable = isCoursePlayable(course);
 

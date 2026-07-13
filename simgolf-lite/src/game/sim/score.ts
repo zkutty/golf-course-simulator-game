@@ -1,7 +1,7 @@
 import type { Course, World } from "../models/types";
 import { scoreCourseHoles } from "./holes";
 import { computeCourseRatingAndSlope } from "./courseRating";
-import { BALANCE } from "../balance/balanceConfig";
+import { getEffectiveBalance } from "../balance/difficulty";
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
@@ -39,6 +39,7 @@ export function priceAttractiveness(course: Course): number {
 
 export function priceAttractivenessWithContext(course: Course, world: World): number {
   // Harsher elasticity above market, especially at low reputation.
+  const BALANCE = getEffectiveBalance(world.difficulty);
   const p = course.baseGreenFee;
   const market = BALANCE.pricing.marketPrice;
   const base = priceAttractiveness(course);
@@ -54,6 +55,7 @@ export function priceAttractivenessWithContext(course: Course, world: World): nu
 }
 
 export function demandBreakdown(course: Course, world: World) {
+  const BALANCE = getEffectiveBalance(world.difficulty);
   const holeSummary = scoreCourseHoles(course);
   const q = clamp01(holeSummary.courseQuality / 100); // 0..1
   const cond = course.condition; // 0..1
@@ -134,11 +136,12 @@ export function demandBreakdown(course: Course, world: World) {
   const blended = casualShare * casualIndex + coreShare * coreIndex;
   const demand = Math.max(0, Math.min(1.2, blended * 1.05 + base * 0.05)); // keep legacy weights barely influential
 
-  const floor = 120;
+  // Mirrors BALANCE.visitors so difficulty's demand multiplier applies here.
+  const floor = BALANCE.visitors.baseFloor;
   const floorCasual = Math.round(floor * casualShare);
   const floorCore = floor - floorCasual;
-  const baseVisitorsCasual = floorCasual + Math.round(520 * casualIndex * casualShare);
-  const baseVisitorsCore = floorCore + Math.round(520 * coreIndex * coreShare);
+  const baseVisitorsCasual = floorCasual + Math.round(BALANCE.visitors.scale * casualIndex * casualShare);
+  const baseVisitorsCore = floorCore + Math.round(BALANCE.visitors.scale * coreIndex * coreShare);
   const totalBaseVisitors = baseVisitorsCasual + baseVisitorsCore;
 
   return {

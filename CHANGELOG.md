@@ -61,6 +61,14 @@ versioning follows [SemVer](https://semver.org/).
   feeds a single `createNewGame` path used by the wizard, quick start,
   defeat-retry, and save reset; the course name now shows in the HUD header
   and browser tab (app retitled "CourseCraft") (ZKU-162).
+- Difficulty levels: Easy / Normal / Hard as a data-driven multiplier layer
+  (`getEffectiveBalance`) over balanceConfig — starting cash, terrain build
+  costs, weekly + live demand, golfer patience/spend, loan APR and bridge
+  cooldown, condition wear rate, and reputation gain/loss asymmetry. Normal
+  is bit-identical to the previous tuning (regression tested + verified via
+  the Monte Carlo tuner). Difficulty is fixed per run, shown as a HUD badge
+  and in save-slot metadata; the tuner now reports per-difficulty survival
+  curves (ZKU-165).
 
 ### Fixed
 - All 24 standing ESLint errors: render purity in App/CanvasCourse,

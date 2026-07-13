@@ -1,6 +1,6 @@
 import type { Course, World } from "../models/types";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
-import { BALANCE } from "../balance/balanceConfig";
+import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty";
 import { hitsLiquidityTrap } from "../sim/runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
 import type { DayResult, RoundReactions } from "./types";
@@ -28,6 +28,8 @@ export function commitDay(args: {
   dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
 }): { world: World; course: Course; result: DayResult } {
   const { course, world, revenue, reactions, dayIndex } = args;
+  // Difficulty-resolved balance (ZKU-165): identity for normal.
+  const BALANCE = getEffectiveBalance(world.difficulty);
   const rounds = reactions.rounds;
   const avgSatisfaction = reactions.avgSatisfaction;
 
@@ -80,8 +82,10 @@ export function commitDay(args: {
   const returnBias = (reactions.willReturnRate - 0.5) * 0.5; // -0.25..0.25
   const sentiment = clamp(nps + returnBias, -1, 1);
   const dailyRepCap = Math.max(1, BALANCE.reputation.capPerWeek / DAYS_PER_WEEK);
+  const profile = getDifficultyProfile(world.difficulty);
+  const repAsym = sentiment >= 0 ? profile.repGainMult : profile.repLossMult;
   const repDelta =
-    rounds > 0 ? clamp(sentiment * BALANCE.reputation.npsGain, -dailyRepCap, dailyRepCap) : 0;
+    rounds > 0 ? clamp(sentiment * BALANCE.reputation.npsGain * repAsym, -dailyRepCap, dailyRepCap) : 0;
   const nextRep = clamp(world.reputation + repDelta, 0, 100);
 
   const nextCashRaw = world.cash - costs; // revenue already banked live

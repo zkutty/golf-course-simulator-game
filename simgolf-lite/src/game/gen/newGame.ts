@@ -6,6 +6,7 @@ import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../models/constants";
 import { findClubhouseSpot } from "../models/buildings";
 import { CHALLENGE_GOALS } from "../objectives/goals";
+import { getDifficultyProfile } from "../balance/difficulty";
 import { generateWildLandWithObstacles } from "./generateWildLand";
 
 /**
@@ -50,10 +51,12 @@ export function createNewGame(
   const effectiveGoals =
     goals !== undefined ? goals : setup.mode === "challenge" ? CHALLENGE_GOALS : null;
 
+  // Explicit sandbox override wins; otherwise difficulty scales the default
+  // (ZKU-165 — Normal is the identity, so this is today's 25k on normal).
   const startingCash =
     setup.mode === "sandbox" && setup.sandboxOverrides?.startingCash != null
       ? setup.sandboxOverrides.startingCash
-      : DEFAULT_WORLD.cash;
+      : Math.round(DEFAULT_WORLD.cash * getDifficultyProfile(setup.difficulty).startingCashMult);
 
   const world: World = {
     ...DEFAULT_WORLD,

@@ -20,8 +20,8 @@ export const TERRAIN_MAINT_WEIGHT: Record<Terrain, number> = {
 // with no salvage (you can't un-move dirt for money).
 export const ELEVATION_COST_PER_STEP: number = BALANCE.terrain.earthworkCostPerStep;
 
-export function computeElevationChangeCost(deltaSteps: number): TerrainChangeCost {
-  const charged = Math.abs(deltaSteps) * ELEVATION_COST_PER_STEP;
+export function computeElevationChangeCost(deltaSteps: number, costMult = 1): TerrainChangeCost {
+  const charged = Math.abs(deltaSteps) * ELEVATION_COST_PER_STEP * costMult;
   return { net: charged, charged, refunded: 0 };
 }
 
@@ -36,15 +36,17 @@ export interface TerrainChangeCost {
 // Delta-based economics:
 // - switching to rough refunds salvage (rough is effectively "free" to paint)
 // - switching premium->premium refunds salvage then charges build difference
-export function computeTerrainChangeCost(prev: Terrain, next: Terrain): TerrainChangeCost {
+// `costMult` is the run difficulty's terrain scaler (ZKU-165); build and
+// salvage scale together so refund ratios stay difficulty-neutral.
+export function computeTerrainChangeCost(prev: Terrain, next: Terrain, costMult = 1): TerrainChangeCost {
   if (prev === next) return { net: 0, charged: 0, refunded: 0 };
 
-  const salvage = TERRAIN_SALVAGE_VALUE[prev] ?? 0;
+  const salvage = (TERRAIN_SALVAGE_VALUE[prev] ?? 0) * costMult;
 
   // Reverting to rough: refund salvage only (no rough build cost)
   if (next === "rough") return { net: -salvage, charged: 0, refunded: salvage };
 
-  const build = TERRAIN_BUILD_COST[next] ?? 0;
+  const build = (TERRAIN_BUILD_COST[next] ?? 0) * costMult;
   const net = build - salvage;
   return {
     net,

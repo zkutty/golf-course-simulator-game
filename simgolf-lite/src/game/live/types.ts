@@ -1,4 +1,4 @@
-import type { Point } from "../models/types";
+import type { Difficulty, Point } from "../models/types";
 import type { Personality } from "./personality";
 
 export type SegmentKind = "walk" | "flight" | "pause";
@@ -76,6 +76,8 @@ export interface LiveState {
   walkCache: Map<string, Point[] | null>;
   dayOver: boolean;
   seed: number;
+  // Run difficulty at day start (ZKU-165) — scales rolled patience/spend.
+  difficulty?: Difficulty;
 }
 
 // Aggregated reactions from the golfers who actually finished a round today.
