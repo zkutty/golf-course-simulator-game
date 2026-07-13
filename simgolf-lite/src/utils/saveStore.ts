@@ -72,7 +72,7 @@ function localStorageKV(): KV {
   };
 }
 
-function indexedDbKV(): KV {
+function indexedDbKV(): KV & { ready: Promise<void> } {
   const open = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open("coursecraft-saves", 1);
     req.onupgradeneeded = () => req.result.createObjectStore("kv");
@@ -89,24 +89,41 @@ function indexedDbKV(): KV {
     });
   };
   return {
+    ready: open.then(() => undefined),
     get: (k) => tx<string | undefined>("readonly", (s) => s.get(k)).then((v) => v ?? null),
     set: (k, v) => tx("readwrite", (s) => s.put(v, k)).then(() => undefined),
     del: (k) => tx("readwrite", (s) => s.delete(k)).then(() => undefined),
   };
 }
 
-function pickKV(): KV {
-  try {
-    if (typeof indexedDB !== "undefined") return indexedDbKV();
-  } catch {
-    /* fall through */
-  }
+function fallbackKV(): KV {
   try {
     if (typeof localStorage !== "undefined") return localStorageKV();
   } catch {
     /* fall through */
   }
   return memoryKV();
+}
+
+function pickKV(): KV {
+  try {
+    if (typeof indexedDB === "undefined") return fallbackKV();
+    const idb = indexedDbKV();
+    // indexedDB.open can also fail ASYNCHRONOUSLY (private browsing,
+    // blocked storage). Route every op through a driver promise that
+    // swaps to the fallback if the database never opens.
+    const driver = idb.ready.then(
+      () => idb as KV,
+      () => fallbackKV()
+    );
+    return {
+      get: (k) => driver.then((d) => d.get(k)),
+      set: (k, v) => driver.then((d) => d.set(k, v)),
+      del: (k) => driver.then((d) => d.del(k)),
+    };
+  } catch {
+    return fallbackKV();
+  }
 }
 
 let kv: KV = pickKV();

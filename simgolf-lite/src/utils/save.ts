@@ -1,7 +1,8 @@
-import type { Course, WeekResult, World, Point, Obstacle } from "../game/models/types";
+import type { Building, Course, WeekResult, World, Point, Obstacle } from "../game/models/types";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { withNormalizedElevations } from "../game/models/elevation";
+import { BUILDING_SPECS } from "../game/models/buildings";
 
 const KEY = "simgolf_lite_save_v1";
 const SCHEMA_VERSION = 1 as const;
@@ -111,6 +112,26 @@ export interface SavePayload {
 }
 
 /**
+ * Keep only well-formed buildings of known types whose footprint fits the
+ * grid — renderers and pathfinding dereference the spec unconditionally, so
+ * a hostile import with a bogus type/position must not survive the load.
+ */
+function sanitizeBuildings(raw: unknown, width: number, height: number): Building[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((b): b is Building => {
+    if (!b || typeof b !== "object") return false;
+    const { type, x, y } = b as Building;
+    const spec =
+      typeof type === "string"
+        ? (BUILDING_SPECS as Record<string, (typeof BUILDING_SPECS)[keyof typeof BUILDING_SPECS] | undefined>)[type]
+        : undefined;
+    if (!spec) return false;
+    if (!Number.isInteger(x) || !Number.isInteger(y)) return false;
+    return x >= 0 && y >= 0 && x + spec.w <= width && y + spec.d <= height;
+  });
+}
+
+/**
  * Validate + normalize a parsed save of any vintage into a playable
  * payload, or null if it's unusable. Shared by the legacy single-slot
  * loader and the slot store / file import (ZKU-174), so every load path
@@ -137,7 +158,11 @@ export function normalizeLoadedSave(input: unknown): SavePayload | null {
         })) ?? DEFAULT_COURSE.holes,
       obstacles: rawCourse.obstacles ?? DEFAULT_COURSE.obstacles,
       elevations: rawCourse.elevations ?? [], // normalized to flat below
-      buildings: rawCourse.buildings ?? [],
+      buildings: sanitizeBuildings(
+        rawCourse.buildings,
+        rawCourse.width ?? DEFAULT_COURSE.width,
+        rawCourse.height ?? DEFAULT_COURSE.height
+      ),
       yardsPerTile: rawCourse.yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
     };
 

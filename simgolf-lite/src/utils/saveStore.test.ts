@@ -99,6 +99,38 @@ describe("saveStore", () => {
     expect(loaded!.world.cash).toBe(40_000);
   });
 
+  it("sanitizes malformed buildings on import instead of crashing later", async () => {
+    const p = payload(2);
+    const file = JSON.stringify({
+      schemaVersion: 1,
+      savedAt: 0,
+      course: {
+        ...p.course,
+        buildings: [
+          { type: "castle", x: 1, y: 1 }, // unknown type
+          { type: "clubhouse", x: -5, y: 2 }, // out of bounds
+          { type: "clubhouse", x: 3.7, y: 4 }, // non-integer
+          "junk", // not even an object
+          { type: "clubhouse", x: 3, y: 4 }, // the one valid entry
+        ],
+      },
+      world: p.world,
+    });
+    const meta = await importSave(file, "sneaky");
+    expect(meta).not.toBeNull();
+    const loaded = await loadSlot(meta!.id);
+    expect(loaded!.course.buildings).toEqual([{ type: "clubhouse", x: 3, y: 4 }]);
+
+    const nonArray = JSON.stringify({
+      schemaVersion: 1,
+      savedAt: 0,
+      course: { ...p.course, buildings: "nope" },
+      world: p.world,
+    });
+    const meta2 = await importSave(nonArray, "sneaky2");
+    expect((await loadSlot(meta2!.id))!.course.buildings).toEqual([]);
+  });
+
   it("hostile imports return null and leave existing slots untouched", async () => {
     await saveToSlot(null, "manual", "Keep me", payload(4));
     expect(await importSave("not json at all", "x")).toBeNull();
