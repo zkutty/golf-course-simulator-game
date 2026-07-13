@@ -14,6 +14,9 @@ versioning follows [SemVer](https://semver.org/).
 - Animated water: shimmer with glints, shore foam, and splash ripples when
   a ball lands in water (ZKU-150).
 - Prop drop shadows and per-tree wind sway (ZKU-151).
+- Buildings: multi-tile structure model with placement validation, golfers
+  path around footprints, and a starter clubhouse auto-placed on new
+  courses (ZKU-152).
 - Isometric projection core (`src/game/render/iso.ts`): 2:1 dimetric
   world↔screen math with cardinal rotation, picking, and depth keys (ZKU-137).
 - Production Pixi renderer: layered scene graph, camera-aware input, clean

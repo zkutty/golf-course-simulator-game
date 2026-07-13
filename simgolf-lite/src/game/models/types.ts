@@ -25,6 +25,16 @@ export interface Hole {
 
 export type ObstacleType = "tree" | "bush" | "rock";
 
+export type BuildingType = "clubhouse";
+
+// Multi-tile structure anchored at its top-left footprint tile; footprint
+// dimensions come from BUILDING_SPECS (src/game/models/buildings.ts).
+export interface Building {
+  type: BuildingType;
+  x: number;
+  y: number;
+}
+
 export interface Obstacle {
   x: number;
   y: number;
@@ -41,6 +51,9 @@ export interface Course {
   elevations: number[]; // length = width * height
   holes: Hole[]; // 9 or 18 (MVP: 9)
   obstacles: Obstacle[]; // overlay layer (not terrain)
+  // Multi-tile structures (ZKU-152; extended by M4 concessions). Older
+  // saves migrate to an empty list on load.
+  buildings: Building[];
   yardsPerTile: number; // distance model (default 10)
   name: string;
   baseGreenFee: number; // dollars

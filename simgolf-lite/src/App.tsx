@@ -11,6 +11,7 @@ import { hasSavedGame, loadGame, resetSave, saveGame } from "./utils/save";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
+import { findClubhouseSpot } from "./game/models/buildings";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
 import { createSoundPlayer } from "./utils/sound";
@@ -390,6 +391,9 @@ export default function App() {
       })),
       obstacles: generatedObstacles,
     };
+    // Starter clubhouse (ZKU-152): anchor the course visually from day one.
+    const clubhouseSpot = findClubhouseSpot(newCourse);
+    newCourse.buildings = clubhouseSpot ? [{ type: "clubhouse" as const, ...clubhouseSpot }] : [];
     
     const newWorld = {
       ...DEFAULT_STATE.world,
@@ -995,6 +999,9 @@ export default function App() {
       })),
       obstacles: generatedObstacles,
     };
+    // Starter clubhouse (ZKU-152): anchor the course visually from day one.
+    const clubhouseSpot = findClubhouseSpot(newCourse);
+    newCourse.buildings = clubhouseSpot ? [{ type: "clubhouse" as const, ...clubhouseSpot }] : [];
     
     const newWorld = {
       ...DEFAULT_STATE.world,

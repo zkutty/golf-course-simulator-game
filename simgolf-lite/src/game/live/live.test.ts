@@ -51,6 +51,7 @@ function makeTestCourse(): Course {
     height,
     tiles,
     elevations: Array.from({ length: width * height }, () => 0),
+    buildings: [],
     holes: [{ tee, green, parMode: "AUTO", name: "H1" }],
     obstacles: [],
     yardsPerTile: 10,

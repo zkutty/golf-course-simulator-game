@@ -98,6 +98,9 @@ function migrateCourseGrid(oldCourse: Course): Course {
     elevations: newElevations,
     holes: migratedHoles,
     obstacles: migratedObstacles,
+    buildings: (oldCourse.buildings ?? []).filter(
+      (b) => b.x >= 0 && b.y >= 0 && b.x < newWidth && b.y < newHeight
+    ),
   };
 }
 
@@ -121,6 +124,7 @@ export function loadGame(): { course: Course; world: World; history?: WeekResult
         })) ?? DEFAULT_COURSE.holes,
       obstacles: (parsed.course as Course).obstacles ?? DEFAULT_COURSE.obstacles,
       elevations: (parsed.course as Course).elevations ?? [], // normalized to flat below
+      buildings: (parsed.course as Course).buildings ?? [],
       yardsPerTile: (parsed.course as Course).yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
     };
 

@@ -23,6 +23,8 @@ import { getPropFrame, loadAtlases, type PropFrame, type TerrainFrame } from "..
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth, placeObject } from "../game/render/objectPlacement";
+import { buildingSpec } from "../game/models/buildings";
+import type { AtlasFrame } from "../render/atlas";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -246,6 +248,7 @@ export function PixiStage(props: PixiStageProps) {
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
   const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
+  const buildingSpritesRef = useRef<PIXI.Sprite[]>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const ripplesRef = useRef<Array<{ x: number; y: number; t0: number }>>([]);
   const rippleGraphicsRef = useRef<PIXI.Graphics | null>(null);
@@ -495,6 +498,7 @@ export function PixiStage(props: PixiStageProps) {
       hoverHighlightRef.current = null;
       golferPoolRef.current.clear();
       flagPoolRef.current.clear();
+      buildingSpritesRef.current = [];
       rippleGraphicsRef.current = null;
       ripplesRef.current = [];
       waterAnimRef.current = { last: 0, wasAnimating: false };
@@ -1094,6 +1098,38 @@ export function PixiStage(props: PixiStageProps) {
       }
     });
   }, [appReady, obstacles, tileSize, props.showObstacles, course, rotation]);
+
+  // ---------------------------------------------------------------------
+  // Objects layer — buildings (multi-tile footprints, ZKU-152)
+  // ---------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!appReady) return;
+    const layers = layersRef.current;
+    if (!layers) return;
+
+    buildingSpritesRef.current.forEach((sprite) => {
+      layers.objects.removeChild(sprite);
+      sprite.destroy();
+    });
+    buildingSpritesRef.current = [];
+
+    for (const b of course.buildings ?? []) {
+      const spec = buildingSpec(b);
+      const tex = getPropFrame(spec.frame as AtlasFrame);
+      if (!tex) continue; // no fallback tier for buildings — atlas only
+      const e = getElevation(course, b.x, b.y);
+      const placement = placeObject({ x: b.x, y: b.y, w: spec.w, d: spec.d }, e, rotation);
+      const sprite = new PIXI.Sprite(tex);
+      sprite.anchor.set(0.5, 1);
+      sprite.position.set(placement.position.x, placement.position.y);
+      sprite.width = spec.w * TILE_W;
+      sprite.height = (sprite.width * tex.height) / tex.width;
+      sprite.zIndex = placement.zIndex;
+      layers.objects.addChild(sprite);
+      buildingSpritesRef.current.push(sprite);
+    }
+  }, [appReady, course, rotation]);
 
   // ---------------------------------------------------------------------
   // Decals layer — tee/green markers (incl. wizard drafts) + route overlays
