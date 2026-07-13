@@ -13,7 +13,6 @@ import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
-import { findClubhouseSpot } from "./game/models/buildings";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
 import { createSoundPlayer } from "./utils/sound";
@@ -30,8 +29,10 @@ import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
 import { HoleMinimap } from "./ui/HoleMinimap";
-import { generateWildLandWithObstacles } from "./game/gen/generateWildLand";
-import { COURSE_WIDTH, COURSE_HEIGHT } from "./game/models/constants";
+import { createNewGame } from "./game/gen/newGame";
+import type { GameSetup } from "./game/models/setup";
+import { NewGameWizard } from "./ui/NewGameWizard";
+import { generateCourseName } from "./utils/courseNames";
 import { applyAction } from "./core/reducer";
 import type { Action } from "./core/actions";
 import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
@@ -40,7 +41,7 @@ import { LiveControls } from "./ui/LiveControls";
 import { GolferInspector } from "./ui/GolferInspector";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
-import { createObjectiveState, type GoalDefinition, type RunOutcome } from "./game/models/objectives";
+import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -49,7 +50,7 @@ type ViewMode = "global" | "hole";
 const STRIKE_SFX = "/audio/ball-strike.mp3";
 
 export default function App() {
-  const [screen, setScreen] = useState<"menu" | "game">("menu");
+  const [screen, setScreen] = useState<"menu" | "setup" | "game">("menu");
   const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
   const { course, world } = gameState;
   const [selected, setSelected] = useState<Terrain>("fairway");
@@ -363,6 +364,11 @@ export default function App() {
     if (objectiveOutcome === "WON" && prevOutcome === "OPEN") setShowVictory(true);
   }
 
+  // Course name propagates to the browser tab (ZKU-162).
+  useEffect(() => {
+    document.title = screen === "game" ? `${course.name} — CourseCraft` : "CourseCraft";
+  }, [screen, course.name]);
+
   // Handle audio based on screen and view mode
   useEffect(() => {
     if (!soundEnabled) {
@@ -385,48 +391,13 @@ export default function App() {
     }
   }, [screen, viewMode, soundEnabled, audio]);
 
-  function restartRun(args: { seed: number; goals?: GoalDefinition[] | null }) {
+  // THE new-run path (ZKU-162): every fresh run goes through createNewGame.
+  // `goals` overrides the mode's default goal set (defeat-retry, scenarios).
+  function restartRun(setup: GameSetup, goals?: GoalDefinition[] | null) {
     console.log('[Performance] Starting new game...');
-    const seed = args.seed | 0;
-
-    // Generate wild land terrain and obstacles using the seed
-    console.log('[Performance] Generating wild land...');
     const start = performance.now();
-    const { tiles: generatedTiles, obstacles: generatedObstacles, elevations: generatedElevations } = generateWildLandWithObstacles(
-      COURSE_WIDTH,
-      COURSE_HEIGHT,
-      seed,
-      [] // No reserved zones for new games (no holes placed yet)
-    );
+    const { course: newCourse, world: newWorld } = createNewGame(setup, goals);
     console.log('[Performance] Wild land generated in', performance.now() - start, 'ms');
-    
-    // Create new course with generated terrain and obstacles, no holes
-    const newCourse = {
-      ...DEFAULT_STATE.course,
-      tiles: generatedTiles,
-      elevations: generatedElevations,
-      holes: Array.from({ length: 9 }, () => ({
-        tee: null,
-        green: null,
-        parMode: "AUTO" as const,
-      })),
-      obstacles: generatedObstacles,
-    };
-    // Starter clubhouse (ZKU-152): anchor the course visually from day one.
-    const clubhouseSpot = findClubhouseSpot(newCourse);
-    newCourse.buildings = clubhouseSpot ? [{ type: "clubhouse" as const, ...clubhouseSpot }] : [];
-    
-    const newWorld = {
-      ...DEFAULT_STATE.world,
-      runSeed: seed,
-      distressWeeks: 0,
-      isBankrupt: false,
-      loans: [],
-      lastBridgeLoanWeek: -999,
-      lastWeekProfit: 0,
-      // Retry-same-seed keeps the run's goal definitions; fresh progress.
-      objectives: args.goals && args.goals.length > 0 ? createObjectiveState(args.goals) : null,
-    };
 
     dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
     setHistory([]);
@@ -440,13 +411,35 @@ export default function App() {
     setPaintError(null);
     setObstacleType("tree");
     setFlyoverNonce(0);
-    setPeakCash(DEFAULT_STATE.world.cash);
-    setPeakRep(DEFAULT_STATE.world.reputation);
+    setPeakCash(newWorld.cash);
+    setPeakRep(newWorld.reputation);
     setShowBridgePrompt(false);
     setPrevDistress(0);
     legacyAwardedRef.current = false;
     setPrevOutcome("OPEN");
     setShowVictory(false);
+  }
+
+  /** GameSetup matching the CURRENT run, for retry-same-seed / new-seed. */
+  function currentRunSetup(seed: number): GameSetup {
+    return {
+      mode: world.mode ?? "sandbox",
+      courseName: course.name,
+      founderName: world.founderName,
+      seed,
+      theme: course.theme ?? "parkland",
+      difficulty: world.difficulty ?? "normal",
+    };
+  }
+
+  function quickStartSetup(): GameSetup {
+    return {
+      mode: "sandbox",
+      courseName: generateCourseName(),
+      seed: (Date.now() % 1_000_000) | 0,
+      theme: "parkland",
+      difficulty: "normal",
+    };
   }
 
   const [canLoadFromMenu, setCanLoadFromMenu] = useState(false);
@@ -474,8 +467,13 @@ export default function App() {
 
   function newGameFromMenu() {
     void audio.unlock();
+    setScreen("setup");
+  }
+
+  function startNewGame(setup: GameSetup) {
+    void audio.unlock();
     void audio.playSfx(STRIKE_SFX);
-    restartRun({ seed: (Date.now() % 1_000_000) | 0 });
+    restartRun(setup);
     setScreen("game");
   }
 
@@ -993,48 +991,8 @@ export default function App() {
 
   function onResetSave() {
     resetSave();
-    // Generate new terrain and obstacles with a new seed
-    const newSeed = Date.now();
-    const { tiles: generatedTiles, obstacles: generatedObstacles, elevations: generatedElevations } = generateWildLandWithObstacles(
-      COURSE_WIDTH,
-      COURSE_HEIGHT,
-      newSeed,
-      [] // No reserved zones for reset (no holes placed yet)
-    );
-    
-    const newCourse = {
-      ...DEFAULT_STATE.course,
-      tiles: generatedTiles,
-      elevations: generatedElevations,
-      holes: Array.from({ length: 9 }, () => ({
-        tee: null,
-        green: null,
-        parMode: "AUTO" as const,
-      })),
-      obstacles: generatedObstacles,
-    };
-    // Starter clubhouse (ZKU-152): anchor the course visually from day one.
-    const clubhouseSpot = findClubhouseSpot(newCourse);
-    newCourse.buildings = clubhouseSpot ? [{ type: "clubhouse" as const, ...clubhouseSpot }] : [];
-    
-    const newWorld = {
-      ...DEFAULT_STATE.world,
-      runSeed: newSeed,
-    };
-    
-    dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
-    setHistory([]);
-    setLast(undefined);
-    setEditorMode("PAINT");
-    setActiveHoleIndex(0);
-    setWizardStep("TEE");
-    setDraftTee(null);
-    setDraftGreen(null);
-    setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
-    setPaintError(null);
-    setObstacleType("tree");
-    setPeakCash(DEFAULT_STATE.world.cash);
-    setPeakRep(DEFAULT_STATE.world.reputation);
+    // Fresh land, same run framing (mode/theme/difficulty), new seed.
+    restartRun(currentRunSetup((Date.now() % 1_000_000) | 0));
   }
 
   function simulate() {
@@ -1093,12 +1051,22 @@ export default function App() {
     />
   );
 
+  if (screen === "setup") {
+    return (
+      <NewGameWizard
+        onCancel={() => setScreen("menu")}
+        onStart={startNewGame}
+      />
+    );
+  }
+
   if (screen === "menu") {
     return (
       <>
       <StartMenu
         canLoad={canLoadFromMenu}
         onNewGame={newGameFromMenu}
+        onQuickStart={() => startNewGame(quickStartSetup())}
         onLoadGame={loadFromMenu}
         audioVolumes={{
           music: audio.getVolumes().musicVolume,
@@ -1137,8 +1105,8 @@ export default function App() {
           courseRating={rating.courseRating}
           slope={rating.slope}
           seed={world.runSeed}
-          onRetrySeed={(seed) => restartRun({ seed, goals: world.objectives?.goals ?? null })}
-          onNewGame={() => restartRun({ seed: (Date.now() % 1_000_000) | 0, goals: world.objectives?.goals ?? null })}
+          onRetrySeed={(seed) => restartRun(currentRunSetup(seed), world.objectives?.goals ?? null)}
+          onNewGame={() => setScreen("setup")}
           onLoad={() => setSaveModalOpen({ canSave: false })}
         />
       )}

@@ -53,6 +53,14 @@ versioning follows [SemVer](https://semver.org/).
   bars; victory celebration with "keep playing"; unified defeat screen
   (bankruptcy or missed deadline) with retry-same-seed / load / new game.
   Goal state persists in saves; free play shows a Free Play badge (ZKU-163).
+- New-game setup wizard: Mode (Challenge / Sandbox / Career-soon) → Land
+  (theme pick + four seeded land previews with reroll and a shareable,
+  re-enterable seed) → Difficulty → Details (course name with a fun name
+  generator, optional founder, sandbox starting-cash slider). Quick Start on
+  the title screen skips it with sensible defaults. One typed `GameSetup`
+  feeds a single `createNewGame` path used by the wizard, quick start,
+  defeat-retry, and save reset; the course name now shows in the HUD header
+  and browser tab (app retitled "CourseCraft") (ZKU-162).
 
 ### Fixed
 - All 24 standing ESLint errors: render purity in App/CanvasCourse,

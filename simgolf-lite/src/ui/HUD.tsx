@@ -257,10 +257,21 @@ export function HUD(props: {
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <LogoCourseCraft height={44} />
             <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
-              <div style={{ fontSize: 12, letterSpacing: "0.08em", color: "var(--cc-muted)" }}>
-                Design &amp; run your course
+              <div
+                style={{
+                  fontFamily: "var(--font-heading)",
+                  fontSize: 15,
+                  fontWeight: 800,
+                  color: "#3d4a3e",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={course.name}
+              >
+                {course.name}
               </div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>

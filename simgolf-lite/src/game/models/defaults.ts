@@ -18,6 +18,7 @@ export const DEFAULT_COURSE: Course = {
   yardsPerTile: 10,
   baseGreenFee: 65,
   condition: 0.75,
+  theme: "parkland",
 };
 
 export const DEFAULT_WORLD: World = {
@@ -34,6 +35,8 @@ export const DEFAULT_WORLD: World = {
   lastBridgeLoanWeek: -999,
   loans: [],
   objectives: null,
+  mode: "sandbox",
+  difficulty: "normal",
 };
 
 

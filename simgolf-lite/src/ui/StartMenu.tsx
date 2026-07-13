@@ -6,6 +6,7 @@ import { SettingsModal } from "./SettingsModal";
 export interface StartMenuProps {
   canLoad: boolean;
   onNewGame: () => void;
+  onQuickStart: () => void;
   onLoadGame: () => void;
   audioVolumes: { music: number; ambience: number };
   onAudioVolumesChange: (volumes: { music?: number; ambience?: number }) => void;
@@ -137,6 +138,18 @@ export function StartMenu(props: StartMenuProps) {
               }}
             >
               New Game
+            </MenuButton>
+
+            <MenuButton
+              variant="secondary"
+              icon="🚀"
+              subtitle="Skip setup — fresh sandbox land"
+              onClick={() => {
+                props.onButtonClick?.();
+                props.onQuickStart();
+              }}
+            >
+              Quick Start
             </MenuButton>
 
             <MenuButton

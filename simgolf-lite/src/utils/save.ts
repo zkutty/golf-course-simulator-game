@@ -1,5 +1,21 @@
-import type { Building, Course, WeekResult, World, Point, Obstacle } from "../game/models/types";
+import type {
+  Building,
+  Course,
+  Difficulty,
+  LandTheme,
+  PlayMode,
+  WeekResult,
+  World,
+  Point,
+  Obstacle,
+} from "../game/models/types";
 import type { ObjectiveState } from "../game/models/objectives";
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { withNormalizedElevations } from "../game/models/elevation";
@@ -186,16 +202,20 @@ export function normalizeLoadedSave(input: unknown): SavePayload | null {
         rawCourse.height ?? DEFAULT_COURSE.height
       ),
       yardsPerTile: rawCourse.yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
+      theme: oneOf<LandTheme>(rawCourse.theme, ["parkland", "links", "desert"], "parkland"),
     };
 
     // Migrate if grid size differs, then guarantee a well-formed
     // elevations array (pre-elevation saves load flat — ZKU-143).
     const course = withNormalizedElevations(migrateCourseGrid(loadedCourse));
 
+    const rawWorld = parsed.world as World;
     const world: World = {
       ...DEFAULT_WORLD,
-      ...(parsed.world as World),
-      objectives: sanitizeObjectives((parsed.world as World).objectives),
+      ...rawWorld,
+      objectives: sanitizeObjectives(rawWorld.objectives),
+      mode: oneOf<PlayMode>(rawWorld.mode, ["sandbox", "challenge", "career"], "sandbox"),
+      difficulty: oneOf<Difficulty>(rawWorld.difficulty, ["easy", "normal", "hard"], "normal"),
     };
     const history = parsed.history ?? undefined;
     return { course, world, history };
