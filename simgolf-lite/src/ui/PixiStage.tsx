@@ -240,7 +240,9 @@ export function PixiStage(props: PixiStageProps) {
   const prevElevationsRef = useRef<number[] | null>(null);
   const builtRotationRef = useRef<IsoRotation | null>(null);
   const chunkRebuildsRef = useRef(0);
-  const obstacleSpritesRef = useRef<Map<string, PIXI.Sprite>>(new Map());
+  const obstacleSpritesRef = useRef<
+    Map<string, { sprite: PIXI.Sprite; shadow: PIXI.Graphics; swayPhase: number | null }>
+  >(new Map());
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
   const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
@@ -1024,9 +1026,11 @@ export function PixiStage(props: PixiStageProps) {
     const layers = layersRef.current;
     if (!layers) return;
 
-    obstacleSpritesRef.current.forEach((sprite) => {
-      layers.objects.removeChild(sprite);
-      sprite.destroy();
+    obstacleSpritesRef.current.forEach((entry) => {
+      layers.objects.removeChild(entry.sprite);
+      entry.sprite.destroy();
+      entry.shadow.parent?.removeChild(entry.shadow);
+      entry.shadow.destroy();
     });
     obstacleSpritesRef.current.clear();
 
@@ -1050,7 +1054,23 @@ export function PixiStage(props: PixiStageProps) {
       sprite.height = tall ? (size * texture.height) / texture.width : size;
       sprite.zIndex = placement.zIndex;
       layersNow.objects.addChild(sprite);
-      obstacleSpritesRef.current.set(key, sprite);
+
+      // Drop shadow (ZKU-151): soft ellipse at the base, offset SE to match
+      // the fixed NW sun; lives in the decal layer under all objects.
+      const shadow = new PIXI.Graphics();
+      const shadowRx = obs.type === "tree" ? 13 : obs.type === "bush" ? 10 : 9;
+      shadow.ellipse(3, 1.5, shadowRx, shadowRx * 0.45);
+      shadow.fill({ color: 0x000000, alpha: 0.18 });
+      shadow.position.set(placement.position.x, placement.position.y - TILE_H / 2 + 1);
+      layersNow.terrainDecals.addChild(shadow);
+
+      obstacleSpritesRef.current.set(key, {
+        sprite,
+        shadow,
+        // Wind sway (ZKU-151): trees only, per-instance phase so canopies
+        // never move in lockstep.
+        swayPhase: obs.type === "tree" ? ((obs.x * 17 + obs.y * 29) % 32) / 32 * Math.PI * 2 : null,
+      });
     };
 
     obstacles.forEach((obs) => {
@@ -1347,6 +1367,19 @@ export function PixiStage(props: PixiStageProps) {
         for (const chunk of chunksRef.current) {
           for (const ws of chunk.waterSprites) ws.sprite.tint = ws.baseTint;
           for (const fs of chunk.foamSprites) fs.sprite.alpha = 0.26;
+        }
+      }
+
+      // Wind sway (ZKU-151): subtle skew oscillation on tree canopies.
+      if (props.animationsEnabled) {
+        const t = nowMs / 1000;
+        for (const entry of obstacleSpritesRef.current.values()) {
+          if (entry.swayPhase === null) continue;
+          entry.sprite.skew.x = Math.sin(t * 1.1 + entry.swayPhase) * 0.035;
+        }
+      } else {
+        for (const entry of obstacleSpritesRef.current.values()) {
+          if (entry.swayPhase !== null && entry.sprite.skew.x !== 0) entry.sprite.skew.x = 0;
         }
       }
 
