@@ -46,6 +46,13 @@ versioning follows [SemVer](https://semver.org/).
   "Source: GitHub Actions") (ZKU-184).
 - App version injected from package.json and shown on the title screen
   (ZKU-184).
+- Objective engine: data-driven goals (cash, reputation, course rating,
+  holes built, weekly profit, profit streak, total rounds, condition) with
+  all/any composition and week deadlines, evaluated deterministically at sim
+  commit points; pinned HUD mini-tracker + objectives panel with progress
+  bars; victory celebration with "keep playing"; unified defeat screen
+  (bankruptcy or missed deadline) with retry-same-seed / load / new game.
+  Goal state persists in saves; free play shows a Free Play badge (ZKU-163).
 
 ### Fixed
 - All 24 standing ESLint errors: render purity in App/CanvasCourse,

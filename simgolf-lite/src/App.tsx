@@ -38,6 +38,9 @@ import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
 import { LiveControls } from "./ui/LiveControls";
 import { GolferInspector } from "./ui/GolferInspector";
+import { DefeatModal } from "./ui/DefeatModal";
+import { VictoryModal } from "./ui/VictoryModal";
+import { createObjectiveState, type GoalDefinition, type RunOutcome } from "./game/models/objectives";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -123,6 +126,8 @@ export default function App() {
   const [prevDistress, setPrevDistress] = useState(0);
   const [legacy, setLegacy] = useState(() => loadLegacy());
   const legacyAwardedRef = useRef(false);
+  const [prevOutcome, setPrevOutcome] = useState<RunOutcome>("OPEN");
+  const [showVictory, setShowVictory] = useState(false);
 
   // Lazy singleton via useState initializer (render-pure, unlike a ref write).
   const [sound] = useState(() => createSoundPlayer());
@@ -350,6 +355,14 @@ export default function App() {
   if (!world.isBankrupt && world.cash > peakCash) setPeakCash(world.cash);
   if (!world.isBankrupt && world.reputation > peakRep) setPeakRep(world.reputation);
 
+  // Victory celebration fires once on the OPEN → WON transition (render
+  // adjustment; restart/load reset prevOutcome so it can't re-fire).
+  const objectiveOutcome: RunOutcome = world.objectives?.outcome ?? "OPEN";
+  if (objectiveOutcome !== prevOutcome) {
+    setPrevOutcome(objectiveOutcome);
+    if (objectiveOutcome === "WON" && prevOutcome === "OPEN") setShowVictory(true);
+  }
+
   // Handle audio based on screen and view mode
   useEffect(() => {
     if (!soundEnabled) {
@@ -372,7 +385,7 @@ export default function App() {
     }
   }, [screen, viewMode, soundEnabled, audio]);
 
-  function restartRun(args: { seed: number }) {
+  function restartRun(args: { seed: number; goals?: GoalDefinition[] | null }) {
     console.log('[Performance] Starting new game...');
     const seed = args.seed | 0;
 
@@ -411,8 +424,10 @@ export default function App() {
       loans: [],
       lastBridgeLoanWeek: -999,
       lastWeekProfit: 0,
+      // Retry-same-seed keeps the run's goal definitions; fresh progress.
+      objectives: args.goals && args.goals.length > 0 ? createObjectiveState(args.goals) : null,
     };
-    
+
     dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
     setHistory([]);
     setLast(undefined);
@@ -430,6 +445,8 @@ export default function App() {
     setShowBridgePrompt(false);
     setPrevDistress(0);
     legacyAwardedRef.current = false;
+    setPrevOutcome("OPEN");
+    setShowVictory(false);
   }
 
   const [canLoadFromMenu, setCanLoadFromMenu] = useState(false);
@@ -450,6 +467,9 @@ export default function App() {
     dispatch({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
     setHistory(loaded.history ?? []);
     setLast(loaded.history?.[loaded.history.length - 1]);
+    // Loading a finished run must not replay the celebration.
+    setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
+    setShowVictory(false);
   }
 
   function newGameFromMenu() {
@@ -1107,16 +1127,30 @@ export default function App() {
       <GameBackground />
       {saveLoadModal}
       <div className="cc-main">
-        {world.isBankrupt && (
-        <RunEndModal
+        {(world.isBankrupt || world.objectives?.outcome === "LOST") && (
+        <DefeatModal
+          reason={world.isBankrupt ? "BANKRUPT" : world.objectives?.lostReason ?? "DEADLINE"}
+          objectives={world.objectives}
           weeksSurvived={weeksSurvived}
           peakCash={peakCash}
           peakRep={peakRep}
           courseRating={rating.courseRating}
           slope={rating.slope}
           seed={world.runSeed}
-          onRestartNew={() => restartRun({ seed: (Date.now() % 1_000_000) | 0 })}
-          onRestartSeed={(seed) => restartRun({ seed })}
+          onRetrySeed={(seed) => restartRun({ seed, goals: world.objectives?.goals ?? null })}
+          onNewGame={() => restartRun({ seed: (Date.now() % 1_000_000) | 0, goals: world.objectives?.goals ?? null })}
+          onLoad={() => setSaveModalOpen({ canSave: false })}
+        />
+      )}
+        {showVictory && world.objectives && !world.isBankrupt && (
+        <VictoryModal
+          objectives={world.objectives}
+          courseName={course.name}
+          week={world.week}
+          cash={world.cash}
+          reputation={world.reputation}
+          courseRating={rating.courseRating}
+          onContinue={() => setShowVictory(false)}
         />
       )}
         {showBridgePrompt && (
@@ -1403,108 +1437,6 @@ export default function App() {
         setShowShotPlan={setShowShotPlan}
       />
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RunEndModal(props: {
-  weeksSurvived: number;
-  peakCash: number;
-  peakRep: number;
-  courseRating: number;
-  slope: number;
-  seed: number;
-  onRestartNew: () => void;
-  onRestartSeed: (seed: number) => void;
-}) {
-  const [seed, setSeed] = useState(props.seed);
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 99999,
-        padding: 16,
-      }}
-    >
-      <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: 14, padding: 16 }}>
-        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>Run ended: Bankruptcy</div>
-        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
-          You can restart and try a new plan. Same seed gives a comparable “challenge run”.
-        </div>
-
-        <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>Weeks survived</span>
-            <b>{props.weeksSurvived}</b>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>Peak reputation</span>
-            <b>{props.peakRep}</b>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>Peak cash</span>
-            <b>${Math.round(props.peakCash).toLocaleString()}</b>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>Course rating / slope</span>
-            <b>
-              {props.courseRating.toFixed(1)} / {Math.round(props.slope)}
-            </b>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <button
-            onClick={props.onRestartNew}
-            style={{
-              width: "100%",
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #000",
-              background: "#000",
-              color: "#fff",
-              fontWeight: 700,
-            }}
-          >
-            Restart (new run)
-          </button>
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <label style={{ flex: 1, fontSize: 12, color: "#374151" }}>
-              Seed
-              <input
-                type="number"
-                value={seed}
-                onChange={(e) => setSeed(Number(e.target.value))}
-                style={{
-                  width: "100%",
-                  marginTop: 4,
-                  padding: "8px 10px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                }}
-              />
-            </label>
-            <button
-              onClick={() => props.onRestartSeed(seed | 0)}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid #ddd",
-                background: "#fff",
-                fontWeight: 700,
-              }}
-            >
-              Restart (seeded)
-            </button>
-          </div>
         </div>
       </div>
     </div>

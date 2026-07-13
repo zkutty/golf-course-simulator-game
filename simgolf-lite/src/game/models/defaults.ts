@@ -33,6 +33,7 @@ export const DEFAULT_WORLD: World = {
   lastWeekProfit: 0,
   lastBridgeLoanWeek: -999,
   loans: [],
+  objectives: null,
 };
 
 

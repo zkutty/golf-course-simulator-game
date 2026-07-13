@@ -1,6 +1,8 @@
 import type { Course, World } from "../models/types";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { BALANCE } from "../balance/balanceConfig";
+import { hitsLiquidityTrap } from "../sim/runState";
+import { withEvaluatedObjectives } from "../objectives/evaluate";
 import type { DayResult, RoundReactions } from "./types";
 
 function clamp(x: number, a: number, b: number) {
@@ -23,8 +25,9 @@ export function commitDay(args: {
   world: World;
   revenue: number; // green fees already banked today
   reactions: RoundReactions; // real observed reactions from finished rounds
+  dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
 }): { world: World; course: Course; result: DayResult } {
-  const { course, world, revenue, reactions } = args;
+  const { course, world, revenue, reactions, dayIndex } = args;
   const rounds = reactions.rounds;
   const avgSatisfaction = reactions.avgSatisfaction;
 
@@ -82,17 +85,28 @@ export function commitDay(args: {
   const nextRep = clamp(world.reputation + repDelta, 0, 100);
 
   const nextCashRaw = world.cash - costs; // revenue already banked live
-  const bankrupt = nextCashRaw < BALANCE.distress.liquidityTrapCash;
+  const bankrupt = hitsLiquidityTrap(nextCashRaw);
+
+  const nextCourse = { ...course, condition: nextCondition };
+  const nextWorldBase: World = {
+    ...world,
+    cash: nextCashRaw,
+    reputation: nextRep,
+    lastWeekProfit: profit,
+    isBankrupt: world.isBankrupt || bankrupt,
+  };
+  // Objective evaluation at the sim commit point (ZKU-163). The last day of
+  // the week closes it, which is when streaks advance and deadlines can fire.
+  const closesWeek = dayIndex != null && dayIndex + 1 >= DAYS_PER_WEEK;
+  const nextWorld = withEvaluatedObjectives(nextCourse, nextWorldBase, {
+    rounds,
+    profit,
+    ...(closesWeek ? { weekCompleted: world.week } : {}),
+  });
 
   return {
-    course: { ...course, condition: nextCondition },
-    world: {
-      ...world,
-      cash: nextCashRaw,
-      reputation: nextRep,
-      lastWeekProfit: profit,
-      isBankrupt: world.isBankrupt || bankrupt,
-    },
+    course: nextCourse,
+    world: nextWorld,
     result: {
       dayIndex: 0,
       rounds,

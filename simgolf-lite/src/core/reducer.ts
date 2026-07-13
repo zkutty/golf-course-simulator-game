@@ -2,6 +2,7 @@ import type { GameState } from "../game/gameState";
 import type { Action } from "./actions";
 import { computeElevationChangeCost, computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { clampElevation } from "../game/models/elevation";
+import { hitsLiquidityTrap } from "../game/sim/runState";
 
 /**
  * Apply an action to the game state. This is the ONLY function that should mutate
@@ -48,7 +49,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - cashDelta,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - cashDelta < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cashDelta),
         },
       };
       terrainVersion++;
@@ -84,7 +85,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - cashDelta,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - cashDelta < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cashDelta),
         },
       };
       terrainVersion++;
@@ -118,7 +119,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - cost.net,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - cost.net < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cost.net),
         },
       };
       terrainVersion++;
@@ -161,7 +162,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - totalCost,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - totalCost < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - totalCost),
         },
       };
       terrainVersion++;
@@ -196,7 +197,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - cost.net,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - cost.net < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cost.net),
         },
       };
       terrainVersion++;
@@ -239,7 +240,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - totalCost,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - totalCost < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - totalCost),
         },
       };
       terrainVersion++;

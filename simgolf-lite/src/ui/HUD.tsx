@@ -14,6 +14,7 @@ import { BALANCE } from "../game/balance/balanceConfig";
 import paperTex from "../assets/textures/paper.svg";
 import { IconBush, IconCash, IconCondition, IconHoles, IconReputation, IconRock, IconTree, LogoCourseCraft } from "@/assets/icons";
 import { GameButton } from "@/ui/gameui";
+import { ObjectiveMiniTracker, ObjectivesPanel } from "./ObjectivesPanel";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -146,6 +147,7 @@ export function HUD(props: {
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
+  const [objectivesOpen, setObjectivesOpen] = useState(false);
   const audio = useAudio();
 
   const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
@@ -294,6 +296,16 @@ export function HUD(props: {
             <b>Bankrupt.</b> This run has ended — restart to continue.
           </div>
         )}
+        {/* Pinned objective mini-tracker (ZKU-163); click for the full panel */}
+        <div style={{ marginTop: 10 }}>
+          <ObjectiveMiniTracker objectives={world.objectives} onOpen={() => setObjectivesOpen(true)} />
+        </div>
+        <ObjectivesPanel
+          open={objectivesOpen}
+          onClose={() => setObjectivesOpen(false)}
+          objectives={world.objectives}
+          week={world.week}
+        />
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
           {viewMode === "COZY" ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>

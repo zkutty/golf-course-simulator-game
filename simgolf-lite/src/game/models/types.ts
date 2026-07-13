@@ -1,3 +1,5 @@
+import type { ObjectiveState } from "./objectives";
+
 export type Terrain =
   | "fairway"
   | "rough"
@@ -74,6 +76,9 @@ export interface World {
   lastWeekProfit: number;
   lastBridgeLoanWeek: number; // used to rate-limit bridge loans
   loans: Loan[];
+  // Objective engine state (ZKU-163). null = free play (no goals). Older
+  // saves migrate to null on load.
+  objectives?: ObjectiveState | null;
 }
 
 export type LoanKind = "BRIDGE" | "EXPANSION";
