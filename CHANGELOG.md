@@ -7,6 +7,13 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Autotiled terrain transitions and dithered tile texture variants — no
+  more hard diamond seams between terrains (ZKU-148).
+- Course dressing: mow stripes along each hole's axis, tee pads with
+  markers, green cup, and a fluttering pin flag (ZKU-149).
+- Animated water: shimmer with glints, shore foam, and splash ripples when
+  a ball lands in water (ZKU-150).
+- Prop drop shadows and per-tree wind sway (ZKU-151).
 - Isometric projection core (`src/game/render/iso.ts`): 2:1 dimetric
   world↔screen math with cardinal rotation, picking, and depth keys (ZKU-137).
 - Production Pixi renderer: layered scene graph, camera-aware input, clean
