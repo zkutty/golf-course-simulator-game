@@ -276,6 +276,11 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
 
     case "REMOVE_OBSTACLE": {
+      // Scenario constraint (ZKU-164): heritage trees can't be removed.
+      if (state.world.constraints?.protectedTrees) {
+        const target = state.course.obstacles.find((o) => o.x === action.x && o.y === action.y);
+        if (target?.type === "tree") break;
+      }
       const newObstacles = state.course.obstacles.filter(
         (o) => !(o.x === action.x && o.y === action.y)
       );

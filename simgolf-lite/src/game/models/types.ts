@@ -6,6 +6,17 @@ export type PlayMode = "sandbox" | "challenge" | "career";
 export type Difficulty = "easy" | "normal" | "hard";
 export type LandTheme = "parkland" | "links" | "desert";
 
+// Scenario rule overrides (ZKU-164), persisted denormalized on World so a
+// save stays self-contained even if scenario definitions change later.
+export interface ScenarioConstraints {
+  /** Bank won't lend on this deal. */
+  noLoans?: boolean;
+  /** Green fee locked by the scenario (dollars). */
+  fixedGreenFee?: number;
+  /** Heritage trees: tree obstacles cannot be removed. */
+  protectedTrees?: boolean;
+}
+
 export type Terrain =
   | "fairway"
   | "rough"
@@ -92,6 +103,9 @@ export interface World {
   mode?: PlayMode;
   difficulty?: Difficulty;
   founderName?: string;
+  // Career (ZKU-164): which scenario this run is, and its rule overrides.
+  scenarioId?: string;
+  constraints?: ScenarioConstraints;
 }
 
 export type LoanKind = "BRIDGE" | "EXPANSION";

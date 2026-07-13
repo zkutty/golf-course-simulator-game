@@ -224,13 +224,16 @@ export function HUD(props: {
     return (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "EXPANSION");
   }, [world.loans]);
 
+  const loansBarred = world.constraints?.noLoans === true;
   const bridgeEligible =
+    !loansBarred &&
     world.reputation >= BALANCE.loans.bridge.repMin &&
     (playable || validHoles >= 6) &&
     !hasActiveBridge &&
     world.week - (world.lastBridgeLoanWeek ?? -999) >= BALANCE.loans.bridgeCooldownWeeks;
 
   const expansionEligible =
+    !loansBarred &&
     world.reputation >= BALANCE.loans.expansion.repMin &&
     validHoles >= BALANCE.loans.expansion.minValidHoles &&
     (world.lastWeekProfit ?? 0) > 0 &&
@@ -1322,11 +1325,17 @@ export function HUD(props: {
             <Section title="Business">
               <label style={{ display: "block", marginBottom: 12 }}>
                 Green fee (${course.baseGreenFee})
+                {world.constraints?.fixedGreenFee != null && (
+                  <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "#8a6d1a" }}>
+                    🔒 set by the scenario
+                  </span>
+                )}
                 <input
                   type="range"
                   min={20}
                   max={150}
                   value={course.baseGreenFee}
+                  disabled={world.constraints?.fixedGreenFee != null}
                   onChange={(e) => setGreenFee(Number(e.target.value))}
                   style={{ width: "100%" }}
                 />
@@ -1348,7 +1357,9 @@ export function HUD(props: {
 
             <Section title="Financing">
               <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
-                Loans can keep you afloat — but weekly payments are a fixed cost. Missed payments hurt reputation and worsen APR.
+                {loansBarred
+                  ? "No bank will touch this deal — the scenario forbids loans."
+                  : "Loans can keep you afloat — but weekly payments are a fixed cost. Missed payments hurt reputation and worsen APR."}
               </div>
 
               <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>

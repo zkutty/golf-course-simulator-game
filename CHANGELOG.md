@@ -77,6 +77,15 @@ versioning follows [SemVer](https://semver.org/).
   links deep rough penalizes shots 1.15×). Parkland is the identity theme —
   bit-identical to pre-theme generation per seed. Theme is recorded on the
   course, shown in save-slot metadata, and survives save/load (ZKU-166).
+- Career mode: a six-scenario ladder (The Back Nine → Muni Rescue → Swamp
+  Deal → Links by the Sea → The Members Club → Championship Dream) with
+  sequential unlocks, medals, best-result tracking, and replayability.
+  Scenario definitions are pure data (seed/theme/difficulty/goals/
+  constraints); two prebuilt authored courses ship as deterministic
+  fixtures (a run-down muni, a manicured members club). Constraints are
+  enforced in the sim/UI: no-loans deals, committee-fixed green fees, and
+  heritage trees that can't be removed. Career progress lives in its own
+  localStorage store so restarting a scenario never wipes medals (ZKU-164).
 
 ### Fixed
 - All 24 standing ESLint errors: render purity in App/CanvasCourse,

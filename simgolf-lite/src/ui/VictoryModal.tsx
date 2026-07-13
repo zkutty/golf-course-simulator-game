@@ -59,6 +59,8 @@ export function VictoryModal(props: {
   cash: number;
   reputation: number;
   courseRating: number;
+  /** Career runs: medal/unlock message under the goal list (ZKU-164). */
+  careerNote?: string;
   onContinue: () => void;
 }) {
   const { objectives } = props;
@@ -131,6 +133,23 @@ export function VictoryModal(props: {
             </div>
           ))}
         </div>
+
+        {props.careerNote && (
+          <div
+            style={{
+              marginTop: 14,
+              padding: "8px 12px",
+              borderRadius: 10,
+              background: "rgba(242,193,78,0.18)",
+              border: "1px solid rgba(242,193,78,0.6)",
+              fontSize: 13,
+              fontWeight: 700,
+              color: "#8a6d1a",
+            }}
+          >
+            🏅 {props.careerNote}
+          </div>
+        )}
 
         <button
           onClick={props.onContinue}

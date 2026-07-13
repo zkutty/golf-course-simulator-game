@@ -31,6 +31,9 @@ import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
 import { HoleMinimap } from "./ui/HoleMinimap";
 import { createNewGame } from "./game/gen/newGame";
 import type { GameSetup } from "./game/models/setup";
+import { createScenarioGame, getScenario } from "./game/scenarios/scenarios";
+import type { ScenarioDefinition } from "./game/scenarios/types";
+import { recordScenarioAttempt, recordScenarioCompleted } from "./utils/careerStore";
 import { NewGameWizard } from "./ui/NewGameWizard";
 import { generateCourseName } from "./utils/courseNames";
 import { applyAction } from "./core/reducer";
@@ -132,6 +135,7 @@ export default function App() {
   const legacyAwardedRef = useRef(false);
   const [prevOutcome, setPrevOutcome] = useState<RunOutcome>("OPEN");
   const [showVictory, setShowVictory] = useState(false);
+  const scenarioRecordedRef = useRef(false);
 
   // Lazy singleton via useState initializer (render-pure, unlike a ref write).
   const [sound] = useState(() => createSoundPlayer());
@@ -227,12 +231,13 @@ export default function App() {
   }, [holeSummary]);
 
   const eligibleBridge = useMemo(() => {
+    if (world.constraints?.noLoans) return false;
     const repOk = world.reputation >= BALANCE.loans.bridge.repMin;
     const holesOk = isCoursePlayable(course) || validHolesCount >= BALANCE.loans.bridge.minValidHolesAlt;
     const cooldownOk = world.week - (world.lastBridgeLoanWeek ?? -999) >= BALANCE.loans.bridgeCooldownWeeks;
     const hasActiveBridge = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
     return repOk && holesOk && cooldownOk && !hasActiveBridge && !world.isBankrupt;
-  }, [world.reputation, world.week, world.lastBridgeLoanWeek, world.loans, world.isBankrupt, course, validHolesCount, BALANCE]);
+  }, [world.constraints, world.reputation, world.week, world.lastBridgeLoanWeek, world.loans, world.isBankrupt, course, validHolesCount, BALANCE]);
 
   // Hole edit mode functions
   function enterHoleEditMode(holeIndex: number) {
@@ -367,6 +372,20 @@ export default function App() {
     if (objectiveOutcome === "WON" && prevOutcome === "OPEN") setShowVictory(true);
   }
 
+  // Career medal (ZKU-164): record the win once per run; replays keep the
+  // best (earliest) week via the store.
+  const objectivesOutcomeForRecord = world.objectives?.outcome;
+  useEffect(() => {
+    if (objectivesOutcomeForRecord !== "WON") return;
+    if (scenarioRecordedRef.current) return;
+    if (world.mode !== "career" || !world.scenarioId) return;
+    scenarioRecordedRef.current = true;
+    recordScenarioCompleted(world.scenarioId, {
+      week: world.objectives?.wonWeek ?? world.week,
+      cash: world.cash,
+    });
+  }, [objectivesOutcomeForRecord, world]);
+
   // Course name propagates to the browser tab (ZKU-162).
   useEffect(() => {
     document.title = screen === "game" ? `${course.name} — CourseCraft` : "CourseCraft";
@@ -394,14 +413,9 @@ export default function App() {
     }
   }, [screen, viewMode, soundEnabled, audio]);
 
-  // THE new-run path (ZKU-162): every fresh run goes through createNewGame.
-  // `goals` overrides the mode's default goal set (defeat-retry, scenarios).
-  function restartRun(setup: GameSetup, goals?: GoalDefinition[] | null) {
-    console.log('[Performance] Starting new game...');
-    const start = performance.now();
-    const { course: newCourse, world: newWorld } = createNewGame(setup, goals);
-    console.log('[Performance] Wild land generated in', performance.now() - start, 'ms');
-
+  // THE new-run path (ZKU-162): every fresh run goes through createNewGame
+  // (or createScenarioGame for career runs) and then this shared reset.
+  function startRun(newCourse: typeof course, newWorld: typeof world) {
     dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
     setHistory([]);
     setLast(undefined);
@@ -419,8 +433,27 @@ export default function App() {
     setShowBridgePrompt(false);
     setPrevDistress(0);
     legacyAwardedRef.current = false;
+    scenarioRecordedRef.current = false;
     setPrevOutcome("OPEN");
     setShowVictory(false);
+  }
+
+  // `goals` overrides the mode's default goal set (defeat-retry keeps a
+  // run's exact goals).
+  function restartRun(setup: GameSetup, goals?: GoalDefinition[] | null) {
+    console.log('[Performance] Starting new game...');
+    const start = performance.now();
+    const { course: newCourse, world: newWorld } = createNewGame(setup, goals);
+    console.log('[Performance] Wild land generated in', performance.now() - start, 'ms');
+    startRun(newCourse, newWorld);
+  }
+
+  // Career (ZKU-164): scenarios build their run from the authored definition.
+  function startScenario(scenario: ScenarioDefinition) {
+    recordScenarioAttempt(scenario.id);
+    const { course: newCourse, world: newWorld } = createScenarioGame(scenario);
+    startRun(newCourse, newWorld);
+    setScreen("game");
   }
 
   /** GameSetup matching the CURRENT run, for retry-same-seed / new-seed. */
@@ -463,9 +496,11 @@ export default function App() {
     dispatch({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
     setHistory(loaded.history ?? []);
     setLast(loaded.history?.[loaded.history.length - 1]);
-    // Loading a finished run must not replay the celebration.
+    // Loading a finished run must not replay the celebration or re-record
+    // the medal (the store keeps best results anyway).
     setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
     setShowVictory(false);
+    scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
   }
 
   function newGameFromMenu() {
@@ -507,6 +542,7 @@ export default function App() {
   }
 
   function takeExpansionLoan() {
+    if (world.constraints?.noLoans) return;
     const repOk = world.reputation >= BALANCE.loans.expansion.repMin;
     const holesOk = validHolesCount >= BALANCE.loans.expansion.minValidHoles;
     const cashflowOk = (world.lastWeekProfit ?? 0) > 0;
@@ -1059,6 +1095,7 @@ export default function App() {
       <NewGameWizard
         onCancel={() => setScreen("menu")}
         onStart={startNewGame}
+        onStartScenario={startScenario}
       />
     );
   }
@@ -1108,7 +1145,11 @@ export default function App() {
           courseRating={rating.courseRating}
           slope={rating.slope}
           seed={world.runSeed}
-          onRetrySeed={(seed) => restartRun(currentRunSetup(seed), world.objectives?.goals ?? null)}
+          onRetrySeed={(seed) => {
+            const scenario = getScenario(world.scenarioId);
+            if (scenario) startScenario(scenario);
+            else restartRun(currentRunSetup(seed), world.objectives?.goals ?? null);
+          }}
           onNewGame={() => setScreen("setup")}
           onLoad={() => setSaveModalOpen({ canSave: false })}
         />
@@ -1121,6 +1162,11 @@ export default function App() {
           cash={world.cash}
           reputation={world.reputation}
           courseRating={rating.courseRating}
+          careerNote={
+            world.mode === "career" && world.scenarioId
+              ? "Medal earned — the next scenario is unlocked."
+              : undefined
+          }
           onContinue={() => setShowVictory(false)}
         />
       )}
@@ -1334,7 +1380,11 @@ export default function App() {
         prev={history.length >= 2 ? history[history.length - 2] : undefined}
         selected={selected}
         setSelected={setSelected}
-        setGreenFee={(n) => setCourse((c) => ({ ...c, baseGreenFee: n }))}
+        setGreenFee={(n) => {
+          // Scenario constraint (ZKU-164): committee sets the fee, not you.
+          if (world.constraints?.fixedGreenFee != null) return;
+          setCourse((c) => ({ ...c, baseGreenFee: n }));
+        }}
         setMaintenance={(n) => setWorld((w) => ({ ...w, maintenanceBudget: n }))}
         editorMode={editorMode}
         setEditorMode={setEditorMode}

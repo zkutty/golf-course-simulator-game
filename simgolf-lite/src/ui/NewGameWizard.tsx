@@ -8,14 +8,17 @@ import { generateWildLand } from "../game/gen/generateWildLand";
 import { getLandTheme } from "../game/models/themes";
 import { generateCourseName } from "../utils/courseNames";
 import { StartMenuBackground } from "./StartMenuBackground";
+import { ScenarioSelect } from "./ScenarioSelect";
+import type { ScenarioDefinition } from "../game/scenarios/types";
 
 // New-game setup wizard (ZKU-162): Mode → Land → Difficulty → Details.
 // Output is a typed GameSetup consumed by the single createNewGame path.
 
-type Step = "MODE" | "LAND" | "DIFFICULTY" | "DETAILS";
+type Step = "MODE" | "SCENARIOS" | "LAND" | "DIFFICULTY" | "DETAILS";
 const STEPS: Step[] = ["MODE", "LAND", "DIFFICULTY", "DETAILS"];
 const STEP_TITLE: Record<Step, string> = {
   MODE: "Choose your game",
+  SCENARIOS: "Pick a scenario",
   LAND: "Pick your land",
   DIFFICULTY: "How hard should it be?",
   DETAILS: "Name your course",
@@ -159,6 +162,7 @@ function ChoiceCard(props: {
 export function NewGameWizard(props: {
   onCancel: () => void;
   onStart: (setup: GameSetup) => void;
+  onStartScenario: (scenario: ScenarioDefinition) => void;
 }) {
   const [step, setStep] = useState<Step>("MODE");
   const [mode, setMode] = useState<PlayMode>("challenge");
@@ -173,7 +177,7 @@ export function NewGameWizard(props: {
   const [startingCash, setStartingCash] = useState(DEFAULT_WORLD.cash);
 
   const seed = candidateSeeds[selectedSeedIdx] ?? candidateSeeds[0];
-  const stepIdx = STEPS.indexOf(step);
+  const stepIdx = step === "SCENARIOS" ? 1 : STEPS.indexOf(step);
 
   const setup: GameSetup = {
     mode,
@@ -188,9 +192,13 @@ export function NewGameWizard(props: {
         : undefined,
   };
 
-  const next = () => setStep(STEPS[Math.min(STEPS.length - 1, stepIdx + 1)]);
+  const next = () => {
+    if (step === "MODE" && mode === "career") setStep("SCENARIOS");
+    else setStep(STEPS[Math.min(STEPS.length - 1, stepIdx + 1)]);
+  };
   const back = () => {
-    if (stepIdx === 0) props.onCancel();
+    if (step === "SCENARIOS") setStep("MODE");
+    else if (stepIdx === 0) props.onCancel();
     else setStep(STEPS[stepIdx - 1]);
   };
 
@@ -277,12 +285,13 @@ export function NewGameWizard(props: {
                 title="Career"
                 icon="🏆"
                 blurb="An authored ladder of scenarios with medals and unlocks."
-                badge="COMING SOON"
-                disabled
-                onSelect={() => {}}
+                selected={mode === "career"}
+                onSelect={() => setMode("career")}
               />
             </div>
           )}
+
+          {step === "SCENARIOS" && <ScenarioSelect onStart={props.onStartScenario} />}
 
           {step === "LAND" && (
             <div style={{ display: "grid", gap: 14 }}>
@@ -495,10 +504,14 @@ export function NewGameWizard(props: {
 
           {/* Navigation */}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 20 }}>
-            {navButton(stepIdx === 0 ? "Cancel" : "← Back", back)}
-            {step !== "DETAILS"
-              ? navButton("Next →", next, true)
-              : navButton("⛳ Start building", () => props.onStart(setup), true)}
+            {navButton(step === "MODE" ? "Cancel" : "← Back", back)}
+            {step === "SCENARIOS" ? (
+              <span />
+            ) : step !== "DETAILS" ? (
+              navButton("Next →", next, true)
+            ) : (
+              navButton("⛳ Start building", () => props.onStart(setup), true)
+            )}
           </div>
         </div>
       </div>

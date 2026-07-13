@@ -210,12 +210,24 @@ export function normalizeLoadedSave(input: unknown): SavePayload | null {
     const course = withNormalizedElevations(migrateCourseGrid(loadedCourse));
 
     const rawWorld = parsed.world as World;
+    const rawConstraints = rawWorld.constraints;
     const world: World = {
       ...DEFAULT_WORLD,
       ...rawWorld,
       objectives: sanitizeObjectives(rawWorld.objectives),
       mode: oneOf<PlayMode>(rawWorld.mode, ["sandbox", "challenge", "career"], "sandbox"),
       difficulty: oneOf<Difficulty>(rawWorld.difficulty, ["easy", "normal", "hard"], "normal"),
+      scenarioId: typeof rawWorld.scenarioId === "string" ? rawWorld.scenarioId : undefined,
+      constraints:
+        rawConstraints && typeof rawConstraints === "object" && !Array.isArray(rawConstraints)
+          ? {
+              noLoans: rawConstraints.noLoans === true,
+              ...(typeof rawConstraints.fixedGreenFee === "number"
+                ? { fixedGreenFee: rawConstraints.fixedGreenFee }
+                : {}),
+              protectedTrees: rawConstraints.protectedTrees === true,
+            }
+          : undefined,
     };
     const history = parsed.history ?? undefined;
     return { course, world, history };
