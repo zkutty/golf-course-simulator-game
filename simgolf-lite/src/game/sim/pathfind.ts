@@ -1,4 +1,6 @@
 import type { Course, Obstacle, Point, Terrain } from "../models/types";
+import { BALANCE } from "../balance/balanceConfig";
+import { getElevation } from "../models/elevation";
 
 export interface PathResult {
   path: Point[]; // includes start and end
@@ -164,7 +166,10 @@ export function findBestPlayablePath(
       if (visited[ni]) continue;
       const sc = stepCost(course, obstacles, nx, ny);
       if (!Number.isFinite(sc)) continue;
-      const nd = dist[curIdx] + sc;
+      // Slopes cost extra to walk; 2+ step cliffs are impassable (ZKU-146).
+      const slope = Math.abs(getElevation(course, nx, ny) - getElevation(course, cx, cy));
+      if (slope > 1) continue;
+      const nd = dist[curIdx] + sc + slope * BALANCE.elevation.walkSlopeCost;
       if (nd < dist[ni]) {
         dist[ni] = nd;
         prev[ni] = curIdx;

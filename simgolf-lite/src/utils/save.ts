@@ -1,6 +1,7 @@
 import type { Course, WeekResult, World, Point, Obstacle } from "../game/models/types";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
+import { withNormalizedElevations } from "../game/models/elevation";
 
 const KEY = "simgolf_lite_save_v1";
 const SCHEMA_VERSION = 1 as const;
@@ -39,8 +40,9 @@ function migrateCourseGrid(oldCourse: Course): Course {
     return oldCourse;
   }
 
-  // Create new grid filled with rough
+  // Create new grid filled with rough (elevations default to base level)
   const newTiles: Course["tiles"] = Array.from({ length: newWidth * newHeight }, () => "rough" as const);
+  const newElevations: number[] = new Array(newWidth * newHeight).fill(0);
 
   // Copy old tiles into top-left (centered would be: offsetX = (newWidth - oldWidth) / 2)
   const offsetX = 0; // Top-left alignment
@@ -55,6 +57,9 @@ function migrateCourseGrid(oldCourse: Course): Course {
         const newIdx = newY * newWidth + newX;
         if (oldIdx < oldCourse.tiles.length) {
           newTiles[newIdx] = oldCourse.tiles[oldIdx];
+        }
+        if (oldCourse.elevations && oldIdx < oldCourse.elevations.length) {
+          newElevations[newIdx] = oldCourse.elevations[oldIdx];
         }
       }
     }
@@ -90,6 +95,7 @@ function migrateCourseGrid(oldCourse: Course): Course {
     width: newWidth,
     height: newHeight,
     tiles: newTiles,
+    elevations: newElevations,
     holes: migratedHoles,
     obstacles: migratedObstacles,
   };
@@ -111,14 +117,16 @@ export function loadGame(): { course: Course; world: World; history?: WeekResult
         (parsed.course as Course).holes?.map((h, i) => ({
           ...DEFAULT_COURSE.holes[i],
           ...h,
-          parMode: (h as any).parMode ?? "AUTO",
+          parMode: h.parMode ?? "AUTO",
         })) ?? DEFAULT_COURSE.holes,
       obstacles: (parsed.course as Course).obstacles ?? DEFAULT_COURSE.obstacles,
+      elevations: (parsed.course as Course).elevations ?? [], // normalized to flat below
       yardsPerTile: (parsed.course as Course).yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
     };
 
-    // Migrate if grid size differs
-    const course = migrateCourseGrid(loadedCourse);
+    // Migrate if grid size differs, then guarantee a well-formed
+    // elevations array (pre-elevation saves load flat — ZKU-143).
+    const course = withNormalizedElevations(migrateCourseGrid(loadedCourse));
     
     const world: World = { ...DEFAULT_WORLD, ...(parsed.world as World) };
     const history = parsed.history ?? undefined;

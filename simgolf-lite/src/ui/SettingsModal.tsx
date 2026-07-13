@@ -1,5 +1,3 @@
-import { useState, useEffect } from "react";
-
 export interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
@@ -10,23 +8,18 @@ export interface SettingsModalProps {
 }
 
 export function SettingsModal(props: SettingsModalProps) {
-  const [musicVolume, setMusicVolume] = useState(props.audioVolumes.music);
-  const [ambienceVolume, setAmbienceVolume] = useState(props.audioVolumes.ambience);
-
-  useEffect(() => {
-    setMusicVolume(props.audioVolumes.music);
-    setAmbienceVolume(props.audioVolumes.ambience);
-  }, [props.audioVolumes]);
+  // Fully controlled: the parent owns volume state and passes it back down,
+  // so the sliders read straight from props (no state mirror / sync effect).
+  const musicVolume = props.audioVolumes.music;
+  const ambienceVolume = props.audioVolumes.ambience;
 
   if (!props.open) return null;
 
   const handleMusicChange = (value: number) => {
-    setMusicVolume(value);
     props.onAudioVolumesChange({ music: value });
   };
 
   const handleAmbienceChange = (value: number) => {
-    setAmbienceVolume(value);
     props.onAudioVolumesChange({ ambience: value });
   };
 

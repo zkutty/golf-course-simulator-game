@@ -13,8 +13,8 @@ interface HoleInspectorProps {
   onSetHoleIndex?: (index: number) => void;
   onSmartPaintFairway?: (widthYards: number) => void;
   // Editor tools props
-  editorMode?: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
-  setEditorMode?: (mode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE") => void;
+  editorMode?: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
+  setEditorMode?: (mode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT") => void;
   selectedTerrain?: Terrain;
   setSelected?: (terrain: Terrain) => void;
   obstacleType?: ObstacleType;

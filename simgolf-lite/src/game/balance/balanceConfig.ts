@@ -150,6 +150,14 @@ export const BALANCE = {
     },
   },
 
+  elevation: {
+    // Uphill shots play longer: yards added per elevation step of rise
+    // (negative rise plays shorter). Standard golf heuristic ~2-3 yd/step.
+    shotYardsPerStep: 2.5,
+    // Extra walking cost per 1-step slope crossed; 2+ step cliffs are
+    // impassable on foot (matches the sculpting terracing constraint).
+    walkSlopeCost: 0.8,
+  },
   shots: {
     utilizationThreshold: 0.9, // beyond this, dispersion ramps up
     dispersionRamp: 2.2, // multiplier slope vs utilization over threshold
@@ -205,6 +213,9 @@ export const BALANCE = {
       tee: 45, // 150 build → 30%
       path: 12, // 40 build → 30%
     } satisfies Record<Terrain, number>,
+    // Sculpting: cost per tile per elevation step, charged for raising AND
+    // lowering (earthworks are never refunded).
+    earthworkCostPerStep: 60,
     maintWeight: {
       rough: 0.3,
       deep_rough: 0.6,

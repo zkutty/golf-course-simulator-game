@@ -8,7 +8,9 @@ import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import type { Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, loadGame, resetSave, saveGame } from "./utils/save";
-import { computeTerrainChangeCost } from "./game/models/terrainEconomics";
+import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
+import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
+import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
 import { createSoundPlayer } from "./utils/sound";
@@ -19,7 +21,7 @@ import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { BALANCE } from "./game/balance/balanceConfig";
 import { GameBackground } from "./ui/gameui";
 import { StartMenu } from "./ui/StartMenu";
-import { useAudio } from "./audio/AudioProvider";
+import { useAudio } from "./audio/audioContext";
 import { HoleInspector } from "./ui/HoleInspector";
 import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState } from "./game/render/camera";
@@ -29,11 +31,11 @@ import { generateWildLandWithObstacles } from "./game/gen/generateWildLand";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "./game/models/constants";
 import { applyAction } from "./core/reducer";
 import type { Action } from "./core/actions";
-import { DEBUG_PERF, logReducerDispatch, logEvaluateHole } from "./utils/performance";
+import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
 import { LiveControls } from "./ui/LiveControls";
 
-type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
+type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
 type ViewMode = "global" | "hole";
 
@@ -78,6 +80,8 @@ export default function App() {
   const [draftTee, setDraftTee] = useState<Point | null>(null);
   const [draftGreen, setDraftGreen] = useState<Point | null>(null);
   const [obstacleType, setObstacleType] = useState<ObstacleType>("tree");
+  const [sculptBrush, setSculptBrush] = useState<SculptBrush>("raise");
+  const [sculptRadius, setSculptRadius] = useState<SculptRadius>(1);
 
   const [capital, setCapital] = useState(() => ({
     spent: 0,
@@ -102,7 +106,7 @@ export default function App() {
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
   const [renderer, setRenderer] = useState<"canvas" | "pixi">(() => {
     const saved = localStorage.getItem("coursecraft_renderer");
-    return (saved === "pixi" || saved === "canvas") ? saved : "canvas";
+    return (saved === "pixi" || saved === "canvas") ? saved : "pixi";
   });
 
   const handleRendererChange = (newRenderer: "canvas" | "pixi") => {
@@ -111,13 +115,12 @@ export default function App() {
   };
   const [peakRep, setPeakRep] = useState(DEFAULT_STATE.world.reputation);
   const [showBridgePrompt, setShowBridgePrompt] = useState(false);
-  const prevDistressRef = useRef(0);
+  const [prevDistress, setPrevDistress] = useState(0);
   const [legacy, setLegacy] = useState(() => loadLegacy());
   const legacyAwardedRef = useRef(false);
 
-  const soundRef = useRef<ReturnType<typeof createSoundPlayer> | null>(null);
-  if (!soundRef.current) soundRef.current = createSoundPlayer();
-  const sound = soundRef.current;
+  // Lazy singleton via useState initializer (render-pure, unlike a ref write).
+  const [sound] = useState(() => createSoundPlayer());
 
   // Audio system
   const audio = useAudio();
@@ -176,13 +179,10 @@ export default function App() {
     return Math.max(4, Math.min(40, size));
   }, [paneSize.width, paneSize.height, course.width, course.height]);
 
-  const holeSummary = useMemo(() => {
-    console.log('[Performance] Computing holeSummary...');
-    const start = performance.now();
-    const result = perfProfiler.measure('scoreCourseHoles', () => scoreCourseHoles(course));
-    console.log('[Performance] holeSummary computed in', performance.now() - start, 'ms');
-    return result;
-  }, [course]);
+  const holeSummary = useMemo(
+    () => perfProfiler.measure('scoreCourseHoles', () => scoreCourseHoles(course)),
+    [course]
+  );
   const activePath = useMemo(() => holeSummary.holes[activeHoleIndex]?.path ?? [], [holeSummary, activeHoleIndex]);
   const activeShotPlan = useMemo(
     () => holeSummary.holes[activeHoleIndex]?.shotPlan ?? [],
@@ -191,17 +191,10 @@ export default function App() {
 
   // Extract failing corridor segments for overlay
   const activeHoleEvaluation = useMemo(
-    () => {
-      console.log('[Performance] Computing activeHoleEvaluation...');
-      const start = performance.now();
-      const result = perfProfiler.measure('evaluateHole', () => evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex));
-      const duration = performance.now() - start;
-      console.log('[Performance] activeHoleEvaluation computed in', duration, 'ms');
-      if (DEBUG_PERF) {
-        logEvaluateHole(duration);
-      }
-      return result;
-    },
+    () =>
+      perfProfiler.measure('evaluateHole', () =>
+        evaluateHole(course, course.holes[activeHoleIndex], activeHoleIndex)
+      ),
     [course, activeHoleIndex]
   );
   const failingCorridorSegments = useMemo(() => {
@@ -296,6 +289,10 @@ export default function App() {
           activeHoleIndex,
           tileSize
         );
+        // Legit effect-shaped sync: gated by holeEditCameraManualRef, a mutable
+        // flag written from event handlers, so this can't be derived in render.
+        // The camera flow is restructured wholesale in ZKU-141.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setHoleEditCamera(camera);
       }
     }
@@ -328,22 +325,21 @@ export default function App() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [holeEditMode, activeHoleIndex]);
 
-  useEffect(() => {
-    if (world.isBankrupt) return;
-    const prev = prevDistressRef.current;
-    prevDistressRef.current = world.distressWeeks ?? 0;
-    if (prev === 0 && (world.distressWeeks ?? 0) > 0) {
-      // Entering distress: prompt for bridge loan (MVP)
-      if (eligibleBridge) setShowBridgePrompt(true);
+  // Distress transition → bridge-loan prompt, via render adjustment (React's
+  // documented "storing information from previous renders" pattern; avoids
+  // setState-in-effect cascades).
+  if (!world.isBankrupt) {
+    const distressNow = world.distressWeeks ?? 0;
+    if (distressNow !== prevDistress) {
+      setPrevDistress(distressNow);
+      if (prevDistress === 0 && distressNow > 0 && eligibleBridge) setShowBridgePrompt(true);
+      if (distressNow === 0) setShowBridgePrompt(false);
     }
-    if ((world.distressWeeks ?? 0) === 0) setShowBridgePrompt(false);
-  }, [world.distressWeeks, world.isBankrupt, eligibleBridge]);
+  }
 
-  useEffect(() => {
-    if (world.isBankrupt) return;
-    setPeakCash((p) => Math.max(p, world.cash));
-    setPeakRep((p) => Math.max(p, world.reputation));
-  }, [world.cash, world.reputation, world.isBankrupt]);
+  // Peak cash/reputation tracking via render adjustment (same pattern).
+  if (!world.isBankrupt && world.cash > peakCash) setPeakCash(world.cash);
+  if (!world.isBankrupt && world.reputation > peakRep) setPeakRep(world.reputation);
 
   // Handle audio based on screen and view mode
   useEffect(() => {
@@ -374,7 +370,7 @@ export default function App() {
     // Generate wild land terrain and obstacles using the seed
     console.log('[Performance] Generating wild land...');
     const start = performance.now();
-    const { tiles: generatedTiles, obstacles: generatedObstacles } = generateWildLandWithObstacles(
+    const { tiles: generatedTiles, obstacles: generatedObstacles, elevations: generatedElevations } = generateWildLandWithObstacles(
       COURSE_WIDTH,
       COURSE_HEIGHT,
       seed,
@@ -386,6 +382,7 @@ export default function App() {
     const newCourse = {
       ...DEFAULT_STATE.course,
       tiles: generatedTiles,
+      elevations: generatedElevations,
       holes: Array.from({ length: 9 }, () => ({
         tee: null,
         green: null,
@@ -419,7 +416,7 @@ export default function App() {
     setPeakCash(DEFAULT_STATE.world.cash);
     setPeakRep(DEFAULT_STATE.world.reputation);
     setShowBridgePrompt(false);
-    prevDistressRef.current = 0;
+    setPrevDistress(0);
     legacyAwardedRef.current = false;
   }
 
@@ -707,6 +704,17 @@ export default function App() {
   function confirmWizardWithValues(tee: Point, green: Point) {
     if (world.isBankrupt) return;
 
+    // Elevation check (ZKU-146): tee and green sites must be near-flat
+    // (max 1 step across their 3x3 footprint). Sculpt with Level first.
+    const teeSlope = maxSlopeInRect(course, tee.x - 1, tee.y - 1, tee.x + 1, tee.y + 1);
+    const greenSlope = maxSlopeInRect(course, green.x - 1, green.y - 1, green.x + 1, green.y + 1);
+    if (teeSlope > 1 || greenSlope > 1) {
+      setPaintError(
+        `${teeSlope > 1 ? "Tee" : "Green"} site is too steep — level the ground with the Sculpt tool first.`
+      );
+      return;
+    }
+
     // Two tile changes: tee + green. Check combined affordability.
     const teeIdx = tee.y * course.width + tee.x;
     const greenIdx = green.y * course.width + green.x;
@@ -774,6 +782,21 @@ export default function App() {
       }
     }
     
+    if (editorMode === "SCULPT") {
+      if (x < 0 || y < 0 || x >= course.width || y >= course.height) return;
+      const deltas = computeSculptDeltas(course, x, y, sculptBrush, sculptRadius);
+      if (deltas.length === 0) return;
+      const cost = sculptSteps(deltas) * ELEVATION_COST_PER_STEP;
+      if (cost > world.cash) {
+        setPaintError(`Not enough cash for earthworks ($${cost.toLocaleString()} needed).`);
+        return;
+      }
+      setPaintError(null);
+      dispatch({ type: "SCULPT_TILES", deltas });
+      if (soundEnabled) void sound?.playBrush(soundEnabled);
+      return;
+    }
+
     if (editorMode === "PAINT") {
       applyTerrainAt(x, y, selected);
       return;
@@ -954,7 +977,7 @@ export default function App() {
     resetSave();
     // Generate new terrain and obstacles with a new seed
     const newSeed = Date.now();
-    const { tiles: generatedTiles, obstacles: generatedObstacles } = generateWildLandWithObstacles(
+    const { tiles: generatedTiles, obstacles: generatedObstacles, elevations: generatedElevations } = generateWildLandWithObstacles(
       COURSE_WIDTH,
       COURSE_HEIGHT,
       newSeed,
@@ -964,6 +987,7 @@ export default function App() {
     const newCourse = {
       ...DEFAULT_STATE.course,
       tiles: generatedTiles,
+      elevations: generatedElevations,
       holes: Array.from({ length: 9 }, () => ({
         tee: null,
         green: null,
@@ -1022,6 +1046,10 @@ export default function App() {
     const awardId = `${world.runSeed}:${weeksSurvived}:${peakRep}`;
     const earned = legacyAwardForRun({ weeksSurvived, peakRep });
     if (earned <= 0) return;
+    // One-shot award on the bankruptcy transition; pairs a localStorage write
+    // with the state update, so it belongs in an effect (runs once per run,
+    // guarded by legacyAwardedRef — no cascade risk).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLegacy((s) => {
       if (s.lastAwardId === awardId) return s; // prevent double-award across reloads
       const next = { ...s, legacyPoints: s.legacyPoints + earned, lastAwardId: awardId };
@@ -1137,6 +1165,9 @@ export default function App() {
                 showFixOverlay={showFixOverlay}
                 failingCorridorSegments={failingCorridorSegments}
                 showObstacles={showObstacles}
+                golfersRef={live.golfersRef}
+                liveActive={live.liveActive}
+                sculptRadius={sculptRadius}
                 onCameraUpdate={(camera) => {
                   holeEditCameraManualRef.current = true;
                   setHoleEditCamera(camera);
@@ -1304,6 +1335,10 @@ export default function App() {
         onResetSave={onResetSave}
         simulate={simulate}
         paintError={paintError}
+        sculptBrush={sculptBrush}
+        setSculptBrush={setSculptBrush}
+        sculptRadius={sculptRadius}
+        setSculptRadius={setSculptRadius}
         viewMode={viewMode}
         setViewMode={setViewMode}
         animationsEnabled={animationsEnabled}

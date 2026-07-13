@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
-import { useAudio } from "../audio/AudioProvider";
+import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
+import { ELEVATION_COST_PER_STEP } from "../game/models/terrainEconomics";
+import { useAudio } from "../audio/audioContext";
 import type { Course, ObstacleType, Point, Terrain, WeekResult, World } from "../game/models/types";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
@@ -35,8 +37,12 @@ export function HUD(props: {
   setSelected: (t: Terrain) => void;
   setGreenFee: (n: number) => void;
   setMaintenance: (n: number) => void;
-  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE";
-  setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE") => void;
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
+  setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT") => void;
+  sculptBrush?: SculptBrush;
+  setSculptBrush?: (b: SculptBrush) => void;
+  sculptRadius?: SculptRadius;
+  setSculptRadius?: (r: SculptRadius) => void;
   startWizard: () => void;
   startPlaceTee?: () => void;
   startPlaceGreen?: () => void;
@@ -540,7 +546,70 @@ export function HUD(props: {
                 >
                   Obstacles
                 </button>
+                <button
+                  onClick={() => setEditorMode("SCULPT")}
+                  style={{
+                    flex: 1,
+                    padding: "8px 6px",
+                    borderRadius: 10,
+                    border: editorMode === "SCULPT" ? "2px solid #000" : "1px solid #ccc",
+                    background: "#fff",
+                    fontSize: 12,
+                  }}
+                >
+                  Sculpt
+                </button>
               </div>
+
+              {editorMode === "SCULPT" && props.sculptBrush && props.setSculptBrush && props.setSculptRadius && (
+                <div style={{ marginBottom: 10 }}>
+                  <div style={{ marginBottom: 6 }}>
+                    <b>Sculpt brush</b>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
+                    {(["raise", "lower", "smooth", "level"] as const).map((b) => (
+                      <button
+                        key={b}
+                        onClick={() => props.setSculptBrush!(b)}
+                        style={{
+                          flex: "1 1 40%",
+                          padding: "7px 6px",
+                          borderRadius: 10,
+                          border: props.sculptBrush === b ? "2px solid #000" : "1px solid #ccc",
+                          background: "#fff",
+                          fontSize: 12,
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {b === "raise" ? "⬆ Raise" : b === "lower" ? "⬇ Lower" : b === "smooth" ? "〜 Smooth" : "▭ Level"}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: "#555" }}>Size</span>
+                    {([1, 2, 3] as const).map((r) => (
+                      <button
+                        key={r}
+                        onClick={() => props.setSculptRadius!(r)}
+                        style={{
+                          width: 32,
+                          padding: "5px 0",
+                          borderRadius: 8,
+                          border: props.sculptRadius === r ? "2px solid #000" : "1px solid #ccc",
+                          background: "#fff",
+                          fontSize: 12,
+                        }}
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#777" }}>
+                    Earthworks cost ${ELEVATION_COST_PER_STEP} per step per tile. Steep edges
+                    auto-terrace (and are included in the cost). Tees, greens and water can't be sculpted.
+                  </div>
+                </div>
+              )}
 
               {viewMode === "ARCHITECT" && (
                 <div style={{ marginTop: -2, marginBottom: 10, fontSize: 12, color: "#374151" }}>

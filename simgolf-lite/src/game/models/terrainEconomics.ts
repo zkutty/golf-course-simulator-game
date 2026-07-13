@@ -16,6 +16,15 @@ export const TERRAIN_MAINT_WEIGHT: Record<Terrain, number> = {
   ...BALANCE.terrain.maintWeight,
 };
 
+// Earthworks: sculpting charges per tile per elevation step, both directions,
+// with no salvage (you can't un-move dirt for money).
+export const ELEVATION_COST_PER_STEP: number = BALANCE.terrain.earthworkCostPerStep;
+
+export function computeElevationChangeCost(deltaSteps: number): TerrainChangeCost {
+  const charged = Math.abs(deltaSteps) * ELEVATION_COST_PER_STEP;
+  return { net: charged, charged, refunded: 0 };
+}
+
 export interface TerrainChangeCost {
   // Positive => cost, negative => refund
   net: number;

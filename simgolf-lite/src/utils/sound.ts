@@ -7,7 +7,7 @@ function nowMs() {
 }
 
 function hasWebAudio() {
-  return typeof window !== "undefined" && typeof (window as any).AudioContext !== "undefined";
+  return typeof window !== "undefined" && typeof window.AudioContext !== "undefined";
 }
 
 export function createSoundPlayer() {
@@ -24,8 +24,7 @@ export function createSoundPlayer() {
   async function ensure() {
     if (!hasWebAudio()) return null;
     if (!ctx) {
-      const AC = (window as any).AudioContext as typeof AudioContext;
-      ctx = new AC();
+      ctx = new window.AudioContext();
       master = ctx.createGain();
       master.gain.value = 0.22; // overall low volume
       master.connect(ctx.destination);
@@ -58,8 +57,8 @@ export function createSoundPlayer() {
 
   function throttle(name: SoundName, minGapMs: number) {
     const t = nowMs();
-    if (t - (last as any)[name] < minGapMs) return false;
-    (last as any)[name] = t;
+    if (t - last[name] < minGapMs) return false;
+    last[name] = t;
     return true;
   }
 

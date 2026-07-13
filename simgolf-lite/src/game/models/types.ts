@@ -35,6 +35,10 @@ export interface Course {
   width: number;
   height: number;
   tiles: Terrain[]; // length = width * height
+  // Per-tile elevation in integer steps, same row-major indexing as tiles.
+  // 0 = base level; see src/game/models/elevation.ts. Older saves migrate
+  // to a flat (all-zero) field on load.
+  elevations: number[]; // length = width * height
   holes: Hole[]; // 9 or 18 (MVP: 9)
   obstacles: Obstacle[]; // overlay layer (not terrain)
   yardsPerTile: number; // distance model (default 10)
