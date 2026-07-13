@@ -7,8 +7,22 @@ import { rollPersonality, solverProfileForSkill } from "./personality";
 import { buildGolferRound, entryPoint, planFromHole } from "./golfer";
 import { advanceGolfer } from "./golfer";
 import { planDay } from "./spawn";
+import { findWalkPath } from "./walkPath";
 import { LIVE } from "./liveConfig";
 import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } from "./types";
+
+// A memoized walk router bound to a course + per-day cache. Golfers spawned the
+// same day share cached routes, so pathfinding runs at most once per (from,to).
+function makeRouter(course: Course, cache: Map<string, Point[] | null>) {
+  return (from: Point, to: Point): Point[] | null => {
+    const key = `${Math.round(from.x)},${Math.round(from.y)}>${Math.round(to.x)},${Math.round(to.y)}`;
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    const path = findWalkPath(course, from, to);
+    cache.set(key, path);
+    return path;
+  };
+}
 
 export function createLiveState(
   course: Course,
@@ -32,6 +46,8 @@ export function createLiveState(
     detractors: 0,
     willReturnCount: 0,
     reconcileEpoch: 0,
+    nextTeeFreeAt: 0,
+    walkCache: new Map(),
     dayOver: false,
     seed,
   };
@@ -64,6 +80,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     entry,
     rng,
     personality,
+    route: makeRouter(course, state.walkCache),
   });
   return {
     id,
@@ -108,16 +125,20 @@ export function stepLive(
   let cashDelta = 0;
   let finishedThisStep = 0;
 
-  // Spawn any arrivals that are now due (no arrivals after close).
+  // Spawn arrivals that are now due (no arrivals after close). The first tee
+  // only clears every `teeGapMinutes`, so backed-up arrivals queue instead of
+  // all teeing off together (ZKU-110).
   while (
     state.nextArrivalIdx < state.arrivals.length &&
     state.arrivals[state.nextArrivalIdx].atMinute <= state.dayMinute &&
-    state.dayMinute <= LIVE.day.closeMinute
+    state.dayMinute <= LIVE.day.closeMinute &&
+    state.dayMinute >= state.nextTeeFreeAt
   ) {
     const arrival = state.arrivals[state.nextArrivalIdx++];
     const golfer = spawnGolfer(state, course, arrival);
     state.golfers.push(golfer);
     state.roundsStarted++;
+    state.nextTeeFreeAt = state.dayMinute + LIVE.day.teeGapMinutes;
     cashDelta += course.baseGreenFee;
     state.greenFeeCollected += course.baseGreenFee;
   }
@@ -205,6 +226,7 @@ function nthValidHoleIndex(course: Course, n: number): number {
 // (e.g. flying over freshly-painted water) for the rest of the round.
 export function reconcileGolfers(state: LiveState, course: Course): void {
   state.reconcileEpoch++;
+  state.walkCache.clear(); // terrain changed → cached routes are stale
   const exit = entryPoint(course);
   for (const g of state.golfers) {
     if (g.finished) continue;
@@ -223,6 +245,7 @@ export function reconcileGolfers(state: LiveState, course: Course): void {
       startHole,
       cursor: from,
       exit,
+      route: makeRouter(course, state.walkCache),
     });
 
     // Splice: keep scored holes, replace the unplayed tail with the new plan.
