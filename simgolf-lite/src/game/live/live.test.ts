@@ -13,6 +13,8 @@ import {
 } from "./simulation";
 import type { RoundReactions } from "./types";
 import { planDay, plannedGolfersForDay } from "./spawn";
+import { findWalkPath } from "./walkPath";
+import { pickGolferAt } from "./pick";
 import { archetypeAppeal, courseProfile } from "./demand";
 import { commitDay } from "./commitDay";
 import { rollPersonality, type Personality } from "./personality";
@@ -381,5 +383,78 @@ describe("reconcileGolfers on mid-round edits (ZKU-136)", () => {
     while (!g.finished && guard++ < 100_000) advanceGolfer(g, 2, edited.condition);
     expect(g.finished).toBe(true);
     expect(g.scoredHoles).toBe(g.holeStrokes.length);
+  });
+});
+
+describe("findWalkPath (ZKU-107)", () => {
+  // A fairway field with an optional vertical water wall at x=10.
+  function fieldWithWall(gapAtY: number | null): Course {
+    const width = 24, height = 16;
+    const tiles: Terrain[] = Array.from({ length: width * height }, () => "fairway" as Terrain);
+    for (let y = 0; y < height; y++) {
+      if (gapAtY != null && y === gapAtY) continue; // leave a passable gap
+      tiles[y * width + 10] = "water";
+    }
+    return {
+      name: "wall", width, height, tiles,
+      elevations: Array.from({ length: width * height }, () => 0),
+      holes: [], obstacles: [], yardsPerTile: 10, baseGreenFee: 65, condition: 0.8,
+    };
+  }
+  const isWater = (c: Course, p: { x: number; y: number }) => c.tiles[p.y * c.width + p.x] === "water";
+
+  it("returns a route on open ground ending at the target", () => {
+    const c = fieldWithWall(null);
+    c.tiles.fill("fairway"); // remove the wall entirely
+    const path = findWalkPath(c, { x: 2, y: 8 }, { x: 20, y: 8 });
+    expect(path).not.toBeNull();
+    expect(path![path!.length - 1]).toEqual({ x: 20, y: 8 });
+  });
+
+  it("routes around a water wall through the gap, never onto water", () => {
+    const c = fieldWithWall(2); // wall x=10 with a single gap at y=2
+    const path = findWalkPath(c, { x: 4, y: 8 }, { x: 16, y: 8 });
+    expect(path).not.toBeNull();
+    expect(path![path!.length - 1]).toEqual({ x: 16, y: 8 });
+    for (const wp of path!) expect(isWater(c, wp)).toBe(false);
+  });
+
+  it("returns null when the target is unreachable (solid water wall)", () => {
+    const c = fieldWithWall(null); // full wall, no gap
+    expect(findWalkPath(c, { x: 4, y: 8 }, { x: 16, y: 8 })).toBeNull();
+  });
+});
+
+describe("pickGolferAt (ZKU-134)", () => {
+  const golfers = [
+    { id: 1, x: 10, y: 10 },
+    { id: 2, x: 20, y: 12 },
+  ];
+  it("selects the golfer whose tile-center is under the click", () => {
+    expect(pickGolferAt(golfers, 10.5, 10.5)).toBe(1);
+    expect(pickGolferAt(golfers, 20.6, 12.4)).toBe(2);
+  });
+  it("returns null when the click is beyond the pick radius", () => {
+    expect(pickGolferAt(golfers, 15, 15)).toBe(null);
+  });
+});
+
+describe("tee-time queueing (ZKU-110)", () => {
+  it("spaces out backed-up arrivals instead of teeing them all off at once", () => {
+    const course = makeTestCourse();
+    const live = createLiveState(course, { ...DEFAULT_WORLD }, 0);
+    // Force a backlog: 5 golfers all "arriving" at minute 20.
+    live.arrivals = Array.from({ length: 5 }, () => ({ atMinute: 20, archetype: "casual" as const }));
+    live.nextArrivalIdx = 0;
+    live.nextTeeFreeAt = 0;
+    live.dayMinute = 0;
+
+    // Jump to minute 21: despite 5 being due, only one may tee off.
+    stepLive(live, course, 21);
+    expect(live.roundsStarted).toBe(1);
+
+    // Advancing a minute at a time, the rest drain ~one per tee gap.
+    for (let i = 0; i < 45; i++) stepLive(live, course, 1);
+    expect(live.roundsStarted).toBe(5);
   });
 });
