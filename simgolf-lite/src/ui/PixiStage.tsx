@@ -238,6 +238,7 @@ export function PixiStage(props: PixiStageProps) {
   const obstacleSpritesRef = useRef<Map<string, PIXI.Sprite>>(new Map());
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
+  const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
   const golferPoolRef = useRef<
     Map<number, { holder: PIXI.Container; body: PIXI.Graphics; ball: PIXI.Graphics; lastColor: string; lastMoodBucket: number }>
   >(new Map());
@@ -473,6 +474,7 @@ export function PixiStage(props: PixiStageProps) {
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
       golferPoolRef.current.clear();
+      flagPoolRef.current.clear();
       diamondTextureRef.current = null;
       if (appRef.current) {
         appRef.current.destroy(true, { children: true, texture: true });
@@ -803,6 +805,40 @@ export function PixiStage(props: PixiStageProps) {
       };
       const NEIGHBORS: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
 
+      // Mow stripes (ZKU-149): fairway/green tiles get alternating light/dark
+      // bands oriented along the nearest hole's tee→green axis; fairway far
+      // from any hole falls back to a global diagonal. Pure tint math — no
+      // extra sprites, cached with the chunk.
+      const holeAxes = course.holes
+        .filter((hole) => hole.tee && hole.green)
+        .map((hole) => {
+          const ax = hole.tee!.x;
+          const ay = hole.tee!.y;
+          const dx = hole.green!.x - ax;
+          const dy = hole.green!.y - ay;
+          const len2 = Math.max(1e-6, dx * dx + dy * dy);
+          return { ax, ay, dx, dy, len2 };
+        });
+      const stripeShade = (x: number, y: number): number => {
+        let band: number | null = null;
+        let bestDist = 64; // squared distance gate (~8 tiles from the axis)
+        for (const axis of holeAxes) {
+          const px = x - axis.ax;
+          const py = y - axis.ay;
+          const t = Math.max(0, Math.min(1, (px * axis.dx + py * axis.dy) / axis.len2));
+          const cx2 = px - t * axis.dx;
+          const cy2 = py - t * axis.dy;
+          const d2 = cx2 * cx2 + cy2 * cy2;
+          if (d2 < bestDist) {
+            bestDist = d2;
+            const along = t * Math.sqrt(axis.len2); // tiles along the axis
+            band = Math.floor(along / 1.5) % 2;
+          }
+        }
+        if (band === null) band = ((Math.floor((x - y) / 2) % 2) + 2) % 2; // global diagonal
+        return band === 0 ? 1.035 : 0.965; // subtle per ART_GUIDE
+      };
+
       for (const { x, y } of order) {
         const terrain = course.tiles[y * w + x];
         const e = elev(x, y);
@@ -810,7 +846,8 @@ export function PixiStage(props: PixiStageProps) {
         // NW-sun slope shade from central-difference normals (world-fixed sun).
         const dzdx = (elev(x + 1, y) - elev(x - 1, y)) / 2;
         const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
-        const slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
+        let slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
+        if (terrain === "fairway" || terrain === "green") slopeShade *= stripeShade(x, y);
         const tileTint = shade(darken(COLORS[terrain], EDGE_DARKEN), slopeShade);
 
         // Base: textured variant by deterministic position hash (kills the
@@ -1007,11 +1044,50 @@ export function PixiStage(props: PixiStageProps) {
       layers.terrainDecals.addChild(g);
     };
 
+    // Tee box (ZKU-149): pad diamond + two tee markers set perpendicular to
+    // the shot direction (toward the green).
+    const drawTee = (tee: Point, green: Point | null, alpha = 1) => {
+      const g = new PIXI.Graphics();
+      const e = getElevation(course, tee.x, tee.y);
+      const c = tileCenterIso(tee.x, tee.y, e, rotation);
+      g.ellipse(c.x, c.y, TILE_W * 0.3, TILE_H * 0.3);
+      g.fill({ color: 0x9a7a58, alpha: 0.9 * alpha });
+      // Perpendicular offset in world space, projected.
+      let px = 0.7;
+      let py = -0.7;
+      if (green) {
+        const dx = green.x - tee.x;
+        const dy = green.y - tee.y;
+        const len = Math.max(1e-6, Math.hypot(dx, dy));
+        px = -dy / len;
+        py = dx / len;
+      }
+      for (const side of [-0.28, 0.28]) {
+        const m = worldToIso(tee.x + 0.5 + px * side, tee.y + 0.5 + py * side, e, rotation);
+        g.circle(m.x, m.y - 2, 2.2);
+        g.fill({ color: 0xe8c15a, alpha });
+        g.stroke({ width: 1, color: 0x6b5426, alpha });
+      }
+      g.label = MARKER_LABEL;
+      layers.terrainDecals.addChild(g);
+    };
+
+    // Cup (ZKU-149): small dark hole with a light rim on the green tile.
+    const drawCup = (green: Point, alpha = 1) => {
+      const g = new PIXI.Graphics();
+      const c = tileCenterIso(green.x, green.y, getElevation(course, green.x, green.y), rotation);
+      g.ellipse(c.x, c.y, 4.5, 2.2);
+      g.fill({ color: 0x1c2b1c, alpha });
+      g.stroke({ width: 1, color: 0xe9efe4, alpha: 0.85 * alpha });
+      g.label = MARKER_LABEL;
+      layers.terrainDecals.addChild(g);
+    };
+
     holes.forEach((hole) => {
-      if (hole.tee) drawMarker(hole.tee, 0x222222);
-      if (hole.green) drawMarker(hole.green, 0x1b5e20);
+      if (hole.tee) drawTee(hole.tee, hole.green);
+      if (hole.green) drawCup(hole.green);
     });
-    if (draftTee) drawMarker(draftTee, 0x222222, 0.55);
+    if (draftTee) drawTee(draftTee, draftGreen, 0.55);
     if (draftGreen) drawMarker(draftGreen, 0x1b5e20, 0.55);
   }, [appReady, holes, draftTee, draftGreen, course, rotation]);
 
@@ -1144,6 +1220,48 @@ export function PixiStage(props: PixiStageProps) {
         }
       }
 
+      // Pin flags (ZKU-149): one pole+flag per placed green, depth-sorted
+      // with the world; the cloth flutters on a time-based wave (static
+      // first frame when animations are off).
+      const flags = flagPoolRef.current;
+      const liveHoles = new Set<number>();
+      const flagColor = props.flagColor ?? "#d9534f";
+      holes.forEach((hole, hi) => {
+        if (!hole.green) return;
+        liveHoles.add(hi);
+        let g = flags.get(hi);
+        if (!g) {
+          g = new PIXI.Graphics();
+          layers.objects.addChild(g);
+          flags.set(hi, g);
+        }
+        const e = getElevation(course, hole.green.x, hole.green.y);
+        const c = tileCenterIso(hole.green.x, hole.green.y, e, rotation);
+        g.position.set(c.x, c.y);
+        const z = entityDepth(hole.green.x + 0.5, hole.green.y + 0.5, e, rotation) + 0.05;
+        if (g.zIndex !== z) g.zIndex = z;
+        const phase = props.animationsEnabled ? performance.now() / 160 + hi * 1.3 : 0;
+        g.clear();
+        // pole
+        g.moveTo(0, 0);
+        g.lineTo(0, -34);
+        g.stroke({ width: 1.5, color: 0xe9efe4 });
+        // cloth: triangle with a fluttering tip
+        const w1 = Math.sin(phase) * 2.2;
+        const w2 = Math.sin(phase + 0.9) * 3.2;
+        g.poly([0, -34, 13, -30.5 + w1, 0, -26]);
+        g.fill(flagColor);
+        g.poly([9, -31.5 + w1 * 0.8, 13, -30.5 + w1, 15.5, -29.5 + w2, 9, -29]);
+        g.fill({ color: flagColor, alpha: 0.85 });
+      });
+      for (const [hi, g] of flags) {
+        if (!liveHoles.has(hi)) {
+          layers.objects.removeChild(g);
+          g.destroy();
+          flags.delete(hi);
+        }
+      }
+
       // Live golfers/balls: pooled per-golfer objects in the depth-sorted
       // objects layer so props occlude them correctly (ZKU-140; character
       // sprites replace the dots in M11/ZKU-153).
@@ -1215,7 +1333,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.flagColor]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
