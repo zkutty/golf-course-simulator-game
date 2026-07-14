@@ -11,7 +11,8 @@
     "test": "vitest run",
     "tune": "vite build --ssr src/game/tuning/tuneCli.ts --outDir tune-dist --emptyOutDir --minify false && node tune-dist/tuneCli.js",
     "gen:sprites": "node scripts/gen-placeholder-sprites.mjs && node scripts/gen-golfer-sprites.mjs",
-    "build:atlas": "node scripts/build-atlas.mjs"
+    "build:atlas": "node scripts/build-atlas.mjs",
+    "test:perf": "node scripts/perf-smoke.mjs"
   },
   "dependencies": {
     "pixi.js": "^8.14.3",

@@ -69,6 +69,7 @@ import {
   timeOfDayTint,
 } from "../game/render/ambient";
 import { FLYOVER_DURATION_MS, buildFlyoverKeys, sampleFlyover, type FlyoverKey } from "../game/render/flyover";
+import { PerfWindow } from "../game/render/perfStats";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { buildingSpec } from "../game/models/buildings";
 import { getLandTheme } from "../game/models/themes";
@@ -521,6 +522,16 @@ export function PixiStage(props: PixiStageProps) {
   useEffect(() => {
     dayMinuteRef.current = props.dayMinute;
   });
+  // Perf HUD (ZKU-160): rolling frame stats + per-section timings, enabled
+  // via localStorage "coursecraft_perfhud" = "on" (see README dev section).
+  const perfRef = useRef<{
+    win: PerfWindow;
+    enabled: boolean;
+    lastPollMs: number;
+    lastHudMs: number;
+    text: PIXI.Text | null;
+    sections: Record<string, number>;
+  }>({ win: new PerfWindow(180), enabled: false, lastPollMs: 0, lastHudMs: 0, text: null, sections: {} });
   const golferPoolRef = useRef<Map<number, GolferEntry>>(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
@@ -749,6 +760,7 @@ export function PixiStage(props: PixiStageProps) {
     // These ref objects are stable for the app's lifetime.
     const emoteSprites = emoteSpritesRef.current;
     const ambient = ambientRef.current;
+    const perfState = perfRef.current;
 
     const app = new PIXI.Application();
 
@@ -881,6 +893,8 @@ export function PixiStage(props: PixiStageProps) {
       ambient.birdG = null;
       ambient.shimmer = null;
       ambient.heron = { g: null, spot: null, forCourse: null, state: "standing", flyT0: 0, respawnAt: 0 };
+      perfState.text = null;
+      perfState.win.reset();
       waterAnimRef.current = { last: 0, wasAnimating: false };
       diamondTextureRef.current = null;
       if (appRef.current) {
@@ -1689,6 +1703,43 @@ export function PixiStage(props: PixiStageProps) {
 
     const tick = (ticker: PIXI.Ticker) => {
       const dtMs = ticker.deltaMS;
+      const nowMs = performance.now();
+
+      // Perf HUD (ZKU-160): poll the flag ~1/s; section marks are zero-cost
+      // when disabled.
+      const perf = perfRef.current;
+      if (nowMs - perf.lastPollMs > 1000) {
+        perf.lastPollMs = nowMs;
+        perf.enabled = localStorage.getItem("coursecraft_perfhud") === "on";
+        if (perf.enabled && !perf.text) {
+          const t = new PIXI.Text({
+            text: "",
+            style: {
+              fontFamily: "monospace",
+              fontSize: 11,
+              fill: 0xffffff,
+              stroke: { color: 0x000000, width: 3 },
+              lineHeight: 15,
+            },
+          });
+          t.position.set(8, 8);
+          layers.screenOverlay.addChild(t);
+          perf.text = t;
+        } else if (!perf.enabled && perf.text) {
+          layers.screenOverlay.removeChild(perf.text);
+          perf.text.destroy();
+          perf.text = null;
+          perf.win.reset();
+        }
+      }
+      if (perf.enabled) perf.sections = {};
+      let perfLast = perf.enabled ? performance.now() : 0;
+      const perfMark = (name: string) => {
+        if (!perf.enabled) return;
+        const t = performance.now();
+        perf.sections[name] = (perf.sections[name] ?? 0) + (t - perfLast);
+        perfLast = t;
+      };
       // Hover visuals only redraw when dirty.
       if (overlayDirtyRef.current) {
         overlayDirtyRef.current = false;
@@ -1796,8 +1847,8 @@ export function PixiStage(props: PixiStageProps) {
       // oscillation over the chunk-registered water sprites; visible chunks
       // only; rare bright glints from a positional hash. Snaps back to the
       // static base when animations are turned off.
+      perfMark("hover+flags");
       const waterAnim = waterAnimRef.current;
-      const nowMs = performance.now();
       if (props.animationsEnabled) {
         if (nowMs - waterAnim.last > 140) {
           waterAnim.last = nowMs;
@@ -1836,6 +1887,8 @@ export function PixiStage(props: PixiStageProps) {
           if (entry.swayPhase !== null && entry.sprite.skew.x !== 0) entry.sprite.skew.x = 0;
         }
       }
+
+      perfMark("water+sway");
 
       // ---------------------------------------------------------------
       // Ambient world life (ZKU-156). Time-of-day-shaped effects run off
@@ -1967,6 +2020,8 @@ export function PixiStage(props: PixiStageProps) {
         }
       }
 
+      perfMark("ambient");
+
       // Splash ripples: expanding rings where a ball landed in water. Kept
       // on even with animations off — it communicates a penalty event.
       if (!rippleGraphicsRef.current) {
@@ -2021,6 +2076,8 @@ export function PixiStage(props: PixiStageProps) {
         }
       }
 
+      perfMark("fx");
+
       // Live golfers/balls: pooled per-golfer objects in the depth-sorted
       // objects layer so props occlude them correctly (ZKU-140). Character
       // sprites (ZKU-153) when the golfers atlas is loaded; legacy dots
@@ -2029,6 +2086,23 @@ export function PixiStage(props: PixiStageProps) {
       const list = liveActive ? golfersRef?.current : null;
       const seen = new Set<number>();
       const golferById = new Map<number, GolferRenderData>();
+      // Entity culling bounds (ZKU-160): golfers outside the viewport skip
+      // all animation/texture work, mirroring the chunk culler. Disabled
+      // during the rotation tween (bounds don't model the spin).
+      let cullL = -Infinity;
+      let cullR = Infinity;
+      let cullT = -Infinity;
+      let cullB = Infinity;
+      const worldCull = layers.world;
+      if (worldCull.rotation === 0 && app) {
+        const m = 96;
+        const halfW = app.screen.width / 2 / worldCull.scale.x;
+        const halfH = app.screen.height / 2 / worldCull.scale.y;
+        cullL = worldCull.pivot.x - halfW - m;
+        cullR = worldCull.pivot.x + halfW + m;
+        cullT = worldCull.pivot.y - halfH - m;
+        cullB = worldCull.pivot.y + halfH + m;
+      }
       if (list) {
         for (const golfer of list) {
           seen.add(golfer.id);
@@ -2143,7 +2217,21 @@ export function PixiStage(props: PixiStageProps) {
             showEmote("zzz");
           }
 
-          if (entry.sprite) {
+          // Position + entity culling first: an offscreen golfer keeps its
+          // trigger bookkeeping (above) but skips all visual work.
+          const ge = getElevation(course, Math.floor(golfer.x + 0.5), Math.floor(golfer.y + 0.5));
+          const c = tileCenterIso(golfer.x, golfer.y, ge, rotation);
+          entry.holder.position.set(c.x, c.y);
+          const offscreen = c.x < cullL || c.x > cullR || c.y < cullT || c.y > cullB;
+          entry.holder.visible = !offscreen;
+          if (!offscreen) {
+            // Quantize the depth key so the container only re-sorts when the
+            // golfer crosses a meaningful slice of a tile row, not per frame.
+            const z = Math.round(entityDepth(golfer.x, golfer.y, ge, rotation) * 10) / 10;
+            if (entry.holder.zIndex !== z) entry.holder.zIndex = z;
+          }
+
+          if (!offscreen && entry.sprite) {
             const sp = entry.sprite;
             // Hole-out reactions: a scored-holes tick means "just holed out".
             if (golfer.scoredHoles > sp.lastScored) {
@@ -2204,7 +2292,7 @@ export function PixiStage(props: PixiStageProps) {
             } else if (sp.ring.visible) {
               sp.ring.visible = false;
             }
-          } else if (entry.dot) {
+          } else if (!offscreen && entry.dot) {
             // Legacy dot tier: redraw only when color or mood bucket changes.
             const dot = entry.dot;
             const moodBucket = Math.round(Math.max(0, Math.min(1, golfer.mood)) * 10);
@@ -2220,13 +2308,6 @@ export function PixiStage(props: PixiStageProps) {
               body.stroke({ width: 1.5, color: `hsl(${moodBucket * 12}, 80%, 45%)` });
             }
           }
-          const ge = getElevation(course, Math.floor(golfer.x + 0.5), Math.floor(golfer.y + 0.5));
-          const c = tileCenterIso(golfer.x, golfer.y, ge, rotation);
-          entry.holder.position.set(c.x, c.y);
-          // Quantize the depth key so the container only re-sorts when the
-          // golfer crosses a meaningful slice of a tile row, not per frame.
-          const z = Math.round(entityDepth(golfer.x, golfer.y, ge, rotation) * 10) / 10;
-          if (entry.holder.zIndex !== z) entry.holder.zIndex = z;
 
           if (golfer.ballX != null && golfer.ballY != null) {
             // Ball flight 2.0 (ZKU-154): the render layer replaces the sim's
@@ -2390,6 +2471,44 @@ export function PixiStage(props: PixiStageProps) {
           cont.scale.set(pres.scale);
           cont.alpha = pres.alpha;
           cont.visible = anchors[i].x > -9000;
+        }
+      }
+
+      // Perf HUD: fold this frame in and refresh the readout ~4x/s.
+      if (perf.enabled) {
+        perfMark("golfers+emotes");
+        perf.win.push({ totalMs: dtMs, sections: perf.sections });
+        if (nowMs - perf.lastHudMs > 250) {
+          perf.lastHudMs = nowMs;
+          const s = perf.win.summary();
+          let visibleChunks = 0;
+          for (const ch of chunksRef.current) if (ch.container.visible) visibleChunks++;
+          let work = 0;
+          for (const v of Object.values(s.sections)) work += v;
+          const info = {
+            fps: s.fps,
+            meanMs: s.meanMs,
+            p95Ms: s.p95Ms,
+            maxMs: s.maxMs,
+            workMs: work,
+            sections: s.sections,
+            golfers: golferPoolRef.current.size,
+            bubbles: emoteSpritesRef.current.size,
+            chunksVisible: visibleChunks,
+            chunksTotal: chunksRef.current.length,
+            objects: layers.objects.children.length,
+          };
+          (window as unknown as { __ccPerf?: object }).__ccPerf = info;
+          if (perf.text) {
+            const secStr = Object.entries(s.sections)
+              .sort((a, b) => b[1] - a[1])
+              .map(([k, v]) => `${k} ${v.toFixed(2)}`)
+              .join("  ");
+            perf.text.text =
+              `${s.fps.toFixed(0)} fps  mean ${s.meanMs.toFixed(2)}ms  p95 ${s.p95Ms.toFixed(2)}ms  max ${s.maxMs.toFixed(1)}ms\n` +
+              `tick work ${work.toFixed(2)}ms  chunks ${visibleChunks}/${chunksRef.current.length}  golfers ${golferPoolRef.current.size}  bubbles ${emoteSpritesRef.current.size}  objects ${layers.objects.children.length}\n` +
+              secStr;
+          }
         }
       }
     };
