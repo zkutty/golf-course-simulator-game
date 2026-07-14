@@ -7,6 +7,14 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Ambient world life (ZKU-156): soft cloud shadows drifting across the
+  course on a constant daily wind, a small flock of birds crossing the sky
+  every few in-game hours, an occasional light-band grass shimmer synced to
+  the tree-sway wind, a shoreline heron that flies off when a ball splashes
+  down nearby, and a subtle time-of-day color grade (cool morning → neutral
+  midday → warm evening, always continuous — no popping, scales with sim
+  speed). All of it sits behind a new "Ambient life" toggle in Settings,
+  separate from the Animations toggle, and costs nothing when off.
 - SimGolf-style emote bubbles (ZKU-155): golfers announce how they feel with
   comic thought bubbles above their heads — ★ for birdies, a smile for pars,
   a frown for bogeys, a storm cloud for blow-up holes or gutter mood, "!"
