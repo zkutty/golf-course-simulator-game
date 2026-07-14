@@ -68,6 +68,8 @@ import {
   heronSpot,
   timeOfDayTint,
 } from "../game/render/ambient";
+import { FLYOVER_DURATION_MS, buildFlyoverKeys, sampleFlyover, type FlyoverKey } from "../game/render/flyover";
+import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { buildingSpec } from "../game/models/buildings";
 import { getLandTheme } from "../game/models/themes";
 import type { AtlasFrame } from "../render/atlas";
@@ -526,6 +528,14 @@ export function PixiStage(props: PixiStageProps) {
   // Free camera (ZKU-141): current values lerp toward targets each frame.
   // Center is in world tile coordinates so it survives rotation changes.
   const [rotation, setRotation] = useState<IsoRotation>(0);
+  // Cinematic hole flyover (ZKU-157): keyframes + the camera state to
+  // restore on finish/skip; the card is the only chrome shown meanwhile.
+  const flyoverRef = useRef<{
+    keys: FlyoverKey[];
+    t0: number;
+    saved: { cx: number; cy: number; zoom: number };
+  } | null>(null);
+  const [flyoverCard, setFlyoverCard] = useState<{ hole: number; par: number; yards: number } | null>(null);
   const camRef = useRef({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false });
   const rotTweenRef = useRef<{ start: number; toDeg: number; next: IsoRotation } | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
@@ -631,6 +641,60 @@ export function PixiStage(props: PixiStageProps) {
     },
     [course.width, course.height, rotation, applyCamera]
   );
+
+  /** End (or skip) the flyover: restore the exact pre-flyover camera. */
+  const endFlyover = useCallback(() => {
+    const f = flyoverRef.current;
+    if (!f) return;
+    const cam = camRef.current;
+    cam.tcx = f.saved.cx;
+    cam.tcy = f.saved.cy;
+    cam.tzoom = f.saved.zoom;
+    flyoverRef.current = null;
+    setFlyoverCard(null);
+  }, []);
+
+  // Flyover trigger: the shared flyoverNonce contract (HUD button, wizard
+  // confirm, hole inspector). Needs a complete active hole.
+  useEffect(() => {
+    if (!appReady || props.flyoverNonce === 0) return;
+    const app = appRef.current;
+    // Wizard confirm advances the active hole before this effect runs, so
+    // fall back to the previous (just-confirmed) hole when the active one
+    // is still empty.
+    let holeIndex = activeHoleIndex;
+    let hole = holes[holeIndex];
+    if ((!hole?.tee || !hole?.green) && holeIndex > 0) {
+      holeIndex = activeHoleIndex - 1;
+      hole = holes[holeIndex];
+    }
+    if (!app || !hole?.tee || !hole?.green) return;
+    const tee = hole.tee;
+    const green = hole.green;
+    const cam = camRef.current;
+    // Frame the whole hole for the wide shots; tighten for the green.
+    const minX = Math.min(tee.x, green.x) - 5;
+    const maxX = Math.max(tee.x, green.x) + 5;
+    const minY = Math.min(tee.y, green.y) - 5;
+    const maxY = Math.max(tee.y, green.y) + 5;
+    const wide = fitZoomForTileBounds(minX, minY, maxX, maxY, app.screen.width, app.screen.height, rotation);
+    const tight = Math.min(MAX_ZOOM * 0.6, Math.max(wide * 2.4, wide + 0.4));
+    const corridor = (props.activeShotPlan ?? []).map((s) => s.to);
+    flyoverRef.current = {
+      keys: buildFlyoverKeys(tee, green, corridor, wide, tight),
+      t0: performance.now(),
+      // A re-trigger mid-flyover keeps the original pre-flyover camera.
+      saved: flyoverRef.current?.saved ?? { cx: cam.tcx, cy: cam.tcy, zoom: cam.tzoom },
+    };
+    const distTiles = computeHoleDistanceTiles(tee, green);
+    const autoPar = computeAutoPar(distTiles);
+    setFlyoverCard({
+      hole: holeIndex + 1,
+      par: hole.parMode === "MANUAL" ? hole.parManual ?? autoPar : autoPar,
+      yards: Math.round(distTiles * (course.yardsPerTile ?? 10)),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.flyoverNonce, appReady]);
 
   /**
    * Inverse camera transform: global pointer coords → integer tile, or null.
@@ -908,6 +972,10 @@ export function PixiStage(props: PixiStageProps) {
 
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
+      if (flyoverRef.current) {
+        endFlyover(); // any input skips the flyover
+        return;
+      }
       const cam = camRef.current;
       const rect = el.getBoundingClientRect();
       const gx = e.clientX - rect.left;
@@ -940,6 +1008,10 @@ export function PixiStage(props: PixiStageProps) {
     const handlePointerDown = (e: PointerEvent) => {
       if (e.button !== 1 && e.button !== 2) return;
       e.preventDefault();
+      if (flyoverRef.current) {
+        endFlyover();
+        return;
+      }
       const cam = camRef.current;
       panState = { gx: e.clientX, gy: e.clientY, cx: cam.cx, cy: cam.cy };
       el.setPointerCapture(e.pointerId);
@@ -974,6 +1046,14 @@ export function PixiStage(props: PixiStageProps) {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
       const k = e.key.toLowerCase();
+      if (flyoverRef.current) {
+        // Esc (or any camera key) skips the flyover; nothing else fires.
+        if (["escape", " ", "enter", "q", "e", "w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
+          endFlyover();
+          e.preventDefault();
+        }
+        return;
+      }
       if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
         keysRef.current.add(k);
         e.preventDefault();
@@ -997,9 +1077,26 @@ export function PixiStage(props: PixiStageProps) {
       const dtMs = ticker.deltaMS;
       let moved = false;
 
+      // Flyover (ZKU-157): drive the camera targets along the keyframes;
+      // the smoothing below adds the final organic ease.
+      const flyover = flyoverRef.current;
+      if (flyover) {
+        const t = (performance.now() - flyover.t0) / FLYOVER_DURATION_MS;
+        if (t >= 1.08) {
+          endFlyover();
+        } else {
+          const s = sampleFlyover(flyover.keys, t);
+          const clamped = clampCenter(s.x, s.y);
+          cam.tcx = clamped.x;
+          cam.tcy = clamped.y;
+          cam.tzoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, s.zoom));
+          moved = true;
+        }
+      }
+
       // Keyboard pan in screen space → iso plane → tile space.
       const keys = keysRef.current;
-      if (keys.size > 0 && !rotTweenRef.current) {
+      if (!flyover && keys.size > 0 && !rotTweenRef.current) {
         let dx = 0;
         let dy = 0;
         if (keys.has("a") || keys.has("arrowleft")) dx -= 1;
@@ -2326,6 +2423,11 @@ export function PixiStage(props: PixiStageProps) {
 
     const handleClick = (e: PIXI.FederatedPointerEvent) => {
       if (e.button !== 0) return; // middle/right are camera pan, not editing
+      // During a flyover, editor input is suspended — a click skips it.
+      if (flyoverRef.current) {
+        endFlyover();
+        return;
+      }
       // In the global view, clicking a golfer selects them instead of
       // painting (ZKU-134 parity). Iso-plane distance against each golfer's
       // projected position keeps the hit test elevation-correct.
@@ -2371,18 +2473,53 @@ export function PixiStage(props: PixiStageProps) {
       app.stage.off("pointerdown", handleClick);
       app.stage.off("pointermove", handleMove);
     };
-  }, [appReady, screenToTile, screenToIsoPlane, onClickTile, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef]);
+  }, [appReady, screenToTile, screenToIsoPlane, onClickTile, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover]);
 
   return (
     <div
-      ref={containerRef}
       style={{
         width: "100%",
         height: "100%",
         position: "relative",
         overflow: "hidden",
-        cursor: "crosshair",
       }}
-    />
+    >
+      <div
+        ref={containerRef}
+        style={{
+          width: "100%",
+          height: "100%",
+          position: "relative",
+          overflow: "hidden",
+          cursor: "crosshair",
+        }}
+      />
+      {flyoverCard && (
+        <div
+          style={{
+            position: "absolute",
+            bottom: 118, // clear of the live-controls bar
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(22,30,22,0.86)",
+            color: "#f2e8c9",
+            padding: "10px 26px",
+            borderRadius: 12,
+            border: "1px solid rgba(242,232,201,0.25)",
+            textAlign: "center",
+            pointerEvents: "none",
+            letterSpacing: "0.08em",
+            fontFamily: "var(--font-heading, Georgia, serif)",
+            boxShadow: "0 6px 24px rgba(0,0,0,0.35)",
+          }}
+        >
+          <div style={{ fontSize: 21, fontWeight: 700 }}>Hole {flyoverCard.hole}</div>
+          <div style={{ fontSize: 13, opacity: 0.85, marginTop: 2 }}>
+            Par {flyoverCard.par} · {flyoverCard.yards} yds
+          </div>
+          <div style={{ fontSize: 10, opacity: 0.55, marginTop: 4 }}>click or Esc to skip</div>
+        </div>
+      )}
+    </div>
   );
 }

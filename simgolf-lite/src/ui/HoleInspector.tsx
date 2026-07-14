@@ -8,6 +8,7 @@ interface HoleInspectorProps {
   showFixOverlay: boolean;
   setShowFixOverlay: (show: boolean) => void;
   onFitHole?: (preset?: "fit" | "tee" | "landing" | "green") => void;
+  onFlyover?: () => void; // cinematic hole flyover (ZKU-157)
   course: Course;
   hole: Hole;
   onSetHoleIndex?: (index: number) => void;
@@ -27,6 +28,7 @@ export function HoleInspector({
   showFixOverlay,
   setShowFixOverlay,
   onFitHole,
+  onFlyover,
   course,
   hole,
   onSetHoleIndex,
@@ -145,6 +147,23 @@ export function HoleInspector({
             >
               Green
             </button>
+            {onFlyover && (
+              <button
+                onClick={onFlyover}
+                style={{
+                  padding: "6px 10px",
+                  fontSize: 11,
+                  borderRadius: 4,
+                  border: "1px solid #ddd",
+                  background: "#fff",
+                  cursor: "pointer",
+                  fontWeight: 500,
+                }}
+                title="Cinematic hole flyover"
+              >
+                ▶ Flyover
+              </button>
+            )}
           </div>
         )}
       </div>

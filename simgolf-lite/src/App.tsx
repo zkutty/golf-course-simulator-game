@@ -803,6 +803,7 @@ export default function App() {
     dispatch({ type: "PLACE_TEE", holeIndex: activeHoleIndex, position: tee });
     dispatch({ type: "PLACE_GREEN", holeIndex: activeHoleIndex, position: green });
     void sound?.playConfirm(soundEnabled);
+    setFlyoverNonce((n) => n + 1); // cinematic hole flyover (ZKU-157)
 
     setActiveHoleIndex((i) => Math.min(8, i + 1));
     setWizardStep("TEE");
@@ -1352,6 +1353,7 @@ export default function App() {
                   showFixOverlay={showFixOverlay}
                   setShowFixOverlay={setShowFixOverlay}
                   onFitHole={fitHole}
+                  onFlyover={() => setFlyoverNonce((n) => n + 1)}
                   course={course}
                   hole={course.holes[activeHoleIndex]}
                   onSetHoleIndex={(newIndex: number) => {
