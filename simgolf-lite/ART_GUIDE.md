@@ -61,6 +61,31 @@ Supporting colors: trunk brown `#5d4330`, canopy greens `#3f8a3f`→`#77c46a`
 (3 steps), rock grays `#7d7d78`→`#a8a89f`, blossom/flag accents
 `#d9534f` (red), `#e8c15a` (gold), sky/UI parchment `#dfe8d8`.
 
+## Golfer characters (M11 / ZKU-153)
+
+- Character canvas: **48×72 px** per frame, feet on y=69 at bottom-center;
+  chibi proportions (~2.5 heads tall), 1 px darkened outline, NW light.
+- Frames ship as **grid sheets** in `src/assets/sprites/golfers/`, one file
+  per (variant, animation, layer): `golfer{v}_{anim}.grid{COLS}x{ROWS}.png`.
+  The atlas packer slices a grid file into frames named
+  `{base}_{row}_{col}` inside `public/atlases/golfers.png/json`.
+- **Two layers per frame**: the base sheet carries skin/pants/shoes/club in
+  real colors; the `_t` twin (`golfer{v}_{anim}_t.grid….png`) carries shirt
+  + hat in **grayscale** (~2 value steps around #d2d2d2) and is tinted at
+  runtime with the golfer's color — author clothing light enough to tint.
+- **Direction rows** (5 authored, 3 mirrored at runtime):
+  rows 0..4 = screen octants `[s, sw, w, nw, n]`; se/e/ne are mirrored from
+  sw/w/nw. walk/idle rows are the octant the character FACES; swing/putt
+  rows are the octant the ball TRAVELS (stance is authored 90° off-target,
+  right-handed; mirrored rows read as left-handers).
+- **Animations**: walk 6f, idle 2f, swing 8f (0–5 windup→contact, 6–7
+  follow-through/finish; contact must be frame 5), putt 4f (0–2
+  stroke→contact, 3 hold), cheer 4f + mad 4f (single row, facing s).
+  Frame timing lives in `src/game/render/golferSprites.ts` — replacement
+  art must keep frame counts and the contact-frame positions.
+- Regenerate placeholders: `npm run gen:sprites` (golfer generator is
+  `scripts/gen-golfer-sprites.mjs`), then `npm run build:atlas`.
+
 ## Asset pipeline
 
 1. Author/generate sprites as individual PNGs in `src/assets/sprites/`

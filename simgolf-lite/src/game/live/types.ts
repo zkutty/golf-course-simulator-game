@@ -12,6 +12,9 @@ export interface Segment {
   to: Point;
   dur: number; // game-minutes
   holeIndex: number; // hole this segment belongs to (-1 for arrival/exit)
+  // Render-facing only (ZKU-153): which stroke a "flight" represents, so the
+  // renderer can pick the swing vs putt animation. Never read by sim logic.
+  shot?: "swing" | "putt";
 }
 
 export type GolferArchetypeName =
@@ -101,6 +104,28 @@ export interface GolferRenderData {
   color: string;
   mood: number;
   thought: string | null;
+  // --- Animation facts (ZKU-153): raw, renderer-agnostic segment state. ---
+  archetype: GolferArchetypeName;
+  /** Current itinerary segment kind, or null when idle/retired. */
+  segKind: SegmentKind | null;
+  /** Progress through the current segment, 0..1. */
+  segT: number;
+  /**
+   * The stroke being addressed (pause before a flight) or in the air
+   * (flight); null while walking or plain waiting.
+   */
+  shot: "swing" | "putt" | null;
+  /**
+   * World-space facing: walk direction while walking, shot direction while
+   * addressing/swinging. Zero when the segment has no direction (renderer
+   * keeps the last facing).
+   */
+  dirX: number;
+  dirY: number;
+  /** Holes folded into the score so far — a tick means "just holed out". */
+  scoredHoles: number;
+  /** Strokes over/under par on the most recently scored hole (0 if none). */
+  lastHoleDelta: number;
 }
 
 // Result of committing a finished day into the economy/reputation model.
