@@ -1,0 +1,170 @@
+// Render performance smoke (ZKU-160).
+//
+// Boots the app headless (Chromium via Playwright), builds a hole, runs the
+// live day at 3x with a slow camera pan, then reads the renderer's perf
+// counters (window.__ccPerf, exposed when the perf HUD flag is on) and
+// asserts the p95 frame time stays under a generous budget. The goal is
+// catching order-of-magnitude regressions, not micro-drift — headless GL
+// varies, so the default budget is deliberately loose.
+//
+// What is asserted: the renderer's own per-tick JS work (workMs) — that is
+// stable across machines. Raw frame spacing is also reported, but headless
+// Chromium software-GL throttles rAF (~10fps regardless of our code), so
+// the frame-time budget is only enforced when PERF_ASSERT_FRAME=1 (use on
+// real hardware with a GPU).
+//
+// Usage: npm run test:perf   (requires playwright + a chromium; set
+//        CHROMIUM_PATH if the bundled browser isn't installed)
+// Env:   PERF_WORK_BUDGET_MS (default 8), PERF_BUDGET_MS (frame budget,
+//        default 33, enforced only with PERF_ASSERT_FRAME=1),
+//        PERF_MEASURE_S (default 20)
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+
+const WORK_BUDGET_MS = Number(process.env.PERF_WORK_BUDGET_MS || 8);
+const BUDGET_MS = Number(process.env.PERF_BUDGET_MS || 33);
+const ASSERT_FRAME = process.env.PERF_ASSERT_FRAME === "1";
+const MEASURE_S = Number(process.env.PERF_MEASURE_S || 20);
+const PORT = 5199;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function importPlaywright() {
+  try {
+    return await import("playwright");
+  } catch {
+    console.error("playwright is not installed — `npm i -D playwright` (or run from an env that has it)");
+    process.exit(2);
+  }
+}
+
+// Whole-course-fit camera math mirrored from the renderer (110x70 default).
+const W = 110, H = 70, TILE_W = 64, TILE_H = 32;
+function tileToScreen(box, tx, ty) {
+  const corners = [[0, 0], [W, 0], [W, H], [0, H]].map(([x, y]) => [((x - y) * TILE_W) / 2, ((x + y) * TILE_H) / 2]);
+  const xs = corners.map((c) => c[0]);
+  const ys = corners.map((c) => c[1]);
+  const zoom = Math.min((box.width * 0.95) / (Math.max(...xs) - Math.min(...xs)), (box.height * 0.95) / (Math.max(...ys) - Math.min(...ys)));
+  const pivot = [((W / 2 - H / 2) * TILE_W) / 2, ((W / 2 + H / 2) * TILE_H) / 2];
+  const iso = [((tx + 0.5 - ty - 0.5) * TILE_W) / 2, ((tx + 0.5 + ty + 0.5) * TILE_H) / 2];
+  return { x: box.x + box.width / 2 + (iso[0] - pivot[0]) * zoom, y: box.y + box.height / 2 + (iso[1] - pivot[1]) * zoom };
+}
+
+const { chromium } = await importPlaywright();
+
+console.log(`[perf-smoke] starting vite on :${PORT} …`);
+const vite = spawn("npx", ["vite", "--port", String(PORT), "--strictPort"], {
+  stdio: "ignore",
+  detached: false,
+});
+process.on("exit", () => vite.kill());
+let up = false;
+for (let i = 0; i < 60 && !up; i++) {
+  await sleep(1000);
+  try {
+    const res = await fetch(`http://localhost:${PORT}`);
+    up = res.ok;
+  } catch {
+    /* not yet */
+  }
+}
+if (!up) {
+  console.error("[perf-smoke] vite never came up");
+  process.exit(2);
+}
+
+const execCandidate = process.env.CHROMIUM_PATH || "/opt/pw-browsers/chromium";
+const browser = await chromium.launch(
+  existsSync(execCandidate) ? { executablePath: execCandidate } : {}
+);
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await page.addInitScript(() => {
+  localStorage.setItem("coursecraft_renderer", "pixi");
+  localStorage.setItem("coursecraft_perfhud", "on");
+  localStorage.setItem("coursecraft_ambience", "on");
+});
+await page.goto(`http://localhost:${PORT}`);
+
+// New game (through the setup wizard), enable animations, open hole wizard.
+await page.getByText("New Game", { exact: true }).click();
+await sleep(800);
+for (let i = 0; i < 6; i++) {
+  const start = page.getByText("Start building");
+  if (await start.isVisible().catch(() => false)) { await start.click(); break; }
+  const next = page.getByText("Next →");
+  if (await next.isVisible().catch(() => false)) { await next.click(); await sleep(350); }
+  else break;
+}
+await sleep(1200);
+await page.getByText("Animations", { exact: true }).click();
+await page.getByRole("button", { name: "Hole Wizard" }).click();
+await sleep(300);
+
+// Place one open hole (retry rows around water/steep terrain).
+const box = await page.locator("canvas").first().boundingBox();
+const holesOpen = async () => {
+  const t = await page.getByText("HOLES OPEN").locator("..").innerText();
+  return Number(t.replace(/[^0-9]/g, "").slice(0, -1)) || 0;
+};
+let placed = false;
+outer: for (const row of [35, 28, 42, 22, 48, 55, 60, 18]) {
+  for (const [x1, x2] of [[28, 48], [45, 68], [60, 82]]) {
+    await page.getByRole("button", { name: "Redo" }).click();
+    await sleep(200);
+    const tee = tileToScreen(box, x1, row);
+    const green = tileToScreen(box, x2, row);
+    await page.mouse.click(tee.x, tee.y);
+    await sleep(250);
+    await page.mouse.click(green.x, green.y);
+    await sleep(500);
+    // A confirm triggers the flyover — skip it so measurement is steady.
+    await page.keyboard.press("Escape");
+    if ((await holesOpen()) >= 1) { placed = true; break outer; }
+  }
+}
+if (!placed) {
+  console.error("[perf-smoke] could not place an open hole (unlucky terrain seed) — rerun");
+  await browser.close();
+  process.exit(2);
+}
+
+// Run the day at 3x with a slow keyboard pan; warm up, then measure.
+await page.getByRole("button", { name: "▶▶▶" }).click();
+await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); // focus + skip any flyover
+console.log("[perf-smoke] warmup 8s …");
+await sleep(8000);
+console.log(`[perf-smoke] measuring ${MEASURE_S}s with slow pan …`);
+const t0 = Date.now();
+let dir = "d";
+while (Date.now() - t0 < MEASURE_S * 1000) {
+  await page.keyboard.down(dir);
+  await sleep(900);
+  await page.keyboard.up(dir);
+  dir = dir === "d" ? "a" : "d";
+  await sleep(400);
+}
+const perf = await page.evaluate(() => window.__ccPerf ?? null);
+await browser.close();
+vite.kill();
+
+if (!perf) {
+  console.error("[perf-smoke] window.__ccPerf missing — is the perf HUD flag wired?");
+  process.exit(2);
+}
+console.log("[perf-smoke] result:", JSON.stringify(perf, null, 2));
+let failed = false;
+if (perf.workMs > WORK_BUDGET_MS) {
+  console.error(`[perf-smoke] FAIL: renderer tick work ${perf.workMs.toFixed(2)}ms > budget ${WORK_BUDGET_MS}ms`);
+  failed = true;
+}
+if (ASSERT_FRAME && perf.p95Ms > BUDGET_MS) {
+  console.error(`[perf-smoke] FAIL: p95 frame time ${perf.p95Ms.toFixed(2)}ms > budget ${BUDGET_MS}ms`);
+  failed = true;
+}
+if (failed) process.exit(1);
+console.log(
+  `[perf-smoke] PASS: tick work ${perf.workMs.toFixed(2)}ms ≤ ${WORK_BUDGET_MS}ms` +
+    (ASSERT_FRAME
+      ? `, p95 frame ${perf.p95Ms.toFixed(2)}ms ≤ ${BUDGET_MS}ms`
+      : ` (frame p95 ${perf.p95Ms.toFixed(2)}ms reported, not asserted headless)`)
+);

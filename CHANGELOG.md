@@ -7,6 +7,15 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Render performance budget (ZKU-160): a dev perf HUD in the Pixi renderer
+  (enable with `localStorage.coursecraft_perfhud = "on"`) showing fps,
+  mean/p95/max frame time, the renderer's own per-tick work split by
+  section, chunk-culling counts, and sprite-pool occupancy — mirrored to
+  `window.__ccPerf` for scripts. Golfers outside the viewport now skip all
+  animation and texture work (entity culling, matching the chunk culler),
+  and `npm run test:perf` runs a headless smoke that fails if the
+  renderer's tick work regresses past its budget. Documented in the README
+  dev section.
 - Cinematic hole flyover (ZKU-157): confirming a hole (or hitting Flyover in
   the HUD / hole inspector) glides the camera from wide behind the tee,
   along the shot corridor with a hold over the landing zone, settling in
