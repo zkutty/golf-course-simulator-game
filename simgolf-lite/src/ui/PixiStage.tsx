@@ -46,6 +46,20 @@ import {
   type GolferReaction,
 } from "../game/render/golferSprites";
 import { ballFlightPose, landingBehavior } from "../game/render/ballFlight";
+import {
+  EMOTE_STALL_MS,
+  createEmoteScheduler,
+  emotePresentation,
+  feeEmote,
+  hazardEmote,
+  holeOutEmote,
+  moodEmote,
+  pruneEmotes,
+  resolveOverlaps,
+  tryShowEmote,
+  type EmoteKind,
+} from "../game/render/emotes";
+import { forgetGolfer, recordEmote } from "../game/render/emoteFeed";
 import { buildingSpec } from "../game/models/buildings";
 import { getLandTheme } from "../game/models/themes";
 import type { AtlasFrame } from "../render/atlas";
@@ -160,6 +174,91 @@ function shade(color: number, factor: number): number {
 const CLIFF_SW = 0x6b4f33;
 const CLIFF_SE = 0x8a6844;
 
+/**
+ * Build a thought-bubble display object (ZKU-155): rounded white bubble +
+ * tail dots + a comic icon. Lives in the screen overlay at fixed screen
+ * size, so it reads at every zoom and rotation. Origin (0,0) is the anchor
+ * point just above the golfer's head; the bubble body floats above it.
+ */
+function buildEmoteBubble(kind: EmoteKind): PIXI.Container {
+  const c = new PIXI.Container();
+  const g = new PIXI.Graphics();
+  // Tail dots walking up toward the bubble body.
+  g.circle(-5, -2, 1.6);
+  g.fill({ color: 0xffffff, alpha: 0.95 });
+  g.stroke({ width: 1, color: 0x4a4a40, alpha: 0.9 });
+  g.circle(-8, -7, 2.4);
+  g.fill({ color: 0xffffff, alpha: 0.95 });
+  g.stroke({ width: 1, color: 0x4a4a40, alpha: 0.9 });
+  // Body.
+  g.roundRect(-16, -38, 32, 26, 9);
+  g.fill({ color: 0xffffff, alpha: 0.96 });
+  g.stroke({ width: 1.5, color: 0x4a4a40, alpha: 0.95 });
+  c.addChild(g);
+
+  const icon = new PIXI.Graphics();
+  const cy = -25; // icon center inside the body
+  switch (kind) {
+    case "star":
+      icon.star(0, cy, 5, 9, 4.2);
+      icon.fill(0xe8c15a);
+      icon.stroke({ width: 1, color: 0x8a6d2a });
+      break;
+    case "happy":
+    case "angry": {
+      const face = kind === "happy" ? 0xffd75e : 0xef8354;
+      icon.circle(0, cy, 8);
+      icon.fill(face);
+      icon.stroke({ width: 1, color: 0x8a6d2a });
+      icon.circle(-2.8, cy - 2, 1.2);
+      icon.circle(2.8, cy - 2, 1.2);
+      icon.fill(0x4a3b1e);
+      // moveTo first: arc() would otherwise connect from the last path
+      // point (the eye), drawing a stray line through the face.
+      if (kind === "happy") {
+        const a0 = Math.PI * 0.15;
+        icon.moveTo(4.2 * Math.cos(a0), cy + 0.5 + 4.2 * Math.sin(a0));
+        icon.arc(0, cy + 0.5, 4.2, a0, Math.PI * 0.85);
+      } else {
+        const a0 = Math.PI * 1.2;
+        icon.moveTo(4.2 * Math.cos(a0), cy + 6 + 4.2 * Math.sin(a0));
+        icon.arc(0, cy + 6, 4.2, a0, Math.PI * 1.8);
+      }
+      icon.stroke({ width: 1.4, color: 0x4a3b1e });
+      break;
+    }
+    case "storm":
+      icon.circle(-4, cy - 1, 4.4);
+      icon.circle(1.5, cy - 3, 5);
+      icon.circle(5.5, cy, 3.6);
+      icon.fill(0x6b7280);
+      icon.stroke({ width: 1, color: 0x3f4650 });
+      icon.poly([1.5, cy + 2, -1.5, cy + 7, 0.5, cy + 7, -1.5, cy + 12, 3.5, cy + 6, 1.5, cy + 6, 3.5, cy + 2]);
+      icon.fill(0xffd75e);
+      break;
+    default: {
+      // Text glyphs: Zz / $ / !
+      const style: Partial<PIXI.TextStyle> = {
+        fontFamily: "Arial, sans-serif",
+        fontWeight: "900",
+        fontSize: kind === "zzz" ? 13 : 16,
+        fill:
+          kind === "cashGood" ? 0x2f8a4a : kind === "cashBad" ? 0xc0392b : kind === "alert" ? 0xc0392b : 0x4a5568,
+      };
+      const text = new PIXI.Text({
+        text: kind === "zzz" ? "Zz" : kind === "alert" ? "!" : "$",
+        style: style as PIXI.TextStyle,
+      });
+      text.anchor.set(0.5);
+      text.position.set(0, cy);
+      c.addChild(text);
+      break;
+    }
+  }
+  c.addChild(icon);
+  return c;
+}
+
 export interface PixiStageProps {
   course: Course;
   holes: Hole[];
@@ -217,6 +316,14 @@ interface GolferEntry {
   prevBallIso: { x: number; y: number } | null;
   /** Touchdown FX already fired for the current flight. */
   ballLanded: boolean;
+  /** Edge-trigger state for emote bubbles (ZKU-155). */
+  emote: {
+    lastScored: number;
+    prevMood: number;
+    feeChecked: boolean;
+    lastPos: { x: number; y: number };
+    stillSinceMs: number;
+  };
   sprite: {
     shadow: PIXI.Graphics;
     ring: PIXI.Graphics;
@@ -323,6 +430,11 @@ export function PixiStage(props: PixiStageProps) {
   // Touchdown particle bursts (ZKU-154): sand puffs, grass flecks, green
   // check ticks. Tile coords + elevation so rotation re-projects them.
   const impactsRef = useRef<Array<{ kind: "sand" | "grass" | "check"; x: number; y: number; e: number; t0: number }>>([]);
+  // Emote bubbles (ZKU-155): scheduler decides what shows, the map holds
+  // the screen-overlay display objects per golfer.
+  const emoteSchedulerRef = useRef(createEmoteScheduler());
+  const emoteSpritesRef = useRef<Map<number, PIXI.Container>>(new Map());
+  const simMovingAtRef = useRef(0);
   const golferPoolRef = useRef<Map<number, GolferEntry>>(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
@@ -486,6 +598,8 @@ export function PixiStage(props: PixiStageProps) {
     let cancelled = false;
     const container = containerRef.current;
     if (!container) return;
+    // The emote-bubble map instance is stable for the app's lifetime.
+    const emoteSprites = emoteSpritesRef.current;
 
     const app = new PIXI.Application();
 
@@ -562,6 +676,8 @@ export function PixiStage(props: PixiStageProps) {
       rippleGraphicsRef.current = null;
       ripplesRef.current = [];
       impactsRef.current = [];
+      emoteSprites.clear();
+      emoteSchedulerRef.current = createEmoteScheduler();
       waterAnimRef.current = { last: 0, wasAnimating: false };
       diamondTextureRef.current = null;
       if (appRef.current) {
@@ -1545,6 +1661,7 @@ export function PixiStage(props: PixiStageProps) {
       const pool = golferPoolRef.current;
       const list = liveActive ? golfersRef?.current : null;
       const seen = new Set<number>();
+      const golferById = new Map<number, GolferRenderData>();
       if (list) {
         for (const golfer of list) {
           seen.add(golfer.id);
@@ -1571,6 +1688,13 @@ export function PixiStage(props: PixiStageProps) {
               lastBall: null,
               prevBallIso: null,
               ballLanded: false,
+              emote: {
+                lastScored: golfer.scoredHoles,
+                prevMood: golfer.mood,
+                feeChecked: false,
+                lastPos: { x: golfer.x, y: golfer.y },
+                stillSinceMs: nowMs,
+              },
               sprite: null,
               dot: null,
             };
@@ -1613,6 +1737,43 @@ export function PixiStage(props: PixiStageProps) {
               entry.dot = { body, lastColor: "", lastMoodBucket: -1 };
             }
             pool.set(golfer.id, entry);
+          }
+          golferById.set(golfer.id, golfer);
+
+          // --- Emote bubble triggers (ZKU-155): edges from observable
+          // render facts; the scheduler enforces cap + cooldowns.
+          const em = entry.emote;
+          const isSel = props.selectedGolferId === golfer.id;
+          const showEmote = (kind: EmoteKind | null) => {
+            if (kind && tryShowEmote(emoteSchedulerRef.current, golfer.id, kind, nowMs, isSel)) {
+              recordEmote(golfer.id, kind, nowMs);
+            }
+          };
+          if (Math.hypot(golfer.x - em.lastPos.x, golfer.y - em.lastPos.y) > 1e-4) {
+            em.lastPos = { x: golfer.x, y: golfer.y };
+            em.stillSinceMs = nowMs;
+            simMovingAtRef.current = nowMs;
+          }
+          if (golfer.scoredHoles > em.lastScored) {
+            em.lastScored = golfer.scoredHoles;
+            showEmote(holeOutEmote(golfer.lastHoleDelta));
+          }
+          showEmote(moodEmote(em.prevMood, golfer.mood));
+          em.prevMood = golfer.mood;
+          if (!em.feeChecked) {
+            em.feeChecked = true;
+            // Walk-in fee opinion — only for golfers actually starting out.
+            if (golfer.scoredHoles === 0) showEmote(feeEmote(course.baseGreenFee, golfer.id));
+          }
+          // Zzz: standing dead-still while the rest of the sim moves.
+          if (
+            golfer.segKind !== "flight" &&
+            !golfer.shot &&
+            nowMs - em.stillSinceMs > EMOTE_STALL_MS &&
+            nowMs - simMovingAtRef.current < 400
+          ) {
+            em.stillSinceMs = nowMs; // re-arm; the cooldown gates repeats
+            showEmote("zzz");
           }
 
           if (entry.sprite) {
@@ -1740,6 +1901,8 @@ export function PixiStage(props: PixiStageProps) {
                   const e = getElevation(course, restTx, restTy);
                   impactsRef.current.push({ kind: behavior.fx, x: gx, y: gy, e, t0: nowMs });
                 }
+                // Hazard drama bubble (ZKU-155).
+                showEmote(hazardEmote(behavior.fx));
               }
             }
             const be = getElevation(course, Math.floor(gx + 0.5), Math.floor(gy + 0.5));
@@ -1808,6 +1971,46 @@ export function PixiStage(props: PixiStageProps) {
           entry.ball.destroy();
           entry.ballShadow.destroy();
           pool.delete(id);
+          forgetGolfer(id);
+        }
+      }
+
+      // --- Emote bubble pass (ZKU-155): screen overlay, fixed screen size
+      // (clamped anchor height), fanned out horizontally on collisions.
+      const sched = emoteSchedulerRef.current;
+      pruneEmotes(sched, nowMs, seen);
+      const bubbles = emoteSpritesRef.current;
+      for (const [id, cont] of bubbles) {
+        if (!sched.active.some((e) => e.golferId === id)) {
+          layers.screenOverlay.removeChild(cont);
+          cont.destroy({ children: true });
+          bubbles.delete(id);
+        }
+      }
+      if (sched.active.length > 0) {
+        const zoomScale = layers.world.scale.x;
+        const headPx = Math.max(16, Math.min(64, 42 * zoomScale));
+        const anchors = sched.active.map((e) => {
+          const g = golferById.get(e.golferId);
+          if (!g) return { x: -9999, y: -9999 };
+          const ge2 = getElevation(course, Math.floor(g.x + 0.5), Math.floor(g.y + 0.5));
+          const p = worldPointToScreen(g.x + 0.5, g.y + 0.5, ge2);
+          return { x: p.x, y: p.y - headPx };
+        });
+        const offsets = resolveOverlaps(anchors);
+        for (let i = 0; i < sched.active.length; i++) {
+          const e = sched.active[i];
+          let cont = bubbles.get(e.golferId);
+          if (!cont) {
+            cont = buildEmoteBubble(e.kind);
+            layers.screenOverlay.addChild(cont);
+            bubbles.set(e.golferId, cont);
+          }
+          const pres = emotePresentation(nowMs - e.t0);
+          cont.position.set(anchors[i].x + offsets[i], anchors[i].y - pres.rise);
+          cont.scale.set(pres.scale);
+          cont.alpha = pres.alpha;
+          cont.visible = anchors[i].x > -9000;
         }
       }
     };

@@ -7,6 +7,16 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- SimGolf-style emote bubbles (ZKU-155): golfers announce how they feel with
+  comic thought bubbles above their heads — ★ for birdies, a smile for pars,
+  a frown for bogeys, a storm cloud for blow-up holes or gutter mood, "!"
+  when a ball finds sand or water, "$" opinions about the green fee on
+  walk-in, and Zzz when someone is stuck standing still. Bubbles pop in,
+  hold ~2.5s, and fade up and out at a fixed screen size (readable at any
+  zoom and rotation), capped at five at once with per-golfer cooldowns, and
+  near-coincident bubbles fan out sideways. The selected golfer's bubbles
+  take priority, and their recent thoughts mirror into the golfer
+  inspector as a feed.
 - Ball flight 2.0 (ZKU-154): shots now rise along a parabolic arc whose apex
   scales with distance, with a separate ground shadow that hugs the terrain
   (elevation-sampled) and telegraphs the landing spot; a subtle comet trail

@@ -1,6 +1,21 @@
 import type { SelectedGolferDetail } from "../hooks/useLiveSimulation";
 import { ARCHETYPES } from "../game/live/archetypes";
 import type { GolferArchetypeName } from "../game/live/types";
+import { recentEmotes } from "../game/render/emoteFeed";
+import type { EmoteKind } from "../game/render/emotes";
+
+// Compact glyphs for the recent-thoughts strip (mirrors the on-course
+// bubbles, ZKU-155).
+const EMOTE_GLYPH: Record<EmoteKind, { char: string; color: string }> = {
+  star: { char: "★", color: "#e8c15a" },
+  happy: { char: "☺", color: "#ffd75e" },
+  angry: { char: "☹", color: "#ef8354" },
+  storm: { char: "☁", color: "#9ca3af" },
+  zzz: { char: "Zz", color: "#94a3b8" },
+  cashGood: { char: "$", color: "#86efac" },
+  cashBad: { char: "$", color: "#fca5a5" },
+  alert: { char: "!", color: "#fca5a5" },
+};
 
 function toPar(n: number): string {
   if (n === 0) return "E";
@@ -113,6 +128,30 @@ export function GolferInspector(props: {
           />
         </div>
       </div>
+
+      {recentEmotes(selected.id).length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 4 }}>Recent thoughts</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+            {[...recentEmotes(selected.id)].reverse().map((e, i) => (
+              <div key={`${e.atMs}-${i}`} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12 }}>
+                <span
+                  style={{
+                    color: EMOTE_GLYPH[e.kind].color,
+                    fontWeight: 800,
+                    width: 16,
+                    textAlign: "center",
+                    flex: "0 0 auto",
+                  }}
+                >
+                  {EMOTE_GLYPH[e.kind].char}
+                </span>
+                <span style={{ opacity: 0.85 }}>{e.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {played > 0 && (
         <div style={{ marginTop: 12 }}>
