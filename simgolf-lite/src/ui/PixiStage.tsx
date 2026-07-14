@@ -45,6 +45,7 @@ import {
   reactionFor,
   type GolferReaction,
 } from "../game/render/golferSprites";
+import { ballFlightPose, landingBehavior } from "../game/render/ballFlight";
 import { buildingSpec } from "../game/models/buildings";
 import { getLandTheme } from "../game/models/themes";
 import type { AtlasFrame } from "../render/atlas";
@@ -209,7 +210,13 @@ interface Layers {
 interface GolferEntry {
   holder: PIXI.Container;
   ball: PIXI.Graphics;
+  /** Ground shadow that tracks the ball's ground path (ZKU-154). */
+  ballShadow: PIXI.Graphics;
   lastBall: { x: number; y: number } | null;
+  /** Previous airborne ball screen position, for the motion trail. */
+  prevBallIso: { x: number; y: number } | null;
+  /** Touchdown FX already fired for the current flight. */
+  ballLanded: boolean;
   sprite: {
     shadow: PIXI.Graphics;
     ring: PIXI.Graphics;
@@ -313,6 +320,9 @@ export function PixiStage(props: PixiStageProps) {
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const ripplesRef = useRef<Array<{ x: number; y: number; t0: number }>>([]);
   const rippleGraphicsRef = useRef<PIXI.Graphics | null>(null);
+  // Touchdown particle bursts (ZKU-154): sand puffs, grass flecks, green
+  // check ticks. Tile coords + elevation so rotation re-projects them.
+  const impactsRef = useRef<Array<{ kind: "sand" | "grass" | "check"; x: number; y: number; e: number; t0: number }>>([]);
   const golferPoolRef = useRef<Map<number, GolferEntry>>(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
@@ -551,6 +561,7 @@ export function PixiStage(props: PixiStageProps) {
       buildingSpritesRef.current = [];
       rippleGraphicsRef.current = null;
       ripplesRef.current = [];
+      impactsRef.current = [];
       waterAnimRef.current = { last: 0, wasAnimating: false };
       diamondTextureRef.current = null;
       if (appRef.current) {
@@ -1497,6 +1508,36 @@ export function PixiStage(props: PixiStageProps) {
         }
       }
 
+      // Touchdown particles (ZKU-154): short bursts keyed to the surface the
+      // ball hit. Deterministic per-particle offsets from the impact index.
+      if (impactsRef.current.length > 0) {
+        impactsRef.current = impactsRef.current.filter((p) => nowMs - p.t0 < 600);
+        for (const p of impactsRef.current) {
+          const pt = (nowMs - p.t0) / 600;
+          const c = tileCenterIso(p.x, p.y, p.e, rotation);
+          const fade = 1 - pt;
+          if (p.kind === "sand") {
+            for (let i = 0; i < 6; i++) {
+              const a = (i / 6) * Math.PI * 2 + 0.5;
+              const r = 2 + pt * 9;
+              rg.circle(c.x + Math.cos(a) * r, c.y - 2 - pt * 7 + Math.sin(a) * r * 0.4, 1.6 * fade + 0.4);
+              rg.fill({ color: 0xd7c48a, alpha: 0.85 * fade });
+            }
+          } else if (p.kind === "grass") {
+            for (let i = 0; i < 4; i++) {
+              const a = (i / 4) * Math.PI * 2 + 1.1;
+              const r = 1.5 + pt * 6;
+              rg.circle(c.x + Math.cos(a) * r, c.y - 1 - pt * 5 + Math.sin(a) * r * 0.4, 1.1 * fade + 0.3);
+              rg.fill({ color: 0x3e8a44, alpha: 0.8 * fade });
+            }
+          } else {
+            // Green check-up: a small white skid tick that fades quickly.
+            rg.ellipse(c.x, c.y - 1, 3.5 * fade + 1, 1.4 * fade + 0.4);
+            rg.stroke({ width: 1, color: 0xffffff, alpha: 0.8 * fade });
+          }
+        }
+      }
+
       // Live golfers/balls: pooled per-golfer objects in the depth-sorted
       // objects layer so props occlude them correctly (ZKU-140). Character
       // sprites (ZKU-153) when the golfers atlas is loaded; legacy dots
@@ -1515,8 +1556,24 @@ export function PixiStage(props: PixiStageProps) {
             ball.fill(0xffffff);
             ball.stroke({ width: 0.8, color: 0x555555 });
             ball.visible = false;
+            // Ball ground shadow (ZKU-154): in the decals layer so it hugs
+            // the terrain under every object.
+            const ballShadow = new PIXI.Graphics();
+            ballShadow.ellipse(0, 0, 3.2, 1.5);
+            ballShadow.fill({ color: 0x000000, alpha: 0.4 });
+            ballShadow.visible = false;
+            layers.terrainDecals.addChild(ballShadow);
             layers.objects.addChild(holder, ball);
-            entry = { holder, ball, lastBall: null, sprite: null, dot: null };
+            entry = {
+              holder,
+              ball,
+              ballShadow,
+              lastBall: null,
+              prevBallIso: null,
+              ballLanded: false,
+              sprite: null,
+              dot: null,
+            };
             if (golfersAtlasReady()) {
               // Drop shadow at the feet, then selection ring, then the two
               // sprite layers (base colors + tinted grayscale clothing).
@@ -1644,28 +1701,101 @@ export function PixiStage(props: PixiStageProps) {
           if (entry.holder.zIndex !== z) entry.holder.zIndex = z;
 
           if (golfer.ballX != null && golfer.ballY != null) {
-            const be = getElevation(course, Math.floor(golfer.ballX + 0.5), Math.floor(golfer.ballY + 0.5));
-            const b = tileCenterIso(golfer.ballX, golfer.ballY, be, rotation);
-            entry.ball.position.set(b.x, b.y);
-            const bz = Math.round(entityDepth(golfer.ballX, golfer.ballY, be, rotation) * 10) / 10;
+            // Ball flight 2.0 (ZKU-154): the render layer replaces the sim's
+            // straight ground track with an arc + shadow + bounce/roll
+            // profile, all driven by segment progress so game speed scales
+            // it and it converges on the sim's rest point exactly.
+            const from = { x: golfer.x, y: golfer.y };
+            const to =
+              golfer.ballToX != null && golfer.ballToY != null
+                ? { x: golfer.ballToX, y: golfer.ballToY }
+                : { x: golfer.ballX, y: golfer.ballY };
+            const distTiles = Math.hypot(to.x - from.x, to.y - from.y);
+            const restTx = Math.floor(to.x + 0.5);
+            const restTy = Math.floor(to.y + 0.5);
+            const restTerrain =
+              restTx >= 0 && restTy >= 0 && restTx < course.width && restTy < course.height
+                ? course.tiles[restTy * course.width + restTx]
+                : null;
+            const behavior = landingBehavior(restTerrain);
+            const shot = golfer.shot ?? "swing";
+            let gx = golfer.ballX;
+            let gy = golfer.ballY;
+            let heightPx = 0;
+            let shadowK = 1;
+            let hidden = false;
+            if (props.animationsEnabled && golfer.segKind === "flight") {
+              const pose = ballFlightPose(golfer.segT, distTiles, shot, behavior);
+              gx = from.x + (to.x - from.x) * pose.groundFrac;
+              gy = from.y + (to.y - from.y) * pose.groundFrac;
+              heightPx = pose.heightPx;
+              shadowK = pose.shadow;
+              hidden = pose.hidden;
+              // Touchdown FX, once per flight, on the surface actually hit.
+              if (pose.landed && !entry.ballLanded) {
+                entry.ballLanded = true;
+                if (behavior.fx === "splash") {
+                  ripplesRef.current.push({ x: to.x, y: to.y, t0: nowMs });
+                } else if (behavior.fx) {
+                  const e = getElevation(course, restTx, restTy);
+                  impactsRef.current.push({ kind: behavior.fx, x: gx, y: gy, e, t0: nowMs });
+                }
+              }
+            }
+            const be = getElevation(course, Math.floor(gx + 0.5), Math.floor(gy + 0.5));
+            const ground = tileCenterIso(gx, gy, be, rotation);
+            entry.ball.position.set(ground.x, ground.y - heightPx);
+            const bz = Math.round(entityDepth(gx, gy, be, rotation) * 10) / 10;
             if (entry.ball.zIndex !== bz) entry.ball.zIndex = bz;
-            entry.ball.visible = true;
+            entry.ball.visible = !hidden;
+            // Shadow hugs the terrain under the ball and fades as it climbs.
+            entry.ballShadow.position.set(ground.x, ground.y);
+            entry.ballShadow.scale.set(0.55 + 0.45 * shadowK);
+            entry.ballShadow.alpha = 0.45 + 0.55 * shadowK;
+            entry.ballShadow.visible = !hidden && heightPx >= 0 && shadowK > 0;
+            // Comet trail while airborne (drawn into the shared fx pass).
+            if (props.animationsEnabled && heightPx > 2 && entry.prevBallIso && rippleGraphicsRef.current) {
+              const rgTrail = rippleGraphicsRef.current;
+              rgTrail.moveTo(entry.prevBallIso.x, entry.prevBallIso.y);
+              rgTrail.lineTo(ground.x, ground.y - heightPx);
+              rgTrail.stroke({ width: 1.2, color: 0xffffff, alpha: 0.3 });
+            }
+            entry.prevBallIso = heightPx > 2 ? { x: ground.x, y: ground.y - heightPx } : null;
             entry.lastBall = { x: golfer.ballX, y: golfer.ballY };
           } else {
-            // Ball just came down (ZKU-150): splash ripple if it ended over
-            // water. This is the landing hook ZKU-154's full ball FX extends.
+            // Flight over. With animations on, touchdown FX already fired at
+            // the landing moment; the legacy end-of-flight water ripple
+            // (ZKU-150) still covers the animations-off path.
             if (entry.lastBall) {
-              const tx = Math.floor(entry.lastBall.x + 0.5);
-              const ty = Math.floor(entry.lastBall.y + 0.5);
-              if (
-                tx >= 0 && ty >= 0 && tx < course.width && ty < course.height &&
-                course.tiles[ty * course.width + tx] === "water"
-              ) {
-                ripplesRef.current.push({ x: entry.lastBall.x, y: entry.lastBall.y, t0: performance.now() });
+              if (!props.animationsEnabled) {
+                const tx = Math.floor(entry.lastBall.x + 0.5);
+                const ty = Math.floor(entry.lastBall.y + 0.5);
+                if (
+                  tx >= 0 && ty >= 0 && tx < course.width && ty < course.height &&
+                  course.tiles[ty * course.width + tx] === "water"
+                ) {
+                  ripplesRef.current.push({ x: entry.lastBall.x, y: entry.lastBall.y, t0: performance.now() });
+                }
               }
               entry.lastBall = null;
             }
+            entry.ballLanded = false;
+            entry.prevBallIso = null;
             entry.ball.visible = false;
+            entry.ballShadow.visible = false;
+          }
+          // Camera-follow (ZKU-154): track the selected golfer's ball in
+          // flight; the camera's own smoothing provides the lerp.
+          if (
+            props.selectedGolferId === golfer.id &&
+            golfer.segKind === "flight" &&
+            golfer.ballX != null &&
+            golfer.ballY != null
+          ) {
+            const cam = camRef.current;
+            const clamped = clampCenter(golfer.ballX, golfer.ballY);
+            cam.tcx = clamped.x;
+            cam.tcy = clamped.y;
           }
         }
       }
@@ -1673,8 +1803,10 @@ export function PixiStage(props: PixiStageProps) {
       for (const [id, entry] of pool) {
         if (!seen.has(id)) {
           layers.objects.removeChild(entry.holder, entry.ball);
+          layers.terrainDecals.removeChild(entry.ballShadow);
           entry.holder.destroy({ children: true });
           entry.ball.destroy();
+          entry.ballShadow.destroy();
           pool.delete(id);
         }
       }
@@ -1684,7 +1816,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.flagColor, props.selectedGolferId]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.flagColor, props.selectedGolferId, clampCenter]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform

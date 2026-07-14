@@ -219,6 +219,8 @@ export function liveRenderData(state: LiveState): GolferRenderData[] {
       y: g.pos.y,
       ballX: g.ball ? g.ball.x : null,
       ballY: g.ball ? g.ball.y : null,
+      ballToX: g.ball && seg?.kind === "flight" ? seg.to.x : null,
+      ballToY: g.ball && seg?.kind === "flight" ? seg.to.y : null,
       color: g.color,
       mood: g.mood,
       thought: g.thought,

@@ -101,6 +101,10 @@ export interface GolferRenderData {
   y: number;
   ballX: number | null;
   ballY: number | null;
+  /** Flight destination (rest point), non-null while a shot is in the air.
+   *  The render layer draws its own arc/bounce profile toward it (ZKU-154). */
+  ballToX: number | null;
+  ballToY: number | null;
   color: string;
   mood: number;
   thought: string | null;

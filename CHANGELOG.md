@@ -7,6 +7,15 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Ball flight 2.0 (ZKU-154): shots now rise along a parabolic arc whose apex
+  scales with distance, with a separate ground shadow that hugs the terrain
+  (elevation-sampled) and telegraphs the landing spot; a subtle comet trail
+  while airborne; and surface-specific landings — firm bounce and long roll
+  on fairway, check-up on green, dead plug with a sand puff in bunkers,
+  splash ripple on water, muffled drop in rough. Putts stay ground-level
+  with an eased roll. The whole profile is driven by shot progress so 2x/3x
+  speeds compress it cleanly, it converges exactly on the sim's rest point,
+  and the camera gently follows the selected golfer's ball in flight.
 - Golfer character sprites (ZKU-153): chibi golfers with 8-way directional
   walk cycles, idle, full-swing and putt animations, and hole-out reactions
   (cheer/frustration), replacing the colored dots in the isometric renderer.
