@@ -7,6 +7,13 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Cinematic hole flyover (ZKU-157): confirming a hole (or hitting Flyover in
+  the HUD / hole inspector) glides the camera from wide behind the tee,
+  along the shot corridor with a hold over the landing zone, settling in
+  tight behind the green — ~7s, with a hole title card (number, par,
+  yardage). Any click or Esc skips it and restores the exact prior camera;
+  editor input is suspended during the glide while the live course keeps
+  playing underneath.
 - Ambient world life (ZKU-156): soft cloud shadows drifting across the
   course on a constant daily wind, a small flock of birds crossing the sky
   every few in-game hours, an occasional light-band grass shimmer synced to
