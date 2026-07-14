@@ -46,6 +46,46 @@ versioning follows [SemVer](https://semver.org/).
   "Source: GitHub Actions") (ZKU-184).
 - App version injected from package.json and shown on the title screen
   (ZKU-184).
+- Objective engine: data-driven goals (cash, reputation, course rating,
+  holes built, weekly profit, profit streak, total rounds, condition) with
+  all/any composition and week deadlines, evaluated deterministically at sim
+  commit points; pinned HUD mini-tracker + objectives panel with progress
+  bars; victory celebration with "keep playing"; unified defeat screen
+  (bankruptcy or missed deadline) with retry-same-seed / load / new game.
+  Goal state persists in saves; free play shows a Free Play badge (ZKU-163).
+- New-game setup wizard: Mode (Challenge / Sandbox / Career-soon) → Land
+  (theme pick + four seeded land previews with reroll and a shareable,
+  re-enterable seed) → Difficulty → Details (course name with a fun name
+  generator, optional founder, sandbox starting-cash slider). Quick Start on
+  the title screen skips it with sensible defaults. One typed `GameSetup`
+  feeds a single `createNewGame` path used by the wizard, quick start,
+  defeat-retry, and save reset; the course name now shows in the HUD header
+  and browser tab (app retitled "CourseCraft") (ZKU-162).
+- Difficulty levels: Easy / Normal / Hard as a data-driven multiplier layer
+  (`getEffectiveBalance`) over balanceConfig — starting cash, terrain build
+  costs, weekly + live demand, golfer patience/spend, loan APR and bridge
+  cooldown, condition wear rate, and reputation gain/loss asymmetry. Normal
+  is bit-identical to the previous tuning (regression tested + verified via
+  the Monte Carlo tuner). Difficulty is fixed per run, shown as a HUD badge
+  and in save-slot metadata; the tuner now reports per-difficulty survival
+  curves (ZKU-165).
+- Land themes: parkland, links, and desert. Theme-driven wild-land
+  generation (terrain mix, coastal water edge on links, sand washes and
+  scarce water on desert, obstacle species mix, per-theme elevation
+  character), flat-color palette variants read by the renderer from theme
+  data, and data-driven gameplay flavor (desert water costs 1.5× to build,
+  links deep rough penalizes shots 1.15×). Parkland is the identity theme —
+  bit-identical to pre-theme generation per seed. Theme is recorded on the
+  course, shown in save-slot metadata, and survives save/load (ZKU-166).
+- Career mode: a six-scenario ladder (The Back Nine → Muni Rescue → Swamp
+  Deal → Links by the Sea → The Members Club → Championship Dream) with
+  sequential unlocks, medals, best-result tracking, and replayability.
+  Scenario definitions are pure data (seed/theme/difficulty/goals/
+  constraints); two prebuilt authored courses ship as deterministic
+  fixtures (a run-down muni, a manicured members club). Constraints are
+  enforced in the sim/UI: no-loans deals, committee-fixed green fees, and
+  heritage trees that can't be removed. Career progress lives in its own
+  localStorage store so restarting a scenario never wipes medals (ZKU-164).
 
 ### Fixed
 - All 24 standing ESLint errors: render purity in App/CanvasCourse,

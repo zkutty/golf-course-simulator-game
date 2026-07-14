@@ -1,4 +1,21 @@
-import type { Building, Course, WeekResult, World, Point, Obstacle } from "../game/models/types";
+import type {
+  Building,
+  Course,
+  Difficulty,
+  LandTheme,
+  PlayMode,
+  WeekResult,
+  World,
+  Point,
+  Obstacle,
+} from "../game/models/types";
+import type { ObjectiveState } from "../game/models/objectives";
+
+function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
+  return typeof value === "string" && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { withNormalizedElevations } from "../game/models/elevation";
@@ -132,6 +149,27 @@ function sanitizeBuildings(raw: unknown, width: number, height: number): Buildin
 }
 
 /**
+ * Objective state must be structurally sound or the goals panel / evaluator
+ * would crash on first render. Pre-M13 saves have no field at all → null
+ * (free play). Anything malformed also degrades to null rather than failing
+ * the whole load.
+ */
+function sanitizeObjectives(raw: unknown): ObjectiveState | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as ObjectiveState;
+  if (!Array.isArray(o.goals) || !Array.isArray(o.progress)) return null;
+  if (o.outcome !== "OPEN" && o.outcome !== "WON" && o.outcome !== "LOST") return null;
+  if (o.goals.some((g) => !g || typeof g.id !== "string" || !Array.isArray(g.conditions))) return null;
+  if (o.progress.some((p) => !p || typeof p.goalId !== "string" || !Array.isArray(p.conditions))) return null;
+  return {
+    ...o,
+    totalRounds: typeof o.totalRounds === "number" ? o.totalRounds : 0,
+    profitStreak: typeof o.profitStreak === "number" ? o.profitStreak : 0,
+    weekProfitAccum: typeof o.weekProfitAccum === "number" ? o.weekProfitAccum : 0,
+  };
+}
+
+/**
  * Validate + normalize a parsed save of any vintage into a playable
  * payload, or null if it's unusable. Shared by the legacy single-slot
  * loader and the slot store / file import (ZKU-174), so every load path
@@ -164,13 +202,33 @@ export function normalizeLoadedSave(input: unknown): SavePayload | null {
         rawCourse.height ?? DEFAULT_COURSE.height
       ),
       yardsPerTile: rawCourse.yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
+      theme: oneOf<LandTheme>(rawCourse.theme, ["parkland", "links", "desert"], "parkland"),
     };
 
     // Migrate if grid size differs, then guarantee a well-formed
     // elevations array (pre-elevation saves load flat — ZKU-143).
     const course = withNormalizedElevations(migrateCourseGrid(loadedCourse));
 
-    const world: World = { ...DEFAULT_WORLD, ...(parsed.world as World) };
+    const rawWorld = parsed.world as World;
+    const rawConstraints = rawWorld.constraints;
+    const world: World = {
+      ...DEFAULT_WORLD,
+      ...rawWorld,
+      objectives: sanitizeObjectives(rawWorld.objectives),
+      mode: oneOf<PlayMode>(rawWorld.mode, ["sandbox", "challenge", "career"], "sandbox"),
+      difficulty: oneOf<Difficulty>(rawWorld.difficulty, ["easy", "normal", "hard"], "normal"),
+      scenarioId: typeof rawWorld.scenarioId === "string" ? rawWorld.scenarioId : undefined,
+      constraints:
+        rawConstraints && typeof rawConstraints === "object" && !Array.isArray(rawConstraints)
+          ? {
+              noLoans: rawConstraints.noLoans === true,
+              ...(typeof rawConstraints.fixedGreenFee === "number"
+                ? { fixedGreenFee: rawConstraints.fixedGreenFee }
+                : {}),
+              protectedTrees: rawConstraints.protectedTrees === true,
+            }
+          : undefined,
+    };
     const history = parsed.history ?? undefined;
     return { course, world, history };
   } catch {

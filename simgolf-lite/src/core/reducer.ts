@@ -2,6 +2,8 @@ import type { GameState } from "../game/gameState";
 import type { Action } from "./actions";
 import { computeElevationChangeCost, computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { clampElevation } from "../game/models/elevation";
+import { hitsLiquidityTrap } from "../game/sim/runState";
+import { terrainCostMult } from "../game/balance/difficulty";
 
 /**
  * Apply an action to the game state. This is the ONLY function that should mutate
@@ -16,6 +18,9 @@ export function applyAction(state: GameState, action: Action): GameState {
   if (action.type === "SET_MODE" || action.type === "SET_ACTIVE_HOLE" || action.type === "SET_BRUSH") {
     return state; // UI-only actions don't mutate state
   }
+
+  // Difficulty-scaled build economics (ZKU-165).
+  const costMult = terrainCostMult(state.world.difficulty);
 
   // Clone state for mutation
   let newState: GameState = { ...state };
@@ -35,7 +40,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         if (idx >= 0 && idx < newTiles.length) {
           const prev = newTiles[idx];
           if (prev !== terrain) {
-            const cost = computeTerrainChangeCost(prev, terrain);
+            const cost = computeTerrainChangeCost(prev, terrain, costMult, state.course.theme);
             cashDelta += cost.net;
             newTiles[idx] = terrain;
           }
@@ -48,7 +53,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - cashDelta,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - cashDelta < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cashDelta),
         },
       };
       terrainVersion++;
@@ -71,7 +76,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         const next = clampElevation(prev + delta);
         const applied = next - prev;
         if (applied !== 0) {
-          cashDelta += computeElevationChangeCost(applied).net;
+          cashDelta += computeElevationChangeCost(applied, costMult).net;
           newElevations[idx] = next;
         }
       }
@@ -84,7 +89,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - cashDelta,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - cashDelta < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cashDelta),
         },
       };
       terrainVersion++;
@@ -100,7 +105,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       if (idx < 0 || idx >= state.course.tiles.length) break;
 
       const prevTerrain = state.course.tiles[idx];
-      const cost = computeTerrainChangeCost(prevTerrain, "tee");
+      const cost = computeTerrainChangeCost(prevTerrain, "tee", costMult, state.course.theme);
       
       const newTiles = state.course.tiles.slice();
       newTiles[idx] = "tee";
@@ -118,7 +123,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - cost.net,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - cost.net < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cost.net),
         },
       };
       terrainVersion++;
@@ -139,9 +144,9 @@ export function applyAction(state: GameState, action: Action): GameState {
       const newTerrain = state.course.tiles[newIdx];
       
       // Remove old marker (revert to rough)
-      const removeCost = computeTerrainChangeCost(oldTerrain, "rough");
+      const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult, state.course.theme);
       // Place new marker
-      const placeCost = computeTerrainChangeCost(newTerrain, "tee");
+      const placeCost = computeTerrainChangeCost(newTerrain, "tee", costMult, state.course.theme);
       const totalCost = removeCost.net + placeCost.net;
 
       const newTiles = state.course.tiles.slice();
@@ -161,7 +166,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - totalCost,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - totalCost < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - totalCost),
         },
       };
       terrainVersion++;
@@ -178,7 +183,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       if (idx < 0 || idx >= state.course.tiles.length) break;
 
       const prevTerrain = state.course.tiles[idx];
-      const cost = computeTerrainChangeCost(prevTerrain, "green");
+      const cost = computeTerrainChangeCost(prevTerrain, "green", costMult, state.course.theme);
       
       const newTiles = state.course.tiles.slice();
       newTiles[idx] = "green";
@@ -196,7 +201,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - cost.net,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - cost.net < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cost.net),
         },
       };
       terrainVersion++;
@@ -217,9 +222,9 @@ export function applyAction(state: GameState, action: Action): GameState {
       const newTerrain = state.course.tiles[newIdx];
       
       // Remove old marker (revert to rough)
-      const removeCost = computeTerrainChangeCost(oldTerrain, "rough");
+      const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult, state.course.theme);
       // Place new marker
-      const placeCost = computeTerrainChangeCost(newTerrain, "green");
+      const placeCost = computeTerrainChangeCost(newTerrain, "green", costMult, state.course.theme);
       const totalCost = removeCost.net + placeCost.net;
 
       const newTiles = state.course.tiles.slice();
@@ -239,7 +244,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         world: {
           ...state.world,
           cash: state.world.cash - totalCost,
-          isBankrupt: state.world.isBankrupt || (state.world.cash - totalCost < -10_000),
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - totalCost),
         },
       };
       terrainVersion++;
@@ -271,6 +276,11 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
 
     case "REMOVE_OBSTACLE": {
+      // Scenario constraint (ZKU-164): heritage trees can't be removed.
+      if (state.world.constraints?.protectedTrees) {
+        const target = state.course.obstacles.find((o) => o.x === action.x && o.y === action.y);
+        if (target?.type === "tree") break;
+      }
       const newObstacles = state.course.obstacles.filter(
         (o) => !(o.x === action.x && o.y === action.y)
       );

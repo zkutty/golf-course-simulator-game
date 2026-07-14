@@ -335,7 +335,21 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
   };
 }
 
+// Pure function of the (immutable) course object, and by far the hottest
+// path in the game — App, HUD, demand, rating, and the live sim all call it.
+// Memoized by course identity: every state change builds a NEW course object
+// (reducer/tickWeek/commitDay all spread), so identity is a correct key.
+const summaryCache = new WeakMap<Course, CourseHoleSummary>();
+
 export function scoreCourseHoles(course: Course): CourseHoleSummary {
+  const cached = summaryCache.get(course);
+  if (cached) return cached;
+  const result = scoreCourseHolesUncached(course);
+  summaryCache.set(course, result);
+  return result;
+}
+
+function scoreCourseHolesUncached(course: Course): CourseHoleSummary {
   const holes = course.holes.map((h, i) => scoreHole(course, h, i));
   const scored = holes.filter((h) => h.isComplete);
   const holeQualityAvg =

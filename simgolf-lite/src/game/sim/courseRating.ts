@@ -136,7 +136,19 @@ function computeExpectedScoreForHole(course: Course, holeIndex: number, profile:
   return expected;
 }
 
+// Memoized by course identity for the same reason as scoreCourseHoles: pure
+// function of an immutable course object, called from several UI/sim sites.
+const ratingCache = new WeakMap<Course, RatingSummary>();
+
 export function computeCourseRatingAndSlope(course: Course): RatingSummary {
+  const cached = ratingCache.get(course);
+  if (cached) return cached;
+  const result = computeRatingUncached(course);
+  ratingCache.set(course, result);
+  return result;
+}
+
+function computeRatingUncached(course: Course): RatingSummary {
   const holeSummary = scoreCourseHoles(course);
   const n = holeSummary.holes.length;
   const holesUsed = n >= 18 ? 18 : 9;

@@ -5,7 +5,9 @@ import { scoreCourseHoles } from "./holes";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { isCoursePlayable } from "./isCoursePlayable";
 import { stepLoanWeek, totalWeeklyPayments } from "./loans";
-import { BALANCE } from "../balance/balanceConfig";
+import { getEffectiveBalance } from "../balance/difficulty";
+import { distressExhausted, hitsLiquidityTrap } from "./runState";
+import { withEvaluatedObjectives } from "../objectives/evaluate";
 
 export function tickWeek(
   course: Course,
@@ -13,6 +15,8 @@ export function tickWeek(
   seed = 1234
 ): { world: World; course: Course; result: WeekResult } {
   const rng = mulberry32(seed + world.week);
+  // Difficulty-resolved balance (ZKU-165): identity for normal.
+  const BALANCE = getEffectiveBalance(world.difficulty);
 
   const playable = isCoursePlayable(course);
 
@@ -84,12 +88,12 @@ export function tickWeek(
 
   // Distress / bankruptcy rules
   const nextCashRaw = world.cash + profit;
-  const liquidityTrap = nextCashRaw < BALANCE.distress.liquidityTrapCash;
+  const liquidityTrap = hitsLiquidityTrap(nextCashRaw);
   const prevDistress = world.distressWeeks ?? 0;
   let nextDistress =
     nextCashRaw < 0 ? Math.min(BALANCE.distress.weeksToBankrupt, prevDistress + 1) : 0;
   if (missedLoanPayment) nextDistress = Math.min(BALANCE.distress.weeksToBankrupt, nextDistress + 1); // shorten distress timer
-  const bankrupt = liquidityTrap || nextDistress >= BALANCE.distress.weeksToBankrupt;
+  const bankrupt = liquidityTrap || distressExhausted(nextDistress);
 
   // Condition update: maintenance pushes up, wear pushes down
   const totalWeight = totalWeight0;
@@ -154,18 +158,29 @@ export function tickWeek(
   }
   const topIssues = buildTopIssues(holes);
 
+  const nextCourse = { ...course, condition: nextCondition };
+  const nextWorldBase: World = {
+    ...world,
+    week: world.week + 1,
+    cash: nextCashRaw,
+    reputation: nextRep,
+    distressWeeks: nextDistress,
+    isBankrupt: world.isBankrupt || bankrupt,
+    lastWeekProfit: profit,
+    loans,
+  };
+  // Objective evaluation happens at the sim commit point (ZKU-163); the
+  // week that just finished is the pre-increment week number.
+  const nextWorld = withEvaluatedObjectives(nextCourse, nextWorldBase, {
+    rounds: visitors,
+    profit,
+    weekCompleted: world.week,
+    holeSummary: holeSummary0,
+  });
+
   return {
-    course: { ...course, condition: nextCondition },
-    world: {
-      ...world,
-      week: world.week + 1,
-      cash: nextCashRaw,
-      reputation: nextRep,
-      distressWeeks: nextDistress,
-      isBankrupt: world.isBankrupt || bankrupt,
-      lastWeekProfit: profit,
-      loans,
-    },
+    course: nextCourse,
+    world: nextWorld,
     result: {
       visitors,
       capacity: playable ? capacity : undefined,

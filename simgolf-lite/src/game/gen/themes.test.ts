@@ -1,0 +1,142 @@
+import { describe, expect, it } from "vitest";
+import { generateWildLandWithObstacles } from "./generateWildLand";
+import { LAND_THEMES } from "../models/themes";
+import { computeTerrainChangeCost, themeBuildMult } from "../models/terrainEconomics";
+import { computeExpectedLandingPenalty } from "../sim/shots/landingPenalty";
+import { normalizeLoadedSave } from "../../utils/save";
+import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
+import type { LandTheme, Terrain } from "../models/types";
+
+const W = 110;
+const H = 70;
+const SEEDS = [7, 1234, 99001];
+
+function gen(seed: number, theme?: LandTheme) {
+  return generateWildLandWithObstacles(W, H, seed, [], theme);
+}
+
+function frac(tiles: Terrain[], t: Terrain): number {
+  return tiles.filter((x) => x === t).length / tiles.length;
+}
+
+describe("land themes (ZKU-166)", () => {
+  it("parkland is the identity theme — bit-identical to themeless generation", () => {
+    for (const seed of SEEDS) {
+      expect(gen(seed, "parkland")).toEqual(gen(seed));
+    }
+  });
+
+  it("generation is deterministic per seed + theme", () => {
+    for (const theme of ["parkland", "links", "desert"] as const) {
+      expect(gen(42, theme)).toEqual(gen(42, theme));
+    }
+    expect(gen(42, "links").tiles).not.toEqual(gen(43, "links").tiles);
+  });
+
+  it("themes produce statistically distinct tile mixes", () => {
+    for (const seed of SEEDS) {
+      const parkland = gen(seed, "parkland").tiles;
+      const links = gen(seed, "links").tiles;
+      const desert = gen(seed, "desert").tiles;
+
+      // Desert: sand-heavy, water-scarce.
+      expect(frac(desert, "sand")).toBeGreaterThan(frac(parkland, "sand") * 2);
+      expect(frac(desert, "water")).toBeLessThan(frac(parkland, "water"));
+      // Links: more deep rough and more (dune) sand than parkland.
+      expect(frac(links, "deep_rough")).toBeGreaterThan(frac(parkland, "deep_rough"));
+      expect(frac(links, "sand")).toBeGreaterThan(frac(parkland, "sand"));
+    }
+  });
+
+  it("links gets a coastal water edge; parkland borders stay dry", () => {
+    for (const seed of SEEDS) {
+      const isBorderWater = (tiles: Terrain[]) => {
+        let count = 0;
+        for (let x = 0; x < W; x++) {
+          if (tiles[x] === "water") count++;
+          if (tiles[(H - 1) * W + x] === "water") count++;
+        }
+        for (let y = 0; y < H; y++) {
+          if (tiles[y * W] === "water") count++;
+          if (tiles[y * W + W - 1] === "water") count++;
+        }
+        return count;
+      };
+      expect(isBorderWater(gen(seed, "links").tiles)).toBeGreaterThan(Math.min(W, H) / 2);
+      expect(isBorderWater(gen(seed, "parkland").tiles)).toBe(0);
+    }
+  });
+
+  it("obstacle species mix follows the theme", () => {
+    const share = (theme: LandTheme, type: "tree" | "bush" | "rock", seed: number) => {
+      const { obstacles } = gen(seed, theme);
+      if (obstacles.length === 0) return 0;
+      return obstacles.filter((o) => o.type === type).length / obstacles.length;
+    };
+    // Averages across seeds to keep the assertion robust.
+    const avg = (theme: LandTheme, type: "tree" | "bush" | "rock") =>
+      SEEDS.reduce((a, s) => a + share(theme, type, s), 0) / SEEDS.length;
+
+    expect(avg("links", "tree")).toBeLessThan(avg("parkland", "tree"));
+    expect(avg("desert", "tree")).toBeLessThan(avg("parkland", "tree"));
+    expect(avg("desert", "rock")).toBeGreaterThan(avg("parkland", "rock"));
+  });
+
+  it("elevation character follows the theme (links stays low)", () => {
+    for (const seed of SEEDS) {
+      const maxOf = (theme: LandTheme) => Math.max(...gen(seed, theme).elevations);
+      expect(maxOf("links")).toBeLessThanOrEqual(
+        LAND_THEMES.links.generation.elevation.maxStep
+      );
+    }
+  });
+
+  it("desert water costs more to build; other themes neutral", () => {
+    expect(themeBuildMult("desert", "water")).toBeGreaterThan(1);
+    expect(themeBuildMult("desert", "fairway")).toBe(1);
+    expect(themeBuildMult("links", "water")).toBe(1);
+    expect(themeBuildMult(undefined, "water")).toBe(1);
+
+    const parkland = computeTerrainChangeCost("rough", "water", 1, "parkland");
+    const desert = computeTerrainChangeCost("rough", "water", 1, "desert");
+    expect(desert.net).toBeCloseTo(parkland.net * 1.5, 5);
+    // Salvage scales symmetrically so refunds stay proportional.
+    const salvageDesert = computeTerrainChangeCost("water", "rough", 1, "desert");
+    const salvageParkland = computeTerrainChangeCost("water", "rough", 1, "parkland");
+    expect(salvageDesert.refunded).toBeCloseTo(salvageParkland.refunded * 1.5, 5);
+  });
+
+  it("links deep rough punishes shots slightly harder", () => {
+    const width = 20;
+    const height = 20;
+    const tiles: Terrain[] = Array.from({ length: width * height }, () => "deep_rough" as Terrain);
+    const course = (theme: LandTheme) => ({
+      ...DEFAULT_COURSE,
+      width,
+      height,
+      tiles,
+      elevations: new Array(width * height).fill(0),
+      theme,
+    });
+    const pen = (theme: LandTheme) =>
+      computeExpectedLandingPenalty({
+        course: course(theme),
+        target: { x: 10, y: 10 },
+        dispersionTiles: 2,
+      }).expectedPenalty;
+    expect(pen("links")).toBeCloseTo(pen("parkland") * 1.15, 5);
+    expect(pen("desert")).toBeCloseTo(pen("parkland"), 5);
+  });
+
+  it("theme survives save/load; bogus themes degrade to parkland", () => {
+    const save = (theme: unknown) => ({
+      schemaVersion: 1,
+      savedAt: 0,
+      course: { ...DEFAULT_COURSE, theme },
+      world: DEFAULT_WORLD,
+    });
+    expect(normalizeLoadedSave(save("links"))!.course.theme).toBe("links");
+    expect(normalizeLoadedSave(save("moonbase"))!.course.theme).toBe("parkland");
+    expect(normalizeLoadedSave(save(undefined))!.course.theme).toBe("parkland");
+  });
+});

@@ -9,6 +9,7 @@ import {
   stepLive,
 } from "../game/live/simulation";
 import { commitDay } from "../game/live/commitDay";
+import { hitsLiquidityTrap } from "../game/sim/runState";
 import type { DayResult, GolferRenderData, LiveState } from "../game/live/types";
 
 const DAYS_PER_WEEK = 7;
@@ -187,11 +188,12 @@ export function useLiveSimulation(args: {
   const finishDay = useCallback((live: LiveState) => {
     flushCash();
     const revenue = live.greenFeeCollected;
-    const { result } = commitDay({
+    const { result, world: committedWorld } = commitDay({
       course: courseRef.current,
       world: worldRef.current,
       revenue,
       reactions: roundReactions(live),
+      dayIndex: live.dayIndex,
     });
     result.dayIndex = live.dayIndex;
 
@@ -205,7 +207,10 @@ export function useLiveSimulation(args: {
         reputation: clamp(w.reputation + result.reputationDelta, 0, 100),
         lastWeekProfit: result.profit,
         week: rolloverWeek ? w.week + 1 : w.week,
-        isBankrupt: w.isBankrupt || nextCash < -10_000,
+        isBankrupt: w.isBankrupt || hitsLiquidityTrap(nextCash),
+        // Objective state was evaluated inside commitDay (the sim commit
+        // point); the hook only stores the result.
+        objectives: committedWorld.objectives,
       };
     });
     onDayRef.current?.(result);

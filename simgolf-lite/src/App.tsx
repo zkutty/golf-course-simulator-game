@@ -13,7 +13,6 @@ import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
-import { findClubhouseSpot } from "./game/models/buildings";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
 import { createSoundPlayer } from "./utils/sound";
@@ -21,7 +20,7 @@ import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
 import { createLoan } from "./game/sim/loans";
 import { isCoursePlayable } from "./game/sim/isCoursePlayable";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
-import { BALANCE } from "./game/balance/balanceConfig";
+import { getEffectiveBalance, terrainCostMult } from "./game/balance/difficulty";
 import { GameBackground } from "./ui/gameui";
 import { StartMenu } from "./ui/StartMenu";
 import { useAudio } from "./audio/audioContext";
@@ -30,14 +29,22 @@ import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
 import { HoleMinimap } from "./ui/HoleMinimap";
-import { generateWildLandWithObstacles } from "./game/gen/generateWildLand";
-import { COURSE_WIDTH, COURSE_HEIGHT } from "./game/models/constants";
+import { createNewGame } from "./game/gen/newGame";
+import type { GameSetup } from "./game/models/setup";
+import { createScenarioGame, getScenario } from "./game/scenarios/scenarios";
+import type { ScenarioDefinition } from "./game/scenarios/types";
+import { recordScenarioAttempt, recordScenarioCompleted } from "./utils/careerStore";
+import { NewGameWizard } from "./ui/NewGameWizard";
+import { generateCourseName } from "./utils/courseNames";
 import { applyAction } from "./core/reducer";
 import type { Action } from "./core/actions";
 import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
 import { LiveControls } from "./ui/LiveControls";
 import { GolferInspector } from "./ui/GolferInspector";
+import { DefeatModal } from "./ui/DefeatModal";
+import { VictoryModal } from "./ui/VictoryModal";
+import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -46,10 +53,13 @@ type ViewMode = "global" | "hole";
 const STRIKE_SFX = "/audio/ball-strike.mp3";
 
 export default function App() {
-  const [screen, setScreen] = useState<"menu" | "game">("menu");
+  const [screen, setScreen] = useState<"menu" | "setup" | "game">("menu");
   const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
   const { course, world } = gameState;
   const [selected, setSelected] = useState<Terrain>("fairway");
+  // Difficulty-resolved balance + terrain cost scaler (ZKU-165).
+  const BALANCE = getEffectiveBalance(world.difficulty);
+  const costMult = terrainCostMult(world.difficulty);
 
   // Dispatch function for actions
   const dispatch = useCallback((action: Action) => {
@@ -123,6 +133,9 @@ export default function App() {
   const [prevDistress, setPrevDistress] = useState(0);
   const [legacy, setLegacy] = useState(() => loadLegacy());
   const legacyAwardedRef = useRef(false);
+  const [prevOutcome, setPrevOutcome] = useState<RunOutcome>("OPEN");
+  const [showVictory, setShowVictory] = useState(false);
+  const scenarioRecordedRef = useRef(false);
 
   // Lazy singleton via useState initializer (render-pure, unlike a ref write).
   const [sound] = useState(() => createSoundPlayer());
@@ -218,12 +231,13 @@ export default function App() {
   }, [holeSummary]);
 
   const eligibleBridge = useMemo(() => {
+    if (world.constraints?.noLoans) return false;
     const repOk = world.reputation >= BALANCE.loans.bridge.repMin;
     const holesOk = isCoursePlayable(course) || validHolesCount >= BALANCE.loans.bridge.minValidHolesAlt;
     const cooldownOk = world.week - (world.lastBridgeLoanWeek ?? -999) >= BALANCE.loans.bridgeCooldownWeeks;
     const hasActiveBridge = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
     return repOk && holesOk && cooldownOk && !hasActiveBridge && !world.isBankrupt;
-  }, [world.reputation, world.week, world.lastBridgeLoanWeek, world.loans, world.isBankrupt, course, validHolesCount]);
+  }, [world.constraints, world.reputation, world.week, world.lastBridgeLoanWeek, world.loans, world.isBankrupt, course, validHolesCount, BALANCE]);
 
   // Hole edit mode functions
   function enterHoleEditMode(holeIndex: number) {
@@ -350,6 +364,33 @@ export default function App() {
   if (!world.isBankrupt && world.cash > peakCash) setPeakCash(world.cash);
   if (!world.isBankrupt && world.reputation > peakRep) setPeakRep(world.reputation);
 
+  // Victory celebration fires once on the OPEN → WON transition (render
+  // adjustment; restart/load reset prevOutcome so it can't re-fire).
+  const objectiveOutcome: RunOutcome = world.objectives?.outcome ?? "OPEN";
+  if (objectiveOutcome !== prevOutcome) {
+    setPrevOutcome(objectiveOutcome);
+    if (objectiveOutcome === "WON" && prevOutcome === "OPEN") setShowVictory(true);
+  }
+
+  // Career medal (ZKU-164): record the win once per run; replays keep the
+  // best (earliest) week via the store.
+  const objectivesOutcomeForRecord = world.objectives?.outcome;
+  useEffect(() => {
+    if (objectivesOutcomeForRecord !== "WON") return;
+    if (scenarioRecordedRef.current) return;
+    if (world.mode !== "career" || !world.scenarioId) return;
+    scenarioRecordedRef.current = true;
+    recordScenarioCompleted(world.scenarioId, {
+      week: world.objectives?.wonWeek ?? world.week,
+      cash: world.cash,
+    });
+  }, [objectivesOutcomeForRecord, world]);
+
+  // Course name propagates to the browser tab (ZKU-162).
+  useEffect(() => {
+    document.title = screen === "game" ? `${course.name} — CourseCraft` : "CourseCraft";
+  }, [screen, course.name]);
+
   // Handle audio based on screen and view mode
   useEffect(() => {
     if (!soundEnabled) {
@@ -372,47 +413,9 @@ export default function App() {
     }
   }, [screen, viewMode, soundEnabled, audio]);
 
-  function restartRun(args: { seed: number }) {
-    console.log('[Performance] Starting new game...');
-    const seed = args.seed | 0;
-
-    // Generate wild land terrain and obstacles using the seed
-    console.log('[Performance] Generating wild land...');
-    const start = performance.now();
-    const { tiles: generatedTiles, obstacles: generatedObstacles, elevations: generatedElevations } = generateWildLandWithObstacles(
-      COURSE_WIDTH,
-      COURSE_HEIGHT,
-      seed,
-      [] // No reserved zones for new games (no holes placed yet)
-    );
-    console.log('[Performance] Wild land generated in', performance.now() - start, 'ms');
-    
-    // Create new course with generated terrain and obstacles, no holes
-    const newCourse = {
-      ...DEFAULT_STATE.course,
-      tiles: generatedTiles,
-      elevations: generatedElevations,
-      holes: Array.from({ length: 9 }, () => ({
-        tee: null,
-        green: null,
-        parMode: "AUTO" as const,
-      })),
-      obstacles: generatedObstacles,
-    };
-    // Starter clubhouse (ZKU-152): anchor the course visually from day one.
-    const clubhouseSpot = findClubhouseSpot(newCourse);
-    newCourse.buildings = clubhouseSpot ? [{ type: "clubhouse" as const, ...clubhouseSpot }] : [];
-    
-    const newWorld = {
-      ...DEFAULT_STATE.world,
-      runSeed: seed,
-      distressWeeks: 0,
-      isBankrupt: false,
-      loans: [],
-      lastBridgeLoanWeek: -999,
-      lastWeekProfit: 0,
-    };
-    
+  // THE new-run path (ZKU-162): every fresh run goes through createNewGame
+  // (or createScenarioGame for career runs) and then this shared reset.
+  function startRun(newCourse: typeof course, newWorld: typeof world) {
     dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
     setHistory([]);
     setLast(undefined);
@@ -425,11 +428,54 @@ export default function App() {
     setPaintError(null);
     setObstacleType("tree");
     setFlyoverNonce(0);
-    setPeakCash(DEFAULT_STATE.world.cash);
-    setPeakRep(DEFAULT_STATE.world.reputation);
+    setPeakCash(newWorld.cash);
+    setPeakRep(newWorld.reputation);
     setShowBridgePrompt(false);
     setPrevDistress(0);
     legacyAwardedRef.current = false;
+    scenarioRecordedRef.current = false;
+    setPrevOutcome("OPEN");
+    setShowVictory(false);
+  }
+
+  // `goals` overrides the mode's default goal set (defeat-retry keeps a
+  // run's exact goals).
+  function restartRun(setup: GameSetup, goals?: GoalDefinition[] | null) {
+    console.log('[Performance] Starting new game...');
+    const start = performance.now();
+    const { course: newCourse, world: newWorld } = createNewGame(setup, goals);
+    console.log('[Performance] Wild land generated in', performance.now() - start, 'ms');
+    startRun(newCourse, newWorld);
+  }
+
+  // Career (ZKU-164): scenarios build their run from the authored definition.
+  function startScenario(scenario: ScenarioDefinition) {
+    recordScenarioAttempt(scenario.id);
+    const { course: newCourse, world: newWorld } = createScenarioGame(scenario);
+    startRun(newCourse, newWorld);
+    setScreen("game");
+  }
+
+  /** GameSetup matching the CURRENT run, for retry-same-seed / new-seed. */
+  function currentRunSetup(seed: number): GameSetup {
+    return {
+      mode: world.mode ?? "sandbox",
+      courseName: course.name,
+      founderName: world.founderName,
+      seed,
+      theme: course.theme ?? "parkland",
+      difficulty: world.difficulty ?? "normal",
+    };
+  }
+
+  function quickStartSetup(): GameSetup {
+    return {
+      mode: "sandbox",
+      courseName: generateCourseName(),
+      seed: (Date.now() % 1_000_000) | 0,
+      theme: "parkland",
+      difficulty: "normal",
+    };
   }
 
   const [canLoadFromMenu, setCanLoadFromMenu] = useState(false);
@@ -450,12 +496,22 @@ export default function App() {
     dispatch({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
     setHistory(loaded.history ?? []);
     setLast(loaded.history?.[loaded.history.length - 1]);
+    // Loading a finished run must not replay the celebration or re-record
+    // the medal (the store keeps best results anyway).
+    setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
+    setShowVictory(false);
+    scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
   }
 
   function newGameFromMenu() {
     void audio.unlock();
+    setScreen("setup");
+  }
+
+  function startNewGame(setup: GameSetup) {
+    void audio.unlock();
     void audio.playSfx(STRIKE_SFX);
-    restartRun({ seed: (Date.now() % 1_000_000) | 0 });
+    restartRun(setup);
     setScreen("game");
   }
 
@@ -486,6 +542,7 @@ export default function App() {
   }
 
   function takeExpansionLoan() {
+    if (world.constraints?.noLoans) return;
     const repOk = world.reputation >= BALANCE.loans.expansion.repMin;
     const holesOk = validHolesCount >= BALANCE.loans.expansion.minValidHoles;
     const cashflowOk = (world.lastWeekProfit ?? 0) > 0;
@@ -507,7 +564,7 @@ export default function App() {
   function applyTileChange(idx: number, next: Terrain, opts?: { silent?: boolean }): boolean {
     if (world.isBankrupt) return false;
     const prev = course.tiles[idx];
-    const { net, charged, refunded } = computeTerrainChangeCost(prev, next);
+    const { net, charged, refunded } = computeTerrainChangeCost(prev, next, costMult, course.theme);
     if (net > 0 && world.cash < net) {
       setPaintError(`Insufficient funds: need $${Math.ceil(net).toLocaleString()}`);
       return false;
@@ -597,7 +654,7 @@ export default function App() {
     // Calculate total cost
     let totalNet = 0;
     for (const tile of tilesToPaintData) {
-      const cost = computeTerrainChangeCost(tile.prev, "fairway");
+      const cost = computeTerrainChangeCost(tile.prev, "fairway", costMult, course.theme);
       totalNet += cost.net;
     }
 
@@ -695,9 +752,9 @@ export default function App() {
     const newTerrain = course.tiles[newIdx];
     
     // Cost to remove old marker (revert to rough, get salvage)
-    const removeCost = computeTerrainChangeCost(oldTerrain, "rough"); // Reverting to rough
+    const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult, course.theme); // Reverting to rough
     // Cost to place new marker
-    const placeCost = computeTerrainChangeCost(newTerrain, markerType);
+    const placeCost = computeTerrainChangeCost(newTerrain, markerType, costMult, course.theme);
     const totalNet = placeCost.net + removeCost.net; // removeCost.net is negative (refund), so this is correct
     
     if (totalNet > 0 && world.cash < totalNet) {
@@ -734,8 +791,8 @@ export default function App() {
     const greenIdx = green.y * course.width + green.x;
     const teePrev = course.tiles[teeIdx];
     const greenPrev = course.tiles[greenIdx];
-    const teeCost = computeTerrainChangeCost(teePrev, "tee");
-    const greenCost = computeTerrainChangeCost(greenPrev, "green");
+    const teeCost = computeTerrainChangeCost(teePrev, "tee", costMult, course.theme);
+    const greenCost = computeTerrainChangeCost(greenPrev, "green", costMult, course.theme);
     const totalNet = teeCost.net + greenCost.net;
     if (totalNet > 0 && world.cash < totalNet) {
       setPaintError(`Insufficient funds to confirm: need $${Math.ceil(totalNet).toLocaleString()}`);
@@ -800,7 +857,7 @@ export default function App() {
       if (x < 0 || y < 0 || x >= course.width || y >= course.height) return;
       const deltas = computeSculptDeltas(course, x, y, sculptBrush, sculptRadius);
       if (deltas.length === 0) return;
-      const cost = sculptSteps(deltas) * ELEVATION_COST_PER_STEP;
+      const cost = sculptSteps(deltas) * ELEVATION_COST_PER_STEP * costMult;
       if (cost > world.cash) {
         setPaintError(`Not enough cash for earthworks ($${cost.toLocaleString()} needed).`);
         return;
@@ -973,48 +1030,8 @@ export default function App() {
 
   function onResetSave() {
     resetSave();
-    // Generate new terrain and obstacles with a new seed
-    const newSeed = Date.now();
-    const { tiles: generatedTiles, obstacles: generatedObstacles, elevations: generatedElevations } = generateWildLandWithObstacles(
-      COURSE_WIDTH,
-      COURSE_HEIGHT,
-      newSeed,
-      [] // No reserved zones for reset (no holes placed yet)
-    );
-    
-    const newCourse = {
-      ...DEFAULT_STATE.course,
-      tiles: generatedTiles,
-      elevations: generatedElevations,
-      holes: Array.from({ length: 9 }, () => ({
-        tee: null,
-        green: null,
-        parMode: "AUTO" as const,
-      })),
-      obstacles: generatedObstacles,
-    };
-    // Starter clubhouse (ZKU-152): anchor the course visually from day one.
-    const clubhouseSpot = findClubhouseSpot(newCourse);
-    newCourse.buildings = clubhouseSpot ? [{ type: "clubhouse" as const, ...clubhouseSpot }] : [];
-    
-    const newWorld = {
-      ...DEFAULT_STATE.world,
-      runSeed: newSeed,
-    };
-    
-    dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
-    setHistory([]);
-    setLast(undefined);
-    setEditorMode("PAINT");
-    setActiveHoleIndex(0);
-    setWizardStep("TEE");
-    setDraftTee(null);
-    setDraftGreen(null);
-    setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
-    setPaintError(null);
-    setObstacleType("tree");
-    setPeakCash(DEFAULT_STATE.world.cash);
-    setPeakRep(DEFAULT_STATE.world.reputation);
+    // Fresh land, same run framing (mode/theme/difficulty), new seed.
+    restartRun(currentRunSetup((Date.now() % 1_000_000) | 0));
   }
 
   function simulate() {
@@ -1073,12 +1090,23 @@ export default function App() {
     />
   );
 
+  if (screen === "setup") {
+    return (
+      <NewGameWizard
+        onCancel={() => setScreen("menu")}
+        onStart={startNewGame}
+        onStartScenario={startScenario}
+      />
+    );
+  }
+
   if (screen === "menu") {
     return (
       <>
       <StartMenu
         canLoad={canLoadFromMenu}
         onNewGame={newGameFromMenu}
+        onQuickStart={() => startNewGame(quickStartSetup())}
         onLoadGame={loadFromMenu}
         audioVolumes={{
           music: audio.getVolumes().musicVolume,
@@ -1107,16 +1135,39 @@ export default function App() {
       <GameBackground />
       {saveLoadModal}
       <div className="cc-main">
-        {world.isBankrupt && (
-        <RunEndModal
+        {(world.isBankrupt || world.objectives?.outcome === "LOST") && (
+        <DefeatModal
+          reason={world.isBankrupt ? "BANKRUPT" : world.objectives?.lostReason ?? "DEADLINE"}
+          objectives={world.objectives}
           weeksSurvived={weeksSurvived}
           peakCash={peakCash}
           peakRep={peakRep}
           courseRating={rating.courseRating}
           slope={rating.slope}
           seed={world.runSeed}
-          onRestartNew={() => restartRun({ seed: (Date.now() % 1_000_000) | 0 })}
-          onRestartSeed={(seed) => restartRun({ seed })}
+          onRetrySeed={(seed) => {
+            const scenario = getScenario(world.scenarioId);
+            if (scenario) startScenario(scenario);
+            else restartRun(currentRunSetup(seed), world.objectives?.goals ?? null);
+          }}
+          onNewGame={() => setScreen("setup")}
+          onLoad={() => setSaveModalOpen({ canSave: false })}
+        />
+      )}
+        {showVictory && world.objectives && !world.isBankrupt && (
+        <VictoryModal
+          objectives={world.objectives}
+          courseName={course.name}
+          week={world.week}
+          cash={world.cash}
+          reputation={world.reputation}
+          courseRating={rating.courseRating}
+          careerNote={
+            world.mode === "career" && world.scenarioId
+              ? "Medal earned — the next scenario is unlocked."
+              : undefined
+          }
+          onContinue={() => setShowVictory(false)}
         />
       )}
         {showBridgePrompt && (
@@ -1329,7 +1380,11 @@ export default function App() {
         prev={history.length >= 2 ? history[history.length - 2] : undefined}
         selected={selected}
         setSelected={setSelected}
-        setGreenFee={(n) => setCourse((c) => ({ ...c, baseGreenFee: n }))}
+        setGreenFee={(n) => {
+          // Scenario constraint (ZKU-164): committee sets the fee, not you.
+          if (world.constraints?.fixedGreenFee != null) return;
+          setCourse((c) => ({ ...c, baseGreenFee: n }));
+        }}
         setMaintenance={(n) => setWorld((w) => ({ ...w, maintenanceBudget: n }))}
         editorMode={editorMode}
         setEditorMode={setEditorMode}
@@ -1403,108 +1458,6 @@ export default function App() {
         setShowShotPlan={setShowShotPlan}
       />
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RunEndModal(props: {
-  weeksSurvived: number;
-  peakCash: number;
-  peakRep: number;
-  courseRating: number;
-  slope: number;
-  seed: number;
-  onRestartNew: () => void;
-  onRestartSeed: (seed: number) => void;
-}) {
-  const [seed, setSeed] = useState(props.seed);
-  return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 99999,
-        padding: 16,
-      }}
-    >
-      <div style={{ width: "min(560px, 100%)", background: "#fff", borderRadius: 14, padding: 16 }}>
-        <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 6 }}>Run ended: Bankruptcy</div>
-        <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
-          You can restart and try a new plan. Same seed gives a comparable “challenge run”.
-        </div>
-
-        <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>Weeks survived</span>
-            <b>{props.weeksSurvived}</b>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>Peak reputation</span>
-            <b>{props.peakRep}</b>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>Peak cash</span>
-            <b>${Math.round(props.peakCash).toLocaleString()}</b>
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span>Course rating / slope</span>
-            <b>
-              {props.courseRating.toFixed(1)} / {Math.round(props.slope)}
-            </b>
-          </div>
-        </div>
-
-        <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
-          <button
-            onClick={props.onRestartNew}
-            style={{
-              width: "100%",
-              padding: 12,
-              borderRadius: 12,
-              border: "1px solid #000",
-              background: "#000",
-              color: "#fff",
-              fontWeight: 700,
-            }}
-          >
-            Restart (new run)
-          </button>
-
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <label style={{ flex: 1, fontSize: 12, color: "#374151" }}>
-              Seed
-              <input
-                type="number"
-                value={seed}
-                onChange={(e) => setSeed(Number(e.target.value))}
-                style={{
-                  width: "100%",
-                  marginTop: 4,
-                  padding: "8px 10px",
-                  borderRadius: 10,
-                  border: "1px solid #ddd",
-                }}
-              />
-            </label>
-            <button
-              onClick={() => props.onRestartSeed(seed | 0)}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid #ddd",
-                background: "#fff",
-                fontWeight: 700,
-              }}
-            >
-              Restart (seeded)
-            </button>
-          </div>
         </div>
       </div>
     </div>

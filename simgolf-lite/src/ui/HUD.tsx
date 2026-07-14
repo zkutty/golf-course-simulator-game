@@ -10,10 +10,11 @@ import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
 import { computeCourseRatingAndSlope } from "../game/sim/courseRating";
 import { isCoursePlayable } from "../game/sim/isCoursePlayable";
 import type { LegacyState } from "../utils/legacy";
-import { BALANCE } from "../game/balance/balanceConfig";
+import { getEffectiveBalance, getDifficultyProfile } from "../game/balance/difficulty";
 import paperTex from "../assets/textures/paper.svg";
 import { IconBush, IconCash, IconCondition, IconHoles, IconReputation, IconRock, IconTree, LogoCourseCraft } from "@/assets/icons";
 import { GameButton } from "@/ui/gameui";
+import { ObjectiveMiniTracker, ObjectivesPanel } from "./ObjectivesPanel";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -146,6 +147,9 @@ export function HUD(props: {
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
+  const [objectivesOpen, setObjectivesOpen] = useState(false);
+  // Difficulty-resolved balance for loan terms/eligibility (ZKU-165).
+  const BALANCE = getEffectiveBalance(world.difficulty);
   const audio = useAudio();
 
   const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
@@ -220,13 +224,16 @@ export function HUD(props: {
     return (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "EXPANSION");
   }, [world.loans]);
 
+  const loansBarred = world.constraints?.noLoans === true;
   const bridgeEligible =
+    !loansBarred &&
     world.reputation >= BALANCE.loans.bridge.repMin &&
     (playable || validHoles >= 6) &&
     !hasActiveBridge &&
     world.week - (world.lastBridgeLoanWeek ?? -999) >= BALANCE.loans.bridgeCooldownWeeks;
 
   const expansionEligible =
+    !loansBarred &&
     world.reputation >= BALANCE.loans.expansion.repMin &&
     validHoles >= BALANCE.loans.expansion.minValidHoles &&
     (world.lastWeekProfit ?? 0) > 0 &&
@@ -255,13 +262,49 @@ export function HUD(props: {
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <LogoCourseCraft height={44} />
             <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
-              <div style={{ fontSize: 12, letterSpacing: "0.08em", color: "var(--cc-muted)" }}>
-                Design &amp; run your course
+              <div
+                style={{
+                  fontFamily: "var(--font-heading)",
+                  fontSize: 15,
+                  fontWeight: 800,
+                  color: "#3d4a3e",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+                title={course.name}
+              >
+                {course.name}
               </div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <span
+              title={`Difficulty: ${getDifficultyProfile(world.difficulty).label} (fixed for this run)`}
+              style={{
+                fontSize: 10,
+                fontWeight: 800,
+                letterSpacing: "0.06em",
+                padding: "3px 8px",
+                borderRadius: 999,
+                border: "1px solid rgba(0,0,0,0.12)",
+                background:
+                  world.difficulty === "hard"
+                    ? "#fde8e8"
+                    : world.difficulty === "easy"
+                      ? "#e8f5e0"
+                      : "rgba(255,255,255,0.7)",
+                color:
+                  world.difficulty === "hard"
+                    ? "#b91c1c"
+                    : world.difficulty === "easy"
+                      ? "#2f6b33"
+                      : "#6b7280",
+              }}
+            >
+              {getDifficultyProfile(world.difficulty).label.toUpperCase()}
+            </span>
             {(["COZY", "ARCHITECT"] as const).map((m) => (
               <button
                 key={m}
@@ -294,6 +337,16 @@ export function HUD(props: {
             <b>Bankrupt.</b> This run has ended — restart to continue.
           </div>
         )}
+        {/* Pinned objective mini-tracker (ZKU-163); click for the full panel */}
+        <div style={{ marginTop: 10 }}>
+          <ObjectiveMiniTracker objectives={world.objectives} onOpen={() => setObjectivesOpen(true)} />
+        </div>
+        <ObjectivesPanel
+          open={objectivesOpen}
+          onClose={() => setObjectivesOpen(false)}
+          objectives={world.objectives}
+          week={world.week}
+        />
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
           {viewMode === "COZY" ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -1272,11 +1325,17 @@ export function HUD(props: {
             <Section title="Business">
               <label style={{ display: "block", marginBottom: 12 }}>
                 Green fee (${course.baseGreenFee})
+                {world.constraints?.fixedGreenFee != null && (
+                  <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "#8a6d1a" }}>
+                    🔒 set by the scenario
+                  </span>
+                )}
                 <input
                   type="range"
                   min={20}
                   max={150}
                   value={course.baseGreenFee}
+                  disabled={world.constraints?.fixedGreenFee != null}
                   onChange={(e) => setGreenFee(Number(e.target.value))}
                   style={{ width: "100%" }}
                 />
@@ -1298,7 +1357,9 @@ export function HUD(props: {
 
             <Section title="Financing">
               <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
-                Loans can keep you afloat — but weekly payments are a fixed cost. Missed payments hurt reputation and worsen APR.
+                {loansBarred
+                  ? "No bank will touch this deal — the scenario forbids loans."
+                  : "Loans can keep you afloat — but weekly payments are a fixed cost. Missed payments hurt reputation and worsen APR."}
               </div>
 
               <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>

@@ -1,4 +1,4 @@
-import type { Course, Terrain, World } from "../models/types";
+import type { Course, Difficulty, Terrain, World } from "../models/types";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import { computeTerrainChangeCost } from "../models/terrainEconomics";
 import { scoreCourseHoles } from "../sim/holes";
@@ -6,6 +6,7 @@ import { isCoursePlayable } from "../sim/isCoursePlayable";
 import { createLoan } from "../sim/loans";
 import { tickWeek } from "../sim/tickWeek";
 import { mulberry32, randInt } from "../../utils/rng";
+import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty";
 
 export type Archetype = "Builder" | "Optimizer" | "Chaotic";
 
@@ -54,7 +55,7 @@ function paintBrush(course: Course, world: World, x: number, y: number, t: Terra
   const idx = y * course.width + x;
   const prev = course.tiles[idx];
   if (prev === t) return { course, world };
-  const { net } = computeTerrainChangeCost(prev, t);
+  const { net } = computeTerrainChangeCost(prev, t, getDifficultyProfile(world.difficulty).terrainCostMult, course.theme);
   if (net > 0 && world.cash < net) return { course, world };
   const tiles = course.tiles.slice();
   tiles[idx] = t;
@@ -99,10 +100,19 @@ function maybeTakeBridgeLoan(course: Course, world: World) {
   const holes = scoreCourseHoles(course).holes.filter((h) => h.isComplete && h.isValid).length;
   const repOk = world.reputation >= 15;
   const holesOk = isCoursePlayable(course) || holes >= 6;
-  const cooldownOk = world.week - (world.lastBridgeLoanWeek ?? -999) >= 8;
+  const cooldownOk =
+    world.week - (world.lastBridgeLoanWeek ?? -999) >=
+    getEffectiveBalance(world.difficulty).loans.bridgeCooldownWeeks;
   const hasActiveBridge = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
   if (!repOk || !holesOk || !cooldownOk || hasActiveBridge) return world;
-  const loan = createLoan({ kind: "BRIDGE", principal: 25_000, apr: 0.18, termWeeks: 26, idSeed: world.week });
+  const B = getEffectiveBalance(world.difficulty);
+  const loan = createLoan({
+    kind: "BRIDGE",
+    principal: B.loans.bridge.maxPrincipal,
+    apr: B.loans.bridge.apr,
+    termWeeks: B.loans.bridge.termWeeks,
+    idSeed: world.week,
+  });
   return {
     ...world,
     cash: world.cash + loan.principal,
@@ -118,7 +128,14 @@ function maybeTakeExpansionLoan(course: Course, world: World) {
   const cashflowOk = (world.lastWeekProfit ?? 0) > 0;
   const hasActiveExpansion = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "EXPANSION");
   if (!repOk || !holesOk || !cashflowOk || hasActiveExpansion) return world;
-  const loan = createLoan({ kind: "EXPANSION", principal: 150_000, apr: 0.12, termWeeks: 104, idSeed: world.week });
+  const B = getEffectiveBalance(world.difficulty);
+  const loan = createLoan({
+    kind: "EXPANSION",
+    principal: B.loans.expansion.maxPrincipal,
+    apr: B.loans.expansion.apr,
+    termWeeks: B.loans.expansion.termWeeks,
+    idSeed: world.week,
+  });
   return { ...world, cash: world.cash + loan.principal, loans: [...(world.loans ?? []), loan] };
 }
 
@@ -191,10 +208,17 @@ function stepBot(archetype: Archetype, course: Course, world: World, rng: () => 
   return { course, world };
 }
 
-export function simulateRun(archetype: Archetype, seed: number, maxWeeks = 260): TuneRunResult {
+export function simulateRun(
+  archetype: Archetype,
+  seed: number,
+  maxWeeks = 260,
+  difficulty: Difficulty = "normal"
+): TuneRunResult {
   let course: Course = { ...DEFAULT_COURSE, tiles: DEFAULT_COURSE.tiles.slice() };
   let world: World = {
     ...DEFAULT_WORLD,
+    difficulty,
+    cash: Math.round(DEFAULT_WORLD.cash * getDifficultyProfile(difficulty).startingCashMult),
     runSeed: seed,
     isBankrupt: false,
     distressWeeks: 0,
@@ -229,12 +253,16 @@ export function simulateRun(archetype: Archetype, seed: number, maxWeeks = 260):
   };
 }
 
-export function runMonteCarlo(args: { nPerArchetype: number; seed0: number }) {
+export function runMonteCarlo(args: {
+  nPerArchetype: number;
+  seed0: number;
+  difficulty?: Difficulty;
+}) {
   const archetypes: Archetype[] = ["Optimizer", "Builder", "Chaotic"];
   const results: TuneRunResult[] = [];
   for (const a of archetypes) {
     for (let i = 0; i < args.nPerArchetype; i++) {
-      results.push(simulateRun(a, args.seed0 + i * 101 + a.length * 1000));
+      results.push(simulateRun(a, args.seed0 + i * 101 + a.length * 1000, 260, args.difficulty ?? "normal"));
     }
   }
 
