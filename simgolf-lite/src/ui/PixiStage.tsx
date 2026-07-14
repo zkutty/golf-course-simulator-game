@@ -60,6 +60,14 @@ import {
   type EmoteKind,
 } from "../game/render/emotes";
 import { forgetGolfer, recordEmote } from "../game/render/emoteFeed";
+import {
+  CLOUD_COUNT,
+  HERON_STARTLE_TILES,
+  birdCrossing,
+  cloudPos,
+  heronSpot,
+  timeOfDayTint,
+} from "../game/render/ambient";
 import { buildingSpec } from "../game/models/buildings";
 import { getLandTheme } from "../game/models/themes";
 import type { AtlasFrame } from "../render/atlas";
@@ -173,6 +181,43 @@ function shade(color: number, factor: number): number {
 // (screen lower-left) face sits in shadow, the SE-facing face catches more.
 const CLIFF_SW = 0x6b4f33;
 const CLIFF_SE = 0x8a6844;
+
+/** Draw the heron (ZKU-156): a stilt-legged shoreline bird, ~24px tall. */
+function drawHeron(g: PIXI.Graphics, flying: boolean): void {
+  g.clear();
+  const body = 0x8a99a8;
+  const dark = 0x5a6672;
+  if (!flying) {
+    // Legs
+    g.moveTo(-1.5, 0);
+    g.lineTo(-1.5, -7);
+    g.moveTo(1.5, 0);
+    g.lineTo(1.8, -7);
+    g.stroke({ width: 1, color: dark });
+  }
+  // Body
+  g.ellipse(0, -10, 4.4, 2.8);
+  g.fill(body);
+  g.stroke({ width: 1, color: dark });
+  if (flying) {
+    // Spread wings
+    g.moveTo(-2, -11);
+    g.quadraticCurveTo(-9, -16, -12, -13);
+    g.moveTo(2, -11);
+    g.quadraticCurveTo(9, -17, 12, -14);
+    g.stroke({ width: 1.6, color: dark });
+  }
+  // Neck + head + beak
+  g.moveTo(2.5, -11.5);
+  g.quadraticCurveTo(4.5, -14, 4, -17);
+  g.stroke({ width: 1.4, color: body });
+  g.circle(4, -17.5, 1.7);
+  g.fill(body);
+  g.stroke({ width: 0.8, color: dark });
+  g.moveTo(5.5, -17.5);
+  g.lineTo(8.5, -16.8);
+  g.stroke({ width: 1, color: 0xe8c15a });
+}
 
 /**
  * Build a thought-bubble display object (ZKU-155): rounded white bubble +
@@ -289,6 +334,8 @@ export interface PixiStageProps {
   liveActive?: boolean;
   onPickGolfer?: (id: number | null) => void;
   selectedGolferId?: number | null;
+  /** Live game-clock minute (0..840) driving ambient time-of-day effects. */
+  dayMinute?: number;
 }
 
 interface Layers {
@@ -435,6 +482,43 @@ export function PixiStage(props: PixiStageProps) {
   const emoteSchedulerRef = useRef(createEmoteScheduler());
   const emoteSpritesRef = useRef<Map<number, PIXI.Container>>(new Map());
   const simMovingAtRef = useRef(0);
+  // Ambient world life (ZKU-156): clouds/shimmer in the world fx layer, a
+  // multiply tint quad + bird layer between world and UI overlay. The
+  // "coursecraft_ambience" localStorage flag is polled ~1/s.
+  const ambientRef = useRef<{
+    clouds: PIXI.Sprite[];
+    tintQuad: PIXI.Sprite | null;
+    birdG: PIXI.Graphics | null;
+    shimmer: PIXI.Sprite | null;
+    heron: {
+      g: PIXI.Graphics | null;
+      spot: Point | null;
+      forCourse: Course | null;
+      state: "standing" | "flying" | "gone";
+      flyT0: number;
+      respawnAt: number;
+    };
+    tintCur: { r: number; g: number; b: number };
+    clockMin: number;
+    prevDayMinute: number | null;
+    enabled: boolean;
+    lastPollMs: number;
+  }>({
+    clouds: [],
+    tintQuad: null,
+    birdG: null,
+    shimmer: null,
+    heron: { g: null, spot: null, forCourse: null, state: "standing", flyT0: 0, respawnAt: 0 },
+    tintCur: { r: 255, g: 255, b: 255 },
+    clockMin: 0,
+    prevDayMinute: null,
+    enabled: true,
+    lastPollMs: 0,
+  });
+  const dayMinuteRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    dayMinuteRef.current = props.dayMinute;
+  });
   const golferPoolRef = useRef<Map<number, GolferEntry>>(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
@@ -598,8 +682,9 @@ export function PixiStage(props: PixiStageProps) {
     let cancelled = false;
     const container = containerRef.current;
     if (!container) return;
-    // The emote-bubble map instance is stable for the app's lifetime.
+    // These ref objects are stable for the app's lifetime.
     const emoteSprites = emoteSpritesRef.current;
+    const ambient = ambientRef.current;
 
     const app = new PIXI.Application();
 
@@ -647,7 +732,56 @@ export function PixiStage(props: PixiStageProps) {
       const screenOverlay = new PIXI.Container();
 
       world.addChild(terrain, terrainDecals, objects, fx);
-      app.stage.addChild(world, screenOverlay);
+
+      // Ambient stack (ZKU-156): a full-screen multiply quad for the
+      // time-of-day grade and a screen-space bird layer, both between the
+      // world and the UI overlay.
+      const tintQuad = new PIXI.Sprite(PIXI.Texture.WHITE);
+      tintQuad.blendMode = "multiply";
+      tintQuad.visible = false;
+      const birdG = new PIXI.Graphics();
+      app.stage.addChild(world, tintQuad, birdG, screenOverlay);
+      ambientRef.current.tintQuad = tintQuad;
+      ambientRef.current.birdG = birdG;
+
+      // Soft radial blob texture for cloud shadows / the shimmer band.
+      const cvs = document.createElement("canvas");
+      cvs.width = 256;
+      cvs.height = 256;
+      const ctx = cvs.getContext("2d");
+      if (ctx) {
+        const grad = ctx.createRadialGradient(128, 128, 20, 128, 128, 126);
+        grad.addColorStop(0, "rgba(255,255,255,1)");
+        grad.addColorStop(0.65, "rgba(255,255,255,0.55)");
+        grad.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, 256, 256);
+        const blobTex = PIXI.Texture.from(cvs);
+        for (let i = 0; i < CLOUD_COUNT; i++) {
+          const cloud = new PIXI.Sprite(blobTex);
+          cloud.anchor.set(0.5);
+          cloud.tint = 0x0a1408; // near-black, green-leaning shade
+          cloud.alpha = 0.07;
+          cloud.scale.set(3.6 + i * 0.9, 1.9 + i * 0.5); // squashed for iso
+          cloud.visible = false;
+          fx.addChild(cloud);
+          ambientRef.current.clouds.push(cloud);
+        }
+        const shimmer = new PIXI.Sprite(blobTex);
+        shimmer.anchor.set(0.5);
+        shimmer.blendMode = "add";
+        shimmer.tint = 0xfffbe8;
+        shimmer.alpha = 0.05;
+        shimmer.scale.set(7, 2.2);
+        shimmer.visible = false;
+        fx.addChild(shimmer);
+        ambientRef.current.shimmer = shimmer;
+      }
+      // Heron perch graphic lives with depth-sorted objects.
+      const heronG = new PIXI.Graphics();
+      heronG.visible = false;
+      objects.addChild(heronG);
+      ambientRef.current.heron.g = heronG;
 
       app.stage.eventMode = "static";
       app.stage.hitArea = app.screen;
@@ -678,6 +812,11 @@ export function PixiStage(props: PixiStageProps) {
       impactsRef.current = [];
       emoteSprites.clear();
       emoteSchedulerRef.current = createEmoteScheduler();
+      ambient.clouds = [];
+      ambient.tintQuad = null;
+      ambient.birdG = null;
+      ambient.shimmer = null;
+      ambient.heron = { g: null, spot: null, forCourse: null, state: "standing", flyT0: 0, respawnAt: 0 };
       waterAnimRef.current = { last: 0, wasAnimating: false };
       diamondTextureRef.current = null;
       if (appRef.current) {
@@ -1451,7 +1590,8 @@ export function PixiStage(props: PixiStageProps) {
     }
 
 
-    const tick = () => {
+    const tick = (ticker: PIXI.Ticker) => {
+      const dtMs = ticker.deltaMS;
       // Hover visuals only redraw when dirty.
       if (overlayDirtyRef.current) {
         overlayDirtyRef.current = false;
@@ -1597,6 +1737,136 @@ export function PixiStage(props: PixiStageProps) {
       } else {
         for (const entry of obstacleSpritesRef.current.values()) {
           if (entry.swayPhase !== null && entry.sprite.skew.x !== 0) entry.sprite.skew.x = 0;
+        }
+      }
+
+      // ---------------------------------------------------------------
+      // Ambient world life (ZKU-156). Time-of-day-shaped effects run off
+      // the game clock (scales with sim speed); micro-motion is real-time.
+      // ---------------------------------------------------------------
+      const amb = ambientRef.current;
+      if (nowMs - amb.lastPollMs > 1000) {
+        amb.lastPollMs = nowMs;
+        amb.enabled = localStorage.getItem("coursecraft_ambience") !== "off";
+      }
+      const ambientOn = amb.enabled && props.animationsEnabled;
+      const dayMin = dayMinuteRef.current;
+      // Continuous ambient clock: accumulates game minutes across days (no
+      // rewind at day rollover); drifts at 1x-equivalent in the editor.
+      if (dayMin !== undefined && amb.prevDayMinute !== null) {
+        const d = dayMin - amb.prevDayMinute;
+        amb.clockMin += d > 0 ? d : dayMin >= 0 ? Math.max(0, dayMin) : 0;
+      } else if (dayMin === undefined) {
+        amb.clockMin += (dtMs / 1000) * 3;
+      }
+      if (dayMin !== undefined) amb.prevDayMinute = dayMin;
+
+      // Time-of-day tint: lerp toward the target so nothing ever pops.
+      const quad = amb.tintQuad;
+      if (quad) {
+        const target = ambientOn ? timeOfDayTint(dayMin ?? 420) : 0xffffff;
+        const k = 1 - Math.exp(-dtMs / 600);
+        const cur = amb.tintCur;
+        cur.r += (((target >> 16) & 0xff) - cur.r) * k;
+        cur.g += (((target >> 8) & 0xff) - cur.g) * k;
+        cur.b += ((target & 0xff) - cur.b) * k;
+        const tint =
+          (Math.round(cur.r) << 16) | (Math.round(cur.g) << 8) | Math.round(cur.b);
+        quad.tint = tint;
+        quad.visible = tint !== 0xffffff;
+        if (quad.visible && app) {
+          quad.width = app.screen.width;
+          quad.height = app.screen.height;
+        }
+      }
+
+      // Cloud shadows drift on a constant wind, wrapping the course.
+      for (let i = 0; i < amb.clouds.length; i++) {
+        const cloud = amb.clouds[i];
+        cloud.visible = ambientOn;
+        if (!ambientOn) continue;
+        const p = cloudPos(amb.clockMin, i, course.width, course.height);
+        const iso = worldToIso(p.x, p.y, 0, rotation);
+        cloud.position.set(iso.x, iso.y);
+      }
+
+      // Grass shimmer: a soft light band sweeping with the sway wind phase.
+      const shimmer = amb.shimmer;
+      if (shimmer) {
+        const span = (course.width + course.height) * 1.6; // sparse passes
+        const sweep = ((nowMs / 1000) * 1.1 * 2.2) % span; // sway time base
+        const sx = sweep - 20;
+        const inCourse = sx > -12 && sx < course.width + 12;
+        shimmer.visible = ambientOn && inCourse;
+        if (shimmer.visible) {
+          const iso = worldToIso(sx, course.height / 2, 0, rotation);
+          shimmer.position.set(iso.x, iso.y);
+        }
+      }
+
+      // Birds: a flock crosses the sky every few in-game hours.
+      const birdG = amb.birdG;
+      if (birdG && app) {
+        const bc = birdCrossing(dayMin ?? -1);
+        birdG.clear();
+        if (ambientOn && bc.active) {
+          const sw = app.screen.width;
+          const sh = app.screen.height;
+          const leftToRight = bc.index % 2 === 0;
+          const yBase = sh * (0.18 + ((bc.index * 37) % 40) / 100);
+          const x0 = leftToRight ? -50 : sw + 50;
+          const x1 = leftToRight ? sw + 50 : -50;
+          const flap = Math.floor(nowMs / 150) % 2 === 0 ? -2.4 : 2.2;
+          for (let b = 0; b < 4; b++) {
+            const lag = b * 0.035;
+            const t = Math.max(0, Math.min(1, bc.t - lag));
+            const bx = x0 + (x1 - x0) * t + (b % 2) * 14 - 7;
+            const by =
+              yBase + b * 9 + Math.sin(nowMs / 700 + b * 1.7) * 3 + (x1 - x0 > 0 ? t : -t) * 40;
+            birdG.moveTo(bx - 4.5, by + flap);
+            birdG.lineTo(bx, by);
+            birdG.lineTo(bx + 4.5, by + flap);
+            birdG.stroke({ width: 1.5, color: 0x2f2f2a, alpha: 0.7 });
+          }
+        }
+      }
+
+      // Heron: perches on the nearest shoreline; startled by ZKU-154
+      // landings (see the touchdown block), flies off, later returns.
+      const heron = amb.heron;
+      if (heron.g) {
+        if (heron.forCourse !== course) {
+          heron.forCourse = course;
+          heron.spot = heronSpot(course);
+          heron.state = "standing";
+          drawHeron(heron.g, false);
+        }
+        const hg = heron.g;
+        if (!ambientOn || !heron.spot) {
+          hg.visible = false;
+        } else if (heron.state === "standing") {
+          const e = getElevation(course, heron.spot.x, heron.spot.y);
+          const c = tileCenterIso(heron.spot.x, heron.spot.y, e, rotation);
+          hg.position.set(c.x, c.y + Math.sin(nowMs / 1100) * 0.4);
+          hg.zIndex = entityDepth(heron.spot.x, heron.spot.y, e, rotation);
+          hg.alpha = 1;
+          hg.visible = true;
+        } else if (heron.state === "flying") {
+          const t = (nowMs - heron.flyT0) / 1400;
+          if (t >= 1) {
+            heron.state = "gone";
+            heron.respawnAt = nowMs + 45_000;
+            hg.visible = false;
+          } else {
+            const e = getElevation(course, heron.spot.x, heron.spot.y);
+            const c = tileCenterIso(heron.spot.x, heron.spot.y, e, rotation);
+            hg.position.set(c.x + t * 90, c.y - t * 70);
+            hg.alpha = 1 - t * t;
+            hg.visible = true;
+          }
+        } else if (heron.state === "gone" && nowMs > heron.respawnAt) {
+          heron.state = "standing";
+          drawHeron(heron.g, false);
         }
       }
 
@@ -1903,6 +2173,18 @@ export function PixiStage(props: PixiStageProps) {
                 }
                 // Hazard drama bubble (ZKU-155).
                 showEmote(hazardEmote(behavior.fx));
+                // Startle the shoreline heron (ZKU-156).
+                const heron2 = ambientRef.current.heron;
+                if (
+                  heron2.state === "standing" &&
+                  heron2.spot &&
+                  heron2.g &&
+                  Math.hypot(to.x - heron2.spot.x, to.y - heron2.spot.y) < HERON_STARTLE_TILES
+                ) {
+                  heron2.state = "flying";
+                  heron2.flyT0 = nowMs;
+                  drawHeron(heron2.g, true);
+                }
               }
             }
             const be = getElevation(course, Math.floor(gx + 0.5), Math.floor(gy + 0.5));

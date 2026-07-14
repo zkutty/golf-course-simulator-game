@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
@@ -12,6 +14,16 @@ export function SettingsModal(props: SettingsModalProps) {
   // so the sliders read straight from props (no state mirror / sync effect).
   const musicVolume = props.audioVolumes.music;
   const ambienceVolume = props.audioVolumes.ambience;
+
+  // Visual ambience toggle (ZKU-156): self-contained localStorage flag —
+  // the Pixi renderer polls it, so no parent state is involved.
+  const [visualAmbience, setVisualAmbience] = useState(
+    () => localStorage.getItem("coursecraft_ambience") !== "off"
+  );
+  const handleVisualAmbience = (on: boolean) => {
+    setVisualAmbience(on);
+    localStorage.setItem("coursecraft_ambience", on ? "on" : "off");
+  };
 
   if (!props.open) return null;
 
@@ -117,6 +129,25 @@ export function SettingsModal(props: SettingsModalProps) {
                 WebkitAppearance: "none",
               }}
             />
+          </div>
+        </div>
+
+        {/* Visual ambience section (ZKU-156) */}
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontFamily: "var(--font-heading)", fontSize: 18, fontWeight: 700, color: "#3d4a3e", marginBottom: 10 }}>
+            Ambience
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 14, color: "#3d4a3e" }}>
+            <input
+              type="checkbox"
+              checked={visualAmbience}
+              onChange={(e) => handleVisualAmbience(e.target.checked)}
+              style={{ width: 16, height: 16, cursor: "pointer" }}
+            />
+            Ambient life — cloud shadows, birds, grass shimmer, time-of-day light
+          </label>
+          <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4, marginLeft: 26 }}>
+            Turn off on low-end machines. Separate from the Animations toggle.
           </div>
         </div>
 

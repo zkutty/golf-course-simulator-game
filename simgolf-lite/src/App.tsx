@@ -1241,6 +1241,7 @@ export default function App() {
                 liveActive={live.liveActive}
                 onPickGolfer={live.selectGolfer}
                 selectedGolferId={live.selectedId}
+                dayMinute={live.status.dayMinute}
                 sculptRadius={sculptRadius}
                 onCameraUpdate={(camera) => {
                   holeEditCameraManualRef.current = true;
