@@ -32,15 +32,39 @@ export function createLoan(args: {
 
 export function stepLoanWeek(loan: Loan, opts: { pay: boolean }): Loan {
   if (loan.status !== "ACTIVE") return loan;
-  if (loan.weeksRemaining <= 0 || loan.balance <= 0.01) {
+  // Only a cleared balance counts as PAID. Term expiry with debt still owed is
+  // handled as a default in the missed-payment branch (ZKU-76).
+  if (loan.balance <= 0.01) {
     return { ...loan, weeksRemaining: 0, balance: 0, status: "PAID", weeklyPayment: 0 };
   }
 
   if (!opts.pay) {
-    // Missed payment: increase APR by +1% (cap), recompute payment on remaining balance/term.
+    // Missed payment (ZKU-76): non-payment is no longer nearly free.
+    //  - Capitalize the week's accrued interest into the balance (balloon grows).
+    //  - Still consume a term week so perpetual non-payment can't extend the loan.
+    //  - Bump APR as a penalty and re-amortize the larger balance over less time,
+    //    which sharply raises the payment the player must catch up on.
+    //  - After a threshold of missed payments — or if the term runs out with debt
+    //    still owed — the loan DEFAULTS.
+    const interest = loan.balance * (loan.apr / 52);
+    const nextBalance = loan.balance + interest;
+    const nextWeeks = Math.max(0, loan.weeksRemaining - 1);
     const apr = Math.min(BALANCE.loans.aprMax, loan.apr + BALANCE.loans.aprMissedPaymentBump);
-    const weeklyPayment = computeWeeklyPayment(loan.balance, apr, loan.weeksRemaining);
-    return { ...loan, apr, weeklyPayment, missedPayments: loan.missedPayments + 1 };
+    const missedPayments = loan.missedPayments + 1;
+    const defaulted =
+      missedPayments >= BALANCE.loans.missedPaymentsToDefault ||
+      (nextWeeks <= 0 && nextBalance > 0.01);
+    const weeklyPayment =
+      defaulted || nextWeeks <= 0 ? 0 : computeWeeklyPayment(nextBalance, apr, nextWeeks);
+    return {
+      ...loan,
+      apr,
+      balance: nextBalance,
+      weeksRemaining: nextWeeks,
+      weeklyPayment,
+      missedPayments,
+      status: defaulted ? "DEFAULTED" : loan.status,
+    };
   }
 
   const r = loan.apr / 52;

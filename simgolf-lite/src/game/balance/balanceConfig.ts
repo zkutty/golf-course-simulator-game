@@ -108,6 +108,9 @@ export const BALANCE = {
   loans: {
     aprMax: 0.30,
     aprMissedPaymentBump: 0.01,
+    // A missed payment capitalizes interest and burns a term week; after this
+    // many consecutive-or-cumulative misses the loan DEFAULTS (ZKU-76).
+    missedPaymentsToDefault: 4,
     bridgeCooldownWeeks: 8,
     bridge: {
       maxPrincipal: 25_000,

@@ -1359,7 +1359,7 @@ export function HUD(props: {
               <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
                 {loansBarred
                   ? "No bank will touch this deal — the scenario forbids loans."
-                  : "Loans can keep you afloat — but weekly payments are a fixed cost. Missed payments hurt reputation and worsen APR."}
+                  : "Loans can keep you afloat — but weekly payments are a fixed cost. Miss one and interest capitalizes onto the balance, a term week burns, APR rises, and reputation drops. Enough missed payments defaults the loan and bankrupts the course."}
               </div>
 
               <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
@@ -1419,6 +1419,12 @@ export function HUD(props: {
                       <div key={l.id} style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>
                           {l.kind} • {Math.round(l.apr * 100)}% • {l.weeksRemaining}w left
+                          {l.missedPayments > 0 && (
+                            <span style={{ color: "#b91c1c", fontWeight: 700 }}>
+                              {" "}
+                              ⚠ {l.missedPayments}/{BALANCE.loans.missedPaymentsToDefault} missed
+                            </span>
+                          )}
                         </span>
                         <span>
                           ${Math.round(l.weeklyPayment).toLocaleString()}/wk • bal $
