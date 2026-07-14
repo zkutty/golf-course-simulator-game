@@ -18,6 +18,7 @@ import { scoreCourseHoles } from "./game/sim/holes";
 import { createSoundPlayer } from "./utils/sound";
 import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
 import { createLoan } from "./game/sim/loans";
+import { hitsLiquidityTrap } from "./game/sim/runState";
 import { isCoursePlayable } from "./game/sim/isCoursePlayable";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { getEffectiveBalance, terrainCostMult } from "./game/balance/difficulty";
@@ -1000,7 +1001,7 @@ export default function App() {
         ...w,
         cash: nextCash,
         staffLevel: w.staffLevel + 1,
-        isBankrupt: w.isBankrupt || nextCash < -10_000,
+        isBankrupt: w.isBankrupt || hitsLiquidityTrap(nextCash),
       };
     });
   }
@@ -1016,7 +1017,7 @@ export default function App() {
         ...w,
         cash: nextCash,
         marketingLevel: w.marketingLevel + 1,
-        isBankrupt: w.isBankrupt || nextCash < -10_000,
+        isBankrupt: w.isBankrupt || hitsLiquidityTrap(nextCash),
       };
     });
   }
