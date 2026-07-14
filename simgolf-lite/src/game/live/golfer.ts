@@ -19,10 +19,10 @@ function walkSeg(from: Point, to: Point, holeIndex: number, cap = Infinity): Seg
   return { kind: "walk", from, to, holeIndex, dur: Math.min(cap, d * LIVE.pace.walkPerTile) };
 }
 
-function flightSeg(from: Point, to: Point, holeIndex: number): Segment {
+function flightSeg(from: Point, to: Point, holeIndex: number, shot: "swing" | "putt" = "swing"): Segment {
   const d = dist(from, to);
   const dur = Math.max(LIVE.pace.flightMin, Math.min(LIVE.pace.flightMax, d * LIVE.pace.flightPerTile));
-  return { kind: "flight", from, to, holeIndex, dur };
+  return { kind: "flight", from, to, holeIndex, dur, shot };
 }
 
 function pauseSeg(at: Point, holeIndex: number, dur: number): Segment {
@@ -137,7 +137,7 @@ export function planFromHole(args: {
     // A short putting flourish on the green (visuals independent of putt count).
     const near: Point = { x: green.x + 0.6, y: green.y + 0.4 };
     segments.push(pauseSeg(green, i, LIVE.pace.puttPause));
-    segments.push(flightSeg(near, green, i));
+    segments.push(flightSeg(near, green, i, "putt"));
     segments.push(walkSeg(near, green, i, LIVE.pace.puttWalk));
 
     holePar.push(par);

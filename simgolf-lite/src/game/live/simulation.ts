@@ -172,6 +172,41 @@ export function stepLive(
 export function liveRenderData(state: LiveState): GolferRenderData[] {
   const out: GolferRenderData[] = [];
   for (const g of state.golfers) {
+    // Animation facts (ZKU-153): current segment kind/progress, the stroke
+    // being played, and a facing direction. Pure derivation — no sim state
+    // is touched. The pause before a flight is the address/swing windup, so
+    // its facing and shot come from the upcoming flight; that lets the
+    // renderer land the contact frame exactly when the ball launches.
+    const seg = g.segments[g.segIndex];
+    const segKind = seg?.kind ?? null;
+    const segT = seg ? (seg.dur > 0 ? Math.max(0, Math.min(1, g.segElapsed / seg.dur)) : 1) : 0;
+    let shot: "swing" | "putt" | null = null;
+    let dirX = 0;
+    let dirY = 0;
+    if (seg) {
+      let aim: { from: { x: number; y: number }; to: { x: number; y: number } } | null = null;
+      if (seg.kind === "walk") {
+        aim = seg;
+      } else if (seg.kind === "flight") {
+        shot = seg.shot ?? "swing";
+        aim = seg;
+      } else {
+        const next = g.segments[g.segIndex + 1];
+        if (next?.kind === "flight") {
+          shot = next.shot ?? "swing";
+          aim = next;
+        }
+      }
+      if (aim) {
+        const dx = aim.to.x - aim.from.x;
+        const dy = aim.to.y - aim.from.y;
+        const len = Math.hypot(dx, dy);
+        if (len > 1e-6) {
+          dirX = dx / len;
+          dirY = dy / len;
+        }
+      }
+    }
     out.push({
       id: g.id,
       x: g.pos.x,
@@ -181,6 +216,17 @@ export function liveRenderData(state: LiveState): GolferRenderData[] {
       color: g.color,
       mood: g.mood,
       thought: g.thought,
+      archetype: g.archetype,
+      segKind,
+      segT,
+      shot,
+      dirX,
+      dirY,
+      scoredHoles: g.scoredHoles,
+      lastHoleDelta:
+        g.scoredHoles > 0
+          ? (g.holeStrokes[g.scoredHoles - 1] ?? 0) - (g.holePar[g.scoredHoles - 1] ?? 0)
+          : 0,
     });
   }
   return out;

@@ -7,6 +7,17 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Golfer character sprites (ZKU-153): chibi golfers with 8-way directional
+  walk cycles, idle, full-swing and putt animations, and hole-out reactions
+  (cheer/frustration), replacing the colored dots in the isometric renderer.
+  Three procedural body/outfit variants × per-golfer palette-swap tinting
+  (grayscale clothing layer tinted by archetype color) keep a full tee sheet
+  visibly diverse. Swings are driven by the pre-shot pause so the club's
+  contact frame lands exactly at ball launch; facing tracks movement/shot
+  direction under camera rotation; sprites stay pooled, depth-sorted, and
+  elevation-aware, with drop shadows, a pulsing selection ring, and
+  click-to-select golfers in the Pixi renderer. New `golfers` atlas + grid
+  sprite-sheet support in the art pipeline.
 - Real save system: named save slots, three rotating autosaves (one per
   committed game day), quicksave slot, rename/delete, and export/import as
   `.coursecraft` files. Saves live in IndexedDB with localStorage fallback;

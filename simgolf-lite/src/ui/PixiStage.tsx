@@ -19,10 +19,32 @@ import {
   type IsoRotation,
 } from "../game/render/iso";
 import { getObstacleSprite } from "../render/iconSprites";
-import { getPropFrame, loadAtlases, type PropFrame, type TerrainFrame } from "../render/atlas";
+import {
+  getGolferFrame,
+  getPropFrame,
+  golfersAtlasReady,
+  loadAtlases,
+  type PropFrame,
+  type TerrainFrame,
+} from "../render/atlas";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth, placeObject } from "../game/render/objectPlacement";
+import {
+  GOLFER_DISPLAY_W,
+  GOLFER_FEET_Y,
+  GOLFER_FRAME_H,
+  GOLFER_FRAME_W,
+  REACTION_SEC,
+  WALK_STRIDES_PER_TILE,
+  facingOctant,
+  golferFrameName,
+  golferPose,
+  golferTint,
+  golferVariant,
+  reactionFor,
+  type GolferReaction,
+} from "../game/render/golferSprites";
 import { buildingSpec } from "../game/models/buildings";
 import type { AtlasFrame } from "../render/atlas";
 
@@ -164,6 +186,8 @@ export interface PixiStageProps {
   showObstacles?: boolean;
   golfersRef?: React.RefObject<GolferRenderData[]>;
   liveActive?: boolean;
+  onPickGolfer?: (id: number | null) => void;
+  selectedGolferId?: number | null;
 }
 
 interface Layers {
@@ -173,6 +197,42 @@ interface Layers {
   objects: PIXI.Container;
   fx: PIXI.Container;
   screenOverlay: PIXI.Container;
+}
+
+/**
+ * Pooled per-golfer render objects (ZKU-153). Two tiers, chosen once at
+ * creation: animated character sprites when the golfers atlas is loaded
+ * (shadow + base sprite + tinted clothing twin + selection ring), or the
+ * legacy colored dot when it isn't.
+ */
+interface GolferEntry {
+  holder: PIXI.Container;
+  ball: PIXI.Graphics;
+  lastBall: { x: number; y: number } | null;
+  sprite: {
+    shadow: PIXI.Graphics;
+    ring: PIXI.Graphics;
+    base: PIXI.Sprite;
+    tintLayer: PIXI.Sprite;
+    variant: number;
+    tint: number;
+    /** Last applied atlas frame, to skip redundant texture swaps. */
+    lastFrame: string;
+    /** Accumulated stride cycles (advanced by ground distance walked). */
+    walkPhase: number;
+    lastPos: { x: number; y: number } | null;
+    /** Last non-zero facing, world space (survives pauses/rotation). */
+    dirX: number;
+    dirY: number;
+    reaction: GolferReaction | null;
+    reactionUntil: number;
+    lastScored: number;
+  } | null;
+  dot: {
+    body: PIXI.Graphics;
+    lastColor: string;
+    lastMoodBucket: number;
+  } | null;
 }
 
 /**
@@ -252,19 +312,7 @@ export function PixiStage(props: PixiStageProps) {
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const ripplesRef = useRef<Array<{ x: number; y: number; t0: number }>>([]);
   const rippleGraphicsRef = useRef<PIXI.Graphics | null>(null);
-  const golferPoolRef = useRef<
-    Map<
-      number,
-      {
-        holder: PIXI.Container;
-        body: PIXI.Graphics;
-        ball: PIXI.Graphics;
-        lastColor: string;
-        lastMoodBucket: number;
-        lastBall: { x: number; y: number } | null;
-      }
-    >
-  >(new Map());
+  const golferPoolRef = useRef<Map<number, GolferEntry>>(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
 
@@ -297,6 +345,7 @@ export function PixiStage(props: PixiStageProps) {
     failingCorridorSegments,
     golfersRef,
     liveActive,
+    onPickGolfer,
   } = props;
 
   // ---------------------------------------------------------------------
@@ -1444,8 +1493,9 @@ export function PixiStage(props: PixiStageProps) {
       }
 
       // Live golfers/balls: pooled per-golfer objects in the depth-sorted
-      // objects layer so props occlude them correctly (ZKU-140; character
-      // sprites replace the dots in M11/ZKU-153).
+      // objects layer so props occlude them correctly (ZKU-140). Character
+      // sprites (ZKU-153) when the golfers atlas is loaded; legacy dots
+      // otherwise.
       const pool = golferPoolRef.current;
       const list = liveActive ? golfersRef?.current : null;
       const seen = new Set<number>();
@@ -1455,29 +1505,130 @@ export function PixiStage(props: PixiStageProps) {
           let entry = pool.get(golfer.id);
           if (!entry) {
             const holder = new PIXI.Container();
-            const body = new PIXI.Graphics();
             const ball = new PIXI.Graphics();
             ball.circle(0, -2, 2.2);
             ball.fill(0xffffff);
             ball.stroke({ width: 0.8, color: 0x555555 });
             ball.visible = false;
-            holder.addChild(body);
             layers.objects.addChild(holder, ball);
-            entry = { holder, body, ball, lastColor: "", lastMoodBucket: -1, lastBall: null };
+            entry = { holder, ball, lastBall: null, sprite: null, dot: null };
+            if (golfersAtlasReady()) {
+              // Drop shadow at the feet, then selection ring, then the two
+              // sprite layers (base colors + tinted grayscale clothing).
+              const shadow = new PIXI.Graphics();
+              shadow.ellipse(1.5, 0.8, 8, 3.4);
+              shadow.fill({ color: 0x000000, alpha: 0.18 });
+              const ring = new PIXI.Graphics();
+              ring.visible = false;
+              const scale = GOLFER_DISPLAY_W / GOLFER_FRAME_W;
+              const base = new PIXI.Sprite();
+              base.anchor.set(0.5, GOLFER_FEET_Y / GOLFER_FRAME_H);
+              base.scale.set(scale);
+              const tintLayer = new PIXI.Sprite();
+              tintLayer.anchor.set(0.5, GOLFER_FEET_Y / GOLFER_FRAME_H);
+              tintLayer.scale.set(scale);
+              tintLayer.tint = golferTint(golfer.color, golfer.id);
+              holder.addChild(shadow, ring, base, tintLayer);
+              entry.sprite = {
+                shadow,
+                ring,
+                base,
+                tintLayer,
+                variant: golferVariant(golfer.archetype, golfer.id),
+                tint: tintLayer.tint,
+                lastFrame: "",
+                walkPhase: 0,
+                lastPos: null,
+                dirX: golfer.dirX,
+                dirY: golfer.dirY,
+                reaction: null,
+                reactionUntil: 0,
+                lastScored: golfer.scoredHoles,
+              };
+            } else {
+              const body = new PIXI.Graphics();
+              holder.addChild(body);
+              entry.dot = { body, lastColor: "", lastMoodBucket: -1 };
+            }
             pool.set(golfer.id, entry);
           }
-          // Redraw the body only when color or mood bucket changes.
-          const moodBucket = Math.round(Math.max(0, Math.min(1, golfer.mood)) * 10);
-          if (entry.lastColor !== golfer.color || entry.lastMoodBucket !== moodBucket) {
-            entry.lastColor = golfer.color;
-            entry.lastMoodBucket = moodBucket;
-            const body = entry.body;
-            body.clear();
-            body.ellipse(0, 0, 7, 3.2); // ground shadow at the feet
-            body.fill({ color: 0x000000, alpha: 0.2 });
-            body.circle(0, -7, 5.5);
-            body.fill(golfer.color);
-            body.stroke({ width: 1.5, color: `hsl(${moodBucket * 12}, 80%, 45%)` });
+
+          if (entry.sprite) {
+            const sp = entry.sprite;
+            // Hole-out reactions: a scored-holes tick means "just holed out".
+            if (golfer.scoredHoles > sp.lastScored) {
+              sp.lastScored = golfer.scoredHoles;
+              const r = reactionFor(golfer.lastHoleDelta);
+              if (r) {
+                sp.reaction = r;
+                sp.reactionUntil = nowMs + REACTION_SEC * 1000;
+              }
+            }
+            if (sp.reaction && nowMs >= sp.reactionUntil) sp.reaction = null;
+            // Stride phase advances with actual ground covered, so the walk
+            // cycle tracks every sim speed for free.
+            if (golfer.segKind === "walk" && sp.lastPos) {
+              sp.walkPhase +=
+                Math.hypot(golfer.x - sp.lastPos.x, golfer.y - sp.lastPos.y) *
+                WALK_STRIDES_PER_TILE;
+            }
+            sp.lastPos = { x: golfer.x, y: golfer.y };
+            // Keep the last real facing through pauses; stored in world space
+            // so camera rotation re-resolves it naturally.
+            if (golfer.dirX !== 0 || golfer.dirY !== 0) {
+              sp.dirX = golfer.dirX;
+              sp.dirY = golfer.dirY;
+            }
+            const pose = golferPose({
+              segKind: golfer.segKind,
+              segT: golfer.segT,
+              shot: golfer.shot,
+              facingOct: facingOctant(sp.dirX, sp.dirY, rotation),
+              walkPhase: props.animationsEnabled ? sp.walkPhase : 0,
+              timeSec: props.animationsEnabled ? nowMs / 1000 : 0,
+              reaction: sp.reaction,
+            });
+            const frame = golferFrameName(sp.variant, pose, false);
+            if (frame !== sp.lastFrame) {
+              sp.lastFrame = frame;
+              const baseTex = getGolferFrame(frame);
+              const tintTex = getGolferFrame(golferFrameName(sp.variant, pose, true));
+              if (baseTex) sp.base.texture = baseTex;
+              if (tintTex) sp.tintLayer.texture = tintTex;
+            }
+            // Mirror can flip while the frame name stays put (sw→se keeps
+            // the same row), so apply it outside the frame-change guard.
+            const flip = pose.mirror ? -1 : 1;
+            if (Math.sign(sp.base.scale.x) !== flip) {
+              sp.base.scale.x = Math.abs(sp.base.scale.x) * flip;
+              sp.tintLayer.scale.x = Math.abs(sp.tintLayer.scale.x) * flip;
+            }
+            // Selection ring (ZKU-134): pulsing ellipse under the feet.
+            const isSelected = props.selectedGolferId === golfer.id;
+            if (isSelected) {
+              const pulse = 1 + Math.sin(nowMs * 0.006) * 0.12;
+              sp.ring.clear();
+              sp.ring.ellipse(0, 0, 11 * pulse, 5.5 * pulse);
+              sp.ring.stroke({ width: 1.8, color: 0xffffff, alpha: 0.95 });
+              sp.ring.visible = true;
+            } else if (sp.ring.visible) {
+              sp.ring.visible = false;
+            }
+          } else if (entry.dot) {
+            // Legacy dot tier: redraw only when color or mood bucket changes.
+            const dot = entry.dot;
+            const moodBucket = Math.round(Math.max(0, Math.min(1, golfer.mood)) * 10);
+            if (dot.lastColor !== golfer.color || dot.lastMoodBucket !== moodBucket) {
+              dot.lastColor = golfer.color;
+              dot.lastMoodBucket = moodBucket;
+              const body = dot.body;
+              body.clear();
+              body.ellipse(0, 0, 7, 3.2); // ground shadow at the feet
+              body.fill({ color: 0x000000, alpha: 0.2 });
+              body.circle(0, -7, 5.5);
+              body.fill(golfer.color);
+              body.stroke({ width: 1.5, color: `hsl(${moodBucket * 12}, 80%, 45%)` });
+            }
           }
           const ge = getElevation(course, Math.floor(golfer.x + 0.5), Math.floor(golfer.y + 0.5));
           const c = tileCenterIso(golfer.x, golfer.y, ge, rotation);
@@ -1528,7 +1679,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.flagColor]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.flagColor, props.selectedGolferId]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
@@ -1553,6 +1704,31 @@ export function PixiStage(props: PixiStageProps) {
 
     const handleClick = (e: PIXI.FederatedPointerEvent) => {
       if (e.button !== 0) return; // middle/right are camera pan, not editing
+      // In the global view, clicking a golfer selects them instead of
+      // painting (ZKU-134 parity). Iso-plane distance against each golfer's
+      // projected position keeps the hit test elevation-correct.
+      if (onPickGolfer && !cameraState && liveActive && golfersRef?.current?.length) {
+        const iso = screenToIsoPlane(e.global.x, e.global.y);
+        if (iso) {
+          let bestId: number | null = null;
+          let bestD = TILE_W * 0.45; // ~0.9 tiles, matches the canvas picker
+          for (const g of golfersRef.current) {
+            const ge = getElevation(course, Math.floor(g.x + 0.5), Math.floor(g.y + 0.5));
+            const c = tileCenterIso(g.x, g.y, ge, rotation);
+            // Compensate the 2:1 vertical squash so the radius is circular
+            // in tile space.
+            const d = Math.hypot(iso.x - c.x, (iso.y - c.y) * 2);
+            if (d < bestD) {
+              bestD = d;
+              bestId = g.id;
+            }
+          }
+          if (bestId != null) {
+            onPickGolfer(bestId);
+            return;
+          }
+        }
+      }
       const t = screenToTile(e.global.x, e.global.y);
       if (t) onClickTile(t.x, t.y);
     };
@@ -1573,7 +1749,7 @@ export function PixiStage(props: PixiStageProps) {
       app.stage.off("pointerdown", handleClick);
       app.stage.off("pointermove", handleMove);
     };
-  }, [appReady, screenToTile, onClickTile, editorMode, selectedTerrain, worldCash, course.tiles, course.width]);
+  }, [appReady, screenToTile, screenToIsoPlane, onClickTile, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef]);
 
   return (
     <div
