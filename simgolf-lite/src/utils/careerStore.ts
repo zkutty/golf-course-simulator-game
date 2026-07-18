@@ -25,9 +25,24 @@ export const DEFAULT_CAREER: CareerState = { version: 1, scenarios: {} };
 // In-memory fallback (tests / storage-less environments).
 let memory: CareerState | null = null;
 
+function storage(): Storage | null {
+  try {
+    if (
+      typeof localStorage !== "undefined" &&
+      typeof localStorage.getItem === "function" &&
+      typeof localStorage.setItem === "function" &&
+      typeof localStorage.removeItem === "function"
+    ) return localStorage;
+  } catch {
+    // SecurityError / partial Node globals fall back to memory.
+  }
+  return null;
+}
+
 export function loadCareer(): CareerState {
-  if (typeof localStorage === "undefined") return memory ?? DEFAULT_CAREER;
-  const raw = localStorage.getItem(KEY);
+  const store = storage();
+  if (!store) return memory ?? DEFAULT_CAREER;
+  const raw = store.getItem(KEY);
   if (!raw) return DEFAULT_CAREER;
   try {
     const parsed = JSON.parse(raw) as Partial<CareerState>;
@@ -41,11 +56,12 @@ export function loadCareer(): CareerState {
 }
 
 export function saveCareer(state: CareerState): void {
-  if (typeof localStorage === "undefined") {
+  const store = storage();
+  if (!store) {
     memory = state;
     return;
   }
-  localStorage.setItem(KEY, JSON.stringify(state));
+  store.setItem(KEY, JSON.stringify(state));
 }
 
 function record(state: CareerState, id: string): ScenarioRecord {
@@ -108,5 +124,5 @@ export function isScenarioUnlocked(
 /** Test hook: reset the in-memory fallback. */
 export function __resetCareerForTests(): void {
   memory = null;
-  if (typeof localStorage !== "undefined") localStorage.removeItem(KEY);
+  storage()?.removeItem(KEY);
 }

@@ -10,6 +10,10 @@ import type {
   Obstacle,
 } from "../game/models/types";
 import type { ObjectiveState } from "../game/models/objectives";
+import {
+  restoreLiveSimulation,
+  type LiveSimulationSnapshotV1,
+} from "../game/live/persistence";
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === "string" && (allowed as readonly string[]).includes(value)
@@ -22,23 +26,58 @@ import { withNormalizedElevations } from "../game/models/elevation";
 import { BUILDING_SPECS } from "../game/models/buildings";
 
 const KEY = "simgolf_lite_save_v1";
-const SCHEMA_VERSION = 1 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 2 as const;
+const MAX_SAVE_GRID_DIMENSION = 256;
+const TERRAIN_VALUES = [
+  "fairway",
+  "rough",
+  "deep_rough",
+  "sand",
+  "water",
+  "green",
+  "tee",
+  "path",
+] as const;
 
 export interface SaveV1 {
-  schemaVersion: typeof SCHEMA_VERSION;
+  schemaVersion: 1;
   savedAt: number;
   course: Course;
   world: World;
   history?: WeekResult[];
+  live?: LiveSimulationSnapshotV1;
 }
 
-export function saveGame(payload: { course: Course; world: World; history?: WeekResult[] }) {
-  const save: SaveV1 = {
-    schemaVersion: SCHEMA_VERSION,
+export interface SaveV2 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
+}
+
+export type SaveLoadErrorCode =
+  | "INVALID_JSON"
+  | "INVALID_SHAPE"
+  | "INVALID_VERSION"
+  | "UNSUPPORTED_VERSION"
+  | "INVALID_COURSE"
+  | "INVALID_WORLD"
+  | "INVALID_LIVE_STATE";
+
+export interface SaveLoadError {
+  code: SaveLoadErrorCode;
+  message: string;
+}
+
+export type SaveLoadResult =
+  | { ok: true; payload: SavePayload; migratedFrom?: number }
+  | { ok: false; error: SaveLoadError };
+
+export function saveGame(payload: SavePayload) {
+  const save: SaveV2 = {
+    schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
     world: payload.world,
     history: payload.history?.slice(-20),
+    live: payload.live,
   };
   localStorage.setItem(KEY, JSON.stringify(save));
 }
@@ -126,6 +165,116 @@ export interface SavePayload {
   course: Course;
   world: World;
   history?: WeekResult[];
+  live?: LiveSimulationSnapshotV1;
+}
+
+type SaveRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is SaveRecord {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function fail(code: SaveLoadErrorCode, message: string): SaveLoadResult {
+  return { ok: false, error: { code, message } };
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function validPoint(value: unknown, width: number, height: number): boolean {
+  if (value === null) return true;
+  if (!isRecord(value)) return false;
+  return (
+    Number.isInteger(value.x) &&
+    Number.isInteger(value.y) &&
+    (value.x as number) >= 0 &&
+    (value.y as number) >= 0 &&
+    (value.x as number) < width &&
+    (value.y as number) < height
+  );
+}
+
+function validateCourseShape(raw: unknown): SaveLoadError | null {
+  if (!isRecord(raw)) return { code: "INVALID_COURSE", message: "The save has no valid course data." };
+  const { width, height, tiles, holes } = raw;
+  if (
+    !Number.isInteger(width) ||
+    !Number.isInteger(height) ||
+    (width as number) < 1 ||
+    (height as number) < 1 ||
+    (width as number) > MAX_SAVE_GRID_DIMENSION ||
+    (height as number) > MAX_SAVE_GRID_DIMENSION
+  ) {
+    return { code: "INVALID_COURSE", message: "The saved course dimensions are invalid." };
+  }
+  const expected = (width as number) * (height as number);
+  if (
+    !Array.isArray(tiles) ||
+    tiles.length !== expected ||
+    tiles.some((tile) => typeof tile !== "string" || !(TERRAIN_VALUES as readonly string[]).includes(tile))
+  ) {
+    return { code: "INVALID_COURSE", message: "The saved terrain grid is malformed." };
+  }
+  if (!Array.isArray(holes) || holes.length < 1 || holes.length > 18) {
+    return { code: "INVALID_COURSE", message: "The saved hole list is malformed." };
+  }
+  for (const hole of holes) {
+    if (!isRecord(hole) || !validPoint(hole.tee ?? null, width as number, height as number) || !validPoint(hole.green ?? null, width as number, height as number)) {
+      return { code: "INVALID_COURSE", message: "A saved tee or green position is invalid." };
+    }
+    if (hole.waypoints != null && (!Array.isArray(hole.waypoints) || hole.waypoints.some((p) => !validPoint(p, width as number, height as number)))) {
+      return { code: "INVALID_COURSE", message: "A saved hole waypoint is invalid." };
+    }
+  }
+  return null;
+}
+
+function validateWorldShape(raw: unknown): SaveLoadError | null {
+  if (!isRecord(raw)) return { code: "INVALID_WORLD", message: "The save has no valid world data." };
+  for (const key of ["week", "cash", "reputation", "runSeed"] as const) {
+    if (!isFiniteNumber(raw[key])) {
+      return { code: "INVALID_WORLD", message: `The saved world field "${key}" is invalid.` };
+    }
+  }
+  return null;
+}
+
+type SaveMigration = (save: SaveRecord) => SaveRecord;
+
+const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
+  // V2 formalizes the migration/validation pipeline. Its gameplay payload is
+  // deliberately unchanged, so every existing v1 slot can migrate losslessly.
+  1: (save) => ({ ...save, schemaVersion: 2 }),
+};
+
+function migrateSave(input: unknown):
+  | { ok: true; save: SaveRecord; migratedFrom?: number }
+  | { ok: false; error: SaveLoadError } {
+  if (!isRecord(input)) {
+    return { ok: false, error: { code: "INVALID_SHAPE", message: "The save file is not an object." } };
+  }
+  const version = input.schemaVersion;
+  if (!Number.isInteger(version) || (version as number) < 1) {
+    return { ok: false, error: { code: "INVALID_VERSION", message: "The save has no valid schema version." } };
+  }
+  if ((version as number) > CURRENT_SAVE_SCHEMA_VERSION) {
+    return { ok: false, error: { code: "UNSUPPORTED_VERSION", message: "This save was created by a newer version of CourseCraft." } };
+  }
+  const migratedFrom = version as number;
+  let save = { ...input };
+  while ((save.schemaVersion as number) < CURRENT_SAVE_SCHEMA_VERSION) {
+    const migration = SAVE_MIGRATIONS[save.schemaVersion as number];
+    if (!migration) {
+      return { ok: false, error: { code: "UNSUPPORTED_VERSION", message: `No migration is available for save version ${save.schemaVersion}.` } };
+    }
+    save = migration(save);
+  }
+  return {
+    ok: true,
+    save,
+    ...(migratedFrom === CURRENT_SAVE_SCHEMA_VERSION ? {} : { migratedFrom }),
+  };
 }
 
 /**
@@ -145,6 +294,22 @@ function sanitizeBuildings(raw: unknown, width: number, height: number): Buildin
     if (!spec) return false;
     if (!Number.isInteger(x) || !Number.isInteger(y)) return false;
     return x >= 0 && y >= 0 && x + spec.w <= width && y + spec.d <= height;
+  });
+}
+
+function sanitizeObstacles(raw: unknown, width: number, height: number): Obstacle[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((value): value is Obstacle => {
+    if (!isRecord(value)) return false;
+    return (
+      Number.isInteger(value.x) &&
+      Number.isInteger(value.y) &&
+      (value.x as number) >= 0 &&
+      (value.y as number) >= 0 &&
+      (value.x as number) < width &&
+      (value.y as number) < height &&
+      (value.type === "tree" || value.type === "bush" || value.type === "rock")
+    );
   });
 }
 
@@ -176,14 +341,18 @@ function sanitizeObjectives(raw: unknown): ObjectiveState | null {
  * gets the same field-default migrations (elevations, buildings, grid
  * resize) and can never crash the game on a hostile file.
  */
-export function normalizeLoadedSave(input: unknown): SavePayload | null {
+export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
   try {
-    const parsed = input as Partial<SaveV1>;
-    if (!parsed || typeof parsed !== "object") return null;
-    if (parsed.schemaVersion !== SCHEMA_VERSION) return null;
-    if (!parsed.course || !parsed.world) return null;
-    const rawCourse = parsed.course as Course;
-    if (!Array.isArray(rawCourse.tiles) || !Array.isArray(rawCourse.holes)) return null;
+    const migrated = migrateSave(input);
+    if (!migrated.ok) return migrated;
+    const parsed = migrated.save;
+    const courseError = validateCourseShape(parsed.course);
+    if (courseError) return { ok: false, error: courseError };
+    const worldError = validateWorldShape(parsed.world);
+    if (worldError) return { ok: false, error: worldError };
+    const rawCourse = parsed.course as unknown as Course;
+    const rawWidth = rawCourse.width;
+    const rawHeight = rawCourse.height;
 
     const loadedCourse: Course = {
       ...DEFAULT_COURSE,
@@ -194,8 +363,10 @@ export function normalizeLoadedSave(input: unknown): SavePayload | null {
           ...h,
           parMode: h.parMode ?? "AUTO",
         })) ?? DEFAULT_COURSE.holes,
-      obstacles: rawCourse.obstacles ?? DEFAULT_COURSE.obstacles,
-      elevations: rawCourse.elevations ?? [], // normalized to flat below
+      obstacles: sanitizeObstacles(rawCourse.obstacles, rawWidth, rawHeight),
+      elevations: Array.isArray(rawCourse.elevations)
+        ? rawCourse.elevations.map((value) => isFiniteNumber(value) ? value : 0)
+        : [], // normalized to flat below
       buildings: sanitizeBuildings(
         rawCourse.buildings,
         rawCourse.width ?? DEFAULT_COURSE.width,
@@ -209,7 +380,7 @@ export function normalizeLoadedSave(input: unknown): SavePayload | null {
     // elevations array (pre-elevation saves load flat — ZKU-143).
     const course = withNormalizedElevations(migrateCourseGrid(loadedCourse));
 
-    const rawWorld = parsed.world as World;
+    const rawWorld = parsed.world as unknown as World;
     const rawConstraints = rawWorld.constraints;
     const world: World = {
       ...DEFAULT_WORLD,
@@ -229,21 +400,43 @@ export function normalizeLoadedSave(input: unknown): SavePayload | null {
             }
           : undefined,
     };
-    const history = parsed.history ?? undefined;
-    return { course, world, history };
+    const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
+    let live: LiveSimulationSnapshotV1 | undefined;
+    if (parsed.live != null) {
+      const restored = restoreLiveSimulation(parsed.live);
+      if (!restored) {
+        return fail("INVALID_LIVE_STATE", "The saved live simulation state is malformed.");
+      }
+      live = parsed.live as unknown as LiveSimulationSnapshotV1;
+    }
+    return {
+      ok: true,
+      payload: { course, world, history, live },
+      ...(migrated.migratedFrom == null ? {} : { migratedFrom: migrated.migratedFrom }),
+    };
   } catch {
-    return null;
+    return fail("INVALID_SHAPE", "The save data could not be safely read.");
+  }
+}
+
+export function normalizeLoadedSave(input: unknown): SavePayload | null {
+  const result = normalizeLoadedSaveResult(input);
+  return result.ok ? result.payload : null;
+}
+
+export function parseSaveText(text: string): SaveLoadResult {
+  try {
+    return normalizeLoadedSaveResult(JSON.parse(text));
+  } catch {
+    return fail("INVALID_JSON", "The save file is not valid JSON.");
   }
 }
 
 export function loadGame(): SavePayload | null {
   const raw = localStorage.getItem(KEY);
   if (!raw) return null;
-  try {
-    return normalizeLoadedSave(JSON.parse(raw));
-  } catch {
-    return null;
-  }
+  const result = parseSaveText(raw);
+  return result.ok ? result.payload : null;
 }
 
 export function resetSave() {
@@ -253,5 +446,3 @@ export function resetSave() {
 export function hasSavedGame() {
   return localStorage.getItem(KEY) != null;
 }
-
-

@@ -1,5 +1,13 @@
 import type { Course, Difficulty, LandTheme, WeekResult, World } from "../game/models/types";
-import { normalizeLoadedSave, type SavePayload } from "./save";
+import type { LiveSimulationSnapshotV1 } from "../game/live/persistence";
+import {
+  CURRENT_SAVE_SCHEMA_VERSION,
+  normalizeLoadedSave,
+  parseSaveText,
+  type SaveLoadError,
+  type SaveLoadResult,
+  type SavePayload,
+} from "./save";
 
 /**
  * Save repository (ZKU-174): named slots + rotating autosaves + quicksave.
@@ -36,11 +44,12 @@ export interface SaveSlotMeta {
 }
 
 export interface SaveFile {
-  schemaVersion: 1;
+  schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   savedAt: number;
   course: Course;
   world: World;
   history?: WeekResult[];
+  live?: LiveSimulationSnapshotV1;
 }
 
 const MANIFEST_KEY = "coursecraft_saves_manifest_v1";
@@ -206,11 +215,12 @@ async function migrateLegacyOnce(): Promise<void> {
 
 function payloadToFile(p: SavePayload): SaveFile {
   return {
-    schemaVersion: 1,
+    schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: p.course,
     world: p.world,
     history: p.history?.slice(-20),
+    live: p.live,
   };
 }
 
@@ -239,14 +249,17 @@ export async function saveToSlot(
 }
 
 export async function loadSlot(id: string): Promise<SavePayload | null> {
+  const result = await loadSlotResult(id);
+  return result.ok ? result.payload : null;
+}
+
+export async function loadSlotResult(id: string): Promise<SaveLoadResult> {
   await migrateLegacyOnce();
   const raw = await kv.get(SLOT_PREFIX + id);
-  if (!raw) return null;
-  try {
-    return normalizeLoadedSave(JSON.parse(raw));
-  } catch {
-    return null;
+  if (!raw) {
+    return { ok: false, error: { code: "INVALID_SHAPE", message: "That save slot is missing." } };
   }
+  return parseSaveText(raw);
 }
 
 export async function deleteSlot(id: string): Promise<void> {
@@ -300,13 +313,21 @@ export async function exportSlot(id: string): Promise<string | null> {
  * through normalizeLoadedSave — a hostile file yields null, never a throw.
  */
 export async function importSave(text: string, name: string): Promise<SaveSlotMeta | null> {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  const normalized = normalizeLoadedSave(parsed);
-  if (!normalized) return null;
-  return saveToSlot(null, "manual", name, normalized);
+  const result = await importSaveResult(text, name);
+  return result.ok ? result.meta : null;
+}
+
+export type SaveImportResult =
+  | { ok: true; meta: SaveSlotMeta; migratedFrom?: number }
+  | { ok: false; error: SaveLoadError };
+
+export async function importSaveResult(text: string, name: string): Promise<SaveImportResult> {
+  const result = parseSaveText(text);
+  if (!result.ok) return result;
+  const meta = await saveToSlot(null, "manual", name, result.payload);
+  return {
+    ok: true,
+    meta,
+    ...(result.migratedFrom == null ? {} : { migratedFrom: result.migratedFrom }),
+  };
 }

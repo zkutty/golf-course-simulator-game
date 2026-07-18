@@ -73,9 +73,13 @@ if (!up) {
   process.exit(2);
 }
 
-const execCandidate = process.env.CHROMIUM_PATH || "/opt/pw-browsers/chromium";
+const execCandidate = [
+  process.env.CHROMIUM_PATH,
+  "/opt/pw-browsers/chromium",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+].find((candidate) => candidate && existsSync(candidate));
 const browser = await chromium.launch(
-  existsSync(execCandidate) ? { executablePath: execCandidate } : {}
+  execCandidate ? { executablePath: execCandidate } : {}
 );
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 await page.addInitScript(() => {
