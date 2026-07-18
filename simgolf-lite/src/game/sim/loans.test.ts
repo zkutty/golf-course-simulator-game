@@ -62,7 +62,7 @@ describe("loans — amortization, missed payments, and default (ZKU-76)", () => 
   });
 
   it("APR is capped at aprMax across repeated misses", () => {
-    let loan = { ...bridge(), apr: BALANCE.loans.aprMax };
+    let loan: Loan = { ...bridge(), apr: BALANCE.loans.aprMax };
     loan = stepLoanWeek(loan, { pay: false });
     expect(loan.apr).toBe(BALANCE.loans.aprMax);
   });
