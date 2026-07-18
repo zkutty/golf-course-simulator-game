@@ -95,6 +95,7 @@ function freshGolfer(course: Course): Golfer {
     thoughtUntil: 0,
     finished: false,
     spent: 0,
+    waitedMin: 0,
   };
 }
 

@@ -5,6 +5,7 @@ import { scoreCourseHoles } from "./holes";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { isCoursePlayable } from "./isCoursePlayable";
 import { stepLoanWeek, totalWeeklyPayments } from "./loans";
+import { staffWeeklyWage } from "../models/staff";
 import { getEffectiveBalance } from "../balance/difficulty";
 import { distressExhausted, hitsLiquidityTrap } from "./runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
@@ -45,8 +46,9 @@ export function tickWeek(
   // Revenue: visitors * price, but satisfaction affects repeat visits (baked into rep later)
   const revenue = playable ? visitors * course.baseGreenFee : visitors * BALANCE.visitors.testingRoundFee;
 
-  // Costs
-  const staffCost = BALANCE.ops.staffCostPerLevel * world.staffLevel;
+  // Costs — payroll from the individual staff roster (ZKU-121); worlds
+  // without one fall back to the legacy staffLevel formula in the helper.
+  const staffCost = staffWeeklyWage(world);
   const marketingCost = BALANCE.ops.marketingCostPerLevel * world.marketingLevel;
   const maintenanceCost = world.maintenanceBudget;
 
@@ -79,7 +81,13 @@ export function tickWeek(
   const canPayLoan = world.cash + revenue - nonLoanCosts >= paymentDue;
   const loanPaid = canPayLoan ? paymentDue : 0;
   const missedLoanPayment = !canPayLoan && paymentDue > 0;
-  const loans = (world.loans ?? []).map((l) => stepLoanWeek(l, { pay: canPayLoan }));
+  const prevLoans = world.loans ?? [];
+  const loans = prevLoans.map((l) => stepLoanWeek(l, { pay: canPayLoan }));
+  // A loan that just crossed into DEFAULTED (ZKU-76) is a hard failure: the
+  // lender calls the debt and the course goes under.
+  const loanDefaulted = loans.some(
+    (l, i) => l.status === "DEFAULTED" && prevLoans[i]?.status !== "DEFAULTED"
+  );
 
   const costs = nonLoanCosts + variableTotal + loanPaid;
   const profitPreTax = revenue - costs;
@@ -93,7 +101,7 @@ export function tickWeek(
   let nextDistress =
     nextCashRaw < 0 ? Math.min(BALANCE.distress.weeksToBankrupt, prevDistress + 1) : 0;
   if (missedLoanPayment) nextDistress = Math.min(BALANCE.distress.weeksToBankrupt, nextDistress + 1); // shorten distress timer
-  const bankrupt = liquidityTrap || distressExhausted(nextDistress);
+  const bankrupt = liquidityTrap || distressExhausted(nextDistress) || loanDefaulted;
 
   // Condition update: maintenance pushes up, wear pushes down
   const totalWeight = totalWeight0;

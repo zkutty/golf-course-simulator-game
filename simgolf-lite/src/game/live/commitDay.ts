@@ -1,5 +1,6 @@
 import type { Course, World } from "../models/types";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
+import { staffWeeklyWage } from "../models/staff";
 import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty";
 import { hitsLiquidityTrap } from "../sim/runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
@@ -26,15 +27,20 @@ export function commitDay(args: {
   revenue: number; // green fees already banked today
   reactions: RoundReactions; // real observed reactions from finished rounds
   dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
+  // Groundskeeper maintenance tasks completed on the live course today
+  // (ZKU-122) — credited as extra condition recovery below.
+  staffUpkeepTasks?: number;
 }): { world: World; course: Course; result: DayResult } {
-  const { course, world, revenue, reactions, dayIndex } = args;
+  const { course, world, revenue, reactions, dayIndex, staffUpkeepTasks = 0 } = args;
   // Difficulty-resolved balance (ZKU-165): identity for normal.
   const BALANCE = getEffectiveBalance(world.difficulty);
   const rounds = reactions.rounds;
   const avgSatisfaction = reactions.avgSatisfaction;
 
   // ---- Costs (per-day slice of weekly overhead + per-round variable) ----
-  const staffCost = (BALANCE.ops.staffCostPerLevel * world.staffLevel) / DAYS_PER_WEEK;
+  // Payroll comes from the individual roster (ZKU-121); worlds without one
+  // fall back to the legacy staffLevel formula inside the helper.
+  const staffCost = staffWeeklyWage(world) / DAYS_PER_WEEK;
   const marketingCost =
     (BALANCE.ops.marketingCostPerLevel * world.marketingLevel) / DAYS_PER_WEEK;
   const maintenanceCost = world.maintenanceBudget / DAYS_PER_WEEK;
@@ -73,7 +79,14 @@ export function commitDay(args: {
     BALANCE.condition.maintEffectCap / DAYS_PER_WEEK,
     maintenanceCost / BALANCE.condition.maintEffectDivisor
   );
-  const nextCondition = clamp01(course.condition - wear + maintEffect);
+  // Real groundskeeper work done on the course today (ZKU-122): each
+  // completed maintenance task recovers a sliver of condition, capped so a
+  // packed roster can't trivially pin condition at 1.
+  const staffUpkeepEffect = Math.min(
+    BALANCE.staff.upkeepConditionCapPerDay,
+    staffUpkeepTasks * BALANCE.staff.upkeepConditionPerTask
+  );
+  const nextCondition = clamp01(course.condition - wear + maintEffect + staffUpkeepEffect);
 
   // ---- Reputation: driven by the day's real net-promoter balance ----
   // Net promoter score of the golfers who actually finished, nudged by how many

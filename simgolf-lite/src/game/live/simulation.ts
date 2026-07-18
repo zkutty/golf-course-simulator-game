@@ -10,6 +10,14 @@ import { advanceGolfer } from "./golfer";
 import { planDay } from "./spawn";
 import { findWalkPath } from "./walkPath";
 import { LIVE } from "./liveConfig";
+import {
+  createStaffEntities,
+  marshaledHoles,
+  onDutyCount,
+  staffRenderData,
+  stepStaffEntities,
+  syncStaffEntities,
+} from "./staff";
 import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } from "./types";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
@@ -49,10 +57,19 @@ export function createLiveState(
     willReturnCount: 0,
     reconcileEpoch: 0,
     nextTeeFreeAt: 0,
+    staff: createStaffEntities(world, course, seed),
+    upkeepTasksDone: 0,
+    congestedHoles: [],
     walkCache: new Map(),
     dayOver: false,
     seed,
   };
+}
+
+// Rebuild live staff entities after a roster edit (hire/fire/shift change,
+// ZKU-124) without disturbing anyone already out on the course.
+export function reconcileStaff(state: LiveState, world: World, course: Course): void {
+  state.staff = syncStaffEntities(state.staff, world, course, state.seed);
 }
 
 // Turn a finished golfer's observed round into a discrete reaction. Kept here
@@ -110,7 +127,34 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     thoughtUntil: 0,
     finished: false,
     spent: 0,
+    waitedMin: 0,
   };
+}
+
+// Effective course condition golfers experience right now: the committed
+// condition plus the day's accumulated groundskeeper work (ZKU-122).
+export function liveCondition(state: LiveState, course: Course): number {
+  const lift = Math.min(
+    LIVE.staff.liveConditionCap,
+    state.upkeepTasksDone * LIVE.staff.liveConditionPerTask
+  );
+  return Math.min(1, course.condition + lift);
+}
+
+// Congested holes, most stacked first: more concurrent golfers than the
+// pace-of-play threshold allows (ZKU-123).
+function computeCongestedHoles(golfers: readonly Golfer[]): number[] {
+  const counts = new Map<number, number>();
+  for (const g of golfers) {
+    if (g.finished || g.currentHole < 0) continue;
+    counts.set(g.currentHole, (counts.get(g.currentHole) ?? 0) + 1);
+  }
+  const congested: number[] = [];
+  for (const [hole, n] of counts) {
+    if (n >= LIVE.staff.congestion.golfersPerHole) congested.push(hole);
+  }
+  congested.sort((a, b) => (counts.get(b) ?? 0) - (counts.get(a) ?? 0) || a - b);
+  return congested;
 }
 
 export interface StepEvents {
@@ -149,11 +193,55 @@ export function stepLive(
     state.greenFeeCollected += course.baseGreenFee;
   }
 
+  // Staff first (ZKU-121): they see the congestion picture from the end of
+  // the previous step and react to it this step.
+  const staffResult = stepStaffEntities(state.staff, dtMin, {
+    course,
+    dayMinute: state.dayMinute,
+    route: makeRouter(course, state.walkCache),
+    congested: state.congestedHoles,
+  });
+  state.upkeepTasksDone += staffResult.mowTasksCompleted;
+
+  const attended = marshaledHoles(state.staff);
+  const congestedSet = new Set(state.congestedHoles);
+  // Cart attendants shave everyone's walking time a little (ZKU-121).
+  const cartMult =
+    1 +
+    Math.min(
+      LIVE.staff.cartPaceCap,
+      onDutyCount(state.staff, "cartAttendant") * LIVE.staff.cartPacePerAttendant
+    );
+  const proShopBonus = Math.min(
+    LIVE.staff.proShopFinishMoodCap,
+    onDutyCount(state.staff, "proShop") * LIVE.staff.proShopFinishMoodBonus
+  );
+  const condition = liveCondition(state, course);
+  const cg = LIVE.staff.congestion;
+
   // Advance every golfer; retire finished ones.
   const stillPlaying: Golfer[] = [];
   for (const g of state.golfers) {
-    advanceGolfer(g, dtMin, course.condition);
+    // Pace of play (ZKU-123): a stacked hole slows the round and sours moods
+    // — unless a marshal is stationed there, hurrying groups along.
+    let walkMult = cartMult;
+    if (!g.finished && congestedSet.has(g.currentHole)) {
+      if (attended.has(g.currentHole)) {
+        walkMult *= cg.marshalPaceBoost;
+      } else {
+        const before = g.waitedMin;
+        g.waitedMin += dtMin;
+        g.mood = Math.max(LIVE.mood.min, g.mood - cg.moodDrainPerMin * dtMin);
+        if (before < cg.thoughtAfterMin && g.waitedMin >= cg.thoughtAfterMin) {
+          g.thought = "Pace of play is dragging…";
+          g.thoughtUntil = state.dayMinute + 8;
+        }
+      }
+    }
+    advanceGolfer(g, dtMin, condition, walkMult);
     if (g.finished) {
+      // A staffed pro shop sends finishers off a touch happier (ZKU-121).
+      if (proShopBonus > 0) g.mood = Math.min(LIVE.mood.max, g.mood + proShopBonus);
       state.satisfactionSum += g.mood * 100;
       state.roundsFinished++;
       const reaction = classifyReaction(g);
@@ -166,6 +254,7 @@ export function stepLive(
     }
   }
   state.golfers = stillPlaying;
+  state.congestedHoles = computeCongestedHoles(state.golfers);
 
   const allArrived = state.nextArrivalIdx >= state.arrivals.length;
   if (state.dayMinute >= LIVE.day.closeMinute && allArrived && state.golfers.length === 0) {
@@ -176,7 +265,8 @@ export function stepLive(
 }
 
 export function liveRenderData(state: LiveState): GolferRenderData[] {
-  const out: GolferRenderData[] = [];
+  // Staff ride the same render pipeline with negated ids (ZKU-121).
+  const out: GolferRenderData[] = staffRenderData(state.staff);
   for (const g of state.golfers) {
     // Animation facts (ZKU-153): current segment kind/progress, the stroke
     // being played, and a facing direction. Pure derivation — no sim state

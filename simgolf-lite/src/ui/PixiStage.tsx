@@ -2195,26 +2195,30 @@ export function PixiStage(props: PixiStageProps) {
             em.stillSinceMs = nowMs;
             simMovingAtRef.current = nowMs;
           }
-          if (golfer.scoredHoles > em.lastScored) {
-            em.lastScored = golfer.scoredHoles;
-            showEmote(holeOutEmote(golfer.lastHoleDelta));
-          }
-          showEmote(moodEmote(em.prevMood, golfer.mood));
-          em.prevMood = golfer.mood;
-          if (!em.feeChecked) {
-            em.feeChecked = true;
-            // Walk-in fee opinion — only for golfers actually starting out.
-            if (golfer.scoredHoles === 0) showEmote(feeEmote(course.baseGreenFee, golfer.id));
-          }
-          // Zzz: standing dead-still while the rest of the sim moves.
-          if (
-            golfer.segKind !== "flight" &&
-            !golfer.shot &&
-            nowMs - em.stillSinceMs > EMOTE_STALL_MS &&
-            nowMs - simMovingAtRef.current < 400
-          ) {
-            em.stillSinceMs = nowMs; // re-arm; the cooldown gates repeats
-            showEmote("zzz");
+          // Staff entities (negated ids, ZKU-121) are working, not reacting —
+          // no fee opinions, mood swings, or dozing at their station.
+          if (golfer.id > 0) {
+            if (golfer.scoredHoles > em.lastScored) {
+              em.lastScored = golfer.scoredHoles;
+              showEmote(holeOutEmote(golfer.lastHoleDelta));
+            }
+            showEmote(moodEmote(em.prevMood, golfer.mood));
+            em.prevMood = golfer.mood;
+            if (!em.feeChecked) {
+              em.feeChecked = true;
+              // Walk-in fee opinion — only for golfers actually starting out.
+              if (golfer.scoredHoles === 0) showEmote(feeEmote(course.baseGreenFee, golfer.id));
+            }
+            // Zzz: standing dead-still while the rest of the sim moves.
+            if (
+              golfer.segKind !== "flight" &&
+              !golfer.shot &&
+              nowMs - em.stillSinceMs > EMOTE_STALL_MS &&
+              nowMs - simMovingAtRef.current < 400
+            ) {
+              em.stillSinceMs = nowMs; // re-arm; the cooldown gates repeats
+              showEmote("zzz");
+            }
           }
 
           // Position + entity culling first: an offscreen golfer keeps its

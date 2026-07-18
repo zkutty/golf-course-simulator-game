@@ -4,6 +4,7 @@ import { computeTerrainChangeCost } from "../models/terrainEconomics";
 import { scoreCourseHoles } from "../sim/holes";
 import { isCoursePlayable } from "../sim/isCoursePlayable";
 import { createLoan } from "../sim/loans";
+import { hitsLiquidityTrap } from "../sim/runState";
 import { tickWeek } from "../sim/tickWeek";
 import { mulberry32, randInt } from "../../utils/rng";
 import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty";
@@ -62,7 +63,7 @@ function paintBrush(course: Course, world: World, x: number, y: number, t: Terra
   const nextCash = world.cash - net;
   return {
     course: { ...course, tiles },
-    world: { ...world, cash: nextCash, isBankrupt: world.isBankrupt || nextCash < -10_000 },
+    world: { ...world, cash: nextCash, isBankrupt: world.isBankrupt || hitsLiquidityTrap(nextCash) },
   };
 }
 
@@ -200,7 +201,7 @@ function stepBot(archetype: Archetype, course: Course, world: World, rng: () => 
       const t: Terrain =
         rng() < 0.45 ? "fairway" : rng() < 0.65 ? "sand" : rng() < 0.78 ? "water" : rng() < 0.9 ? "deep_rough" : "rough";
       ({ course, world } = paintBrush(course, world, x, y, t));
-      if (world.cash < -10_000) break;
+      if (hitsLiquidityTrap(world.cash)) break;
       if (rng() < 0.05) break;
     }
   }

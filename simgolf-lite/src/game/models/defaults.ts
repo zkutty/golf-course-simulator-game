@@ -1,5 +1,6 @@
 import type { Course, Terrain, World } from "./types";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "./constants";
+import { defaultRosterFor } from "./staff";
 
 export const DEFAULT_COURSE: Course = {
   name: "West Village Municipal",
@@ -28,6 +29,8 @@ export const DEFAULT_WORLD: World = {
   staffLevel: 1,
   marketingLevel: 0,
   maintenanceBudget: 900,
+  staff: defaultRosterFor(1),
+  nextStaffId: 2,
   runSeed: 1337,
   distressWeeks: 0,
   isBankrupt: false,

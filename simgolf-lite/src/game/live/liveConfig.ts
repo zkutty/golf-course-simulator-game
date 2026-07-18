@@ -65,6 +65,46 @@ export const LIVE = {
     max: 1,
   },
 
+  // Staff as people (ZKU-121/122/123): on-course staff entity behavior.
+  staff: {
+    walkPerTile: 0.12, // staff stride a touch quicker than golfers
+    // Shift windows in day game-minutes (day runs 0..closeMinute).
+    shifts: {
+      full: { start: 0, end: 840 },
+      morning: { start: 0, end: 420 },
+      afternoon: { start: 420, end: 840 },
+    },
+    // Groundskeeper maintenance task (ZKU-122): mow legs zigzag over the
+    // target patch, then a raking pause before moving on.
+    mow: {
+      legMinutes: 2.5,
+      legs: 6,
+      finishPause: 3,
+    },
+    // Live condition lift while groundskeeper work accumulates during the
+    // day; the durable recovery is credited at day commit (balance config).
+    liveConditionPerTask: 0.005,
+    liveConditionCap: 0.05,
+    // Idle stationing pause for desk roles between shuttle walks.
+    stationPause: 8,
+    shuttleRadius: 4,
+    // Pace of play (ZKU-123): a hole with this many groups stacked on it is
+    // congested; golfers stuck there bleed mood unless a marshal attends.
+    congestion: {
+      golfersPerHole: 4,
+      moodDrainPerMin: 0.0012,
+      thoughtAfterMin: 10,
+      marshalPaceBoost: 1.35, // walk-speed multiplier on marshaled holes
+      marshalWatchPause: 6,
+    },
+    // Cart attendants shave walking time course-wide; pro shop staff send
+    // finishers off happier (visible in reactions, ZKU-121 scope).
+    cartPacePerAttendant: 0.06,
+    cartPaceCap: 0.15,
+    proShopFinishMoodBonus: 0.03,
+    proShopFinishMoodCap: 0.06,
+  },
+
   // Thresholds that turn a finished golfer's mood into a discrete reaction,
   // aggregated into reputation (ZKU-116).
   reactions: {

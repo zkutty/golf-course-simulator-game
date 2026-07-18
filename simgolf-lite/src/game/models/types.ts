@@ -82,13 +82,32 @@ export interface Course {
   theme?: LandTheme;
 }
 
+// Staff as people (ZKU-121): individual employees replace the old aggregate
+// staff level. Wage is snapshotted at hire; shift picks the on-course window.
+export type StaffRole = "groundskeeper" | "cartAttendant" | "proShop" | "marshal";
+export type StaffShift = "full" | "morning" | "afternoon";
+
+export interface StaffMember {
+  id: number;
+  name: string;
+  role: StaffRole;
+  shift: StaffShift;
+  wage: number; // dollars per week
+}
+
 export interface World {
   week: number;
   cash: number;
   reputation: number; // 0..100
+  // Derived cache of min(5, staff roster size); kept so the demand and
+  // satisfaction formulas (score.ts) survive the roster migration (ZKU-121).
   staffLevel: number; // 0..5
   marketingLevel: number; // 0..5
   maintenanceBudget: number; // dollars per week
+  // Individual staff roster (ZKU-121). Optional so hand-built worlds (tuner,
+  // tests) fall back to the aggregate staffLevel; saves migrate on load.
+  staff?: StaffMember[];
+  nextStaffId?: number;
   // Run state
   runSeed: number;
   distressWeeks: number; // 0..2 (bankrupt when reaches 2 and still negative)
