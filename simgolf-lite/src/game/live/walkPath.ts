@@ -1,8 +1,10 @@
 import type { Course, Point, Terrain } from "../models/types";
+import { buildingFootprintSet } from "../models/buildings";
 
 // Tile-aware walking routes for golfers so they path AROUND water instead of
 // straight-lining over it. A lightweight 8-directional BFS on the tile grid;
-// water (and out-of-bounds) is impassable. Returns the list of waypoints from
+// water, building footprints (M4/ZKU-117 — matches the sim-side pathfinder),
+// and out-of-bounds are impassable. Returns the list of waypoints from
 // just-after `from` through `to` (inclusive), simplified to direction-change
 // corners, or null if no walkable route exists.
 
@@ -12,9 +14,11 @@ function inBounds(course: Course, x: number, y: number): boolean {
   return x >= 0 && y >= 0 && x < course.width && y < course.height;
 }
 
-function walkable(course: Course, x: number, y: number): boolean {
+function walkable(course: Course, x: number, y: number, footprints: Set<number>): boolean {
   if (!inBounds(course, x, y)) return false;
-  return !BLOCKED[course.tiles[y * course.width + x]];
+  const idx = y * course.width + x;
+  if (footprints.has(idx)) return false;
+  return !BLOCKED[course.tiles[idx]];
 }
 
 const DIRS: Array<[number, number]> = [
@@ -33,8 +37,10 @@ export function findWalkPath(
   const tx = Math.round(to.x);
   const ty = Math.round(to.y);
 
-  // If endpoints sit on water/out-of-bounds we can't route; caller falls back.
-  if (!walkable(course, sx, sy) || !walkable(course, tx, ty)) return null;
+  const footprints = buildingFootprintSet(course);
+  // If endpoints sit on water/buildings/out-of-bounds we can't route; caller
+  // falls back to a straight-line walk.
+  if (!walkable(course, sx, sy, footprints) || !walkable(course, tx, ty, footprints)) return null;
   if (sx === tx && sy === ty) return [{ x: to.x, y: to.y }];
 
   const W = course.width;
@@ -56,9 +62,14 @@ export function findWalkPath(
       for (const [dx, dy] of DIRS) {
         const nx = cx + dx;
         const ny = cy + dy;
-        if (!walkable(course, nx, ny)) continue;
-        // Prevent squeezing diagonally through a water pinch.
-        if (dx !== 0 && dy !== 0 && (!walkable(course, cx + dx, cy) || !walkable(course, cx, cy + dy))) continue;
+        if (!walkable(course, nx, ny, footprints)) continue;
+        // Prevent squeezing diagonally through a water/building pinch.
+        if (
+          dx !== 0 &&
+          dy !== 0 &&
+          (!walkable(course, cx + dx, cy, footprints) || !walkable(course, cx, cy + dy, footprints))
+        )
+          continue;
         const nk = ny * W + nx;
         if (seen.has(nk)) continue;
         seen.add(nk);

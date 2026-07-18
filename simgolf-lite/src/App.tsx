@@ -160,12 +160,7 @@ export default function App() {
           visitors: result.rounds,
           revenue: result.revenue,
           // Itemized income from the day's real transactions (M4/ZKU-120).
-          revenueBreakdown: {
-            greenFees: { count: result.rounds, revenue: result.greenFees },
-            concessions: result.concessionSales,
-            concessionsTotal: result.concessionRevenue,
-            total: result.revenue,
-          },
+          revenueBreakdown: result.revenueBreakdown,
           costs: result.costs,
           profit: result.profit,
           avgSatisfaction: result.avgSatisfaction,

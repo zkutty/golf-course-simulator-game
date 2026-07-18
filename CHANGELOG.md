@@ -27,6 +27,12 @@ versioning follows [SemVer](https://semver.org/).
   save/load with sanitization. Balance for building-less courses is
   unchanged (concession lines are exactly zero), so tuning results are
   unaffected.
+
+### Fixed
+- Live golfers now walk around building footprints: the live walk router
+  only avoided water, so golfers strolled straight through the clubhouse
+  (and would have through the new concessions). It now blocks the same
+  footprints as the sim-side pathfinder.
 - Render performance budget (ZKU-160): a dev perf HUD in the Pixi renderer
   (enable with `localStorage.coursecraft_perfhud = "on"`) showing fps,
   mean/p95/max frame time, the renderer's own per-tick work split by

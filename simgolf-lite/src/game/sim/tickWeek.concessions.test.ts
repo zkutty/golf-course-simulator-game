@@ -62,6 +62,30 @@ describe("tickWeek itemized revenue (ZKU-120)", () => {
     expect(rb.concessionsTotal).toBeGreaterThan(result.variableCosts!.concessionGoods!);
   });
 
+  it("premium pricing repels buyers offline just like the live appeal model", () => {
+    const std = playableCourse();
+    std.buildings = [{ type: "snackbar", x: 10, y: 20 }];
+    const prem = playableCourse();
+    prem.buildings = [{ type: "snackbar", x: 10, y: 20, pricing: "premium" }];
+    const rbStd = tickWeek(std, world(), 42).result.revenueBreakdown!;
+    const rbPrem = tickWeek(prem, world(), 42).result.revenueBreakdown!;
+    expect(rbPrem.concessions.snackbar!.count).toBeLessThan(rbStd.concessions.snackbar!.count);
+  });
+
+  it("a bricked-in concession (no service point) sells nothing", () => {
+    const course = playableCourse();
+    course.buildings = [{ type: "snackbar", x: 10, y: 20 }];
+    // Surround the snack bar with water so no adjacent tile is walkable.
+    for (let y = 19; y <= 21; y++) {
+      for (let x = 9; x <= 11; x++) {
+        if (x === 10 && y === 20) continue;
+        course.tiles[y * course.width + x] = "water";
+      }
+    }
+    const rb = tickWeek(course, world(), 42).result.revenueBreakdown!;
+    expect(rb.concessionsTotal).toBe(0);
+  });
+
   it("two snack bars attach more buyers than one, with diminishing returns", () => {
     const one = playableCourse();
     one.buildings = [{ type: "snackbar", x: 10, y: 20 }];

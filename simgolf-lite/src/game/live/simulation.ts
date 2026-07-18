@@ -118,6 +118,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     // a stable per-golfer seed for frame-timing-independent buy rolls.
     wallet: rollWallet(personality, rng),
     purchaseSeed: (state.seed + id * 977) | 0,
+    buyRolls: 0,
     pendingPurchases: [],
   };
 }

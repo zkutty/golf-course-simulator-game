@@ -239,14 +239,20 @@ export const BALANCE = {
       pricePrefWeight: 0.2, // scales prefs.price vs the pricing appeal
       hungerPerHole: 0.03, // snack appetite grows through the round
       walletBase: 40,
-      walletSpendScale: 140, // wallet = base + propensity * scale * (0.6..1.4)
+      walletSpendScale: 140, // wallet = base + propensity * scale * spread
+      walletSpreadMin: 0.6, // rng spread multiplier on the propensity term
+      walletSpreadMax: 1.4,
     },
-    // Routing model (ZKU-119): how rounds pick up concession detours.
+    // Routing model (ZKU-119): how rounds pick up concession detours. Every
+    // chance is scaled by the golfer's plan-time eagerness:
+    // eagernessBase + spendPropensity * eagernessSpendScale.
     routing: {
-      preRoundProShopChance: 0.35, // scaled by spend propensity at plan time
+      preRoundProShopChance: 0.35,
       preRoundCartChance: 0.5,
       postRoundProShopChance: 0.4,
       snackStopBaseChance: 0.3,
+      eagernessBase: 0.4,
+      eagernessSpendScale: 0.9,
       maxSnackStops: 2,
       detourMaxTiles: 16, // how far off-route a snack bar can pull a golfer
     },

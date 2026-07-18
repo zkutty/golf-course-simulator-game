@@ -18,8 +18,10 @@ import { BUILDING_SPECS, buildingFootprintSet, buildingSpec } from "./buildings"
 
 export const CONCESSION_TYPES = ["proshop", "snackbar", "cartrental"] as const;
 
+// Positive membership check so a future non-selling building type (restrooms,
+// sheds…) never silently gains a price tag and a salvage refund.
 export function isConcession(type: BuildingType): type is ConcessionType {
-  return type !== "clubhouse";
+  return (CONCESSION_TYPES as readonly string[]).includes(type);
 }
 
 export function concessionsOnCourse(course: Course): Building[] {

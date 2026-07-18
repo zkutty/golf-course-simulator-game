@@ -1,4 +1,10 @@
-import type { ConcessionType, Difficulty, Point, RevenueLine } from "../models/types";
+import type {
+  ConcessionType,
+  Difficulty,
+  Point,
+  RevenueBreakdown,
+  RevenueLine,
+} from "../models/types";
 import type { Personality } from "./personality";
 import type { ConcessionPurchase, ConcessionStopInfo } from "./concessions";
 
@@ -59,6 +65,9 @@ export interface Golfer {
   // outcomes are deterministic regardless of frame timing.
   wallet: number;
   purchaseSeed: number;
+  // Count of buy rolls drawn so far — persists across mid-round re-plans so a
+  // replaced itinerary can never replay an already-consumed roll.
+  buyRolls: number;
   // Realized purchases not yet folded into the day's books; drained by
   // stepLive each tick into cash + itemized revenue.
   pendingPurchases: ConcessionPurchase[];
@@ -153,10 +162,9 @@ export interface DayResult {
   dayIndex: number;
   rounds: number;
   revenue: number; // everything actually collected (green fees + concessions)
-  // Itemized income behind `revenue` (M4/ZKU-120).
-  greenFees: number;
-  concessionRevenue: number;
-  concessionSales: Partial<Record<ConcessionType, RevenueLine>>;
+  // Itemized income behind `revenue` (M4/ZKU-120), built here so the weekly
+  // and daily paths share one breakdown shape.
+  revenueBreakdown: RevenueBreakdown;
   costs: number;
   profit: number;
   avgSatisfaction: number; // 0..100

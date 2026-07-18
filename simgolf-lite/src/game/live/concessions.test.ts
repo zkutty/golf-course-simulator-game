@@ -6,6 +6,8 @@ import { buildGolferRound, advanceGolfer, entryPoint } from "./golfer";
 import { createLiveState, stepLive } from "./simulation";
 import { commitDay } from "./commitDay";
 import { decidePurchase, planRoundStops, rollWallet } from "./concessions";
+import { findWalkPath } from "./walkPath";
+import { buildingFootprintSet } from "../models/buildings";
 import { mulberry32 } from "../../utils/rng";
 import type { Golfer, RoundReactions } from "./types";
 import type { Personality } from "./personality";
@@ -93,6 +95,7 @@ function spender(course: Course, rngSeed = 7): Golfer {
     spent: 0,
     wallet: 500,
     purchaseSeed: 99,
+    buyRolls: 0,
     pendingPurchases: [],
   };
 }
@@ -144,6 +147,20 @@ describe("planRoundStops (ZKU-119)", () => {
     for (const s of stopSegs) {
       expect(s.kind).toBe("pause");
       expect(s.stop!.price).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("live walk routing vs buildings", () => {
+  it("findWalkPath never routes through a building footprint", () => {
+    const course = makeCourse();
+    // Wall the direct line with a pro shop and route across it.
+    course.buildings = [{ type: "proshop", x: 20, y: 11 }];
+    const path = findWalkPath(course, { x: 10, y: 12 }, { x: 30, y: 12 })!;
+    expect(path).not.toBeNull();
+    const blocked = buildingFootprintSet(course);
+    for (const p of path) {
+      expect(blocked.has(p.y * course.width + p.x)).toBe(false);
     }
   });
 });
@@ -257,9 +274,10 @@ describe("live purchases and itemized day income (ZKU-118/120)", () => {
       reactions,
     });
     expect(withShops.result.revenue).toBe(850);
-    expect(withShops.result.greenFees).toBe(650);
-    expect(withShops.result.concessionRevenue).toBe(200);
-    expect(withShops.result.concessionSales.snackbar?.count).toBe(10);
+    expect(withShops.result.revenueBreakdown.greenFees.revenue).toBe(650);
+    expect(withShops.result.revenueBreakdown.concessionsTotal).toBe(200);
+    expect(withShops.result.revenueBreakdown.total).toBe(850);
+    expect(withShops.result.revenueBreakdown.concessions.snackbar?.count).toBe(10);
     // COGS lands in costs: same day is more expensive by exactly the goods.
     expect(withShops.result.costs).toBeGreaterThan(base.result.costs);
   });

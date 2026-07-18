@@ -29,7 +29,7 @@ export function commitDay(args: {
   concessions?: {
     revenue: number;
     goodsCost: number;
-    sales: DayResult["concessionSales"];
+    sales: DayResult["revenueBreakdown"]["concessions"];
   };
   reactions: RoundReactions; // real observed reactions from finished rounds
   dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
@@ -61,6 +61,8 @@ export function commitDay(args: {
   );
   const laborVariable = rounds * laborPerRound;
   const consumablesVariable = rounds * BALANCE.variableCosts.consumablesPerRound;
+  // Card fees intentionally apply to ALL takings, concessions included — a
+  // sale's true margin is price − goods − merchant fee.
   const merchantFees = revenue * BALANCE.variableCosts.merchantFeeRate;
 
   const costsPreTax =
@@ -126,9 +128,12 @@ export function commitDay(args: {
       dayIndex: 0,
       rounds,
       revenue,
-      greenFees,
-      concessionRevenue,
-      concessionSales: args.concessions?.sales ?? {},
+      revenueBreakdown: {
+        greenFees: { count: rounds, revenue: greenFees },
+        concessions: args.concessions?.sales ?? {},
+        concessionsTotal: concessionRevenue,
+        total: revenue,
+      },
       costs,
       profit,
       avgSatisfaction,

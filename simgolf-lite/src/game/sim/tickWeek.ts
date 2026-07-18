@@ -1,13 +1,25 @@
-import type { ConcessionType, Course, RevenueBreakdown, WeekResult, World } from "../models/types";
+import type {
+  ConcessionType,
+  Course,
+  Difficulty,
+  RevenueBreakdown,
+  WeekResult,
+  World,
+} from "../models/types";
 import { mulberry32, randInt } from "../../utils/rng";
-import { BALANCE as BASE_BALANCE } from "../balance/balanceConfig";
-import { concessionGoodsCost, concessionItemPrice, concessionsOnCourse } from "../models/concessions";
+import {
+  concessionAppeal,
+  concessionGoodsCost,
+  concessionItemPrice,
+  concessionsOnCourse,
+  servicePoint,
+} from "../models/concessions";
 import { demandBreakdown, satisfactionBreakdown, satisfactionScore } from "./score";
 import { scoreCourseHoles } from "./holes";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { isCoursePlayable } from "./isCoursePlayable";
 import { stepLoanWeek, totalWeeklyPayments } from "./loans";
-import { getEffectiveBalance } from "../balance/difficulty";
+import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty";
 import { distressExhausted, hitsLiquidityTrap } from "./runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
 
@@ -49,7 +61,7 @@ export function tickWeek(
   const greenFeeRevenue = playable
     ? visitors * course.baseGreenFee
     : visitors * BALANCE.visitors.testingRoundFee;
-  const concessions = expectedConcessionRevenue(course, playable ? visitors : 0);
+  const concessions = expectedConcessionRevenue(course, playable ? visitors : 0, world.difficulty);
   const revenue = greenFeeRevenue + concessions.total;
   const revenueBreakdown: RevenueBreakdown = {
     greenFees: { count: visitors, revenue: greenFeeRevenue },
@@ -232,14 +244,20 @@ function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
 }
 
-// Expected weekly concession income from the placed buildings (ZKU-120).
-// The offline counterpart of the live per-transaction model: attach rates say
-// what share of visitors buy at one building of a type; extra buildings add
-// coverage with diminishing returns (1 - (1-a)^n); each expected sale uses
-// that building mix's real ticket price and cost of goods.
+// Expected weekly concession income from the placed buildings (ZKU-120): the
+// offline counterpart of the live per-transaction model, sharing its levers so
+// the two economies agree. Attach rates say what share of visitors buy at one
+// building of a type; each building's rate is tilted by its tier/pricing
+// appeal (premium repels buyers offline exactly like it does at the live
+// counter) and by the difficulty spend multiplier the live model applies to
+// personalities. Buildings golfers can't reach (no service point) sell
+// nothing. Extra buildings of a type add coverage with diminishing returns
+// (1 - Π(1 - a_i)); sales split across the mix proportional to each
+// building's rate at its own ticket price and cost of goods.
 function expectedConcessionRevenue(
   course: Course,
-  visitors: number
+  visitors: number,
+  difficulty: Difficulty | undefined
 ): {
   total: number;
   goodsCost: number;
@@ -249,20 +267,27 @@ function expectedConcessionRevenue(
   let total = 0;
   let goodsCost = 0;
   if (visitors <= 0) return { total, goodsCost, lines };
-  const byType = new Map<ConcessionType, { prices: number[]; goods: number[] }>();
+  const BALANCE = getEffectiveBalance(difficulty);
+  const spendMult = getDifficultyProfile(difficulty).spendMult;
+  const byType = new Map<ConcessionType, Array<{ attach: number; price: number; goods: number }>>();
   for (const b of concessionsOnCourse(course)) {
+    if (!servicePoint(course, b)) continue; // bricked in — live golfers can't buy here either
     const t = b.type as ConcessionType;
-    const entry = byType.get(t) ?? { prices: [], goods: [] };
-    entry.prices.push(concessionItemPrice(b));
-    entry.goods.push(concessionGoodsCost(b));
+    const attach = Math.max(
+      0,
+      Math.min(0.95, BALANCE.concessions.weeklyAttach[t] * (1 + concessionAppeal(b)) * spendMult)
+    );
+    const entry = byType.get(t) ?? [];
+    entry.push({ attach, price: concessionItemPrice(b), goods: concessionGoodsCost(b) });
     byType.set(t, entry);
   }
-  for (const [type, entry] of byType) {
-    const attachOne = BASE_BALANCE.concessions.weeklyAttach[type];
-    const attach = 1 - Math.pow(1 - attachOne, entry.prices.length);
-    const count = Math.round(visitors * attach);
-    const avgPrice = entry.prices.reduce((a, p) => a + p, 0) / entry.prices.length;
-    const avgGoods = entry.goods.reduce((a, g) => a + g, 0) / entry.goods.length;
+  for (const [type, buildings] of byType) {
+    const coverage = 1 - buildings.reduce((acc, b) => acc * (1 - b.attach), 1);
+    const attachSum = buildings.reduce((acc, b) => acc + b.attach, 0);
+    if (coverage <= 0 || attachSum <= 0) continue;
+    const count = Math.round(visitors * coverage);
+    const avgPrice = buildings.reduce((acc, b) => acc + (b.attach / attachSum) * b.price, 0);
+    const avgGoods = buildings.reduce((acc, b) => acc + (b.attach / attachSum) * b.goods, 0);
     const revenue = count * avgPrice;
     lines[type] = { count, revenue };
     total += revenue;

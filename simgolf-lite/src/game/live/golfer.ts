@@ -105,7 +105,6 @@ export function planFromHole(args: {
   // Concession detours (ZKU-119): walk to the counter, wait to be served
   // (the pause carries the stop info that triggers the buy roll), walk on.
   const stops = planRoundStops({ course, personality, rng, entry: args.cursor });
-  let stopIndex = 0;
   let snackStops = 0;
   const pushStop = (stop: PlannedStop, holeIndex: number) => {
     pushWalk(cursor, stop.point, holeIndex, LIVE.pace.interHoleWalkCap);
@@ -115,7 +114,7 @@ export function planFromHole(args: {
       to: stop.point,
       holeIndex,
       dur: stop.serviceMinutes,
-      stop: { ...stop.info, stopIndex: stopIndex++ },
+      stop: stop.info,
     });
     cursor = stop.point;
   };
@@ -237,10 +236,12 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
       remaining -= left;
       g.segElapsed = 0;
       // Leaving a concession counter (M4/ZKU-118): roll the purchase. The
-      // roll is seeded per golfer+stop, so the outcome is identical no matter
-      // how the frame timing sliced this segment.
+      // roll is seeded per golfer and salted by a persistent per-golfer roll
+      // counter, so the outcome is identical no matter how frame timing
+      // sliced this segment, and a mid-round re-plan (ZKU-136) draws fresh
+      // rolls instead of replaying ones already consumed.
       if (seg.stop) {
-        const roll = mulberry32((g.purchaseSeed + seg.stop.stopIndex * 7919) | 0)();
+        const roll = mulberry32((g.purchaseSeed + g.buyRolls++ * 7919) | 0)();
         const buys = decidePurchase({
           personality: g.personality,
           mood: g.mood,

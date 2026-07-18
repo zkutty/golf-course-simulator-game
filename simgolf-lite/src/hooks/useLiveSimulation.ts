@@ -79,6 +79,14 @@ function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
 }
 
+// Buildings compare by footprint signature, not array identity: placing or
+// removing one changes walkability and must re-plan live rounds (M4), but
+// CONFIGURE_BUILDING replaces the array for pure economy tweaks (pricing,
+// tier) that move no footprint and must NOT rewind golfers mid-hole.
+function buildingsKey(c: Course): string {
+  return (c.buildings ?? []).map((b) => `${b.type}:${b.x}:${b.y}`).join("|");
+}
+
 // Drives the real-time "living course": a game clock that spawns golfers, walks
 // them through their rounds, banks green fees live, and commits each finished
 // day into the economy/reputation model.
@@ -139,7 +147,7 @@ export function useLiveSimulation(args: {
     tiles: course.tiles,
     holes: course.holes,
     obstacles: course.obstacles,
-    buildings: course.buildings,
+    buildings: buildingsKey(course),
   });
   useEffect(() => {
     const prev = geomRef.current;
@@ -147,15 +155,13 @@ export function useLiveSimulation(args: {
       prev.tiles !== course.tiles ||
       prev.holes !== course.holes ||
       prev.obstacles !== course.obstacles ||
-      // Buildings block walking and host concession stops (M4) — placing or
-      // removing one must re-plan live rounds too.
-      prev.buildings !== course.buildings;
+      prev.buildings !== buildingsKey(course);
     if (!changed) return;
     geomRef.current = {
       tiles: course.tiles,
       holes: course.holes,
       obstacles: course.obstacles,
-      buildings: course.buildings,
+      buildings: buildingsKey(course),
     };
     const live = liveRef.current;
     if (enabled && live && live.golfers.length > 0) {

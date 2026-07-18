@@ -185,6 +185,9 @@ export function HUD(props: {
   const audio = useAudio();
 
   const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
+  // Concession panel data (M4): one filter + one cost scaler per render.
+  const placedConcessions = useMemo(() => concessionsOnCourse(course), [course]);
+  const buildCostMult = terrainCostMult(world.difficulty);
   const price = useMemo(() => Math.round(priceAttractiveness(course) * 100), [course]);
   const liveDemand = useMemo(() => demandBreakdown(course, world), [course, world]);
   const activeHole = holeSummary.holes[activeHoleIndex];
@@ -863,7 +866,7 @@ export function HUD(props: {
                 <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
                   {CONCESSION_TYPES.map((t) => {
                     const spec = BUILDING_SPECS[t];
-                    const cost = concessionBuildCost(t, terrainCostMult(world.difficulty));
+                    const cost = concessionBuildCost(t, buildCostMult);
                     return (
                       <button
                         key={t}
@@ -890,15 +893,15 @@ export function HUD(props: {
                     );
                   })}
                 </div>
-                {concessionsOnCourse(course).length > 0 && (
+                {placedConcessions.length > 0 && (
                   <div style={{ marginTop: 12 }}>
                     <div style={{ marginBottom: 6 }}>
                       <b>Placed concessions</b>
                     </div>
                     <div style={{ display: "grid", gap: 8 }}>
-                      {concessionsOnCourse(course).map((b) => {
+                      {placedConcessions.map((b) => {
                         const spec = BUILDING_SPECS[b.type];
-                        const upgrade = tierUpgradeCost(b, terrainCostMult(world.difficulty));
+                        const upgrade = tierUpgradeCost(b, buildCostMult);
                         return (
                           <div
                             key={`${b.type}:${b.x}:${b.y}`}

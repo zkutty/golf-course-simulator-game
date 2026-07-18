@@ -1,5 +1,6 @@
 import type { Building, ConcessionType, Course, Point } from "../models/types";
 import { BALANCE } from "../../game/balance/balanceConfig";
+import { clamp } from "../../utils/clamp";
 import {
   concessionAppeal,
   concessionGoodsCost,
@@ -19,12 +20,13 @@ import type { Personality } from "./personality";
  */
 
 // A planned stop at a concession counter, attached to the pause segment.
+// The buy roll is salted by the golfer's persistent roll counter (not a
+// plan-local index), so a mid-round re-plan can never replay a consumed roll.
 export interface ConcessionStopInfo {
   kind: ConcessionType;
   price: number;
   goodsCost: number;
   appeal: number; // building's tier/pricing appeal, folded into the buy roll
-  stopIndex: number; // per-round ordinal, salts the deterministic buy roll
 }
 
 // One realized transaction, drained by stepLive into cash + itemized rollups.
@@ -38,7 +40,7 @@ export interface PlannedStop {
   building: Building;
   point: Point;
   serviceMinutes: number;
-  info: Omit<ConcessionStopInfo, "stopIndex">;
+  info: ConcessionStopInfo;
 }
 
 function toStop(course: Course, b: Building): PlannedStop | null {
@@ -62,17 +64,10 @@ function dist(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-function nearestOfType(
-  course: Course,
-  type: ConcessionType,
-  from: Point
-): PlannedStop | null {
+function nearestStop(stops: PlannedStop[], from: Point): PlannedStop | null {
   let best: PlannedStop | null = null;
   let bestD = Infinity;
-  for (const b of concessionsOnCourse(course)) {
-    if (b.type !== type) continue;
-    const stop = toStop(course, b);
-    if (!stop) continue;
+  for (const stop of stops) {
     const d = dist(from, stop.point);
     if (d < bestD) {
       bestD = d;
@@ -101,31 +96,48 @@ export function planRoundStops(args: {
 } {
   const { course, personality, rng, entry } = args;
   const R = BALANCE.concessions.routing;
-  const eagerness = 0.4 + personality.spendPropensity * 0.9; // 0.4..1.3
+  const eagerness = R.eagernessBase + personality.spendPropensity * R.eagernessSpendScale;
+
+  // Resolve every reachable counter once per plan (service-point lookups
+  // rebuild the footprint set, so don't repeat them per hole).
+  const stopsByType: Record<ConcessionType, PlannedStop[]> = {
+    proshop: [],
+    snackbar: [],
+    cartrental: [],
+  };
+  for (const b of concessionsOnCourse(course)) {
+    const stop = toStop(course, b);
+    if (stop) stopsByType[stop.info.kind].push(stop);
+  }
+
+  // Draw every plan-time roll unconditionally so the rng stream the rest of
+  // the round consumes (mishits, putts) is invariant to which concessions
+  // exist — placing a snack bar must not rewrite every golfer's scores.
+  const cartRoll = rng();
+  const shopInRoll = rng();
+  const postRoll = rng();
 
   const preRound: PlannedStop[] = [];
-  const cart = nearestOfType(course, "cartrental", entry);
-  if (cart && rng() < R.preRoundCartChance * eagerness) preRound.push(cart);
-  const shopIn = nearestOfType(course, "proshop", entry);
-  if (shopIn && rng() < R.preRoundProShopChance * eagerness) preRound.push(shopIn);
+  const cart = nearestStop(stopsByType.cartrental, entry);
+  if (cart && cartRoll < R.preRoundCartChance * eagerness) preRound.push(cart);
+  const shop = nearestStop(stopsByType.proshop, entry);
+  if (shop && shopInRoll < R.preRoundProShopChance * eagerness) preRound.push(shop);
 
-  const postRound =
-    nearestOfType(course, "proshop", entry) &&
-    rng() < R.postRoundProShopChance * eagerness
-      ? nearestOfType(course, "proshop", entry)
-      : null;
+  const postRound = shop && postRoll < R.postRoundProShopChance * eagerness ? shop : null;
 
   const snackAfterHole = (
     green: Point,
     holesPlayed: number,
     snackStopsSoFar: number
   ): PlannedStop | null => {
+    const roll = rng(); // drawn before any early-out, same stream invariance
     if (snackStopsSoFar >= R.maxSnackStops) return null;
-    const snack = nearestOfType(course, "snackbar", green);
+    const snack = nearestStop(stopsByType.snackbar, green);
     if (!snack) return null;
+    // Straight-line cap — an approximation of the routed detour cost.
     if (dist(green, snack.point) > R.detourMaxTiles) return null;
     const hunger = holesPlayed * BALANCE.concessions.purchase.hungerPerHole;
-    return rng() < (R.snackStopBaseChance * eagerness + hunger) ? snack : null;
+    return roll < (R.snackStopBaseChance * eagerness + hunger) ? snack : null;
   };
 
   return { preRound, snackAfterHole, postRound };
@@ -157,13 +169,12 @@ export function decidePurchase(args: {
     // ones, while a price-tolerant golfer largely shrugs the markup off.
     -personality.prefs.price * info.appeal * P.pricePrefWeight +
     info.appeal;
-  return roll < Math.max(0.02, Math.min(0.95, chance));
+  return roll < clamp(chance, 0.02, 0.95);
 }
 
 /** Wallet rolled at spawn: propensity sets the budget, rng adds spread. */
 export function rollWallet(personality: Personality, rng: () => number): number {
   const P = BALANCE.concessions.purchase;
-  return Math.round(
-    P.walletBase + personality.spendPropensity * P.walletSpendScale * (0.6 + rng() * 0.8)
-  );
+  const spread = P.walletSpreadMin + rng() * (P.walletSpreadMax - P.walletSpreadMin);
+  return Math.round(P.walletBase + personality.spendPropensity * P.walletSpendScale * spread);
 }
