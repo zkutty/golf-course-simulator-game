@@ -70,6 +70,22 @@ Raw frame times are reported too, but only asserted with
 `PERF_ASSERT_FRAME=1` on real hardware — headless software-GL throttles
 rAF to ~10fps regardless of app code. Not part of `npm run test`/CI.
 
+## Determinism and QA invariants
+
+Given the same seed, course, and action sequence, CourseCraft's game core must
+produce byte-equivalent canonical state hashes. Code under `src/game/` must use
+the seeded RNG utilities and must never call `Math.random()` directly. CI guards
+this invariant with deterministic generation/live-simulation tests and a
+10,000-sequence reducer property test.
+
+- `npm test` — unit, migration, live-persistence, determinism, and reducer tests
+- `npm run test:e2e` — browser golden path and historical save fixtures
+- `npm run test:soak` — 30 simulated weeks with heap/state assertions
+- `npm run test:perf` — 100-golfer renderer performance fixture
+
+The E2E browser hook is exposed only when Vite runs in `e2e` mode; production
+builds do not attach it to `window`.
+
 ## Useful code pointers
 
 - **Game models**: `src/game/models/*`

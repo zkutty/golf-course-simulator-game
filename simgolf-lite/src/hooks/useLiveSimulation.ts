@@ -11,6 +11,11 @@ import {
 import { commitDay } from "../game/live/commitDay";
 import { hitsLiquidityTrap } from "../game/sim/runState";
 import type { DayResult, GolferRenderData, LiveState } from "../game/live/types";
+import {
+  restoreLiveSimulation,
+  snapshotLiveSimulation,
+  type LiveSimulationSnapshotV1,
+} from "../game/live/persistence";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
@@ -87,7 +92,7 @@ export function useLiveSimulation(args: {
   world: World;
   setWorld: (updater: (w: World) => World) => void;
   setCourse: (updater: (c: Course) => Course) => void;
-  onDayCommitted?: (result: DayResult) => void;
+  onDayCommitted?: (result: DayResult, live: LiveSimulationSnapshotV1) => void;
   onCashTick?: () => void;
 }) {
   const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick } = args;
@@ -120,6 +125,7 @@ export function useLiveSimulation(args: {
   const selectedIdRef = useRef<number | null>(null);
   const onDayRef = useRef(onDayCommitted);
   const onCashRef = useRef(onCashTick);
+  const skipNextReconcileRef = useRef(false);
 
   useEffect(() => {
     courseRef.current = course;
@@ -142,6 +148,10 @@ export function useLiveSimulation(args: {
       prev.obstacles !== course.obstacles;
     if (!changed) return;
     geomRef.current = { tiles: course.tiles, holes: course.holes, obstacles: course.obstacles };
+    if (skipNextReconcileRef.current) {
+      skipNextReconcileRef.current = false;
+      return;
+    }
     const live = liveRef.current;
     if (enabled && live && live.golfers.length > 0) {
       reconcileGolfers(live, course);
@@ -213,12 +223,18 @@ export function useLiveSimulation(args: {
         objectives: committedWorld.objectives,
       };
     });
-    onDayRef.current?.(result);
-
     const nextDayIndex = (live.dayIndex + 1) % DAYS_PER_WEEK;
     const next = createLiveState(courseRef.current, worldRef.current, nextDayIndex);
     liveRef.current = next;
     golfersRef.current = [];
+    selectedIdRef.current = null;
+    setSelectedId(null);
+    onDayRef.current?.(result, snapshotLiveSimulation({
+      state: next,
+      pendingCash: 0,
+      speed: speedRef.current,
+      selectedGolferId: null,
+    }));
     setStatus((s) => ({
       ...s,
       dayIndex: next.dayIndex,
@@ -278,5 +294,62 @@ export function useLiveSimulation(args: {
 
   const liveActive = speed !== "paused" || status.onCourse > 0;
 
-  return { status, speed, setSpeed, golfersRef, liveActive, selectGolfer, selectedId };
+  const getSnapshot = useCallback((): LiveSimulationSnapshotV1 | undefined => {
+    const state = liveRef.current;
+    if (!state) return undefined;
+    return snapshotLiveSimulation({
+      state,
+      pendingCash: pendingCashRef.current,
+      speed: speedRef.current,
+      selectedGolferId: selectedIdRef.current,
+    });
+  }, []);
+
+  const restoreSnapshot = useCallback((snapshot: LiveSimulationSnapshotV1 | undefined): boolean => {
+    if (!snapshot) {
+      liveRef.current = null;
+      golfersRef.current = [];
+      pendingCashRef.current = 0;
+      selectedIdRef.current = null;
+      setSelectedId(null);
+      speedRef.current = "paused";
+      setSpeed("paused");
+      return true;
+    }
+    const restored = restoreLiveSimulation(snapshot);
+    if (!restored) return false;
+    liveRef.current = restored.state;
+    golfersRef.current = liveRenderData(restored.state);
+    pendingCashRef.current = restored.pendingCash;
+    speedRef.current = restored.speed;
+    setSpeed(restored.speed);
+    const selected = buildSelected(restored.state, restored.selectedGolferId);
+    selectedIdRef.current = selected?.id ?? null;
+    setSelectedId(selected?.id ?? null);
+    skipNextReconcileRef.current = true;
+    setStatus({
+      speed: restored.speed,
+      dayIndex: restored.state.dayIndex,
+      dayMinute: restored.state.dayMinute,
+      clockLabel: clockLabel(restored.state.dayMinute),
+      onCourse: restored.state.golfers.length,
+      roundsToday: restored.state.roundsStarted,
+      greenFeesToday: restored.state.greenFeeCollected,
+      lastDay: null,
+      selected,
+    });
+    return true;
+  }, []);
+
+  return {
+    status,
+    speed,
+    setSpeed,
+    golfersRef,
+    liveActive,
+    selectGolfer,
+    selectedId,
+    getSnapshot,
+    restoreSnapshot,
+  };
 }

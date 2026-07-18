@@ -1,0 +1,42 @@
+name: Nightly QA soak
+
+on:
+  schedule:
+    - cron: "17 7 * * *"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: simgolf-lite
+
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser golden path and error-boundary guard
+        run: npm run test:e2e
+      - name: Renderer performance fixture
+        run: npm run test:perf
+      - name: 30-week deterministic simulation soak
+        run: npm run test:soak | tee soak-report.json
+      - name: Upload QA reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-qa-reports
+          path: |
+            simgolf-lite/soak-report.json
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 14

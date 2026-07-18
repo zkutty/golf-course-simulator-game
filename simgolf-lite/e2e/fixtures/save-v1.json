@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "savedAt": 1,
+  "course": {
+    "width": 1,
+    "height": 1,
+    "tiles": ["rough"],
+    "elevations": [0],
+    "holes": [{ "tee": null, "green": null, "parMode": "AUTO", "name": "Legacy hole" }],
+    "obstacles": [],
+    "buildings": [],
+    "yardsPerTile": 10,
+    "name": "Legacy Links",
+    "baseGreenFee": 65,
+    "condition": 0.75
+  },
+  "world": {
+    "week": 1,
+    "cash": 25000,
+    "reputation": 40,
+    "staffLevel": 1,
+    "marketingLevel": 0,
+    "maintenanceBudget": 900,
+    "runSeed": 1337,
+    "distressWeeks": 0,
+    "isBankrupt": false,
+    "lastWeekProfit": 0,
+    "lastBridgeLoanWeek": -999,
+    "loans": []
+  },
+  "history": []
+}

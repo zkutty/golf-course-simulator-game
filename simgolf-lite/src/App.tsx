@@ -7,8 +7,8 @@ import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import type { Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
-import { hasSavedGame, resetSave, type SavePayload } from "./utils/save";
-import { autosave } from "./utils/saveStore";
+import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
+import { autosave, loadSlot, saveToSlot } from "./utils/saveStore";
 import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
@@ -45,6 +45,10 @@ import { GolferInspector } from "./ui/GolferInspector";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
+import { createReferenceCourse } from "./game/testing/referenceCourse";
+import { runLiveDaysHeadless } from "./game/live/headless";
+import { snapshotLiveSimulation } from "./game/live/persistence";
+import { hashGameState } from "./utils/stateHash";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -55,6 +59,7 @@ const STRIKE_SFX = "/audio/ball-strike.mp3";
 export default function App() {
   const [screen, setScreen] = useState<"menu" | "setup" | "game">("menu");
   const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
+  const gameStateRef = useRef(gameState);
   const { course, world } = gameState;
   const [selected, setSelected] = useState<Terrain>("fairway");
   // Difficulty-resolved balance + terrain cost scaler (ZKU-165).
@@ -87,6 +92,12 @@ export default function App() {
   }, []);
   const [last, setLast] = useState<WeekResult | undefined>(undefined);
   const [history, setHistory] = useState<WeekResult[]>([]);
+  const historyRef = useRef(history);
+
+  useEffect(() => {
+    gameStateRef.current = gameState;
+    historyRef.current = history;
+  }, [gameState, history]);
 
   const [editorMode, setEditorMode] = useState<EditorMode>("PAINT");
   const [activeHoleIndex, setActiveHoleIndex] = useState(0); // 0..8
@@ -150,7 +161,7 @@ export default function App() {
     world,
     setWorld,
     setCourse,
-    onDayCommitted: (result) => {
+    onDayCommitted: (result, liveSnapshot) => {
       setHistory((h) => [
         ...h.slice(-19),
         {
@@ -166,7 +177,7 @@ export default function App() {
       // Rotating autosave after every committed game day (ZKU-174). The
       // setState reader snapshots post-commit state without extra renders.
       setGameState((current) => {
-        void autosave({ course: current.course, world: current.world });
+        void autosave({ course: current.course, world: current.world, live: liveSnapshot });
         return current;
       });
     },
@@ -445,6 +456,7 @@ export default function App() {
     const start = performance.now();
     const { course: newCourse, world: newWorld } = createNewGame(setup, goals);
     console.log('[Performance] Wild land generated in', performance.now() - start, 'ms');
+    live.restoreSnapshot(undefined);
     startRun(newCourse, newWorld);
   }
 
@@ -452,6 +464,7 @@ export default function App() {
   function startScenario(scenario: ScenarioDefinition) {
     recordScenarioAttempt(scenario.id);
     const { course: newCourse, world: newWorld } = createScenarioGame(scenario);
+    live.restoreSnapshot(undefined);
     startRun(newCourse, newWorld);
     setScreen("game");
   }
@@ -494,6 +507,7 @@ export default function App() {
 
   function applyLoadedGame(loaded: SavePayload) {
     dispatch({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
+    live.restoreSnapshot(loaded.live);
     setHistory(loaded.history ?? []);
     setLast(loaded.history?.[loaded.history.length - 1]);
     // Loading a finished run must not replay the celebration or re-record
@@ -502,6 +516,77 @@ export default function App() {
     setShowVictory(false);
     scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
   }
+
+  useEffect(() => {
+    if (import.meta.env.MODE !== "e2e") return;
+    window.__coursecraftTest = {
+      state: () => {
+        const current = gameStateRef.current;
+        const liveSnapshot = live.getSnapshot();
+        return {
+          screen,
+          week: current.world.week,
+          cash: current.world.cash,
+          courseHash: hashGameState({ course: current.course, world: current.world, live: liveSnapshot }),
+        };
+      },
+      runGoldenWeek: async () => {
+        const current = gameStateRef.current;
+        const course = createReferenceCourse();
+        const world = {
+          ...current.world,
+          week: 1,
+          cash: 100_000,
+          runSeed: 424242,
+          isBankrupt: false,
+          distressWeeks: 0,
+        };
+        const run = runLiveDaysHeadless({ course, world, days: 7 });
+        const liveSnapshot = snapshotLiveSimulation({
+          state: run.live,
+          pendingCash: 0,
+          speed: "3x",
+          selectedGolferId: null,
+        });
+        const payload: SavePayload = {
+          course: run.course,
+          world: run.world,
+          history: historyRef.current,
+          live: liveSnapshot,
+        };
+        const beforeHash = hashGameState(payload);
+        await saveToSlot("e2e-golden", "manual", "E2E golden path", payload);
+        const loaded = await loadSlot("e2e-golden");
+        if (!loaded) throw new Error("Golden-path slot failed to reload");
+        const afterHash = hashGameState(loaded);
+        dispatch({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
+        live.restoreSnapshot(loaded.live);
+        setHistory(loaded.history ?? []);
+        setLast(loaded.history?.[loaded.history.length - 1]);
+        setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
+        setShowVictory(false);
+        scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
+        setScreen("game");
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        return {
+          beforeHash,
+          afterHash,
+          week: loaded.world.week,
+          cash: loaded.world.cash,
+          rounds: run.rounds,
+        };
+      },
+      validateFixture: (text: string) => {
+        const result = parseSaveText(text);
+        return result.ok
+          ? { ok: true as const, migratedFrom: result.migratedFrom ?? null }
+          : { ok: false as const, error: result.error.message };
+      },
+    };
+    return () => {
+      delete window.__coursecraftTest;
+    };
+  }, [dispatch, live, screen]);
 
   function newGameFromMenu() {
     void audio.unlock();
@@ -1081,7 +1166,7 @@ export default function App() {
       open={saveModalOpen != null}
       onClose={() => setSaveModalOpen(null)}
       canSave={saveModalOpen?.canSave ?? false}
-      getPayload={() => ({ course, world, history })}
+      getPayload={() => ({ course, world, history, live: live.getSnapshot() })}
       onLoaded={(payload) => {
         applyLoadedGame(payload);
         setScreen("game");

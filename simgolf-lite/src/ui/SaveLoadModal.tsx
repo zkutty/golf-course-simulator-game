@@ -3,9 +3,9 @@ import type { SavePayload } from "../utils/save";
 import {
   deleteSlot,
   exportSlot,
-  importSave,
+  importSaveResult,
   listSlots,
-  loadSlot,
+  loadSlotResult,
   renameSlot,
   saveToSlot,
   type SaveSlotMeta,
@@ -79,13 +79,13 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
   };
 
   const handleLoad = async (slot: SaveSlotMeta) => {
-    const payload = await loadSlot(slot.id);
-    if (!payload) {
-      flash("That slot could not be loaded.");
+    const result = await loadSlotResult(slot.id);
+    if (!result.ok) {
+      flash(result.error.message);
       refresh();
       return;
     }
-    props.onLoaded(payload);
+    props.onLoaded(result.payload);
     props.onClose();
   };
 
@@ -121,12 +121,12 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
 
   const handleImportFile = async (file: File) => {
     const text = await file.text();
-    const meta = await importSave(text, file.name.replace(/\.coursecraft$|\.json$/i, ""));
-    if (!meta) {
-      flash("That file is not a valid CourseCraft save.");
+    const result = await importSaveResult(text, file.name.replace(/\.coursecraft$|\.json$/i, ""));
+    if (!result.ok) {
+      flash(result.error.message);
       return;
     }
-    flash(`Imported "${meta.name}".`);
+    flash(`Imported "${result.meta.name}"${result.migratedFrom ? ` and upgraded it from save version ${result.migratedFrom}` : ""}.`);
     refresh();
   };
 
