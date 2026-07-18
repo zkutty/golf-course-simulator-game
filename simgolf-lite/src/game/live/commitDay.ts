@@ -24,10 +24,21 @@ export function commitDay(args: {
   course: Course;
   world: World;
   revenue: number; // green fees already banked today
+  // Itemized concession income banked today (M4/ZKU-120): real transactions
+  // from live golfers, plus the cost of goods behind them.
+  concessions?: {
+    revenue: number;
+    goodsCost: number;
+    sales: DayResult["concessionSales"];
+  };
   reactions: RoundReactions; // real observed reactions from finished rounds
   dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
 }): { world: World; course: Course; result: DayResult } {
-  const { course, world, revenue, reactions, dayIndex } = args;
+  const { course, world, reactions, dayIndex } = args;
+  const greenFees = args.revenue;
+  const concessionRevenue = args.concessions?.revenue ?? 0;
+  const concessionGoods = args.concessions?.goodsCost ?? 0;
+  const revenue = greenFees + concessionRevenue;
   // Difficulty-resolved balance (ZKU-165): identity for normal.
   const BALANCE = getEffectiveBalance(world.difficulty);
   const rounds = reactions.rounds;
@@ -54,7 +65,7 @@ export function commitDay(args: {
 
   const costsPreTax =
     staffCost + marketingCost + maintenanceCost + overheadTotal +
-    laborVariable + consumablesVariable + merchantFees;
+    laborVariable + consumablesVariable + merchantFees + concessionGoods;
 
   const profitPreTax = revenue - costsPreTax;
   const tax =
@@ -115,6 +126,9 @@ export function commitDay(args: {
       dayIndex: 0,
       rounds,
       revenue,
+      greenFees,
+      concessionRevenue,
+      concessionSales: args.concessions?.sales ?? {},
       costs,
       profit,
       avgSatisfaction,

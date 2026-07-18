@@ -1,5 +1,7 @@
-import type { Course, WeekResult, World } from "../models/types";
+import type { ConcessionType, Course, RevenueBreakdown, WeekResult, World } from "../models/types";
 import { mulberry32, randInt } from "../../utils/rng";
+import { BALANCE as BASE_BALANCE } from "../balance/balanceConfig";
+import { concessionGoodsCost, concessionItemPrice, concessionsOnCourse } from "../models/concessions";
 import { demandBreakdown, satisfactionBreakdown, satisfactionScore } from "./score";
 import { scoreCourseHoles } from "./holes";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
@@ -42,8 +44,19 @@ export function tickWeek(
 
   const avgSatBase = satisfactionScore(course, world); // 0..100
 
-  // Revenue: visitors * price, but satisfaction affects repeat visits (baked into rep later)
-  const revenue = playable ? visitors * course.baseGreenFee : visitors * BALANCE.visitors.testingRoundFee;
+  // Revenue rolls up itemized (ZKU-120): green fees per round plus expected
+  // concession income from the same purchase economics the live entities use.
+  const greenFeeRevenue = playable
+    ? visitors * course.baseGreenFee
+    : visitors * BALANCE.visitors.testingRoundFee;
+  const concessions = expectedConcessionRevenue(course, playable ? visitors : 0);
+  const revenue = greenFeeRevenue + concessions.total;
+  const revenueBreakdown: RevenueBreakdown = {
+    greenFees: { count: visitors, revenue: greenFeeRevenue },
+    concessions: concessions.lines,
+    concessionsTotal: concessions.total,
+    total: revenue,
+  };
 
   // Costs
   const staffCost = BALANCE.ops.staffCostPerLevel * world.staffLevel;
@@ -71,7 +84,7 @@ export function tickWeek(
   const laborVariable = visitors * laborPerRound;
   const consumablesVariable = visitors * BALANCE.variableCosts.consumablesPerRound;
   const merchantFees = revenue * BALANCE.variableCosts.merchantFeeRate;
-  const variableTotal = laborVariable + consumablesVariable + merchantFees;
+  const variableTotal = laborVariable + consumablesVariable + merchantFees + concessions.goodsCost;
 
   const nonLoanCosts = staffCost + marketingCost + maintenanceCost + overheadTotal;
 
@@ -186,6 +199,7 @@ export function tickWeek(
       capacity: playable ? capacity : undefined,
       turnaways: turnaways > 0 ? turnaways : undefined,
       revenue,
+      revenueBreakdown,
       costs,
       profit,
       tax: tax > 0 ? tax : undefined,
@@ -193,6 +207,7 @@ export function tickWeek(
         labor: laborVariable,
         consumables: consumablesVariable,
         merchantFees,
+        ...(concessions.goodsCost > 0 ? { concessionGoods: concessions.goodsCost } : {}),
         total: variableTotal,
       },
       overhead: { ...overhead, total: overheadTotal },
@@ -215,6 +230,45 @@ function clamp01(x: number) {
 }
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
+}
+
+// Expected weekly concession income from the placed buildings (ZKU-120).
+// The offline counterpart of the live per-transaction model: attach rates say
+// what share of visitors buy at one building of a type; extra buildings add
+// coverage with diminishing returns (1 - (1-a)^n); each expected sale uses
+// that building mix's real ticket price and cost of goods.
+function expectedConcessionRevenue(
+  course: Course,
+  visitors: number
+): {
+  total: number;
+  goodsCost: number;
+  lines: Partial<Record<ConcessionType, { count: number; revenue: number }>>;
+} {
+  const lines: Partial<Record<ConcessionType, { count: number; revenue: number }>> = {};
+  let total = 0;
+  let goodsCost = 0;
+  if (visitors <= 0) return { total, goodsCost, lines };
+  const byType = new Map<ConcessionType, { prices: number[]; goods: number[] }>();
+  for (const b of concessionsOnCourse(course)) {
+    const t = b.type as ConcessionType;
+    const entry = byType.get(t) ?? { prices: [], goods: [] };
+    entry.prices.push(concessionItemPrice(b));
+    entry.goods.push(concessionGoodsCost(b));
+    byType.set(t, entry);
+  }
+  for (const [type, entry] of byType) {
+    const attachOne = BASE_BALANCE.concessions.weeklyAttach[type];
+    const attach = 1 - Math.pow(1 - attachOne, entry.prices.length);
+    const count = Math.round(visitors * attach);
+    const avgPrice = entry.prices.reduce((a, p) => a + p, 0) / entry.prices.length;
+    const avgGoods = entry.goods.reduce((a, g) => a + g, 0) / entry.goods.length;
+    const revenue = count * avgPrice;
+    lines[type] = { count, revenue };
+    total += revenue;
+    goodsCost += count * avgGoods;
+  }
+  return { total, goodsCost, lines };
 }
 
 function buildExplainabilityTips(holes: ReturnType<typeof scoreCourseHoles>) {

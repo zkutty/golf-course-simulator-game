@@ -38,6 +38,7 @@ export interface LiveStatus {
   onCourse: number;
   roundsToday: number;
   greenFeesToday: number;
+  concessionsToday: number; // itemized concession income banked today (M4)
   lastDay: DayResult | null;
   selected: SelectedGolferDetail | null;
 }
@@ -101,6 +102,7 @@ export function useLiveSimulation(args: {
     onCourse: 0,
     roundsToday: 0,
     greenFeesToday: 0,
+    concessionsToday: 0,
     lastDay: null,
     selected: null,
   });
@@ -133,15 +135,28 @@ export function useLiveSimulation(args: {
   // golfers already on the course so they don't walk a stale itinerary. The
   // reducer replaces these arrays on every edit, while daily condition updates
   // keep the same references — so identity comparison isolates real edits.
-  const geomRef = useRef({ tiles: course.tiles, holes: course.holes, obstacles: course.obstacles });
+  const geomRef = useRef({
+    tiles: course.tiles,
+    holes: course.holes,
+    obstacles: course.obstacles,
+    buildings: course.buildings,
+  });
   useEffect(() => {
     const prev = geomRef.current;
     const changed =
       prev.tiles !== course.tiles ||
       prev.holes !== course.holes ||
-      prev.obstacles !== course.obstacles;
+      prev.obstacles !== course.obstacles ||
+      // Buildings block walking and host concession stops (M4) — placing or
+      // removing one must re-plan live rounds too.
+      prev.buildings !== course.buildings;
     if (!changed) return;
-    geomRef.current = { tiles: course.tiles, holes: course.holes, obstacles: course.obstacles };
+    geomRef.current = {
+      tiles: course.tiles,
+      holes: course.holes,
+      obstacles: course.obstacles,
+      buildings: course.buildings,
+    };
     const live = liveRef.current;
     if (enabled && live && live.golfers.length > 0) {
       reconcileGolfers(live, course);
@@ -172,6 +187,7 @@ export function useLiveSimulation(args: {
       onCourse: live.golfers.length,
       roundsToday: live.roundsStarted,
       greenFeesToday: live.greenFeeCollected,
+      concessionsToday: live.concessionRevenue,
       lastDay: status.lastDay,
       selected,
     });
@@ -187,11 +203,15 @@ export function useLiveSimulation(args: {
   // already banked live), then roll the calendar and start the next day.
   const finishDay = useCallback((live: LiveState) => {
     flushCash();
-    const revenue = live.greenFeeCollected;
     const { result, world: committedWorld } = commitDay({
       course: courseRef.current,
       world: worldRef.current,
-      revenue,
+      revenue: live.greenFeeCollected,
+      concessions: {
+        revenue: live.concessionRevenue,
+        goodsCost: live.concessionGoodsCost,
+        sales: live.concessionSales,
+      },
       reactions: roundReactions(live),
       dayIndex: live.dayIndex,
     });
@@ -227,6 +247,7 @@ export function useLiveSimulation(args: {
       onCourse: 0,
       roundsToday: 0,
       greenFeesToday: 0,
+      concessionsToday: 0,
       lastDay: result,
     }));
   }, [flushCash, setCourse, setWorld]);

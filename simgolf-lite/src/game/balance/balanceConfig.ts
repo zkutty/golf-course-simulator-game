@@ -190,6 +190,76 @@ export const BALANCE = {
     },
   },
 
+  // Concessions & on-course spending (M4, ZKU-117/118/119/120).
+  concessions: {
+    // Per-building economics. `itemPrice` is the tier-1 standard-pricing
+    // ticket; `goodsCostFrac` is the COGS share of each sale.
+    buildings: {
+      proshop: {
+        buildCost: 4000,
+        salvage: 1200,
+        itemPrice: 45,
+        goodsCostFrac: 0.45,
+        serviceMinutes: 6,
+        item: "gear",
+      },
+      snackbar: {
+        buildCost: 1500,
+        salvage: 450,
+        itemPrice: 9,
+        goodsCostFrac: 0.35,
+        serviceMinutes: 3,
+        item: "snack",
+      },
+      cartrental: {
+        buildCost: 2500,
+        salvage: 750,
+        itemPrice: 30,
+        goodsCostFrac: 0.2,
+        serviceMinutes: 4,
+        item: "cart",
+      },
+    },
+    // Tier scaling (index = tier - 1): nicer shops charge more and appeal more.
+    tierPriceMult: [1, 1.35, 1.75],
+    tierAppealBonus: [0, 0.08, 0.16],
+    tierUpgradeCostFrac: 0.6, // of build cost, per tier step
+    // Per-building pricing lever: cheaper draws buyers, premium repels them.
+    pricing: {
+      budget: { priceMult: 0.75, appeal: 0.1 },
+      standard: { priceMult: 1, appeal: 0 },
+      premium: { priceMult: 1.4, appeal: -0.12 },
+    },
+    // Purchase-decision model (ZKU-118): probability a golfer standing at a
+    // concession buys, from spend propensity, mood, and price preference.
+    purchase: {
+      base: 0.22,
+      spendWeight: 0.55,
+      moodWeight: 0.25,
+      pricePrefWeight: 0.2, // scales prefs.price vs the pricing appeal
+      hungerPerHole: 0.03, // snack appetite grows through the round
+      walletBase: 40,
+      walletSpendScale: 140, // wallet = base + propensity * scale * (0.6..1.4)
+    },
+    // Routing model (ZKU-119): how rounds pick up concession detours.
+    routing: {
+      preRoundProShopChance: 0.35, // scaled by spend propensity at plan time
+      preRoundCartChance: 0.5,
+      postRoundProShopChance: 0.4,
+      snackStopBaseChance: 0.3,
+      maxSnackStops: 2,
+      detourMaxTiles: 16, // how far off-route a snack bar can pull a golfer
+    },
+    // Aggregate weekly attach rates (ZKU-120) for the offline tickWeek model:
+    // share of visitors expected to buy when one building of the type exists.
+    // Extra buildings of a type add coverage with diminishing returns.
+    weeklyAttach: {
+      proshop: 0.18,
+      snackbar: 0.35,
+      cartrental: 0.22,
+    },
+  },
+
   // Land-theme gameplay flavor (ZKU-166) — data only, no new mechanics.
   // Parkland is the neutral identity theme.
   themes: {

@@ -2,8 +2,10 @@ import type { Course, Point } from "../models/types";
 import type { GolferProfile } from "../sim/golferProfiles";
 import { solveShotsToGreen } from "../sim/shots/solveShotsToGreen";
 import { scoreCourseHoles } from "../sim/holes";
+import { mulberry32 } from "../../utils/rng";
 import { LIVE } from "./liveConfig";
 import { mishitChance, puttOutcome, type Personality } from "./personality";
+import { decidePurchase, planRoundStops, type PlannedStop } from "./concessions";
 import type { Golfer, Segment } from "./types";
 
 // Optional tile-aware router; returns waypoints from just-after `from` to `to`,
@@ -55,6 +57,7 @@ export function buildGolferRound(args: {
     cursor: args.entry,
     exit: args.entry,
     route: args.route,
+    freshRound: true,
   });
 }
 
@@ -71,8 +74,10 @@ export function planFromHole(args: {
   cursor: Point;
   exit: Point;
   route?: WalkRouter;
+  /** True on a brand-new round: enables pre-round concession stops (M4). */
+  freshRound?: boolean;
 }): BuiltRound {
-  const { course, profile, rng, personality, startHole, exit, route } = args;
+  const { course, profile, rng, personality, startHole, exit, route, freshRound } = args;
   const summary = scoreCourseHoles(course);
   const segments: Segment[] = [];
   const holePar: number[] = [];
@@ -97,6 +102,29 @@ export function planFromHole(args: {
 
   let cursor: Point = args.cursor;
 
+  // Concession detours (ZKU-119): walk to the counter, wait to be served
+  // (the pause carries the stop info that triggers the buy roll), walk on.
+  const stops = planRoundStops({ course, personality, rng, entry: args.cursor });
+  let stopIndex = 0;
+  let snackStops = 0;
+  const pushStop = (stop: PlannedStop, holeIndex: number) => {
+    pushWalk(cursor, stop.point, holeIndex, LIVE.pace.interHoleWalkCap);
+    segments.push({
+      kind: "pause",
+      from: stop.point,
+      to: stop.point,
+      holeIndex,
+      dur: stop.serviceMinutes,
+      stop: { ...stop.info, stopIndex: stopIndex++ },
+    });
+    cursor = stop.point;
+  };
+
+  if (freshRound) {
+    for (const stop of stops.preRound) pushStop(stop, -1);
+  }
+
+  let holesPlayed = 0;
   for (let i = Math.max(0, startHole); i < course.holes.length; i++) {
     const hole = course.holes[i];
     const info = summary.holes[i];
@@ -105,6 +133,17 @@ export function planFromHole(args: {
     const tee = hole.tee;
     const green = hole.green;
     const par = info.par ?? 4;
+
+    // Between holes: maybe swing by a snack bar on the way to the next tee
+    // (ZKU-119). Never before the first hole of this plan — pre-round shopping
+    // is its own path above — and capped so pacing stays intact.
+    if (holesPlayed > 0) {
+      const snack = stops.snackAfterHole(cursor, holesPlayed, snackStops);
+      if (snack) {
+        snackStops++;
+        pushStop(snack, i);
+      }
+    }
 
     // Walk from wherever we are to this tee (routed around water).
     pushWalk(cursor, tee, i, LIVE.pace.interHoleWalkCap);
@@ -143,7 +182,11 @@ export function planFromHole(args: {
     holePar.push(par);
     holeStrokes.push(shots + penalties + putts);
     cursor = green;
+    holesPlayed++;
   }
+
+  // A browse through the pro shop on the way out (ZKU-119), then the exit.
+  if (stops.postRound && holesPlayed > 0) pushStop(stops.postRound, -1);
 
   // Walk off to the exit (routed around water).
   pushWalk(cursor, exit, -1, LIVE.pace.interHoleWalkCap);
@@ -193,6 +236,29 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
     } else {
       remaining -= left;
       g.segElapsed = 0;
+      // Leaving a concession counter (M4/ZKU-118): roll the purchase. The
+      // roll is seeded per golfer+stop, so the outcome is identical no matter
+      // how the frame timing sliced this segment.
+      if (seg.stop) {
+        const roll = mulberry32((g.purchaseSeed + seg.stop.stopIndex * 7919) | 0)();
+        const buys = decidePurchase({
+          personality: g.personality,
+          mood: g.mood,
+          wallet: g.wallet,
+          info: seg.stop,
+          roll,
+        });
+        if (buys) {
+          g.wallet -= seg.stop.price;
+          g.spent += seg.stop.price;
+          g.mood = clamp01(g.mood + LIVE.mood.concessionLift);
+          g.pendingPurchases.push({
+            kind: seg.stop.kind,
+            amount: seg.stop.price,
+            goodsCost: seg.stop.goodsCost,
+          });
+        }
+      }
       g.segIndex++;
       // Detect hole completion: we just left a real hole for a different one.
       // Each boundary scores exactly the next unscored hole, so the fold stays

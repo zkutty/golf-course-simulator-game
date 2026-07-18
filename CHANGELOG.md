@@ -7,6 +7,26 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Concessions & on-course spending (M4, ZKU-117/118/119/120): a new Build
+  editor mode places pro shops (2×2), snack bars (1×1), and cart rentals
+  (2×2) on open ground through the reducer, each configurable per building
+  with a tier (1–3, paid upgrades) and a pricing level (budget / standard /
+  premium); demolition refunds partial salvage and the clubhouse stays
+  protected. Live golfers now carry a wallet rolled from their personality's
+  spend propensity and make real, seeded purchase decisions — cart rental
+  and pro-shop browsing before the round, snack-bar detours between holes
+  (distance-capped, max two per round), and a pro-shop stop on the way out —
+  with the buy roll weighing spend propensity, current mood, and the shop's
+  tier/pricing appeal against the golfer's price sensitivity. Every sale is
+  a real itemized transaction: the day's cash ticks up as golfers pay, the
+  weekly P&L now reports a revenue breakdown (green fees + per-concession
+  sales counts and dollars, with cost of goods in variable costs) in both
+  the live day commit and the offline weekly sim, and the HUD Results tab
+  and live control bar show the itemized lines. Placeholder iso sprites for
+  all three buildings ship in the props atlas; concession config survives
+  save/load with sanitization. Balance for building-less courses is
+  unchanged (concession lines are exactly zero), so tuning results are
+  unaffected.
 - Render performance budget (ZKU-160): a dev perf HUD in the Pixi renderer
   (enable with `localStorage.coursecraft_perfhud = "on"`) showing fps,
   mean/p95/max frame time, the renderer's own per-tick work split by

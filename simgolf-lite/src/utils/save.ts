@@ -135,7 +135,7 @@ export interface SavePayload {
  */
 function sanitizeBuildings(raw: unknown, width: number, height: number): Building[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter((b): b is Building => {
+  const kept = raw.filter((b): b is Building => {
     if (!b || typeof b !== "object") return false;
     const { type, x, y } = b as Building;
     const spec =
@@ -145,6 +145,22 @@ function sanitizeBuildings(raw: unknown, width: number, height: number): Buildin
     if (!spec) return false;
     if (!Number.isInteger(x) || !Number.isInteger(y)) return false;
     return x >= 0 && y >= 0 && x + spec.w <= width && y + spec.d <= height;
+  });
+  // Normalize concession config (M4/ZKU-117): malformed tier/pricing degrade
+  // to the defaults instead of poisoning the purchase model.
+  return kept.map((b) => {
+    const tier = b.tier === 2 || b.tier === 3 ? b.tier : undefined;
+    const pricing =
+      b.pricing === "budget" || b.pricing === "premium" || b.pricing === "standard"
+        ? b.pricing
+        : undefined;
+    return {
+      type: b.type,
+      x: b.x,
+      y: b.y,
+      ...(tier ? { tier } : {}),
+      ...(pricing ? { pricing } : {}),
+    };
   });
 }
 

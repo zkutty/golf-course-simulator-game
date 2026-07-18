@@ -260,6 +260,105 @@ function clubhouse(name) {
   console.log(`wrote ${name}.png`);
 }
 
+// --- Concession buildings (M4/ZKU-117): square-footprint iso boxes --------
+// Same visual language as the clubhouse (two visible walls, NW light, 1px
+// outline) at smaller footprints, with an awning stripe per type so the three
+// concessions read differently at a glance. `n` is the square footprint size
+// in tiles; canvas width is 64*n to match the renderer's sizing convention.
+function concession(name, n, { wall, awningA, awningB, wallH }) {
+  const CW = 64 * n;
+  const diamondH = 32 * n;
+  const CH = diamondH + wallH + 18;
+  const png = new PNG({ width: CW, height: CH });
+  const putc = (x, y, c, a = 255) => {
+    if (x < 0 || y < 0 || x >= CW || y >= CH) return;
+    const i = (CW * y + x) << 2;
+    png.data[i] = c[0]; png.data[i + 1] = c[1]; png.data[i + 2] = c[2]; png.data[i + 3] = a;
+  };
+  const inQuad = (px, py, q) => {
+    let sign = 0;
+    for (let i = 0; i < 4; i++) {
+      const [x1, y1] = q[i];
+      const [x2, y2] = q[(i + 1) % 4];
+      const cr = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1);
+      if (cr !== 0) {
+        if (sign === 0) sign = Math.sign(cr);
+        else if (Math.sign(cr) !== sign) return false;
+      }
+    }
+    return true;
+  };
+  const fillQuad = (q, base, dither) => {
+    const c2 = darken(base, 0.9);
+    for (let y = 0; y < CH; y++) {
+      for (let x = 0; x < CW; x++) {
+        if (!inQuad(x, y, q)) continue;
+        const speck = dither && ((x * 7 + y * 13) % 17 === 0);
+        putc(x, y, speck ? c2 : base);
+      }
+    }
+  };
+  // Footprint diamond corners (anchor = bottom-center at B).
+  const B = [CW / 2, CH - 2];
+  const T = [CW / 2, CH - 2 - diamondH];
+  const L = [0, CH - 2 - diamondH / 2];
+  const R = [CW, CH - 2 - diamondH / 2];
+  const wallC = hex(wall);
+  const wallShad = darken(wallC, 0.78);
+  // Walls drop from L/B/R; roof is the footprint diamond raised by wallH.
+  fillQuad([[L[0], L[1] - wallH], [B[0], B[1] - wallH], B, L], wallShad, true); // SW (shadow)
+  fillQuad([[B[0], B[1] - wallH], [R[0], R[1] - wallH], R, B], wallC, true); // SE (lit)
+  // Awning stripes along the top of both walls.
+  const stripeH = 6;
+  const a1 = hex(awningA);
+  const a2 = hex(awningB);
+  for (let y = 0; y < CH; y++) {
+    for (let x = 0; x < CW; x++) {
+      const overSW = inQuad(x, y, [[L[0], L[1] - wallH], [B[0], B[1] - wallH], [B[0], B[1] - wallH + stripeH], [L[0], L[1] - wallH + stripeH]]);
+      const overSE = inQuad(x, y, [[B[0], B[1] - wallH], [R[0], R[1] - wallH], [R[0], R[1] - wallH + stripeH], [B[0], B[1] - wallH + stripeH]]);
+      if (overSW || overSE) {
+        const band = Math.floor(x / 6) % 2 === 0;
+        putc(x, y, band ? a1 : overSW ? darken(a2, 0.85) : a2);
+      }
+    }
+  }
+  // Roof: raised diamond, lit NW half / shaded SE half.
+  const Lr = [L[0], L[1] - wallH];
+  const Tr = [T[0], T[1] - wallH];
+  const Rr = [R[0], R[1] - wallH];
+  const Br = [B[0], B[1] - wallH];
+  // Lighten with a clamp — darken() alone can push a light wall past 255 and
+  // wrap the channel (cyan/magenta roofs).
+  const roof = darken(wallC, 1.12).map((v) => Math.min(255, v));
+  fillQuad([Lr, Tr, Rr, [CW / 2, Tr[1] + diamondH / 2]], roof, true); // top half
+  fillQuad([Lr, [CW / 2, Tr[1] + diamondH / 2], Rr, Br], darken(roof, 0.88), true); // bottom half
+  // Door on the SE face, near the B corner.
+  const door = hex("#5d4330");
+  const doorW = Math.max(6, Math.round(CW * 0.08));
+  const doorH = Math.max(8, wallH - 12);
+  const doorX = Math.round(CW / 2 + CW * 0.08);
+  const doorBaseY = Math.round((B[1] + R[1]) / 2);
+  for (let y = doorBaseY - doorH; y <= doorBaseY; y++) {
+    for (let x = doorX; x < doorX + doorW; x++) putc(x, y, door);
+  }
+  // Outline all opaque pixels.
+  const o = darken(wallC, 0.5);
+  for (let y = 0; y < CH; y++) {
+    for (let x = 0; x < CW; x++) {
+      const i = (CW * y + x) << 2;
+      if (png.data[i + 3] > 0) continue;
+      const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= CW || ny >= CH) return false;
+        return png.data[((CW * ny + nx) << 2) + 3] > 0;
+      });
+      if (nb) putc(x, y, o);
+    }
+  }
+  writeFileSync(path.join(OUT, `${name}.png`), PNG.sync.write(png));
+  console.log(`wrote ${name}.png`);
+}
+
 tree("tree", "#3f8a3f", true);
 tree("tree2", "#5aa348", false);
 bush("bush", "#4f9440");
@@ -272,4 +371,7 @@ edgeStrip("edge_lr", "lr");
 edgeStrip("edge_ll", "ll");
 edgeStrip("edge_ul", "ul");
 clubhouse("clubhouse");
+concession("proshop", 2, { wall: "#dfe6d3", awningA: "#2f7d4f", awningB: "#e8e0c8", wallH: 30 });
+concession("snackbar", 1, { wall: "#eadfc2", awningA: "#c0392b", awningB: "#f2e6d8", wallH: 26 });
+concession("cartrental", 2, { wall: "#d9dde2", awningA: "#3b6ea5", awningB: "#e6e9ee", wallH: 24 });
 console.log("done");

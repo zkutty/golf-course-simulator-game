@@ -13,7 +13,9 @@ import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
-import type { ObstacleType } from "./game/models/types";
+import type { ConcessionType, ObstacleType } from "./game/models/types";
+import { canPlaceBuilding } from "./game/models/buildings";
+import { buildingAt, concessionBuildCost, isConcession } from "./game/models/concessions";
 import { scoreCourseHoles } from "./game/sim/holes";
 import { createSoundPlayer } from "./utils/sound";
 import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
@@ -46,7 +48,7 @@ import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
 
-type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
+type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
 type ViewMode = "global" | "hole";
 
@@ -94,6 +96,7 @@ export default function App() {
   const [draftTee, setDraftTee] = useState<Point | null>(null);
   const [draftGreen, setDraftGreen] = useState<Point | null>(null);
   const [obstacleType, setObstacleType] = useState<ObstacleType>("tree");
+  const [buildingType, setBuildingType] = useState<ConcessionType>("snackbar");
   const [sculptBrush, setSculptBrush] = useState<SculptBrush>("raise");
   const [sculptRadius, setSculptRadius] = useState<SculptRadius>(1);
 
@@ -156,6 +159,13 @@ export default function App() {
         {
           visitors: result.rounds,
           revenue: result.revenue,
+          // Itemized income from the day's real transactions (M4/ZKU-120).
+          revenueBreakdown: {
+            greenFees: { count: result.rounds, revenue: result.greenFees },
+            concessions: result.concessionSales,
+            concessionsTotal: result.concessionRevenue,
+            total: result.revenue,
+          },
           costs: result.costs,
           profit: result.profit,
           avgSatisfaction: result.avgSatisfaction,
@@ -882,6 +892,34 @@ export default function App() {
       }
       return;
     }
+    if (editorMode === "BUILDING") {
+      // Concession placement (M4/ZKU-117): click open ground to build the
+      // selected type; click an existing concession to demolish it.
+      if (x < 0 || y < 0 || x >= course.width || y >= course.height) return;
+      const existing = buildingAt(course, x, y);
+      if (existing) {
+        if (isConcession(existing.type)) {
+          dispatch({ type: "REMOVE_BUILDING", x, y });
+        } else {
+          setPaintError("The clubhouse can't be demolished.");
+        }
+        return;
+      }
+      const check = canPlaceBuilding(course, buildingType, x, y);
+      if (!check.ok) {
+        setPaintError(`Can't build here: ${check.reason}.`);
+        return;
+      }
+      const cost = concessionBuildCost(buildingType, costMult);
+      if (cost > world.cash) {
+        setPaintError(`Not enough cash ($${cost.toLocaleString()} needed).`);
+        return;
+      }
+      setPaintError(null);
+      dispatch({ type: "PLACE_BUILDING", buildingType, x, y });
+      void sound?.playConfirm(soundEnabled);
+      return;
+    }
     // HOLE_WIZARD
     if (wizardStep === "TEE" || wizardStep === "MOVE_TEE") {
       // Validate: cannot place on water and must be in bounds
@@ -1393,6 +1431,10 @@ export default function App() {
         setMaintenance={(n) => setWorld((w) => ({ ...w, maintenanceBudget: n }))}
         editorMode={editorMode}
         setEditorMode={setEditorMode}
+        buildingType={buildingType}
+        setBuildingType={setBuildingType}
+        onConfigureBuilding={(x, y, opts) => dispatch({ type: "CONFIGURE_BUILDING", x, y, ...opts })}
+        onRemoveBuilding={(x, y) => dispatch({ type: "REMOVE_BUILDING", x, y })}
         startWizard={startWizard}
         startPlaceTee={startPlaceTee}
         startPlaceGreen={startPlaceGreen}

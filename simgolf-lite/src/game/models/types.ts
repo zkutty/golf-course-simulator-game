@@ -44,7 +44,14 @@ export interface Hole {
 
 export type ObstacleType = "tree" | "bush" | "rock";
 
-export type BuildingType = "clubhouse";
+export type BuildingType = "clubhouse" | "proshop" | "snackbar" | "cartrental";
+
+// Concessions (M4/ZKU-117): every building type except the clubhouse sells
+// something to golfers on the course.
+export type ConcessionType = Exclude<BuildingType, "clubhouse">;
+
+export type BuildingTier = 1 | 2 | 3;
+export type BuildingPricing = "budget" | "standard" | "premium";
 
 // Multi-tile structure anchored at its top-left footprint tile; footprint
 // dimensions come from BUILDING_SPECS (src/game/models/buildings.ts).
@@ -52,6 +59,10 @@ export interface Building {
   type: BuildingType;
   x: number;
   y: number;
+  // Concession configuration (ZKU-117). Absent on the clubhouse and on
+  // pre-M4 saves; readers default to tier 1 / "standard" pricing.
+  tier?: BuildingTier;
+  pricing?: BuildingPricing;
 }
 
 export interface Obstacle {
@@ -171,11 +182,27 @@ export interface SatisfactionBreakdown {
   satisfaction: number; // 0..100
 }
 
+// One itemized income line: how many transactions and the dollars they made.
+export interface RevenueLine {
+  count: number;
+  revenue: number;
+}
+
+// Itemized income (ZKU-120): green fees plus per-concession transaction
+// rollups replace the old single aggregate revenue number.
+export interface RevenueBreakdown {
+  greenFees: RevenueLine;
+  concessions: Partial<Record<ConcessionType, RevenueLine>>;
+  concessionsTotal: number;
+  total: number;
+}
+
 export interface WeekResult {
   visitors: number;
   turnaways?: number;
   capacity?: number;
   revenue: number;
+  revenueBreakdown?: RevenueBreakdown;
   costs: number;
   profit: number;
   tax?: number;
@@ -183,6 +210,8 @@ export interface WeekResult {
     labor: number;
     consumables: number;
     merchantFees: number;
+    /** Cost of goods sold at concessions (ZKU-120). */
+    concessionGoods?: number;
     total: number;
   };
   overhead?: {
