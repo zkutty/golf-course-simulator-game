@@ -21,6 +21,9 @@ export interface BuildingSpec {
 
 export const BUILDING_SPECS: Record<BuildingType, BuildingSpec> = {
   clubhouse: { type: "clubhouse", name: "Clubhouse", w: 3, d: 3, frame: "clubhouse" },
+  proshop: { type: "proshop", name: "Pro Shop", w: 2, d: 2, frame: "proshop" },
+  snackbar: { type: "snackbar", name: "Snack Bar", w: 1, d: 1, frame: "snackbar" },
+  cartrental: { type: "cartrental", name: "Cart Rental", w: 2, d: 2, frame: "cartrental" },
 };
 
 export function buildingSpec(b: Building): BuildingSpec {

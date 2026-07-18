@@ -1,5 +1,12 @@
-import type { Difficulty, Point } from "../models/types";
+import type {
+  ConcessionType,
+  Difficulty,
+  Point,
+  RevenueBreakdown,
+  RevenueLine,
+} from "../models/types";
 import type { Personality } from "./personality";
+import type { ConcessionPurchase, ConcessionStopInfo } from "./concessions";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -15,6 +22,9 @@ export interface Segment {
   // Render-facing only (ZKU-153): which stroke a "flight" represents, so the
   // renderer can pick the swing vs putt animation. Never read by sim logic.
   shot?: "swing" | "putt";
+  // Concession service stop (M4/ZKU-119): set on the "pause" at a counter.
+  // Completing the segment triggers the buy roll (ZKU-118).
+  stop?: ConcessionStopInfo;
 }
 
 export type GolferArchetypeName =
@@ -50,7 +60,17 @@ export interface Golfer {
   thought: string | null;
   thoughtUntil: number; // dayMinute when the thought expires
   finished: boolean;
-  spent: number; // money spent (green fee + concessions later)
+  spent: number; // money spent this visit (green fee + concessions)
+  // Concessions (M4/ZKU-118): cash on hand and the seed salting buy rolls so
+  // outcomes are deterministic regardless of frame timing.
+  wallet: number;
+  purchaseSeed: number;
+  // Count of buy rolls drawn so far — persists across mid-round re-plans so a
+  // replaced itinerary can never replay an already-consumed roll.
+  buyRolls: number;
+  // Realized purchases not yet folded into the day's books; drained by
+  // stepLive each tick into cash + itemized revenue.
+  pendingPurchases: ConcessionPurchase[];
 }
 
 export interface Arrival {
@@ -66,6 +86,11 @@ export interface LiveState {
   nextArrivalIdx: number;
   nextGolferId: number;
   greenFeeCollected: number; // cash collected today (green fees)
+  // Itemized concession income for the day (M4/ZKU-120): every line is real
+  // per-golfer transactions, not an aggregate estimate.
+  concessionRevenue: number;
+  concessionGoodsCost: number;
+  concessionSales: Partial<Record<ConcessionType, RevenueLine>>;
   roundsStarted: number;
   roundsFinished: number;
   satisfactionSum: number; // sum of finished golfers' mood*100
@@ -136,7 +161,10 @@ export interface GolferRenderData {
 export interface DayResult {
   dayIndex: number;
   rounds: number;
-  revenue: number; // green fees actually collected
+  revenue: number; // everything actually collected (green fees + concessions)
+  // Itemized income behind `revenue` (M4/ZKU-120), built here so the weekly
+  // and daily paths share one breakdown shape.
+  revenueBreakdown: RevenueBreakdown;
   costs: number;
   profit: number;
   avgSatisfaction: number; // 0..100

@@ -1,4 +1,12 @@
-import type { Point, Terrain, ObstacleType, Course, World } from "../game/models/types";
+import type {
+  Point,
+  Terrain,
+  ObstacleType,
+  Course,
+  World,
+  ConcessionType,
+  BuildingPricing,
+} from "../game/models/types";
 
 // Actions that mutate terrain (increment terrainVersion)
 export type TerrainMutationAction =
@@ -16,6 +24,19 @@ export type TerrainMutationAction =
 export type ObstacleMutationAction =
   | { type: "PLACE_OBSTACLE"; x: number; y: number; obstacleType: ObstacleType }
   | { type: "REMOVE_OBSTACLE"; x: number; y: number };
+
+// Concession buildings (M4/ZKU-117). Footprints block pathfinding, so these
+// bump obstaclesVersion (route invalidation) alongside economyVersion.
+export type BuildingMutationAction =
+  | { type: "PLACE_BUILDING"; buildingType: ConcessionType; x: number; y: number }
+  | { type: "REMOVE_BUILDING"; x: number; y: number }
+  | {
+      type: "CONFIGURE_BUILDING";
+      x: number;
+      y: number;
+      upgradeTier?: boolean;
+      pricing?: BuildingPricing;
+    };
 
 // Actions that mutate markers (increment markersVersion)
 export type MarkerMutationAction =
@@ -41,10 +62,15 @@ export type EconomyMutationAction =
 
 // UI-only actions (do not affect versions)
 export type UIAction =
-  | { type: "SET_MODE"; mode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" }
+  | { type: "SET_MODE"; mode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" }
   | { type: "SET_ACTIVE_HOLE"; holeIndex: number }
   | { type: "SET_BRUSH"; terrain: Terrain };
 
 // Union of all actions
-export type Action = TerrainMutationAction | ObstacleMutationAction | MarkerMutationAction | UIAction;
+export type Action =
+  | TerrainMutationAction
+  | ObstacleMutationAction
+  | BuildingMutationAction
+  | MarkerMutationAction
+  | UIAction;
 

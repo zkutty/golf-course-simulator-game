@@ -21,7 +21,7 @@ export type TerrainFrame =
   | "edge_lr"
   | "edge_ll"
   | "edge_ul";
-export type BuildingFrame = "clubhouse";
+export type BuildingFrame = "clubhouse" | "proshop" | "snackbar" | "cartrental";
 export type AtlasFrame = PropFrame | TerrainFrame | BuildingFrame;
 
 /**

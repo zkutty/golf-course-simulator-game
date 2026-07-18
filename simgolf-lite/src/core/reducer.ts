@@ -4,6 +4,15 @@ import { computeElevationChangeCost, computeTerrainChangeCost } from "../game/mo
 import { clampElevation } from "../game/models/elevation";
 import { hitsLiquidityTrap } from "../game/sim/runState";
 import { terrainCostMult } from "../game/balance/difficulty";
+import { canPlaceBuilding } from "../game/models/buildings";
+import {
+  buildingAt,
+  buildingTier,
+  concessionBuildCost,
+  concessionSalvageValue,
+  isConcession,
+  tierUpgradeCost,
+} from "../game/models/concessions";
 
 /**
  * Apply an action to the game state. This is the ONLY function that should mutate
@@ -292,6 +301,76 @@ export function applyAction(state: GameState, action: Action): GameState {
         },
       };
       obstaclesVersion++;
+      break;
+    }
+
+    case "PLACE_BUILDING": {
+      if (!canPlaceBuilding(state.course, action.buildingType, action.x, action.y).ok) break;
+      const cost = concessionBuildCost(action.buildingType, costMult);
+      newState = {
+        ...newState,
+        course: {
+          ...state.course,
+          buildings: [
+            ...(state.course.buildings ?? []),
+            { type: action.buildingType, x: action.x, y: action.y },
+          ],
+        },
+        world: {
+          ...state.world,
+          cash: state.world.cash - cost,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cost),
+        },
+      };
+      obstaclesVersion++; // footprints block walking — invalidate routes
+      economyVersion++;
+      break;
+    }
+
+    case "REMOVE_BUILDING": {
+      const target = buildingAt(state.course, action.x, action.y);
+      // The clubhouse is the course's front door — never removable.
+      if (!target || !isConcession(target.type)) break;
+      const refund = concessionSalvageValue(target, costMult);
+      newState = {
+        ...newState,
+        course: {
+          ...state.course,
+          buildings: (state.course.buildings ?? []).filter((b) => b !== target),
+        },
+        world: { ...state.world, cash: state.world.cash + refund },
+      };
+      obstaclesVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "CONFIGURE_BUILDING": {
+      const target = buildingAt(state.course, action.x, action.y);
+      if (!target || !isConcession(target.type)) break;
+      let cost = 0;
+      let next = target;
+      if (action.upgradeTier) {
+        const upgrade = tierUpgradeCost(target, costMult);
+        if (upgrade == null) break; // already max tier
+        cost = upgrade;
+        next = { ...next, tier: (buildingTier(target) + 1) as 2 | 3 };
+      }
+      if (action.pricing) next = { ...next, pricing: action.pricing };
+      if (next === target) break;
+      newState = {
+        ...newState,
+        course: {
+          ...state.course,
+          buildings: (state.course.buildings ?? []).map((b) => (b === target ? next : b)),
+        },
+        world: {
+          ...state.world,
+          cash: state.world.cash - cost,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cost),
+        },
+      };
+      economyVersion++;
       break;
     }
 

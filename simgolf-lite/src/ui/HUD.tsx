@@ -2,7 +2,27 @@ import { useMemo, useState } from "react";
 import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
 import { ELEVATION_COST_PER_STEP } from "../game/models/terrainEconomics";
 import { useAudio } from "../audio/audioContext";
-import type { Course, ObstacleType, Point, Terrain, WeekResult, World } from "../game/models/types";
+import type {
+  BuildingPricing,
+  ConcessionType,
+  Course,
+  ObstacleType,
+  Point,
+  Terrain,
+  WeekResult,
+  World,
+} from "../game/models/types";
+import { BUILDING_SPECS } from "../game/models/buildings";
+import {
+  CONCESSION_TYPES,
+  buildingPricing,
+  buildingTier,
+  concessionBuildCost,
+  concessionItemPrice,
+  concessionsOnCourse,
+  tierUpgradeCost,
+} from "../game/models/concessions";
+import { terrainCostMult } from "../game/balance/difficulty";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
@@ -38,8 +58,16 @@ export function HUD(props: {
   setSelected: (t: Terrain) => void;
   setGreenFee: (n: number) => void;
   setMaintenance: (n: number) => void;
-  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
-  setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT") => void;
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
+  setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING") => void;
+  buildingType: ConcessionType;
+  setBuildingType: (t: ConcessionType) => void;
+  onConfigureBuilding: (
+    x: number,
+    y: number,
+    opts: { upgradeTier?: boolean; pricing?: BuildingPricing }
+  ) => void;
+  onRemoveBuilding: (x: number, y: number) => void;
   sculptBrush?: SculptBrush;
   setSculptBrush?: (b: SculptBrush) => void;
   sculptRadius?: SculptRadius;
@@ -100,6 +128,10 @@ export function HUD(props: {
     setMaintenance,
     editorMode,
     setEditorMode,
+    buildingType,
+    setBuildingType,
+    onConfigureBuilding,
+    onRemoveBuilding,
     startWizard,
     startPlaceTee,
     startPlaceGreen,
@@ -153,6 +185,9 @@ export function HUD(props: {
   const audio = useAudio();
 
   const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
+  // Concession panel data (M4): one filter + one cost scaler per render.
+  const placedConcessions = useMemo(() => concessionsOnCourse(course), [course]);
+  const buildCostMult = terrainCostMult(world.difficulty);
   const price = useMemo(() => Math.round(priceAttractiveness(course) * 100), [course]);
   const liveDemand = useMemo(() => demandBreakdown(course, world), [course, world]);
   const activeHole = holeSummary.holes[activeHoleIndex];
@@ -612,6 +647,19 @@ export function HUD(props: {
                 >
                   Sculpt
                 </button>
+                <button
+                  onClick={() => setEditorMode("BUILDING")}
+                  style={{
+                    flex: 1,
+                    padding: "8px 6px",
+                    borderRadius: 10,
+                    border: editorMode === "BUILDING" ? "2px solid #000" : "1px solid #ccc",
+                    background: "#fff",
+                    fontSize: 12,
+                  }}
+                >
+                  Build
+                </button>
               </div>
 
               {editorMode === "SCULPT" && props.sculptBrush && props.setSculptBrush && props.setSculptRadius && (
@@ -808,6 +856,131 @@ export function HUD(props: {
                   Draft: tee {draftTee ? `(${draftTee.x},${draftTee.y})` : "—"} • green{" "}
                   {draftGreen ? `(${draftGreen.x},${draftGreen.y})` : "—"}
                 </div>
+              </Section>
+            ) : editorMode === "BUILDING" ? (
+              <Section title="Concessions">
+                <div style={{ color: "#444", fontSize: 12 }}>
+                  Click open ground to build. Click a placed concession to demolish it
+                  (partial refund). Golfers detour to buy during their rounds.
+                </div>
+                <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
+                  {CONCESSION_TYPES.map((t) => {
+                    const spec = BUILDING_SPECS[t];
+                    const cost = concessionBuildCost(t, buildCostMult);
+                    return (
+                      <button
+                        key={t}
+                        onClick={() => setBuildingType(t)}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "8px 10px",
+                          borderRadius: 10,
+                          border: buildingType === t ? "2px solid #000" : "1px solid #ccc",
+                          background: "#fff",
+                          fontSize: 12,
+                        }}
+                      >
+                        <span>
+                          {spec.name}{" "}
+                          <span style={{ color: "#777" }}>
+                            ({spec.w}×{spec.d})
+                          </span>
+                        </span>
+                        <b>${cost.toLocaleString()}</b>
+                      </button>
+                    );
+                  })}
+                </div>
+                {placedConcessions.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ marginBottom: 6 }}>
+                      <b>Placed concessions</b>
+                    </div>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {placedConcessions.map((b) => {
+                        const spec = BUILDING_SPECS[b.type];
+                        const upgrade = tierUpgradeCost(b, buildCostMult);
+                        return (
+                          <div
+                            key={`${b.type}:${b.x}:${b.y}`}
+                            style={{
+                              border: "1px solid #ddd",
+                              borderRadius: 10,
+                              padding: 8,
+                              fontSize: 12,
+                              background: "#fff",
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span>
+                                <b>{spec.name}</b>{" "}
+                                <span style={{ color: "#777" }}>
+                                  ({b.x},{b.y}) • Tier {buildingTier(b)}
+                                </span>
+                              </span>
+                              <span>${concessionItemPrice(b)}/sale</span>
+                            </div>
+                            <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
+                              {(["budget", "standard", "premium"] as const).map((p) => (
+                                <button
+                                  key={p}
+                                  onClick={() => onConfigureBuilding(b.x, b.y, { pricing: p })}
+                                  style={{
+                                    flex: 1,
+                                    padding: "4px 4px",
+                                    borderRadius: 8,
+                                    border:
+                                      buildingPricing(b) === p ? "2px solid #000" : "1px solid #ccc",
+                                    background: "#fff",
+                                    fontSize: 11,
+                                    textTransform: "capitalize",
+                                  }}
+                                >
+                                  {p}
+                                </button>
+                              ))}
+                            </div>
+                            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                              <button
+                                onClick={() => onConfigureBuilding(b.x, b.y, { upgradeTier: true })}
+                                disabled={upgrade == null || upgrade > world.cash}
+                                style={{
+                                  flex: 1,
+                                  padding: "4px 6px",
+                                  borderRadius: 8,
+                                  border: "1px solid #ccc",
+                                  background: "#fff",
+                                  fontSize: 11,
+                                  opacity: upgrade == null || upgrade > world.cash ? 0.5 : 1,
+                                }}
+                              >
+                                {upgrade == null
+                                  ? "Max tier"
+                                  : `Upgrade ($${upgrade.toLocaleString()})`}
+                              </button>
+                              <button
+                                onClick={() => onRemoveBuilding(b.x, b.y)}
+                                style={{
+                                  flex: 1,
+                                  padding: "4px 6px",
+                                  borderRadius: 8,
+                                  border: "1px solid #e2b4b4",
+                                  background: "#fff",
+                                  color: "#a40000",
+                                  fontSize: 11,
+                                }}
+                              >
+                                Demolish
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </Section>
             ) : editorMode === "OBSTACLE" ? (
               <Section title="Place obstacle">
@@ -1087,6 +1260,26 @@ export function HUD(props: {
                   </div>
                 )}
                 <div>Revenue: ${Math.round(last.revenue).toLocaleString()}</div>
+                {last.revenueBreakdown && (
+                  <div style={{ marginTop: 4, display: "grid", gap: 2, fontSize: 12, color: "#444" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Green fees ({last.revenueBreakdown.greenFees.count})</span>
+                      <span>${Math.round(last.revenueBreakdown.greenFees.revenue).toLocaleString()}</span>
+                    </div>
+                    {CONCESSION_TYPES.map((t) => {
+                      const line = last.revenueBreakdown!.concessions[t];
+                      if (!line || line.count === 0) return null;
+                      return (
+                        <div key={t} style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span>
+                            {BUILDING_SPECS[t].name} ({line.count} sales)
+                          </span>
+                          <span>${Math.round(line.revenue).toLocaleString()}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 <div>Costs: ${Math.round(last.costs).toLocaleString()}</div>
                 {last.variableCosts && (
                   <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
@@ -1109,6 +1302,14 @@ export function HUD(props: {
                         <span>Merchant fees</span>
                         <span>${Math.round(last.variableCosts.merchantFees).toLocaleString()}</span>
                       </div>
+                      {(last.variableCosts.concessionGoods ?? 0) > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span>Concession goods</span>
+                          <span>
+                            ${Math.round(last.variableCosts.concessionGoods!).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

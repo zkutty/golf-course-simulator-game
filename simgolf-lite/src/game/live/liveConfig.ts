@@ -61,6 +61,7 @@ export const LIVE = {
     perStrokeOverPar: -0.06, // each stroke over par nudges mood down
     perStrokeUnderPar: 0.05,
     conditionWeight: 0.25, // course condition contribution
+    concessionLift: 0.03, // a snack/new glove takes the edge off (M4)
     min: 0,
     max: 1,
   },

@@ -95,6 +95,10 @@ function freshGolfer(course: Course): Golfer {
     thoughtUntil: 0,
     finished: false,
     spent: 0,
+    wallet: 100,
+    purchaseSeed: 42,
+    buyRolls: 0,
+    pendingPurchases: [],
   };
 }
 

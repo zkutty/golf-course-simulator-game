@@ -7,6 +7,7 @@ import { rollPersonality, solverProfileForSkill } from "./personality";
 import { getDifficultyProfile } from "../balance/difficulty";
 import { buildGolferRound, entryPoint, planFromHole } from "./golfer";
 import { advanceGolfer } from "./golfer";
+import { rollWallet } from "./concessions";
 import { planDay } from "./spawn";
 import { findWalkPath } from "./walkPath";
 import { LIVE } from "./liveConfig";
@@ -41,6 +42,9 @@ export function createLiveState(
     nextArrivalIdx: 0,
     nextGolferId: 1,
     greenFeeCollected: 0,
+    concessionRevenue: 0,
+    concessionGoodsCost: 0,
+    concessionSales: {},
     roundsStarted: 0,
     roundsFinished: 0,
     satisfactionSum: 0,
@@ -109,7 +113,13 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     thought: null,
     thoughtUntil: 0,
     finished: false,
-    spent: 0,
+    spent: course.baseGreenFee,
+    // Concessions (M4/ZKU-118): pocket money scaled by spend propensity, and
+    // a stable per-golfer seed for frame-timing-independent buy rolls.
+    wallet: rollWallet(personality, rng),
+    purchaseSeed: (state.seed + id * 977) | 0,
+    buyRolls: 0,
+    pendingPurchases: [],
   };
 }
 
@@ -153,6 +163,19 @@ export function stepLive(
   const stillPlaying: Golfer[] = [];
   for (const g of state.golfers) {
     advanceGolfer(g, dtMin, course.condition);
+    // Bank concession transactions realized this step (M4/ZKU-118/120):
+    // itemized per concession type, with COGS tracked for the day commit.
+    for (const p of g.pendingPurchases) {
+      cashDelta += p.amount;
+      state.concessionRevenue += p.amount;
+      state.concessionGoodsCost += p.goodsCost;
+      const line = state.concessionSales[p.kind] ?? { count: 0, revenue: 0 };
+      state.concessionSales[p.kind] = {
+        count: line.count + 1,
+        revenue: line.revenue + p.amount,
+      };
+    }
+    if (g.pendingPurchases.length > 0) g.pendingPurchases = [];
     if (g.finished) {
       state.satisfactionSum += g.mood * 100;
       state.roundsFinished++;
