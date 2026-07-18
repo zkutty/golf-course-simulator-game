@@ -17,6 +17,7 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
     : fallback;
 }
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
+import { defaultRosterFor, derivedStaffLevel, sanitizeStaff } from "../game/models/staff";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { withNormalizedElevations } from "../game/models/elevation";
 import { BUILDING_SPECS } from "../game/models/buildings";
@@ -211,9 +212,22 @@ export function normalizeLoadedSave(input: unknown): SavePayload | null {
 
     const rawWorld = parsed.world as World;
     const rawConstraints = rawWorld.constraints;
+    // Staff roster migration (ZKU-121): pre-M5 saves carry only the aggregate
+    // staffLevel — expand it into individual employees at the legacy wage so
+    // payroll is unchanged. staffLevel becomes a derived cache of the roster.
+    const staff =
+      sanitizeStaff(rawWorld.staff) ??
+      defaultRosterFor(typeof rawWorld.staffLevel === "number" ? rawWorld.staffLevel : 1);
     const world: World = {
       ...DEFAULT_WORLD,
       ...rawWorld,
+      staff,
+      staffLevel: derivedStaffLevel(staff),
+      nextStaffId: Math.max(
+        typeof rawWorld.nextStaffId === "number" ? rawWorld.nextStaffId : 1,
+        ...staff.map((s) => s.id + 1),
+        1
+      ),
       objectives: sanitizeObjectives(rawWorld.objectives),
       mode: oneOf<PlayMode>(rawWorld.mode, ["sandbox", "challenge", "career"], "sandbox"),
       difficulty: oneOf<Difficulty>(rawWorld.difficulty, ["easy", "normal", "hard"], "normal"),

@@ -169,8 +169,15 @@ function ballArc(from: Point, to: Point, t: number): Point {
 
 // Advance a single golfer by `dtMin` game-minutes, walking through its segment
 // itinerary. Updates position, ball, running score, and mood. Returns the
-// golfer (mutated in place for the caller's array).
-export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void {
+// golfer (mutated in place for the caller's array). `walkMult` scales walking
+// speed only (carts, marshals hurrying a congested hole — ZKU-121/123);
+// swings and ball flights keep their natural pace.
+export function advanceGolfer(
+  g: Golfer,
+  dtMin: number,
+  condition: number,
+  walkMult = 1
+): void {
   if (g.finished) return;
   let remaining = dtMin;
   let guard = 0;
@@ -185,10 +192,11 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
       return;
     }
     const seg = g.segments[g.segIndex];
-    const left = seg.dur - g.segElapsed;
+    const rate = seg.kind === "walk" ? Math.max(0.01, walkMult) : 1;
+    const left = (seg.dur - g.segElapsed) / rate;
 
     if (remaining < left) {
-      g.segElapsed += remaining;
+      g.segElapsed += remaining * rate;
       remaining = 0;
     } else {
       remaining -= left;

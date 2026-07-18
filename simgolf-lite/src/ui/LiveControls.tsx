@@ -84,6 +84,7 @@ export function LiveControls(props: {
       <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.15)" }} />
 
       <Stat label="On course" value={`${status.onCourse}`} />
+      <Stat label="Staff on duty" value={`${status.staffOnDuty}`} />
       <Stat label="Rounds today" value={`${status.roundsToday}`} />
       <Stat label="Fees today" value={money(status.greenFeesToday)} accent="#bbf7d0" />
       <Stat label="Cash" value={money(cash)} accent={cash < 0 ? "#fca5a5" : "#e2e8f0"} />

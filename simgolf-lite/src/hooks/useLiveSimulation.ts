@@ -5,6 +5,7 @@ import {
   createLiveState,
   liveRenderData,
   reconcileGolfers,
+  reconcileStaff,
   roundReactions,
   stepLive,
 } from "../game/live/simulation";
@@ -36,6 +37,7 @@ export interface LiveStatus {
   dayMinute: number;
   clockLabel: string;
   onCourse: number;
+  staffOnDuty: number; // staff entities currently working the course (ZKU-121)
   roundsToday: number;
   greenFeesToday: number;
   lastDay: DayResult | null;
@@ -99,6 +101,7 @@ export function useLiveSimulation(args: {
     dayMinute: 0,
     clockLabel: clockLabel(0),
     onCourse: 0,
+    staffOnDuty: 0,
     roundsToday: 0,
     greenFeesToday: 0,
     lastDay: null,
@@ -149,6 +152,19 @@ export function useLiveSimulation(args: {
     }
   }, [enabled, course]);
 
+  // Roster edits (hire/fire/shift changes, ZKU-124) reconcile the live staff
+  // entities immediately — new hires walk in mid-day, fired staff vanish.
+  const staffRosterRef = useRef(world.staff);
+  useEffect(() => {
+    if (staffRosterRef.current === world.staff) return;
+    staffRosterRef.current = world.staff;
+    const live = liveRef.current;
+    if (enabled && live) {
+      reconcileStaff(live, world, courseRef.current);
+      golfersRef.current = liveRenderData(live);
+    }
+  }, [enabled, world]);
+
   const flushCash = useCallback(() => {
     const d = pendingCashRef.current;
     if (d === 0) return;
@@ -170,6 +186,7 @@ export function useLiveSimulation(args: {
       dayMinute: live.dayMinute,
       clockLabel: clockLabel(live.dayMinute),
       onCourse: live.golfers.length,
+      staffOnDuty: live.staff.filter((s) => s.onCourse).length,
       roundsToday: live.roundsStarted,
       greenFeesToday: live.greenFeeCollected,
       lastDay: status.lastDay,
@@ -194,6 +211,7 @@ export function useLiveSimulation(args: {
       revenue,
       reactions: roundReactions(live),
       dayIndex: live.dayIndex,
+      staffUpkeepTasks: live.upkeepTasksDone,
     });
     result.dayIndex = live.dayIndex;
 

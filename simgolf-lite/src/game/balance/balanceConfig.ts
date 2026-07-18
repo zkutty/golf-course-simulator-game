@@ -47,6 +47,24 @@ export const BALANCE = {
     marketingCostPerLevel: 300,
   },
 
+  // Individual staff roster (ZKU-121/122). Wages are weekly and snapshotted
+  // onto each hire; migrated legacy rosters keep ops.staffCostPerLevel so old
+  // saves' payroll is unchanged.
+  staff: {
+    hireFee: 800, // one-time signing cost
+    maxRoster: 8,
+    wages: {
+      groundskeeper: 450,
+      cartAttendant: 400,
+      proShop: 420,
+      marshal: 500,
+    },
+    // Condition recovery credited at day commit per completed groundskeeper
+    // maintenance task, and the per-day cap on that recovery (ZKU-122).
+    upkeepConditionPerTask: 0.004,
+    upkeepConditionCapPerDay: 0.03,
+  },
+
   // Variable costs that scale with rounds / revenue (main margin control)
   variableCosts: {
     laborPerRoundBase: 8,

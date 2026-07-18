@@ -1,5 +1,6 @@
 import type { Difficulty, Point } from "../models/types";
 import type { Personality } from "./personality";
+import type { StaffEntity } from "./staff";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -51,6 +52,9 @@ export interface Golfer {
   thoughtUntil: number; // dayMinute when the thought expires
   finished: boolean;
   spent: number; // money spent (green fee + concessions later)
+  // Game-minutes spent on congested holes this round (ZKU-123) — drives the
+  // slow-play grumble threshold.
+  waitedMin: number;
 }
 
 export interface Arrival {
@@ -75,6 +79,14 @@ export interface LiveState {
   willReturnCount: number; // golfers intending to come back
   reconcileEpoch: number; // bumped when a mid-round re-plan runs (ZKU-136)
   nextTeeFreeAt: number; // earliest game-minute the next group may tee off (ZKU-110)
+  // Staff as people (ZKU-121/122/123): live entities from the World roster.
+  staff: StaffEntity[];
+  // Groundskeeper maintenance tasks completed today (ZKU-122). Lifts live
+  // condition intra-day and is credited as recovery at day commit.
+  upkeepTasksDone: number;
+  // Holes currently over the congestion threshold, most stacked first
+  // (recomputed every step, ZKU-123).
+  congestedHoles: number[];
   // Memoized walking routes (from->to), shared by all golfers spawned this day (ZKU-107).
   walkCache: Map<string, Point[] | null>;
   dayOver: boolean;

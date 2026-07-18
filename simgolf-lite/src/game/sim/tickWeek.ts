@@ -5,6 +5,7 @@ import { scoreCourseHoles } from "./holes";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { isCoursePlayable } from "./isCoursePlayable";
 import { stepLoanWeek, totalWeeklyPayments } from "./loans";
+import { staffWeeklyWage } from "../models/staff";
 import { getEffectiveBalance } from "../balance/difficulty";
 import { distressExhausted, hitsLiquidityTrap } from "./runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
@@ -45,8 +46,9 @@ export function tickWeek(
   // Revenue: visitors * price, but satisfaction affects repeat visits (baked into rep later)
   const revenue = playable ? visitors * course.baseGreenFee : visitors * BALANCE.visitors.testingRoundFee;
 
-  // Costs
-  const staffCost = BALANCE.ops.staffCostPerLevel * world.staffLevel;
+  // Costs — payroll from the individual staff roster (ZKU-121); worlds
+  // without one fall back to the legacy staffLevel formula in the helper.
+  const staffCost = staffWeeklyWage(world);
   const marketingCost = BALANCE.ops.marketingCostPerLevel * world.marketingLevel;
   const maintenanceCost = world.maintenanceBudget;
 
