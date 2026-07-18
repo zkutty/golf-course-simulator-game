@@ -2,7 +2,14 @@ import { useMemo, useState } from "react";
 import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
 import { ELEVATION_COST_PER_STEP } from "../game/models/terrainEconomics";
 import { useAudio } from "../audio/audioContext";
-import type { Course, ObstacleType, Point, Terrain, WeekResult, World } from "../game/models/types";
+import type { Course, ObstacleType, Point, StaffRole, Terrain, WeekResult, World } from "../game/models/types";
+import {
+  STAFF_ROLES,
+  STAFF_ROLE_COLOR,
+  STAFF_ROLE_LABEL,
+  STAFF_SHIFT_LABEL,
+  staffWeeklyWage,
+} from "../game/models/staff";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
@@ -60,11 +67,11 @@ export function HUD(props: {
   onWizardNextHole: () => void;
   setActiveHoleParMode: (m: "AUTO" | "MANUAL") => void;
   setActiveHoleParManual: (p: 3 | 4 | 5) => void;
-  onUpgradeStaff: () => void;
+  onHireStaff: (role: StaffRole) => void;
+  onFireStaff: (id: number) => void;
+  onCycleStaffShift: (id: number) => void;
   onUpgradeMarketing: () => void;
-  staffUpgradeCost: number | null;
   marketingUpgradeCost: number | null;
-  canUpgradeStaff: boolean;
   canUpgradeMarketing: boolean;
   onSave: () => void;
   onLoad: () => void;
@@ -116,11 +123,11 @@ export function HUD(props: {
     onWizardNextHole,
     setActiveHoleParMode,
     setActiveHoleParManual,
-    onUpgradeStaff,
+    onHireStaff,
+    onFireStaff,
+    onCycleStaffShift,
     onUpgradeMarketing,
-    staffUpgradeCost,
     marketingUpgradeCost,
-    canUpgradeStaff,
     canUpgradeMarketing,
     onSave,
     onLoad,
@@ -1515,24 +1522,120 @@ export function HUD(props: {
               </div>
             </Section>
 
+            <Section title="Staff">
+              <div style={{ display: "grid", gap: 8, fontSize: 12 }}>
+                {(world.staff ?? []).length === 0 && (
+                  <div style={{ color: "#6b7280" }}>
+                    No staff on the payroll — the course is running itself.
+                  </div>
+                )}
+                {(world.staff ?? []).map((s) => (
+                  <div
+                    key={s.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "6px 8px",
+                      borderRadius: 10,
+                      border: "1px solid #e2e2e2",
+                      background: "#fff",
+                    }}
+                  >
+                    <span
+                      title={STAFF_ROLE_LABEL[s.role]}
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 999,
+                        background: STAFF_ROLE_COLOR[s.role],
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {s.name}
+                      </div>
+                      <div style={{ color: "#6b7280" }}>
+                        {STAFF_ROLE_LABEL[s.role]} · ${s.wage.toLocaleString()}/wk
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onCycleStaffShift(s.id)}
+                      title="Change shift"
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 999,
+                        border: "1px solid #ddd",
+                        background: "#f8fafc",
+                        fontSize: 11,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {STAFF_SHIFT_LABEL[s.shift]}
+                    </button>
+                    <button
+                      onClick={() => onFireStaff(s.id)}
+                      title={`Let ${s.name} go`}
+                      style={{
+                        padding: "4px 8px",
+                        borderRadius: 8,
+                        border: "1px solid #fca5a5",
+                        background: "#fff5f5",
+                        color: "#b91c1c",
+                        fontSize: 11,
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                <div style={{ color: "#555" }}>
+                  Payroll: <b>${staffWeeklyWage(world).toLocaleString()}/wk</b>
+                  {" · "}
+                  {(world.staff ?? []).length}/{BALANCE.staff.maxRoster} hired
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                  {STAFF_ROLES.map((role) => {
+                    const full = (world.staff ?? []).length >= BALANCE.staff.maxRoster;
+                    const affordable = world.cash >= BALANCE.staff.hireFee;
+                    const enabled = !full && affordable && !isBankrupt;
+                    return (
+                      <button
+                        key={role}
+                        onClick={() => onHireStaff(role)}
+                        disabled={!enabled}
+                        title={`Hire fee $${BALANCE.staff.hireFee.toLocaleString()}, then $${BALANCE.staff.wages[role].toLocaleString()}/wk`}
+                        style={{
+                          padding: "7px 6px",
+                          borderRadius: 10,
+                          border: enabled ? `1px solid ${STAFF_ROLE_COLOR[role]}` : "1px solid #ccc",
+                          background: enabled ? "#fff" : "#f6f6f6",
+                          color: enabled ? "#111" : "#888",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: enabled ? "pointer" : "default",
+                        }}
+                      >
+                        + {STAFF_ROLE_LABEL[role]}
+                        <div style={{ fontWeight: 400, color: "#6b7280" }}>
+                          ${BALANCE.staff.wages[role].toLocaleString()}/wk
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ color: "#6b7280", fontSize: 11 }}>
+                  Groundskeepers keep the turf healthy, marshals fight slow play,
+                  cart &amp; shop staff speed up and sweeten every round.
+                </div>
+              </div>
+            </Section>
+
             <Section title="Upgrades">
               <div style={{ display: "grid", gap: 8 }}>
-                <button
-                  onClick={onUpgradeStaff}
-                  disabled={!canUpgradeStaff}
-                  style={{
-                    width: "100%",
-                    padding: 10,
-                    borderRadius: 10,
-                    border: "1px solid #ccc",
-                    background: canUpgradeStaff ? "#fff" : "#f6f6f6",
-                  }}
-                >
-                  Staff level: {world.staffLevel}/5{" "}
-                  {staffUpgradeCost != null
-                    ? `(Buy: $${staffUpgradeCost.toLocaleString()})`
-                    : "(Max)"}
-                </button>
                 <button
                   onClick={onUpgradeMarketing}
                   disabled={!canUpgradeMarketing}

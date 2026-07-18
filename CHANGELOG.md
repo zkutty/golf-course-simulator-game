@@ -7,6 +7,24 @@ versioning follows [SemVer](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- Staff as people — M5 (ZKU-121/122/123/124): staff are no longer a
+  spreadsheet line item. The world carries a roster of individual employees
+  (groundskeepers, cart attendants, pro shop staff, marshals) with names,
+  per-role weekly wages, and Full day / Morning / Afternoon shifts; during
+  their shift each one clocks in at the entrance and works the course as a
+  live entity rendered through the golfer sprite pipeline in a role-colored
+  uniform. Groundskeepers pick greens and tees and visibly mow them —
+  completed tasks lift course condition intra-day (golfers' moods notice)
+  and credit real condition recovery at the day commit. Holes with too many
+  groups stacked on them now count as congested: golfers stuck there bleed
+  mood ("Pace of play is dragging…") unless a marshal patrols over and
+  hurries play along with a walk-speed boost; cart attendants shave walking
+  time course-wide and staffed pro shops send finishers off a bit happier.
+  The old "Staff level" upgrade button is replaced by a roster panel in the
+  Upgrades tab (hire by role for a signing fee, fire, click a shift chip to
+  reschedule, live payroll total), and the live bar shows staff on duty.
+  Pre-M5 saves migrate their staff level into an equivalent roster with
+  payroll unchanged to the dollar.
 - Render performance budget (ZKU-160): a dev perf HUD in the Pixi renderer
   (enable with `localStorage.coursecraft_perfhud = "on"`) showing fps,
   mean/p95/max frame time, the renderer's own per-tick work split by

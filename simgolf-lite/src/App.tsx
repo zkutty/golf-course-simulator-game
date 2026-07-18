@@ -5,7 +5,10 @@ import "./ui/cozyLayout.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
-import type { Point, Terrain, WeekResult } from "./game/models/types";
+import type { Point, StaffMember, StaffRole, StaffShift, Terrain, WeekResult } from "./game/models/types";
+import { derivedStaffLevel } from "./game/models/staff";
+import { golferName } from "./game/live/archetypes";
+import { mulberry32 } from "./utils/rng";
 import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, resetSave, type SavePayload } from "./utils/save";
 import { autosave } from "./utils/saveStore";
@@ -976,34 +979,63 @@ export default function App() {
     });
   }
 
-  const staffUpgradeCost = useMemo(() => {
-    if (world.staffLevel >= 5) return null;
-    return 2500 * (world.staffLevel + 1);
-  }, [world.staffLevel]);
-
   const marketingUpgradeCost = useMemo(() => {
     if (world.marketingLevel >= 5) return null;
     return 2000 * (world.marketingLevel + 1);
   }, [world.marketingLevel]);
 
-  const canUpgradeStaff = staffUpgradeCost != null && world.cash >= staffUpgradeCost;
   const canUpgradeMarketing =
     marketingUpgradeCost != null && world.cash >= marketingUpgradeCost;
 
-  function onUpgradeStaff() {
-    if (staffUpgradeCost == null) return;
+  // Staff roster management (ZKU-124): hire/fire/schedule individual people
+  // instead of buying an aggregate level. The live layer picks changes up
+  // immediately via the roster-reconcile effect in useLiveSimulation.
+  function onHireStaff(role: StaffRole) {
     setWorld((w) => {
+      const roster = w.staff ?? [];
       if (w.isBankrupt) return w;
-      if (w.staffLevel >= 5) return w;
-      if (w.cash < staffUpgradeCost) return w;
-      const nextCash = w.cash - staffUpgradeCost;
+      if (roster.length >= BALANCE.staff.maxRoster) return w;
+      if (w.cash < BALANCE.staff.hireFee) return w;
+      const id = w.nextStaffId ?? Math.max(0, ...roster.map((s) => s.id)) + 1;
+      const rng = mulberry32((w.runSeed | 0) + id * 977);
+      const hire: StaffMember = {
+        id,
+        name: golferName(rng(), rng()),
+        role,
+        shift: "full",
+        wage: BALANCE.staff.wages[role],
+      };
+      const nextCash = w.cash - BALANCE.staff.hireFee;
+      const staff = [...roster, hire];
       return {
         ...w,
         cash: nextCash,
-        staffLevel: w.staffLevel + 1,
+        staff,
+        nextStaffId: id + 1,
+        staffLevel: derivedStaffLevel(staff),
         isBankrupt: w.isBankrupt || hitsLiquidityTrap(nextCash),
       };
     });
+  }
+
+  function onFireStaff(id: number) {
+    setWorld((w) => {
+      const staff = (w.staff ?? []).filter((s) => s.id !== id);
+      if (staff.length === (w.staff ?? []).length) return w;
+      return { ...w, staff, staffLevel: derivedStaffLevel(staff) };
+    });
+  }
+
+  function onCycleStaffShift(id: number) {
+    const order: StaffShift[] = ["full", "morning", "afternoon"];
+    setWorld((w) => ({
+      ...w,
+      staff: (w.staff ?? []).map((s) =>
+        s.id === id
+          ? { ...s, shift: order[(order.indexOf(s.shift) + 1) % order.length] }
+          : s
+      ),
+    }));
   }
 
   function onUpgradeMarketing() {
@@ -1410,11 +1442,11 @@ export default function App() {
         onWizardNextHole={nextHoleWizard}
         setActiveHoleParMode={setActiveHoleParMode}
         setActiveHoleParManual={setActiveHoleParManual}
-        onUpgradeStaff={onUpgradeStaff}
+        onHireStaff={onHireStaff}
+        onFireStaff={onFireStaff}
+        onCycleStaffShift={onCycleStaffShift}
         onUpgradeMarketing={onUpgradeMarketing}
-        staffUpgradeCost={staffUpgradeCost}
         marketingUpgradeCost={marketingUpgradeCost}
-        canUpgradeStaff={canUpgradeStaff}
         canUpgradeMarketing={canUpgradeMarketing}
         onSave={onSave}
         onLoad={onLoad}
