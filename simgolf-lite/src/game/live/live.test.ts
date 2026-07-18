@@ -95,8 +95,46 @@ function freshGolfer(course: Course): Golfer {
     thoughtUntil: 0,
     finished: false,
     spent: 0,
+    wallet: 40,
+    purchasedSegmentIndexes: [],
   };
 }
+
+describe("M4 concessions", () => {
+  it("adds real concession detours to a golfer itinerary", () => {
+    const course = makeTestCourse();
+    course.buildings = [
+      { type: "pro_shop", x: 24, y: 4, tier: 1, price: 20 },
+      { type: "snack_bar", x: 28, y: 18, tier: 2, price: 8 },
+      { type: "cart_rental", x: 20, y: 18, tier: 1, price: 15 },
+    ];
+    const round = buildGolferRound({
+      course,
+      profile: getGolferProfile("SCRATCH", course),
+      entry: entryPoint(course),
+      rng: () => 0,
+      personality: testPersonality({ spendPropensity: 1 }),
+      wallet: 100,
+    });
+    const visits = round.segments.filter((segment) => segment.concession);
+    expect(visits.length).toBeGreaterThan(0);
+    expect(visits.every((segment) => segment.kind === "pause")).toBe(true);
+  });
+
+  it("banks itemized concession transactions during a live day", () => {
+    const course = makeTestCourse();
+    course.buildings = [{ type: "snack_bar", x: 28, y: 18, tier: 3, price: 5 }];
+    const live = createLiveState(course, { ...DEFAULT_WORLD, runSeed: 7 }, 0);
+    let cash = 0;
+    let guard = 0;
+    while (!live.dayOver && guard++ < 100_000) cash += stepLive(live, course, 1).cashDelta;
+    expect(live.concessionTransactions.length).toBeGreaterThan(0);
+    expect(live.concessionCollected).toBe(
+      live.concessionTransactions.reduce((sum, tx) => sum + tx.amount, 0)
+    );
+    expect(cash).toBe(live.greenFeeCollected + live.concessionCollected);
+  });
+});
 
 describe("test course validity", () => {
   it("has one complete, valid hole", () => {

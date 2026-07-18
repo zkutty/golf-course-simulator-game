@@ -1,4 +1,4 @@
-import type { Course, World } from "../models/types";
+import type { ConcessionTransaction, ConcessionType, Course, World } from "../models/types";
 import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
 import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty";
 import { hitsLiquidityTrap } from "../sim/runState";
@@ -24,6 +24,10 @@ export function commitDay(args: {
   course: Course;
   world: World;
   revenue: number; // green fees already banked today
+  greenFees?: number;
+  concessionRevenue?: number;
+  concessionByType?: Partial<Record<ConcessionType, number>>;
+  transactions?: ConcessionTransaction[];
   reactions: RoundReactions; // real observed reactions from finished rounds
   dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
 }): { world: World; course: Course; result: DayResult } {
@@ -115,6 +119,12 @@ export function commitDay(args: {
       dayIndex: 0,
       rounds,
       revenue,
+      revenueBreakdown: {
+        greenFees: args.greenFees ?? revenue,
+        concessions: args.concessionRevenue ?? 0,
+        byConcession: args.concessionByType ?? {},
+        transactions: args.transactions ?? [],
+      },
       costs,
       profit,
       avgSatisfaction,

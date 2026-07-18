@@ -5,7 +5,7 @@ import "./ui/cozyLayout.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
-import type { Point, Terrain, WeekResult } from "./game/models/types";
+import type { BuildingTier, ConcessionType, Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
 import { autosave, loadSlot, saveToSlot } from "./utils/saveStore";
@@ -49,8 +49,14 @@ import { createReferenceCourse } from "./game/testing/referenceCourse";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
 import { hashGameState } from "./utils/stateHash";
+import {
+  BUILDING_SPECS,
+  CONCESSION_TYPES,
+  buildingAtTile,
+  canPlaceBuilding,
+} from "./game/models/buildings";
 
-type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
+type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
 type ViewMode = "global" | "hole";
 
@@ -107,6 +113,7 @@ export default function App() {
   const [obstacleType, setObstacleType] = useState<ObstacleType>("tree");
   const [sculptBrush, setSculptBrush] = useState<SculptBrush>("raise");
   const [sculptRadius, setSculptRadius] = useState<SculptRadius>(1);
+  const [buildingType, setBuildingType] = useState<ConcessionType>("snack_bar");
 
   const [capital, setCapital] = useState(() => ({
     spent: 0,
@@ -162,17 +169,20 @@ export default function App() {
     setWorld,
     setCourse,
     onDayCommitted: (result, liveSnapshot) => {
+      const report: WeekResult = {
+        visitors: result.rounds,
+        revenue: result.revenue,
+        revenueBreakdown: result.revenueBreakdown,
+        costs: result.costs,
+        profit: result.profit,
+        avgSatisfaction: result.avgSatisfaction,
+        reputationDelta: result.reputationDelta,
+        visitorNoise: 0,
+      };
+      setLast(report);
       setHistory((h) => [
         ...h.slice(-19),
-        {
-          visitors: result.rounds,
-          revenue: result.revenue,
-          costs: result.costs,
-          profit: result.profit,
-          avgSatisfaction: result.avgSatisfaction,
-          reputationDelta: result.reputationDelta,
-          visitorNoise: 0,
-        } as WeekResult,
+        report,
       ]);
       // Rotating autosave after every committed game day (ZKU-174). The
       // setState reader snapshots post-commit state without extra renders.
@@ -967,6 +977,32 @@ export default function App() {
       }
       return;
     }
+    if (editorMode === "BUILDING") {
+      const existing = buildingAtTile(course, x, y);
+      if (existing) {
+        if (existing.type === "clubhouse") {
+          setPaintError("The starter clubhouse cannot be removed.");
+          return;
+        }
+        dispatch({ type: "REMOVE_BUILDING", x, y });
+        setPaintError(null);
+        return;
+      }
+      const validation = canPlaceBuilding(course, buildingType, x, y);
+      if (!validation.ok) {
+        setPaintError(`Cannot place ${BUILDING_SPECS[buildingType].name.toLowerCase()}: ${validation.reason}.`);
+        return;
+      }
+      const cost = BUILDING_SPECS[buildingType].buildCost;
+      if (world.cash < cost) {
+        setPaintError(`Insufficient funds: need $${cost.toLocaleString()}.`);
+        return;
+      }
+      dispatch({ type: "PLACE_BUILDING", buildingType, x, y });
+      setPaintError(null);
+      void sound?.playConfirm(soundEnabled);
+      return;
+    }
     // HOLE_WIZARD
     if (wizardStep === "TEE" || wizardStep === "MOVE_TEE") {
       // Validate: cannot place on water and must be in bounds
@@ -1483,6 +1519,12 @@ export default function App() {
         startPlaceGreen={startPlaceGreen}
         obstacleType={obstacleType}
         setObstacleType={setObstacleType}
+        buildingType={buildingType}
+        setBuildingType={setBuildingType}
+        concessionTypes={CONCESSION_TYPES}
+        onConfigureBuilding={(x: number, y: number, tier: BuildingTier, price: number) =>
+          dispatch({ type: "CONFIGURE_BUILDING", x, y, tier, price })
+        }
         activeHoleIndex={activeHoleIndex}
         setActiveHoleIndex={setActiveHoleIndex}
         onEnterHoleEditMode={enterHoleEditMode}

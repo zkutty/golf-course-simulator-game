@@ -11,6 +11,7 @@ import { planDay } from "./spawn";
 import { findWalkPath } from "./walkPath";
 import { LIVE } from "./liveConfig";
 import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } from "./types";
+import { rollDiscretionaryWallet } from "./concessions";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -41,6 +42,9 @@ export function createLiveState(
     nextArrivalIdx: 0,
     nextGolferId: 1,
     greenFeeCollected: 0,
+    concessionCollected: 0,
+    concessionTransactions: [],
+    concessionByType: {},
     roundsStarted: 0,
     roundsFinished: 0,
     satisfactionSum: 0,
@@ -80,6 +84,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   });
   const profile = getGolferProfile(solverProfileForSkill(personality.skill), course);
   const entry = entryPoint(course);
+  const wallet = rollDiscretionaryWallet(personality, rng);
   const round = buildGolferRound({
     course,
     profile,
@@ -87,6 +92,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     rng,
     personality,
     route: makeRouter(course, state.walkCache),
+    wallet,
   });
   return {
     id,
@@ -110,6 +116,8 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     thoughtUntil: 0,
     finished: false,
     spent: 0,
+    wallet,
+    purchasedSegmentIndexes: [],
   };
 }
 
@@ -147,12 +155,39 @@ export function stepLive(
     state.nextTeeFreeAt = state.dayMinute + LIVE.day.teeGapMinutes;
     cashDelta += course.baseGreenFee;
     state.greenFeeCollected += course.baseGreenFee;
+    golfer.spent += course.baseGreenFee;
   }
 
   // Advance every golfer; retire finished ones.
   const stillPlaying: Golfer[] = [];
   for (const g of state.golfers) {
+    const previousSegment = g.segIndex;
     advanceGolfer(g, dtMin, course.condition);
+    for (let i = previousSegment; i <= Math.min(g.segIndex, g.segments.length - 1); i++) {
+      const concession = g.segments[i]?.concession;
+      if (!concession || g.purchasedSegmentIndexes.includes(i) || g.wallet < concession.amount) continue;
+      g.purchasedSegmentIndexes.push(i);
+      g.wallet -= concession.amount;
+      g.spent += concession.amount;
+      g.thought = `Bought ${concession.item.toLowerCase()} for $${concession.amount}`;
+      g.thoughtUntil = state.dayMinute + 18;
+      const transaction = {
+        id: `${state.seed}-${g.id}-${i}`,
+        golferId: g.id,
+        golferName: g.name,
+        buildingType: concession.buildingType,
+        buildingX: concession.buildingX,
+        buildingY: concession.buildingY,
+        item: concession.item,
+        amount: concession.amount,
+        atMinute: state.dayMinute,
+      };
+      state.concessionTransactions.push(transaction);
+      state.concessionCollected += concession.amount;
+      state.concessionByType[concession.buildingType] =
+        (state.concessionByType[concession.buildingType] ?? 0) + concession.amount;
+      cashDelta += concession.amount;
+    }
     if (g.finished) {
       state.satisfactionSum += g.mood * 100;
       state.roundsFinished++;
@@ -300,6 +335,7 @@ export function reconcileGolfers(state: LiveState, course: Course): void {
       cursor: from,
       exit,
       route: makeRouter(course, state.walkCache),
+      wallet: g.wallet,
     });
 
     // Splice: keep scored holes, replace the unplayed tail with the new plan.

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
 import { ELEVATION_COST_PER_STEP } from "../game/models/terrainEconomics";
 import { useAudio } from "../audio/audioContext";
-import type { Course, ObstacleType, Point, Terrain, WeekResult, World } from "../game/models/types";
+import type { BuildingTier, ConcessionType, Course, ObstacleType, Point, Terrain, WeekResult, World } from "../game/models/types";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
@@ -15,6 +15,7 @@ import paperTex from "../assets/textures/paper.svg";
 import { IconBush, IconCash, IconCondition, IconHoles, IconReputation, IconRock, IconTree, LogoCourseCraft } from "@/assets/icons";
 import { GameButton } from "@/ui/gameui";
 import { ObjectiveMiniTracker, ObjectivesPanel } from "./ObjectivesPanel";
+import { BUILDING_SPECS, isConcession } from "../game/models/buildings";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -38,8 +39,8 @@ export function HUD(props: {
   setSelected: (t: Terrain) => void;
   setGreenFee: (n: number) => void;
   setMaintenance: (n: number) => void;
-  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
-  setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT") => void;
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
+  setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING") => void;
   sculptBrush?: SculptBrush;
   setSculptBrush?: (b: SculptBrush) => void;
   sculptRadius?: SculptRadius;
@@ -49,6 +50,10 @@ export function HUD(props: {
   startPlaceGreen?: () => void;
   obstacleType: ObstacleType;
   setObstacleType: (t: ObstacleType) => void;
+  buildingType: ConcessionType;
+  setBuildingType: (t: ConcessionType) => void;
+  concessionTypes: readonly ConcessionType[];
+  onConfigureBuilding: (x: number, y: number, tier: BuildingTier, price: number) => void;
   activeHoleIndex: number;
   setActiveHoleIndex: (n: number) => void;
   onEnterHoleEditMode?: (holeIndex: number) => void;
@@ -105,6 +110,10 @@ export function HUD(props: {
     startPlaceGreen,
     obstacleType,
     setObstacleType,
+    buildingType,
+    setBuildingType,
+    concessionTypes,
+    onConfigureBuilding,
     activeHoleIndex,
     setActiveHoleIndex,
     onEnterHoleEditMode,
@@ -612,6 +621,19 @@ export function HUD(props: {
                 >
                   Sculpt
                 </button>
+                <button
+                  onClick={() => setEditorMode("BUILDING")}
+                  style={{
+                    flex: 1,
+                    padding: "8px 6px",
+                    borderRadius: 10,
+                    border: editorMode === "BUILDING" ? "2px solid #000" : "1px solid #ccc",
+                    background: "#fff",
+                    fontSize: 12,
+                  }}
+                >
+                  Shops
+                </button>
               </div>
 
               {editorMode === "SCULPT" && props.sculptBrush && props.setSculptBrush && props.setSculptRadius && (
@@ -835,6 +857,67 @@ export function HUD(props: {
                   ))}
                 </div>
               </Section>
+            ) : editorMode === "BUILDING" ? (
+              <>
+                <Section title="Concession buildings">
+                  <div style={{ color: "#444", fontSize: 12, marginBottom: 8 }}>
+                    Choose a shop, then click clear, near-flat land to build. Click an existing concession to remove it for 35% salvage.
+                  </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {concessionTypes.map((type) => {
+                      const spec = BUILDING_SPECS[type];
+                      return (
+                        <button
+                          key={type}
+                          onClick={() => setBuildingType(type)}
+                          style={{
+                            padding: 9,
+                            borderRadius: 9,
+                            border: buildingType === type ? "2px solid #000" : "1px solid #ccc",
+                            background: "#fff",
+                            textAlign: "left",
+                            fontSize: 12,
+                          }}
+                        >
+                          <b>{spec.name}</b> · ${spec.buildCost.toLocaleString()} · starts at ${spec.defaultPrice}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Section>
+                <Section title="Pricing & tiers">
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {course.buildings.filter(isConcession).map((building, i) => {
+                      const spec = BUILDING_SPECS[building.type];
+                      const tier = building.tier ?? 1;
+                      const price = building.price ?? spec.defaultPrice!;
+                      return (
+                        <div key={`${building.x},${building.y},${i}`} style={{ padding: 8, border: "1px solid #ddd", borderRadius: 8, background: "#fff" }}>
+                          <div style={{ fontSize: 12, marginBottom: 6 }}><b>{spec.name}</b> at {building.x},{building.y}</div>
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <select
+                              aria-label={`${spec.name} tier`}
+                              value={tier}
+                              onChange={(e) => onConfigureBuilding(building.x, building.y, Number(e.target.value) as BuildingTier, price)}
+                            >
+                              <option value={1}>Tier 1</option><option value={2}>Tier 2</option><option value={3}>Tier 3</option>
+                            </select>
+                            <label style={{ fontSize: 12 }}>
+                              $ <input
+                                aria-label={`${spec.name} price`}
+                                type="number" min={1} max={250} value={price}
+                                onChange={(e) => onConfigureBuilding(building.x, building.y, tier, Number(e.target.value))}
+                                style={{ width: 58 }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {course.buildings.filter(isConcession).length === 0 && <div style={{ fontSize: 12, color: "#666" }}>No concessions built yet.</div>}
+                  </div>
+                </Section>
+              </>
             ) : (
               <>
                 {viewMode === "ARCHITECT" && (
@@ -1087,6 +1170,23 @@ export function HUD(props: {
                   </div>
                 )}
                 <div>Revenue: ${Math.round(last.revenue).toLocaleString()}</div>
+                {last.revenueBreakdown && (
+                  <div style={{ marginTop: 4, padding: 7, borderRadius: 7, background: "#f7f3e8", fontSize: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Green fees</span><b>${Math.round(last.revenueBreakdown.greenFees).toLocaleString()}</b>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Concessions ({last.revenueBreakdown.transactions.length} sales)</span>
+                      <b>${Math.round(last.revenueBreakdown.concessions).toLocaleString()}</b>
+                    </div>
+                    {Object.entries(last.revenueBreakdown.byConcession).map(([type, amount]) => (
+                      <div key={type} style={{ display: "flex", justifyContent: "space-between", color: "#666", paddingLeft: 8 }}>
+                        <span>{BUILDING_SPECS[type as ConcessionType].name}</span>
+                        <span>${Math.round(amount ?? 0).toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div>Costs: ${Math.round(last.costs).toLocaleString()}</div>
                 {last.variableCosts && (
                   <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
@@ -1700,5 +1800,3 @@ function Section(props: { title: string; children: React.ReactNode }) {
     </div>
   );
 }
-
-

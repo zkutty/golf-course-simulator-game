@@ -5,6 +5,8 @@ import { scoreCourseHoles } from "../sim/holes";
 import { LIVE } from "./liveConfig";
 import { mishitChance, puttOutcome, type Personality } from "./personality";
 import type { Golfer, Segment } from "./types";
+import type { ConcessionType } from "../models/types";
+import { planPurchase } from "./concessions";
 
 // Optional tile-aware router; returns waypoints from just-after `from` to `to`,
 // or null to fall back to a straight-line walk.
@@ -25,8 +27,8 @@ function flightSeg(from: Point, to: Point, holeIndex: number, shot: "swing" | "p
   return { kind: "flight", from, to, holeIndex, dur, shot };
 }
 
-function pauseSeg(at: Point, holeIndex: number, dur: number): Segment {
-  return { kind: "pause", from: at, to: at, holeIndex, dur };
+function pauseSeg(at: Point, holeIndex: number, dur: number, concession?: Segment["concession"]): Segment {
+  return { kind: "pause", from: at, to: at, holeIndex, dur, concession };
 }
 
 export interface BuiltRound {
@@ -44,6 +46,7 @@ export function buildGolferRound(args: {
   entry: Point;
   rng: () => number;
   personality: Personality;
+  wallet?: number;
   route?: WalkRouter;
 }): BuiltRound {
   return planFromHole({
@@ -55,6 +58,7 @@ export function buildGolferRound(args: {
     cursor: args.entry,
     exit: args.entry,
     route: args.route,
+    wallet: args.wallet,
   });
 }
 
@@ -71,6 +75,7 @@ export function planFromHole(args: {
   cursor: Point;
   exit: Point;
   route?: WalkRouter;
+  wallet?: number;
 }): BuiltRound {
   const { course, profile, rng, personality, startHole, exit, route } = args;
   const summary = scoreCourseHoles(course);
@@ -96,6 +101,33 @@ export function planFromHole(args: {
   };
 
   let cursor: Point = args.cursor;
+  let planningWallet = args.wallet ?? 0;
+
+  const pushPurchase = (type: ConcessionType, holeIndex: number): void => {
+    const purchase = planPurchase({
+      course, type, from: cursor, personality, satisfaction: 0.7,
+      wallet: planningWallet, rng,
+    });
+    if (!purchase) return;
+    pushWalk(cursor, purchase.entrance, holeIndex, LIVE.pace.interHoleWalkCap);
+    segments.push(pauseSeg(purchase.entrance, holeIndex, purchase.serviceMinutes, {
+      buildingType: purchase.building.type,
+      buildingX: purchase.building.x,
+      buildingY: purchase.building.y,
+      item: purchase.item,
+      amount: purchase.amount,
+    }));
+    cursor = purchase.entrance;
+    planningWallet -= purchase.amount;
+  };
+
+  // Pro shop and cart desk are pre-round decisions. Their service pauses are
+  // also visible queue stops, before the golfer reaches the first tee.
+  pushPurchase("pro_shop", -1);
+  pushPurchase("cart_rental", -1);
+
+  const validHoleCount = summary.holes.filter((h) => h.isComplete && h.isValid).length;
+  let playedValidHoles = 0;
 
   for (let i = Math.max(0, startHole); i < course.holes.length; i++) {
     const hole = course.holes[i];
@@ -143,6 +175,10 @@ export function planFromHole(args: {
     holePar.push(par);
     holeStrokes.push(shots + penalties + putts);
     cursor = green;
+    playedValidHoles++;
+    if (playedValidHoles === Math.max(1, Math.ceil(validHoleCount / 2))) {
+      pushPurchase("snack_bar", i);
+    }
   }
 
   // Walk off to the exit (routed around water).

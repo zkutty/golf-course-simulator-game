@@ -319,7 +319,7 @@ export interface PixiStageProps {
   animationsEnabled: boolean;
   flyoverNonce: number;
   showShotPlan: boolean;
-  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
   sculptRadius?: number;
   wizardStep: "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
   draftTee: Point | null;
@@ -1547,8 +1547,8 @@ export function PixiStage(props: PixiStageProps) {
 
     for (const b of course.buildings ?? []) {
       const spec = buildingSpec(b);
-      const tex = getPropFrame(spec.frame as AtlasFrame);
-      if (!tex) continue; // no fallback tier for buildings — atlas only
+      const tex = getPropFrame(spec.frame as AtlasFrame) ?? getPropFrame("clubhouse");
+      if (!tex) continue;
       const e = getElevation(course, b.x, b.y);
       const placement = placeObject({ x: b.x, y: b.y, w: spec.w, d: spec.d }, e, rotation);
       const sprite = new PIXI.Sprite(tex);
@@ -1557,6 +1557,7 @@ export function PixiStage(props: PixiStageProps) {
       sprite.width = spec.w * TILE_W;
       sprite.height = (sprite.width * tex.height) / tex.width;
       sprite.zIndex = placement.zIndex;
+      sprite.tint = b.type === "snack_bar" ? 0xffd27a : b.type === "pro_shop" ? 0x9fc5e8 : b.type === "cart_rental" ? 0xb6d7a8 : 0xffffff;
       layers.objects.addChild(sprite);
       buildingSpritesRef.current.push(sprite);
     }

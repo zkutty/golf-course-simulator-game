@@ -1,4 +1,4 @@
-import type { Course, WeekResult, World } from "../models/types";
+import type { ConcessionTransaction, ConcessionType, Course, WeekResult, World } from "../models/types";
 import { mulberry32, randInt } from "../../utils/rng";
 import { demandBreakdown, satisfactionBreakdown, satisfactionScore } from "./score";
 import { scoreCourseHoles } from "./holes";
@@ -12,7 +12,8 @@ import { withEvaluatedObjectives } from "../objectives/evaluate";
 export function tickWeek(
   course: Course,
   world: World,
-  seed = 1234
+  seed = 1234,
+  concessionTransactions: ConcessionTransaction[] = []
 ): { world: World; course: Course; result: WeekResult } {
   const rng = mulberry32(seed + world.week);
   // Difficulty-resolved balance (ZKU-165): identity for normal.
@@ -43,7 +44,13 @@ export function tickWeek(
   const avgSatBase = satisfactionScore(course, world); // 0..100
 
   // Revenue: visitors * price, but satisfaction affects repeat visits (baked into rep later)
-  const revenue = playable ? visitors * course.baseGreenFee : visitors * BALANCE.visitors.testingRoundFee;
+  const greenFeeRevenue = playable ? visitors * course.baseGreenFee : visitors * BALANCE.visitors.testingRoundFee;
+  const concessionRevenue = concessionTransactions.reduce((sum, tx) => sum + tx.amount, 0);
+  const byConcession = concessionTransactions.reduce<Partial<Record<ConcessionType, number>>>((totals, tx) => {
+    totals[tx.buildingType] = (totals[tx.buildingType] ?? 0) + tx.amount;
+    return totals;
+  }, {});
+  const revenue = greenFeeRevenue + concessionRevenue;
 
   // Costs
   const staffCost = BALANCE.ops.staffCostPerLevel * world.staffLevel;
@@ -186,6 +193,12 @@ export function tickWeek(
       capacity: playable ? capacity : undefined,
       turnaways: turnaways > 0 ? turnaways : undefined,
       revenue,
+      revenueBreakdown: {
+        greenFees: greenFeeRevenue,
+        concessions: concessionRevenue,
+        byConcession,
+        transactions: concessionTransactions,
+      },
       costs,
       profit,
       tax: tax > 0 ? tax : undefined,
@@ -339,5 +352,4 @@ function buildTopIssues(holes: ReturnType<typeof scoreCourseHoles>) {
   }
   return deduped.slice(0, 3);
 }
-
 

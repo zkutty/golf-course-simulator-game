@@ -23,10 +23,10 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { withNormalizedElevations } from "../game/models/elevation";
-import { BUILDING_SPECS } from "../game/models/buildings";
+import { BUILDING_SPECS, normalizedBuilding } from "../game/models/buildings";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 2 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 3 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -49,6 +49,10 @@ export interface SaveV1 {
 }
 
 export interface SaveV2 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 2;
+}
+
+export interface SaveV3 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
 }
 
@@ -71,7 +75,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV2 = {
+  const save: SaveV3 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -246,6 +250,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V2 formalizes the migration/validation pipeline. Its gameplay payload is
   // deliberately unchanged, so every existing v1 slot can migrate losslessly.
   1: (save) => ({ ...save, schemaVersion: 2 }),
+  // V3 adds configurable concession fields. Normalization supplies defaults
+  // for every pre-M4 building so old saves remain playable.
+  2: (save) => ({ ...save, schemaVersion: 3 }),
 };
 
 function migrateSave(input: unknown):
@@ -294,7 +301,7 @@ function sanitizeBuildings(raw: unknown, width: number, height: number): Buildin
     if (!spec) return false;
     if (!Number.isInteger(x) || !Number.isInteger(y)) return false;
     return x >= 0 && y >= 0 && x + spec.w <= width && y + spec.d <= height;
-  });
+  }).map(normalizedBuilding);
 }
 
 function sanitizeObstacles(raw: unknown, width: number, height: number): Obstacle[] {
