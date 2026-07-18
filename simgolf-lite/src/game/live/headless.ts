@@ -34,11 +34,16 @@ export function runLiveDaysHeadless(args: {
     }
     rounds += live.roundsFinished;
     // commitDay expects green fees to have already reached world.cash.
-    const withRevenue = { ...world, cash: world.cash + live.greenFeeCollected };
+    const revenue = live.greenFeeCollected + live.concessionCollected;
+    const withRevenue = { ...world, cash: world.cash + revenue };
     const committed = commitDay({
       course,
       world: withRevenue,
-      revenue: live.greenFeeCollected,
+      revenue,
+      greenFees: live.greenFeeCollected,
+      concessionRevenue: live.concessionCollected,
+      concessionByType: live.concessionByType,
+      transactions: live.concessionTransactions,
       reactions: roundReactions(live),
       dayIndex,
     });

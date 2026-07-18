@@ -606,7 +606,7 @@ export function CanvasCourse(props: {
   animationsEnabled: boolean;
   flyoverNonce: number;
   showShotPlan: boolean;
-  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT";
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
   wizardStep: "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
   draftTee: Point | null;
   draftGreen: Point | null;
@@ -1757,7 +1757,7 @@ export function CanvasCourse(props: {
         ctx2.lineWidth = 1;
         ctx2.strokeRect(x + 1.5, y + roofH + 0.5, w - 3, h - roofH - 2);
         // gabled roof
-        ctx2.fillStyle = "#96503b";
+        ctx2.fillStyle = b.type === "snack_bar" ? "#d18b35" : b.type === "pro_shop" ? "#467da8" : b.type === "cart_rental" ? "#5e8f4b" : "#96503b";
         ctx2.beginPath();
         ctx2.moveTo(x, y + roofH);
         ctx2.lineTo(x + w / 2, y);
@@ -2618,5 +2618,3 @@ export function CanvasCourse(props: {
     </div>
   );
 }
-
-

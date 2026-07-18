@@ -1,4 +1,4 @@
-import type { Difficulty, Point } from "../models/types";
+import type { ConcessionTransaction, ConcessionType, Difficulty, Point } from "../models/types";
 import type { Personality } from "./personality";
 
 export type SegmentKind = "walk" | "flight" | "pause";
@@ -15,6 +15,13 @@ export interface Segment {
   // Render-facing only (ZKU-153): which stroke a "flight" represents, so the
   // renderer can pick the swing vs putt animation. Never read by sim logic.
   shot?: "swing" | "putt";
+  concession?: {
+    buildingType: ConcessionType;
+    buildingX: number;
+    buildingY: number;
+    item: string;
+    amount: number;
+  };
 }
 
 export type GolferArchetypeName =
@@ -51,6 +58,8 @@ export interface Golfer {
   thoughtUntil: number; // dayMinute when the thought expires
   finished: boolean;
   spent: number; // money spent (green fee + concessions later)
+  wallet: number; // remaining discretionary concession budget
+  purchasedSegmentIndexes: number[];
 }
 
 export interface Arrival {
@@ -66,6 +75,9 @@ export interface LiveState {
   nextArrivalIdx: number;
   nextGolferId: number;
   greenFeeCollected: number; // cash collected today (green fees)
+  concessionCollected: number;
+  concessionTransactions: ConcessionTransaction[];
+  concessionByType: Partial<Record<ConcessionType, number>>;
   roundsStarted: number;
   roundsFinished: number;
   satisfactionSum: number; // sum of finished golfers' mood*100
@@ -137,6 +149,12 @@ export interface DayResult {
   dayIndex: number;
   rounds: number;
   revenue: number; // green fees actually collected
+  revenueBreakdown: {
+    greenFees: number;
+    concessions: number;
+    byConcession: Partial<Record<ConcessionType, number>>;
+    transactions: ConcessionTransaction[];
+  };
   costs: number;
   profit: number;
   avgSatisfaction: number; // 0..100

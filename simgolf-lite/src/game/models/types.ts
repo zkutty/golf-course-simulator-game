@@ -44,7 +44,9 @@ export interface Hole {
 
 export type ObstacleType = "tree" | "bush" | "rock";
 
-export type BuildingType = "clubhouse";
+export type ConcessionType = "pro_shop" | "snack_bar" | "cart_rental";
+export type BuildingType = "clubhouse" | ConcessionType;
+export type BuildingTier = 1 | 2 | 3;
 
 // Multi-tile structure anchored at its top-left footprint tile; footprint
 // dimensions come from BUILDING_SPECS (src/game/models/buildings.ts).
@@ -52,6 +54,21 @@ export interface Building {
   type: BuildingType;
   x: number;
   y: number;
+  /** Concessions are configurable; clubhouse intentionally leaves these unset. */
+  tier?: BuildingTier;
+  price?: number;
+}
+
+export interface ConcessionTransaction {
+  id: string;
+  golferId: number;
+  golferName: string;
+  buildingType: ConcessionType;
+  buildingX: number;
+  buildingY: number;
+  item: string;
+  amount: number;
+  atMinute: number;
 }
 
 export interface Obstacle {
@@ -176,6 +193,12 @@ export interface WeekResult {
   turnaways?: number;
   capacity?: number;
   revenue: number;
+  revenueBreakdown?: {
+    greenFees: number;
+    concessions: number;
+    byConcession: Partial<Record<ConcessionType, number>>;
+    transactions: ConcessionTransaction[];
+  };
   costs: number;
   profit: number;
   tax?: number;
@@ -218,5 +241,4 @@ export interface WeekResult {
     wear: number; // 0..1 applied this week
   };
 }
-
 

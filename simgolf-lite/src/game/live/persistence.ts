@@ -42,7 +42,12 @@ function segment(value: unknown): value is Segment {
     finite(value.dur) &&
     value.dur >= 0 &&
     Number.isInteger(value.holeIndex) &&
-    (value.shot == null || value.shot === "swing" || value.shot === "putt")
+    (value.shot == null || value.shot === "swing" || value.shot === "putt") &&
+    (value.concession == null || (
+      isRecord(value.concession) && typeof value.concession.buildingType === "string" &&
+      finite(value.concession.buildingX) && finite(value.concession.buildingY) &&
+      typeof value.concession.item === "string" && finite(value.concession.amount)
+    ))
   );
 }
 
@@ -57,7 +62,9 @@ function golfer(value: unknown): value is Golfer {
   for (const key of ["segIndex", "segElapsed", "scoredHoles", "currentHole", "strokes", "scoreToPar", "mood", "thoughtUntil", "spent"] as const) {
     if (!finite(value[key])) return false;
   }
-  return typeof value.finished === "boolean" && (value.thought === null || typeof value.thought === "string");
+  return typeof value.finished === "boolean" && (value.thought === null || typeof value.thought === "string") &&
+    (value.wallet == null || finite(value.wallet)) &&
+    (value.purchasedSegmentIndexes == null || (Array.isArray(value.purchasedSegmentIndexes) && value.purchasedSegmentIndexes.every(Number.isInteger)));
 }
 
 function arrival(value: unknown): value is Arrival {
@@ -106,6 +113,14 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
   if (input.selectedGolferId !== null && !Number.isInteger(input.selectedGolferId)) return null;
 
   const serializable = cloneSerializableState(state as unknown as Omit<LiveState, "walkCache">);
+  serializable.golfers = serializable.golfers.map((g) => ({
+    ...g,
+    wallet: g.wallet ?? 0,
+    purchasedSegmentIndexes: g.purchasedSegmentIndexes ?? [],
+  }));
+  serializable.concessionCollected ??= 0;
+  serializable.concessionTransactions ??= [];
+  serializable.concessionByType ??= {};
   return {
     state: { ...serializable, walkCache: new Map() },
     pendingCash: input.pendingCash,

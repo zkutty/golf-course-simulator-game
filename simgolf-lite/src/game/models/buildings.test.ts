@@ -50,6 +50,15 @@ describe("buildings", () => {
     expect(canPlaceBuilding(built, "clubhouse", 10, 10).ok).toBe(true);
   });
 
+  it("defines all M4 concessions with build and pricing configuration", () => {
+    for (const type of ["pro_shop", "snack_bar", "cart_rental"] as const) {
+      const spec = BUILDING_SPECS[type];
+      expect(spec.buildCost).toBeGreaterThan(0);
+      expect(spec.defaultPrice).toBeGreaterThan(0);
+      expect(canPlaceBuilding(flatCourse(), type, 5, 5).ok).toBe(true);
+    }
+  });
+
   it("footprint set covers the full spec rect", () => {
     const c = flatCourse();
     c.buildings = [{ type: "clubhouse", x: 4, y: 4 }];

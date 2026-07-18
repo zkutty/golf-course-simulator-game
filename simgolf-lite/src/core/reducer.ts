@@ -4,6 +4,12 @@ import { computeElevationChangeCost, computeTerrainChangeCost } from "../game/mo
 import { clampElevation } from "../game/models/elevation";
 import { hitsLiquidityTrap } from "../game/sim/runState";
 import { terrainCostMult } from "../game/balance/difficulty";
+import {
+  BUILDING_SPECS,
+  buildingAtTile,
+  canPlaceBuilding,
+  isConcessionType,
+} from "../game/models/buildings";
 
 /**
  * Apply an action to the game state. This is the ONLY function that should mutate
@@ -295,6 +301,67 @@ export function applyAction(state: GameState, action: Action): GameState {
       break;
     }
 
+    case "PLACE_BUILDING": {
+      const validation = canPlaceBuilding(state.course, action.buildingType, action.x, action.y);
+      if (!validation.ok) break;
+      const spec = BUILDING_SPECS[action.buildingType];
+      if (state.world.cash < spec.buildCost) break;
+      const building = {
+        type: action.buildingType,
+        x: action.x,
+        y: action.y,
+        ...(isConcessionType(action.buildingType)
+          ? { tier: 1 as const, price: spec.defaultPrice }
+          : {}),
+      };
+      const cash = state.world.cash - spec.buildCost;
+      newState = {
+        ...newState,
+        course: { ...state.course, buildings: [...(state.course.buildings ?? []), building] },
+        world: {
+          ...state.world,
+          cash,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash),
+        },
+      };
+      terrainVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "REMOVE_BUILDING": {
+      const target = buildingAtTile(state.course, action.x, action.y);
+      if (!target || target.type === "clubhouse") break;
+      const salvage = Math.round(BUILDING_SPECS[target.type].buildCost * 0.35);
+      newState = {
+        ...newState,
+        course: {
+          ...state.course,
+          buildings: state.course.buildings.filter((b) => b !== target),
+        },
+        world: { ...state.world, cash: state.world.cash + salvage },
+      };
+      terrainVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "CONFIGURE_BUILDING": {
+      const target = state.course.buildings.find((b) => b.x === action.x && b.y === action.y);
+      if (!target || !isConcessionType(target.type)) break;
+      const buildings = state.course.buildings.map((b) => {
+        if (b !== target) return b;
+        return {
+          ...b,
+          tier: action.tier ?? b.tier ?? 1,
+          price: action.price == null ? b.price : Math.max(1, Math.round(action.price)),
+        };
+      });
+      newState = { ...newState, course: { ...state.course, buildings } };
+      economyVersion++;
+      break;
+    }
+
     case "ADD_WAYPOINT": {
       const hole = state.course.holes[action.holeIndex];
       if (!hole) break;
@@ -396,4 +463,3 @@ export function applyAction(state: GameState, action: Action): GameState {
     economyVersion,
   };
 }
-

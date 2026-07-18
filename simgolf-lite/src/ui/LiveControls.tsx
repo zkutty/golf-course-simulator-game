@@ -86,6 +86,7 @@ export function LiveControls(props: {
       <Stat label="On course" value={`${status.onCourse}`} />
       <Stat label="Rounds today" value={`${status.roundsToday}`} />
       <Stat label="Fees today" value={money(status.greenFeesToday)} accent="#bbf7d0" />
+      <Stat label="Shops today" value={money(status.concessionsToday)} accent="#fde68a" />
       <Stat label="Cash" value={money(cash)} accent={cash < 0 ? "#fca5a5" : "#e2e8f0"} />
       <Stat label="Rep" value={`${Math.round(reputation)}`} />
 

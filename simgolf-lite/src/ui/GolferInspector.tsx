@@ -103,6 +103,8 @@ export function GolferInspector(props: {
         <Stat label="Position" value={holeText} />
         <Stat label="Score" value={toPar(selected.scoreToPar)} accent="#bbf7d0" />
         <Stat label="Thru" value={`${played}`} />
+        <Stat label="Spent" value={`$${selected.spent}`} accent="#bbf7d0" />
+        <Stat label="Wallet" value={`$${selected.wallet}`} />
       </div>
 
       <div style={{ marginTop: 10 }}>
