@@ -17,4 +17,10 @@ Original prompt: Let’s do m14 in linear for this project
 
 ## Remaining
 
-- ZK-167 and ZK-168 are Done in Linear. ZK-169 remains In Progress for the exhaustive secondary-control/report/inspector tooltip audit documented in its Linear comment.
+- ZK-167, ZK-168, and ZK-169 are Done in Linear. M14 implementation and acceptance verification are complete.
+
+## ZK-169 completion pass
+
+- Added one delegated tooltip surface across the playable UI: pointer tooltips share a 500 ms delay, keyboard focus opens them immediately, and stat readouts become keyboard-focusable.
+- Extended contextual help across secondary controls, HUD/course metrics, weekly-report factors, live simulation stats, and golfer/hole inspectors.
+- Added shared report/control copy and focused M14 tests for representative controls and every demand factor.

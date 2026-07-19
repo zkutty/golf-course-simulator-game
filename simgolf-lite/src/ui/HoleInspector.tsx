@@ -212,33 +212,33 @@ export function HoleInspector({
         }}
       >
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-          <div>
+          <div data-tooltip="The recommended par calculated from effective playing distance.">
             <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Auto Par</div>
             <div style={{ fontSize: 18, fontWeight: 600 }}>{autoPar}</div>
           </div>
-          <div>
+          <div data-tooltip="Playing length after route shape and elevation adjustments; this drives automatic par.">
             <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Effective Distance</div>
             <div style={{ fontSize: 18, fontWeight: 600 }}>{effectiveDistanceYards.toFixed(0)} yds</div>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
-          <div>
+          <div data-tooltip="Direct tee-to-green distance without route or elevation adjustments.">
             <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Straight Distance</div>
             <div style={{ fontSize: 14, fontWeight: 500 }}>{straightDistYards.toFixed(0)} yds</div>
           </div>
-          <div>
+          <div data-tooltip="Net height change from tee to green; elevation data is not yet available in this summary.">
             <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Elevation Change</div>
             <div style={{ fontSize: 14, fontWeight: 500, color: "#888" }}>—</div>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <div>
+          <div data-tooltip="Estimated shots a scratch golfer needs to reach the green.">
             <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Scratch Shots</div>
             <div style={{ fontSize: 14, fontWeight: 500 }}>
               {scratchShotsToGreen === Infinity ? "—" : scratchShotsToGreen.toFixed(1)}
             </div>
           </div>
-          <div>
+          <div data-tooltip="Estimated shots a bogey golfer needs to reach the green.">
             <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Bogey Shots</div>
             <div style={{ fontSize: 14, fontWeight: 500 }}>
               {bogeyShotsToGreen === Infinity ? "—" : bogeyShotsToGreen.toFixed(1)}

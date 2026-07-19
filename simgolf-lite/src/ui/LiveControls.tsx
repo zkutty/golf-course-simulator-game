@@ -106,8 +106,17 @@ export function LiveControls(props: {
 }
 
 function Stat(props: { label: string; value: string; accent?: string }) {
+  const help: Record<string, string> = {
+    "On course": "Golfers currently playing or moving through the course.",
+    "Rounds today": "Rounds completed since the current in-game day began.",
+    "Fees today": "Green-fee revenue collected during the current in-game day.",
+    "Shops today": "Concession revenue collected during the current in-game day.",
+    Cash: "Available operating cash after live income and expenses.",
+    Rep: "Current course reputation, which supports future golfer demand.",
+    "Yesterday P&L": "The previous in-game day's revenue minus expenses.",
+  };
   return (
-    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+    <div data-tooltip={help[props.label] ?? `Current ${props.label.toLowerCase()} value.`} style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
       <span style={{ fontWeight: 700, color: props.accent ?? "#f5f5f0" }}>{props.value}</span>
       <span style={{ opacity: 0.65, fontSize: 11 }}>{props.label}</span>
     </div>

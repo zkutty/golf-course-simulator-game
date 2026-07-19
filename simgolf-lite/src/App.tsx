@@ -56,6 +56,7 @@ import {
   canPlaceBuilding,
 } from "./game/models/buildings";
 import { GolfopediaModal } from "./ui/help/GolfopediaModal";
+import { TooltipSurface } from "./ui/help/TooltipSurface";
 import { AdvisorCard } from "./ui/onboarding/AdvisorCard";
 import { TutorialOverlay } from "./ui/onboarding/TutorialOverlay";
 import {
@@ -1330,8 +1331,9 @@ export default function App() {
 
   return (
     <div className="cc-app">
-      <GameBackground />
-      {saveLoadModal}
+      <TooltipSurface>
+        <GameBackground />
+        {saveLoadModal}
       {golfopediaEntry !== undefined && (
         <GolfopediaModal
           open
@@ -1697,7 +1699,8 @@ export default function App() {
       />
           )}
         </div>
-      </div>
+        </div>
+      </TooltipSurface>
     </div>
   );
 }

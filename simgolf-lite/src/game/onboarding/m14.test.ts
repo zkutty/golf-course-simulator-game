@@ -6,6 +6,7 @@ import { TUTORIAL_STEPS, createTutorialProgress } from "./tutorial";
 import { GOLFOPEDIA_ENTRIES } from "../../ui/help/golfopediaData";
 import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../models/terrainEconomics";
 import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/save";
+import { REPORT_HELP, tooltipForControl } from "../../ui/help/tooltipContent";
 
 const terrains: Terrain[] = ["fairway", "rough", "deep_rough", "sand", "water", "green", "tee", "path"];
 
@@ -81,5 +82,20 @@ describe("M14 Golfopedia", () => {
 
   it("generates all six golfer archetype pages", () => {
     expect(GOLFOPEDIA_ENTRIES.filter((entry) => entry.section === "Golfers")).toHaveLength(6);
+  });
+});
+
+describe("M14 shared tooltip content", () => {
+  it("provides meaningful help for representative control types", () => {
+    expect(tooltipForControl("Help")).toMatch(/Golfopedia/);
+    expect(tooltipForControl("Simulate week")).toMatch(/aggregate week/);
+    expect(tooltipForControl("Green fee", "input")).toMatch(/Adjust/);
+    expect(tooltipForControl("Speed 3x")).toMatch(/triple speed/);
+  });
+
+  it("documents every weekly demand factor", () => {
+    expect(Object.keys(REPORT_HELP)).toEqual(expect.arrayContaining([
+      "Course quality", "Condition", "Reputation", "Price", "Marketing", "Staff",
+    ]));
   });
 });

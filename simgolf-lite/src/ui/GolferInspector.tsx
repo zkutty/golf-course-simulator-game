@@ -189,8 +189,15 @@ export function GolferInspector(props: {
 }
 
 function Stat(props: { label: string; value: string; accent?: string }) {
+  const help: Record<string, string> = {
+    Position: "This golfer's current tile on the course grid.",
+    Score: "This golfer's running score relative to par.",
+    Thru: "The number of holes this golfer has completed.",
+    Spent: "Total green-fee and concession spending during this visit.",
+    Wallet: "Cash this golfer still has available for concessions.",
+  };
   return (
-    <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+    <div data-tooltip={help[props.label] ?? `Current ${props.label.toLowerCase()} value.`} style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
       <span style={{ fontWeight: 800, fontSize: 15, color: props.accent ?? "#f5f5f0" }}>
         {props.value}
       </span>

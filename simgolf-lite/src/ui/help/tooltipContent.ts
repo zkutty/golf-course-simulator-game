@@ -1,0 +1,75 @@
+const HELP: Array<[RegExp, string]> = [
+  [/^help$/i, "Open Golfopedia for searchable explanations of terrain, golfers, management systems, and controls."],
+  [/tutorial/i, "Start or restart the guided course-building tutorial without changing your career progress."],
+  [/^cozy$/i, "Use the streamlined management view with the most important course information."],
+  [/architect/i, "Use the detailed design view with shot plans, course metrics, and diagnostic overlays."],
+  [/flyover/i, "Play a cinematic tee-to-green camera tour of the active hole."],
+  [/animation/i, "Toggle nonessential interface and course animation."],
+  [/sound/i, "Toggle game music, ambience, and sound effects."],
+  [/show.*obstacle|^obstacles$/i, "Show course obstacles or switch to the tree, bush, and rock placement tool."],
+  [/^paint$/i, "Switch to the terrain brush; choose a surface below, then paint directly on the course."],
+  [/hole wizard/i, "Place or move a tee and green, preview the route, and confirm a playable hole."],
+  [/^sculpt$/i, "Shape elevation with raise, lower, smooth, and level brushes."],
+  [/^shops$/i, "Place and configure concessions that earn money from visiting golfers."],
+  [/raise/i, "Raise every affected tile by one elevation step; earthwork costs apply per tile and step."],
+  [/lower/i, "Lower every affected tile by one elevation step; water, tees, and greens remain protected."],
+  [/smooth/i, "Blend abrupt elevation changes toward the average height of neighboring tiles."],
+  [/level/i, "Flatten the brush area toward its center height."],
+  [/place tee|move tee|^tee$/i, "Set the starting point of the active hole."],
+  [/place green|move green|^green$/i, "Set the putting surface and destination of the active hole."],
+  [/confirm/i, "Save the current tee and green placement to the active hole."],
+  [/redo/i, "Discard the current hole draft and place its markers again."],
+  [/next hole/i, "Advance the hole wizard to the next course slot."],
+  [/^tree$/i, "Place a tree obstacle that affects scenery, recovery, and walking routes."],
+  [/^bush$/i, "Place a bush obstacle for scenery and lighter shot interference."],
+  [/^rock$/i, "Place a rock obstacle that blocks travel and complicates recovery shots."],
+  [/pro shop/i, "Place a pro shop where golfers can buy higher-value merchandise."],
+  [/snack bar/i, "Place a snack bar that turns golfer hunger into concession revenue."],
+  [/cart rental/i, "Place a cart rental that earns revenue from golfers who value faster travel."],
+  [/^auto$/i, "Let effective distance determine the hole's par automatically."],
+  [/^manual$/i, "Override automatic par and choose par 3, 4, or 5 yourself."],
+  [/^par [345]$/i, "Set the active hole to this manual par value."],
+  [/^edit$/i, "Open the selected hole in the detailed inspector and camera view."],
+  [/fairway/i, "Paint short grass that creates safer lies and the intended route to the green."],
+  [/rough/i, "Paint natural grass that is cheap to maintain but less reliable for shots."],
+  [/sand/i, "Paint a bunker hazard that raises difficulty and recovery cost."],
+  [/water/i, "Paint a severe hazard that golfers must carry or route around."],
+  [/^path$/i, "Paint fast walking terrain for golfers and staff."],
+  [/save/i, "Save the current course, economy, live simulation, and tutorial progress to a slot."],
+  [/load/i, "Load a saved course and restore its live simulation state."],
+  [/reset/i, "Replace the current run with fresh land after confirmation."],
+  [/simulate week/i, "Resolve one aggregate week immediately and open its financial and demand results."],
+  [/bridge loan/i, "Borrow short-term operating cash; fixed weekly payments and interest reduce future flexibility."],
+  [/expansion loan/i, "Borrow growth capital after proving the course can operate profitably."],
+  [/staff/i, "Invest in service capacity that supports satisfaction and demand."],
+  [/marketing/i, "Invest in promotion that raises demand but adds a recurring operating cost."],
+  [/fit/i, "Fit the entire active hole inside the design camera."],
+  [/landing/i, "Center the camera on the active hole's primary landing area."],
+  [/fix overlay/i, "Highlight failing shot-corridor segments so you can repair playability."],
+  [/close/i, "Close this panel and return to the course."],
+  [/pause/i, "Pause the living-course simulation."],
+  [/speed 1x/i, "Run the living-course simulation at normal speed."],
+  [/speed 2x/i, "Run the living-course simulation at double speed."],
+  [/speed 3x/i, "Run the living-course simulation at triple speed."],
+];
+
+export function tooltipForControl(label: string, kind: "button" | "input" | "select" = "button"): string {
+  const normalized = label.replace(/\s+/g, " ").trim();
+  const match = HELP.find(([pattern]) => pattern.test(normalized));
+  if (match) return match[1];
+  if (kind === "select") return `Choose the ${normalized || "available"} option.`;
+  if (kind === "input") return `Adjust ${normalized || "this setting"}; the displayed result updates immediately.`;
+  return `Use ${normalized || "this control"}.`;
+}
+
+export const REPORT_HELP: Record<string, string> = {
+  "Course quality": "The weighted quality of valid holes, including playability, difficulty, variety, and aesthetics.",
+  Condition: "Current playing-surface health. Maintenance restores it while golfers and premium turf increase wear.",
+  Reputation: "The market's memory of golfer satisfaction and reliability; it directly supports future demand.",
+  Price: "How attractive the green fee is relative to course quality and golfer expectations.",
+  Marketing: "The share of demand contributed by the current marketing level.",
+  Staff: "The share of demand and satisfaction supported by the current staff level.",
+  Playability: "How reliably golfers can complete the designed holes using valid shot corridors.",
+  Aesthetics: "Scenery and terrain variety along the playable holes.",
+  "Difficulty (ease)": "The satisfaction contribution from keeping difficulty appropriate for the golfer mix.",
+};

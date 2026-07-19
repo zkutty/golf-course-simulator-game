@@ -14,6 +14,7 @@ export function Tooltip(props: { content: ReactNode; children: ReactNode; learnM
   };
   return (
     <span
+      data-rich-tooltip="true"
       style={{ position: "relative", display: props.block ? "block" : "inline-flex", minWidth: 0 }}
       onMouseEnter={show}
       onMouseLeave={hide}

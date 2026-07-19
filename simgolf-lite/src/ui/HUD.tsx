@@ -18,6 +18,7 @@ import { ObjectiveMiniTracker, ObjectivesPanel } from "./ObjectivesPanel";
 import { BUILDING_SPECS, isConcession } from "../game/models/buildings";
 import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../game/models/terrainEconomics";
 import { Tooltip } from "./help/Tooltip";
+import { REPORT_HELP } from "./help/tooltipContent";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -452,15 +453,15 @@ export function HUD(props: {
             </div>
           ) : (
             <>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <div data-tooltip="Available operating cash. Building, maintenance, staffing, and debt payments spend this balance." style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <div style={{ fontSize: 12, color: "#6b7280" }}>Cash</div>
                 <div style={{ fontSize: 18, fontWeight: 800 }}>${Math.round(world.cash).toLocaleString()}</div>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <div data-tooltip={REPORT_HELP.Reputation} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <div style={{ fontSize: 12, color: "#6b7280" }}>Reputation</div>
                 <div style={{ fontSize: 16, fontWeight: 700 }}>{world.reputation}/100</div>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <div data-tooltip={REPORT_HELP.Condition} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <div style={{ fontSize: 12, color: "#6b7280" }}>Condition</div>
                 <div style={{ fontSize: 16, fontWeight: 700 }}>{Math.round(course.condition * 100)}%</div>
               </div>
@@ -468,11 +469,11 @@ export function HUD(props: {
           )}
           {viewMode === "COZY" && (
             <div style={{ display: "grid", gap: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <div data-tooltip="A quick summary of the course's atmosphere, based on condition, satisfaction, and recent results." style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <div style={{ fontSize: 12, color: "#6b7280" }}>Vibe</div>
                 <div style={{ fontSize: 13, fontWeight: 800 }}>{vibe.vibeLabel}</div>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <div data-tooltip="The current mood of golfers on the course, summarized from their recent experiences." style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
                 <div style={{ fontSize: 12, color: "#6b7280" }}>Golfer sentiment</div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <div style={{ fontSize: 12, letterSpacing: 1, color: "#111" }}>{vibe.stars}</div>
@@ -766,16 +767,16 @@ export function HUD(props: {
                   )}
                   {viewMode === "ARCHITECT" && activeHole.isComplete && (
                     <div style={{ marginTop: 6, display: "grid", gap: 2 }}>
-                      <div>
+                      <div data-tooltip={REPORT_HELP.Playability}>
                         Playability: <b>{Math.round(activeHole.playabilityScore)}</b>/100
                       </div>
-                      <div>
+                      <div data-tooltip="The strategic challenge created by distance, hazards, elevation, and shot demands.">
                         Difficulty: <b>{Math.round(activeHole.difficultyScore)}</b>/100
                       </div>
-                      <div>
+                      <div data-tooltip={REPORT_HELP.Aesthetics}>
                         Aesthetics: <b>{Math.round(activeHole.aestheticsScore)}</b>/100
                       </div>
-                      <div>
+                      <div data-tooltip="The combined hole score used in course-quality calculations.">
                         Overall: <b>{Math.round(activeHole.overallHoleScore)}</b>/100
                       </div>
                     </div>
@@ -1130,11 +1131,11 @@ export function HUD(props: {
         {tab === "Metrics" && (
           <>
             <Section title="Course metrics">
-              <div>Course quality: {Math.round(holeSummary.courseQuality)}/100</div>
-              <div>Hole quality avg: {Math.round(holeSummary.holeQualityAvg)}/100</div>
-              <div>Variety: {Math.round(holeSummary.variety)}/100</div>
-              <div>Price attractiveness: {price}/100</div>
-              <div>Demand index: {liveDemand.demandIndex.toFixed(2)}</div>
+              <div data-tooltip={REPORT_HELP["Course quality"]}>Course quality: {Math.round(holeSummary.courseQuality)}/100</div>
+              <div data-tooltip="The mean overall score of every completed, valid hole.">Hole quality avg: {Math.round(holeSummary.holeQualityAvg)}/100</div>
+              <div data-tooltip="Rewards a course that mixes hole lengths, pars, shapes, hazards, and scenery.">Variety: {Math.round(holeSummary.variety)}/100</div>
+              <div data-tooltip={REPORT_HELP.Price}>Price attractiveness: {price}/100</div>
+              <div data-tooltip="The combined demand factors before capacity and random visitor noise are applied.">Demand index: {liveDemand.demandIndex.toFixed(2)}</div>
               <div style={{ marginTop: 8 }}>
                 <Tooltip
                   content="Rating estimates a scratch golfer's expected score; slope measures how much harder the course becomes for bogey golfers."
@@ -1143,17 +1144,17 @@ export function HUD(props: {
                   <span style={{ cursor: "help" }}>Course Rating: <b>{rating.courseRating.toFixed(1)}</b> • Slope: <b>{rating.slope}</b></span>
                 </Tooltip>
               </div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>
+              <div data-tooltip="Expected scoring for scratch and bogey golfers; their gap drives the slope rating." style={{ fontSize: 12, color: "#6b7280" }}>
                 Scratch: {rating.expectedScratchScore.toFixed(1)} • Bogey: {rating.expectedBogeyScore.toFixed(1)} •
                 yards/tile: {course.yardsPerTile}
               </div>
-              <div style={{ marginTop: 8, fontSize: 12, color: "#444" }}>
+              <div data-tooltip="Completed holes that currently fail route, placement, or shot-corridor validation." style={{ marginTop: 8, fontSize: 12, color: "#444" }}>
                 Layout issues: {holeSummary.holes.filter((h) => h.isComplete && !h.isValid).length} /{" "}
                 {course.holes.length}
               </div>
             </Section>
             <Section title="Terrain mix + maintenance burden">
-              <div>
+              <div data-tooltip="The average and total upkeep pressure created by the course's terrain mix.">
                 Estimated maintenance weight: <b>{avgMaintWeight.toFixed(2)}</b> avg •{" "}
                 <span style={{ color: "#555" }}>{Math.round(totalMaintWeight).toLocaleString()} total</span>
               </div>
@@ -1164,7 +1165,7 @@ export function HUD(props: {
                     const n = terrainCounts[t] ?? 0;
                     const pct = (100 * n) / totalTiles;
                     return (
-                      <div key={t} style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div key={t} data-tooltip={`The share and tile count of ${t.replace("_", " ")} terrain on this course.`} style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>{t}</span>
                         <span style={{ color: "#555" }}>
                           {pct.toFixed(1)}% ({n})
@@ -1182,9 +1183,9 @@ export function HUD(props: {
             {!last && <div style={{ color: "#555", fontSize: 13 }}>Simulate a week to see results.</div>}
             {last && (
               <Section title="Last week">
-                <div>Visitors: {last.visitors}</div>
+                <div data-tooltip="Golfers who completed a visit during the simulated week.">Visitors: {last.visitors}</div>
                 {typeof last.capacity === "number" && (
-                  <div style={{ fontSize: 12, color: "#555" }}>
+                  <div data-tooltip="The maximum number of golfers the course can serve this week; excess demand becomes turnaways." style={{ fontSize: 12, color: "#555" }}>
                     Capacity: {last.capacity}{" "}
                     {typeof last.turnaways === "number" && last.turnaways > 0 && (
                       <>
@@ -1193,9 +1194,9 @@ export function HUD(props: {
                     )}
                   </div>
                 )}
-                <div>Revenue: ${Math.round(last.revenue).toLocaleString()}</div>
+                <div data-tooltip="Total green-fee and concession income earned this week.">Revenue: ${Math.round(last.revenue).toLocaleString()}</div>
                 {last.revenueBreakdown && (
-                  <div style={{ marginTop: 4, padding: 7, borderRadius: 7, background: "#f7f3e8", fontSize: 12 }}>
+                  <div data-tooltip="The sources that make up this week's total revenue." style={{ marginTop: 4, padding: 7, borderRadius: 7, background: "#f7f3e8", fontSize: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>Green fees</span><b>${Math.round(last.revenueBreakdown.greenFees).toLocaleString()}</b>
                     </div>
@@ -1211,9 +1212,9 @@ export function HUD(props: {
                     ))}
                   </div>
                 )}
-                <div>Costs: ${Math.round(last.costs).toLocaleString()}</div>
+                <div data-tooltip="All variable costs, fixed overhead, maintenance, staffing, marketing, and debt costs this week.">Costs: ${Math.round(last.costs).toLocaleString()}</div>
                 {last.variableCosts && (
-                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
+                  <div data-tooltip="Costs that scale with rounds played and transactions completed." style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>Variable costs</span>
                       <span>
@@ -1237,7 +1238,7 @@ export function HUD(props: {
                   </div>
                 )}
                 {last.overhead && (
-                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
+                  <div data-tooltip="Fixed weekly insurance, utilities, administration, and base staffing expenses." style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>Overhead (fixed)</span>
                       <span>
@@ -1265,7 +1266,7 @@ export function HUD(props: {
                   </div>
                 )}
                 {last.maintenance && (
-                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
+                  <div data-tooltip="Required upkeep versus the maintenance budget; a shortfall lowers course condition." style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>Required maintenance</span>
                       <span>
@@ -1285,23 +1286,23 @@ export function HUD(props: {
                     </div>
                   </div>
                 )}
-                <div>
+                <div data-tooltip="Revenue minus operating costs before any displayed profit tax.">
                   <b>Profit:</b> ${Math.round(last.profit).toLocaleString()}
                 </div>
                 {typeof last.tax === "number" && last.tax > 0 && (
-                  <div style={{ fontSize: 12, color: "#555" }}>
+                  <div data-tooltip="Tax charged on profitable weeks at the current difficulty's rate." style={{ fontSize: 12, color: "#555" }}>
                     Profit tax: -${Math.round(last.tax).toLocaleString()}
                   </div>
                 )}
-                <div>Avg satisfaction: {Math.round(last.avgSatisfaction)}/100</div>
-                <div>
+                <div data-tooltip="The average golfer experience score for visits completed this week.">Avg satisfaction: {Math.round(last.avgSatisfaction)}/100</div>
+                <div data-tooltip="The lasting reputation change caused by this week's golfer experiences.">
                   Reputation Δ: {last.reputationDelta >= 0 ? "+" : ""}
                   {last.reputationDelta}
                 </div>
                 {last.reputationMomentum && (
                   <div style={{ fontSize: 12, color: "#555" }}>{last.reputationMomentum}</div>
                 )}
-                <div>
+                <div data-tooltip="A small random visitor fluctuation that keeps otherwise identical weeks from being perfectly predictable.">
                   Noise: {last.visitorNoise >= 0 ? "+" : ""}
                   {last.visitorNoise} visitors
                 </div>
@@ -1325,13 +1326,13 @@ export function HUD(props: {
                     ["Staff", last.demand.staff, last.demand.weights.staff, last.demand.contributions.staff],
                   ]}
                 />
-                <div style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
+                <div data-tooltip="The final demand index converted into an expected base visitor count before capacity and noise." style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
                   DemandIndex: {last.demand.demandIndex.toFixed(2)} → base visitors:{" "}
                   {last.demand.segments?.totalBaseVisitors ?? 120 + Math.round(520 * last.demand.demandIndex)}
                 </div>
                 {last.demand.segments && (
                   <div style={{ marginTop: 8, fontSize: 12, color: "#444", display: "grid", gap: 4 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <div data-tooltip="Casual golfers are more price-sensitive and make up the broadest visitor segment." style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>Casual</span>
                       <span>
                         {Math.round(last.demand.segments.casual.share * 100)}% • idx{" "}
@@ -1339,7 +1340,7 @@ export function HUD(props: {
                         {last.demand.segments.casual.baseVisitors}
                       </span>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <div data-tooltip="Core golfers value course quality more strongly but are capped as a share of total visitors." style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>Core</span>
                       <span>
                         {Math.round(last.demand.segments.core.share * 100)}% • idx{" "}
@@ -1371,7 +1372,7 @@ export function HUD(props: {
                     ["Staff", last.satisfaction.staff, last.satisfaction.weights.staff, last.satisfaction.weights.staff * (last.satisfaction.staff / 100)],
                   ]}
                 />
-                <div style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
+                <div data-tooltip="The weighted combination of playability, aesthetics, difficulty fit, condition, and staff." style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
                   Satisfaction: <b>{last.satisfaction.satisfaction}</b>/100
                 </div>
                 {prev?.satisfaction && (
@@ -1782,6 +1783,7 @@ function BreakdownTableDetailed(props: {
       {props.rows.map(([label, value, weight, contrib]) => (
         <div
           key={label}
+          data-tooltip={REPORT_HELP[label] ?? `How ${label.toLowerCase()} contributes to the combined score.`}
           style={{
             display: "grid",
             gridTemplateColumns: "1fr auto",
