@@ -317,6 +317,13 @@ export interface PixiStageProps {
   tileSize: number;
   showGridOverlays: boolean;
   animationsEnabled: boolean;
+  ambienceFx: boolean;
+  waterAnimation: boolean;
+  treeSway: boolean;
+  resolutionScale: number;
+  cameraSmoothing: boolean;
+  edgeScroll: boolean;
+  edgeScrollSpeed: number;
   flyoverNonce: number;
   showShotPlan: boolean;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
@@ -550,6 +557,7 @@ export function PixiStage(props: PixiStageProps) {
   const camRef = useRef({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false });
   const rotTweenRef = useRef<{ start: number; toDeg: number; next: IsoRotation } | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const lastReportedCenterRef = useRef<Point | null>(null);
   const lastCameraStateRef = useRef<CameraState | null | undefined>(undefined);
 
@@ -773,7 +781,7 @@ export function PixiStage(props: PixiStageProps) {
         height,
         backgroundColor: 0xdfe8d8, // soft parchment-green backdrop
         antialias: true,
-        resolution: window.devicePixelRatio || 1,
+        resolution: (window.devicePixelRatio || 1) * props.resolutionScale,
         autoDensity: true,
       });
 
@@ -902,7 +910,7 @@ export function PixiStage(props: PixiStageProps) {
         appRef.current = null;
       }
     };
-  }, []);
+  }, [props.resolutionScale]);
 
   // Resize with ResizeObserver
   useEffect(() => {
@@ -1032,6 +1040,8 @@ export function PixiStage(props: PixiStageProps) {
       el.style.cursor = "grabbing";
     };
     const handlePointerMove = (e: PointerEvent) => {
+      const rect = el.getBoundingClientRect();
+      pointerRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       if (!panState) return;
       const cam = camRef.current;
       const startIso = worldToIso(panState.cx, panState.cy, 0, rotation);
@@ -1083,6 +1093,7 @@ export function PixiStage(props: PixiStageProps) {
       keysRef.current.delete(e.key.toLowerCase());
     };
     const handleBlur = () => keysRef.current.clear();
+    const handlePointerLeave = () => { pointerRef.current = null; };
 
     // Per-frame: keyboard pan, target smoothing, rotation tween.
     const tickCamera = (ticker: PIXI.Ticker) => {
@@ -1128,8 +1139,26 @@ export function PixiStage(props: PixiStageProps) {
         }
       }
 
+      // Optional screen-edge pan uses the same camera targets as keyboard
+      // input, so changing the option takes effect without reloading Pixi.
+      const pointer = pointerRef.current;
+      if (!flyover && props.edgeScroll && pointer && !rotTweenRef.current) {
+        const margin = 28;
+        const dx = pointer.x < margin ? -1 : pointer.x > el.clientWidth - margin ? 1 : 0;
+        const dy = pointer.y < margin ? -1 : pointer.y > el.clientHeight - margin ? 1 : 0;
+        if (dx || dy) {
+          const step = (KEY_PAN_SPEED * props.edgeScrollSpeed * dtMs) / 1000 / cam.zoom;
+          const centerIso = worldToIso(cam.tcx, cam.tcy, 0, rotation);
+          const tile = isoToWorld(centerIso.x + dx * step, centerIso.y + dy * step, rotation);
+          const clamped = clampCenter(tile.x, tile.y);
+          cam.tcx = clamped.x;
+          cam.tcy = clamped.y;
+          moved = true;
+        }
+      }
+
       // Smooth toward targets.
-      const k = 1 - Math.exp(-dtMs / 90);
+      const k = props.cameraSmoothing ? 1 - Math.exp(-dtMs / 90) : 1;
       const snap = (a: number, b: number) => (Math.abs(a - b) < 1e-4 ? b : a + (b - a) * k);
       const ncx = snap(cam.cx, cam.tcx);
       const ncy = snap(cam.cy, cam.tcy);
@@ -1170,6 +1199,7 @@ export function PixiStage(props: PixiStageProps) {
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", handleBlur);
+    el.addEventListener("pointerleave", handlePointerLeave);
     app.ticker.add(tickCamera);
 
     return () => {
@@ -1181,10 +1211,11 @@ export function PixiStage(props: PixiStageProps) {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
-      app.ticker.remove(tickCamera);
+      el.removeEventListener("pointerleave", handlePointerLeave);
+      app.ticker?.remove(tickCamera);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appReady, rotation, cameraState, applyCamera, clampCenter, screenToIsoPlane]);
+  }, [appReady, rotation, cameraState, applyCamera, clampCenter, screenToIsoPlane, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing]);
 
   // ---------------------------------------------------------------------
   // Terrain layer — tinted diamond sprites, back-to-front
@@ -1850,7 +1881,7 @@ export function PixiStage(props: PixiStageProps) {
       // static base when animations are turned off.
       perfMark("hover+flags");
       const waterAnim = waterAnimRef.current;
-      if (props.animationsEnabled) {
+      if (props.animationsEnabled && props.waterAnimation) {
         if (nowMs - waterAnim.last > 140) {
           waterAnim.last = nowMs;
           waterAnim.wasAnimating = true;
@@ -1877,7 +1908,7 @@ export function PixiStage(props: PixiStageProps) {
       }
 
       // Wind sway (ZKU-151): subtle skew oscillation on tree canopies.
-      if (props.animationsEnabled) {
+      if (props.animationsEnabled && props.treeSway) {
         const t = nowMs / 1000;
         for (const entry of obstacleSpritesRef.current.values()) {
           if (entry.swayPhase === null) continue;
@@ -1896,11 +1927,7 @@ export function PixiStage(props: PixiStageProps) {
       // the game clock (scales with sim speed); micro-motion is real-time.
       // ---------------------------------------------------------------
       const amb = ambientRef.current;
-      if (nowMs - amb.lastPollMs > 1000) {
-        amb.lastPollMs = nowMs;
-        amb.enabled = localStorage.getItem("coursecraft_ambience") !== "off";
-      }
-      const ambientOn = amb.enabled && props.animationsEnabled;
+      const ambientOn = props.ambienceFx && props.animationsEnabled;
       const dayMin = dayMinuteRef.current;
       // Continuous ambient clock: accumulates game minutes across days (no
       // rewind at day rollover); drifts at 1x-equivalent in the editor.
@@ -2516,9 +2543,9 @@ export function PixiStage(props: PixiStageProps) {
 
     app.ticker.add(tick);
     return () => {
-      app.ticker.remove(tick);
+      app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.flagColor, props.selectedGolferId, clampCenter]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, clampCenter]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform

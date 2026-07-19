@@ -9,6 +9,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     setMusic: (src: string | null) => audioManager.setMusic(src),
     playSfx: (src: string) => audioManager.playSfx(src),
     setVolumes: (volumes) => audioManager.setVolumes(volumes),
+    syncVolumes: (volumes) => audioManager.syncVolumes(volumes),
     getVolumes: () => audioManager.getVolumes(),
   };
 

@@ -81,11 +81,7 @@ export function HUD(props: {
   paintError?: string | null;
   viewMode: "COZY" | "ARCHITECT";
   setViewMode: (m: "COZY" | "ARCHITECT") => void;
-  animationsEnabled: boolean;
-  setAnimationsEnabled: (b: boolean) => void;
   onFlyover: () => void;
-  soundEnabled: boolean;
-  setSoundEnabled: (b: boolean) => void;
   showObstacles?: boolean;
   setShowObstacles?: (b: boolean) => void;
   isBankrupt: boolean;
@@ -143,11 +139,7 @@ export function HUD(props: {
     paintError,
     viewMode,
     setViewMode,
-    animationsEnabled,
-    setAnimationsEnabled,
     onFlyover,
-    soundEnabled,
-    setSoundEnabled,
     showObstacles,
     setShowObstacles,
     isBankrupt,
@@ -494,22 +486,6 @@ export function HUD(props: {
                 >
                   Flyover
                 </button>
-                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#374151" }}>
-                  <input
-                    type="checkbox"
-                    checked={animationsEnabled}
-                    onChange={(e) => setAnimationsEnabled(e.target.checked)}
-                  />
-                  Animations
-                </label>
-                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#374151" }}>
-                  <input
-                    type="checkbox"
-                    checked={soundEnabled}
-                    onChange={(e) => setSoundEnabled(e.target.checked)}
-                  />
-                  Sound
-                </label>
                 {setShowObstacles && (
                   <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#374151" }}>
                     <input

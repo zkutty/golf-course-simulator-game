@@ -9,6 +9,7 @@ import {
   type SavePayload,
 } from "./save";
 import type { TutorialProgress } from "../game/onboarding/tutorial";
+import { loadAppProfile, type AppProfile } from "../game/onboarding/profile";
 
 /**
  * Save repository (ZKU-174): named slots + rotating autosaves + quicksave.
@@ -52,6 +53,8 @@ export interface SaveFile {
   history?: WeekResult[];
   live?: LiveSimulationSnapshotV1;
   tutorial?: TutorialProgress | null;
+  /** Diagnostic snapshot only; importing a course never overwrites local options. */
+  appProfile?: AppProfile;
 }
 
 const MANIFEST_KEY = "coursecraft_saves_manifest_v1";
@@ -224,6 +227,7 @@ function payloadToFile(p: SavePayload): SaveFile {
     history: p.history?.slice(-20),
     live: p.live,
     tutorial: p.tutorial,
+    appProfile: loadAppProfile(),
   };
 }
 

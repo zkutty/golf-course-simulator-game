@@ -66,7 +66,7 @@ import {
   saveTutorialProgress,
   type TutorialProgress,
 } from "./game/onboarding/tutorial";
-import { loadAppProfile, updateAppProfile } from "./game/onboarding/profile";
+import { loadAppProfile, saveAppProfile, updateAppProfile, type AppProfile } from "./game/onboarding/profile";
 import { advisorMessages, allowsMessage, type AdvisorMessage } from "./game/advisor/advisor";
 import { INITIAL_SCREEN_FLOW, reduceScreenFlow } from "./app/screenFlow";
 import { PauseOverlay } from "./ui/appShell/PauseOverlay";
@@ -82,6 +82,7 @@ const STRIKE_SFX = "/audio/ball-strike.mp3";
 
 export default function App() {
   const [flow, flowDispatch] = useReducer(reduceScreenFlow, INITIAL_SCREEN_FLOW);
+  const [appProfile, setAppProfile] = useState<AppProfile>(() => loadAppProfile());
   const screen = flow.base === "title" ? "menu" : flow.base === "setup-wizard" ? "setup" : flow.base === "in-game" ? "game" : "loading";
   const changeSequenceRef = useRef(0);
   const [dirty, setDirty] = useState(false);
@@ -160,25 +161,23 @@ export default function App() {
   const [saveModalCanSave, setSaveModalCanSave] = useState(false);
   const payloadSequenceRef = useRef(0);
   const [showObstacles, setShowObstacles] = useState(true);
-  const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">("COZY");
+  const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">(() => appProfile.graphics.gridOverlays ? "ARCHITECT" : "COZY");
   const [holeEditMode, setHoleEditMode] = useState<ViewMode>("global"); // "global" or "hole"
   const [holeEditCamera, setHoleEditCamera] = useState<CameraState | null>(null);
   const holeEditCameraManualRef = useRef(false); // Track if camera was manually set
   const [showFixOverlay, setShowFixOverlay] = useState(false);
-  const [animationsEnabled, setAnimationsEnabled] = useState(false);
+  const [animationsEnabled, setAnimationsEnabled] = useState(() => appProfile.graphics.animations);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const soundEnabled = appProfile.audio.masterVolume > 0 && appProfile.audio.sfxVolume > 0;
+  const effectiveAnimations = animationsEnabled && !appProfile.accessibility.reducedMotion;
   const [showShotPlan, setShowShotPlan] = useState(true);
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
-  const [renderer, setRenderer] = useState<"canvas" | "pixi">(() => {
-    const saved = localStorage.getItem("coursecraft_renderer");
-    return (saved === "pixi" || saved === "canvas") ? saved : "pixi";
-  });
+  const [renderer, setRenderer] = useState<"canvas" | "pixi">(() => appProfile.graphics.renderer);
 
-  const handleRendererChange = (newRenderer: "canvas" | "pixi") => {
-    setRenderer(newRenderer);
-    localStorage.setItem("coursecraft_renderer", newRenderer);
-  };
+  function handleProfileChange(next: AppProfile) {
+    saveAppProfile(next);
+    setAppProfile(next);
+  }
   const [peakRep, setPeakRep] = useState(DEFAULT_STATE.world.reputation);
   const [showBridgePrompt, setShowBridgePrompt] = useState(false);
   const [prevDistress, setPrevDistress] = useState(0);
@@ -225,6 +224,8 @@ export default function App() {
       ]);
       // Rotating autosave after every committed game day (ZKU-174). The
       // setState reader snapshots post-commit state without extra renders.
+      if (appProfile.gameplay.autosaveCadence === "off") return;
+      if (appProfile.gameplay.autosaveCadence === "weekly" && result.dayIndex !== 6) return;
       setGameState((current) => {
         const sequence = changeSequenceRef.current;
         void autosave({ course: current.course, world: current.world, live: liveSnapshot, tutorial: tutorialProgress })
@@ -236,7 +237,7 @@ export default function App() {
       if (soundEnabled) void sound?.playCashTick(soundEnabled);
     },
   });
-  const resumeSpeedRef = useRef<SpeedName>("1x");
+  const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);
 
   const openPauseMenu = useCallback(() => {
     if (flow.base !== "in-game" || flow.modal || flow.paused) return;
@@ -303,6 +304,26 @@ export default function App() {
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [dirty, flow.base]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.fontSize = `${appProfile.accessibility.textScale}%`;
+    root.dataset.reducedMotion = String(appProfile.accessibility.reducedMotion);
+    root.dataset.colorVision = appProfile.accessibility.colorVision;
+    root.dataset.terrainPatterns = String(appProfile.accessibility.terrainPatterns);
+  }, [appProfile.accessibility]);
+
+  useEffect(() => {
+    const cadence = appProfile.gameplay.autosaveCadence;
+    if (flow.base !== "in-game" || (cadence !== "5m" && cadence !== "15m")) return;
+    const interval = window.setInterval(() => {
+      const sequence = changeSequenceRef.current;
+      const current = gameStateRef.current;
+      void autosave({ course: current.course, world: current.world, history: historyRef.current, live: live.getSnapshot(), tutorial: tutorialProgress })
+        .then(() => markClean(sequence));
+    }, cadence === "5m" ? 300_000 : 900_000);
+    return () => window.clearInterval(interval);
+  }, [appProfile.gameplay.autosaveCadence, flow.base, live, markClean, tutorialProgress]);
 
   const canvasPaneRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
@@ -516,10 +537,18 @@ export default function App() {
   }, [objectivesOutcomeForRecord, world]);
 
   useEffect(() => {
-    const onProfileChange = () => setAdvisorWake((value) => value + 1);
+    const onProfileChange = () => {
+      const next = loadAppProfile();
+      setAppProfile(next);
+      setAnimationsEnabled(next.graphics.animations);
+      setRenderer(next.graphics.renderer);
+      audio.syncVolumes(next.audio);
+      if (next.advisorFrequency === "off") setAdvisorMessage(null);
+      setAdvisorWake((value) => value + 1);
+    };
     window.addEventListener("coursecraft-profile-change", onProfileChange);
     return () => window.removeEventListener("coursecraft-profile-change", onProfileChange);
-  }, []);
+  }, [audio]);
 
   useEffect(() => {
     if (screen !== "game" || tutorialProgress || advisorMessage || flow.modal || flow.paused || showVictory || showBridgePrompt) return;
@@ -629,6 +658,7 @@ export default function App() {
       const { course: newCourse, world: newWorld } = createScenarioGame(scenario);
       live.restoreSnapshot(undefined);
       startRun(newCourse, newWorld);
+      live.setSpeed(appProfile.gameplay.defaultGameSpeed);
       flowDispatch({ type: "ENTER_GAME" });
     }, 0);
   }
@@ -775,6 +805,7 @@ export default function App() {
     flowDispatch({ type: "BEGIN_LOADING", label: "Growing your new course…" });
     window.setTimeout(() => {
       restartRun(setup);
+      live.setSpeed(appProfile.gameplay.defaultGameSpeed);
       flowDispatch({ type: "ENTER_GAME" });
     }, 0);
   }
@@ -1155,6 +1186,7 @@ export default function App() {
     if (editorMode === "OBSTACLE") {
       const existingIdx = course.obstacles.findIndex((o) => o.x === x && o.y === y);
       if (existingIdx >= 0) {
+        if (appProfile.gameplay.confirmBulldoze && !window.confirm("Bulldoze this obstacle?")) return;
         dispatch({ type: "REMOVE_OBSTACLE", x, y });
       } else {
         dispatch({ type: "PLACE_OBSTACLE", x, y, obstacleType });
@@ -1168,6 +1200,7 @@ export default function App() {
           setPaintError("The starter clubhouse cannot be removed.");
           return;
         }
+        if (appProfile.gameplay.confirmSalvage && !window.confirm(`Salvage this ${BUILDING_SPECS[existing.type].name.toLowerCase()}?`)) return;
         dispatch({ type: "REMOVE_BUILDING", x, y });
         setPaintError(null);
         return;
@@ -1452,10 +1485,8 @@ export default function App() {
       <SettingsModal
         open={flow.modal === "options"}
         onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
-        audioVolumes={{ music: audio.getVolumes().musicVolume, ambience: audio.getVolumes().ambienceVolume }}
-        onAudioVolumesChange={(volumes) => audio.setVolumes({ musicVolume: volumes.music, ambienceVolume: volumes.ambience })}
-        renderer={renderer}
-        onRendererChange={handleRendererChange}
+        profile={appProfile}
+        onProfileChange={handleProfileChange}
       />
       </>
     );
@@ -1548,7 +1579,7 @@ export default function App() {
                 activeShotPlan={activeShotPlan}
                 tileSize={tileSize}
                 showGridOverlays={viewMode === "ARCHITECT"}
-                animationsEnabled={animationsEnabled}
+                animationsEnabled={effectiveAnimations}
                 flyoverNonce={flyoverNonce}
                 showShotPlan={showShotPlan}
                 editorMode={editorMode}
@@ -1582,7 +1613,14 @@ export default function App() {
                 activeShotPlan={activeShotPlan}
                 tileSize={tileSize}
                 showGridOverlays={viewMode === "ARCHITECT"}
-                animationsEnabled={animationsEnabled}
+                animationsEnabled={effectiveAnimations}
+                ambienceFx={appProfile.graphics.ambienceFx}
+                waterAnimation={appProfile.graphics.waterAnimation}
+                treeSway={appProfile.graphics.treeSway}
+                resolutionScale={appProfile.graphics.resolutionScale}
+                cameraSmoothing={appProfile.gameplay.cameraSmoothing}
+                edgeScroll={appProfile.gameplay.edgeScroll}
+                edgeScrollSpeed={appProfile.gameplay.edgeScrollSpeed}
                 flyoverNonce={flyoverNonce}
                 showShotPlan={showShotPlan}
                 editorMode={editorMode}
@@ -1792,11 +1830,7 @@ export default function App() {
         setSculptRadius={setSculptRadius}
         viewMode={viewMode}
         setViewMode={setViewMode}
-        animationsEnabled={animationsEnabled}
-        setAnimationsEnabled={setAnimationsEnabled}
         onFlyover={() => setFlyoverNonce((n) => n + 1)}
-        soundEnabled={soundEnabled}
-        setSoundEnabled={setSoundEnabled}
         showObstacles={showObstacles}
         setShowObstacles={setShowObstacles}
         isBankrupt={world.isBankrupt}
@@ -1851,10 +1885,8 @@ export default function App() {
         <SettingsModal
           open={flow.modal === "options"}
           onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
-          audioVolumes={{ music: audio.getVolumes().musicVolume, ambience: audio.getVolumes().ambienceVolume }}
-          onAudioVolumesChange={(volumes) => audio.setVolumes({ musicVolume: volumes.music, ambienceVolume: volumes.ambience })}
-          renderer={renderer}
-          onRendererChange={handleRendererChange}
+          profile={appProfile}
+          onProfileChange={handleProfileChange}
         />
       </TooltipSurface>
     </div>

@@ -80,3 +80,40 @@ test("every checked-in historical save fixture migrates", async ({ page }) => {
     expect(result).toEqual({ ok: true, migratedFrom: 1 });
   }
 });
+
+test("options apply live and persist independently across reload", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Options" }).click();
+  await expect(page.getByTestId("options-screen")).toBeVisible();
+
+  await page.getByLabel("Autosave cadence").selectOption("off");
+  await page.getByLabel("Default game speed").selectOption("2x");
+  await page.getByRole("button", { name: "Graphics" }).click();
+  await page.getByLabel("Animations master").uncheck();
+  await page.getByLabel("Resolution scale").fill("0.75");
+  await page.getByRole("button", { name: "Audio" }).click();
+  await page.getByLabel("Master volume").fill("0.55");
+  await page.getByRole("button", { name: "Accessibility" }).click();
+  await page.getByLabel("Text scale").selectOption("115");
+  await expect.poll(() => page.evaluate(() => document.documentElement.style.fontSize)).toBe("115%");
+  await page.getByRole("button", { name: "Done" }).click();
+
+  await page.reload();
+  await page.getByRole("button", { name: "Options" }).click();
+  await expect(page.getByLabel("Autosave cadence")).toHaveValue("off");
+  await expect(page.getByLabel("Default game speed")).toHaveValue("2x");
+  await page.getByRole("button", { name: "Graphics" }).click();
+  await expect(page.getByLabel("Animations master")).not.toBeChecked();
+  await expect(page.getByLabel("Resolution scale")).toHaveValue("0.75");
+  await page.getByRole("button", { name: "Audio" }).click();
+  await expect(page.getByLabel("Master volume")).toHaveValue("0.55");
+  await page.getByRole("button", { name: "Accessibility" }).click();
+  await expect(page.getByLabel("Text scale")).toHaveValue("115");
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v2") ?? "null"));
+  expect(stored).toMatchObject({ version: 2, gameplay: { autosaveCadence: "off", defaultGameSpeed: "2x" }, accessibility: { textScale: 115 } });
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Reset Accessibility" }).click();
+  await expect(page.getByLabel("Text scale")).toHaveValue("100");
+  const reset = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v2") ?? "null"));
+  expect(reset.audio.masterVolume).toBe(0.55);
+});
