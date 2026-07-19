@@ -5,6 +5,8 @@ import {
   type ProfileTab,
 } from "../game/onboarding/profile";
 import { GameButton, GameTabs } from "./gameui";
+import { KeybindingsPanel } from "./accessibility/KeybindingsPanel";
+import { useFocusTrap } from "./accessibility/useFocusTrap";
 
 export interface SettingsModalProps {
   open: boolean;
@@ -29,6 +31,8 @@ function copyProfile(profile: AppProfile): AppProfile {
 
 export function SettingsModal(props: SettingsModalProps) {
   const [tab, setTab] = useState<Tab>("Gameplay");
+  const [bindingsOpen, setBindingsOpen] = useState(false);
+  const trapRef = useFocusTrap<HTMLElement>(props.open && !bindingsOpen, props.onClose);
   if (!props.open) return null;
 
   const change = <T extends ProfileTab>(key: T, patch: Partial<AppProfile[T]>) => {
@@ -45,7 +49,7 @@ export function SettingsModal(props: SettingsModalProps) {
 
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="options-title" data-testid="options-screen" style={{ position: "fixed", inset: 0, background: "rgba(15,24,18,.68)", display: "grid", placeItems: "center", padding: 16, zIndex: 99990 }} onClick={props.onClose}>
-      <section style={{ width: "min(820px, 100%)", maxHeight: "min(760px, 92vh)", overflow: "hidden", display: "grid", gridTemplateRows: "auto auto minmax(0,1fr) auto", borderRadius: 20, background: "#f7f0df", border: "2px solid #a9987f", boxShadow: "0 24px 64px rgba(0,0,0,.42)" }} onClick={(event) => event.stopPropagation()}>
+      <section ref={trapRef} style={{ width: "min(820px, 100%)", maxHeight: "min(760px, 92vh)", overflow: "hidden", display: "grid", gridTemplateRows: "auto auto minmax(0,1fr) auto", borderRadius: 20, background: "#f7f0df", border: "2px solid #a9987f", boxShadow: "0 24px 64px rgba(0,0,0,.42)" }} onClick={(event) => event.stopPropagation()}>
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 22px 12px" }}>
           <div><div id="options-title" style={{ fontFamily: "var(--font-heading)", fontSize: 28, fontWeight: 900, color: "#344338" }}>Options</div><div style={{ fontSize: 12, color: "#687266" }}>Changes apply immediately and save outside your course files.</div></div>
           <button aria-label="Close options" onClick={props.onClose} style={{ border: "1px solid #687266", borderRadius: 9, background: "#fffaf0", padding: "8px 11px", cursor: "pointer", fontWeight: 900 }}>✕</button>
@@ -55,13 +59,18 @@ export function SettingsModal(props: SettingsModalProps) {
           {tab === "Gameplay" && <GameplayTab profile={props.profile} change={change} onProfileChange={props.onProfileChange} />}
           {tab === "Graphics" && <GraphicsTab profile={props.profile} change={change} />}
           {tab === "Audio" && <AudioTab profile={props.profile} change={change} />}
-          {tab === "Accessibility" && <AccessibilityTab profile={props.profile} change={change} onOpenKeybindings={props.onOpenKeybindings} />}
+          {tab === "Accessibility" && <AccessibilityTab profile={props.profile} change={change} onOpenKeybindings={() => setBindingsOpen(true)} />}
         </div>
         <footer style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: 16, borderTop: "1px solid rgba(61,74,62,.2)", background: "rgba(255,255,255,.35)" }}>
           <GameButton variant="secondary" onClick={reset}>Reset {tab}</GameButton>
           <GameButton onClick={props.onClose}>Done</GameButton>
         </footer>
       </section>
+      {bindingsOpen && <KeybindingsPanel
+        bindings={props.profile.accessibility.keybindings}
+        onChange={(keybindings) => change("accessibility", { keybindings })}
+        onClose={() => setBindingsOpen(false)}
+      />}
     </div>
   );
 }

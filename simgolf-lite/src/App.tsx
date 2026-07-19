@@ -73,6 +73,7 @@ import { PauseOverlay } from "./ui/appShell/PauseOverlay";
 import { LoadingCard } from "./ui/appShell/LoadingCard";
 import { SettingsModal } from "./ui/SettingsModal";
 import type { SpeedName } from "./game/live/liveConfig";
+import { eventMatchesBinding } from "./accessibility/keybindings";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -192,6 +193,7 @@ export default function App() {
   const [advisorWake, setAdvisorWake] = useState(0);
   const seenAdvisorMessagesRef = useRef(new Set<string>());
   const advisorCooldownUntilRef = useRef(0);
+  const [a11yMessage, setA11yMessage] = useState("");
 
   // Lazy singleton via useState initializer (render-pure, unlike a ref write).
   const [sound] = useState(() => createSoundPlayer());
@@ -260,6 +262,18 @@ export default function App() {
       live.setSpeed("paused");
     }
   }, [flow.base, flow.modal, flow.paused, live]);
+  const quickSave = useCallback(async () => {
+    if (flow.base !== "in-game") return;
+    const sequence = changeSequenceRef.current;
+    const current = gameStateRef.current;
+    await saveToSlot("quick-save", "manual", "Quick Save", {
+      course: current.course, world: current.world, history: historyRef.current,
+      live: live.getSnapshot(), tutorial: tutorialProgress,
+    });
+    markClean(sequence);
+    setA11yMessage("Quick save complete.");
+  }, [flow.base, live, markClean, tutorialProgress]);
+
 
   const quitToTitle = useCallback(() => {
     if (dirty && !window.confirm("Quit to title and lose unsaved changes?")) return;
@@ -286,14 +300,32 @@ export default function App() {
           if (flow.paused) resumeFromPause();
           else openPauseMenu();
         }
-      } else if (event.code === "Space" && !typing) {
+        return;
+      }
+      if (typing || flow.modal || flow.paused || flow.base !== "in-game") return;
+      const bindings = appProfile.accessibility.keybindings;
+      if (eventMatchesBinding(event, bindings.pause)) {
         event.preventDefault();
         toggleClock();
+      } else if (eventMatchesBinding(event, bindings.speed1)) {
+        event.preventDefault(); live.setSpeed("1x");
+      } else if (eventMatchesBinding(event, bindings.speed2)) {
+        event.preventDefault(); live.setSpeed("2x");
+      } else if (eventMatchesBinding(event, bindings.speed3)) {
+        event.preventDefault(); live.setSpeed("3x");
+      } else if (eventMatchesBinding(event, bindings.terrainTool)) {
+        event.preventDefault(); setEditorMode("PAINT");
+      } else if (eventMatchesBinding(event, bindings.obstacleTool)) {
+        event.preventDefault(); setEditorMode("OBSTACLE");
+      } else if (eventMatchesBinding(event, bindings.buildingTool)) {
+        event.preventDefault(); setEditorMode("BUILDING");
+      } else if (eventMatchesBinding(event, bindings.quicksave)) {
+        event.preventDefault(); void quickSave();
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [flow.base, flow.modal, flow.paused, openPauseMenu, resumeFromPause, toggleClock]);
+  }, [appProfile.accessibility.keybindings, flow.base, flow.modal, flow.paused, live, openPauseMenu, quickSave, resumeFromPause, toggleClock]);
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -558,7 +590,10 @@ export default function App() {
     const next = advisorMessages(course, world, last, previous).find(
       (message) => allowsMessage(frequency, message) && !seenAdvisorMessagesRef.current.has(message.id)
     );
-    if (next) setAdvisorMessage(next);
+    if (next) {
+      setAdvisorMessage(next);
+      setA11yMessage(`${next.title}. ${next.body}`);
+    }
   }, [screen, tutorialProgress, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, course, world, last, history, advisorWake]);
 
   function dismissAdvisor() {
@@ -568,6 +603,15 @@ export default function App() {
     const cooldown = frequency === "chatty" ? 8_000 : 18_000;
     advisorCooldownUntilRef.current = Date.now() + cooldown;
     window.setTimeout(() => setAdvisorWake((value) => value + 1), cooldown + 50);
+  }
+
+  function startFlyover() {
+    if (appProfile.accessibility.reducedMotion) {
+      setA11yMessage("Flyover is disabled while reduced motion is on.");
+      return;
+    }
+    if (advisorMessage) dismissAdvisor();
+    setFlyoverNonce((value) => value + 1);
   }
 
   // Course name propagates to the browser tab (ZKU-162).
@@ -1495,6 +1539,7 @@ export default function App() {
   return (
     <div className="cc-app">
       <TooltipSurface>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{a11yMessage}</div>
         <GameBackground />
         {saveLoadModal}
       {flow.modal === "golfopedia" && (
@@ -1581,6 +1626,9 @@ export default function App() {
                 showGridOverlays={viewMode === "ARCHITECT"}
                 animationsEnabled={effectiveAnimations}
                 flyoverNonce={flyoverNonce}
+                colorVision={appProfile.accessibility.colorVision}
+                terrainPatterns={appProfile.accessibility.terrainPatterns}
+                reducedMotion={appProfile.accessibility.reducedMotion}
                 showShotPlan={showShotPlan}
                 editorMode={editorMode}
                 wizardStep={wizardStep}
@@ -1618,12 +1666,15 @@ export default function App() {
                 waterAnimation={appProfile.graphics.waterAnimation}
                 treeSway={appProfile.graphics.treeSway}
                 resolutionScale={appProfile.graphics.resolutionScale}
-                cameraSmoothing={appProfile.gameplay.cameraSmoothing}
+                cameraSmoothing={appProfile.gameplay.cameraSmoothing && !appProfile.accessibility.reducedMotion}
                 edgeScroll={appProfile.gameplay.edgeScroll}
                 edgeScrollSpeed={appProfile.gameplay.edgeScrollSpeed}
                 flyoverNonce={flyoverNonce}
                 showShotPlan={showShotPlan}
                 editorMode={editorMode}
+                colorVision={appProfile.accessibility.colorVision}
+                terrainPatterns={appProfile.accessibility.terrainPatterns}
+                keybindings={appProfile.accessibility.keybindings}
                 wizardStep={wizardStep}
                 draftTee={draftTee}
                 draftGreen={draftGreen}
@@ -1751,7 +1802,7 @@ export default function App() {
                   showFixOverlay={showFixOverlay}
                   setShowFixOverlay={setShowFixOverlay}
                   onFitHole={fitHole}
-                  onFlyover={() => setFlyoverNonce((n) => n + 1)}
+                  onFlyover={startFlyover}
                   course={course}
                   hole={course.holes[activeHoleIndex]}
                   onSetHoleIndex={(newIndex: number) => {
@@ -1830,7 +1881,7 @@ export default function App() {
         setSculptRadius={setSculptRadius}
         viewMode={viewMode}
         setViewMode={setViewMode}
-        onFlyover={() => setFlyoverNonce((n) => n + 1)}
+        onFlyover={startFlyover}
         showObstacles={showObstacles}
         setShowObstacles={setShowObstacles}
         isBankrupt={world.isBankrupt}

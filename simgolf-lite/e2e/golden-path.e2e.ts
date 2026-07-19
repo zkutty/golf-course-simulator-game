@@ -109,11 +109,96 @@ test("options apply live and persist independently across reload", async ({ page
   await expect(page.getByLabel("Master volume")).toHaveValue("0.55");
   await page.getByRole("button", { name: "Accessibility" }).click();
   await expect(page.getByLabel("Text scale")).toHaveValue("115");
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v2") ?? "null"));
-  expect(stored).toMatchObject({ version: 2, gameplay: { autosaveCadence: "off", defaultGameSpeed: "2x" }, accessibility: { textScale: 115 } });
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v3") ?? "null"));
+  expect(stored).toMatchObject({ version: 3, gameplay: { autosaveCadence: "off", defaultGameSpeed: "2x" }, accessibility: { textScale: 115 } });
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Reset Accessibility" }).click();
   await expect(page.getByLabel("Text scale")).toHaveValue("100");
-  const reset = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v2") ?? "null"));
+  const reset = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v3") ?? "null"));
   expect(reset.audio.masterVolume).toBe(0.55);
+});
+test("keyboard-only options, remapping, conflicts, and save/load round-trip", async ({ page }) => {
+  await page.goto("/");
+  for (let i = 0; i < 8; i++) {
+    if (await page.getByRole("button", { name: "Options" }).evaluate((node) => node === document.activeElement)) break;
+    await page.keyboard.press("Tab");
+  }
+  await expect(page.getByRole("button", { name: "Options" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Close options" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(page.getByRole("button", { name: "Done" })).toBeFocused();
+
+  await page.getByRole("button", { name: "Accessibility" }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Configure keybindings…" }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Rebind Pause / resume" }).focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("KeyP");
+  await expect(page.getByRole("button", { name: "Rebind Pause / resume" })).toHaveText("P");
+
+  await page.getByRole("button", { name: "Rebind Speed 1×" }).focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("KeyP");
+  await expect(page.getByRole("alert")).toContainText("already assigned");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("keybindings-panel").getByRole("button", { name: "Done" }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByTestId("options-screen").getByRole("button", { name: "Done" }).focus();
+  await page.keyboard.press("Enter");
+
+  await page.getByRole("button", { name: "Quick Start" }).focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screenBase)).toBe("in-game");
+  await page.keyboard.press("KeyP");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().speed)).toBe("paused");
+  await page.keyboard.press("KeyP");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().speed)).toBe("1x");
+  await page.keyboard.press("Control+KeyS");
+  await expect(page.getByRole("status")).toContainText("Quick save complete");
+
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /load game/i }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByText("Quick Save")).toBeVisible();
+  await page.getByText("Quick Save").locator("..").getByRole("button", { name: "Load" }).focus();
+  await page.keyboard.press("Enter");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screenBase)).toBe("in-game");
+
+  await page.reload();
+  await page.getByRole("button", { name: "Options" }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Accessibility" }).focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: "Configure keybindings…" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: "Rebind Pause / resume" })).toHaveText("P");
+});
+test("accessible palettes, patterns, text scaling, and reduced motion apply live", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Options" }).click();
+  await page.getByRole("button", { name: "Accessibility" }).click();
+  await page.getByLabel("Terrain patterns").check();
+  await page.getByLabel("Reduced motion").check();
+  await page.getByLabel("Text scale").selectOption("130");
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: "Quick Start" }).click();
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.reducedMotion)).toBe("true");
+  await expect.poll(() => page.evaluate(() => document.documentElement.style.fontSize)).toBe("130%");
+
+  for (const mode of ["deuteranopia", "protanopia", "tritanopia"]) {
+    await page.evaluate((colorVision) => {
+      const key = "coursecraft_app_profile_v3";
+      const profile = JSON.parse(localStorage.getItem(key)!);
+      profile.accessibility.colorVision = colorVision;
+      localStorage.setItem(key, JSON.stringify(profile));
+      window.dispatchEvent(new CustomEvent("coursecraft-profile-change"));
+    }, mode);
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorVision)).toBe(mode);
+    await test.info().attach(`terrain-${mode}`, { body: await page.screenshot(), contentType: "image/png" });
+  }
+
+  await page.getByRole("button", { name: "Flyover" }).click();
+  await expect(page.getByRole("status")).toContainText("disabled while reduced motion");
 });

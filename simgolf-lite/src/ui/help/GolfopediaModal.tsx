@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import { GameTabs } from "../gameui";
 import { GOLFOPEDIA_ENTRIES, type GolfopediaSection } from "./golfopediaData";
+import { BINDING_ACTIONS, BINDING_LABELS, displayBinding } from "../../accessibility/keybindings";
+import { loadAppProfile } from "../../game/onboarding/profile";
+import { useFocusTrap } from "../accessibility/useFocusTrap";
 
 const SECTIONS: GolfopediaSection[] = ["Terrain", "Golfers", "Management", "Controls"];
 
@@ -9,6 +12,8 @@ export function GolfopediaModal(props: { open: boolean; onClose: () => void; ini
   const [section, setSection] = useState<GolfopediaSection>(initial?.section ?? "Terrain");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(initial?.id ?? GOLFOPEDIA_ENTRIES[0].id);
+  const trapRef = useFocusTrap<HTMLDivElement>(props.open, props.onClose);
+  const bindings = loadAppProfile().accessibility.keybindings;
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return GOLFOPEDIA_ENTRIES.filter((entry) => (!q ? entry.section === section : `${entry.title} ${entry.summary} ${entry.details.join(" ")}`.toLowerCase().includes(q)));
@@ -18,7 +23,7 @@ export function GolfopediaModal(props: { open: boolean; onClose: () => void; ini
   if (!props.open) return null;
   return (
     <div role="dialog" aria-modal="true" aria-label="Golfopedia" style={{ position: "fixed", inset: 0, zIndex: 99980, display: "grid", placeItems: "center", padding: 18, background: "rgba(19,28,20,.68)" }} onClick={props.onClose}>
-      <div style={{ width: "min(980px, 100%)", height: "min(720px, 92vh)", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 18, border: "2px solid #3d4a3e", background: "#f7f0dd", boxShadow: "0 28px 80px rgba(0,0,0,.4)" }} onClick={(event) => event.stopPropagation()}>
+      <div ref={trapRef} style={{ width: "min(980px, 100%)", height: "min(720px, 92vh)", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 18, border: "2px solid #3d4a3e", background: "#f7f0dd", boxShadow: "0 28px 80px rgba(0,0,0,.4)" }} onClick={(event) => event.stopPropagation()}>
         <header style={{ padding: 18, borderBottom: "1px solid rgba(61,74,62,.25)", background: "#e8dcc0" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
             <div><div style={{ fontFamily: "var(--font-heading)", fontWeight: 900, fontSize: 25, color: "#344338" }}>Golfopedia</div><div style={{ color: "#6b755f", fontSize: 12 }}>The course designer's pocket reference</div></div>
@@ -41,6 +46,11 @@ export function GolfopediaModal(props: { open: boolean; onClose: () => void; ini
             <h2 style={{ fontFamily: "var(--font-heading)", fontSize: 30, margin: "6px 0 10px" }}>{selected.title}</h2>
             <p style={{ fontSize: 16, lineHeight: 1.5, color: "#526056" }}>{selected.summary}</p>
             {selected.facts && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, margin: "20px 0" }}>{selected.facts.map((fact) => <div key={fact.label} style={{ background: "#fffaf0", border: "1px solid rgba(61,74,62,.18)", borderRadius: 10, padding: 12 }}><div style={{ fontSize: 10, letterSpacing: ".08em", color: "#778077", textTransform: "uppercase" }}>{fact.label}</div><div style={{ fontWeight: 900, marginTop: 3 }}>{fact.value}</div></div>)}</div>}
+            {selected.section === "Controls" && <dl data-testid="current-keybindings" style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "6px 18px", background: "#fffaf0", padding: 14, borderRadius: 10 }}>
+              {BINDING_ACTIONS.map((action) => <div key={action} style={{ display: "contents" }}>
+                <dt>{BINDING_LABELS[action]}</dt><dd style={{ margin: 0, fontWeight: 900 }}>{displayBinding(bindings[action])}</dd>
+              </div>)}
+            </dl>}
             <ul style={{ paddingLeft: 20, lineHeight: 1.65 }}>{selected.details.map((detail) => <li key={detail}>{detail}</li>)}</ul>
           </article>
         </div>

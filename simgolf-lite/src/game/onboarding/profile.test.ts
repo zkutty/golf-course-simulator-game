@@ -24,7 +24,7 @@ describe("versioned app profile", () => {
       coursecraft_ambience: "off",
     });
     const profile = loadAppProfile(store);
-    expect(profile).toMatchObject({ version: 2, tutorialOffered: true, advisorFrequency: "important" });
+    expect(profile).toMatchObject({ version: 3, tutorialOffered: true, advisorFrequency: "important" });
     expect(profile.audio).toMatchObject({ musicVolume: 0.7, ambienceVolume: 0.2, sfxVolume: 0.4 });
     expect(profile.graphics).toMatchObject({ renderer: "canvas", ambienceFx: false });
   });
@@ -45,6 +45,14 @@ describe("versioned app profile", () => {
     const profile = loadAppProfile(store);
     expect(profile.gameplay.edgeScrollSpeed).toBe(2);
     expect(profile.graphics.resolutionScale).toBe(0.5);
+    expect(profile.accessibility.keybindings.pause).toBe("Space");
     expect(profile.audio.masterVolume).toBe(1);
   });
 });
+  it("honors the operating-system reduced-motion preference on first boot", () => {
+    vi.stubGlobal("window", {
+      dispatchEvent: vi.fn(),
+      matchMedia: vi.fn(() => ({ matches: true })),
+    });
+    expect(loadAppProfile(storage()).accessibility.reducedMotion).toBe(true);
+  });

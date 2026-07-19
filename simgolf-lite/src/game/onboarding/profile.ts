@@ -1,4 +1,5 @@
 import type { SpeedName } from "../live/liveConfig";
+import { DEFAULT_KEYBINDINGS, normalizeKeybindings, type Keybindings } from "../../accessibility/keybindings";
 
 export type AdvisorFrequency = "chatty" | "normal" | "important" | "off";
 export type AutosaveCadence = "off" | "weekly" | "5m" | "15m";
@@ -7,7 +8,7 @@ export type ColorVisionMode = "standard" | "deuteranopia" | "protanopia" | "trit
 export type TextScale = 90 | 100 | 115 | 130;
 
 export interface AppProfile {
-  version: 2;
+  version: 3;
   tutorialOffered: boolean;
   tutorialCompleted: boolean;
   advisorFrequency: AdvisorFrequency;
@@ -40,16 +41,18 @@ export interface AppProfile {
     terrainPatterns: boolean;
     reducedMotion: boolean;
     textScale: TextScale;
+    keybindings: Keybindings;
   };
 }
 
-const PROFILE_KEY = "coursecraft_app_profile_v2";
-const LEGACY_PROFILE_KEY = "coursecraft_app_profile_v1";
+const PROFILE_KEY = "coursecraft_app_profile_v3";
+const LEGACY_PROFILE_KEY = "coursecraft_app_profile_v2";
+const OLDER_PROFILE_KEY = "coursecraft_app_profile_v1";
 const LEGACY_AUDIO_KEY = "coursecraft_audio_volumes";
 
 /** Shipping defaults. Keep additions migration-safe and covered by tests. */
 export const DEFAULT_APP_PROFILE: AppProfile = {
-  version: 2,
+  version: 3,
   tutorialOffered: false,
   tutorialCompleted: false,
   advisorFrequency: "normal",
@@ -82,6 +85,7 @@ export const DEFAULT_APP_PROFILE: AppProfile = {
     terrainPatterns: false,
     reducedMotion: false,
     textScale: 100,
+    keybindings: { ...DEFAULT_KEYBINDINGS },
   },
 };
 
@@ -116,12 +120,12 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
   const accessibility = record(raw.accessibility);
 
   let legacyAudio: Record<string, unknown> = {};
-  if (storage && raw.version !== 2) {
+  if (storage && raw.version !== 3) {
     try { legacyAudio = record(JSON.parse(storage.getItem(LEGACY_AUDIO_KEY) ?? "null")); } catch { /* defaults */ }
   }
 
   return {
-    version: 2,
+    version: 3,
     tutorialOffered: raw.tutorialOffered === true,
     tutorialCompleted: raw.tutorialCompleted === true,
     advisorFrequency: oneOf(raw.advisorFrequency, ["chatty", "normal", "important", "off"], defaults.advisorFrequency),
@@ -155,6 +159,7 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
       reducedMotion: bool(accessibility.reducedMotion, defaults.accessibility.reducedMotion),
       textScale: [90, 100, 115, 130].includes(accessibility.textScale as number) ? accessibility.textScale as TextScale : defaults.accessibility.textScale,
     },
+      keybindings: normalizeKeybindings(accessibility.keybindings),
   };
 }
 
@@ -166,8 +171,12 @@ export function loadAppProfile(storage = browserStorage()): AppProfile {
   if (!storage) return cloneDefaults();
   try {
     const current = storage.getItem(PROFILE_KEY);
-    const legacy = current == null ? storage.getItem(LEGACY_PROFILE_KEY) : null;
-    const profile = normalizeProfile(JSON.parse(current ?? legacy ?? "null"), storage);
+    const legacy = current == null ? storage.getItem(LEGACY_PROFILE_KEY) ?? storage.getItem(OLDER_PROFILE_KEY) : null;
+    const parsed = JSON.parse(current ?? legacy ?? "null");
+    const profile = normalizeProfile(parsed, storage);
+    const hasMotionPreference = "reducedMotion" in record(record(parsed).accessibility);
+    if (!hasMotionPreference && typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)
+      profile.accessibility.reducedMotion = true;
     if (current == null) storage.setItem(PROFILE_KEY, JSON.stringify(profile));
     return profile;
   } catch {

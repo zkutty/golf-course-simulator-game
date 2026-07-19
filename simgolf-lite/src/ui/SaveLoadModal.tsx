@@ -10,6 +10,7 @@ import {
   saveToSlot,
   type SaveSlotMeta,
 } from "../utils/saveStore";
+import { useFocusTrap } from "./accessibility/useFocusTrap";
 
 /**
  * Save/Load slot manager (ZKU-174). Opened from the in-game Save/Load
@@ -37,6 +38,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(props.open, props.onClose);
 
   const refresh = useCallback(() => {
     void listSlots().then(setSlots);
@@ -143,7 +145,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
   };
 
   return (
-    <div
+    <div role="dialog" aria-modal="true" aria-label={props.canSave ? "Save and load game" : "Load game"}
       style={{
         position: "fixed",
         inset: 0,
@@ -156,7 +158,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
       }}
       onClick={props.onClose}
     >
-      <div
+      <div ref={trapRef}
         style={{
           width: "min(640px, 100%)",
           maxHeight: "85vh",
