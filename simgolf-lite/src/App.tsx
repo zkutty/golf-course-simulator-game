@@ -626,6 +626,7 @@ export default function App() {
           world: run.world,
           history: historyRef.current,
           live: liveSnapshot,
+          tutorial: tutorialProgress,
         };
         const beforeHash = hashGameState(payload);
         await saveToSlot("e2e-golden", "manual", "E2E golden path", payload);
@@ -659,7 +660,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, live, screen]);
+  }, [dispatch, live, screen, tutorialProgress]);
 
   function newGameFromMenu() {
     void audio.unlock();
