@@ -1,5 +1,7 @@
 import type { SpeedName } from "../game/live/liveConfig";
+import { formatCurrency, formatDayLabel } from "../i18n/format";
 import type { LiveStatus } from "../hooks/useLiveSimulation";
+import { translateCurrent } from "../i18n/core";
 
 const SPEEDS: { key: SpeedName; label: string }[] = [
   { key: "paused", label: "❚❚" },
@@ -10,7 +12,7 @@ const SPEEDS: { key: SpeedName; label: string }[] = [
 
 function money(n: number): string {
   const sign = n < 0 ? "-" : "";
-  return `${sign}$${Math.abs(Math.round(n)).toLocaleString()}`;
+  return `${sign}${formatCurrency(Math.abs(n))}`;
 }
 
 // Floating real-time control bar: game clock, speed controls, and live day
@@ -54,7 +56,7 @@ export function LiveControls(props: {
     >
       <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
         <span style={{ fontWeight: 700, fontSize: 15 }}>{status.clockLabel}</span>
-        <span style={{ opacity: 0.7, fontSize: 11 }}>Day {status.dayIndex + 1} / 7</span>
+        <span style={{ opacity: 0.7, fontSize: 11 }}>{formatDayLabel(status.dayIndex + 1)}</span>
       </div>
 
       <div style={{ display: "flex", gap: 4 }}>
@@ -84,23 +86,23 @@ export function LiveControls(props: {
       </div>
 
       {props.onOpenPauseMenu && (
-        <button onClick={props.onOpenPauseMenu} title="Pause menu" aria-label="Open pause menu" style={{ minWidth: 34, padding: "5px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.3)", background: "rgba(255,255,255,.1)", color: "white", cursor: "pointer", fontWeight: 800 }}>☰</button>
+        <button onClick={props.onOpenPauseMenu} title={translateCurrent("auto.ui.livecontrols.pause.menu")} aria-label={translateCurrent("auto.ui.livecontrols.open.pause.menu")} style={{ minWidth: 34, padding: "5px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.3)", background: "rgba(255,255,255,.1)", color: "white", cursor: "pointer", fontWeight: 800 }}>☰</button>
       )}
 
       <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.15)" }} />
 
-      <Stat label="On course" value={`${status.onCourse}`} />
-      <Stat label="Rounds today" value={`${status.roundsToday}`} />
-      <Stat label="Fees today" value={money(status.greenFeesToday)} accent="#bbf7d0" />
-      <Stat label="Shops today" value={money(status.concessionsToday)} accent="#fde68a" />
-      <Stat label="Cash" value={money(cash)} accent={cash < 0 ? "#fca5a5" : "#e2e8f0"} />
-      <Stat label="Rep" value={`${Math.round(reputation)}`} />
+      <Stat label={translateCurrent("live.onCourse")} value={`${status.onCourse}`} />
+      <Stat label={translateCurrent("live.roundsToday")} value={`${status.roundsToday}`} />
+      <Stat label={translateCurrent("live.feesToday")} value={money(status.greenFeesToday)} accent="#bbf7d0" />
+      <Stat label={translateCurrent("live.shopsToday")} value={money(status.concessionsToday)} accent="#fde68a" />
+      <Stat label={translateCurrent("stat.cash")} value={money(cash)} accent={cash < 0 ? "#fca5a5" : "#e2e8f0"} />
+      <Stat label={translateCurrent("stat.reputationShort")} value={`${Math.round(reputation)}`} />
 
       {last && (
         <>
           <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.15)" }} />
           <Stat
-            label="Yesterday P&L"
+            label={translateCurrent("live.yesterdayProfitLoss")}
             value={money(last.profit)}
             accent={last.profit >= 0 ? "#bbf7d0" : "#fca5a5"}
           />

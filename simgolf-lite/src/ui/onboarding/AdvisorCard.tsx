@@ -1,6 +1,7 @@
 import type { AdvisorMessage } from "../../game/advisor/advisor";
 import { AdvisorPresenter } from "./AdvisorPresenter";
 import { presenterButtonStyle } from "./presenterStyles";
+import { T } from "../../i18n/T";
 
 export function AdvisorCard(props: { message: AdvisorMessage; onDismiss: () => void; onShowHole?: (holeIndex: number) => void }) {
   return (
@@ -14,9 +15,9 @@ export function AdvisorCard(props: { message: AdvisorMessage; onDismiss: () => v
         actions={
           <>
             {props.message.holeIndex != null && props.onShowHole && (
-              <button style={presenterButtonStyle} onClick={() => props.onShowHole?.(props.message.holeIndex!)}>Show me</button>
+              <button style={presenterButtonStyle} onClick={() => props.onShowHole?.(props.message.holeIndex!)}><T id="auto.ui.onboarding.advisorcard.show.me" /></button>
             )}
-            <button style={{ ...presenterButtonStyle, background: "transparent", color: "#465349" }} onClick={props.onDismiss}>Got it</button>
+            <button style={{ ...presenterButtonStyle, background: "transparent", color: "#465349" }} onClick={props.onDismiss}><T id="auto.ui.onboarding.advisorcard.got.it" /></button>
           </>
         }
       />

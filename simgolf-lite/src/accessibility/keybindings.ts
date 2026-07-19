@@ -17,6 +17,11 @@ export const BINDING_LABELS: Record<BindingAction, string> = {
   rotateLeft: "Rotate left", rotateRight: "Rotate right", speed1: "Speed 1×", speed2: "Speed 2×", speed3: "Speed 3×",
   pause: "Pause / resume", terrainTool: "Terrain tool", obstacleTool: "Obstacle tool", buildingTool: "Building tool", quicksave: "Quick save",
 };
+export const BINDING_LABEL_KEYS = {
+  panUp: "binding.panUp", panDown: "binding.panDown", panLeft: "binding.panLeft", panRight: "binding.panRight",
+  rotateLeft: "binding.rotateLeft", rotateRight: "binding.rotateRight", speed1: "binding.speed1", speed2: "binding.speed2", speed3: "binding.speed3",
+  pause: "binding.pause", terrainTool: "binding.terrainTool", obstacleTool: "binding.obstacleTool", buildingTool: "binding.buildingTool", quicksave: "binding.quicksave",
+} as const;
 
 export function normalizeKeybindings(value: unknown): Keybindings {
   const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};

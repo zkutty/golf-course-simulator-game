@@ -88,12 +88,12 @@ test("options apply live and persist independently across reload", async ({ page
 
   await page.getByLabel("Autosave cadence").selectOption("off");
   await page.getByLabel("Default game speed").selectOption("2x");
-  await page.getByRole("button", { name: "Graphics" }).click();
+  await page.getByRole("tab", { name: "Graphics" }).click();
   await page.getByLabel("Animations master").uncheck();
   await page.getByLabel("Resolution scale").fill("0.75");
-  await page.getByRole("button", { name: "Audio" }).click();
+  await page.getByRole("tab", { name: "Audio" }).click();
   await page.getByLabel("Master volume").fill("0.55");
-  await page.getByRole("button", { name: "Accessibility" }).click();
+  await page.getByRole("tab", { name: "Accessibility" }).click();
   await page.getByLabel("Text scale").selectOption("115");
   await expect.poll(() => page.evaluate(() => document.documentElement.style.fontSize)).toBe("115%");
   await page.getByRole("button", { name: "Done" }).click();
@@ -102,12 +102,12 @@ test("options apply live and persist independently across reload", async ({ page
   await page.getByRole("button", { name: "Options" }).click();
   await expect(page.getByLabel("Autosave cadence")).toHaveValue("off");
   await expect(page.getByLabel("Default game speed")).toHaveValue("2x");
-  await page.getByRole("button", { name: "Graphics" }).click();
+  await page.getByRole("tab", { name: "Graphics" }).click();
   await expect(page.getByLabel("Animations master")).not.toBeChecked();
   await expect(page.getByLabel("Resolution scale")).toHaveValue("0.75");
-  await page.getByRole("button", { name: "Audio" }).click();
+  await page.getByRole("tab", { name: "Audio" }).click();
   await expect(page.getByLabel("Master volume")).toHaveValue("0.55");
-  await page.getByRole("button", { name: "Accessibility" }).click();
+  await page.getByRole("tab", { name: "Accessibility" }).click();
   await expect(page.getByLabel("Text scale")).toHaveValue("115");
   const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v3") ?? "null"));
   expect(stored).toMatchObject({ version: 3, gameplay: { autosaveCadence: "off", defaultGameSpeed: "2x" }, accessibility: { textScale: 115 } });
@@ -129,7 +129,7 @@ test("keyboard-only options, remapping, conflicts, and save/load round-trip", as
   await page.keyboard.press("Shift+Tab");
   await expect(page.getByRole("button", { name: "Done" })).toBeFocused();
 
-  await page.getByRole("button", { name: "Accessibility" }).focus();
+  await page.getByRole("tab", { name: "Accessibility" }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Configure keybindings…" }).focus();
   await page.keyboard.press("Enter");
@@ -151,6 +151,9 @@ test("keyboard-only options, remapping, conflicts, and save/load round-trip", as
   await page.getByRole("button", { name: "Quick Start" }).focus();
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screenBase)).toBe("in-game");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Skip tutorial" }).focus();
+  await page.keyboard.press("Enter");
   await page.keyboard.press("KeyP");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().speed)).toBe("paused");
   await page.keyboard.press("KeyP");
@@ -161,15 +164,15 @@ test("keyboard-only options, remapping, conflicts, and save/load round-trip", as
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /load game/i }).focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByText("Quick Save")).toBeVisible();
-  await page.getByText("Quick Save").locator("..").getByRole("button", { name: "Load" }).focus();
+  await expect(page.getByTestId("save-slot-quick-save")).toContainText("Quick Save");
+  await page.getByTestId("save-slot-quick-save").getByRole("button", { name: "Load", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screenBase)).toBe("in-game");
 
   await page.reload();
   await page.getByRole("button", { name: "Options" }).focus();
   await page.keyboard.press("Enter");
-  await page.getByRole("button", { name: "Accessibility" }).focus();
+  await page.getByRole("tab", { name: "Accessibility" }).focus();
   await page.keyboard.press("Enter");
   await page.getByRole("button", { name: "Configure keybindings…" }).focus();
   await page.keyboard.press("Enter");
@@ -178,7 +181,7 @@ test("keyboard-only options, remapping, conflicts, and save/load round-trip", as
 test("accessible palettes, patterns, text scaling, and reduced motion apply live", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Options" }).click();
-  await page.getByRole("button", { name: "Accessibility" }).click();
+  await page.getByRole("tab", { name: "Accessibility" }).click();
   await page.getByLabel("Terrain patterns").check();
   await page.getByLabel("Reduced motion").check();
   await page.getByLabel("Text scale").selectOption("130");
@@ -186,6 +189,8 @@ test("accessible palettes, patterns, text scaling, and reduced motion apply live
   await page.getByRole("button", { name: "Quick Start" }).click();
   await expect.poll(() => page.evaluate(() => document.documentElement.dataset.reducedMotion)).toBe("true");
   await expect.poll(() => page.evaluate(() => document.documentElement.style.fontSize)).toBe("130%");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Skip tutorial" }).click();
 
   for (const mode of ["deuteranopia", "protanopia", "tritanopia"]) {
     await page.evaluate((colorVision) => {

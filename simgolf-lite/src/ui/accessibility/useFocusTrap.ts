@@ -5,7 +5,9 @@ const FOCUSABLE = "button:not([disabled]), input:not([disabled]), select:not([di
 export function useFocusTrap<T extends HTMLElement>(open: boolean, onClose: () => void) {
   const ref = useRef<T | null>(null);
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;

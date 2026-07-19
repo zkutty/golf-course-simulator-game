@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { formatCurrency } from "../i18n/format";
 import type { Difficulty, LandTheme, PlayMode, Terrain } from "../game/models/types";
 import type { GameSetup } from "../game/models/setup";
 import { SANDBOX_STARTING_CASH } from "../game/models/setup";
@@ -10,6 +11,8 @@ import { generateCourseName } from "../utils/courseNames";
 import { StartMenuBackground } from "./StartMenuBackground";
 import { ScenarioSelect } from "./ScenarioSelect";
 import type { ScenarioDefinition } from "../game/scenarios/types";
+import { T } from "../i18n/T";
+import { translateCurrent } from "../i18n/core";
 
 // New-game setup wizard (ZKU-162): Mode → Land → Difficulty → Details.
 // Output is a typed GameSetup consumed by the single createNewGame path.
@@ -93,7 +96,7 @@ function LandPreview(props: {
         display: "grid",
         gap: 4,
       }}
-      title={`Seed ${props.seed}`}
+      title={translateCurrent("newGame.seedTitle", { seed: props.seed })}
     >
       <canvas
         ref={canvasRef}
@@ -101,7 +104,7 @@ function LandPreview(props: {
         height={COURSE_HEIGHT * 2}
         style={{ width: 220, height: 140, borderRadius: 8, display: "block" }}
       />
-      <span style={{ fontSize: 11, color: "#fff", fontWeight: 600 }}>Seed {props.seed}</span>
+      <span style={{ fontSize: 11, color: "#fff", fontWeight: 600 }}><T id="auto.ui.newgamewizard.seed" />{props.seed}</span>
     </button>
   );
 }
@@ -268,21 +271,21 @@ export function NewGameWizard(props: {
           {step === "MODE" && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               <ChoiceCard
-                title="Challenge"
+                title={translateCurrent("auto.ui.newgamewizard.challenge")}
                 icon="🎯"
                 blurb="Fresh land with a set of objectives to beat — build, profit, and earn a name."
                 selected={mode === "challenge"}
                 onSelect={() => setMode("challenge")}
               />
               <ChoiceCard
-                title="Sandbox"
+                title={translateCurrent("auto.ui.newgamewizard.sandbox")}
                 icon="🌿"
                 blurb="Free play. No goals, no deadlines — shape the course of your dreams."
                 selected={mode === "sandbox"}
                 onSelect={() => setMode("sandbox")}
               />
               <ChoiceCard
-                title="Career"
+                title={translateCurrent("auto.ui.newgamewizard.career")}
                 icon="🏆"
                 blurb="An authored ladder of scenarios with medals and unlocks."
                 selected={mode === "career"}
@@ -297,21 +300,21 @@ export function NewGameWizard(props: {
             <div style={{ display: "grid", gap: 14 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                 <ChoiceCard
-                  title="Parkland"
+                  title={translateCurrent("auto.ui.newgamewizard.parkland")}
                   icon="🌳"
                   blurb="Classic tree-lined golf: gentle hills, ponds, and generous turf."
                   selected={theme === "parkland"}
                   onSelect={() => setTheme("parkland")}
                 />
                 <ChoiceCard
-                  title="Links"
+                  title={translateCurrent("auto.ui.newgamewizard.links")}
                   icon="🌾"
                   blurb="Windswept coastal dunes, deep rough, and barely a tree in sight."
                   selected={theme === "links"}
                   onSelect={() => setTheme("links")}
                 />
                 <ChoiceCard
-                  title="Desert"
+                  title={translateCurrent("auto.ui.newgamewizard.desert")}
                   icon="🌵"
                   blurb="Sand washes and rocky mesas — water is scarce and precious."
                   selected={theme === "desert"}
@@ -352,10 +355,9 @@ export function NewGameWizard(props: {
                     cursor: "pointer",
                   }}
                 >
-                  🎲 Reroll land
-                </button>
+                  <T id="auto.ui.newgamewizard.reroll.land" /></button>
                 <label style={{ fontSize: 12, color: "#fff", fontWeight: 600 }}>
-                  Seed{" "}
+                  <T id="auto.ui.newgamewizard.seed.2" />{" "}
                   <input
                     type="number"
                     value={seed}
@@ -384,21 +386,21 @@ export function NewGameWizard(props: {
           {step === "DIFFICULTY" && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               <ChoiceCard
-                title="Easy"
+                title={translateCurrent("auto.ui.newgamewizard.easy")}
                 icon="⛱️"
                 blurb="A relaxed build: more starting room for error, forgiving golfers, friendlier terms."
                 selected={difficulty === "easy"}
                 onSelect={() => setDifficulty("easy")}
               />
               <ChoiceCard
-                title="Normal"
+                title={translateCurrent("auto.ui.newgamewizard.normal")}
                 icon="⛳"
                 blurb="The intended experience — the tuning the sim was balanced around."
                 selected={difficulty === "normal"}
                 onSelect={() => setDifficulty("normal")}
               />
               <ChoiceCard
-                title="Hard"
+                title={translateCurrent("auto.ui.newgamewizard.hard")}
                 icon="🌪️"
                 blurb="Tight margins, faster wear, stricter lenders. For seasoned architects."
                 selected={difficulty === "hard"}
@@ -418,8 +420,7 @@ export function NewGameWizard(props: {
               }}
             >
               <label style={{ fontSize: 13, fontWeight: 700, color: "#3d4a3e" }}>
-                Course name
-                <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <T id="auto.ui.newgamewizard.course.name" /><div style={{ display: "flex", gap: 8, marginTop: 6 }}>
                   <input
                     value={courseName}
                     onChange={(e) => setCourseName(e.target.value)}
@@ -435,7 +436,7 @@ export function NewGameWizard(props: {
                   />
                   <button
                     onClick={() => setCourseName(generateCourseName())}
-                    title="Random name"
+                    title={translateCurrent("auto.ui.newgamewizard.random.name")}
                     style={{
                       padding: "0 14px",
                       borderRadius: 10,
@@ -451,12 +452,12 @@ export function NewGameWizard(props: {
               </label>
 
               <label style={{ fontSize: 13, fontWeight: 700, color: "#3d4a3e" }}>
-                Founder name <span style={{ fontWeight: 400, color: "#6b7280" }}>(optional)</span>
+                <T id="auto.ui.newgamewizard.founder.name" /><span style={{ fontWeight: 400, color: "#6b7280" }}><T id="auto.ui.newgamewizard.optional" /></span>
                 <input
                   value={founderName}
                   onChange={(e) => setFounderName(e.target.value)}
                   maxLength={30}
-                  placeholder="Your name on the clubhouse plaque"
+                  placeholder={translateCurrent("auto.ui.newgamewizard.your.name.on.the.clubhouse.plaque")}
                   style={{
                     display: "block",
                     width: "100%",
@@ -471,7 +472,7 @@ export function NewGameWizard(props: {
 
               {mode === "sandbox" && (
                 <label style={{ fontSize: 13, fontWeight: 700, color: "#3d4a3e" }}>
-                  Starting cash — ${startingCash.toLocaleString()}
+                  <T id="auto.ui.newgamewizard.starting.cash" />{formatCurrency(startingCash)}
                   <input
                     type="range"
                     min={SANDBOX_STARTING_CASH.min}
@@ -482,8 +483,7 @@ export function NewGameWizard(props: {
                     style={{ display: "block", width: "100%", marginTop: 8 }}
                   />
                   <span style={{ fontWeight: 400, fontSize: 11, color: "#6b7280" }}>
-                    Sandbox override — challenge runs use the balanced default.
-                  </span>
+                    <T id="auto.ui.newgamewizard.sandbox.override.challenge.runs.use.the.balanced.defau" /></span>
                 </label>
               )}
 
@@ -496,7 +496,7 @@ export function NewGameWizard(props: {
                   background: "rgba(0,0,0,0.05)",
                 }}
               >
-                {mode === "challenge" ? "🎯 Challenge" : "🌿 Sandbox"} • {theme} • {difficulty} • seed{" "}
+                {mode === "challenge" ? "🎯 Challenge" : "🌿 Sandbox"} • {theme} • {difficulty} <T id="auto.ui.newgamewizard.seed.3" />{" "}
                 {seed}
               </div>
             </div>

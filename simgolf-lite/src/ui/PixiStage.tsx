@@ -77,6 +77,7 @@ import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetric
 import { buildingSpec } from "../game/models/buildings";
 import { getLandTheme } from "../game/models/themes";
 import type { AtlasFrame } from "../render/atlas";
+import { T } from "../i18n/T";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -2646,11 +2647,12 @@ export function PixiStage(props: PixiStageProps) {
       }
     };
 
-    app.stage.on("pointerdown", handleClick);
-    app.stage.on("pointermove", handleMove);
+    const stage = app.stage;
+    stage.on("pointerdown", handleClick);
+    stage.on("pointermove", handleMove);
     return () => {
-      app.stage.off("pointerdown", handleClick);
-      app.stage.off("pointermove", handleMove);
+      stage.off("pointerdown", handleClick);
+      stage.off("pointermove", handleMove);
     };
   }, [appReady, screenToTile, screenToIsoPlane, onClickTile, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover]);
 
@@ -2692,11 +2694,10 @@ export function PixiStage(props: PixiStageProps) {
             boxShadow: "0 6px 24px rgba(0,0,0,0.35)",
           }}
         >
-          <div style={{ fontSize: 21, fontWeight: 700 }}>Hole {flyoverCard.hole}</div>
+          <div style={{ fontSize: 21, fontWeight: 700 }}><T id="auto.ui.pixistage.hole" />{flyoverCard.hole}</div>
           <div style={{ fontSize: 13, opacity: 0.85, marginTop: 2 }}>
-            Par {flyoverCard.par} · {flyoverCard.yards} yds
-          </div>
-          <div style={{ fontSize: 10, opacity: 0.55, marginTop: 4 }}>click or Esc to skip</div>
+            <T id="auto.ui.pixistage.par" />{flyoverCard.par} · {flyoverCard.yards} <T id="auto.ui.pixistage.yds" /></div>
+          <div style={{ fontSize: 10, opacity: 0.55, marginTop: 4 }}><T id="auto.ui.pixistage.click.or.esc.to.skip" /></div>
         </div>
       )}
     </div>

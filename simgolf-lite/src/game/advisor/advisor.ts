@@ -1,6 +1,9 @@
 import type { Course, WeekResult, World } from "../models/types";
 import type { AdvisorFrequency } from "../onboarding/profile";
 import { scoreCourseHoles } from "../sim/holes";
+import type { Translator } from "../../i18n/context";
+import { translate } from "../../i18n/core";
+import { formatCurrency, formatNumber } from "../../i18n/format";
 
 export type AdvisorExpression = "neutral" | "pleased" | "worried" | "excited";
 export type AdvisorPriority = "hint" | "info" | "celebration" | "warning";
@@ -20,6 +23,7 @@ export function advisorMessages(
   world: World,
   last: WeekResult | undefined,
   previous: WeekResult | undefined,
+  t: Translator = (key, params) => translate("en", key, params),
 ): AdvisorMessage[] {
   const messages: AdvisorMessage[] = [];
   const holes = scoreCourseHoles(course);
@@ -29,8 +33,7 @@ export function advisorMessages(
   if (world.cash < weeklyExpenses * 2) {
     messages.push({
       id: `cash-runway-${world.week}`,
-      title: "The clubhouse till is getting light",
-      body: "We have less than two weeks of recent expenses in cash. Trim a budget or raise revenue before the bank starts practicing its swing.",
+      title: t("advisor.cash.title"), body: t("advisor.cash.body"),
       expression: "worried",
       priority: "warning",
     });
@@ -38,8 +41,7 @@ export function advisorMessages(
   if (course.condition < 0.55) {
     messages.push({
       id: `condition-${world.week}`,
-      title: "The turf is asking for help",
-      body: "Condition has slipped below 55%. A stronger maintenance budget now is cheaper than rebuilding reputation later.",
+      title: t("advisor.condition.title"), body: t("advisor.condition.body"),
       expression: "worried",
       priority: "warning",
     });
@@ -47,8 +49,7 @@ export function advisorMessages(
   if ((last?.profit ?? 0) > 0 && (previous?.profit ?? 0) <= 0) {
     messages.push({
       id: `first-profit-${world.week}`,
-      title: "That week finished under par",
-      body: `A $${Math.round(last!.profit).toLocaleString()} profit — proof that the course loop is working. Now make it repeatable.`,
+      title: t("advisor.profit.title"), body: t("advisor.profit.body", { profit: formatCurrency(last!.profit) }),
       expression: "excited",
       priority: "celebration",
     });
@@ -56,8 +57,7 @@ export function advisorMessages(
   if ((last?.turnaways ?? 0) > 0) {
     messages.push({
       id: `turnaways-${world.week}`,
-      title: "The tee sheet is bursting",
-      body: `${last!.turnaways} golfers were turned away. More valid holes add capacity without asking marketing to work any harder.`,
+      title: t("advisor.turnaways.title"), body: t("advisor.turnaways.body", { count: formatNumber(last!.turnaways!) }),
       expression: "pleased",
       priority: "info",
     });
@@ -67,8 +67,7 @@ export function advisorMessages(
     const holeIndex = holes.holes.indexOf(worst);
     messages.push({
       id: `weak-hole-${holeIndex}-${world.week}`,
-      title: `Hole ${holeIndex + 1} needs a quiet word`,
-      body: "Its overall design score is lagging. Open the inspector and look at corridor safety, aesthetics, and effective distance.",
+      title: t("advisor.weakHole.title", { hole: formatNumber(holeIndex + 1) }), body: t("advisor.weakHole.body"),
       expression: "worried",
       priority: "info",
       holeIndex,
@@ -77,8 +76,7 @@ export function advisorMessages(
   if (!last && valid.length < 9) {
     messages.push({
       id: `finish-course-${valid.length}`,
-      title: "One good hole at a time",
-      body: `${valid.length}/9 holes are valid. Finish the next cleanly before polishing the whole property.`,
+      title: t("advisor.finish.title"), body: t("advisor.finish.body", { count: formatNumber(valid.length) }),
       expression: "neutral",
       priority: "hint",
     });

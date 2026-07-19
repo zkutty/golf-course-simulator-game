@@ -1,8 +1,11 @@
 import type { SelectedGolferDetail } from "../hooks/useLiveSimulation";
+import { formatCurrency } from "../i18n/format";
 import { ARCHETYPES } from "../game/live/archetypes";
 import type { GolferArchetypeName } from "../game/live/types";
 import { recentEmotes } from "../game/render/emoteFeed";
 import type { EmoteKind } from "../game/render/emotes";
+import { T } from "../i18n/T";
+import { translateCurrent } from "../i18n/core";
 
 // Compact glyphs for the recent-thoughts strip (mirrors the on-course
 // bubbles, ZKU-155).
@@ -82,7 +85,7 @@ export function GolferInspector(props: {
         </div>
         <button
           onClick={onClose}
-          title="Close"
+          title={translateCurrent("auto.ui.golferinspector.close")}
           style={{
             border: "none",
             background: "rgba(255,255,255,0.1)",
@@ -100,16 +103,16 @@ export function GolferInspector(props: {
       </div>
 
       <div style={{ display: "flex", gap: 14, marginTop: 10 }}>
-        <Stat label="Position" value={holeText} />
-        <Stat label="Score" value={toPar(selected.scoreToPar)} accent="#bbf7d0" />
-        <Stat label="Thru" value={`${played}`} />
-        <Stat label="Spent" value={`$${selected.spent}`} accent="#bbf7d0" />
-        <Stat label="Wallet" value={`$${selected.wallet}`} />
+        <Stat label={translateCurrent("golfer.position")} value={holeText} />
+        <Stat label={translateCurrent("golfer.score")} value={toPar(selected.scoreToPar)} accent="#bbf7d0" />
+        <Stat label={translateCurrent("golfer.thru")} value={`${played}`} />
+        <Stat label={translateCurrent("golfer.spent")} value={formatCurrency(selected.spent)} accent="#bbf7d0" />
+        <Stat label={translateCurrent("golfer.wallet")} value={formatCurrency(selected.wallet)} />
       </div>
 
       <div style={{ marginTop: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, opacity: 0.7 }}>
-          <span>Mood</span>
+          <span><T id="auto.ui.golferinspector.mood" /></span>
           <span>{moodLabel(selected.mood)}</span>
         </div>
         <div
@@ -133,7 +136,7 @@ export function GolferInspector(props: {
 
       {recentEmotes(selected.id).length > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 4 }}>Recent thoughts</div>
+          <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 4 }}><T id="auto.ui.golferinspector.recent.thoughts" /></div>
           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
             {[...recentEmotes(selected.id)].reverse().map((e, i) => (
               <div key={`${e.atMs}-${i}`} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12 }}>
@@ -157,7 +160,7 @@ export function GolferInspector(props: {
 
       {played > 0 && (
         <div style={{ marginTop: 12 }}>
-          <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 4 }}>Scorecard</div>
+          <div style={{ fontSize: 11, opacity: 0.7, marginBottom: 4 }}><T id="auto.ui.golferinspector.scorecard" /></div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
             {selected.holeStrokes.slice(0, played).map((strokes, i) => {
               const d = strokes - selected.holePar[i];
@@ -166,7 +169,7 @@ export function GolferInspector(props: {
               return (
                 <div
                   key={i}
-                  title={`Hole ${i + 1} · par ${selected.holePar[i]} · ${toPar(d)}`}
+                  title={translateCurrent("golfer.holeScoreTitle", { hole: i + 1, par: selected.holePar[i], score: toPar(d) })}
                   style={{
                     width: 34,
                     padding: "3px 0",

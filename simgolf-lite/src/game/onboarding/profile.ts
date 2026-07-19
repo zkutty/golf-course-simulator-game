@@ -158,8 +158,8 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
       terrainPatterns: bool(accessibility.terrainPatterns, defaults.accessibility.terrainPatterns),
       reducedMotion: bool(accessibility.reducedMotion, defaults.accessibility.reducedMotion),
       textScale: [90, 100, 115, 130].includes(accessibility.textScale as number) ? accessibility.textScale as TextScale : defaults.accessibility.textScale,
-    },
       keybindings: normalizeKeybindings(accessibility.keybindings),
+    },
   };
 }
 

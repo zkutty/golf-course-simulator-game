@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { MenuButton } from "./MenuButton";
 import { StartMenuBackground } from "./StartMenuBackground";
+import { useI18n } from "../i18n/useI18n";
+import { T } from "../i18n/T";
 
 export interface StartMenuProps {
   canLoad: boolean;
@@ -13,7 +15,8 @@ export interface StartMenuProps {
 }
 
 export function StartMenu(props: StartMenuProps) {
-  const loadSubtitle = useMemo(() => (props.canLoad ? undefined : "No saved game"), [props.canLoad]);
+  const { t } = useI18n();
+  const loadSubtitle = useMemo(() => (props.canLoad ? undefined : t("title.noSave")), [props.canLoad, t]);
 
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
@@ -107,7 +110,7 @@ export function StartMenu(props: StartMenuProps) {
                 textShadow: "0 4px 12px rgba(61, 74, 62, 0.5), 0 2px 4px rgba(61, 74, 62, 0.3)",
               }}
             >
-              CourseCraft
+              {t("app.name")}
             </div>
             <div
               style={{
@@ -119,7 +122,7 @@ export function StartMenu(props: StartMenuProps) {
                 textShadow: "0 2px 8px rgba(61, 74, 62, 0.4)",
               }}
             >
-              Design and run your course
+              {t("title.tagline")}
             </div>
           </div>
 
@@ -129,13 +132,13 @@ export function StartMenu(props: StartMenuProps) {
               <MenuButton
                 variant="primary"
                 icon="▶"
-                subtitle="Resume your most recent course"
+                subtitle={t("title.continueHint")}
                 onClick={() => {
                   props.onButtonClick?.();
                   props.onContinue();
                 }}
               >
-                Continue
+                {t("title.continue")}
               </MenuButton>
             )}
             <MenuButton
@@ -146,19 +149,19 @@ export function StartMenu(props: StartMenuProps) {
                 props.onNewGame();
               }}
             >
-              New Game
+              {t("title.newGame")}
             </MenuButton>
 
             <MenuButton
               variant="secondary"
               icon="🚀"
-              subtitle="Skip setup — fresh sandbox land"
+              subtitle={t("title.quickStartHint")}
               onClick={() => {
                 props.onButtonClick?.();
                 props.onQuickStart();
               }}
             >
-              Quick Start
+              {t("title.quickStart")}
             </MenuButton>
 
             <MenuButton
@@ -171,7 +174,7 @@ export function StartMenu(props: StartMenuProps) {
               disabled={!props.canLoad}
               subtitle={loadSubtitle}
             >
-              Load Game
+              {t("title.load")}
             </MenuButton>
 
             <MenuButton
@@ -182,12 +185,12 @@ export function StartMenu(props: StartMenuProps) {
                 props.onOptions();
               }}
             >
-              Options
+              {t("title.options")}
             </MenuButton>
           </div>
 
           <div style={{ textAlign: "center", marginTop: 26, fontSize: 12, color: "rgba(255,255,255,0.65)", textShadow: "0 1px 3px rgba(0, 0, 0, 0.3)" }}>
-            v{__APP_VERSION__} • A cozy golf management experience
+            <T id="auto.ui.startmenu.v" />{__APP_VERSION__} • {t("title.footer")}
           </div>
         </div>
       </div>

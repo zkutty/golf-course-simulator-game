@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
+import { formatCurrency } from "../i18n/format";
 import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
@@ -1561,12 +1562,12 @@ export function CanvasCourse(props: {
       // Build tooltip text
       const lines: string[] = [];
       if (cost.net > 0) {
-        lines.push(`Cost: $${Math.ceil(cost.net).toLocaleString()}`);
+        lines.push(`Cost: ${formatCurrency(Math.ceil(cost.net))}`);
         if (!canAfford) {
           lines.push("Insufficient funds");
         }
       } else if (cost.net < 0) {
-        lines.push(`Refund: $${Math.ceil(-cost.net).toLocaleString()}`);
+        lines.push(`Refund: ${formatCurrency(Math.ceil(-cost.net))}`);
       }
       
       if (lines.length === 0) return;

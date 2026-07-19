@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState, useCallback } from "react";
+import { formatCurrency } from "./i18n/format";
+import { useI18n } from "./i18n/useI18n";
 import { perfProfiler } from "./utils/performanceProfiler";
 import { CanvasCourse } from "./ui/CanvasCourse";
 import "./ui/cozyLayout.css";
@@ -74,6 +76,7 @@ import { LoadingCard } from "./ui/appShell/LoadingCard";
 import { SettingsModal } from "./ui/SettingsModal";
 import type { SpeedName } from "./game/live/liveConfig";
 import { eventMatchesBinding } from "./accessibility/keybindings";
+import { T } from "./i18n/T";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -82,6 +85,7 @@ type ViewMode = "global" | "hole";
 const STRIKE_SFX = "/audio/ball-strike.mp3";
 
 export default function App() {
+  const { t } = useI18n();
   const [flow, flowDispatch] = useReducer(reduceScreenFlow, INITIAL_SCREEN_FLOW);
   const [appProfile, setAppProfile] = useState<AppProfile>(() => loadAppProfile());
   const screen = flow.base === "title" ? "menu" : flow.base === "setup-wizard" ? "setup" : flow.base === "in-game" ? "game" : "loading";
@@ -266,24 +270,24 @@ export default function App() {
     if (flow.base !== "in-game") return;
     const sequence = changeSequenceRef.current;
     const current = gameStateRef.current;
-    await saveToSlot("quick-save", "manual", "Quick Save", {
+    await saveToSlot("quick-save", "manual", t("save.quick"), {
       course: current.course, world: current.world, history: historyRef.current,
       live: live.getSnapshot(), tutorial: tutorialProgress,
     });
     markClean(sequence);
-    setA11yMessage("Quick save complete.");
-  }, [flow.base, live, markClean, tutorialProgress]);
+    setA11yMessage(t("save.quickComplete"));
+  }, [flow.base, live, markClean, t, tutorialProgress]);
 
 
   const quitToTitle = useCallback(() => {
-    if (dirty && !window.confirm("Quit to title and lose unsaved changes?")) return;
+    if (dirty && !window.confirm(t("quit.confirm"))) return;
     live.setSpeed("paused");
     flowDispatch({ type: "BACK_TO_TITLE" });
-  }, [dirty, live]);
+  }, [dirty, live, t]);
 
   function restartCurrentScenario() {
     const scenario = getScenario(world.scenarioId);
-    if (!scenario || !window.confirm("Restart this scenario from the beginning?")) return;
+    if (!scenario || !window.confirm(t("confirm.restartScenario"))) return;
     startScenario(scenario);
   }
 
@@ -587,14 +591,14 @@ export default function App() {
     if (Date.now() < advisorCooldownUntilRef.current) return;
     const frequency = loadAppProfile().advisorFrequency;
     const previous = history.length >= 2 ? history[history.length - 2] : undefined;
-    const next = advisorMessages(course, world, last, previous).find(
+    const next = advisorMessages(course, world, last, previous, t).find(
       (message) => allowsMessage(frequency, message) && !seenAdvisorMessagesRef.current.has(message.id)
     );
     if (next) {
       setAdvisorMessage(next);
       setA11yMessage(`${next.title}. ${next.body}`);
     }
-  }, [screen, tutorialProgress, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, course, world, last, history, advisorWake]);
+  }, [screen, tutorialProgress, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, course, world, last, history, advisorWake, t]);
 
   function dismissAdvisor() {
     if (advisorMessage) seenAdvisorMessagesRef.current.add(advisorMessage.id);
@@ -607,7 +611,7 @@ export default function App() {
 
   function startFlyover() {
     if (appProfile.accessibility.reducedMotion) {
-      setA11yMessage("Flyover is disabled while reduced motion is on.");
+      setA11yMessage(t("flyover.disabled"));
       return;
     }
     if (advisorMessage) dismissAdvisor();
@@ -616,8 +620,8 @@ export default function App() {
 
   // Course name propagates to the browser tab (ZKU-162).
   useEffect(() => {
-    document.title = screen === "game" ? `${course.name} — CourseCraft` : "CourseCraft";
-  }, [screen, course.name]);
+    document.title = screen === "game" ? `${course.name} — ${t("app.name")}` : t("app.name");
+  }, [screen, course.name, t]);
 
   // Handle audio based on screen and view mode
   useEffect(() => {
@@ -696,7 +700,7 @@ export default function App() {
 
   // Career (ZKU-164): scenarios build their run from the authored definition.
   function startScenario(scenario: ScenarioDefinition) {
-    flowDispatch({ type: "BEGIN_LOADING", label: `Preparing ${scenario.name}…` });
+    flowDispatch({ type: "BEGIN_LOADING", label: t("scenario.preparing", { name: t(scenario.nameKey) }) });
     window.setTimeout(() => {
       recordScenarioAttempt(scenario.id);
       const { course: newCourse, world: newWorld } = createScenarioGame(scenario);
@@ -815,7 +819,7 @@ export default function App() {
         setShowVictory(false);
         scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
         flowDispatch({ type: "BACK_TO_TITLE" });
-        flowDispatch({ type: "BEGIN_LOADING", label: "Restoring your course…" });
+        flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
         flowDispatch({ type: "ENTER_GAME" });
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         return {
@@ -846,7 +850,7 @@ export default function App() {
   function startNewGame(setup: GameSetup) {
     void audio.unlock();
     void audio.playSfx(STRIKE_SFX);
-    flowDispatch({ type: "BEGIN_LOADING", label: "Growing your new course…" });
+    flowDispatch({ type: "BEGIN_LOADING", label: t("loading.growCourse") });
     window.setTimeout(() => {
       restartRun(setup);
       live.setSpeed(appProfile.gameplay.defaultGameSpeed);
@@ -864,7 +868,7 @@ export default function App() {
     void audio.unlock();
     const recent = await mostRecentSlot();
     if (!recent) return;
-    flowDispatch({ type: "BEGIN_LOADING", label: "Restoring your latest course…" });
+    flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreLatest") });
     const loaded = await loadSlot(recent.id);
     if (!loaded) {
       flowDispatch({ type: "BACK_TO_TITLE" });
@@ -920,7 +924,7 @@ export default function App() {
     const prev = course.tiles[idx];
     const { net, charged, refunded } = computeTerrainChangeCost(prev, next, costMult, course.theme);
     if (net > 0 && world.cash < net) {
-      setPaintError(`Insufficient funds: need $${Math.ceil(net).toLocaleString()}`);
+      setPaintError(t("error.insufficientFunds", { amount: formatCurrency(Math.ceil(net)) }));
       return false;
     }
     if (prev === next) return true;
@@ -1014,7 +1018,7 @@ export default function App() {
 
     // Check affordability
     if (totalNet > 0 && world.cash < totalNet) {
-      setPaintError(`Insufficient funds: need $${Math.ceil(totalNet).toLocaleString()} to paint fairway`);
+      setPaintError(t("error.insufficientFairway", { amount: formatCurrency(Math.ceil(totalNet)) }));
       return;
     }
 
@@ -1112,7 +1116,7 @@ export default function App() {
     const totalNet = placeCost.net + removeCost.net; // removeCost.net is negative (refund), so this is correct
     
     if (totalNet > 0 && world.cash < totalNet) {
-      setPaintError(`Insufficient funds to move ${markerType}: need $${Math.ceil(totalNet).toLocaleString()}`);
+      setPaintError(t("error.insufficientMove", { marker: markerType, amount: formatCurrency(Math.ceil(totalNet)) }));
       return;
     }
     
@@ -1135,7 +1139,7 @@ export default function App() {
     const greenSlope = maxSlopeInRect(course, green.x - 1, green.y - 1, green.x + 1, green.y + 1);
     if (teeSlope > 1 || greenSlope > 1) {
       setPaintError(
-        `${teeSlope > 1 ? "Tee" : "Green"} site is too steep — level the ground with the Sculpt tool first.`
+        t("error.siteSteep", { marker: teeSlope > 1 ? t("terrain.tee") : t("terrain.green") })
       );
       return;
     }
@@ -1149,7 +1153,7 @@ export default function App() {
     const greenCost = computeTerrainChangeCost(greenPrev, "green", costMult, course.theme);
     const totalNet = teeCost.net + greenCost.net;
     if (totalNet > 0 && world.cash < totalNet) {
-      setPaintError(`Insufficient funds to confirm: need $${Math.ceil(totalNet).toLocaleString()}`);
+      setPaintError(t("error.insufficientConfirm", { amount: formatCurrency(Math.ceil(totalNet)) }));
       return;
     }
 
@@ -1177,7 +1181,7 @@ export default function App() {
     
     // Check bounds (only for marker placement, not for painting which supports infinite canvas)
     if (editorMode === "HOLE_WIZARD" && (x < 0 || y < 0 || x >= course.width || y >= course.height)) {
-      setPaintError("Cannot place markers outside course bounds");
+      setPaintError(t("error.markersBounds"));
       return;
     }
     
@@ -1214,7 +1218,7 @@ export default function App() {
       if (deltas.length === 0) return;
       const cost = sculptSteps(deltas) * ELEVATION_COST_PER_STEP * costMult;
       if (cost > world.cash) {
-        setPaintError(`Not enough cash for earthworks ($${cost.toLocaleString()} needed).`);
+        setPaintError(t("error.earthworksFunds", { amount: formatCurrency(cost) }));
         return;
       }
       setPaintError(null);
@@ -1230,7 +1234,7 @@ export default function App() {
     if (editorMode === "OBSTACLE") {
       const existingIdx = course.obstacles.findIndex((o) => o.x === x && o.y === y);
       if (existingIdx >= 0) {
-        if (appProfile.gameplay.confirmBulldoze && !window.confirm("Bulldoze this obstacle?")) return;
+        if (appProfile.gameplay.confirmBulldoze && !window.confirm(t("confirm.bulldoze"))) return;
         dispatch({ type: "REMOVE_OBSTACLE", x, y });
       } else {
         dispatch({ type: "PLACE_OBSTACLE", x, y, obstacleType });
@@ -1241,22 +1245,22 @@ export default function App() {
       const existing = buildingAtTile(course, x, y);
       if (existing) {
         if (existing.type === "clubhouse") {
-          setPaintError("The starter clubhouse cannot be removed.");
+          setPaintError(t("error.clubhouseRemove"));
           return;
         }
-        if (appProfile.gameplay.confirmSalvage && !window.confirm(`Salvage this ${BUILDING_SPECS[existing.type].name.toLowerCase()}?`)) return;
+        if (appProfile.gameplay.confirmSalvage && !window.confirm(t("confirm.salvage", { building: BUILDING_SPECS[existing.type].name.toLowerCase() }))) return;
         dispatch({ type: "REMOVE_BUILDING", x, y });
         setPaintError(null);
         return;
       }
       const validation = canPlaceBuilding(course, buildingType, x, y);
       if (!validation.ok) {
-        setPaintError(`Cannot place ${BUILDING_SPECS[buildingType].name.toLowerCase()}: ${validation.reason}.`);
+        setPaintError(t("error.buildingPlacement", { building: BUILDING_SPECS[buildingType].name.toLowerCase(), reason: validation.reason ?? "unknown restriction" }));
         return;
       }
       const cost = BUILDING_SPECS[buildingType].buildCost;
       if (world.cash < cost) {
-        setPaintError(`Insufficient funds: need $${cost.toLocaleString()}.`);
+        setPaintError(t("error.insufficientFunds", { amount: formatCurrency(cost) }));
         return;
       }
       dispatch({ type: "PLACE_BUILDING", buildingType, x, y });
@@ -1268,12 +1272,12 @@ export default function App() {
     if (wizardStep === "TEE" || wizardStep === "MOVE_TEE") {
       // Validate: cannot place on water and must be in bounds
       if (x < 0 || y < 0 || x >= course.width || y >= course.height) {
-        setPaintError("Cannot place tee outside course bounds");
+        setPaintError(t("error.teeBounds"));
         return;
       }
       const terrain = course.tiles[y * course.width + x];
       if (terrain === "water") {
-        setPaintError("Cannot place tee on water");
+        setPaintError(t("error.teeWater"));
         return;
       }
       
@@ -1305,12 +1309,12 @@ export default function App() {
     if (wizardStep === "GREEN" || wizardStep === "MOVE_GREEN") {
       // Validate: cannot place on water and must be in bounds
       if (x < 0 || y < 0 || x >= course.width || y >= course.height) {
-        setPaintError("Cannot place green outside course bounds");
+        setPaintError(t("error.greenBounds"));
         return;
       }
       const terrain = course.tiles[y * course.width + x];
       if (terrain === "water") {
-        setPaintError("Cannot place green on water");
+        setPaintError(t("error.greenWater"));
         return;
       }
       
@@ -1471,11 +1475,11 @@ export default function App() {
       }}
       onSaved={() => markClean(payloadSequenceRef.current)}
       onLoaded={(payload) => {
-        flowDispatch({ type: "BEGIN_LOADING", label: "Restoring your course…" });
+        flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
         window.setTimeout(() => {
           applyLoadedGame(payload);
           flowDispatch({ type: "ENTER_GAME" });
-          setPaintError("Game loaded.");
+          setPaintError(t("save.loaded"));
           setTimeout(() => setPaintError(null), 2000);
         }, 0);
       }}
@@ -1764,8 +1768,7 @@ export default function App() {
                     cursor: "pointer",
                   }}
                 >
-                  Exit
-                </button>
+                  <T id="auto.app.exit" /></button>
                 <button
                   onClick={() => navigateHole(-1)}
                   style={{
@@ -1778,8 +1781,7 @@ export default function App() {
                     cursor: "pointer",
                   }}
                 >
-                  ← Prev
-                </button>
+                  <T id="auto.app.prev" /></button>
                 <button
                   onClick={() => navigateHole(1)}
                   style={{
@@ -1792,8 +1794,7 @@ export default function App() {
                     cursor: "pointer",
                   }}
                 >
-                  Next →
-                </button>
+                  <T id="auto.app.next" /></button>
               </div>
               <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
                 <HoleInspector
@@ -1959,10 +1960,9 @@ function BridgeLoanPrompt(props: { onAccept: () => void; onDecline: () => void }
       }}
     >
       <div style={{ width: "min(520px, 100%)", background: "#fff", borderRadius: 14, padding: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 6 }}>Distress: take a Bridge Loan?</div>
+        <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 6 }}><T id="auto.app.distress.take.a.bridge.loan" /></div>
         <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
-          $25,000 • 18% APR • 26 weeks • amortized weekly payments. Missing payments hurts reputation and worsens terms.
-        </div>
+          <T id="auto.app.25.000.18.apr.26.weeks.amortized.weekly.payments.missi" /></div>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={props.onAccept}
@@ -1976,8 +1976,7 @@ function BridgeLoanPrompt(props: { onAccept: () => void; onDecline: () => void }
               fontWeight: 800,
             }}
           >
-            Take loan
-          </button>
+            <T id="auto.app.take.loan" /></button>
           <button
             onClick={props.onDecline}
             style={{
@@ -1989,8 +1988,7 @@ function BridgeLoanPrompt(props: { onAccept: () => void; onDecline: () => void }
               fontWeight: 800,
             }}
           >
-            Decline
-        </button>
+            <T id="auto.app.decline" /></button>
         </div>
       </div>
     </div>

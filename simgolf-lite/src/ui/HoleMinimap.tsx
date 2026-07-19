@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from "react";
 import type { Course, Hole, Point } from "../game/models/types";
 import type { CameraState } from "../game/render/camera";
+import { translateCurrent } from "../i18n/core";
 
 const COLORS: Record<string, string> = {
   fairway: "#4fa64f",
@@ -153,7 +154,7 @@ export function HoleMinimap({
         boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
         cursor: "pointer",
       }}
-      title="Click to center view"
+      title={translateCurrent("auto.ui.holeminimap.click.to.center.view")}
     >
       <canvas
         ref={canvasRef}

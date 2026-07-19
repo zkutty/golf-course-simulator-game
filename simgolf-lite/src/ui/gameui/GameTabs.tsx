@@ -9,6 +9,7 @@ export interface GameTabsProps {
 export function GameTabs({ tabs, activeTab, onTabChange }: GameTabsProps) {
   return (
     <div
+      role="tablist"
       style={{
         display: "flex",
         gap: 8,
@@ -33,7 +34,7 @@ export function GameTabs({ tabs, activeTab, onTabChange }: GameTabsProps) {
           boxShadow: isActive ? "0 10px 20px rgba(0,0,0,0.14)" : undefined,
         };
         return (
-          <button key={t} onClick={() => onTabChange(t)} style={btn}>
+          <button key={t} role="tab" aria-selected={isActive} onClick={() => onTabChange(t)} style={btn}>
             {t}
           </button>
         );
@@ -51,6 +52,7 @@ export interface PillTabsProps {
 export function PillTabs({ tabs, activeTab, onTabChange }: PillTabsProps) {
   return (
     <div
+      role="tablist"
       style={{
         display: "inline-flex",
         gap: 6,
@@ -66,6 +68,8 @@ export function PillTabs({ tabs, activeTab, onTabChange }: PillTabsProps) {
         return (
           <button
             key={t.id}
+            role="tab"
+            aria-selected={isActive}
             onClick={() => onTabChange(t.id)}
             style={{
               padding: "8px 12px",
