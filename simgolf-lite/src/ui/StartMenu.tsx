@@ -1,22 +1,18 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { MenuButton } from "./MenuButton";
 import { StartMenuBackground } from "./StartMenuBackground";
-import { SettingsModal } from "./SettingsModal";
 
 export interface StartMenuProps {
   canLoad: boolean;
   onNewGame: () => void;
   onQuickStart: () => void;
   onLoadGame: () => void;
-  audioVolumes: { music: number; ambience: number };
-  onAudioVolumesChange: (volumes: { music?: number; ambience?: number }) => void;
+  onContinue: () => void;
+  onOptions: () => void;
   onButtonClick?: () => void;
-  renderer: "canvas" | "pixi";
-  onRendererChange: (renderer: "canvas" | "pixi") => void;
 }
 
 export function StartMenu(props: StartMenuProps) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const loadSubtitle = useMemo(() => (props.canLoad ? undefined : "No saved game"), [props.canLoad]);
 
   return (
@@ -129,8 +125,21 @@ export function StartMenu(props: StartMenuProps) {
 
           {/* Buttons */}
           <div style={{ display: "grid", gap: 14, width: "min(420px, 100%)", margin: "0 auto" }}>
+            {props.canLoad && (
+              <MenuButton
+                variant="primary"
+                icon="▶"
+                subtitle="Resume your most recent course"
+                onClick={() => {
+                  props.onButtonClick?.();
+                  props.onContinue();
+                }}
+              >
+                Continue
+              </MenuButton>
+            )}
             <MenuButton
-              variant="primary"
+              variant={props.canLoad ? "secondary" : "primary"}
               icon="⛳"
               onClick={() => {
                 props.onButtonClick?.();
@@ -170,10 +179,10 @@ export function StartMenu(props: StartMenuProps) {
               icon="⚙️"
               onClick={() => {
                 props.onButtonClick?.();
-                setSettingsOpen(true);
+                props.onOptions();
               }}
             >
-              Settings
+              Options
             </MenuButton>
           </div>
 
@@ -183,16 +192,6 @@ export function StartMenu(props: StartMenuProps) {
         </div>
       </div>
 
-        <SettingsModal
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          audioVolumes={props.audioVolumes}
-          onAudioVolumesChange={props.onAudioVolumesChange}
-          renderer={props.renderer}
-          onRendererChange={props.onRendererChange}
-        />
     </div>
   );
 }
-
-

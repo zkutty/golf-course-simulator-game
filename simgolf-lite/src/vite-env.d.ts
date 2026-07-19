@@ -5,7 +5,19 @@ declare const __APP_VERSION__: string;
 
 interface Window {
   __coursecraftTest?: {
-    state(): { screen: string; week: number; cash: number; courseHash: string };
+    state(): {
+      screen: string;
+      screenBase: "title" | "setup-wizard" | "loading" | "in-game";
+      paused: boolean;
+      modal: "options" | "save-load" | "golfopedia" | "scenario-select" | null;
+      dirty: boolean;
+      speed: "paused" | "1x" | "2x" | "3x";
+      dayMinute: number;
+      golferPositions: Array<[number, number, number]>;
+      week: number;
+      cash: number;
+      courseHash: string;
+    };
     runGoldenWeek(): Promise<{
       beforeHash: string;
       afterHash: string;

@@ -46,14 +46,14 @@ export function SettingsModal(props: SettingsModalProps) {
   return (
     <div
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
         background: "rgba(0,0,0,0.45)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: 16,
-        zIndex: 999,
+        zIndex: 99990,
       }}
       onClick={props.onClose}
     >

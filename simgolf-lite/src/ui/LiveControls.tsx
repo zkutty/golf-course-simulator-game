@@ -21,6 +21,7 @@ export function LiveControls(props: {
   onSetSpeed: (s: SpeedName) => void;
   cash: number;
   reputation: number;
+  onOpenPauseMenu?: () => void;
 }) {
   const { status, speed, onSetSpeed, cash, reputation } = props;
   const last = status.lastDay;
@@ -81,6 +82,10 @@ export function LiveControls(props: {
           );
         })}
       </div>
+
+      {props.onOpenPauseMenu && (
+        <button onClick={props.onOpenPauseMenu} title="Pause menu" aria-label="Open pause menu" style={{ minWidth: 34, padding: "5px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.3)", background: "rgba(255,255,255,.1)", color: "white", cursor: "pointer", fontWeight: 800 }}>☰</button>
+      )}
 
       <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.15)" }} />
 

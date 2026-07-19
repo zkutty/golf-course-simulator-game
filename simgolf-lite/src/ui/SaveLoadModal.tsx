@@ -22,6 +22,7 @@ export interface SaveLoadModalProps {
   canSave: boolean;
   getPayload?: () => SavePayload;
   onLoaded: (payload: SavePayload) => void;
+  onSaved?: () => void;
 }
 
 const kindLabel: Record<SaveSlotMeta["kind"], string> = {
@@ -66,6 +67,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
     if (!props.getPayload) return;
     const name = newName.trim() || `Save — week ${props.getPayload().world.week}`;
     await saveToSlot(null, "manual", name, props.getPayload());
+    props.onSaved?.();
     setNewName("");
     flash("Saved.");
     refresh();
@@ -74,6 +76,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
   const handleOverwrite = async (slot: SaveSlotMeta) => {
     if (!props.getPayload) return;
     await saveToSlot(slot.id, slot.kind, slot.name, props.getPayload());
+    props.onSaved?.();
     flash(`Overwrote "${slot.name}".`);
     refresh();
   };
@@ -142,14 +145,14 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
   return (
     <div
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
         background: "rgba(0,0,0,0.45)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: 16,
-        zIndex: 999,
+        zIndex: 99990,
       }}
       onClick={props.onClose}
     >

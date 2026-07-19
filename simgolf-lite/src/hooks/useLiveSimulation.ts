@@ -102,7 +102,7 @@ export function useLiveSimulation(args: {
 }) {
   const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick } = args;
 
-  const [speed, setSpeed] = useState<SpeedName>("paused");
+  const [speed, setSpeedState] = useState<SpeedName>("paused");
   const [status, setStatus] = useState<LiveStatus>({
     speed: "paused",
     dayIndex: 0,
@@ -326,7 +326,7 @@ export function useLiveSimulation(args: {
       selectedIdRef.current = null;
       setSelectedId(null);
       speedRef.current = "paused";
-      setSpeed("paused");
+      setSpeedState("paused");
       return true;
     }
     const restored = restoreLiveSimulation(snapshot);
@@ -335,7 +335,7 @@ export function useLiveSimulation(args: {
     golfersRef.current = liveRenderData(restored.state);
     pendingCashRef.current = restored.pendingCash;
     speedRef.current = restored.speed;
-    setSpeed(restored.speed);
+    setSpeedState(restored.speed);
     const selected = buildSelected(restored.state, restored.selectedGolferId);
     selectedIdRef.current = selected?.id ?? null;
     setSelectedId(selected?.id ?? null);
@@ -353,6 +353,14 @@ export function useLiveSimulation(args: {
       selected,
     });
     return true;
+  }, []);
+
+  const setSpeed = useCallback((next: SpeedName) => {
+    // Update the loop's ref synchronously. App-shell pause must freeze the
+    // mutable live store before React gets a chance to paint the overlay.
+    speedRef.current = next;
+    setSpeedState(next);
+    setStatus((current) => ({ ...current, speed: next }));
   }, []);
 
   return {

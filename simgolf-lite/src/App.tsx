@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, useCallback } from "react";
 import { perfProfiler } from "./utils/performanceProfiler";
 import { CanvasCourse } from "./ui/CanvasCourse";
 import "./ui/cozyLayout.css";
@@ -8,7 +8,7 @@ import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import type { BuildingTier, ConcessionType, Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
-import { autosave, loadSlot, saveToSlot } from "./utils/saveStore";
+import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStore";
 import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
@@ -68,6 +68,11 @@ import {
 } from "./game/onboarding/tutorial";
 import { loadAppProfile, updateAppProfile } from "./game/onboarding/profile";
 import { advisorMessages, allowsMessage, type AdvisorMessage } from "./game/advisor/advisor";
+import { INITIAL_SCREEN_FLOW, reduceScreenFlow } from "./app/screenFlow";
+import { PauseOverlay } from "./ui/appShell/PauseOverlay";
+import { LoadingCard } from "./ui/appShell/LoadingCard";
+import { SettingsModal } from "./ui/SettingsModal";
+import type { SpeedName } from "./game/live/liveConfig";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -76,7 +81,18 @@ type ViewMode = "global" | "hole";
 const STRIKE_SFX = "/audio/ball-strike.mp3";
 
 export default function App() {
-  const [screen, setScreen] = useState<"menu" | "setup" | "game">("menu");
+  const [flow, flowDispatch] = useReducer(reduceScreenFlow, INITIAL_SCREEN_FLOW);
+  const screen = flow.base === "title" ? "menu" : flow.base === "setup-wizard" ? "setup" : flow.base === "in-game" ? "game" : "loading";
+  const changeSequenceRef = useRef(0);
+  const [dirty, setDirty] = useState(false);
+  const markDirty = useCallback(() => {
+    changeSequenceRef.current += 1;
+    setDirty(true);
+  }, []);
+  const markClean = useCallback((sequence = changeSequenceRef.current) => {
+    if (sequence !== changeSequenceRef.current) return;
+    setDirty(false);
+  }, []);
   const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
   const gameStateRef = useRef(gameState);
   const { course, world } = gameState;
@@ -92,23 +108,26 @@ export default function App() {
       logReducerDispatch();
     }
     setGameState((prevState) => applyAction(prevState, action));
-  }, []);
+    if (action.type !== "NEW_GAME" && action.type !== "LOAD_GAME" && !action.type.startsWith("SET_")) markDirty();
+  }, [markDirty]);
 
   // Helper functions for non-core mutations (operations not in the action list)
   // These are used for mutations that don't affect terrain/markers/obstacles/core economy
   const setCourse = useCallback((updater: (c: typeof course) => typeof course) => {
+    markDirty();
     setGameState((prevState) => ({
       ...prevState,
       course: updater(prevState.course),
     }));
-  }, []);
+  }, [markDirty]);
   
   const setWorld = useCallback((updater: (w: typeof world) => typeof world) => {
+    markDirty();
     setGameState((prevState) => ({
       ...prevState,
       world: updater(prevState.world),
     }));
-  }, []);
+  }, [markDirty]);
   const [last, setLast] = useState<WeekResult | undefined>(undefined);
   const [history, setHistory] = useState<WeekResult[]>([]);
   const historyRef = useRef(history);
@@ -138,7 +157,8 @@ export default function App() {
   // Hover state moved to refs in canvas component to avoid React re-renders
 
   const [paintError, setPaintError] = useState<string | null>(null);
-  const [saveModalOpen, setSaveModalOpen] = useState<null | { canSave: boolean }>(null);
+  const [saveModalCanSave, setSaveModalCanSave] = useState(false);
+  const payloadSequenceRef = useRef(0);
   const [showObstacles, setShowObstacles] = useState(true);
   const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">("COZY");
   const [holeEditMode, setHoleEditMode] = useState<ViewMode>("global"); // "global" or "hole"
@@ -206,7 +226,9 @@ export default function App() {
       // Rotating autosave after every committed game day (ZKU-174). The
       // setState reader snapshots post-commit state without extra renders.
       setGameState((current) => {
-        void autosave({ course: current.course, world: current.world, live: liveSnapshot, tutorial: tutorialProgress });
+        const sequence = changeSequenceRef.current;
+        void autosave({ course: current.course, world: current.world, live: liveSnapshot, tutorial: tutorialProgress })
+          .then(() => markClean(sequence));
         return current;
       });
     },
@@ -214,6 +236,73 @@ export default function App() {
       if (soundEnabled) void sound?.playCashTick(soundEnabled);
     },
   });
+  const resumeSpeedRef = useRef<SpeedName>("1x");
+
+  const openPauseMenu = useCallback(() => {
+    if (flow.base !== "in-game" || flow.modal || flow.paused) return;
+    resumeSpeedRef.current = live.speed;
+    live.setSpeed("paused");
+    flowDispatch({ type: "OPEN_PAUSE" });
+  }, [flow.base, flow.modal, flow.paused, live]);
+
+  const resumeFromPause = useCallback(() => {
+    if (!flow.paused || flow.modal) return;
+    flowDispatch({ type: "CLOSE_PAUSE" });
+    live.setSpeed(resumeSpeedRef.current);
+  }, [flow.paused, flow.modal, live]);
+
+  const toggleClock = useCallback(() => {
+    if (flow.base !== "in-game" || flow.modal || flow.paused) return;
+    if (live.speed === "paused") live.setSpeed(resumeSpeedRef.current === "paused" ? "1x" : resumeSpeedRef.current);
+    else {
+      resumeSpeedRef.current = live.speed;
+      live.setSpeed("paused");
+    }
+  }, [flow.base, flow.modal, flow.paused, live]);
+
+  const quitToTitle = useCallback(() => {
+    if (dirty && !window.confirm("Quit to title and lose unsaved changes?")) return;
+    live.setSpeed("paused");
+    flowDispatch({ type: "BACK_TO_TITLE" });
+  }, [dirty, live]);
+
+  function restartCurrentScenario() {
+    const scenario = getScenario(world.scenarioId);
+    if (!scenario || !window.confirm("Restart this scenario from the beginning?")) return;
+    startScenario(scenario);
+  }
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.matches("input, textarea, select, [contenteditable='true']") ?? false;
+      if (event.key === "Escape") {
+        if (flow.modal) {
+          event.preventDefault();
+          flowDispatch({ type: "CLOSE_TOP_LAYER" });
+        } else if (flow.base === "in-game") {
+          event.preventDefault();
+          if (flow.paused) resumeFromPause();
+          else openPauseMenu();
+        }
+      } else if (event.code === "Space" && !typing) {
+        event.preventDefault();
+        toggleClock();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [flow.base, flow.modal, flow.paused, openPauseMenu, resumeFromPause, toggleClock]);
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty || flow.base !== "in-game") return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty, flow.base]);
 
   const canvasPaneRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
@@ -433,7 +522,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (screen !== "game" || tutorialProgress || advisorMessage || saveModalOpen || showVictory || showBridgePrompt) return;
+    if (screen !== "game" || tutorialProgress || advisorMessage || flow.modal || flow.paused || showVictory || showBridgePrompt) return;
     if (Date.now() < advisorCooldownUntilRef.current) return;
     const frequency = loadAppProfile().advisorFrequency;
     const previous = history.length >= 2 ? history[history.length - 2] : undefined;
@@ -441,7 +530,7 @@ export default function App() {
       (message) => allowsMessage(frequency, message) && !seenAdvisorMessagesRef.current.has(message.id)
     );
     if (next) setAdvisorMessage(next);
-  }, [screen, tutorialProgress, advisorMessage, saveModalOpen, showVictory, showBridgePrompt, course, world, last, history, advisorWake]);
+  }, [screen, tutorialProgress, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, course, world, last, history, advisorWake]);
 
   function dismissAdvisor() {
     if (advisorMessage) seenAdvisorMessagesRef.current.add(advisorMessage.id);
@@ -498,6 +587,7 @@ export default function App() {
 
   function startRun(newCourse: typeof course, newWorld: typeof world) {
     dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
+    markClean();
     setHistory([]);
     setLast(undefined);
     setEditorMode("PAINT");
@@ -533,11 +623,14 @@ export default function App() {
 
   // Career (ZKU-164): scenarios build their run from the authored definition.
   function startScenario(scenario: ScenarioDefinition) {
-    recordScenarioAttempt(scenario.id);
-    const { course: newCourse, world: newWorld } = createScenarioGame(scenario);
-    live.restoreSnapshot(undefined);
-    startRun(newCourse, newWorld);
-    setScreen("game");
+    flowDispatch({ type: "BEGIN_LOADING", label: `Preparing ${scenario.name}…` });
+    window.setTimeout(() => {
+      recordScenarioAttempt(scenario.id);
+      const { course: newCourse, world: newWorld } = createScenarioGame(scenario);
+      live.restoreSnapshot(undefined);
+      startRun(newCourse, newWorld);
+      flowDispatch({ type: "ENTER_GAME" });
+    }, 0);
   }
 
   /** GameSetup matching the CURRENT run, for retry-same-seed / new-seed. */
@@ -588,6 +681,7 @@ export default function App() {
     scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
     setTutorialProgress(loaded.tutorial ?? null);
     saveTutorialProgress(loaded.tutorial ?? null);
+    markClean();
   }
 
   useEffect(() => {
@@ -598,6 +692,13 @@ export default function App() {
         const liveSnapshot = live.getSnapshot();
         return {
           screen,
+          screenBase: flow.base,
+          paused: flow.paused,
+          modal: flow.modal,
+          dirty,
+          speed: live.speed,
+          dayMinute: liveSnapshot?.state.dayMinute ?? 0,
+          golferPositions: liveSnapshot?.state.golfers.map((golfer) => [golfer.id, golfer.pos.x, golfer.pos.y]) ?? [],
           week: current.world.week,
           cash: current.world.cash,
           courseHash: hashGameState({ course: current.course, world: current.world, live: liveSnapshot }),
@@ -639,7 +740,9 @@ export default function App() {
         setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
         setShowVictory(false);
         scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
-        setScreen("game");
+        flowDispatch({ type: "BACK_TO_TITLE" });
+        flowDispatch({ type: "BEGIN_LOADING", label: "Restoring your course…" });
+        flowDispatch({ type: "ENTER_GAME" });
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         return {
           beforeHash,
@@ -659,23 +762,41 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, live, screen]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, screen]);
 
   function newGameFromMenu() {
     void audio.unlock();
-    setScreen("setup");
+    flowDispatch({ type: "OPEN_SETUP" });
   }
 
   function startNewGame(setup: GameSetup) {
     void audio.unlock();
     void audio.playSfx(STRIKE_SFX);
-    restartRun(setup);
-    setScreen("game");
+    flowDispatch({ type: "BEGIN_LOADING", label: "Growing your new course…" });
+    window.setTimeout(() => {
+      restartRun(setup);
+      flowDispatch({ type: "ENTER_GAME" });
+    }, 0);
   }
 
   function loadFromMenu() {
     void audio.unlock();
-    setSaveModalOpen({ canSave: false });
+    setSaveModalCanSave(false);
+    flowDispatch({ type: "OPEN_MODAL", modal: "save-load" });
+  }
+
+  async function continueFromMenu() {
+    void audio.unlock();
+    const recent = await mostRecentSlot();
+    if (!recent) return;
+    flowDispatch({ type: "BEGIN_LOADING", label: "Restoring your latest course…" });
+    const loaded = await loadSlot(recent.id);
+    if (!loaded) {
+      flowDispatch({ type: "BACK_TO_TITLE" });
+      return;
+    }
+    applyLoadedGame(loaded);
+    flowDispatch({ type: "ENTER_GAME" });
   }
 
   function takeBridgeLoan() {
@@ -1206,11 +1327,13 @@ export default function App() {
   }
 
   function onSave() {
-    setSaveModalOpen({ canSave: true });
+    setSaveModalCanSave(true);
+    flowDispatch({ type: "OPEN_MODAL", modal: "save-load" });
   }
 
   function onLoad() {
-    setSaveModalOpen({ canSave: true });
+    setSaveModalCanSave(true);
+    flowDispatch({ type: "OPEN_MODAL", modal: "save-load" });
   }
 
   function onResetSave() {
@@ -1262,15 +1385,22 @@ export default function App() {
 
   const saveLoadModal = (
     <SaveLoadModal
-      open={saveModalOpen != null}
-      onClose={() => setSaveModalOpen(null)}
-      canSave={saveModalOpen?.canSave ?? false}
-      getPayload={() => ({ course, world, history, live: live.getSnapshot(), tutorial: tutorialProgress })}
+      open={flow.modal === "save-load"}
+      onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
+      canSave={saveModalCanSave}
+      getPayload={() => {
+        payloadSequenceRef.current = changeSequenceRef.current;
+        return { course, world, history, live: live.getSnapshot(), tutorial: tutorialProgress };
+      }}
+      onSaved={() => markClean(payloadSequenceRef.current)}
       onLoaded={(payload) => {
-        applyLoadedGame(payload);
-        setScreen("game");
-        setPaintError("Game loaded.");
-        setTimeout(() => setPaintError(null), 2000);
+        flowDispatch({ type: "BEGIN_LOADING", label: "Restoring your course…" });
+        window.setTimeout(() => {
+          applyLoadedGame(payload);
+          flowDispatch({ type: "ENTER_GAME" });
+          setPaintError("Game loaded.");
+          setTimeout(() => setPaintError(null), 2000);
+        }, 0);
       }}
     />
   );
@@ -1292,11 +1422,15 @@ export default function App() {
   if (screen === "setup") {
     return (
       <NewGameWizard
-        onCancel={() => setScreen("menu")}
+        onCancel={() => flowDispatch({ type: "BACK_TO_TITLE" })}
         onStart={startNewGame}
         onStartScenario={startScenario}
       />
     );
+  }
+
+  if (screen === "loading") {
+    return <LoadingCard label={flow.loadingLabel ?? "Loading CourseCraft…"} />;
   }
 
   if (screen === "menu") {
@@ -1307,24 +1441,22 @@ export default function App() {
         onNewGame={newGameFromMenu}
         onQuickStart={() => startNewGame(quickStartSetup())}
         onLoadGame={loadFromMenu}
-        audioVolumes={{
-          music: audio.getVolumes().musicVolume,
-          ambience: audio.getVolumes().ambienceVolume,
-        }}
-        onAudioVolumesChange={(volumes) =>
-          audio.setVolumes({
-            musicVolume: volumes.music,
-            ambienceVolume: volumes.ambience,
-          })
-        }
-        renderer={renderer}
-        onRendererChange={handleRendererChange}
+        onContinue={() => void continueFromMenu()}
+        onOptions={() => flowDispatch({ type: "OPEN_MODAL", modal: "options" })}
         onButtonClick={() => {
           void audio.unlock();
           if (soundEnabled) void audio.playSfx(STRIKE_SFX);
         }}
       />
       {saveLoadModal}
+      <SettingsModal
+        open={flow.modal === "options"}
+        onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
+        audioVolumes={{ music: audio.getVolumes().musicVolume, ambience: audio.getVolumes().ambienceVolume }}
+        onAudioVolumesChange={(volumes) => audio.setVolumes({ musicVolume: volumes.music, ambienceVolume: volumes.ambience })}
+        renderer={renderer}
+        onRendererChange={handleRendererChange}
+      />
       </>
     );
   }
@@ -1334,11 +1466,11 @@ export default function App() {
       <TooltipSurface>
         <GameBackground />
         {saveLoadModal}
-      {golfopediaEntry !== undefined && (
+      {flow.modal === "golfopedia" && (
         <GolfopediaModal
           open
           initialEntry={golfopediaEntry}
-          onClose={() => setGolfopediaEntry(undefined)}
+          onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
         />
       )}
       {tutorialProgress && (
@@ -1378,8 +1510,8 @@ export default function App() {
             if (scenario) startScenario(scenario);
             else restartRun(currentRunSetup(seed), world.objectives?.goals ?? null);
           }}
-          onNewGame={() => setScreen("setup")}
-          onLoad={() => setSaveModalOpen({ canSave: false })}
+          onNewGame={() => flowDispatch({ type: "BACK_TO_TITLE" })}
+          onLoad={() => { setSaveModalCanSave(false); flowDispatch({ type: "OPEN_MODAL", modal: "save-load" }); }}
         />
       )}
         {showVictory && world.objectives && !world.isBankrupt && (
@@ -1501,6 +1633,7 @@ export default function App() {
               onSetSpeed={live.setSpeed}
               cash={world.cash}
               reputation={world.reputation}
+              onOpenPauseMenu={openPauseMenu}
             />
             <GolferInspector
               selected={live.status.selected}
@@ -1694,12 +1827,35 @@ export default function App() {
         }}
         showShotPlan={showShotPlan}
         setShowShotPlan={setShowShotPlan}
-        onOpenGolfopedia={(entry) => setGolfopediaEntry(entry ?? null)}
+        onOpenGolfopedia={(entry) => {
+          setGolfopediaEntry(entry ?? null);
+          flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" });
+        }}
         onStartTutorial={() => beginTutorial()}
       />
           )}
         </div>
         </div>
+        {flow.paused && (
+          <PauseOverlay
+            career={world.mode === "career"}
+            dirty={dirty}
+            onResume={resumeFromPause}
+            onSave={onSave}
+            onLoad={onLoad}
+            onOptions={() => flowDispatch({ type: "OPEN_MODAL", modal: "options" })}
+            onRestart={restartCurrentScenario}
+            onQuit={quitToTitle}
+          />
+        )}
+        <SettingsModal
+          open={flow.modal === "options"}
+          onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
+          audioVolumes={{ music: audio.getVolumes().musicVolume, ambience: audio.getVolumes().ambienceVolume }}
+          onAudioVolumesChange={(volumes) => audio.setVolumes({ musicVolume: volumes.music, ambienceVolume: volumes.ambience })}
+          renderer={renderer}
+          onRendererChange={handleRendererChange}
+        />
       </TooltipSurface>
     </div>
   );
