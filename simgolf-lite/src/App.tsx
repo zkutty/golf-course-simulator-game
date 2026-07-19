@@ -55,6 +55,18 @@ import {
   buildingAtTile,
   canPlaceBuilding,
 } from "./game/models/buildings";
+import { GolfopediaModal } from "./ui/help/GolfopediaModal";
+import { AdvisorCard } from "./ui/onboarding/AdvisorCard";
+import { TutorialOverlay } from "./ui/onboarding/TutorialOverlay";
+import {
+  TUTORIAL_STEPS,
+  createTutorialProgress,
+  loadTutorialProgress,
+  saveTutorialProgress,
+  type TutorialProgress,
+} from "./game/onboarding/tutorial";
+import { loadAppProfile, updateAppProfile } from "./game/onboarding/profile";
+import { advisorMessages, allowsMessage, type AdvisorMessage } from "./game/advisor/advisor";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -154,6 +166,12 @@ export default function App() {
   const [prevOutcome, setPrevOutcome] = useState<RunOutcome>("OPEN");
   const [showVictory, setShowVictory] = useState(false);
   const scenarioRecordedRef = useRef(false);
+  const [golfopediaEntry, setGolfopediaEntry] = useState<string | null | undefined>(undefined);
+  const [tutorialProgress, setTutorialProgress] = useState<TutorialProgress | null>(() => loadTutorialProgress());
+  const [advisorMessage, setAdvisorMessage] = useState<AdvisorMessage | null>(null);
+  const [advisorWake, setAdvisorWake] = useState(0);
+  const seenAdvisorMessagesRef = useRef(new Set<string>());
+  const advisorCooldownUntilRef = useRef(0);
 
   // Lazy singleton via useState initializer (render-pure, unlike a ref write).
   const [sound] = useState(() => createSoundPlayer());
@@ -187,7 +205,7 @@ export default function App() {
       // Rotating autosave after every committed game day (ZKU-174). The
       // setState reader snapshots post-commit state without extra renders.
       setGameState((current) => {
-        void autosave({ course: current.course, world: current.world, live: liveSnapshot });
+        void autosave({ course: current.course, world: current.world, live: liveSnapshot, tutorial: tutorialProgress });
         return current;
       });
     },
@@ -407,6 +425,32 @@ export default function App() {
     });
   }, [objectivesOutcomeForRecord, world]);
 
+  useEffect(() => {
+    const onProfileChange = () => setAdvisorWake((value) => value + 1);
+    window.addEventListener("coursecraft-profile-change", onProfileChange);
+    return () => window.removeEventListener("coursecraft-profile-change", onProfileChange);
+  }, []);
+
+  useEffect(() => {
+    if (screen !== "game" || tutorialProgress || advisorMessage || saveModalOpen || showVictory || showBridgePrompt) return;
+    if (Date.now() < advisorCooldownUntilRef.current) return;
+    const frequency = loadAppProfile().advisorFrequency;
+    const previous = history.length >= 2 ? history[history.length - 2] : undefined;
+    const next = advisorMessages(course, world, last, previous).find(
+      (message) => allowsMessage(frequency, message) && !seenAdvisorMessagesRef.current.has(message.id)
+    );
+    if (next) setAdvisorMessage(next);
+  }, [screen, tutorialProgress, advisorMessage, saveModalOpen, showVictory, showBridgePrompt, course, world, last, history, advisorWake]);
+
+  function dismissAdvisor() {
+    if (advisorMessage) seenAdvisorMessagesRef.current.add(advisorMessage.id);
+    setAdvisorMessage(null);
+    const frequency = loadAppProfile().advisorFrequency;
+    const cooldown = frequency === "chatty" ? 8_000 : 18_000;
+    advisorCooldownUntilRef.current = Date.now() + cooldown;
+    window.setTimeout(() => setAdvisorWake((value) => value + 1), cooldown + 50);
+  }
+
   // Course name propagates to the browser tab (ZKU-162).
   useEffect(() => {
     document.title = screen === "game" ? `${course.name} — CourseCraft` : "CourseCraft";
@@ -436,6 +480,21 @@ export default function App() {
 
   // THE new-run path (ZKU-162): every fresh run goes through createNewGame
   // (or createScenarioGame for career runs) and then this shared reset.
+  function beginTutorial(tutorialCourse = course, tutorialWorld = world) {
+    const progress = createTutorialProgress(tutorialCourse, tutorialWorld);
+    setTutorialProgress(progress);
+    saveTutorialProgress(progress);
+    updateAppProfile({ tutorialOffered: true });
+    setGolfopediaEntry(undefined);
+    setAdvisorMessage(null);
+  }
+
+  function finishTutorial(completed: boolean) {
+    setTutorialProgress(null);
+    saveTutorialProgress(null);
+    updateAppProfile({ tutorialOffered: true, tutorialCompleted: completed || loadAppProfile().tutorialCompleted });
+  }
+
   function startRun(newCourse: typeof course, newWorld: typeof world) {
     dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
     setHistory([]);
@@ -457,6 +516,7 @@ export default function App() {
     scenarioRecordedRef.current = false;
     setPrevOutcome("OPEN");
     setShowVictory(false);
+    if (!loadAppProfile().tutorialOffered) beginTutorial(newCourse, newWorld);
   }
 
   // `goals` overrides the mode's default goal set (defeat-retry keeps a
@@ -525,6 +585,8 @@ export default function App() {
     setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
     setShowVictory(false);
     scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
+    setTutorialProgress(loaded.tutorial ?? null);
+    saveTutorialProgress(loaded.tutorial ?? null);
   }
 
   useEffect(() => {
@@ -1202,7 +1264,7 @@ export default function App() {
       open={saveModalOpen != null}
       onClose={() => setSaveModalOpen(null)}
       canSave={saveModalOpen?.canSave ?? false}
-      getPayload={() => ({ course, world, history, live: live.getSnapshot() })}
+      getPayload={() => ({ course, world, history, live: live.getSnapshot(), tutorial: tutorialProgress })}
       onLoaded={(payload) => {
         applyLoadedGame(payload);
         setScreen("game");
@@ -1211,6 +1273,20 @@ export default function App() {
       }}
     />
   );
+
+  function advanceTutorial() {
+    if (!tutorialProgress) return;
+    const step = TUTORIAL_STEPS[tutorialProgress.stepIndex];
+    const context = { course, world, last, onCourse: live.status.onCourse };
+    if (!step.canAdvance(context, tutorialProgress.baseline)) return;
+    if (tutorialProgress.stepIndex >= TUTORIAL_STEPS.length - 1) {
+      finishTutorial(true);
+      return;
+    }
+    const next = { ...tutorialProgress, stepIndex: tutorialProgress.stepIndex + 1 };
+    setTutorialProgress(next);
+    saveTutorialProgress(next);
+  }
 
   if (screen === "setup") {
     return (
@@ -1256,6 +1332,34 @@ export default function App() {
     <div className="cc-app">
       <GameBackground />
       {saveLoadModal}
+      {golfopediaEntry !== undefined && (
+        <GolfopediaModal
+          open
+          initialEntry={golfopediaEntry}
+          onClose={() => setGolfopediaEntry(undefined)}
+        />
+      )}
+      {tutorialProgress && (
+        <TutorialOverlay
+          step={TUTORIAL_STEPS[tutorialProgress.stepIndex]}
+          canAdvance={TUTORIAL_STEPS[tutorialProgress.stepIndex].canAdvance(
+            { course, world, last, onCourse: live.status.onCourse },
+            tutorialProgress.baseline
+          )}
+          onAdvance={advanceTutorial}
+          onSkip={() => finishTutorial(false)}
+        />
+      )}
+      {!tutorialProgress && advisorMessage && (
+        <AdvisorCard
+          message={advisorMessage}
+          onDismiss={dismissAdvisor}
+          onShowHole={(holeIndex) => {
+            enterHoleEditMode(holeIndex);
+            dismissAdvisor();
+          }}
+        />
+      )}
       <div className="cc-main">
         {(world.isBankrupt || world.objectives?.outcome === "LOST") && (
         <DefeatModal
@@ -1299,7 +1403,7 @@ export default function App() {
         />
       )}
         <div className="cc-course-frame">
-          <div ref={canvasPaneRef} className="cc-course-pane">
+          <div ref={canvasPaneRef} className="cc-course-pane" data-tutorial-target="course">
             {renderer === "canvas" ? (
               <CanvasCourse
                 course={course}
@@ -1588,6 +1692,8 @@ export default function App() {
         }}
         showShotPlan={showShotPlan}
         setShowShotPlan={setShowShotPlan}
+        onOpenGolfopedia={(entry) => setGolfopediaEntry(entry ?? null)}
+        onStartTutorial={() => beginTutorial()}
       />
           )}
         </div>

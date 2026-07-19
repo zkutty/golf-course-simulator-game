@@ -16,6 +16,8 @@ import { IconBush, IconCash, IconCondition, IconHoles, IconReputation, IconRock,
 import { GameButton } from "@/ui/gameui";
 import { ObjectiveMiniTracker, ObjectivesPanel } from "./ObjectivesPanel";
 import { BUILDING_SPECS, isConcession } from "../game/models/buildings";
+import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../game/models/terrainEconomics";
+import { Tooltip } from "./help/Tooltip";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -93,6 +95,8 @@ export function HUD(props: {
   onSelectFlagColor: (rgba: string) => void;
   showShotPlan: boolean;
   setShowShotPlan: (b: boolean) => void;
+  onOpenGolfopedia: (entry?: string) => void;
+  onStartTutorial: () => void;
 }) {
   const {
     course,
@@ -153,6 +157,8 @@ export function HUD(props: {
     onSelectFlagColor,
     showShotPlan,
     setShowShotPlan,
+    onOpenGolfopedia,
+    onStartTutorial,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
@@ -289,6 +295,14 @@ export function HUD(props: {
             </div>
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <Tooltip content="Open the searchable reference for terrain, golfers, management systems, and controls.">
+              <button onClick={() => onOpenGolfopedia()} style={{ padding: "6px 8px", borderRadius: 999, border: "1px solid #ddd", background: "#fff", fontSize: 12, fontWeight: 800 }}>
+                ? Help
+              </button>
+            </Tooltip>
+            <button onClick={onStartTutorial} style={{ padding: "6px 8px", borderRadius: 999, border: "1px solid #ddd", background: "#fff", fontSize: 12, fontWeight: 800 }}>
+              Tutorial
+            </button>
             <span
               title={`Difficulty: ${getDifficultyProfile(world.difficulty).label} (fixed for this run)`}
               style={{
@@ -359,6 +373,7 @@ export function HUD(props: {
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
           {viewMode === "COZY" ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <Tooltip block content="Your available operating runway. Construction, losses, and loan payments reduce it; profitable play restores it." learnMore={() => onOpenGolfopedia("management-cash")}>
               <div
                 style={{
                   display: "flex",
@@ -376,6 +391,8 @@ export function HUD(props: {
                   <div style={{ fontSize: 18, fontWeight: 800 }}>${Math.round(world.cash).toLocaleString()}</div>
                 </div>
               </div>
+              </Tooltip>
+              <Tooltip block content="The market's memory of golfer satisfaction. It falls faster than it recovers and directly supports demand." learnMore={() => onOpenGolfopedia("management-reputation")}>
               <div
                 style={{
                   display: "flex",
@@ -393,6 +410,8 @@ export function HUD(props: {
                   <div style={{ fontSize: 16, fontWeight: 800 }}>{world.reputation}/100</div>
                 </div>
               </div>
+              </Tooltip>
+              <Tooltip block content="Playing-surface health. Traffic causes wear; the maintenance budget restores condition each period." learnMore={() => onOpenGolfopedia("management-condition")}>
               <div
                 style={{
                   display: "flex",
@@ -410,6 +429,8 @@ export function HUD(props: {
                   <div style={{ fontSize: 16, fontWeight: 800 }}>{Math.round(course.condition * 100)}%</div>
                 </div>
               </div>
+              </Tooltip>
+              <Tooltip block content="Valid holes with a tee, green, and safe playable corridor. Nine valid holes open the full course." learnMore={() => onOpenGolfopedia("management-demand")}>
               <div
                 style={{
                   display: "flex",
@@ -427,6 +448,7 @@ export function HUD(props: {
                   <div style={{ fontSize: 16, fontWeight: 800 }}>{validHoles}/9</div>
                 </div>
               </div>
+              </Tooltip>
             </div>
           ) : (
             <>
@@ -584,6 +606,7 @@ export function HUD(props: {
                 </button>
                 <button
                   onClick={startWizard}
+                  data-tutorial-target="hole-wizard"
                   style={{
                     flex: 1,
                     padding: "8px 6px",
@@ -687,7 +710,7 @@ export function HUD(props: {
               )}
 
               {viewMode === "ARCHITECT" && (
-                <div style={{ marginTop: -2, marginBottom: 10, fontSize: 12, color: "#374151" }}>
+                <div data-tutorial-target="shot-plan" style={{ marginTop: -2, marginBottom: 10, fontSize: 12, color: "#374151" }}>
                   <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <input
                       type="checkbox"
@@ -1077,21 +1100,26 @@ export function HUD(props: {
                 <div style={{ marginBottom: 8 }}>
                   <b>Terrain brush</b>
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <div data-tutorial-target="terrain-palette" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {TERRAIN.map((t) => (
-                    <button
+                    <Tooltip
                       key={t}
-                      onClick={() => setSelected(t)}
-                      style={{
-                        padding: "6px 8px",
-                        borderRadius: 8,
-                        border: selected === t ? "2px solid #000" : "1px solid #ccc",
-                        background: "#fff",
-                        fontSize: 12,
-                      }}
+                      content={<><b>{t.replace("_", " ")}</b><br />Build ${TERRAIN_BUILD_COST[t].toLocaleString()} / tile · salvage ${TERRAIN_SALVAGE_VALUE[t].toLocaleString()}.</>}
+                      learnMore={() => onOpenGolfopedia(`terrain-${t}`)}
                     >
-                      {t}
-                    </button>
+                      <button
+                        onClick={() => setSelected(t)}
+                        style={{
+                          padding: "6px 8px",
+                          borderRadius: 8,
+                          border: selected === t ? "2px solid #000" : "1px solid #ccc",
+                          background: "#fff",
+                          fontSize: 12,
+                        }}
+                      >
+                        {t}
+                      </button>
+                    </Tooltip>
                   ))}
                 </div>
               </>
@@ -1108,16 +1136,12 @@ export function HUD(props: {
               <div>Price attractiveness: {price}/100</div>
               <div>Demand index: {liveDemand.demandIndex.toFixed(2)}</div>
               <div style={{ marginTop: 8 }}>
-                <span
-                  title={
-                    "Course Rating ≈ expected scratch score (18 holes).\n" +
-                    "Slope measures how much harder the course is for bogey golfers vs scratch.\n" +
-                    "We scale slope so a ~20-stroke bogey-scratch spread maps to 113 (average), clamped 55–155."
-                  }
-                  style={{ cursor: "help" }}
+                <Tooltip
+                  content="Rating estimates a scratch golfer's expected score; slope measures how much harder the course becomes for bogey golfers."
+                  learnMore={() => onOpenGolfopedia("management-rating")}
                 >
-                  Course Rating: <b>{rating.courseRating.toFixed(1)}</b> • Slope: <b>{rating.slope}</b>
-                </span>
+                  <span style={{ cursor: "help" }}>Course Rating: <b>{rating.courseRating.toFixed(1)}</b> • Slope: <b>{rating.slope}</b></span>
+                </Tooltip>
               </div>
               <div style={{ fontSize: 12, color: "#6b7280" }}>
                 Scratch: {rating.expectedScratchScore.toFixed(1)} • Bogey: {rating.expectedBogeyScore.toFixed(1)} •
@@ -1154,7 +1178,7 @@ export function HUD(props: {
         )}
 
         {tab === "Results" && (
-          <>
+          <div data-tutorial-target="weekly-report">
             {!last && <div style={{ color: "#555", fontSize: 13 }}>Simulate a week to see results.</div>}
             {last && (
               <Section title="Last week">
@@ -1417,13 +1441,13 @@ export function HUD(props: {
               </Section>
             )}
 
-          </>
+          </div>
         )}
 
         {tab === "Upgrades" && (
           <>
             <Section title="Business">
-              <label style={{ display: "block", marginBottom: 12 }}>
+              <label data-tutorial-target="green-fee" style={{ display: "block", marginBottom: 12 }}>
                 Green fee (${course.baseGreenFee})
                 {world.constraints?.fixedGreenFee != null && (
                   <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "#8a6d1a" }}>
@@ -1441,7 +1465,7 @@ export function HUD(props: {
                 />
               </label>
 
-              <label style={{ display: "block" }}>
+              <label data-tutorial-target="maintenance" style={{ display: "block" }}>
                 Maintenance budget (${world.maintenanceBudget}/wk)
                 <input
                   type="range"

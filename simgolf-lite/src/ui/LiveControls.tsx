@@ -27,6 +27,7 @@ export function LiveControls(props: {
 
   return (
     <div
+      data-tutorial-target="speed-controls"
       style={{
         position: "absolute",
         left: "50%",

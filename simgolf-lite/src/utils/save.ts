@@ -24,6 +24,7 @@ import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { withNormalizedElevations } from "../game/models/elevation";
 import { BUILDING_SPECS, normalizedBuilding } from "../game/models/buildings";
+import { normalizeTutorialProgress, type TutorialProgress } from "../game/onboarding/tutorial";
 
 const KEY = "simgolf_lite_save_v1";
 export const CURRENT_SAVE_SCHEMA_VERSION = 3 as const;
@@ -46,6 +47,7 @@ export interface SaveV1 {
   world: World;
   history?: WeekResult[];
   live?: LiveSimulationSnapshotV1;
+  tutorial?: TutorialProgress | null;
 }
 
 export interface SaveV2 extends Omit<SaveV1, "schemaVersion"> {
@@ -82,6 +84,7 @@ export function saveGame(payload: SavePayload) {
     world: payload.world,
     history: payload.history?.slice(-20),
     live: payload.live,
+    tutorial: payload.tutorial,
   };
   localStorage.setItem(KEY, JSON.stringify(save));
 }
@@ -170,6 +173,7 @@ export interface SavePayload {
   world: World;
   history?: WeekResult[];
   live?: LiveSimulationSnapshotV1;
+  tutorial?: TutorialProgress | null;
 }
 
 type SaveRecord = Record<string, unknown>;
@@ -408,6 +412,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
           : undefined,
     };
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
+    const tutorial = normalizeTutorialProgress(parsed.tutorial);
     let live: LiveSimulationSnapshotV1 | undefined;
     if (parsed.live != null) {
       const restored = restoreLiveSimulation(parsed.live);
@@ -418,7 +423,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     }
     return {
       ok: true,
-      payload: { course, world, history, live },
+      payload: { course, world, history, live, tutorial },
       ...(migrated.migratedFrom == null ? {} : { migratedFrom: migrated.migratedFrom }),
     };
   } catch {

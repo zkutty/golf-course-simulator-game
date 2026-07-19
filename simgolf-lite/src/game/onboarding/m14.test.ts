@@ -1,0 +1,85 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
+import type { Terrain, WeekResult } from "../models/types";
+import { advisorMessages, allowsMessage } from "../advisor/advisor";
+import { TUTORIAL_STEPS, createTutorialProgress } from "./tutorial";
+import { GOLFOPEDIA_ENTRIES } from "../../ui/help/golfopediaData";
+import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../models/terrainEconomics";
+import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/save";
+
+const terrains: Terrain[] = ["fairway", "rough", "deep_rough", "sand", "water", "green", "tee", "path"];
+
+function week(profit: number): WeekResult {
+  return {
+    visitors: 40,
+    revenue: 5_000,
+    costs: 5_000 - profit,
+    profit,
+    avgSatisfaction: 70,
+    reputationDelta: 0,
+    visitorNoise: 0,
+  };
+}
+
+describe("M14 onboarding data", () => {
+  it("authors the complete twelve-step tutorial as data", () => {
+    expect(TUTORIAL_STEPS).toHaveLength(12);
+    expect(new Set(TUTORIAL_STEPS.map((step) => step.id)).size).toBe(12);
+    expect(TUTORIAL_STEPS.at(-1)?.id).toBe("graduation");
+  });
+
+  it("captures a run baseline and accepts threshold-based painting", () => {
+    const progress = createTutorialProgress(DEFAULT_COURSE, DEFAULT_WORLD);
+    const course = { ...DEFAULT_COURSE, tiles: [...DEFAULT_COURSE.tiles] };
+    let changed = 0;
+    for (let i = 0; i < course.tiles.length && changed < 4; i++) {
+      if (course.tiles[i] !== "fairway") {
+        course.tiles[i] = "fairway";
+        changed++;
+      }
+    }
+    const paintStep = TUTORIAL_STEPS.find((step) => step.id === "paint-corridor")!;
+    expect(paintStep.canAdvance({ course, world: DEFAULT_WORLD, onCourse: 0 }, progress.baseline)).toBe(true);
+  });
+
+  it("round-trips the current tutorial step with a game save", () => {
+    const progress = { ...createTutorialProgress(DEFAULT_COURSE, DEFAULT_WORLD), stepIndex: 7 };
+    const loaded = normalizeLoadedSave({
+      schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
+      savedAt: Date.now(),
+      course: DEFAULT_COURSE,
+      world: DEFAULT_WORLD,
+      tutorial: progress,
+    });
+    expect(loaded?.tutorial).toEqual(progress);
+  });
+});
+
+describe("M14 advisor", () => {
+  it("prioritizes a low-cash warning and can silence it", () => {
+    const messages = advisorMessages(DEFAULT_COURSE, { ...DEFAULT_WORLD, cash: 100 }, week(-500), undefined);
+    expect(messages[0].priority).toBe("warning");
+    expect(allowsMessage("important", messages[0])).toBe(true);
+    expect(allowsMessage("off", messages[0])).toBe(false);
+  });
+
+  it("celebrates the first profitable week without requiring an exact value", () => {
+    const messages = advisorMessages(DEFAULT_COURSE, DEFAULT_WORLD, week(1), week(-1));
+    expect(messages.some((message) => message.priority === "celebration")).toBe(true);
+  });
+});
+
+describe("M14 Golfopedia", () => {
+  it("generates one live-economics entry for every terrain", () => {
+    for (const terrain of terrains) {
+      const entry = GOLFOPEDIA_ENTRIES.find((candidate) => candidate.id === `terrain-${terrain}`);
+      expect(entry).toBeDefined();
+      expect(entry?.facts).toContainEqual({ label: "Build", value: `$${TERRAIN_BUILD_COST[terrain].toLocaleString()} / tile` });
+      expect(entry?.facts).toContainEqual({ label: "Salvage", value: `$${TERRAIN_SALVAGE_VALUE[terrain].toLocaleString()} / tile` });
+    }
+  });
+
+  it("generates all six golfer archetype pages", () => {
+    expect(GOLFOPEDIA_ENTRIES.filter((entry) => entry.section === "Golfers")).toHaveLength(6);
+  });
+});

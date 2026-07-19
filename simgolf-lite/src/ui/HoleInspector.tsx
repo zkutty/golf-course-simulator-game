@@ -369,7 +369,7 @@ export function HoleInspector({
       </div>
 
       {/* Fix Overlay Toggle */}
-      <div style={{ marginBottom: 16 }}>
+      <div data-tutorial-target="fix-overlay" style={{ marginBottom: 16 }}>
         <label
           style={{
             display: "flex",

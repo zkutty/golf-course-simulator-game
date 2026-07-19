@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { loadAppProfile, updateAppProfile, type AdvisorFrequency } from "../game/onboarding/profile";
 
 export interface SettingsModalProps {
   open: boolean;
@@ -20,9 +21,16 @@ export function SettingsModal(props: SettingsModalProps) {
   const [visualAmbience, setVisualAmbience] = useState(
     () => localStorage.getItem("coursecraft_ambience") !== "off"
   );
+  const [advisorFrequency, setAdvisorFrequency] = useState<AdvisorFrequency>(
+    () => loadAppProfile().advisorFrequency
+  );
   const handleVisualAmbience = (on: boolean) => {
     setVisualAmbience(on);
     localStorage.setItem("coursecraft_ambience", on ? "on" : "off");
+  };
+  const handleAdvisorFrequency = (frequency: AdvisorFrequency) => {
+    setAdvisorFrequency(frequency);
+    updateAppProfile({ advisorFrequency: frequency });
   };
 
   if (!props.open) return null;
@@ -149,6 +157,26 @@ export function SettingsModal(props: SettingsModalProps) {
           <div style={{ fontSize: 12, opacity: 0.65, marginTop: 4, marginLeft: 26 }}>
             Turn off on low-end machines. Separate from the Animations toggle.
           </div>
+        </div>
+
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ fontFamily: "var(--font-heading)", fontSize: 18, fontWeight: 700, color: "#3d4a3e", marginBottom: 10 }}>
+            Caddie advisor
+          </div>
+          <label style={{ display: "grid", gap: 6, fontSize: 14, color: "#3d4a3e" }}>
+            Frequency
+            <select
+              data-testid="advisor-frequency"
+              value={advisorFrequency}
+              onChange={(event) => handleAdvisorFrequency(event.target.value as AdvisorFrequency)}
+              style={{ width: "100%", borderRadius: 8, border: "1px solid rgba(0,0,0,.2)", background: "white", padding: 10, font: "inherit" }}
+            >
+              <option value="chatty">Chatty — warnings, advice, and design hints</option>
+              <option value="normal">Normal — useful updates without idle hints</option>
+              <option value="important">Important only — warnings and celebrations</option>
+              <option value="off">Off — fully silent</option>
+            </select>
+          </label>
         </div>
 
         {/* Renderer section */}

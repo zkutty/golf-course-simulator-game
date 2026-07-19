@@ -8,6 +8,7 @@ import {
   type SaveLoadResult,
   type SavePayload,
 } from "./save";
+import type { TutorialProgress } from "../game/onboarding/tutorial";
 
 /**
  * Save repository (ZKU-174): named slots + rotating autosaves + quicksave.
@@ -50,6 +51,7 @@ export interface SaveFile {
   world: World;
   history?: WeekResult[];
   live?: LiveSimulationSnapshotV1;
+  tutorial?: TutorialProgress | null;
 }
 
 const MANIFEST_KEY = "coursecraft_saves_manifest_v1";
@@ -221,6 +223,7 @@ function payloadToFile(p: SavePayload): SaveFile {
     world: p.world,
     history: p.history?.slice(-20),
     live: p.live,
+    tutorial: p.tutorial,
   };
 }
 
