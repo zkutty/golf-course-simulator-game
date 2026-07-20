@@ -332,9 +332,10 @@ test("representative delegated and contextual tooltips work by mouse and keyboar
     ["Open holes help", "management-demand"],
   ] as const;
   for (const [label, entry] of contextualCards) {
-    await page.getByLabel(label).focus();
-    await expect(page.getByRole("tooltip")).toBeVisible();
-    await page.getByRole("button", { name: /Learn more in Golfopedia/ }).click();
+    const contextualCard = page.getByLabel(label);
+    await contextualCard.focus();
+    await expect(contextualCard.getByRole("tooltip")).toBeVisible();
+    await contextualCard.getByRole("button", { name: /Learn more in Golfopedia/ }).click();
     await expect(page.getByTestId("golfopedia-entry")).toHaveAttribute("data-entry-id", entry);
     await page.keyboard.press("Escape");
   }
