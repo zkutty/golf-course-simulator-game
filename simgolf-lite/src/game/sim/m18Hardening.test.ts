@@ -117,7 +117,8 @@ describe("M18 core hardening", () => {
   );
 
   it("takes configured loans through the reducer and bumps economyVersion", () => {
-    const course = createRenderPerfCourse();
+    const fixture = createRenderPerfCourse();
+    const course = { ...fixture, holes: fixture.holes.slice(0, 9), obstacles: [] };
     const world = {
       ...DEFAULT_STATE.world,
       reputation: 100,

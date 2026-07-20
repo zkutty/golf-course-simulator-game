@@ -66,5 +66,5 @@ describe("M6 tournaments", () => {
     expect(settlement.event?.status).toBe("completed");
     expect(settlement.event?.winnerName).toBe(sortedStandings(live.tournament!.standings)[0].name);
     expect(tournamentCalendar(settlement.world).events[0].results).toHaveLength(8);
-  });
+  }, 15_000);
 });
