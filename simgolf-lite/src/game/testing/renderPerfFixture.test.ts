@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_STATE } from "../../game/gameState";
 import { createRenderPerfLiveState } from "../live/simulation";
-import { createParklandVisualReferenceCourse, createRenderPerfCourse, PARKLAND_CAMERA_BOOKMARKS, PARKLAND_VISUAL_SEED } from "./referenceCourse";
+import { createM21BiomeReferenceCourse, createParklandVisualReferenceCourse, createRenderPerfCourse, PARKLAND_CAMERA_BOOKMARKS, PARKLAND_VISUAL_SEED } from "./referenceCourse";
 
 describe("M12 render performance fixture", () => {
   it("is a reproducible dressed 18 with 500+ props and 100 concurrent golfers", () => {
@@ -9,6 +9,7 @@ describe("M12 render performance fixture", () => {
     const live = createRenderPerfLiveState(course, { ...DEFAULT_STATE.world, runSeed: 12160 });
     expect(course.holes).toHaveLength(18);
     expect(course.obstacles.length).toBeGreaterThanOrEqual(500);
+    expect(course.obstacles.filter((obstacle) => obstacle.type === "tree").length).toBeGreaterThanOrEqual(500);
     expect(live.golfers).toHaveLength(100);
     expect(live.golfers.every((golfer) => golfer.finished === false)).toBe(true);
   });
@@ -23,5 +24,20 @@ describe("M19 visual reference fixture", () => {
     expect(Object.keys(PARKLAND_CAMERA_BOOKMARKS)).toEqual(["overview50", "hole100", "green200"]);
     expect(new Set(first.tiles)).toEqual(new Set(["rough", "deep_rough", "fairway", "tee", "green", "water", "sand", "path"]));
     expect(first.holes[0]).toMatchObject({ parManual: 4, name: "Founder's Bend" });
+  });
+});
+
+describe("M21 biome acceptance fixtures", () => {
+  it("are deterministic, theme-distinct, playable, and keep props clear of golf surfaces", () => {
+    const fixtures = (["parkland", "links", "desert"] as const).map(createM21BiomeReferenceCourse);
+    for (const course of fixtures) {
+      expect(createM21BiomeReferenceCourse(course.theme)).toEqual(course);
+      expect(course.holes[0].tee).not.toBeNull();
+      expect(course.holes[0].green).not.toBeNull();
+      expect(course.obstacles.length).toBeGreaterThan(20);
+      for (const obstacle of course.obstacles) expect(["rough", "deep_rough", "waste_area"]).toContain(course.tiles[obstacle.y * course.width + obstacle.x]);
+    }
+    expect(fixtures[0].tiles).not.toEqual(fixtures[1].tiles);
+    expect(fixtures[1].tiles).not.toEqual(fixtures[2].tiles);
   });
 });

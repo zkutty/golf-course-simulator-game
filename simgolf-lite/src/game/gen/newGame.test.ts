@@ -77,4 +77,15 @@ describe("createNewGame (ZKU-162)", () => {
     expect(course.holes).toHaveLength(9);
     expect(course.holes.every((h) => h.tee === null && h.green === null)).toBe(true);
   });
+
+  it("adds a deterministic cultivated planting ring clear of the clubhouse footprint", () => {
+    const { course } = createNewGame(setup());
+    const clubhouse = course.buildings.find((building) => building.type === "clubhouse")!;
+    const nearby = course.obstacles.filter((obstacle) => Math.hypot(obstacle.x - clubhouse.x - 1, obstacle.y - clubhouse.y - 1) <= 8);
+    expect(nearby.length).toBeGreaterThanOrEqual(6);
+    for (const obstacle of nearby) {
+      expect(obstacle.x >= clubhouse.x && obstacle.x < clubhouse.x + 3 && obstacle.y >= clubhouse.y && obstacle.y < clubhouse.y + 3).toBe(false);
+      expect(["rough", "deep_rough"]).toContain(course.tiles[obstacle.y * course.width + obstacle.x]);
+    }
+  });
 });

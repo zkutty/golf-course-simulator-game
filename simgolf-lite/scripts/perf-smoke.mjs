@@ -25,6 +25,7 @@ const WORK_BUDGET_MS = Number(process.env.PERF_WORK_BUDGET_MS || 8);
 const BUDGET_MS = Number(process.env.PERF_BUDGET_MS || 33);
 const ASSERT_FRAME = process.env.PERF_ASSERT_FRAME === "1";
 const MEASURE_S = Number(process.env.PERF_MEASURE_S || 20);
+const PERF_THEME = ["parkland", "links", "desert"].includes(process.env.PERF_THEME) ? process.env.PERF_THEME : "parkland";
 const PORT = 5199;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -41,8 +42,8 @@ async function importPlaywright() {
 const { chromium } = await importPlaywright();
 
 console.log(`[perf-smoke] starting vite on :${PORT} …`);
-const vite = spawn("npx", ["vite", "--port", String(PORT), "--strictPort"], {
-  stdio: "ignore",
+const vite = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"], {
+  stdio: "inherit",
   detached: false,
 });
 process.on("exit", () => vite.kill());
@@ -74,7 +75,7 @@ await page.addInitScript(() => {
   localStorage.setItem("coursecraft_perfhud", "on");
   localStorage.setItem("coursecraft_ambience", "on");
 });
-await page.goto(`http://localhost:${PORT}/?perfFixture=1`);
+await page.goto(`http://localhost:${PORT}/?perfFixture=1&perfTheme=${PERF_THEME}`);
 await page.waitForFunction(() => {
   const text = window.render_game_to_text?.();
   return text && JSON.parse(text).screen === "game";

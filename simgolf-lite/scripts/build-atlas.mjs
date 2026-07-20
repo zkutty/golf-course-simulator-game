@@ -2,8 +2,8 @@
 // builds and deploys need no image tooling. Simple shelf packing,
 // deterministic order.
 //
-// - src/assets/terrain/parkland/*.png -> public/atlases/terrain.png/json
-// - tree/bush/rock sources            -> public/atlases/natural-props.png/json
+// - src/assets/terrain/materials/*.png -> public/atlases/terrain.png/json
+// - src/assets/props/natural/*.png     -> public/atlases/natural-props.png/json
 // - building sources                  -> public/atlases/buildings-decor.png/json
 // - src/assets/sprites/golfers/*.png  -> public/atlases/golfers.png/json
 //
@@ -19,7 +19,8 @@ import path from "node:path";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(ROOT, "src/assets/sprites");
-const TERRAIN_SRC = path.join(ROOT, "src/assets/terrain/parkland");
+const NATURAL_SRC = path.join(ROOT, "src/assets/props/natural");
+const TERRAIN_SRC = path.join(ROOT, "src/assets/terrain/materials");
 const OUT_DIR = path.join(ROOT, "public/atlases");
 mkdirSync(OUT_DIR, { recursive: true });
 
@@ -113,6 +114,6 @@ function buildAtlas(srcDir, outName, include = () => true, scale = "1") {
 }
 
 buildAtlas(TERRAIN_SRC, "terrain", () => true, "2");
-buildAtlas(SRC, "natural-props", (name) => /^(tree2?|bush|rock)\.png$/.test(name));
+buildAtlas(NATURAL_SRC, "natural-props");
 buildAtlas(SRC, "buildings-decor", (name) => /^(clubhouse|pro_shop|snack_bar|cart_rental)\.png$/.test(name));
 buildAtlas(path.join(SRC, "golfers"), "golfers");

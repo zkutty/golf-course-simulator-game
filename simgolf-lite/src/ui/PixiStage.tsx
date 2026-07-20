@@ -24,7 +24,6 @@ import {
   getTerrainFrame,
   golfersAtlasReady,
   loadAtlases,
-  type PropFrame,
 } from "../render/atlas";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
@@ -79,6 +78,8 @@ import type { AtlasFrame } from "../render/atlas";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
 import { getTerrainMaterial, pickTerrainBaseFrame, terrainTransitionFrame } from "../game/render/terrainMaterials";
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
+import { pickNaturalProp, shouldFadeTallProp, type NaturalPropVariant } from "../game/render/naturalProps";
+import { isWaterHazard } from "../game/models/terrainRules";
 import { T } from "../i18n/T";
 
 /**
@@ -189,8 +190,6 @@ function shade(color: number, factor: number): number {
 
 // Cliff face colors (exposed earth), lit by the fixed NW sun: the SW-facing
 // (screen lower-left) face sits in shadow, the SE-facing face catches more.
-const CLIFF_SW = 0x6b4f33;
-const CLIFF_SE = 0x8a6844;
 
 /** Draw the heron (ZKU-156): a stilt-legged shoreline bird, ~24px tall. */
 function drawHeron(g: PIXI.Graphics, flying: boolean): void {
@@ -496,7 +495,14 @@ export function PixiStage(props: PixiStageProps) {
   const builtRotationRef = useRef<IsoRotation | null>(null);
   const chunkRebuildsRef = useRef(0);
   const obstacleSpritesRef = useRef<
-    Map<string, { sprite: PIXI.Sprite; shadow: PIXI.Graphics; swayPhase: number | null }>
+    Map<string, {
+      sprite: PIXI.Sprite;
+      shadow: PIXI.Graphics;
+      swayPhase: number | null;
+      sway: NaturalPropVariant["sway"];
+      tall: boolean;
+      fadeAlpha: number;
+    }>
   >(new Map());
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
@@ -1323,6 +1329,7 @@ export function PixiStage(props: PixiStageProps) {
     const THEMED_COLORS: Record<Terrain, number> = props.colorVision === "standard"
       ? { ...COLORS, ...getLandTheme(course.theme).tileTints }
       : TERRAIN_PALETTES[props.colorVision];
+    const cliffFaces = getLandTheme(course.theme).cliffFaces;
 
     /** Rebuild one chunk's contents in place (cliffs first, tops in depth order). */
     const buildChunk = (chunk: TerrainChunk, cx: number, cy: number) => {
@@ -1361,8 +1368,8 @@ export function PixiStage(props: PixiStageProps) {
       );
 
       for (const { x, y } of order) {
-        face(x, y, dSW, CLIFF_SW);
-        face(x, y, dSE, CLIFF_SE);
+        face(x, y, dSW, cliffFaces.sw);
+        face(x, y, dSE, cliffFaces.se);
       }
       // Mow stripes (ZKU-149): fairway/green tiles get alternating light/dark
       // bands oriented along the nearest hole's tee→green axis; fairway far
@@ -1624,7 +1631,20 @@ export function PixiStage(props: PixiStageProps) {
 
     if (!props.showObstacles) return;
 
-    const addSprite = (obs: Obstacle, texture: PIXI.Texture, tall: boolean) => {
+    const terrainNearWater = (x: number, y: number) => {
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const tx = x + dx;
+        const ty = y + dy;
+        if (tx < 0 || ty < 0 || tx >= course.width || ty >= course.height) continue;
+        if (isWaterHazard(course.tiles[ty * course.width + tx])) return true;
+      }
+      return false;
+    };
+    const isCultivated = (x: number, y: number) => (course.buildings ?? []).some((building) =>
+      Math.hypot(building.x - x, building.y - y) <= 8
+    );
+
+    const addSprite = (obs: Obstacle, texture: PIXI.Texture, variant: NaturalPropVariant, scale: number) => {
       const layersNow = layersRef.current;
       if (!layersNow) return;
       const key = `${obs.x},${obs.y}`;
@@ -1633,55 +1653,66 @@ export function PixiStage(props: PixiStageProps) {
       // Ground-anchored via the shared placement helper (ZKU-140).
       const e = getElevation(course, obs.x, obs.y);
       const placement = placeObject({ x: obs.x, y: obs.y, w: 1, d: 1 }, e, rotation);
-      sprite.anchor.set(0.5, 1);
+      sprite.anchor.set(variant.anchor[0], variant.anchor[1]);
       sprite.position.set(placement.position.x, placement.position.y);
-      const size = TILE_W * 0.72;
+      const size = TILE_W * 0.72 * scale;
       sprite.width = size;
-      // Atlas props keep their authored aspect (trees are taller than wide);
-      // the legacy square icons stay square.
-      sprite.height = tall ? (size * texture.height) / texture.width : size;
+      sprite.height = (size * texture.height) / texture.width;
       sprite.zIndex = placement.zIndex;
       layersNow.objects.addChild(sprite);
 
       // Drop shadow (ZKU-151): soft ellipse at the base, offset SE to match
       // the fixed NW sun; lives in the decal layer under all objects.
       const shadow = new PIXI.Graphics();
-      const shadowRx = obs.type === "tree" ? 13 : obs.type === "bush" ? 10 : 9;
-      shadow.ellipse(3, 1.5, shadowRx, shadowRx * 0.45);
-      shadow.fill({ color: 0x000000, alpha: 0.18 });
+      shadow.ellipse(
+        variant.shadow.offsetX,
+        variant.shadow.offsetY,
+        variant.shadow.radiusX * scale,
+        variant.shadow.radiusY * scale
+      );
+      shadow.fill({ color: 0x000000, alpha: variant.shadow.alpha });
       shadow.position.set(placement.position.x, placement.position.y - TILE_H / 2 + 1);
       layersNow.terrainDecals.addChild(shadow);
 
       obstacleSpritesRef.current.set(key, {
         sprite,
         shadow,
-        // Wind sway (ZKU-151): trees only, per-instance phase so canopies
-        // never move in lockstep.
-        swayPhase: obs.type === "tree" ? ((obs.x * 17 + obs.y * 29) % 32) / 32 * Math.PI * 2 : null,
+        swayPhase: variant.sway ? ((obs.x * 17 + obs.y * 29) % 32) / 32 * Math.PI * 2 : null,
+        sway: variant.sway,
+        tall: variant.occlusion.tall,
+        fadeAlpha: variant.occlusion.fadeAlpha,
       });
     };
 
     obstacles.forEach((obs) => {
-      // Atlas path (ZKU-147): species variant chosen by deterministic
-      // position hash so existing courses diversify with zero data changes.
-      let frame: PropFrame = obs.type;
-      if (obs.type === "tree" && (obs.x * 31 + obs.y * 17) % 2 === 1) frame = "tree2";
-      const atlasTex = getPropFrame(frame);
+      const index = obs.y * course.width + obs.x;
+      const context = {
+        theme: course.theme,
+        runSeed: props.worldSeed,
+        obstacle: obs,
+        terrain: course.tiles[index] ?? "rough" as Terrain,
+        elevation: course.elevations[index] ?? 0,
+        nearWater: terrainNearWater(obs.x, obs.y),
+        cultivated: isCultivated(obs.x, obs.y),
+      };
+      const selected = pickNaturalProp(context);
+      const fallback = pickNaturalProp({ ...context, theme: "parkland" });
+      const atlasTex = getPropFrame(selected.variant.frame) ?? getPropFrame(fallback.variant.frame);
       if (atlasTex) {
-        addSprite(obs, atlasTex, true);
+        addSprite(obs, atlasTex, selected.variant, selected.scale);
         return;
       }
       // Legacy fallback: runtime-rasterized SVG icons.
       const spriteOrPromise = getObstacleSprite(obs.type, tileSize);
       if (spriteOrPromise instanceof HTMLImageElement) {
-        addSprite(obs, PIXI.Texture.from(spriteOrPromise), false);
+        addSprite(obs, PIXI.Texture.from(spriteOrPromise), fallback.variant, fallback.scale);
       } else if (spriteOrPromise instanceof Promise) {
         void spriteOrPromise.then((img: HTMLImageElement) => {
-          if (appRef.current) addSprite(obs, PIXI.Texture.from(img), false);
+          if (appRef.current) addSprite(obs, PIXI.Texture.from(img), fallback.variant, fallback.scale);
         });
       }
     });
-  }, [appReady, obstacles, tileSize, props.showObstacles, course, rotation]);
+  }, [appReady, obstacles, tileSize, props.showObstacles, props.worldSeed, course, rotation]);
 
   // ---------------------------------------------------------------------
   // Objects layer — buildings (multi-tile footprints, ZKU-152)
@@ -2035,13 +2066,40 @@ export function PixiStage(props: PixiStageProps) {
       if (props.animationsEnabled && props.treeSway) {
         const t = nowMs / 1000;
         for (const entry of obstacleSpritesRef.current.values()) {
-          if (entry.swayPhase === null) continue;
-          entry.sprite.skew.x = Math.sin(t * 1.1 + entry.swayPhase) * 0.035;
+          if (entry.swayPhase === null || !entry.sway) continue;
+          entry.sprite.skew.x = Math.sin(t * entry.sway.speed + entry.swayPhase) * entry.sway.amplitude;
         }
       } else {
         for (const entry of obstacleSpritesRef.current.values()) {
           if (entry.swayPhase !== null && entry.sprite.skew.x !== 0) entry.sprite.skew.x = 0;
         }
+      }
+
+      // Tall-prop selection/follow occlusion: any canopy whose screen-space
+      // silhouette sits directly in front of the selected golfer fades,
+      // preserving both the person and selection ring at every rotation.
+      const selectedGolfer = props.selectedGolferId == null
+        ? null
+        : golfersRef?.current?.find((golfer) => golfer.id === props.selectedGolferId) ?? null;
+      const selectedIso = selectedGolfer
+        ? tileCenterIso(
+            selectedGolfer.x,
+            selectedGolfer.y,
+            getElevation(course, Math.floor(selectedGolfer.x + 0.5), Math.floor(selectedGolfer.y + 0.5)),
+            rotation
+          )
+        : null;
+      for (const entry of obstacleSpritesRef.current.values()) {
+        const blocksSelection = selectedIso ? shouldFadeTallProp({
+          tall: entry.tall,
+          propX: entry.sprite.position.x,
+          propY: entry.sprite.position.y,
+          propWidth: entry.sprite.width,
+          propHeight: entry.sprite.height,
+          focusX: selectedIso.x,
+          focusY: selectedIso.y,
+        }) : false;
+        entry.sprite.alpha = blocksSelection ? entry.fadeAlpha : 1;
       }
 
       perfMark("water+sway");

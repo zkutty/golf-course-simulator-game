@@ -17,7 +17,17 @@ export interface ThemeGenConfig {
   };
   sand: { pocketsMin: number; pocketsMax: number; sizeMin: number; sizeMax: number };
   environmental: { wetlandEdgeChance: number; wasteAreaEdgeChance: number };
-  obstacles: { density: number; treeRatio: number; bushRatio: number; rockRatio: number };
+  obstacles: {
+    density: number;
+    treeRatio: number;
+    bushRatio: number;
+    rockRatio: number;
+    clustersMin: number;
+    clustersMax: number;
+    lineBias: number;
+    shoreBushChance: number;
+    shoreTreeChance: number;
+  };
   /** elevation = clamp(0, maxStep, round(noise * amplitude + offset)) */
   elevation: { amplitude: number; offset: number; maxStep: number };
 }
@@ -29,6 +39,8 @@ export interface LandThemeDefinition {
   generation: ThemeGenConfig;
   /** Flat-color overrides of the renderer COLORS table (Pixi hex numbers). */
   tileTints: Partial<Record<Terrain, number>>;
+  /** Theme-authored exposed soil/rock faces for the two visible iso sides. */
+  cliffFaces: { sw: number; se: number };
 }
 
 export const LAND_THEMES: Record<LandTheme, LandThemeDefinition> = {
@@ -44,10 +56,11 @@ export const LAND_THEMES: Record<LandTheme, LandThemeDefinition> = {
       water: { bodiesMin: 1, bodiesMax: 2, fracMin: 0.03, fracMax: 0.08, coastalEdge: false },
       sand: { pocketsMin: 3, pocketsMax: 8, sizeMin: 2, sizeMax: 6 },
       environmental: { wetlandEdgeChance: 0.2, wasteAreaEdgeChance: 0.12 },
-      obstacles: { density: 0.03, treeRatio: 0.55, bushRatio: 0.35, rockRatio: 0.1 },
+      obstacles: { density: 0.03, treeRatio: 0.55, bushRatio: 0.35, rockRatio: 0.1, clustersMin: 10, clustersMax: 18, lineBias: 0.28, shoreBushChance: 0.34, shoreTreeChance: 0.08 },
       elevation: { amplitude: 4.6, offset: -0.3, maxStep: 4 },
     },
     tileTints: {},
+    cliffFaces: { sw: 0x6b4f33, se: 0x8a6844 },
   },
   links: {
     key: "links",
@@ -58,7 +71,7 @@ export const LAND_THEMES: Record<LandTheme, LandThemeDefinition> = {
       water: { bodiesMin: 1, bodiesMax: 1, fracMin: 0.015, fracMax: 0.04, coastalEdge: true },
       sand: { pocketsMin: 7, pocketsMax: 12, sizeMin: 3, sizeMax: 8 },
       environmental: { wetlandEdgeChance: 0.12, wasteAreaEdgeChance: 0.18 },
-      obstacles: { density: 0.022, treeRatio: 0.12, bushRatio: 0.53, rockRatio: 0.35 },
+      obstacles: { density: 0.022, treeRatio: 0.12, bushRatio: 0.53, rockRatio: 0.35, clustersMin: 4, clustersMax: 8, lineBias: 0.42, shoreBushChance: 0.16, shoreTreeChance: 0.01 },
       elevation: { amplitude: 3.4, offset: -0.4, maxStep: 3 }, // low rolling dunes
     },
     tileTints: {
@@ -71,6 +84,7 @@ export const LAND_THEMES: Record<LandTheme, LandThemeDefinition> = {
       wetland: 0x4e7a69,
       green: 0x66bb6a,
     },
+    cliffFaces: { sw: 0x59605a, se: 0x7a786a },
   },
   desert: {
     key: "desert",
@@ -81,7 +95,7 @@ export const LAND_THEMES: Record<LandTheme, LandThemeDefinition> = {
       water: { bodiesMin: 1, bodiesMax: 1, fracMin: 0.004, fracMax: 0.015, coastalEdge: false },
       sand: { pocketsMin: 10, pocketsMax: 16, sizeMin: 6, sizeMax: 16 }, // washes
       environmental: { wetlandEdgeChance: 0.05, wasteAreaEdgeChance: 0.35 },
-      obstacles: { density: 0.035, treeRatio: 0.08, bushRatio: 0.32, rockRatio: 0.6 },
+      obstacles: { density: 0.035, treeRatio: 0.08, bushRatio: 0.32, rockRatio: 0.6, clustersMin: 6, clustersMax: 11, lineBias: 0.12, shoreBushChance: 0.18, shoreTreeChance: 0.22 },
       elevation: { amplitude: 6.0, offset: -0.9, maxStep: 4 }, // mesa contrast
     },
     tileTints: {
@@ -95,6 +109,7 @@ export const LAND_THEMES: Record<LandTheme, LandThemeDefinition> = {
       path: 0xa89778,
       tee: 0x9a7a58,
     },
+    cliffFaces: { sw: 0x7a4934, se: 0xa2603f },
   },
 };
 

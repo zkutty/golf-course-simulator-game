@@ -1,83 +1,723 @@
 {
   "frames": {
-    "bush": {
+    "desert_bush_agave": {
       "frame": {
         "x": 2,
         "y": 2,
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 155
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 155
       },
       "sourceSize": {
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 155
       }
     },
-    "rock": {
+    "desert_bush_barrel_cactus": {
       "frame": {
-        "x": 68,
+        "x": 132,
         "y": 2,
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 97
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 97
       },
       "sourceSize": {
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 97
       }
     },
-    "tree": {
+    "desert_bush_creosote": {
       "frame": {
-        "x": 134,
+        "x": 262,
         "y": 2,
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 156
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 156
       },
       "sourceSize": {
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 156
       }
     },
-    "tree2": {
+    "desert_bush_dry_grass": {
       "frame": {
-        "x": 200,
+        "x": 392,
         "y": 2,
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 127
       },
       "rotated": false,
       "trimmed": false,
       "spriteSourceSize": {
         "x": 0,
         "y": 0,
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 127
       },
       "sourceSize": {
-        "w": 64,
-        "h": 96
+        "w": 128,
+        "h": 127
+      }
+    },
+    "desert_bush_prickly_pear": {
+      "frame": {
+        "x": 522,
+        "y": 2,
+        "w": 128,
+        "h": 147
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 147
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 147
+      }
+    },
+    "desert_rock_red_outcrop": {
+      "frame": {
+        "x": 652,
+        "y": 2,
+        "w": 128,
+        "h": 118
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 118
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 118
+      }
+    },
+    "desert_rock_sandstone": {
+      "frame": {
+        "x": 782,
+        "y": 2,
+        "w": 128,
+        "h": 114
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 114
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 114
+      }
+    },
+    "desert_rock_volcanic": {
+      "frame": {
+        "x": 2,
+        "y": 160,
+        "w": 128,
+        "h": 112
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 112
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 112
+      }
+    },
+    "desert_tree_mesquite": {
+      "frame": {
+        "x": 132,
+        "y": 160,
+        "w": 128,
+        "h": 138
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 138
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 138
+      }
+    },
+    "desert_tree_palm": {
+      "frame": {
+        "x": 262,
+        "y": 160,
+        "w": 128,
+        "h": 145
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 145
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 145
+      }
+    },
+    "desert_tree_palo_verde": {
+      "frame": {
+        "x": 392,
+        "y": 160,
+        "w": 128,
+        "h": 124
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 124
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 124
+      }
+    },
+    "desert_tree_saguaro": {
+      "frame": {
+        "x": 522,
+        "y": 160,
+        "w": 96,
+        "h": 192
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 96,
+        "h": 192
+      },
+      "sourceSize": {
+        "w": 96,
+        "h": 192
+      }
+    },
+    "links_bush_dune_grass": {
+      "frame": {
+        "x": 620,
+        "y": 160,
+        "w": 128,
+        "h": 94
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 94
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 94
+      }
+    },
+    "links_bush_golden_fescue": {
+      "frame": {
+        "x": 750,
+        "y": 160,
+        "w": 128,
+        "h": 149
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 149
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 149
+      }
+    },
+    "links_bush_gorse": {
+      "frame": {
+        "x": 880,
+        "y": 160,
+        "w": 128,
+        "h": 166
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 166
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 166
+      }
+    },
+    "links_bush_heather": {
+      "frame": {
+        "x": 2,
+        "y": 354,
+        "w": 128,
+        "h": 145
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 145
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 145
+      }
+    },
+    "links_bush_marram": {
+      "frame": {
+        "x": 132,
+        "y": 354,
+        "w": 128,
+        "h": 183
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 183
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 183
+      }
+    },
+    "links_bush_salt_shrub": {
+      "frame": {
+        "x": 262,
+        "y": 354,
+        "w": 128,
+        "h": 73
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 73
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 73
+      }
+    },
+    "links_rock_coastal_stone": {
+      "frame": {
+        "x": 392,
+        "y": 354,
+        "w": 128,
+        "h": 92
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 92
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 92
+      }
+    },
+    "links_rock_driftwood": {
+      "frame": {
+        "x": 522,
+        "y": 354,
+        "w": 128,
+        "h": 163
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 163
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 163
+      }
+    },
+    "links_rock_dune_boulder": {
+      "frame": {
+        "x": 652,
+        "y": 354,
+        "w": 128,
+        "h": 106
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 106
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 106
+      }
+    },
+    "links_rock_slate": {
+      "frame": {
+        "x": 782,
+        "y": 354,
+        "w": 128,
+        "h": 114
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 114
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 114
+      }
+    },
+    "links_tree_hawthorn": {
+      "frame": {
+        "x": 2,
+        "y": 539,
+        "w": 128,
+        "h": 83
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 83
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 83
+      }
+    },
+    "links_tree_wind_pine": {
+      "frame": {
+        "x": 132,
+        "y": 539,
+        "w": 128,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      }
+    },
+    "parkland_bush_hedge": {
+      "frame": {
+        "x": 262,
+        "y": 539,
+        "w": 128,
+        "h": 177
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 177
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 177
+      }
+    },
+    "parkland_bush_reeds": {
+      "frame": {
+        "x": 392,
+        "y": 539,
+        "w": 128,
+        "h": 177
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 177
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 177
+      }
+    },
+    "parkland_bush_wild_shrub": {
+      "frame": {
+        "x": 522,
+        "y": 539,
+        "w": 128,
+        "h": 159
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 159
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 159
+      }
+    },
+    "parkland_bush_wildflowers": {
+      "frame": {
+        "x": 652,
+        "y": 539,
+        "w": 128,
+        "h": 154
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 154
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 154
+      }
+    },
+    "parkland_rock_angular": {
+      "frame": {
+        "x": 782,
+        "y": 539,
+        "w": 128,
+        "h": 174
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 174
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 174
+      }
+    },
+    "parkland_rock_granite": {
+      "frame": {
+        "x": 2,
+        "y": 718,
+        "w": 128,
+        "h": 157
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 157
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 157
+      }
+    },
+    "parkland_rock_stump": {
+      "frame": {
+        "x": 132,
+        "y": 718,
+        "w": 128,
+        "h": 174
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 174
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 174
+      }
+    },
+    "parkland_tree_birch": {
+      "frame": {
+        "x": 262,
+        "y": 718,
+        "w": 128,
+        "h": 150
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 150
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 150
+      }
+    },
+    "parkland_tree_dogwood": {
+      "frame": {
+        "x": 392,
+        "y": 718,
+        "w": 128,
+        "h": 165
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 165
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 165
+      }
+    },
+    "parkland_tree_fir": {
+      "frame": {
+        "x": 522,
+        "y": 718,
+        "w": 128,
+        "h": 156
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 156
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 156
+      }
+    },
+    "parkland_tree_oak": {
+      "frame": {
+        "x": 652,
+        "y": 718,
+        "w": 128,
+        "h": 125
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 125
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 125
+      }
+    },
+    "parkland_tree_pine": {
+      "frame": {
+        "x": 782,
+        "y": 718,
+        "w": 128,
+        "h": 188
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 188
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 188
       }
     }
   },
@@ -86,8 +726,8 @@
     "image": "natural-props.png",
     "format": "RGBA8888",
     "size": {
-      "w": 266,
-      "h": 100
+      "w": 1010,
+      "h": 908
     },
     "scale": "1"
   }

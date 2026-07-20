@@ -47,7 +47,7 @@ import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
-import { createM20TerrainReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
+import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
@@ -388,13 +388,20 @@ export default function App() {
     const isPerfFixture = fixtureParams.get("perfFixture") === "1";
     const isM19Fixture = fixtureParams.get("m19Fixture") === "1";
     const isM20Fixture = fixtureParams.get("m20Fixture") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture) return;
+    const isM21Fixture = fixtureParams.get("m21Fixture") === "1";
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
-    const requestedTheme = fixtureParams.get("m20Theme");
+    const requestedTheme = fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = requestedTheme === "links" || requestedTheme === "desert" ? requestedTheme : "parkland";
-    const fixtureCourse = isM20Fixture ? createM20TerrainReferenceCourse(fixtureTheme) : isM19Fixture ? createParklandVisualReferenceCourse() : createRenderPerfCourse();
+    const fixtureCourse = isM21Fixture
+      ? createM21BiomeReferenceCourse(fixtureTheme)
+      : isM20Fixture
+        ? createM20TerrainReferenceCourse(fixtureTheme)
+        : isM19Fixture
+          ? createParklandVisualReferenceCourse()
+          : createRenderPerfCourse(fixtureTheme);
     const fixtureWorld = {
       ...gameStateRef.current.world,
       week: 1,
@@ -974,7 +981,15 @@ export default function App() {
       modal: flow.modal,
       paused: flow.paused,
       tutorialStep: tutorialProgress?.stepIndex ?? null,
-      course: { name: course.name, width: course.width, height: course.height, holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length, terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>) },
+      course: {
+        name: course.name,
+        theme: course.theme ?? "parkland",
+        width: course.width,
+        height: course.height,
+        holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length,
+        terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>),
+        obstacleCounts: course.obstacles.reduce((counts, obstacle) => ({ ...counts, [obstacle.type]: (counts[obstacle.type] ?? 0) + 1 }), {} as Partial<Record<ObstacleType, number>>),
+      },
       camera: { center: audioCameraCenter, viewMode, renderer: "pixi" },
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null },
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },

@@ -18,7 +18,7 @@ export interface TerrainMaterialDefinition {
   id: `${LandTheme}.${Terrain}`;
   theme: LandTheme;
   terrain: Terrain;
-  /** M19 ships authored parkland art; later biome milestones replace legacy entries. */
+  /** Every M21 biome ships authored @2x materials. */
   source: "atlas-2x" | "legacy-tint";
   baseFrames: readonly WeightedTerrainFrame[];
   transitionFrames: {
@@ -52,7 +52,7 @@ const DECALS: Record<Terrain, TerrainMaterialDefinition["decals"]> = {
 };
 
 function material(theme: LandTheme, terrain: Terrain): TerrainMaterialDefinition {
-  const baseFrames = Array.from({ length: theme === "parkland" ? 6 : 3 }, (_, index) => ({
+  const baseFrames = Array.from({ length: 6 }, (_, index) => ({
     frame: `${theme}_${terrain}_base_${index}` as TerrainBaseFrame,
     weight: index === 0 ? 3 : index < 3 ? 2 : 1,
   }));
@@ -60,7 +60,7 @@ function material(theme: LandTheme, terrain: Terrain): TerrainMaterialDefinition
     id: `${theme}.${terrain}`,
     theme,
     terrain,
-    source: theme === "parkland" ? "atlas-2x" : "legacy-tint",
+    source: "atlas-2x",
     baseFrames,
     transitionFrames: {
       edge: Object.fromEntries(["n", "e", "s", "w"].map((direction) => [direction, `${theme}_${terrain}_edge_${direction}`])) as Record<CardinalDirection, TerrainTransitionFrame>,

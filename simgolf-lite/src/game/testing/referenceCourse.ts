@@ -1,4 +1,5 @@
 import type { Course, Terrain } from "../models/types";
+import { generateWildLandWithObstacles } from "../gen/generateWildLand";
 
 export const PARKLAND_VISUAL_SEED = 1900212;
 export const PARKLAND_CAMERA_BOOKMARKS = {
@@ -97,6 +98,52 @@ export function createM20TerrainReferenceCourse(theme: Course["theme"] = "parkla
   return { ...base, tiles, theme, name: `M20 ${theme} Terrain Laboratory` };
 }
 
+/** M21 course-only biome acceptance scene with deterministic ecology. */
+export function createM21BiomeReferenceCourse(theme: NonNullable<Course["theme"]> = "parkland"): Course {
+  const width = 64;
+  const height = 44;
+  const seed = 210225;
+  const tee = { x: 7, y: 21 };
+  const green = { x: 55, y: 23 };
+  const generated = generateWildLandWithObstacles(width, height, seed, [tee, green], theme);
+  const tiles = [...generated.tiles];
+  const elevations = [...generated.elevations];
+  const set = (x: number, y: number, terrain: Terrain) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return;
+    tiles[y * width + x] = terrain;
+  };
+  // One restrained maintained corridor makes the environmental identity
+  // legible without letting props obscure golfer-critical surfaces.
+  for (let x = tee.x; x <= green.x; x++) {
+    const center = 21 + Math.round(Math.sin(x / 8) * 2);
+    for (let y = center - 2; y <= center + 2; y++) set(x, y, "fairway");
+  }
+  for (let y = tee.y - 1; y <= tee.y + 1; y++) for (let x = tee.x - 1; x <= tee.x + 1; x++) set(x, y, "tee");
+  for (let y = green.y - 2; y <= green.y + 2; y++) for (let x = green.x - 3; x <= green.x + 3; x++) {
+    const dx = (x - green.x) / 3.5;
+    const dy = (y - green.y) / 2.5;
+    if (dx * dx + dy * dy <= 1) set(x, y, "green");
+  }
+  const obstacles = generated.obstacles.filter((obstacle) => {
+    const terrain = tiles[obstacle.y * width + obstacle.x];
+    return terrain === "rough" || terrain === "deep_rough" || terrain === "waste_area";
+  });
+  return {
+    width,
+    height,
+    tiles,
+    elevations,
+    holes: [{ tee, green, parMode: "MANUAL", parManual: 5, name: `${theme} Coast`, holeIndex: 1 }],
+    obstacles,
+    buildings: [],
+    yardsPerTile: 8,
+    name: `M21 ${theme} Biome Preserve`,
+    baseGreenFee: 90,
+    condition: 0.94,
+    theme,
+  };
+}
+
 /** Deterministic, fully playable course used by QA, fuzz, and soak fixtures. */
 export function createReferenceCourse(): Course {
   const width = 110;
@@ -141,7 +188,7 @@ export function createReferenceCourse(): Course {
 }
 
 /** Reproducible renderer stress scene for M12 (`?perfFixture=1`). */
-export function createRenderPerfCourse(): Course {
+export function createRenderPerfCourse(theme: NonNullable<Course["theme"]> = "parkland"): Course {
   const width = 110;
   const height = 70;
   const tiles = Array.from({ length: width * height }, () => "rough" as Terrain);
@@ -189,7 +236,7 @@ export function createRenderPerfCourse(): Course {
     for (let x = 1; x < width - 1 && obstacles.length < 540; x++) {
       const terrain = tiles[y * width + x];
       if (terrain !== "rough" || (x * 37 + y * 19) % 3 !== 0) continue;
-      obstacles.push({ x, y, type: obstacles.length % 7 === 0 ? "rock" : obstacles.length % 4 === 0 ? "bush" : "tree" });
+      obstacles.push({ x, y, type: obstacles.length % 40 === 0 ? "bush" : obstacles.length % 20 === 0 ? "rock" : "tree" });
     }
   }
 
@@ -210,6 +257,6 @@ export function createRenderPerfCourse(): Course {
     name: "M12 Render Performance Club",
     baseGreenFee: 120,
     condition: 0.92,
-    theme: "parkland",
+    theme,
   };
 }

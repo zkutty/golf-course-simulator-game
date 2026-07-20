@@ -1,4 +1,4 @@
-import type { Course, World } from "../models/types";
+import type { Course, Point, World } from "../models/types";
 import type { GameSetup } from "../models/setup";
 import type { GoalDefinition } from "../models/objectives";
 import { createObjectiveState } from "../models/objectives";
@@ -48,6 +48,28 @@ export function createNewGame(
   // Starter clubhouse (ZKU-152): anchor the course visually from day one.
   const clubhouseSpot = findClubhouseSpot(course);
   course.buildings = clubhouseSpot ? [{ type: "clubhouse" as const, ...clubhouseSpot }] : [];
+  if (clubhouseSpot) {
+    // Deterministic cultivated planting ring. It decorates the arrival area
+    // without entering the 3x3 building footprint or semantic golf surfaces.
+    const occupied = new Set(course.obstacles.map((obstacle) => `${obstacle.x},${obstacle.y}`));
+    const candidates: Point[] = [];
+    for (let dy = -6; dy <= 8; dy++) for (let dx = -6; dx <= 8; dx++) {
+      const x = clubhouseSpot.x + dx;
+      const y = clubhouseSpot.y + dy;
+      const distance = Math.hypot(dx - 1, dy - 1);
+      if (distance < 4 || distance > 7 || x < 0 || y < 0 || x >= course.width || y >= course.height) continue;
+      const terrain = course.tiles[y * course.width + x];
+      if ((terrain === "rough" || terrain === "deep_rough") && !occupied.has(`${x},${y}`)) candidates.push({ x, y });
+    }
+    candidates.sort((a, b) => {
+      const ah = (Math.imul(a.x + 17, 73856093) ^ Math.imul(a.y + seed, 19349663)) >>> 0;
+      const bh = (Math.imul(b.x + 17, 73856093) ^ Math.imul(b.y + seed, 19349663)) >>> 0;
+      return ah - bh;
+    });
+    for (const [index, point] of candidates.slice(0, 10).entries()) {
+      course.obstacles.push({ ...point, type: index % 4 === 0 ? "tree" : "bush" });
+    }
+  }
 
   const effectiveGoals =
     goals !== undefined ? goals : setup.mode === "challenge" ? CHALLENGE_GOALS : null;

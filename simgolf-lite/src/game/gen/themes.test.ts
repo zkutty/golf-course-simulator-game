@@ -82,6 +82,35 @@ describe("land themes (ZKU-166)", () => {
     expect(avg("desert", "rock")).toBeGreaterThan(avg("parkland", "rock"));
   });
 
+  it("keeps generated props off invalid terrain and protected corridors", () => {
+    for (const theme of ["parkland", "links", "desert"] as const) {
+      const reserved = [{ x: 35, y: 25 }, { x: 70, y: 45 }];
+      const generated = generateWildLandWithObstacles(W, H, 210225, reserved, theme);
+      for (const obstacle of generated.obstacles) {
+        expect(["rough", "deep_rough", "waste_area"]).toContain(generated.tiles[obstacle.y * W + obstacle.x]);
+        for (const point of reserved) expect((obstacle.x - point.x) ** 2 + (obstacle.y - point.y) ** 2).toBeGreaterThan(4);
+      }
+      expect(new Set(generated.obstacles.map((obstacle) => `${obstacle.x},${obstacle.y}`)).size).toBe(generated.obstacles.length);
+    }
+  });
+
+  it("forms deterministic theme-specific shoreline ecology", () => {
+    const nearWater = (theme: LandTheme, seed: number) => {
+      const generated = gen(seed, theme);
+      return generated.obstacles.filter((obstacle) => {
+        for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+          const x = obstacle.x + dx;
+          const y = obstacle.y + dy;
+          if (x >= 0 && y >= 0 && x < W && y < H && ["water", "wetland"].includes(generated.tiles[y * W + x])) return true;
+        }
+        return false;
+      });
+    };
+    expect(SEEDS.flatMap((seed) => nearWater("parkland", seed)).some((obstacle) => obstacle.type === "bush")).toBe(true);
+    expect(SEEDS.flatMap((seed) => nearWater("desert", seed)).some((obstacle) => obstacle.type === "tree")).toBe(true);
+    expect(nearWater("links", 1234)).toEqual(nearWater("links", 1234));
+  });
+
   it("elevation character follows the theme (links stays low)", () => {
     for (const seed of SEEDS) {
       const maxOf = (theme: LandTheme) => Math.max(...gen(seed, theme).elevations);

@@ -26,8 +26,8 @@ code changes.
 ## Light
 
 - Sun is **fixed NW** (upper-left), never rotates with the camera.
-- Tops are lit; SE faces darkest, SW faces mid-shadow
-  (see `CLIFF_SW`/`CLIFF_SE` in PixiStage: `#6b4f33` / `#8a6844`).
+- Tops are lit; exposed-face pairs are theme-authored in
+  `src/game/models/themes.ts` (parkland soil, links stone, desert sandstone).
 - Drop shadows: soft ellipse at the base, offset **SE**, ~20% black.
 - No long cast shadows in sprites — the shadow decal is separate.
 
@@ -92,7 +92,8 @@ Supporting colors: trunk brown `#5d4330`, canopy greens `#3f8a3f`→`#77c46a`
 
 ## Asset pipeline
 
-1. Author/generate sprites as individual PNGs in `src/assets/sprites/`
+1. Author/generate sprites as individual PNGs in `src/assets/sprites/` or,
+   for M21 natural props, `src/assets/props/natural/`
    (transparent background, canvas sizes above). Filename = frame name:
    `tree.png`, `tree2.png`, `bush.png`, `rock.png`, …
 2. `npm run gen:sprites` regenerates the **procedural placeholder tier**
@@ -105,6 +106,34 @@ Supporting colors: trunk brown `#5d4330`, canopy greens `#3f8a3f`→`#77c46a`
 4. The renderer loads atlases through `src/render/atlas.ts` (typed frame
    names, async preload). **Missing frames fall back to the legacy
    procedural/SVG path and warn once** — art can land incrementally.
+
+## Biome identity and natural props (M21)
+
+- The semantic save model remains `tree | bush | rock`. Visual species live
+  only in `src/game/render/naturalProps.ts`, keyed by land theme and selected
+  from run seed + type + position. Existing saves therefore gain the richer
+  art without migration or state-hash changes.
+- Each registry entry declares scale, bottom-center anchor, separate shadow,
+  sway, density, cluster affinity, terrain/elevation/water constraints,
+  cultivated/wild weighting, and selection-occlusion behavior. Missing theme
+  art falls back to the matching parkland semantic type.
+- Original atlas sources live in `src/assets/props/natural/`; the three
+  chroma-key generation sheets and cleaned intermediate sheets are retained
+  in sibling `source/` and `processed/` folders for provenance and rebuilding.
+  `npm run gen:props` splits/normalizes the sheets, while
+  `npm run build:atlas` performs final packing.
+- Art was produced with the built-in image generation workflow on 2026-07-20
+  using three theme-specific 4×3 raster-sheet prompts. Shared constraints:
+  original early-2000s PC tycoon isometric props, fixed NW light, clean
+  readable silhouettes, one isolated object per cell, flat `#ff00ff`
+  chroma-key background, no text/watermark/floor/baked shadow. Parkland asked
+  for deciduous/evergreen/flowering trees, hedges, shrubs, reeds, flowers,
+  stump and boulders; links asked for wind-shaped trees, fescue/gorse/heather,
+  marram/driftwood and coastal stone; desert asked for cacti, palo verde,
+  mesquite, palm, agave/scrub and warm/volcanic formations.
+- Theme terrain sources are generated into `src/assets/terrain/materials/`.
+  Parkland, links, and desert all use the same typed material/autotile
+  contracts; renderer-side theme branches are not permitted.
 
 ## Review checklist for new art
 

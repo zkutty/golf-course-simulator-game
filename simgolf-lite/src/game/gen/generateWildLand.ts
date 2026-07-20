@@ -444,13 +444,18 @@ export function generateObstacles(
   const targetTrees = Math.floor(targetObstacles * obstacleCfg.treeRatio);
   const targetBushes = Math.floor(targetObstacles * obstacleCfg.bushRatio);
   const targetRocks = Math.floor(targetObstacles * obstacleCfg.rockRatio);
+  const shorelineTreeReserve = Math.min(targetTrees, Math.ceil(targetTrees * (obstacleCfg.shoreTreeChance > 0.15 ? 0.4 : 0.12)));
+  const shorelineBushReserve = Math.min(targetBushes, Math.ceil(targetBushes * (obstacleCfg.shoreBushChance > 0.25 ? 0.3 : 0.16)));
+  const coreTargetTrees = targetTrees - shorelineTreeReserve;
+  const coreTargetBushes = targetBushes - shorelineBushReserve;
 
   // Step 1: Generate tree/bush clusters in deep rough
-  const treeBushClusters = rng.nextInt(6, 14);
+  const treeBushClusters = rng.nextInt(obstacleCfg.clustersMin, obstacleCfg.clustersMax);
   let treesPlaced = 0;
   let bushesPlaced = 0;
 
-  for (let i = 0; i < treeBushClusters && (treesPlaced < targetTrees || bushesPlaced < targetBushes); i++) {
+  for (let i = 0; i < treeBushClusters && (treesPlaced < coreTargetTrees || bushesPlaced < coreTargetBushes); i++) {
+    const lineAxis = rng.next() < 0.5 ? "x" : "y";
     // Find a seed point in deep_rough
     let seedX = rng.nextInt(1, width - 2);
     let seedY = rng.nextInt(1, height - 2);
@@ -468,9 +473,9 @@ export function generateObstacles(
     }
 
     // Determine cluster type (tree or bush)
-    const clusterType: ObstacleType = treesPlaced < targetTrees && rng.next() < 0.6 ? "tree" : "bush";
+    const clusterType: ObstacleType = treesPlaced < coreTargetTrees && rng.next() < 0.6 ? "tree" : "bush";
     const clusterSize = rng.nextInt(5, 25);
-    const targetCount = clusterType === "tree" ? targetTrees : targetBushes;
+    const targetCount = clusterType === "tree" ? coreTargetTrees : coreTargetBushes;
     const currentCount = clusterType === "tree" ? treesPlaced : bushesPlaced;
 
     if (currentCount >= targetCount) continue;
@@ -497,7 +502,9 @@ export function generateObstacles(
         if (!visited.has(key)) {
           const terrain = getTile(neighbor.x, neighbor.y);
           if (terrain === "deep_rough" || terrain === "rough") {
-            if (rng.next() < 0.5) {
+            const alongLine = lineAxis === "x" ? neighbor.y === current.y : neighbor.x === current.x;
+            const probability = 0.42 + (alongLine ? obstacleCfg.lineBias : 0);
+            if (rng.next() < probability) {
               visited.add(key);
               queue.push(neighbor);
             }
@@ -508,7 +515,7 @@ export function generateObstacles(
   }
 
   // Step 2: Place additional bushes in rough areas (sparse)
-  while (bushesPlaced < targetBushes) {
+  while (bushesPlaced < coreTargetBushes) {
     const x = rng.nextInt(1, width - 2);
     const y = rng.nextInt(1, height - 2);
     if (canPlaceObstacle(x, y, "bush")) {
@@ -517,7 +524,7 @@ export function generateObstacles(
       bushesPlaced++;
     }
     // Prevent infinite loop
-    if (bushesPlaced >= targetBushes || obstacles.length > targetObstacles * 1.2) break;
+    if (bushesPlaced >= coreTargetBushes || obstacles.length > targetObstacles * 1.2) break;
   }
 
   // Step 3: Place rocks near sand edges or borders
@@ -534,6 +541,33 @@ export function generateObstacles(
     }
     // Prevent infinite loop
     if (rocksPlaced >= targetRocks || obstacles.length > targetObstacles * 1.2) break;
+  }
+
+  // Ecological shoreline pass: pond-edge reeds in parkland, sparse marram
+  // on links, and oasis palms/scrub in desert. It only fills remaining
+  // semantic quotas, so obstacle density and gameplay state stay bounded.
+  const shoreline: Point[] = [];
+  for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+    const terrain = getTile(x, y);
+    if (terrain !== "rough" && terrain !== "deep_rough") continue;
+    if (getNeighbors(x, y).some((point) => isWaterHazard(getTile(point.x, point.y)))) shoreline.push({ x, y });
+  }
+  for (let i = shoreline.length - 1; i > 0; i--) {
+    const j = rng.nextInt(0, i);
+    [shoreline[i], shoreline[j]] = [shoreline[j], shoreline[i]];
+  }
+  for (const point of shoreline) {
+    if (treesPlaced < targetTrees && rng.next() < obstacleCfg.shoreTreeChance && canPlaceObstacle(point.x, point.y, "tree")) {
+      obstacles.push({ ...point, type: "tree" });
+      obstacleSet.add(`${point.x},${point.y}`);
+      treesPlaced++;
+      continue;
+    }
+    if (bushesPlaced < targetBushes && rng.next() < obstacleCfg.shoreBushChance && canPlaceObstacle(point.x, point.y, "bush")) {
+      obstacles.push({ ...point, type: "bush" });
+      obstacleSet.add(`${point.x},${point.y}`);
+      bushesPlaced++;
+    }
   }
 
   // Step 4: Smoothing pass - remove isolated single obstacles (optional, light pass)

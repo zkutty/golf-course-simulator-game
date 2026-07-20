@@ -5,7 +5,7 @@ import type { GameSetup } from "../game/models/setup";
 import { SANDBOX_STARTING_CASH } from "../game/models/setup";
 import { DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
-import { generateWildLand } from "../game/gen/generateWildLand";
+import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
 import { getLandTheme } from "../game/models/themes";
 import { generateCourseName } from "../utils/courseNames";
 import { StartMenuBackground } from "./StartMenuBackground";
@@ -66,8 +66,8 @@ function LandPreview(props: {
   onSelect: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const tiles = useMemo(
-    () => generateWildLand(COURSE_WIDTH, COURSE_HEIGHT, props.seed | 0, props.theme),
+  const generated = useMemo(
+    () => generateWildLandWithObstacles(COURSE_WIDTH, COURSE_HEIGHT, props.seed | 0, [], props.theme),
     [props.seed, props.theme]
   );
 
@@ -80,11 +80,21 @@ function LandPreview(props: {
     const px = 2;
     for (let y = 0; y < COURSE_HEIGHT; y++) {
       for (let x = 0; x < COURSE_WIDTH; x++) {
-        ctx.fillStyle = colors[tiles[y * COURSE_WIDTH + x]] ?? "#8fbf6f";
+        ctx.fillStyle = colors[generated.tiles[y * COURSE_WIDTH + x]] ?? "#8fbf6f";
         ctx.fillRect(x * px, y * px, px, px);
       }
     }
-  }, [tiles, props.theme]);
+    const propColors = props.theme === "desert"
+      ? { tree: "#315e32", bush: "#6f7436", rock: "#714633" }
+      : props.theme === "links"
+        ? { tree: "#294f34", bush: "#9a8b38", rock: "#59646a" }
+        : { tree: "#214e2c", bush: "#477d35", rock: "#66685f" };
+    for (const obstacle of generated.obstacles) {
+      ctx.fillStyle = propColors[obstacle.type];
+      const radius = obstacle.type === "tree" ? 2 : 1;
+      ctx.fillRect(obstacle.x * px - radius, obstacle.y * px - radius, radius * 2 + 1, radius * 2 + 1);
+    }
+  }, [generated, props.theme]);
 
   return (
     <button

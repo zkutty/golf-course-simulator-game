@@ -1,5 +1,6 @@
 import { Assets, Spritesheet, Texture } from "pixi.js";
 import type { TerrainAtlasFrame } from "../game/render/terrainMaterials";
+import { missingNaturalPropFrames, type NaturalPropFrame } from "../game/render/naturalProps";
 
 /**
  * Typed texture-atlas loader (ZKU-147).
@@ -13,7 +14,7 @@ import type { TerrainAtlasFrame } from "../game/render/terrainMaterials";
  * can land incrementally without code changes.
  */
 
-export type PropFrame = "tree" | "tree2" | "bush" | "rock";
+export type PropFrame = NaturalPropFrame;
 export type BuildingFrame = "clubhouse" | "pro_shop" | "snack_bar" | "cart_rental";
 export type AtlasFrame = PropFrame | BuildingFrame;
 
@@ -54,6 +55,10 @@ export async function loadAtlases(): Promise<void> {
     load("buildings-decor"),
     load("golfers"),
   ]);
+  if (naturalPropsSheet && import.meta.env.DEV) {
+    const missing = missingNaturalPropFrames((frame) => Boolean(naturalPropsSheet?.textures[frame]));
+    if (missing.length > 0) console.warn(`[atlas] natural-props atlas is missing ${missing.length} registry frames`, missing);
+  }
 }
 
 /**

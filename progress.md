@@ -206,3 +206,24 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M20 remaining
 
 - None. ZK-217 through ZK-220 meet their acceptance criteria.
+
+## 2026-07-20 — M21 biome identity and natural world
+
+- Current request: “implement M21 from the linear project”. Linear scope resolved as ZK-221 through ZK-225.
+- Added a typed, exhaustive `LandTheme × ObstacleType` natural-prop registry with 36 original parkland, links, and desert variants. Deterministic selection uses theme, run seed, semantic obstacle type, and position while preserving the existing save/state model.
+- Added per-variant scale, anchor, separate shadow, sway, density, clustering, terrain/elevation/water, cultivated/wild, and selection-occlusion metadata with automatic atlas completeness checks and parkland semantic fallbacks.
+- Added 540 authored @2× terrain material frames across all three themes, replacing links/desert tint fallbacks without introducing renderer theme branches.
+- Upgraded deterministic ecological generation with theme-specific tree-line/copse bias, shoreline reserves, pond-edge vegetation, sparse links composition, desert oasis trees, reserved-zone safety, and richer new-game previews.
+- Added deterministic M21 fixtures, 12 rotation captures, three detail captures, three new-game preview captures, registry/material/generation tests, and multi-biome performance support.
+
+## M21 verification
+
+- Full unit suite: 41 files, 285 tests passed, one intentional skip.
+- Production build and lint/i18n guards pass; lint reports six pre-existing React hook warnings and no errors.
+- Full Playwright regression: 24/24 passed in 7.1 minutes, including M21 biome packs at all four camera rotations and deterministic new-game previews.
+- 540-prop/100-golfer performance fixtures pass for parkland, links, and desert: 60 fps, 16.8–18.2 ms p95, and 0.20–0.28 ms renderer work against the 8 ms budget. The final parkland certification contains 514 authored trees and passes at 17.0 ms p95 / 0.24 ms renderer work.
+- Bundled web-game client passed with deterministic state output and zero captured console errors. Its WebGL `toDataURL` capture remained black even headed; the dedicated Playwright element screenshots rendered correctly and were visually inspected instead.
+
+## M21 remaining
+
+- None. ZK-221 through ZK-225 meet their implementation and acceptance criteria.

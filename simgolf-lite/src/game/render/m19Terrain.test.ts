@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "./autotile";
 import { LAND_THEME_KINDS, TERRAIN_KINDS, TERRAIN_MATERIALS, getTerrainMaterial, pickTerrainBaseFrame } from "./terrainMaterials";
 
@@ -7,6 +10,17 @@ describe("M19 terrain material registry", () => {
     for (const theme of LAND_THEME_KINDS) {
       expect(Object.keys(TERRAIN_MATERIALS[theme]).sort()).toEqual([...TERRAIN_KINDS].sort());
       for (const terrain of TERRAIN_KINDS) expect(getTerrainMaterial(theme, terrain).id).toBe(`${theme}.${terrain}`);
+    }
+  });
+
+  it("ships authored M21 material frames for every biome", () => {
+    const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+    const atlas = JSON.parse(readFileSync(path.join(root, "public/atlases/terrain.json"), "utf8")) as { frames: Record<string, unknown> };
+    for (const theme of LAND_THEME_KINDS) for (const terrain of TERRAIN_KINDS) {
+      const material = getTerrainMaterial(theme, terrain);
+      expect(material.source).toBe("atlas-2x");
+      for (const base of material.baseFrames) expect(atlas.frames[base.frame]).toBeTruthy();
+      for (const feature of Object.values(material.transitionFrames).flatMap((frames) => Object.values(frames))) expect(atlas.frames[feature]).toBeTruthy();
     }
   });
 
