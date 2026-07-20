@@ -1,0 +1,34 @@
+{
+  "frames": {
+    "clubhouse": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 192,
+        "h": 150
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 150
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 150
+      }
+    }
+  },
+  "meta": {
+    "app": "simgolf-lite build-atlas",
+    "image": "buildings-decor.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 196,
+      "h": 154
+    },
+    "scale": "1"
+  }
+}

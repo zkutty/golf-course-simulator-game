@@ -1,11 +1,12 @@
 import { Assets, Spritesheet, Texture } from "pixi.js";
+import type { TerrainAtlasFrame } from "../game/render/terrainMaterials";
 
 /**
  * Typed texture-atlas loader (ZKU-147).
  *
- * Atlases are packed by `npm run build:atlas` from `src/assets/sprites/`
- * into `public/atlases/` (see ART_GUIDE.md for the authoring spec and
- * workflow). Frame names are a TS union so a typo is a compile error.
+ * Atlases are packed by `npm run build:atlas` from the typed terrain and
+ * sprite source folders into `public/atlases/` (see ART_GUIDE.md). Frame
+ * names are TS unions/templates so a typo is a compile error.
  *
  * Loading is tolerant by design: if an atlas or frame is missing the
  * renderer falls back to its legacy procedural path and warns once — art
@@ -13,16 +14,8 @@ import { Assets, Spritesheet, Texture } from "pixi.js";
  */
 
 export type PropFrame = "tree" | "tree2" | "bush" | "rock";
-export type TerrainFrame =
-  | "diamond0"
-  | "diamond1"
-  | "diamond2"
-  | "edge_ur"
-  | "edge_lr"
-  | "edge_ll"
-  | "edge_ul";
 export type BuildingFrame = "clubhouse" | "pro_shop" | "snack_bar" | "cart_rental";
-export type AtlasFrame = PropFrame | TerrainFrame | BuildingFrame;
+export type AtlasFrame = PropFrame | BuildingFrame;
 
 /**
  * Golfer character frames (ZKU-153) live in their own atlas. Names follow
@@ -33,7 +26,9 @@ export type AtlasFrame = PropFrame | TerrainFrame | BuildingFrame;
 export type GolferAnimName = "walk" | "idle" | "swing" | "putt" | "cheer" | "mad";
 export type GolferFrame = `golfer${number}_${GolferAnimName}${"" | "_t"}_${number}_${number}`;
 
-let propsSheet: Spritesheet | null = null;
+let terrainSheet: Spritesheet | null = null;
+let naturalPropsSheet: Spritesheet | null = null;
+let buildingsSheet: Spritesheet | null = null;
 let golfersSheet: Spritesheet | null = null;
 let loadAttempted = false;
 const warned = new Set<string>();
@@ -53,7 +48,12 @@ export async function loadAtlases(): Promise<void> {
       return null;
     }
   };
-  [propsSheet, golfersSheet] = await Promise.all([load("props"), load("golfers")]);
+  [terrainSheet, naturalPropsSheet, buildingsSheet, golfersSheet] = await Promise.all([
+    load("terrain"),
+    load("natural-props"),
+    load("buildings-decor"),
+    load("golfers"),
+  ]);
 }
 
 /**
@@ -61,10 +61,20 @@ export async function loadAtlases(): Promise<void> {
  * Warns once per missing frame in dev.
  */
 export function getPropFrame(name: AtlasFrame): Texture | null {
-  const tex = propsSheet?.textures[name] ?? null;
+  const tex = naturalPropsSheet?.textures[name] ?? buildingsSheet?.textures[name] ?? null;
   if (!tex && import.meta.env.DEV && !warned.has(name)) {
     warned.add(name);
     console.warn(`[atlas] missing frame "${name}" — falling back to procedural sprite`);
+  }
+  return tex;
+}
+
+/** Authored @2× terrain texture, kept at 64×32 logical world size. */
+export function getTerrainFrame(name: TerrainAtlasFrame): Texture | null {
+  const tex = terrainSheet?.textures[name] ?? null;
+  if (!tex && import.meta.env.DEV && !warned.has(name)) {
+    warned.add(name);
+    console.warn(`[atlas] missing terrain frame "${name}" — using safe material fallback`);
   }
   return tex;
 }
@@ -86,7 +96,9 @@ export function getGolferFrame(name: GolferFrame): Texture | null {
 
 /** Test hook: reset module state (unit tests only). */
 export function __resetAtlasForTests(): void {
-  propsSheet = null;
+  terrainSheet = null;
+  naturalPropsSheet = null;
+  buildingsSheet = null;
   golfersSheet = null;
   loadAttempted = false;
   warned.clear();

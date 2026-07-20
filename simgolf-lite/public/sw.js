@@ -1,5 +1,5 @@
 const VERSION = "coursecraft-v1";
-const SHELL = ["/", "/manifest.webmanifest", "/icons/coursecraft-192.svg", "/icons/coursecraft-512.svg", "/atlases/props.json", "/atlases/props.png", "/atlases/golfers.json", "/atlases/golfers.png"];
+const SHELL = ["/", "/manifest.webmanifest", "/icons/coursecraft-192.svg", "/icons/coursecraft-512.svg", "/atlases/terrain.json", "/atlases/terrain.png", "/atlases/natural-props.json", "/atlases/natural-props.png", "/atlases/buildings-decor.json", "/atlases/buildings-decor.png", "/atlases/golfers.json", "/atlases/golfers.png"];
 const PRECACHE = []; // __COURSECRAFT_PRECACHE__
 self.addEventListener("install", (event) => event.waitUntil(caches.open(VERSION).then((cache) => cache.addAll([...new Set([...SHELL, ...PRECACHE])]))));
 self.addEventListener("activate", (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== VERSION && key.startsWith("coursecraft-")).map((key) => caches.delete(key)))).then(() => self.clients.claim())));

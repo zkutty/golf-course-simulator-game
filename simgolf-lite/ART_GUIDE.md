@@ -1,7 +1,8 @@
 # CourseCraft Art Guide (the "look bible")
 
-Target aesthetic: **Maxis-era 2.5D tycoon** — Sid Meier's SimGolf (2002),
-RollerCoaster Tycoon 2, Zoo Tycoon. Charming, chunky, readable. Every sprite
+Target aesthetic: **original clean modern-isometric course builder** — warm,
+landscaped, toy-like, and readable, with classic 2.5D composition principles
+but no copied palettes, silhouettes, pixels, or traced assets. Every sprite
 in the game (hand-painted, AI-generated, or procedural) must follow this
 spec; if art matches these rules it will sit correctly in the scene with no
 code changes.
@@ -11,11 +12,14 @@ code changes.
 - **2:1 dimetric ("isometric")**: a ground tile is a **64×32 px diamond**
   (`TILE_W`/`TILE_H` in `src/game/render/iso.ts`).
 - One elevation step = **8 px** vertical (`ELEVATION_STEP_PX`).
-- Sprites are authored at 1x for a 64 px tile; the renderer scales.
+- Terrain source art is authored at **@2× (128×64 px)** and displayed on the
+  unchanged 64×32 logical projection. This preserves camera and picking math
+  while remaining sharp on high-DPI screens.
 - Objects stand on their tile with a **ground anchor at bottom-center**
   (sprites use anchor `(0.5, 1)` placed at the footprint's front corner —
   see `src/game/render/objectPlacement.ts`).
-- Standard prop canvas: **64×96 px** (1 tile wide, 3 half-tiles tall).
+- Standard prop source canvas: **@2× 128×192 px** (1 logical tile wide).
+  Legacy 64×96 placeholders remain valid only as development fallbacks.
   Buildings: 64 px per footprint tile of width, height as needed.
 - Character canvas (M11): **48×72 px**, feet at bottom-center.
 
@@ -94,8 +98,9 @@ Supporting colors: trunk brown `#5d4330`, canopy greens `#3f8a3f`→`#77c46a`
 2. `npm run gen:sprites` regenerates the **procedural placeholder tier**
    (checked in, deterministic). Replace any placeholder by dropping a
    better PNG with the same name — the code never changes.
-3. `npm run build:atlas` packs `src/assets/sprites/**` into
-   `public/atlases/props.png` + `props.json` (Pixi spritesheet format).
+3. `npm run build:atlas` packs independent `terrain`, `natural-props`,
+   `buildings-decor`, and `golfers` atlases. Terrain metadata records scale 2;
+   renderer sprites remain exactly 64×32 world pixels.
    Both outputs are checked in so builds/deploys need no image tooling.
 4. The renderer loads atlases through `src/render/atlas.ts` (typed frame
    names, async preload). **Missing frames fall back to the legacy
@@ -108,3 +113,41 @@ Supporting colors: trunk brown `#5d4330`, canopy greens `#3f8a3f`→`#77c46a`
 - [ ] NW-lit, 1 px darkened outline, ≤4 value steps per surface
 - [ ] Colors harmonize with the palette anchors
 - [ ] Transparent background, no baked drop shadow
+
+## Parkland vertical-slice target (M19)
+
+The objective fixture is `createParklandVisualReferenceCourse()` with seed
+`1900212`, reachable in development at `?m19Fixture=1`. It contains one
+landscaped par 4, shaped water and bunkers, a curved path, rolling elevation,
+and cultivated/wild tree density. Fixed capture bookmarks are exported as
+`PARKLAND_CAMERA_BOOKMARKS`: overview at 50%, full hole at 100%, and green
+complex at 200%, all rotation 0. Repeat captures at rotations 1–3 when
+reviewing transition directionality.
+
+Objective gates before a raster enters an atlas:
+
+- **Repetition:** no motif is obvious in a 30×30 single-material field at
+  default zoom; use at least four base variants with unequal weights.
+- **Seams:** cardinal, convex, and concave joins have no transparent cracks
+  or raw diamond outlines in any camera rotation.
+- **Anchors:** terrain fills 128×64 exactly; prop feet/trunks meet the
+  bottom-center ground anchor within two source pixels.
+- **Lighting:** NW-facing values are lightest; SE values are darkest; light
+  never rotates with the camera.
+- **Density:** a maintained hole reads as golf at 50% zoom, yet selection,
+  flags, shot plans, and accessibility patterns remain legible at 100%.
+- **Originality:** no third-party pixels are present. AI-assisted outputs must
+  record prompt/provenance, then receive manual palette, edge, alpha, anchor,
+  and silhouette cleanup before packing.
+
+## Surface dressing
+
+- Fairway and green mowing is clipped inside authored tile alpha; contrast is
+  capped near 7%. Green fringe, bunker lips, shore banks, and path shoulders
+  are material transition frames rather than freehand renderer branches.
+- Cups, flags, tee pads, and markers remain high-contrast semantic decals
+  above terrain materials. They must read with the course UI hidden.
+- Water uses three stepped depth values, sparse reflection marks, and pale
+  shore frames. Runtime motion may only modulate those authored layers.
+  Reduced motion freezes base tint, reflection, shore alpha, tree sway, and
+  looping flag motion.

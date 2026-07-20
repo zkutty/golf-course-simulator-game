@@ -2,7 +2,9 @@
 // builds and deploys need no image tooling. Simple shelf packing,
 // deterministic order.
 //
-// - src/assets/sprites/*.png          -> public/atlases/props.png/json
+// - src/assets/terrain/parkland/*.png -> public/atlases/terrain.png/json
+// - tree/bush/rock sources            -> public/atlases/natural-props.png/json
+// - building sources                  -> public/atlases/buildings-decor.png/json
 // - src/assets/sprites/golfers/*.png  -> public/atlases/golfers.png/json
 //
 // Grid sheets (ZKU-153): a file named `name.grid{C}x{R}.png` is packed as one
@@ -17,19 +19,20 @@ import path from "node:path";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(ROOT, "src/assets/sprites");
+const TERRAIN_SRC = path.join(ROOT, "src/assets/terrain/parkland");
 const OUT_DIR = path.join(ROOT, "public/atlases");
 mkdirSync(OUT_DIR, { recursive: true });
 
 const PAD = 2; // gutter to avoid bleeding when scaled
 const MAX_W = 1024;
 
-function buildAtlas(srcDir, outName) {
+function buildAtlas(srcDir, outName, include = () => true, scale = "1") {
   if (!existsSync(srcDir)) {
     console.error(`no sprite directory ${srcDir} — run npm run gen:sprites first`);
     process.exit(1);
   }
   const files = readdirSync(srcDir, { withFileTypes: true })
-    .filter((f) => f.isFile() && f.name.endsWith(".png"))
+    .filter((f) => f.isFile() && f.name.endsWith(".png") && include(f.name))
     .map((f) => f.name)
     .sort();
   if (files.length === 0) {
@@ -98,7 +101,7 @@ function buildAtlas(srcDir, outName) {
       image: `${outName}.png`,
       format: "RGBA8888",
       size: { w: atlasW, h: atlasH },
-      scale: "1",
+      scale,
     },
   };
 
@@ -109,5 +112,7 @@ function buildAtlas(srcDir, outName) {
   );
 }
 
-buildAtlas(SRC, "props");
+buildAtlas(TERRAIN_SRC, "terrain", () => true, "2");
+buildAtlas(SRC, "natural-props", (name) => /^(tree2?|bush|rock)\.png$/.test(name));
+buildAtlas(SRC, "buildings-decor", (name) => /^(clubhouse|pro_shop|snack_bar|cart_rental)\.png$/.test(name));
 buildAtlas(path.join(SRC, "golfers"), "golfers");

@@ -47,7 +47,7 @@ import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
-import { createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
+import { createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
@@ -384,11 +384,14 @@ export default function App() {
 
   useEffect(() => {
     if (!import.meta.env.DEV || perfFixtureLoadedRef.current) return;
-    if (new URLSearchParams(window.location.search).get("perfFixture") !== "1") return;
+    const fixtureParams = new URLSearchParams(window.location.search);
+    const isPerfFixture = fixtureParams.get("perfFixture") === "1";
+    const isM19Fixture = fixtureParams.get("m19Fixture") === "1";
+    if (!isPerfFixture && !isM19Fixture) return;
     perfFixtureLoadedRef.current = true;
-    const fixtureRepParam = new URLSearchParams(window.location.search).get("m7Rep");
+    const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
-    const fixtureCourse = createRenderPerfCourse();
+    const fixtureCourse = isM19Fixture ? createParklandVisualReferenceCourse() : createRenderPerfCourse();
     const fixtureWorld = {
       ...gameStateRef.current.world,
       week: 1,
@@ -400,18 +403,20 @@ export default function App() {
       mode: "sandbox" as const,
     };
     dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
-    live.restoreSnapshot(snapshotLiveSimulation({
-      state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),
-      pendingCash: 0,
-      speed: "3x",
-      selectedGolferId: null,
-    }));
+    if (isPerfFixture) {
+      live.restoreSnapshot(snapshotLiveSimulation({
+        state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),
+        pendingCash: 0,
+        speed: "3x",
+        selectedGolferId: null,
+      }));
+    }
     setAppProfile((current) => ({ ...current, tutorialOffered: true, tutorialCompleted: true }));
     setTutorialProgress(null);
     setShowTutorialOffer(false);
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
     flowDispatch({ type: "ENTER_GAME" });
-    live.setSpeed("3x");
+    live.setSpeed(isPerfFixture ? "3x" : "paused");
   }, [dispatch, live, t]);
 
   const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);
@@ -972,6 +977,7 @@ export default function App() {
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       progression: { panelOpen: showProgression, tier: reputationTier(world.reputation).id, staffCap: reputationTier(world.reputation).staffCap, buildingTierCap: reputationTier(world.reputation).buildingTierCap },
       editor: { mode: editorMode, selectedTerrain: selected, activeHole: activeHoleIndex + 1 },
+      graphics: { animations: effectiveAnimations, waterAnimation: effectiveAnimations && appProfile.graphics.waterAnimation, treeSway: effectiveAnimations && appProfile.graphics.treeSway },
       retention: { photoMode, recordsOpen: showRetention, achievementsEarned: appProfile.achievements.earned.length, totalRounds: records.totalRounds, aces: records.aces.length, tickerVisible: appProfile.gameplay.tickerVisible },
       tournament: {
         panelOpen: showTournaments,
@@ -986,7 +992,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, audioCameraCenter, course, editorMode, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;

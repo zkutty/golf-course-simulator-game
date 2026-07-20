@@ -163,3 +163,24 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M18 remaining
 
 - None. ZK-81 through ZK-85 meet their acceptance criteria.
+
+## 2026-07-20 — M19 visual foundation implementation
+
+- Current request: “Let’s implement m19 from linear”. Linear scope resolved as ZK-212 through ZK-216.
+- Added Art Guide v2 review gates, original-asset provenance, the deterministic seed-1900212 parkland par-4 fixture, and fixed 50/100/200% camera bookmarks.
+- Added an exhaustive `LandTheme × Terrain` material registry, weighted base variants, typed transition contracts, safe legacy fallbacks, and separate terrain/natural-props/buildings-decor/golfer atlases.
+- Added 144 original @2× parkland terrain sources (six bases plus cardinal/convex/concave transitions for all eight surfaces) and a deterministic generator/build pipeline.
+- Replaced four-neighbor scalloped lips with rotation-safe 8-neighbor masks covering all 256 configurations. Boundaries are material-priority and elevation aware; existing 3×3 chunk invalidation and accessibility overlays remain intact.
+- Integrated clipped mowing, green/fringe transitions, bunker lips, shore foam/banks, path shoulders, restrained water depth/reflection art, and static animation fallbacks.
+
+## M19 verification
+
+- Full unit suite: 38 files, 269 passed, one intentional skip. Focused M19 coverage validates registry completeness, all 256 masks, four rotations, convex/concave normalization, deterministic variants, and the complete fixture.
+- Production build passes; lint/i18n pass with six pre-existing hook warnings and no errors.
+- 100-golfer performance smoke: 60.0 fps, 17.7 ms p95, 0.24 ms renderer work (8 ms budget), 763 objects.
+- Focused M19 Playwright acceptance passes at 1440×900 across rotations and static animation mode with no console errors.
+- Bundled web-game client passes against `?m19Fixture=1`; course-only overview/rotation/static-water captures and final smoke output were visually inspected.
+
+## M19 remaining
+
+- None. ZK-212 through ZK-216 are Done in Linear with implementation and verification notes; the milestone reports complete.

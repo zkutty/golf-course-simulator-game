@@ -1,5 +1,83 @@
 import type { Course, Terrain } from "../models/types";
 
+export const PARKLAND_VISUAL_SEED = 1900212;
+export const PARKLAND_CAMERA_BOOKMARKS = {
+  overview50: { center: { x: 24, y: 18 }, zoom: 0.5, rotation: 0 as const },
+  hole100: { center: { x: 24, y: 18 }, zoom: 1, rotation: 0 as const },
+  green200: { center: { x: 39, y: 20 }, zoom: 2, rotation: 0 as const },
+} as const;
+
+/** Deterministic M19 landscaped par-4 visual acceptance scene. */
+export function createParklandVisualReferenceCourse(): Course {
+  const width = 48;
+  const height = 36;
+  const tiles = Array.from({ length: width * height }, () => "rough" as Terrain);
+  // A single broad clubhouse hill keeps the golf corridor seamless while
+  // still exercising authored elevation joins and exposed-earth faces.
+  const elevations: number[] = Array.from({ length: width * height }, (_, index) => {
+    const x = index % width;
+    const y = Math.floor(index / width);
+    return x < 15 && y < 12 ? 2 : 1;
+  });
+  const set = (x: number, y: number, terrain: Terrain) => {
+    if (x >= 0 && y >= 0 && x < width && y < height) tiles[y * width + x] = terrain;
+  };
+
+  // Curved maintained corridor: a soft dogleg whose width changes along the hole.
+  for (let x = 7; x <= 40; x++) {
+    const centerY = 18 + Math.round(Math.sin((x - 8) / 8) * 3);
+    const radius = x < 12 || x > 35 ? 2 : 3;
+    for (let y = centerY - radius; y <= centerY + radius; y++) {
+      if (Math.abs(y - centerY) + ((x * 7 + y * 11) % 5 === 0 ? 1 : 0) <= radius) set(x, y, "fairway");
+    }
+  }
+  for (let y = 15; y <= 19; y++) for (let x = 5; x <= 9; x++) set(x, y, "tee");
+  for (let y = 17; y <= 23; y++) for (let x = 36; x <= 43; x++) {
+    const dx = (x - 39.5) / 4.5;
+    const dy = (y - 20) / 3.5;
+    if (dx * dx + dy * dy <= 1) set(x, y, "green");
+  }
+  // Lake, two shaped bunkers, and a meandering cart path exercise all seams.
+  for (let y = 22; y <= 31; y++) for (let x = 18; x <= 30; x++) {
+    const dx = (x - 24) / 7;
+    const dy = (y - 26) / 5;
+    if (dx * dx + dy * dy + Math.sin(x * 1.7) * 0.08 <= 1) { set(x, y, "water"); elevations[y * width + x] = 0; }
+  }
+  for (let y = 13; y <= 17; y++) for (let x = 29; x <= 34; x++) if ((x - 31.5) ** 2 / 10 + (y - 15) ** 2 / 5 <= 1) set(x, y, "sand");
+  for (let y = 22; y <= 25; y++) for (let x = 37; x <= 41; x++) if ((x - 39) ** 2 / 7 + (y - 23.5) ** 2 / 3 <= 1) set(x, y, "sand");
+  for (let x = 3; x <= 44; x++) {
+    const y = 10 + Math.round(Math.sin(x / 6) * 2);
+    set(x, y, "path");
+  }
+  for (let y = 2; y < height - 2; y++) for (let x = 2; x < width - 2; x++) {
+    if (tiles[y * width + x] === "rough" && ((x * 41 + y * 67 + PARKLAND_VISUAL_SEED) % 79 < 4)) set(x, y, "deep_rough");
+  }
+
+  const obstacles: Course["obstacles"] = [];
+  for (let y = 2; y < height - 2; y++) for (let x = 2; x < width - 2; x++) {
+    const terrain = tiles[y * width + x];
+    const value = (x * 73 + y * 101 + PARKLAND_VISUAL_SEED) % 113;
+    if ((terrain === "rough" || terrain === "deep_rough") && value < 7) {
+      obstacles.push({ x, y, type: value === 0 ? "rock" : value < 3 ? "bush" : "tree" });
+    }
+  }
+
+  return {
+    width,
+    height,
+    tiles,
+    elevations,
+    holes: [{ tee: { x: 7, y: 17 }, green: { x: 40, y: 20 }, parMode: "MANUAL", parManual: 4, name: "Founder's Bend", holeIndex: 1 }],
+    obstacles,
+    buildings: [{ type: "clubhouse", x: 3, y: 4 }],
+    yardsPerTile: 10,
+    name: "M19 Parkland Reference Club",
+    baseGreenFee: 95,
+    condition: 0.94,
+    theme: "parkland",
+  };
+}
+
 /** Deterministic, fully playable course used by QA, fuzz, and soak fixtures. */
 export function createReferenceCourse(): Course {
   const width = 110;

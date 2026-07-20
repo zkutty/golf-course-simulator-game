@@ -12,7 +12,6 @@ import {
   isoToTile,
   isoToWorld,
   nextRotation,
-  rotateWorld,
   tileCenterIso,
   unrotateWorld,
   worldToIso,
@@ -22,10 +21,10 @@ import { getObstacleSprite } from "../render/iconSprites";
 import {
   getGolferFrame,
   getPropFrame,
+  getTerrainFrame,
   golfersAtlasReady,
   loadAtlases,
   type PropFrame,
-  type TerrainFrame,
 } from "../render/atlas";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
@@ -77,6 +76,8 @@ import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetric
 import { buildingSpec } from "../game/models/buildings";
 import { getLandTheme } from "../game/models/themes";
 import type { AtlasFrame } from "../render/atlas";
+import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
+import { getTerrainMaterial, pickTerrainBaseFrame, terrainTransitionFrame } from "../game/render/terrainMaterials";
 import { T } from "../i18n/T";
 
 /**
@@ -132,14 +133,11 @@ const COLORS: Record<Terrain, number> = {
   path: 0x8f8f8f,
 };
 
-// Slightly darker edge tint per tile to keep the grid readable until the
-// M10 art pass replaces flat colors with textures.
+// Legacy/error fallback shading; normal parkland rendering uses authored art.
 const EDGE_DARKEN = 0.88;
 
-// Autotile transition priority (ZKU-148): where two terrains meet, the
-// HIGHER-priority surface "owns" the boundary and spills a scalloped lip
-// onto the lower-priority tile (green edges spill onto fairway, fairway
-// onto rough, sand onto water, ...).
+// Material-boundary ownership: one higher-priority surface draws the seam,
+// preventing doubled banks/lips where two terrain types meet.
 const TERRAIN_PRIORITY: Record<Terrain, number> = {
   green: 8,
   fairway: 7,
@@ -1311,8 +1309,8 @@ export function PixiStage(props: PixiStageProps) {
       return [{ x, y }, { x: x + 1, y }];
     };
 
-    // ZKU-166 (theme palettes) — the ONLY theme-aware line in the renderer:
-    // flat tint overrides read from game/models/themes; identity for parkland.
+    // Accessibility and legacy-biome tint fallback. Theme/material selection
+    // itself is data-driven through the exhaustive terrain material registry.
     const THEMED_COLORS: Record<Terrain, number> = props.colorVision === "standard"
       ? { ...COLORS, ...getLandTheme(course.theme).tileTints }
       : TERRAIN_PALETTES[props.colorVision];
@@ -1356,17 +1354,6 @@ export function PixiStage(props: PixiStageProps) {
         face(x, y, dSW, CLIFF_SW);
         face(x, y, dSE, CLIFF_SE);
       }
-      // Screen-edge frame for a world-neighbor offset under the current
-      // rotation (rotated +x = lower-right edge, +y = lower-left, etc.).
-      const edgeFrameFor = (dx: number, dy: number): "edge_ur" | "edge_lr" | "edge_ll" | "edge_ul" => {
-        const r = rotateWorld(dx, dy, rotation);
-        if (r.x === 1) return "edge_lr";
-        if (r.x === -1) return "edge_ul";
-        if (r.y === 1) return "edge_ll";
-        return "edge_ur";
-      };
-      const NEIGHBORS: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-
       // Mow stripes (ZKU-149): fairway/green tiles get alternating light/dark
       // bands oriented along the nearest hole's tee→green axis; fairway far
       // from any hole falls back to a global diagonal. Pure tint math — no
@@ -1403,6 +1390,7 @@ export function PixiStage(props: PixiStageProps) {
 
       for (const { x, y } of order) {
         const terrain = course.tiles[y * w + x];
+        const material = getTerrainMaterial(course.theme, terrain);
         const e = elev(x, y);
         const p = worldToIso(x + 0.5, y, e, rotation);
         // NW-sun slope shade from central-difference normals (world-fixed sun).
@@ -1410,15 +1398,23 @@ export function PixiStage(props: PixiStageProps) {
         const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
         let slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
         if (terrain === "fairway" || terrain === "green") slopeShade *= stripeShade(x, y);
-        const tileTint = shade(darken(THEMED_COLORS[terrain], EDGE_DARKEN), slopeShade);
+        const legacyTint = shade(darken(THEMED_COLORS[terrain], EDGE_DARKEN), slopeShade);
 
-        // Base: textured variant by deterministic position hash (kills the
-        // repeating-tile look); flat white diamond when the atlas is absent.
-        const variant = getPropFrame(`diamond${(x * 31 + y * 47) % 3}` as TerrainFrame);
-        const sprite = new PIXI.Sprite(variant ?? diamond);
+        // Authored parkland sources are @2× but remain 64×32 in world space.
+        // Other themes intentionally use the safe legacy tint until M21.
+        const authored = material.source === "atlas-2x"
+          ? getTerrainFrame(pickTerrainBaseFrame(material, x, y))
+          : null;
+        const sprite = new PIXI.Sprite(authored ?? diamond);
         sprite.anchor.set(0.5, 0);
         sprite.position.set(p.x, p.y);
-        sprite.tint = tileTint;
+        // A subpixel overlap hides linear-filter alpha hairlines between
+        // neighboring @2× diamonds without changing projection or picking.
+        sprite.width = authored ? TILE_W + 0.75 : TILE_W;
+        sprite.height = authored ? TILE_H + 0.5 : TILE_H;
+        sprite.tint = authored && props.colorVision === "standard"
+          ? shade(0xffffff, slopeShade)
+          : legacyTint;
         chunk.container.addChild(sprite);
         if (props.terrainPatterns && terrainPattern(terrain) !== "none") {
           const pattern = new PIXI.Graphics();
@@ -1447,45 +1443,44 @@ export function PixiStage(props: PixiStageProps) {
         if (terrain === "water") {
           chunk.waterSprites.push({
             sprite,
-            baseTint: tileTint,
+            baseTint: sprite.tint,
             phase: ((x * 13 + y * 7) % 32) / 32 * Math.PI * 2,
             gx: x,
             gy: y,
           });
-          for (const [dx, dy] of NEIGHBORS) {
-            const nx = x + dx;
-            const ny = y + dy;
-            if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-            if (course.tiles[ny * w + nx] === "water") continue;
-            const foamTex = getPropFrame(edgeFrameFor(dx, dy));
-            if (!foamTex) continue;
-            const foam = new PIXI.Sprite(foamTex);
-            foam.anchor.set(0.5, 0);
-            foam.position.set(p.x, p.y);
-            foam.tint = 0xffffff;
-            foam.alpha = 0.26;
-            chunk.container.addChild(foam);
-            chunk.foamSprites.push({ sprite: foam, phase: ((x * 5 + y * 11) % 16) / 16 * Math.PI * 2 });
-          }
         }
 
-        // Autotile lips: each higher-priority world-neighbor spills a
-        // scalloped, tinted band onto this tile along the shared edge.
-        // Same-elevation only — cliff faces already separate height steps.
-        for (const [dx, dy] of NEIGHBORS) {
+        // True 8-neighbor material boundary. The higher-priority surface owns
+        // the seam, so banks/lips never double-render. Elevation joins remain
+        // exclusively the cliff layer. Rotation maps all 256 masks into the
+        // fixed screen-oriented atlas frame set.
+        let boundaryMask = 0;
+        for (let index = 0; index < AUTOTILE_DIRECTIONS.length; index++) {
+          const { dx, dy } = AUTOTILE_DIRECTIONS[index];
           const nx = x + dx;
           const ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
           const nTerrain = course.tiles[ny * w + nx];
-          if (TERRAIN_PRIORITY[nTerrain] <= TERRAIN_PRIORITY[terrain]) continue;
+          if (TERRAIN_PRIORITY[terrain] <= TERRAIN_PRIORITY[nTerrain]) continue;
           if (elev(nx, ny) !== e) continue;
-          const lipTex = getPropFrame(edgeFrameFor(dx, dy));
-          if (!lipTex) continue;
-          const lip = new PIXI.Sprite(lipTex);
+          boundaryMask |= 1 << index;
+        }
+        const features = autotileFeatures(rotateAutotileMask(boundaryMask, rotation));
+        for (const feature of features) {
+          const transitionTexture = material.source === "atlas-2x"
+            ? getTerrainFrame(terrainTransitionFrame(material, feature))
+            : null;
+          if (!transitionTexture) continue;
+          const lip = new PIXI.Sprite(transitionTexture);
           lip.anchor.set(0.5, 0);
           lip.position.set(p.x, p.y);
-          lip.tint = shade(darken(THEMED_COLORS[nTerrain], EDGE_DARKEN), slopeShade);
+          lip.width = TILE_W;
+          lip.height = TILE_H;
+          lip.tint = props.colorVision === "standard" ? shade(0xffffff, slopeShade) : legacyTint;
           chunk.container.addChild(lip);
+          if (terrain === "water" && feature.kind === "edge") {
+            chunk.foamSprites.push({ sprite: lip, phase: ((x * 5 + y * 11) % 16) / 16 * Math.PI * 2 });
+          }
         }
       }
 
