@@ -8,7 +8,7 @@ import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../models/terrainEcon
 import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/save";
 import { REPORT_HELP, tooltipForControl } from "../../ui/help/tooltipContent";
 
-const terrains: Terrain[] = ["fairway", "rough", "deep_rough", "sand", "water", "green", "tee", "path"];
+const terrains: Terrain[] = ["fairway", "rough", "deep_rough", "sand", "waste_area", "water", "wetland", "green", "tee", "path"];
 
 function week(profit: number): WeekResult {
   return {

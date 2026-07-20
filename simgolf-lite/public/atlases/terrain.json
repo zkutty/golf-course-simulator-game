@@ -2520,10 +2520,370 @@
         "h": 64
       }
     },
-    "parkland_water_base_0": {
+    "parkland_waste_area_base_0": {
       "frame": {
         "x": 2,
         "y": 1190,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_base_1": {
+      "frame": {
+        "x": 132,
+        "y": 1190,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_base_2": {
+      "frame": {
+        "x": 262,
+        "y": 1190,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_base_3": {
+      "frame": {
+        "x": 392,
+        "y": 1190,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_base_4": {
+      "frame": {
+        "x": 522,
+        "y": 1190,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_base_5": {
+      "frame": {
+        "x": 652,
+        "y": 1190,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_edge_e": {
+      "frame": {
+        "x": 782,
+        "y": 1190,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_edge_n": {
+      "frame": {
+        "x": 2,
+        "y": 1256,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_edge_s": {
+      "frame": {
+        "x": 132,
+        "y": 1256,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_edge_w": {
+      "frame": {
+        "x": 262,
+        "y": 1256,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_inner_ne": {
+      "frame": {
+        "x": 392,
+        "y": 1256,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_inner_nw": {
+      "frame": {
+        "x": 522,
+        "y": 1256,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_inner_se": {
+      "frame": {
+        "x": 652,
+        "y": 1256,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_inner_sw": {
+      "frame": {
+        "x": 782,
+        "y": 1256,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_outer_ne": {
+      "frame": {
+        "x": 2,
+        "y": 1322,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_outer_nw": {
+      "frame": {
+        "x": 132,
+        "y": 1322,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_outer_se": {
+      "frame": {
+        "x": 262,
+        "y": 1322,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_waste_area_outer_sw": {
+      "frame": {
+        "x": 392,
+        "y": 1322,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_water_base_0": {
+      "frame": {
+        "x": 522,
+        "y": 1322,
         "w": 128,
         "h": 64
       },
@@ -2542,8 +2902,8 @@
     },
     "parkland_water_base_1": {
       "frame": {
-        "x": 132,
-        "y": 1190,
+        "x": 652,
+        "y": 1322,
         "w": 128,
         "h": 64
       },
@@ -2562,8 +2922,8 @@
     },
     "parkland_water_base_2": {
       "frame": {
-        "x": 262,
-        "y": 1190,
+        "x": 782,
+        "y": 1322,
         "w": 128,
         "h": 64
       },
@@ -2582,8 +2942,8 @@
     },
     "parkland_water_base_3": {
       "frame": {
-        "x": 392,
-        "y": 1190,
+        "x": 2,
+        "y": 1388,
         "w": 128,
         "h": 64
       },
@@ -2602,8 +2962,8 @@
     },
     "parkland_water_base_4": {
       "frame": {
-        "x": 522,
-        "y": 1190,
+        "x": 132,
+        "y": 1388,
         "w": 128,
         "h": 64
       },
@@ -2622,8 +2982,8 @@
     },
     "parkland_water_base_5": {
       "frame": {
-        "x": 652,
-        "y": 1190,
+        "x": 262,
+        "y": 1388,
         "w": 128,
         "h": 64
       },
@@ -2642,8 +3002,8 @@
     },
     "parkland_water_edge_e": {
       "frame": {
-        "x": 782,
-        "y": 1190,
+        "x": 392,
+        "y": 1388,
         "w": 128,
         "h": 64
       },
@@ -2662,8 +3022,8 @@
     },
     "parkland_water_edge_n": {
       "frame": {
-        "x": 2,
-        "y": 1256,
+        "x": 522,
+        "y": 1388,
         "w": 128,
         "h": 64
       },
@@ -2682,8 +3042,8 @@
     },
     "parkland_water_edge_s": {
       "frame": {
-        "x": 132,
-        "y": 1256,
+        "x": 652,
+        "y": 1388,
         "w": 128,
         "h": 64
       },
@@ -2702,8 +3062,8 @@
     },
     "parkland_water_edge_w": {
       "frame": {
-        "x": 262,
-        "y": 1256,
+        "x": 782,
+        "y": 1388,
         "w": 128,
         "h": 64
       },
@@ -2722,8 +3082,8 @@
     },
     "parkland_water_inner_ne": {
       "frame": {
-        "x": 392,
-        "y": 1256,
+        "x": 2,
+        "y": 1454,
         "w": 128,
         "h": 64
       },
@@ -2742,8 +3102,8 @@
     },
     "parkland_water_inner_nw": {
       "frame": {
-        "x": 522,
-        "y": 1256,
+        "x": 132,
+        "y": 1454,
         "w": 128,
         "h": 64
       },
@@ -2762,8 +3122,8 @@
     },
     "parkland_water_inner_se": {
       "frame": {
-        "x": 652,
-        "y": 1256,
+        "x": 262,
+        "y": 1454,
         "w": 128,
         "h": 64
       },
@@ -2782,8 +3142,8 @@
     },
     "parkland_water_inner_sw": {
       "frame": {
-        "x": 782,
-        "y": 1256,
+        "x": 392,
+        "y": 1454,
         "w": 128,
         "h": 64
       },
@@ -2802,8 +3162,8 @@
     },
     "parkland_water_outer_ne": {
       "frame": {
-        "x": 2,
-        "y": 1322,
+        "x": 522,
+        "y": 1454,
         "w": 128,
         "h": 64
       },
@@ -2822,8 +3182,8 @@
     },
     "parkland_water_outer_nw": {
       "frame": {
-        "x": 132,
-        "y": 1322,
+        "x": 652,
+        "y": 1454,
         "w": 128,
         "h": 64
       },
@@ -2842,8 +3202,8 @@
     },
     "parkland_water_outer_se": {
       "frame": {
-        "x": 262,
-        "y": 1322,
+        "x": 782,
+        "y": 1454,
         "w": 128,
         "h": 64
       },
@@ -2862,8 +3222,368 @@
     },
     "parkland_water_outer_sw": {
       "frame": {
+        "x": 2,
+        "y": 1520,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_base_0": {
+      "frame": {
+        "x": 132,
+        "y": 1520,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_base_1": {
+      "frame": {
+        "x": 262,
+        "y": 1520,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_base_2": {
+      "frame": {
         "x": 392,
-        "y": 1322,
+        "y": 1520,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_base_3": {
+      "frame": {
+        "x": 522,
+        "y": 1520,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_base_4": {
+      "frame": {
+        "x": 652,
+        "y": 1520,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_base_5": {
+      "frame": {
+        "x": 782,
+        "y": 1520,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_edge_e": {
+      "frame": {
+        "x": 2,
+        "y": 1586,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_edge_n": {
+      "frame": {
+        "x": 132,
+        "y": 1586,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_edge_s": {
+      "frame": {
+        "x": 262,
+        "y": 1586,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_edge_w": {
+      "frame": {
+        "x": 392,
+        "y": 1586,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_inner_ne": {
+      "frame": {
+        "x": 522,
+        "y": 1586,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_inner_nw": {
+      "frame": {
+        "x": 652,
+        "y": 1586,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_inner_se": {
+      "frame": {
+        "x": 782,
+        "y": 1586,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_inner_sw": {
+      "frame": {
+        "x": 2,
+        "y": 1652,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_outer_ne": {
+      "frame": {
+        "x": 132,
+        "y": 1652,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_outer_nw": {
+      "frame": {
+        "x": 262,
+        "y": 1652,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_outer_se": {
+      "frame": {
+        "x": 392,
+        "y": 1652,
+        "w": 128,
+        "h": 64
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 64
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 64
+      }
+    },
+    "parkland_wetland_outer_sw": {
+      "frame": {
+        "x": 522,
+        "y": 1652,
         "w": 128,
         "h": 64
       },
@@ -2887,7 +3607,7 @@
     "format": "RGBA8888",
     "size": {
       "w": 912,
-      "h": 1388
+      "h": 1718
     },
     "scale": "2"
   }

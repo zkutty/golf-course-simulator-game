@@ -47,7 +47,7 @@ import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
-import { createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
+import { createM20TerrainReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
@@ -355,7 +355,7 @@ export default function App() {
         void audio.playSfx(name, { volume });
       } else if (event.kind === "landing") {
         const hitTree = course.obstacles.some((obstacle) => obstacle.type === "tree" && Math.hypot(obstacle.x - event.at.x, obstacle.y - event.at.y) < .75);
-        const name = hitTree ? "tree" : event.surface === "water" ? "land-water" : event.surface === "sand" ? "land-sand" : event.surface === "green" ? "land-green" : event.surface === "fairway" || event.surface === "tee" ? "land-fairway" : "land-rough";
+        const name = hitTree ? "tree" : event.surface === "water" || event.surface === "wetland" ? "land-water" : event.surface === "sand" || event.surface === "waste_area" ? "land-sand" : event.surface === "green" ? "land-green" : event.surface === "fairway" || event.surface === "tee" ? "land-fairway" : "land-rough";
         void audio.playSfx(name, { volume });
       } else {
         void audio.playSfx("cup", { volume, force: true });
@@ -387,11 +387,14 @@ export default function App() {
     const fixtureParams = new URLSearchParams(window.location.search);
     const isPerfFixture = fixtureParams.get("perfFixture") === "1";
     const isM19Fixture = fixtureParams.get("m19Fixture") === "1";
-    if (!isPerfFixture && !isM19Fixture) return;
+    const isM20Fixture = fixtureParams.get("m20Fixture") === "1";
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
-    const fixtureCourse = isM19Fixture ? createParklandVisualReferenceCourse() : createRenderPerfCourse();
+    const requestedTheme = fixtureParams.get("m20Theme");
+    const fixtureTheme = requestedTheme === "links" || requestedTheme === "desert" ? requestedTheme : "parkland";
+    const fixtureCourse = isM20Fixture ? createM20TerrainReferenceCourse(fixtureTheme) : isM19Fixture ? createParklandVisualReferenceCourse() : createRenderPerfCourse();
     const fixtureWorld = {
       ...gameStateRef.current.world,
       week: 1,
@@ -971,7 +974,7 @@ export default function App() {
       modal: flow.modal,
       paused: flow.paused,
       tutorialStep: tutorialProgress?.stepIndex ?? null,
-      course: { name: course.name, width: course.width, height: course.height, holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length },
+      course: { name: course.name, width: course.width, height: course.height, holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length, terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>) },
       camera: { center: audioCameraCenter, viewMode, renderer: "pixi" },
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null },
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
@@ -1510,7 +1513,7 @@ export default function App() {
         return;
       }
       const terrain = course.tiles[y * course.width + x];
-      if (terrain === "water") {
+      if (terrain === "water" || terrain === "wetland") {
         setPaintError(t("error.teeWater"));
         return;
       }
@@ -1547,7 +1550,7 @@ export default function App() {
         return;
       }
       const terrain = course.tiles[y * course.width + x];
-      if (terrain === "water") {
+      if (terrain === "water" || terrain === "wetland") {
         setPaintError(t("error.greenWater"));
         return;
       }
@@ -1997,6 +2000,7 @@ export default function App() {
                 waterAnimation={appProfile.graphics.waterAnimation}
                 treeSway={appProfile.graphics.treeSway}
                 resolutionScale={appProfile.graphics.resolutionScale}
+                worldSeed={world.runSeed}
                 cameraSmoothing={appProfile.gameplay.cameraSmoothing && !appProfile.accessibility.reducedMotion}
                 edgeScroll={appProfile.gameplay.edgeScroll}
                 edgeScrollSpeed={appProfile.gameplay.edgeScrollSpeed}

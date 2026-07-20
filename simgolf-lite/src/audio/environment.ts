@@ -45,8 +45,8 @@ export function ambientMixFor(input: {
   const dusk = Math.max(0, (input.dayMinute - 620) / 220);
   return {
     birds: clamp01(obstacleCount / 18 + dawn * .42),
-    water: clamp01(share("water") * 3.2),
-    wind: clamp01((share("rough") + share("deep_rough") + share("sand")) * 1.35 + .12),
+    water: clamp01((share("water") + share("wetland") * .8) * 3.2),
+    wind: clamp01((share("rough") + share("deep_rough") + share("sand") + share("waste_area")) * 1.35 + .12),
     murmur: clamp01(input.visibleGolfers / 16),
     crickets: clamp01(dusk),
     paused: input.paused,

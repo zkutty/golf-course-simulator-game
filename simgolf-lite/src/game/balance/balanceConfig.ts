@@ -180,6 +180,8 @@ export const BALANCE = {
       penaltyStrokes: {
         water: 2.6,
         sand: 0.6,
+        waste_area: 0.42,
+        wetland: 2.6,
         deep_rough: 0.85,
         rough: 0.2,
         fairway: 0,
@@ -208,7 +210,9 @@ export const BALANCE = {
       fairway: 120,
       green: 300,
       sand: 80,
+      waste_area: 45,
       water: 200,
+      wetland: 110,
       tee: 150,
       path: 40,
     } satisfies Record<Terrain, number>,
@@ -219,7 +223,9 @@ export const BALANCE = {
       fairway: 36, // 120 build → 30%
       green: 20, // 300 build → ~7% (minimal salvage)
       sand: 24, // 80 build → 30%
+      waste_area: 12,
       water: 10, // 200 build → 5% (minimal salvage)
+      wetland: 8,
       tee: 45, // 150 build → 30%
       path: 12, // 40 build → 30%
     } satisfies Record<Terrain, number>,
@@ -232,10 +238,23 @@ export const BALANCE = {
       fairway: 1.0,
       green: 2.5,
       sand: 1.2,
+      waste_area: 0.25,
       water: 0.6,
+      wetland: 0.35,
       tee: 1.0,
       path: 0.4,
     } satisfies Record<Terrain, number>,
+    walkingCost: {
+      fairway: 1, path: 1.2, tee: 1.2, green: 1.4, rough: 2.2,
+      waste_area: 2.45, sand: 2.8, deep_rough: 3.4, water: Infinity, wetland: Infinity,
+    } satisfies Record<Terrain, number>,
+    rolloutTiles: {
+      fairway: 1.6, path: 1.6, tee: 1.6, green: 0.5, rough: 0.35,
+      deep_rough: 0.35, sand: 0.12, waste_area: 0.85, water: 0, wetland: 0,
+    } satisfies Record<Terrain, number>,
+    aestheticWeight: {
+      fairway: 1, rough: 0.45, deep_rough: 0.7, sand: 1.1, waste_area: 0.75,
+      water: 1.4, wetland: 1.2, green: 1.25, tee: 0.8, path: 0.35,
+    } satisfies Record<Terrain, number>,
   },
 } as const;
-

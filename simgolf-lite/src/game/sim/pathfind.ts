@@ -2,6 +2,7 @@ import type { Course, Obstacle, Point, Terrain } from "../models/types";
 import { BALANCE } from "../balance/balanceConfig";
 import { getElevation } from "../models/elevation";
 import { buildingFootprintSet } from "../models/buildings";
+import { terrainWalkingCost, isWaterHazard } from "../models/terrainRules";
 
 export interface PathResult {
   path: Point[]; // includes start and end
@@ -26,27 +27,7 @@ function obstacleAt(obstacles: Obstacle[], x: number, y: number) {
 }
 
 function baseTraversalCost(t: Terrain): number {
-  // Lower is better. Values are tuned for "golfability", not realism.
-  switch (t) {
-    case "fairway":
-      return 1.0;
-    case "path":
-      return 1.2;
-    case "tee":
-      return 1.2;
-    case "green":
-      return 1.4;
-    case "rough":
-      return 2.2;
-    case "deep_rough":
-      return 3.4;
-    case "sand":
-      return 2.8;
-    case "water":
-      return Infinity; // blocked
-    default:
-      return 2.2;
-  }
+  return terrainWalkingCost(t);
 }
 
 function hazardAdjacencyPenalty(course: Course, x: number, y: number): number {
@@ -60,7 +41,7 @@ function hazardAdjacencyPenalty(course: Course, x: number, y: number): number {
       const ny = y + dy;
       if (!inBounds(course, nx, ny)) continue;
       const t = tileAt(course, nx, ny);
-      if (t === "water") p += 0.9;
+      if (isWaterHazard(t)) p += 0.9;
       if (t === "sand") p += 0.25;
     }
   }
@@ -197,7 +178,6 @@ export function findBestPlayablePath(
   const path: Point[] = pathIdxs.map((i) => ({ x: i % course.width, y: Math.floor(i / course.width) }));
   return { path, cost: dist[gIdx], steps: Math.max(0, path.length - 1) };
 }
-
 
 
 

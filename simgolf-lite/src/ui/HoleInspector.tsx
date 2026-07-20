@@ -345,7 +345,7 @@ export function HoleInspector({
               )}
               {editorMode === "PAINT" && setSelected && (
                 <div data-tutorial-target="terrain-palette" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4, fontSize: 10 }}>
-                  {(["fairway", "rough", "deep_rough", "sand", "water", "green", "tee", "path"] as const).map((terrain) => (
+                  {(["fairway", "rough", "deep_rough", "sand", "waste_area", "water", "wetland", "green", "tee", "path"] as const).map((terrain) => (
                     <button
                       key={terrain}
                       onClick={() => setSelected(terrain as Terrain)}
@@ -475,7 +475,9 @@ function TerrainPercentages({ composition }: { composition: TerrainComposition }
     { key: "rough", label: "Rough" },
     { key: "deep_rough", label: "Deep Rough" },
     { key: "sand", label: "Sand" },
+    { key: "waste_area", label: "Waste Area" },
     { key: "water", label: "Water" },
+    { key: "wetland", label: "Wetland" },
     { key: "green", label: "Green" },
     { key: "tee", label: "Tee" },
     { key: "path", label: "Path" },

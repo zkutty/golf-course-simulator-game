@@ -245,8 +245,8 @@ function buildExplainabilityTips(holes: ReturnType<typeof scoreCourseHoles>) {
 
   for (const h of worst) {
     const s = h.corridor.samples || 1;
-    const waterFrac = h.corridor.water / s;
-    const sandFrac = h.corridor.sand / s;
+    const waterFrac = (h.corridor.water + h.corridor.wetland) / s;
+    const sandFrac = (h.corridor.sand + h.corridor.waste_area * .7) / s;
     const roughFrac = h.corridor.rough / s;
     const holeNo = h.holeIndex + 1;
 
@@ -276,7 +276,7 @@ function buildExplainabilityTips(holes: ReturnType<typeof scoreCourseHoles>) {
   const hard = complete.filter((h) => h.difficultyScore >= 75).length;
   if (hard >= 3) tips.push(translateCurrent("tip.severalHard"));
 
-  const waterHeavyCount = complete.filter((h) => (h.corridor.water / (h.corridor.samples || 1)) > 0.18).length;
+  const waterHeavyCount = complete.filter((h) => ((h.corridor.water + h.corridor.wetland) / (h.corridor.samples || 1)) > 0.18).length;
   if (waterHeavyCount >= 3) tips.push(translateCurrent("tip.waterHeavy"));
 
   const avgAest =
@@ -306,8 +306,8 @@ function buildTopIssues(holes: ReturnType<typeof scoreCourseHoles>) {
 
   for (const h of worst) {
     const s = h.corridor.samples || 1;
-    const waterFrac = h.corridor.water / s;
-    const sandFrac = h.corridor.sand / s;
+    const waterFrac = (h.corridor.water + h.corridor.wetland) / s;
+    const sandFrac = (h.corridor.sand + h.corridor.waste_area * .7) / s;
     const roughFrac = h.corridor.rough / s;
     const deepRoughFrac = h.corridor.deep_rough / s;
     const holeNo = h.holeIndex + 1;

@@ -28,7 +28,9 @@ export interface HoleScore {
     rough: number;
     deep_rough: number;
     sand: number;
+    waste_area: number;
     water: number;
+    wetland: number;
     green: number;
     tee: number;
     path: number;
@@ -113,7 +115,9 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
         rough: 0,
         deep_rough: 0,
         sand: 0,
+        waste_area: 0,
         water: 0,
+        wetland: 0,
         green: 0,
         tee: 0,
         path: 0,
@@ -172,8 +176,8 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
 
   const teeTile = inBounds(course, tee) ? tileAt(course, tee) : "rough";
   const greenTile = inBounds(course, green) ? tileAt(course, green) : "rough";
-  if (teeTile === "water" || teeTile === "sand") issues.push("Tee on hazard");
-  if (greenTile === "water" || greenTile === "sand") issues.push("Green on hazard");
+  if (teeTile === "water" || teeTile === "wetland" || teeTile === "sand") issues.push("Tee on hazard");
+  if (greenTile === "water" || greenTile === "wetland" || greenTile === "sand") issues.push("Green on hazard");
 
   // Evaluate "corridor" along the chosen shot plan polyline.
   const pts = poly;
@@ -190,7 +194,9 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
       rough: 0,
       deep_rough: 0,
       sand: 0,
+      waste_area: 0,
       water: 0,
+      wetland: 0,
       green: 0,
       tee: 0,
       path: 0,
@@ -198,14 +204,15 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
   );
 
   const s = corridorCounts.samples || 1;
-  const waterFrac = corridorCounts.water / s;
+  const waterFrac = (corridorCounts.water + corridorCounts.wetland) / s;
   const sandFrac = corridorCounts.sand / s;
+  const wasteFrac = corridorCounts.waste_area / s;
   const fairwayFrac = corridorCounts.fairway / s;
   const roughFrac = corridorCounts.rough / s;
   const deepRoughFrac = corridorCounts.deep_rough / s;
   const pathFrac = corridorCounts.path / s;
   const onHazardFrac = waterFrac + sandFrac;
-  const onBadLieFrac = roughFrac + deepRoughFrac + onHazardFrac;
+  const onBadLieFrac = roughFrac + deepRoughFrac + wasteFrac + onHazardFrac;
 
   if (waterFrac > 0.25) issues.push("Lots of water on main line");
   if (roughFrac > 0.7) issues.push("Mostly rough on main line");
@@ -233,15 +240,18 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
       rough: 0,
       deep_rough: 0,
       sand: 0,
+      waste_area: 0,
       water: 0,
+      wetland: 0,
       green: 0,
       tee: 0,
       path: 0,
     }
   );
   const ns = nearCounts.samples || 1;
-  const nearWaterFrac = nearCounts.water / ns;
+  const nearWaterFrac = (nearCounts.water + nearCounts.wetland) / ns;
   const nearSandFrac = nearCounts.sand / ns;
+  const nearWasteFrac = nearCounts.waste_area / ns;
   const nearDeepRoughFrac = nearCounts.deep_rough / ns;
 
   // Obstacle influence relative to corridor points
@@ -256,9 +266,10 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
     70 * roughFrac -
     120 * deepRoughFrac -
     130 * waterFrac -
-    55 * sandFrac;
-  if (teeTile === "water" || teeTile === "sand") playabilityScore -= 25;
-  if (greenTile === "water" || greenTile === "sand") playabilityScore -= 25;
+    55 * sandFrac -
+    42 * wasteFrac;
+  if (teeTile === "water" || teeTile === "wetland" || teeTile === "sand") playabilityScore -= 25;
+  if (greenTile === "water" || greenTile === "wetland" || greenTile === "sand") playabilityScore -= 25;
   // Obstacles on/near the line reduce playability (trees more than bushes)
   playabilityScore -= 20 * obstacleStats.treeOnLine;
   playabilityScore -= 10 * obstacleStats.bushOnLine;
@@ -271,11 +282,11 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
   const shotsNorm = reachable ? clamp((scratchShotsToGreen - 2) / 3, 0, 1) : 1;
   let difficultyScore =
     20 +
-    65 * (0.85 * waterFrac + 0.55 * sandFrac + 0.25 * roughFrac + 0.45 * deepRoughFrac) +
+    65 * (0.85 * waterFrac + 0.55 * sandFrac + 0.38 * wasteFrac + 0.25 * roughFrac + 0.45 * deepRoughFrac) +
     28 * distNorm +
     38 * shotsNorm;
-  if (teeTile === "water" || teeTile === "sand") difficultyScore += 10;
-  if (greenTile === "water" || greenTile === "sand") difficultyScore += 10;
+  if (teeTile === "water" || teeTile === "wetland" || teeTile === "sand") difficultyScore += 10;
+  if (greenTile === "water" || greenTile === "wetland" || greenTile === "sand") difficultyScore += 10;
   // Obstacles near/on the corridor raise difficulty (trees more than bushes)
   difficultyScore += 12 * obstacleStats.treeOnLine;
   difficultyScore += 6 * obstacleStats.bushOnLine;
@@ -286,8 +297,8 @@ function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleS
   // Aesthetics: reward "scenic" hazards near the corridor, but penalize hazards directly on it.
   let aestheticsScore =
     55 +
-    75 * (nearWaterFrac + 0.6 * nearSandFrac) -
-    120 * (waterFrac + 0.6 * sandFrac);
+    75 * (nearWaterFrac + 0.6 * nearSandFrac + 0.35 * nearWasteFrac) -
+    120 * (waterFrac + 0.6 * sandFrac + 0.25 * wasteFrac);
   // A small bonus for some contrast, but don't reward excessive hazards.
   aestheticsScore += 10 * clamp(nearWaterFrac, 0, 0.12) / 0.12;
   // Deep rough is visually noisy if overused; allow small amounts without penalty.

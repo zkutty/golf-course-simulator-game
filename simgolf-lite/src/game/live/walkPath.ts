@@ -1,4 +1,5 @@
-import type { Course, Point, Terrain } from "../models/types";
+import type { Course, Point } from "../models/types";
+import { isWalkableTerrain } from "../models/terrainRules";
 
 // Tile-aware walking routes for golfers so they path AROUND water instead of
 // straight-lining over it. A lightweight 8-directional BFS on the tile grid;
@@ -6,15 +7,13 @@ import type { Course, Point, Terrain } from "../models/types";
 // just-after `from` through `to` (inclusive), simplified to direction-change
 // corners, or null if no walkable route exists.
 
-const BLOCKED: Partial<Record<Terrain, boolean>> = { water: true };
-
 function inBounds(course: Course, x: number, y: number): boolean {
   return x >= 0 && y >= 0 && x < course.width && y < course.height;
 }
 
 function walkable(course: Course, x: number, y: number): boolean {
   if (!inBounds(course, x, y)) return false;
-  return !BLOCKED[course.tiles[y * course.width + x]];
+  return isWalkableTerrain(course.tiles[y * course.width + x]);
 }
 
 const DIRS: Array<[number, number]> = [

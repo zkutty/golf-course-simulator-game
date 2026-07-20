@@ -37,6 +37,7 @@ function hazardPenaltyStrokes(args: {
   // fractions along the playable route
   waterFrac: number;
   sandFrac: number;
+  wasteFrac: number;
   roughFrac: number;
   deepRoughFrac: number;
   // obstacle "density" proxy
@@ -44,14 +45,14 @@ function hazardPenaltyStrokes(args: {
   distanceYards: number;
   profile: GolferProfile;
 }) {
-  const { waterFrac, sandFrac, roughFrac, deepRoughFrac, obstaclePenalty, distanceYards, profile } =
+  const { waterFrac, sandFrac, wasteFrac, roughFrac, deepRoughFrac, obstaclePenalty, distanceYards, profile } =
     args;
 
   // Long holes amplify the impact.
   const distFactor = clamp(distanceYards / 480, 0.3, 1.4);
 
   // Water is the biggest "forced layup" driver; sand moderate.
-  const hazard = profile.ratingMultipliers.hazard * (2.2 * waterFrac + 0.9 * sandFrac);
+  const hazard = profile.ratingMultipliers.hazard * (2.2 * waterFrac + 0.9 * sandFrac + 0.62 * wasteFrac);
   const lie =
     profile.ratingMultipliers.rough * (0.9 * roughFrac) +
     profile.ratingMultipliers.deepRough * (1.2 * deepRoughFrac);
@@ -78,8 +79,9 @@ function computeExpectedScoreForHole(
   const distanceYards = h.effectiveDistance * yardsPerTile;
 
   const s = h.corridor.samples || 1;
-  const waterFrac = h.corridor.water / s;
+  const waterFrac = (h.corridor.water + h.corridor.wetland) / s;
   const sandFrac = h.corridor.sand / s;
+  const wasteFrac = h.corridor.waste_area / s;
   const roughFrac = h.corridor.rough / s;
   const deepRoughFrac = h.corridor.deep_rough / s;
 
@@ -90,6 +92,7 @@ function computeExpectedScoreForHole(
   const penalty = hazardPenaltyStrokes({
     waterFrac,
     sandFrac,
+    wasteFrac,
     roughFrac,
     deepRoughFrac,
     obstaclePenalty,
@@ -154,7 +157,6 @@ function computeRatingUncached(course: Course): RatingSummary {
     slope,
   };
 }
-
 
 
 

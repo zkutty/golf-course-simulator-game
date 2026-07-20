@@ -30,14 +30,16 @@ import type { CourseRecords } from "../game/retention/types";
 import { normalizeTournamentCalendar } from "../game/tournaments/tournaments";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 4 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 5 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
   "rough",
   "deep_rough",
   "sand",
+  "waste_area",
   "water",
+  "wetland",
   "green",
   "tee",
   "path",
@@ -61,6 +63,10 @@ export interface SaveV3 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: 3;
 }
 export interface SaveV4 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 4;
+  records?: CourseRecords;
+}
+export interface SaveV5 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -84,7 +90,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV4 = {
+  const save: SaveV5 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -268,6 +274,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   2: (save) => ({ ...save, schemaVersion: 3 }),
   // V4 adds compact long-run history and incremental course records.
   3: (save) => ({ ...save, schemaVersion: 4 }),
+  // V5 expands validation to waste-area and wetland terrain. Existing tile
+  // arrays are deliberately retained by reference/value with no rewrites.
+  4: (save) => ({ ...save, schemaVersion: 5 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World): CourseRecords {

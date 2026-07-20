@@ -78,6 +78,7 @@ import { getLandTheme } from "../game/models/themes";
 import type { AtlasFrame } from "../render/atlas";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
 import { getTerrainMaterial, pickTerrainBaseFrame, terrainTransitionFrame } from "../game/render/terrainMaterials";
+import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
 import { T } from "../i18n/T";
 
 /**
@@ -127,7 +128,9 @@ const COLORS: Record<Terrain, number> = {
   rough: 0x2f7a36,
   deep_rough: 0x1f5f2c,
   sand: 0xd7c48a,
+  waste_area: 0x9f8153,
   water: 0x2b7bbb,
+  wetland: 0x477b68,
   green: 0x5dbb6a,
   tee: 0x8b6b4f,
   path: 0x8f8f8f,
@@ -142,7 +145,9 @@ const TERRAIN_PRIORITY: Record<Terrain, number> = {
   green: 8,
   fairway: 7,
   sand: 6,
+  waste_area: 3,
   water: 5,
+  wetland: 5,
   path: 4,
   tee: 3,
   rough: 2,
@@ -323,6 +328,7 @@ export interface PixiStageProps {
   waterAnimation: boolean;
   treeSway: boolean;
   resolutionScale: number;
+  worldSeed: number;
   cameraSmoothing: boolean;
   edgeScroll: boolean;
   edgeScrollSpeed: number;
@@ -449,6 +455,7 @@ interface TerrainChunk {
   waterSprites: Array<{ sprite: PIXI.Sprite; baseTint: number; phase: number; gx: number; gy: number }>;
   /** Shore-foam lips on water tiles along land edges, alpha-oscillated. */
   foamSprites: Array<{ sprite: PIXI.Sprite; phase: number }>;
+  groundCoverSprites: Array<{ graphic: PIXI.Graphics; tier: 1 | 2 }>;
 }
 
 /** Fit zoom for a world-tile bbox projected to the iso plane. */
@@ -634,10 +641,12 @@ export function PixiStage(props: PixiStageProps) {
     for (const chunk of chunksRef.current) {
       const v = chunk.maxX >= left && chunk.minX <= right && chunk.maxY >= top && chunk.minY <= bottom;
       chunk.container.visible = v;
+      const coverTier = visibleGroundCoverTier(world.scale.x, props.resolutionScale);
+      for (const cover of chunk.groundCoverSprites) cover.graphic.visible = v && cover.tier <= coverTier;
       if (v) visible++;
     }
     if (CHUNK_DEBUG) devLog(`chunks visible: ${visible}/${chunksRef.current.length}`);
-  }, []);
+  }, [props.resolutionScale]);
 
   /** Push the camera's CURRENT values into the world container transform. */
   const applyCamera = useCallback(() => {
@@ -1325,6 +1334,7 @@ export function PixiStage(props: PixiStageProps) {
       chunk.container.removeChildren().forEach((c) => c.destroy());
       chunk.waterSprites = [];
       chunk.foamSprites = [];
+      chunk.groundCoverSprites = [];
 
       // Cliff faces render behind this chunk's tile tops.
       const cliffs = new PIXI.Graphics();
@@ -1437,10 +1447,35 @@ export function PixiStage(props: PixiStageProps) {
           chunk.container.addChild(pattern);
         }
 
+        const cover = deriveGroundCover(course, props.worldSeed, x, y);
+        if (cover) {
+          const detail = new PIXI.Graphics();
+          detail.eventMode = "none";
+          detail.position.set(p.x + cover.offsetX, p.y + cover.offsetY);
+          detail.alpha = .78;
+          if (cover.kind === "native_grass") {
+            detail.moveTo(-3, 2); detail.lineTo(-1, -4); detail.moveTo(0, 2); detail.lineTo(1, -5); detail.moveTo(3, 2); detail.lineTo(5, -3);
+            detail.stroke({ width: 1.2, color: 0x315f2f });
+          } else if (cover.kind === "flowers") {
+            detail.circle(-2, 0, 1.3); detail.circle(2, -1, 1.1); detail.fill(0xf4d86b);
+          } else if (cover.kind === "reeds") {
+            detail.moveTo(-4, 3); detail.lineTo(-4, -7); detail.moveTo(0, 3); detail.lineTo(1, -9); detail.moveTo(4, 3); detail.lineTo(5, -5);
+            detail.stroke({ width: 1.35, color: 0x6e7433 });
+          } else if (cover.kind === "leaf_litter") {
+            detail.ellipse(-3, 0, 2.2, 1); detail.ellipse(2, 2, 1.8, .9); detail.fill(0x795735);
+          } else if (cover.kind === "pebbles") {
+            detail.circle(-3, 1, 1.4); detail.circle(2, -1, 1.7); detail.fill(0x756b5d);
+          } else {
+            detail.ellipse(0, 1, 5, 2.2); detail.fill({ color: 0x76563a, alpha: .5 });
+          }
+          chunk.container.addChild(detail);
+          chunk.groundCoverSprites.push({ graphic: detail, tier: cover.detailTier });
+        }
+
         // Animated water registration (ZKU-150): shimmer phase from position
         // so neighboring tiles never pulse in sync; plus a foam lip along
         // every land edge (drawn on the water side).
-        if (terrain === "water") {
+        if (terrain === "water" || terrain === "wetland") {
           chunk.waterSprites.push({
             sprite,
             baseTint: sprite.tint,
@@ -1478,7 +1513,7 @@ export function PixiStage(props: PixiStageProps) {
           lip.height = TILE_H;
           lip.tint = props.colorVision === "standard" ? shade(0xffffff, slopeShade) : legacyTint;
           chunk.container.addChild(lip);
-          if (terrain === "water" && feature.kind === "edge") {
+          if ((terrain === "water" || terrain === "wetland") && feature.kind === "edge") {
             chunk.foamSprites.push({ sprite: lip, phase: ((x * 5 + y * 11) % 16) / 16 * Math.PI * 2 });
           }
         }
@@ -1535,6 +1570,7 @@ export function PixiStage(props: PixiStageProps) {
           minX: 0, minY: 0, maxX: 0, maxY: 0,
           waterSprites: [],
           foamSprites: [],
+          groundCoverSprites: [],
         };
         layers.terrain.addChild(chunk.container);
         buildChunk(chunk, cx, cy);
@@ -1567,7 +1603,7 @@ export function PixiStage(props: PixiStageProps) {
     prevTilesRef.current = course.tiles;
     prevElevationsRef.current = course.elevations;
     cullChunks();
-  }, [appReady, course, rotation, cullChunks, props.colorVision, props.terrainPatterns]);
+  }, [appReady, course, rotation, cullChunks, props.colorVision, props.terrainPatterns, props.worldSeed]);
 
   // ---------------------------------------------------------------------
   // Objects layer — obstacles, ground-anchored and depth-sorted
@@ -2511,7 +2547,7 @@ export function PixiStage(props: PixiStageProps) {
                 const ty = Math.floor(entry.lastBall.y + 0.5);
                 if (
                   tx >= 0 && ty >= 0 && tx < course.width && ty < course.height &&
-                  course.tiles[ty * course.width + tx] === "water"
+                  (course.tiles[ty * course.width + tx] === "water" || course.tiles[ty * course.width + tx] === "wetland")
                 ) {
                   ripplesRef.current.push({ x: entry.lastBall.x, y: entry.lastBall.y, t0: performance.now() });
                 }

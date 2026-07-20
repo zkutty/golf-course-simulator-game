@@ -12,7 +12,9 @@ const COLORS: Record<string, string> = {
   rough: "#548342",
   deep_rough: "#355f37",
   sand: "#d5bb72",
+  waste_area: "#9f8153",
   water: "#4f91b9",
+  wetland: "#477b68",
   green: "#78ba61",
   tee: "#92bd6c",
   path: "#9b8d76",
@@ -85,7 +87,7 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
           const p = minimapCanvasPoint(iso, transform);
           const terrain = course.tiles[y * course.width + x];
           drawDiamond(ctx, p, transform.scale, shade(COLORS[terrain] ?? COLORS.rough, elevation));
-          if (terrain === "water") {
+          if (terrain === "water" || terrain === "wetland") {
             ctx.strokeStyle = "rgba(220,245,255,.48)";
             ctx.lineWidth = Math.max(.45, transform.scale * 2);
             ctx.beginPath();

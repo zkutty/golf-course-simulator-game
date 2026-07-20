@@ -24,6 +24,7 @@ export const REPUTATION_TIERS: readonly ReputationTier[] = [
 const TERRAIN_MIN_REP: Record<Terrain, number> = {
   fairway: 0, rough: 0, green: 0, tee: 0, path: 0,
   sand: 25, water: 25, deep_rough: 45,
+  waste_area: 0, wetland: 25,
 };
 const OBSTACLE_MIN_REP: Record<ObstacleType, number> = { tree: 0, bush: 25, rock: 65 };
 const CONCESSION_MIN_REP: Record<ConcessionType, number> = { snack_bar: 0, cart_rental: 25, pro_shop: 45 };

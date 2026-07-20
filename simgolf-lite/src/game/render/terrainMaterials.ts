@@ -1,7 +1,7 @@
 import type { LandTheme, Terrain } from "../models/types";
 import type { AutotileFeature, CardinalDirection, CornerDirection } from "./autotile";
 
-export const TERRAIN_KINDS = ["fairway", "rough", "deep_rough", "sand", "water", "green", "tee", "path"] as const satisfies readonly Terrain[];
+export const TERRAIN_KINDS = ["fairway", "rough", "deep_rough", "sand", "waste_area", "water", "wetland", "green", "tee", "path"] as const satisfies readonly Terrain[];
 export const LAND_THEME_KINDS = ["parkland", "links", "desert"] as const satisfies readonly LandTheme[];
 
 export type PaletteRole = "playing" | "natural" | "hazard" | "path";
@@ -35,7 +35,7 @@ export interface TerrainMaterialDefinition {
 const PALETTE_ROLE: Record<Terrain, PaletteRole> = {
   fairway: "playing", green: "playing", tee: "playing",
   rough: "natural", deep_rough: "natural",
-  sand: "hazard", water: "hazard", path: "path",
+  sand: "hazard", waste_area: "natural", water: "hazard", wetland: "hazard", path: "path",
 };
 
 const DECALS: Record<Terrain, TerrainMaterialDefinition["decals"]> = {
@@ -43,7 +43,9 @@ const DECALS: Record<Terrain, TerrainMaterialDefinition["decals"]> = {
   rough: [],
   deep_rough: [],
   sand: ["bunker-lip"],
+  waste_area: [],
   water: ["shore"],
+  wetland: ["shore"],
   green: ["mowing", "fringe"],
   tee: ["mowing"],
   path: ["path-shoulder"],

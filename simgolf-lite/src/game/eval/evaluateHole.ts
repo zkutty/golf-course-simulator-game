@@ -84,7 +84,7 @@ function pointsInCircle(center: Point, radiusTiles: number, course: Course): Poi
 }
 
 function isHazard(terrain: Terrain | null): boolean {
-  return terrain === "water" || terrain === "sand" || terrain === "deep_rough";
+  return terrain === "water" || terrain === "wetland" || terrain === "sand" || terrain === "waste_area" || terrain === "deep_rough";
 }
 
 function isSafe(terrain: Terrain | null): boolean {
@@ -113,7 +113,7 @@ function findContiguousWaterAlongLine(
   for (let i = 0; i < line.length; i++) {
     const p = line[i];
     const terrain = tileAt(course, p);
-    const isWater = terrain === "water";
+    const isWater = terrain === "water" || terrain === "wetland";
 
     // Check buffer around point too
     let hasWater = isWater;
@@ -122,7 +122,7 @@ function findContiguousWaterAlongLine(
         for (let dx = -bufferTiles; dx <= bufferTiles; dx++) {
           if (dx * dx + dy * dy <= bufferTiles * bufferTiles) {
             const q = { x: p.x + dx, y: p.y + dy };
-            if (tileAt(course, q) === "water") {
+            if (tileAt(course, q) === "water" || tileAt(course, q) === "wetland") {
               hasWater = true;
               break;
             }
@@ -499,4 +499,3 @@ export function evaluateHole(course: Course, hole: Hole, holeIndex: number): Hol
     issues,
   };
 }
-

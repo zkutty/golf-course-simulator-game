@@ -16,7 +16,7 @@ import { hashGameState } from "../utils/stateHash";
 import { createReferenceCourse } from "../game/testing/referenceCourse";
 import { runLiveDaysHeadless } from "../game/live/headless";
 
-const terrains: Terrain[] = ["fairway", "rough", "deep_rough", "sand", "water", "green", "tee", "path"];
+const terrains: Terrain[] = ["fairway", "rough", "deep_rough", "sand", "waste_area", "water", "wetland", "green", "tee", "path"];
 
 function initialState(): GameState {
   return {

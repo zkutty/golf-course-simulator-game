@@ -184,3 +184,25 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M19 remaining
 
 - None. ZK-212 through ZK-216 are Done in Linear with implementation and verification notes; the milestone reports complete.
+
+## 2026-07-20 — M20 terrain variety implementation in progress
+
+- Current request: “Implement m20 from linear”. Linear scope resolved as ZK-217 through ZK-220; all four issues are In Progress.
+- Added schema-v5 `waste_area` and `wetland` terrain with lossless v4 migration, exhaustive economics, maintenance, pathing, shot, rollout, rating, generation, stats, accessibility, audio, minimap, photo-mode, and Golfopedia integration.
+- Waste areas are firm, walkable, low-upkeep lies between rough and sand. Wetlands are shallow vegetated water hazards, non-walkable, and use water-hazard ball rules at lower build/upkeep cost than open water.
+- Added grouped terrain editor categories and authored @2× parkland materials for all ten surfaces.
+- Added deterministic derived ground cover (native grass, flowers, reeds, leaf litter, pebbles, bare soil) with marker/building exclusions, pointer transparency, chunk culling, and zoom/render-quality density tiers.
+- Added deterministic all-ten-terrain fixtures for parkland, links, and desert plus focused unit and Playwright acceptance coverage.
+
+## M20 verification so far
+
+- Full unit suite: 40 files, 275 tests passed, one intentional skip. Focused post-i18n M20 checks also pass.
+- Production build and i18n/lint guards pass; lint reports only six pre-existing React hook warnings and no errors.
+- Reducer fuzz suite and 30-week/8,719-round soak pass; soak state hash is `06c03bd3`.
+- 100-golfer performance smoke: 60.0 fps, 17.3 ms p95, 0.19 ms renderer work (8 ms budget), 763 visible objects.
+- Full Playwright regression: 22/22 passed in 6.1 minutes. M20 acceptance captured all three themes at all four rotations plus close detail, verified both editor tools and all ten terrain counts, and reported zero console errors.
+- Bundled web-game client passed with deterministic stepping and `render_game_to_text` terrain counts. Browser screenshots for parkland, links, desert, and micro-detail were visually inspected.
+
+## M20 remaining
+
+- None. ZK-217 through ZK-220 meet their acceptance criteria.

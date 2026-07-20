@@ -23,7 +23,9 @@ export type Terrain =
   | "rough"
   | "deep_rough"
   | "sand"
+  | "waste_area"
   | "water"
+  | "wetland"
   | "green"
   | "tee"
   | "path";

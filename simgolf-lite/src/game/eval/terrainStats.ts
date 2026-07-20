@@ -7,7 +7,9 @@ export interface TerrainComposition {
   rough: number;
   deep_rough: number;
   sand: number;
+  waste_area: number;
   water: number;
+  wetland: number;
   green: number;
   tee: number;
   path: number;
@@ -36,7 +38,9 @@ function computeHoleAreaComposition(
       rough: 0,
       deep_rough: 0,
       sand: 0,
+      waste_area: 0,
       water: 0,
+      wetland: 0,
       green: 0,
       tee: 0,
       path: 0,
@@ -77,7 +81,9 @@ function computeHoleAreaComposition(
     rough: 0,
     deep_rough: 0,
     sand: 0,
+    waste_area: 0,
     water: 0,
+    wetland: 0,
     green: 0,
     tee: 0,
     path: 0,
@@ -116,7 +122,9 @@ function computeCorridorComposition(
       rough: 0,
       deep_rough: 0,
       sand: 0,
+      waste_area: 0,
       water: 0,
+      wetland: 0,
       green: 0,
       tee: 0,
       path: 0,
@@ -156,7 +164,9 @@ function computeCorridorComposition(
     rough: 0,
     deep_rough: 0,
     sand: 0,
+    waste_area: 0,
     water: 0,
+    wetland: 0,
     green: 0,
     tee: 0,
     path: 0,

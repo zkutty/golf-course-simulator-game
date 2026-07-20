@@ -78,6 +78,25 @@ export function createParklandVisualReferenceCourse(): Course {
   };
 }
 
+/** M20 acceptance scene: all ten surfaces with identical geometry per theme. */
+export function createM20TerrainReferenceCourse(theme: Course["theme"] = "parkland"): Course {
+  const base = createParklandVisualReferenceCourse();
+  const tiles = [...base.tiles];
+  const set = (x: number, y: number, terrain: Terrain) => { tiles[y * base.width + x] = terrain; };
+  // Firm waste apron by the approach bunker.
+  for (let y = 11; y <= 14; y++) for (let x = 26; x <= 34; x++) {
+    if (tiles[y * base.width + x] === "rough") set(x, y, "waste_area");
+  }
+  // Vegetated shallow shelf along the lake's north/east banks.
+  for (let y = 20; y <= 29; y++) for (let x = 17; x <= 32; x++) {
+    const index = y * base.width + x;
+    if (tiles[index] !== "rough") continue;
+    const nearWater = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => tiles[(y + dy) * base.width + x + dx] === "water");
+    if (nearWater) tiles[index] = "wetland";
+  }
+  return { ...base, tiles, theme, name: `M20 ${theme} Terrain Laboratory` };
+}
+
 /** Deterministic, fully playable course used by QA, fuzz, and soak fixtures. */
 export function createReferenceCourse(): Course {
   const width = 110;

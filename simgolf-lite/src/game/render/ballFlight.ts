@@ -1,4 +1,5 @@
 import type { Terrain } from "../models/types";
+import { BALANCE } from "../balance/balanceConfig";
 
 /**
  * Ball flight 2.0 (ZKU-154) — pure math, no PIXI.
@@ -47,7 +48,10 @@ export function landingBehavior(terrain: Terrain | null): LandingBehavior {
       return { rollTiles: 0.5, bounces: 1, bounceScale: 0.12, fx: "check", sinks: false };
     case "sand":
       return { rollTiles: 0.12, bounces: 0, bounceScale: 0, fx: "sand", sinks: false };
+    case "waste_area":
+      return { rollTiles: BALANCE.terrain.rolloutTiles.waste_area, bounces: 1, bounceScale: 0.08, fx: "sand", sinks: false };
     case "water":
+    case "wetland":
       return { rollTiles: 0, bounces: 0, bounceScale: 0, fx: "splash", sinks: true };
     case "rough":
     case "deep_rough":

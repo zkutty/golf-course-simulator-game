@@ -2,6 +2,7 @@ import type { Course, Point } from "../../models/types";
 import type { ClubSpec, GolferProfile } from "../golferProfiles";
 import { BALANCE } from "../../balance/balanceConfig";
 import { evalShotBase } from "./shotEval";
+import { isWaterHazard } from "../../models/terrainRules";
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
@@ -55,7 +56,7 @@ export function evalShotWithWaterCarry(args: {
   let best = 0;
   for (let i = 1; i < line.length; i++) {
     const t = tileAt(course, line[i]);
-    if (t === "water") {
+    if (isWaterHazard(t)) {
       run++;
       best = Math.max(best, run);
     } else {
@@ -96,7 +97,6 @@ export function evalShotWithWaterCarry(args: {
 
   return base;
 }
-
 
 
 

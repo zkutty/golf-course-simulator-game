@@ -1,5 +1,6 @@
 import type { LandTheme, Terrain, Obstacle, ObstacleType } from "../models/types";
 import { getLandTheme, type ThemeGenConfig } from "../models/themes";
+import { isWaterHazard } from "../models/terrainRules";
 
 // Seeded RNG using mulberry32
 class SeededRNG {
@@ -222,6 +223,36 @@ export function generateWildLand(
     }
   }
 
+  const environmental = [...tiles];
+  const wetlandCandidates: number[] = [];
+  const wasteCandidates: number[] = [];
+  let wetlandsPlaced = 0;
+  let wastePlaced = 0;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const native = getTile(x, y);
+      if (native !== "rough" && native !== "deep_rough") continue;
+      const neighbors = getNeighbors(x, y).map((point) => getTile(point.x, point.y));
+      const index = y * width + x;
+      if (neighbors.includes("water")) {
+        wetlandCandidates.push(index);
+        if (rng.next() < cfg.environmental.wetlandEdgeChance) {
+          environmental[index] = "wetland";
+          wetlandsPlaced++;
+        }
+      } else if (native === "rough" && neighbors.includes("sand")) {
+        wasteCandidates.push(index);
+        if (rng.next() < cfg.environmental.wasteAreaEdgeChance) {
+          environmental[index] = "waste_area";
+          wastePlaced++;
+        }
+      }
+    }
+  }
+  if (wetlandsPlaced === 0 && wetlandCandidates.length > 0) environmental[wetlandCandidates[0]] = "wetland";
+  if (wastePlaced === 0 && wasteCandidates.length > 0) environmental[wasteCandidates[0]] = "waste_area";
+  for (let i = 0; i < tiles.length; i++) tiles[i] = environmental[i];
+
   // Step 4: Smoothing pass (cellular automata) for organic shapes
   const smoothingPasses = 2;
   for (let pass = 0; pass < smoothingPasses; pass++) {
@@ -265,9 +296,9 @@ export function generateWildLand(
   // parkland this is exactly the old top-left → bottom-right check, since
   // its borders are never water; coastal themes may start further in.
   let startIdx = 0;
-  while (startIdx < tiles.length && tiles[startIdx] === "water") startIdx++;
+  while (startIdx < tiles.length && isWaterHazard(tiles[startIdx])) startIdx++;
   let endIdx = tiles.length - 1;
-  while (endIdx > 0 && tiles[endIdx] === "water") endIdx--;
+  while (endIdx > 0 && isWaterHazard(tiles[endIdx])) endIdx--;
   const startPt = { x: startIdx % width, y: Math.floor(startIdx / width) };
   const endPt = { x: endIdx % width, y: Math.floor(endIdx / width) };
 
@@ -286,7 +317,7 @@ export function generateWildLand(
       const key = `${neighbor.x},${neighbor.y}`;
       if (!visited.has(key)) {
         const tile = getTile(neighbor.x, neighbor.y);
-        if (tile && tile !== "water") {
+        if (tile && !isWaterHazard(tile)) {
           visited.add(key);
           queue.push(neighbor);
         }
@@ -300,7 +331,7 @@ export function generateWildLand(
     const waterTiles: Point[] = [];
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
-        if (getTile(x, y) === "water") {
+        if (isWaterHazard(getTile(x, y))) {
           waterTiles.push({ x, y });
         }
       }
@@ -312,7 +343,7 @@ export function generateWildLand(
     for (let i = 0; i < Math.min(toRemove, waterTiles.length); i++) {
       const p = waterTiles[i];
       // Check if this water tile has few water neighbors (isolated)
-      const waterNeighbors = getNeighbors(p.x, p.y).filter((n) => getTile(n.x, n.y) === "water").length;
+      const waterNeighbors = getNeighbors(p.x, p.y).filter((n) => isWaterHazard(getTile(n.x, n.y))).length;
       if (waterNeighbors <= 2) {
         setTile(p.x, p.y, "rough");
       }
@@ -379,7 +410,7 @@ export function generateObstacles(
     if (!terrain) return false;
 
     // Never place on water, sand, green, tee
-    if (terrain === "water" || terrain === "sand" || terrain === "green" || terrain === "tee") {
+    if (terrain === "water" || terrain === "wetland" || terrain === "sand" || terrain === "green" || terrain === "tee") {
       return false;
     }
 
@@ -586,4 +617,3 @@ export function generateWildLandWithObstacles(
   const elevations = generateElevations(width, height, seed, tiles, theme);
   return { tiles, obstacles, elevations };
 }
-

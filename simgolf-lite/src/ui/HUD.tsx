@@ -23,20 +23,16 @@ import { Tooltip } from "./help/Tooltip";
 import { REPORT_HELP } from "./help/tooltipContent";
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
+import type { MessageKey } from "../i18n/catalog";
 import { HoleMinimap } from "./HoleMinimap";
 import { concessionMinReputation, isConcessionUnlocked, isObstacleUnlocked, isTerrainUnlocked, obstacleMinReputation, reputationTier, terrainMinReputation } from "../game/progression/progression";
 
-const TERRAIN: Terrain[] = [
-  "fairway",
-  "rough",
-  "deep_rough",
-  "sand",
-  "water",
-  "green",
-  "tee",
-  "path",
+const TERRAIN_GROUPS: ReadonlyArray<{ label: MessageKey; terrains: Terrain[] }> = [
+  { label: "terrain.group.playing", terrains: ["tee", "fairway", "green"] },
+  { label: "terrain.group.hazards", terrains: ["sand", "water", "wetland"] },
+  { label: "terrain.group.paths", terrains: ["path"] },
+  { label: "terrain.group.natural", terrains: ["rough", "deep_rough", "waste_area"] },
 ];
-
 type Tab = "Editor" | "Metrics" | "Results" | "Upgrades";
 
 export function HUD(props: {
@@ -1064,8 +1060,8 @@ export function HUD(props: {
                 <div style={{ marginBottom: 8 }}>
                   <b><T id="auto.ui.hud.terrain.brush" /></b>
                 </div>
-                <div data-tutorial-target="terrain-palette" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {TERRAIN.map((t) => {
+                <div data-tutorial-target="terrain-palette" style={{ display: "grid", gap: 8 }}>
+                  {TERRAIN_GROUPS.map((group) => <div key={group.label}><div style={{ fontSize: 10, fontWeight: 700, color: "#6c604d", marginBottom: 4 }}>{translateCurrent(group.label)}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{group.terrains.map((t) => {
                     const locked = !isTerrainUnlocked(t, world.reputation);
                     return (
                     <Tooltip
@@ -1088,7 +1084,7 @@ export function HUD(props: {
                         {locked ? `🔒 ${t}` : t}
                       </button>
                     </Tooltip>
-                  );})}
+                  );})}</div></div>)}
                 </div>
               </>
             )}
