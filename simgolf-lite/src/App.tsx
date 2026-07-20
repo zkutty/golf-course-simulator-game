@@ -2,7 +2,6 @@ import { useEffect, useMemo, useReducer, useRef, useState, useCallback } from "r
 import { formatCurrency } from "./i18n/format";
 import { useI18n } from "./i18n/useI18n";
 import { perfProfiler } from "./utils/performanceProfiler";
-import { CanvasCourse } from "./ui/CanvasCourse";
 import "./ui/cozyLayout.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
@@ -27,7 +26,7 @@ import { StartMenu } from "./ui/StartMenu";
 import { useAudio } from "./audio/audioContext";
 import { HoleInspector } from "./ui/HoleInspector";
 import { evaluateHole } from "./game/eval/evaluateHole";
-import type { CameraState } from "./game/render/camera";
+import type { CameraState, IsoCameraSnapshot } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
 import { HoleMinimap } from "./ui/HoleMinimap";
 import { createNewGame } from "./game/gen/newGame";
@@ -46,7 +45,8 @@ import { GolferInspector } from "./ui/GolferInspector";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
-import { createReferenceCourse } from "./game/testing/referenceCourse";
+import { createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
+import { createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
 import { hashGameState } from "./utils/stateHash";
@@ -168,6 +168,8 @@ export default function App() {
   const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">(() => appProfile.graphics.gridOverlays ? "ARCHITECT" : "COZY");
   const [holeEditMode, setHoleEditMode] = useState<ViewMode>("global"); // "global" or "hole"
   const [holeEditCamera, setHoleEditCamera] = useState<CameraState | null>(null);
+  const [minimapView, setMinimapView] = useState<IsoCameraSnapshot | null>(null);
+  const [minimapJump, setMinimapJump] = useState<{ center: Point; nonce: number } | null>(null);
   const [audioCameraCenter, setAudioCameraCenter] = useState<Point>(() => ({ x: course.width / 2, y: course.height / 2 }));
   const audioCameraCenterRef = useRef(audioCameraCenter);
   const holeEditCameraManualRef = useRef(false); // Track if camera was manually set
@@ -178,7 +180,6 @@ export default function App() {
   const effectiveAnimations = animationsEnabled && !appProfile.accessibility.reducedMotion;
   const [showShotPlan, setShowShotPlan] = useState(true);
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
-  const [renderer, setRenderer] = useState<"canvas" | "pixi">(() => appProfile.graphics.renderer);
 
   function handleProfileChange(next: AppProfile) {
     saveAppProfile(next);
@@ -202,6 +203,7 @@ export default function App() {
   const seenAdvisorMessagesRef = useRef(new Set<string>());
   const advisorCooldownUntilRef = useRef(0);
   const [a11yMessage, setA11yMessage] = useState("");
+  const perfFixtureLoadedRef = useRef(false);
 
   // Audio system
   const audio = useAudio();
@@ -263,6 +265,37 @@ export default function App() {
     },
   });
   const getLiveSnapshot = live.getSnapshot;
+
+  useEffect(() => {
+    if (!import.meta.env.DEV || perfFixtureLoadedRef.current) return;
+    if (new URLSearchParams(window.location.search).get("perfFixture") !== "1") return;
+    perfFixtureLoadedRef.current = true;
+    const fixtureCourse = createRenderPerfCourse();
+    const fixtureWorld = {
+      ...gameStateRef.current.world,
+      week: 1,
+      cash: 250_000,
+      reputation: 95,
+      runSeed: 12160,
+      isBankrupt: false,
+      distressWeeks: 0,
+      mode: "sandbox" as const,
+    };
+    dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+    live.restoreSnapshot(snapshotLiveSimulation({
+      state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),
+      pendingCash: 0,
+      speed: "3x",
+      selectedGolferId: null,
+    }));
+    setAppProfile((current) => ({ ...current, tutorialOffered: true, tutorialCompleted: true }));
+    setTutorialProgress(null);
+    setShowTutorialOffer(false);
+    flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
+    flowDispatch({ type: "ENTER_GAME" });
+    live.setSpeed("3x");
+  }, [dispatch, live, t]);
+
   const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);
 
   const openPauseMenu = useCallback(() => {
@@ -605,7 +638,6 @@ export default function App() {
       const next = loadAppProfile();
       setAppProfile(next);
       setAnimationsEnabled(next.graphics.animations);
-      setRenderer(next.graphics.renderer);
       audio.syncVolumes(next.audio);
       if (next.advisorFrequency === "off") setAdvisorMessage(null);
       setAdvisorWake((value) => value + 1);
@@ -818,7 +850,7 @@ export default function App() {
       paused: flow.paused,
       tutorialStep: tutorialProgress?.stepIndex ?? null,
       course: { name: course.name, width: course.width, height: course.height, holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length },
-      camera: { center: audioCameraCenter, viewMode, renderer },
+      camera: { center: audioCameraCenter, viewMode, renderer: "pixi" },
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday },
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       editor: { mode: editorMode, selectedTerrain: selected, activeHole: activeHoleIndex + 1 },
@@ -830,7 +862,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, audioCameraCenter, course, editorMode, flow.base, flow.modal, flow.paused, live, renderer, screen, selected, tutorialProgress?.stepIndex, viewMode, world.cash, world.reputation, world.isBankrupt]);
+  }, [activeHoleIndex, audioCameraCenter, course, editorMode, flow.base, flow.modal, flow.paused, live, screen, selected, tutorialProgress?.stepIndex, viewMode, world.cash, world.reputation, world.isBankrupt]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1717,45 +1749,7 @@ export default function App() {
       )}
         <div className="cc-course-frame">
           <div ref={canvasPaneRef} className="cc-course-pane" data-tutorial-target="course">
-            {renderer === "canvas" ? (
-              <CanvasCourse
-                course={course}
-                holes={course.holes}
-                obstacles={course.obstacles}
-                activeHoleIndex={activeHoleIndex}
-                activePath={activePath}
-                activeShotPlan={activeShotPlan}
-                tileSize={tileSize}
-                showGridOverlays={viewMode === "ARCHITECT"}
-                animationsEnabled={effectiveAnimations}
-                flyoverNonce={flyoverNonce}
-                colorVision={appProfile.accessibility.colorVision}
-                terrainPatterns={appProfile.accessibility.terrainPatterns}
-                reducedMotion={appProfile.accessibility.reducedMotion}
-                showShotPlan={showShotPlan}
-                editorMode={editorMode}
-                wizardStep={wizardStep}
-                draftTee={draftTee}
-                draftGreen={draftGreen}
-                onClickTile={handleCanvasClick}
-                selectedTerrain={selected}
-                worldCash={world.cash}
-                flagColor={legacy.selected.flagColor}
-                cameraState={holeEditCamera}
-                showFixOverlay={showFixOverlay}
-                failingCorridorSegments={failingCorridorSegments}
-                showObstacles={showObstacles}
-                golfersRef={live.golfersRef}
-                liveActive={live.liveActive}
-                onPickGolfer={live.selectGolfer}
-                selectedGolferId={live.selectedId}
-                onCameraUpdate={(camera) => {
-                  holeEditCameraManualRef.current = true;
-                  setHoleEditCamera(camera);
-                }}
-              />
-            ) : (
-              <PixiStage
+            <PixiStage
                 course={course}
                 holes={course.holes}
                 obstacles={course.obstacles}
@@ -1800,26 +1794,19 @@ export default function App() {
                   setHoleEditCamera(camera);
                 }}
                 onCameraCenter={setAudioCameraCenter}
-              />
-            )}
+                onViewChange={setMinimapView}
+                cameraJump={minimapJump}
+            />
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
-            {holeEditMode === "hole" && course.holes[activeHoleIndex]?.tee && course.holes[activeHoleIndex]?.green && (
-              <HoleMinimap
-                course={course}
-                hole={course.holes[activeHoleIndex]}
-                cameraState={holeEditCamera}
-                tileSize={tileSize}
-                onCenter={(center: Point) => {
-                  if (holeEditCamera) {
-                    const newCamera: CameraState = {
-                      ...holeEditCamera,
-                      center,
-                    };
-                    setHoleEditCamera(newCamera);
-                  }
-                }}
-              />
-            )}
+            <HoleMinimap
+              course={course}
+              view={minimapView}
+              golfersRef={live.golfersRef}
+              onCenter={(center: Point) => {
+                if (holeEditCamera) setHoleEditCamera({ ...holeEditCamera, center });
+                else setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }));
+              }}
+            />
             <LiveControls
               status={live.status}
               speed={live.speed}
@@ -1907,6 +1894,7 @@ export default function App() {
                   onFlyover={startFlyover}
                   course={course}
                   hole={course.holes[activeHoleIndex]}
+                  thumbnail={<HoleMinimap course={course} hole={course.holes[activeHoleIndex]} holeIndex={activeHoleIndex} thumbnail />}
                   onSetHoleIndex={(newIndex: number) => {
                     // Update hole.holeIndex in course
                     setCourse((c) => {

@@ -3,7 +3,7 @@ import * as PIXI from "pixi.js";
 import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
-import type { CameraState } from "../game/render/camera";
+import type { CameraState, IsoCameraSnapshot } from "../game/render/camera";
 import {
   ELEVATION_STEP_PX,
   TILE_H,
@@ -348,6 +348,10 @@ export interface PixiStageProps {
   onCameraUpdate?: (camera: CameraState) => void;
   /** Debounced world-space center used by camera-aware systems such as audio. */
   onCameraCenter?: (center: Point) => void;
+  /** Throttled pan/zoom/rotation telemetry for the north-up minimap. */
+  onViewChange?: (view: IsoCameraSnapshot) => void;
+  /** Imperative camera destination from minimap click-to-jump. */
+  cameraJump?: { center: Point; nonce: number } | null;
   showObstacles?: boolean;
   golfersRef?: React.RefObject<GolferRenderData[]>;
   liveActive?: boolean;
@@ -592,6 +596,7 @@ export function PixiStage(props: PixiStageProps) {
     golfersRef,
     liveActive,
     onPickGolfer,
+    onViewChange,
   } = props;
 
   // ---------------------------------------------------------------------
@@ -738,6 +743,41 @@ export function PixiStage(props: PixiStageProps) {
       y: (globalY - world.position.y) / world.scale.y + world.pivot.y,
     };
   }, []);
+
+  const reportView = useCallback(() => {
+    const app = appRef.current;
+    const cam = camRef.current;
+    if (!app || !onViewChange || cam.zoom <= 0) return;
+    const centerIso = worldToIso(cam.cx, cam.cy, 0, rotation);
+    const halfW = app.screen.width / (2 * cam.zoom);
+    const halfH = app.screen.height / (2 * cam.zoom);
+    const corners = [
+      isoToWorld(centerIso.x - halfW, centerIso.y - halfH, rotation),
+      isoToWorld(centerIso.x + halfW, centerIso.y - halfH, rotation),
+      isoToWorld(centerIso.x + halfW, centerIso.y + halfH, rotation),
+      isoToWorld(centerIso.x - halfW, centerIso.y + halfH, rotation),
+    ];
+    onViewChange({
+      center: { x: cam.cx, y: cam.cy },
+      zoom: cam.zoom,
+      rotation,
+      bounds: {
+        minX: Math.max(0, Math.min(...corners.map((p) => p.x))),
+        minY: Math.max(0, Math.min(...corners.map((p) => p.y))),
+        maxX: Math.min(course.width - 1, Math.max(...corners.map((p) => p.x))),
+        maxY: Math.min(course.height - 1, Math.max(...corners.map((p) => p.y))),
+      },
+    });
+  }, [course.height, course.width, onViewChange, rotation]);
+
+  useEffect(() => {
+    if (!appReady || !props.cameraJump) return;
+    const cam = camRef.current;
+    const next = clampCenter(props.cameraJump.center.x, props.cameraJump.center.y);
+    cam.tcx = next.x;
+    cam.tcy = next.y;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appReady, props.cameraJump?.nonce]);
 
   const screenToTile = useCallback(
     (globalX: number, globalY: number): { x: number; y: number } | null => {
@@ -952,6 +992,11 @@ export function PixiStage(props: PixiStageProps) {
       fitWholeCourse(true);
     }
   }, [appReady, fitWholeCourse]);
+
+  useEffect(() => {
+    if (!appReady) return;
+    reportView();
+  }, [appReady, reportView]);
 
   // CameraState prop → glide targets. Skips echoes of centers we reported
   // ourselves so user pan/zoom isn't fought by the round-trip through App.
@@ -1207,6 +1252,7 @@ export function PixiStage(props: PixiStageProps) {
         if (now - lastAmbientReportAtRef.current >= 250) {
           lastAmbientReportAtRef.current = now;
           props.onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
+          reportView();
         }
       }
     };
@@ -1235,7 +1281,7 @@ export function PixiStage(props: PixiStageProps) {
       app.ticker?.remove(tickCamera);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appReady, rotation, cameraState, applyCamera, clampCenter, screenToIsoPlane, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing, props.keybindings]);
+  }, [appReady, rotation, cameraState, applyCamera, clampCenter, screenToIsoPlane, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing, props.keybindings, reportView]);
 
   // ---------------------------------------------------------------------
   // Terrain layer — tinted diamond sprites, back-to-front
@@ -2667,6 +2713,7 @@ export function PixiStage(props: PixiStageProps) {
 
   return (
     <div
+      className={`cc-pixi-stage cc-tool-${editorMode.toLowerCase()}`}
       style={{
         width: "100%",
         height: "100%",

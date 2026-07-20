@@ -10,6 +10,14 @@
   --cc-parchment: #ebe3d5;
   --cc-muted: #6b7a5f;
   --cc-ink: #111827;
+  --cc-wood: #704723;
+  --cc-wood-dark: #3f2819;
+  --cc-brass: #c6a253;
+  --cc-brass-light: #f1d78d;
+  --cc-felt: #365f46;
+  --cc-paper: #f1e3bf;
+  --cc-bevel-light: rgba(255, 247, 211, .92);
+  --cc-bevel-dark: rgba(55, 33, 18, .72);
 
   /* UI tokens */
   --ui-bg: var(--cc-parchment);
@@ -29,6 +37,129 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* M12 tycoon chrome: tactile painted wood, brass, felt, and paper surfaces. */
+.cc-tycoon-panel,
+[data-gameui="card"],
+[data-gameui="sidebar"] {
+  background-color: var(--cc-paper) !important;
+  background-image:
+    linear-gradient(100deg, rgba(255,255,255,.20), transparent 28%, rgba(111,75,35,.06) 72%, transparent),
+    repeating-linear-gradient(0deg, rgba(85,55,28,.025) 0 1px, transparent 1px 4px) !important;
+  border: 2px solid var(--cc-wood-dark) !important;
+  border-top-color: var(--cc-brass-light) !important;
+  border-left-color: #d2b875 !important;
+  border-radius: 7px !important;
+  box-shadow: inset 0 0 0 2px rgba(255,250,222,.5), inset -3px -3px 0 rgba(77,46,25,.16), 0 5px 0 var(--cc-wood-dark), 0 12px 24px rgba(0,0,0,.22) !important;
+}
+
+[data-gameui="header"],
+[data-gameui="card-header"] {
+  background: linear-gradient(#8b6035, #66401f) !important;
+  border-bottom: 3px ridge var(--cc-brass) !important;
+  box-shadow: inset 0 2px rgba(255,235,174,.38), inset 0 -3px rgba(48,25,13,.38) !important;
+}
+
+[data-gameui="button"],
+[data-gameui="icon-button"],
+[data-gameui="tab"],
+.cc-live-controls button,
+.cc-hole-inspector button {
+  border: 2px outset #e5ce90 !important;
+  border-radius: 7px !important;
+  box-shadow: inset 0 1px rgba(255,255,255,.42), 0 3px 0 rgba(61,38,20,.66), 0 5px 8px rgba(0,0,0,.15) !important;
+  text-shadow: 0 1px rgba(255,255,255,.28);
+}
+
+[data-gameui="button"]:active,
+[data-gameui="icon-button"]:active,
+[data-gameui="tab"]:active,
+.cc-live-controls button:active,
+.cc-hole-inspector button:active {
+  border-style: inset !important;
+  transform: translateY(2px) !important;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,.26), 0 1px 0 rgba(61,38,20,.66) !important;
+}
+
+[data-gameui="tabs"] {
+  align-items: end;
+  gap: 3px !important;
+  padding: 7px 7px 0 !important;
+  border: 2px inset #b49455 !important;
+  border-radius: 7px 7px 0 0 !important;
+  background: linear-gradient(#6f4b2b, #4d321f) !important;
+}
+
+[data-gameui="tab"] {
+  margin-bottom: -2px;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  background: #d8c08a !important;
+  color: #3c2b1e !important;
+}
+
+[data-gameui="tab"][aria-selected="true"] {
+  padding-top: 12px !important;
+  background: var(--cc-paper) !important;
+  color: #274233 !important;
+  border-bottom-color: var(--cc-paper) !important;
+}
+
+[data-gameui="counter"] {
+  border: 2px inset #d0b56f !important;
+  border-radius: 5px !important;
+  background: #263a2d !important;
+  color: #fff1bc !important;
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.5) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.cc-live-controls {
+  border: 3px ridge var(--cc-brass) !important;
+  border-radius: 6px !important;
+  background: linear-gradient(180deg, rgba(76,52,31,.96), rgba(41,34,26,.97)) !important;
+  box-shadow: inset 0 2px rgba(255,231,167,.25), 0 5px 0 #2a1b12, 0 10px 24px rgba(0,0,0,.38) !important;
+}
+
+.cc-options-panel > header,
+.cc-hud > div:first-child,
+.cc-hole-inspector > div:first-child {
+  background: linear-gradient(180deg, rgba(130,88,47,.20), rgba(92,57,29,.06));
+  border-bottom: 2px ridge var(--cc-brass);
+}
+
+.cc-options-panel select,
+.cc-options-panel input:not([type="checkbox"]):not([type="range"]),
+.cc-hole-inspector input,
+.cc-hole-inspector select {
+  border: 2px inset #b99e67 !important;
+  border-radius: 4px !important;
+  background: #fff8df !important;
+}
+
+@keyframes cc-odometer-tick {
+  0% { transform: translateY(-3px); filter: brightness(1.45); }
+  100% { transform: translateY(0); filter: none; }
+}
+
+[data-gameui="counter"] strong,
+[data-gameui="counter"] div:last-child {
+  animation: cc-odometer-tick 220ms steps(3, end);
+}
+
+.cc-tool-paint > div {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M6 22c3-1 4-4 3-7l8-9 5 5-9 8c-3-1-6 0-7 3z' fill='%23f0d58d' stroke='%233b2818' stroke-width='2'/%3E%3Ccircle cx='20' cy='8' r='2' fill='%2376ad58'/%3E%3C/svg%3E") 4 24, crosshair !important;
+}
+
+.cc-tool-sculpt > div {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M7 5l5 8-3 10h5l3-10 6-4-3-4-7 4-3-5z' fill='%23d7bc78' stroke='%233b2818' stroke-width='2'/%3E%3C/svg%3E") 9 24, crosshair !important;
+}
+
+.cc-tool-hole_wizard > div,
+.cc-tool-obstacle > div,
+.cc-tool-building > div {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M8 25V4' stroke='%233b2818' stroke-width='3'/%3E%3Cpath d='M10 5l13 4-13 5z' fill='%23d94b42' stroke='%23fff1bc' stroke-width='1'/%3E%3C/svg%3E") 8 25, crosshair !important;
 }
 
 body {

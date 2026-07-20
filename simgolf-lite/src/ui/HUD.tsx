@@ -23,6 +23,7 @@ import { Tooltip } from "./help/Tooltip";
 import { REPORT_HELP } from "./help/tooltipContent";
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
+import { HoleMinimap } from "./HoleMinimap";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -262,6 +263,7 @@ export function HUD(props: {
 
   return (
     <div
+      className="cc-hud cc-tycoon-panel"
       style={{
         width: "100%",
         height: "100%",
@@ -974,6 +976,9 @@ export function HUD(props: {
 
                 {viewMode === "ARCHITECT" && (
                   <Section title={translateCurrent("auto.ui.hud.hole.list.overall.score")}>
+                  {course.holes[activeHoleIndex]?.tee && course.holes[activeHoleIndex]?.green && (
+                    <HoleMinimap course={course} hole={course.holes[activeHoleIndex]} holeIndex={activeHoleIndex} thumbnail />
+                  )}
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "34px 44px 1fr 54px 70px", fontSize: 12, color: "#555" }}>
                       <div>

@@ -3,7 +3,6 @@ import { DEFAULT_KEYBINDINGS, normalizeKeybindings, type Keybindings } from "../
 
 export type AdvisorFrequency = "chatty" | "normal" | "important" | "off";
 export type AutosaveCadence = "off" | "weekly" | "5m" | "15m";
-export type RendererChoice = "canvas" | "pixi";
 export type ColorVisionMode = "standard" | "deuteranopia" | "protanopia" | "tritanopia";
 export type TextScale = 90 | 100 | 115 | 130;
 
@@ -28,7 +27,6 @@ export interface AppProfile {
     treeSway: boolean;
     resolutionScale: number;
     gridOverlays: boolean;
-    renderer: RendererChoice;
   };
   audio: {
     masterVolume: number;
@@ -74,7 +72,6 @@ export const DEFAULT_APP_PROFILE: AppProfile = {
     treeSway: true,
     resolutionScale: 1,
     gridOverlays: false,
-    renderer: "pixi",
   },
   audio: {
     masterVolume: 1,
@@ -149,7 +146,6 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
       treeSway: bool(graphics.treeSway, defaults.graphics.treeSway),
       resolutionScale: numberIn(graphics.resolutionScale, 0.5, 1.5, defaults.graphics.resolutionScale),
       gridOverlays: bool(graphics.gridOverlays, defaults.graphics.gridOverlays),
-      renderer: oneOf(graphics.renderer ?? storage?.getItem("coursecraft_renderer"), ["canvas", "pixi"], defaults.graphics.renderer),
     },
     audio: {
       masterVolume: numberIn(audio.masterVolume, 0, 1, defaults.audio.masterVolume),

@@ -38,18 +38,6 @@ async function importPlaywright() {
   }
 }
 
-// Whole-course-fit camera math mirrored from the renderer (110x70 default).
-const W = 110, H = 70, TILE_W = 64, TILE_H = 32;
-function tileToScreen(box, tx, ty) {
-  const corners = [[0, 0], [W, 0], [W, H], [0, H]].map(([x, y]) => [((x - y) * TILE_W) / 2, ((x + y) * TILE_H) / 2]);
-  const xs = corners.map((c) => c[0]);
-  const ys = corners.map((c) => c[1]);
-  const zoom = Math.min((box.width * 0.95) / (Math.max(...xs) - Math.min(...xs)), (box.height * 0.95) / (Math.max(...ys) - Math.min(...ys)));
-  const pivot = [((W / 2 - H / 2) * TILE_W) / 2, ((W / 2 + H / 2) * TILE_H) / 2];
-  const iso = [((tx + 0.5 - ty - 0.5) * TILE_W) / 2, ((tx + 0.5 + ty + 0.5) * TILE_H) / 2];
-  return { x: box.x + box.width / 2 + (iso[0] - pivot[0]) * zoom, y: box.y + box.height / 2 + (iso[1] - pivot[1]) * zoom };
-}
-
 const { chromium } = await importPlaywright();
 
 console.log(`[perf-smoke] starting vite on :${PORT} …`);
@@ -83,57 +71,19 @@ const browser = await chromium.launch(
 );
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 await page.addInitScript(() => {
-  localStorage.setItem("coursecraft_renderer", "pixi");
   localStorage.setItem("coursecraft_perfhud", "on");
   localStorage.setItem("coursecraft_ambience", "on");
 });
-await page.goto(`http://localhost:${PORT}`);
-
-// New game (through the setup wizard), enable animations, open hole wizard.
-await page.getByText("New Game", { exact: true }).click();
-await sleep(800);
-for (let i = 0; i < 6; i++) {
-  const start = page.getByText("Start building");
-  if (await start.isVisible().catch(() => false)) { await start.click(); break; }
-  const next = page.getByText("Next →");
-  if (await next.isVisible().catch(() => false)) { await next.click(); await sleep(350); }
-  else break;
-}
+await page.goto(`http://localhost:${PORT}/?perfFixture=1`);
+await page.waitForFunction(() => {
+  const text = window.render_game_to_text?.();
+  return text && JSON.parse(text).screen === "game";
+}, null, { timeout: 30_000 });
 await sleep(1200);
-await page.getByText("Animations", { exact: true }).click();
-await page.getByRole("button", { name: "Hole Wizard" }).click();
-await sleep(300);
-
-// Place one open hole (retry rows around water/steep terrain).
 const box = await page.locator("canvas").first().boundingBox();
-const holesOpen = async () => {
-  const t = await page.getByText("HOLES OPEN").locator("..").innerText();
-  return Number(t.replace(/[^0-9]/g, "").slice(0, -1)) || 0;
-};
-let placed = false;
-outer: for (const row of [35, 28, 42, 22, 48, 55, 60, 18]) {
-  for (const [x1, x2] of [[28, 48], [45, 68], [60, 82]]) {
-    await page.getByRole("button", { name: "Redo" }).click();
-    await sleep(200);
-    const tee = tileToScreen(box, x1, row);
-    const green = tileToScreen(box, x2, row);
-    await page.mouse.click(tee.x, tee.y);
-    await sleep(250);
-    await page.mouse.click(green.x, green.y);
-    await sleep(500);
-    // A confirm triggers the flyover — skip it so measurement is steady.
-    await page.keyboard.press("Escape");
-    if ((await holesOpen()) >= 1) { placed = true; break outer; }
-  }
-}
-if (!placed) {
-  console.error("[perf-smoke] could not place an open hole (unlucky terrain seed) — rerun");
-  await browser.close();
-  process.exit(2);
-}
+if (!box) throw new Error("performance fixture did not create a renderer canvas");
 
 // Run the day at 3x with a slow keyboard pan; warm up, then measure.
-await page.getByRole("button", { name: "▶▶▶" }).click();
 await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); // focus + skip any flyover
 console.log("[perf-smoke] warmup 8s …");
 await sleep(8000);

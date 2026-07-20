@@ -47,6 +47,7 @@ export function GameSidebar({
 
   return (
     <div
+      data-gameui="sidebar"
       style={{
         position: "relative",
         width: 360,
@@ -152,6 +153,7 @@ export function GameSidebar({
 function Card(props: { title: string; children: ReactNode }) {
   return (
     <div
+      data-gameui="sidebar-card"
       style={{
         background: "rgba(255,255,255,0.72)",
         borderRadius: 22,
@@ -182,7 +184,6 @@ function StatRow(props: { icon: ReactNode; label: string; value: string }) {
     </div>
   );
 }
-
 
 
 

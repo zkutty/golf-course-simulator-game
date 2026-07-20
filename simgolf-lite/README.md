@@ -93,7 +93,7 @@ builds do not attach it to `window`.
 - **Dogleg pathfinding**: `src/game/sim/pathfind.ts`
 - **Weekly sim tick**: `src/game/sim/tickWeek.ts`
 - **Terrain economics**: `src/game/models/terrainEconomics.ts`
-- **UI**: `src/ui/HUD.tsx`, `src/ui/CanvasCourse.tsx`
+- **UI**: `src/ui/HUD.tsx`, `src/ui/PixiStage.tsx`
 
 ## Adding player-facing strings
 

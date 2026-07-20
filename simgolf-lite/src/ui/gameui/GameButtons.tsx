@@ -71,6 +71,7 @@ export function GameButton({
 
   return (
     <button
+      data-gameui="button"
       disabled={disabled}
       style={{ ...base, ...variants[variant], ...style }}
       {...props}
@@ -120,6 +121,7 @@ export function IconButton({ icon, label, variant = "secondary", disabled, style
 
   return (
     <button
+      data-gameui="icon-button"
       disabled={disabled}
       style={{ ...base, ...variantStyle, ...(disabled ? { opacity: 0.55 } : {}), ...style }}
       {...props}
@@ -129,5 +131,4 @@ export function IconButton({ icon, label, variant = "secondary", disabled, style
     </button>
   );
 }
-
 

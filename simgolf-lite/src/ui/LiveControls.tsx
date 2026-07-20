@@ -30,6 +30,7 @@ export function LiveControls(props: {
 
   return (
     <div
+      className="cc-live-controls"
       data-tutorial-target="speed-controls"
       style={{
         position: "absolute",

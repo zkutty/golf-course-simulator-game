@@ -121,6 +121,40 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   };
 }
 
+/** Seed 100 active golfers across one immutable round plan for render perf QA. */
+export function createRenderPerfLiveState(course: Course, world: World): LiveState {
+  const state = createLiveState(course, world, 0);
+  const template = spawnGolfer(state, course, { atMinute: LIVE.day.openMinute, archetype: "casual" });
+  const colors = Object.values(ARCHETYPES).map((archetype) => archetype.color);
+  state.golfers = Array.from({ length: 100 }, (_, index) => {
+    const holeIndex = index % 18;
+    const pos = { x: 12 + ((index * 17) % 85), y: 5 + holeIndex * 3 };
+    const to = { x: Math.min(course.width - 2, pos.x + 1), y: pos.y };
+    return {
+      ...template,
+      id: index + 1,
+      name: `Perf Golfer ${index + 1}`,
+      color: colors[index % colors.length],
+      segments: [{ kind: "walk" as const, from: pos, to, holeIndex, dur: 10_000 }],
+      segIndex: 0,
+      segElapsed: (index % 100) * 10,
+      pos,
+      ball: null,
+      currentHole: holeIndex,
+      holePar: new Array(18).fill(5),
+      holeStrokes: new Array(18).fill(5),
+      mood: 0.2 + (index % 8) * 0.1,
+    };
+  });
+  state.arrivals = [];
+  state.nextArrivalIdx = 0;
+  state.nextGolferId = 101;
+  state.roundsStarted = 100;
+  state.dayMinute = LIVE.day.openMinute + 240;
+  state.nextTeeFreeAt = state.dayMinute + LIVE.day.teeGapMinutes;
+  return state;
+}
+
 export interface StepEvents {
   cashDelta: number; // green fees collected this step
   finishedThisStep: number;

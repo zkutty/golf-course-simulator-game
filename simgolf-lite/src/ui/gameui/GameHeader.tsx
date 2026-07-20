@@ -26,6 +26,7 @@ export function GameHeader({
 }: GameHeaderProps) {
   return (
     <div
+      data-gameui="header"
       style={{
         position: "relative",
         background: "var(--cc-parchment)",
@@ -121,6 +122,7 @@ export function GameHeader({
 function StatPill(props: { icon: ReactNode; label: string; value: string }) {
   return (
     <div
+      data-gameui="counter"
       style={{
         display: "flex",
         alignItems: "center",
@@ -144,4 +146,3 @@ function StatPill(props: { icon: ReactNode; label: string; value: string }) {
     </div>
   );
 }
-

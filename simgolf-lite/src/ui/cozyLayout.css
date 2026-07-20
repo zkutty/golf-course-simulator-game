@@ -51,6 +51,87 @@
   justify-content: center;
 }
 
+.cc-minimap,
+.cc-hole-thumbnail {
+  position: absolute;
+  right: 14px;
+  bottom: 128px;
+  width: 214px;
+  height: 214px;
+  overflow: hidden;
+  border: 3px ridge #c8a864;
+  border-radius: 5px;
+  background: #26372f;
+  box-shadow: 0 5px 0 #45331f, 0 10px 22px rgba(0, 0, 0, .32), inset 0 0 0 2px #f4dfa4;
+  z-index: 15;
+}
+
+.cc-minimap canvas,
+.cc-hole-thumbnail canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+}
+
+.cc-minimap-collapse,
+.cc-minimap-toggle {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  z-index: 2;
+  width: 24px;
+  height: 22px;
+  border: 2px outset #e7ce91;
+  border-radius: 3px;
+  background: #8f6237;
+  color: #fff3c2;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.cc-minimap-toggle {
+  top: auto;
+  right: 14px;
+  bottom: 128px;
+  z-index: 15;
+  width: 38px;
+  height: 34px;
+  font-size: 20px;
+}
+
+.cc-minimap-compass {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  color: #fff4bd;
+  font: 800 10px/1 var(--font-body);
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+}
+
+.cc-minimap-compass span {
+  display: block;
+  margin-top: 2px;
+  transform-origin: center;
+  transition: transform 180ms ease;
+}
+
+.cc-hole-thumbnail {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  height: 132px;
+  flex: 0 0 132px;
+  margin: 0 0 12px;
+  box-sizing: border-box;
+  box-shadow: 0 3px 0 #45331f, 0 7px 16px rgba(0, 0, 0, .22), inset 0 0 0 2px #f4dfa4;
+}
+
 /* Sidebar "clubhouse card" */
 .cc-sidebar-frame {
   height: 100%;
@@ -71,5 +152,3 @@
     grid-template-rows: minmax(0, 1fr) minmax(260px, 360px);
   }
 }
-
-

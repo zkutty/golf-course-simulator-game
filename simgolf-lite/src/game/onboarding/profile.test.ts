@@ -16,17 +16,16 @@ function storage(seed: Record<string, string> = {}): Storage {
 describe("versioned app profile", () => {
   beforeEach(() => vi.stubGlobal("window", { dispatchEvent: vi.fn() }));
 
-  it("migrates the M14 profile and scattered audio/renderer/ambience keys", () => {
+  it("migrates the M14 profile and scattered audio/ambience keys", () => {
     const store = storage({
       coursecraft_app_profile_v1: JSON.stringify({ tutorialOffered: true, advisorFrequency: "important" }),
       coursecraft_audio_volumes: JSON.stringify({ musicVolume: 0.7, ambienceVolume: 0.2, sfxVolume: 0.4 }),
-      coursecraft_renderer: "canvas",
       coursecraft_ambience: "off",
     });
     const profile = loadAppProfile(store);
     expect(profile).toMatchObject({ version: 3, tutorialOffered: true, advisorFrequency: "important" });
     expect(profile.audio).toMatchObject({ musicVolume: 0.7, ambienceVolume: 0.2, sfxVolume: 0.4 });
-    expect(profile.graphics).toMatchObject({ renderer: "canvas", ambienceFx: false });
+    expect(profile.graphics).toMatchObject({ ambienceFx: false });
   });
 
   it("persists tab updates and resets one tab without touching others", () => {

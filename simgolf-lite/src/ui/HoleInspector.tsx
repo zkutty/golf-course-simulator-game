@@ -4,6 +4,7 @@ import type { Course, Hole, Terrain, ObstacleType } from "../game/models/types";
 import { computeHoleTerrainStats, type TerrainComposition } from "../game/eval/terrainStats";
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
+import type { ReactNode } from "react";
 
 interface HoleInspectorProps {
   holeIndex: number;
@@ -14,6 +15,7 @@ interface HoleInspectorProps {
   onFlyover?: () => void; // cinematic hole flyover (ZKU-157)
   course: Course;
   hole: Hole;
+  thumbnail?: ReactNode;
   onSetHoleIndex?: (index: number) => void;
   onSmartPaintFairway?: (widthYards: number) => void;
   // Editor tools props
@@ -34,6 +36,7 @@ export function HoleInspector({
   onFlyover,
   course,
   hole,
+  thumbnail,
   onSetHoleIndex,
   onSmartPaintFairway,
   editorMode = "PAINT",
@@ -76,6 +79,7 @@ export function HoleInspector({
 
   return (
     <div
+      className="cc-tycoon-panel cc-hole-inspector"
       style={{
         display: "flex",
         flexDirection: "column",
@@ -165,6 +169,8 @@ export function HoleInspector({
           </div>
         )}
       </div>
+
+      {thumbnail}
 
       {/* Hole Index / Stroke Index */}
       <div style={{ marginBottom: 12 }}>

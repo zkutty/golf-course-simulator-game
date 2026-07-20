@@ -13,6 +13,7 @@ export function GameCard({ title, icon, children, variant = "metrics" }: GameCar
 
   return (
     <div
+      data-gameui="card"
       style={{
         background: "rgba(255,255,255,0.80)",
         borderRadius: 22,
@@ -22,6 +23,7 @@ export function GameCard({ title, icon, children, variant = "metrics" }: GameCar
       }}
     >
       <div
+        data-gameui="card-header"
         style={{
           padding: "14px 16px",
           display: "flex",
@@ -84,7 +86,6 @@ export function MetricRow({ label, value, icon, change }: MetricRowProps) {
     </div>
   );
 }
-
 
 
 

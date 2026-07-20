@@ -1,167 +1,166 @@
-import React, { useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Course, Hole, Point } from "../game/models/types";
-import type { CameraState } from "../game/render/camera";
+import type { GolferRenderData } from "../game/live/types";
+import { computeHoleBoundingBox, type BoundingBox, type IsoCameraSnapshot } from "../game/render/camera";
+import { TILE_H, TILE_W, worldToIso } from "../game/render/iso";
+import { getElevation } from "../game/models/elevation";
 import { translateCurrent } from "../i18n/core";
+import { MINIMAP_SIZE as SIZE, makeMinimapTransform, minimapCanvasPoint, minimapPointToWorld, type MinimapTransform } from "../game/render/minimap";
 
 const COLORS: Record<string, string> = {
-  fairway: "#4fa64f",
-  rough: "#2f7a36",
-  deep_rough: "#1f5f2c",
-  sand: "#d7c48a",
-  water: "#2b7bbb",
-  green: "#5dbb6a",
-  tee: "#8b6b4f",
-  path: "#8f8f8f",
+  fairway: "#76ad58",
+  rough: "#548342",
+  deep_rough: "#355f37",
+  sand: "#d5bb72",
+  water: "#4f91b9",
+  green: "#78ba61",
+  tee: "#92bd6c",
+  path: "#9b8d76",
 };
 
 interface HoleMinimapProps {
   course: Course;
-  hole: Hole;
-  cameraState: CameraState | null;
-  tileSize: number;
-  onCenter: (center: Point) => void;
+  hole?: Hole;
+  holeIndex?: number;
+  view?: IsoCameraSnapshot | null;
+  golfersRef?: React.RefObject<GolferRenderData[]>;
+  onCenter?: (center: Point) => void;
+  thumbnail?: boolean;
 }
 
-const MINIMAP_SIZE = 200; // Fixed minimap size in pixels
+function boundsFor(course: Course, hole?: Hole, holeIndex = 0): BoundingBox {
+  return hole ? computeHoleBoundingBox(course, hole, holeIndex, 2) ?? { minX: 0, minY: 0, maxX: course.width, maxY: course.height }
+    : { minX: 0, minY: 0, maxX: course.width, maxY: course.height };
+}
 
-export function HoleMinimap({
-  course,
-  hole,
-  cameraState,
-  tileSize,
-  onCenter,
-}: HoleMinimapProps) {
+function shade(hex: string, elevation: number): string {
+  const value = Number.parseInt(hex.slice(1), 16);
+  const factor = 0.82 + Math.min(0.24, elevation * 0.018);
+  const channel = (shift: number) => Math.max(0, Math.min(255, Math.round(((value >> shift) & 255) * factor)));
+  return `rgb(${channel(16)},${channel(8)},${channel(0)})`;
+}
+
+function drawDiamond(ctx: CanvasRenderingContext2D, center: Point, scale: number, fill: string) {
+  const hw = TILE_W * scale / 2;
+  const hh = TILE_H * scale / 2;
+  ctx.beginPath();
+  ctx.moveTo(center.x, center.y - hh);
+  ctx.lineTo(center.x + hw, center.y);
+  ctx.lineTo(center.x, center.y + hh);
+  ctx.lineTo(center.x - hw, center.y);
+  ctx.closePath();
+  ctx.fillStyle = fill;
+  ctx.fill();
+}
+
+/** North-up isometric course overview and reusable per-hole thumbnail. */
+export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onCenter, thumbnail = false }: HoleMinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const transformRef = useRef<{ minX: number; minY: number; scale: number; offsetX: number; offsetY: number } | null>(null);
+  const baseRef = useRef<HTMLCanvasElement | null>(null);
+  const transformRef = useRef<MinimapTransform | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !hole.tee || !hole.green) return;
+    const timer = window.setTimeout(() => {
+      const bounds = boundsFor(course, hole, holeIndex);
+      const transform = makeMinimapTransform(bounds);
+      transformRef.current = transform;
+      const base = document.createElement("canvas");
+      base.width = SIZE * devicePixelRatio;
+      base.height = SIZE * devicePixelRatio;
+      const ctx = base.getContext("2d");
+      if (!ctx) return;
+      ctx.scale(devicePixelRatio, devicePixelRatio);
+      ctx.fillStyle = "#26372f";
+      ctx.fillRect(0, 0, SIZE, SIZE);
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    // Compute hole bounding box
-    const points: Point[] = [hole.tee, hole.green];
-    for (let y = 0; y < course.height; y++) {
-      for (let x = 0; x < course.width; x++) {
-        const idx = y * course.width + x;
-        const terrain = course.tiles[idx];
-        if (terrain === "green" || terrain === "tee") {
-          points.push({ x, y });
+      // Painter order for the fixed north-up 2:1 projection.
+      for (let sum = Math.floor(bounds.minX + bounds.minY); sum <= Math.ceil(bounds.maxX + bounds.maxY); sum++) {
+        for (let x = Math.floor(bounds.minX); x <= Math.ceil(bounds.maxX); x++) {
+          const y = sum - x;
+          if (x < 0 || y < 0 || x >= course.width || y >= course.height) continue;
+          if (x < bounds.minX || y < bounds.minY || x > bounds.maxX || y > bounds.maxY) continue;
+          const elevation = getElevation(course, x, y);
+          const iso = worldToIso(x + 0.5, y + 0.5, elevation);
+          const p = minimapCanvasPoint(iso, transform);
+          const terrain = course.tiles[y * course.width + x];
+          drawDiamond(ctx, p, transform.scale, shade(COLORS[terrain] ?? COLORS.rough, elevation));
+          if (terrain === "water") {
+            ctx.strokeStyle = "rgba(220,245,255,.48)";
+            ctx.lineWidth = Math.max(.45, transform.scale * 2);
+            ctx.beginPath();
+            ctx.moveTo(p.x - TILE_W * transform.scale * .2, p.y);
+            ctx.lineTo(p.x + TILE_W * transform.scale * .2, p.y);
+            ctx.stroke();
+          }
         }
       }
-    }
+      baseRef.current = base;
+    }, 420); // terrain/elevation edits regenerate without stalling paint input
+    return () => window.clearTimeout(timer);
+  }, [course, hole, holeIndex]);
 
-    if (points.length === 0) return;
+  useEffect(() => {
+    if (collapsed) return;
+    const render = () => {
+      const canvas = canvasRef.current;
+      const base = baseRef.current;
+      const transform = transformRef.current;
+      if (!canvas || !base || !transform) return;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      ctx.drawImage(base, 0, 0, SIZE, SIZE);
 
-    let minX = points[0].x;
-    let minY = points[0].y;
-    let maxX = points[0].x;
-    let maxY = points[0].y;
-    for (const p of points) {
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
-    }
+      if (!thumbnail) {
+        for (const golfer of golfersRef?.current ?? []) {
+          const iso = worldToIso(golfer.x, golfer.y, getElevation(course, Math.round(golfer.x), Math.round(golfer.y)));
+          const p = minimapCanvasPoint(iso, transform);
+          ctx.fillStyle = golfer.mood < .35 ? "#d94b42" : golfer.mood > .75 ? "#7adb68" : "#f1d36c";
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (view) {
+          const corners = [
+            { x: view.bounds.minX, y: view.bounds.minY }, { x: view.bounds.maxX, y: view.bounds.minY },
+            { x: view.bounds.maxX, y: view.bounds.maxY }, { x: view.bounds.minX, y: view.bounds.maxY },
+          ].map((p) => minimapCanvasPoint(worldToIso(p.x, p.y), transform));
+          ctx.strokeStyle = "#fff1a6";
+          ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          corners.forEach((p, index) => index ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+          ctx.closePath();
+          ctx.stroke();
+        }
+      }
+    };
+    render();
+    const interval = window.setInterval(render, 333); // live dots + viewport at 3 Hz
+    return () => window.clearInterval(interval);
+  }, [collapsed, course, golfersRef, thumbnail, view]);
 
-    const bboxWidth = maxX - minX;
-    const bboxHeight = maxY - minY;
-    const scale = Math.min(MINIMAP_SIZE / (bboxWidth + 2), MINIMAP_SIZE / (bboxHeight + 2));
-
-    // Clear
-    ctx.clearRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
-    ctx.fillStyle = "#f5f5f5";
-    ctx.fillRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
-
-    // Draw terrain (simplified: just show green/tee and path)
-    const offsetX = (MINIMAP_SIZE - bboxWidth * scale) / 2;
-    const offsetY = (MINIMAP_SIZE - bboxHeight * scale) / 2;
-
-    // Draw centerline
-    ctx.strokeStyle = "#888";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 2]);
-    ctx.beginPath();
-    const teeScreenX = (hole.tee.x - minX) * scale + offsetX;
-    const teeScreenY = (hole.tee.y - minY) * scale + offsetY;
-    const greenScreenX = (hole.green.x - minX) * scale + offsetX;
-    const greenScreenY = (hole.green.y - minY) * scale + offsetY;
-    ctx.moveTo(teeScreenX, teeScreenY);
-    ctx.lineTo(greenScreenX, greenScreenY);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Draw tee
-    ctx.fillStyle = COLORS.tee;
-    ctx.beginPath();
-    ctx.arc(teeScreenX, teeScreenY, 3, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Draw green
-    ctx.fillStyle = COLORS.green;
-    ctx.beginPath();
-    ctx.arc(greenScreenX, greenScreenY, 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Draw viewport rectangle if in hole edit mode
-    if (cameraState && cameraState.mode === "hole" && cameraState.bounds) {
-      const bounds = cameraState.bounds;
-      const viewMinX = (bounds.minX - minX) * scale + offsetX;
-      const viewMinY = (bounds.minY - minY) * scale + offsetY;
-      const viewWidth = (bounds.maxX - bounds.minX) * scale;
-      const viewHeight = (bounds.maxY - bounds.minY) * scale;
-
-      ctx.strokeStyle = "#2b7bbb";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(viewMinX, viewMinY, viewWidth, viewHeight);
-    }
-
-    // Store transform for click handling
-    transformRef.current = { minX, minY, scale, offsetX, offsetY };
-  }, [course, hole, cameraState, tileSize]);
-
-  const handleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas || !hole.tee || !hole.green) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-
-    const transform = transformRef.current;
-    if (!transform) return;
-
-    // Convert screen coords to world coords
-    const worldX = (x - transform.offsetX) / transform.scale + transform.minX;
-    const worldY = (y - transform.offsetY) / transform.scale + transform.minY;
-
-    onCenter({ x: worldX, y: worldY });
-  };
+  if (collapsed && !thumbnail) {
+    return <button className="cc-minimap-toggle" onClick={() => setCollapsed(false)} aria-label={translateCurrent("minimap.open")}>◇</button>;
+  }
 
   return (
-    <div
-      style={{
-        position: "absolute",
-        bottom: 12,
-        right: 12,
-        width: MINIMAP_SIZE,
-        height: MINIMAP_SIZE,
-        border: "2px solid #ddd",
-        borderRadius: 4,
-        backgroundColor: "#fff",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-        cursor: "pointer",
-      }}
-      title={translateCurrent("auto.ui.holeminimap.click.to.center.view")}
-    >
+    <div className={thumbnail ? "cc-hole-thumbnail" : "cc-minimap"}>
+      {!thumbnail && <button className="cc-minimap-collapse" onClick={() => setCollapsed(true)} aria-label={translateCurrent("minimap.collapse")}>−</button>}
+      {!thumbnail && <div className="cc-minimap-compass" aria-label={translateCurrent("minimap.bearing", { degrees: view?.rotation ?? 0 })}>{translateCurrent("minimap.north")}<span style={{ transform: `rotate(${-(view?.rotation ?? 0)}deg)` }}>▲</span></div>}
       <canvas
         ref={canvasRef}
-        width={MINIMAP_SIZE}
-        height={MINIMAP_SIZE}
-        onClick={handleClick}
-        style={{ display: "block", width: "100%", height: "100%" }}
+        width={SIZE}
+        height={SIZE}
+        aria-label={thumbnail ? `Isometric preview of hole ${holeIndex + 1}` : "Isometric course minimap"}
+        title={onCenter ? translateCurrent("auto.ui.holeminimap.click.to.center.view") : undefined}
+        onClick={(event) => {
+          if (!onCenter || !transformRef.current) return;
+          const rect = event.currentTarget.getBoundingClientRect();
+          const point = { x: (event.clientX - rect.left) * SIZE / rect.width, y: (event.clientY - rect.top) * SIZE / rect.height };
+          const world = minimapPointToWorld(point, transformRef.current);
+          onCenter({ x: Math.max(0, Math.min(course.width - 1, world.x)), y: Math.max(0, Math.min(course.height - 1, world.y)) });
+        }}
       />
     </div>
   );

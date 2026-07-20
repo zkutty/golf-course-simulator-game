@@ -9,6 +9,7 @@ export interface GameTabsProps {
 export function GameTabs({ tabs, activeTab, onTabChange }: GameTabsProps) {
   return (
     <div
+      data-gameui="tabs"
       role="tablist"
       style={{
         display: "flex",
@@ -34,7 +35,7 @@ export function GameTabs({ tabs, activeTab, onTabChange }: GameTabsProps) {
           boxShadow: isActive ? "0 10px 20px rgba(0,0,0,0.14)" : undefined,
         };
         return (
-          <button key={t} role="tab" aria-selected={isActive} onClick={() => onTabChange(t)} style={btn}>
+          <button data-gameui="tab" key={t} role="tab" aria-selected={isActive} onClick={() => onTabChange(t)} style={btn}>
             {t}
           </button>
         );
@@ -52,6 +53,7 @@ export interface PillTabsProps {
 export function PillTabs({ tabs, activeTab, onTabChange }: PillTabsProps) {
   return (
     <div
+      data-gameui="tabs"
       role="tablist"
       style={{
         display: "inline-flex",
@@ -67,6 +69,7 @@ export function PillTabs({ tabs, activeTab, onTabChange }: PillTabsProps) {
         const isActive = t.id === activeTab;
         return (
           <button
+            data-gameui="tab"
             key={t.id}
             role="tab"
             aria-selected={isActive}
@@ -94,7 +97,6 @@ export function PillTabs({ tabs, activeTab, onTabChange }: PillTabsProps) {
     </div>
   );
 }
-
 
 
 

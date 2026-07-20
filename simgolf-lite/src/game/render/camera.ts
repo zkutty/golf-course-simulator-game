@@ -23,6 +23,14 @@ export interface BoundingBox {
   maxY: number;
 }
 
+/** Throttled camera telemetry consumed by lightweight overlays such as the minimap. */
+export interface IsoCameraSnapshot {
+  center: Point;
+  zoom: number;
+  rotation: 0 | 90 | 180 | 270;
+  bounds: BoundingBox;
+}
+
 /**
  * Compute bounding box for a hole including:
  * - Tee and green positions
@@ -296,102 +304,3 @@ export function computeHoleCamera(
     bounds: bbox,
   };
 }
-
-/**
- * Apply camera transform to a world point to get screen coordinates
- */
-export function worldToScreen(
-  worldPoint: Point,
-  camera: CameraState,
-  tileSize: number,
-  canvasWidth: number,
-  canvasHeight: number
-): Point {
-  // Translate to center
-  let x = worldPoint.x - camera.center.x;
-  let y = worldPoint.y - camera.center.y;
-
-  // Rotate (counter-clockwise, so negate the angle)
-  const angleRad = (-camera.rotationDeg * Math.PI) / 180;
-  const cos = Math.cos(angleRad);
-  const sin = Math.sin(angleRad);
-  const rotatedX = x * cos - y * sin;
-  const rotatedY = x * sin + y * cos;
-  x = rotatedX;
-  y = rotatedY;
-
-  // Scale
-  x *= camera.zoom;
-  y *= camera.zoom;
-
-  // Convert to pixels and center on canvas
-  x = x * tileSize + canvasWidth / 2;
-  y = y * tileSize + canvasHeight / 2;
-
-  return { x, y };
-}
-
-/**
- * Convert screen coordinates to world (tile) coordinates
- */
-export function screenToWorld(
-  screenPoint: Point,
-  camera: CameraState,
-  tileSize: number,
-  canvasWidth: number,
-  canvasHeight: number
-): Point {
-  // Convert to centered pixel coordinates
-  let x = (screenPoint.x - canvasWidth / 2) / tileSize;
-  let y = (screenPoint.y - canvasHeight / 2) / tileSize;
-
-  // Un-scale
-  x /= camera.zoom;
-  y /= camera.zoom;
-
-  // Un-rotate (clockwise rotation)
-  const angleRad = (camera.rotationDeg * Math.PI) / 180;
-  const cos = Math.cos(angleRad);
-  const sin = Math.sin(angleRad);
-  const unrotatedX = x * cos + y * sin;
-  const unrotatedY = -x * sin + y * cos;
-  x = unrotatedX;
-  y = unrotatedY;
-
-  // Translate back
-  x += camera.center.x;
-  y += camera.center.y;
-
-  return { x, y };
-}
-
-/**
- * Apply camera transform to canvas context
- * Note: Does not save/restore context; caller should manage that
- */
-export function applyCameraTransform(
-  ctx: CanvasRenderingContext2D,
-  camera: CameraState,
-  tileSize: number,
-  canvasWidth: number,
-  canvasHeight: number
-): void {
-  // Reset to identity first
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  
-  // Center
-  ctx.translate(canvasWidth / 2, canvasHeight / 2);
-  
-  // Scale
-  ctx.scale(camera.zoom, camera.zoom);
-  
-  // No rotation in hole edit mode
-  // Rotate (counter-clockwise, so negate the angle) - only if rotationDeg != 0
-  if (camera.rotationDeg !== 0) {
-    ctx.rotate((-camera.rotationDeg * Math.PI) / 180);
-  }
-  
-  // Translate to camera center (in tile space, scale by tileSize)
-  ctx.translate(-camera.center.x * tileSize, -camera.center.y * tileSize);
-}
-

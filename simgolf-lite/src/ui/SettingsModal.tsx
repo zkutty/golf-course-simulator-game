@@ -47,7 +47,7 @@ export function SettingsModal(props: SettingsModalProps) {
 
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="options-title" data-testid="options-screen" style={{ position: "fixed", inset: 0, background: "rgba(15,24,18,.68)", display: "grid", placeItems: "center", padding: 16, zIndex: 99990 }} onClick={props.onClose}>
-      <section ref={trapRef} style={{ width: "min(820px, 100%)", maxHeight: "min(760px, 92vh)", overflow: "hidden", display: "grid", gridTemplateRows: "auto auto minmax(0,1fr) auto", borderRadius: 20, background: "#f7f0df", border: "2px solid #a9987f", boxShadow: "0 24px 64px rgba(0,0,0,.42)" }} onClick={(event) => event.stopPropagation()}>
+      <section className="cc-tycoon-panel cc-options-panel" ref={trapRef} style={{ width: "min(820px, 100%)", maxHeight: "min(760px, 92vh)", overflow: "hidden", display: "grid", gridTemplateRows: "auto auto minmax(0,1fr) auto", borderRadius: 20, background: "#f7f0df", border: "2px solid #a9987f", boxShadow: "0 24px 64px rgba(0,0,0,.42)" }} onClick={(event) => event.stopPropagation()}>
         <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "20px 22px 12px" }}>
           <div><div id="options-title" style={{ fontFamily: "var(--font-heading)", fontSize: 28, fontWeight: 900, color: "#344338" }}>{t("common.options")}</div><div style={{ fontSize: 12, color: "#687266" }}>{t("options.subtitle")}</div></div>
           <button aria-label={t("options.close")} onClick={props.onClose} style={{ border: "1px solid #687266", borderRadius: 9, background: "#fffaf0", padding: "8px 11px", cursor: "pointer", fontWeight: 900 }}>✕</button>
@@ -114,7 +114,6 @@ function GraphicsTab({ profile, change }: { profile: AppProfile; change: Change 
     <Row label={t("settings.treeSway")}><Toggle label={t("settings.treeSway")} checked={p.treeSway} onChange={(treeSway) => change("graphics", { treeSway })} /></Row>
     <Row label={t("settings.resolutionScale")}><Range label={t("settings.resolutionScale")} value={p.resolutionScale} min={.5} max={1.5} step={.25} onChange={(resolutionScale) => change("graphics", { resolutionScale })} /></Row>
     <Row label={t("settings.gridOverlays")}><Toggle label={t("settings.gridOverlays")} checked={p.gridOverlays} onChange={(gridOverlays) => change("graphics", { gridOverlays })} /></Row>
-    <Row label={t("settings.renderer")}><select aria-label={t("settings.renderer")} value={p.renderer} onChange={(e) => change("graphics", { renderer: e.target.value as typeof p.renderer })} style={selectStyle}><option value="pixi"><T id="auto.ui.settingsmodal.pixi.isometric" /></option><option value="canvas"><T id="auto.ui.settingsmodal.canvas.legacy" /></option></select></Row>
   </div>;
 }
 
