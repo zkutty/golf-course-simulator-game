@@ -274,8 +274,8 @@ export function stepLive(
   return { cashDelta, finishedThisStep, completedRounds };
 }
 
-export function liveRenderData(state: LiveState): GolferRenderData[] {
-  const out: GolferRenderData[] = [];
+export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): GolferRenderData[] {
+  let outIndex = 0;
   for (const g of state.golfers) {
     // Animation facts (ZKU-153): current segment kind/progress, the stroke
     // being played, and a facing direction. Pure derivation — no sim state
@@ -312,7 +312,7 @@ export function liveRenderData(state: LiveState): GolferRenderData[] {
         }
       }
     }
-    out.push({
+    const next: GolferRenderData = {
       id: g.id,
       x: g.pos.x,
       y: g.pos.y,
@@ -334,8 +334,12 @@ export function liveRenderData(state: LiveState): GolferRenderData[] {
         g.scoredHoles > 0
           ? (g.holeStrokes[g.scoredHoles - 1] ?? 0) - (g.holePar[g.scoredHoles - 1] ?? 0)
           : 0,
-    });
+    };
+    if (out[outIndex]) Object.assign(out[outIndex], next);
+    else out.push(next);
+    outIndex += 1;
   }
+  out.length = outIndex;
   return out;
 }
 

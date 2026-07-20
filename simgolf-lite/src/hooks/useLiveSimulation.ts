@@ -52,8 +52,11 @@ export interface LiveStatus {
   roundsToday: number;
   greenFeesToday: number;
   concessionsToday: number;
+  arrivalsRemaining: number;
+  nextArrivalMinute: number | null;
   lastDay: DayResult | null;
   selected: SelectedGolferDetail | null;
+  golfers: Array<Pick<SelectedGolferDetail, "id" | "name" | "archetype" | "currentHole" | "scoreToPar" | "mood">>;
   tournament: null | {
     eventId: string;
     name: string;
@@ -126,8 +129,11 @@ export function useLiveSimulation(args: {
     roundsToday: 0,
     greenFeesToday: 0,
     concessionsToday: 0,
+    arrivalsRemaining: 0,
+    nextArrivalMinute: null,
     lastDay: null,
     selected: null,
+    golfers: [],
     tournament: null,
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -139,6 +145,11 @@ export function useLiveSimulation(args: {
   const speedRef = useRef<SpeedName>(speed);
   const liveRef = useRef<LiveState | null>(null);
   const golfersRef = useRef<GolferRenderData[]>([]);
+  // Alternate two retained render buffers so 100+ entity frames do not
+  // allocate a new array/object graph every rAF. The previous buffer remains
+  // intact long enough for audio edge detection.
+  const renderBuffersRef = useRef<[GolferRenderData[], GolferRenderData[]]>([[], []]);
+  const renderBufferIndexRef = useRef(0);
   const rafRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
   const pendingCashRef = useRef(0);
@@ -150,6 +161,11 @@ export function useLiveSimulation(args: {
   const onRoundRef = useRef(onRoundCompleted);
   const skipNextReconcileRef = useRef(false);
   const wasPlayableRef = useRef(isCoursePlayable(course));
+
+  const buildRenderData = useCallback((live: LiveState) => {
+    renderBufferIndexRef.current = renderBufferIndexRef.current === 0 ? 1 : 0;
+    return liveRenderData(live, renderBuffersRef.current[renderBufferIndexRef.current]);
+  }, []);
 
   useEffect(() => {
     courseRef.current = course;
@@ -198,9 +214,9 @@ export function useLiveSimulation(args: {
     }
     if (enabled && live && live.golfers.length > 0) {
       reconcileGolfers(live, course);
-      golfersRef.current = liveRenderData(live);
+      golfersRef.current = buildRenderData(live);
     }
-  }, [enabled, course]);
+  }, [buildRenderData, enabled, course]);
 
   const flushCash = useCallback(() => {
     const d = pendingCashRef.current;
@@ -226,8 +242,18 @@ export function useLiveSimulation(args: {
       roundsToday: live.roundsStarted,
       greenFeesToday: live.greenFeeCollected,
       concessionsToday: live.concessionCollected,
+      arrivalsRemaining: Math.max(0, live.arrivals.length - live.nextArrivalIdx),
+      nextArrivalMinute: live.arrivals[live.nextArrivalIdx]?.atMinute ?? null,
       lastDay: status.lastDay,
       selected,
+      golfers: live.golfers.map((g) => ({
+        id: g.id,
+        name: g.name,
+        archetype: g.archetype,
+        currentHole: g.currentHole,
+        scoreToPar: g.scoreToPar,
+        mood: g.mood,
+      })),
       tournament: live.tournament ? {
         eventId: live.tournament.eventId,
         name: live.tournament.name,
@@ -310,7 +336,10 @@ export function useLiveSimulation(args: {
       roundsToday: 0,
       greenFeesToday: 0,
       concessionsToday: 0,
+      arrivalsRemaining: next.arrivals.length,
+      nextArrivalMinute: next.arrivals[0]?.atMinute ?? null,
       lastDay: result,
+      golfers: [],
       tournament: next.tournament ? {
         eventId: next.tournament.eventId,
         name: next.tournament.name,
@@ -344,7 +373,7 @@ export function useLiveSimulation(args: {
           pendingCashRef.current += ev.cashDelta;
           onCashRef.current?.();
         }
-        const nextRender = liveRenderData(live);
+        const nextRender = buildRenderData(live);
         golfersRef.current = nextRender;
         const eventCap = speedRef.current === "3x" ? 2 : speedRef.current === "2x" ? 3 : 6;
         for (const audioEvent of deriveLiveAudioEvents(previousRender, nextRender, courseRef.current).slice(0, eventCap)) {
@@ -370,7 +399,7 @@ export function useLiveSimulation(args: {
       rafRef.current = null;
       lastTsRef.current = null;
     };
-  }, [enabled, flushCash, publishStatus, finishDay]);
+  }, [buildRenderData, enabled, flushCash, publishStatus, finishDay]);
 
   const liveActive = speed !== "paused" || status.onCourse > 0;
 
@@ -399,7 +428,7 @@ export function useLiveSimulation(args: {
     const restored = restoreLiveSimulation(snapshot);
     if (!restored) return false;
     liveRef.current = restored.state;
-    golfersRef.current = liveRenderData(restored.state);
+    golfersRef.current = buildRenderData(restored.state);
     pendingCashRef.current = restored.pendingCash;
     speedRef.current = restored.speed;
     setSpeedState(restored.speed);
@@ -416,8 +445,18 @@ export function useLiveSimulation(args: {
       roundsToday: restored.state.roundsStarted,
       greenFeesToday: restored.state.greenFeeCollected,
       concessionsToday: restored.state.concessionCollected,
+      arrivalsRemaining: Math.max(0, restored.state.arrivals.length - restored.state.nextArrivalIdx),
+      nextArrivalMinute: restored.state.arrivals[restored.state.nextArrivalIdx]?.atMinute ?? null,
       lastDay: null,
       selected,
+      golfers: restored.state.golfers.map((g) => ({
+        id: g.id,
+        name: g.name,
+        archetype: g.archetype,
+        currentHole: g.currentHole,
+        scoreToPar: g.scoreToPar,
+        mood: g.mood,
+      })),
       tournament: restored.state.tournament ? {
         eventId: restored.state.tournament.eventId,
         name: restored.state.tournament.name,
@@ -426,7 +465,7 @@ export function useLiveSimulation(args: {
       } : null,
     });
     return true;
-  }, []);
+  }, [buildRenderData]);
 
   const advanceTime = useCallback((ms: number) => {
     if (!enabled || !Number.isFinite(ms) || ms <= 0) return;
@@ -438,7 +477,7 @@ export function useLiveSimulation(args: {
     const ev = stepLive(live, courseRef.current, Math.min(2, ms / 1000) * gmPerSec);
     for (const round of ev.completedRounds) onRoundRef.current?.(round, live.dayIndex);
     if (ev.cashDelta > 0) pendingCashRef.current += ev.cashDelta;
-    const nextRender = liveRenderData(live);
+    const nextRender = buildRenderData(live);
     golfersRef.current = nextRender;
     const eventCap = speedRef.current === "3x" ? 2 : speedRef.current === "2x" ? 3 : 6;
     for (const audioEvent of deriveLiveAudioEvents(previousRender, nextRender, courseRef.current).slice(0, eventCap)) {
@@ -447,7 +486,7 @@ export function useLiveSimulation(args: {
     flushCash();
     publishStatus(live);
     if (live.dayOver) finishDay(live);
-  }, [enabled, finishDay, flushCash, publishStatus]);
+  }, [buildRenderData, enabled, finishDay, flushCash, publishStatus]);
 
   const setSpeed = useCallback((next: SpeedName) => {
     // Update the loop's ref synchronously. App-shell pause must freeze the

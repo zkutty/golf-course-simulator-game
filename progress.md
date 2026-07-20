@@ -122,3 +122,22 @@ Previous prompt: Let’s do m14 in linear for this project
 - Full Playwright regression suite: 18 tests passing, including M6 booking, deposit accounting, progressing live leaderboard, completed-results recap, and zero browser console errors.
 - Bundled web-game client passed against the final implementation; `render_game_to_text` exposed tournament panel/schedule/active state. Full-page live and results screenshots were visually inspected at 1440×900.
 - ZK-125, ZK-126, ZK-127, and ZK-128 are Done in Linear with implementation/test notes; the M6 milestone reports 100% progress.
+
+## 2026-07-20 — M7 progression and live-view implementation in progress
+
+- Linear scope resolved as ZK-129, ZK-130, and ZK-131; the already-complete ZK-132 and ZK-135 account for the milestone's prior 40% progress. The three open issues are In Progress.
+- Added five reputation tiers with concrete concession, terrain/decor, staff-cap, building-tier, and tournament progression, plus a course progression panel and enforcement at UI and action boundaries.
+- Added a consolidated live overview for golfers, leaderboard, arrivals, and staff coverage; polished clock controls with explicit speeds/day progress; and extended camera follow from ball flight to the selected golfer's whole round.
+- Reduced high-count live-render garbage by alternating and reusing two render-data buffers while preserving the previous frame for audio edge detection.
+
+## M7 remaining
+
+- None. M7 implementation and acceptance verification are complete.
+
+## M7 verification
+
+- Unit suite: 36 files and 259 tests passing, including focused reputation-tier and cross-category unlock coverage.
+- Production build and i18n/lint guards pass; lint reports only six pre-existing React hook warnings and no errors.
+- Focused M7 Playwright coverage passes progression/locks, pause/1x/2x/3x controls, live golfer/leaderboard/staff tabs, and selection/follow. The 13-test non-onboarding regression set passes; all seven long-form M14 tests also passed in the full run before the two discovered fixture/layout regressions were fixed and reverified directly.
+- 100-golfer 3x performance smoke: 60.0 fps, 17.5 ms p95 frame time, 0.20 ms renderer work, and 0.065 ms golfer/emote work.
+- Bundled web-game client passed with deterministic stepping and `render_game_to_text` progression/live state. Progression, staff overview, locked tools, follow inspector, and gameplay screenshots were visually inspected.

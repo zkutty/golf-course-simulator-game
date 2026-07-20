@@ -359,6 +359,7 @@ export interface PixiStageProps {
   liveActive?: boolean;
   onPickGolfer?: (id: number | null) => void;
   selectedGolferId?: number | null;
+  followSelected?: boolean;
   /** Live game-clock minute (0..840) driving ambient time-of-day effects. */
   dayMinute?: number;
 }
@@ -2527,16 +2528,13 @@ export function PixiStage(props: PixiStageProps) {
             entry.ball.visible = false;
             entry.ballShadow.visible = false;
           }
-          // Camera-follow (ZKU-154): track the selected golfer's ball in
-          // flight; the camera's own smoothing provides the lerp.
-          if (
-            props.selectedGolferId === golfer.id &&
-            golfer.segKind === "flight" &&
-            golfer.ballX != null &&
-            golfer.ballY != null
-          ) {
+          // M7 live-view follow: hold the selected golfer through the whole
+          // round, switching to the ball while it is airborne.
+          if (props.followSelected && props.selectedGolferId === golfer.id) {
             const cam = camRef.current;
-            const clamped = clampCenter(golfer.ballX, golfer.ballY);
+            const targetX = golfer.segKind === "flight" && golfer.ballX != null ? golfer.ballX : golfer.x;
+            const targetY = golfer.segKind === "flight" && golfer.ballY != null ? golfer.ballY : golfer.y;
+            const clamped = clampCenter(targetX, targetY);
             cam.tcx = clamped.x;
             cam.tcy = clamped.y;
           }
@@ -2637,7 +2635,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.showGolfers, clampCenter]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, clampCenter]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform

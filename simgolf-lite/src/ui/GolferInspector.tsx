@@ -39,6 +39,8 @@ function moodLabel(m: number): string {
 export function GolferInspector(props: {
   selected: SelectedGolferDetail | null;
   onClose: () => void;
+  following?: boolean;
+  onToggleFollow?: () => void;
 }) {
   const { selected, onClose } = props;
   if (!selected) return null;
@@ -54,7 +56,7 @@ export function GolferInspector(props: {
       style={{
         position: "absolute",
         left: 14,
-        top: 14,
+        top: 58,
         width: 232,
         padding: "12px 14px",
         borderRadius: 12,
@@ -109,6 +111,8 @@ export function GolferInspector(props: {
         <Stat label={translateCurrent("golfer.spent")} value={formatCurrency(selected.spent)} accent="#bbf7d0" />
         <Stat label={translateCurrent("golfer.wallet")} value={formatCurrency(selected.wallet)} />
       </div>
+
+      {props.onToggleFollow && <button aria-pressed={props.following} aria-label={translateCurrent(props.following ? "live.stopFollowing" : "live.followGolfer")} onClick={props.onToggleFollow} style={{ width: "100%", marginTop: 10, padding: "7px 9px", borderRadius: 8, border: props.following ? "1px solid #86efac" : "1px solid rgba(255,255,255,.25)", background: props.following ? "rgba(134,239,172,.2)" : "rgba(255,255,255,.08)", color: "inherit", fontWeight: 800, cursor: "pointer" }}>{props.following ? `◎ ${translateCurrent("live.following")}` : `◉ ${translateCurrent("live.follow")}`}</button>}
 
       <div style={{ marginTop: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, opacity: 0.7 }}>

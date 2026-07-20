@@ -1,13 +1,13 @@
-import type { SpeedName } from "../game/live/liveConfig";
+import { LIVE, type SpeedName } from "../game/live/liveConfig";
 import { formatCurrency, formatDayLabel } from "../i18n/format";
 import type { LiveStatus } from "../hooks/useLiveSimulation";
 import { translateCurrent } from "../i18n/core";
 
 const SPEEDS: { key: SpeedName; label: string }[] = [
   { key: "paused", label: "❚❚" },
-  { key: "1x", label: "▶" },
-  { key: "2x", label: "▶▶" },
-  { key: "3x", label: "▶▶▶" },
+  { key: "1x", label: "1×" },
+  { key: "2x", label: "2×" },
+  { key: "3x", label: "3×" },
 ];
 
 function money(n: number): string {
@@ -24,6 +24,8 @@ export function LiveControls(props: {
   cash: number;
   reputation: number;
   onOpenPauseMenu?: () => void;
+  onOpenOverview?: () => void;
+  overviewOpen?: boolean;
 }) {
   const { status, speed, onSetSpeed, cash, reputation } = props;
   const last = status.lastDay;
@@ -39,8 +41,8 @@ export function LiveControls(props: {
         transform: "translateX(-50%)",
         display: "flex",
         alignItems: "center",
-        gap: 14,
-        padding: "8px 14px",
+        gap: 10,
+        padding: "8px 10px",
         borderRadius: 12,
         background: "rgba(24, 33, 26, 0.86)",
         color: "#f5f5f0",
@@ -55,9 +57,10 @@ export function LiveControls(props: {
         justifyContent: "center",
       }}
     >
-      <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+      <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1, minWidth: 88 }}>
         <span style={{ fontWeight: 700, fontSize: 15 }}>{status.clockLabel}</span>
         <span style={{ opacity: 0.7, fontSize: 11 }}>{formatDayLabel(status.dayIndex + 1)}</span>
+        <div aria-hidden="true" style={{ height: 3, borderRadius: 3, background: "rgba(255,255,255,.14)", marginTop: 4, overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, status.dayMinute / LIVE.day.closeMinute * 100))}%`, background: "#86efac" }} /></div>
       </div>
 
       <div style={{ display: "flex", gap: 4 }}>
@@ -68,6 +71,8 @@ export function LiveControls(props: {
               key={s.key}
               onClick={() => onSetSpeed(s.key)}
               title={s.key === "paused" ? "Pause" : `Speed ${s.key}`}
+              aria-pressed={active}
+              data-testid={`speed-${s.key}`}
               style={{
                 minWidth: 34,
                 padding: "5px 8px",
@@ -88,6 +93,10 @@ export function LiveControls(props: {
 
       {props.onOpenPauseMenu && (
         <button onClick={props.onOpenPauseMenu} title={translateCurrent("auto.ui.livecontrols.pause.menu")} aria-label={translateCurrent("auto.ui.livecontrols.open.pause.menu")} style={{ minWidth: 34, padding: "5px 8px", borderRadius: 8, border: "1px solid rgba(255,255,255,.3)", background: "rgba(255,255,255,.1)", color: "white", cursor: "pointer", fontWeight: 800 }}>☰</button>
+      )}
+
+      {props.onOpenOverview && (
+        <button onClick={props.onOpenOverview} aria-pressed={props.overviewOpen} aria-label={translateCurrent("live.openOverview")} style={{ minWidth: 42, padding: "5px 8px", borderRadius: 8, border: props.overviewOpen ? "1px solid #86efac" : "1px solid rgba(255,255,255,.3)", background: props.overviewOpen ? "rgba(134,239,172,.2)" : "rgba(255,255,255,.1)", color: "white", cursor: "pointer", fontWeight: 800 }}>👥 {status.onCourse}</button>
       )}
 
       <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.15)" }} />

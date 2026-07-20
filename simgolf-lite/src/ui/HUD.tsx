@@ -24,6 +24,7 @@ import { REPORT_HELP } from "./help/tooltipContent";
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
 import { HoleMinimap } from "./HoleMinimap";
+import { concessionMinReputation, isConcessionUnlocked, isObstacleUnlocked, isTerrainUnlocked, obstacleMinReputation, reputationTier, terrainMinReputation } from "../game/progression/progression";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -837,24 +838,29 @@ export function HUD(props: {
                 <div style={{ color: "#444" }}>
                   <T id="auto.ui.hud.click.on.the.canvas.to.place.remove.an.obstacle.does.n" /></div>
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  {(["tree", "bush", "rock"] as const).map((t) => (
+                  {(["tree", "bush", "rock"] as const).map((t) => {
+                    const locked = !isObstacleUnlocked(t, world.reputation);
+                    return (
                     <button
                       key={t}
+                      disabled={locked}
+                      title={locked ? translateCurrent("progression.locked", { reputation: obstacleMinReputation(t) }) : undefined}
                       onClick={() => setObstacleType(t)}
                       style={{
                         flex: 1,
                         padding: 10,
                         borderRadius: 10,
                         border: obstacleType === t ? "2px solid #000" : "1px solid #ccc",
-                        background: "#fff",
+                        background: locked ? "#eee" : "#fff",
+                        opacity: locked ? .58 : 1,
                       }}
                     >
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         {t === "tree" ? <IconTree size={22} /> : t === "bush" ? <IconBush size={22} /> : <IconRock size={22} />}
-                        <span style={{ textTransform: "capitalize" }}>{t}</span>
+                        <span style={{ textTransform: "capitalize" }}>{locked ? `🔒 ${t}` : t}</span>
                       </span>
                     </button>
-                  ))}
+                  );})}
                 </div>
               </Section>
             ) : editorMode === "BUILDING" ? (
@@ -865,20 +871,24 @@ export function HUD(props: {
                   <div style={{ display: "grid", gap: 6 }}>
                     {concessionTypes.map((type) => {
                       const spec = BUILDING_SPECS[type];
+                      const locked = !isConcessionUnlocked(type, world.reputation);
                       return (
                         <button
                           key={type}
+                          disabled={locked}
+                          title={locked ? translateCurrent("progression.locked", { reputation: concessionMinReputation(type) }) : undefined}
                           onClick={() => setBuildingType(type)}
                           style={{
                             padding: 9,
                             borderRadius: 9,
                             border: buildingType === type ? "2px solid #000" : "1px solid #ccc",
-                            background: "#fff",
+                            background: locked ? "#eee" : "#fff",
+                            opacity: locked ? .58 : 1,
                             textAlign: "left",
                             fontSize: 12,
                           }}
                         >
-                          <b>{spec.name}</b> · {formatCurrency(spec.buildCost)} <T id="auto.ui.hud.starts.at" />{formatCurrency(spec.defaultPrice ?? 0)}
+                          <b>{locked ? `🔒 ${spec.name}` : spec.name}</b> · {formatCurrency(spec.buildCost)} <T id="auto.ui.hud.starts.at" />{formatCurrency(spec.defaultPrice ?? 0)}
                         </button>
                       );
                     })}
@@ -899,7 +909,7 @@ export function HUD(props: {
                               value={tier}
                               onChange={(e) => onConfigureBuilding(building.x, building.y, Number(e.target.value) as BuildingTier, price)}
                             >
-                              <option value={1}><T id="auto.ui.hud.tier.1" /></option><option value={2}><T id="auto.ui.hud.tier.2" /></option><option value={3}><T id="auto.ui.hud.tier.3" /></option>
+                              <option value={1}><T id="auto.ui.hud.tier.1" /></option><option disabled={reputationTier(world.reputation).buildingTierCap < 2} value={2}><T id="auto.ui.hud.tier.2" /></option><option disabled={reputationTier(world.reputation).buildingTierCap < 3} value={3}><T id="auto.ui.hud.tier.3" /></option>
                             </select>
                             <label style={{ fontSize: 12 }}>
                               $ <input
@@ -1075,26 +1085,30 @@ export function HUD(props: {
                   <b><T id="auto.ui.hud.terrain.brush" /></b>
                 </div>
                 <div data-tutorial-target="terrain-palette" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {TERRAIN.map((t) => (
+                  {TERRAIN.map((t) => {
+                    const locked = !isTerrainUnlocked(t, world.reputation);
+                    return (
                     <Tooltip
                       key={t}
-                      content={<><b>{t.replace("_", " ")}</b><br /><T id="auto.ui.hud.build" />{formatCurrency(TERRAIN_BUILD_COST[t])} <T id="auto.ui.hud.tile.salvage" />{formatCurrency(TERRAIN_SALVAGE_VALUE[t])}.</>}
+                      content={<><b>{t.replace("_", " ")}</b><br />{locked ? translateCurrent("progression.locked", { reputation: terrainMinReputation(t) }) : <><T id="auto.ui.hud.build" />{formatCurrency(TERRAIN_BUILD_COST[t])} <T id="auto.ui.hud.tile.salvage" />{formatCurrency(TERRAIN_SALVAGE_VALUE[t])}.</>}</>}
                       learnMore={() => onOpenGolfopedia(`terrain-${t}`)}
                     >
                       <button
+                        disabled={locked}
                         onClick={() => setSelected(t)}
                         style={{
                           padding: "6px 8px",
                           borderRadius: 8,
                           border: selected === t ? "2px solid #000" : "1px solid #ccc",
-                          background: "#fff",
+                          background: locked ? "#eee" : "#fff",
+                          opacity: locked ? .58 : 1,
                           fontSize: 12,
                         }}
                       >
-                        {t}
+                        {locked ? `🔒 ${t}` : t}
                       </button>
                     </Tooltip>
-                  ))}
+                  );})}
                 </div>
               </>
             )}

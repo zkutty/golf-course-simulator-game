@@ -43,6 +43,8 @@ import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
 import { LiveControls } from "./ui/LiveControls";
 import { GolferInspector } from "./ui/GolferInspector";
+import { LiveOverview } from "./ui/LiveOverview";
+import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
@@ -90,6 +92,15 @@ import { PhotoModeOverlay } from "./ui/retention/PhotoModeOverlay";
 import { captureCourseCanvas, createCourseCard, downloadBlob, shareBlob } from "./utils/photoCapture";
 import { usePwa } from "./hooks/usePwa";
 import { TournamentPanel } from "./ui/TournamentPanel";
+import {
+  concessionMinReputation,
+  isConcessionUnlocked,
+  isObstacleUnlocked,
+  isTerrainUnlocked,
+  obstacleMinReputation,
+  reputationTier,
+  terrainMinReputation,
+} from "./game/progression/progression";
 import { createTournamentEvent, scheduleTournament, tournamentCalendar } from "./game/tournaments/tournaments";
 import type { TournamentTier } from "./game/tournaments/types";
 
@@ -226,6 +237,9 @@ export default function App() {
   const audio = useAudio();
   const [showRetention, setShowRetention] = useState(false);
   const [showTournaments, setShowTournaments] = useState(false);
+  const [showProgression, setShowProgression] = useState(false);
+  const [showLiveOverview, setShowLiveOverview] = useState(false);
+  const [followSelected, setFollowSelected] = useState(false);
   const [achievementQueue, setAchievementQueue] = useState<AchievementDefinition[]>([]);
   const [photoMode, setPhotoMode] = useState(false);
   const [photoGolfers, setPhotoGolfers] = useState(true);
@@ -360,12 +374,14 @@ export default function App() {
     if (!import.meta.env.DEV || perfFixtureLoadedRef.current) return;
     if (new URLSearchParams(window.location.search).get("perfFixture") !== "1") return;
     perfFixtureLoadedRef.current = true;
+    const fixtureRepParam = new URLSearchParams(window.location.search).get("m7Rep");
+    const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
     const fixtureCourse = createRenderPerfCourse();
     const fixtureWorld = {
       ...gameStateRef.current.world,
       week: 1,
       cash: 250_000,
-      reputation: 95,
+      reputation: Number.isFinite(fixtureRep) ? Math.max(0, Math.min(100, fixtureRep)) : 95,
       runSeed: 12160,
       isBankrupt: false,
       distressWeeks: 0,
@@ -949,8 +965,9 @@ export default function App() {
       tutorialStep: tutorialProgress?.stepIndex ?? null,
       course: { name: course.name, width: course.width, height: course.height, holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length },
       camera: { center: audioCameraCenter, viewMode, renderer: "pixi" },
-      simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday },
+      simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null },
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
+      progression: { panelOpen: showProgression, tier: reputationTier(world.reputation).id, staffCap: reputationTier(world.reputation).staffCap, buildingTierCap: reputationTier(world.reputation).buildingTierCap },
       editor: { mode: editorMode, selectedTerrain: selected, activeHole: activeHoleIndex + 1 },
       retention: { photoMode, recordsOpen: showRetention, achievementsEarned: appProfile.achievements.earned.length, totalRounds: records.totalRounds, aces: records.aces.length, tickerVisible: appProfile.gameplay.tickerVisible },
       tournament: {
@@ -966,7 +983,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, audioCameraCenter, course, editorMode, flow.base, flow.modal, flow.paused, live, photoMode, records, screen, selected, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, audioCameraCenter, course, editorMode, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1147,6 +1164,10 @@ export default function App() {
 
   function applyTileChange(idx: number, next: Terrain, opts?: { silent?: boolean }): boolean {
     if (world.isBankrupt) return false;
+    if (!isTerrainUnlocked(next, world.reputation)) {
+      setPaintError(t("progression.locked", { reputation: terrainMinReputation(next) }));
+      return false;
+    }
     const prev = course.tiles[idx];
     const { net, charged, refunded } = computeTerrainChangeCost(prev, next, costMult, course.theme);
     if (net > 0 && world.cash < net) {
@@ -1463,6 +1484,10 @@ export default function App() {
         if (appProfile.gameplay.confirmBulldoze && !window.confirm(t("confirm.bulldoze"))) return;
         dispatch({ type: "REMOVE_OBSTACLE", x, y });
       } else {
+        if (!isObstacleUnlocked(obstacleType, world.reputation)) {
+          setPaintError(t("progression.locked", { reputation: obstacleMinReputation(obstacleType) }));
+          return;
+        }
         dispatch({ type: "PLACE_OBSTACLE", x, y, obstacleType });
       }
       return;
@@ -1477,6 +1502,10 @@ export default function App() {
         if (appProfile.gameplay.confirmSalvage && !window.confirm(t("confirm.salvage", { building: BUILDING_SPECS[existing.type].name.toLowerCase() }))) return;
         dispatch({ type: "REMOVE_BUILDING", x, y });
         setPaintError(null);
+        return;
+      }
+      if (!isConcessionUnlocked(buildingType, world.reputation)) {
+        setPaintError(t("progression.locked", { reputation: concessionMinReputation(buildingType) }));
         return;
       }
       const validation = canPlaceBuilding(course, buildingType, x, y);
@@ -1588,9 +1617,9 @@ export default function App() {
   }
 
   const staffUpgradeCost = useMemo(() => {
-    if (world.staffLevel >= 5) return null;
+    if (world.staffLevel >= reputationTier(world.reputation).staffCap) return null;
     return 2500 * (world.staffLevel + 1);
-  }, [world.staffLevel]);
+  }, [world.reputation, world.staffLevel]);
 
   const marketingUpgradeCost = useMemo(() => {
     if (world.marketingLevel >= 5) return null;
@@ -1605,7 +1634,7 @@ export default function App() {
     if (staffUpgradeCost == null) return;
     setWorld((w) => {
       if (w.isBankrupt) return w;
-      if (w.staffLevel >= 5) return w;
+      if (w.staffLevel >= reputationTier(w.reputation).staffCap) return w;
       if (w.cash < staffUpgradeCost) return w;
       const nextCash = w.cash - staffUpgradeCost;
       return {
@@ -2013,6 +2042,7 @@ export default function App() {
                 liveActive={live.liveActive}
                 onPickGolfer={live.selectGolfer}
                 selectedGolferId={live.selectedId}
+                followSelected={followSelected}
                 showGolfers={!photoMode || photoGolfers}
                 showMarkers={!photoMode || photoMarkers}
                 dayMinute={live.status.dayMinute}
@@ -2027,11 +2057,14 @@ export default function App() {
             />
             {!tutorialProgress && <div className="cc-retention-toolbar" style={{ position: "absolute", top: 10, left: 10, zIndex: 110, display: "flex", gap: 6 }}>
               <button onClick={() => setShowRetention(true)}>🏆 {t("retention.open")}</button>
+              <button data-testid="open-progression" aria-pressed={showProgression} onClick={() => setShowProgression((open) => !open)}>⭐ {t("progression.open")} · {reputationTier(world.reputation).name}</button>
               <button data-testid="open-tournaments" aria-pressed={showTournaments} onClick={() => setShowTournaments((open) => !open)}>⛳ {t("tournament.open")}{live.status.tournament ? " •" : ""}</button>
               <button aria-pressed={appProfile.gameplay.tickerVisible} onClick={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: !appProfile.gameplay.tickerVisible } })}>📰 {t("retention.ticker")}</button>
               <button onClick={() => enterPhotoMode(false)}>📷 {t("retention.photo")}</button>
             </div>}
+            {showProgression && !tutorialProgress && <ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} />}
             {showTournaments && !tutorialProgress && <TournamentPanel world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
+            {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
             {!tutorialProgress && <HoleMinimap
               course={course}
@@ -2049,10 +2082,14 @@ export default function App() {
               cash={world.cash}
               reputation={world.reputation}
               onOpenPauseMenu={openPauseMenu}
+              onOpenOverview={() => setShowLiveOverview((open) => !open)}
+              overviewOpen={showLiveOverview}
             />
             <GolferInspector
               selected={live.status.selected}
-              onClose={() => live.selectGolfer(null)}
+              following={followSelected}
+              onToggleFollow={() => setFollowSelected((following) => !following)}
+              onClose={() => { live.selectGolfer(null); setFollowSelected(false); }}
             />
           </div>
         </div>
@@ -2175,9 +2212,14 @@ export default function App() {
         buildingType={buildingType}
         setBuildingType={setBuildingType}
         concessionTypes={CONCESSION_TYPES}
-        onConfigureBuilding={(x: number, y: number, tier: BuildingTier, price: number) =>
-          dispatch({ type: "CONFIGURE_BUILDING", x, y, tier, price })
-        }
+        onConfigureBuilding={(x: number, y: number, tier: BuildingTier, price: number) => {
+          const cap = reputationTier(world.reputation).buildingTierCap;
+          if (tier > cap) {
+            setPaintError(t("progression.locked", { reputation: tier === 2 ? 65 : 85 }));
+            return;
+          }
+          dispatch({ type: "CONFIGURE_BUILDING", x, y, tier, price });
+        }}
         activeHoleIndex={activeHoleIndex}
         setActiveHoleIndex={setActiveHoleIndex}
         onEnterHoleEditMode={enterHoleEditMode}
