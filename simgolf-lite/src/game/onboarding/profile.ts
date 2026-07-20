@@ -5,9 +5,10 @@ export type AdvisorFrequency = "chatty" | "normal" | "important" | "off";
 export type AutosaveCadence = "off" | "weekly" | "5m" | "15m";
 export type ColorVisionMode = "standard" | "deuteranopia" | "protanopia" | "tritanopia";
 export type TextScale = 90 | 100 | 115 | 130;
+export interface EarnedAchievement { id: string; earnedAt: number; courseName: string }
 
 export interface AppProfile {
-  version: 3;
+  version: 4;
   tutorialOffered: boolean;
   tutorialCompleted: boolean;
   advisorFrequency: AdvisorFrequency;
@@ -19,6 +20,8 @@ export interface AppProfile {
     confirmBulldoze: boolean;
     confirmSalvage: boolean;
     defaultGameSpeed: Exclude<SpeedName, "paused">;
+    tickerVisible: boolean;
+    momentCamera: boolean;
   };
   graphics: {
     animations: boolean;
@@ -43,16 +46,18 @@ export interface AppProfile {
     textScale: TextScale;
     keybindings: Keybindings;
   };
+  achievements: { earned: EarnedAchievement[] };
 }
 
-const PROFILE_KEY = "coursecraft_app_profile_v3";
-const LEGACY_PROFILE_KEY = "coursecraft_app_profile_v2";
-const OLDER_PROFILE_KEY = "coursecraft_app_profile_v1";
+const PROFILE_KEY = "coursecraft_app_profile_v4";
+const LEGACY_PROFILE_KEY = "coursecraft_app_profile_v3";
+const OLDER_PROFILE_KEY = "coursecraft_app_profile_v2";
+const OLDEST_PROFILE_KEY = "coursecraft_app_profile_v1";
 const LEGACY_AUDIO_KEY = "coursecraft_audio_volumes";
 
 /** Shipping defaults. Keep additions migration-safe and covered by tests. */
 export const DEFAULT_APP_PROFILE: AppProfile = {
-  version: 3,
+  version: 4,
   tutorialOffered: false,
   tutorialCompleted: false,
   advisorFrequency: "normal",
@@ -64,6 +69,8 @@ export const DEFAULT_APP_PROFILE: AppProfile = {
     confirmBulldoze: true,
     confirmSalvage: true,
     defaultGameSpeed: "1x",
+    tickerVisible: true,
+    momentCamera: false,
   },
   graphics: {
     animations: true,
@@ -88,6 +95,7 @@ export const DEFAULT_APP_PROFILE: AppProfile = {
     textScale: 100,
     keybindings: { ...DEFAULT_KEYBINDINGS },
   },
+  achievements: { earned: [] },
 };
 
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
@@ -119,14 +127,15 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
   const graphics = record(raw.graphics);
   const audio = record(raw.audio);
   const accessibility = record(raw.accessibility);
+  const achievements = record(raw.achievements);
 
   let legacyAudio: Record<string, unknown> = {};
-  if (storage && raw.version !== 3) {
+  if (storage && raw.version !== 4) {
     try { legacyAudio = record(JSON.parse(storage.getItem(LEGACY_AUDIO_KEY) ?? "null")); } catch { /* defaults */ }
   }
 
   return {
-    version: 3,
+    version: 4,
     tutorialOffered: raw.tutorialOffered === true,
     tutorialCompleted: raw.tutorialCompleted === true,
     advisorFrequency: oneOf(raw.advisorFrequency, ["chatty", "normal", "important", "off"], defaults.advisorFrequency),
@@ -138,6 +147,8 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
       confirmBulldoze: bool(gameplay.confirmBulldoze, defaults.gameplay.confirmBulldoze),
       confirmSalvage: bool(gameplay.confirmSalvage, defaults.gameplay.confirmSalvage),
       defaultGameSpeed: oneOf(gameplay.defaultGameSpeed, ["1x", "2x", "3x"], defaults.gameplay.defaultGameSpeed),
+      tickerVisible: bool(gameplay.tickerVisible, defaults.gameplay.tickerVisible),
+      momentCamera: bool(gameplay.momentCamera, defaults.gameplay.momentCamera),
     },
     graphics: {
       animations: bool(graphics.animations, defaults.graphics.animations),
@@ -162,6 +173,14 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
       textScale: [90, 100, 115, 130].includes(accessibility.textScale as number) ? accessibility.textScale as TextScale : defaults.accessibility.textScale,
       keybindings: normalizeKeybindings(accessibility.keybindings),
     },
+    achievements: {
+      earned: Array.isArray(achievements.earned)
+        ? achievements.earned.filter((value): value is EarnedAchievement => {
+            const item = record(value);
+            return typeof item.id === "string" && typeof item.earnedAt === "number" && typeof item.courseName === "string";
+          })
+        : [],
+    },
   };
 }
 
@@ -173,7 +192,7 @@ export function loadAppProfile(storage = browserStorage()): AppProfile {
   if (!storage) return cloneDefaults();
   try {
     const current = storage.getItem(PROFILE_KEY);
-    const legacy = current == null ? storage.getItem(LEGACY_PROFILE_KEY) ?? storage.getItem(OLDER_PROFILE_KEY) : null;
+    const legacy = current == null ? storage.getItem(LEGACY_PROFILE_KEY) ?? storage.getItem(OLDER_PROFILE_KEY) ?? storage.getItem(OLDEST_PROFILE_KEY) : null;
     const parsed = JSON.parse(current ?? legacy ?? "null");
     const profile = normalizeProfile(parsed, storage);
     const hasMotionPreference = "reducedMotion" in record(record(parsed).accessibility);

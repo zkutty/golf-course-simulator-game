@@ -113,12 +113,12 @@ test("options apply live and persist independently across reload", async ({ page
   await expect(page.getByLabel("Master volume")).toHaveValue("0.55");
   await page.getByRole("tab", { name: "Accessibility" }).click();
   await expect(page.getByLabel("Text scale")).toHaveValue("115");
-  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v3") ?? "null"));
-  expect(stored).toMatchObject({ version: 3, gameplay: { autosaveCadence: "off", defaultGameSpeed: "2x" }, accessibility: { textScale: 115 } });
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v4") ?? "null"));
+  expect(stored).toMatchObject({ version: 4, gameplay: { autosaveCadence: "off", defaultGameSpeed: "2x" }, accessibility: { textScale: 115 } });
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Reset Accessibility" }).click();
   await expect(page.getByLabel("Text scale")).toHaveValue("100");
-  const reset = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v3") ?? "null"));
+  const reset = await page.evaluate(() => JSON.parse(localStorage.getItem("coursecraft_app_profile_v4") ?? "null"));
   expect(reset.audio.masterVolume).toBe(0.55);
 });
 test("keyboard-only options, remapping, conflicts, and save/load round-trip", async ({ page }) => {
@@ -198,7 +198,7 @@ test("accessible palettes, patterns, text scaling, and reduced motion apply live
 
   for (const mode of ["deuteranopia", "protanopia", "tritanopia"]) {
     await page.evaluate((colorVision) => {
-      const key = "coursecraft_app_profile_v3";
+      const key = "coursecraft_app_profile_v4";
       const profile = JSON.parse(localStorage.getItem(key)!);
       profile.accessibility.colorVision = colorVision;
       localStorage.setItem(key, JSON.stringify(profile));

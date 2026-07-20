@@ -25,9 +25,11 @@ import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { withNormalizedElevations } from "../game/models/elevation";
 import { BUILDING_SPECS, normalizedBuilding } from "../game/models/buildings";
 import { normalizeTutorialProgress, type TutorialProgress } from "../game/onboarding/tutorial";
+import { emptyCourseRecords, seedRecordsFromHistory } from "../game/retention/records";
+import type { CourseRecords } from "../game/retention/types";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 3 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 4 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -55,7 +57,11 @@ export interface SaveV2 extends Omit<SaveV1, "schemaVersion"> {
 }
 
 export interface SaveV3 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 3;
+}
+export interface SaveV4 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
+  records?: CourseRecords;
 }
 
 export type SaveLoadErrorCode =
@@ -77,12 +83,13 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV3 = {
+  const save: SaveV4 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
     world: payload.world,
-    history: payload.history?.slice(-20),
+    history: payload.history,
+    records: payload.records,
     live: payload.live,
     tutorial: payload.tutorial,
   };
@@ -174,6 +181,7 @@ export interface SavePayload {
   history?: WeekResult[];
   live?: LiveSimulationSnapshotV1;
   tutorial?: TutorialProgress | null;
+  records?: CourseRecords;
 }
 
 type SaveRecord = Record<string, unknown>;
@@ -257,7 +265,25 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V3 adds configurable concession fields. Normalization supplies defaults
   // for every pre-M4 building so old saves remain playable.
   2: (save) => ({ ...save, schemaVersion: 3 }),
+  // V4 adds compact long-run history and incremental course records.
+  3: (save) => ({ ...save, schemaVersion: 4 }),
 };
+
+function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World): CourseRecords {
+  if (!isRecord(raw) || raw.version !== 1 || !Array.isArray(raw.history) || !Array.isArray(raw.holes) || !Array.isArray(raw.hall) || !Array.isArray(raw.aces)) {
+    return seedRecordsFromHistory(history, Math.max(1, world.week - (history?.length ?? 0)));
+  }
+  const defaults = emptyCourseRecords();
+  const candidate = raw as unknown as CourseRecords;
+  return {
+    ...defaults,
+    ...candidate,
+    history: candidate.history.filter((row) => Array.isArray(row) && row.length === 6 && row.every(isFiniteNumber)),
+    holes: candidate.holes.filter((hole) => hole && isFiniteNumber(hole.rounds) && isFiniteNumber(hole.strokes) && isFiniteNumber(hole.par)),
+    hall: candidate.hall.filter((entry) => entry && typeof entry.golferName === "string" && isFiniteNumber(entry.rounds)),
+    aces: candidate.aces.filter((ace) => ace && typeof ace.golferName === "string" && isFiniteNumber(ace.week)),
+  };
+}
 
 function migrateSave(input: unknown):
   | { ok: true; save: SaveRecord; migratedFrom?: number }
@@ -412,6 +438,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
           : undefined,
     };
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
+    const records = normalizeRecords(parsed.records, history, world);
     const tutorial = normalizeTutorialProgress(parsed.tutorial);
     let live: LiveSimulationSnapshotV1 | undefined;
     if (parsed.live != null) {
@@ -423,7 +450,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     }
     return {
       ok: true,
-      payload: { course, world, history, live, tutorial },
+      payload: { course, world, history, live, tutorial, records },
       ...(migrated.migratedFrom == null ? {} : { migratedFrom: migrated.migratedFrom }),
     };
   } catch {

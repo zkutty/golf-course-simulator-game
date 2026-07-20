@@ -19,6 +19,7 @@ import {
   type LiveSimulationSnapshotV1,
 } from "../game/live/persistence";
 import { deriveLiveAudioEvents, type LiveAudioEvent } from "../audio/liveEvents";
+import type { CompletedRound } from "../game/retention/types";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
@@ -103,8 +104,9 @@ export function useLiveSimulation(args: {
   onDayCommitted?: (result: DayResult, live: LiveSimulationSnapshotV1) => void;
   onCashTick?: () => void;
   onAudioEvent?: (event: LiveAudioEvent) => void;
+  onRoundCompleted?: (round: CompletedRound, dayIndex: number) => void;
 }) {
-  const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick, onAudioEvent } = args;
+  const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick, onAudioEvent, onRoundCompleted } = args;
 
   const [speed, setSpeedState] = useState<SpeedName>("paused");
   const [status, setStatus] = useState<LiveStatus>({
@@ -136,6 +138,7 @@ export function useLiveSimulation(args: {
   const onDayRef = useRef(onDayCommitted);
   const onCashRef = useRef(onCashTick);
   const onAudioRef = useRef(onAudioEvent);
+  const onRoundRef = useRef(onRoundCompleted);
   const skipNextReconcileRef = useRef(false);
   const wasPlayableRef = useRef(isCoursePlayable(course));
 
@@ -146,6 +149,7 @@ export function useLiveSimulation(args: {
     onDayRef.current = onDayCommitted;
     onCashRef.current = onCashTick;
     onAudioRef.current = onAudioEvent;
+    onRoundRef.current = onRoundCompleted;
   });
 
   // Detect course *geometry* edits (terrain/holes/obstacles) and re-plan any
@@ -302,6 +306,7 @@ export function useLiveSimulation(args: {
         const dtMin = realDtSec * gmPerSec;
         const previousRender = golfersRef.current;
         const ev = stepLive(live, courseRef.current, dtMin);
+        for (const round of ev.completedRounds) onRoundRef.current?.(round, live.dayIndex);
         if (ev.cashDelta > 0) {
           pendingCashRef.current += ev.cashDelta;
           onCashRef.current?.();
@@ -392,6 +397,7 @@ export function useLiveSimulation(args: {
     if (gmPerSec <= 0) return;
     const previousRender = golfersRef.current;
     const ev = stepLive(live, courseRef.current, Math.min(2, ms / 1000) * gmPerSec);
+    for (const round of ev.completedRounds) onRoundRef.current?.(round, live.dayIndex);
     if (ev.cashDelta > 0) pendingCashRef.current += ev.cashDelta;
     const nextRender = liveRenderData(live);
     golfersRef.current = nextRender;

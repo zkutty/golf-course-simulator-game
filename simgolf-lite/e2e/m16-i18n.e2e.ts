@@ -4,7 +4,7 @@ test("pseudo locale brackets shell, options, game, and pause copy and persists",
   await page.goto("/");
   await page.evaluate(() => {
     localStorage.removeItem("coursecraft_locale");
-    localStorage.removeItem("coursecraft_app_profile_v3");
+    localStorage.removeItem("coursecraft_app_profile_v4");
   });
   await page.reload();
 
@@ -23,6 +23,7 @@ test("pseudo locale brackets shell, options, game, and pause copy and persists",
   await page.getByRole("button", { name: /Dôñë/ }).click();
   await expect(page.getByRole("button", { name: /Qüïçk Stárt/ })).toBeVisible();
   await page.getByRole("button", { name: /Qüïçk Stárt/ }).click();
+  if (await page.getByRole("dialog", { name: /Fïrst-láüñçh tütôrïál/ }).count()) await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /Ôpëñ páüsë mëñü/ }).click();
   await expect(page.getByRole("dialog", { name: /Gámë páüsëd/ })).toBeVisible();
   await expect(page.getByRole("dialog", { name: /Gámë páüsëd/ })).toContainText("⟦Ësç rësümës");

@@ -11,6 +11,9 @@ export interface StartMenuProps {
   onLoadGame: () => void;
   onContinue: () => void;
   onOptions: () => void;
+  onAchievements: () => void;
+  canInstall?: boolean;
+  onInstall?: () => void;
   onButtonClick?: () => void;
 }
 
@@ -187,6 +190,8 @@ export function StartMenu(props: StartMenuProps) {
             >
               {t("title.options")}
             </MenuButton>
+            <MenuButton variant="secondary" icon="🏆" onClick={props.onAchievements}>{t("title.achievements")}</MenuButton>
+            {props.canInstall && <MenuButton variant="secondary" icon="⬇" onClick={props.onInstall}>{t("title.install")}</MenuButton>}
           </div>
 
           <div style={{ textAlign: "center", marginTop: 26, fontSize: 12, color: "rgba(255,255,255,0.65)", textShadow: "0 1px 3px rgba(0, 0, 0, 0.3)" }}>

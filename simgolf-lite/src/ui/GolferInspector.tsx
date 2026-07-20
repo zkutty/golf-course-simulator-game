@@ -50,7 +50,7 @@ export function GolferInspector(props: {
   const played = selected.scoredHoles;
 
   return (
-    <div
+    <div className="cc-golfer-inspector"
       style={{
         position: "absolute",
         left: 14,

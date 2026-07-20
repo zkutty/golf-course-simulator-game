@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "CourseCraft",
+  "short_name": "CourseCraft",
+  "description": "Design, build, and run a living golf course.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#ead9b6",
+  "theme_color": "#2f5b3b",
+  "categories": ["games", "simulation", "strategy"],
+  "icons": [
+    { "src": "/icons/coursecraft-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icons/coursecraft-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icons/coursecraft-maskable.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

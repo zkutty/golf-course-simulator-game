@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/inject-sw-assets.mjs",
     "lint": "eslint . && npm run lint:i18n",
     "lint:i18n": "node scripts/check-i18n.mjs",
     "preview": "vite preview",
@@ -17,7 +17,8 @@
     "gen:sprites": "node scripts/gen-placeholder-sprites.mjs && node scripts/gen-golfer-sprites.mjs",
     "gen:audio": "node scripts/gen-audio.mjs",
     "build:atlas": "node scripts/build-atlas.mjs",
-    "test:perf": "node scripts/perf-smoke.mjs"
+    "test:perf": "node scripts/perf-smoke.mjs",
+    "test:pwa": "node scripts/pwa-smoke.mjs"
   },
   "dependencies": {
     "pixi.js": "^8.14.3",

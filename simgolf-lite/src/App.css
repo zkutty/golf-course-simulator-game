@@ -39,3 +39,46 @@
 @keyframes cc-loading-spin { to { transform: rotate(360deg); } }
 .cc-loading-dot { animation: cc-loading-spin .85s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .cc-loading-dot { animation: none; } }
+.cc-photo-mode .cc-sidebar-frame,
+.cc-photo-mode .cc-live-controls,
+.cc-photo-mode .cc-minimap,
+.cc-photo-mode .cc-minimap-toggle,
+.cc-photo-mode .cc-golfer-inspector,
+.cc-photo-mode .cc-retention-toolbar,
+.cc-photo-mode .cc-news {
+  display: none !important;
+}
+
+.cc-photo-mode .cc-course-frame {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.cc-photo-mode {
+  padding: 0;
+}
+
+.cc-photo-mode .cc-main {
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.cc-photo-mode .cc-course-pane {
+  border-radius: 0;
+}
+
+.cc-storage-warning {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 100060;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100vw - 32px));
+  border: 2px solid #b7602a;
+  border-radius: 10px;
+  background: #fff3d8;
+  color: #5a321e;
+  padding: 10px 14px;
+  font-weight: 800;
+}

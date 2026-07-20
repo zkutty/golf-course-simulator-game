@@ -23,7 +23,7 @@ describe("versioned app profile", () => {
       coursecraft_ambience: "off",
     });
     const profile = loadAppProfile(store);
-    expect(profile).toMatchObject({ version: 3, tutorialOffered: true, advisorFrequency: "important" });
+    expect(profile).toMatchObject({ version: 4, tutorialOffered: true, advisorFrequency: "important", achievements: { earned: [] } });
     expect(profile.audio).toMatchObject({ musicVolume: 0.7, ambienceVolume: 0.2, sfxVolume: 0.4 });
     expect(profile.graphics).toMatchObject({ ambienceFx: false });
   });

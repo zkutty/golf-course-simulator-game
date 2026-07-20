@@ -82,3 +82,23 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M12 remaining
 
 - None.
+
+## 2026-07-20 — M17 retention, stats, and release readiness
+
+- Original request: “Inplement m17 milestone from linear”.
+- Implemented persistent schema-v4 course history and records, per-hole aggregates, course records, downsampled long-run charts, and a capped Hall of Fame.
+- Added a data-driven 25-achievement registry (including five hidden achievements), permanent profile unlocks, queued toast notifications, and a complete gallery.
+- Added a shared retention event bus powering the news ticker/feed, with duplicate merging, cooldowns, caps, filters, click-to-jump, and moment-camera behavior.
+- Added photo mode with chrome-free rendering controls, guarded high-resolution capture, downloadable/shareable course cards, and reliable simulation/camera restoration.
+- Added CourseCraft PWA metadata and icons, injected hashed precache assets, offline navigation/runtime audio policies, install/update UI, persistent-storage handling, and an offline save-persistence smoke test.
+
+## M17 verification
+
+- Unit suite: 34 files and 254 tests passing, including focused retention, migration, record, event, and achievement coverage.
+- Production build passes and injects 18 offline assets; PWA smoke passes controlled install, offline reload, and local-save persistence.
+- Full Playwright regression suite: 17 tests passing, including M17 records, achievements, photo capture/restoration, and manifest coverage.
+- Lint and i18n guards pass with no errors. The bundled web-game client completed; full-page browser screenshots of records, achievements, photo mode, and gameplay were visually inspected.
+
+## M17 remaining
+
+- None.

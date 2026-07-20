@@ -12,6 +12,7 @@ import { findWalkPath } from "./walkPath";
 import { LIVE } from "./liveConfig";
 import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } from "./types";
 import { rollDiscretionaryWallet } from "./concessions";
+import type { CompletedRound } from "../retention/types";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -158,6 +159,7 @@ export function createRenderPerfLiveState(course: Course, world: World): LiveSta
 export interface StepEvents {
   cashDelta: number; // green fees collected this step
   finishedThisStep: number;
+  completedRounds: CompletedRound[];
 }
 
 // Advance the live day by dtMin game-minutes. Mutates and returns state; also
@@ -167,11 +169,12 @@ export function stepLive(
   course: Course,
   dtMin: number
 ): StepEvents {
-  if (state.dayOver || dtMin <= 0) return { cashDelta: 0, finishedThisStep: 0 };
+  if (state.dayOver || dtMin <= 0) return { cashDelta: 0, finishedThisStep: 0, completedRounds: [] };
 
   state.dayMinute += dtMin;
   let cashDelta = 0;
   let finishedThisStep = 0;
+  const completedRounds: CompletedRound[] = [];
 
   // Spawn arrivals that are now due (no arrivals after close). The first tee
   // only clears every `teeGapMinutes`, so backed-up arrivals queue instead of
@@ -230,6 +233,16 @@ export function stepLive(
       if (reaction.detractor) state.detractors++;
       if (reaction.willReturn) state.willReturnCount++;
       finishedThisStep++;
+      completedRounds.push({
+        golferId: g.id,
+        golferName: g.name,
+        archetype: g.archetype,
+        score: g.strokes,
+        scoreToPar: g.scoreToPar,
+        holePar: g.holePar.slice(),
+        holeStrokes: g.holeStrokes.slice(),
+        mood: g.mood,
+      });
     } else {
       stillPlaying.push(g);
     }
@@ -241,7 +254,7 @@ export function stepLive(
     state.dayOver = true;
   }
 
-  return { cashDelta, finishedThisStep };
+  return { cashDelta, finishedThisStep, completedRounds };
 }
 
 export function liveRenderData(state: LiveState): GolferRenderData[] {

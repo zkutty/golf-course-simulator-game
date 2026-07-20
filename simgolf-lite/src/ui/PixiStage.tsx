@@ -353,6 +353,8 @@ export interface PixiStageProps {
   /** Imperative camera destination from minimap click-to-jump. */
   cameraJump?: { center: Point; nonce: number } | null;
   showObstacles?: boolean;
+  showGolfers?: boolean;
+  showMarkers?: boolean;
   golfersRef?: React.RefObject<GolferRenderData[]>;
   liveActive?: boolean;
   onPickGolfer?: (id: number | null) => void;
@@ -1696,6 +1698,7 @@ export function PixiStage(props: PixiStageProps) {
       layers.terrainDecals.removeChild(c);
       c.destroy();
     });
+    if (props.showMarkers === false) return;
 
     const drawMarker = (p: Point, fill: number, alpha = 1) => {
       const g = new PIXI.Graphics();
@@ -1752,7 +1755,7 @@ export function PixiStage(props: PixiStageProps) {
     });
     if (draftTee) drawTee(draftTee, draftGreen, 0.55);
     if (draftGreen) drawMarker(draftGreen, 0x1b5e20, 0.55);
-  }, [appReady, holes, draftTee, draftGreen, course, rotation]);
+  }, [appReady, holes, draftTee, draftGreen, course, rotation, props.showMarkers]);
 
   useEffect(() => {
     if (!appReady) return;
@@ -1764,6 +1767,7 @@ export function PixiStage(props: PixiStageProps) {
       layers.terrainDecals.removeChild(c);
       c.destroy();
     });
+    if (props.showMarkers === false) return;
 
     // Failing-corridor overlay: red translucent diamonds.
     if (showFixOverlay && failingCorridorSegments && failingCorridorSegments.length > 0) {
@@ -1797,7 +1801,7 @@ export function PixiStage(props: PixiStageProps) {
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
     }
-  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, rotation]);
+  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, rotation, props.showMarkers]);
 
   // ---------------------------------------------------------------------
   // Ticker pass — hover highlight/line + live golfer dots
@@ -2199,7 +2203,7 @@ export function PixiStage(props: PixiStageProps) {
       // sprites (ZKU-153) when the golfers atlas is loaded; legacy dots
       // otherwise.
       const pool = golferPoolRef.current;
-      const list = liveActive ? golfersRef?.current : null;
+      const list = liveActive && props.showGolfers !== false ? golfersRef?.current : null;
       const seen = new Set<number>();
       const golferById = new Map<number, GolferRenderData>();
       // Entity culling bounds (ZKU-160): golfers outside the viewport skip
@@ -2633,7 +2637,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, clampCenter]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.showGolfers, clampCenter]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
@@ -2666,7 +2670,7 @@ export function PixiStage(props: PixiStageProps) {
       // In the global view, clicking a golfer selects them instead of
       // painting (ZKU-134 parity). Iso-plane distance against each golfer's
       // projected position keeps the hit test elevation-correct.
-      if (onPickGolfer && !cameraState && liveActive && golfersRef?.current?.length) {
+      if (props.showGolfers !== false && onPickGolfer && !cameraState && liveActive && golfersRef?.current?.length) {
         const iso = screenToIsoPlane(e.global.x, e.global.y);
         if (iso) {
           let bestId: number | null = null;
@@ -2709,7 +2713,7 @@ export function PixiStage(props: PixiStageProps) {
       stage.off("pointerdown", handleClick);
       stage.off("pointermove", handleMove);
     };
-  }, [appReady, screenToTile, screenToIsoPlane, onClickTile, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover]);
+  }, [appReady, screenToTile, screenToIsoPlane, onClickTile, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.showGolfers]);
 
   return (
     <div

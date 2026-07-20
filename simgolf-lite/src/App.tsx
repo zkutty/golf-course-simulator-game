@@ -3,6 +3,7 @@ import { formatCurrency } from "./i18n/format";
 import { useI18n } from "./i18n/useI18n";
 import { perfProfiler } from "./utils/performanceProfiler";
 import "./ui/cozyLayout.css";
+import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
@@ -78,6 +79,16 @@ import type { SpeedName } from "./game/live/liveConfig";
 import { eventMatchesBinding } from "./accessibility/keybindings";
 import { T } from "./i18n/T";
 import { ambientMixFor, distanceVolume, musicContextFor } from "./audio/environment";
+import { emptyCourseRecords, recordCompletedRound, recordWeek } from "./game/retention/records";
+import type { CourseRecords, RetentionEvent } from "./game/retention/types";
+import { publishRetentionEvent, subscribeRetentionEvents } from "./game/retention/eventBus";
+import { evaluateAchievements, type AchievementContext, type AchievementDefinition } from "./game/retention/achievements";
+import { RetentionHub } from "./ui/retention/RetentionHub";
+import { AchievementToasts } from "./ui/retention/AchievementToasts";
+import { NewsTicker } from "./ui/retention/NewsTicker";
+import { PhotoModeOverlay } from "./ui/retention/PhotoModeOverlay";
+import { captureCourseCanvas, createCourseCard, downloadBlob, shareBlob } from "./utils/photoCapture";
+import { usePwa } from "./hooks/usePwa";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -99,6 +110,9 @@ export default function App() {
     setDirty(false);
   }, []);
   const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
+  const [records, setRecords] = useState<CourseRecords>(() => emptyCourseRecords(DEFAULT_STATE.course.holes.length));
+  const recordsRef = useRef(records);
+  const sculptedRef = useRef(false);
   const gameStateRef = useRef(gameState);
   const { course, world } = gameState;
   const [selected, setSelected] = useState<Terrain>("fairway");
@@ -108,6 +122,7 @@ export default function App() {
 
   // Dispatch function for actions
   const dispatch = useCallback((action: Action) => {
+    if (action.type === "SCULPT_TILES") sculptedRef.current = true;
     // Log reducer dispatch count (only for mutations, not UI-only actions)
     if (DEBUG_PERF && (action.type !== "SET_MODE" && action.type !== "SET_ACTIVE_HOLE" && action.type !== "SET_BRUSH")) {
       logReducerDispatch();
@@ -140,7 +155,8 @@ export default function App() {
   useEffect(() => {
     gameStateRef.current = gameState;
     historyRef.current = history;
-  }, [gameState, history]);
+    recordsRef.current = records;
+  }, [gameState, history, records]);
 
   const [editorMode, setEditorMode] = useState<EditorMode>("PAINT");
   const [activeHoleIndex, setActiveHoleIndex] = useState(0); // 0..8
@@ -204,9 +220,36 @@ export default function App() {
   const advisorCooldownUntilRef = useRef(0);
   const [a11yMessage, setA11yMessage] = useState("");
   const perfFixtureLoadedRef = useRef(false);
-
-  // Audio system
   const audio = useAudio();
+  const [showRetention, setShowRetention] = useState(false);
+  const [achievementQueue, setAchievementQueue] = useState<AchievementDefinition[]>([]);
+  const [photoMode, setPhotoMode] = useState(false);
+  const [photoGolfers, setPhotoGolfers] = useState(true);
+  const [photoMarkers, setPhotoMarkers] = useState(false);
+  const lastCourseCardRef = useRef<Blob | null>(null);
+  const pwa = usePwa();
+
+  const achievementContext = useCallback((nextRecords = recordsRef.current, perfectMood = false): AchievementContext => ({
+    course: gameStateRef.current.course,
+    world: gameStateRef.current.world,
+    records: nextRecords,
+    rating: computeCourseRatingAndSlope(gameStateRef.current.course).courseRating,
+    tutorialCompleted: loadAppProfile().tutorialCompleted,
+    profitStreak: nextRecords.currentProfitStreak,
+    sculpted: sculptedRef.current,
+    recoveredDistress: prevDistress > 0 && gameStateRef.current.world.distressWeeks === 0,
+    perfectMood,
+  }), [prevDistress]);
+
+  const checkAchievements = useCallback((nextRecords = recordsRef.current, perfectMood = false) => {
+    const current = loadAppProfile();
+    const evaluated = evaluateAchievements(current, achievementContext(nextRecords, perfectMood), gameStateRef.current.course.name);
+    if (!evaluated.earned.length) return;
+    saveAppProfile(evaluated.profile);
+    setAppProfile(evaluated.profile);
+    setAchievementQueue((queue) => [...queue, ...evaluated.earned]);
+    void audio.playSting("celebration");
+  }, [achievementContext, audio]);
 
   // Real-time "living course" simulation: golfers arrive, play, and pay live.
   const live = useLiveSimulation({
@@ -227,20 +270,47 @@ export default function App() {
         visitorNoise: 0,
       };
       setLast(report);
-      setHistory((h) => [
-        ...h.slice(-19),
-        report,
-      ]);
+      setHistory((h) => [...h, report]);
+      const nextRecords = recordWeek(recordsRef.current, {
+        week: gameStateRef.current.world.week,
+        cash: gameStateRef.current.world.cash + result.profit,
+        rating: computeCourseRatingAndSlope(gameStateRef.current.course).courseRating,
+        reputation: gameStateRef.current.world.reputation + result.reputationDelta,
+        result: report,
+      });
+      recordsRef.current = nextRecords;
+      setRecords(nextRecords);
+      publishRetentionEvent({
+        type: result.profit >= 0 ? "profitable-week" : "loss-week",
+        category: "economy",
+        severity: Math.abs(result.profit) >= 10_000 ? "notable" : "routine",
+        message: t("retention.weekProfit", { week: gameStateRef.current.world.week, profit: formatCurrency(result.profit) }),
+        week: gameStateRef.current.world.week,
+        day: result.dayIndex,
+      });
+      if (nextRecords.attendanceRecord?.week === gameStateRef.current.world.week) publishRetentionEvent({ type: "attendance-record", category: "milestone", severity: "notable", message: t("retention.attendance", { rounds: result.rounds }), week: gameStateRef.current.world.week, day: result.dayIndex });
+      checkAchievements(nextRecords);
       // Rotating autosave after every committed game day (ZKU-174). The
       // setState reader snapshots post-commit state without extra renders.
       if (appProfile.gameplay.autosaveCadence === "off") return;
       if (appProfile.gameplay.autosaveCadence === "weekly" && result.dayIndex !== 6) return;
       setGameState((current) => {
         const sequence = changeSequenceRef.current;
-        void autosave({ course: current.course, world: current.world, live: liveSnapshot, tutorial: tutorialProgress })
+        void autosave({ course: current.course, world: current.world, history: historyRef.current, records: recordsRef.current, live: liveSnapshot, tutorial: tutorialProgress })
           .then(() => markClean(sequence));
         return current;
       });
+    },
+    onRoundCompleted: (round, dayIndex) => {
+      const captured = recordCompletedRound(recordsRef.current, round, gameStateRef.current.world.week);
+      recordsRef.current = captured.records;
+      setRecords(captured.records);
+      for (const holeIndex of captured.aceHoles) {
+        const point = gameStateRef.current.course.holes[holeIndex]?.green ?? undefined;
+        publishRetentionEvent({ type: "hole-in-one", category: "play", severity: "major", message: t("retention.holeInOne", { golfer: round.golferName, hole: holeIndex + 1 }), week: gameStateRef.current.world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, holeIndex, point });
+      }
+      if (captured.courseRecord) publishRetentionEvent({ type: "course-record", category: "play", severity: "major", message: t("retention.courseRecord", { golfer: round.golferName, score: round.scoreToPar > 0 ? `+${round.scoreToPar}` : round.scoreToPar }), week: gameStateRef.current.world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, point: gameStateRef.current.course.holes.at(-1)?.green ?? undefined });
+      checkAchievements(captured.records, round.mood >= .99);
     },
     onCashTick: () => {
       if (soundEnabled) void audio.playSfx("cash");
@@ -325,7 +395,7 @@ export default function App() {
     const current = gameStateRef.current;
     await saveToSlot("quick-save", "manual", t("save.quick"), {
       course: current.course, world: current.world, history: historyRef.current,
-      live: live.getSnapshot(), tutorial: tutorialProgress,
+      records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress,
     });
     markClean(sequence);
     setA11yMessage(t("save.quickComplete"));
@@ -412,7 +482,7 @@ export default function App() {
     const interval = window.setInterval(() => {
       const sequence = changeSequenceRef.current;
       const current = gameStateRef.current;
-      void autosave({ course: current.course, world: current.world, history: historyRef.current, live: live.getSnapshot(), tutorial: tutorialProgress })
+      void autosave({ course: current.course, world: current.world, history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress })
         .then(() => markClean(sequence));
     }, cadence === "5m" ? 300_000 : 900_000);
     return () => window.clearInterval(interval);
@@ -727,13 +797,18 @@ export default function App() {
     saveTutorialProgress(null);
     updateAppProfile({ tutorialOffered: true, tutorialCompleted: completed || loadAppProfile().tutorialCompleted });
     setShowTutorialOffer(false);
-    void autosave({ course, world, history, live: live.getSnapshot(), tutorial: null });
+    void autosave({ course, world, history, records, live: live.getSnapshot(), tutorial: null });
+    checkAchievements(records);
   }
 
   function startRun(newCourse: typeof course, newWorld: typeof world) {
     dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
     markClean();
     setHistory([]);
+    sculptedRef.current = false;
+    const freshRecords = emptyCourseRecords(newCourse.holes.length);
+    recordsRef.current = freshRecords;
+    setRecords(freshRecords);
     setLast(undefined);
     setEditorMode("PAINT");
     setActiveHoleIndex(0);
@@ -761,10 +836,10 @@ export default function App() {
     queueMicrotask(() => {
       if (tutorialSaveSequenceRef.current === sequence) setTutorialSaveStatus("saving");
     });
-    void autosave({ course, world, history, live: getLiveSnapshot(), tutorial: tutorialProgress }).then(() => {
+    void autosave({ course, world, history, records, live: getLiveSnapshot(), tutorial: tutorialProgress }).then(() => {
       if (tutorialSaveSequenceRef.current === sequence) setTutorialSaveStatus("saved");
     });
-  }, [screen, course, world, history, tutorialProgress, getLiveSnapshot]);
+  }, [screen, course, world, history, records, tutorialProgress, getLiveSnapshot]);
 
   // `goals` overrides the mode's default goal set (defeat-retry keeps a
   // run's exact goals).
@@ -831,6 +906,9 @@ export default function App() {
     live.restoreSnapshot(loaded.live);
     setHistory(loaded.history ?? []);
     setLast(loaded.history?.[loaded.history.length - 1]);
+    const loadedRecords = loaded.records ?? emptyCourseRecords(loaded.course.holes.length);
+    recordsRef.current = loadedRecords;
+    setRecords(loadedRecords);
     // Loading a finished run must not replay the celebration or re-record
     // the medal (the store keeps best results anyway).
     setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
@@ -854,6 +932,7 @@ export default function App() {
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday },
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       editor: { mode: editorMode, selectedTerrain: selected, activeHole: activeHoleIndex + 1 },
+      retention: { photoMode, recordsOpen: showRetention, achievementsEarned: appProfile.achievements.earned.length, totalRounds: records.totalRounds, aces: records.aces.length, tickerVisible: appProfile.gameplay.tickerVisible },
       golfers: live.golfersRef.current.slice(0, 24).map((golfer) => ({ id: golfer.id, x: Number(golfer.x.toFixed(2)), y: Number(golfer.y.toFixed(2)), segment: golfer.segKind, shot: golfer.shot, mood: Number(golfer.mood.toFixed(2)) })),
     });
     window.render_game_to_text = renderText;
@@ -862,7 +941,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, audioCameraCenter, course, editorMode, flow.base, flow.modal, flow.paused, live, screen, selected, tutorialProgress?.stepIndex, viewMode, world.cash, world.reputation, world.isBankrupt]);
+  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, audioCameraCenter, course, editorMode, flow.base, flow.modal, flow.paused, live, photoMode, records, screen, selected, showRetention, tutorialProgress?.stepIndex, viewMode, world.cash, world.reputation, world.isBankrupt]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -906,6 +985,7 @@ export default function App() {
           course: run.course,
           world: run.world,
           history: historyRef.current,
+          records: recordsRef.current,
           live: liveSnapshot,
           tutorial: tutorialProgress,
         };
@@ -917,6 +997,8 @@ export default function App() {
         dispatch({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
         live.restoreSnapshot(loaded.live);
         setHistory(loaded.history ?? []);
+        recordsRef.current = loaded.records ?? emptyCourseRecords(loaded.course.holes.length);
+        setRecords(recordsRef.current);
         setLast(loaded.history?.[loaded.history.length - 1]);
         setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
         setShowVictory(false);
@@ -1541,13 +1623,106 @@ export default function App() {
     dispatch({ type: "SIMULATE_WEEK", course: c2, world: w2 });
     const withCap: WeekResult = { ...result, capitalSpending: cap };
     setLast(withCap);
-    setHistory((h) => [...h.slice(-19), withCap]);
+    setHistory((h) => [...h, withCap]);
+    const nextRecords = recordWeek(recordsRef.current, { week: w2.week, cash: w2.cash, rating: computeCourseRatingAndSlope(c2).courseRating, reputation: w2.reputation, result: withCap });
+    recordsRef.current = nextRecords;
+    setRecords(nextRecords);
+    publishRetentionEvent({ type: result.profit >= 0 ? "profitable-week" : "loss-week", category: "economy", severity: Math.abs(result.profit) >= 10_000 ? "notable" : "routine", message: t("retention.weekProfit", { week: w2.week, profit: formatCurrency(result.profit) }), week: w2.week, day: 6 });
+    checkAchievements(nextRecords);
     setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
     if (result.profit > 0) void audio.playSfx("cash");
   }
 
   const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
   const weeksSurvived = Math.max(0, world.week - 1);
+  const photoRestoreRef = useRef<{ speed: SpeedName; center: Point; camera: CameraState | null } | null>(null);
+
+  function photoCanvas(): HTMLCanvasElement | null {
+    return canvasPaneRef.current?.querySelector("canvas") ?? null;
+  }
+
+  function enterPhotoMode(autoCapture = false) {
+    if (photoMode) return;
+    photoRestoreRef.current = { speed: live.speed, center: { ...audioCameraCenter }, camera: holeEditCamera ? { ...holeEditCamera, center: { ...holeEditCamera.center } } : null };
+    live.setSpeed("paused");
+    setPhotoMode(true);
+    if (autoCapture) window.setTimeout(() => void capturePhoto(), 100);
+  }
+
+  function exitPhotoMode() {
+    const restore = photoRestoreRef.current;
+    setPhotoMode(false);
+    if (!restore) return;
+    setHoleEditCamera(restore.camera);
+    setMinimapJump((current) => ({ center: restore.center, nonce: (current?.nonce ?? 0) + 1 }));
+    live.setSpeed(restore.speed);
+    photoRestoreRef.current = null;
+  }
+
+  async function capturePhoto() {
+    const canvas = photoCanvas();
+    if (!canvas) return;
+    const blob = await captureCourseCanvas(canvas, 2);
+    downloadBlob(blob, `${course.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-course.png`);
+    setA11yMessage(t("photo.saved"));
+    void audio.playSfx("confirm", { force: true });
+  }
+
+  async function captureCard(download = true): Promise<Blob | null> {
+    const canvas = photoCanvas();
+    if (!canvas) return null;
+    const blob = await createCourseCard(canvas, course, world, recordsRef.current, rating.courseRating);
+    lastCourseCardRef.current = blob;
+    if (download) downloadBlob(blob, `${course.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-card.png`);
+    setA11yMessage(t("photo.cardSaved"));
+    return blob;
+  }
+
+  async function shareCard() {
+    const blob = lastCourseCardRef.current ?? await captureCard(false);
+    if (!blob) return;
+    await shareBlob(blob, "coursecraft-course-card.png", course.name);
+    setA11yMessage(t("photo.shared"));
+  }
+
+  useEffect(() => {
+    const onPhotoKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches("input,textarea,select,[contenteditable='true']") || event.key.toLowerCase() !== "p" || flow.base !== "in-game" || flow.modal) return;
+      event.preventDefault();
+      if (photoMode) exitPhotoMode();
+      else enterPhotoMode(true);
+    };
+    window.addEventListener("keydown", onPhotoKey);
+    return () => window.removeEventListener("keydown", onPhotoKey);
+  });
+
+  useEffect(() => {
+    if (!achievementQueue.length) return;
+    const timer = window.setTimeout(() => setAchievementQueue((queue) => queue.slice(1)), 4200);
+    return () => window.clearTimeout(timer);
+  }, [achievementQueue]);
+
+  const achievementCheckKey = `${gameState.terrainVersion}:${gameState.obstaclesVersion}:${gameState.markersVersion}:${course.holes.filter((hole) => hole.tee && hole.green).length}:${course.obstacles.filter((obstacle) => obstacle.type === "tree").length}:${world.cash}:${world.reputation}:${world.loans.map((loan) => loan.status).join(",")}:${world.objectives?.outcome}`;
+  useEffect(() => {
+    if (screen === "game") checkAchievements(recordsRef.current);
+  }, [achievementCheckKey, screen, checkAchievements]);
+
+  const liveDayIndex = live.status.dayIndex;
+  const liveGolfersRef = live.golfersRef;
+  const selectLiveGolfer = live.selectGolfer;
+  const jumpToEvent = useCallback((event: RetentionEvent) => {
+    const point = event.point ?? (event.holeIndex != null ? course.holes[event.holeIndex]?.green ?? course.holes[event.holeIndex]?.tee : null);
+    if (event.week === world.week && event.day === liveDayIndex && event.golferId != null && liveGolfersRef.current.some((golfer) => golfer.id === event.golferId)) selectLiveGolfer(event.golferId);
+    if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 }));
+  }, [course.holes, liveDayIndex, liveGolfersRef, selectLiveGolfer, world.week]);
+
+  useEffect(() => subscribeRetentionEvents((event) => {
+    if (!appProfile.gameplay.momentCamera || event.severity !== "major" || photoMode) return;
+    const previous = { ...audioCameraCenterRef.current };
+    jumpToEvent(event);
+    window.setTimeout(() => setMinimapJump((current) => ({ center: previous, nonce: (current?.nonce ?? 0) + 1 })), 2000);
+  }), [appProfile.gameplay.momentCamera, jumpToEvent, photoMode]);
 
   useEffect(() => {
     if (!world.isBankrupt) return;
@@ -1574,7 +1749,7 @@ export default function App() {
       canSave={saveModalCanSave}
       getPayload={() => {
         payloadSequenceRef.current = changeSequenceRef.current;
-        return { course, world, history, live: live.getSnapshot(), tutorial: tutorialProgress };
+        return { course, world, history, records, live: live.getSnapshot(), tutorial: tutorialProgress };
       }}
       onSaved={() => markClean(payloadSequenceRef.current)}
       onLoaded={(payload) => {
@@ -1645,6 +1820,9 @@ export default function App() {
         onLoadGame={loadFromMenu}
         onContinue={() => void continueFromMenu()}
         onOptions={() => flowDispatch({ type: "OPEN_MODAL", modal: "options" })}
+        onAchievements={() => setShowRetention(true)}
+        canInstall={pwa.canInstall}
+        onInstall={() => void pwa.install()}
         onButtonClick={() => {
           void audio.unlock();
           if (soundEnabled) void audio.playSfx("button");
@@ -1657,16 +1835,23 @@ export default function App() {
         profile={appProfile}
         onProfileChange={handleProfileChange}
       />
+      {showRetention && <RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} />}
+      {pwa.updateAvailable && <PwaUpdateToast onReload={() => { const current = gameStateRef.current; void autosave({ course: current.course, world: current.world, history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress }).finally(pwa.applyUpdate); }} />}
       </>
     );
   }
 
   return (
-    <div className="cc-app">
+    <div className={`cc-app${photoMode ? " cc-photo-mode" : ""}`}>
       <TooltipSurface>
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{a11yMessage}</div>
         <GameBackground />
         {saveLoadModal}
+      {showRetention && <RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} />}
+      {!photoMode && <AchievementToasts queue={achievementQueue} onDismiss={() => setAchievementQueue((queue) => queue.slice(1))} />}
+      {photoMode && <PhotoModeOverlay showGolfers={photoGolfers} showMarkers={photoMarkers} onToggleGolfers={() => setPhotoGolfers((value) => !value)} onToggleMarkers={() => setPhotoMarkers((value) => !value)} onCapture={() => void capturePhoto()} onCard={() => void captureCard()} onShare={() => void shareCard()} onExit={exitPhotoMode} />}
+      {pwa.updateAvailable && <PwaUpdateToast onReload={() => { const current = gameStateRef.current; void autosave({ course: current.course, world: current.world, history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress }).finally(pwa.applyUpdate); }} />}
+      {flow.modal === "save-load" && pwa.storagePersistent === false && <div role="status" className="cc-storage-warning">{t("pwa.storageWarning")}</div>}
       {flow.modal === "golfopedia" && (
         <GolfopediaModal
           open
@@ -1787,6 +1972,8 @@ export default function App() {
                 liveActive={live.liveActive}
                 onPickGolfer={live.selectGolfer}
                 selectedGolferId={live.selectedId}
+                showGolfers={!photoMode || photoGolfers}
+                showMarkers={!photoMode || photoMarkers}
                 dayMinute={live.status.dayMinute}
                 sculptRadius={sculptRadius}
                 onCameraUpdate={(camera) => {
@@ -1797,8 +1984,13 @@ export default function App() {
                 onViewChange={setMinimapView}
                 cameraJump={minimapJump}
             />
+            {!tutorialProgress && <div className="cc-retention-toolbar" style={{ position: "absolute", top: 10, left: 10, zIndex: 110, display: "flex", gap: 6 }}>
+              <button onClick={() => setShowRetention(true)}>🏆 {t("retention.open")}</button>
+              <button aria-pressed={appProfile.gameplay.tickerVisible} onClick={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: !appProfile.gameplay.tickerVisible } })}>📰 {t("retention.ticker")}</button>
+              <button onClick={() => enterPhotoMode(false)}>📷 {t("retention.photo")}</button>
+            </div>}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
-            <HoleMinimap
+            {!tutorialProgress && <HoleMinimap
               course={course}
               view={minimapView}
               golfersRef={live.golfersRef}
@@ -1806,7 +1998,7 @@ export default function App() {
                 if (holeEditCamera) setHoleEditCamera({ ...holeEditCamera, center });
                 else setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }));
               }}
-            />
+            />}
             <LiveControls
               status={live.status}
               speed={live.speed}
@@ -2012,6 +2204,7 @@ export default function App() {
           )}
         </div>
         </div>
+        <NewsTicker visible={!tutorialProgress && !photoMode && appProfile.gameplay.tickerVisible} onJump={jumpToEvent} onHide={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: false } })} />
         {flow.paused && (
           <PauseOverlay
             career={world.mode === "career"}
@@ -2033,6 +2226,11 @@ export default function App() {
       </TooltipSurface>
     </div>
   );
+}
+
+function PwaUpdateToast(props: { onReload: () => void }) {
+  const { t } = useI18n();
+  return <aside role="status" style={{ position: "fixed", right: 18, bottom: 72, zIndex: 100060, background: "#263b2d", color: "white", border: "2px solid #c99a32", borderRadius: 12, padding: 14, boxShadow: "0 10px 30px rgba(0,0,0,.3)" }}><div style={{ marginBottom: 8 }}>{t("pwa.update")}</div><button onClick={props.onReload}>{t("pwa.reload")}</button></aside>;
 }
 
 function BridgeLoanPrompt(props: { onAccept: () => void; onDecline: () => void }) {

@@ -45,7 +45,7 @@ async function startFreshTutorial(page: Page, run: string) {
 }
 
 async function gameCanvas(page: Page) {
-  const canvas = page.locator(".cc-course-pane canvas");
+  const canvas = page.locator(".cc-pixi-stage canvas");
   await expect(canvas).toHaveCount(1);
   await expect(canvas).toBeVisible();
   return canvas;

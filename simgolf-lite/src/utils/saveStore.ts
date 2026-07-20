@@ -10,6 +10,7 @@ import {
 } from "./save";
 import type { TutorialProgress } from "../game/onboarding/tutorial";
 import { loadAppProfile, type AppProfile } from "../game/onboarding/profile";
+import type { CourseRecords } from "../game/retention/types";
 
 /**
  * Save repository (ZKU-174): named slots + rotating autosaves + quicksave.
@@ -53,6 +54,7 @@ export interface SaveFile {
   history?: WeekResult[];
   live?: LiveSimulationSnapshotV1;
   tutorial?: TutorialProgress | null;
+  records?: CourseRecords;
   /** Diagnostic snapshot only; importing a course never overwrites local options. */
   appProfile?: AppProfile;
 }
@@ -224,7 +226,8 @@ function payloadToFile(p: SavePayload): SaveFile {
     savedAt: Date.now(),
     course: p.course,
     world: p.world,
-    history: p.history?.slice(-20),
+    history: p.history,
+    records: p.records,
     live: p.live,
     tutorial: p.tutorial,
     appProfile: loadAppProfile(),
