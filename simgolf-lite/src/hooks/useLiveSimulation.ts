@@ -10,6 +10,8 @@ import {
 } from "../game/live/simulation";
 import { commitDay } from "../game/live/commitDay";
 import { hitsLiquidityTrap } from "../game/sim/runState";
+import { isCoursePlayable } from "../game/sim/isCoursePlayable";
+import { planDay } from "../game/live/spawn";
 import type { DayResult, GolferRenderData, LiveState } from "../game/live/types";
 import {
   restoreLiveSimulation,
@@ -132,6 +134,7 @@ export function useLiveSimulation(args: {
   const onDayRef = useRef(onDayCommitted);
   const onCashRef = useRef(onCashTick);
   const skipNextReconcileRef = useRef(false);
+  const wasPlayableRef = useRef(isCoursePlayable(course));
 
   useEffect(() => {
     courseRef.current = course;
@@ -160,6 +163,22 @@ export function useLiveSimulation(args: {
       return;
     }
     const live = liveRef.current;
+    const playable = isCoursePlayable(course);
+    const becamePlayable = playable && !wasPlayableRef.current;
+    wasPlayableRef.current = playable;
+    if (enabled && live && becamePlayable) {
+      const arrivals = planDay(course, worldRef.current, live.seed);
+      if (arrivals.length > 0) {
+        arrivals[0] = {
+          ...arrivals[0],
+          atMinute: Math.min(arrivals[0].atMinute, live.dayMinute + 2),
+        };
+        arrivals.sort((a, b) => a.atMinute - b.atMinute);
+      }
+      live.arrivals = arrivals;
+      live.nextArrivalIdx = 0;
+      live.nextTeeFreeAt = live.dayMinute;
+    }
     if (enabled && live && live.golfers.length > 0) {
       reconcileGolfers(live, course);
       golfersRef.current = liveRenderData(live);

@@ -1207,7 +1207,7 @@ export function PixiStage(props: PixiStageProps) {
     el.addEventListener("pointermove", handlePointerMove);
     el.addEventListener("pointerup", handlePointerUp);
     el.addEventListener("contextmenu", handleContextMenu);
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", handleBlur);
     el.addEventListener("pointerleave", handlePointerLeave);
@@ -1219,7 +1219,7 @@ export function PixiStage(props: PixiStageProps) {
       el.removeEventListener("pointermove", handlePointerMove);
       el.removeEventListener("pointerup", handlePointerUp);
       el.removeEventListener("contextmenu", handleContextMenu);
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
       el.removeEventListener("pointerleave", handlePointerLeave);

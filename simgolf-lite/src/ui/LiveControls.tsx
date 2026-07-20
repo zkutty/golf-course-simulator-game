@@ -91,7 +91,7 @@ export function LiveControls(props: {
 
       <div style={{ width: 1, alignSelf: "stretch", background: "rgba(255,255,255,0.15)" }} />
 
-      <Stat label={translateCurrent("live.onCourse")} value={`${status.onCourse}`} />
+      <Stat label={translateCurrent("live.onCourse")} value={`${status.onCourse}`} testId="live-stat-on-course" />
       <Stat label={translateCurrent("live.roundsToday")} value={`${status.roundsToday}`} />
       <Stat label={translateCurrent("live.feesToday")} value={money(status.greenFeesToday)} accent="#bbf7d0" />
       <Stat label={translateCurrent("live.shopsToday")} value={money(status.concessionsToday)} accent="#fde68a" />
@@ -112,7 +112,7 @@ export function LiveControls(props: {
   );
 }
 
-function Stat(props: { label: string; value: string; accent?: string }) {
+function Stat(props: { label: string; value: string; accent?: string; testId?: string }) {
   const help: Record<string, string> = {
     "On course": "Golfers currently playing or moving through the course.",
     "Rounds today": "Rounds completed since the current in-game day began.",
@@ -123,7 +123,7 @@ function Stat(props: { label: string; value: string; accent?: string }) {
     "Yesterday P&L": "The previous in-game day's revenue minus expenses.",
   };
   return (
-    <div data-tooltip={help[props.label] ?? `Current ${props.label.toLowerCase()} value.`} style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+    <div data-testid={props.testId} data-tooltip={help[props.label] ?? `Current ${props.label.toLowerCase()} value.`} style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
       <span style={{ fontWeight: 700, color: props.accent ?? "#f5f5f0" }}>{props.value}</span>
       <span style={{ opacity: 0.65, fontSize: 11 }}>{props.label}</span>
     </div>

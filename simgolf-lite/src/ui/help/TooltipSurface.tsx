@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type FocusEvent, type PointerEvent, type ReactNode } from "react";
 import { tooltipForControl } from "./tooltipContent";
 
-type ActiveTooltip = { content: string; left: number; top: number };
+type ActiveTooltip = { content: string; left: number; top: number; placement: "above" | "below" };
 
 function eligibleTarget(raw: EventTarget | null): HTMLElement | null {
   if (!(raw instanceof Element)) return null;
@@ -37,7 +37,13 @@ export function TooltipSurface({ children }: { children: ReactNode }) {
       });
     };
     makeStatsFocusable();
-    const observer = new MutationObserver(makeStatsFocusable);
+    const observer = new MutationObserver(() => {
+      makeStatsFocusable();
+      if (describedRef.current && !describedRef.current.isConnected) {
+        describedRef.current = null;
+        setActive(null);
+      }
+    });
     observer.observe(root, { childList: true, subtree: true });
     return () => observer.disconnect();
   }, []);
@@ -55,10 +61,12 @@ export function TooltipSurface({ children }: { children: ReactNode }) {
     element.setAttribute("aria-describedby", id);
     describedRef.current = element;
     const rect = element.getBoundingClientRect();
+    const placement = rect.top >= 90 ? "above" : "below";
     setActive({
       content: labelFor(element),
       left: Math.max(132, Math.min(window.innerWidth - 132, rect.left + rect.width / 2)),
-      top: Math.max(12, rect.top - 8),
+      top: placement === "above" ? rect.top - 8 : rect.bottom + 8,
+      placement,
     });
   };
 
@@ -83,6 +91,7 @@ export function TooltipSurface({ children }: { children: ReactNode }) {
       style={{ display: "contents" }}
       onPointerOverCapture={pointerOver}
       onPointerOutCapture={hide}
+      onClickCapture={hide}
       onFocusCapture={focus}
       onBlurCapture={hide}
     >
@@ -97,7 +106,7 @@ export function TooltipSurface({ children }: { children: ReactNode }) {
             width: 245,
             left: active.left,
             top: active.top,
-            transform: "translate(-50%, -100%)",
+            transform: active.placement === "above" ? "translate(-50%, -100%)" : "translate(-50%, 0)",
             border: "1px solid #3d4a3e",
             borderRadius: 9,
             padding: 10,

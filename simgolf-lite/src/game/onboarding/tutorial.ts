@@ -7,6 +7,8 @@ export type TutorialTarget =
   | "course"
   | "terrain-palette"
   | "hole-wizard"
+  | "editor-tools"
+  | "hole-editor-nav"
   | "shot-plan"
   | "fix-overlay"
   | "speed-controls"
@@ -27,6 +29,7 @@ export interface TutorialStep {
   titleKey: MessageKey;
   bodyKey: MessageKey;
   target: TutorialTarget;
+  allowedTargets?: readonly TutorialTarget[];
   expression: "neutral" | "pleased" | "worried" | "excited";
   canAdvance: (context: TutorialContext, baseline: TutorialBaseline) => boolean;
   actionLabelKey?: MessageKey;
@@ -63,6 +66,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     id: "paint-corridor",
     eyebrowKey: "tutorial.lesson2.eyebrow", titleKey: "tutorial.lesson2.title", bodyKey: "tutorial.lesson2.body",
     target: "terrain-palette",
+    allowedTargets: ["terrain-palette", "course"],
     expression: "pleased",
     canAdvance: ({ course }, baseline) => course.tiles.filter((tile) => tile === "fairway").length >= baseline.fairwayTiles + 4,
   },
@@ -70,6 +74,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     id: "place-hole",
     eyebrowKey: "tutorial.lesson3.eyebrow", titleKey: "tutorial.lesson3.title", bodyKey: "tutorial.lesson3.body",
     target: "hole-wizard",
+    allowedTargets: ["hole-wizard", "editor-tools", "course"],
     expression: "neutral",
     canAdvance: ({ course }) => course.holes.some((hole) => !!hole.tee && !!hole.green),
   },
@@ -77,6 +82,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     id: "shot-plan",
     eyebrowKey: "tutorial.lesson4.eyebrow", titleKey: "tutorial.lesson4.title", bodyKey: "tutorial.lesson4.body",
     target: "shot-plan",
+    allowedTargets: ["shot-plan", "course"],
     expression: "neutral",
     canAdvance: always,
     actionLabelKey: "tutorial.lesson4.action",
@@ -85,6 +91,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     id: "fix-corridor",
     eyebrowKey: "tutorial.lesson5.eyebrow", titleKey: "tutorial.lesson5.title", bodyKey: "tutorial.lesson5.body",
     target: "fix-overlay",
+    allowedTargets: ["fix-overlay", "hole-editor-nav", "hole-wizard", "editor-tools", "course", "terrain-palette"],
     expression: "worried",
     canAdvance: ({ course }) => validHoles(course) >= 1,
   },
@@ -92,6 +99,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     id: "open-course",
     eyebrowKey: "tutorial.lesson6.eyebrow", titleKey: "tutorial.lesson6.title", bodyKey: "tutorial.lesson6.body",
     target: "hole-wizard",
+    allowedTargets: ["hole-wizard", "course", "terrain-palette"],
     expression: "pleased",
     canAdvance: ({ course }) => isCoursePlayable(course),
   },

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { formatCurrency, formatNumber, formatWeekLabel } from "../i18n/format";
+import type { TutorialTarget } from "../game/onboarding/tutorial";
 import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
 import { ELEVATION_COST_PER_STEP } from "../game/models/terrainEconomics";
 import { useAudio } from "../audio/audioContext";
@@ -97,6 +98,7 @@ export function HUD(props: {
   setShowShotPlan: (b: boolean) => void;
   onOpenGolfopedia: (entry?: string) => void;
   onStartTutorial: () => void;
+  tutorialTarget?: TutorialTarget;
 }) {
   const {
     course,
@@ -155,10 +157,18 @@ export function HUD(props: {
     setShowShotPlan,
     onOpenGolfopedia,
     onStartTutorial,
+    tutorialTarget,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
   const [objectivesOpen, setObjectivesOpen] = useState(false);
+  const activeTab: Tab = tutorialTarget === "weekly-report"
+    ? "Results"
+    : tutorialTarget === "green-fee" || tutorialTarget === "maintenance"
+      ? "Upgrades"
+      : tutorialTarget
+        ? "Editor"
+        : tab;
   // Difficulty-resolved balance for loan terms/eligibility (ZKU-165).
   const BALANCE = getEffectiveBalance(world.difficulty);
   const audio = useAudio();
@@ -366,7 +376,7 @@ export function HUD(props: {
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
           {viewMode === "COZY" ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <Tooltip block content="Your available operating runway. Construction, losses, and loan payments reduce it; profitable play restores it." learnMore={() => onOpenGolfopedia("management-cash")}>
+              <Tooltip block label={translateCurrent("hud.cashHelp")} content="Your available operating runway. Construction, losses, and loan payments reduce it; profitable play restores it." learnMore={() => onOpenGolfopedia("management-cash")}>
               <div
                 style={{
                   display: "flex",
@@ -385,7 +395,7 @@ export function HUD(props: {
                 </div>
               </div>
               </Tooltip>
-              <Tooltip block content="The market's memory of golfer satisfaction. It falls faster than it recovers and directly supports demand." learnMore={() => onOpenGolfopedia("management-reputation")}>
+              <Tooltip block label={translateCurrent("hud.reputationHelp")} content="The market's memory of golfer satisfaction. It falls faster than it recovers and directly supports demand." learnMore={() => onOpenGolfopedia("management-reputation")}>
               <div
                 style={{
                   display: "flex",
@@ -404,7 +414,7 @@ export function HUD(props: {
                 </div>
               </div>
               </Tooltip>
-              <Tooltip block content="Playing-surface health. Traffic causes wear; the maintenance budget restores condition each period." learnMore={() => onOpenGolfopedia("management-condition")}>
+              <Tooltip block label={translateCurrent("hud.conditionHelp")} content="Playing-surface health. Traffic causes wear; the maintenance budget restores condition each period." learnMore={() => onOpenGolfopedia("management-condition")}>
               <div
                 style={{
                   display: "flex",
@@ -423,7 +433,7 @@ export function HUD(props: {
                 </div>
               </div>
               </Tooltip>
-              <Tooltip block content="Valid holes with a tee, green, and safe playable corridor. Nine valid holes open the full course." learnMore={() => onOpenGolfopedia("management-demand")}>
+              <Tooltip block label={translateCurrent("hud.openHolesHelp")} content="Valid holes with a tee, green, and safe playable corridor. Nine valid holes open the full course." learnMore={() => onOpenGolfopedia("management-demand")}>
               <div
                 style={{
                   display: "flex",
@@ -521,9 +531,9 @@ export function HUD(props: {
                 flex: 1,
                 padding: "8px 6px",
                 borderRadius: 999,
-                border: tab === t ? "2px solid rgba(0,0,0,0.75)" : "1px solid rgba(0,0,0,0.10)",
-                background: tab === t ? "var(--cc-grass)" : "rgba(255,255,255,0.75)",
-                color: tab === t ? "#fff" : "#3d4a3e",
+                border: activeTab === t ? "2px solid rgba(0,0,0,0.75)" : "1px solid rgba(0,0,0,0.10)",
+                background: activeTab === t ? "var(--cc-grass)" : "rgba(255,255,255,0.75)",
+                color: activeTab === t ? "#fff" : "#3d4a3e",
                 fontSize: 12,
                 fontWeight: 900,
               }}
@@ -543,7 +553,7 @@ export function HUD(props: {
           opacity: isBankrupt ? 0.55 : 1,
         }}
       >
-        {tab === "Editor" && (
+        {activeTab === "Editor" && (
           <>
             {paintError && (
               <div
@@ -565,9 +575,10 @@ export function HUD(props: {
               <div style={{ marginBottom: 8 }}>
                 <b><T id="auto.ui.hud.editor.mode" /></b>
               </div>
-              <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <div data-tutorial-target="editor-tools" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
                 <button
                   onClick={() => setEditorMode("PAINT")}
+                  data-tutorial-target="terrain-palette"
                   style={{
                     flex: 1,
                     padding: "8px 6px",
@@ -580,7 +591,7 @@ export function HUD(props: {
                   <T id="auto.ui.hud.paint" /></button>
                 <button
                   onClick={startWizard}
-                  data-tutorial-target="hole-wizard"
+                  data-tutorial-target={editorMode === "HOLE_WIZARD" ? undefined : "hole-wizard"}
                   style={{
                     flex: 1,
                     padding: "8px 6px",
@@ -771,7 +782,7 @@ export function HUD(props: {
             </div>
 
             {editorMode === "HOLE_WIZARD" ? (
-              <Section title={translateCurrent("auto.ui.hud.hole.setup.wizard")}>
+              <div data-tutorial-target="hole-wizard"><Section title={translateCurrent("auto.ui.hud.hole.setup.wizard")}>
                 <div>
                   <b><T id="auto.ui.hud.hole" />{activeHoleIndex + 1} <T id="auto.ui.hud.of.9" /></b>
                 </div>
@@ -818,7 +829,7 @@ export function HUD(props: {
                   <T id="auto.ui.hud.draft.tee" />{draftTee ? `(${draftTee.x},${draftTee.y})` : "—"} <T id="auto.ui.hud.green" />{" "}
                   {draftGreen ? `(${draftGreen.x},${draftGreen.y})` : "—"}
                 </div>
-              </Section>
+              </Section></div>
             ) : editorMode === "OBSTACLE" ? (
               <Section title={translateCurrent("auto.ui.hud.place.obstacle")}>
                 <div style={{ color: "#444" }}>
@@ -1085,7 +1096,7 @@ export function HUD(props: {
           </>
         )}
 
-        {tab === "Metrics" && (
+        {activeTab === "Metrics" && (
           <>
             <Section title={translateCurrent("auto.ui.hud.course.metrics")}>
               <div data-tooltip={REPORT_HELP["Course quality"]}><T id="auto.ui.hud.course.quality" />{Math.round(holeSummary.courseQuality)}/100</div>
@@ -1134,7 +1145,7 @@ export function HUD(props: {
           </>
         )}
 
-        {tab === "Results" && (
+        {activeTab === "Results" && (
           <div data-tutorial-target="weekly-report">
             {!last && <div style={{ color: "#555", fontSize: 13 }}><T id="auto.ui.hud.simulate.a.week.to.see.results" /></div>}
             {last && (
@@ -1401,7 +1412,7 @@ export function HUD(props: {
           </div>
         )}
 
-        {tab === "Upgrades" && (
+        {activeTab === "Upgrades" && (
           <>
             <Section title={translateCurrent("auto.ui.hud.business")}>
               <label data-tutorial-target="green-fee" style={{ display: "block", marginBottom: 12 }}>
@@ -1700,7 +1711,7 @@ export function HUD(props: {
             <T id="auto.ui.hud.reset" /></GameButton>
         </div>
 
-        <GameButton
+        <div data-tutorial-target="weekly-report"><GameButton
           onClick={simulate}
           disabled={isBankrupt}
           variant="primary"
@@ -1708,7 +1719,7 @@ export function HUD(props: {
           style={{ width: "100%", borderRadius: 18 }}
         >
           {isBankrupt ? "Run ended" : "⏩ Simulate week"}
-        </GameButton>
+        </GameButton></div>
       </div>
     </div>
   );

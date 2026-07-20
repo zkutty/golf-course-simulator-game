@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GameTabs } from "../gameui";
 import { buildGolfopediaEntries, type GolfopediaSection } from "./golfopediaData";
 import { BINDING_ACTIONS, BINDING_LABEL_KEYS, displayBinding } from "../../accessibility/keybindings";
@@ -17,13 +17,20 @@ export function GolfopediaModal(props: { open: boolean; onClose: () => void; ini
   const [section, setSection] = useState<GolfopediaSection>(initial?.section ?? "Terrain");
   const [query, setQuery] = useState("");
   const [selectedId, setSelectedId] = useState(initial?.id ?? entries[0].id);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const trapRef = useFocusTrap<HTMLDivElement>(props.open, props.onClose);
   const bindings = loadAppProfile().accessibility.keybindings;
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return entries.filter((entry) => (!q ? entry.section === section : `${entry.title} ${entry.summary} ${entry.details.join(" ")}`.toLowerCase().includes(q)));
   }, [entries, query, section]);
-  const selected = entries.find((entry) => entry.id === selectedId) ?? filtered[0] ?? entries[0];
+  const selectedCandidate = entries.find((entry) => entry.id === selectedId);
+  const selected = (selectedCandidate && filtered.some((entry) => entry.id === selectedCandidate.id) ? selectedCandidate : filtered[0]) ?? entries[0];
+
+  useEffect(() => {
+    if (!props.open) return;
+    searchRef.current?.focus();
+  }, [props.open]);
 
   if (!props.open) return null;
   return (
@@ -36,9 +43,14 @@ export function GolfopediaModal(props: { open: boolean; onClose: () => void; ini
           </div>
           <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
             <div style={{ maxWidth: "100%", overflowX: "auto", paddingBottom: 2 }}>
-              <GameTabs tabs={SECTIONS} activeTab={section} onTabChange={(tab) => { setSection(tab as GolfopediaSection); setQuery(""); }} />
+              <GameTabs tabs={SECTIONS} activeTab={section} onTabChange={(tab) => {
+                const nextSection = tab as GolfopediaSection;
+                setSection(nextSection);
+                setQuery("");
+                setSelectedId(entries.find((entry) => entry.section === nextSection)?.id ?? entries[0].id);
+              }} />
             </div>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translateCurrent("auto.ui.help.golfopediamodal.search.terrain.stats.controls")} aria-label={translateCurrent("auto.ui.help.golfopediamodal.search.golfopedia")} style={{ width: "100%", minWidth: 0, boxSizing: "border-box", borderRadius: 999, border: "1px solid rgba(61,74,62,.35)", padding: "11px 15px", background: "#fffdf6" }} />
+            <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder={translateCurrent("auto.ui.help.golfopediamodal.search.terrain.stats.controls")} aria-label={translateCurrent("auto.ui.help.golfopediamodal.search.golfopedia")} style={{ width: "100%", minWidth: 0, boxSizing: "border-box", borderRadius: 999, border: "1px solid rgba(61,74,62,.35)", padding: "11px 15px", background: "#fffdf6" }} />
           </div>
         </header>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(190px, 30%) 1fr", minHeight: 0, flex: 1 }}>
@@ -46,7 +58,7 @@ export function GolfopediaModal(props: { open: boolean; onClose: () => void; ini
             {filtered.map((entry) => <button key={entry.id} onClick={() => setSelectedId(entry.id)} style={{ display: "block", width: "100%", textAlign: "left", border: 0, borderRadius: 9, padding: "10px 11px", marginBottom: 4, background: selected.id === entry.id ? "#3d4a3e" : "transparent", color: selected.id === entry.id ? "white" : "#3d4a3e", cursor: "pointer", fontWeight: 800 }}>{entry.title}</button>)}
             {filtered.length === 0 && <div style={{ padding: 12, color: "#6b7280", fontSize: 13 }}><T id="auto.ui.help.golfopediamodal.no.entries.match.that.search" /></div>}
           </nav>
-          <article style={{ overflowY: "auto", padding: "clamp(20px, 4vw, 42px)", color: "#354039" }}>
+          <article data-testid="golfopedia-entry" data-entry-id={selected.id} style={{ overflowY: "auto", padding: "clamp(20px, 4vw, 42px)", color: "#354039" }}>
             <div style={{ textTransform: "uppercase", letterSpacing: ".12em", fontSize: 10, fontWeight: 900, color: "#8a6d3b" }}>{selected.section}</div>
             <h2 style={{ fontFamily: "var(--font-heading)", fontSize: 30, margin: "6px 0 10px" }}>{selected.title}</h2>
             <p style={{ fontSize: 16, lineHeight: 1.5, color: "#526056" }}>{selected.summary}</p>

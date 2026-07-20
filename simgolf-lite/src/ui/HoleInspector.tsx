@@ -338,7 +338,7 @@ export function HoleInspector({
                 </div>
               )}
               {editorMode === "PAINT" && setSelected && (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4, fontSize: 10 }}>
+                <div data-tutorial-target="terrain-palette" style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4, fontSize: 10 }}>
                   {(["fairway", "rough", "deep_rough", "sand", "water", "green", "tee", "path"] as const).map((terrain) => (
                     <button
                       key={terrain}

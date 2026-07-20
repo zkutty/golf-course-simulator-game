@@ -68,6 +68,12 @@ describe("M14 advisor", () => {
     const messages = advisorMessages(DEFAULT_COURSE, DEFAULT_WORLD, week(1), week(-1));
     expect(messages.some((message) => message.priority === "celebration")).toBe(true);
   });
+
+  it("offers a chatty hint before the course is complete", () => {
+    const messages = advisorMessages(DEFAULT_COURSE, DEFAULT_WORLD, undefined, undefined);
+    const hint = messages.find((message) => message.priority === "hint");
+    expect(hint && allowsMessage("chatty", hint)).toBe(true);
+  });
 });
 
 describe("M14 Golfopedia", () => {
@@ -91,6 +97,10 @@ describe("M14 shared tooltip content", () => {
     expect(tooltipForControl("Simulate week")).toMatch(/aggregate week/);
     expect(tooltipForControl("Green fee", "input")).toMatch(/Adjust/);
     expect(tooltipForControl("Speed 3x")).toMatch(/triple speed/);
+    expect(tooltipForControl("Editor")).toMatch(/terrain/);
+    expect(tooltipForControl("Results")).toMatch(/revenue/);
+    expect(tooltipForControl("Quick Start")).toMatch(/sandbox/);
+    expect(tooltipForControl("Skip tutorial")).toMatch(/normal play/);
   });
 
   it("documents every weekly demand factor", () => {

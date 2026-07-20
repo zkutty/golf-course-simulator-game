@@ -61,6 +61,7 @@ import { GolfopediaModal } from "./ui/help/GolfopediaModal";
 import { TooltipSurface } from "./ui/help/TooltipSurface";
 import { AdvisorCard } from "./ui/onboarding/AdvisorCard";
 import { TutorialOverlay } from "./ui/onboarding/TutorialOverlay";
+import { TutorialOffer } from "./ui/onboarding/TutorialOffer";
 import {
   TUTORIAL_STEPS,
   createTutorialProgress,
@@ -193,6 +194,9 @@ export default function App() {
   const scenarioRecordedRef = useRef(false);
   const [golfopediaEntry, setGolfopediaEntry] = useState<string | null | undefined>(undefined);
   const [tutorialProgress, setTutorialProgress] = useState<TutorialProgress | null>(() => loadTutorialProgress());
+  const [tutorialSaveStatus, setTutorialSaveStatus] = useState<"saving" | "saved">("saving");
+  const tutorialSaveSequenceRef = useRef(0);
+  const [showTutorialOffer, setShowTutorialOffer] = useState(false);
   const [advisorMessage, setAdvisorMessage] = useState<AdvisorMessage | null>(null);
   const [advisorWake, setAdvisorWake] = useState(0);
   const seenAdvisorMessagesRef = useRef(new Set<string>());
@@ -243,6 +247,7 @@ export default function App() {
       if (soundEnabled) void sound?.playCashTick(soundEnabled);
     },
   });
+  const getLiveSnapshot = live.getSnapshot;
   const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);
 
   const openPauseMenu = useCallback(() => {
@@ -299,6 +304,10 @@ export default function App() {
         if (flow.modal) {
           event.preventDefault();
           flowDispatch({ type: "CLOSE_TOP_LAYER" });
+        } else if (tutorialProgress) {
+          // The tutorial owns the top layer. Opening the pause menu here would
+          // stack two competing dialogs and obscure the highlighted control.
+          event.preventDefault();
         } else if (flow.base === "in-game") {
           event.preventDefault();
           if (flow.paused) resumeFromPause();
@@ -329,7 +338,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [appProfile.accessibility.keybindings, flow.base, flow.modal, flow.paused, live, openPauseMenu, quickSave, resumeFromPause, toggleClock]);
+  }, [appProfile.accessibility.keybindings, flow.base, flow.modal, flow.paused, live, openPauseMenu, quickSave, resumeFromPause, toggleClock, tutorialProgress]);
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -587,7 +596,7 @@ export default function App() {
   }, [audio]);
 
   useEffect(() => {
-    if (screen !== "game" || tutorialProgress || advisorMessage || flow.modal || flow.paused || showVictory || showBridgePrompt) return;
+    if (screen !== "game" || tutorialProgress || showTutorialOffer || advisorMessage || flow.modal || flow.paused || showVictory || showBridgePrompt) return;
     if (Date.now() < advisorCooldownUntilRef.current) return;
     const frequency = loadAppProfile().advisorFrequency;
     const previous = history.length >= 2 ? history[history.length - 2] : undefined;
@@ -598,7 +607,7 @@ export default function App() {
       setAdvisorMessage(next);
       setA11yMessage(`${next.title}. ${next.body}`);
     }
-  }, [screen, tutorialProgress, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, course, world, last, history, advisorWake, t]);
+  }, [screen, tutorialProgress, showTutorialOffer, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, course, world, last, history, advisorWake, t]);
 
   function dismissAdvisor() {
     if (advisorMessage) seenAdvisorMessagesRef.current.add(advisorMessage.id);
@@ -654,12 +663,15 @@ export default function App() {
     updateAppProfile({ tutorialOffered: true });
     setGolfopediaEntry(undefined);
     setAdvisorMessage(null);
+    setShowTutorialOffer(false);
   }
 
   function finishTutorial(completed: boolean) {
     setTutorialProgress(null);
     saveTutorialProgress(null);
     updateAppProfile({ tutorialOffered: true, tutorialCompleted: completed || loadAppProfile().tutorialCompleted });
+    setShowTutorialOffer(false);
+    void autosave({ course, world, history, live: live.getSnapshot(), tutorial: null });
   }
 
   function startRun(newCourse: typeof course, newWorld: typeof world) {
@@ -684,8 +696,19 @@ export default function App() {
     scenarioRecordedRef.current = false;
     setPrevOutcome("OPEN");
     setShowVictory(false);
-    if (!loadAppProfile().tutorialOffered) beginTutorial(newCourse, newWorld);
+    if (!loadAppProfile().tutorialOffered) setShowTutorialOffer(true);
   }
+
+  useEffect(() => {
+    if (screen !== "game" || !tutorialProgress) return;
+    const sequence = ++tutorialSaveSequenceRef.current;
+    queueMicrotask(() => {
+      if (tutorialSaveSequenceRef.current === sequence) setTutorialSaveStatus("saving");
+    });
+    void autosave({ course, world, history, live: getLiveSnapshot(), tutorial: tutorialProgress }).then(() => {
+      if (tutorialSaveSequenceRef.current === sequence) setTutorialSaveStatus("saved");
+    });
+  }, [screen, course, world, history, tutorialProgress, getLiveSnapshot]);
 
   // `goals` overrides the mode's default goal set (defeat-retry keeps a
   // run's exact goals).
@@ -727,7 +750,7 @@ export default function App() {
     return {
       mode: "sandbox",
       courseName: generateCourseName(),
-      seed: (Date.now() % 1_000_000) | 0,
+      seed: import.meta.env.MODE === "e2e" ? 424242 : (Date.now() % 1_000_000) | 0,
       theme: "parkland",
       difficulty: "normal",
     };
@@ -1496,6 +1519,24 @@ export default function App() {
       return;
     }
     const next = { ...tutorialProgress, stepIndex: tutorialProgress.stepIndex + 1 };
+    const nextStep = TUTORIAL_STEPS[next.stepIndex];
+    if (["shot-plan", "weekly-report", "green-fee", "maintenance", "first-profit"].includes(nextStep.id)) {
+      setViewMode("ARCHITECT");
+    }
+    if (nextStep.id === "shot-plan") {
+      setActiveHoleIndex(Math.max(0, activeHoleIndex - 1));
+      setEditorMode("PAINT");
+    }
+    if (nextStep.id === "fix-corridor") enterHoleEditMode(activeHoleIndex);
+    if (step.id === "fix-corridor") {
+      exitHoleEditMode();
+      const nextHole = course.holes.findIndex((hole) => !hole.tee || !hole.green);
+      setActiveHoleIndex(nextHole >= 0 ? nextHole : 0);
+      setEditorMode("HOLE_WIZARD");
+      setWizardStep("TEE");
+      setDraftTee(null);
+      setDraftGreen(null);
+    }
     setTutorialProgress(next);
     saveTutorialProgress(next);
   }
@@ -1562,9 +1603,19 @@ export default function App() {
           )}
           onAdvance={advanceTutorial}
           onSkip={() => finishTutorial(false)}
+          saveStatus={tutorialSaveStatus}
         />
       )}
-      {!tutorialProgress && advisorMessage && (
+      {showTutorialOffer && !flow.paused && (
+        <TutorialOffer
+          onAccept={() => beginTutorial()}
+          onSkip={() => {
+            updateAppProfile({ tutorialOffered: true });
+            setShowTutorialOffer(false);
+          }}
+        />
+      )}
+      {!tutorialProgress && !showTutorialOffer && !flow.modal && !flow.paused && !showVictory && !showBridgePrompt && advisorMessage && (
         <AdvisorCard
           message={advisorMessage}
           onDismiss={dismissAdvisor}
@@ -1748,6 +1799,7 @@ export default function App() {
               }}
             >
               <div
+                data-tutorial-target="hole-editor-nav"
                 style={{
                   padding: 12,
                   borderBottom: "1px solid rgba(0,0,0,0.1)",
@@ -1918,6 +1970,7 @@ export default function App() {
           flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" });
         }}
         onStartTutorial={() => beginTutorial()}
+        tutorialTarget={tutorialProgress ? TUTORIAL_STEPS[tutorialProgress.stepIndex].target : undefined}
       />
           )}
         </div>
