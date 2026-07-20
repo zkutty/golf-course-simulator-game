@@ -1,4 +1,3 @@
-
 import { loadAppProfile, updateProfileTab } from "../game/onboarding/profile";
 
 export interface AudioVolumes {
@@ -6,289 +5,412 @@ export interface AudioVolumes {
   musicVolume: number;
   ambienceVolume: number;
   sfxVolume: number;
+  masterMuted: boolean;
+  muteWhenHidden: boolean;
+}
+
+export type MusicContext = "silent" | "title" | "build" | "live" | "tension";
+export type StingName = "celebration" | "record" | "achievement";
+export type SfxName =
+  | "brush" | "confirm" | "cash" | "button" | "tab" | "error" | "sculpt"
+  | "driver" | "iron" | "chip" | "putt"
+  | "land-fairway" | "land-green" | "land-sand" | "land-water"
+  | "land-rough" | "tree" | "cup" | "crowd-cheer" | "crowd-groan";
+
+export interface AmbientMix {
+  birds: number;
+  water: number;
+  wind: number;
+  murmur: number;
+  crickets: number;
+  paused: boolean;
+}
+
+interface Track {
+  id: string;
+  ogg: string;
+  m4a: string;
+}
+
+export const MUSIC_PLAYLISTS: Record<Exclude<MusicContext, "silent">, readonly Track[]> = {
+  title: [track("clubhouse-morning"), track("porch-swing")],
+  build: [track("drafting-table"), track("breezy-nine")],
+  live: [track("fairway-stroll"), track("golden-green")],
+  tension: [track("last-light"), track("drafting-table")],
+};
+
+function track(id: string): Track {
+  return { id, ogg: `/audio/music/${id}.ogg`, m4a: `/audio/music/${id}.m4a` };
 }
 
 function loadVolumes(): AudioVolumes {
   return { ...loadAppProfile().audio };
 }
 
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+}
+
+function nowMs(): number {
+  return typeof performance === "undefined" ? Date.now() : performance.now();
+}
+
 class AudioManager {
   private static instance: AudioManager | null = null;
-  private audioUnlocked = false;
+  private unlocked = false;
   private volumes: AudioVolumes = loadVolumes();
-  
-  private musicAudio: HTMLAudioElement | null = null;
-  private ambienceAudio: HTMLAudioElement | null = null;
-  private sfxPool: HTMLAudioElement[] = [];
-  private currentAmbienceSrc: string | null = null;
-  private currentMusicSrc: string | null = null;
-  
-  private fadeDuration = 650; // ms
-  private readonly MAX_SFX_POOL_SIZE = 5;
+  private hidden = typeof document !== "undefined" && document.hidden;
+  private pauseDuck = 1;
+  private stingDuck = 1;
+  private context: MusicContext = "silent";
+  private playingContext: MusicContext = "silent";
+  private override: MusicContext | null = null;
+  private trackIndex = new Map<MusicContext, number>();
+  private contextPositions = new Map<MusicContext, number>();
+  private musicSlots: [HTMLAudioElement, HTMLAudioElement] | null = null;
+  private activeSlot = 0;
+  private musicFadeToken = 0;
+  private ctx: AudioContext | null = null;
+  private sfxBus: GainNode | null = null;
+  private ambienceBus: GainNode | null = null;
+  private ambienceLayers = new Map<keyof Omit<AmbientMix, "paused">, GainNode>();
+  private ambienceSources: AudioBufferSourceNode[] = [];
+  private ambientMix: AmbientMix = { birds: 0, water: 0, wind: 0, murmur: 0, crickets: 0, paused: true };
+  private voices = new Set<AudioScheduledSourceNode>();
+  private lastPlayed = new Map<SfxName, number>();
+  private readonly MAX_VOICES = 8;
 
   private constructor() {
-    this.musicAudio = new Audio();
-    this.musicAudio.loop = true;
-    this.musicAudio.preload = "auto";
-    this.musicAudio.volume = this.effective("musicVolume");
-
-    this.ambienceAudio = new Audio();
-    this.ambienceAudio.loop = true;
-    this.ambienceAudio.preload = "auto";
-    this.ambienceAudio.volume = this.effective("ambienceVolume");
+    if (typeof Audio !== "undefined") {
+      this.musicSlots = [this.createMusicElement(), this.createMusicElement()];
+    }
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", () => {
+        this.hidden = document.hidden;
+        this.rampAll(0.35);
+      });
+    }
   }
 
   static getInstance(): AudioManager {
-    if (!AudioManager.instance) {
-      AudioManager.instance = new AudioManager();
-    }
+    AudioManager.instance ??= new AudioManager();
     return AudioManager.instance;
   }
 
-  async unlock(): Promise<void> {
-    if (this.audioUnlocked) return;
+  private createMusicElement(): HTMLAudioElement {
+    const audio = new Audio();
+    audio.preload = "none";
+    audio.addEventListener("ended", () => {
+      if (audio === this.musicSlots?.[this.activeSlot]) void this.advanceTrack();
+    });
+    return audio;
+  }
 
-    console.log("[AudioManager] Unlocking audio context...");
-    
-    // Try to play/pause a silent sound to unlock audio context
-    const testAudio = new Audio();
-    testAudio.volume = 0;
-    try {
-      await testAudio.play();
-      testAudio.pause();
-      this.audioUnlocked = true;
-      console.log("[AudioManager] Audio context unlocked");
-    } catch (e) {
-      console.warn("[AudioManager] Audio unlock failed:", e);
-      // Still mark as unlocked - some browsers allow audio after user gesture even if test fails
-      this.audioUnlocked = true;
+  private effective(channel: "musicVolume" | "ambienceVolume" | "sfxVolume"): number {
+    if (this.volumes.masterMuted || (this.hidden && this.volumes.muteWhenHidden)) return 0;
+    const duck = channel === "musicVolume" ? this.pauseDuck * this.stingDuck : 1;
+    return clamp01(this.volumes.masterVolume * this.volumes[channel] * duck);
+  }
+
+  private preferredSource(track: Track): string {
+    const probe = this.musicSlots?.[0];
+    return probe?.canPlayType("audio/ogg; codecs=vorbis") ? track.ogg : track.m4a;
+  }
+
+  private rampParam(param: AudioParam, value: number, seconds = 0.08): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    param.cancelScheduledValues(t);
+    param.setValueAtTime(param.value, t);
+    param.linearRampToValueAtTime(clamp01(value), t + seconds);
+  }
+
+  private rampAll(seconds = 0.08): void {
+    const music = this.effective("musicVolume");
+    this.musicSlots?.forEach((slot, index) => {
+      this.fadeElement(slot, index === this.activeSlot ? music : 0, seconds * 1000, false, this.musicFadeToken);
+    });
+    if (this.sfxBus) this.rampParam(this.sfxBus.gain, this.effective("sfxVolume"), seconds);
+    if (this.ambienceBus) this.rampParam(this.ambienceBus.gain, this.effective("ambienceVolume"), seconds);
+  }
+
+  async unlock(): Promise<void> {
+    if (this.unlocked) return;
+    const Context = typeof window === "undefined" ? undefined : window.AudioContext;
+    if (Context) {
+      this.ctx = new Context();
+      this.sfxBus = this.ctx.createGain();
+      this.ambienceBus = this.ctx.createGain();
+      this.sfxBus.gain.value = this.effective("sfxVolume");
+      this.ambienceBus.gain.value = this.effective("ambienceVolume");
+      this.sfxBus.connect(this.ctx.destination);
+      this.ambienceBus.connect(this.ctx.destination);
+      await this.ctx.resume().catch(() => undefined);
+      this.createAmbientBed();
+      this.scheduleAmbientAccent();
     }
+    this.unlocked = true;
+    if (this.resolvedContext() !== "silent") await this.switchPlaylist(this.resolvedContext());
   }
 
   setVolumes(volumes: Partial<AudioVolumes>): void {
     this.volumes = { ...this.volumes, ...volumes };
     updateProfileTab("audio", this.volumes);
-    this.applyElementVolumes();
+    if (volumes.masterMuted === true) this.applyImmediateMute();
+    else this.rampAll();
   }
 
   syncVolumes(volumes: AudioVolumes): void {
     this.volumes = { ...volumes };
-    this.applyElementVolumes();
-  }
-
-  private applyElementVolumes(): void {
-    if (this.musicAudio) this.musicAudio.volume = this.effective("musicVolume");
-    if (this.ambienceAudio) this.ambienceAudio.volume = this.effective("ambienceVolume");
+    if (volumes.masterMuted) this.applyImmediateMute();
+    else this.rampAll();
   }
 
   getVolumes(): AudioVolumes {
     return { ...this.volumes };
   }
 
-  private effective(channel: "musicVolume" | "ambienceVolume" | "sfxVolume"): number {
-    return this.volumes.masterVolume * this.volumes[channel];
+  setPaused(paused: boolean): void {
+    this.pauseDuck = paused ? 0.45 : 1;
+    this.rampAll(0.25);
   }
 
-  private async fadeIn(audio: HTMLAudioElement, targetVolume: number): Promise<void> {
-    if (!audio || !this.audioUnlocked) return;
+  setMusicContext(context: MusicContext): Promise<void> {
+    this.context = context;
+    return this.switchPlaylist(this.resolvedContext());
+  }
 
-    const startVolume = audio.volume;
-    const startTime = Date.now();
-    const duration = this.fadeDuration;
+  setMusicOverride(context: MusicContext | null): Promise<void> {
+    this.override = context;
+    return this.switchPlaylist(this.resolvedContext());
+  }
 
-    const fade = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(1, elapsed / duration);
-      const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
-      audio.volume = startVolume + (targetVolume - startVolume) * eased;
+  private resolvedContext(): MusicContext {
+    return this.override ?? this.context;
+  }
 
-      if (progress < 1) {
-        requestAnimationFrame(fade);
-      } else {
-        audio.volume = targetVolume;
-      }
+  private async switchPlaylist(context: MusicContext): Promise<void> {
+    if (!this.unlocked || !this.musicSlots) return;
+    const old = this.musicSlots[this.activeSlot];
+    if (this.playingContext !== "silent" && old.currentTime > 0 && !old.ended) this.contextPositions.set(this.playingContext, old.currentTime);
+    if (context === "silent") {
+      const token = ++this.musicFadeToken;
+      this.fadeElement(old, 0, 450, true, token);
+      return;
+    }
+    const list = MUSIC_PLAYLISTS[context];
+    const index = this.trackIndex.get(context) ?? 0;
+    const selected = list[index % list.length];
+    const src = this.preferredSource(selected);
+    if (old.dataset.trackId === selected.id && !old.paused) {
+      this.rampAll();
+      return;
+    }
+    const nextSlot = this.activeSlot === 0 ? 1 : 0;
+    const next = this.musicSlots[nextSlot];
+    next.src = src;
+    next.dataset.trackId = selected.id;
+    next.currentTime = this.contextPositions.get(context) ?? 0;
+    next.volume = 0;
+    const token = ++this.musicFadeToken;
+    try {
+      await next.play();
+    } catch {
+      return;
+    }
+    this.activeSlot = nextSlot;
+    this.playingContext = context;
+    this.fadeElement(old, 0, 2000, true, token);
+    this.fadeElement(next, this.effective("musicVolume"), 2000, false, token);
+  }
+
+  private fadeElement(audio: HTMLAudioElement, target: number, durationMs: number, pauseAtEnd: boolean, token: number): void {
+    const from = audio.volume;
+    const start = nowMs();
+    const tick = () => {
+      if (token !== this.musicFadeToken && pauseAtEnd) return;
+      const p = Math.min(1, (nowMs() - start) / Math.max(1, durationMs));
+      audio.volume = clamp01(from + (target - from) * (p * p * (3 - 2 * p)));
+      if (p < 1) requestAnimationFrame(tick);
+      else if (pauseAtEnd) audio.pause();
     };
-
-    fade();
+    requestAnimationFrame(tick);
   }
 
-  private async fadeOut(audio: HTMLAudioElement): Promise<void> {
-    if (!audio) return;
+  private async advanceTrack(): Promise<void> {
+    const context = this.resolvedContext();
+    if (context === "silent") return;
+    const list = MUSIC_PLAYLISTS[context];
+    const current = this.trackIndex.get(context) ?? 0;
+    const offset = list.length > 1 ? 1 + Math.floor(Math.random() * (list.length - 1)) : 0;
+    this.trackIndex.set(context, (current + offset) % list.length);
+    this.contextPositions.delete(context);
+    await this.switchPlaylist(context);
+  }
 
-    const startVolume = audio.volume;
-    const startTime = Date.now();
-    const duration = this.fadeDuration;
+  async playSting(name: StingName): Promise<void> {
+    if (!this.unlocked) return;
+    this.stingDuck = 0.28;
+    this.rampAll(0.12);
+    await this.playSfx(name === "celebration" ? "crowd-cheer" : "confirm", { force: true });
+    globalThis.setTimeout(() => {
+      this.stingDuck = 1;
+      this.rampAll(0.55);
+    }, name === "celebration" ? 1300 : 850);
+  }
 
-    const fade = () => {
-      const elapsed = Date.now() - startTime;
-      const progress = Math.min(1, elapsed / duration);
-      const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
-      audio.volume = startVolume * (1 - eased);
+  async playSfx(name: SfxName, options: { volume?: number; force?: boolean } = {}): Promise<void> {
+    if (!this.unlocked || !this.ctx || !this.sfxBus || this.effective("sfxVolume") <= 0) return;
+    const gap = name.startsWith("land-") ? 55 : name === "brush" ? 35 : 90;
+    const time = nowMs();
+    if (!options.force && time - (this.lastPlayed.get(name) ?? -Infinity) < gap) return;
+    if (!options.force && this.voices.size >= this.MAX_VOICES) return;
+    this.lastPlayed.set(name, time);
+    this.synthesize(name, clamp01(options.volume ?? 1));
+  }
 
-      if (progress < 1) {
-        requestAnimationFrame(fade);
-      } else {
-        audio.pause();
-        audio.currentTime = 0;
-        audio.volume = startVolume;
-      }
+  private register(source: AudioScheduledSourceNode): void {
+    this.voices.add(source);
+    source.addEventListener("ended", () => this.voices.delete(source), { once: true });
+  }
+
+  private synthesize(name: SfxName, level: number): void {
+    const ctx = this.ctx;
+    const bus = this.sfxBus;
+    if (!ctx || !bus) return;
+    const t = ctx.currentTime;
+    const pitch = 0.95 + Math.random() * 0.1;
+    const noiseNames: SfxName[] = ["brush", "sculpt", "driver", "iron", "chip", "land-fairway", "land-green", "land-sand", "land-water", "land-rough", "tree", "crowd-cheer", "crowd-groan"];
+    if (noiseNames.includes(name)) {
+      const duration = name.startsWith("crowd") ? 0.65 : name === "land-water" ? 0.42 : 0.18;
+      const buffer = ctx.createBuffer(1, Math.ceil(ctx.sampleRate * duration), ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.playbackRate.value = pitch;
+      const filter = ctx.createBiquadFilter();
+      filter.type = name === "land-water" || name.startsWith("crowd") ? "lowpass" : "bandpass";
+      filter.frequency.value = name === "land-sand" ? 900 : name === "tree" ? 420 : name.startsWith("crowd") ? 620 : 1450;
+      const gain = ctx.createGain();
+      const peak = level * (name === "driver" ? 0.42 : name.startsWith("crowd") ? 0.18 : 0.25);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.linearRampToValueAtTime(peak, t + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+      source.connect(filter).connect(gain).connect(bus);
+      this.register(source);
+      source.start(t);
+      source.stop(t + duration);
+      if (!["driver", "iron", "chip", "tree"].includes(name)) return;
+    }
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const definitions: Partial<Record<SfxName, [OscillatorType, number, number, number]>> = {
+      confirm: ["sine", 523, 784, .42], button: ["sine", 440, 590, .12], tab: ["triangle", 620, 760, .1],
+      cash: ["triangle", 880, 1320, .22], error: ["square", 150, 95, .2], putt: ["sine", 620, 390, .1],
+      cup: ["triangle", 1450, 760, .35], driver: ["triangle", 180, 78, .16], iron: ["triangle", 320, 120, .13],
+      chip: ["triangle", 480, 210, .11], tree: ["triangle", 250, 110, .14],
     };
-
-    fade();
+    const [type, from, to, duration] = definitions[name] ?? ["sine", 440, 660, .16];
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(from * pitch, t);
+    oscillator.frequency.exponentialRampToValueAtTime(to * pitch, t + duration);
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.linearRampToValueAtTime(level * 0.16, t + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    oscillator.connect(gain).connect(bus);
+    this.register(oscillator);
+    oscillator.start(t);
+    oscillator.stop(t + duration);
   }
 
-  async setAmbience(src: string | null): Promise<void> {
-    if (!this.audioUnlocked) {
-      console.warn("[AudioManager] Cannot set ambience: audio not unlocked");
-      return;
+  private createAmbientBed(): void {
+    const ctx = this.ctx;
+    const bus = this.ambienceBus;
+    if (!ctx || !bus || this.ambienceSources.length) return;
+    const seconds = 4;
+    const buffer = ctx.createBuffer(1, ctx.sampleRate * seconds, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    let brown = 0;
+    for (let i = 0; i < data.length; i++) {
+      brown = (brown + (Math.random() * 2 - 1) * .035) * .995;
+      data[i] = brown;
     }
-
-    if (!this.ambienceAudio) return;
-
-    if (src === null) {
-      // Stop ambience
-      if (!this.ambienceAudio.paused) {
-        await this.fadeOut(this.ambienceAudio);
-      }
-      this.currentAmbienceSrc = null;
-      return;
-    }
-
-    if (src === this.currentAmbienceSrc) {
-      // Already playing this ambience
-      if (this.ambienceAudio.paused) {
-        // Resume if paused
-        try {
-          this.ambienceAudio.volume = 0;
-          await this.ambienceAudio.play();
-          await this.fadeIn(this.ambienceAudio, this.effective("ambienceVolume"));
-        } catch (e) {
-          console.warn("[AudioManager] Failed to resume ambience:", e);
-        }
-      }
-      return;
-    }
-
-    // Fade out old ambience
-    if (!this.ambienceAudio.paused) {
-      await this.fadeOut(this.ambienceAudio);
-    }
-
-    // Load and play new ambience
-    this.currentAmbienceSrc = src;
-    this.ambienceAudio.src = src;
-    this.ambienceAudio.volume = 0;
-
-    try {
-      await this.ambienceAudio.play();
-      await this.fadeIn(this.ambienceAudio, this.effective("ambienceVolume"));
-      console.log("[AudioManager] Ambience playing:", src);
-    } catch (e) {
-      console.warn("[AudioManager] Failed to play ambience:", src, e);
+    const configs: Array<[keyof Omit<AmbientMix, "paused">, BiquadFilterType, number]> = [
+      ["birds", "highpass", 1900], ["water", "bandpass", 760], ["wind", "lowpass", 520],
+      ["murmur", "bandpass", 340], ["crickets", "highpass", 3100],
+    ];
+    for (const [name, type, frequency] of configs) {
+      const source = ctx.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+      source.playbackRate.value = name === "water" ? .72 : name === "birds" ? 1.7 : 1;
+      const filter = ctx.createBiquadFilter();
+      filter.type = type;
+      filter.frequency.value = frequency;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      source.connect(filter).connect(gain).connect(bus);
+      source.start();
+      this.ambienceSources.push(source);
+      this.ambienceLayers.set(name, gain);
     }
   }
 
-  async setMusic(src: string | null): Promise<void> {
-    if (!this.audioUnlocked) {
-      console.warn("[AudioManager] Cannot set music: audio not unlocked");
-      return;
-    }
+  private scheduleAmbientAccent(): void {
+    globalThis.setTimeout(() => {
+      this.playAmbientAccent();
+      this.scheduleAmbientAccent();
+    }, 18_000 + Math.random() * 22_000);
+  }
 
-    if (!this.musicAudio) return;
+  private playAmbientAccent(): void {
+    const ctx = this.ctx;
+    const bus = this.ambienceBus;
+    if (!ctx || !bus || this.ambientMix.paused || this.effective("ambienceVolume") <= 0) return;
+    const t = ctx.currentTime;
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const bird = this.ambientMix.birds >= Math.max(this.ambientMix.murmur, this.ambientMix.wind);
+    const crowd = !bird && this.ambientMix.murmur > .3;
+    oscillator.type = bird ? "sine" : crowd ? "triangle" : "sawtooth";
+    oscillator.frequency.setValueAtTime(bird ? 1450 : crowd ? 240 : 72, t);
+    oscillator.frequency.exponentialRampToValueAtTime(bird ? 2350 : crowd ? 170 : 58, t + (bird ? .22 : .8));
+    gain.gain.setValueAtTime(.0001, t);
+    gain.gain.linearRampToValueAtTime(bird ? .045 : .025, t + .08);
+    gain.gain.exponentialRampToValueAtTime(.0001, t + (bird ? .65 : 1.4));
+    oscillator.connect(gain).connect(bus);
+    oscillator.start(t);
+    oscillator.stop(t + (bird ? .7 : 1.45));
+  }
 
-    if (src === null) {
-      // Stop music
-      if (!this.musicAudio.paused) {
-        await this.fadeOut(this.musicAudio);
-      }
-      this.currentMusicSrc = null;
-      return;
-    }
-
-    if (src === this.currentMusicSrc) {
-      // Already playing this music
-      if (this.musicAudio.paused) {
-        // Resume if paused
-        try {
-          this.musicAudio.volume = 0;
-          await this.musicAudio.play();
-          await this.fadeIn(this.musicAudio, this.effective("musicVolume"));
-        } catch (e) {
-          console.warn("[AudioManager] Failed to resume music:", e);
-        }
-      }
-      return;
-    }
-
-    // Stop ambience when music starts
-    await this.setAmbience(null);
-
-    // Fade out old music
-    if (!this.musicAudio.paused) {
-      await this.fadeOut(this.musicAudio);
-    }
-
-    // Load and play new music
-    this.currentMusicSrc = src;
-    this.musicAudio.src = src;
-    this.musicAudio.volume = 0;
-
-    try {
-      await this.musicAudio.play();
-      await this.fadeIn(this.musicAudio, this.effective("musicVolume"));
-      console.log("[AudioManager] Music playing:", src);
-    } catch (e) {
-      console.warn("[AudioManager] Failed to play music:", src, e);
+  setAmbientMix(mix: AmbientMix): void {
+    this.ambientMix = { ...mix };
+    if (!this.ctx) return;
+    const scale = mix.paused ? 0.12 : 1;
+    for (const name of ["birds", "water", "wind", "murmur", "crickets"] as const) {
+      const gain = this.ambienceLayers.get(name);
+      if (gain) this.rampParam(gain.gain, clamp01(mix[name]) * scale, 1);
     }
   }
 
-  async playSfx(src: string): Promise<void> {
-    if (!this.audioUnlocked) {
-      console.warn("[AudioManager] Cannot play SFX: audio not unlocked");
-      return;
-    }
-
-    // Get an available audio element from the pool
-    let audio: HTMLAudioElement | null = null;
-    
-    // Find an available (paused) element in the pool
-    for (const a of this.sfxPool) {
-      if (a.paused || a.ended) {
-        audio = a;
-        break;
+  testChannel(channel: "music" | "sfx" | "ambience"): void {
+    void this.unlock().then(() => {
+      if (channel === "music") void this.playSting("achievement");
+      else if (channel === "sfx") void this.playSfx("cup", { force: true });
+      else {
+        const previous = { ...this.ambientMix };
+        this.setAmbientMix({ birds: .65, water: .45, wind: .35, murmur: 0, crickets: 0, paused: false });
+        globalThis.setTimeout(() => this.setAmbientMix(previous), 1400);
       }
-    }
+    });
+  }
 
-    // If no available element and pool not full, create a new one
-    if (!audio && this.sfxPool.length < this.MAX_SFX_POOL_SIZE) {
-      audio = new Audio();
-      audio.preload = "auto";
-      this.sfxPool.push(audio);
-    }
-
-    // If still no available element, reuse the first one (force interrupt)
-    if (!audio && this.sfxPool.length > 0) {
-      audio = this.sfxPool[0];
-    }
-
-    if (!audio) {
-      // Create a temporary one if pool is somehow empty
-      audio = new Audio();
-      audio.preload = "auto";
-    }
-
-    audio.src = src;
-    audio.volume = this.effective("sfxVolume");
-    audio.currentTime = 0;
-
-    try {
-      await audio.play();
-      console.log("[AudioManager] SFX playing:", src);
-    } catch (e) {
-      console.warn("[AudioManager] Failed to play SFX:", src, e);
-    }
+  private applyImmediateMute(): void {
+    this.musicSlots?.forEach((slot) => { slot.volume = 0; });
+    if (this.sfxBus) this.sfxBus.gain.value = 0;
+    if (this.ambienceBus) this.ambienceBus.gain.value = 0;
   }
 }
 
 export const audioManager = AudioManager.getInstance();
-

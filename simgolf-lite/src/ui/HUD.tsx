@@ -1040,7 +1040,7 @@ export function HUD(props: {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 audio.unlock();
-                                audio.playSfx("/audio/ball-strike.mp3");
+                                audio.playSfx("driver");
                                 onEnterHoleEditMode(h.holeIndex);
                               }}
                               style={{

@@ -346,6 +346,8 @@ export interface PixiStageProps {
   showFixOverlay?: boolean;
   failingCorridorSegments?: Point[];
   onCameraUpdate?: (camera: CameraState) => void;
+  /** Debounced world-space center used by camera-aware systems such as audio. */
+  onCameraCenter?: (center: Point) => void;
   showObstacles?: boolean;
   golfersRef?: React.RefObject<GolferRenderData[]>;
   liveActive?: boolean;
@@ -566,6 +568,7 @@ export function PixiStage(props: PixiStageProps) {
   const keysRef = useRef<Set<string>>(new Set());
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const lastReportedCenterRef = useRef<Point | null>(null);
+  const lastAmbientReportAtRef = useRef(0);
   const lastCameraStateRef = useRef<CameraState | null | undefined>(undefined);
 
   const {
@@ -992,9 +995,10 @@ export function PixiStage(props: PixiStageProps) {
     if (!app || !el) return;
 
     const reportCenter = () => {
-      if (!cameraState || !props.onCameraUpdate) return;
       const cam = camRef.current;
       const center = { x: cam.tcx, y: cam.tcy };
+      props.onCameraCenter?.(center);
+      if (!cameraState || !props.onCameraUpdate) return;
       lastReportedCenterRef.current = center;
       props.onCameraUpdate({ ...cameraState, center });
     };
@@ -1199,6 +1203,11 @@ export function PixiStage(props: PixiStageProps) {
       if (moved) {
         applyCamera();
         overlayDirtyRef.current = true;
+        const now = performance.now();
+        if (now - lastAmbientReportAtRef.current >= 250) {
+          lastAmbientReportAtRef.current = now;
+          props.onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
+        }
       }
     };
 

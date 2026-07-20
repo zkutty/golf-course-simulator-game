@@ -1,13 +1,18 @@
 import { createContext, useContext } from "react";
+import type { AmbientMix, AudioVolumes, MusicContext, SfxName, StingName } from "./AudioManager";
 
 export interface AudioContextValue {
   unlock: () => Promise<void>;
-  setAmbience: (src: string | null) => Promise<void>;
-  setMusic: (src: string | null) => Promise<void>;
-  playSfx: (src: string) => Promise<void>;
-  setVolumes: (volumes: Partial<{ masterVolume: number; musicVolume: number; ambienceVolume: number; sfxVolume: number }>) => void;
-  syncVolumes: (volumes: { masterVolume: number; musicVolume: number; ambienceVolume: number; sfxVolume: number }) => void;
-  getVolumes: () => { masterVolume: number; musicVolume: number; ambienceVolume: number; sfxVolume: number };
+  setMusicContext: (context: MusicContext) => Promise<void>;
+  setMusicOverride: (context: MusicContext | null) => Promise<void>;
+  playSfx: (name: SfxName, options?: { volume?: number; force?: boolean }) => Promise<void>;
+  playSting: (name: StingName) => Promise<void>;
+  setAmbientMix: (mix: AmbientMix) => void;
+  setPaused: (paused: boolean) => void;
+  testChannel: (channel: "music" | "sfx" | "ambience") => void;
+  setVolumes: (volumes: Partial<AudioVolumes>) => void;
+  syncVolumes: (volumes: AudioVolumes) => void;
+  getVolumes: () => AudioVolumes;
 }
 
 export const AudioReactContext = createContext<AudioContextValue | null>(null);

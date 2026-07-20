@@ -18,6 +18,7 @@ import {
   snapshotLiveSimulation,
   type LiveSimulationSnapshotV1,
 } from "../game/live/persistence";
+import { deriveLiveAudioEvents, type LiveAudioEvent } from "../audio/liveEvents";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
@@ -101,8 +102,9 @@ export function useLiveSimulation(args: {
   setCourse: (updater: (c: Course) => Course) => void;
   onDayCommitted?: (result: DayResult, live: LiveSimulationSnapshotV1) => void;
   onCashTick?: () => void;
+  onAudioEvent?: (event: LiveAudioEvent) => void;
 }) {
-  const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick } = args;
+  const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick, onAudioEvent } = args;
 
   const [speed, setSpeedState] = useState<SpeedName>("paused");
   const [status, setStatus] = useState<LiveStatus>({
@@ -133,6 +135,7 @@ export function useLiveSimulation(args: {
   const selectedIdRef = useRef<number | null>(null);
   const onDayRef = useRef(onDayCommitted);
   const onCashRef = useRef(onCashTick);
+  const onAudioRef = useRef(onAudioEvent);
   const skipNextReconcileRef = useRef(false);
   const wasPlayableRef = useRef(isCoursePlayable(course));
 
@@ -142,6 +145,7 @@ export function useLiveSimulation(args: {
     speedRef.current = speed;
     onDayRef.current = onDayCommitted;
     onCashRef.current = onCashTick;
+    onAudioRef.current = onAudioEvent;
   });
 
   // Detect course *geometry* edits (terrain/holes/obstacles) and re-plan any
@@ -296,12 +300,18 @@ export function useLiveSimulation(args: {
       const gmPerSec = LIVE.speed[speedRef.current];
       if (gmPerSec > 0) {
         const dtMin = realDtSec * gmPerSec;
+        const previousRender = golfersRef.current;
         const ev = stepLive(live, courseRef.current, dtMin);
         if (ev.cashDelta > 0) {
           pendingCashRef.current += ev.cashDelta;
           onCashRef.current?.();
         }
-        golfersRef.current = liveRenderData(live);
+        const nextRender = liveRenderData(live);
+        golfersRef.current = nextRender;
+        const eventCap = speedRef.current === "3x" ? 2 : speedRef.current === "2x" ? 3 : 6;
+        for (const audioEvent of deriveLiveAudioEvents(previousRender, nextRender, courseRef.current).slice(0, eventCap)) {
+          onAudioRef.current?.(audioEvent);
+        }
       }
 
       // Publish status (clock, on-course, selected golfer) on a throttle even
@@ -374,6 +384,26 @@ export function useLiveSimulation(args: {
     return true;
   }, []);
 
+  const advanceTime = useCallback((ms: number) => {
+    if (!enabled || !Number.isFinite(ms) || ms <= 0) return;
+    const live = liveRef.current ?? createLiveState(courseRef.current, worldRef.current, 0);
+    liveRef.current = live;
+    const gmPerSec = LIVE.speed[speedRef.current];
+    if (gmPerSec <= 0) return;
+    const previousRender = golfersRef.current;
+    const ev = stepLive(live, courseRef.current, Math.min(2, ms / 1000) * gmPerSec);
+    if (ev.cashDelta > 0) pendingCashRef.current += ev.cashDelta;
+    const nextRender = liveRenderData(live);
+    golfersRef.current = nextRender;
+    const eventCap = speedRef.current === "3x" ? 2 : speedRef.current === "2x" ? 3 : 6;
+    for (const audioEvent of deriveLiveAudioEvents(previousRender, nextRender, courseRef.current).slice(0, eventCap)) {
+      onAudioRef.current?.(audioEvent);
+    }
+    flushCash();
+    publishStatus(live);
+    if (live.dayOver) finishDay(live);
+  }, [enabled, finishDay, flushCash, publishStatus]);
+
   const setSpeed = useCallback((next: SpeedName) => {
     // Update the loop's ref synchronously. App-shell pause must freeze the
     // mutable live store before React gets a chance to paint the overlay.
@@ -392,5 +422,6 @@ export function useLiveSimulation(args: {
     selectedId,
     getSnapshot,
     restoreSnapshot,
+    advanceTime,
   };
 }

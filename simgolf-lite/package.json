@@ -15,6 +15,7 @@
     "test:soak": "vite build --ssr src/game/testing/soakCli.ts --outDir soak-dist --emptyOutDir --minify false && node soak-dist/soakCli.js",
     "tune": "vite build --ssr src/game/tuning/tuneCli.ts --outDir tune-dist --emptyOutDir --minify false && node tune-dist/tuneCli.js",
     "gen:sprites": "node scripts/gen-placeholder-sprites.mjs && node scripts/gen-golfer-sprites.mjs",
+    "gen:audio": "node scripts/gen-audio.mjs",
     "build:atlas": "node scripts/build-atlas.mjs",
     "test:perf": "node scripts/perf-smoke.mjs"
   },

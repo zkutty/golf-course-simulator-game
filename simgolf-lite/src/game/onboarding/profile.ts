@@ -35,6 +35,8 @@ export interface AppProfile {
     musicVolume: number;
     sfxVolume: number;
     ambienceVolume: number;
+    masterMuted: boolean;
+    muteWhenHidden: boolean;
   };
   accessibility: {
     colorVision: ColorVisionMode;
@@ -79,6 +81,8 @@ export const DEFAULT_APP_PROFILE: AppProfile = {
     musicVolume: 0.25,
     sfxVolume: 0.6,
     ambienceVolume: 0.4,
+    masterMuted: false,
+    muteWhenHidden: true,
   },
   accessibility: {
     colorVision: "standard",
@@ -152,6 +156,8 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
       musicVolume: numberIn(audio.musicVolume ?? legacyAudio.musicVolume, 0, 1, defaults.audio.musicVolume),
       sfxVolume: numberIn(audio.sfxVolume ?? legacyAudio.sfxVolume, 0, 1, defaults.audio.sfxVolume),
       ambienceVolume: numberIn(audio.ambienceVolume ?? legacyAudio.ambienceVolume, 0, 1, defaults.audio.ambienceVolume),
+      masterMuted: bool(audio.masterMuted, defaults.audio.masterMuted),
+      muteWhenHidden: bool(audio.muteWhenHidden, defaults.audio.muteWhenHidden),
     },
     accessibility: {
       colorVision: oneOf(accessibility.colorVision, ["standard", "deuteranopia", "protanopia", "tritanopia"], defaults.accessibility.colorVision),

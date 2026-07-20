@@ -17,7 +17,6 @@ import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius }
 import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
-import { createSoundPlayer } from "./utils/sound";
 import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
 import { createLoan } from "./game/sim/loans";
 import { isCoursePlayable } from "./game/sim/isCoursePlayable";
@@ -78,12 +77,11 @@ import { SettingsModal } from "./ui/SettingsModal";
 import type { SpeedName } from "./game/live/liveConfig";
 import { eventMatchesBinding } from "./accessibility/keybindings";
 import { T } from "./i18n/T";
+import { ambientMixFor, distanceVolume, musicContextFor } from "./audio/environment";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
 type ViewMode = "global" | "hole";
-
-const STRIKE_SFX = "/audio/ball-strike.mp3";
 
 export default function App() {
   const { t } = useI18n();
@@ -170,11 +168,13 @@ export default function App() {
   const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">(() => appProfile.graphics.gridOverlays ? "ARCHITECT" : "COZY");
   const [holeEditMode, setHoleEditMode] = useState<ViewMode>("global"); // "global" or "hole"
   const [holeEditCamera, setHoleEditCamera] = useState<CameraState | null>(null);
+  const [audioCameraCenter, setAudioCameraCenter] = useState<Point>(() => ({ x: course.width / 2, y: course.height / 2 }));
+  const audioCameraCenterRef = useRef(audioCameraCenter);
   const holeEditCameraManualRef = useRef(false); // Track if camera was manually set
   const [showFixOverlay, setShowFixOverlay] = useState(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(() => appProfile.graphics.animations);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
-  const soundEnabled = appProfile.audio.masterVolume > 0 && appProfile.audio.sfxVolume > 0;
+  const soundEnabled = !appProfile.audio.masterMuted && appProfile.audio.masterVolume > 0 && appProfile.audio.sfxVolume > 0;
   const effectiveAnimations = animationsEnabled && !appProfile.accessibility.reducedMotion;
   const [showShotPlan, setShowShotPlan] = useState(true);
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
@@ -202,9 +202,6 @@ export default function App() {
   const seenAdvisorMessagesRef = useRef(new Set<string>());
   const advisorCooldownUntilRef = useRef(0);
   const [a11yMessage, setA11yMessage] = useState("");
-
-  // Lazy singleton via useState initializer (render-pure, unlike a ref write).
-  const [sound] = useState(() => createSoundPlayer());
 
   // Audio system
   const audio = useAudio();
@@ -244,7 +241,25 @@ export default function App() {
       });
     },
     onCashTick: () => {
-      if (soundEnabled) void sound?.playCashTick(soundEnabled);
+      if (soundEnabled) void audio.playSfx("cash");
+    },
+    onAudioEvent: (event) => {
+      const point = event.kind === "shot" ? event.from : event.at;
+      const volume = distanceVolume(point, audioCameraCenterRef.current);
+      if (volume <= .03) return;
+      if (event.kind === "shot") {
+        const distance = Math.hypot(event.to.x - event.from.x, event.to.y - event.from.y);
+        const name = event.shot === "putt" ? "putt" : distance > 16 ? "driver" : distance > 7 ? "iron" : "chip";
+        void audio.playSfx(name, { volume });
+      } else if (event.kind === "landing") {
+        const hitTree = course.obstacles.some((obstacle) => obstacle.type === "tree" && Math.hypot(obstacle.x - event.at.x, obstacle.y - event.at.y) < .75);
+        const name = hitTree ? "tree" : event.surface === "water" ? "land-water" : event.surface === "sand" ? "land-sand" : event.surface === "green" ? "land-green" : event.surface === "fairway" || event.surface === "tee" ? "land-fairway" : "land-rough";
+        void audio.playSfx(name, { volume });
+      } else {
+        void audio.playSfx("cup", { volume, force: true });
+        if (event.scoreDelta <= 0) void audio.playSfx("crowd-cheer", { volume: volume * .7 });
+        else if (event.scoreDelta >= 2) void audio.playSfx("crowd-groan", { volume: volume * .55 });
+      }
     },
   });
   const getLiveSnapshot = live.getSnapshot;
@@ -571,6 +586,10 @@ export default function App() {
   // best (earliest) week via the store.
   const objectivesOutcomeForRecord = world.objectives?.outcome;
   useEffect(() => {
+    if (showVictory) void audio.playSting("celebration");
+  }, [audio, showVictory]);
+
+  useEffect(() => {
     if (objectivesOutcomeForRecord !== "WON") return;
     if (scenarioRecordedRef.current) return;
     if (world.mode !== "career" || !world.scenarioId) return;
@@ -632,27 +651,32 @@ export default function App() {
     document.title = screen === "game" ? `${course.name} — ${t("app.name")}` : t("app.name");
   }, [screen, course.name, t]);
 
-  // Handle audio based on screen and view mode
   useEffect(() => {
-    if (!soundEnabled) {
-      audio.setMusic(null);
-      audio.setAmbience(null);
-      return;
-    }
+    audioCameraCenterRef.current = audioCameraCenter;
+  }, [audioCameraCenter]);
 
-    if (screen === "menu") {
-      audio.setMusic("/audio/menu-theme.mp3");
-      audio.setAmbience(null);
-    } else if (screen === "game") {
-      if (viewMode === "COZY") {
-        audio.setMusic(null);
-        audio.setAmbience("/audio/course-ambiance.mp3");
-      } else {
-        audio.setMusic("/audio/design-loop-1.mp3");
-        audio.setAmbience(null);
-      }
-    }
-  }, [screen, viewMode, soundEnabled, audio]);
+  // One app-state mapping owns music selection. Track files remain preload=none
+  // until the first user gesture unlocks the manager.
+  useEffect(() => {
+    void audio.setMusicContext(musicContextFor({
+      screen,
+      viewMode,
+      cash: world.cash,
+      liveRunning: live.speed !== "paused",
+      won: world.objectives?.outcome === "WON",
+    }));
+  }, [screen, viewMode, world.cash, world.objectives?.outcome, live.speed, audio]);
+
+  useEffect(() => {
+    audio.setPaused(flow.paused || live.speed === "paused");
+    audio.setAmbientMix(ambientMixFor({
+      course,
+      center: audioCameraCenter,
+      dayMinute: live.status.dayMinute,
+      visibleGolfers: live.status.onCourse,
+      paused: flow.paused || live.speed === "paused",
+    }));
+  }, [audio, audioCameraCenter, course, flow.paused, live.speed, live.status.dayMinute, live.status.onCourse]);
 
   // THE new-run path (ZKU-162): every fresh run goes through createNewGame
   // (or createScenarioGame for career runs) and then this shared reset.
@@ -786,6 +810,29 @@ export default function App() {
   }
 
   useEffect(() => {
+    const renderText = () => JSON.stringify({
+      coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
+      screen,
+      screenBase: flow.base,
+      modal: flow.modal,
+      paused: flow.paused,
+      tutorialStep: tutorialProgress?.stepIndex ?? null,
+      course: { name: course.name, width: course.width, height: course.height, holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length },
+      camera: { center: audioCameraCenter, viewMode, renderer },
+      simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday },
+      economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
+      editor: { mode: editorMode, selectedTerrain: selected, activeHole: activeHoleIndex + 1 },
+      golfers: live.golfersRef.current.slice(0, 24).map((golfer) => ({ id: golfer.id, x: Number(golfer.x.toFixed(2)), y: Number(golfer.y.toFixed(2)), segment: golfer.segKind, shot: golfer.shot, mood: Number(golfer.mood.toFixed(2)) })),
+    });
+    window.render_game_to_text = renderText;
+    window.advanceTime = live.advanceTime;
+    return () => {
+      if (window.render_game_to_text === renderText) delete window.render_game_to_text;
+      if (window.advanceTime === live.advanceTime) delete window.advanceTime;
+    };
+  }, [activeHoleIndex, audioCameraCenter, course, editorMode, flow.base, flow.modal, flow.paused, live, renderer, screen, selected, tutorialProgress?.stepIndex, viewMode, world.cash, world.reputation, world.isBankrupt]);
+
+  useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
     window.__coursecraftTest = {
       state: () => {
@@ -873,7 +920,7 @@ export default function App() {
 
   function startNewGame(setup: GameSetup) {
     void audio.unlock();
-    void audio.playSfx(STRIKE_SFX);
+    void audio.playSfx("confirm");
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.growCourse") });
     window.setTimeout(() => {
       restartRun(setup);
@@ -976,7 +1023,7 @@ export default function App() {
       },
     }));
     setPaintError(null);
-    if (!opts?.silent) void sound?.playBrush(soundEnabled);
+    if (!opts?.silent) void audio.playSfx("brush");
     return true;
   }
 
@@ -1151,7 +1198,7 @@ export default function App() {
       dispatch({ type: "MOVE_GREEN", holeIndex: activeHoleIndex, position: newPos, oldPosition: oldPos });
     }
     
-    void sound?.playConfirm(soundEnabled);
+    void audio.playSfx("confirm");
   }
 
   function confirmWizardWithValues(tee: Point, green: Point) {
@@ -1184,7 +1231,7 @@ export default function App() {
     // Dispatch PLACE_TEE and PLACE_GREEN actions
     dispatch({ type: "PLACE_TEE", holeIndex: activeHoleIndex, position: tee });
     dispatch({ type: "PLACE_GREEN", holeIndex: activeHoleIndex, position: green });
-    void sound?.playConfirm(soundEnabled);
+    void audio.playSfx("confirm");
     setFlyoverNonce((n) => n + 1); // cinematic hole flyover (ZKU-157)
 
     setActiveHoleIndex((i) => Math.min(8, i + 1));
@@ -1247,7 +1294,7 @@ export default function App() {
       }
       setPaintError(null);
       dispatch({ type: "SCULPT_TILES", deltas });
-      if (soundEnabled) void sound?.playBrush(soundEnabled);
+      if (soundEnabled) void audio.playSfx(editorMode === "SCULPT" ? "sculpt" : "brush");
       return;
     }
 
@@ -1289,7 +1336,7 @@ export default function App() {
       }
       dispatch({ type: "PLACE_BUILDING", buildingType, x, y });
       setPaintError(null);
-      void sound?.playConfirm(soundEnabled);
+      void audio.playSfx("confirm");
       return;
     }
     // HOLE_WIZARD
@@ -1450,7 +1497,7 @@ export default function App() {
   function simulate() {
     if (world.isBankrupt) return;
     void audio.unlock();
-    if (soundEnabled) void audio.playSfx(STRIKE_SFX);
+    if (soundEnabled) void audio.playSfx("driver");
     const { course: c2, world: w2, result } = tickWeek(course, world, world.runSeed);
     const cap = {
       spent: capital.spent,
@@ -1464,7 +1511,7 @@ export default function App() {
     setLast(withCap);
     setHistory((h) => [...h.slice(-19), withCap]);
     setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
-    if (result.profit > 0) void sound?.playCashTick(soundEnabled);
+    if (result.profit > 0) void audio.playSfx("cash");
   }
 
   const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
@@ -1568,7 +1615,7 @@ export default function App() {
         onOptions={() => flowDispatch({ type: "OPEN_MODAL", modal: "options" })}
         onButtonClick={() => {
           void audio.unlock();
-          if (soundEnabled) void audio.playSfx(STRIKE_SFX);
+          if (soundEnabled) void audio.playSfx("button");
         }}
       />
       {saveLoadModal}
@@ -1752,6 +1799,7 @@ export default function App() {
                   holeEditCameraManualRef.current = true;
                   setHoleEditCamera(camera);
                 }}
+                onCameraCenter={setAudioCameraCenter}
               />
             )}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}

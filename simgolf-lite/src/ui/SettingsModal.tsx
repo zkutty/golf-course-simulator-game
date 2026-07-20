@@ -9,6 +9,7 @@ import { KeybindingsPanel } from "./accessibility/KeybindingsPanel";
 import { useFocusTrap } from "./accessibility/useFocusTrap";
 import { useI18n } from "../i18n/useI18n";
 import { T } from "../i18n/T";
+import { useAudio } from "../audio/audioContext";
 
 export interface SettingsModalProps {
   open: boolean;
@@ -119,13 +120,22 @@ function GraphicsTab({ profile, change }: { profile: AppProfile; change: Change 
 
 function AudioTab({ profile, change }: { profile: AppProfile; change: Change }) {
   const { t } = useI18n();
+  const audio = useAudio();
+  const [devOverride, setDevOverride] = useState("auto");
   const p = profile.audio;
   return <div>
+    <Row label={t("settings.masterMute")} hint={t("settings.masterMuteHint")}><Toggle label={t("settings.masterMute")} checked={p.masterMuted} onChange={(masterMuted) => change("audio", { masterMuted })} /></Row>
     <Row label={t("settings.masterVolume")}><Range label={t("settings.masterVolume")} value={p.masterVolume} onChange={(masterVolume) => change("audio", { masterVolume })} /></Row>
-    <Row label={t("settings.musicVolume")}><Range label={t("settings.musicVolume")} value={p.musicVolume} onChange={(musicVolume) => change("audio", { musicVolume })} /></Row>
-    <Row label={t("settings.soundEffects")}><Range label={t("settings.soundEffects")} value={p.sfxVolume} onChange={(sfxVolume) => change("audio", { sfxVolume })} /></Row>
-    <Row label={t("settings.ambienceVolume")}><Range label={t("settings.ambienceVolume")} value={p.ambienceVolume} onChange={(ambienceVolume) => change("audio", { ambienceVolume })} /></Row>
+    <AudioRange label={t("settings.musicVolume")} value={p.musicVolume} onChange={(musicVolume) => change("audio", { musicVolume })} onTest={() => audio.testChannel("music")} testLabel={t("settings.testMusic")} />
+    <AudioRange label={t("settings.soundEffects")} value={p.sfxVolume} onChange={(sfxVolume) => change("audio", { sfxVolume })} onTest={() => audio.testChannel("sfx")} testLabel={t("settings.testSfx")} />
+    <AudioRange label={t("settings.ambienceVolume")} value={p.ambienceVolume} onChange={(ambienceVolume) => change("audio", { ambienceVolume })} onTest={() => audio.testChannel("ambience")} testLabel={t("settings.testAmbience")} />
+    <Row label={t("settings.muteWhenHidden")} hint={t("settings.muteWhenHiddenHint")}><Toggle label={t("settings.muteWhenHidden")} checked={p.muteWhenHidden} onChange={(muteWhenHidden) => change("audio", { muteWhenHidden })} /></Row>
+    {import.meta.env.DEV && <Row label={t("settings.musicOverride")} hint={t("settings.musicOverrideHint")}><select aria-label={t("settings.musicOverride")} value={devOverride} onChange={(event) => { const value = event.target.value; setDevOverride(value); void audio.setMusicOverride(value === "auto" ? null : value as "silent" | "title" | "build" | "live" | "tension"); }} style={selectStyle}><option value="auto">{t("settings.musicContext.auto")}</option><option value="silent">{t("settings.musicContext.silent")}</option><option value="title">{t("settings.musicContext.title")}</option><option value="build">{t("settings.musicContext.build")}</option><option value="live">{t("settings.musicContext.live")}</option><option value="tension">{t("settings.musicContext.tension")}</option></select></Row>}
   </div>;
+}
+
+function AudioRange(props: { label: string; value: number; onChange: (value: number) => void; onTest: () => void; testLabel: string }) {
+  return <Row label={props.label}><span style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center" }}><Range label={props.label} value={props.value} onChange={props.onChange} /><button type="button" aria-label={props.testLabel} onClick={props.onTest} style={{ border: "1px solid #87907f", borderRadius: 8, background: "#fffdf6", padding: "7px 9px", cursor: "pointer" }}>▶</button></span></Row>;
 }
 
 function AccessibilityTab({ profile, change, onOpenKeybindings }: { profile: AppProfile; change: Change; onOpenKeybindings?: () => void }) {

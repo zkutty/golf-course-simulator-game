@@ -188,6 +188,11 @@ export const en = {
   "settings.animations": "Animations master", "settings.ambientFx": "Ambient world FX", "settings.waterAnimation": "Water animation", "settings.treeSway": "Tree sway",
   "settings.resolutionScale": "Resolution scale", "settings.gridOverlays": "Grid overlays by default", "settings.renderer": "Renderer",
   "settings.masterVolume": "Master volume", "settings.musicVolume": "Music volume", "settings.soundEffects": "Sound effects", "settings.ambienceVolume": "Ambience volume",
+  "settings.masterMute": "Mute all audio", "settings.masterMuteHint": "Silences music, effects, and ambience instantly.",
+  "settings.muteWhenHidden": "Mute in background", "settings.muteWhenHiddenHint": "Gently fades audio when this tab is hidden.",
+  "settings.testMusic": "Test music", "settings.testSfx": "Test sound effects", "settings.testAmbience": "Test ambience",
+  "settings.musicOverride": "Music context override", "settings.musicOverrideHint": "Development-only playlist control for audio QA.",
+  "settings.musicContext.auto": "Auto", "settings.musicContext.silent": "Silent", "settings.musicContext.title": "Title", "settings.musicContext.build": "Build", "settings.musicContext.live": "Live", "settings.musicContext.tension": "Tension",
 } as const;
 
 export type MessageKey = keyof typeof en;

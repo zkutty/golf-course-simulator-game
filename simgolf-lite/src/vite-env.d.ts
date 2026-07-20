@@ -4,6 +4,8 @@
 declare const __APP_VERSION__: string;
 
 interface Window {
+  render_game_to_text?: () => string;
+  advanceTime?: (ms: number) => void;
   __coursecraftTest?: {
     state(): {
       screen: string;
