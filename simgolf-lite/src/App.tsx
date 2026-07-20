@@ -864,7 +864,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, screen, tutorialProgress]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, screen, t, tutorialProgress]);
 
   function newGameFromMenu() {
     void audio.unlock();
