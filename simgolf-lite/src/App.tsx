@@ -18,8 +18,7 @@ import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
 import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
-import { createLoan } from "./game/sim/loans";
-import { isCoursePlayable } from "./game/sim/isCoursePlayable";
+import { canTakeBridgeLoan, canTakeExpansionLoan } from "./game/sim/loanEligibility";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { getEffectiveBalance, terrainCostMult } from "./game/balance/difficulty";
 import { GameBackground } from "./ui/gameui";
@@ -103,6 +102,7 @@ import {
 } from "./game/progression/progression";
 import { createTournamentEvent, scheduleTournament, tournamentCalendar } from "./game/tournaments/tournaments";
 import type { TournamentTier } from "./game/tournaments/types";
+import { debugLog } from "./utils/debugLog";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -145,22 +145,34 @@ export default function App() {
     if (action.type !== "NEW_GAME" && action.type !== "LOAD_GAME" && !action.type.startsWith("SET_")) markDirty();
   }, [markDirty]);
 
-  // Helper functions for non-core mutations (operations not in the action list)
-  // These are used for mutations that don't affect terrain/markers/obstacles/core economy
+  // Versioned integration setters for live-simulation and UI configuration
+  // commits that are intentionally outside the serializable core action list.
   const setCourse = useCallback((updater: (c: typeof course) => typeof course) => {
     markDirty();
-    setGameState((prevState) => ({
-      ...prevState,
-      course: updater(prevState.course),
-    }));
+    setGameState((prevState) => {
+      const nextCourse = updater(prevState.course);
+      if (nextCourse === prevState.course) return prevState;
+      return {
+        ...prevState,
+        course: nextCourse,
+        terrainVersion: prevState.terrainVersion + 1,
+        markersVersion: prevState.markersVersion + 1,
+        economyVersion: prevState.economyVersion + 1,
+      };
+    });
   }, [markDirty]);
   
   const setWorld = useCallback((updater: (w: typeof world) => typeof world) => {
     markDirty();
-    setGameState((prevState) => ({
-      ...prevState,
-      world: updater(prevState.world),
-    }));
+    setGameState((prevState) => {
+      const nextWorld = updater(prevState.world);
+      if (nextWorld === prevState.world) return prevState;
+      return {
+        ...prevState,
+        world: nextWorld,
+        economyVersion: prevState.economyVersion + 1,
+      };
+    });
   }, [markDirty]);
   const [last, setLast] = useState<WeekResult | undefined>(undefined);
   const [history, setHistory] = useState<WeekResult[]>([]);
@@ -575,18 +587,9 @@ export default function App() {
     return fairwayIssue?.metadata?.failingSegments ?? [];
   }, [activeHoleEvaluation]);
 
-  const validHolesCount = useMemo(() => {
-    return holeSummary.holes.filter((h) => h.isComplete && h.isValid).length;
-  }, [holeSummary]);
-
   const eligibleBridge = useMemo(() => {
-    if (world.constraints?.noLoans) return false;
-    const repOk = world.reputation >= BALANCE.loans.bridge.repMin;
-    const holesOk = isCoursePlayable(course) || validHolesCount >= BALANCE.loans.bridge.minValidHolesAlt;
-    const cooldownOk = world.week - (world.lastBridgeLoanWeek ?? -999) >= BALANCE.loans.bridgeCooldownWeeks;
-    const hasActiveBridge = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
-    return repOk && holesOk && cooldownOk && !hasActiveBridge && !world.isBankrupt;
-  }, [world.constraints, world.reputation, world.week, world.lastBridgeLoanWeek, world.loans, world.isBankrupt, course, validHolesCount, BALANCE]);
+    return canTakeBridgeLoan(course, world, BALANCE);
+  }, [course, world, BALANCE]);
 
   // Hole edit mode functions
   function enterHoleEditMode(holeIndex: number) {
@@ -880,10 +883,10 @@ export default function App() {
   // `goals` overrides the mode's default goal set (defeat-retry keeps a
   // run's exact goals).
   function restartRun(setup: GameSetup, goals?: GoalDefinition[] | null) {
-    console.log('[Performance] Starting new game...');
+    debugLog('[Performance] Starting new game...');
     const start = performance.now();
     const { course: newCourse, world: newWorld } = createNewGame(setup, goals);
-    console.log('[Performance] Wild land generated in', performance.now() - start, 'ms');
+    debugLog('[Performance] Wild land generated in', performance.now() - start, 'ms');
     live.restoreSnapshot(undefined);
     startRun(newCourse, newWorld);
   }
@@ -1123,43 +1126,13 @@ export default function App() {
 
   function takeBridgeLoan() {
     if (!eligibleBridge) return;
-    setWorld((w) => {
-      if (w.isBankrupt) return w;
-      const loan = createLoan({
-        kind: "BRIDGE",
-        principal: BALANCE.loans.bridge.maxPrincipal,
-        apr: BALANCE.loans.bridge.apr,
-        termWeeks: BALANCE.loans.bridge.termWeeks,
-        idSeed: w.week,
-      });
-      return {
-        ...w,
-        cash: w.cash + loan.principal,
-        loans: [...(w.loans ?? []), loan],
-        lastBridgeLoanWeek: w.week,
-      };
-    });
+    dispatch({ type: "TAKE_LOAN", kind: "BRIDGE" });
     setShowBridgePrompt(false);
   }
 
   function takeExpansionLoan() {
-    if (world.constraints?.noLoans) return;
-    const repOk = world.reputation >= BALANCE.loans.expansion.repMin;
-    const holesOk = validHolesCount >= BALANCE.loans.expansion.minValidHoles;
-    const cashflowOk = (world.lastWeekProfit ?? 0) > 0;
-    const hasActiveExpansion = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "EXPANSION");
-    if (world.isBankrupt || !repOk || !holesOk || !cashflowOk || hasActiveExpansion) return;
-    setWorld((w) => {
-      if (w.isBankrupt) return w;
-      const loan = createLoan({
-        kind: "EXPANSION",
-        principal: BALANCE.loans.expansion.maxPrincipal,
-        apr: BALANCE.loans.expansion.apr,
-        termWeeks: BALANCE.loans.expansion.termWeeks,
-        idSeed: w.week,
-      });
-      return { ...w, cash: w.cash + loan.principal, loans: [...(w.loans ?? []), loan] };
-    });
+    if (!canTakeExpansionLoan(course, world, BALANCE)) return;
+    dispatch({ type: "TAKE_LOAN", kind: "EXPANSION" });
   }
 
   function applyTileChange(idx: number, next: Terrain, opts?: { silent?: boolean }): boolean {

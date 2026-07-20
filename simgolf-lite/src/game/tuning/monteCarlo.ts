@@ -4,6 +4,7 @@ import { computeTerrainChangeCost } from "../models/terrainEconomics";
 import { scoreCourseHoles } from "../sim/holes";
 import { isCoursePlayable } from "../sim/isCoursePlayable";
 import { createLoan } from "../sim/loans";
+import { canTakeBridgeLoan, canTakeExpansionLoan } from "../sim/loanEligibility";
 import { tickWeek } from "../sim/tickWeek";
 import { mulberry32, randInt } from "../../utils/rng";
 import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty";
@@ -97,15 +98,8 @@ function paintGreenPad(course: Course, world: World, holeIndex: number) {
 }
 
 function maybeTakeBridgeLoan(course: Course, world: World) {
-  const holes = scoreCourseHoles(course).holes.filter((h) => h.isComplete && h.isValid).length;
-  const repOk = world.reputation >= 15;
-  const holesOk = isCoursePlayable(course) || holes >= 6;
-  const cooldownOk =
-    world.week - (world.lastBridgeLoanWeek ?? -999) >=
-    getEffectiveBalance(world.difficulty).loans.bridgeCooldownWeeks;
-  const hasActiveBridge = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
-  if (!repOk || !holesOk || !cooldownOk || hasActiveBridge) return world;
   const B = getEffectiveBalance(world.difficulty);
+  if (!canTakeBridgeLoan(course, world, B)) return world;
   const loan = createLoan({
     kind: "BRIDGE",
     principal: B.loans.bridge.maxPrincipal,
@@ -122,13 +116,8 @@ function maybeTakeBridgeLoan(course: Course, world: World) {
 }
 
 function maybeTakeExpansionLoan(course: Course, world: World) {
-  const holes = scoreCourseHoles(course).holes.filter((h) => h.isComplete && h.isValid).length;
-  const repOk = world.reputation >= 50;
-  const holesOk = holes >= 9;
-  const cashflowOk = (world.lastWeekProfit ?? 0) > 0;
-  const hasActiveExpansion = (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "EXPANSION");
-  if (!repOk || !holesOk || !cashflowOk || hasActiveExpansion) return world;
   const B = getEffectiveBalance(world.difficulty);
+  if (!canTakeExpansionLoan(course, world, B)) return world;
   const loan = createLoan({
     kind: "EXPANSION",
     principal: B.loans.expansion.maxPrincipal,
@@ -286,7 +275,6 @@ export function runMonteCarlo(args: {
     },
   };
 }
-
 
 
 

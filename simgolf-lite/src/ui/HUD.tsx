@@ -10,7 +10,7 @@ import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
 import { computeCourseRatingAndSlope } from "../game/sim/courseRating";
-import { isCoursePlayable } from "../game/sim/isCoursePlayable";
+import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
 import type { LegacyState } from "../utils/legacy";
 import { getEffectiveBalance, getDifficultyProfile } from "../game/balance/difficulty";
 import paperTex from "../assets/textures/paper.svg";
@@ -238,29 +238,9 @@ export function HUD(props: {
   const validHoles = useMemo(() => {
     return holeSummary.holes.filter((h) => h.isComplete && h.isValid).length;
   }, [holeSummary]);
-  const playable = useMemo(() => isCoursePlayable(course), [course]);
-
-  const hasActiveBridge = useMemo(() => {
-    return (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "BRIDGE");
-  }, [world.loans]);
-  const hasActiveExpansion = useMemo(() => {
-    return (world.loans ?? []).some((l) => l.status === "ACTIVE" && l.kind === "EXPANSION");
-  }, [world.loans]);
-
   const loansBarred = world.constraints?.noLoans === true;
-  const bridgeEligible =
-    !loansBarred &&
-    world.reputation >= BALANCE.loans.bridge.repMin &&
-    (playable || validHoles >= 6) &&
-    !hasActiveBridge &&
-    world.week - (world.lastBridgeLoanWeek ?? -999) >= BALANCE.loans.bridgeCooldownWeeks;
-
-  const expansionEligible =
-    !loansBarred &&
-    world.reputation >= BALANCE.loans.expansion.repMin &&
-    validHoles >= BALANCE.loans.expansion.minValidHoles &&
-    (world.lastWeekProfit ?? 0) > 0 &&
-    !hasActiveExpansion;
+  const bridgeEligible = canTakeBridgeLoan(course, world, BALANCE);
+  const expansionEligible = canTakeExpansionLoan(course, world, BALANCE);
 
   return (
     <div

@@ -130,6 +130,7 @@ export const BALANCE = {
     // Note: yardsPerTile here is the default yard model for the solver; the course also has yardsPerTile.
     scratch: {
       yardsPerTile: 10,
+      ratingMultipliers: { hazard: 1.0, rough: 0.8, deepRough: 1.0, obstacle: 1.0 },
       clubs: [
         { name: "Driver", carryYards: 280, dispersionTilesBase: 3.5 },
         { name: "3W", carryYards: 250, dispersionTilesBase: 3.0 },
@@ -140,6 +141,7 @@ export const BALANCE = {
     },
     bogey: {
       yardsPerTile: 10,
+      ratingMultipliers: { hazard: 1.5, rough: 1.4, deepRough: 1.8, obstacle: 1.3 },
       clubs: [
         { name: "Driver", carryYards: 220, dispersionTilesBase: 4.2 },
         { name: "3W", carryYards: 200, dispersionTilesBase: 3.7 },
@@ -236,5 +238,4 @@ export const BALANCE = {
     } satisfies Record<Terrain, number>,
   },
 } as const;
-
 

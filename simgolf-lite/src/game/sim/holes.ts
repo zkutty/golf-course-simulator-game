@@ -86,7 +86,7 @@ export function sampleLine(a: Point, b: Point, samples = 13): Point[] {
   });
 }
 
-export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleScore {
+function scoreHoleUncached(course: Course, hole: Hole, holeIndex: number): HoleScore {
   const issues: string[] = [];
   if (!hole.tee || !hole.green) {
     const par = hole.parMode === "MANUAL" ? (hole.parManual ?? 4) : 4;
@@ -335,10 +335,107 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
   };
 }
 
-// Pure function of the (immutable) course object, and by far the hottest
-// path in the game — App, HUD, demand, rating, and the live sim all call it.
-// Memoized by course identity: every state change builds a NEW course object
-// (reducer/tickWeek/commitDay all spread), so identity is a correct key.
+interface HoleScoreCacheEntry {
+  width: number;
+  height: number;
+  yardsPerTile: number;
+  holeIndex: number;
+  obstacles: Course["obstacles"];
+  tileDependencies: Map<number, Terrain>;
+  elevationDependencies: Map<number, number>;
+  result: HoleScore;
+}
+
+let holeScoreCache = new WeakMap<Hole, HoleScoreCacheEntry>();
+let holeScoreCacheHits = 0;
+let holeScoreCacheMisses = 0;
+
+function numericIndex(property: string | symbol): number | null {
+  if (typeof property !== "string" || !/^\d+$/.test(property)) return null;
+  return Number(property);
+}
+
+function trackArrayReads<T>(values: T[], dependencies: Map<number, T>): T[] {
+  return new Proxy(values, {
+    get(target, property, receiver) {
+      const index = numericIndex(property);
+      if (index !== null) dependencies.set(index, target[index]);
+      return Reflect.get(target, property, receiver);
+    },
+  });
+}
+
+function dependenciesMatch<T>(dependencies: Map<number, T>, values: T[]): boolean {
+  for (const [index, previous] of dependencies) {
+    if (values[index] !== previous) return false;
+  }
+  return true;
+}
+
+/**
+ * Memoize each hole by the exact terrain/elevation cells its previous solve
+ * read. A paint stroke only invalidates a hole when it changes an input that
+ * participated in that hole's Dijkstra search, while immutable marker and
+ * obstacle identities invalidate naturally.
+ */
+export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleScore {
+  const cached = holeScoreCache.get(hole);
+  const elevations = course.elevations ?? [];
+  if (
+    cached &&
+    cached.width === course.width &&
+    cached.height === course.height &&
+    cached.yardsPerTile === (course.yardsPerTile ?? 10) &&
+    cached.holeIndex === holeIndex &&
+    cached.obstacles === course.obstacles &&
+    dependenciesMatch(cached.tileDependencies, course.tiles) &&
+    dependenciesMatch(cached.elevationDependencies, elevations)
+  ) {
+    holeScoreCacheHits++;
+    return cached.result;
+  }
+
+  holeScoreCacheMisses++;
+  const tileDependencies = new Map<number, Terrain>();
+  const elevationDependencies = new Map<number, number>();
+  const trackedCourse: Course = {
+    ...course,
+    tiles: trackArrayReads(course.tiles, tileDependencies),
+    ...(course.elevations
+      ? { elevations: trackArrayReads(course.elevations, elevationDependencies) }
+      : {}),
+  };
+  const result = scoreHoleUncached(trackedCourse, hole, holeIndex);
+  holeScoreCache.set(hole, {
+    width: course.width,
+    height: course.height,
+    yardsPerTile: course.yardsPerTile ?? 10,
+    holeIndex,
+    obstacles: course.obstacles,
+    tileDependencies,
+    elevationDependencies,
+    result,
+  });
+  return result;
+}
+
+export function __getHoleScoreCacheStatsForTests(): { hits: number; misses: number } {
+  return { hits: holeScoreCacheHits, misses: holeScoreCacheMisses };
+}
+
+export function __getHoleScoreDependenciesForTests(hole: Hole): number[] {
+  return [...(holeScoreCache.get(hole)?.tileDependencies.keys() ?? [])];
+}
+
+export function __resetHoleScoreCacheForTests(): void {
+  holeScoreCache = new WeakMap<Hole, HoleScoreCacheEntry>();
+  holeScoreCacheHits = 0;
+  holeScoreCacheMisses = 0;
+}
+
+// Whole-summary identity caching handles repeated reads in one render. The
+// per-hole dependency cache above carries expensive solves across immutable
+// course objects produced by drag painting/sculpting.
 const summaryCache = new WeakMap<Course, CourseHoleSummary>();
 
 export function scoreCourseHoles(course: Course): CourseHoleSummary {
@@ -431,5 +528,3 @@ function scoreObstaclesAgainstCorridor(obstacles: Obstacle[], corridorPts: Point
   const total = treeOnLine + bushOnLine + treeNear + bushNear + treeScenic + bushScenic + treeOff + bushOff;
   return { treeOnLine, bushOnLine, treeNear, bushNear, treeScenic, bushScenic, treeOff, bushOff, total };
 }
-
-

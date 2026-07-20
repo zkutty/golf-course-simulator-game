@@ -44,6 +44,7 @@ export type EconomyMutationAction =
   | { type: "MOVE_GREEN"; holeIndex: number; position: Point; oldPosition: Point }
   | { type: "PLACE_BUILDING"; buildingType: BuildingType; x: number; y: number }
   | { type: "REMOVE_BUILDING"; x: number; y: number }
+  | { type: "TAKE_LOAN"; kind: "BRIDGE" | "EXPANSION" }
   | { type: "SIMULATE_WEEK"; course: Course; world: World };
 
 // UI-only actions (do not affect versions)
@@ -53,4 +54,10 @@ export type UIAction =
   | { type: "SET_BRUSH"; terrain: Terrain };
 
 // Union of all actions
-export type Action = TerrainMutationAction | ObstacleMutationAction | BuildingMutationAction | MarkerMutationAction | UIAction;
+export type Action =
+  | TerrainMutationAction
+  | ObstacleMutationAction
+  | BuildingMutationAction
+  | MarkerMutationAction
+  | EconomyMutationAction
+  | UIAction;

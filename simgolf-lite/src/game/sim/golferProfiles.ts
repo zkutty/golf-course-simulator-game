@@ -11,6 +11,12 @@ export interface GolferProfile {
   name: "SCRATCH" | "BOGEY";
   yardsPerTile: number;
   clubs: ClubSpec[];
+  ratingMultipliers: {
+    hazard: number;
+    rough: number;
+    deepRough: number;
+    obstacle: number;
+  };
 }
 
 export function getGolferProfile(name: GolferProfile["name"], course?: Course): GolferProfile {
@@ -23,9 +29,9 @@ export function getGolferProfile(name: GolferProfile["name"], course?: Course): 
     name,
     yardsPerTile,
     clubs: base.clubs.slice(),
+    ratingMultipliers: { ...base.ratingMultipliers },
   };
 }
-
 
 
 

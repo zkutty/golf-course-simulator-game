@@ -10,10 +10,14 @@ import {
   canPlaceBuilding,
   isConcessionType,
 } from "../game/models/buildings";
+import { getEffectiveBalance } from "../game/balance/difficulty";
+import { createLoan } from "../game/sim/loans";
+import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
 
 /**
- * Apply an action to the game state. This is the ONLY function that should mutate
- * terrain, obstacles, markers, or economy state.
+ * Apply a core editor/economy action to game state. Long-running live-simulation
+ * commits use App's versioned integration setters; player-triggered mutations
+ * belong here so version invalidation is automatic.
  * 
  * @param state - Current game state
  * @param action - Action to apply
@@ -358,6 +362,34 @@ export function applyAction(state: GameState, action: Action): GameState {
         };
       });
       newState = { ...newState, course: { ...state.course, buildings } };
+      economyVersion++;
+      break;
+    }
+
+    case "TAKE_LOAN": {
+      const balance = getEffectiveBalance(state.world.difficulty);
+      const eligible =
+        action.kind === "BRIDGE"
+          ? canTakeBridgeLoan(state.course, state.world, balance)
+          : canTakeExpansionLoan(state.course, state.world, balance);
+      if (!eligible) break;
+      const terms = action.kind === "BRIDGE" ? balance.loans.bridge : balance.loans.expansion;
+      const loan = createLoan({
+        kind: action.kind,
+        principal: terms.maxPrincipal,
+        apr: terms.apr,
+        termWeeks: terms.termWeeks,
+        idSeed: state.world.week,
+      });
+      newState = {
+        ...newState,
+        world: {
+          ...state.world,
+          cash: state.world.cash + loan.principal,
+          loans: [...(state.world.loans ?? []), loan],
+          ...(action.kind === "BRIDGE" ? { lastBridgeLoanWeek: state.world.week } : {}),
+        },
+      };
       economyVersion++;
       break;
     }

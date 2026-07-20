@@ -141,3 +141,25 @@ Previous prompt: Let’s do m14 in linear for this project
 - Focused M7 Playwright coverage passes progression/locks, pause/1x/2x/3x controls, live golfer/leaderboard/staff tabs, and selection/follow. The 13-test non-onboarding regression set passes; all seven long-form M14 tests also passed in the full run before the two discovered fixture/layout regressions were fixed and reverified directly.
 - 100-golfer 3x performance smoke: 60.0 fps, 17.5 ms p95 frame time, 0.20 ms renderer work, and 0.065 ms golfer/emote work.
 - Bundled web-game client passed with deterministic stepping and `render_game_to_text` progression/live state. Progression, staff overview, locked tools, follow inspector, and gameplay screenshots were visually inspected.
+
+## 2026-07-20 — M18 core hardening in progress
+
+- Current request: “Implement m18 from the linear project”.
+- Linear scope resolved as ZK-81 through ZK-85; all five issues are In Progress.
+- Course rating now consumes the shared BALANCE-backed golfer profiles, including rating sensitivity multipliers, with regression coverage proving balance edits affect rating output.
+- Bridge and expansion eligibility is centralized across App, HUD, reducer, and Monte Carlo tuning. Loan acceptance is a reducer action, and versioned integration setters now invalidate economy state for simulation/configuration commits.
+- Hole scoring now carries per-hole dynamic tile/elevation dependencies across immutable course updates, reusing unaffected Dijkstra solves. The retired Canvas renderer has no per-tile linear-gradient path; Pixi's sole radial gradient is a one-time ambient texture.
+- Routine App diagnostics now use an opt-in development logger (`VITE_DEBUG_LOGS=1`); production error reporting and CLI output remain intentional.
+- Focused M18 tests pass; full unit suite is 37 files / 262 tests passing.
+
+## M18 verification
+
+- Full unit suite: 37 files, 262 tests passed, with the repeatable nine-hole timing benchmark opt-in via `M18_BENCH=1`.
+- Nine-hole score benchmark: 713.6 ms cold vs 286.9 ms after a paint update (2.5× faster), reusing five unaffected hole solves.
+- Production build, i18n/lint guard, reducer fuzz suite, Monte Carlo tuner, and 100-golfer renderer performance smoke all pass. Renderer result: 60.0 fps, 18.4 ms p95, 0.21 ms render work.
+- Full Playwright regression: 20/20 passed in 6.0 minutes with no browser console errors.
+- Bundled web-game client passed against the 100-golfer fixture; `render_game_to_text` advanced deterministically and the final gameplay screenshot was visually inspected.
+
+## M18 remaining
+
+- None. ZK-81 through ZK-85 meet their acceptance criteria.

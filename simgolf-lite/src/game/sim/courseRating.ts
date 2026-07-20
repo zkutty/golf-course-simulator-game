@@ -1,5 +1,6 @@
 import type { Course } from "../models/types";
 import { scoreCourseHoles } from "./holes";
+import { getGolferProfile, type GolferProfile } from "./golferProfiles";
 
 export interface RatingSummary {
   holesUsed: number; // 9 or 18
@@ -10,44 +11,6 @@ export interface RatingSummary {
   slope: number; // USGA-like range ~55–155, 113 avg
 }
 
-interface GolferProfile {
-  // carry distances (yards)
-  driver: number;
-  wood3: number;
-  iron5: number;
-  iron7: number;
-  pw: number;
-  // penalty multipliers
-  hazardMult: number;
-  roughMult: number;
-  deepRoughMult: number;
-  obstacleMult: number;
-}
-
-const SCRATCH: GolferProfile = {
-  driver: 280,
-  wood3: 250,
-  iron5: 200,
-  iron7: 170,
-  pw: 135,
-  hazardMult: 1.0,
-  roughMult: 0.8,
-  deepRoughMult: 1.0,
-  obstacleMult: 1.0,
-};
-
-const BOGEY: GolferProfile = {
-  driver: 220,
-  wood3: 200,
-  iron5: 160,
-  iron7: 140,
-  pw: 110,
-  hazardMult: 1.5,
-  roughMult: 1.4,
-  deepRoughMult: 1.8,
-  obstacleMult: 1.3,
-};
-
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
 }
@@ -55,9 +18,7 @@ function clamp(x: number, a: number, b: number) {
 function estimateShotsToReachGreen(distanceYards: number, profile: GolferProfile) {
   // Greedy "longest club that doesn't overshoot too badly" approximation.
   // This intentionally stays simple + deterministic.
-  const clubs = [profile.driver, profile.wood3, profile.iron5, profile.iron7, profile.pw].sort(
-    (a, b) => b - a
-  );
+  const clubs = profile.clubs.map((club) => club.carryYards).sort((a, b) => b - a);
 
   let remaining = Math.max(0, distanceYards);
   let shots = 0;
@@ -90,21 +51,27 @@ function hazardPenaltyStrokes(args: {
   const distFactor = clamp(distanceYards / 480, 0.3, 1.4);
 
   // Water is the biggest "forced layup" driver; sand moderate.
-  const hazard = profile.hazardMult * (2.2 * waterFrac + 0.9 * sandFrac);
-  const lie = profile.roughMult * (0.9 * roughFrac) + profile.deepRoughMult * (1.2 * deepRoughFrac);
-  const obst = profile.obstacleMult * obstaclePenalty;
+  const hazard = profile.ratingMultipliers.hazard * (2.2 * waterFrac + 0.9 * sandFrac);
+  const lie =
+    profile.ratingMultipliers.rough * (0.9 * roughFrac) +
+    profile.ratingMultipliers.deepRough * (1.2 * deepRoughFrac);
+  const obst = profile.ratingMultipliers.obstacle * obstaclePenalty;
 
   // Convert to strokes (fractional) and cap to keep it MVP-friendly.
   const raw = distFactor * (hazard + lie + obst);
   return clamp(raw * 1.4, 0, 2.5);
 }
 
-function computeExpectedScoreForHole(course: Course, holeIndex: number, profile: GolferProfile) {
-  const summary = scoreCourseHoles(course);
+function computeExpectedScoreForHole(
+  course: Course,
+  holeIndex: number,
+  profile: GolferProfile,
+  summary: ReturnType<typeof scoreCourseHoles>
+) {
   const h = summary.holes[holeIndex];
   if (!h || !h.isComplete || !h.isValid) {
     // Treat invalid holes as very punishing (forces redesign); bogey punished more.
-    return profile === BOGEY ? 9 : 7;
+    return profile.name === "BOGEY" ? 9 : 7;
   }
 
   const yardsPerTile = course.yardsPerTile ?? 10;
@@ -150,15 +117,17 @@ export function computeCourseRatingAndSlope(course: Course): RatingSummary {
 
 function computeRatingUncached(course: Course): RatingSummary {
   const holeSummary = scoreCourseHoles(course);
+  const scratch = getGolferProfile("SCRATCH", course);
+  const bogey = getGolferProfile("BOGEY", course);
   const n = holeSummary.holes.length;
   const holesUsed = n >= 18 ? 18 : 9;
 
   const scratch9 = Array.from({ length: Math.min(holesUsed, n) }, (_, i) =>
-    computeExpectedScoreForHole(course, i, SCRATCH)
+    computeExpectedScoreForHole(course, i, scratch, holeSummary)
   ).reduce((a, b) => a + b, 0);
 
   const bogey9 = Array.from({ length: Math.min(holesUsed, n) }, (_, i) =>
-    computeExpectedScoreForHole(course, i, BOGEY)
+    computeExpectedScoreForHole(course, i, bogey, holeSummary)
   ).reduce((a, b) => a + b, 0);
 
   const mult = holesUsed === 9 ? 2 : 1;
@@ -185,7 +154,6 @@ function computeRatingUncached(course: Course): RatingSummary {
     slope,
   };
 }
-
 
 
 
