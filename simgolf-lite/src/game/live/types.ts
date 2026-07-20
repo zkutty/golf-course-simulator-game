@@ -1,5 +1,6 @@
 import type { ConcessionTransaction, ConcessionType, Difficulty, Point } from "../models/types";
 import type { Personality } from "./personality";
+import type { LiveTournamentState } from "../tournaments/types";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -60,11 +61,14 @@ export interface Golfer {
   spent: number; // money spent (green fee + concessions later)
   wallet: number; // remaining discretionary concession budget
   purchasedSegmentIndexes: number[];
+  tournamentId?: string;
+  tournamentEntrantId?: string;
 }
 
 export interface Arrival {
   atMinute: number;
   archetype: GolferArchetypeName;
+  tournament?: { eventId: string; entrantId: string; name: string; skill: number };
 }
 
 export interface LiveState {
@@ -93,6 +97,7 @@ export interface LiveState {
   seed: number;
   // Run difficulty at day start (ZKU-165) — scales rolled patience/spend.
   difficulty?: Difficulty;
+  tournament?: LiveTournamentState;
 }
 
 // Aggregated reactions from the golfers who actually finished a round today.
@@ -152,6 +157,7 @@ export interface DayResult {
   revenueBreakdown: {
     greenFees: number;
     concessions: number;
+    tournaments?: number;
     byConcession: Partial<Record<ConcessionType, number>>;
     transactions: ConcessionTransaction[];
   };

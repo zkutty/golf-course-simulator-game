@@ -13,6 +13,7 @@ import { LIVE } from "./liveConfig";
 import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } from "./types";
 import { rollDiscretionaryWallet } from "./concessions";
 import type { CompletedRound } from "../retention/types";
+import { createLiveTournament, planTournamentDay, tournamentForDate, updateTournamentStanding } from "../tournaments/tournaments";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -33,7 +34,10 @@ export function createLiveState(
   dayIndex: number
 ): LiveState {
   const seed = (world.runSeed | 0) + dayIndex * 7919;
-  const arrivals = planDay(course, world, seed);
+  const tournamentEvent = tournamentForDate(world, dayIndex);
+  const arrivals = tournamentEvent
+    ? planTournamentDay(tournamentEvent, LIVE.day.firstArrivalMinute, LIVE.day.teeGapMinutes)
+    : planDay(course, world, seed);
   return {
     difficulty: world.difficulty,
     dayIndex,
@@ -57,6 +61,7 @@ export function createLiveState(
     walkCache: new Map(),
     dayOver: false,
     seed,
+    tournament: tournamentEvent ? createLiveTournament(tournamentEvent) : undefined,
   };
 }
 
@@ -79,10 +84,13 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   // Roll this individual's personality, then plan their round from the shot
   // model their rolled skill implies (not a fixed per-archetype tier).
   const dp = getDifficultyProfile(state.difficulty);
-  const personality = rollPersonality(arch.personality, rng, {
+  const rolledPersonality = rollPersonality(arch.personality, rng, {
     patience: dp.patienceMult,
     spend: dp.spendMult,
   });
+  const personality = arrival.tournament
+    ? { ...rolledPersonality, skill: Math.max(0, Math.min(1, arrival.tournament.skill)), consistency: Math.max(rolledPersonality.consistency, .62) }
+    : rolledPersonality;
   const profile = getGolferProfile(solverProfileForSkill(personality.skill), course);
   const entry = entryPoint(course);
   const wallet = rollDiscretionaryWallet(personality, rng);
@@ -97,7 +105,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   });
   return {
     id,
-    name: golferName(rng(), rng()),
+    name: arrival.tournament?.name ?? golferName(rng(), rng()),
     archetype: arch.name,
     personality,
     color: arch.color,
@@ -119,6 +127,8 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     spent: 0,
     wallet,
     purchasedSegmentIndexes: [],
+    tournamentId: arrival.tournament?.eventId,
+    tournamentEntrantId: arrival.tournament?.entrantId,
   };
 }
 
@@ -190,9 +200,13 @@ export function stepLive(
     state.golfers.push(golfer);
     state.roundsStarted++;
     state.nextTeeFreeAt = state.dayMinute + LIVE.day.teeGapMinutes;
-    cashDelta += course.baseGreenFee;
-    state.greenFeeCollected += course.baseGreenFee;
-    golfer.spent += course.baseGreenFee;
+    // Hosted-event players are in the contracted field; the sponsor/hosting
+    // award is settled after results instead of charging each entrant a fee.
+    if (!arrival.tournament) {
+      cashDelta += course.baseGreenFee;
+      state.greenFeeCollected += course.baseGreenFee;
+      golfer.spent += course.baseGreenFee;
+    }
   }
 
   // Advance every golfer; retire finished ones.
@@ -200,6 +214,7 @@ export function stepLive(
   for (const g of state.golfers) {
     const previousSegment = g.segIndex;
     advanceGolfer(g, dtMin, course.condition);
+    if (state.tournament) updateTournamentStanding(state.tournament, g);
     for (let i = previousSegment; i <= Math.min(g.segIndex, g.segments.length - 1); i++) {
       const concession = g.segments[i]?.concession;
       if (!concession || g.purchasedSegmentIndexes.includes(i) || g.wallet < concession.amount) continue;
@@ -242,6 +257,8 @@ export function stepLive(
         holePar: g.holePar.slice(),
         holeStrokes: g.holeStrokes.slice(),
         mood: g.mood,
+        tournamentId: g.tournamentId,
+        tournamentEntrantId: g.tournamentEntrantId,
       });
     } else {
       stillPlaying.push(g);

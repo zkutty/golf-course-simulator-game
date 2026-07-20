@@ -20,6 +20,8 @@ import {
 } from "../game/live/persistence";
 import { deriveLiveAudioEvents, type LiveAudioEvent } from "../audio/liveEvents";
 import type { CompletedRound } from "../game/retention/types";
+import { completeTournament, sortedStandings } from "../game/tournaments/tournaments";
+import type { TournamentStanding, TournamentTier } from "../game/tournaments/types";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
@@ -52,6 +54,12 @@ export interface LiveStatus {
   concessionsToday: number;
   lastDay: DayResult | null;
   selected: SelectedGolferDetail | null;
+  tournament: null | {
+    eventId: string;
+    name: string;
+    tier: TournamentTier;
+    standings: TournamentStanding[];
+  };
 }
 
 function buildSelected(
@@ -120,6 +128,7 @@ export function useLiveSimulation(args: {
     concessionsToday: 0,
     lastDay: null,
     selected: null,
+    tournament: null,
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -219,6 +228,12 @@ export function useLiveSimulation(args: {
       concessionsToday: live.concessionCollected,
       lastDay: status.lastDay,
       selected,
+      tournament: live.tournament ? {
+        eventId: live.tournament.eventId,
+        name: live.tournament.name,
+        tier: live.tournament.tier,
+        standings: sortedStandings(live.tournament.standings),
+      } : null,
     });
   }, [status.lastDay]);
 
@@ -232,13 +247,19 @@ export function useLiveSimulation(args: {
   // already banked live), then roll the calendar and start the next day.
   const finishDay = useCallback((live: LiveState) => {
     flushCash();
-    const revenue = live.greenFeeCollected + live.concessionCollected;
+    const tournament = completeTournament(worldRef.current, live);
+    const revenue = live.greenFeeCollected + live.concessionCollected + tournament.revenue;
     const { result, world: committedWorld } = commitDay({
       course: courseRef.current,
-      world: worldRef.current,
+      // Green fees/concessions are already banked live. Tournament awards
+      // settle at the results ceremony, so include that cash for objective
+      // evaluation as well as the state update below.
+      world: { ...tournament.world, cash: tournament.world.cash + tournament.revenue },
       revenue,
       greenFees: live.greenFeeCollected,
       concessionRevenue: live.concessionCollected,
+      tournamentRevenue: tournament.revenue,
+      tournamentReputation: tournament.reputation,
       concessionByType: live.concessionByType,
       transactions: live.concessionTransactions,
       reactions: roundReactions(live),
@@ -248,7 +269,8 @@ export function useLiveSimulation(args: {
 
     setCourse((c) => ({ ...c, condition: clamp(c.condition + result.conditionDelta, 0, 1) }));
     setWorld((w) => {
-      const nextCash = w.cash - result.costs;
+      const completedTournament = completeTournament(w, live);
+      const nextCash = w.cash - result.costs + completedTournament.revenue;
       const rolloverWeek = live.dayIndex + 1 >= DAYS_PER_WEEK;
       return {
         ...w,
@@ -260,10 +282,15 @@ export function useLiveSimulation(args: {
         // Objective state was evaluated inside commitDay (the sim commit
         // point); the hook only stores the result.
         objectives: committedWorld.objectives,
+        tournaments: completedTournament.world.tournaments,
       };
     });
     const nextDayIndex = (live.dayIndex + 1) % DAYS_PER_WEEK;
-    const next = createLiveState(courseRef.current, worldRef.current, nextDayIndex);
+    const nextCalendarWorld: World = {
+      ...tournament.world,
+      week: nextDayIndex === 0 ? tournament.world.week + 1 : tournament.world.week,
+    };
+    const next = createLiveState(courseRef.current, nextCalendarWorld, nextDayIndex);
     liveRef.current = next;
     golfersRef.current = [];
     selectedIdRef.current = null;
@@ -284,6 +311,12 @@ export function useLiveSimulation(args: {
       greenFeesToday: 0,
       concessionsToday: 0,
       lastDay: result,
+      tournament: next.tournament ? {
+        eventId: next.tournament.eventId,
+        name: next.tournament.name,
+        tier: next.tournament.tier,
+        standings: sortedStandings(next.tournament.standings),
+      } : null,
     }));
   }, [flushCash, setCourse, setWorld]);
 
@@ -385,6 +418,12 @@ export function useLiveSimulation(args: {
       concessionsToday: restored.state.concessionCollected,
       lastDay: null,
       selected,
+      tournament: restored.state.tournament ? {
+        eventId: restored.state.tournament.eventId,
+        name: restored.state.tournament.name,
+        tier: restored.state.tournament.tier,
+        standings: sortedStandings(restored.state.tournament.standings),
+      } : null,
     });
     return true;
   }, []);

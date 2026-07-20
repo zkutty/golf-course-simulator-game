@@ -27,6 +27,7 @@ import { BUILDING_SPECS, normalizedBuilding } from "../game/models/buildings";
 import { normalizeTutorialProgress, type TutorialProgress } from "../game/onboarding/tutorial";
 import { emptyCourseRecords, seedRecordsFromHistory } from "../game/retention/records";
 import type { CourseRecords } from "../game/retention/types";
+import { normalizeTournamentCalendar } from "../game/tournaments/tournaments";
 
 const KEY = "simgolf_lite_save_v1";
 export const CURRENT_SAVE_SCHEMA_VERSION = 4 as const;
@@ -436,6 +437,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
               protectedTrees: rawConstraints.protectedTrees === true,
             }
           : undefined,
+      tournaments: normalizeTournamentCalendar(rawWorld.tournaments),
     };
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
     const records = normalizeRecords(parsed.records, history, world);

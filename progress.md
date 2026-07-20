@@ -102,3 +102,23 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M17 remaining
 
 - None.
+
+## 2026-07-20 — M6 tournaments implementation in progress
+
+- Current request: “Let’s implement m6 from linear project”.
+- Linear scope resolved as ZK-125 through ZK-128: future scheduling and tiered field generation, competitive live rounds/leaderboards, economy and reputation awards, and scheduling/spectator/results UI.
+- Added a persisted tournament calendar with local, regional, and championship tiers; deterministic personality-model fields; future game-date booking; deposits; and save normalization.
+- Tournament fields now run through the existing live golfer simulation, shot planner, scoring, reactions, concessions, and clock. Live standings persist through saves and completion settles sponsor revenue/reputation awards.
+- Added an in-course tournament office with booking controls, upcoming events, live leaderboard, and expandable results recaps. Production build passes after the first integration slice.
+
+## M6 remaining
+
+- None. M6 implementation and acceptance verification are complete.
+
+## M6 verification
+
+- Unit suite: 35 files and 257 tests passing, including deterministic booking requirements, field generation, live round execution, save/restore, standings, settlement, and duplicate-booking safety.
+- Production build and i18n/lint guards pass; lint reports only six pre-existing React hook warnings and no errors.
+- Full Playwright regression suite: 18 tests passing, including M6 booking, deposit accounting, progressing live leaderboard, completed-results recap, and zero browser console errors.
+- Bundled web-game client passed against the final implementation; `render_game_to_text` exposed tournament panel/schedule/active state. Full-page live and results screenshots were visually inspected at 1440×900.
+- ZK-125, ZK-126, ZK-127, and ZK-128 are Done in Linear with implementation/test notes; the M6 milestone reports 100% progress.

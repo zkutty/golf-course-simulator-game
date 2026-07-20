@@ -28,6 +28,8 @@ export interface CompletedRound {
   holePar: number[];
   holeStrokes: number[];
   mood: number;
+  tournamentId?: string;
+  tournamentEntrantId?: string;
 }
 
 /** Compact numeric rows keep long-running saves bounded: [week,cash,rating,reputation,profit,attendance]. */

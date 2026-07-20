@@ -64,11 +64,27 @@ function golfer(value: unknown): value is Golfer {
   }
   return typeof value.finished === "boolean" && (value.thought === null || typeof value.thought === "string") &&
     (value.wallet == null || finite(value.wallet)) &&
-    (value.purchasedSegmentIndexes == null || (Array.isArray(value.purchasedSegmentIndexes) && value.purchasedSegmentIndexes.every(Number.isInteger)));
+    (value.purchasedSegmentIndexes == null || (Array.isArray(value.purchasedSegmentIndexes) && value.purchasedSegmentIndexes.every(Number.isInteger))) &&
+    (value.tournamentId == null || typeof value.tournamentId === "string") &&
+    (value.tournamentEntrantId == null || typeof value.tournamentEntrantId === "string");
 }
 
 function arrival(value: unknown): value is Arrival {
-  return isRecord(value) && finite(value.atMinute) && typeof value.archetype === "string";
+  if (!isRecord(value) || !finite(value.atMinute) || typeof value.archetype !== "string") return false;
+  if (value.tournament == null) return true;
+  return isRecord(value.tournament) && typeof value.tournament.eventId === "string" &&
+    typeof value.tournament.entrantId === "string" && typeof value.tournament.name === "string" && finite(value.tournament.skill);
+}
+
+function tournament(value: unknown): boolean {
+  if (value == null) return true;
+  if (!isRecord(value) || typeof value.eventId !== "string" || typeof value.name !== "string") return false;
+  if (value.tier !== "local" && value.tier !== "regional" && value.tier !== "championship") return false;
+  if (!Array.isArray(value.standings) || value.standings.length > MAX_GOLFERS) return false;
+  return value.standings.every((row) => isRecord(row) && typeof row.entrantId === "string" &&
+    (row.golferId === null || Number.isInteger(row.golferId)) && typeof row.name === "string" &&
+    typeof row.archetype === "string" && finite(row.holesCompleted) && finite(row.score) &&
+    finite(row.scoreToPar) && typeof row.finished === "boolean");
 }
 
 function validSpeed(value: unknown): value is SpeedName {
@@ -101,6 +117,7 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
   const state = input.state;
   if (!Array.isArray(state.golfers) || state.golfers.length > MAX_GOLFERS || state.golfers.some((g) => !golfer(g))) return null;
   if (!Array.isArray(state.arrivals) || state.arrivals.length > MAX_ARRIVALS || state.arrivals.some((a) => !arrival(a))) return null;
+  if (!tournament(state.tournament)) return null;
   for (const key of [
     "dayIndex", "dayMinute", "nextArrivalIdx", "nextGolferId", "greenFeeCollected",
     "roundsStarted", "roundsFinished", "satisfactionSum", "promoters", "detractors",

@@ -47,7 +47,7 @@ import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
 import { createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
-import { createRenderPerfLiveState } from "./game/live/simulation";
+import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
 import { hashGameState } from "./utils/stateHash";
@@ -89,6 +89,9 @@ import { NewsTicker } from "./ui/retention/NewsTicker";
 import { PhotoModeOverlay } from "./ui/retention/PhotoModeOverlay";
 import { captureCourseCanvas, createCourseCard, downloadBlob, shareBlob } from "./utils/photoCapture";
 import { usePwa } from "./hooks/usePwa";
+import { TournamentPanel } from "./ui/TournamentPanel";
+import { createTournamentEvent, scheduleTournament, tournamentCalendar } from "./game/tournaments/tournaments";
+import type { TournamentTier } from "./game/tournaments/types";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -222,6 +225,7 @@ export default function App() {
   const perfFixtureLoadedRef = useRef(false);
   const audio = useAudio();
   const [showRetention, setShowRetention] = useState(false);
+  const [showTournaments, setShowTournaments] = useState(false);
   const [achievementQueue, setAchievementQueue] = useState<AchievementDefinition[]>([]);
   const [photoMode, setPhotoMode] = useState(false);
   const [photoGolfers, setPhotoGolfers] = useState(true);
@@ -335,6 +339,22 @@ export default function App() {
     },
   });
   const getLiveSnapshot = live.getSnapshot;
+
+  const bookTournament = useCallback((tier: TournamentTier, daysAhead: number): string | null => {
+    const current = gameStateRef.current;
+    const created = createTournamentEvent({
+      course: current.course,
+      world: current.world,
+      tier,
+      currentDay: live.status.dayIndex,
+      daysAhead,
+    });
+    if (!created.ok) return created.reason;
+    setWorld((next) => scheduleTournament(next, created.event));
+    setA11yMessage(t("tournament.booked"));
+    if (soundEnabled) void audio.playSfx("cash");
+    return null;
+  }, [audio, live.status.dayIndex, setWorld, soundEnabled, t]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || perfFixtureLoadedRef.current) return;
@@ -933,6 +953,11 @@ export default function App() {
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       editor: { mode: editorMode, selectedTerrain: selected, activeHole: activeHoleIndex + 1 },
       retention: { photoMode, recordsOpen: showRetention, achievementsEarned: appProfile.achievements.earned.length, totalRounds: records.totalRounds, aces: records.aces.length, tickerVisible: appProfile.gameplay.tickerVisible },
+      tournament: {
+        panelOpen: showTournaments,
+        scheduled: tournamentCalendar(world).events.filter((event) => event.status === "scheduled").length,
+        active: live.status.tournament ? { name: live.status.tournament.name, standings: live.status.tournament.standings.slice(0, 5) } : null,
+      },
       golfers: live.golfersRef.current.slice(0, 24).map((golfer) => ({ id: golfer.id, x: Number(golfer.x.toFixed(2)), y: Number(golfer.y.toFixed(2)), segment: golfer.segKind, shot: golfer.shot, mood: Number(golfer.mood.toFixed(2)) })),
     });
     window.render_game_to_text = renderText;
@@ -941,7 +966,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, audioCameraCenter, course, editorMode, flow.base, flow.modal, flow.paused, live, photoMode, records, screen, selected, showRetention, tutorialProgress?.stepIndex, viewMode, world.cash, world.reputation, world.isBankrupt]);
+  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, audioCameraCenter, course, editorMode, flow.base, flow.modal, flow.paused, live, photoMode, records, screen, selected, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1020,6 +1045,22 @@ export default function App() {
         return result.ok
           ? { ok: true as const, migratedFrom: result.migratedFrom ?? null }
           : { ok: false as const, error: result.error.message };
+      },
+      startTournamentFixture: () => {
+        const current = gameStateRef.current;
+        const fixtureWorld = { ...current.world, tournaments: { version: 1 as const, events: [] } };
+        const created = createTournamentEvent({ course: current.course, world: fixtureWorld, tier: "local", currentDay: live.status.dayIndex, daysAhead: 1 });
+        if (!created.ok) throw new Error(created.reason);
+        const event = { ...created.event, scheduledWeek: current.world.week, scheduledDay: live.status.dayIndex };
+        const tournamentWorld = scheduleTournament(fixtureWorld, event);
+        dispatch({ type: "LOAD_GAME", course: current.course, world: tournamentWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createLiveState(current.course, tournamentWorld, live.status.dayIndex),
+          pendingCash: 0,
+          speed: "3x",
+          selectedGolferId: null,
+        }));
+        live.setSpeed("3x");
       },
     };
     return () => {
@@ -1986,9 +2027,11 @@ export default function App() {
             />
             {!tutorialProgress && <div className="cc-retention-toolbar" style={{ position: "absolute", top: 10, left: 10, zIndex: 110, display: "flex", gap: 6 }}>
               <button onClick={() => setShowRetention(true)}>🏆 {t("retention.open")}</button>
+              <button data-testid="open-tournaments" aria-pressed={showTournaments} onClick={() => setShowTournaments((open) => !open)}>⛳ {t("tournament.open")}{live.status.tournament ? " •" : ""}</button>
               <button aria-pressed={appProfile.gameplay.tickerVisible} onClick={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: !appProfile.gameplay.tickerVisible } })}>📰 {t("retention.ticker")}</button>
               <button onClick={() => enterPhotoMode(false)}>📷 {t("retention.photo")}</button>
             </div>}
+            {showTournaments && !tutorialProgress && <TournamentPanel world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
             {!tutorialProgress && <HoleMinimap
               course={course}

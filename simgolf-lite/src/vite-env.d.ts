@@ -30,5 +30,6 @@ interface Window {
     validateFixture(text: string):
       | { ok: true; migratedFrom: number | null }
       | { ok: false; error: string };
+    startTournamentFixture(): void;
   };
 }

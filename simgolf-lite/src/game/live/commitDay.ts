@@ -26,6 +26,8 @@ export function commitDay(args: {
   revenue: number; // green fees already banked today
   greenFees?: number;
   concessionRevenue?: number;
+  tournamentRevenue?: number;
+  tournamentReputation?: number;
   concessionByType?: Partial<Record<ConcessionType, number>>;
   transactions?: ConcessionTransaction[];
   reactions: RoundReactions; // real observed reactions from finished rounds
@@ -88,8 +90,9 @@ export function commitDay(args: {
   const dailyRepCap = Math.max(1, BALANCE.reputation.capPerWeek / DAYS_PER_WEEK);
   const profile = getDifficultyProfile(world.difficulty);
   const repAsym = sentiment >= 0 ? profile.repGainMult : profile.repLossMult;
-  const repDelta =
+  const audienceRepDelta =
     rounds > 0 ? clamp(sentiment * BALANCE.reputation.npsGain * repAsym, -dailyRepCap, dailyRepCap) : 0;
+  const repDelta = audienceRepDelta + (args.tournamentReputation ?? 0);
   const nextRep = clamp(world.reputation + repDelta, 0, 100);
 
   const nextCashRaw = world.cash - costs; // revenue already banked live
@@ -122,6 +125,7 @@ export function commitDay(args: {
       revenueBreakdown: {
         greenFees: args.greenFees ?? revenue,
         concessions: args.concessionRevenue ?? 0,
+        tournaments: args.tournamentRevenue ?? 0,
         byConcession: args.concessionByType ?? {},
         transactions: args.transactions ?? [],
       },

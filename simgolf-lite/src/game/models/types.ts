@@ -1,4 +1,5 @@
 import type { ObjectiveState } from "./objectives";
+import type { TournamentCalendar } from "../tournaments/types";
 
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
@@ -123,6 +124,8 @@ export interface World {
   // Career (ZKU-164): which scenario this run is, and its rule overrides.
   scenarioId?: string;
   constraints?: ScenarioConstraints;
+  // Scheduled and completed hosted events (M6). Optional for pre-M6 saves.
+  tournaments?: TournamentCalendar;
 }
 
 export type LoanKind = "BRIDGE" | "EXPANSION";
@@ -196,6 +199,7 @@ export interface WeekResult {
   revenueBreakdown?: {
     greenFees: number;
     concessions: number;
+    tournaments?: number;
     byConcession: Partial<Record<ConcessionType, number>>;
     transactions: ConcessionTransaction[];
   };
@@ -241,4 +245,3 @@ export interface WeekResult {
     wear: number; // 0..1 applied this week
   };
 }
-

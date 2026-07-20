@@ -249,6 +249,12 @@ export const en = {
   "settings.testMusic": "Test music", "settings.testSfx": "Test sound effects", "settings.testAmbience": "Test ambience",
   "settings.musicOverride": "Music context override", "settings.musicOverrideHint": "Development-only playlist control for audio QA.",
   "settings.musicContext.auto": "Auto", "settings.musicContext.silent": "Silent", "settings.musicContext.title": "Title", "settings.musicContext.build": "Build", "settings.musicContext.live": "Live", "settings.musicContext.tension": "Tension",
+  "tournament.open": "Tournaments", "tournament.eyebrow": "Event office", "tournament.title": "Tournaments", "tournament.close": "Close tournaments",
+  "tournament.live": "LIVE LEADERBOARD", "tournament.schedule": "Schedule an event", "tournament.tier": "Prestige tier", "tournament.date": "Tournament date",
+  "tournament.tomorrow": "Tomorrow", "tournament.threeDays": "In 3 days", "tournament.nextWeek": "In 1 week", "tournament.players": "players", "tournament.deposit": "deposit",
+  "tournament.reputation": "rep award", "tournament.payout": "Completion award: {amount}. Requires {reputation} reputation and nine open holes.", "tournament.book": "Book tournament", "tournament.booked": "Tournament booked.",
+  "tournament.upcoming": "Upcoming", "tournament.results": "Recent results", "tournament.week": "Week {week}", "tournament.inOneDay": "in 1 day", "tournament.inDays": "in {days} days",
+  "tournament.wonBy": "Won by {winner}", "tournament.repShort": "rep",
 } as const;
 
 export type MessageKey = keyof typeof en;
