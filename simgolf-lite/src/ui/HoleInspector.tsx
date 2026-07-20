@@ -1,6 +1,9 @@
 import type { HoleEvaluation } from "../game/eval/evaluateHole";
+import { formatCurrency } from "../i18n/format";
 import type { Course, Hole, Terrain, ObstacleType } from "../game/models/types";
 import { computeHoleTerrainStats, type TerrainComposition } from "../game/eval/terrainStats";
+import { T } from "../i18n/T";
+import { translateCurrent } from "../i18n/core";
 
 interface HoleInspectorProps {
   holeIndex: number;
@@ -87,7 +90,7 @@ export function HoleInspector({
       }}
     >
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: "#1a1a1a" }}>Hole {holeIndex + 1}</h2>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: "#1a1a1a" }}><T id="auto.ui.holeinspector.hole" />{holeIndex + 1}</h2>
         {onFitHole && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
             <button
@@ -101,10 +104,9 @@ export function HoleInspector({
                 cursor: "pointer",
                 fontWeight: 500,
               }}
-              title="Fit Hole (F)"
+              title={translateCurrent("auto.ui.holeinspector.fit.hole.f")}
             >
-              Fit
-            </button>
+              <T id="auto.ui.holeinspector.fit" /></button>
             <button
               onClick={() => onFitHole("tee")}
               style={{
@@ -117,8 +119,7 @@ export function HoleInspector({
                 fontWeight: 500,
               }}
             >
-              Tee
-            </button>
+              <T id="auto.ui.holeinspector.tee" /></button>
             <button
               onClick={() => onFitHole("landing")}
               style={{
@@ -131,8 +132,7 @@ export function HoleInspector({
                 fontWeight: 500,
               }}
             >
-              Landing
-            </button>
+              <T id="auto.ui.holeinspector.landing" /></button>
             <button
               onClick={() => onFitHole("green")}
               style={{
@@ -145,8 +145,7 @@ export function HoleInspector({
                 fontWeight: 500,
               }}
             >
-              Green
-            </button>
+              <T id="auto.ui.holeinspector.green" /></button>
             {onFlyover && (
               <button
                 onClick={onFlyover}
@@ -159,10 +158,9 @@ export function HoleInspector({
                   cursor: "pointer",
                   fontWeight: 500,
                 }}
-                title="Cinematic hole flyover"
+                title={translateCurrent("auto.ui.holeinspector.cinematic.hole.flyover")}
               >
-                ▶ Flyover
-              </button>
+                <T id="auto.ui.holeinspector.flyover" /></button>
             )}
           </div>
         )}
@@ -170,9 +168,9 @@ export function HoleInspector({
 
       {/* Hole Index / Stroke Index */}
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}>Hole Index / Stroke Index</div>
+        <div style={{ fontSize: 11, color: "#666", marginBottom: 4 }}><T id="auto.ui.holeinspector.hole.index.stroke.index" /></div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 13 }}>Hole {holeIndex + 1}</span>
+          <span style={{ fontSize: 13 }}><T id="auto.ui.holeinspector.hole" />{holeIndex + 1}</span>
           {onSetHoleIndex && (
             <input
               type="number"
@@ -196,8 +194,7 @@ export function HoleInspector({
             />
           )}
           <span style={{ fontSize: 11, color: "#888" }}>
-            (defaults to array position)
-          </span>
+            <T id="auto.ui.holeinspector.defaults.to.array.position" /></span>
         </div>
       </div>
 
@@ -213,33 +210,33 @@ export function HoleInspector({
       >
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
           <div data-tooltip="The recommended par calculated from effective playing distance.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Auto Par</div>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.auto.par" /></div>
             <div style={{ fontSize: 18, fontWeight: 600 }}>{autoPar}</div>
           </div>
           <div data-tooltip="Playing length after route shape and elevation adjustments; this drives automatic par.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Effective Distance</div>
-            <div style={{ fontSize: 18, fontWeight: 600 }}>{effectiveDistanceYards.toFixed(0)} yds</div>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.effective.distance" /></div>
+            <div style={{ fontSize: 18, fontWeight: 600 }}>{effectiveDistanceYards.toFixed(0)} <T id="auto.ui.holeinspector.yds" /></div>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
           <div data-tooltip="Direct tee-to-green distance without route or elevation adjustments.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Straight Distance</div>
-            <div style={{ fontSize: 14, fontWeight: 500 }}>{straightDistYards.toFixed(0)} yds</div>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.straight.distance" /></div>
+            <div style={{ fontSize: 14, fontWeight: 500 }}>{straightDistYards.toFixed(0)} <T id="auto.ui.holeinspector.yds" /></div>
           </div>
           <div data-tooltip="Net height change from tee to green; elevation data is not yet available in this summary.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Elevation Change</div>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.elevation.change" /></div>
             <div style={{ fontSize: 14, fontWeight: 500, color: "#888" }}>—</div>
           </div>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <div data-tooltip="Estimated shots a scratch golfer needs to reach the green.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Scratch Shots</div>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.scratch.shots" /></div>
             <div style={{ fontSize: 14, fontWeight: 500 }}>
               {scratchShotsToGreen === Infinity ? "—" : scratchShotsToGreen.toFixed(1)}
             </div>
           </div>
           <div data-tooltip="Estimated shots a bogey golfer needs to reach the green.">
-            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}>Bogey Shots</div>
+            <div style={{ fontSize: 11, color: "#666", marginBottom: 2 }}><T id="auto.ui.holeinspector.bogey.shots" /></div>
             <div style={{ fontSize: 14, fontWeight: 500 }}>
               {bogeyShotsToGreen === Infinity ? "—" : bogeyShotsToGreen.toFixed(1)}
             </div>
@@ -269,22 +266,22 @@ export function HoleInspector({
           border: "1px solid rgba(0, 0, 0, 0.1)",
         }}
       >
-        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 600 }}>Terrain Composition</h3>
+        <h3 style={{ margin: "0 0 12px 0", fontSize: 14, fontWeight: 600 }}><T id="auto.ui.holeinspector.terrain.composition" /></h3>
         
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 6 }}>Total Hole Area</div>
+          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 6 }}><T id="auto.ui.holeinspector.total.hole.area" /></div>
           <TerrainPercentages composition={terrainStats.total} />
         </div>
         
         <div>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 6 }}>Corridor Area</div>
+          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 6 }}><T id="auto.ui.holeinspector.corridor.area" /></div>
           <TerrainPercentages composition={terrainStats.corridor} />
         </div>
       </div>
 
       {/* Editor Tools */}
       <div style={{ marginBottom: 16, padding: 12, backgroundColor: "rgba(255, 255, 255, 0.7)", borderRadius: 6, border: "1px solid rgba(0, 0, 0, 0.1)" }}>
-        <h3 style={{ margin: "0 0 8px 0", fontSize: 13, fontWeight: 600 }}>Editor Tools</h3>
+        <h3 style={{ margin: "0 0 8px 0", fontSize: 13, fontWeight: 600 }}><T id="auto.ui.holeinspector.editor.tools" /></h3>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {setEditorMode && (
             <>
@@ -302,8 +299,7 @@ export function HoleInspector({
                     fontWeight: editorMode === "PAINT" ? 600 : 400,
                   }}
                 >
-                  Paint
-                </button>
+                  <T id="auto.ui.holeinspector.paint" /></button>
                 <button
                   onClick={() => setEditorMode("OBSTACLE")}
                   style={{
@@ -317,8 +313,7 @@ export function HoleInspector({
                     fontWeight: editorMode === "OBSTACLE" ? 600 : 400,
                   }}
                 >
-                  Obstacle
-                </button>
+                  <T id="auto.ui.holeinspector.obstacle" /></button>
               </div>
               {editorMode === "OBSTACLE" && setObstacleType && (
                 <div style={{ display: "flex", gap: 4, fontSize: 10 }}>
@@ -386,7 +381,7 @@ export function HoleInspector({
             onChange={(e) => setShowFixOverlay(e.target.checked)}
             style={{ cursor: "pointer" }}
           />
-          <span>Show fix overlay</span>
+          <span><T id="auto.ui.holeinspector.show.fix.overlay" /></span>
         </label>
       </div>
 
@@ -402,8 +397,7 @@ export function HoleInspector({
             textAlign: "center",
           }}
         >
-          No issues found. Hole looks good!
-        </div>
+          <T id="auto.ui.holeinspector.no.issues.found.hole.looks.good" /></div>
       )}
 
       {groupedIssues.bad.length > 0 && (
@@ -419,8 +413,7 @@ export function HoleInspector({
               gap: 6,
             }}
           >
-            <span style={{ fontSize: 16 }}>●</span> Critical Issues
-          </h3>
+            <span style={{ fontSize: 16 }}>●</span> <T id="auto.ui.holeinspector.critical.issues" /></h3>
           {groupedIssues.bad.map((issue, idx) => (
             <IssueCard key={idx} issue={issue} onAction={handleIssueAction} />
           ))}
@@ -440,8 +433,7 @@ export function HoleInspector({
               gap: 6,
             }}
           >
-            <span style={{ fontSize: 16 }}>●</span> Warnings
-          </h3>
+            <span style={{ fontSize: 16 }}>●</span> <T id="auto.ui.holeinspector.warnings" /></h3>
           {groupedIssues.warn.map((issue, idx) => (
             <IssueCard key={idx} issue={issue} onAction={handleIssueAction} />
           ))}
@@ -461,8 +453,7 @@ export function HoleInspector({
               gap: 6,
             }}
           >
-            <span style={{ fontSize: 16 }}>●</span> Notes
-          </h3>
+            <span style={{ fontSize: 16 }}>●</span> <T id="auto.ui.holeinspector.notes" /></h3>
           {groupedIssues.info.map((issue, idx) => (
             <IssueCard key={idx} issue={issue} onAction={handleIssueAction} />
           ))}
@@ -485,7 +476,7 @@ function TerrainPercentages({ composition }: { composition: TerrainComposition }
   ];
 
   if (composition.total === 0) {
-    return <div style={{ fontSize: 12, color: "#888" }}>No area</div>;
+    return <div style={{ fontSize: 12, color: "#888" }}><T id="auto.ui.holeinspector.no.area" /></div>;
   }
 
   return (
@@ -525,7 +516,7 @@ function TerrainPercentages({ composition }: { composition: TerrainComposition }
         })}
       {composition.other > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-          <div style={{ width: 80, textAlign: "left" }}>Other:</div>
+          <div style={{ width: 80, textAlign: "left" }}><T id="auto.ui.holeinspector.other" /></div>
           <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 6 }}>
             <div
               style={{
@@ -605,12 +596,12 @@ function IssueCard({ issue, onAction }: IssueCardProps) {
         <div style={{ marginBottom: 8, fontSize: 11, color: "#666" }}>
           {issue.metadata.currentValue != null && issue.metadata.targetValue != null && (
             <div style={{ marginBottom: 4 }}>
-              Current: {(issue.metadata.currentValue * 100).toFixed(1)}% | Target: {(issue.metadata.targetValue * 100).toFixed(0)}%
+              <T id="auto.ui.holeinspector.current" />{(issue.metadata.currentValue * 100).toFixed(1)}<T id="auto.ui.holeinspector.target" />{(issue.metadata.targetValue * 100).toFixed(0)}%
             </div>
           )}
           {issue.metadata.costEstimate != null && issue.metadata.costEstimate > 0 && (
             <div style={{ marginBottom: 4, fontWeight: 500 }}>
-              Est. cost: ${issue.metadata.costEstimate.toLocaleString()}
+              <T id="auto.ui.holeinspector.est.cost" />{formatCurrency(issue.metadata.costEstimate)}
             </div>
           )}
         </div>
@@ -618,7 +609,7 @@ function IssueCard({ issue, onAction }: IssueCardProps) {
 
       {issue.suggestedFixes.length > 0 && (
         <div>
-          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 4 }}>Suggested fixes:</div>
+          <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 4 }}><T id="auto.ui.holeinspector.suggested.fixes" /></div>
           {isFairwayIssue && onAction ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {issue.suggestedFixes.map((fix, idx) => (

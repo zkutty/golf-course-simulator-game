@@ -94,3 +94,15 @@ builds do not attach it to `window`.
 - **Weekly sim tick**: `src/game/sim/tickWeek.ts`
 - **Terrain economics**: `src/game/models/terrainEconomics.ts`
 - **UI**: `src/ui/HUD.tsx`, `src/ui/CanvasCourse.tsx`
+
+## Adding player-facing strings
+
+CourseCraft uses the lightweight typed catalog in `src/i18n/catalog.ts`. For new UI copy:
+
+1. Add a descriptive key and English message to `en` in the catalog. Parameters use `{name}`; simple counts use ICU-style `{n, plural, one {# golfer} other {# golfers}}`.
+2. Call `const { t } = useI18n()` and render `t("your.key", { name })`. TypeScript rejects unknown keys.
+3. Use `formatCurrency`, `formatNumber`, `formatWeekLabel`, and `formatDayLabel` from `src/i18n/format.ts` instead of formatting values inline.
+4. In Options → Accessibility, switch **Language preview** to **Pseudo — expanded** and sweep the affected screens for brackets and overflow.
+5. Run `npm run lint`; its i18n guard rejects new hardcoded JSX strings in covered app-shell files.
+
+English is the only shipped locale. The pseudo locale is a persisted developer QA option, not a translation.

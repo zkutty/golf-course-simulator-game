@@ -17,7 +17,10 @@ export function hashGameState(value: {
   world: World;
   live?: LiveSimulationSnapshotV1;
 }): string {
-  const text = canonical(value);
+  // Callers often pass a full SavePayload. Hash only the persisted game-state
+  // contract declared above; UI metadata such as tutorial/profile fields must
+  // not make an otherwise lossless save/load round trip look different.
+  const text = canonical({ course: value.course, world: value.world, live: value.live });
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     hash ^= text.charCodeAt(i);

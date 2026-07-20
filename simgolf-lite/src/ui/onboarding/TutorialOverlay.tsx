@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import type { TutorialStep } from "../../game/onboarding/tutorial";
 import { AdvisorPresenter } from "./AdvisorPresenter";
 import { presenterButtonStyle } from "./presenterStyles";
+import { T } from "../../i18n/T";
+import { translateCurrent } from "../../i18n/core";
+import { useI18n } from "../../i18n/useI18n";
 
 type Rect = { top: number; left: number; right: number; bottom: number; width: number; height: number };
 
@@ -11,6 +14,7 @@ export function TutorialOverlay(props: {
   onAdvance: () => void;
   onSkip: () => void;
 }) {
+  const { t } = useI18n();
   const [rect, setRect] = useState<Rect | null>(null);
 
   useEffect(() => {
@@ -43,7 +47,7 @@ export function TutorialOverlay(props: {
     : [{ inset: 0 }];
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 99990, pointerEvents: "none" }} aria-label="Interactive tutorial">
+    <div style={{ position: "fixed", inset: 0, zIndex: 99990, pointerEvents: "none" }} aria-label={translateCurrent("auto.ui.onboarding.tutorialoverlay.interactive.tutorial")}>
       {blockers.map((style, index) => (
         <div key={index} style={{ position: "fixed", background: "rgba(18, 25, 18, .62)", pointerEvents: "auto", ...style }} />
       ))}
@@ -65,22 +69,21 @@ export function TutorialOverlay(props: {
       )}
       <div style={{ position: "fixed", pointerEvents: "auto", ...cardPosition }}>
         <AdvisorPresenter
-          eyebrow={props.step.eyebrow}
-          title={props.step.title}
-          body={props.step.body}
+          eyebrow={t(props.step.eyebrowKey)}
+          title={t(props.step.titleKey)}
+          body={t(props.step.bodyKey)}
           expression={props.step.expression}
           actions={
             <>
               <button
                 onClick={() => {
-                  if (window.confirm("Skip the tutorial? Your current course will stay exactly as it is.")) props.onSkip();
+                  if (window.confirm(t("tutorial.skipConfirm"))) props.onSkip();
                 }}
                 style={{ ...presenterButtonStyle, background: "transparent", color: "#465349", borderColor: "rgba(39,54,43,.35)" }}
               >
-                Skip tutorial
-              </button>
+                <T id="auto.ui.onboarding.tutorialoverlay.skip.tutorial" /></button>
               <button onClick={props.onAdvance} disabled={!props.canAdvance} style={{ ...presenterButtonStyle, opacity: props.canAdvance ? 1 : .45 }}>
-                {props.canAdvance ? props.step.actionLabel ?? "Continue" : "Complete the highlighted task"}
+                {props.canAdvance ? t(props.step.actionLabelKey ?? "tutorial.continue") : t("tutorial.completeTask")}
               </button>
             </>
           }

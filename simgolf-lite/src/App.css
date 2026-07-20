@@ -36,3 +36,6 @@
 .read-the-docs {
   color: #888;
 }
+@keyframes cc-loading-spin { to { transform: rotate(360deg); } }
+.cc-loading-dot { animation: cc-loading-spin .85s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .cc-loading-dot { animation: none; } }

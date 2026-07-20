@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef } from "react";
+import { formatCurrency } from "../i18n/format";
 import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
@@ -9,6 +10,8 @@ import { getObstacleSprite } from "../render/iconSprites";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import { BUILDING_SPECS } from "../game/models/buildings";
 import { perfProfiler } from "../utils/performanceProfiler";
+import { terrainColorCss, terrainPattern } from "../accessibility/terrainPalettes";
+import type { ColorVisionMode } from "../game/onboarding/profile";
 
 // Feature flag: Enable/disable hover-based distance preview (performance optimization)
 // When disabled, no hover tracking or preview rendering occurs for marker placement
@@ -32,6 +35,28 @@ function hash01(n: number) {
   x ^= x >>> 17;
   x ^= x << 5;
   return ((x >>> 0) % 1_000_000) / 1_000_000;
+}
+function drawAccessibilityPattern(ctx: CanvasRenderingContext2D, terrain: Terrain, x: number, y: number, size: number) {
+  const pattern = terrainPattern(terrain);
+  if (pattern === "none") return;
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = Math.max(1, size / 18);
+  if (pattern === "stripe") {
+    for (let offset = -size; offset < size * 2; offset += size / 3) {
+      ctx.beginPath(); ctx.moveTo(x + offset, y); ctx.lineTo(x + offset - size, y + size); ctx.stroke();
+    }
+  } else if (pattern === "crosshatch") {
+    for (let offset = -size; offset < size * 2; offset += size / 2) {
+      ctx.beginPath(); ctx.moveTo(x + offset, y); ctx.lineTo(x + offset - size, y + size); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x + offset, y + size); ctx.lineTo(x + offset - size, y); ctx.stroke();
+    }
+  } else {
+    ctx.fillStyle = "#fff";
+    for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) { ctx.beginPath(); ctx.arc(x + (col + .5) * size / 3, y + (row + .5) * size / 3, Math.max(1, size / 18), 0, Math.PI * 2); ctx.fill(); }
+  }
+  ctx.restore();
 }
 
 function shadeHex(hex: string, amt: number) {
@@ -58,6 +83,8 @@ function rgbaHex(hex: string, alpha: number, shadeAmt = 0) {
 
 function drawTileTexture(
   ctx: CanvasRenderingContext2D,
+  colorVision: ColorVisionMode,
+  terrainPatterns: boolean,
   terrain: Terrain,
   x: number,
   y: number,
@@ -68,8 +95,9 @@ function drawTileTexture(
 ) {
   // Subtle per-tile variation
   const v = (hash01(seed) - 0.5) * 0.12;
-  ctx.fillStyle = shadeHex(COLORS[terrain], v);
+  ctx.fillStyle = shadeHex(terrainColorCss(colorVision, terrain), v);
   ctx.fillRect(x, y, size, size);
+  if (terrainPatterns) drawAccessibilityPattern(ctx, terrain, x, y, size);
 
   // Terrain-specific texture pass
   if (terrain === "water") {
@@ -604,6 +632,9 @@ export function CanvasCourse(props: {
   tileSize: number;
   showGridOverlays: boolean;
   animationsEnabled: boolean;
+  colorVision: ColorVisionMode;
+  terrainPatterns: boolean;
+  reducedMotion: boolean;
   flyoverNonce: number;
   showShotPlan: boolean;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
@@ -634,6 +665,9 @@ export function CanvasCourse(props: {
     tileSize,
     showGridOverlays,
     animationsEnabled,
+    colorVision,
+    terrainPatterns,
+    reducedMotion,
     flyoverNonce,
     showShotPlan,
     editorMode,
@@ -732,8 +766,8 @@ export function CanvasCourse(props: {
   // }, [TILE]);
 
   const imageData = useMemo(() => {
-    return course.tiles.map((t) => COLORS[t]);
-  }, [course.tiles]);
+    return course.tiles.map((t) => terrainColorCss(colorVision, t));
+  }, [course.tiles, colorVision]);
 
   const noisePattern = useMemo(() => {
     const c = document.createElement("canvas");
@@ -881,8 +915,13 @@ export function CanvasCourse(props: {
   }
 
   function startCameraAnim(to: { panX: number; panY: number; zoom: number }, dur = 650) {
-    const from = { ...camRef.current };
-    camAnimRef.current = { from, to: clampCamera({ ...to }), t0: performance.now(), dur };
+    const target = clampCamera({ ...to });
+    if (reducedMotion) {
+      camRef.current = target;
+      camAnimRef.current = null;
+      return;
+    }
+    camAnimRef.current = { from: { ...camRef.current }, to: target, t0: performance.now(), dur };
   }
 
   function focusOnPoints(points: Array<{ x: number; y: number }>) {
@@ -939,6 +978,8 @@ export function CanvasCourse(props: {
             const y = ty * TILE;
             drawTileTexture(
               bctx,
+              colorVision,
+              terrainPatterns,
               terrain,
               x,
               y,
@@ -1521,12 +1562,12 @@ export function CanvasCourse(props: {
       // Build tooltip text
       const lines: string[] = [];
       if (cost.net > 0) {
-        lines.push(`Cost: $${Math.ceil(cost.net).toLocaleString()}`);
+        lines.push(`Cost: ${formatCurrency(Math.ceil(cost.net))}`);
         if (!canAfford) {
           lines.push("Insufficient funds");
         }
       } else if (cost.net < 0) {
-        lines.push(`Refund: $${Math.ceil(-cost.net).toLocaleString()}`);
+        lines.push(`Refund: ${formatCurrency(Math.ceil(-cost.net))}`);
       }
       
       if (lines.length === 0) return;
@@ -2077,6 +2118,8 @@ export function CanvasCourse(props: {
                 // Draw tile texture
                 drawTileTexture(
                   ctx2,
+                  colorVision,
+                  terrainPatterns,
                   terrain,
                   x,
                   y,
@@ -2217,6 +2260,7 @@ export function CanvasCourse(props: {
     wPx,
     hPx,
     imageData,
+    terrainPatterns,
     noisePattern,
     mowPattern,
     holes,

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import portraits from "../../assets/advisor/caddie-portraits.png";
 import type { AdvisorExpression } from "../../game/advisor/advisor";
+import { translateCurrent } from "../../i18n/core";
 
 const positions: Record<AdvisorExpression, string> = {
   neutral: "0% 50%",
@@ -13,7 +14,7 @@ export function AdvisorPortrait({ expression, size = 112 }: { expression: Adviso
   return (
     <div
       role="img"
-      aria-label={`Caddie advisor, ${expression}`}
+      aria-label={translateCurrent("advisor.portraitLabel", { expression })}
       style={{
         width: size,
         height: size,

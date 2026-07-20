@@ -1,5 +1,8 @@
 import { useState } from "react";
+import { formatCurrency, formatWeekLabel } from "../i18n/format";
 import type { DefeatReason, ObjectiveState } from "../game/models/objectives";
+import { T } from "../i18n/T";
+import { useI18n } from "../i18n/useI18n";
 
 // Defeat screen (ZKU-163): one screen for every way a run ends — bankruptcy
 // or a missed objective deadline — offering retry-same-seed / load / new game.
@@ -17,6 +20,7 @@ export function DefeatModal(props: {
   onNewGame: () => void;
   onLoad: () => void;
 }) {
+  const { t } = useI18n();
   const [seed, setSeed] = useState(props.seed);
   const missed =
     props.reason === "DEADLINE" && props.objectives
@@ -63,18 +67,18 @@ export function DefeatModal(props: {
           >
             {missed.map((g) => (
               <div key={g.id}>
-                ❌ <b>{g.label}</b> — needed by week {g.deadlineWeek}
+                ❌ <b>{g.labelKey ? t(g.labelKey) : g.label}</b> <T id="auto.ui.defeatmodal.needed.by" />{formatWeekLabel(g.deadlineWeek!, "en", "week")}
               </div>
             ))}
           </div>
         )}
 
         <div style={{ display: "grid", gap: 6, fontSize: 13 }}>
-          <Row label="Weeks survived" value={`${props.weeksSurvived}`} />
-          <Row label="Peak reputation" value={`${props.peakRep}`} />
-          <Row label="Peak cash" value={`$${Math.round(props.peakCash).toLocaleString()}`} />
+          <Row label={t("defeat.weeksSurvived")} value={`${props.weeksSurvived}`} />
+          <Row label={t("defeat.peakReputation")} value={`${props.peakRep}`} />
+          <Row label={t("defeat.peakCash")} value={formatCurrency(props.peakCash)} />
           <Row
-            label="Course rating / slope"
+            label={t("defeat.ratingSlope")}
             value={`${props.courseRating.toFixed(1)} / ${Math.round(props.slope)}`}
           />
         </div>
@@ -82,8 +86,7 @@ export function DefeatModal(props: {
         <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
             <label style={{ flex: 1, fontSize: 12, color: "#374151" }}>
-              Seed
-              <input
+              <T id="auto.ui.defeatmodal.seed" /><input
                 type="number"
                 value={seed}
                 onChange={(e) => setSeed(Number(e.target.value))}
@@ -108,8 +111,7 @@ export function DefeatModal(props: {
                 cursor: "pointer",
               }}
             >
-              Retry this run
-            </button>
+              <T id="auto.ui.defeatmodal.retry.this.run" /></button>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button
@@ -124,8 +126,7 @@ export function DefeatModal(props: {
                 cursor: "pointer",
               }}
             >
-              Load a save
-            </button>
+              <T id="auto.ui.defeatmodal.load.a.save" /></button>
             <button
               onClick={props.onNewGame}
               style={{
@@ -138,8 +139,7 @@ export function DefeatModal(props: {
                 cursor: "pointer",
               }}
             >
-              New game
-            </button>
+              <T id="auto.ui.defeatmodal.new.game" /></button>
           </div>
         </div>
       </div>

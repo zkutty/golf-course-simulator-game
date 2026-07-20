@@ -1,4 +1,5 @@
 import { useId, useRef, useState, type ReactNode } from "react";
+import { T } from "../../i18n/T";
 
 export function Tooltip(props: { content: ReactNode; children: ReactNode; learnMore?: () => void; block?: boolean }) {
   const id = useId();
@@ -48,8 +49,7 @@ export function Tooltip(props: { content: ReactNode; children: ReactNode; learnM
           {props.content}
           {props.learnMore && (
             <button onClick={props.learnMore} style={{ display: "block", marginTop: 6, padding: 0, border: 0, background: "none", color: "#416b46", fontWeight: 800, cursor: "pointer" }}>
-              Learn more in Golfopedia →
-            </button>
+              <T id="auto.ui.help.tooltip.learn.more.in.golfopedia" /></button>
           )}
         </span>
       )}

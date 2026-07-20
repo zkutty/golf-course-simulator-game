@@ -1,23 +1,22 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { MenuButton } from "./MenuButton";
 import { StartMenuBackground } from "./StartMenuBackground";
-import { SettingsModal } from "./SettingsModal";
+import { useI18n } from "../i18n/useI18n";
+import { T } from "../i18n/T";
 
 export interface StartMenuProps {
   canLoad: boolean;
   onNewGame: () => void;
   onQuickStart: () => void;
   onLoadGame: () => void;
-  audioVolumes: { music: number; ambience: number };
-  onAudioVolumesChange: (volumes: { music?: number; ambience?: number }) => void;
+  onContinue: () => void;
+  onOptions: () => void;
   onButtonClick?: () => void;
-  renderer: "canvas" | "pixi";
-  onRendererChange: (renderer: "canvas" | "pixi") => void;
 }
 
 export function StartMenu(props: StartMenuProps) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const loadSubtitle = useMemo(() => (props.canLoad ? undefined : "No saved game"), [props.canLoad]);
+  const { t } = useI18n();
+  const loadSubtitle = useMemo(() => (props.canLoad ? undefined : t("title.noSave")), [props.canLoad, t]);
 
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
@@ -111,7 +110,7 @@ export function StartMenu(props: StartMenuProps) {
                 textShadow: "0 4px 12px rgba(61, 74, 62, 0.5), 0 2px 4px rgba(61, 74, 62, 0.3)",
               }}
             >
-              CourseCraft
+              {t("app.name")}
             </div>
             <div
               style={{
@@ -123,33 +122,46 @@ export function StartMenu(props: StartMenuProps) {
                 textShadow: "0 2px 8px rgba(61, 74, 62, 0.4)",
               }}
             >
-              Design and run your course
+              {t("title.tagline")}
             </div>
           </div>
 
           {/* Buttons */}
           <div style={{ display: "grid", gap: 14, width: "min(420px, 100%)", margin: "0 auto" }}>
+            {props.canLoad && (
+              <MenuButton
+                variant="primary"
+                icon="▶"
+                subtitle={t("title.continueHint")}
+                onClick={() => {
+                  props.onButtonClick?.();
+                  props.onContinue();
+                }}
+              >
+                {t("title.continue")}
+              </MenuButton>
+            )}
             <MenuButton
-              variant="primary"
+              variant={props.canLoad ? "secondary" : "primary"}
               icon="⛳"
               onClick={() => {
                 props.onButtonClick?.();
                 props.onNewGame();
               }}
             >
-              New Game
+              {t("title.newGame")}
             </MenuButton>
 
             <MenuButton
               variant="secondary"
               icon="🚀"
-              subtitle="Skip setup — fresh sandbox land"
+              subtitle={t("title.quickStartHint")}
               onClick={() => {
                 props.onButtonClick?.();
                 props.onQuickStart();
               }}
             >
-              Quick Start
+              {t("title.quickStart")}
             </MenuButton>
 
             <MenuButton
@@ -162,7 +174,7 @@ export function StartMenu(props: StartMenuProps) {
               disabled={!props.canLoad}
               subtitle={loadSubtitle}
             >
-              Load Game
+              {t("title.load")}
             </MenuButton>
 
             <MenuButton
@@ -170,29 +182,19 @@ export function StartMenu(props: StartMenuProps) {
               icon="⚙️"
               onClick={() => {
                 props.onButtonClick?.();
-                setSettingsOpen(true);
+                props.onOptions();
               }}
             >
-              Settings
+              {t("title.options")}
             </MenuButton>
           </div>
 
           <div style={{ textAlign: "center", marginTop: 26, fontSize: 12, color: "rgba(255,255,255,0.65)", textShadow: "0 1px 3px rgba(0, 0, 0, 0.3)" }}>
-            v{__APP_VERSION__} • A cozy golf management experience
+            <T id="auto.ui.startmenu.v" />{__APP_VERSION__} • {t("title.footer")}
           </div>
         </div>
       </div>
 
-        <SettingsModal
-          open={settingsOpen}
-          onClose={() => setSettingsOpen(false)}
-          audioVolumes={props.audioVolumes}
-          onAudioVolumesChange={props.onAudioVolumesChange}
-          renderer={props.renderer}
-          onRendererChange={props.onRendererChange}
-        />
     </div>
   );
 }
-
-

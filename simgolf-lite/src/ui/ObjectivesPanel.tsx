@@ -1,6 +1,10 @@
 import type { CSSProperties } from "react";
+import { formatCurrency, formatWeekLabel } from "../i18n/format";
 import type { ObjectiveState, GoalProgress, ConditionProgress } from "../game/models/objectives";
 import { GameCard } from "./gameui";
+import { T } from "../i18n/T";
+import { translateCurrent } from "../i18n/core";
+import { useI18n } from "../i18n/useI18n";
 
 // Objectives UI (ZKU-163): a pinned mini-tracker for the HUD header and the
 // full goals panel with per-condition progress bars.
@@ -21,7 +25,7 @@ function formatMetricValue(metric: ConditionProgress["metric"], value: number): 
   switch (metric) {
     case "cash":
     case "weeklyProfit":
-      return `$${Math.round(value).toLocaleString()}`;
+      return formatCurrency(value);
     case "condition":
       return `${Math.round(value)}%`;
     case "courseRating":
@@ -93,10 +97,10 @@ export function ObjectiveMiniTracker(props: {
 
   if (!objectives) {
     return (
-      <div style={{ ...baseStyle, cursor: "default", color: "#6b7280" }} title="No goals — build freely">
+      <div style={{ ...baseStyle, cursor: "default", color: "#6b7280" }} title={translateCurrent("auto.ui.objectivespanel.no.goals.build.freely")}>
         <span aria-hidden>🌿</span>
-        <b style={{ letterSpacing: "0.06em" }}>FREE PLAY</b>
-        <span>— no goals, build at your own pace</span>
+        <b style={{ letterSpacing: "0.06em" }}><T id="auto.ui.objectivespanel.free.play" /></b>
+        <span><T id="auto.ui.objectivespanel.no.goals.build.at.your.own.pace" /></span>
       </div>
     );
   }
@@ -108,7 +112,7 @@ export function ObjectiveMiniTracker(props: {
   const nextProgress = nextIdx >= 0 ? objectives.progress[nextIdx] : null;
 
   return (
-    <button style={baseStyle} onClick={props.onOpen} title="Open objectives">
+    <button style={baseStyle} onClick={props.onOpen} title={translateCurrent("auto.ui.objectivespanel.open.objectives")}>
       <span aria-hidden>{objectives.outcome === "WON" ? "🏆" : "🎯"}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -145,6 +149,7 @@ export function ObjectivesPanel(props: {
   objectives: ObjectiveState | null | undefined;
   week: number;
 }) {
+  const { t } = useI18n();
   const { open, onClose, objectives, week } = props;
   if (!open) return null;
 
@@ -166,11 +171,10 @@ export function ObjectivesPanel(props: {
         style={{ width: "min(560px, 100%)", maxHeight: "85vh", overflowY: "auto" }}
         onClick={(e) => e.stopPropagation()}
       >
-        <GameCard title="Objectives" icon={<span style={{ fontSize: 18 }}>🎯</span>} variant="results">
+        <GameCard title={translateCurrent("auto.ui.objectivespanel.objectives")} icon={<span style={{ fontSize: 18 }}>🎯</span>} variant="results">
           {!objectives && (
             <div style={{ fontSize: 13, color: "#6b7280" }}>
-              Free play — no goals. Enjoy the course.
-            </div>
+              <T id="auto.ui.objectivespanel.free.play.no.goals.enjoy.the.course" /></div>
           )}
           {objectives && (
             <div style={{ display: "grid", gap: 14 }}>
@@ -189,7 +193,7 @@ export function ObjectivesPanel(props: {
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                       <div style={{ fontWeight: 800, fontSize: 14 }}>
-                        {p?.met ? "✅" : "⬜"} {goal.label}
+                        {p?.met ? "✅" : "⬜"} {goal.labelKey ? t(goal.labelKey) : goal.label}
                       </div>
                       {goal.deadlineWeek != null && !p?.met && (
                         <div
@@ -200,18 +204,18 @@ export function ObjectivesPanel(props: {
                             flexShrink: 0,
                           }}
                         >
-                          by week {goal.deadlineWeek}
+                          <T id="auto.ui.objectivespanel.by" />{formatWeekLabel(goal.deadlineWeek!, "en", "week")}
                           {weeksLeft != null && weeksLeft >= 0 ? ` (${weeksLeft} left)` : ""}
                         </div>
                       )}
                       {p?.met && p.completedWeek != null && (
                         <div style={{ fontSize: 11, color: "#2f6b33", flexShrink: 0 }}>
-                          week {p.completedWeek}
+                          {formatWeekLabel(p.completedWeek!, "en", "week")}
                         </div>
                       )}
                     </div>
                     {goal.description && (
-                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{goal.description}</div>
+                      <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{goal.descriptionKey ? t(goal.descriptionKey) : goal.description}</div>
                     )}
                     <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
                       {p?.conditions.map((c, ci) => (
@@ -253,8 +257,7 @@ export function ObjectivesPanel(props: {
                 cursor: "pointer",
               }}
             >
-              Close
-            </button>
+              <T id="auto.ui.objectivespanel.close" /></button>
           </div>
         </GameCard>
       </div>

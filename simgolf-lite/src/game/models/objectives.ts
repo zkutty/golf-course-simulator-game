@@ -1,6 +1,7 @@
 // Objective engine (ZKU-163): goals are DATA, not code. Every metric here is
 // an existing sim output; scenarios (ZKU-164), the tutorial (M14), and
 // achievements (ZKU-180) reuse this same condition vocabulary.
+import type { MessageKey } from "../../i18n/catalog";
 
 export type GoalMetric =
   | "cash" // world.cash, dollars
@@ -25,6 +26,8 @@ export interface GoalDefinition {
   id: string;
   label: string;
   description?: string;
+  labelKey?: MessageKey;
+  descriptionKey?: MessageKey;
   /** How conditions combine: "all" (default) or "any". */
   match?: "all" | "any";
   conditions: GoalCondition[];

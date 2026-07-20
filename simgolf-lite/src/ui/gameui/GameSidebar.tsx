@@ -1,6 +1,9 @@
 import type { CSSProperties, ReactNode } from "react";
+import { formatCurrency } from "../../i18n/format";
 import { IconCash, IconCondition, IconReputation } from "@/assets/icons";
 import { GameButton } from "./GameButtons";
+import { T } from "../../i18n/T";
+import { translateCurrent } from "../../i18n/core";
 
 export type GameMode = "editor" | "metrics" | "results" | "upgrades";
 
@@ -36,10 +39,10 @@ export function GameSidebar({
   footerRight,
 }: GameSidebarProps) {
   const modes: { id: GameMode; label: string }[] = [
-    { id: "editor", label: "Editor" },
-    { id: "metrics", label: "Metrics" },
-    { id: "results", label: "Results" },
-    { id: "upgrades", label: "Upgrades" },
+    { id: "editor", label: translateCurrent("game.mode.editor") },
+    { id: "metrics", label: translateCurrent("game.mode.metrics") },
+    { id: "results", label: translateCurrent("game.mode.results") },
+    { id: "upgrades", label: translateCurrent("game.mode.upgrades") },
   ];
 
   return (
@@ -83,15 +86,15 @@ export function GameSidebar({
       </div>
 
       <div style={{ position: "relative", flex: 1, overflow: "auto", padding: 16, display: "grid", gap: 14 }}>
-        <Card title="Course Status">
+        <Card title={translateCurrent("auto.ui.gameui.gamesidebar.course.status")}>
           <div style={{ display: "grid", gap: 12 }}>
-            <StatRow icon={<IconCash size={26} />} label="Cash" value={`$${(cash / 1000).toFixed(1)}k`} />
-            <StatRow icon={<IconReputation size={26} />} label="Reputation" value={`${Math.round(reputation)}%`} />
-            <StatRow icon={<IconCondition size={26} />} label="Condition" value={`${pct(condition)}%`} />
+            <StatRow icon={<IconCash size={26} />} label={translateCurrent("stat.cash")} value={formatCurrency(cash / 1000, "en", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "k"} />
+            <StatRow icon={<IconReputation size={26} />} label={translateCurrent("stat.reputation")} value={`${Math.round(reputation)}%`} />
+            <StatRow icon={<IconCondition size={26} />} label={translateCurrent("stat.condition")} value={`${pct(condition)}%`} />
           </div>
         </Card>
 
-        <Card title="Game Mode">
+        <Card title={translateCurrent("auto.ui.gameui.gamesidebar.game.mode")}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             {modes.map((m) => (
               <button
@@ -116,8 +119,7 @@ export function GameSidebar({
         </Card>
 
         <GameButton variant="primary" size="lg" onClick={onSimulate} style={{ width: "100%", borderRadius: 18 }}>
-          ⏩ Simulate Week
-        </GameButton>
+          <T id="auto.ui.gameui.gamesidebar.simulate.week" /></GameButton>
 
         {children}
       </div>
@@ -133,11 +135,9 @@ export function GameSidebar({
         }}
       >
         <GameButton variant="secondary" size="md" onClick={onSave} style={{ flex: 1, borderRadius: 16 }}>
-          💾 Save
-        </GameButton>
+          <T id="auto.ui.gameui.gamesidebar.save" /></GameButton>
         <GameButton variant="secondary" size="md" onClick={onLoad} style={{ flex: 1, borderRadius: 16 }}>
-          📁 Load
-        </GameButton>
+          <T id="auto.ui.gameui.gamesidebar.load" /></GameButton>
         {onReset && (
           <GameButton variant="secondary" size="md" onClick={onReset} style={{ borderRadius: 16 }}>
             ↺
@@ -182,7 +182,6 @@ function StatRow(props: { icon: ReactNode; label: string; value: string }) {
     </div>
   );
 }
-
 
 
 

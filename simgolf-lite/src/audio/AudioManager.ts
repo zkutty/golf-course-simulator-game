@@ -1,41 +1,15 @@
 
-const AUDIO_STORAGE_KEY = "coursecraft_audio_volumes";
+import { loadAppProfile, updateProfileTab } from "../game/onboarding/profile";
 
-interface AudioVolumes {
+export interface AudioVolumes {
+  masterVolume: number;
   musicVolume: number;
   ambienceVolume: number;
   sfxVolume: number;
 }
 
-const DEFAULT_VOLUMES: AudioVolumes = {
-  musicVolume: 0.25,
-  ambienceVolume: 0.40,
-  sfxVolume: 0.6,
-};
-
 function loadVolumes(): AudioVolumes {
-  try {
-    const stored = localStorage.getItem(AUDIO_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      return {
-        musicVolume: typeof parsed.musicVolume === "number" ? Math.max(0, Math.min(1, parsed.musicVolume)) : DEFAULT_VOLUMES.musicVolume,
-        ambienceVolume: typeof parsed.ambienceVolume === "number" ? Math.max(0, Math.min(1, parsed.ambienceVolume)) : DEFAULT_VOLUMES.ambienceVolume,
-        sfxVolume: typeof parsed.sfxVolume === "number" ? Math.max(0, Math.min(1, parsed.sfxVolume)) : DEFAULT_VOLUMES.sfxVolume,
-      };
-    }
-  } catch (e) {
-    console.warn("[AudioManager] Failed to load volumes:", e);
-  }
-  return DEFAULT_VOLUMES;
-}
-
-function saveVolumes(volumes: AudioVolumes): void {
-  try {
-    localStorage.setItem(AUDIO_STORAGE_KEY, JSON.stringify(volumes));
-  } catch (e) {
-    console.warn("[AudioManager] Failed to save volumes:", e);
-  }
+  return { ...loadAppProfile().audio };
 }
 
 class AudioManager {
@@ -56,12 +30,12 @@ class AudioManager {
     this.musicAudio = new Audio();
     this.musicAudio.loop = true;
     this.musicAudio.preload = "auto";
-    this.musicAudio.volume = this.volumes.musicVolume;
+    this.musicAudio.volume = this.effective("musicVolume");
 
     this.ambienceAudio = new Audio();
     this.ambienceAudio.loop = true;
     this.ambienceAudio.preload = "auto";
-    this.ambienceAudio.volume = this.volumes.ambienceVolume;
+    this.ambienceAudio.volume = this.effective("ambienceVolume");
   }
 
   static getInstance(): AudioManager {
@@ -93,14 +67,26 @@ class AudioManager {
 
   setVolumes(volumes: Partial<AudioVolumes>): void {
     this.volumes = { ...this.volumes, ...volumes };
-    saveVolumes(this.volumes);
-    
-    if (this.musicAudio) this.musicAudio.volume = this.volumes.musicVolume;
-    if (this.ambienceAudio) this.ambienceAudio.volume = this.volumes.ambienceVolume;
+    updateProfileTab("audio", this.volumes);
+    this.applyElementVolumes();
+  }
+
+  syncVolumes(volumes: AudioVolumes): void {
+    this.volumes = { ...volumes };
+    this.applyElementVolumes();
+  }
+
+  private applyElementVolumes(): void {
+    if (this.musicAudio) this.musicAudio.volume = this.effective("musicVolume");
+    if (this.ambienceAudio) this.ambienceAudio.volume = this.effective("ambienceVolume");
   }
 
   getVolumes(): AudioVolumes {
     return { ...this.volumes };
+  }
+
+  private effective(channel: "musicVolume" | "ambienceVolume" | "sfxVolume"): number {
+    return this.volumes.masterVolume * this.volumes[channel];
   }
 
   private async fadeIn(audio: HTMLAudioElement, targetVolume: number): Promise<void> {
@@ -175,7 +161,7 @@ class AudioManager {
         try {
           this.ambienceAudio.volume = 0;
           await this.ambienceAudio.play();
-          await this.fadeIn(this.ambienceAudio, this.volumes.ambienceVolume);
+          await this.fadeIn(this.ambienceAudio, this.effective("ambienceVolume"));
         } catch (e) {
           console.warn("[AudioManager] Failed to resume ambience:", e);
         }
@@ -195,7 +181,7 @@ class AudioManager {
 
     try {
       await this.ambienceAudio.play();
-      await this.fadeIn(this.ambienceAudio, this.volumes.ambienceVolume);
+      await this.fadeIn(this.ambienceAudio, this.effective("ambienceVolume"));
       console.log("[AudioManager] Ambience playing:", src);
     } catch (e) {
       console.warn("[AudioManager] Failed to play ambience:", src, e);
@@ -226,7 +212,7 @@ class AudioManager {
         try {
           this.musicAudio.volume = 0;
           await this.musicAudio.play();
-          await this.fadeIn(this.musicAudio, this.volumes.musicVolume);
+          await this.fadeIn(this.musicAudio, this.effective("musicVolume"));
         } catch (e) {
           console.warn("[AudioManager] Failed to resume music:", e);
         }
@@ -249,7 +235,7 @@ class AudioManager {
 
     try {
       await this.musicAudio.play();
-      await this.fadeIn(this.musicAudio, this.volumes.musicVolume);
+      await this.fadeIn(this.musicAudio, this.effective("musicVolume"));
       console.log("[AudioManager] Music playing:", src);
     } catch (e) {
       console.warn("[AudioManager] Failed to play music:", src, e);
@@ -292,7 +278,7 @@ class AudioManager {
     }
 
     audio.src = src;
-    audio.volume = this.volumes.sfxVolume;
+    audio.volume = this.effective("sfxVolume");
     audio.currentTime = 0;
 
     try {
@@ -305,6 +291,4 @@ class AudioManager {
 }
 
 export const audioManager = AudioManager.getInstance();
-
-
 

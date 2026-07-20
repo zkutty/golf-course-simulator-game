@@ -53,3 +53,36 @@ body,
 a {
   color: inherit;
 }
+
+html[data-reduced-motion="true"] *,
+html[data-reduced-motion="true"] *::before,
+html[data-reduced-motion="true"] *::after {
+  scroll-behavior: auto !important;
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+:where(button, input, select, textarea, [href], [tabindex]):focus-visible {
+  outline: 3px solid #0b67a3 !important;
+  outline-offset: 3px;
+  box-shadow: 0 0 0 2px #fff !important;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (max-width: 720px) {
+  [data-testid="options-screen"] label {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+}
