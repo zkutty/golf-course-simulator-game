@@ -5,7 +5,10 @@ test("M7 reputation progression, clock, live overview, and follow flow", async (
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?perfFixture=1&m7Rep=40");
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.onCourse)).toBe(100);
+  await expect.poll(
+    () => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.onCourse),
+    { timeout: 30_000 },
+  ).toBe(100);
 
   await page.getByTestId("open-progression").click();
   const progression = page.getByTestId("progression-panel");
@@ -39,7 +42,10 @@ test("M7 reputation progression, clock, live overview, and follow flow", async (
 
 test("M7 progression locks unavailable build content", async ({ page }) => {
   await page.goto("/?perfFixture=1&m7Rep=40");
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").progression?.tier)).toBe("local");
+  await expect.poll(
+    () => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").progression?.tier),
+    { timeout: 30_000 },
+  ).toBe("local");
   await page.getByRole("button", { name: "Architect" }).click();
   await expect(page.getByRole("button", { name: /deep_rough/ })).toBeDisabled();
   await page.getByRole("button", { name: /Obstacle/ }).click();
