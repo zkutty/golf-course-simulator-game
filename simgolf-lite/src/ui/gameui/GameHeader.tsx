@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { formatCurrency } from "../../i18n/format";
 import { IconCash, IconCondition, IconReputation } from "@/assets/icons";
+import { translateCurrent } from "../../i18n/core";
 
 export interface GameHeaderProps {
   cash?: number;
@@ -18,8 +20,8 @@ export function GameHeader({
   cash = 50_000,
   reputation = 85,
   condition = 0.92,
-  title = "SimGolf-lite Tycoon",
-  subtitle = "Build • Route • Manage",
+  title = translateCurrent("game.header.defaultTitle"),
+  subtitle = translateCurrent("game.header.defaultSubtitle"),
   rightSlot,
 }: GameHeaderProps) {
   return (
@@ -105,9 +107,9 @@ export function GameHeader({
 
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <StatPill icon={<IconCash size={26} />} label="Cash" value={`$${Math.round(cash / 1000)}k`} />
-            <StatPill icon={<IconReputation size={26} />} label="Reputation" value={`${Math.round(reputation)}%`} />
-            <StatPill icon={<IconCondition size={26} />} label="Condition" value={`${pct(condition)}%`} />
+            <StatPill icon={<IconCash size={26} />} label={translateCurrent("stat.cash")} value={formatCurrency(cash / 1000) + "k"} />
+            <StatPill icon={<IconReputation size={26} />} label={translateCurrent("stat.reputation")} value={`${Math.round(reputation)}%`} />
+            <StatPill icon={<IconCondition size={26} />} label={translateCurrent("stat.condition")} value={`${pct(condition)}%`} />
           </div>
           {rightSlot}
         </div>
@@ -142,5 +144,4 @@ function StatPill(props: { icon: ReactNode; label: string; value: string }) {
     </div>
   );
 }
-
 

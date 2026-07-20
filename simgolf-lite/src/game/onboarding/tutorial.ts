@@ -1,11 +1,14 @@
 import type { Course, WeekResult, World } from "../models/types";
 import { isCoursePlayable } from "../sim/isCoursePlayable";
 import { scoreCourseHoles } from "../sim/holes";
+import type { MessageKey } from "../../i18n/catalog";
 
 export type TutorialTarget =
   | "course"
   | "terrain-palette"
   | "hole-wizard"
+  | "editor-tools"
+  | "hole-editor-nav"
   | "shot-plan"
   | "fix-overlay"
   | "speed-controls"
@@ -22,13 +25,14 @@ export interface TutorialContext {
 
 export interface TutorialStep {
   id: string;
-  eyebrow: string;
-  title: string;
-  body: string;
+  eyebrowKey: MessageKey;
+  titleKey: MessageKey;
+  bodyKey: MessageKey;
   target: TutorialTarget;
+  allowedTargets?: readonly TutorialTarget[];
   expression: "neutral" | "pleased" | "worried" | "excited";
   canAdvance: (context: TutorialContext, baseline: TutorialBaseline) => boolean;
-  actionLabel?: string;
+  actionLabelKey?: MessageKey;
 }
 
 export interface TutorialBaseline {
@@ -52,114 +56,95 @@ const validHoles = (course: Course) => scoreCourseHoles(course).holes.filter((ho
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
     id: "meet-land",
-    eyebrow: "Lesson 1 of 12",
-    title: "Meet your patch of earth",
-    body: "This is real sandbox land. We will build on it together, and everything you do here remains playable when the lesson ends.",
+    eyebrowKey: "tutorial.lesson1.eyebrow", titleKey: "tutorial.lesson1.title", bodyKey: "tutorial.lesson1.body",
     target: "course",
     expression: "neutral",
     canAdvance: always,
-    actionLabel: "Show me the tools",
+    actionLabelKey: "tutorial.lesson1.action",
   },
   {
     id: "paint-corridor",
-    eyebrow: "Lesson 2 of 12",
-    title: "Give the ball somewhere to go",
-    body: "Choose Fairway and paint a generous corridor. A few tiles are enough to continue; wider corridors are kinder to wayward shots.",
+    eyebrowKey: "tutorial.lesson2.eyebrow", titleKey: "tutorial.lesson2.title", bodyKey: "tutorial.lesson2.body",
     target: "terrain-palette",
+    allowedTargets: ["terrain-palette", "course"],
     expression: "pleased",
     canAdvance: ({ course }, baseline) => course.tiles.filter((tile) => tile === "fairway").length >= baseline.fairwayTiles + 4,
   },
   {
     id: "place-hole",
-    eyebrow: "Lesson 3 of 12",
-    title: "Pin down a hole",
-    body: "Open the Hole Wizard, place a tee at one end of your corridor and a green at the other, then confirm it.",
+    eyebrowKey: "tutorial.lesson3.eyebrow", titleKey: "tutorial.lesson3.title", bodyKey: "tutorial.lesson3.body",
     target: "hole-wizard",
+    allowedTargets: ["hole-wizard", "editor-tools", "course"],
     expression: "neutral",
     canAdvance: ({ course }) => course.holes.some((hole) => !!hole.tee && !!hole.green),
   },
   {
     id: "shot-plan",
-    eyebrow: "Lesson 4 of 12",
-    title: "Read the shot plan",
-    body: "The dotted route estimates how golfers attack the hole. Effective distance includes elevation and hazards, not just the ruler distance.",
+    eyebrowKey: "tutorial.lesson4.eyebrow", titleKey: "tutorial.lesson4.title", bodyKey: "tutorial.lesson4.body",
     target: "shot-plan",
+    allowedTargets: ["shot-plan", "course"],
     expression: "neutral",
     canAdvance: always,
-    actionLabel: "I see it",
+    actionLabelKey: "tutorial.lesson4.action",
   },
   {
     id: "fix-corridor",
-    eyebrow: "Lesson 5 of 12",
-    title: "Make it playable",
-    body: "If the hole is flagged, use its Fix overlay and widen the marked landing corridor. The lesson accepts any valid design — no exact score required.",
+    eyebrowKey: "tutorial.lesson5.eyebrow", titleKey: "tutorial.lesson5.title", bodyKey: "tutorial.lesson5.body",
     target: "fix-overlay",
+    allowedTargets: ["fix-overlay", "hole-editor-nav", "hole-wizard", "editor-tools", "course", "terrain-palette"],
     expression: "worried",
     canAdvance: ({ course }) => validHoles(course) >= 1,
   },
   {
     id: "open-course",
-    eyebrow: "Lesson 6 of 12",
-    title: "Open for play",
-    body: "A full course needs nine valid holes. Keep using the wizard; you can continue the lesson early if this run already has a playable course.",
+    eyebrowKey: "tutorial.lesson6.eyebrow", titleKey: "tutorial.lesson6.title", bodyKey: "tutorial.lesson6.body",
     target: "hole-wizard",
+    allowedTargets: ["hole-wizard", "course", "terrain-palette"],
     expression: "pleased",
     canAdvance: ({ course }) => isCoursePlayable(course),
   },
   {
     id: "watch-golfers",
-    eyebrow: "Lesson 7 of 12",
-    title: "Let the first group breathe",
-    body: "Set the clock to 1× and watch a group arrive. Their reaction bubbles are honest little course reviews.",
+    eyebrowKey: "tutorial.lesson7.eyebrow", titleKey: "tutorial.lesson7.title", bodyKey: "tutorial.lesson7.body",
     target: "speed-controls",
     expression: "excited",
     canAdvance: ({ onCourse }) => onCourse > 0,
   },
   {
     id: "weekly-report",
-    eyebrow: "Lesson 8 of 12",
-    title: "Close the books",
-    body: "Open the Results tab after a week closes. Revenue is nice; profit is what survives after staff, maintenance, and overhead.",
+    eyebrowKey: "tutorial.lesson8.eyebrow", titleKey: "tutorial.lesson8.title", bodyKey: "tutorial.lesson8.body",
     target: "weekly-report",
     expression: "neutral",
     canAdvance: ({ last }) => !!last,
   },
   {
     id: "green-fee",
-    eyebrow: "Lesson 9 of 12",
-    title: "Price with a light touch",
-    body: "Adjust the green fee. Higher prices earn more per round but can cool demand, especially for casual golfers.",
+    eyebrowKey: "tutorial.lesson9.eyebrow", titleKey: "tutorial.lesson9.title", bodyKey: "tutorial.lesson9.body",
     target: "green-fee",
     expression: "neutral",
     canAdvance: ({ course }, baseline) => course.baseGreenFee !== baseline.greenFee,
   },
   {
     id: "maintenance",
-    eyebrow: "Lesson 10 of 12",
-    title: "Protect the grass",
-    body: "Change the maintenance budget. Underfunding saves cash today, then quietly taxes condition and reputation tomorrow.",
+    eyebrowKey: "tutorial.lesson10.eyebrow", titleKey: "tutorial.lesson10.title", bodyKey: "tutorial.lesson10.body",
     target: "maintenance",
     expression: "worried",
     canAdvance: ({ world }, baseline) => world.maintenanceBudget !== baseline.maintenanceBudget,
   },
   {
     id: "first-profit",
-    eyebrow: "Lesson 11 of 12",
-    title: "Reach a profitable week",
-    body: "Now tune the loop: fair price, healthy condition, attractive holes. Any positive weekly profit clears this lesson.",
+    eyebrowKey: "tutorial.lesson11.eyebrow", titleKey: "tutorial.lesson11.title", bodyKey: "tutorial.lesson11.body",
     target: "weekly-report",
     expression: "pleased",
     canAdvance: ({ last }) => (last?.profit ?? 0) > 0,
   },
   {
     id: "graduation",
-    eyebrow: "Lesson 12 of 12",
-    title: "Your course is open",
-    body: "You know the loop: design, observe, read the numbers, adjust. The sandbox is yours — and the career scenarios are waiting when you want a sharper test.",
+    eyebrowKey: "tutorial.lesson12.eyebrow", titleKey: "tutorial.lesson12.title", bodyKey: "tutorial.lesson12.body",
     target: "course",
     expression: "excited",
     canAdvance: always,
-    actionLabel: "Graduate",
+    actionLabelKey: "tutorial.lesson12.action",
   },
 ];
 

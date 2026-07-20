@@ -1,4 +1,5 @@
 import type { ConcessionTransaction, ConcessionType, Course, WeekResult, World } from "../models/types";
+import { translateCurrent } from "../../i18n/core";
 import { mulberry32, randInt } from "../../utils/rng";
 import { demandBreakdown, satisfactionBreakdown, satisfactionScore } from "./score";
 import { scoreCourseHoles } from "./holes";
@@ -234,7 +235,7 @@ function buildExplainabilityTips(holes: ReturnType<typeof scoreCourseHoles>) {
   const tips: string[] = [];
 
   const incomplete = holes.holes.filter((h) => !h.isComplete).length;
-  if (incomplete > 0) tips.push(`You have ${incomplete} incomplete holes (missing tee/green).`);
+  if (incomplete > 0) tips.push(translateCurrent("tip.incomplete", { n: incomplete }));
 
   const complete = holes.holes.filter((h) => h.isComplete);
   const worst = complete
@@ -250,37 +251,37 @@ function buildExplainabilityTips(holes: ReturnType<typeof scoreCourseHoles>) {
     const holeNo = h.holeIndex + 1;
 
     if (waterFrac >= 0.12) {
-      tips.push(`Hole ${holeNo}: water on the direct line reduces playability — move it off the corridor.`);
+      tips.push(translateCurrent("tip.waterLine", { hole: holeNo }));
       continue;
     }
     if (roughFrac >= 0.6) {
-      tips.push(`Hole ${holeNo}: the tee→green line is mostly rough — paint a fairway corridor.`);
+      tips.push(translateCurrent("tip.roughLine", { hole: holeNo }));
       continue;
     }
     if (h.difficultyScore >= 78 && h.effectiveDistance >= 28 && waterFrac + sandFrac >= 0.08) {
-      tips.push(`Hole ${holeNo}: long + hazard-heavy — feels unfair; reduce hazards or shorten it.`);
+      tips.push(translateCurrent("tip.unfair", { hole: holeNo }));
       continue;
     }
     if (h.aestheticsScore < 45 && waterFrac + sandFrac >= 0.08) {
-      tips.push(`Hole ${holeNo}: aesthetics suffers because hazards are on the line — keep water/sand near the corridor, not on it.`);
+      tips.push(translateCurrent("tip.aestheticsLine", { hole: holeNo }));
       continue;
     }
     if (h.playabilityScore < 55) {
-      tips.push(`Hole ${holeNo}: low playability — reduce hazards/rough on the main corridor.`);
+      tips.push(translateCurrent("tip.lowPlayability", { hole: holeNo }));
       continue;
     }
   }
 
   // Global patterns (deterministic)
   const hard = complete.filter((h) => h.difficultyScore >= 75).length;
-  if (hard >= 3) tips.push("Several holes are very difficult (long + hazards) → many golfers will find it unfair.");
+  if (hard >= 3) tips.push(translateCurrent("tip.severalHard"));
 
   const waterHeavyCount = complete.filter((h) => (h.corridor.water / (h.corridor.samples || 1)) > 0.18).length;
-  if (waterHeavyCount >= 3) tips.push("3+ holes have lots of water on the direct corridor; casual golfers tend to avoid this.");
+  if (waterHeavyCount >= 3) tips.push(translateCurrent("tip.waterHeavy"));
 
   const avgAest =
     complete.length === 0 ? 0 : complete.reduce((acc, h) => acc + h.aestheticsScore, 0) / complete.length;
-  if (avgAest < 45) tips.push("Aesthetics is low: add water/sand near fairway edges (not directly on the tee→green line).");
+  if (avgAest < 45) tips.push(translateCurrent("tip.lowAesthetics"));
 
   return tips.slice(0, 3);
 }
@@ -352,4 +353,3 @@ function buildTopIssues(holes: ReturnType<typeof scoreCourseHoles>) {
   }
   return deduped.slice(0, 3);
 }
-

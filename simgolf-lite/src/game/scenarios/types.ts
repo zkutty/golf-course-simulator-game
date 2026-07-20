@@ -1,5 +1,6 @@
 import type { Difficulty, LandTheme, ScenarioConstraints } from "../models/types";
 import type { GoalDefinition } from "../models/objectives";
+import type { MessageKey } from "../../i18n/catalog";
 
 // Career scenario format (ZKU-164): pure data. Goals come from the ZKU-163
 // vocabulary; constraints are the ScenarioConstraints the sim/UI enforce.
@@ -12,6 +13,8 @@ export interface ScenarioDefinition {
   order: number;
   name: string;
   blurb: string;
+  nameKey: MessageKey;
+  blurbKey: MessageKey;
   seed: number;
   theme: LandTheme;
   difficulty: Difficulty;

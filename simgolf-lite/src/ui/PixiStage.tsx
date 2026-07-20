@@ -60,6 +60,9 @@ import {
   type EmoteKind,
 } from "../game/render/emotes";
 import { forgetGolfer, recordEmote } from "../game/render/emoteFeed";
+import { TERRAIN_PALETTES, terrainPattern } from "../accessibility/terrainPalettes";
+import type { ColorVisionMode } from "../game/onboarding/profile";
+import { bindingFromEvent, type BindingAction, type Keybindings } from "../accessibility/keybindings";
 import {
   CLOUD_COUNT,
   HERON_STARTLE_TILES,
@@ -74,6 +77,7 @@ import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetric
 import { buildingSpec } from "../game/models/buildings";
 import { getLandTheme } from "../game/models/themes";
 import type { AtlasFrame } from "../render/atlas";
+import { T } from "../i18n/T";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -317,6 +321,16 @@ export interface PixiStageProps {
   tileSize: number;
   showGridOverlays: boolean;
   animationsEnabled: boolean;
+  ambienceFx: boolean;
+  waterAnimation: boolean;
+  treeSway: boolean;
+  resolutionScale: number;
+  cameraSmoothing: boolean;
+  edgeScroll: boolean;
+  edgeScrollSpeed: number;
+  colorVision: ColorVisionMode;
+  terrainPatterns: boolean;
+  keybindings: Keybindings;
   flyoverNonce: number;
   showShotPlan: boolean;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
@@ -550,6 +564,7 @@ export function PixiStage(props: PixiStageProps) {
   const camRef = useRef({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false });
   const rotTweenRef = useRef<{ start: number; toDeg: number; next: IsoRotation } | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
   const lastReportedCenterRef = useRef<Point | null>(null);
   const lastCameraStateRef = useRef<CameraState | null | undefined>(undefined);
 
@@ -773,7 +788,7 @@ export function PixiStage(props: PixiStageProps) {
         height,
         backgroundColor: 0xdfe8d8, // soft parchment-green backdrop
         antialias: true,
-        resolution: window.devicePixelRatio || 1,
+        resolution: (window.devicePixelRatio || 1) * props.resolutionScale,
         autoDensity: true,
       });
 
@@ -902,7 +917,7 @@ export function PixiStage(props: PixiStageProps) {
         appRef.current = null;
       }
     };
-  }, []);
+  }, [props.resolutionScale]);
 
   // Resize with ResizeObserver
   useEffect(() => {
@@ -1032,6 +1047,8 @@ export function PixiStage(props: PixiStageProps) {
       el.style.cursor = "grabbing";
     };
     const handlePointerMove = (e: PointerEvent) => {
+      const rect = el.getBoundingClientRect();
+      pointerRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       if (!panState) return;
       const cam = camRef.current;
       const startIso = worldToIso(panState.cx, panState.cy, 0, rotation);
@@ -1059,30 +1076,35 @@ export function PixiStage(props: PixiStageProps) {
       (t instanceof HTMLElement && t.isContentEditable);
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
-      const k = e.key.toLowerCase();
+      const binding = bindingFromEvent(e);
+      const panActions: BindingAction[] = ["panUp", "panDown", "panLeft", "panRight"];
+      const panAction = panActions.find((action) => props.keybindings[action] === binding);
       if (flyoverRef.current) {
-        // Esc (or any camera key) skips the flyover; nothing else fires.
-        if (["escape", " ", "enter", "q", "e", "w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
+        if (e.code === "Escape" || panAction || binding === props.keybindings.rotateLeft || binding === props.keybindings.rotateRight) {
           endFlyover();
           e.preventDefault();
+          e.stopImmediatePropagation();
         }
         return;
       }
-      if (["w", "a", "s", "d", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(k)) {
-        keysRef.current.add(k);
+      if (panAction) {
+        keysRef.current.add(panAction);
         e.preventDefault();
-      } else if ((k === "q" || k === "e") && !e.repeat && !rotTweenRef.current) {
+      } else if (!e.repeat && !rotTweenRef.current && (binding === props.keybindings.rotateLeft || binding === props.keybindings.rotateRight)) {
+        const right = binding === props.keybindings.rotateRight;
         rotTweenRef.current = {
           start: performance.now(),
-          toDeg: k === "e" ? -90 : 90,
-          next: nextRotation(rotation, k === "e" ? 1 : -1),
+          toDeg: right ? -90 : 90,
+          next: nextRotation(rotation, right ? 1 : -1),
         };
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
-      keysRef.current.delete(e.key.toLowerCase());
+      const released = (["panUp", "panDown", "panLeft", "panRight"] as BindingAction[]).filter((action) => props.keybindings[action].endsWith(e.code));
+      for (const action of released) keysRef.current.delete(action);
     };
     const handleBlur = () => keysRef.current.clear();
+    const handlePointerLeave = () => { pointerRef.current = null; };
 
     // Per-frame: keyboard pan, target smoothing, rotation tween.
     const tickCamera = (ticker: PIXI.Ticker) => {
@@ -1113,10 +1135,10 @@ export function PixiStage(props: PixiStageProps) {
       if (!flyover && keys.size > 0 && !rotTweenRef.current) {
         let dx = 0;
         let dy = 0;
-        if (keys.has("a") || keys.has("arrowleft")) dx -= 1;
-        if (keys.has("d") || keys.has("arrowright")) dx += 1;
-        if (keys.has("w") || keys.has("arrowup")) dy -= 1;
-        if (keys.has("s") || keys.has("arrowdown")) dy += 1;
+        if (keys.has("panLeft")) dx -= 1;
+        if (keys.has("panRight")) dx += 1;
+        if (keys.has("panUp")) dy -= 1;
+        if (keys.has("panDown")) dy += 1;
         if (dx !== 0 || dy !== 0) {
           const step = (KEY_PAN_SPEED * dtMs) / 1000 / cam.zoom;
           const centerIso = worldToIso(cam.tcx, cam.tcy, 0, rotation);
@@ -1128,8 +1150,26 @@ export function PixiStage(props: PixiStageProps) {
         }
       }
 
+      // Optional screen-edge pan uses the same camera targets as keyboard
+      // input, so changing the option takes effect without reloading Pixi.
+      const pointer = pointerRef.current;
+      if (!flyover && props.edgeScroll && pointer && !rotTweenRef.current) {
+        const margin = 28;
+        const dx = pointer.x < margin ? -1 : pointer.x > el.clientWidth - margin ? 1 : 0;
+        const dy = pointer.y < margin ? -1 : pointer.y > el.clientHeight - margin ? 1 : 0;
+        if (dx || dy) {
+          const step = (KEY_PAN_SPEED * props.edgeScrollSpeed * dtMs) / 1000 / cam.zoom;
+          const centerIso = worldToIso(cam.tcx, cam.tcy, 0, rotation);
+          const tile = isoToWorld(centerIso.x + dx * step, centerIso.y + dy * step, rotation);
+          const clamped = clampCenter(tile.x, tile.y);
+          cam.tcx = clamped.x;
+          cam.tcy = clamped.y;
+          moved = true;
+        }
+      }
+
       // Smooth toward targets.
-      const k = 1 - Math.exp(-dtMs / 90);
+      const k = props.cameraSmoothing ? 1 - Math.exp(-dtMs / 90) : 1;
       const snap = (a: number, b: number) => (Math.abs(a - b) < 1e-4 ? b : a + (b - a) * k);
       const ncx = snap(cam.cx, cam.tcx);
       const ncy = snap(cam.cy, cam.tcy);
@@ -1167,9 +1207,10 @@ export function PixiStage(props: PixiStageProps) {
     el.addEventListener("pointermove", handlePointerMove);
     el.addEventListener("pointerup", handlePointerUp);
     el.addEventListener("contextmenu", handleContextMenu);
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
     window.addEventListener("keyup", handleKeyUp);
     window.addEventListener("blur", handleBlur);
+    el.addEventListener("pointerleave", handlePointerLeave);
     app.ticker.add(tickCamera);
 
     return () => {
@@ -1178,13 +1219,14 @@ export function PixiStage(props: PixiStageProps) {
       el.removeEventListener("pointermove", handlePointerMove);
       el.removeEventListener("pointerup", handlePointerUp);
       el.removeEventListener("contextmenu", handleContextMenu);
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, true);
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("blur", handleBlur);
-      app.ticker.remove(tickCamera);
+      el.removeEventListener("pointerleave", handlePointerLeave);
+      app.ticker?.remove(tickCamera);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appReady, rotation, cameraState, applyCamera, clampCenter, screenToIsoPlane]);
+  }, [appReady, rotation, cameraState, applyCamera, clampCenter, screenToIsoPlane, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing, props.keybindings]);
 
   // ---------------------------------------------------------------------
   // Terrain layer — tinted diamond sprites, back-to-front
@@ -1213,7 +1255,9 @@ export function PixiStage(props: PixiStageProps) {
 
     // ZKU-166 (theme palettes) — the ONLY theme-aware line in the renderer:
     // flat tint overrides read from game/models/themes; identity for parkland.
-    const THEMED_COLORS: Record<Terrain, number> = { ...COLORS, ...getLandTheme(course.theme).tileTints };
+    const THEMED_COLORS: Record<Terrain, number> = props.colorVision === "standard"
+      ? { ...COLORS, ...getLandTheme(course.theme).tileTints }
+      : TERRAIN_PALETTES[props.colorVision];
 
     /** Rebuild one chunk's contents in place (cliffs first, tops in depth order). */
     const buildChunk = (chunk: TerrainChunk, cx: number, cy: number) => {
@@ -1318,6 +1362,26 @@ export function PixiStage(props: PixiStageProps) {
         sprite.position.set(p.x, p.y);
         sprite.tint = tileTint;
         chunk.container.addChild(sprite);
+        if (props.terrainPatterns && terrainPattern(terrain) !== "none") {
+          const pattern = new PIXI.Graphics();
+          pattern.position.set(p.x, p.y);
+          pattern.alpha = 0.38;
+          if (terrainPattern(terrain) === "stripe") {
+            pattern.moveTo(-22, 12); pattern.lineTo(0, 1);
+            pattern.moveTo(-8, 16); pattern.lineTo(15, 5);
+            pattern.stroke({ width: 1.5, color: 0xffffff });
+          } else if (terrainPattern(terrain) === "crosshatch") {
+            pattern.moveTo(-18, 7); pattern.lineTo(0, 16);
+            pattern.moveTo(0, 0); pattern.lineTo(18, 9);
+            pattern.moveTo(-18, 9); pattern.lineTo(0, 0);
+            pattern.moveTo(0, 16); pattern.lineTo(18, 7);
+            pattern.stroke({ width: 1.2, color: 0xffffff });
+          } else {
+            pattern.circle(-12, 8, 1.4); pattern.circle(0, 4, 1.4); pattern.circle(12, 10, 1.4); pattern.circle(0, 14, 1.4);
+            pattern.fill(0xffffff);
+          }
+          chunk.container.addChild(pattern);
+        }
 
         // Animated water registration (ZKU-150): shimmer phase from position
         // so neighboring tiles never pulse in sync; plus a foam lip along
@@ -1450,7 +1514,7 @@ export function PixiStage(props: PixiStageProps) {
     prevTilesRef.current = course.tiles;
     prevElevationsRef.current = course.elevations;
     cullChunks();
-  }, [appReady, course, rotation, cullChunks]);
+  }, [appReady, course, rotation, cullChunks, props.colorVision, props.terrainPatterns]);
 
   // ---------------------------------------------------------------------
   // Objects layer — obstacles, ground-anchored and depth-sorted
@@ -1850,7 +1914,7 @@ export function PixiStage(props: PixiStageProps) {
       // static base when animations are turned off.
       perfMark("hover+flags");
       const waterAnim = waterAnimRef.current;
-      if (props.animationsEnabled) {
+      if (props.animationsEnabled && props.waterAnimation) {
         if (nowMs - waterAnim.last > 140) {
           waterAnim.last = nowMs;
           waterAnim.wasAnimating = true;
@@ -1877,7 +1941,7 @@ export function PixiStage(props: PixiStageProps) {
       }
 
       // Wind sway (ZKU-151): subtle skew oscillation on tree canopies.
-      if (props.animationsEnabled) {
+      if (props.animationsEnabled && props.treeSway) {
         const t = nowMs / 1000;
         for (const entry of obstacleSpritesRef.current.values()) {
           if (entry.swayPhase === null) continue;
@@ -1896,11 +1960,7 @@ export function PixiStage(props: PixiStageProps) {
       // the game clock (scales with sim speed); micro-motion is real-time.
       // ---------------------------------------------------------------
       const amb = ambientRef.current;
-      if (nowMs - amb.lastPollMs > 1000) {
-        amb.lastPollMs = nowMs;
-        amb.enabled = localStorage.getItem("coursecraft_ambience") !== "off";
-      }
-      const ambientOn = amb.enabled && props.animationsEnabled;
+      const ambientOn = props.ambienceFx && props.animationsEnabled;
       const dayMin = dayMinuteRef.current;
       // Continuous ambient clock: accumulates game minutes across days (no
       // rewind at day rollover); drifts at 1x-equivalent in the editor.
@@ -2516,9 +2576,9 @@ export function PixiStage(props: PixiStageProps) {
 
     app.ticker.add(tick);
     return () => {
-      app.ticker.remove(tick);
+      app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.flagColor, props.selectedGolferId, clampCenter]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, clampCenter]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
@@ -2587,11 +2647,12 @@ export function PixiStage(props: PixiStageProps) {
       }
     };
 
-    app.stage.on("pointerdown", handleClick);
-    app.stage.on("pointermove", handleMove);
+    const stage = app.stage;
+    stage.on("pointerdown", handleClick);
+    stage.on("pointermove", handleMove);
     return () => {
-      app.stage.off("pointerdown", handleClick);
-      app.stage.off("pointermove", handleMove);
+      stage.off("pointerdown", handleClick);
+      stage.off("pointermove", handleMove);
     };
   }, [appReady, screenToTile, screenToIsoPlane, onClickTile, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover]);
 
@@ -2633,11 +2694,10 @@ export function PixiStage(props: PixiStageProps) {
             boxShadow: "0 6px 24px rgba(0,0,0,0.35)",
           }}
         >
-          <div style={{ fontSize: 21, fontWeight: 700 }}>Hole {flyoverCard.hole}</div>
+          <div style={{ fontSize: 21, fontWeight: 700 }}><T id="auto.ui.pixistage.hole" />{flyoverCard.hole}</div>
           <div style={{ fontSize: 13, opacity: 0.85, marginTop: 2 }}>
-            Par {flyoverCard.par} · {flyoverCard.yards} yds
-          </div>
-          <div style={{ fontSize: 10, opacity: 0.55, marginTop: 4 }}>click or Esc to skip</div>
+            <T id="auto.ui.pixistage.par" />{flyoverCard.par} · {flyoverCard.yards} <T id="auto.ui.pixistage.yds" /></div>
+          <div style={{ fontSize: 10, opacity: 0.55, marginTop: 4 }}><T id="auto.ui.pixistage.click.or.esc.to.skip" /></div>
         </div>
       )}
     </div>

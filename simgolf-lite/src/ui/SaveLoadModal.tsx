@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { formatCurrency, formatDateTime, formatWeekLabel } from "../i18n/format";
 import type { SavePayload } from "../utils/save";
 import {
   deleteSlot,
@@ -10,6 +11,10 @@ import {
   saveToSlot,
   type SaveSlotMeta,
 } from "../utils/saveStore";
+import { useFocusTrap } from "./accessibility/useFocusTrap";
+import { T } from "../i18n/T";
+import { translateCurrent } from "../i18n/core";
+import { useI18n } from "../i18n/useI18n";
 
 /**
  * Save/Load slot manager (ZKU-174). Opened from the in-game Save/Load
@@ -22,6 +27,7 @@ export interface SaveLoadModalProps {
   canSave: boolean;
   getPayload?: () => SavePayload;
   onLoaded: (payload: SavePayload) => void;
+  onSaved?: () => void;
 }
 
 const kindLabel: Record<SaveSlotMeta["kind"], string> = {
@@ -31,11 +37,13 @@ const kindLabel: Record<SaveSlotMeta["kind"], string> = {
 };
 
 export function SaveLoadModal(props: SaveLoadModalProps) {
+  const { t } = useI18n();
   const [slots, setSlots] = useState<SaveSlotMeta[]>([]);
   const [newName, setNewName] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(props.open, props.onClose);
 
   const refresh = useCallback(() => {
     void listSlots().then(setSlots);
@@ -66,15 +74,17 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
     if (!props.getPayload) return;
     const name = newName.trim() || `Save — week ${props.getPayload().world.week}`;
     await saveToSlot(null, "manual", name, props.getPayload());
+    props.onSaved?.();
     setNewName("");
-    flash("Saved.");
+    flash(t("save.saved"));
     refresh();
   };
 
   const handleOverwrite = async (slot: SaveSlotMeta) => {
     if (!props.getPayload) return;
     await saveToSlot(slot.id, slot.kind, slot.name, props.getPayload());
-    flash(`Overwrote "${slot.name}".`);
+    props.onSaved?.();
+    flash(t("save.overwritten", { name: slot.name }));
     refresh();
   };
 
@@ -96,12 +106,12 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
     }
     await deleteSlot(slot.id);
     setConfirmDeleteId(null);
-    flash(`Deleted "${slot.name}".`);
+    flash(t("save.deleted", { name: slot.name }));
     refresh();
   };
 
   const handleRename = async (slot: SaveSlotMeta) => {
-    const name = window.prompt("Rename save", slot.name);
+    const name = window.prompt(t("save.renamePrompt"), slot.name);
     if (!name || !name.trim()) return;
     await renameSlot(slot.id, name.trim());
     refresh();
@@ -126,7 +136,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
       flash(result.error.message);
       return;
     }
-    flash(`Imported "${result.meta.name}"${result.migratedFrom ? ` and upgraded it from save version ${result.migratedFrom}` : ""}.`);
+    flash(result.migratedFrom ? t("save.importedUpgraded", { name: result.meta.name, version: result.migratedFrom }) : t("save.imported", { name: result.meta.name }));
     refresh();
   };
 
@@ -140,20 +150,20 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
   };
 
   return (
-    <div
+    <div role="dialog" aria-modal="true" aria-label={props.canSave ? "Save and load game" : "Load game"}
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
         background: "rgba(0,0,0,0.45)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         padding: 16,
-        zIndex: 999,
+        zIndex: 99990,
       }}
       onClick={props.onClose}
     >
-      <div
+      <div ref={trapRef}
         style={{
           width: "min(640px, 100%)",
           maxHeight: "85vh",
@@ -178,7 +188,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
             <input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="New save name…"
+              placeholder={translateCurrent("auto.ui.saveloadmodal.new.save.name")}
               style={{
                 flex: 1,
                 padding: "8px 10px",
@@ -188,20 +198,20 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
               }}
             />
             <button style={{ ...buttonStyle, background: "#3d4a3e", color: "#fff", fontWeight: 600 }} onClick={() => void handleSaveNew()}>
-              Save to new slot
-            </button>
+              <T id="auto.ui.saveloadmodal.save.to.new.slot" /></button>
           </div>
         )}
 
         {slots.length === 0 && (
           <div style={{ fontSize: 13, color: "#6b7280", margin: "18px 0" }}>
-            No saves yet{props.canSave ? " — save your course above." : "."}
+            <T id="auto.ui.saveloadmodal.no.saves.yet" />{props.canSave ? " — save your course above." : "."}
           </div>
         )}
 
         {slots.map((slot) => (
           <div
             key={slot.id}
+            data-testid={`save-slot-${slot.id}`}
             style={{
               display: "flex",
               alignItems: "center",
@@ -232,26 +242,21 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
                 </span>
               </div>
               <div style={{ fontSize: 12, color: "#6b7280" }}>
-                {slot.courseName} • week {slot.week} • ${slot.cash.toLocaleString()} • {slot.holesOpen}/9 holes
-                {slot.difficulty ? ` • ${slot.difficulty}` : ""}
+                {slot.courseName} • {formatWeekLabel(slot.week, "en", "week")} • {formatCurrency(slot.cash)} • {slot.holesOpen}<T id="auto.ui.saveloadmodal.9.holes" />{slot.difficulty ? ` • ${slot.difficulty}` : ""}
                 {slot.theme ? ` • ${slot.theme}` : ""} •{" "}
-                {new Date(slot.savedAt).toLocaleString()}
+                {formatDateTime(slot.savedAt)}
               </div>
             </div>
             <button style={buttonStyle} onClick={() => void handleLoad(slot)}>
-              Load
-            </button>
+              <T id="auto.ui.saveloadmodal.load" /></button>
             {props.canSave && (
               <button style={buttonStyle} onClick={() => void handleOverwrite(slot)}>
-                Overwrite
-              </button>
+                <T id="auto.ui.saveloadmodal.overwrite" /></button>
             )}
             <button style={buttonStyle} onClick={() => void handleRename(slot)}>
-              Rename
-            </button>
+              <T id="auto.ui.saveloadmodal.rename" /></button>
             <button style={buttonStyle} onClick={() => void handleExport(slot)}>
-              Export
-            </button>
+              <T id="auto.ui.saveloadmodal.export" /></button>
             <button
               style={{
                 ...buttonStyle,
@@ -268,8 +273,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
 
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
           <button style={buttonStyle} onClick={() => fileInputRef.current?.click()}>
-            Import .coursecraft file…
-          </button>
+            <T id="auto.ui.saveloadmodal.import.coursecraft.file" /></button>
           <input
             ref={fileInputRef}
             type="file"
@@ -282,8 +286,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
             }}
           />
           <button style={{ ...buttonStyle, background: "#3d4a3e", color: "#fff", fontWeight: 600 }} onClick={props.onClose}>
-            Close
-          </button>
+            <T id="auto.ui.saveloadmodal.close" /></button>
         </div>
       </div>
     </div>

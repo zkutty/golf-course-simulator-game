@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, useCallback } from "react";
+import { formatCurrency } from "./i18n/format";
+import { useI18n } from "./i18n/useI18n";
 import { perfProfiler } from "./utils/performanceProfiler";
 import { CanvasCourse } from "./ui/CanvasCourse";
 import "./ui/cozyLayout.css";
@@ -8,7 +10,7 @@ import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import type { BuildingTier, ConcessionType, Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
-import { autosave, loadSlot, saveToSlot } from "./utils/saveStore";
+import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStore";
 import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
@@ -59,6 +61,7 @@ import { GolfopediaModal } from "./ui/help/GolfopediaModal";
 import { TooltipSurface } from "./ui/help/TooltipSurface";
 import { AdvisorCard } from "./ui/onboarding/AdvisorCard";
 import { TutorialOverlay } from "./ui/onboarding/TutorialOverlay";
+import { TutorialOffer } from "./ui/onboarding/TutorialOffer";
 import {
   TUTORIAL_STEPS,
   createTutorialProgress,
@@ -66,8 +69,15 @@ import {
   saveTutorialProgress,
   type TutorialProgress,
 } from "./game/onboarding/tutorial";
-import { loadAppProfile, updateAppProfile } from "./game/onboarding/profile";
+import { loadAppProfile, saveAppProfile, updateAppProfile, type AppProfile } from "./game/onboarding/profile";
 import { advisorMessages, allowsMessage, type AdvisorMessage } from "./game/advisor/advisor";
+import { INITIAL_SCREEN_FLOW, reduceScreenFlow } from "./app/screenFlow";
+import { PauseOverlay } from "./ui/appShell/PauseOverlay";
+import { LoadingCard } from "./ui/appShell/LoadingCard";
+import { SettingsModal } from "./ui/SettingsModal";
+import type { SpeedName } from "./game/live/liveConfig";
+import { eventMatchesBinding } from "./accessibility/keybindings";
+import { T } from "./i18n/T";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -76,7 +86,20 @@ type ViewMode = "global" | "hole";
 const STRIKE_SFX = "/audio/ball-strike.mp3";
 
 export default function App() {
-  const [screen, setScreen] = useState<"menu" | "setup" | "game">("menu");
+  const { t } = useI18n();
+  const [flow, flowDispatch] = useReducer(reduceScreenFlow, INITIAL_SCREEN_FLOW);
+  const [appProfile, setAppProfile] = useState<AppProfile>(() => loadAppProfile());
+  const screen = flow.base === "title" ? "menu" : flow.base === "setup-wizard" ? "setup" : flow.base === "in-game" ? "game" : "loading";
+  const changeSequenceRef = useRef(0);
+  const [dirty, setDirty] = useState(false);
+  const markDirty = useCallback(() => {
+    changeSequenceRef.current += 1;
+    setDirty(true);
+  }, []);
+  const markClean = useCallback((sequence = changeSequenceRef.current) => {
+    if (sequence !== changeSequenceRef.current) return;
+    setDirty(false);
+  }, []);
   const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
   const gameStateRef = useRef(gameState);
   const { course, world } = gameState;
@@ -92,23 +115,26 @@ export default function App() {
       logReducerDispatch();
     }
     setGameState((prevState) => applyAction(prevState, action));
-  }, []);
+    if (action.type !== "NEW_GAME" && action.type !== "LOAD_GAME" && !action.type.startsWith("SET_")) markDirty();
+  }, [markDirty]);
 
   // Helper functions for non-core mutations (operations not in the action list)
   // These are used for mutations that don't affect terrain/markers/obstacles/core economy
   const setCourse = useCallback((updater: (c: typeof course) => typeof course) => {
+    markDirty();
     setGameState((prevState) => ({
       ...prevState,
       course: updater(prevState.course),
     }));
-  }, []);
+  }, [markDirty]);
   
   const setWorld = useCallback((updater: (w: typeof world) => typeof world) => {
+    markDirty();
     setGameState((prevState) => ({
       ...prevState,
       world: updater(prevState.world),
     }));
-  }, []);
+  }, [markDirty]);
   const [last, setLast] = useState<WeekResult | undefined>(undefined);
   const [history, setHistory] = useState<WeekResult[]>([]);
   const historyRef = useRef(history);
@@ -138,27 +164,26 @@ export default function App() {
   // Hover state moved to refs in canvas component to avoid React re-renders
 
   const [paintError, setPaintError] = useState<string | null>(null);
-  const [saveModalOpen, setSaveModalOpen] = useState<null | { canSave: boolean }>(null);
+  const [saveModalCanSave, setSaveModalCanSave] = useState(false);
+  const payloadSequenceRef = useRef(0);
   const [showObstacles, setShowObstacles] = useState(true);
-  const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">("COZY");
+  const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">(() => appProfile.graphics.gridOverlays ? "ARCHITECT" : "COZY");
   const [holeEditMode, setHoleEditMode] = useState<ViewMode>("global"); // "global" or "hole"
   const [holeEditCamera, setHoleEditCamera] = useState<CameraState | null>(null);
   const holeEditCameraManualRef = useRef(false); // Track if camera was manually set
   const [showFixOverlay, setShowFixOverlay] = useState(false);
-  const [animationsEnabled, setAnimationsEnabled] = useState(false);
+  const [animationsEnabled, setAnimationsEnabled] = useState(() => appProfile.graphics.animations);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const soundEnabled = appProfile.audio.masterVolume > 0 && appProfile.audio.sfxVolume > 0;
+  const effectiveAnimations = animationsEnabled && !appProfile.accessibility.reducedMotion;
   const [showShotPlan, setShowShotPlan] = useState(true);
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
-  const [renderer, setRenderer] = useState<"canvas" | "pixi">(() => {
-    const saved = localStorage.getItem("coursecraft_renderer");
-    return (saved === "pixi" || saved === "canvas") ? saved : "pixi";
-  });
+  const [renderer, setRenderer] = useState<"canvas" | "pixi">(() => appProfile.graphics.renderer);
 
-  const handleRendererChange = (newRenderer: "canvas" | "pixi") => {
-    setRenderer(newRenderer);
-    localStorage.setItem("coursecraft_renderer", newRenderer);
-  };
+  function handleProfileChange(next: AppProfile) {
+    saveAppProfile(next);
+    setAppProfile(next);
+  }
   const [peakRep, setPeakRep] = useState(DEFAULT_STATE.world.reputation);
   const [showBridgePrompt, setShowBridgePrompt] = useState(false);
   const [prevDistress, setPrevDistress] = useState(0);
@@ -169,10 +194,14 @@ export default function App() {
   const scenarioRecordedRef = useRef(false);
   const [golfopediaEntry, setGolfopediaEntry] = useState<string | null | undefined>(undefined);
   const [tutorialProgress, setTutorialProgress] = useState<TutorialProgress | null>(() => loadTutorialProgress());
+  const [tutorialSaveStatus, setTutorialSaveStatus] = useState<"saving" | "saved">("saving");
+  const tutorialSaveSequenceRef = useRef(0);
+  const [showTutorialOffer, setShowTutorialOffer] = useState(false);
   const [advisorMessage, setAdvisorMessage] = useState<AdvisorMessage | null>(null);
   const [advisorWake, setAdvisorWake] = useState(0);
   const seenAdvisorMessagesRef = useRef(new Set<string>());
   const advisorCooldownUntilRef = useRef(0);
+  const [a11yMessage, setA11yMessage] = useState("");
 
   // Lazy singleton via useState initializer (render-pure, unlike a ref write).
   const [sound] = useState(() => createSoundPlayer());
@@ -205,8 +234,12 @@ export default function App() {
       ]);
       // Rotating autosave after every committed game day (ZKU-174). The
       // setState reader snapshots post-commit state without extra renders.
+      if (appProfile.gameplay.autosaveCadence === "off") return;
+      if (appProfile.gameplay.autosaveCadence === "weekly" && result.dayIndex !== 6) return;
       setGameState((current) => {
-        void autosave({ course: current.course, world: current.world, live: liveSnapshot, tutorial: tutorialProgress });
+        const sequence = changeSequenceRef.current;
+        void autosave({ course: current.course, world: current.world, live: liveSnapshot, tutorial: tutorialProgress })
+          .then(() => markClean(sequence));
         return current;
       });
     },
@@ -214,6 +247,128 @@ export default function App() {
       if (soundEnabled) void sound?.playCashTick(soundEnabled);
     },
   });
+  const getLiveSnapshot = live.getSnapshot;
+  const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);
+
+  const openPauseMenu = useCallback(() => {
+    if (flow.base !== "in-game" || flow.modal || flow.paused) return;
+    resumeSpeedRef.current = live.speed;
+    live.setSpeed("paused");
+    flowDispatch({ type: "OPEN_PAUSE" });
+  }, [flow.base, flow.modal, flow.paused, live]);
+
+  const resumeFromPause = useCallback(() => {
+    if (!flow.paused || flow.modal) return;
+    flowDispatch({ type: "CLOSE_PAUSE" });
+    live.setSpeed(resumeSpeedRef.current);
+  }, [flow.paused, flow.modal, live]);
+
+  const toggleClock = useCallback(() => {
+    if (flow.base !== "in-game" || flow.modal || flow.paused) return;
+    if (live.speed === "paused") live.setSpeed(resumeSpeedRef.current === "paused" ? "1x" : resumeSpeedRef.current);
+    else {
+      resumeSpeedRef.current = live.speed;
+      live.setSpeed("paused");
+    }
+  }, [flow.base, flow.modal, flow.paused, live]);
+  const quickSave = useCallback(async () => {
+    if (flow.base !== "in-game") return;
+    const sequence = changeSequenceRef.current;
+    const current = gameStateRef.current;
+    await saveToSlot("quick-save", "manual", t("save.quick"), {
+      course: current.course, world: current.world, history: historyRef.current,
+      live: live.getSnapshot(), tutorial: tutorialProgress,
+    });
+    markClean(sequence);
+    setA11yMessage(t("save.quickComplete"));
+  }, [flow.base, live, markClean, t, tutorialProgress]);
+
+
+  const quitToTitle = useCallback(() => {
+    if (dirty && !window.confirm(t("quit.confirm"))) return;
+    live.setSpeed("paused");
+    flowDispatch({ type: "BACK_TO_TITLE" });
+  }, [dirty, live, t]);
+
+  function restartCurrentScenario() {
+    const scenario = getScenario(world.scenarioId);
+    if (!scenario || !window.confirm(t("confirm.restartScenario"))) return;
+    startScenario(scenario);
+  }
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const typing = target?.matches("input, textarea, select, [contenteditable='true']") ?? false;
+      if (event.key === "Escape") {
+        if (flow.modal) {
+          event.preventDefault();
+          flowDispatch({ type: "CLOSE_TOP_LAYER" });
+        } else if (tutorialProgress) {
+          // The tutorial owns the top layer. Opening the pause menu here would
+          // stack two competing dialogs and obscure the highlighted control.
+          event.preventDefault();
+        } else if (flow.base === "in-game") {
+          event.preventDefault();
+          if (flow.paused) resumeFromPause();
+          else openPauseMenu();
+        }
+        return;
+      }
+      if (typing || flow.modal || flow.paused || flow.base !== "in-game") return;
+      const bindings = appProfile.accessibility.keybindings;
+      if (eventMatchesBinding(event, bindings.pause)) {
+        event.preventDefault();
+        toggleClock();
+      } else if (eventMatchesBinding(event, bindings.speed1)) {
+        event.preventDefault(); live.setSpeed("1x");
+      } else if (eventMatchesBinding(event, bindings.speed2)) {
+        event.preventDefault(); live.setSpeed("2x");
+      } else if (eventMatchesBinding(event, bindings.speed3)) {
+        event.preventDefault(); live.setSpeed("3x");
+      } else if (eventMatchesBinding(event, bindings.terrainTool)) {
+        event.preventDefault(); setEditorMode("PAINT");
+      } else if (eventMatchesBinding(event, bindings.obstacleTool)) {
+        event.preventDefault(); setEditorMode("OBSTACLE");
+      } else if (eventMatchesBinding(event, bindings.buildingTool)) {
+        event.preventDefault(); setEditorMode("BUILDING");
+      } else if (eventMatchesBinding(event, bindings.quicksave)) {
+        event.preventDefault(); void quickSave();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [appProfile.accessibility.keybindings, flow.base, flow.modal, flow.paused, live, openPauseMenu, quickSave, resumeFromPause, toggleClock, tutorialProgress]);
+
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!dirty || flow.base !== "in-game") return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty, flow.base]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.fontSize = `${appProfile.accessibility.textScale}%`;
+    root.dataset.reducedMotion = String(appProfile.accessibility.reducedMotion);
+    root.dataset.colorVision = appProfile.accessibility.colorVision;
+    root.dataset.terrainPatterns = String(appProfile.accessibility.terrainPatterns);
+  }, [appProfile.accessibility]);
+
+  useEffect(() => {
+    const cadence = appProfile.gameplay.autosaveCadence;
+    if (flow.base !== "in-game" || (cadence !== "5m" && cadence !== "15m")) return;
+    const interval = window.setInterval(() => {
+      const sequence = changeSequenceRef.current;
+      const current = gameStateRef.current;
+      void autosave({ course: current.course, world: current.world, history: historyRef.current, live: live.getSnapshot(), tutorial: tutorialProgress })
+        .then(() => markClean(sequence));
+    }, cadence === "5m" ? 300_000 : 900_000);
+    return () => window.clearInterval(interval);
+  }, [appProfile.gameplay.autosaveCadence, flow.base, live, markClean, tutorialProgress]);
 
   const canvasPaneRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
@@ -427,21 +582,32 @@ export default function App() {
   }, [objectivesOutcomeForRecord, world]);
 
   useEffect(() => {
-    const onProfileChange = () => setAdvisorWake((value) => value + 1);
+    const onProfileChange = () => {
+      const next = loadAppProfile();
+      setAppProfile(next);
+      setAnimationsEnabled(next.graphics.animations);
+      setRenderer(next.graphics.renderer);
+      audio.syncVolumes(next.audio);
+      if (next.advisorFrequency === "off") setAdvisorMessage(null);
+      setAdvisorWake((value) => value + 1);
+    };
     window.addEventListener("coursecraft-profile-change", onProfileChange);
     return () => window.removeEventListener("coursecraft-profile-change", onProfileChange);
-  }, []);
+  }, [audio]);
 
   useEffect(() => {
-    if (screen !== "game" || tutorialProgress || advisorMessage || saveModalOpen || showVictory || showBridgePrompt) return;
+    if (screen !== "game" || tutorialProgress || showTutorialOffer || advisorMessage || flow.modal || flow.paused || showVictory || showBridgePrompt) return;
     if (Date.now() < advisorCooldownUntilRef.current) return;
     const frequency = loadAppProfile().advisorFrequency;
     const previous = history.length >= 2 ? history[history.length - 2] : undefined;
-    const next = advisorMessages(course, world, last, previous).find(
+    const next = advisorMessages(course, world, last, previous, t).find(
       (message) => allowsMessage(frequency, message) && !seenAdvisorMessagesRef.current.has(message.id)
     );
-    if (next) setAdvisorMessage(next);
-  }, [screen, tutorialProgress, advisorMessage, saveModalOpen, showVictory, showBridgePrompt, course, world, last, history, advisorWake]);
+    if (next) {
+      setAdvisorMessage(next);
+      setA11yMessage(`${next.title}. ${next.body}`);
+    }
+  }, [screen, tutorialProgress, showTutorialOffer, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, course, world, last, history, advisorWake, t]);
 
   function dismissAdvisor() {
     if (advisorMessage) seenAdvisorMessagesRef.current.add(advisorMessage.id);
@@ -452,10 +618,19 @@ export default function App() {
     window.setTimeout(() => setAdvisorWake((value) => value + 1), cooldown + 50);
   }
 
+  function startFlyover() {
+    if (appProfile.accessibility.reducedMotion) {
+      setA11yMessage(t("flyover.disabled"));
+      return;
+    }
+    if (advisorMessage) dismissAdvisor();
+    setFlyoverNonce((value) => value + 1);
+  }
+
   // Course name propagates to the browser tab (ZKU-162).
   useEffect(() => {
-    document.title = screen === "game" ? `${course.name} — CourseCraft` : "CourseCraft";
-  }, [screen, course.name]);
+    document.title = screen === "game" ? `${course.name} — ${t("app.name")}` : t("app.name");
+  }, [screen, course.name, t]);
 
   // Handle audio based on screen and view mode
   useEffect(() => {
@@ -488,16 +663,20 @@ export default function App() {
     updateAppProfile({ tutorialOffered: true });
     setGolfopediaEntry(undefined);
     setAdvisorMessage(null);
+    setShowTutorialOffer(false);
   }
 
   function finishTutorial(completed: boolean) {
     setTutorialProgress(null);
     saveTutorialProgress(null);
     updateAppProfile({ tutorialOffered: true, tutorialCompleted: completed || loadAppProfile().tutorialCompleted });
+    setShowTutorialOffer(false);
+    void autosave({ course, world, history, live: live.getSnapshot(), tutorial: null });
   }
 
   function startRun(newCourse: typeof course, newWorld: typeof world) {
     dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
+    markClean();
     setHistory([]);
     setLast(undefined);
     setEditorMode("PAINT");
@@ -517,8 +696,19 @@ export default function App() {
     scenarioRecordedRef.current = false;
     setPrevOutcome("OPEN");
     setShowVictory(false);
-    if (!loadAppProfile().tutorialOffered) beginTutorial(newCourse, newWorld);
+    if (!loadAppProfile().tutorialOffered) setShowTutorialOffer(true);
   }
+
+  useEffect(() => {
+    if (screen !== "game" || !tutorialProgress) return;
+    const sequence = ++tutorialSaveSequenceRef.current;
+    queueMicrotask(() => {
+      if (tutorialSaveSequenceRef.current === sequence) setTutorialSaveStatus("saving");
+    });
+    void autosave({ course, world, history, live: getLiveSnapshot(), tutorial: tutorialProgress }).then(() => {
+      if (tutorialSaveSequenceRef.current === sequence) setTutorialSaveStatus("saved");
+    });
+  }, [screen, course, world, history, tutorialProgress, getLiveSnapshot]);
 
   // `goals` overrides the mode's default goal set (defeat-retry keeps a
   // run's exact goals).
@@ -533,11 +723,15 @@ export default function App() {
 
   // Career (ZKU-164): scenarios build their run from the authored definition.
   function startScenario(scenario: ScenarioDefinition) {
-    recordScenarioAttempt(scenario.id);
-    const { course: newCourse, world: newWorld } = createScenarioGame(scenario);
-    live.restoreSnapshot(undefined);
-    startRun(newCourse, newWorld);
-    setScreen("game");
+    flowDispatch({ type: "BEGIN_LOADING", label: t("scenario.preparing", { name: t(scenario.nameKey) }) });
+    window.setTimeout(() => {
+      recordScenarioAttempt(scenario.id);
+      const { course: newCourse, world: newWorld } = createScenarioGame(scenario);
+      live.restoreSnapshot(undefined);
+      startRun(newCourse, newWorld);
+      live.setSpeed(appProfile.gameplay.defaultGameSpeed);
+      flowDispatch({ type: "ENTER_GAME" });
+    }, 0);
   }
 
   /** GameSetup matching the CURRENT run, for retry-same-seed / new-seed. */
@@ -556,7 +750,7 @@ export default function App() {
     return {
       mode: "sandbox",
       courseName: generateCourseName(),
-      seed: (Date.now() % 1_000_000) | 0,
+      seed: import.meta.env.MODE === "e2e" ? 424242 : (Date.now() % 1_000_000) | 0,
       theme: "parkland",
       difficulty: "normal",
     };
@@ -588,6 +782,7 @@ export default function App() {
     scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
     setTutorialProgress(loaded.tutorial ?? null);
     saveTutorialProgress(loaded.tutorial ?? null);
+    markClean();
   }
 
   useEffect(() => {
@@ -598,6 +793,13 @@ export default function App() {
         const liveSnapshot = live.getSnapshot();
         return {
           screen,
+          screenBase: flow.base,
+          paused: flow.paused,
+          modal: flow.modal,
+          dirty,
+          speed: live.speed,
+          dayMinute: liveSnapshot?.state.dayMinute ?? 0,
+          golferPositions: liveSnapshot?.state.golfers.map((golfer) => [golfer.id, golfer.pos.x, golfer.pos.y]) ?? [],
           week: current.world.week,
           cash: current.world.cash,
           courseHash: hashGameState({ course: current.course, world: current.world, live: liveSnapshot }),
@@ -640,7 +842,9 @@ export default function App() {
         setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
         setShowVictory(false);
         scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
-        setScreen("game");
+        flowDispatch({ type: "BACK_TO_TITLE" });
+        flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
+        flowDispatch({ type: "ENTER_GAME" });
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         return {
           beforeHash,
@@ -660,23 +864,42 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, live, screen, tutorialProgress]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, screen, tutorialProgress]);
 
   function newGameFromMenu() {
     void audio.unlock();
-    setScreen("setup");
+    flowDispatch({ type: "OPEN_SETUP" });
   }
 
   function startNewGame(setup: GameSetup) {
     void audio.unlock();
     void audio.playSfx(STRIKE_SFX);
-    restartRun(setup);
-    setScreen("game");
+    flowDispatch({ type: "BEGIN_LOADING", label: t("loading.growCourse") });
+    window.setTimeout(() => {
+      restartRun(setup);
+      live.setSpeed(appProfile.gameplay.defaultGameSpeed);
+      flowDispatch({ type: "ENTER_GAME" });
+    }, 0);
   }
 
   function loadFromMenu() {
     void audio.unlock();
-    setSaveModalOpen({ canSave: false });
+    setSaveModalCanSave(false);
+    flowDispatch({ type: "OPEN_MODAL", modal: "save-load" });
+  }
+
+  async function continueFromMenu() {
+    void audio.unlock();
+    const recent = await mostRecentSlot();
+    if (!recent) return;
+    flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreLatest") });
+    const loaded = await loadSlot(recent.id);
+    if (!loaded) {
+      flowDispatch({ type: "BACK_TO_TITLE" });
+      return;
+    }
+    applyLoadedGame(loaded);
+    flowDispatch({ type: "ENTER_GAME" });
   }
 
   function takeBridgeLoan() {
@@ -725,7 +948,7 @@ export default function App() {
     const prev = course.tiles[idx];
     const { net, charged, refunded } = computeTerrainChangeCost(prev, next, costMult, course.theme);
     if (net > 0 && world.cash < net) {
-      setPaintError(`Insufficient funds: need $${Math.ceil(net).toLocaleString()}`);
+      setPaintError(t("error.insufficientFunds", { amount: formatCurrency(Math.ceil(net)) }));
       return false;
     }
     if (prev === next) return true;
@@ -819,7 +1042,7 @@ export default function App() {
 
     // Check affordability
     if (totalNet > 0 && world.cash < totalNet) {
-      setPaintError(`Insufficient funds: need $${Math.ceil(totalNet).toLocaleString()} to paint fairway`);
+      setPaintError(t("error.insufficientFairway", { amount: formatCurrency(Math.ceil(totalNet)) }));
       return;
     }
 
@@ -917,7 +1140,7 @@ export default function App() {
     const totalNet = placeCost.net + removeCost.net; // removeCost.net is negative (refund), so this is correct
     
     if (totalNet > 0 && world.cash < totalNet) {
-      setPaintError(`Insufficient funds to move ${markerType}: need $${Math.ceil(totalNet).toLocaleString()}`);
+      setPaintError(t("error.insufficientMove", { marker: markerType, amount: formatCurrency(Math.ceil(totalNet)) }));
       return;
     }
     
@@ -940,7 +1163,7 @@ export default function App() {
     const greenSlope = maxSlopeInRect(course, green.x - 1, green.y - 1, green.x + 1, green.y + 1);
     if (teeSlope > 1 || greenSlope > 1) {
       setPaintError(
-        `${teeSlope > 1 ? "Tee" : "Green"} site is too steep — level the ground with the Sculpt tool first.`
+        t("error.siteSteep", { marker: teeSlope > 1 ? t("terrain.tee") : t("terrain.green") })
       );
       return;
     }
@@ -954,7 +1177,7 @@ export default function App() {
     const greenCost = computeTerrainChangeCost(greenPrev, "green", costMult, course.theme);
     const totalNet = teeCost.net + greenCost.net;
     if (totalNet > 0 && world.cash < totalNet) {
-      setPaintError(`Insufficient funds to confirm: need $${Math.ceil(totalNet).toLocaleString()}`);
+      setPaintError(t("error.insufficientConfirm", { amount: formatCurrency(Math.ceil(totalNet)) }));
       return;
     }
 
@@ -982,7 +1205,7 @@ export default function App() {
     
     // Check bounds (only for marker placement, not for painting which supports infinite canvas)
     if (editorMode === "HOLE_WIZARD" && (x < 0 || y < 0 || x >= course.width || y >= course.height)) {
-      setPaintError("Cannot place markers outside course bounds");
+      setPaintError(t("error.markersBounds"));
       return;
     }
     
@@ -1019,7 +1242,7 @@ export default function App() {
       if (deltas.length === 0) return;
       const cost = sculptSteps(deltas) * ELEVATION_COST_PER_STEP * costMult;
       if (cost > world.cash) {
-        setPaintError(`Not enough cash for earthworks ($${cost.toLocaleString()} needed).`);
+        setPaintError(t("error.earthworksFunds", { amount: formatCurrency(cost) }));
         return;
       }
       setPaintError(null);
@@ -1035,6 +1258,7 @@ export default function App() {
     if (editorMode === "OBSTACLE") {
       const existingIdx = course.obstacles.findIndex((o) => o.x === x && o.y === y);
       if (existingIdx >= 0) {
+        if (appProfile.gameplay.confirmBulldoze && !window.confirm(t("confirm.bulldoze"))) return;
         dispatch({ type: "REMOVE_OBSTACLE", x, y });
       } else {
         dispatch({ type: "PLACE_OBSTACLE", x, y, obstacleType });
@@ -1045,21 +1269,22 @@ export default function App() {
       const existing = buildingAtTile(course, x, y);
       if (existing) {
         if (existing.type === "clubhouse") {
-          setPaintError("The starter clubhouse cannot be removed.");
+          setPaintError(t("error.clubhouseRemove"));
           return;
         }
+        if (appProfile.gameplay.confirmSalvage && !window.confirm(t("confirm.salvage", { building: BUILDING_SPECS[existing.type].name.toLowerCase() }))) return;
         dispatch({ type: "REMOVE_BUILDING", x, y });
         setPaintError(null);
         return;
       }
       const validation = canPlaceBuilding(course, buildingType, x, y);
       if (!validation.ok) {
-        setPaintError(`Cannot place ${BUILDING_SPECS[buildingType].name.toLowerCase()}: ${validation.reason}.`);
+        setPaintError(t("error.buildingPlacement", { building: BUILDING_SPECS[buildingType].name.toLowerCase(), reason: validation.reason ?? "unknown restriction" }));
         return;
       }
       const cost = BUILDING_SPECS[buildingType].buildCost;
       if (world.cash < cost) {
-        setPaintError(`Insufficient funds: need $${cost.toLocaleString()}.`);
+        setPaintError(t("error.insufficientFunds", { amount: formatCurrency(cost) }));
         return;
       }
       dispatch({ type: "PLACE_BUILDING", buildingType, x, y });
@@ -1071,12 +1296,12 @@ export default function App() {
     if (wizardStep === "TEE" || wizardStep === "MOVE_TEE") {
       // Validate: cannot place on water and must be in bounds
       if (x < 0 || y < 0 || x >= course.width || y >= course.height) {
-        setPaintError("Cannot place tee outside course bounds");
+        setPaintError(t("error.teeBounds"));
         return;
       }
       const terrain = course.tiles[y * course.width + x];
       if (terrain === "water") {
-        setPaintError("Cannot place tee on water");
+        setPaintError(t("error.teeWater"));
         return;
       }
       
@@ -1108,12 +1333,12 @@ export default function App() {
     if (wizardStep === "GREEN" || wizardStep === "MOVE_GREEN") {
       // Validate: cannot place on water and must be in bounds
       if (x < 0 || y < 0 || x >= course.width || y >= course.height) {
-        setPaintError("Cannot place green outside course bounds");
+        setPaintError(t("error.greenBounds"));
         return;
       }
       const terrain = course.tiles[y * course.width + x];
       if (terrain === "water") {
-        setPaintError("Cannot place green on water");
+        setPaintError(t("error.greenWater"));
         return;
       }
       
@@ -1207,11 +1432,13 @@ export default function App() {
   }
 
   function onSave() {
-    setSaveModalOpen({ canSave: true });
+    setSaveModalCanSave(true);
+    flowDispatch({ type: "OPEN_MODAL", modal: "save-load" });
   }
 
   function onLoad() {
-    setSaveModalOpen({ canSave: true });
+    setSaveModalCanSave(true);
+    flowDispatch({ type: "OPEN_MODAL", modal: "save-load" });
   }
 
   function onResetSave() {
@@ -1263,15 +1490,22 @@ export default function App() {
 
   const saveLoadModal = (
     <SaveLoadModal
-      open={saveModalOpen != null}
-      onClose={() => setSaveModalOpen(null)}
-      canSave={saveModalOpen?.canSave ?? false}
-      getPayload={() => ({ course, world, history, live: live.getSnapshot(), tutorial: tutorialProgress })}
+      open={flow.modal === "save-load"}
+      onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
+      canSave={saveModalCanSave}
+      getPayload={() => {
+        payloadSequenceRef.current = changeSequenceRef.current;
+        return { course, world, history, live: live.getSnapshot(), tutorial: tutorialProgress };
+      }}
+      onSaved={() => markClean(payloadSequenceRef.current)}
       onLoaded={(payload) => {
-        applyLoadedGame(payload);
-        setScreen("game");
-        setPaintError("Game loaded.");
-        setTimeout(() => setPaintError(null), 2000);
+        flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
+        window.setTimeout(() => {
+          applyLoadedGame(payload);
+          flowDispatch({ type: "ENTER_GAME" });
+          setPaintError(t("save.loaded"));
+          setTimeout(() => setPaintError(null), 2000);
+        }, 0);
       }}
     />
   );
@@ -1286,6 +1520,24 @@ export default function App() {
       return;
     }
     const next = { ...tutorialProgress, stepIndex: tutorialProgress.stepIndex + 1 };
+    const nextStep = TUTORIAL_STEPS[next.stepIndex];
+    if (["shot-plan", "weekly-report", "green-fee", "maintenance", "first-profit"].includes(nextStep.id)) {
+      setViewMode("ARCHITECT");
+    }
+    if (nextStep.id === "shot-plan") {
+      setActiveHoleIndex(Math.max(0, activeHoleIndex - 1));
+      setEditorMode("PAINT");
+    }
+    if (nextStep.id === "fix-corridor") enterHoleEditMode(activeHoleIndex);
+    if (step.id === "fix-corridor") {
+      exitHoleEditMode();
+      const nextHole = course.holes.findIndex((hole) => !hole.tee || !hole.green);
+      setActiveHoleIndex(nextHole >= 0 ? nextHole : 0);
+      setEditorMode("HOLE_WIZARD");
+      setWizardStep("TEE");
+      setDraftTee(null);
+      setDraftGreen(null);
+    }
     setTutorialProgress(next);
     saveTutorialProgress(next);
   }
@@ -1293,11 +1545,15 @@ export default function App() {
   if (screen === "setup") {
     return (
       <NewGameWizard
-        onCancel={() => setScreen("menu")}
+        onCancel={() => flowDispatch({ type: "BACK_TO_TITLE" })}
         onStart={startNewGame}
         onStartScenario={startScenario}
       />
     );
+  }
+
+  if (screen === "loading") {
+    return <LoadingCard label={flow.loadingLabel ?? "Loading CourseCraft…"} />;
   }
 
   if (screen === "menu") {
@@ -1308,24 +1564,20 @@ export default function App() {
         onNewGame={newGameFromMenu}
         onQuickStart={() => startNewGame(quickStartSetup())}
         onLoadGame={loadFromMenu}
-        audioVolumes={{
-          music: audio.getVolumes().musicVolume,
-          ambience: audio.getVolumes().ambienceVolume,
-        }}
-        onAudioVolumesChange={(volumes) =>
-          audio.setVolumes({
-            musicVolume: volumes.music,
-            ambienceVolume: volumes.ambience,
-          })
-        }
-        renderer={renderer}
-        onRendererChange={handleRendererChange}
+        onContinue={() => void continueFromMenu()}
+        onOptions={() => flowDispatch({ type: "OPEN_MODAL", modal: "options" })}
         onButtonClick={() => {
           void audio.unlock();
           if (soundEnabled) void audio.playSfx(STRIKE_SFX);
         }}
       />
       {saveLoadModal}
+      <SettingsModal
+        open={flow.modal === "options"}
+        onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
+        profile={appProfile}
+        onProfileChange={handleProfileChange}
+      />
       </>
     );
   }
@@ -1333,13 +1585,14 @@ export default function App() {
   return (
     <div className="cc-app">
       <TooltipSurface>
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{a11yMessage}</div>
         <GameBackground />
         {saveLoadModal}
-      {golfopediaEntry !== undefined && (
+      {flow.modal === "golfopedia" && (
         <GolfopediaModal
           open
           initialEntry={golfopediaEntry}
-          onClose={() => setGolfopediaEntry(undefined)}
+          onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
         />
       )}
       {tutorialProgress && (
@@ -1351,9 +1604,19 @@ export default function App() {
           )}
           onAdvance={advanceTutorial}
           onSkip={() => finishTutorial(false)}
+          saveStatus={tutorialSaveStatus}
         />
       )}
-      {!tutorialProgress && advisorMessage && (
+      {showTutorialOffer && !flow.paused && (
+        <TutorialOffer
+          onAccept={() => beginTutorial()}
+          onSkip={() => {
+            updateAppProfile({ tutorialOffered: true });
+            setShowTutorialOffer(false);
+          }}
+        />
+      )}
+      {!tutorialProgress && !showTutorialOffer && !flow.modal && !flow.paused && !showVictory && !showBridgePrompt && advisorMessage && (
         <AdvisorCard
           message={advisorMessage}
           onDismiss={dismissAdvisor}
@@ -1379,8 +1642,8 @@ export default function App() {
             if (scenario) startScenario(scenario);
             else restartRun(currentRunSetup(seed), world.objectives?.goals ?? null);
           }}
-          onNewGame={() => setScreen("setup")}
-          onLoad={() => setSaveModalOpen({ canSave: false })}
+          onNewGame={() => flowDispatch({ type: "BACK_TO_TITLE" })}
+          onLoad={() => { setSaveModalCanSave(false); flowDispatch({ type: "OPEN_MODAL", modal: "save-load" }); }}
         />
       )}
         {showVictory && world.objectives && !world.isBankrupt && (
@@ -1417,8 +1680,11 @@ export default function App() {
                 activeShotPlan={activeShotPlan}
                 tileSize={tileSize}
                 showGridOverlays={viewMode === "ARCHITECT"}
-                animationsEnabled={animationsEnabled}
+                animationsEnabled={effectiveAnimations}
                 flyoverNonce={flyoverNonce}
+                colorVision={appProfile.accessibility.colorVision}
+                terrainPatterns={appProfile.accessibility.terrainPatterns}
+                reducedMotion={appProfile.accessibility.reducedMotion}
                 showShotPlan={showShotPlan}
                 editorMode={editorMode}
                 wizardStep={wizardStep}
@@ -1451,10 +1717,20 @@ export default function App() {
                 activeShotPlan={activeShotPlan}
                 tileSize={tileSize}
                 showGridOverlays={viewMode === "ARCHITECT"}
-                animationsEnabled={animationsEnabled}
+                animationsEnabled={effectiveAnimations}
+                ambienceFx={appProfile.graphics.ambienceFx}
+                waterAnimation={appProfile.graphics.waterAnimation}
+                treeSway={appProfile.graphics.treeSway}
+                resolutionScale={appProfile.graphics.resolutionScale}
+                cameraSmoothing={appProfile.gameplay.cameraSmoothing && !appProfile.accessibility.reducedMotion}
+                edgeScroll={appProfile.gameplay.edgeScroll}
+                edgeScrollSpeed={appProfile.gameplay.edgeScrollSpeed}
                 flyoverNonce={flyoverNonce}
                 showShotPlan={showShotPlan}
                 editorMode={editorMode}
+                colorVision={appProfile.accessibility.colorVision}
+                terrainPatterns={appProfile.accessibility.terrainPatterns}
+                keybindings={appProfile.accessibility.keybindings}
                 wizardStep={wizardStep}
                 draftTee={draftTee}
                 draftGreen={draftGreen}
@@ -1502,6 +1778,7 @@ export default function App() {
               onSetSpeed={live.setSpeed}
               cash={world.cash}
               reputation={world.reputation}
+              onOpenPauseMenu={openPauseMenu}
             />
             <GolferInspector
               selected={live.status.selected}
@@ -1523,6 +1800,7 @@ export default function App() {
               }}
             >
               <div
+                data-tutorial-target="hole-editor-nav"
                 style={{
                   padding: 12,
                   borderBottom: "1px solid rgba(0,0,0,0.1)",
@@ -1543,8 +1821,7 @@ export default function App() {
                     cursor: "pointer",
                   }}
                 >
-                  Exit
-                </button>
+                  <T id="auto.app.exit" /></button>
                 <button
                   onClick={() => navigateHole(-1)}
                   style={{
@@ -1557,8 +1834,7 @@ export default function App() {
                     cursor: "pointer",
                   }}
                 >
-                  ← Prev
-                </button>
+                  <T id="auto.app.prev" /></button>
                 <button
                   onClick={() => navigateHole(1)}
                   style={{
@@ -1571,8 +1847,7 @@ export default function App() {
                     cursor: "pointer",
                   }}
                 >
-                  Next →
-                </button>
+                  <T id="auto.app.next" /></button>
               </div>
               <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
                 <HoleInspector
@@ -1581,7 +1856,7 @@ export default function App() {
                   showFixOverlay={showFixOverlay}
                   setShowFixOverlay={setShowFixOverlay}
                   onFitHole={fitHole}
-                  onFlyover={() => setFlyoverNonce((n) => n + 1)}
+                  onFlyover={startFlyover}
                   course={course}
                   hole={course.holes[activeHoleIndex]}
                   onSetHoleIndex={(newIndex: number) => {
@@ -1660,11 +1935,7 @@ export default function App() {
         setSculptRadius={setSculptRadius}
         viewMode={viewMode}
         setViewMode={setViewMode}
-        animationsEnabled={animationsEnabled}
-        setAnimationsEnabled={setAnimationsEnabled}
-        onFlyover={() => setFlyoverNonce((n) => n + 1)}
-        soundEnabled={soundEnabled}
-        setSoundEnabled={setSoundEnabled}
+        onFlyover={startFlyover}
         showObstacles={showObstacles}
         setShowObstacles={setShowObstacles}
         isBankrupt={world.isBankrupt}
@@ -1695,12 +1966,34 @@ export default function App() {
         }}
         showShotPlan={showShotPlan}
         setShowShotPlan={setShowShotPlan}
-        onOpenGolfopedia={(entry) => setGolfopediaEntry(entry ?? null)}
+        onOpenGolfopedia={(entry) => {
+          setGolfopediaEntry(entry ?? null);
+          flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" });
+        }}
         onStartTutorial={() => beginTutorial()}
+        tutorialTarget={tutorialProgress ? TUTORIAL_STEPS[tutorialProgress.stepIndex].target : undefined}
       />
           )}
         </div>
         </div>
+        {flow.paused && (
+          <PauseOverlay
+            career={world.mode === "career"}
+            dirty={dirty}
+            onResume={resumeFromPause}
+            onSave={onSave}
+            onLoad={onLoad}
+            onOptions={() => flowDispatch({ type: "OPEN_MODAL", modal: "options" })}
+            onRestart={restartCurrentScenario}
+            onQuit={quitToTitle}
+          />
+        )}
+        <SettingsModal
+          open={flow.modal === "options"}
+          onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
+          profile={appProfile}
+          onProfileChange={handleProfileChange}
+        />
       </TooltipSurface>
     </div>
   );
@@ -1721,10 +2014,9 @@ function BridgeLoanPrompt(props: { onAccept: () => void; onDecline: () => void }
       }}
     >
       <div style={{ width: "min(520px, 100%)", background: "#fff", borderRadius: 14, padding: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 6 }}>Distress: take a Bridge Loan?</div>
+        <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 6 }}><T id="auto.app.distress.take.a.bridge.loan" /></div>
         <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 12 }}>
-          $25,000 • 18% APR • 26 weeks • amortized weekly payments. Missing payments hurts reputation and worsens terms.
-        </div>
+          <T id="auto.app.25.000.18.apr.26.weeks.amortized.weekly.payments.missi" /></div>
         <div style={{ display: "flex", gap: 8 }}>
           <button
             onClick={props.onAccept}
@@ -1738,8 +2030,7 @@ function BridgeLoanPrompt(props: { onAccept: () => void; onDecline: () => void }
               fontWeight: 800,
             }}
           >
-            Take loan
-          </button>
+            <T id="auto.app.take.loan" /></button>
           <button
             onClick={props.onDecline}
             style={{
@@ -1751,8 +2042,7 @@ function BridgeLoanPrompt(props: { onAccept: () => void; onDecline: () => void }
               fontWeight: 800,
             }}
           >
-            Decline
-        </button>
+            <T id="auto.app.decline" /></button>
         </div>
       </div>
     </div>

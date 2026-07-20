@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { formatCurrency, formatNumber, formatWeekLabel } from "../i18n/format";
+import type { TutorialTarget } from "../game/onboarding/tutorial";
 import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
 import { ELEVATION_COST_PER_STEP } from "../game/models/terrainEconomics";
 import { useAudio } from "../audio/audioContext";
@@ -19,6 +21,8 @@ import { BUILDING_SPECS, isConcession } from "../game/models/buildings";
 import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../game/models/terrainEconomics";
 import { Tooltip } from "./help/Tooltip";
 import { REPORT_HELP } from "./help/tooltipContent";
+import { T } from "../i18n/T";
+import { translateCurrent } from "../i18n/core";
 
 const TERRAIN: Terrain[] = [
   "fairway",
@@ -81,11 +85,7 @@ export function HUD(props: {
   paintError?: string | null;
   viewMode: "COZY" | "ARCHITECT";
   setViewMode: (m: "COZY" | "ARCHITECT") => void;
-  animationsEnabled: boolean;
-  setAnimationsEnabled: (b: boolean) => void;
   onFlyover: () => void;
-  soundEnabled: boolean;
-  setSoundEnabled: (b: boolean) => void;
   showObstacles?: boolean;
   setShowObstacles?: (b: boolean) => void;
   isBankrupt: boolean;
@@ -98,6 +98,7 @@ export function HUD(props: {
   setShowShotPlan: (b: boolean) => void;
   onOpenGolfopedia: (entry?: string) => void;
   onStartTutorial: () => void;
+  tutorialTarget?: TutorialTarget;
 }) {
   const {
     course,
@@ -143,11 +144,7 @@ export function HUD(props: {
     paintError,
     viewMode,
     setViewMode,
-    animationsEnabled,
-    setAnimationsEnabled,
     onFlyover,
-    soundEnabled,
-    setSoundEnabled,
     showObstacles,
     setShowObstacles,
     isBankrupt,
@@ -160,10 +157,18 @@ export function HUD(props: {
     setShowShotPlan,
     onOpenGolfopedia,
     onStartTutorial,
+    tutorialTarget,
   } = props;
 
   const [tab, setTab] = useState<Tab>("Editor");
   const [objectivesOpen, setObjectivesOpen] = useState(false);
+  const activeTab: Tab = tutorialTarget === "weekly-report"
+    ? "Results"
+    : tutorialTarget === "green-fee" || tutorialTarget === "maintenance"
+      ? "Upgrades"
+      : tutorialTarget
+        ? "Editor"
+        : tab;
   // Difficulty-resolved balance for loan terms/eligibility (ZKU-165).
   const BALANCE = getEffectiveBalance(world.difficulty);
   const audio = useAudio();
@@ -292,20 +297,18 @@ export function HUD(props: {
               >
                 {course.name}
               </div>
-              <div style={{ fontSize: 12, color: "#6b7280" }}>Week {world.week}</div>
+              <div style={{ fontSize: 12, color: "#6b7280" }}>{formatWeekLabel(world.week)}</div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <Tooltip content="Open the searchable reference for terrain, golfers, management systems, and controls.">
               <button onClick={() => onOpenGolfopedia()} style={{ padding: "6px 8px", borderRadius: 999, border: "1px solid #ddd", background: "#fff", fontSize: 12, fontWeight: 800 }}>
-                ? Help
-              </button>
+                <T id="auto.ui.hud.help" /></button>
             </Tooltip>
             <button onClick={onStartTutorial} style={{ padding: "6px 8px", borderRadius: 999, border: "1px solid #ddd", background: "#fff", fontSize: 12, fontWeight: 800 }}>
-              Tutorial
-            </button>
+              <T id="auto.ui.hud.tutorial" /></button>
             <span
-              title={`Difficulty: ${getDifficultyProfile(world.difficulty).label} (fixed for this run)`}
+              title={translateCurrent("hud.difficultyTitle", { difficulty: getDifficultyProfile(world.difficulty).label })}
               style={{
                 fontSize: 10,
                 fontWeight: 800,
@@ -358,8 +361,7 @@ export function HUD(props: {
               fontSize: 12,
             }}
           >
-            <b>Bankrupt.</b> This run has ended — restart to continue.
-          </div>
+            <b><T id="auto.ui.hud.bankrupt" /></b> <T id="auto.ui.hud.this.run.has.ended.restart.to.continue" /></div>
         )}
         {/* Pinned objective mini-tracker (ZKU-163); click for the full panel */}
         <div style={{ marginTop: 10 }}>
@@ -374,7 +376,7 @@ export function HUD(props: {
         <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
           {viewMode === "COZY" ? (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <Tooltip block content="Your available operating runway. Construction, losses, and loan payments reduce it; profitable play restores it." learnMore={() => onOpenGolfopedia("management-cash")}>
+              <Tooltip block label={translateCurrent("hud.cashHelp")} content="Your available operating runway. Construction, losses, and loan payments reduce it; profitable play restores it." learnMore={() => onOpenGolfopedia("management-cash")}>
               <div
                 style={{
                   display: "flex",
@@ -388,12 +390,12 @@ export function HUD(props: {
               >
                 <IconCash size={22} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>CASH</div>
-                  <div style={{ fontSize: 18, fontWeight: 800 }}>${Math.round(world.cash).toLocaleString()}</div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}><T id="auto.ui.hud.cash" /></div>
+                  <div style={{ fontSize: 18, fontWeight: 800 }}>{formatCurrency(world.cash)}</div>
                 </div>
               </div>
               </Tooltip>
-              <Tooltip block content="The market's memory of golfer satisfaction. It falls faster than it recovers and directly supports demand." learnMore={() => onOpenGolfopedia("management-reputation")}>
+              <Tooltip block label={translateCurrent("hud.reputationHelp")} content="The market's memory of golfer satisfaction. It falls faster than it recovers and directly supports demand." learnMore={() => onOpenGolfopedia("management-reputation")}>
               <div
                 style={{
                   display: "flex",
@@ -407,12 +409,12 @@ export function HUD(props: {
               >
                 <IconReputation size={22} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>REPUTATION</div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}><T id="auto.ui.hud.reputation" /></div>
                   <div style={{ fontSize: 16, fontWeight: 800 }}>{world.reputation}/100</div>
                 </div>
               </div>
               </Tooltip>
-              <Tooltip block content="Playing-surface health. Traffic causes wear; the maintenance budget restores condition each period." learnMore={() => onOpenGolfopedia("management-condition")}>
+              <Tooltip block label={translateCurrent("hud.conditionHelp")} content="Playing-surface health. Traffic causes wear; the maintenance budget restores condition each period." learnMore={() => onOpenGolfopedia("management-condition")}>
               <div
                 style={{
                   display: "flex",
@@ -426,12 +428,12 @@ export function HUD(props: {
               >
                 <IconCondition size={22} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>CONDITION</div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}><T id="auto.ui.hud.condition" /></div>
                   <div style={{ fontSize: 16, fontWeight: 800 }}>{Math.round(course.condition * 100)}%</div>
                 </div>
               </div>
               </Tooltip>
-              <Tooltip block content="Valid holes with a tee, green, and safe playable corridor. Nine valid holes open the full course." learnMore={() => onOpenGolfopedia("management-demand")}>
+              <Tooltip block label={translateCurrent("hud.openHolesHelp")} content="Valid holes with a tee, green, and safe playable corridor. Nine valid holes open the full course." learnMore={() => onOpenGolfopedia("management-demand")}>
               <div
                 style={{
                   display: "flex",
@@ -445,7 +447,7 @@ export function HUD(props: {
               >
                 <IconHoles size={22} />
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}>HOLES OPEN</div>
+                  <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#6b7280" }}><T id="auto.ui.hud.holes.open" /></div>
                   <div style={{ fontSize: 16, fontWeight: 800 }}>{validHoles}/9</div>
                 </div>
               </div>
@@ -454,15 +456,15 @@ export function HUD(props: {
           ) : (
             <>
               <div data-tooltip="Available operating cash. Building, maintenance, staffing, and debt payments spend this balance." style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>Cash</div>
-                <div style={{ fontSize: 18, fontWeight: 800 }}>${Math.round(world.cash).toLocaleString()}</div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}><T id="auto.ui.hud.cash.2" /></div>
+                <div style={{ fontSize: 18, fontWeight: 800 }}>{formatCurrency(world.cash)}</div>
               </div>
               <div data-tooltip={REPORT_HELP.Reputation} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>Reputation</div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}><T id="auto.ui.hud.reputation.2" /></div>
                 <div style={{ fontSize: 16, fontWeight: 700 }}>{world.reputation}/100</div>
               </div>
               <div data-tooltip={REPORT_HELP.Condition} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>Condition</div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}><T id="auto.ui.hud.condition.2" /></div>
                 <div style={{ fontSize: 16, fontWeight: 700 }}>{Math.round(course.condition * 100)}%</div>
               </div>
             </>
@@ -470,11 +472,11 @@ export function HUD(props: {
           {viewMode === "COZY" && (
             <div style={{ display: "grid", gap: 6 }}>
               <div data-tooltip="A quick summary of the course's atmosphere, based on condition, satisfaction, and recent results." style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>Vibe</div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}><T id="auto.ui.hud.vibe" /></div>
                 <div style={{ fontSize: 13, fontWeight: 800 }}>{vibe.vibeLabel}</div>
               </div>
               <div data-tooltip="The current mood of golfers on the course, summarized from their recent experiences." style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                <div style={{ fontSize: 12, color: "#6b7280" }}>Golfer sentiment</div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}><T id="auto.ui.hud.golfer.sentiment" /></div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <div style={{ fontSize: 12, letterSpacing: 1, color: "#111" }}>{vibe.stars}</div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: "#111" }}>{vibe.sentiment}</div>
@@ -492,24 +494,7 @@ export function HUD(props: {
                     fontWeight: 700,
                   }}
                 >
-                  Flyover
-                </button>
-                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#374151" }}>
-                  <input
-                    type="checkbox"
-                    checked={animationsEnabled}
-                    onChange={(e) => setAnimationsEnabled(e.target.checked)}
-                  />
-                  Animations
-                </label>
-                <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#374151" }}>
-                  <input
-                    type="checkbox"
-                    checked={soundEnabled}
-                    onChange={(e) => setSoundEnabled(e.target.checked)}
-                  />
-                  Sound
-                </label>
+                  <T id="auto.ui.hud.flyover" /></button>
                 {setShowObstacles && (
                   <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, color: "#374151" }}>
                     <input
@@ -517,8 +502,7 @@ export function HUD(props: {
                       checked={showObstacles ?? true}
                       onChange={(e) => setShowObstacles(e.target.checked)}
                     />
-                    Obstacles
-                  </label>
+                    <T id="auto.ui.hud.obstacles" /></label>
                 )}
               </div>
             </div>
@@ -547,9 +531,9 @@ export function HUD(props: {
                 flex: 1,
                 padding: "8px 6px",
                 borderRadius: 999,
-                border: tab === t ? "2px solid rgba(0,0,0,0.75)" : "1px solid rgba(0,0,0,0.10)",
-                background: tab === t ? "var(--cc-grass)" : "rgba(255,255,255,0.75)",
-                color: tab === t ? "#fff" : "#3d4a3e",
+                border: activeTab === t ? "2px solid rgba(0,0,0,0.75)" : "1px solid rgba(0,0,0,0.10)",
+                background: activeTab === t ? "var(--cc-grass)" : "rgba(255,255,255,0.75)",
+                color: activeTab === t ? "#fff" : "#3d4a3e",
                 fontSize: 12,
                 fontWeight: 900,
               }}
@@ -569,7 +553,7 @@ export function HUD(props: {
           opacity: isBankrupt ? 0.55 : 1,
         }}
       >
-        {tab === "Editor" && (
+        {activeTab === "Editor" && (
           <>
             {paintError && (
               <div
@@ -583,17 +567,18 @@ export function HUD(props: {
                   fontSize: 12,
                 }}
               >
-                {paintError.startsWith("Game") ? null : <b>Build blocked:</b>} {paintError}
+                {paintError.startsWith("Game") ? null : <b><T id="auto.ui.hud.build.blocked" /></b>} {paintError}
               </div>
             )}
 
             <div style={{ marginBottom: 10 }}>
               <div style={{ marginBottom: 8 }}>
-                <b>Editor mode</b>
+                <b><T id="auto.ui.hud.editor.mode" /></b>
               </div>
-              <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+              <div data-tutorial-target="editor-tools" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
                 <button
                   onClick={() => setEditorMode("PAINT")}
+                  data-tutorial-target="terrain-palette"
                   style={{
                     flex: 1,
                     padding: "8px 6px",
@@ -603,11 +588,10 @@ export function HUD(props: {
                     fontSize: 12,
                   }}
                 >
-                  Paint
-                </button>
+                  <T id="auto.ui.hud.paint" /></button>
                 <button
                   onClick={startWizard}
-                  data-tutorial-target="hole-wizard"
+                  data-tutorial-target={editorMode === "HOLE_WIZARD" ? undefined : "hole-wizard"}
                   style={{
                     flex: 1,
                     padding: "8px 6px",
@@ -617,8 +601,7 @@ export function HUD(props: {
                     fontSize: 12,
                   }}
                 >
-                  Hole Wizard
-                </button>
+                  <T id="auto.ui.hud.hole.wizard" /></button>
                 <button
                   onClick={() => setEditorMode("OBSTACLE")}
                   style={{
@@ -630,8 +613,7 @@ export function HUD(props: {
                     fontSize: 12,
                   }}
                 >
-                  Obstacles
-                </button>
+                  <T id="auto.ui.hud.obstacles" /></button>
                 <button
                   onClick={() => setEditorMode("SCULPT")}
                   style={{
@@ -643,8 +625,7 @@ export function HUD(props: {
                     fontSize: 12,
                   }}
                 >
-                  Sculpt
-                </button>
+                  <T id="auto.ui.hud.sculpt" /></button>
                 <button
                   onClick={() => setEditorMode("BUILDING")}
                   style={{
@@ -656,14 +637,13 @@ export function HUD(props: {
                     fontSize: 12,
                   }}
                 >
-                  Shops
-                </button>
+                  <T id="auto.ui.hud.shops" /></button>
               </div>
 
               {editorMode === "SCULPT" && props.sculptBrush && props.setSculptBrush && props.setSculptRadius && (
                 <div style={{ marginBottom: 10 }}>
                   <div style={{ marginBottom: 6 }}>
-                    <b>Sculpt brush</b>
+                    <b><T id="auto.ui.hud.sculpt.brush" /></b>
                   </div>
                   <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
                     {(["raise", "lower", "smooth", "level"] as const).map((b) => (
@@ -685,7 +665,7 @@ export function HUD(props: {
                     ))}
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, color: "#555" }}>Size</span>
+                    <span style={{ fontSize: 12, color: "#555" }}><T id="auto.ui.hud.size" /></span>
                     {([1, 2, 3] as const).map((r) => (
                       <button
                         key={r}
@@ -704,9 +684,7 @@ export function HUD(props: {
                     ))}
                   </div>
                   <div style={{ fontSize: 11, color: "#777" }}>
-                    Earthworks cost ${ELEVATION_COST_PER_STEP} per step per tile. Steep edges
-                    auto-terrace (and are included in the cost). Tees, greens and water can't be sculpted.
-                  </div>
+                    <T id="auto.ui.hud.earthworks.cost" />{ELEVATION_COST_PER_STEP} <T id="auto.ui.hud.per.step.per.tile.steep.edges.auto.terrace.and.are.inc" /></div>
                 </div>
               )}
 
@@ -718,46 +696,45 @@ export function HUD(props: {
                       checked={showShotPlan}
                       onChange={(e) => setShowShotPlan(e.target.checked)}
                     />
-                    Show shot plan overlay
-                  </label>
+                    <T id="auto.ui.hud.show.shot.plan.overlay" /></label>
                 </div>
               )}
 
               {activeHole && (
                 <div style={{ fontSize: 12, color: "#222" }}>
                   <div>
-                    <b>Hole {activeHoleIndex + 1}</b>:{" "}
+                    <b><T id="auto.ui.hud.hole" />{activeHoleIndex + 1}</b>:{" "}
                     {activeHole.isComplete ? (
                       <>
-                        score {Math.round(activeHole.score)}/100 • par {activeHole.par}{" "}
+                        <T id="auto.ui.hud.score" />{Math.round(activeHole.score)}<T id="auto.ui.hud.100.par" />{activeHole.par}{" "}
                         <span style={{ color: "#6b7280" }}>
                           {Number.isFinite(activeHole.autoPar) ? ` (auto ${activeHole.autoPar})` : ""}
                         </span>
                       </>
                     ) : (
-                      <>place tee + green</>
+                      <><T id="auto.ui.hud.place.tee.green" /></>
                     )}
                   </div>
                   <div style={{ marginTop: 4, color: "#444" }}>
-                    Straight:{" "}
+                    <T id="auto.ui.hud.straight" />{" "}
                     {distanceTiles != null
                       ? `${Math.round(distanceTiles * course.yardsPerTile)} yds (${distanceTiles.toFixed(1)} tiles)`
                       : "—"}{" "}
-                    • Effective:{" "}
+                    <T id="auto.ui.hud.effective" />{" "}
                     {activeHole.isComplete
                       ? `${Math.round(activeHole.effectiveDistance * course.yardsPerTile)} yds (${activeHole.effectiveDistance.toFixed(1)} tiles)`
                       : "—"}{" "}
-                    • Par: {effectivePar}{" "}
+                    <T id="auto.ui.hud.par" />{effectivePar}{" "}
                     <span style={{ color: "#777" }}>({holeDef?.parMode === "MANUAL" ? "manual" : "auto"})</span>
                   </div>
                   {activeHole.isComplete && Number.isFinite(activeHole.scratchShotsToGreen) && (
                     <div style={{ marginTop: 4, color: "#444" }}>
-                      Scratch to green: <b>{activeHole.scratchShotsToGreen.toFixed(2)}</b> • Bogey:{" "}
+                      <T id="auto.ui.hud.scratch.to.green" /><b>{activeHole.scratchShotsToGreen.toFixed(2)}</b> <T id="auto.ui.hud.bogey" />{" "}
                       <b>{Number.isFinite(activeHole.bogeyShotsToGreen) ? activeHole.bogeyShotsToGreen.toFixed(2) : "—"}</b>
                       {activeHole.autoPar === 5 && (
                         <span style={{ color: "#6b7280" }}>
                           {" "}
-                          • Reachable in two:{" "}
+                          <T id="auto.ui.hud.reachable.in.two" />{" "}
                           <b style={{ color: activeHole.reachableInTwo ? "#065f46" : "#7a0000" }}>
                             {activeHole.reachableInTwo ? "Yes" : "No"}
                           </b>
@@ -768,16 +745,16 @@ export function HUD(props: {
                   {viewMode === "ARCHITECT" && activeHole.isComplete && (
                     <div style={{ marginTop: 6, display: "grid", gap: 2 }}>
                       <div data-tooltip={REPORT_HELP.Playability}>
-                        Playability: <b>{Math.round(activeHole.playabilityScore)}</b>/100
+                        <T id="auto.ui.hud.playability" /><b>{Math.round(activeHole.playabilityScore)}</b>/100
                       </div>
                       <div data-tooltip="The strategic challenge created by distance, hazards, elevation, and shot demands.">
-                        Difficulty: <b>{Math.round(activeHole.difficultyScore)}</b>/100
+                        <T id="auto.ui.hud.difficulty" /><b>{Math.round(activeHole.difficultyScore)}</b>/100
                       </div>
                       <div data-tooltip={REPORT_HELP.Aesthetics}>
-                        Aesthetics: <b>{Math.round(activeHole.aestheticsScore)}</b>/100
+                        <T id="auto.ui.hud.aesthetics" /><b>{Math.round(activeHole.aestheticsScore)}</b>/100
                       </div>
                       <div data-tooltip="The combined hole score used in course-quality calculations.">
-                        Overall: <b>{Math.round(activeHole.overallHoleScore)}</b>/100
+                        <T id="auto.ui.hud.overall" /><b>{Math.round(activeHole.overallHoleScore)}</b>/100
                       </div>
                     </div>
                   )}
@@ -792,13 +769,11 @@ export function HUD(props: {
                         !activeHole.reachableInTwo &&
                         Number.isFinite(activeHole.scratchShotsToGreen) && (
                           <div>
-                            Par 5 not reachable in two: scratch needs ~{activeHole.scratchShotsToGreen.toFixed(2)} shots to reach green.
-                          </div>
+                            <T id="auto.ui.hud.par.5.not.reachable.in.two.scratch.needs" />{activeHole.scratchShotsToGreen.toFixed(2)} <T id="auto.ui.hud.shots.to.reach.green" /></div>
                         )}
                       {activeHole.shotPlan && activeHole.shotPlan.length >= 3 && (
                         <div style={{ marginTop: 4 }}>
-                          Layup preferred: optimal route is {activeHole.shotPlan.length} shots to reach green (hazard/dispersion risk makes aggression costly).
-                        </div>
+                          <T id="auto.ui.hud.layup.preferred.optimal.route.is" />{activeHole.shotPlan.length} <T id="auto.ui.hud.shots.to.reach.green.hazard.dispersion.risk.makes.aggr" /></div>
                       )}
                     </div>
                   )}
@@ -807,9 +782,9 @@ export function HUD(props: {
             </div>
 
             {editorMode === "HOLE_WIZARD" ? (
-              <Section title="Hole Setup Wizard">
+              <div data-tutorial-target="hole-wizard"><Section title={translateCurrent("auto.ui.hud.hole.setup.wizard")}>
                 <div>
-                  <b>Hole {activeHoleIndex + 1} of 9</b>
+                  <b><T id="auto.ui.hud.hole" />{activeHoleIndex + 1} <T id="auto.ui.hud.of.9" /></b>
                 </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 8, marginBottom: 8 }}>
                   <button
@@ -851,15 +826,14 @@ export function HUD(props: {
                       : "Confirm to save this hole, or redo to try again."}
                 </div>
                 <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                  Draft: tee {draftTee ? `(${draftTee.x},${draftTee.y})` : "—"} • green{" "}
+                  <T id="auto.ui.hud.draft.tee" />{draftTee ? `(${draftTee.x},${draftTee.y})` : "—"} <T id="auto.ui.hud.green" />{" "}
                   {draftGreen ? `(${draftGreen.x},${draftGreen.y})` : "—"}
                 </div>
-              </Section>
+              </Section></div>
             ) : editorMode === "OBSTACLE" ? (
-              <Section title="Place obstacle">
+              <Section title={translateCurrent("auto.ui.hud.place.obstacle")}>
                 <div style={{ color: "#444" }}>
-                  Click on the canvas to place/remove an obstacle (does not change terrain).
-                </div>
+                  <T id="auto.ui.hud.click.on.the.canvas.to.place.remove.an.obstacle.does.n" /></div>
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   {(["tree", "bush", "rock"] as const).map((t) => (
                     <button
@@ -883,10 +857,9 @@ export function HUD(props: {
               </Section>
             ) : editorMode === "BUILDING" ? (
               <>
-                <Section title="Concession buildings">
+                <Section title={translateCurrent("auto.ui.hud.concession.buildings")}>
                   <div style={{ color: "#444", fontSize: 12, marginBottom: 8 }}>
-                    Choose a shop, then click clear, near-flat land to build. Click an existing concession to remove it for 35% salvage.
-                  </div>
+                    <T id="auto.ui.hud.choose.a.shop.then.click.clear.near.flat.land.to.build" /></div>
                   <div style={{ display: "grid", gap: 6 }}>
                     {concessionTypes.map((type) => {
                       const spec = BUILDING_SPECS[type];
@@ -903,13 +876,13 @@ export function HUD(props: {
                             fontSize: 12,
                           }}
                         >
-                          <b>{spec.name}</b> · ${spec.buildCost.toLocaleString()} · starts at ${spec.defaultPrice}
+                          <b>{spec.name}</b> · {formatCurrency(spec.buildCost)} <T id="auto.ui.hud.starts.at" />{formatCurrency(spec.defaultPrice ?? 0)}
                         </button>
                       );
                     })}
                   </div>
                 </Section>
-                <Section title="Pricing & tiers">
+                <Section title={translateCurrent("auto.ui.hud.pricing.tiers")}>
                   <div style={{ display: "grid", gap: 8 }}>
                     {course.buildings.filter(isConcession).map((building, i) => {
                       const spec = BUILDING_SPECS[building.type];
@@ -917,18 +890,18 @@ export function HUD(props: {
                       const price = building.price ?? spec.defaultPrice!;
                       return (
                         <div key={`${building.x},${building.y},${i}`} style={{ padding: 8, border: "1px solid #ddd", borderRadius: 8, background: "#fff" }}>
-                          <div style={{ fontSize: 12, marginBottom: 6 }}><b>{spec.name}</b> at {building.x},{building.y}</div>
+                          <div style={{ fontSize: 12, marginBottom: 6 }}><b>{spec.name}</b> <T id="auto.ui.hud.at" />{building.x},{building.y}</div>
                           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                             <select
-                              aria-label={`${spec.name} tier`}
+                              aria-label={translateCurrent("hud.buildingTierLabel", { building: spec.name })}
                               value={tier}
                               onChange={(e) => onConfigureBuilding(building.x, building.y, Number(e.target.value) as BuildingTier, price)}
                             >
-                              <option value={1}>Tier 1</option><option value={2}>Tier 2</option><option value={3}>Tier 3</option>
+                              <option value={1}><T id="auto.ui.hud.tier.1" /></option><option value={2}><T id="auto.ui.hud.tier.2" /></option><option value={3}><T id="auto.ui.hud.tier.3" /></option>
                             </select>
                             <label style={{ fontSize: 12 }}>
                               $ <input
-                                aria-label={`${spec.name} price`}
+                                aria-label={translateCurrent("hud.buildingPriceLabel", { building: spec.name })}
                                 type="number" min={1} max={250} value={price}
                                 onChange={(e) => onConfigureBuilding(building.x, building.y, tier, Number(e.target.value))}
                                 style={{ width: 58 }}
@@ -938,14 +911,14 @@ export function HUD(props: {
                         </div>
                       );
                     })}
-                    {course.buildings.filter(isConcession).length === 0 && <div style={{ fontSize: 12, color: "#666" }}>No concessions built yet.</div>}
+                    {course.buildings.filter(isConcession).length === 0 && <div style={{ fontSize: 12, color: "#666" }}><T id="auto.ui.hud.no.concessions.built.yet" /></div>}
                   </div>
                 </Section>
               </>
             ) : (
               <>
                 {viewMode === "ARCHITECT" && (
-                  <Section title="Par settings (active hole)">
+                  <Section title={translateCurrent("auto.ui.hud.par.settings.active.hole")}>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button
                       onClick={() => setActiveHoleParMode("AUTO")}
@@ -957,8 +930,7 @@ export function HUD(props: {
                         background: "#fff",
                       }}
                     >
-                      Auto
-                    </button>
+                      <T id="auto.ui.hud.auto" /></button>
                     <button
                       onClick={() => setActiveHoleParMode("MANUAL")}
                       style={{
@@ -970,8 +942,7 @@ export function HUD(props: {
                         background: "#fff",
                       }}
                     >
-                      Manual
-                    </button>
+                      <T id="auto.ui.hud.manual" /></button>
                   </div>
 
                   {holeDef?.parMode === "MANUAL" && (
@@ -988,7 +959,7 @@ export function HUD(props: {
                             background: "#fff",
                           }}
                         >
-                          Par {p}
+                          <T id="auto.ui.hud.par.2" />{p}
                         </button>
                       ))}
                     </div>
@@ -996,30 +967,29 @@ export function HUD(props: {
 
                   {holeDef?.parMode === "AUTO" && (
                     <div style={{ marginTop: 8, fontSize: 12, color: "#555" }}>
-                      Auto par thresholds: ≤14 → 3, 15–30 → 4, 31+ → 5
-                    </div>
+                      <T id="auto.ui.hud.auto.par.thresholds.14.3.15.30.4.31.5" /></div>
                   )}
                 </Section>
                 )}
 
                 {viewMode === "ARCHITECT" && (
-                  <Section title="Hole list (overall score)">
+                  <Section title={translateCurrent("auto.ui.hud.hole.list.overall.score")}>
                   <div style={{ display: "grid", gap: 6 }}>
                     <div style={{ display: "grid", gridTemplateColumns: "34px 44px 1fr 54px 70px", fontSize: 12, color: "#555" }}>
                       <div>
                         <b>#</b>
                       </div>
                       <div>
-                        <b>Par</b>
+                        <b><T id="auto.ui.hud.par.2" /></b>
                       </div>
                       <div>
-                        <b>Dist (yds)</b>
+                        <b><T id="auto.ui.hud.dist.yds" /></b>
                       </div>
                       <div style={{ textAlign: "right" }}>
-                        <b>Overall</b>
+                        <b><T id="auto.ui.hud.overall.2" /></b>
                       </div>
                       <div style={{ textAlign: "center" }}>
-                        <b>Edit</b>
+                        <b><T id="auto.ui.hud.edit" /></b>
                       </div>
                     </div>
                     {holeSummary.holes.slice(0, 9).map((h) => (
@@ -1083,8 +1053,7 @@ export function HUD(props: {
                                 fontWeight: 500,
                               }}
                             >
-                              Edit
-                            </button>
+                              <T id="auto.ui.hud.edit" /></button>
                           ) : (
                             <span style={{ fontSize: 11, color: "#999" }}>—</span>
                           )}
@@ -1093,19 +1062,18 @@ export function HUD(props: {
                     ))}
                   </div>
                   <div style={{ marginTop: 8, fontSize: 12, color: "#666" }}>
-                    * layout issue (tee/green missing). Low overall holes drag down course quality.
-                  </div>
+                    <T id="auto.ui.hud.layout.issue.tee.green.missing.low.overall.holes.drag." /></div>
                 </Section>
                 )}
 
                 <div style={{ marginBottom: 8 }}>
-                  <b>Terrain brush</b>
+                  <b><T id="auto.ui.hud.terrain.brush" /></b>
                 </div>
                 <div data-tutorial-target="terrain-palette" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {TERRAIN.map((t) => (
                     <Tooltip
                       key={t}
-                      content={<><b>{t.replace("_", " ")}</b><br />Build ${TERRAIN_BUILD_COST[t].toLocaleString()} / tile · salvage ${TERRAIN_SALVAGE_VALUE[t].toLocaleString()}.</>}
+                      content={<><b>{t.replace("_", " ")}</b><br /><T id="auto.ui.hud.build" />{formatCurrency(TERRAIN_BUILD_COST[t])} <T id="auto.ui.hud.tile.salvage" />{formatCurrency(TERRAIN_SALVAGE_VALUE[t])}.</>}
                       learnMore={() => onOpenGolfopedia(`terrain-${t}`)}
                     >
                       <button
@@ -1128,35 +1096,34 @@ export function HUD(props: {
           </>
         )}
 
-        {tab === "Metrics" && (
+        {activeTab === "Metrics" && (
           <>
-            <Section title="Course metrics">
-              <div data-tooltip={REPORT_HELP["Course quality"]}>Course quality: {Math.round(holeSummary.courseQuality)}/100</div>
-              <div data-tooltip="The mean overall score of every completed, valid hole.">Hole quality avg: {Math.round(holeSummary.holeQualityAvg)}/100</div>
-              <div data-tooltip="Rewards a course that mixes hole lengths, pars, shapes, hazards, and scenery.">Variety: {Math.round(holeSummary.variety)}/100</div>
-              <div data-tooltip={REPORT_HELP.Price}>Price attractiveness: {price}/100</div>
-              <div data-tooltip="The combined demand factors before capacity and random visitor noise are applied.">Demand index: {liveDemand.demandIndex.toFixed(2)}</div>
+            <Section title={translateCurrent("auto.ui.hud.course.metrics")}>
+              <div data-tooltip={REPORT_HELP["Course quality"]}><T id="auto.ui.hud.course.quality" />{Math.round(holeSummary.courseQuality)}/100</div>
+              <div data-tooltip="The mean overall score of every completed, valid hole."><T id="auto.ui.hud.hole.quality.avg" />{Math.round(holeSummary.holeQualityAvg)}/100</div>
+              <div data-tooltip="Rewards a course that mixes hole lengths, pars, shapes, hazards, and scenery."><T id="auto.ui.hud.variety" />{Math.round(holeSummary.variety)}/100</div>
+              <div data-tooltip={REPORT_HELP.Price}><T id="auto.ui.hud.price.attractiveness" />{price}/100</div>
+              <div data-tooltip="The combined demand factors before capacity and random visitor noise are applied."><T id="auto.ui.hud.demand.index" />{liveDemand.demandIndex.toFixed(2)}</div>
               <div style={{ marginTop: 8 }}>
                 <Tooltip
                   content="Rating estimates a scratch golfer's expected score; slope measures how much harder the course becomes for bogey golfers."
                   learnMore={() => onOpenGolfopedia("management-rating")}
                 >
-                  <span style={{ cursor: "help" }}>Course Rating: <b>{rating.courseRating.toFixed(1)}</b> • Slope: <b>{rating.slope}</b></span>
+                  <span style={{ cursor: "help" }}><T id="auto.ui.hud.course.rating" /><b>{rating.courseRating.toFixed(1)}</b> <T id="auto.ui.hud.slope" /><b>{rating.slope}</b></span>
                 </Tooltip>
               </div>
               <div data-tooltip="Expected scoring for scratch and bogey golfers; their gap drives the slope rating." style={{ fontSize: 12, color: "#6b7280" }}>
-                Scratch: {rating.expectedScratchScore.toFixed(1)} • Bogey: {rating.expectedBogeyScore.toFixed(1)} •
-                yards/tile: {course.yardsPerTile}
+                <T id="auto.ui.hud.scratch" />{rating.expectedScratchScore.toFixed(1)} <T id="auto.ui.hud.bogey.2" />{rating.expectedBogeyScore.toFixed(1)} <T id="auto.ui.hud.yards.tile" />{course.yardsPerTile}
               </div>
               <div data-tooltip="Completed holes that currently fail route, placement, or shot-corridor validation." style={{ marginTop: 8, fontSize: 12, color: "#444" }}>
-                Layout issues: {holeSummary.holes.filter((h) => h.isComplete && !h.isValid).length} /{" "}
+                <T id="auto.ui.hud.layout.issues" />{holeSummary.holes.filter((h) => h.isComplete && !h.isValid).length} /{" "}
                 {course.holes.length}
               </div>
             </Section>
-            <Section title="Terrain mix + maintenance burden">
+            <Section title={translateCurrent("auto.ui.hud.terrain.mix.maintenance.burden")}>
               <div data-tooltip="The average and total upkeep pressure created by the course's terrain mix.">
-                Estimated maintenance weight: <b>{avgMaintWeight.toFixed(2)}</b> avg •{" "}
-                <span style={{ color: "#555" }}>{Math.round(totalMaintWeight).toLocaleString()} total</span>
+                <T id="auto.ui.hud.estimated.maintenance.weight" /><b>{avgMaintWeight.toFixed(2)}</b> <T id="auto.ui.hud.avg" />{" "}
+                <span style={{ color: "#555" }}>{formatNumber(totalMaintWeight, "en", { maximumFractionDigits: 0 })} <T id="auto.ui.hud.total" /></span>
               </div>
               <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
                 {(Object.keys(terrainCounts) as Terrain[])
@@ -1178,61 +1145,61 @@ export function HUD(props: {
           </>
         )}
 
-        {tab === "Results" && (
+        {activeTab === "Results" && (
           <div data-tutorial-target="weekly-report">
-            {!last && <div style={{ color: "#555", fontSize: 13 }}>Simulate a week to see results.</div>}
+            {!last && <div style={{ color: "#555", fontSize: 13 }}><T id="auto.ui.hud.simulate.a.week.to.see.results" /></div>}
             {last && (
-              <Section title="Last week">
-                <div data-tooltip="Golfers who completed a visit during the simulated week.">Visitors: {last.visitors}</div>
+              <Section title={translateCurrent("auto.ui.hud.last.week")}>
+                <div data-tooltip="Golfers who completed a visit during the simulated week."><T id="auto.ui.hud.visitors" />{last.visitors}</div>
                 {typeof last.capacity === "number" && (
                   <div data-tooltip="The maximum number of golfers the course can serve this week; excess demand becomes turnaways." style={{ fontSize: 12, color: "#555" }}>
-                    Capacity: {last.capacity}{" "}
+                    <T id="auto.ui.hud.capacity" />{last.capacity}{" "}
                     {typeof last.turnaways === "number" && last.turnaways > 0 && (
                       <>
-                        • Turned away: <b>{last.turnaways}</b>
+                        <T id="auto.ui.hud.turned.away" /><b>{last.turnaways}</b>
                       </>
                     )}
                   </div>
                 )}
-                <div data-tooltip="Total green-fee and concession income earned this week.">Revenue: ${Math.round(last.revenue).toLocaleString()}</div>
+                <div data-tooltip="Total green-fee and concession income earned this week."><T id="auto.ui.hud.revenue" />{formatCurrency(last.revenue)}</div>
                 {last.revenueBreakdown && (
                   <div data-tooltip="The sources that make up this week's total revenue." style={{ marginTop: 4, padding: 7, borderRadius: 7, background: "#f7f3e8", fontSize: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>Green fees</span><b>${Math.round(last.revenueBreakdown.greenFees).toLocaleString()}</b>
+                      <span><T id="auto.ui.hud.green.fees" /></span><b>{formatCurrency(last.revenueBreakdown.greenFees)}</b>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>Concessions ({last.revenueBreakdown.transactions.length} sales)</span>
-                      <b>${Math.round(last.revenueBreakdown.concessions).toLocaleString()}</b>
+                      <span><T id="auto.ui.hud.concessions" />{last.revenueBreakdown.transactions.length} <T id="auto.ui.hud.sales" /></span>
+                      <b>{formatCurrency(last.revenueBreakdown.concessions)}</b>
                     </div>
                     {Object.entries(last.revenueBreakdown.byConcession).map(([type, amount]) => (
                       <div key={type} style={{ display: "flex", justifyContent: "space-between", color: "#666", paddingLeft: 8 }}>
                         <span>{BUILDING_SPECS[type as ConcessionType].name}</span>
-                        <span>${Math.round(amount ?? 0).toLocaleString()}</span>
+                        <span>{formatCurrency(amount ?? 0)}</span>
                       </div>
                     ))}
                   </div>
                 )}
-                <div data-tooltip="All variable costs, fixed overhead, maintenance, staffing, marketing, and debt costs this week.">Costs: ${Math.round(last.costs).toLocaleString()}</div>
+                <div data-tooltip="All variable costs, fixed overhead, maintenance, staffing, marketing, and debt costs this week."><T id="auto.ui.hud.costs" />{formatCurrency(last.costs)}</div>
                 {last.variableCosts && (
                   <div data-tooltip="Costs that scale with rounds played and transactions completed." style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>Variable costs</span>
+                      <span><T id="auto.ui.hud.variable.costs" /></span>
                       <span>
-                        <b>${Math.round(last.variableCosts.total).toLocaleString()}</b>
+                        <b>{formatCurrency(last.variableCosts.total)}</b>
                       </span>
                     </div>
                     <div style={{ marginTop: 4, display: "grid", gap: 2 }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>Labor (per round)</span>
-                        <span>${Math.round(last.variableCosts.labor).toLocaleString()}</span>
+                        <span><T id="auto.ui.hud.labor.per.round" /></span>
+                        <span>{formatCurrency(last.variableCosts.labor)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>Consumables</span>
-                        <span>${Math.round(last.variableCosts.consumables).toLocaleString()}</span>
+                        <span><T id="auto.ui.hud.consumables" /></span>
+                        <span>{formatCurrency(last.variableCosts.consumables)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>Merchant fees</span>
-                        <span>${Math.round(last.variableCosts.merchantFees).toLocaleString()}</span>
+                        <span><T id="auto.ui.hud.merchant.fees" /></span>
+                        <span>{formatCurrency(last.variableCosts.merchantFees)}</span>
                       </div>
                     </div>
                   </div>
@@ -1240,27 +1207,27 @@ export function HUD(props: {
                 {last.overhead && (
                   <div data-tooltip="Fixed weekly insurance, utilities, administration, and base staffing expenses." style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>Overhead (fixed)</span>
+                      <span><T id="auto.ui.hud.overhead.fixed" /></span>
                       <span>
-                        <b>${Math.round(last.overhead.total).toLocaleString()}</b>
+                        <b>{formatCurrency(last.overhead.total)}</b>
                       </span>
                     </div>
                     <div style={{ marginTop: 4, display: "grid", gap: 2 }}>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>Insurance</span>
-                        <span>${Math.round(last.overhead.insurance).toLocaleString()}</span>
+                        <span><T id="auto.ui.hud.insurance" /></span>
+                        <span>{formatCurrency(last.overhead.insurance)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>Utilities</span>
-                        <span>${Math.round(last.overhead.utilities).toLocaleString()}</span>
+                        <span><T id="auto.ui.hud.utilities" /></span>
+                        <span>{formatCurrency(last.overhead.utilities)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>Admin</span>
-                        <span>${Math.round(last.overhead.admin).toLocaleString()}</span>
+                        <span><T id="auto.ui.hud.admin" /></span>
+                        <span>{formatCurrency(last.overhead.admin)}</span>
                       </div>
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>Base staff</span>
-                        <span>${Math.round(last.overhead.baseStaff).toLocaleString()}</span>
+                        <span><T id="auto.ui.hud.base.staff" /></span>
+                        <span>{formatCurrency(last.overhead.baseStaff)}</span>
                       </div>
                     </div>
                   </div>
@@ -1268,49 +1235,51 @@ export function HUD(props: {
                 {last.maintenance && (
                   <div data-tooltip="Required upkeep versus the maintenance budget; a shortfall lowers course condition." style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>Required maintenance</span>
+                      <span><T id="auto.ui.hud.required.maintenance" /></span>
                       <span>
-                        <b>${Math.round(last.maintenance.required).toLocaleString()}</b>
+                        <b>{formatCurrency(last.maintenance.required)}</b>
                       </span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
-                      <span>Budget</span>
-                      <span>${Math.round(last.maintenance.budget).toLocaleString()}</span>
+                      <span><T id="auto.ui.hud.budget" /></span>
+                      <span>{formatCurrency(last.maintenance.budget)}</span>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
                       <span>{last.maintenance.shortfall > 0 ? "Shortfall" : "Excess"}</span>
                       <span>
-                        {last.maintenance.shortfall > 0 ? "-" : "+"}$
-                        {Math.round(Math.abs(last.maintenance.shortfall)).toLocaleString()}
+                        {formatCurrency(
+                          last.maintenance.shortfall > 0 ? -Math.abs(last.maintenance.shortfall) : Math.abs(last.maintenance.shortfall),
+                          "en",
+                          { signDisplay: "always" },
+                        )}
                       </span>
                     </div>
                   </div>
                 )}
                 <div data-tooltip="Revenue minus operating costs before any displayed profit tax.">
-                  <b>Profit:</b> ${Math.round(last.profit).toLocaleString()}
+                  <b><T id="auto.ui.hud.profit" /></b> {formatCurrency(last.profit)}
                 </div>
                 {typeof last.tax === "number" && last.tax > 0 && (
                   <div data-tooltip="Tax charged on profitable weeks at the current difficulty's rate." style={{ fontSize: 12, color: "#555" }}>
-                    Profit tax: -${Math.round(last.tax).toLocaleString()}
+                    <T id="auto.ui.hud.profit.tax" />{formatCurrency(last.tax)}
                   </div>
                 )}
-                <div data-tooltip="The average golfer experience score for visits completed this week.">Avg satisfaction: {Math.round(last.avgSatisfaction)}/100</div>
+                <div data-tooltip="The average golfer experience score for visits completed this week."><T id="auto.ui.hud.avg.satisfaction" />{Math.round(last.avgSatisfaction)}/100</div>
                 <div data-tooltip="The lasting reputation change caused by this week's golfer experiences.">
-                  Reputation Δ: {last.reputationDelta >= 0 ? "+" : ""}
+                  <T id="auto.ui.hud.reputation.3" />{last.reputationDelta >= 0 ? "+" : ""}
                   {last.reputationDelta}
                 </div>
                 {last.reputationMomentum && (
                   <div style={{ fontSize: 12, color: "#555" }}>{last.reputationMomentum}</div>
                 )}
                 <div data-tooltip="A small random visitor fluctuation that keeps otherwise identical weeks from being perfectly predictable.">
-                  Noise: {last.visitorNoise >= 0 ? "+" : ""}
-                  {last.visitorNoise} visitors
-                </div>
+                  <T id="auto.ui.hud.noise" />{last.visitorNoise >= 0 ? "+" : ""}
+                  {last.visitorNoise} <T id="auto.ui.hud.visitors.2" /></div>
               </Section>
             )}
 
             {last?.demand && (
-              <Section title="Demand breakdown">
+              <Section title={translateCurrent("auto.ui.hud.demand.breakdown")}>
                 <BreakdownTableDetailed
                   rows={[
                     [
@@ -1327,27 +1296,27 @@ export function HUD(props: {
                   ]}
                 />
                 <div data-tooltip="The final demand index converted into an expected base visitor count before capacity and noise." style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
-                  DemandIndex: {last.demand.demandIndex.toFixed(2)} → base visitors:{" "}
+                  <T id="auto.ui.hud.demandindex" />{last.demand.demandIndex.toFixed(2)} <T id="auto.ui.hud.base.visitors" />{" "}
                   {last.demand.segments?.totalBaseVisitors ?? 120 + Math.round(520 * last.demand.demandIndex)}
                 </div>
                 {last.demand.segments && (
                   <div style={{ marginTop: 8, fontSize: 12, color: "#444", display: "grid", gap: 4 }}>
                     <div data-tooltip="Casual golfers are more price-sensitive and make up the broadest visitor segment." style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>Casual</span>
+                      <span><T id="auto.ui.hud.casual" /></span>
                       <span>
-                        {Math.round(last.demand.segments.casual.share * 100)}% • idx{" "}
-                        {last.demand.segments.casual.demandIndex.toFixed(2)} • base{" "}
+                        {Math.round(last.demand.segments.casual.share * 100)}<T id="auto.ui.hud.idx" />{" "}
+                        {last.demand.segments.casual.demandIndex.toFixed(2)} <T id="auto.ui.hud.base" />{" "}
                         {last.demand.segments.casual.baseVisitors}
                       </span>
                     </div>
                     <div data-tooltip="Core golfers value course quality more strongly but are capped as a share of total visitors." style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span>Core</span>
+                      <span><T id="auto.ui.hud.core" /></span>
                       <span>
-                        {Math.round(last.demand.segments.core.share * 100)}% • idx{" "}
-                        {last.demand.segments.core.demandIndex.toFixed(2)} • base{" "}
+                        {Math.round(last.demand.segments.core.share * 100)}<T id="auto.ui.hud.idx" />{" "}
+                        {last.demand.segments.core.demandIndex.toFixed(2)} <T id="auto.ui.hud.base" />{" "}
                         {last.demand.segments.core.baseVisitors}{" "}
                         <span style={{ color: "#6b7280" }}>
-                          (cap {Math.round(last.demand.segments.core.cap * 100)}%)
+                          <T id="auto.ui.hud.cap" />{Math.round(last.demand.segments.core.cap * 100)}%)
                         </span>
                       </span>
                     </div>
@@ -1355,14 +1324,14 @@ export function HUD(props: {
                 )}
                 {prev?.demand && (
                   <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
-                    Δ DemandIndex vs last week: {(last.demand.demandIndex - prev.demand.demandIndex).toFixed(2)}
+                    <T id="auto.ui.hud.demandindex.vs.last.week" />{(last.demand.demandIndex - prev.demand.demandIndex).toFixed(2)}
                   </div>
                 )}
               </Section>
             )}
 
             {viewMode === "ARCHITECT" && last?.satisfaction && (
-              <Section title="Satisfaction breakdown">
+              <Section title={translateCurrent("auto.ui.hud.satisfaction.breakdown")}>
                 <BreakdownTableDetailed
                   rows={[
                     ["Playability", last.satisfaction.playability, last.satisfaction.weights.playability, last.satisfaction.weights.playability * (last.satisfaction.playability / 100)],
@@ -1373,18 +1342,18 @@ export function HUD(props: {
                   ]}
                 />
                 <div data-tooltip="The weighted combination of playability, aesthetics, difficulty fit, condition, and staff." style={{ marginTop: 6, fontSize: 12, color: "#444" }}>
-                  Satisfaction: <b>{last.satisfaction.satisfaction}</b>/100
+                  <T id="auto.ui.hud.satisfaction" /><b>{last.satisfaction.satisfaction}</b>/100
                 </div>
                 {prev?.satisfaction && (
                   <div style={{ marginTop: 6, fontSize: 12, color: "#6b7280" }}>
-                    Δ Satisfaction vs last week: {last.satisfaction.satisfaction - prev.satisfaction.satisfaction}
+                    <T id="auto.ui.hud.satisfaction.vs.last.week" />{last.satisfaction.satisfaction - prev.satisfaction.satisfaction}
                   </div>
                 )}
               </Section>
             )}
 
             {viewMode === "ARCHITECT" && last?.topIssues && last.topIssues.length > 0 && (
-              <Section title="Top issues (what to fix next)">
+              <Section title={translateCurrent("auto.ui.hud.top.issues.what.to.fix.next")}>
                 <ul style={{ margin: 0, paddingLeft: 16 }}>
                   {last.topIssues.map((t, i) => (
                     <li key={i} style={{ marginBottom: 6 }}>
@@ -1396,7 +1365,7 @@ export function HUD(props: {
             )}
 
             {last?.tips && last.tips.length > 0 && (
-              <Section title="Why people like / don’t like it">
+              <Section title={translateCurrent("auto.ui.hud.why.people.like.don.t.like.it")}>
                 <ul style={{ margin: 0, paddingLeft: 16 }}>
                   {last.tips.map((t, i) => (
                     <li key={i} style={{ marginBottom: 4 }}>
@@ -1408,11 +1377,11 @@ export function HUD(props: {
             )}
 
             {last?.capitalSpending && (
-              <Section title="Capital spending (terrain builds)">
+              <Section title={translateCurrent("auto.ui.hud.capital.spending.terrain.builds")}>
                 <div>
-                  Spent: <b>${Math.round(last.capitalSpending.spent).toLocaleString()}</b> • Refunded:{" "}
-                  <b>${Math.round(last.capitalSpending.refunded).toLocaleString()}</b> • Net:{" "}
-                  <b>${Math.round(last.capitalSpending.net).toLocaleString()}</b>
+                  <T id="auto.ui.hud.spent" /><b>{formatCurrency(last.capitalSpending.spent)}</b> <T id="auto.ui.hud.refunded" />{" "}
+                  <b>{formatCurrency(last.capitalSpending.refunded)}</b> <T id="auto.ui.hud.net" />{" "}
+                  <b>{formatCurrency(last.capitalSpending.net)}</b>
                 </div>
                 <div style={{ marginTop: 8, display: "grid", gap: 4, fontSize: 12 }}>
                   {Object.entries(last.capitalSpending.byTerrainSpent)
@@ -1422,10 +1391,9 @@ export function HUD(props: {
                       <div key={t} style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>{t}</span>
                         <span>
-                          ${Math.round(v ?? 0).toLocaleString()}{" "}
+                          {formatCurrency(v ?? 0)}{" "}
                           <span style={{ color: "#777" }}>
-                            ({last.capitalSpending!.byTerrainTiles[t as Terrain] ?? 0} tiles)
-                          </span>
+                            ({last.capitalSpending!.byTerrainTiles[t as Terrain] ?? 0} <T id="auto.ui.hud.tiles" /></span>
                         </span>
                       </div>
                     ))}
@@ -1434,10 +1402,9 @@ export function HUD(props: {
             )}
 
             {last?.maintenancePressure && (
-              <Section title="Maintenance pressure">
+              <Section title={translateCurrent("auto.ui.hud.maintenance.pressure")}>
                 <div>
-                  Avg terrain weight: <b>{last.maintenancePressure.avgWeight.toFixed(2)}</b> • Wear this
-                  week: <b>{Math.round(last.maintenancePressure.wear * 100)}%</b>
+                  <T id="auto.ui.hud.avg.terrain.weight" /><b>{last.maintenancePressure.avgWeight.toFixed(2)}</b> <T id="auto.ui.hud.wear.this.week" /><b>{Math.round(last.maintenancePressure.wear * 100)}%</b>
                 </div>
               </Section>
             )}
@@ -1445,15 +1412,14 @@ export function HUD(props: {
           </div>
         )}
 
-        {tab === "Upgrades" && (
+        {activeTab === "Upgrades" && (
           <>
-            <Section title="Business">
+            <Section title={translateCurrent("auto.ui.hud.business")}>
               <label data-tutorial-target="green-fee" style={{ display: "block", marginBottom: 12 }}>
-                Green fee (${course.baseGreenFee})
+                <T id="auto.ui.hud.green.fee" />{course.baseGreenFee})
                 {world.constraints?.fixedGreenFee != null && (
                   <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: "#8a6d1a" }}>
-                    🔒 set by the scenario
-                  </span>
+                    <T id="auto.ui.hud.set.by.the.scenario" /></span>
                 )}
                 <input
                   type="range"
@@ -1467,8 +1433,7 @@ export function HUD(props: {
               </label>
 
               <label data-tutorial-target="maintenance" style={{ display: "block" }}>
-                Maintenance budget (${world.maintenanceBudget}/wk)
-                <input
+                <T id="auto.ui.hud.maintenance.budget" />{world.maintenanceBudget}<T id="auto.ui.hud.wk" /><input
                   type="range"
                   min={0}
                   max={5000}
@@ -1480,7 +1445,7 @@ export function HUD(props: {
               </label>
             </Section>
 
-            <Section title="Financing">
+            <Section title={translateCurrent("auto.ui.hud.financing")}>
               <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
                 {loansBarred
                   ? "No bank will touch this deal — the scenario forbids loans."
@@ -1502,12 +1467,11 @@ export function HUD(props: {
                     textAlign: "left",
                   }}
                 >
-                  Bridge Loan — ${BALANCE.loans.bridge.maxPrincipal.toLocaleString()} •{" "}
-                  {Math.round(BALANCE.loans.bridge.apr * 100)}% APR • {BALANCE.loans.bridge.termWeeks}w{" "}
+                  <T id="auto.ui.hud.bridge.loan" />{formatCurrency(BALANCE.loans.bridge.maxPrincipal)} •{" "}
+                  {Math.round(BALANCE.loans.bridge.apr * 100)}<T id="auto.ui.hud.apr" />{BALANCE.loans.bridge.termWeeks}<T id="auto.ui.hud.w" />{" "}
                   {!bridgeEligible && (
                     <span style={{ fontWeight: 500, color: "#777" }}>
-                      (need rep ≥ {BALANCE.loans.bridge.repMin}, ≥{BALANCE.loans.bridge.minValidHolesAlt} valid holes or playable, and {BALANCE.loans.bridgeCooldownWeeks}-week cooldown)
-                    </span>
+                      <T id="auto.ui.hud.need.rep" />{BALANCE.loans.bridge.repMin}, ≥{BALANCE.loans.bridge.minValidHolesAlt} <T id="auto.ui.hud.valid.holes.or.playable.and" />{BALANCE.loans.bridgeCooldownWeeks}<T id="auto.ui.hud.week.cooldown" /></span>
                   )}
                 </button>
 
@@ -1525,29 +1489,27 @@ export function HUD(props: {
                     textAlign: "left",
                   }}
                 >
-                  Expansion Loan — ${BALANCE.loans.expansion.maxPrincipal.toLocaleString()} •{" "}
-                  {Math.round(BALANCE.loans.expansion.apr * 100)}% APR • {BALANCE.loans.expansion.termWeeks}w{" "}
+                  <T id="auto.ui.hud.expansion.loan" />{formatCurrency(BALANCE.loans.expansion.maxPrincipal)} •{" "}
+                  {Math.round(BALANCE.loans.expansion.apr * 100)}<T id="auto.ui.hud.apr" />{BALANCE.loans.expansion.termWeeks}<T id="auto.ui.hud.w" />{" "}
                   {!expansionEligible && (
                     <span style={{ fontWeight: 500, color: "#777" }}>
-                      (need rep ≥ {BALANCE.loans.expansion.repMin}, {BALANCE.loans.expansion.minValidHoles} valid holes, and last week profit &gt; 0)
-                    </span>
+                      <T id="auto.ui.hud.need.rep" />{BALANCE.loans.expansion.repMin}, {BALANCE.loans.expansion.minValidHoles} <T id="auto.ui.hud.valid.holes.and.last.week.profit.gt.0" /></span>
                   )}
                 </button>
               </div>
 
               {(world.loans ?? []).length > 0 && (
                 <div style={{ display: "grid", gap: 6, fontSize: 12 }}>
-                  <div style={{ fontWeight: 800 }}>Active loans</div>
+                  <div style={{ fontWeight: 800 }}><T id="auto.ui.hud.active.loans" /></div>
                   {(world.loans ?? [])
                     .filter((l) => l.status === "ACTIVE")
                     .map((l) => (
                       <div key={l.id} style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>
-                          {l.kind} • {Math.round(l.apr * 100)}% • {l.weeksRemaining}w left
-                        </span>
+                          {l.kind} • {Math.round(l.apr * 100)}% • {l.weeksRemaining}<T id="auto.ui.hud.w.left" /></span>
                         <span>
-                          ${Math.round(l.weeklyPayment).toLocaleString()}/wk • bal $
-                          {Math.round(l.balance).toLocaleString()}
+                          {formatCurrency(l.weeklyPayment)}<T id="auto.ui.hud.wk.bal" />{" "}
+                          {formatCurrency(l.balance)}
                         </span>
                       </div>
                     ))}
@@ -1555,28 +1517,26 @@ export function HUD(props: {
               )}
             </Section>
 
-            <Section title="Unlocks (cosmetic)">
+            <Section title={translateCurrent("auto.ui.hud.unlocks.cosmetic")}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
-                <span style={{ color: "#555" }}>Legacy points</span>
+                <span style={{ color: "#555" }}><T id="auto.ui.hud.legacy.points" /></span>
                 <b>{legacy.legacyPoints}</b>
               </div>
               <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
-                Earn points on bankruptcy based on weeks survived + peak reputation. Purely cosmetic.
-              </div>
+                <T id="auto.ui.hud.earn.points.on.bankruptcy.based.on.weeks.survived.peak" /></div>
 
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
-                    <b>Flag color: Blue</b>{" "}
-                    <span style={{ color: "#6b7280" }}>(cost 3)</span>
+                    <b><T id="auto.ui.hud.flag.color.blue" /></b>{" "}
+                    <span style={{ color: "#6b7280" }}><T id="auto.ui.hud.cost.3" /></span>
                   </div>
                   {legacy.unlocked.FLAG_BLUE ? (
                     <button
                       onClick={() => onSelectFlagColor("rgba(37,99,235,0.92)")}
                       style={{ padding: "6px 10px", borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
                     >
-                      Use
-                    </button>
+                      <T id="auto.ui.hud.use" /></button>
                   ) : (
                     <button
                       onClick={() => onUnlockFlagColor("BLUE", 3)}
@@ -1590,23 +1550,21 @@ export function HUD(props: {
                         fontWeight: 700,
                       }}
                     >
-                      Unlock
-                    </button>
+                      <T id="auto.ui.hud.unlock" /></button>
                   )}
                 </div>
 
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <div>
-                    <b>Flag color: Gold</b>{" "}
-                    <span style={{ color: "#6b7280" }}>(cost 5)</span>
+                    <b><T id="auto.ui.hud.flag.color.gold" /></b>{" "}
+                    <span style={{ color: "#6b7280" }}><T id="auto.ui.hud.cost.5" /></span>
                   </div>
                   {legacy.unlocked.FLAG_GOLD ? (
                     <button
                       onClick={() => onSelectFlagColor("rgba(245,158,11,0.92)")}
                       style={{ padding: "6px 10px", borderRadius: 10, border: "1px solid #ddd", background: "#fff" }}
                     >
-                      Use
-                    </button>
+                      <T id="auto.ui.hud.use" /></button>
                   ) : (
                     <button
                       onClick={() => onUnlockFlagColor("GOLD", 5)}
@@ -1620,21 +1578,19 @@ export function HUD(props: {
                         fontWeight: 700,
                       }}
                     >
-                      Unlock
-                    </button>
+                      <T id="auto.ui.hud.unlock" /></button>
                   )}
                 </div>
 
                 <div style={{ marginTop: 6, fontSize: 12, color: "#555" }}>
-                  Current flag:{" "}
+                  <T id="auto.ui.hud.current.flag" />{" "}
                   <span style={{ padding: "2px 8px", borderRadius: 999, border: "1px solid #ddd" }}>
-                    <span style={{ color: legacy.selected.flagColor }}>●</span> active
-                  </span>
+                    <span style={{ color: legacy.selected.flagColor }}>●</span> <T id="auto.ui.hud.active" /></span>
                 </div>
               </div>
             </Section>
 
-            <Section title="Upgrades">
+            <Section title={translateCurrent("auto.ui.hud.upgrades")}>
               <div style={{ display: "grid", gap: 8 }}>
                 <button
                   onClick={onUpgradeStaff}
@@ -1647,9 +1603,9 @@ export function HUD(props: {
                     background: canUpgradeStaff ? "#fff" : "#f6f6f6",
                   }}
                 >
-                  Staff level: {world.staffLevel}/5{" "}
+                  <T id="auto.ui.hud.staff.level" />{world.staffLevel}/5{" "}
                   {staffUpgradeCost != null
-                    ? `(Buy: $${staffUpgradeCost.toLocaleString()})`
+                    ? `(Buy: ${formatCurrency(staffUpgradeCost)})`
                     : "(Max)"}
                 </button>
                 <button
@@ -1663,9 +1619,9 @@ export function HUD(props: {
                     background: canUpgradeMarketing ? "#fff" : "#f6f6f6",
                   }}
                 >
-                  Marketing level: {world.marketingLevel}/5{" "}
+                  <T id="auto.ui.hud.marketing.level" />{world.marketingLevel}/5{" "}
                   {marketingUpgradeCost != null
-                    ? `(Buy: $${marketingUpgradeCost.toLocaleString()})`
+                    ? `(Buy: ${formatCurrency(marketingUpgradeCost)})`
                     : "(Max)"}
                 </button>
               </div>
@@ -1686,7 +1642,7 @@ export function HUD(props: {
         >
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>
             <div>
-              <b>Hole {activeHoleIndex + 1} / 9</b>
+              <b><T id="auto.ui.hud.hole" />{activeHoleIndex + 1} / 9</b>
             </div>
             <div style={{ color: "#555" }}>
               {wizardStep === "TEE"
@@ -1710,8 +1666,7 @@ export function HUD(props: {
                 fontWeight: 600,
               }}
             >
-              Confirm
-            </button>
+              <T id="auto.ui.hud.confirm" /></button>
             <button
               onClick={onWizardRedo}
               style={{
@@ -1722,8 +1677,7 @@ export function HUD(props: {
                 background: "#fff",
               }}
             >
-              Redo
-            </button>
+              <T id="auto.ui.hud.redo" /></button>
             <button
               onClick={onWizardNextHole}
               style={{
@@ -1734,8 +1688,7 @@ export function HUD(props: {
                 background: "#fff",
               }}
             >
-              Next hole
-            </button>
+              <T id="auto.ui.hud.next.hole" /></button>
           </div>
         </div>
       )}
@@ -1751,17 +1704,14 @@ export function HUD(props: {
       >
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <GameButton variant="secondary" size="md" onClick={onSave} style={{ flex: 1, borderRadius: 16 }}>
-            💾 Save
-          </GameButton>
+            <T id="auto.ui.hud.save" /></GameButton>
           <GameButton variant="secondary" size="md" onClick={onLoad} style={{ flex: 1, borderRadius: 16 }}>
-            📁 Load
-          </GameButton>
+            <T id="auto.ui.hud.load" /></GameButton>
           <GameButton variant="secondary" size="md" onClick={onResetSave} style={{ flex: 1, borderRadius: 16 }}>
-            ↺ Reset
-          </GameButton>
+            <T id="auto.ui.hud.reset" /></GameButton>
         </div>
 
-        <GameButton
+        <div data-tutorial-target="weekly-report"><GameButton
           onClick={simulate}
           disabled={isBankrupt}
           variant="primary"
@@ -1769,7 +1719,7 @@ export function HUD(props: {
           style={{ width: "100%", borderRadius: 18 }}
         >
           {isBankrupt ? "Run ended" : "⏩ Simulate week"}
-        </GameButton>
+        </GameButton></div>
       </div>
     </div>
   );

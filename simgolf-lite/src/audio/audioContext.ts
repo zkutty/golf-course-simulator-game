@@ -5,8 +5,9 @@ export interface AudioContextValue {
   setAmbience: (src: string | null) => Promise<void>;
   setMusic: (src: string | null) => Promise<void>;
   playSfx: (src: string) => Promise<void>;
-  setVolumes: (volumes: Partial<{ musicVolume: number; ambienceVolume: number; sfxVolume: number }>) => void;
-  getVolumes: () => { musicVolume: number; ambienceVolume: number; sfxVolume: number };
+  setVolumes: (volumes: Partial<{ masterVolume: number; musicVolume: number; ambienceVolume: number; sfxVolume: number }>) => void;
+  syncVolumes: (volumes: { masterVolume: number; musicVolume: number; ambienceVolume: number; sfxVolume: number }) => void;
+  getVolumes: () => { masterVolume: number; musicVolume: number; ambienceVolume: number; sfxVolume: number };
 }
 
 export const AudioReactContext = createContext<AudioContextValue | null>(null);

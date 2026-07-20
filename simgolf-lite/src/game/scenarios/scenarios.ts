@@ -3,6 +3,9 @@ import { createObjectiveState } from "../models/objectives";
 import { createNewGame } from "../gen/newGame";
 import { buildFixtureCourse } from "./fixtures";
 import type { ScenarioDefinition } from "./types";
+import { translate } from "../../i18n/core";
+
+const text = (key: Parameters<typeof translate>[1]) => translate("en", key);
 
 // The launch career ladder (ZKU-164): six authored scenarios, escalating.
 // Data only — every goal uses the ZKU-163 condition vocabulary.
@@ -15,24 +18,22 @@ export const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "back-nine",
     order: 1,
-    name: "The Back Nine",
-    blurb:
-      "A friendly patch of parkland behind your uncle's farm. Get three holes open and show the books can balance.",
+    nameKey: "scenario.backNine.name", name: text("scenario.backNine.name"),
+    blurbKey: "scenario.backNine.blurb", blurb: text("scenario.backNine.blurb"),
     seed: 90101,
     theme: "parkland",
     difficulty: "easy",
-    courseName: "The Back Nine",
     goals: [
       {
         id: "three-holes",
-        label: "Open three holes",
-        description: "Build 3 playable holes.",
+        labelKey: "scenario.goal.threeHoles.label", label: text("scenario.goal.threeHoles.label"),
+        descriptionKey: "scenario.goal.threeHoles.description", description: text("scenario.goal.threeHoles.description"),
         conditions: [{ metric: "holesBuilt", comparator: ">=", target: 3 }],
       },
       {
         id: "first-profit",
-        label: "Turn a profit",
-        description: "Finish a week in the black.",
+        labelKey: "scenario.goal.firstProfit.label", label: text("scenario.goal.firstProfit.label"),
+        descriptionKey: "scenario.goal.firstProfit.description", description: text("scenario.goal.firstProfit.description"),
         conditions: [{ metric: "profitStreak", comparator: ">=", target: 1 }],
       },
     ],
@@ -40,9 +41,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "muni-rescue",
     order: 2,
-    name: "Muni Rescue",
-    blurb:
-      "The city's beloved municipal course has gone to seed. Nine tired holes, no budget, and a town watching. Bring it back.",
+    nameKey: "scenario.muniRescue.name", name: text("scenario.muniRescue.name"),
+    blurbKey: "scenario.muniRescue.blurb", blurb: text("scenario.muniRescue.blurb"),
     seed: 90202,
     theme: "parkland",
     difficulty: "normal",
@@ -52,14 +52,14 @@ export const SCENARIOS: ScenarioDefinition[] = [
     goals: [
       {
         id: "restore-turf",
-        label: "Restore the turf",
-        description: "Bring course condition back to 70%.",
+        labelKey: "scenario.goal.restoreTurf.label", label: text("scenario.goal.restoreTurf.label"),
+        descriptionKey: "scenario.goal.restoreTurf.description", description: text("scenario.goal.restoreTurf.description"),
         conditions: [{ metric: "condition", comparator: ">=", target: 70 }],
       },
       {
         id: "win-back-town",
-        label: "Win back the town",
-        description: "Reach 55 reputation.",
+        labelKey: "scenario.goal.winBackTown.label", label: text("scenario.goal.winBackTown.label"),
+        descriptionKey: "scenario.goal.winBackTown.description", description: text("scenario.goal.winBackTown.description"),
         conditions: [{ metric: "reputation", comparator: ">=", target: 55 }],
       },
     ],
@@ -67,9 +67,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "swamp-deal",
     order: 3,
-    name: "Swamp Deal",
-    blurb:
-      "The land was cheap for a reason: it's half water. No bank will touch the deal — design your way out of the wet.",
+    nameKey: "scenario.swampDeal.name", name: text("scenario.swampDeal.name"),
+    blurbKey: "scenario.swampDeal.blurb", blurb: text("scenario.swampDeal.blurb"),
     seed: 90333,
     theme: "parkland",
     difficulty: "normal",
@@ -78,14 +77,14 @@ export const SCENARIOS: ScenarioDefinition[] = [
     goals: [
       {
         id: "nine-holes-wet",
-        label: "Drain and build",
-        description: "Open all 9 holes on the wetland parcel.",
+        labelKey: "scenario.goal.drainBuild.label", label: text("scenario.goal.drainBuild.label"),
+        descriptionKey: "scenario.goal.drainBuild.description", description: text("scenario.goal.drainBuild.description"),
         conditions: [{ metric: "holesBuilt", comparator: ">=", target: 9 }],
       },
       {
         id: "respectable-rating",
-        label: "Make it respectable",
-        description: "Reach a course rating of 67.",
+        labelKey: "scenario.goal.respectable.label", label: text("scenario.goal.respectable.label"),
+        descriptionKey: "scenario.goal.respectable.description", description: text("scenario.goal.respectable.description"),
         conditions: [{ metric: "courseRating", comparator: ">=", target: 67 }],
       },
     ],
@@ -93,9 +92,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "links-by-the-sea",
     order: 4,
-    name: "Links by the Sea",
-    blurb:
-      "Dunes, fescue, and a cold gray sea. The handful of trees are heritage-listed — the course must be found, not forced.",
+    nameKey: "scenario.links.name", name: text("scenario.links.name"),
+    blurbKey: "scenario.links.blurb", blurb: text("scenario.links.blurb"),
     seed: 90404,
     theme: "links",
     difficulty: "normal",
@@ -103,14 +101,14 @@ export const SCENARIOS: ScenarioDefinition[] = [
     goals: [
       {
         id: "real-links",
-        label: "Rout the links",
-        description: "Open all 9 holes.",
+        labelKey: "scenario.goal.routLinks.label", label: text("scenario.goal.routLinks.label"),
+        descriptionKey: "scenario.goal.routLinks.description", description: text("scenario.goal.routLinks.description"),
         conditions: [{ metric: "holesBuilt", comparator: ">=", target: 9 }],
       },
       {
         id: "championship-rating",
-        label: "A proper test",
-        description: "Reach a course rating of 70.",
+        labelKey: "scenario.goal.properTest.label", label: text("scenario.goal.properTest.label"),
+        descriptionKey: "scenario.goal.properTest.description", description: text("scenario.goal.properTest.description"),
         conditions: [{ metric: "courseRating", comparator: ">=", target: 70 }],
       },
     ],
@@ -118,9 +116,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "members-club",
     order: 5,
-    name: "The Members Club",
-    blurb:
-      "Fairhaven's committee sets the green fee, not you — and their members expect perfection. Keep the standards, keep the streak.",
+    nameKey: "scenario.members.name", name: text("scenario.members.name"),
+    blurbKey: "scenario.members.blurb", blurb: text("scenario.members.blurb"),
     seed: 90505,
     theme: "parkland",
     difficulty: "hard",
@@ -131,14 +128,14 @@ export const SCENARIOS: ScenarioDefinition[] = [
     goals: [
       {
         id: "prestige",
-        label: "Uphold the name",
-        description: "Reach 75 reputation with picky, premium golfers.",
+        labelKey: "scenario.goal.prestige.label", label: text("scenario.goal.prestige.label"),
+        descriptionKey: "scenario.goal.prestige.description", description: text("scenario.goal.prestige.description"),
         conditions: [{ metric: "reputation", comparator: ">=", target: 75 }],
       },
       {
         id: "steady-books",
-        label: "Steady the books",
-        description: "String together 3 profitable weeks at the committee's fee.",
+        labelKey: "scenario.goal.steadyBooks.label", label: text("scenario.goal.steadyBooks.label"),
+        descriptionKey: "scenario.goal.steadyBooks.description", description: text("scenario.goal.steadyBooks.description"),
         conditions: [{ metric: "profitStreak", comparator: ">=", target: 3 }],
       },
     ],
@@ -146,23 +143,22 @@ export const SCENARIOS: ScenarioDefinition[] = [
   {
     id: "championship-dream",
     order: 6,
-    name: "Championship Dream",
-    blurb:
-      "Raw land, hard money, and one ambition: a course worthy of hosting a championship. Build the resume the tour can't ignore.",
+    nameKey: "scenario.championship.name", name: text("scenario.championship.name"),
+    blurbKey: "scenario.championship.blurb", blurb: text("scenario.championship.blurb"),
     seed: 90666,
     theme: "parkland",
     difficulty: "hard",
     goals: [
       {
         id: "full-course",
-        label: "The full course",
-        description: "Open all 9 holes.",
+        labelKey: "scenario.goal.fullCourse.label", label: text("scenario.goal.fullCourse.label"),
+        descriptionKey: "scenario.goal.fullCourse.description", description: text("scenario.goal.fullCourse.description"),
         conditions: [{ metric: "holesBuilt", comparator: ">=", target: 9 }],
       },
       {
         id: "tour-quality",
-        label: "Tour quality",
-        description: "Reach a course rating of 72 and 80 reputation.",
+        labelKey: "scenario.goal.tourQuality.label", label: text("scenario.goal.tourQuality.label"),
+        descriptionKey: "scenario.goal.tourQuality.description", description: text("scenario.goal.tourQuality.description"),
         conditions: [
           { metric: "courseRating", comparator: ">=", target: 72 },
           { metric: "reputation", comparator: ">=", target: 80 },
@@ -170,8 +166,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
       },
       {
         id: "war-chest",
-        label: "A championship war chest",
-        description: "Bank $150,000 to fund the bid.",
+        labelKey: "scenario.goal.warChest.label", label: text("scenario.goal.warChest.label"),
+        descriptionKey: "scenario.goal.warChest.description", description: text("scenario.goal.warChest.description"),
         conditions: [{ metric: "cash", comparator: ">=", target: 150_000 }],
       },
     ],

@@ -1,9 +1,12 @@
 import { useMemo } from "react";
+import { formatCurrency } from "../i18n/format";
 import { SCENARIOS } from "../game/scenarios/scenarios";
 import type { ScenarioDefinition } from "../game/scenarios/types";
 import { isScenarioUnlocked, loadCareer } from "../utils/careerStore";
 import { getLandTheme } from "../game/models/themes";
 import { getDifficultyProfile } from "../game/balance/difficulty";
+import { T } from "../i18n/T";
+import { useI18n } from "../i18n/useI18n";
 
 // Career scenario ladder (ZKU-164): card list with medal states —
 // locked / unlocked / completed (+ best-result stats), sequential unlock.
@@ -11,6 +14,7 @@ import { getDifficultyProfile } from "../game/balance/difficulty";
 const THEME_ICON: Record<string, string> = { parkland: "🌳", links: "🌾", desert: "🌵" };
 
 export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) => void }) {
+  const { t } = useI18n();
   const career = useMemo(() => loadCareer(), []);
   const ladder = useMemo(() => [...SCENARIOS].sort((a, b) => a.order - b.order), []);
 
@@ -53,20 +57,20 @@ export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) 
                     color: "#3d4a3e",
                   }}
                 >
-                  {s.order}. {s.name}
+                  {s.order}. {t(s.nameKey)}
                 </span>
                 <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", color: "#6b7280" }}>
                   {getLandTheme(s.theme).label.toUpperCase()} • {getDifficultyProfile(s.difficulty).label.toUpperCase()}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>
-                {unlocked ? s.blurb : "Complete the previous scenario to unlock."}
+                {unlocked ? t(s.blurbKey) : t("scenario.locked")}
               </div>
               {completed && (
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#8a6d1a", marginTop: 4 }}>
-                  Completed{rec?.bestWeek != null ? ` — best: week ${rec.bestWeek}` : ""}
-                  {rec?.bestCash != null ? `, $${rec.bestCash.toLocaleString()}` : ""}
-                  {" · replayable"}
+                  <T id="auto.ui.scenarioselect.completed" />{rec?.bestWeek != null ? ` — best: week ${rec.bestWeek}` : ""}
+                  {rec?.bestCash != null ? `, ${formatCurrency(rec.bestCash)}` : ""}
+                  {t("scenario.replayable")}
                 </div>
               )}
             </div>

@@ -10,6 +10,8 @@ import {
 } from "../game/live/simulation";
 import { commitDay } from "../game/live/commitDay";
 import { hitsLiquidityTrap } from "../game/sim/runState";
+import { isCoursePlayable } from "../game/sim/isCoursePlayable";
+import { planDay } from "../game/live/spawn";
 import type { DayResult, GolferRenderData, LiveState } from "../game/live/types";
 import {
   restoreLiveSimulation,
@@ -102,7 +104,7 @@ export function useLiveSimulation(args: {
 }) {
   const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick } = args;
 
-  const [speed, setSpeed] = useState<SpeedName>("paused");
+  const [speed, setSpeedState] = useState<SpeedName>("paused");
   const [status, setStatus] = useState<LiveStatus>({
     speed: "paused",
     dayIndex: 0,
@@ -132,6 +134,7 @@ export function useLiveSimulation(args: {
   const onDayRef = useRef(onDayCommitted);
   const onCashRef = useRef(onCashTick);
   const skipNextReconcileRef = useRef(false);
+  const wasPlayableRef = useRef(isCoursePlayable(course));
 
   useEffect(() => {
     courseRef.current = course;
@@ -160,6 +163,22 @@ export function useLiveSimulation(args: {
       return;
     }
     const live = liveRef.current;
+    const playable = isCoursePlayable(course);
+    const becamePlayable = playable && !wasPlayableRef.current;
+    wasPlayableRef.current = playable;
+    if (enabled && live && becamePlayable) {
+      const arrivals = planDay(course, worldRef.current, live.seed);
+      if (arrivals.length > 0) {
+        arrivals[0] = {
+          ...arrivals[0],
+          atMinute: Math.min(arrivals[0].atMinute, live.dayMinute + 2),
+        };
+        arrivals.sort((a, b) => a.atMinute - b.atMinute);
+      }
+      live.arrivals = arrivals;
+      live.nextArrivalIdx = 0;
+      live.nextTeeFreeAt = live.dayMinute;
+    }
     if (enabled && live && live.golfers.length > 0) {
       reconcileGolfers(live, course);
       golfersRef.current = liveRenderData(live);
@@ -326,7 +345,7 @@ export function useLiveSimulation(args: {
       selectedIdRef.current = null;
       setSelectedId(null);
       speedRef.current = "paused";
-      setSpeed("paused");
+      setSpeedState("paused");
       return true;
     }
     const restored = restoreLiveSimulation(snapshot);
@@ -335,7 +354,7 @@ export function useLiveSimulation(args: {
     golfersRef.current = liveRenderData(restored.state);
     pendingCashRef.current = restored.pendingCash;
     speedRef.current = restored.speed;
-    setSpeed(restored.speed);
+    setSpeedState(restored.speed);
     const selected = buildSelected(restored.state, restored.selectedGolferId);
     selectedIdRef.current = selected?.id ?? null;
     setSelectedId(selected?.id ?? null);
@@ -353,6 +372,14 @@ export function useLiveSimulation(args: {
       selected,
     });
     return true;
+  }, []);
+
+  const setSpeed = useCallback((next: SpeedName) => {
+    // Update the loop's ref synchronously. App-shell pause must freeze the
+    // mutable live store before React gets a chance to paint the overlay.
+    speedRef.current = next;
+    setSpeedState(next);
+    setStatus((current) => ({ ...current, speed: next }));
   }, []);
 
   return {

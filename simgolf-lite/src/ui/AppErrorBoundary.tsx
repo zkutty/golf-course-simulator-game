@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { resetSave } from "../utils/save";
+import { T } from "../i18n/T";
 
 interface AppErrorBoundaryProps {
   children: ReactNode;
@@ -74,25 +75,21 @@ export class AppErrorBoundary extends Component<
             boxShadow: "0 22px 55px rgba(0,0,0,0.16)",
           }}
         >
-          <h1 style={{ margin: "0 0 10px", fontSize: 28 }}>CourseCraft hit an unexpected problem</h1>
+          <h1 style={{ margin: "0 0 10px", fontSize: 28 }}><T id="auto.ui.apperrorboundary.coursecraft.hit.an.unexpected.problem" /></h1>
           <p style={{ margin: "0 0 18px", lineHeight: 1.5 }}>
-            Your course is still stored locally. Try reloading first. If the same crash returns,
-            reset the legacy save and start clean.
-          </p>
+            <T id="auto.ui.apperrorboundary.your.course.is.still.stored.locally.try.reloading.firs" /></p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
             <button type="button" onClick={this.reload} style={buttonStyle}>
-              Reload
-            </button>
+              <T id="auto.ui.apperrorboundary.reload" /></button>
             <button
               type="button"
               onClick={this.resetAndReload}
               style={{ ...buttonStyle, background: "#8b2f2f" }}
             >
-              Reset save &amp; reload
-            </button>
+              <T id="auto.ui.apperrorboundary.reset.save.and.reload" /></button>
           </div>
           <details style={{ marginTop: 18, color: "#566057", fontSize: 12 }}>
-            <summary>Technical details</summary>
+            <summary><T id="auto.ui.apperrorboundary.technical.details" /></summary>
             <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
               {this.state.error.message || this.state.error.name}
             </pre>

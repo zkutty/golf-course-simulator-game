@@ -1,5 +1,8 @@
 import { useMemo } from "react";
+import { formatCurrency, formatWeekLabel } from "../i18n/format";
 import type { ObjectiveState } from "../game/models/objectives";
+import { T } from "../i18n/T";
+import { useI18n } from "../i18n/useI18n";
 
 // Victory celebration (ZKU-163): confetti + summary; never force-quits the
 // session — "Keep playing" just closes the modal.
@@ -63,6 +66,7 @@ export function VictoryModal(props: {
   careerNote?: string;
   onContinue: () => void;
 }) {
+  const { t } = useI18n();
   const { objectives } = props;
   return (
     <div
@@ -100,11 +104,9 @@ export function VictoryModal(props: {
             marginTop: 6,
           }}
         >
-          Objectives complete!
-        </div>
+          <T id="auto.ui.victorymodal.objectives.complete" /></div>
         <div style={{ fontSize: 13, color: "#6b7280", marginTop: 4 }}>
-          {props.courseName} met every goal
-          {objectives.wonWeek != null ? ` by week ${objectives.wonWeek}` : ""}.
+          {props.courseName} <T id="auto.ui.victorymodal.met.every.goal" />{objectives.wonWeek != null ? ` by week ${objectives.wonWeek}` : ""}.
         </div>
 
         <div
@@ -117,18 +119,18 @@ export function VictoryModal(props: {
             fontSize: 13,
           }}
         >
-          <SummaryStat label="Week" value={`${props.week}`} />
-          <SummaryStat label="Cash" value={`$${Math.round(props.cash).toLocaleString()}`} />
-          <SummaryStat label="Reputation" value={`${props.reputation}/100`} />
-          <SummaryStat label="Course rating" value={props.courseRating.toFixed(1)} />
+          <SummaryStat label={t("common.weekLabel")} value={`${props.week}`} />
+          <SummaryStat label={t("stat.cash")} value={formatCurrency(props.cash)} />
+          <SummaryStat label={t("stat.reputation")} value={`${props.reputation}/100`} />
+          <SummaryStat label={t("stat.courseRating")} value={props.courseRating.toFixed(1)} />
         </div>
 
         <div style={{ display: "grid", gap: 6, marginTop: 14, textAlign: "left" }}>
           {objectives.goals.map((g, i) => (
             <div key={g.id} style={{ fontSize: 13 }}>
-              ✅ <b>{g.label}</b>
+              ✅ <b>{g.labelKey ? t(g.labelKey) : g.label}</b>
               {objectives.progress[i]?.completedWeek != null && (
-                <span style={{ color: "#6b7280" }}> — week {objectives.progress[i].completedWeek}</span>
+                <span style={{ color: "#6b7280" }}> — {formatWeekLabel(objectives.progress[i].completedWeek!, "en", "week")}</span>
               )}
             </div>
           ))}
@@ -166,8 +168,7 @@ export function VictoryModal(props: {
             cursor: "pointer",
           }}
         >
-          Keep playing
-        </button>
+          <T id="auto.ui.victorymodal.keep.playing" /></button>
       </div>
     </div>
   );
