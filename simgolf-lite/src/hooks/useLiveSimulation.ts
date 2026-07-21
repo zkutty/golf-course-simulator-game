@@ -11,7 +11,7 @@ import {
 import { commitDay } from "../game/live/commitDay";
 import { hitsLiquidityTrap } from "../game/sim/runState";
 import { isCoursePlayable } from "../game/sim/isCoursePlayable";
-import { planDay } from "../game/live/spawn";
+import { planEstateDay } from "../game/live/spawn";
 import type { DayResult, GolferRenderData, LiveState } from "../game/live/types";
 import {
   restoreLiveSimulation,
@@ -43,6 +43,9 @@ export interface SelectedGolferDetail {
   wallet: number;
   teeSet: TeeSet;
   pinRotation: PinRotation;
+  courseId?: string;
+  courseName?: string;
+  currentHoleId?: string;
 }
 
 export interface LiveStatus {
@@ -58,7 +61,7 @@ export interface LiveStatus {
   nextArrivalMinute: number | null;
   lastDay: DayResult | null;
   selected: SelectedGolferDetail | null;
-  golfers: Array<Pick<SelectedGolferDetail, "id" | "name" | "archetype" | "currentHole" | "scoreToPar" | "mood">>;
+  golfers: Array<Pick<SelectedGolferDetail, "id" | "name" | "archetype" | "currentHole" | "scoreToPar" | "mood" | "courseId" | "currentHoleId">>;
   tournament: null | {
     eventId: string;
     name: string;
@@ -93,6 +96,9 @@ function buildSelected(
     wallet: g.wallet,
     teeSet: g.teeSet ?? "member",
     pinRotation: g.pinRotation ?? "A",
+    courseId: g.courseId,
+    courseName: g.courseName,
+    currentHoleId: g.currentHoleId,
   };
 }
 
@@ -206,7 +212,7 @@ export function useLiveSimulation(args: {
     const becamePlayable = playable && !wasPlayableRef.current;
     wasPlayableRef.current = playable;
     if (enabled && live && becamePlayable) {
-      const arrivals = planDay(course, worldRef.current, live.seed);
+      const arrivals = planEstateDay(course, worldRef.current, live.seed);
       if (arrivals.length > 0) {
         arrivals[0] = {
           ...arrivals[0],
@@ -259,6 +265,8 @@ export function useLiveSimulation(args: {
         currentHole: g.currentHole,
         scoreToPar: g.scoreToPar,
         mood: g.mood,
+        courseId: g.courseId,
+        currentHoleId: g.currentHoleId,
       })),
       tournament: live.tournament ? {
         eventId: live.tournament.eventId,
@@ -296,6 +304,7 @@ export function useLiveSimulation(args: {
       tournamentReputation: tournament.reputation,
       concessionByType: live.concessionByType,
       transactions: live.concessionTransactions,
+      perCourse: live.perCourse,
       reactions: roundReactions(live),
       dayIndex: live.dayIndex,
     });
@@ -473,6 +482,8 @@ export function useLiveSimulation(args: {
         currentHole: g.currentHole,
         scoreToPar: g.scoreToPar,
         mood: g.mood,
+        courseId: g.courseId,
+        currentHoleId: g.currentHoleId,
       })),
       tournament: restored.state.tournament ? {
         eventId: restored.state.tournament.eventId,

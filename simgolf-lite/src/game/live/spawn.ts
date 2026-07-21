@@ -8,6 +8,7 @@ import {
   plannedGolfersForDay,
 } from "./demand";
 import type { Arrival } from "./types";
+import { activeCourseLayout, operatingCourseViews } from "../models/courseLayouts";
 
 // Re-exported so callers/tests keep a single import surface for spawning.
 export { plannedGolfersForDay } from "./demand";
@@ -26,8 +27,18 @@ export function planDay(course: Course, world: World, seed: number): Arrival[] {
     const atMinute =
       firstArrivalMinute + rng() * (lastArrivalMinute - firstArrivalMinute);
     const archetype = pickArchetypeFrom(appeal, rng());
-    arrivals.push({ atMinute, archetype });
+    arrivals.push({ atMinute, archetype, courseId: activeCourseLayout(course).id });
   }
   arrivals.sort((a, b) => a.atMinute - b.atMinute);
+  return arrivals;
+}
+
+/** Build one deterministic tee sheet per open published course. */
+export function planEstateDay(course: Course, world: World, seed: number): Arrival[] {
+  const views = operatingCourseViews(course);
+  const arrivals = views.flatMap(({ layout, course: view }, index) =>
+    planDay(view, world, seed + index * 104729).slice(0, layout.roundLength * 4).map((arrival) => ({ ...arrival, courseId: layout.id }))
+  );
+  arrivals.sort((a, b) => a.atMinute - b.atMinute || (a.courseId ?? "").localeCompare(b.courseId ?? ""));
   return arrivals;
 }

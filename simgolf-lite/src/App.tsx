@@ -47,7 +47,7 @@ import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
-import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
+import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createM26MultiCourseReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
@@ -108,6 +108,8 @@ import { createTournamentEvent, prepareTournamentDay, revalidateScheduledTournam
 import { evaluateTournamentCourseQualification } from "./game/tournaments/eligibility";
 import type { TournamentTier } from "./game/tournaments/types";
 import { debugLog } from "./utils/debugLog";
+import { CourseManagerPanel } from "./ui/CourseManagerPanel";
+import { activeCourseLayout, courseForLayout, normalizeCourseLayouts, selectLayout, updateLayout } from "./game/models/courseLayouts";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -134,6 +136,8 @@ export default function App() {
   const sculptedRef = useRef(false);
   const gameStateRef = useRef(gameState);
   const { course, world } = gameState;
+  const activeLayout = useMemo(() => activeCourseLayout(course), [course]);
+  const activeOperatingCourse = useMemo(() => courseForLayout(course, activeLayout.id), [course, activeLayout.id]);
   const [selected, setSelected] = useState<Terrain>("fairway");
   // Difficulty-resolved balance + terrain cost scaler (ZKU-165).
   const BALANCE = getEffectiveBalance(world.difficulty);
@@ -260,6 +264,7 @@ export default function App() {
   const [showRetention, setShowRetention] = useState(false);
   const [showTournaments, setShowTournaments] = useState(false);
   const [showLandOffice, setShowLandOffice] = useState(false);
+  const [showCourseManager, setShowCourseManager] = useState(false);
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [showProgression, setShowProgression] = useState(false);
   const [showLiveOverview, setShowLiveOverview] = useState(false);
@@ -310,6 +315,7 @@ export default function App() {
         avgSatisfaction: result.avgSatisfaction,
         reputationDelta: result.reputationDelta,
         visitorNoise: 0,
+        perCourse: result.perCourse,
       };
       setLast(report);
       setHistory((h) => [...h, report]);
@@ -348,10 +354,16 @@ export default function App() {
       recordsRef.current = captured.records;
       setRecords(captured.records);
       for (const holeIndex of captured.aceHoles) {
-        const point = gameStateRef.current.course.holes[holeIndex]?.green ?? undefined;
-        publishRetentionEvent({ type: "hole-in-one", category: "play", severity: "major", message: t("retention.holeInOne", { golfer: round.golferName, hole: holeIndex + 1 }), week: gameStateRef.current.world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, holeIndex, point });
+        const holeId = round.holeIds?.[holeIndex];
+        const globalIndex = holeId ? gameStateRef.current.course.holes.findIndex((hole) => hole.id === holeId) : holeIndex;
+        const point = gameStateRef.current.course.holes[globalIndex]?.green ?? undefined;
+        publishRetentionEvent({ type: "hole-in-one", category: "play", severity: "major", message: t("retention.holeInOne", { golfer: round.golferName, hole: holeIndex + 1 }), week: gameStateRef.current.world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, holeIndex: globalIndex, holeId, courseId: round.courseId, point });
       }
-      if (captured.courseRecord) publishRetentionEvent({ type: "course-record", category: "play", severity: "major", message: t("retention.courseRecord", { golfer: round.golferName, score: round.scoreToPar > 0 ? `+${round.scoreToPar}` : round.scoreToPar }), week: gameStateRef.current.world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, point: gameStateRef.current.course.holes.at(-1)?.green ?? undefined });
+      if (captured.courseRecord) {
+        const lastHoleId = round.holeIds?.at(-1);
+        const lastHole = lastHoleId ? gameStateRef.current.course.holes.find((hole) => hole.id === lastHoleId) : gameStateRef.current.course.holes.at(-1);
+        publishRetentionEvent({ type: "course-record", category: "play", severity: "major", message: t("retention.courseRecord", { golfer: round.golferName, score: round.scoreToPar > 0 ? `+${round.scoreToPar}` : round.scoreToPar }), week: gameStateRef.current.world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, courseId: round.courseId, holeId: lastHoleId, point: lastHole?.green ?? undefined });
+      }
       checkAchievements(captured.records, round.mood >= .99);
     },
     onCashTick: () => {
@@ -386,6 +398,7 @@ export default function App() {
       tier,
       currentDay: live.status.dayIndex,
       daysAhead,
+      courseId: activeCourseLayout(current.course).id,
     });
     if (!created.ok) return created.reason;
     setWorld((next) => scheduleTournament(next, created.event));
@@ -405,13 +418,16 @@ export default function App() {
     const isM23Fixture = fixtureParams.get("m23Fixture") === "1";
     const isM24Fixture = fixtureParams.get("m24Fixture") === "1";
     const isM25Fixture = fixtureParams.get("m25Fixture") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture) return;
+    const isM26Fixture = fixtureParams.get("m26Fixture") === "1";
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
     const requestedTheme = fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = requestedTheme === "links" || requestedTheme === "desert" ? requestedTheme : "parkland";
-    const fixtureCourse = isM25Fixture
+    const fixtureCourse = isM26Fixture
+      ? createM26MultiCourseReferenceCourse()
+      : isM25Fixture
       ? createNewGame({ mode: "sandbox", courseName: "M25 Survey Estate", seed: 250025, theme: fixtureTheme, difficulty: "normal", sandboxOverrides: { startingCash: 500_000 } }).course
       : isM24Fixture
       ? createTournamentStandardsCourse()
@@ -804,14 +820,14 @@ export default function App() {
     if (Date.now() < advisorCooldownUntilRef.current) return;
     const frequency = loadAppProfile().advisorFrequency;
     const previous = history.length >= 2 ? history[history.length - 2] : undefined;
-    const next = advisorMessages(course, world, last, previous, t).find(
+    const next = advisorMessages(activeOperatingCourse, world, last, previous, t).find(
       (message) => allowsMessage(frequency, message) && !seenAdvisorMessagesRef.current.has(message.id)
     );
     if (next) {
       setAdvisorMessage(next);
       setA11yMessage(`${next.title}. ${next.body}`);
     }
-  }, [screen, tutorialProgress, showTutorialOffer, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, course, world, last, history, advisorWake, t]);
+  }, [screen, tutorialProgress, showTutorialOffer, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, activeOperatingCourse, world, last, history, advisorWake, t]);
 
   function dismissAdvisor() {
     if (advisorMessage) seenAdvisorMessagesRef.current.add(advisorMessage.id);
@@ -1006,13 +1022,13 @@ export default function App() {
 
   useEffect(() => {
     const hasExpandedSetup = course.holes.some((hole) => hole.teeBoxes?.forward || hole.teeBoxes?.championship || hole.pinPositions?.B || hole.pinPositions?.C);
-    const textMemberRating = computeCourseRatingAndSlope(course);
+    const textMemberRating = computeCourseRatingAndSlope(activeOperatingCourse);
     const tournamentReadiness = Object.fromEntries((["local", "regional", "championship"] as const).map((tier) => {
-      const result = evaluateTournamentCourseQualification(course, tier);
+      const result = evaluateTournamentCourseQualification(activeOperatingCourse, tier);
       return [tier, { eligible: result.eligible, teeSet: result.teeSet, pinRotation: result.pinRotation, rating: result.rating, slope: result.slope, completeRotations: result.completeRotations, blockers: result.requirements.filter((item) => !item.passed).map((item) => ({ id: item.id, current: item.current, required: item.required })) }];
     }));
     const textTeeRatings = hasExpandedSetup
-      ? computeRatingsByTee(course)
+      ? computeRatingsByTee(activeOperatingCourse)
       : {
           forward: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
           member: { courseRating: textMemberRating.courseRating, slope: textMemberRating.slope, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
@@ -1037,6 +1053,9 @@ export default function App() {
         activePinRotation: course.activePinRotation ?? "A",
         teeRatings: Object.fromEntries(Object.entries(textTeeRatings).map(([teeSet, summary]) => [teeSet, { rating: summary.courseRating, slope: summary.slope, yardage: summary.effectiveYardage, complete: summary.setupComplete, deltas: summary.rotationDeltas }])),
         holeSetups: course.holes.map((hole) => ({ teeBoxes: hole.teeBoxes ?? { member: hole.tee }, pinPositions: hole.pinPositions ?? { A: hole.green } })),
+        courseManagerOpen: showCourseManager,
+        activeCourseId: activeLayout.id,
+        layouts: normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name, state: layout.state, greenFee: layout.greenFee, roundLength: layout.roundLength, draftHoleIds: layout.draftHoleIds, publishedHoleIds: layout.publishedHoleIds })),
         estate: course.estate ? {
           generationVersion: course.estate.generationVersion,
           ownedParcelIds: course.estate.ownedParcelIds,
@@ -1046,7 +1065,7 @@ export default function App() {
         } : null,
       },
       camera: { center: audioCameraCenter, viewMode, renderer: "pixi" },
-      simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null },
+      simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       progression: { panelOpen: showProgression, tier: reputationTier(world.reputation).id, staffCap: reputationTier(world.reputation).staffCap, buildingTierCap: reputationTier(world.reputation).buildingTierCap },
       editor: { mode: editorMode, selectedTerrain: selected, selectedDecoration: decorationKind, decorationRotation, decorationSpan, decorationAction, activeHole: activeHoleIndex + 1 },
@@ -1068,7 +1087,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, selectedParcelId, showLandOffice, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, selectedParcelId, showCourseManager, showLandOffice, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1926,10 +1945,12 @@ export default function App() {
   const liveGolfersRef = live.golfersRef;
   const selectLiveGolfer = live.selectGolfer;
   const jumpToEvent = useCallback((event: RetentionEvent) => {
-    const point = event.point ?? (event.holeIndex != null ? course.holes[event.holeIndex]?.green ?? course.holes[event.holeIndex]?.tee : null);
+    if (event.courseId) setCourse((current) => selectLayout(current, event.courseId!));
+    const stableHole = event.holeId ? course.holes.find((hole) => hole.id === event.holeId) : undefined;
+    const point = event.point ?? stableHole?.green ?? stableHole?.tee ?? (event.holeIndex != null ? course.holes[event.holeIndex]?.green ?? course.holes[event.holeIndex]?.tee : null);
     if (event.week === world.week && event.day === liveDayIndex && event.golferId != null && liveGolfersRef.current.some((golfer) => golfer.id === event.golferId)) selectLiveGolfer(event.golferId);
     if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 }));
-  }, [course.holes, liveDayIndex, liveGolfersRef, selectLiveGolfer, world.week]);
+  }, [course.holes, liveDayIndex, liveGolfersRef, selectLiveGolfer, setCourse, world.week]);
 
   useEffect(() => subscribeRetentionEvents((event) => {
     if (!appProfile.gameplay.momentCamera || event.severity !== "major" || photoMode) return;
@@ -2097,7 +2118,9 @@ export default function App() {
           message={advisorMessage}
           onDismiss={dismissAdvisor}
           onShowHole={(holeIndex) => {
-            enterHoleEditMode(holeIndex);
+            const holeId = activeOperatingCourse.holes[holeIndex]?.id;
+            const estateIndex = holeId ? course.holes.findIndex((hole) => hole.id === holeId) : holeIndex;
+            enterHoleEditMode(estateIndex >= 0 ? estateIndex : holeIndex);
             dismissAdvisor();
           }}
         />
@@ -2208,16 +2231,18 @@ export default function App() {
               <button data-testid="open-progression" aria-pressed={showProgression} onClick={() => setShowProgression((open) => !open)}>⭐ {t("progression.open")} · {reputationTier(world.reputation).name}</button>
               <button data-testid="open-tournaments" aria-pressed={showTournaments} onClick={() => setShowTournaments((open) => !open)}>⛳ {t("tournament.open")}{live.status.tournament ? " •" : ""}</button>
               <button data-testid="open-land-office" aria-pressed={showLandOffice} onClick={() => { setShowLandOffice((open) => !open); setSelectedParcelId((current) => current ?? course.estate?.starterParcelId ?? null); }}>🗺️ {t("land.open")}</button>
+              <button data-testid="open-course-manager" aria-pressed={showCourseManager} onClick={() => setShowCourseManager((open) => !open)}>⛳ {t("courses.open")}</button>
               <button aria-pressed={appProfile.gameplay.tickerVisible} onClick={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: !appProfile.gameplay.tickerVisible } })}>📰 {t("retention.ticker")}</button>
               <button onClick={() => enterPhotoMode(false)}>📷 {t("retention.photo")}</button>
             </div>}
             {showProgression && !tutorialProgress && <ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} />}
-            {showTournaments && !tutorialProgress && <TournamentPanel course={course} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
+            {showTournaments && !tutorialProgress && <TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
             {showLandOffice && !tutorialProgress && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
+            {showCourseManager && !tutorialProgress && <CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onClose={() => setShowCourseManager(false)} />}
             {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
             {!tutorialProgress && <HoleMinimap
-              course={course}
+              course={activeOperatingCourse}
               view={minimapView}
               golfersRef={live.golfersRef}
               onCenter={(center: Point) => {
@@ -2359,7 +2384,7 @@ export default function App() {
         setGreenFee={(n) => {
           // Scenario constraint (ZKU-164): committee sets the fee, not you.
           if (world.constraints?.fixedGreenFee != null) return;
-          setCourse((c) => ({ ...c, baseGreenFee: n }));
+          setCourse((c) => updateLayout(c, activeCourseLayout(c).id, { greenFee: n }));
         }}
         setMaintenance={(n) => setWorld((w) => ({ ...w, maintenanceBudget: n }))}
         editorMode={editorMode}

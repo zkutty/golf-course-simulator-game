@@ -15,6 +15,8 @@ export interface RetentionEvent {
   golferId?: number;
   golferName?: string;
   holeIndex?: number;
+  holeId?: string;
+  courseId?: string;
   point?: { x: number; y: number };
   count?: number;
 }
@@ -28,6 +30,9 @@ export interface CompletedRound {
   holePar: number[];
   holeStrokes: number[];
   mood: number;
+  courseId?: string;
+  courseName?: string;
+  holeIds?: string[];
   tournamentId?: string;
   tournamentEntrantId?: string;
 }
@@ -39,6 +44,8 @@ export interface AceRecord {
   golferName: string;
   golferId: number;
   holeIndex: number;
+  holeId?: string;
+  courseId?: string;
   week: number;
   archetype: GolferArchetypeName;
 }
@@ -64,4 +71,10 @@ export interface CourseRecords {
   totalRounds: number;
   holes: Array<{ rounds: number; strokes: number; par: number }>;
   hall: GolferHallEntry[];
+  byCourse?: Record<string, {
+    courseName: string;
+    totalRounds: number;
+    bestRound: { scoreToPar: number; score: number; golferName: string; golferId: number; week: number } | null;
+    holes: Record<string, { rounds: number; strokes: number; par: number }>;
+  }>;
 }

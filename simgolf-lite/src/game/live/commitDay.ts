@@ -4,6 +4,8 @@ import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty
 import { hitsLiquidityTrap } from "../sim/runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
 import type { DayResult, RoundReactions } from "./types";
+import type { LiveState } from "./types";
+import { layoutById } from "../models/courseLayouts";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -30,6 +32,7 @@ export function commitDay(args: {
   tournamentReputation?: number;
   concessionByType?: Partial<Record<ConcessionType, number>>;
   transactions?: ConcessionTransaction[];
+  perCourse?: LiveState["perCourse"];
   reactions: RoundReactions; // real observed reactions from finished rounds
   dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
 }): { world: World; course: Course; result: DayResult } {
@@ -114,6 +117,31 @@ export function commitDay(args: {
     profit,
     ...(closesWeek ? { weekCompleted: world.week } : {}),
   });
+  const courseEntries = Object.entries(args.perCourse ?? {});
+  let allocatedRevenue = 0;
+  let allocatedCosts = 0;
+  const weightTotal = courseEntries.reduce((sum, [, stats]) => sum + (stats.greenFees || stats.roundsFinished || 1), 0);
+  const perCourse = courseEntries.map(([courseId, stats], index) => {
+    const last = index === courseEntries.length - 1;
+    const weight = (stats.greenFees || stats.roundsFinished || 1) / Math.max(1, weightTotal);
+    const courseRevenue = last ? revenue - allocatedRevenue : Math.round(revenue * weight * 100) / 100;
+    const courseCosts = last ? costs - allocatedCosts : Math.round(costs * weight * 100) / 100;
+    allocatedRevenue += courseRevenue;
+    allocatedCosts += courseCosts;
+    const layout = layoutById(course, courseId);
+    const capacity = (layout?.roundLength ?? 9) * 4;
+    return {
+      courseId,
+      courseName: stats.courseName,
+      attendance: stats.roundsFinished,
+      turnaways: Math.max(0, stats.arrivals - capacity),
+      capacity,
+      revenue: courseRevenue,
+      costs: courseCosts,
+      profit: courseRevenue - courseCosts,
+      avgSatisfaction: stats.roundsFinished ? stats.satisfactionSum / stats.roundsFinished : 0,
+    };
+  });
 
   return {
     course: nextCourse,
@@ -137,6 +165,7 @@ export function commitDay(args: {
       promoters: reactions.promoters,
       detractors: reactions.detractors,
       willReturnRate: reactions.willReturnRate,
+      perCourse,
     },
   };
 }

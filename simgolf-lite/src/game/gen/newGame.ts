@@ -9,6 +9,7 @@ import { CHALLENGE_GOALS } from "../objectives/goals";
 import { getDifficultyProfile } from "../balance/difficulty";
 import { generateWildLandWithObstacles } from "./generateWildLand";
 import { createEstate, starterParcelOffset } from "../estate/estate";
+import { normalizeCourseLayouts } from "../models/courseLayouts";
 
 /**
  * THE new-game path (ZKU-162): every fresh run — wizard, quick start, defeat
@@ -60,6 +61,7 @@ export function createNewGame(
     tiles,
     elevations,
     holes: Array.from({ length: 9 }, (_, i) => ({
+      id: `hole-${i + 1}`,
       tee: null,
       green: null,
       parMode: "AUTO" as const,
@@ -67,6 +69,16 @@ export function createNewGame(
     })),
     obstacles,
     buildings: [],
+    layouts: [{
+      id: "course-primary",
+      name: setup.courseName.trim() || DEFAULT_COURSE.name,
+      draftHoleIds: Array.from({ length: 9 }, (_, i) => `hole-${i + 1}`),
+      publishedHoleIds: Array.from({ length: 9 }, (_, i) => `hole-${i + 1}`),
+      roundLength: 9,
+      state: "open",
+      greenFee: DEFAULT_COURSE.baseGreenFee,
+    }],
+    activeCourseId: "course-primary",
   };
   // Starter clubhouse (ZKU-152): anchor the course visually from day one.
   const clubhouseSpot = findClubhouseSpot(course);
@@ -120,5 +132,5 @@ export function createNewGame(
   };
   if (setup.founderName?.trim()) world.founderName = setup.founderName.trim();
 
-  return { course, world };
+  return { course: normalizeCourseLayouts(course), world };
 }

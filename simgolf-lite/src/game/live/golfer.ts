@@ -270,7 +270,10 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
 
     // Interpolate position/ball for the (partial) current segment.
     const t = seg.dur > 0 ? Math.max(0, Math.min(1, g.segElapsed / seg.dur)) : 1;
-    if (seg.holeIndex >= 0) g.currentHole = seg.holeIndex;
+    if (seg.holeIndex >= 0) {
+      g.currentHole = seg.holeIndex;
+      g.currentHoleId = seg.holeId ?? g.holeIds?.[seg.holeIndex];
+    }
     if (seg.kind === "walk") {
       g.pos = lerp(seg.from, seg.to, t);
       g.ball = null;

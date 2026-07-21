@@ -13,6 +13,7 @@ export interface Segment {
   to: Point;
   dur: number; // game-minutes
   holeIndex: number; // hole this segment belongs to (-1 for arrival/exit)
+  holeId?: string;
   // Render-facing only (ZKU-153): which stroke a "flight" represents, so the
   // renderer can pick the swing vs putt animation. Never read by sim logic.
   shot?: "swing" | "putt";
@@ -39,6 +40,10 @@ export interface Golfer {
   archetype: GolferArchetypeName;
   teeSet?: TeeSet;
   pinRotation?: PinRotation;
+  courseId?: string;
+  courseName?: string;
+  /** Immutable published routing booked at arrival. */
+  holeIds?: string[];
   personality: Personality;
   color: string;
   // Itinerary
@@ -54,6 +59,7 @@ export interface Golfer {
   scoredHoles: number; // how many holes have been folded into scoreToPar
   // Progress / outcome
   currentHole: number; // -1 before first hole / after finishing
+  currentHoleId?: string;
   strokes: number; // total strokes so far this round
   scoreToPar: number;
   mood: number; // 0..1
@@ -70,6 +76,7 @@ export interface Golfer {
 export interface Arrival {
   atMinute: number;
   archetype: GolferArchetypeName;
+  courseId?: string;
   tournament?: { eventId: string; entrantId: string; name: string; skill: number; teeSet?: TeeSet; pinRotation?: PinRotation };
 }
 
@@ -93,6 +100,18 @@ export interface LiveState {
   willReturnCount: number; // golfers intending to come back
   reconcileEpoch: number; // bumped when a mid-round re-plan runs (ZKU-136)
   nextTeeFreeAt: number; // earliest game-minute the next group may tee off (ZKU-110)
+  nextTeeFreeAtByCourse?: Record<string, number>;
+  perCourse?: Record<string, {
+    courseName: string;
+    arrivals: number;
+    roundsStarted: number;
+    roundsFinished: number;
+    greenFees: number;
+    satisfactionSum: number;
+    promoters: number;
+    detractors: number;
+    willReturnCount: number;
+  }>;
   // Memoized walking routes (from->to), shared by all golfers spawned this day (ZKU-107).
   walkCache: Map<string, Point[] | null>;
   dayOver: boolean;
@@ -131,6 +150,8 @@ export interface GolferRenderData {
   archetype: GolferArchetypeName;
   teeSet?: TeeSet;
   pinRotation?: PinRotation;
+  courseId?: string;
+  currentHoleId?: string;
   /** Current itinerary segment kind, or null when idle/retired. */
   segKind: SegmentKind | null;
   /** Progress through the current segment, 0..1. */
@@ -174,4 +195,15 @@ export interface DayResult {
   promoters: number;
   detractors: number;
   willReturnRate: number; // 0..1
+  perCourse?: Array<{
+    courseId: string;
+    courseName: string;
+    attendance: number;
+    turnaways: number;
+    capacity: number;
+    revenue: number;
+    costs: number;
+    profit: number;
+    avgSatisfaction: number;
+  }>;
 }

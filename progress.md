@@ -318,3 +318,23 @@ Previous prompt: Let’s do m14 in linear for this project
 
 - None for M25. ZK-238 through ZK-242 are documented and marked Done in Linear.
 - The legacy M14 playthrough reached graduation on the expanded estate, then exposed a post-graduation weak-hole advisor comparison against an unrounded 55.x score. The comparison now uses the same rounded score shown in the HUD; its focused unit coverage and production build pass, but the final seven-minute browser replay was not repeated after that last one-line alignment.
+
+## 2026-07-21 — M26 multi-course property operations
+
+- Current request: “Implement m26 from the linear project”. Linear scope resolved as ZK-243 through ZK-247 and all five issues were moved to In Progress.
+- Added schema-v9 stable hole identities and persisted named course layouts with independent draft/published routing, 9/18-hole round length, open/closed state, green fee, active selection, legacy-partial migration, 36-hole validation, and starter-course migration for old saves, records, live rounds, and tournaments.
+- Added an accessible Course Manager for creating/selecting/renaming courses, adding estate holes, assigning/reordering/removing draft holes, independent pricing/state, blocking-condition explanations, course metrics, and atomic publishing that leaves already-booked golfer itineraries unchanged.
+- Added deterministic per-course demand/capacity and bookings, course-scoped live golfer itineraries and persistence, independent fee collection, stable completed-round identities, and exact per-course daily/weekly attendance, turnaway, revenue, cost, satisfaction, and profit reconciliation.
+- Scoped tournament hosts, tournament routing, stable records/aces, event navigation, advisor hole navigation, minimap selection, and retention filtering to course/hole IDs. New tournament bookings require an open published 18-hole host; migrated events attach to the starter course.
+
+## M26 verification
+
+- Focused M26 unit suite: 6 tests passing, covering 36-hole save round trips, unique assignment, draft/published atomicity, deterministic bookings, live route isolation/save restore, daily and weekly reconciliation, stable records, and 18-hole tournament hosting.
+- Production build and lint/i18n guards pass; lint reports seven existing React hook warnings and no errors. `git diff --check` passes.
+- Unit regressions were run in focused groups; the render-performance fixture passed in isolation at 8.9s after timing out only under the combined parallel test load. The previously failing M22/M23/live/scenario migration and queueing cases pass after the schema-v9 compatibility and per-course tee-queue fixes.
+- M26 Playwright acceptance passes in 22.5s with zero console errors. The final 1440×900 Course Manager/gameplay capture was visually inspected.
+- The bundled web-game client passed deterministic stepping/capture; `render_game_to_text` exposes stable layouts, active course, draft/published IDs, course fees, and live golfer course/hole IDs. Its Pixi canvas capture was visually inspected.
+
+## M26 remaining
+
+- None for implementation. ZK-243 through ZK-247 include completion notes and are marked Done in Linear.

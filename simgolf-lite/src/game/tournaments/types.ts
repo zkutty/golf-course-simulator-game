@@ -51,6 +51,9 @@ export interface TournamentEvent {
   id: string;
   name: string;
   tier: TournamentTier;
+  courseId?: string;
+  courseName?: string;
+  holeIds?: string[];
   scheduledWeek: number;
   scheduledDay: number;
   status: TournamentStatus;
@@ -80,6 +83,7 @@ export interface LiveTournamentState {
   eventId: string;
   name: string;
   tier: TournamentTier;
+  courseId?: string;
   teeSet: TeeSet;
   pinRotation: PinRotation;
   ordinaryPinRotation: PinRotation;

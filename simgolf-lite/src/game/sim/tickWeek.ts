@@ -9,8 +9,9 @@ import { stepLoanWeek, totalWeeklyPayments } from "./loans";
 import { getEffectiveBalance } from "../balance/difficulty";
 import { distressExhausted, hitsLiquidityTrap } from "./runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
+import { operatingCourseViews } from "../models/courseLayouts";
 
-export function tickWeek(
+function tickWeekSingle(
   course: Course,
   world: World,
   seed = 1234,
@@ -220,6 +221,78 @@ export function tickWeek(
       tips,
       topIssues,
       maintenancePressure: { totalWeight, avgWeight, wear },
+    },
+  };
+}
+
+export function tickWeek(
+  course: Course,
+  world: World,
+  seed = 1234,
+  concessionTransactions: ConcessionTransaction[] = []
+): { world: World; course: Course; result: WeekResult } {
+  const views = operatingCourseViews(course);
+  if (views.length <= 1) return tickWeekSingle(views[0]?.course ?? course, world, seed, concessionTransactions);
+
+  const rows = views.map(({ layout, course: view }, index) => ({
+    layout,
+    output: tickWeekSingle(view, world, seed + index * 104729, index === 0 ? concessionTransactions : []),
+  }));
+  const primary = rows[0].output;
+  const visitors = rows.reduce((sum, row) => sum + row.output.result.visitors, 0);
+  const capacity = rows.reduce((sum, row) => sum + (row.output.result.capacity ?? 0), 0);
+  const turnaways = rows.reduce((sum, row) => sum + (row.output.result.turnaways ?? 0), 0);
+  const revenue = rows.reduce((sum, row) => sum + row.output.result.revenue, 0);
+  const variableCosts = rows.reduce((sum, row) => sum + (row.output.result.variableCosts?.total ?? 0), 0);
+  const sharedCosts = primary.result.costs - (primary.result.variableCosts?.total ?? 0);
+  const costs = sharedCosts + variableCosts;
+  const taxRate = getEffectiveBalance(world.difficulty).tax;
+  const preTax = revenue - costs;
+  const tax = taxRate.enabled && preTax > 0 ? preTax * taxRate.profitTaxRate : 0;
+  const profit = preTax - tax;
+  const weightedSatisfaction = visitors
+    ? rows.reduce((sum, row) => sum + row.output.result.avgSatisfaction * row.output.result.visitors, 0) / visitors
+    : 0;
+  let allocatedShared = 0;
+  const perCourse = rows.map(({ layout, output }, index) => {
+    const share = visitors ? output.result.visitors / visitors : 1 / rows.length;
+    const shared = index === rows.length - 1 ? sharedCosts - allocatedShared : Math.round(sharedCosts * share * 100) / 100;
+    allocatedShared += shared;
+    const rowCosts = shared + (output.result.variableCosts?.total ?? 0);
+    return {
+      courseId: layout.id,
+      courseName: layout.name,
+      attendance: output.result.visitors,
+      turnaways: output.result.turnaways ?? 0,
+      capacity: output.result.capacity ?? 0,
+      revenue: output.result.revenue,
+      costs: rowCosts,
+      profit: output.result.revenue - rowCosts,
+      avgSatisfaction: output.result.avgSatisfaction,
+    };
+  });
+  // Put aggregate tax on the final course so per-course profit reconciles.
+  if (perCourse.length) perCourse[perCourse.length - 1].profit -= tax;
+  return {
+    course: { ...course, condition: primary.course.condition },
+    world: { ...primary.world, cash: world.cash + profit, lastWeekProfit: profit },
+    result: {
+      ...primary.result,
+      visitors,
+      capacity,
+      turnaways: turnaways || undefined,
+      revenue,
+      revenueBreakdown: {
+        ...primary.result.revenueBreakdown!,
+        greenFees: rows.reduce((sum, row) => sum + (row.output.result.revenueBreakdown?.greenFees ?? 0), 0),
+        concessions: concessionTransactions.reduce((sum, tx) => sum + tx.amount, 0),
+      },
+      costs,
+      profit,
+      tax: tax || undefined,
+      variableCosts: { ...(primary.result.variableCosts ?? { labor: 0, consumables: 0, merchantFees: 0, total: 0 }), total: variableCosts },
+      avgSatisfaction: weightedSatisfaction,
+      perCourse,
     },
   };
 }

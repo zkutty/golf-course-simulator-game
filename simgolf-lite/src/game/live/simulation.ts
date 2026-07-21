@@ -7,7 +7,7 @@ import { rollPersonality, solverProfileForSkill } from "./personality";
 import { getDifficultyProfile } from "../balance/difficulty";
 import { buildGolferRound, entryPoint, planFromHole } from "./golfer";
 import { advanceGolfer } from "./golfer";
-import { planDay } from "./spawn";
+import { planEstateDay } from "./spawn";
 import { findWalkPath } from "./walkPath";
 import { LIVE } from "./liveConfig";
 import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } from "./types";
@@ -15,6 +15,8 @@ import { rollDiscretionaryWallet } from "./concessions";
 import type { CompletedRound } from "../retention/types";
 import { createLiveTournament, planTournamentDay, tournamentForDate, updateTournamentStanding } from "../tournaments/tournaments";
 import { getTeeBox, preferredTeeForArchetype } from "../models/courseSetup";
+import { activeCourseLayout, courseForHoleIds, courseForLayout, layoutById, operatingCourseViews } from "../models/courseLayouts";
+import { plannedGolfersForDay } from "./demand";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -38,7 +40,18 @@ export function createLiveState(
   const tournamentEvent = tournamentForDate(world, dayIndex, course);
   const arrivals = tournamentEvent
     ? planTournamentDay(tournamentEvent, LIVE.day.firstArrivalMinute, LIVE.day.teeGapMinutes)
-    : planDay(course, world, seed);
+    : planEstateDay(course, world, seed);
+  const perCourse = Object.fromEntries(operatingCourseViews(course).map(({ layout, course: view }) => [layout.id, {
+    courseName: layout.name,
+    arrivals: tournamentEvent ? arrivals.filter((arrival) => arrival.courseId === layout.id).length : plannedGolfersForDay(view, world),
+    roundsStarted: 0,
+    roundsFinished: 0,
+    greenFees: 0,
+    satisfactionSum: 0,
+    promoters: 0,
+    detractors: 0,
+    willReturnCount: 0,
+  }]));
   return {
     difficulty: world.difficulty,
     dayIndex,
@@ -59,6 +72,8 @@ export function createLiveState(
     willReturnCount: 0,
     reconcileEpoch: 0,
     nextTeeFreeAt: 0,
+    nextTeeFreeAtByCourse: {},
+    perCourse,
     walkCache: new Map(),
     dayOver: false,
     seed,
@@ -92,16 +107,19 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   const personality = arrival.tournament
     ? { ...rolledPersonality, skill: Math.max(0, Math.min(1, arrival.tournament.skill)), consistency: Math.max(rolledPersonality.consistency, .62) }
     : rolledPersonality;
-  const profile = getGolferProfile(solverProfileForSkill(personality.skill), course);
-  const entry = entryPoint(course);
+  const courseId = arrival.courseId ?? state.tournament?.courseId ?? activeCourseLayout(course).id;
+  const roundCourse = courseForLayout(course, courseId);
+  const layout = layoutById(course, courseId) ?? activeCourseLayout(course);
+  const profile = getGolferProfile(solverProfileForSkill(personality.skill), roundCourse);
+  const entry = entryPoint(roundCourse);
   const wallet = rollDiscretionaryWallet(personality, rng);
   const preferredTeeSet = preferredTeeForArchetype(arch.name);
-  const teeSet = arrival.tournament?.teeSet ?? (course.holes.every((hole) => !getTeeBox(hole, "member") || !!getTeeBox(hole, preferredTeeSet))
+  const teeSet = arrival.tournament?.teeSet ?? (roundCourse.holes.every((hole) => !getTeeBox(hole, "member") || !!getTeeBox(hole, preferredTeeSet))
     ? preferredTeeSet
     : "member");
-  const pinRotation = arrival.tournament?.pinRotation ?? course.activePinRotation ?? "A";
+  const pinRotation = arrival.tournament?.pinRotation ?? roundCourse.activePinRotation ?? "A";
   const round = buildGolferRound({
-    course,
+    course: roundCourse,
     profile,
     entry,
     rng,
@@ -111,12 +129,17 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     teeSet,
     pinRotation,
   });
+  const holeIds = roundCourse.holes.map((hole) => hole.id!).filter(Boolean);
+  round.segments = round.segments.map((segment) => ({ ...segment, holeId: segment.holeIndex >= 0 ? holeIds[segment.holeIndex] : undefined }));
   return {
     id,
     name: arrival.tournament?.name ?? golferName(rng(), rng()),
     archetype: arch.name,
     teeSet,
     pinRotation,
+    courseId,
+    courseName: layout.name,
+    holeIds,
     personality,
     color: arch.color,
     segments: round.segments,
@@ -203,19 +226,26 @@ export function stepLive(
     state.nextArrivalIdx < state.arrivals.length &&
     state.arrivals[state.nextArrivalIdx].atMinute <= state.dayMinute &&
     state.dayMinute <= LIVE.day.closeMinute &&
-    state.dayMinute >= state.nextTeeFreeAt
+    state.dayMinute >= (state.nextTeeFreeAtByCourse?.[state.arrivals[state.nextArrivalIdx].courseId ?? activeCourseLayout(course).id] ?? 0)
   ) {
     const arrival = state.arrivals[state.nextArrivalIdx++];
     const golfer = spawnGolfer(state, course, arrival);
     state.golfers.push(golfer);
     state.roundsStarted++;
-    state.nextTeeFreeAt = state.dayMinute + LIVE.day.teeGapMinutes;
+    const courseId = golfer.courseId ?? arrival.courseId ?? activeCourseLayout(course).id;
+    state.nextTeeFreeAtByCourse ??= {};
+    state.nextTeeFreeAtByCourse[courseId] = state.dayMinute + LIVE.day.teeGapMinutes;
+    state.nextTeeFreeAt = Math.min(...Object.values(state.nextTeeFreeAtByCourse));
+    const courseStats = state.perCourse?.[courseId];
+    if (courseStats) courseStats.roundsStarted++;
     // Hosted-event players are in the contracted field; the sponsor/hosting
     // award is settled after results instead of charging each entrant a fee.
     if (!arrival.tournament) {
-      cashDelta += course.baseGreenFee;
-      state.greenFeeCollected += course.baseGreenFee;
-      golfer.spent += course.baseGreenFee;
+      const fee = layoutById(course, courseId)?.greenFee ?? course.baseGreenFee;
+      cashDelta += fee;
+      state.greenFeeCollected += fee;
+      golfer.spent += fee;
+      if (courseStats) courseStats.greenFees += fee;
     }
   }
 
@@ -257,6 +287,14 @@ export function stepLive(
       if (reaction.promoter) state.promoters++;
       if (reaction.detractor) state.detractors++;
       if (reaction.willReturn) state.willReturnCount++;
+      const courseStats = g.courseId ? state.perCourse?.[g.courseId] : undefined;
+      if (courseStats) {
+        courseStats.roundsFinished++;
+        courseStats.satisfactionSum += g.mood * 100;
+        if (reaction.promoter) courseStats.promoters++;
+        if (reaction.detractor) courseStats.detractors++;
+        if (reaction.willReturn) courseStats.willReturnCount++;
+      }
       finishedThisStep++;
       completedRounds.push({
         golferId: g.id,
@@ -267,6 +305,9 @@ export function stepLive(
         holePar: g.holePar.slice(),
         holeStrokes: g.holeStrokes.slice(),
         mood: g.mood,
+        courseId: g.courseId,
+        courseName: g.courseName,
+        holeIds: g.holeIds?.slice(),
         tournamentId: g.tournamentId,
         tournamentEntrantId: g.tournamentEntrantId,
       });
@@ -336,6 +377,8 @@ export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): 
       archetype: g.archetype,
       teeSet: g.teeSet ?? preferredTeeForArchetype(g.archetype),
       pinRotation: g.pinRotation ?? "A",
+      courseId: g.courseId,
+      currentHoleId: g.currentHoleId,
       segKind,
       segT,
       shot,
@@ -400,25 +443,27 @@ export function reconcileGolfers(state: LiveState, course: Course): void {
   for (const g of state.golfers) {
     if (g.finished) continue;
     // The hole to resume on is the next one not yet folded into the score.
-    const startHole = nthValidHoleIndex(course, g.scoredHoles);
+    const routing = g.holeIds?.length ? courseForHoleIds(course, g.holeIds, g.courseId) : course;
+    const startHole = nthValidHoleIndex(routing, g.scoredHoles);
     if (startHole < 0) continue; // nothing left to play; let them walk off
 
     const rng = mulberry32(state.seed + g.id * 911 + state.reconcileEpoch * 17);
-    const profile = getGolferProfile(solverProfileForSkill(g.personality.skill), course);
+    const profile = getGolferProfile(solverProfileForSkill(g.personality.skill), routing);
     const from: Point = { x: g.pos.x, y: g.pos.y };
     const replanned = planFromHole({
-      course,
+      course: routing,
       profile,
       personality: g.personality,
       rng,
       startHole,
       cursor: from,
       exit,
-      route: makeRouter(course, state.walkCache),
+      route: makeRouter(routing, state.walkCache),
       wallet: g.wallet,
       teeSet: g.teeSet,
       pinRotation: g.pinRotation,
     });
+    replanned.segments = replanned.segments.map((segment) => ({ ...segment, holeId: segment.holeIndex >= 0 ? routing.holes[segment.holeIndex]?.id : undefined }));
 
     // Splice: keep scored holes, replace the unplayed tail with the new plan.
     g.holePar = g.holePar.slice(0, g.scoredHoles).concat(replanned.holePar);

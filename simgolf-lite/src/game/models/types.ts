@@ -41,6 +41,8 @@ export const PIN_ROTATIONS = ["A", "B", "C"] as const;
 export type PinRotation = (typeof PIN_ROTATIONS)[number];
 
 export interface Hole {
+  /** Stable identity used by layouts, records, events, and navigation. */
+  id?: string;
   /** Authoritative M23 marker collections. Legacy tee/green aliases remain
    * mirrored to Member/A while older fixtures and integrations transition. */
   teeBoxes?: Partial<Record<TeeSet, Point | null>>;
@@ -52,6 +54,22 @@ export interface Hole {
   parManual?: 3 | 4 | 5;
   name?: string;
   holeIndex?: number; // Stroke index (1-18, defaults to array index + 1)
+}
+
+export type CourseOperatingState = "open" | "closed";
+
+/** A named operating routing on the shared estate. Hole geometry remains in
+ * `Course.holes`; layouts own ordering, publication, price, and availability. */
+export interface CourseLayout {
+  id: string;
+  name: string;
+  draftHoleIds: string[];
+  publishedHoleIds: string[];
+  roundLength: 9 | 18;
+  state: CourseOperatingState;
+  greenFee: number;
+  /** Migrated partial routings may keep operating until their first publish. */
+  legacyPartial?: boolean;
 }
 
 export type ObstacleType = "tree" | "bush" | "rock";
@@ -158,7 +176,11 @@ export interface Course {
   // 0 = base level; see src/game/models/elevation.ts. Older saves migrate
   // to a flat (all-zero) field on load.
   elevations: number[]; // length = width * height
-  holes: Hole[]; // 9 or 18 (MVP: 9)
+  holes: Hole[]; // estate inventory, up to 36
+  /** M26 named course routings. Older callers can omit these; normalization
+   * synthesizes one starter layout without changing economic behavior. */
+  layouts?: CourseLayout[];
+  activeCourseId?: string;
   /** Course-wide operational pin used by ordinary live rounds. */
   activePinRotation?: PinRotation;
   obstacles: Obstacle[]; // overlay layer (not terrain)
@@ -305,6 +327,17 @@ export interface WeekResult {
   };
   avgSatisfaction: number; // 0..100
   reputationDelta: number; // signed
+  perCourse?: Array<{
+    courseId: string;
+    courseName: string;
+    attendance: number;
+    turnaways: number;
+    capacity: number;
+    revenue: number;
+    costs: number;
+    profit: number;
+    avgSatisfaction: number;
+  }>;
   reputationMomentum?: string;
   visitorNoise: number; // signed
   demand?: DemandBreakdown;

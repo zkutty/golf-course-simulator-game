@@ -76,4 +76,5 @@ export type Action =
   | DecorationMutationAction
   | MarkerMutationAction
   | EconomyMutationAction
+  | { type: "SET_COURSE_LAYOUTS"; course: Course }
   | UIAction;

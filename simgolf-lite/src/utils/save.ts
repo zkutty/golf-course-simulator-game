@@ -35,9 +35,10 @@ import { DECORATION_KINDS, normalizedDecoration } from "../game/models/decoratio
 import { PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSetup } from "../game/models/courseSetup";
 import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
 import { createEstate, starterParcelOffset, validateEstate } from "../game/estate/estate";
+import { MAX_ESTATE_HOLES, normalizeCourseLayouts } from "../game/models/courseLayouts";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 8 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 9 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -86,6 +87,10 @@ export interface SaveV7 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV8 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 8;
+  records?: CourseRecords;
+}
+export interface SaveV9 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -109,7 +114,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV8 = {
+  const save: SaveV9 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -241,6 +246,31 @@ function translateLiveSnapshot(raw: unknown, offset: Point): unknown {
   return snapshot;
 }
 
+function attachLiveCourseModel(raw: unknown, course: Course): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const snapshot = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
+  const state = snapshot.state as Record<string, unknown> | undefined;
+  const starter = course.layouts?.find((layout) => layout.id === course.activeCourseId) ?? course.layouts?.[0];
+  if (!state || !starter) return snapshot;
+  if (Array.isArray(state.arrivals)) for (const rawArrival of state.arrivals) {
+    const arrival = rawArrival as Record<string, unknown>;
+    if (typeof arrival.courseId !== "string") arrival.courseId = starter.id;
+  }
+  if (Array.isArray(state.golfers)) for (const rawGolfer of state.golfers) {
+    const golfer = rawGolfer as Record<string, unknown>;
+    if (typeof golfer.courseId !== "string") golfer.courseId = starter.id;
+    if (typeof golfer.courseName !== "string") golfer.courseName = starter.name;
+    if (!Array.isArray(golfer.holeIds)) golfer.holeIds = [...starter.publishedHoleIds];
+    if (Array.isArray(golfer.segments)) for (const rawSegment of golfer.segments) {
+      const segment = rawSegment as Record<string, unknown>;
+      if (typeof segment.holeId !== "string" && Number.isInteger(segment.holeIndex) && (segment.holeIndex as number) >= 0) segment.holeId = starter.publishedHoleIds[segment.holeIndex as number];
+    }
+  }
+  const tournament = state.tournament as Record<string, unknown> | undefined;
+  if (tournament && typeof tournament.courseId !== "string") tournament.courseId = starter.id;
+  return snapshot;
+}
+
 export interface SavePayload {
   course: Course;
   world: World;
@@ -304,7 +334,7 @@ function validateCourseShape(raw: unknown): SaveLoadError | null {
   ) {
     return { code: "INVALID_COURSE", message: "The saved terrain grid is malformed." };
   }
-  if (!Array.isArray(holes) || holes.length < 1 || holes.length > 18) {
+  if (!Array.isArray(holes) || holes.length < 1 || holes.length > MAX_ESTATE_HOLES) {
     return { code: "INVALID_COURSE", message: "The saved hole list is malformed." };
   }
   for (const hole of holes) {
@@ -316,6 +346,33 @@ function validateCourseShape(raw: unknown): SaveLoadError | null {
     }
     if (hole.waypoints != null && (!Array.isArray(hole.waypoints) || hole.waypoints.some((p) => !validPoint(p, width as number, height as number)))) {
       return { code: "INVALID_COURSE", message: "A saved hole waypoint is invalid." };
+    }
+  }
+  if (raw.layouts != null) {
+    if (!Array.isArray(raw.layouts) || raw.layouts.length < 1 || raw.layouts.length > MAX_ESTATE_HOLES) {
+      return { code: "INVALID_COURSE", message: "The saved course layout list is malformed." };
+    }
+    const ids = new Set<string>();
+    const holeIds = new Set((holes as SaveRecord[]).map((hole) => typeof hole.id === "string" ? hole.id : "").filter(Boolean));
+    if (holeIds.size !== holes.length) return { code: "INVALID_COURSE", message: "Stable hole identities are missing or duplicated." };
+    const draftOwners = new Set<string>();
+    const publishedOwners = new Set<string>();
+    for (const layout of raw.layouts) {
+      if (!isRecord(layout) || typeof layout.id !== "string" || !layout.id || ids.has(layout.id) || typeof layout.name !== "string" ||
+        !Array.isArray(layout.draftHoleIds) || !Array.isArray(layout.publishedHoleIds) ||
+        !layout.draftHoleIds.every((id) => typeof id === "string") || !layout.publishedHoleIds.every((id) => typeof id === "string") ||
+        (layout.roundLength !== 9 && layout.roundLength !== 18) || (layout.state !== "open" && layout.state !== "closed") || !isFiniteNumber(layout.greenFee)) {
+        return { code: "INVALID_COURSE", message: "A saved operating course layout is malformed." };
+      }
+      for (const holeId of layout.draftHoleIds as string[]) {
+        if (!holeIds.has(holeId) || draftOwners.has(holeId)) return { code: "INVALID_COURSE", message: "A draft hole is missing or assigned to multiple courses." };
+        draftOwners.add(holeId);
+      }
+      for (const holeId of layout.publishedHoleIds as string[]) {
+        if (!holeIds.has(holeId) || publishedOwners.has(holeId)) return { code: "INVALID_COURSE", message: "A published hole is missing or assigned to multiple courses." };
+        publishedOwners.add(holeId);
+      }
+      ids.add(layout.id);
     }
   }
   return null;
@@ -354,22 +411,52 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V8 introduces the full estate. Spatial translation and estate synthesis
   // happen in the normalizer where validated course/world data is available.
   7: (save) => ({ ...save, schemaVersion: 8 }),
+  // V9 adds stable hole identities and independent named course routings.
+  // Normalization creates one equivalent starter course for every older save.
+  8: (save) => ({
+    ...save,
+    schemaVersion: 9,
+    ...(isRecord(save.course) ? { course: normalizeCourseLayouts(save.course as unknown as Course) } : {}),
+  }),
 };
 
-function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World): CourseRecords {
+function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
   if (!isRecord(raw) || raw.version !== 1 || !Array.isArray(raw.history) || !Array.isArray(raw.holes) || !Array.isArray(raw.hall) || !Array.isArray(raw.aces)) {
     return seedRecordsFromHistory(history, Math.max(1, world.week - (history?.length ?? 0)));
   }
   const defaults = emptyCourseRecords();
   const candidate = raw as unknown as CourseRecords;
-  return {
+  const byCourse: NonNullable<CourseRecords["byCourse"]> = {};
+  if (isRecord(candidate.byCourse)) for (const [courseId, value] of Object.entries(candidate.byCourse)) {
+    if (!isRecord(value) || typeof value.courseName !== "string" || !isFiniteNumber(value.totalRounds) || !isRecord(value.holes)) continue;
+    const holes: Record<string, { rounds: number; strokes: number; par: number }> = {};
+    for (const [holeId, hole] of Object.entries(value.holes)) if (isRecord(hole) && isFiniteNumber(hole.rounds) && isFiniteNumber(hole.strokes) && isFiniteNumber(hole.par)) {
+      holes[holeId] = { rounds: hole.rounds, strokes: hole.strokes, par: hole.par };
+    }
+    byCourse[courseId] = { courseName: value.courseName, totalRounds: value.totalRounds, bestRound: isRecord(value.bestRound) ? value.bestRound as NonNullable<CourseRecords["bestRound"]> : null, holes };
+  }
+  const normalized: CourseRecords = {
     ...defaults,
     ...candidate,
     history: candidate.history.filter((row) => Array.isArray(row) && row.length === 6 && row.every(isFiniteNumber)),
     holes: candidate.holes.filter((hole) => hole && isFiniteNumber(hole.rounds) && isFiniteNumber(hole.strokes) && isFiniteNumber(hole.par)),
     hall: candidate.hall.filter((entry) => entry && typeof entry.golferName === "string" && isFiniteNumber(entry.rounds)),
     aces: candidate.aces.filter((ace) => ace && typeof ace.golferName === "string" && isFiniteNumber(ace.week)),
+    byCourse,
   };
+  if (course && Object.keys(normalized.byCourse ?? {}).length === 0 && normalized.totalRounds > 0) {
+    const starter = course.layouts?.find((layout) => layout.id === course.activeCourseId) ?? course.layouts?.[0];
+    if (starter) normalized.byCourse = {
+      [starter.id]: {
+        courseName: starter.name,
+        totalRounds: normalized.totalRounds,
+        bestRound: normalized.bestRound,
+        holes: Object.fromEntries(normalized.holes.map((hole, index) => [starter.publishedHoleIds[index] ?? `hole-${index + 1}`, hole])),
+      },
+    };
+    normalized.aces = normalized.aces.map((ace) => ({ ...ace, courseId: ace.courseId ?? starter?.id, holeId: ace.holeId ?? starter?.publishedHoleIds[ace.holeIndex] }));
+  }
+  return normalized;
 }
 
 function migrateSave(input: unknown):
@@ -520,7 +607,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     const migratedGrid = isLegacyStarterGrid
       ? migrateCourseGrid(loadedCourse, (parsed.world as unknown as World).runSeed)
       : { course: loadedCourse, offset: { x: 0, y: 0 } };
-    let course = withNormalizedElevations(migratedGrid.course);
+    let course = normalizeCourseLayouts(withNormalizedElevations(migratedGrid.course));
     if (rawCourse.estate && !validateEstate(rawCourse.estate, rawWidth, rawHeight)) {
       return fail("INVALID_COURSE", "The saved estate, ownership, or natural-land baseline is malformed.");
     }
@@ -552,14 +639,14 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
               protectedTrees: rawConstraints.protectedTrees === true,
             }
           : undefined,
-      tournaments: normalizeTournamentCalendar(rawWorld.tournaments),
+      tournaments: normalizeTournamentCalendar(rawWorld.tournaments, course),
     };
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
-    const records = normalizeRecords(parsed.records, history, world);
+    const records = normalizeRecords(parsed.records, history, world, course);
     const tutorial = normalizeTutorialProgress(parsed.tutorial);
     let live: LiveSimulationSnapshotV1 | undefined;
     if (parsed.live != null) {
-      const translatedLive = translateLiveSnapshot(parsed.live, migratedGrid.offset);
+      const translatedLive = attachLiveCourseModel(translateLiveSnapshot(parsed.live, migratedGrid.offset), course);
       const restored = restoreLiveSimulation(translatedLive);
       if (!restored) {
         return fail("INVALID_LIVE_STATE", "The saved live simulation state is malformed.");

@@ -65,6 +65,10 @@ function golfer(value: unknown): value is Golfer {
   return typeof value.finished === "boolean" && (value.thought === null || typeof value.thought === "string") &&
     (value.teeSet == null || value.teeSet === "forward" || value.teeSet === "member" || value.teeSet === "championship") &&
     (value.pinRotation == null || value.pinRotation === "A" || value.pinRotation === "B" || value.pinRotation === "C") &&
+    (value.courseId == null || typeof value.courseId === "string") &&
+    (value.courseName == null || typeof value.courseName === "string") &&
+    (value.holeIds == null || (Array.isArray(value.holeIds) && value.holeIds.every((id) => typeof id === "string"))) &&
+    (value.currentHoleId == null || typeof value.currentHoleId === "string") &&
     (value.wallet == null || finite(value.wallet)) &&
     (value.purchasedSegmentIndexes == null || (Array.isArray(value.purchasedSegmentIndexes) && value.purchasedSegmentIndexes.every(Number.isInteger))) &&
     (value.tournamentId == null || typeof value.tournamentId === "string") &&
@@ -73,6 +77,7 @@ function golfer(value: unknown): value is Golfer {
 
 function arrival(value: unknown): value is Arrival {
   if (!isRecord(value) || !finite(value.atMinute) || typeof value.archetype !== "string") return false;
+  if (value.courseId != null && typeof value.courseId !== "string") return false;
   if (value.tournament == null) return true;
   return isRecord(value.tournament) && typeof value.tournament.eventId === "string" &&
     typeof value.tournament.entrantId === "string" && typeof value.tournament.name === "string" && finite(value.tournament.skill) &&
@@ -83,6 +88,7 @@ function arrival(value: unknown): value is Arrival {
 function tournament(value: unknown): boolean {
   if (value == null) return true;
   if (!isRecord(value) || typeof value.eventId !== "string" || typeof value.name !== "string") return false;
+  if (value.courseId != null && typeof value.courseId !== "string") return false;
   if (value.tier !== "local" && value.tier !== "regional" && value.tier !== "championship") return false;
   if (!Array.isArray(value.standings) || value.standings.length > MAX_GOLFERS) return false;
   if (value.teeSet != null && value.teeSet !== "forward" && value.teeSet !== "member" && value.teeSet !== "championship") return false;
@@ -124,6 +130,11 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
   if (!Array.isArray(state.golfers) || state.golfers.length > MAX_GOLFERS || state.golfers.some((g) => !golfer(g))) return null;
   if (!Array.isArray(state.arrivals) || state.arrivals.length > MAX_ARRIVALS || state.arrivals.some((a) => !arrival(a))) return null;
   if (!tournament(state.tournament)) return null;
+  if (state.nextTeeFreeAtByCourse != null && (!isRecord(state.nextTeeFreeAtByCourse) || Object.values(state.nextTeeFreeAtByCourse).some((value) => !finite(value)))) return null;
+  if (state.perCourse != null && (!isRecord(state.perCourse) || Object.values(state.perCourse).some((value) => {
+    if (!isRecord(value) || typeof value.courseName !== "string") return true;
+    return ["arrivals", "roundsStarted", "roundsFinished", "greenFees", "satisfactionSum", "promoters", "detractors", "willReturnCount"].some((key) => !finite(value[key]));
+  }))) return null;
   for (const key of [
     "dayIndex", "dayMinute", "nextArrivalIdx", "nextGolferId", "greenFeeCollected",
     "roundsStarted", "roundsFinished", "satisfactionSum", "promoters", "detractors",

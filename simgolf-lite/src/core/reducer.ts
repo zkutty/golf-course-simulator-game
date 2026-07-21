@@ -602,6 +602,13 @@ export function applyAction(state: GameState, action: Action): GameState {
       break;
     }
 
+    case "SET_COURSE_LAYOUTS": {
+      newState = { ...newState, course: action.course };
+      markersVersion++;
+      economyVersion++;
+      break;
+    }
+
     case "ADD_WAYPOINT": {
       if (!isOwnedTile(state.course, action.position.x, action.position.y)) break;
       const hole = state.course.holes[action.holeIndex];

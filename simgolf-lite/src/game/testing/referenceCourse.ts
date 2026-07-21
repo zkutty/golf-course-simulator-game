@@ -358,3 +358,42 @@ export function createTournamentStandardsCourse(): Course {
   });
   return { ...base, name: "M24 Tournament Standards Club", tiles, holes, yardsPerTile: 3, activePinRotation: "B" };
 }
+
+/** M26 acceptance estate: one published 18-hole championship routing and one
+ * independently priced 9-hole course sharing the same clubhouse/terrain. */
+export function createM26MultiCourseReferenceCourse(): Course {
+  const base = createReferenceCourse();
+  const width = 48;
+  const height = 32;
+  const tiles = Array.from({ length: width * height }, () => "fairway" as Terrain);
+  const makeHole = (prefix: string, index: number, teeX: number, greenX: number) => {
+    const y = 3 + index * 3;
+    const tee = { x: teeX, y };
+    const green = { x: greenX, y };
+    tiles[y * width + teeX] = "tee";
+    tiles[y * width + greenX] = "green";
+    return { id: `${prefix}-${index + 1}`, name: `${prefix === "north" ? "North" : "South"} ${index + 1}`, tee, green, teeBoxes: { member: tee }, pinPositions: { A: green }, parMode: "MANUAL" as const, parManual: 3 as const };
+  };
+  const north = Array.from({ length: 9 }, (_, index) => makeHole("north", index, 3, 18));
+  const south = Array.from({ length: 9 }, (_, index) => makeHole("south", index, 29, 44));
+  return {
+    ...base,
+    name: "M26 Twin Courses Estate",
+    width,
+    height,
+    tiles,
+    elevations: new Array(width * height).fill(0),
+    holes: [...north, ...south],
+    obstacles: [],
+    buildings: [],
+    decorations: [],
+    estate: undefined,
+    yardsPerTile: 8,
+    layouts: [
+      { id: "north", name: "North Course", draftHoleIds: north.map((hole) => hole.id!), publishedHoleIds: north.map((hole) => hole.id!), roundLength: 9, state: "open", greenFee: 120 },
+      { id: "south", name: "South Nine", draftHoleIds: south.map((hole) => hole.id!), publishedHoleIds: south.map((hole) => hole.id!), roundLength: 9, state: "open", greenFee: 55 },
+    ],
+    activeCourseId: "north",
+    baseGreenFee: 120,
+  };
+}

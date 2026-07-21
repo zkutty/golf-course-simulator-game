@@ -16,6 +16,7 @@ export function emptyCourseRecords(holeCount = 18): CourseRecords {
     totalRounds: 0,
     holes: Array.from({ length: holeCount }, () => ({ rounds: 0, strokes: 0, par: 0 })),
     hall: [],
+    byCourse: {},
   };
 }
 
@@ -29,6 +30,11 @@ export function recordCompletedRound(records: CourseRecords, round: CompletedRou
   const aceHoles: number[] = [];
   next.totalRounds++;
   const entry = hallEntry(next, round);
+  next.byCourse ??= {};
+  const courseId = round.courseId ?? "course-primary";
+  const scoped = next.byCourse[courseId] ??= { courseName: round.courseName ?? "Course", totalRounds: 0, bestRound: null, holes: {} };
+  scoped.courseName = round.courseName ?? scoped.courseName;
+  scoped.totalRounds++;
   if (!next.hall.includes(entry)) next.hall.push(entry);
   entry.rounds++;
   entry.bestToPar = Math.min(entry.bestToPar, round.scoreToPar);
@@ -38,14 +44,20 @@ export function recordCompletedRound(records: CourseRecords, round: CompletedRou
     next.holes[index].rounds++;
     next.holes[index].strokes += strokes;
     next.holes[index].par += par;
+    const holeId = round.holeIds?.[index] ?? `hole-${index + 1}`;
+    const stable = scoped.holes[holeId] ??= { rounds: 0, strokes: 0, par: 0 };
+    stable.rounds++;
+    stable.strokes += strokes;
+    stable.par += par;
     if (strokes === 1) {
       aceHoles.push(index);
       entry.aces++;
-      next.aces.push({ golferName: round.golferName, golferId: round.golferId, holeIndex: index, week, archetype: round.archetype });
+      next.aces.push({ golferName: round.golferName, golferId: round.golferId, holeIndex: index, holeId, courseId, week, archetype: round.archetype });
     }
   });
   const courseRecord = next.bestRound == null || round.scoreToPar < next.bestRound.scoreToPar;
   if (courseRecord) next.bestRound = { scoreToPar: round.scoreToPar, score: round.score, golferName: round.golferName, golferId: round.golferId, week };
+  if (!scoped.bestRound || round.scoreToPar < scoped.bestRound.scoreToPar) scoped.bestRound = { scoreToPar: round.scoreToPar, score: round.score, golferName: round.golferName, golferId: round.golferId, week };
   next.hall.sort((a, b) => b.aces - a.aces || a.bestToPar - b.bestToPar || b.rounds - a.rounds);
   next.hall = next.hall.slice(0, 100);
   return { records: next, aceHoles, courseRecord };
