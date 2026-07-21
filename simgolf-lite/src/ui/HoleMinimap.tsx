@@ -7,6 +7,7 @@ import { getElevation } from "../game/models/elevation";
 import { translateCurrent } from "../i18n/core";
 import { MINIMAP_SIZE as SIZE, makeMinimapTransform, minimapCanvasPoint, minimapPointToWorld, type MinimapTransform } from "../game/render/minimap";
 import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
+import { decodeParcelMap } from "../game/estate/estate";
 
 const COLORS: Record<string, string> = {
   fairway: "#76ad58",
@@ -56,6 +57,13 @@ function drawDiamond(ctx: CanvasRenderingContext2D, center: Point, scale: number
   ctx.fill();
 }
 
+function strokeDiamond(ctx: CanvasRenderingContext2D, center: Point, scale: number, stroke: string) {
+  const hw = TILE_W * scale / 2;
+  const hh = TILE_H * scale / 2;
+  ctx.beginPath(); ctx.moveTo(center.x, center.y - hh); ctx.lineTo(center.x + hw, center.y); ctx.lineTo(center.x, center.y + hh); ctx.lineTo(center.x - hw, center.y); ctx.closePath();
+  ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(.55, scale * 2); ctx.stroke();
+}
+
 /** North-up isometric course overview and reusable per-hole thumbnail. */
 export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onCenter, thumbnail = false }: HoleMinimapProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -96,6 +104,20 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
             ctx.lineTo(p.x + TILE_W * transform.scale * .2, p.y);
             ctx.stroke();
           }
+        }
+      }
+      const estate = course.estate;
+      const parcelMap = estate ? decodeParcelMap(estate, course.width * course.height) : null;
+      if (estate && parcelMap) {
+        const owned = new Set(estate.ownedParcelIds);
+        for (let y = Math.max(0, Math.floor(bounds.minY)); y <= Math.min(course.height - 1, Math.ceil(bounds.maxY)); y++) for (let x = Math.max(0, Math.floor(bounds.minX)); x <= Math.min(course.width - 1, Math.ceil(bounds.maxX)); x++) {
+          const index = y * course.width + x;
+          const parcelIndex = parcelMap[index];
+          const iso = worldToIso(x + .5, y + .5, getElevation(course, x, y));
+          const point = minimapCanvasPoint(iso, transform);
+          if (!owned.has(estate.parcels[parcelIndex].id)) drawDiamond(ctx, point, transform.scale, "rgba(9,15,18,.35)");
+          const boundary = x === 0 || y === 0 || x === course.width - 1 || y === course.height - 1 || parcelMap[index - 1] !== parcelIndex || parcelMap[index + 1] !== parcelIndex || parcelMap[index - course.width] !== parcelIndex || parcelMap[index + course.width] !== parcelIndex;
+          if (boundary) strokeDiamond(ctx, point, transform.scale, owned.has(estate.parcels[parcelIndex].id) ? "rgba(117,220,135,.75)" : "rgba(255,239,188,.52)");
         }
       }
       const markerHoles = hole ? [hole] : course.holes;

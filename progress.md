@@ -297,3 +297,24 @@ Previous prompt: Let’s do m14 in linear for this project
 
 - Confirmed the M24 working copy computes `textMemberRating` inside the early text-state effect and no longer references the later `rating` memo from that effect or its dependency list, eliminating TS2448/TS2454.
 - `npm run build` passes and injects 22 offline assets; only the existing Vite chunk-size/dynamic-import warnings remain.
+
+## 2026-07-21 — M25 land estates and parcel acquisition
+
+- Current request: “Implement m25 from linear project”. Linear scope resolved as ZK-238 through ZK-242.
+- Expanded new courses to deterministic 220×140 estates with a centered 110×70 starter parcel, eight irregular neighboring parcels, exact parcel lookup/adjacency, localized traits, fixed itemized appraisals, and compact RLE parcel/natural-baseline persistence.
+- Added schema-v8 migration that centers legacy 110×70 courses and translates holes, tee sets, pins, waypoints, props, buildings, decorations, golfers, balls, shot segments, concessions, and transaction coordinates while preserving the original starter land.
+- Made ownership authoritative across paint, sculpt, holes, waypoints, obstacles, buildings, and decorations. Adjacent affordable purchases are reducer-atomic and preserve the immutable natural baseline.
+- Added an accessible Land Office with keyboard parcel selection, center-on-parcel controls, two-step purchase confirmation, affordability/adjacency guidance, renderer and minimap survey overlays, localized text, accessible feedback, and deterministic text-state output.
+
+## M25 verification
+
+- Full unit suite: 45 files, 305 tests passed, one intentional skip. Focused estate, scenario, course-rating, tournament, and render-fixture coverage also passes in isolation.
+- Production build and lint/i18n guards pass; lint reports seven existing React hook warnings and no errors. `git diff --check` passes.
+- M25 Playwright acceptance passes keyboard survey, centering, two-step purchase, exact cash deduction, ownership state, and screenshot coverage.
+- The bundled web-game client passed deterministic M25 state extraction; its minimap capture and the full Land Office purchase capture were visually inspected.
+- The legacy onboarding playthrough reaches all nine holes and completes the twelve-step lesson on the expanded estate; its scripted routes were moved away from the tutorial card and the weak-hole advisor threshold now includes an exact score of 55.
+
+## M25 remaining
+
+- None for M25. ZK-238 through ZK-242 are documented and marked Done in Linear.
+- The legacy M14 playthrough reached graduation on the expanded estate, then exposed a post-graduation weak-hole advisor comparison against an unrounded 55.x score. The comparison now uses the same rounded score shown in the HUD; its focused unit coverage and production build pass, but the final seven-minute browser replay was not repeated after that last one-line alignment.

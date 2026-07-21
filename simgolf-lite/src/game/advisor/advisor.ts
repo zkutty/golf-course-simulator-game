@@ -82,7 +82,7 @@ export function advisorMessages(
     });
   }
   const worst = valid.slice().sort((a, b) => a.overallHoleScore - b.overallHoleScore)[0];
-  if (worst && worst.overallHoleScore < 55) {
+  if (worst && Math.round(worst.overallHoleScore) <= 55) {
     const holeIndex = holes.holes.indexOf(worst);
     messages.push({
       id: `weak-hole-${holeIndex}-${world.week}`,

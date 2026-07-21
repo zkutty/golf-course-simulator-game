@@ -2,7 +2,8 @@
  * Course grid dimensions
  * These constants define the default course size and can be easily changed.
  * 
- * Current size: 110x70 tiles
+ * Current estate size: 220x140 tiles. The original 110x70 course remains
+ * the central starter parcel so legacy layouts migrate without cropping.
  * At 10 yards/tile, this gives:
  * - Total area: ~1,100 x 700 yards = ~770,000 sq yards = ~159 acres
  * - Suitable for a realistic 9-hole layout with:
@@ -10,8 +11,10 @@
  *   - Mostly par 4s (medium holes)
  *   - 1 par 5 (long hole)
  */
-export const COURSE_WIDTH = 110;
-export const COURSE_HEIGHT = 70;
+export const STARTER_PARCEL_WIDTH = 110;
+export const STARTER_PARCEL_HEIGHT = 70;
+export const COURSE_WIDTH = 220;
+export const COURSE_HEIGHT = 140;
 
 /**
  * Course boundary configuration
@@ -45,4 +48,3 @@ export function isWithinCourseBoundary(x: number, y: number): boolean {
   const normalizedY = dy / COURSE_BOUNDARY.radiusY;
   return normalizedX * normalizedX + normalizedY * normalizedY <= 1;
 }
-

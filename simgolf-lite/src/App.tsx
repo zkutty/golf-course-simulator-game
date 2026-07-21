@@ -93,6 +93,8 @@ import { PhotoModeOverlay } from "./ui/retention/PhotoModeOverlay";
 import { captureCourseCanvas, createCourseCard, downloadBlob, shareBlob } from "./utils/photoCapture";
 import { usePwa } from "./hooks/usePwa";
 import { TournamentPanel } from "./ui/TournamentPanel";
+import { LandOfficePanel } from "./ui/LandOfficePanel";
+import { isOwnedTile } from "./game/estate/estate";
 import {
   concessionMinReputation,
   isConcessionUnlocked,
@@ -257,6 +259,8 @@ export default function App() {
   const audio = useAudio();
   const [showRetention, setShowRetention] = useState(false);
   const [showTournaments, setShowTournaments] = useState(false);
+  const [showLandOffice, setShowLandOffice] = useState(false);
+  const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [showProgression, setShowProgression] = useState(false);
   const [showLiveOverview, setShowLiveOverview] = useState(false);
   const [followSelected, setFollowSelected] = useState(false);
@@ -400,13 +404,16 @@ export default function App() {
     const isM22Fixture = fixtureParams.get("m22Fixture") === "1";
     const isM23Fixture = fixtureParams.get("m23Fixture") === "1";
     const isM24Fixture = fixtureParams.get("m24Fixture") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture) return;
+    const isM25Fixture = fixtureParams.get("m25Fixture") === "1";
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
     const requestedTheme = fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = requestedTheme === "links" || requestedTheme === "desert" ? requestedTheme : "parkland";
-    const fixtureCourse = isM24Fixture
+    const fixtureCourse = isM25Fixture
+      ? createNewGame({ mode: "sandbox", courseName: "M25 Survey Estate", seed: 250025, theme: fixtureTheme, difficulty: "normal", sandboxOverrides: { startingCash: 500_000 } }).course
+      : isM24Fixture
       ? createTournamentStandardsCourse()
       : isM23Fixture
       ? createM23CourseSetupReferenceCourse()
@@ -422,7 +429,7 @@ export default function App() {
     const fixtureWorld = {
       ...gameStateRef.current.world,
       week: 1,
-      cash: 250_000,
+      cash: isM25Fixture ? 500_000 : 250_000,
       reputation: Number.isFinite(fixtureRep) ? Math.max(0, Math.min(100, fixtureRep)) : 95,
       runSeed: 12160,
       isBankrupt: false,
@@ -893,6 +900,8 @@ export default function App() {
     setDraftGreen(null);
     setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
     setPaintError(null);
+    setShowLandOffice(false);
+    setSelectedParcelId(newCourse.estate?.starterParcelId ?? null);
     setObstacleType("tree");
     setFlyoverNonce(0);
     setPeakCash(newWorld.cash);
@@ -1028,6 +1037,13 @@ export default function App() {
         activePinRotation: course.activePinRotation ?? "A",
         teeRatings: Object.fromEntries(Object.entries(textTeeRatings).map(([teeSet, summary]) => [teeSet, { rating: summary.courseRating, slope: summary.slope, yardage: summary.effectiveYardage, complete: summary.setupComplete, deltas: summary.rotationDeltas }])),
         holeSetups: course.holes.map((hole) => ({ teeBoxes: hole.teeBoxes ?? { member: hole.tee }, pinPositions: hole.pinPositions ?? { A: hole.green } })),
+        estate: course.estate ? {
+          generationVersion: course.estate.generationVersion,
+          ownedParcelIds: course.estate.ownedParcelIds,
+          landOfficeOpen: showLandOffice,
+          selectedParcelId,
+          parcels: course.estate.parcels.map((parcel) => ({ id: parcel.id, name: parcel.name, center: parcel.center, acreage: parcel.acreage, traits: parcel.traits, adjacent: parcel.adjacentParcelIds, owned: course.estate!.ownedParcelIds.includes(parcel.id), affordable: world.cash >= parcel.appraisal.total, price: parcel.appraisal.total })),
+        } : null,
       },
       camera: { center: audioCameraCenter, viewMode, renderer: "pixi" },
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null },
@@ -1052,7 +1068,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, selectedParcelId, showLandOffice, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1212,10 +1228,24 @@ export default function App() {
     dispatch({ type: "TAKE_LOAN", kind: "EXPANSION" });
   }
 
+  function purchaseParcel(parcelId: string) {
+    const parcel = course.estate?.parcels.find((entry) => entry.id === parcelId);
+    if (!parcel) return;
+    dispatch({ type: "PURCHASE_PARCEL", parcelId });
+    setA11yMessage(t("land.purchased", { name: parcel.name }));
+    setPaintError(null);
+  }
+
   function applyTileChange(idx: number, next: Terrain, opts?: { silent?: boolean }): boolean {
     if (world.isBankrupt) return false;
     if (!isTerrainUnlocked(next, world.reputation)) {
       setPaintError(t("progression.locked", { reputation: terrainMinReputation(next) }));
+      return false;
+    }
+    const x = idx % course.width;
+    const y = Math.floor(idx / course.width);
+    if (!isOwnedTile(course, x, y)) {
+      if (!opts?.silent) setPaintError(t("land.buildBlocked"));
       return false;
     }
     const prev = course.tiles[idx];
@@ -1226,9 +1256,6 @@ export default function App() {
     }
     if (prev === next) return true;
 
-    const x = idx % course.width;
-    const y = Math.floor(idx / course.width);
-    
     // Dispatch PAINT_TILES action
     dispatch({
       type: "PAINT_TILES",
@@ -1497,6 +1524,10 @@ export default function App() {
     if (world.isBankrupt) return;
     // Unlock audio on first canvas interaction
     void audio.unlock();
+    if (x >= 0 && y >= 0 && x < course.width && y < course.height && !isOwnedTile(course, x, y)) {
+      setPaintError(t("land.buildBlocked"));
+      return;
+    }
     
     // Check bounds (only for marker placement, not for painting which supports infinite canvas)
     if (editorMode === "HOLE_WIZARD" && (x < 0 || y < 0 || x >= course.width || y >= course.height)) {
@@ -2124,6 +2155,8 @@ export default function App() {
                 activeShotPlan={activeShotPlan}
                 tileSize={tileSize}
                 showGridOverlays={viewMode === "ARCHITECT"}
+                surveyMode={showLandOffice}
+                selectedParcelId={selectedParcelId}
                 animationsEnabled={effectiveAnimations}
                 ambienceFx={appProfile.graphics.ambienceFx}
                 waterAnimation={appProfile.graphics.waterAnimation}
@@ -2174,11 +2207,13 @@ export default function App() {
               <button onClick={() => setShowRetention(true)}>🏆 {t("retention.open")}</button>
               <button data-testid="open-progression" aria-pressed={showProgression} onClick={() => setShowProgression((open) => !open)}>⭐ {t("progression.open")} · {reputationTier(world.reputation).name}</button>
               <button data-testid="open-tournaments" aria-pressed={showTournaments} onClick={() => setShowTournaments((open) => !open)}>⛳ {t("tournament.open")}{live.status.tournament ? " •" : ""}</button>
+              <button data-testid="open-land-office" aria-pressed={showLandOffice} onClick={() => { setShowLandOffice((open) => !open); setSelectedParcelId((current) => current ?? course.estate?.starterParcelId ?? null); }}>🗺️ {t("land.open")}</button>
               <button aria-pressed={appProfile.gameplay.tickerVisible} onClick={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: !appProfile.gameplay.tickerVisible } })}>📰 {t("retention.ticker")}</button>
               <button onClick={() => enterPhotoMode(false)}>📷 {t("retention.photo")}</button>
             </div>}
             {showProgression && !tutorialProgress && <ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} />}
             {showTournaments && !tutorialProgress && <TournamentPanel course={course} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
+            {showLandOffice && !tutorialProgress && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
             {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
             {!tutorialProgress && <HoleMinimap

@@ -104,6 +104,52 @@ export interface Decoration {
   span?: number;
 }
 
+export interface ParcelAppraisal {
+  acreage: number;
+  landValue: number;
+  developableValue: number;
+  roadAccessValue: number;
+  sceneryValue: number;
+  waterValue: number;
+  elevationValue: number;
+  pressureValue: number;
+  total: number;
+}
+
+export interface EstateParcel {
+  id: string;
+  name: string;
+  tileCount: number;
+  acreage: number;
+  center: Point;
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+  adjacentParcelIds: string[];
+  publicRoadAccess: boolean;
+  developablePercent: number;
+  waterPercent: number;
+  elevationRange: number;
+  sceneryScore: number;
+  traits: string[];
+  appraisal: ParcelAppraisal;
+}
+
+export interface EstateBaseline {
+  /** Compact row-major RLE. It is intentionally immutable after generation. */
+  terrainRle: string;
+  elevationRle: string;
+}
+
+export interface Estate {
+  generationVersion: 1;
+  seed: number;
+  starterParcelId: string;
+  ownedParcelIds: string[];
+  /** Compact row-major parcel indexes into `parcels`. */
+  parcelMapRle: string;
+  parcels: EstateParcel[];
+  naturalBaseline: EstateBaseline;
+}
+
 export interface Course {
   width: number;
   height: number;
@@ -129,6 +175,8 @@ export interface Course {
   // Land theme the wild land was generated with (ZKU-162/166). Older saves
   // migrate to "parkland" (the identity theme) on load.
   theme?: LandTheme;
+  /** M25 land ownership and immutable surveyed-land record. */
+  estate?: Estate;
 }
 
 export interface World {

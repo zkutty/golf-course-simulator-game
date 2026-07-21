@@ -59,6 +59,7 @@ export type EconomyMutationAction =
   | { type: "PLACE_DECORATION"; decoration: Decoration }
   | { type: "REMOVE_DECORATION"; x: number; y: number }
   | { type: "TAKE_LOAN"; kind: "BRIDGE" | "EXPANSION" }
+  | { type: "PURCHASE_PARCEL"; parcelId: string }
   | { type: "SIMULATE_WEEK"; course: Course; world: World };
 
 // UI-only actions (do not affect versions)

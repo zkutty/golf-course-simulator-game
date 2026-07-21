@@ -8,6 +8,7 @@ import type {
   LandTheme,
 } from "./types";
 import { maxSlopeInRect } from "./elevation";
+import { isOwnedTile } from "../estate/estate";
 
 /**
  * Building registry + placement rules (ZKU-152).
@@ -145,6 +146,9 @@ export function canPlaceBuilding(
   const spec = BUILDING_SPECS[type];
   if (x < 0 || y < 0 || x + spec.w > course.width || y + spec.d > course.height) {
     return { ok: false, reason: "out of bounds" };
+  }
+  for (let ty = y; ty < y + spec.d; ty++) for (let tx = x; tx < x + spec.w; tx++) {
+    if (!isOwnedTile(course, tx, ty)) return { ok: false, reason: "land is not owned" };
   }
   if (maxSlopeInRect(course, x, y, x + spec.w - 1, y + spec.d - 1) > 1) {
     return { ok: false, reason: "site too steep" };

@@ -8,7 +8,6 @@ import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSaveResult } from "../utils
 import { DEFAULT_WORLD } from "./models/defaults";
 import { createLiveState, stepLive } from "./live/simulation";
 import { LIVE } from "./live/liveConfig";
-import { hashGameState } from "../utils/stateHash";
 
 function configuredCourse() {
   const base = createReferenceCourse();
@@ -34,13 +33,13 @@ describe("M23 course setup model", () => {
     const result = normalizeLoadedSaveResult({ schemaVersion: 6, savedAt: 1, course: legacy, world: DEFAULT_WORLD });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(CURRENT_SAVE_SCHEMA_VERSION).toBe(7);
+    expect(CURRENT_SAVE_SCHEMA_VERSION).toBe(8);
     expect(result.migratedFrom).toBe(6);
-    expect(getTeeBox(result.payload.course.holes[0], "member")).toEqual(legacy.holes[0].tee);
-    expect(getPinPosition(result.payload.course.holes[0], "A")).toEqual(legacy.holes[0].green);
+    expect(getTeeBox(result.payload.course.holes[0], "member")).toEqual({ x: legacy.holes[0].tee!.x + 55, y: legacy.holes[0].tee!.y + 35 });
+    expect(getPinPosition(result.payload.course.holes[0], "A")).toEqual({ x: legacy.holes[0].green!.x + 55, y: legacy.holes[0].green!.y + 35 });
     expect(getTeeBox(result.payload.course.holes[0], "forward")).toBeNull();
     expect(result.payload.course.activePinRotation).toBe("A");
-    expect(hashGameState({ course: legacy, world: DEFAULT_WORLD })).toBe(hashGameState({ course: result.payload.course, world: result.payload.world }));
+    expect(result.payload.course.estate?.ownedParcelIds).toEqual(["parcel-5"]);
   });
 
   it("edits markers atomically and rejects duplicate, non-green, and misordered setup", () => {

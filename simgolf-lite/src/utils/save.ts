@@ -33,9 +33,11 @@ import type { CourseRecords } from "../game/retention/types";
 import { normalizeTournamentCalendar } from "../game/tournaments/tournaments";
 import { DECORATION_KINDS, normalizedDecoration } from "../game/models/decorations";
 import { PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSetup } from "../game/models/courseSetup";
+import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
+import { createEstate, starterParcelOffset, validateEstate } from "../game/estate/estate";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 7 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 8 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -80,6 +82,10 @@ export interface SaveV6 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV7 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 7;
+  records?: CourseRecords;
+}
+export interface SaveV8 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -103,7 +109,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV7 = {
+  const save: SaveV8 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -120,7 +126,7 @@ export function saveGame(payload: SavePayload) {
  * Migrate an old course grid to the new size
  * Copies old grid into top-left of new grid, clamping out-of-bounds elements
  */
-function migrateCourseGrid(oldCourse: Course): Course {
+function migrateCourseGrid(oldCourse: Course, runSeed: number): { course: Course; offset: Point } {
   const oldWidth = oldCourse.width;
   const oldHeight = oldCourse.height;
   const newWidth = COURSE_WIDTH;
@@ -128,16 +134,17 @@ function migrateCourseGrid(oldCourse: Course): Course {
 
   // If already correct size, return as-is
   if (oldWidth === newWidth && oldHeight === newHeight) {
-    return oldCourse;
+    return { course: oldCourse, offset: { x: 0, y: 0 } };
   }
 
-  // Create new grid filled with rough (elevations default to base level)
-  const newTiles: Course["tiles"] = Array.from({ length: newWidth * newHeight }, () => "rough" as const);
-  const newElevations: number[] = new Array(newWidth * newHeight).fill(0);
+  // Generate the newly exposed estate first, then preserve the complete old
+  // property in the exact central starter footprint.
+  const generated = generateWildLandWithObstacles(newWidth, newHeight, runSeed | 0, [], oldCourse.theme ?? "parkland");
+  const newTiles: Course["tiles"] = generated.tiles;
+  const newElevations: number[] = generated.elevations;
 
   // Copy old tiles into top-left (centered would be: offsetX = (newWidth - oldWidth) / 2)
-  const offsetX = 0; // Top-left alignment
-  const offsetY = 0; // Top-left alignment
+  const { x: offsetX, y: offsetY } = starterParcelOffset(newWidth, newHeight);
 
   for (let y = 0; y < oldHeight; y++) {
     for (let x = 0; x < oldWidth; x++) {
@@ -171,19 +178,23 @@ function migrateCourseGrid(oldCourse: Course): Course {
       green: clampPoint(hole.green),
       teeBoxes: Object.fromEntries(TEE_SETS.map((set) => [set, clampPoint(hole.teeBoxes?.[set] ?? (set === "member" ? hole.tee : null))])),
       pinPositions: Object.fromEntries(PIN_ROTATIONS.map((rotation) => [rotation, clampPoint(hole.pinPositions?.[rotation] ?? (rotation === "A" ? hole.green : null))])),
+      waypoints: hole.waypoints?.map((point) => clampPoint(point)!).filter(Boolean),
     };
   });
 
   // Migrate obstacles: clamp positions, remove out-of-bounds
-  const migratedObstacles: Obstacle[] = (oldCourse.obstacles ?? [])
+  const exteriorObstacles = generated.obstacles.filter((obs) =>
+    obs.x < offsetX || obs.y < offsetY || obs.x >= offsetX + oldWidth || obs.y >= offsetY + oldHeight
+  );
+  const migratedObstacles: Obstacle[] = [...exteriorObstacles, ...(oldCourse.obstacles ?? [])
     .map((obs) => ({
       ...obs,
       x: obs.x + offsetX,
       y: obs.y + offsetY,
     }))
-    .filter((obs) => obs.x >= 0 && obs.x < newWidth && obs.y >= 0 && obs.y < newHeight);
+    .filter((obs) => obs.x >= 0 && obs.x < newWidth && obs.y >= 0 && obs.y < newHeight)];
 
-  return {
+  const course: Course = {
     ...oldCourse,
     width: newWidth,
     height: newHeight,
@@ -191,13 +202,43 @@ function migrateCourseGrid(oldCourse: Course): Course {
     elevations: newElevations,
     holes: migratedHoles,
     obstacles: migratedObstacles,
-    buildings: (oldCourse.buildings ?? []).filter(
-      (b) => b.x >= 0 && b.y >= 0 && b.x < newWidth && b.y < newHeight
-    ),
-    decorations: (oldCourse.decorations ?? []).filter((decoration) =>
-      decoration.x >= 0 && decoration.y >= 0 && decoration.x < newWidth && decoration.y < newHeight
-    ),
+    buildings: (oldCourse.buildings ?? []).map((b) => ({ ...b, x: b.x + offsetX, y: b.y + offsetY })),
+    decorations: (oldCourse.decorations ?? []).map((decoration) => ({ ...decoration, x: decoration.x + offsetX, y: decoration.y + offsetY })),
   };
+  course.estate = createEstate(course, runSeed);
+  return { course, offset: { x: offsetX, y: offsetY } };
+}
+
+function translateLiveSnapshot(raw: unknown, offset: Point): unknown {
+  if (!raw || typeof raw !== "object" || (offset.x === 0 && offset.y === 0)) return raw;
+  const snapshot = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
+  const state = snapshot.state as Record<string, unknown> | undefined;
+  if (!state || !Array.isArray(state.golfers)) return raw;
+  const move = (point: unknown) => {
+    if (point && typeof point === "object") {
+      const p = point as Record<string, unknown>;
+      if (typeof p.x === "number" && typeof p.y === "number") { p.x += offset.x; p.y += offset.y; }
+    }
+  };
+  for (const rawGolfer of state.golfers) {
+    const golfer = rawGolfer as Record<string, unknown>;
+    move(golfer.pos); move(golfer.ball);
+    if (Array.isArray(golfer.segments)) for (const rawSegment of golfer.segments) {
+      const segment = rawSegment as Record<string, unknown>;
+      move(segment.from); move(segment.to);
+      const concession = segment.concession as Record<string, unknown> | undefined;
+      if (concession && typeof concession.buildingX === "number" && typeof concession.buildingY === "number") {
+        concession.buildingX += offset.x; concession.buildingY += offset.y;
+      }
+    }
+  }
+  if (Array.isArray(state.concessionTransactions)) for (const rawTransaction of state.concessionTransactions) {
+    const transaction = rawTransaction as Record<string, unknown>;
+    if (typeof transaction.buildingX === "number" && typeof transaction.buildingY === "number") {
+      transaction.buildingX += offset.x; transaction.buildingY += offset.y;
+    }
+  }
+  return snapshot;
 }
 
 export interface SavePayload {
@@ -310,6 +351,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V7 introduces typed tee sets and pin rotations. The normalizer mirrors
   // every legacy tee/green into Member/A without altering terrain or routes.
   6: (save) => ({ ...save, schemaVersion: 7 }),
+  // V8 introduces the full estate. Spatial translation and estate synthesis
+  // happen in the normalizer where validated course/world data is available.
+  7: (save) => ({ ...save, schemaVersion: 8 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World): CourseRecords {
@@ -472,7 +516,17 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
 
     // Migrate if grid size differs, then guarantee a well-formed
     // elevations array (pre-elevation saves load flat — ZKU-143).
-    const course = withNormalizedElevations(migrateCourseGrid(loadedCourse));
+    const isLegacyStarterGrid = migrated.migratedFrom != null && rawWidth === 110 && rawHeight === 70;
+    const migratedGrid = isLegacyStarterGrid
+      ? migrateCourseGrid(loadedCourse, (parsed.world as unknown as World).runSeed)
+      : { course: loadedCourse, offset: { x: 0, y: 0 } };
+    let course = withNormalizedElevations(migratedGrid.course);
+    if (rawCourse.estate && !validateEstate(rawCourse.estate, rawWidth, rawHeight)) {
+      return fail("INVALID_COURSE", "The saved estate, ownership, or natural-land baseline is malformed.");
+    }
+    if (!course.estate && migrated.migratedFrom != null && course.width === COURSE_WIDTH && course.height === COURSE_HEIGHT) {
+      course = { ...course, estate: createEstate(course, (parsed.world as unknown as World).runSeed) };
+    }
     for (const hole of course.holes) {
       if (validateHoleCourseSetup(course, hole).length > 0) {
         return fail("INVALID_COURSE", "The saved tee and pin setup is invalid.");
@@ -505,11 +559,12 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     const tutorial = normalizeTutorialProgress(parsed.tutorial);
     let live: LiveSimulationSnapshotV1 | undefined;
     if (parsed.live != null) {
-      const restored = restoreLiveSimulation(parsed.live);
+      const translatedLive = translateLiveSnapshot(parsed.live, migratedGrid.offset);
+      const restored = restoreLiveSimulation(translatedLive);
       if (!restored) {
         return fail("INVALID_LIVE_STATE", "The saved live simulation state is malformed.");
       }
-      live = parsed.live as unknown as LiveSimulationSnapshotV1;
+      live = translatedLive as LiveSimulationSnapshotV1;
     }
     return {
       ok: true,

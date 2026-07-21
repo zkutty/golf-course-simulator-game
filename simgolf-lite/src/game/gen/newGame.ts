@@ -3,11 +3,12 @@ import type { GameSetup } from "../models/setup";
 import type { GoalDefinition } from "../models/objectives";
 import { createObjectiveState } from "../models/objectives";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
-import { COURSE_WIDTH, COURSE_HEIGHT } from "../models/constants";
+import { COURSE_WIDTH, COURSE_HEIGHT, STARTER_PARCEL_HEIGHT, STARTER_PARCEL_WIDTH } from "../models/constants";
 import { findClubhouseSpot } from "../models/buildings";
 import { CHALLENGE_GOALS } from "../objectives/goals";
 import { getDifficultyProfile } from "../balance/difficulty";
 import { generateWildLandWithObstacles } from "./generateWildLand";
+import { createEstate, starterParcelOffset } from "../estate/estate";
 
 /**
  * THE new-game path (ZKU-162): every fresh run — wizard, quick start, defeat
@@ -29,6 +30,28 @@ export function createNewGame(
     [], // no reserved zones — holes aren't placed yet
     setup.theme
   );
+  // Preserve the original seeded 110x70 land experience inside the starter
+  // property. Estate-scale generation supplies the eight outer surveys;
+  // the centered overlay keeps established seeds/tutorial routes familiar.
+  const starter = generateWildLandWithObstacles(
+    STARTER_PARCEL_WIDTH,
+    STARTER_PARCEL_HEIGHT,
+    seed,
+    [],
+    setup.theme
+  );
+  const offset = starterParcelOffset();
+  for (let y = 0; y < STARTER_PARCEL_HEIGHT; y++) for (let x = 0; x < STARTER_PARCEL_WIDTH; x++) {
+    const source = y * STARTER_PARCEL_WIDTH + x;
+    const target = (y + offset.y) * COURSE_WIDTH + x + offset.x;
+    tiles[target] = starter.tiles[source];
+    elevations[target] = starter.elevations[source];
+  }
+  for (let index = obstacles.length - 1; index >= 0; index--) {
+    const obstacle = obstacles[index];
+    if (obstacle.x >= offset.x && obstacle.x < offset.x + STARTER_PARCEL_WIDTH && obstacle.y >= offset.y && obstacle.y < offset.y + STARTER_PARCEL_HEIGHT) obstacles.splice(index, 1);
+  }
+  obstacles.push(...starter.obstacles.map((obstacle) => ({ ...obstacle, x: obstacle.x + offset.x, y: obstacle.y + offset.y })));
 
   const course: Course = {
     ...DEFAULT_COURSE,
@@ -70,6 +93,7 @@ export function createNewGame(
       course.obstacles.push({ ...point, type: index % 4 === 0 ? "tree" : "bush" });
     }
   }
+  course.estate = createEstate(course, seed);
 
   const effectiveGoals =
     goals !== undefined ? goals : setup.mode === "challenge" ? CHALLENGE_GOALS : null;

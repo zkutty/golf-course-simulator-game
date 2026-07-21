@@ -6,6 +6,7 @@ import { hitsLiquidityTrap } from "../game/sim/runState";
 import { terrainCostMult } from "../game/balance/difficulty";
 import {
   BUILDING_SPECS,
+  buildingTiles,
   buildingAtTile,
   canPlaceBuilding,
   isConcessionType,
@@ -13,7 +14,7 @@ import {
 import { getEffectiveBalance } from "../game/balance/difficulty";
 import { createLoan } from "../game/sim/loans";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
-import { canPlaceDecoration, decorationAtTile, decorationCost, decorationSpec } from "../game/models/decorations";
+import { canPlaceDecoration, decorationAtTile, decorationCost, decorationSpec, decorationTiles } from "../game/models/decorations";
 import {
   getPinPosition,
   getTeeBox,
@@ -23,6 +24,7 @@ import {
   withNormalizedHoleSetup,
 } from "../game/models/courseSetup";
 import { revalidateScheduledTournaments } from "../game/tournaments/tournaments";
+import { canPurchaseParcel, isOwnedTile } from "../game/estate/estate";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -54,8 +56,10 @@ export function applyAction(state: GameState, action: Action): GameState {
       // Update tiles and economy
       const newTiles = state.course.tiles.slice();
       let cashDelta = 0;
+      let changed = false;
 
       for (const { x, y, terrain } of action.tiles) {
+        if (!isOwnedTile(state.course, x, y)) continue;
         const idx = y * state.course.width + x;
         if (idx >= 0 && idx < newTiles.length) {
           const prev = newTiles[idx];
@@ -63,9 +67,12 @@ export function applyAction(state: GameState, action: Action): GameState {
             const cost = computeTerrainChangeCost(prev, terrain, costMult, state.course.theme);
             cashDelta += cost.net;
             newTiles[idx] = terrain;
+            changed = true;
           }
         }
       }
+
+      if (!changed) break;
 
       newState = {
         ...newState,
@@ -91,6 +98,7 @@ export function applyAction(state: GameState, action: Action): GameState {
 
       for (const { x, y, delta } of action.deltas) {
         if (x < 0 || y < 0 || x >= state.course.width || y >= state.course.height) continue;
+        if (!isOwnedTile(state.course, x, y)) continue;
         const idx = y * state.course.width + x;
         const prev = newElevations[idx] ?? 0;
         const next = clampElevation(prev + delta);
@@ -120,6 +128,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     case "PLACE_TEE": {
       const hole = state.course.holes[action.holeIndex];
       if (!hole) break;
+      if (!isOwnedTile(state.course, action.position.x, action.position.y)) break;
 
       const idx = action.position.y * state.course.width + action.position.x;
       if (idx < 0 || idx >= state.course.tiles.length) break;
@@ -159,6 +168,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     case "MOVE_TEE": {
       const hole = state.course.holes[action.holeIndex];
       if (!hole || !hole.tee) break;
+      if (!isOwnedTile(state.course, action.position.x, action.position.y)) break;
 
       const oldIdx = action.oldPosition.y * state.course.width + action.oldPosition.x;
       const newIdx = action.position.y * state.course.width + action.position.x;
@@ -206,6 +216,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     case "PLACE_GREEN": {
       const hole = state.course.holes[action.holeIndex];
       if (!hole) break;
+      if (!isOwnedTile(state.course, action.position.x, action.position.y)) break;
 
       const idx = action.position.y * state.course.width + action.position.x;
       if (idx < 0 || idx >= state.course.tiles.length) break;
@@ -245,6 +256,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     case "MOVE_GREEN": {
       const hole = state.course.holes[action.holeIndex];
       if (!hole || !hole.green) break;
+      if (!isOwnedTile(state.course, action.position.x, action.position.y)) break;
 
       const oldIdx = action.oldPosition.y * state.course.width + action.oldPosition.x;
       const newIdx = action.position.y * state.course.width + action.position.x;
@@ -288,6 +300,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       const hole = state.course.holes[action.holeIndex];
       if (!hole) break;
       const { x, y } = action.position;
+      if (!isOwnedTile(state.course, x, y)) break;
       if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= state.course.width || y >= state.course.height) break;
       if (getTeeBox(hole, action.teeSet) && samePoint(getTeeBox(hole, action.teeSet), action.position)) break;
       if (isSetupPointUsedByAnotherTee(hole, action.teeSet, action.position)) break;
@@ -353,6 +366,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       const hole = state.course.holes[action.holeIndex];
       if (!hole) break;
       const { x, y } = action.position;
+      if (!isOwnedTile(state.course, x, y)) break;
       if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= state.course.width || y >= state.course.height) break;
       if (state.course.tiles[y * state.course.width + x] !== "green") break;
       if (["A", "B", "C"].some((rotation) => rotation !== action.pinRotation && samePoint(getPinPosition(hole, rotation as "A" | "B" | "C"), action.position))) break;
@@ -389,6 +403,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
 
     case "PLACE_OBSTACLE": {
+      if (!isOwnedTile(state.course, action.x, action.y)) break;
       const existingIdx = state.course.obstacles.findIndex(
         (o) => o.x === action.x && o.y === action.y
       );
@@ -411,6 +426,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
 
     case "REMOVE_OBSTACLE": {
+      if (!isOwnedTile(state.course, action.x, action.y)) break;
       // Scenario constraint (ZKU-164): heritage trees can't be removed.
       if (state.world.constraints?.protectedTrees) {
         const target = state.course.obstacles.find((o) => o.x === action.x && o.y === action.y);
@@ -431,6 +447,8 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
 
     case "PLACE_BUILDING": {
+      const footprint = buildingTiles({ type: action.buildingType, x: action.x, y: action.y });
+      if (footprint.some((tile) => !isOwnedTile(state.course, tile.x, tile.y))) break;
       const validation = canPlaceBuilding(state.course, action.buildingType, action.x, action.y);
       if (!validation.ok) break;
       const spec = BUILDING_SPECS[action.buildingType];
@@ -461,6 +479,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     case "REMOVE_BUILDING": {
       const target = buildingAtTile(state.course, action.x, action.y);
       if (!target || target.type === "clubhouse") break;
+      if (buildingTiles(target).some((tile) => !isOwnedTile(state.course, tile.x, tile.y))) break;
       const salvage = Math.round(BUILDING_SPECS[target.type].buildCost * 0.35);
       newState = {
         ...newState,
@@ -492,6 +511,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
 
     case "PLACE_DECORATION": {
+      if (decorationTiles(action.decoration).some((tile) => !isOwnedTile(state.course, tile.x, tile.y))) break;
       const validation = canPlaceDecoration(state.course, action.decoration);
       if (!validation.ok) break;
       const cost = decorationCost(action.decoration);
@@ -510,6 +530,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     case "REMOVE_DECORATION": {
       const target = decorationAtTile(state.course, action.x, action.y);
       if (!target) break;
+      if (decorationTiles(target).some((tile) => !isOwnedTile(state.course, tile.x, tile.y))) break;
       const salvage = Math.round(decorationCost(target) * decorationSpec(target.kind).salvageRate);
       newState = {
         ...newState,
@@ -525,6 +546,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       const target = decorationAtTile(state.course, action.x, action.y);
       if (!target) break;
       const rotated = { ...target, rotation: ((target.rotation + 1) % 4) as 0 | 1 | 2 | 3 };
+      if (decorationTiles(rotated).some((tile) => !isOwnedTile(state.course, tile.x, tile.y))) break;
       const withoutTarget = { ...state.course, decorations: (state.course.decorations ?? []).filter((entry) => entry !== target) };
       if (!canPlaceDecoration(withoutTarget, rotated).ok) break;
       newState = { ...newState, course: { ...state.course, decorations: (state.course.decorations ?? []).map((entry) => entry === target ? rotated : entry) } };
@@ -560,7 +582,28 @@ export function applyAction(state: GameState, action: Action): GameState {
       break;
     }
 
+    case "PURCHASE_PARCEL": {
+      const result = canPurchaseParcel(state.course, state.world.cash, action.parcelId);
+      if (!result.ok || !state.course.estate) break;
+      const cash = state.world.cash - result.parcel.appraisal.total;
+      newState = {
+        ...newState,
+        course: {
+          ...state.course,
+          estate: {
+            ...state.course.estate,
+            ownedParcelIds: [...state.course.estate.ownedParcelIds, result.parcel.id],
+          },
+        },
+        world: { ...state.world, cash, isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash) },
+      };
+      terrainVersion++;
+      economyVersion++;
+      break;
+    }
+
     case "ADD_WAYPOINT": {
+      if (!isOwnedTile(state.course, action.position.x, action.position.y)) break;
       const hole = state.course.holes[action.holeIndex];
       if (!hole) break;
 
@@ -581,6 +624,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
 
     case "UPDATE_WAYPOINT": {
+      if (!isOwnedTile(state.course, action.position.x, action.position.y)) break;
       const hole = state.course.holes[action.holeIndex];
       if (!hole || !hole.waypoints || action.waypointIndex < 0 || action.waypointIndex >= hole.waypoints.length) break;
 

@@ -3,6 +3,7 @@ import { COURSE_WIDTH, COURSE_HEIGHT } from "../models/constants";
 import { DEFAULT_COURSE } from "../models/defaults";
 import { findClubhouseSpot } from "../models/buildings";
 import { generateWildLand, generateObstacles } from "../gen/generateWildLand";
+import { createEstate, starterParcelOffset } from "../estate/estate";
 import type { FixtureKey } from "./types";
 
 // Authored prebuilt-course fixtures (ZKU-164). Deterministic: land from the
@@ -17,6 +18,7 @@ interface HoleSpec {
 
 /** Nine varied-length holes zig-zagging down the parcel. */
 function nineHoleLayout(): HoleSpec[] {
+  const offset = starterParcelOffset();
   const rows = [8, 15, 22, 29, 36, 43, 50, 57, 64];
   const lengths = [22, 13, 28, 17, 32, 12, 25, 15, 30]; // tiles ≈ yards/10
   return rows.map((y, i) => {
@@ -24,8 +26,8 @@ function nineHoleLayout(): HoleSpec[] {
     const x0 = 14;
     const x1 = x0 + lengths[i];
     return leftToRight
-      ? { tee: { x: x0, y }, green: { x: x1, y } }
-      : { tee: { x: x1, y }, green: { x: x0, y } };
+      ? { tee: { x: x0 + offset.x, y: y + offset.y }, green: { x: x1 + offset.x, y: y + offset.y } }
+      : { tee: { x: x1 + offset.x, y: y + offset.y }, green: { x: x0 + offset.x, y: y + offset.y } };
   });
 }
 
@@ -90,6 +92,7 @@ function paintCourse(args: {
   };
   const clubhouseSpot = findClubhouseSpot(course);
   course.buildings = clubhouseSpot ? [{ type: "clubhouse" as const, ...clubhouseSpot }] : [];
+  course.estate = createEstate(course, seed);
   return course;
 }
 

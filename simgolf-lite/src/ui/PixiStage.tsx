@@ -83,6 +83,7 @@ import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/ground
 import { pickNaturalProp, shouldFadeTallProp, type NaturalPropVariant } from "../game/render/naturalProps";
 import { isWaterHazard } from "../game/models/terrainRules";
 import { T } from "../i18n/T";
+import { decodeParcelMap } from "../game/estate/estate";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -159,6 +160,7 @@ const TERRAIN_PRIORITY: Record<Terrain, number> = {
 
 const MARKER_LABEL = "hole-marker";
 const ROUTE_LABEL = "route-overlay";
+const ESTATE_LABEL = "estate-overlay";
 
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 8;
@@ -324,6 +326,8 @@ export interface PixiStageProps {
   activeShotPlan?: ShotPlanStep[];
   tileSize: number;
   showGridOverlays: boolean;
+  surveyMode?: boolean;
+  selectedParcelId?: string | null;
   animationsEnabled: boolean;
   ambienceFx: boolean;
   waterAnimation: boolean;
@@ -1754,6 +1758,46 @@ export function PixiStage(props: PixiStageProps) {
       buildingSpritesRef.current.push(sprite);
     }
   }, [appReady, course, rotation]);
+
+  // Estate ownership veil and survey boundaries (M25). A single batched
+  // Graphics object keeps the expanded 220x140 map inexpensive to inspect.
+  useEffect(() => {
+    if (!appReady) return;
+    const layers = layersRef.current;
+    if (!layers) return;
+    const stale = layers.terrainDecals.children.filter((child) => child.label === ESTATE_LABEL);
+    stale.forEach((child) => { layers.terrainDecals.removeChild(child); child.destroy(); });
+    const estate = course.estate;
+    if (!estate) return;
+    const map = decodeParcelMap(estate, course.width * course.height);
+    if (!map) return;
+    const selectedIndex = estate.parcels.findIndex((parcel) => parcel.id === props.selectedParcelId);
+    const owned = new Set(estate.ownedParcelIds);
+    const fill = new PIXI.Graphics();
+    const boundary = new PIXI.Graphics();
+    const boundaryColor = props.colorVision === "tritanopia" ? 0xff4f8b : props.colorVision === "protanopia" ? 0x3f9cff : 0xffd45a;
+    const diamond = (graphics: PIXI.Graphics, x: number, y: number) => {
+      const top = worldToIso(x + 0.5, y, course.elevations[y * course.width + x] ?? 0, rotation);
+      graphics.poly([top.x, top.y, top.x + TILE_W / 2, top.y + TILE_H / 2, top.x, top.y + TILE_H, top.x - TILE_W / 2, top.y + TILE_H / 2]);
+    };
+    for (let y = 0; y < course.height; y++) for (let x = 0; x < course.width; x++) {
+      const index = y * course.width + x;
+      const parcelIndex = map[index];
+      const parcel = estate.parcels[parcelIndex];
+      const selected = parcelIndex === selectedIndex && props.surveyMode;
+      if (!owned.has(parcel.id) || selected) {
+        diamond(fill, x, y);
+        fill.fill({ color: selected ? boundaryColor : 0x111820, alpha: selected ? .2 : props.surveyMode ? .08 : .22 });
+      }
+      if (props.surveyMode) {
+        const differs = x === 0 || y === 0 || x === course.width - 1 || y === course.height - 1 || map[index - 1] !== parcelIndex || map[index + 1] !== parcelIndex || map[index - course.width] !== parcelIndex || map[index + course.width] !== parcelIndex;
+        if (differs) { diamond(boundary, x, y); boundary.stroke({ width: selected ? 2.4 : 1.2, color: selected ? boundaryColor : owned.has(parcel.id) ? 0x75dc87 : 0xf4eee0, alpha: selected ? .95 : .58 }); }
+      }
+    }
+    fill.label = ESTATE_LABEL; boundary.label = ESTATE_LABEL;
+    fill.eventMode = "none"; boundary.eventMode = "none";
+    layers.terrainDecals.addChild(fill, boundary);
+  }, [appReady, course.elevations, course.estate, course.height, course.width, props.colorVision, props.selectedParcelId, props.surveyMode, rotation]);
 
   // ---------------------------------------------------------------------
   // Objects layer — player-authored furniture, bridges, and boardwalks

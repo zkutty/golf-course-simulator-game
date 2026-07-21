@@ -1,6 +1,7 @@
 import { getElevation } from "./elevation";
 import { buildingAtTile } from "./buildings";
 import type { Course, Decoration, DecorationKind, DecorationRotation, LandTheme, Point, Terrain } from "./types";
+import { isOwnedTile } from "../estate/estate";
 
 export interface DecorationVisual {
   frame: string;
@@ -109,6 +110,7 @@ export function canPlaceDecoration(course: Course, decoration: Decoration): { ok
   const spec = decorationSpec(decoration.kind);
   const tiles = decorationTiles(decoration);
   if (tiles.some((tile) => tile.x < 0 || tile.y < 0 || tile.x >= course.width || tile.y >= course.height)) return { ok: false, reason: "out of bounds" };
+  if (tiles.some((tile) => !isOwnedTile(course, tile.x, tile.y))) return { ok: false, reason: "land is not owned" };
   if ((course.decorations ?? []).some((existing) => decorationTiles(existing).some((a) => tiles.some((b) => a.x === b.x && a.y === b.y)))) return { ok: false, reason: "overlaps course decor" };
   if (tiles.some((tile) => buildingAtTile(course, tile.x, tile.y))) return { ok: false, reason: "overlaps a building" };
   if (tiles.some((tile) => course.obstacles.some((obstacle) => obstacle.x === tile.x && obstacle.y === tile.y))) return { ok: false, reason: "blocked by a natural feature" };

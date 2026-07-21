@@ -10,12 +10,12 @@ const green = { x: 640, y: 400 };
 const remainingHoleRoutes = [
   [{ x: 360, y: 260 }, { x: 420, y: 290 }],
   [{ x: 440, y: 260 }, { x: 500, y: 290 }],
-  [{ x: 680, y: 380 }, { x: 740, y: 410 }],
+  [{ x: 500, y: 380 }, { x: 560, y: 410 }],
   [{ x: 400, y: 360 }, { x: 460, y: 390 }],
   [{ x: 500, y: 330 }, { x: 560, y: 360 }],
-  [{ x: 620, y: 380 }, { x: 670, y: 405 }],
-  [{ x: 300, y: 360 }, { x: 360, y: 390 }],
-  [{ x: 740, y: 330 }, { x: 800, y: 360 }],
+  [{ x: 620, y: 370 }, { x: 680, y: 400 }],
+  [{ x: 580, y: 260 }, { x: 640, y: 290 }],
+  [{ x: 600, y: 320 }, { x: 660, y: 350 }],
 ] as const;
 
 function tutorial(page: Page) {
@@ -53,8 +53,8 @@ async function gameCanvas(page: Page) {
 
 async function placeHole(page: Page, start = tee, end = green) {
   const canvas = await gameCanvas(page);
-  await canvas.click({ position: start });
-  await canvas.click({ position: end });
+  await canvas.click({ position: start, force: true });
+  await canvas.click({ position: end, force: true });
   await expect(page.getByText("click or Esc to skip")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByText("click or Esc to skip")).toHaveCount(0);
@@ -66,7 +66,7 @@ async function paintAndPlaceHole(page: Page, start: { x: number; y: number }, en
   const canvas = await gameCanvas(page);
   for (let index = 0; index < 13; index++) {
     const ratio = index / 12;
-    await canvas.click({ position: {
+    await canvas.click({ force: true, position: {
       x: start.x + (end.x - start.x) * ratio,
       y: start.y + (end.y - start.y) * ratio,
     } });

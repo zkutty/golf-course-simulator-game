@@ -11,6 +11,7 @@ import {
   recordScenarioCompleted,
 } from "../../utils/careerStore";
 import { normalizeLoadedSave } from "../../utils/save";
+import { isOwnedTile } from "../estate/estate";
 
 const METRICS = [
   "cash",
@@ -99,7 +100,7 @@ describe("scenario constraints in the reducer", () => {
   it("protected trees can't be removed; bushes still can", () => {
     const { course, world } = createScenarioGame(getScenario("links-by-the-sea")!);
     const tree = course.obstacles.find((o) => o.type === "tree");
-    const bush = course.obstacles.find((o) => o.type === "bush");
+    const bush = course.obstacles.find((o) => o.type === "bush" && isOwnedTile(course, o.x, o.y));
     expect(tree).toBeDefined();
     expect(bush).toBeDefined();
 
