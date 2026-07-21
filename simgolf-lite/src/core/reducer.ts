@@ -22,6 +22,7 @@ import {
   validateHoleCourseSetup,
   withNormalizedHoleSetup,
 } from "../game/models/courseSetup";
+import { revalidateScheduledTournaments } from "../game/tournaments/tournaments";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -649,6 +650,16 @@ export function applyAction(state: GameState, action: Action): GameState {
       void _exhaustive; // Suppress unused warning
       return state;
     }
+  }
+
+  // Rating-relevant edits immediately refresh warnings on future tournament
+  // bookings. Economy-only and UI-only changes intentionally do not churn the
+  // persisted qualification snapshots.
+  if (
+    newState.course !== state.course &&
+    (terrainVersion !== state.terrainVersion || obstaclesVersion !== state.obstaclesVersion || markersVersion !== state.markersVersion)
+  ) {
+    newState = { ...newState, world: revalidateScheduledTournaments(newState.course, newState.world) };
   }
 
   // Update version counters

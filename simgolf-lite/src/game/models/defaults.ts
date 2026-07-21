@@ -41,5 +41,5 @@ export const DEFAULT_WORLD: World = {
   objectives: null,
   mode: "sandbox",
   difficulty: "normal",
-  tournaments: { version: 1, events: [] },
+  tournaments: { version: 2, events: [] },
 };

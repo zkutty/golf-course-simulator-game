@@ -4,6 +4,9 @@ import { scoreCourseHoles } from "../sim/holes";
 import type { Translator } from "../../i18n/context";
 import { translate } from "../../i18n/core";
 import { formatCurrency, formatNumber } from "../../i18n/format";
+import { tournamentCalendar } from "../tournaments/tournaments";
+import type { TournamentRequirementId } from "../tournaments/types";
+import type { MessageKey } from "../../i18n/catalog";
 
 export type AdvisorExpression = "neutral" | "pleased" | "worried" | "excited";
 export type AdvisorPriority = "hint" | "info" | "celebration" | "warning";
@@ -29,6 +32,22 @@ export function advisorMessages(
   const holes = scoreCourseHoles(course);
   const valid = holes.holes.filter((hole) => hole.isComplete && hole.isValid);
   const weeklyExpenses = Math.max(1, last?.costs ?? world.maintenanceBudget + world.staffLevel * 500);
+  const invalidEvent = tournamentCalendar(world).events.find((event) => event.status === "scheduled" && event.warning);
+
+  if (invalidEvent) {
+    const unmet = invalidEvent.currentQualification?.requirements.find((item) => !item.passed);
+    const requirementKey = (id: TournamentRequirementId): MessageKey => `tournament.requirement.${id}` as MessageKey;
+    const localizedWarning = unmet
+      ? `${t(requirementKey(unmet.id))} — ${t("tournament.currentRequired", { current: unmet.current, required: unmet.required })}`
+      : invalidEvent.warning!;
+    messages.push({
+      id: `tournament-warning-${invalidEvent.id}-${invalidEvent.warning}`,
+      title: t("advisor.tournament.title"),
+      body: t("advisor.tournament.body", { event: invalidEvent.name, warning: localizedWarning }),
+      expression: "worried",
+      priority: "warning",
+    });
+  }
 
   if (world.cash < weeklyExpenses * 2) {
     messages.push({

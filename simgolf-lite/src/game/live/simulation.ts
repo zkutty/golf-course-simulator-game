@@ -35,7 +35,7 @@ export function createLiveState(
   dayIndex: number
 ): LiveState {
   const seed = (world.runSeed | 0) + dayIndex * 7919;
-  const tournamentEvent = tournamentForDate(world, dayIndex);
+  const tournamentEvent = tournamentForDate(world, dayIndex, course);
   const arrivals = tournamentEvent
     ? planTournamentDay(tournamentEvent, LIVE.day.firstArrivalMinute, LIVE.day.teeGapMinutes)
     : planDay(course, world, seed);
@@ -62,7 +62,7 @@ export function createLiveState(
     walkCache: new Map(),
     dayOver: false,
     seed,
-    tournament: tournamentEvent ? createLiveTournament(tournamentEvent) : undefined,
+    tournament: tournamentEvent ? createLiveTournament(tournamentEvent, course) : undefined,
   };
 }
 
@@ -96,10 +96,10 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   const entry = entryPoint(course);
   const wallet = rollDiscretionaryWallet(personality, rng);
   const preferredTeeSet = preferredTeeForArchetype(arch.name);
-  const teeSet = course.holes.every((hole) => !getTeeBox(hole, "member") || !!getTeeBox(hole, preferredTeeSet))
+  const teeSet = arrival.tournament?.teeSet ?? (course.holes.every((hole) => !getTeeBox(hole, "member") || !!getTeeBox(hole, preferredTeeSet))
     ? preferredTeeSet
-    : "member";
-  const pinRotation = course.activePinRotation ?? "A";
+    : "member");
+  const pinRotation = arrival.tournament?.pinRotation ?? course.activePinRotation ?? "A";
   const round = buildGolferRound({
     course,
     profile,

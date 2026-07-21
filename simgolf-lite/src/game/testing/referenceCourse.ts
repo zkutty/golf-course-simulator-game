@@ -328,3 +328,33 @@ export function createRenderPerfCourse(theme: NonNullable<Course["theme"]> = "pa
     theme,
   };
 }
+
+/** Fully configured M24 host layout with three tees and three valid pins. */
+export function createTournamentStandardsCourse(): Course {
+  const base = createRenderPerfCourse();
+  const tiles = base.tiles.slice();
+  const holes = base.holes.map((hole, holeIndex) => {
+    const member = hole.tee!;
+    const pinA = hole.green!;
+    const direction = pinA.x > member.x ? 1 : -1;
+    const forward = { x: member.x + direction * 4, y: member.y };
+    const championship = { x: member.x - direction * 4, y: member.y };
+    const pinB = { x: pinA.x - direction, y: pinA.y };
+    const pinC = { x: pinA.x, y: pinA.y + 1 };
+    tiles[forward.y * base.width + forward.x] = "tee";
+    tiles[championship.y * base.width + championship.x] = "tee";
+    if (holeIndex < 9) for (let step = 1; step < 4; step++) {
+      tiles[championship.y * base.width + championship.x + direction * step] = "water";
+    }
+    for (let yy = pinA.y - 1; yy <= pinA.y + 1; yy++) for (let xx = pinA.x - 1; xx <= pinA.x + 1; xx++) {
+      const keepGreen = (xx === pinA.x && yy === pinA.y) || (xx === pinB.x && yy === pinB.y) || (xx === pinC.x && yy === pinC.y);
+      tiles[yy * base.width + xx] = keepGreen ? "green" : "sand";
+    }
+    return {
+      ...hole,
+      teeBoxes: { forward, member, championship },
+      pinPositions: { A: pinA, B: pinB, C: pinC },
+    };
+  });
+  return { ...base, name: "M24 Tournament Standards Club", tiles, holes, yardsPerTile: 3, activePinRotation: "B" };
+}

@@ -20,7 +20,7 @@ import {
 } from "../game/live/persistence";
 import { deriveLiveAudioEvents, type LiveAudioEvent } from "../audio/liveEvents";
 import type { CompletedRound } from "../game/retention/types";
-import { completeTournament, sortedStandings } from "../game/tournaments/tournaments";
+import { completeTournament, prepareTournamentDay, sortedStandings } from "../game/tournaments/tournaments";
 import type { TournamentStanding, TournamentTier } from "../game/tournaments/types";
 
 const DAYS_PER_WEEK = 7;
@@ -63,6 +63,8 @@ export interface LiveStatus {
     eventId: string;
     name: string;
     tier: TournamentTier;
+    teeSet: TeeSet;
+    pinRotation: PinRotation;
     standings: TournamentStanding[];
   };
 }
@@ -262,6 +264,8 @@ export function useLiveSimulation(args: {
         eventId: live.tournament.eventId,
         name: live.tournament.name,
         tier: live.tournament.tier,
+        teeSet: live.tournament.teeSet,
+        pinRotation: live.tournament.pinRotation,
         standings: sortedStandings(live.tournament.standings),
       } : null,
     });
@@ -302,7 +306,7 @@ export function useLiveSimulation(args: {
       const completedTournament = completeTournament(w, live);
       const nextCash = w.cash - result.costs + completedTournament.revenue;
       const rolloverWeek = live.dayIndex + 1 >= DAYS_PER_WEEK;
-      return {
+      const updated: World = {
         ...w,
         cash: nextCash,
         reputation: clamp(w.reputation + result.reputationDelta, 0, 100),
@@ -314,13 +318,15 @@ export function useLiveSimulation(args: {
         objectives: committedWorld.objectives,
         tournaments: completedTournament.world.tournaments,
       };
+      return prepareTournamentDay(courseRef.current, updated, nextDayIndex).world;
     });
     const nextDayIndex = (live.dayIndex + 1) % DAYS_PER_WEEK;
     const nextCalendarWorld: World = {
       ...tournament.world,
       week: nextDayIndex === 0 ? tournament.world.week + 1 : tournament.world.week,
     };
-    const next = createLiveState(courseRef.current, nextCalendarWorld, nextDayIndex);
+    const preparedNext = prepareTournamentDay(courseRef.current, nextCalendarWorld, nextDayIndex);
+    const next = createLiveState(courseRef.current, preparedNext.world, nextDayIndex);
     liveRef.current = next;
     golfersRef.current = [];
     selectedIdRef.current = null;
@@ -348,6 +354,8 @@ export function useLiveSimulation(args: {
         eventId: next.tournament.eventId,
         name: next.tournament.name,
         tier: next.tournament.tier,
+        teeSet: next.tournament.teeSet,
+        pinRotation: next.tournament.pinRotation,
         standings: sortedStandings(next.tournament.standings),
       } : null,
     }));
@@ -357,7 +365,12 @@ export function useLiveSimulation(args: {
   useEffect(() => {
     if (!enabled) return;
     if (!liveRef.current) {
-      liveRef.current = createLiveState(courseRef.current, worldRef.current, 0);
+      const prepared = prepareTournamentDay(courseRef.current, worldRef.current, 0);
+      if (prepared.world !== worldRef.current) {
+        worldRef.current = prepared.world;
+        setWorld(() => prepared.world);
+      }
+      liveRef.current = createLiveState(courseRef.current, prepared.world, 0);
     }
 
     const tick = (ts: number) => {
@@ -465,6 +478,8 @@ export function useLiveSimulation(args: {
         eventId: restored.state.tournament.eventId,
         name: restored.state.tournament.name,
         tier: restored.state.tournament.tier,
+        teeSet: restored.state.tournament.teeSet,
+        pinRotation: restored.state.tournament.pinRotation,
         standings: sortedStandings(restored.state.tournament.standings),
       } : null,
     });

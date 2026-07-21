@@ -4,7 +4,7 @@ test("M6 schedules events and presents live tournament standings", async ({ page
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/?perfFixture=1");
+  await page.goto("/?m24Fixture=1");
   await expect.poll(
     () => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").screen),
     { timeout: 30_000 },

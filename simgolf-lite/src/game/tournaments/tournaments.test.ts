@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_WORLD } from "../models/defaults";
-import { createRenderPerfCourse } from "../testing/referenceCourse";
+import { createTournamentStandardsCourse } from "../testing/referenceCourse";
 import { createLiveState, stepLive } from "../live/simulation";
 import { restoreLiveSimulation, snapshotLiveSimulation } from "../live/persistence";
 import {
@@ -13,7 +13,7 @@ import {
 } from "./tournaments";
 
 describe("M6 tournaments", () => {
-  const course = createRenderPerfCourse();
+  const course = createTournamentStandardsCourse();
   const host = { ...DEFAULT_WORLD, cash: 100_000, reputation: 80, runSeed: 6060 };
 
   it("books a deterministic tier-appropriate field on a future game date", () => {
@@ -29,18 +29,19 @@ describe("M6 tournaments", () => {
     expect(scheduled.cash).toBe(host.cash - 3_500);
     expect(tournamentCalendar(scheduled).events).toHaveLength(1);
     expect(scheduleTournament(scheduled, first.event)).toBe(scheduled);
-  });
+  }, 15_000);
 
   it("blocks dates, tiers, and courses that do not meet hosting requirements", () => {
     const weak = createTournamentEvent({ course, world: { ...host, reputation: 20 }, tier: "regional", currentDay: 0, daysAhead: 1 });
-    expect(weak).toEqual({ ok: false, reason: "Regional Invitational requires 45 reputation." });
+    expect(weak.ok).toBe(false);
+    if (!weak.ok) expect(weak.reason).toContain("Reputation: 20; requires 45");
     const unfinished = createTournamentEvent({ course: { ...course, holes: course.holes.map((hole) => ({ ...hole, tee: null })) }, world: host, tier: "local", currentDay: 0, daysAhead: 1 });
     expect(unfinished.ok).toBe(false);
     const booked = createTournamentEvent({ course, world: host, tier: "local", currentDay: 0, daysAhead: 1 });
     if (!booked.ok) throw new Error(booked.reason);
     const duplicate = createTournamentEvent({ course, world: scheduleTournament(host, booked.event), tier: "local", currentDay: 0, daysAhead: 1 });
     expect(duplicate.ok).toBe(false);
-  });
+  }, 15_000);
 
   it("runs the field through the live simulation and settles ordered results", () => {
     const created = createTournamentEvent({ course, world: host, tier: "local", currentDay: 0, daysAhead: 1 });

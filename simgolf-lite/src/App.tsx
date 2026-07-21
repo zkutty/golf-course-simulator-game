@@ -47,7 +47,7 @@ import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
-import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
+import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
@@ -102,7 +102,8 @@ import {
   reputationTier,
   terrainMinReputation,
 } from "./game/progression/progression";
-import { createTournamentEvent, scheduleTournament, tournamentCalendar } from "./game/tournaments/tournaments";
+import { createTournamentEvent, prepareTournamentDay, revalidateScheduledTournaments, scheduleTournament, tournamentCalendar } from "./game/tournaments/tournaments";
+import { evaluateTournamentCourseQualification } from "./game/tournaments/eligibility";
 import type { TournamentTier } from "./game/tournaments/types";
 import { debugLog } from "./utils/debugLog";
 
@@ -398,13 +399,16 @@ export default function App() {
     const isM21Fixture = fixtureParams.get("m21Fixture") === "1";
     const isM22Fixture = fixtureParams.get("m22Fixture") === "1";
     const isM23Fixture = fixtureParams.get("m23Fixture") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture) return;
+    const isM24Fixture = fixtureParams.get("m24Fixture") === "1";
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
     const requestedTheme = fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = requestedTheme === "links" || requestedTheme === "desert" ? requestedTheme : "parkland";
-    const fixtureCourse = isM23Fixture
+    const fixtureCourse = isM24Fixture
+      ? createTournamentStandardsCourse()
+      : isM23Fixture
       ? createM23CourseSetupReferenceCourse()
       : isM22Fixture
       ? createM22VisualReferenceCourse(fixtureTheme)
@@ -993,11 +997,16 @@ export default function App() {
 
   useEffect(() => {
     const hasExpandedSetup = course.holes.some((hole) => hole.teeBoxes?.forward || hole.teeBoxes?.championship || hole.pinPositions?.B || hole.pinPositions?.C);
+    const textMemberRating = computeCourseRatingAndSlope(course);
+    const tournamentReadiness = Object.fromEntries((["local", "regional", "championship"] as const).map((tier) => {
+      const result = evaluateTournamentCourseQualification(course, tier);
+      return [tier, { eligible: result.eligible, teeSet: result.teeSet, pinRotation: result.pinRotation, rating: result.rating, slope: result.slope, completeRotations: result.completeRotations, blockers: result.requirements.filter((item) => !item.passed).map((item) => ({ id: item.id, current: item.current, required: item.required })) }];
+    }));
     const textTeeRatings = hasExpandedSetup
       ? computeRatingsByTee(course)
       : {
           forward: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
-          member: { courseRating: rating.courseRating, slope: rating.slope, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
+          member: { courseRating: textMemberRating.courseRating, slope: textMemberRating.slope, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
           championship: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
         };
     const renderText = () => JSON.stringify({
@@ -1030,7 +1039,10 @@ export default function App() {
       tournament: {
         panelOpen: showTournaments,
         scheduled: tournamentCalendar(world).events.filter((event) => event.status === "scheduled").length,
-        active: live.status.tournament ? { name: live.status.tournament.name, standings: live.status.tournament.standings.slice(0, 5) } : null,
+        cancelled: tournamentCalendar(world).events.filter((event) => event.status === "cancelled").length,
+        warnings: tournamentCalendar(world).events.filter((event) => event.status === "scheduled" && event.warning).map((event) => ({ name: event.name, warning: event.warning })),
+        readiness: tournamentReadiness,
+        active: live.status.tournament ? { name: live.status.tournament.name, teeSet: live.status.tournament.teeSet, pinRotation: live.status.tournament.pinRotation, standings: live.status.tournament.standings.slice(0, 5) } : null,
       },
       golfers: live.golfersRef.current.slice(0, 24).map((golfer) => ({ id: golfer.id, x: Number(golfer.x.toFixed(2)), y: Number(golfer.y.toFixed(2)), segment: golfer.segKind, shot: golfer.shot, mood: Number(golfer.mood.toFixed(2)), teeSet: golfer.teeSet, pinRotation: golfer.pinRotation })),
     });
@@ -1040,7 +1052,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, rating.courseRating, rating.slope, records, screen, selected, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1122,7 +1134,7 @@ export default function App() {
       },
       startTournamentFixture: () => {
         const current = gameStateRef.current;
-        const fixtureWorld = { ...current.world, tournaments: { version: 1 as const, events: [] } };
+        const fixtureWorld = { ...current.world, tournaments: { version: 2 as const, events: [] } };
         const created = createTournamentEvent({ course: current.course, world: fixtureWorld, tier: "local", currentDay: live.status.dayIndex, daysAhead: 1 });
         if (!created.ok) throw new Error(created.reason);
         const event = { ...created.event, scheduledWeek: current.world.week, scheduledDay: live.status.dayIndex };
@@ -1135,6 +1147,17 @@ export default function App() {
           selectedGolferId: null,
         }));
         live.setSpeed("3x");
+      },
+      invalidateAndCancelTournamentFixture: () => {
+        const current = gameStateRef.current;
+        const editedCourse = { ...current.course, holes: current.course.holes.map((hole) => ({ ...hole, pinPositions: { ...hole.pinPositions, B: null, C: null } })) };
+        const warnedWorld = revalidateScheduledTournaments(editedCourse, current.world);
+        const scheduled = tournamentCalendar(warnedWorld).events.find((event) => event.status === "scheduled");
+        if (!scheduled) throw new Error("No scheduled tournament to invalidate");
+        const eventWorld = { ...warnedWorld, week: scheduled.scheduledWeek };
+        const prepared = prepareTournamentDay(editedCourse, eventWorld, scheduled.scheduledDay);
+        dispatch({ type: "LOAD_GAME", course: editedCourse, world: prepared.world });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(editedCourse, prepared.world, scheduled.scheduledDay), pendingCash: 0, speed: "paused", selectedGolferId: null }));
       },
     };
     return () => {
@@ -2155,7 +2178,7 @@ export default function App() {
               <button onClick={() => enterPhotoMode(false)}>📷 {t("retention.photo")}</button>
             </div>}
             {showProgression && !tutorialProgress && <ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} />}
-            {showTournaments && !tutorialProgress && <TournamentPanel world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
+            {showTournaments && !tutorialProgress && <TournamentPanel course={course} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
             {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
             {!tutorialProgress && <HoleMinimap

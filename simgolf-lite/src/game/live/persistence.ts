@@ -75,7 +75,9 @@ function arrival(value: unknown): value is Arrival {
   if (!isRecord(value) || !finite(value.atMinute) || typeof value.archetype !== "string") return false;
   if (value.tournament == null) return true;
   return isRecord(value.tournament) && typeof value.tournament.eventId === "string" &&
-    typeof value.tournament.entrantId === "string" && typeof value.tournament.name === "string" && finite(value.tournament.skill);
+    typeof value.tournament.entrantId === "string" && typeof value.tournament.name === "string" && finite(value.tournament.skill) &&
+    (value.tournament.teeSet == null || value.tournament.teeSet === "forward" || value.tournament.teeSet === "member" || value.tournament.teeSet === "championship") &&
+    (value.tournament.pinRotation == null || value.tournament.pinRotation === "A" || value.tournament.pinRotation === "B" || value.tournament.pinRotation === "C");
 }
 
 function tournament(value: unknown): boolean {
@@ -83,6 +85,8 @@ function tournament(value: unknown): boolean {
   if (!isRecord(value) || typeof value.eventId !== "string" || typeof value.name !== "string") return false;
   if (value.tier !== "local" && value.tier !== "regional" && value.tier !== "championship") return false;
   if (!Array.isArray(value.standings) || value.standings.length > MAX_GOLFERS) return false;
+  if (value.teeSet != null && value.teeSet !== "forward" && value.teeSet !== "member" && value.teeSet !== "championship") return false;
+  if (value.pinRotation != null && value.pinRotation !== "A" && value.pinRotation !== "B" && value.pinRotation !== "C") return false;
   return value.standings.every((row) => isRecord(row) && typeof row.entrantId === "string" &&
     (row.golferId === null || Number.isInteger(row.golferId)) && typeof row.name === "string" &&
     typeof row.archetype === "string" && finite(row.holesCompleted) && finite(row.score) &&
@@ -142,6 +146,22 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
   serializable.concessionCollected ??= 0;
   serializable.concessionTransactions ??= [];
   serializable.concessionByType ??= {};
+  if (serializable.tournament) {
+    serializable.tournament.teeSet ??= "member";
+    serializable.tournament.pinRotation ??= "A";
+    serializable.tournament.ordinaryPinRotation ??= "A";
+    serializable.tournament.qualificationSnapshot ??= {
+      eligible: true,
+      teeSet: serializable.tournament.teeSet,
+      pinRotation: serializable.tournament.pinRotation,
+      rating: 0,
+      slope: 113,
+      effectiveYardage: 0,
+      completeRotations: [serializable.tournament.pinRotation],
+      requirements: [],
+      blockingReasons: [],
+    };
+  }
   return {
     state: { ...serializable, walkCache: new Map() },
     pendingCash: input.pendingCash,

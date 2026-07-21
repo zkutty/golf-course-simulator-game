@@ -1,7 +1,33 @@
 import type { GolferArchetypeName } from "../live/types";
+import type { PinRotation, TeeSet } from "../models/types";
 
 export type TournamentTier = "local" | "regional" | "championship";
-export type TournamentStatus = "scheduled" | "completed";
+export type TournamentStatus = "scheduled" | "completed" | "cancelled";
+
+export type TournamentRequirementId =
+  | "reputation" | "deposit" | "date" | "calendar" | "holes"
+  | "rotations" | "route" | "rating" | "slope";
+
+export interface TournamentRequirement {
+  id: TournamentRequirementId;
+  label: string;
+  passed: boolean;
+  current: string;
+  required: string;
+  guidance: string;
+}
+
+export interface TournamentQualificationSnapshot {
+  eligible: boolean;
+  teeSet: TeeSet;
+  pinRotation: PinRotation;
+  rating: number;
+  slope: number;
+  effectiveYardage: number;
+  completeRotations: PinRotation[];
+  requirements: TournamentRequirement[];
+  blockingReasons: string[];
+}
 
 export interface TournamentEntrant {
   id: string;
@@ -32,12 +58,21 @@ export interface TournamentEvent {
   revenueAward: number;
   reputationAward: number;
   field: TournamentEntrant[];
+  teeSet?: TeeSet;
+  pinRotation?: PinRotation;
+  qualificationSnapshot?: TournamentQualificationSnapshot;
+  currentQualification?: TournamentQualificationSnapshot;
+  warning?: string;
+  cancelledWeek?: number;
+  cancelledDay?: number;
+  cancellationReason?: string;
+  depositForfeited?: boolean;
   results?: TournamentStanding[];
   winnerName?: string;
 }
 
 export interface TournamentCalendar {
-  version: 1;
+  version: 2;
   events: TournamentEvent[];
 }
 
@@ -45,5 +80,9 @@ export interface LiveTournamentState {
   eventId: string;
   name: string;
   tier: TournamentTier;
+  teeSet: TeeSet;
+  pinRotation: PinRotation;
+  ordinaryPinRotation: PinRotation;
+  qualificationSnapshot: TournamentQualificationSnapshot;
   standings: TournamentStanding[];
 }

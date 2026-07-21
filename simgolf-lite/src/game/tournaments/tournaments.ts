@@ -10,6 +10,7 @@ import type {
   TournamentStanding,
   TournamentTier,
 } from "./types";
+import { evaluateTournamentCourseQualification, evaluateTournamentEligibility, revalidatePrescribedTournamentSetup } from "./eligibility";
 
 export const TOURNAMENT_TIERS: Record<TournamentTier, {
   label: string;
@@ -26,7 +27,7 @@ export const TOURNAMENT_TIERS: Record<TournamentTier, {
   championship: { label: "CourseCraft Championship", fieldSize: 16, minReputation: 65, bookingCost: 7_000, revenueAward: 30_000, reputationAward: 7, skillMin: .78, skillMax: .99 },
 };
 
-const EMPTY_CALENDAR: TournamentCalendar = { version: 1, events: [] };
+const EMPTY_CALENDAR: TournamentCalendar = { version: 2, events: [] };
 
 export function tournamentCalendar(world: World): TournamentCalendar {
   return world.tournaments ?? EMPTY_CALENDAR;
@@ -60,15 +61,17 @@ export function createTournamentEvent(args: {
   daysAhead: number;
 }): { ok: true; event: TournamentEvent } | { ok: false; reason: string } {
   const spec = TOURNAMENT_TIERS[args.tier];
-  const completeHoles = args.course.holes.filter((hole) => hole.tee && hole.green).length;
-  if (completeHoles < 9) return { ok: false, reason: "Open nine complete holes before scheduling a tournament." };
-  if (args.world.reputation < spec.minReputation) return { ok: false, reason: `${spec.label} requires ${spec.minReputation} reputation.` };
-  if (args.world.cash < spec.bookingCost) return { ok: false, reason: `You need $${spec.bookingCost.toLocaleString()} for the hosting deposit.` };
+  const qualification = evaluateTournamentEligibility({
+    course: args.course,
+    world: args.world,
+    tier: args.tier,
+    currentDay: args.currentDay,
+    daysAhead: args.daysAhead,
+    minReputation: spec.minReputation,
+    bookingCost: spec.bookingCost,
+  });
+  if (!qualification.eligible) return { ok: false, reason: qualification.blockingReasons[0] ?? "This course does not meet the event standard." };
   const date = gameDateAfter(args.world.week, args.currentDay, args.daysAhead);
-  const calendar = tournamentCalendar(args.world);
-  if (calendar.events.some((event) => event.status === "scheduled" && event.scheduledWeek === date.week && event.scheduledDay === date.day)) {
-    return { ok: false, reason: "Another tournament is already booked for that day." };
-  }
 
   const seed = eventSeed(args.world, args.tier, date.week, date.day);
   const rng = mulberry32(seed);
@@ -97,6 +100,10 @@ export function createTournamentEvent(args: {
       revenueAward: spec.revenueAward,
       reputationAward: spec.reputationAward,
       field,
+      teeSet: qualification.teeSet,
+      pinRotation: qualification.pinRotation,
+      qualificationSnapshot: qualification,
+      currentQualification: qualification,
     },
   };
 }
@@ -109,14 +116,73 @@ export function scheduleTournament(world: World, event: TournamentEvent): World 
   return {
     ...world,
     cash: world.cash - event.bookingCost,
-    tournaments: { version: 1, events: [...calendar.events, event] },
+    tournaments: { version: 2, events: [...calendar.events, event] },
   };
 }
 
-export function tournamentForDate(world: World, dayIndex: number): TournamentEvent | undefined {
-  return tournamentCalendar(world).events.find((event) =>
+export function tournamentForDate(world: World, dayIndex: number, course?: Course): TournamentEvent | undefined {
+  const event = tournamentCalendar(world).events.find((event) =>
     event.status === "scheduled" && event.scheduledWeek === world.week && event.scheduledDay === dayIndex
   );
+  if (!event || !course) return event;
+  return evaluateTournamentCourseQualification(course, event.tier).eligible ? event : undefined;
+}
+
+function sameQualification(a: TournamentEvent["currentQualification"], b: TournamentEvent["currentQualification"]): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+export function revalidateScheduledTournaments(course: Course, world: World): World {
+  const calendar = tournamentCalendar(world);
+  let changed = calendar.version !== 2;
+  const events = calendar.events.map((event) => {
+    if (event.status !== "scheduled") return event;
+    const initial = event.qualificationSnapshot ?? evaluateTournamentCourseQualification(course, event.tier);
+    const current = revalidatePrescribedTournamentSetup(course, event.tier, event.teeSet ?? initial.teeSet, event.pinRotation ?? initial.pinRotation);
+    const warning = current.eligible ? undefined : current.blockingReasons[0];
+    if (sameQualification(event.currentQualification, current) && event.warning === warning && event.teeSet && event.pinRotation) return event;
+    changed = true;
+    return {
+      ...event,
+      teeSet: event.teeSet ?? current.teeSet,
+      pinRotation: event.pinRotation ?? current.pinRotation,
+      qualificationSnapshot: event.qualificationSnapshot ?? current,
+      currentQualification: current,
+      warning,
+    };
+  });
+  return changed ? { ...world, tournaments: { version: 2, events } } : world;
+}
+
+export function prepareTournamentDay(course: Course, world: World, dayIndex: number): {
+  world: World;
+  event?: TournamentEvent;
+  cancelled?: TournamentEvent;
+} {
+  const calendar = tournamentCalendar(world);
+  const event = calendar.events.find((candidate) => candidate.status === "scheduled" && candidate.scheduledWeek === world.week && candidate.scheduledDay === dayIndex);
+  if (!event) return { world };
+  const initial = event.qualificationSnapshot ?? evaluateTournamentCourseQualification(course, event.tier);
+  const current = revalidatePrescribedTournamentSetup(course, event.tier, event.teeSet ?? initial.teeSet, event.pinRotation ?? initial.pinRotation);
+  if (current.eligible) {
+    const ready = { ...event, teeSet: event.teeSet ?? current.teeSet, pinRotation: event.pinRotation ?? current.pinRotation, qualificationSnapshot: event.qualificationSnapshot ?? current, currentQualification: current, warning: undefined };
+    const nextWorld = ready === event ? world : { ...world, tournaments: { version: 2 as const, events: calendar.events.map((candidate) => candidate.id === event.id ? ready : candidate) } };
+    return { world: nextWorld, event: ready };
+  }
+  const cancelled: TournamentEvent = {
+    ...event,
+    status: "cancelled",
+    currentQualification: current,
+    warning: current.blockingReasons[0],
+    cancelledWeek: world.week,
+    cancelledDay: dayIndex,
+    cancellationReason: current.blockingReasons.join(" "),
+    depositForfeited: true,
+  };
+  return {
+    world: { ...world, tournaments: { version: 2, events: calendar.events.map((candidate) => candidate.id === event.id ? cancelled : candidate) } },
+    cancelled,
+  };
 }
 
 export function planTournamentDay(event: TournamentEvent, openMinute: number, teeGapMinutes: number): Arrival[] {
@@ -128,15 +194,22 @@ export function planTournamentDay(event: TournamentEvent, openMinute: number, te
       entrantId: entrant.id,
       name: entrant.name,
       skill: entrant.skill,
+      teeSet: event.teeSet ?? "member",
+      pinRotation: event.pinRotation ?? "A",
     },
   }));
 }
 
-export function createLiveTournament(event: TournamentEvent): LiveTournamentState {
+export function createLiveTournament(event: TournamentEvent, course: Course): LiveTournamentState {
+  const qualification = event.qualificationSnapshot ?? evaluateTournamentCourseQualification(course, event.tier);
   return {
     eventId: event.id,
     name: event.name,
     tier: event.tier,
+    teeSet: event.teeSet ?? qualification.teeSet,
+    pinRotation: event.pinRotation ?? qualification.pinRotation,
+    ordinaryPinRotation: course.activePinRotation ?? "A",
+    qualificationSnapshot: qualification,
     standings: event.field.map((entrant) => ({
       entrantId: entrant.id,
       golferId: null,
@@ -181,7 +254,7 @@ export function completeTournament(world: World, live: LiveState): { world: Worl
   return {
     world: {
       ...world,
-      tournaments: { version: 1, events: calendar.events.map((candidate) => candidate.id === event.id ? completed : candidate) },
+      tournaments: { version: 2, events: calendar.events.map((candidate) => candidate.id === event.id ? completed : candidate) },
     },
     revenue: event.revenueAward,
     reputation: event.reputationAward,
@@ -190,12 +263,12 @@ export function completeTournament(world: World, live: LiveState): { world: Worl
 }
 
 export function normalizeTournamentCalendar(raw: unknown): TournamentCalendar {
-  if (!raw || typeof raw !== "object" || !Array.isArray((raw as TournamentCalendar).events)) return { version: 1, events: [] };
+  if (!raw || typeof raw !== "object" || !Array.isArray((raw as TournamentCalendar).events)) return { version: 2, events: [] };
   const events = (raw as TournamentCalendar).events.filter((event) => {
     if (!event || typeof event !== "object") return false;
     return typeof event.id === "string" && typeof event.name === "string" &&
       (event.tier === "local" || event.tier === "regional" || event.tier === "championship") &&
-      (event.status === "scheduled" || event.status === "completed") &&
+      (event.status === "scheduled" || event.status === "completed" || event.status === "cancelled") &&
       Number.isFinite(event.scheduledWeek) && Number.isFinite(event.scheduledDay) &&
       Number.isFinite(event.bookingCost) && Number.isFinite(event.revenueAward) && Number.isFinite(event.reputationAward) &&
       event.scheduledWeek >= 1 && event.scheduledDay >= 0 && event.scheduledDay <= 6 &&
@@ -208,5 +281,5 @@ export function normalizeTournamentCalendar(raw: unknown): TournamentCalendar {
         Number.isFinite(row.score) && Number.isFinite(row.scoreToPar) && typeof row.finished === "boolean"
       )));
   }).slice(-24);
-  return { version: 1, events };
+  return { version: 2, events };
 }

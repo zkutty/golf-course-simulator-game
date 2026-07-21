@@ -70,7 +70,7 @@ export interface Golfer {
 export interface Arrival {
   atMinute: number;
   archetype: GolferArchetypeName;
-  tournament?: { eventId: string; entrantId: string; name: string; skill: number };
+  tournament?: { eventId: string; entrantId: string; name: string; skill: number; teeSet?: TeeSet; pinRotation?: PinRotation };
 }
 
 export interface LiveState {

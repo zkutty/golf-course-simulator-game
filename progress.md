@@ -272,3 +272,28 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M23 remaining
 
 - None. ZK-231 through ZK-234 meet their implementation and acceptance criteria.
+
+## 2026-07-21 — M24 tournament course standards
+
+- Linear scope resolved as ZK-235 through ZK-237; all three issues are In Progress.
+- Added centralized, data-driven Local/Regional/Championship qualification with prescribed tees and deterministic easiest/median/hardest pin selection, complete-route checks, normalized nine-hole ratings, exact checklist values, and inclusive rating/slope thresholds.
+- Tournament calendar v2 now persists setup and qualification snapshots, revalidates prescribed setups after rating-relevant edits, exposes warnings, cancels invalid events on event day without refund/awards, and preserves completed pre-v2 history.
+- Tournament entrants now carry the event tee/pin through arrivals, live rounds, standings, save/restore, and text-state output without mutating the operator's ordinary daily pin.
+- Added the expanded tee rating matrix, Tournament Office readiness checklist and corrective guidance, warning/cancellation UI, advisor warning, and Golfopedia coverage.
+
+## M24 verification
+
+- Full unit suite: 44 files, 301 tests passed, one intentional skip. Reducer fuzz and the 30-week/8,719-round soak pass; the soak finishes at $10,433,856 cash, 100 reputation, and an 8.42 MB heap increase.
+- Production build, lint/i18n guards, PWA offline smoke, and `git diff --check` pass. Lint reports seven existing React hook warnings and no errors.
+- Full Playwright regression: 29/29 passed, including readiness/booking, prescribed live setup, edit-driven cancellation, pseudo-localization at 130% scale, and legacy M6 tournament coverage.
+- The 100-golfer performance fixture holds 60 fps at 16.8 ms p95 with 0.342 ms renderer work and 1,048 visible objects.
+- Bundled web-game client passed deterministic stepping and exposed the expected Local/Regional/Championship readiness state. Readiness, live play, cancellation, and pseudo-localized layout captures were visually inspected.
+
+## M24 remaining
+
+- None. ZK-235 through ZK-237 meet their implementation and acceptance criteria.
+
+## 2026-07-21 — CI build ordering fix verification
+
+- Confirmed the M24 working copy computes `textMemberRating` inside the early text-state effect and no longer references the later `rating` memo from that effect or its dependency list, eliminating TS2448/TS2454.
+- `npm run build` passes and injects 22 offline assets; only the existing Vite chunk-size/dynamic-import warnings remain.
