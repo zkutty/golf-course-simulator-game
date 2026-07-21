@@ -43,7 +43,7 @@ export function buildGolfopediaEntries(t: Translator): readonly GolfopediaEntry[
       facts: [{ label: t("golfopedia.fact.skill"), value: formatNumber(archetype.personality.skill, "en", { style: "percent" }) }, { label: t("golfopedia.fact.patience"), value: formatNumber(archetype.personality.patience, "en", { style: "percent" }) }, { label: t("golfopedia.fact.spending"), value: formatNumber(archetype.personality.spendPropensity, "en", { style: "percent" }) }],
     };
   });
-  const management = ["rating", "tournaments", "demand", "cash", "reputation", "condition"] as const;
+  const management = ["rating", "tournaments", "demand", "cash", "reputation", "condition", "architecture", "routing", "naturalFit", "walkability", "safety"] as const;
   const managementEntries = management.map((id) => ({ id: `management-${id}`, section: "Management" as const, title: t(`golfopedia.management.${id}.title`), summary: t(`golfopedia.management.${id}.summary`), details: [t(`golfopedia.management.${id}.detail1`), t(`golfopedia.management.${id}.detail2`)] }));
   const controls = ["camera", "simulation", "tools"] as const;
   const controlEntries = controls.map((id) => ({ id: `controls-${id}`, section: "Controls" as const, title: t(`golfopedia.controls.${id}.title`), summary: t(`golfopedia.controls.${id}.summary`), details: [t(`golfopedia.controls.${id}.detail1`), t(`golfopedia.controls.${id}.detail2`)] }));

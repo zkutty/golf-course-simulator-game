@@ -599,6 +599,11 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       yardsPerTile: rawCourse.yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
       theme: oneOf<LandTheme>(rawCourse.theme, ["parkland", "links", "desert"], "parkland"),
       activePinRotation: oneOf<PinRotation>(rawCourse.activePinRotation, PIN_ROTATIONS, "A"),
+      // Do not inherit DEFAULT_COURSE's starter routing when a valid legacy
+      // course omitted M26 layout fields. Normalization must synthesize the
+      // layout from that save's own holes, name, and green fee.
+      layouts: Array.isArray(rawCourse.layouts) ? rawCourse.layouts : undefined,
+      activeCourseId: typeof rawCourse.activeCourseId === "string" ? rawCourse.activeCourseId : undefined,
     };
 
     // Migrate if grid size differs, then guarantee a well-formed

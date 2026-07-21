@@ -8,6 +8,8 @@ export type GoalMetric =
   | "reputation" // world.reputation, 0..100
   | "courseRating" // computeCourseRatingAndSlope().courseRating
   | "holesBuilt" // complete + valid holes
+  | "publishedHoles" // unique complete holes in published routings
+  | "publishedCourses" // complete 9/18-hole published layouts
   | "weeklyProfit" // most recent completed week's profit
   | "profitStreak" // consecutive profitable weeks
   | "totalRounds" // cumulative rounds played this run

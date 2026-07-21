@@ -7,6 +7,8 @@ import { formatCurrency, formatNumber } from "../../i18n/format";
 import { tournamentCalendar } from "../tournaments/tournaments";
 import type { TournamentRequirementId } from "../tournaments/types";
 import type { MessageKey } from "../../i18n/catalog";
+import { analyzeArchitecture } from "../architecture/architecture";
+import { courseLayouts } from "../models/courseLayouts";
 
 export type AdvisorExpression = "neutral" | "pleased" | "worried" | "excited";
 export type AdvisorPriority = "hint" | "info" | "celebration" | "warning";
@@ -33,6 +35,21 @@ export function advisorMessages(
   const valid = holes.holes.filter((hole) => hole.isComplete && hole.isValid);
   const weeklyExpenses = Math.max(1, last?.costs ?? world.maintenanceBudget + world.staffLevel * 500);
   const invalidEvent = tournamentCalendar(world).events.find((event) => event.status === "scheduled" && event.warning);
+  const architecture = course.estate && valid.length >= 9 ? analyzeArchitecture(course) : null;
+
+  if (architecture && architecture.total < 55 && architecture.warnings.length) {
+    messages.push({
+      id: `architecture-${course.activeCourseId ?? "primary"}`,
+      title: t("advisor.architecture.title"),
+      body: t("advisor.architecture.body", { course: course.name, score: Math.round(architecture.total) }),
+      expression: "worried",
+      priority: "info",
+      holeIndex: architecture.warnings[0].holeIds[0] ? course.holes.findIndex((hole) => hole.id === architecture.warnings[0].holeIds[0]) : undefined,
+    });
+  }
+  if (course.estate && course.estate.ownedParcelIds.length < course.estate.parcels.length && valid.length >= 9 && courseLayouts(course).length === 1 && world.reputation >= 50 && world.cash >= 45_000) {
+    messages.push({ id: "expansion-ready", title: t("advisor.expansion.title"), body: t("advisor.expansion.body"), expression: "pleased", priority: "info" });
+  }
 
   if (invalidEvent) {
     const unmet = invalidEvent.currentQualification?.requirements.find((item) => !item.passed);

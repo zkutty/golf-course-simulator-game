@@ -9,6 +9,7 @@ import type {
   GoalProgress,
   ObjectiveState,
 } from "../models/objectives";
+import { courseLayouts } from "../models/courseLayouts";
 
 // Pure, deterministic goal evaluation (ZKU-163). Runs at sim commit points —
 // after each tickWeek and after each committed live day — never in the UI.
@@ -68,6 +69,12 @@ function makeMetricReader(args: {
         }
         return holesBuilt;
       }
+      case "publishedHoles": {
+        const complete = new Set(course.holes.filter((hole) => hole.id && hole.tee && hole.green).map((hole) => hole.id!));
+        return new Set(courseLayouts(course).flatMap((layout) => layout.publishedHoleIds).filter((id) => complete.has(id))).size;
+      }
+      case "publishedCourses":
+        return courseLayouts(course).filter((layout) => layout.publishedHoleIds.length === layout.roundLength).length;
       case "courseRating": {
         courseRating ??= computeCourseRatingAndSlope(course).courseRating;
         return courseRating;

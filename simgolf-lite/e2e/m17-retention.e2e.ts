@@ -12,7 +12,7 @@ test("M17 records, achievements, ticker, photo mode, and PWA identity", async ({
   await page.getByRole("button", { name: "Trophy Gallery" }).click();
   await expect(page.getByTestId("retention-hub")).toBeVisible();
   await page.getByRole("button", { name: "Achievements" }).click();
-  await expect(page.locator("article[data-earned]")).toHaveCount(25);
+  await expect(page.locator("article[data-earned]")).toHaveCount(27);
   await page.screenshot({ fullPage: true, path: "artifacts/m17-achievements.png" });
   await page.getByRole("button", { name: "Close" }).click();
 

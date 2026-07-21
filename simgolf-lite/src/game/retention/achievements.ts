@@ -1,14 +1,17 @@
 import type { AppProfile, EarnedAchievement } from "../onboarding/profile";
 import type { Course, World } from "../models/types";
 import type { CourseRecords } from "./types";
+import { courseLayouts } from "../models/courseLayouts";
 
-export type AchievementMetric = "holes" | "trees" | "cash" | "profit" | "rounds" | "aces" | "rating" | "reputation" | "tutorial" | "scenario" | "career" | "sculpt" | "loan" | "distress" | "mood";
+export type AchievementMetric = "holes" | "publishedHoles" | "courses" | "trees" | "cash" | "profit" | "rounds" | "aces" | "rating" | "reputation" | "tutorial" | "scenario" | "career" | "sculpt" | "loan" | "distress" | "mood";
 export interface AchievementDefinition { id: string; icon: string; title: string; hint: string; metric: AchievementMetric; target: number; hidden?: boolean }
 
 export const ACHIEVEMENTS: AchievementDefinition[] = [
   { id: "first-hole", icon: "⛳", title: "Groundbreaker", hint: "Open your first playable hole.", metric: "holes", target: 1 },
-  { id: "front-nine", icon: "9️⃣", title: "Front Nine", hint: "Open nine holes.", metric: "holes", target: 9 },
-  { id: "full-eighteen", icon: "🏌️", title: "The Full Eighteen", hint: "Open eighteen holes.", metric: "holes", target: 18 },
+  { id: "front-nine", icon: "9️⃣", title: "Front Nine", hint: "Publish nine unique, complete holes.", metric: "publishedHoles", target: 9 },
+  { id: "full-eighteen", icon: "🏌️", title: "The Full Eighteen", hint: "Publish eighteen unique, complete holes.", metric: "publishedHoles", target: 18 },
+  { id: "second-course", icon: "🗺️", title: "A Second Routing", hint: "Publish a second operating course.", metric: "courses", target: 2 },
+  { id: "thirty-six-holes", icon: "🏰", title: "Thirty-Six Hole Estate", hint: "Publish 36 uniquely assigned holes.", metric: "publishedHoles", target: 36 },
   { id: "first-hill", icon: "⛰️", title: "Earth Mover", hint: "Sculpt your first hill.", metric: "sculpt", target: 1 },
   { id: "arboretum", icon: "🌲", title: "Arboretum", hint: "Plant 100 trees.", metric: "trees", target: 100 },
   { id: "first-profit", icon: "💵", title: "In the Black", hint: "Finish a profitable week.", metric: "profit", target: 1 },
@@ -38,6 +41,11 @@ export interface AchievementContext { course: Course; world: World; records: Cou
 export function achievementProgress(definition: AchievementDefinition, context: AchievementContext): number {
   switch (definition.metric) {
     case "holes": return context.course.holes.filter((hole) => hole.tee && hole.green).length;
+    case "publishedHoles": {
+      const complete = new Set(context.course.holes.filter((hole) => hole.id && hole.tee && hole.green).map((hole) => hole.id!));
+      return new Set(courseLayouts(context.course).flatMap((layout) => layout.publishedHoleIds).filter((id) => complete.has(id))).size;
+    }
+    case "courses": return courseLayouts(context.course).filter((layout) => layout.publishedHoleIds.length === layout.roundLength).length;
     case "trees": return context.course.obstacles.filter((obstacle) => obstacle.type === "tree").length;
     case "cash": return Math.max(0, context.world.cash);
     case "profit": return definition.id === "hidden-profit-ten" ? context.profitStreak : context.world.lastWeekProfit > 0 ? 1 : 0;

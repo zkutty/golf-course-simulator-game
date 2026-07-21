@@ -47,7 +47,7 @@ import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
-import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createM26MultiCourseReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
+import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createM26MultiCourseReferenceCourse, createM27ReleaseReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
@@ -110,6 +110,7 @@ import type { TournamentTier } from "./game/tournaments/types";
 import { debugLog } from "./utils/debugLog";
 import { CourseManagerPanel } from "./ui/CourseManagerPanel";
 import { activeCourseLayout, courseForLayout, normalizeCourseLayouts, selectLayout, updateLayout } from "./game/models/courseLayouts";
+import { analyzeArchitecture } from "./game/architecture/architecture";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -256,7 +257,7 @@ export default function App() {
   const [showTutorialOffer, setShowTutorialOffer] = useState(false);
   const [advisorMessage, setAdvisorMessage] = useState<AdvisorMessage | null>(null);
   const [advisorWake, setAdvisorWake] = useState(0);
-  const seenAdvisorMessagesRef = useRef(new Set<string>());
+  const seenAdvisorMessagesRef = useRef(new Set(loadAppProfile().advisorSeen));
   const advisorCooldownUntilRef = useRef(0);
   const [a11yMessage, setA11yMessage] = useState("");
   const perfFixtureLoadedRef = useRef(false);
@@ -265,6 +266,7 @@ export default function App() {
   const [showTournaments, setShowTournaments] = useState(false);
   const [showLandOffice, setShowLandOffice] = useState(false);
   const [showCourseManager, setShowCourseManager] = useState(false);
+  const architectureReport = useMemo(() => showCourseManager ? analyzeArchitecture(activeOperatingCourse) : null, [activeOperatingCourse, showCourseManager]);
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [showProgression, setShowProgression] = useState(false);
   const [showLiveOverview, setShowLiveOverview] = useState(false);
@@ -419,13 +421,16 @@ export default function App() {
     const isM24Fixture = fixtureParams.get("m24Fixture") === "1";
     const isM25Fixture = fixtureParams.get("m25Fixture") === "1";
     const isM26Fixture = fixtureParams.get("m26Fixture") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture) return;
+    const isM27Fixture = fixtureParams.get("m27Fixture") === "1";
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
     const requestedTheme = fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = requestedTheme === "links" || requestedTheme === "desert" ? requestedTheme : "parkland";
-    const fixtureCourse = isM26Fixture
+    const fixtureCourse = isM27Fixture
+      ? createM27ReleaseReferenceCourse(fixtureTheme)
+      : isM26Fixture
       ? createM26MultiCourseReferenceCourse()
       : isM25Fixture
       ? createNewGame({ mode: "sandbox", courseName: "M25 Survey Estate", seed: 250025, theme: fixtureTheme, difficulty: "normal", sandboxOverrides: { startingCash: 500_000 } }).course
@@ -458,7 +463,7 @@ export default function App() {
       setHoleEditMode("hole");
       setViewMode("ARCHITECT");
     }
-    if (isPerfFixture) {
+    if (isPerfFixture || isM27Fixture) {
       live.restoreSnapshot(snapshotLiveSimulation({
         state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),
         pendingCash: 0,
@@ -469,9 +474,10 @@ export default function App() {
     setAppProfile((current) => ({ ...current, tutorialOffered: true, tutorialCompleted: true }));
     setTutorialProgress(null);
     setShowTutorialOffer(false);
+    if (isM27Fixture) setShowCourseManager(true);
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
     flowDispatch({ type: "ENTER_GAME" });
-    live.setSpeed(isPerfFixture ? "3x" : "paused");
+    live.setSpeed(isPerfFixture || isM27Fixture ? "3x" : "paused");
   }, [dispatch, live, t]);
 
   const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);
@@ -830,7 +836,11 @@ export default function App() {
   }, [screen, tutorialProgress, showTutorialOffer, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, activeOperatingCourse, world, last, history, advisorWake, t]);
 
   function dismissAdvisor() {
-    if (advisorMessage) seenAdvisorMessagesRef.current.add(advisorMessage.id);
+    if (advisorMessage) {
+      seenAdvisorMessagesRef.current.add(advisorMessage.id);
+      const profile = loadAppProfile();
+      saveAppProfile({ ...profile, advisorSeen: [...seenAdvisorMessagesRef.current].slice(-100) });
+    }
     setAdvisorMessage(null);
     const frequency = loadAppProfile().advisorFrequency;
     const cooldown = frequency === "chatty" ? 8_000 : 18_000;
@@ -1056,6 +1066,7 @@ export default function App() {
         courseManagerOpen: showCourseManager,
         activeCourseId: activeLayout.id,
         layouts: normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name, state: layout.state, greenFee: layout.greenFee, roundLength: layout.roundLength, draftHoleIds: layout.draftHoleIds, publishedHoleIds: layout.publishedHoleIds })),
+        architecture: architectureReport ? { total: architectureReport.total, components: Object.fromEntries(Object.entries(architectureReport.components).map(([id, item]) => [id, { score: item.score, weight: item.weight, raw: item.raw }])), warnings: architectureReport.warnings.map((warning) => ({ id: warning.id, kind: warning.kind, holeIds: warning.holeIds, location: warning.location, measurement: warning.measurement })) } : null,
         estate: course.estate ? {
           generationVersion: course.estate.generationVersion,
           ownedParcelIds: course.estate.ownedParcelIds,
@@ -1087,7 +1098,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, selectedParcelId, showCourseManager, showLandOffice, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, architectureReport, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, selectedParcelId, showCourseManager, showLandOffice, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -2180,6 +2191,7 @@ export default function App() {
                 showGridOverlays={viewMode === "ARCHITECT"}
                 surveyMode={showLandOffice}
                 selectedParcelId={selectedParcelId}
+                architectureWarnings={architectureReport?.warnings}
                 animationsEnabled={effectiveAnimations}
                 ambienceFx={appProfile.graphics.ambienceFx}
                 waterAnimation={appProfile.graphics.waterAnimation}
@@ -2238,7 +2250,7 @@ export default function App() {
             {showProgression && !tutorialProgress && <ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} />}
             {showTournaments && !tutorialProgress && <TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
             {showLandOffice && !tutorialProgress && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
-            {showCourseManager && !tutorialProgress && <CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onClose={() => setShowCourseManager(false)} />}
+            {showCourseManager && !tutorialProgress && <CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onClose={() => setShowCourseManager(false)} />}
             {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
             {!tutorialProgress && <HoleMinimap

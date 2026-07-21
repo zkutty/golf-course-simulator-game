@@ -2,6 +2,8 @@ import type { Course, World } from "../models/types";
 import { scoreCourseHoles } from "./holes";
 import { computeCourseRatingAndSlope } from "./courseRating";
 import { getEffectiveBalance } from "../balance/difficulty";
+import { BALANCE as BASE_BALANCE } from "../balance/balanceConfig";
+import { analyzeArchitecture, architectureDemandMultiplier } from "../architecture/architecture";
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
@@ -27,7 +29,8 @@ export const SATISFACTION_WEIGHTS = {
 export function courseQuality(course: Course): number {
   // Hole-based quality (0..1)
   const s = scoreCourseHoles(course);
-  return clamp01(s.courseQuality / 100);
+  const architecture = analyzeArchitecture(course).total / 100;
+  return clamp01((s.courseQuality / 100) * (1 - BASE_BALANCE.architecture.qualityBlend) + architecture * BASE_BALANCE.architecture.qualityBlend);
 }
 
 export function priceAttractiveness(course: Course): number {
@@ -57,7 +60,8 @@ export function priceAttractivenessWithContext(course: Course, world: World): nu
 export function demandBreakdown(course: Course, world: World) {
   const BALANCE = getEffectiveBalance(world.difficulty);
   const holeSummary = scoreCourseHoles(course);
-  const q = clamp01(holeSummary.courseQuality / 100); // 0..1
+  const architecture = analyzeArchitecture(course);
+  const q = clamp01((holeSummary.courseQuality / 100) * (1 - BALANCE.architecture.qualityBlend) + (architecture.total / 100) * BALANCE.architecture.qualityBlend);
   const cond = course.condition; // 0..1
   const rep = world.reputation / 100; // 0..1
   const price = priceAttractivenessWithContext(course, world); // 0..1
@@ -134,7 +138,7 @@ export function demandBreakdown(course: Course, world: World) {
     contributions.staff;
 
   const blended = casualShare * casualIndex + coreShare * coreIndex;
-  const demand = Math.max(0, Math.min(1.2, blended * 1.05 + base * 0.05)); // keep legacy weights barely influential
+  const demand = Math.max(0, Math.min(1.2, (blended * 1.05 + base * 0.05) * architectureDemandMultiplier(course))); // bounded architecture nudge
 
   // Mirrors BALANCE.visitors so difficulty's demand multiplier applies here.
   const floor = BALANCE.visitors.baseFloor;
@@ -154,6 +158,7 @@ export function demandBreakdown(course: Course, world: World) {
     weights: { ...DEMAND_WEIGHTS },
     contributions,
     demandIndex: demand,
+    architecture: { score: architecture.total, multiplier: architectureDemandMultiplier(course) },
     segments: {
       casual: { share: casualShare, demandIndex: casualIndex, baseVisitors: baseVisitorsCasual },
       core: { share: coreShare, demandIndex: coreIndex, baseVisitors: baseVisitorsCore, cap: coreCap },
@@ -207,5 +212,3 @@ export function satisfactionBreakdown(course: Course, world: World) {
     satisfaction: Math.round(Math.max(0, Math.min(100, sat))),
   };
 }
-
-

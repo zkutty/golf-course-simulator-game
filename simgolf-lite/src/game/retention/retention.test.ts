@@ -21,8 +21,8 @@ describe("M17 retention", () => {
     expect(records.longestProfitStreak).toBe(220);
   });
 
-  it("defines 25 one-shot achievements and never re-fires earned ones", () => {
-    expect(ACHIEVEMENTS).toHaveLength(25);
+  it("defines 27 one-shot achievements, including expansion goals, and never re-fires earned ones", () => {
+    expect(ACHIEVEMENTS).toHaveLength(27);
     const course = { ...DEFAULT_COURSE, holes: DEFAULT_COURSE.holes.map((hole, index) => index === 0 ? { ...hole, tee: { x: 1, y: 1 }, green: { x: 4, y: 4 } } : hole) };
     const context = { course, world: DEFAULT_WORLD, records: emptyCourseRecords(), rating: 0, tutorialCompleted: false, profitStreak: 0, sculpted: false, recoveredDistress: false, perfectMood: false };
     const first = evaluateAchievements(DEFAULT_APP_PROFILE, context, "Test", 1);

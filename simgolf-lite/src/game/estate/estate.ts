@@ -194,6 +194,25 @@ export function isOwnedTile(course: Course, x: number, y: number): boolean {
   return !!parcel && course.estate.ownedParcelIds.includes(parcel.id);
 }
 
+/** Managed footprint for operating-cost scaling. Surveyed but untouched land is
+ * intentionally free; only owned construction and authored playing ground count. */
+export function developedOwnedTileCount(course: Course): number {
+  const expected = course.width * course.height;
+  if (!course.estate) return expected;
+  const baseline = decodeTerrainBaseline(course.estate.naturalBaseline.terrainRle, expected);
+  const parcelMap = decodeParcelMap(course.estate, expected);
+  if (!baseline || !parcelMap) return expected;
+  const owned = new Set(course.estate.ownedParcelIds);
+  let count = 0;
+  for (let index = 0; index < expected; index++) {
+    const parcel = course.estate.parcels[parcelMap[index]];
+    if (!parcel || !owned.has(parcel.id)) continue;
+    const terrain = course.tiles[index];
+    if (terrain !== baseline[index] || terrain === "fairway" || terrain === "green" || terrain === "tee" || terrain === "path") count++;
+  }
+  return count;
+}
+
 export function canPurchaseParcel(course: Course, cash: number, parcelId: string): { ok: true; parcel: EstateParcel } | { ok: false; reason: "missing" | "owned" | "non-adjacent" | "unaffordable" } {
   const estate = course.estate;
   const parcel = estate?.parcels.find((entry) => entry.id === parcelId);

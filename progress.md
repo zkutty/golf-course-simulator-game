@@ -345,3 +345,28 @@ Previous prompt: Let’s do m14 in linear for this project
 - Root cause: repeated M26 layout normalization and course-view cloning defeated the existing identity-based scoring caches, while daily setup also recomputed the same course demand twice.
 - Memoized immutable normalized courses and draft/published layout views, reused operating views across live-day planning, and cached tournament qualification by course revision and tier.
 - Full CI-equivalent unit suite now passes: 46 files, 311 passed, 1 skipped, in 23.2s locally.
+
+## 2026-07-21 — M27 golf architecture intelligence in progress
+
+- Current request: “Implement m27 from linear project”. Linear scope resolved as ZK-248 through ZK-252 and all five issues were moved to In Progress.
+- M27 covers deterministic architecture scoring, routing/safety/walkability analysis, the Architect Report and guidance surfaces, expansion progression/balance, and complete 36-hole release certification.
+- Existing modified and untracked visual/test artifacts predate this task and are being preserved untouched.
+
+## 2026-07-21 — M27 golf architecture intelligence complete
+
+- Added a deterministic, explainable 0–100 architecture score with exact Routing 25%, Natural Fit 25%, Variety 20%, Safety 15%, and Walkability 15% weights, raw measurements, bounded demand/quality influence, and identity caching.
+- Added estate-aware routed green-to-tee and clubhouse analysis, returning-nine measurements, crossing/parallel/repetition detection, earthwork and terrain-retention findings, nonblocking map geometry, and bounded route-search fallbacks that cannot stall play.
+- Added the accessible Architect Report to Course Manager with progress bars, explanations, warning navigation, map overlays, Golfopedia concepts, localized copy, pseudo-locale coverage, text scaling, reduced motion, and color-safe terrain verification.
+- Added 18/36-hole progression goals and achievements, second-course guidance, persistent one-shot advisor IDs, developed-land and multi-course operating costs, a complete two-course/36-hole/100-golfer release fixture, save/hash compatibility fixes, and performance-fixture support.
+
+## M27 verification
+
+- Full unit suite passes with an expanded timeout appropriate to the existing synchronous M24 live fixture: 48 files, 316 tests passed, one intentional skip. Reducer fuzz passes 3/3.
+- Production build, lint/i18n guards, and `git diff --check` pass. Lint reports the same seven existing React hook warnings and no errors.
+- M27 Playwright acceptance passes 2/2: 36 holes, two independently published eighteens, nine owned parcels, 100 concurrent golfers, architecture report/map findings, the ≤8 ms renderer-work gate, and pseudo-locale/accessibility coverage.
+- The long M14 fresh-state tutorial regression passes at its normal timeout (9.8 minutes). Previously isolated M17 retention, M20 advisor, and golden quick-start regressions also pass.
+- The bundled web-game client completed deterministic stepping with no console-error artifact; text state confirms 36 holes, two layouts, architecture 60.3, four findings, nine owned parcels, and 100 golfers. Its headless canvas-only capture was black under SwiftShader, while the full Playwright captures rendered correctly and were visually inspected.
+
+## M27 remaining
+
+- None. ZK-248 through ZK-252 meet their implementation and acceptance criteria.

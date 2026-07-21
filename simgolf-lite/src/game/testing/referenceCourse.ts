@@ -1,5 +1,6 @@
 import type { Course, Terrain } from "../models/types";
 import { generateWildLandWithObstacles } from "../gen/generateWildLand";
+import { createNewGame } from "../gen/newGame";
 
 export const PARKLAND_VISUAL_SEED = 1900212;
 export const PARKLAND_CAMERA_BOOKMARKS = {
@@ -395,5 +396,57 @@ export function createM26MultiCourseReferenceCourse(): Course {
     ],
     activeCourseId: "north",
     baseGreenFee: 120,
+  };
+}
+
+/** M27 release fixture: the complete 220×140 estate, two independent
+ * published eighteens, every parcel owned, dense scenery, and stable IDs. */
+export function createM27ReleaseReferenceCourse(theme: NonNullable<Course["theme"]> = "parkland"): Course {
+  const generated = createNewGame({ mode: "sandbox", courseName: "M27 Thirty-Six Hole Estate", seed: 270252, theme, difficulty: "normal", sandboxOverrides: { startingCash: 1_000_000 } }).course;
+  const tiles = generated.tiles.slice();
+  const elevations = generated.elevations.slice();
+  const holes: Course["holes"] = [];
+  for (let courseIndex = 0; courseIndex < 2; courseIndex++) for (let index = 0; index < 18; index++) {
+    const y = 6 + index * 7;
+    const leftToRight = index % 2 === 0;
+    const west = courseIndex === 0 ? 7 : 117;
+    const east = courseIndex === 0 ? 102 : 212;
+    const tee = { x: leftToRight ? west : east, y };
+    const green = { x: leftToRight ? east : west, y };
+    const direction = green.x > tee.x ? 1 : -1;
+    for (let x = tee.x; x !== green.x + direction; x += direction) for (let dy = -1; dy <= 1; dy++) {
+      const tileIndex = (y + dy) * generated.width + x;
+      tiles[tileIndex] = "fairway";
+      elevations[tileIndex] = 2 + ((index + Math.floor(x / 18)) % 3);
+    }
+    tiles[tee.y * generated.width + tee.x] = "tee";
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) tiles[(green.y + dy) * generated.width + green.x + dx] = "green";
+    const id = `${courseIndex === 0 ? "heritage" : "meadow"}-${index + 1}`;
+    holes.push({ id, name: `${courseIndex === 0 ? "Heritage" : "Meadow"} ${index + 1}`, tee, green, teeBoxes: { member: tee }, pinPositions: { A: green }, parMode: "MANUAL", parManual: index % 6 === 0 ? 3 : index % 5 === 0 ? 5 : 4, holeIndex: index + 1 });
+  }
+  const occupied = new Set(holes.flatMap((hole) => [hole.tee, hole.green]).filter(Boolean).map((point) => `${point!.x},${point!.y}`));
+  const obstacles = generated.obstacles.filter((obstacle) => tiles[obstacle.y * generated.width + obstacle.x] === "rough" && !occupied.has(`${obstacle.x},${obstacle.y}`)).slice(0, 900);
+  const decorations: NonNullable<Course["decorations"]> = [];
+  for (let y = 3; y < generated.height - 3 && decorations.length < 600; y += 3) for (let x = 3; x < generated.width - 3 && decorations.length < 600; x += 4) {
+    if (tiles[y * generated.width + x] !== "rough") continue;
+    decorations.push({ kind: decorations.length % 5 === 0 ? "flower_bed" : decorations.length % 3 === 0 ? "lamp" : "bench", x, y, rotation: (decorations.length % 4) as 0 | 1 | 2 | 3 });
+  }
+  const heritage = holes.slice(0, 18).map((hole) => hole.id!);
+  const meadow = holes.slice(18).map((hole) => hole.id!);
+  return {
+    ...generated,
+    tiles,
+    elevations,
+    holes,
+    obstacles,
+    decorations,
+    layouts: [
+      { id: "heritage", name: "Heritage Course", draftHoleIds: heritage, publishedHoleIds: heritage, roundLength: 18, state: "open", greenFee: 125 },
+      { id: "meadow", name: "Meadow Course", draftHoleIds: meadow, publishedHoleIds: meadow, roundLength: 18, state: "open", greenFee: 85 },
+    ],
+    activeCourseId: "heritage",
+    baseGreenFee: 125,
+    condition: .94,
+    estate: generated.estate ? { ...generated.estate, ownedParcelIds: generated.estate.parcels.map((parcel) => parcel.id) } : undefined,
   };
 }

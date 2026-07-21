@@ -20,6 +20,13 @@ export const BALANCE = {
     highRepPriceMult: 0.85, // slightly softer above-market penalty when rep > threshold
   },
 
+  architecture: {
+    // Architectural judgment informs demand without becoming an opening gate.
+    // A 0/100 report can move demand by at most -/+ this fraction.
+    demandEffectMax: 0.08,
+    qualityBlend: 0.15,
+  },
+
   capacity: {
     roundsPerPlayableHolePerWeek: 300,
     soldOutRepBonus: 1,
@@ -44,6 +51,7 @@ export const BALANCE = {
   // Variable operating costs
   ops: {
     staffCostPerLevel: 450,
+    perAdditionalOperatingCourseStaff: 220,
     marketingCostPerLevel: 300,
   },
 
@@ -67,6 +75,8 @@ export const BALANCE = {
   // Required maintenance model
   requiredMaintenance: {
     base: 400,
+    perDevelopedTile: 0.12,
+    perAdditionalOperatingCourse: 180,
     perVisitorK: 0.08,
     // If budget < required, add extra wear and reputation penalty
     wearShortfallMult: 0.06, // extra wear (0..this) at 100% shortfall

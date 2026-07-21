@@ -84,6 +84,7 @@ import { pickNaturalProp, shouldFadeTallProp, type NaturalPropVariant } from "..
 import { isWaterHazard } from "../game/models/terrainRules";
 import { T } from "../i18n/T";
 import { decodeParcelMap } from "../game/estate/estate";
+import type { ArchitectureWarning } from "../game/architecture/architecture";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -328,6 +329,7 @@ export interface PixiStageProps {
   showGridOverlays: boolean;
   surveyMode?: boolean;
   selectedParcelId?: string | null;
+  architectureWarnings?: ArchitectureWarning[];
   animationsEnabled: boolean;
   ambienceFx: boolean;
   waterAnimation: boolean;
@@ -1942,6 +1944,39 @@ export function PixiStage(props: PixiStageProps) {
     });
     if (props.showMarkers === false) return;
 
+    // Architect Report overlay: warnings remain advisory and use both shape
+    // and color so crossings/transfers stay legible in color-vision modes.
+    if (props.architectureWarnings?.length) {
+      const g = new PIXI.Graphics();
+      const warningPoint = (point: Point) => {
+        const x = Math.max(0, Math.min(course.width - 1, Math.round(point.x)));
+        const y = Math.max(0, Math.min(course.height - 1, Math.round(point.y)));
+        return tileCenterIso(point.x, point.y, getElevation(course, x, y), rotation);
+      };
+      for (const warning of props.architectureWarnings) {
+        const points = warning.geometry?.length ? warning.geometry : warning.location ? [warning.location] : [];
+        if (points.length > 1) {
+          const first = warningPoint(points[0]);
+          g.moveTo(first.x, first.y);
+          for (let index = 1; index < points.length; index++) {
+            const point = points[index];
+            const projected = warningPoint(point);
+            g.lineTo(projected.x, projected.y);
+          }
+          g.stroke({ width: warning.severity === "warning" ? 4 : 2, color: 0xf3a712, alpha: .86 });
+        }
+        if (warning.location) {
+          const projected = warningPoint(warning.location);
+          g.circle(projected.x, projected.y, warning.severity === "warning" ? 8 : 5);
+          g.stroke({ width: 3, color: 0x3f2200, alpha: .95 });
+          g.circle(projected.x, projected.y, warning.severity === "warning" ? 5 : 3);
+          g.fill({ color: 0xffc857, alpha: .95 });
+        }
+      }
+      g.label = ROUTE_LABEL;
+      layers.terrainDecals.addChild(g);
+    }
+
     // Failing-corridor overlay: red translucent diamonds.
     if (showFixOverlay && failingCorridorSegments && failingCorridorSegments.length > 0) {
       const g = new PIXI.Graphics();
@@ -1974,7 +2009,7 @@ export function PixiStage(props: PixiStageProps) {
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
     }
-  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, rotation, props.showMarkers]);
+  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, rotation, props.showMarkers, props.architectureWarnings]);
 
   // ---------------------------------------------------------------------
   // Ticker pass — hover highlight/line + live golfer dots

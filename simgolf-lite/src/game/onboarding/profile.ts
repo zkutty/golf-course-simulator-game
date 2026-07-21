@@ -12,6 +12,8 @@ export interface AppProfile {
   tutorialOffered: boolean;
   tutorialCompleted: boolean;
   advisorFrequency: AdvisorFrequency;
+  /** Stable one-shot advisor triggers that must survive save/load and reload. */
+  advisorSeen: string[];
   gameplay: {
     autosaveCadence: AutosaveCadence;
     edgeScroll: boolean;
@@ -61,6 +63,7 @@ export const DEFAULT_APP_PROFILE: AppProfile = {
   tutorialOffered: false,
   tutorialCompleted: false,
   advisorFrequency: "normal",
+  advisorSeen: [],
   gameplay: {
     autosaveCadence: "weekly",
     edgeScroll: true,
@@ -139,6 +142,7 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
     tutorialOffered: raw.tutorialOffered === true,
     tutorialCompleted: raw.tutorialCompleted === true,
     advisorFrequency: oneOf(raw.advisorFrequency, ["chatty", "normal", "important", "off"], defaults.advisorFrequency),
+    advisorSeen: Array.isArray(raw.advisorSeen) ? [...new Set(raw.advisorSeen.filter((value): value is string => typeof value === "string"))].slice(-100) : [],
     gameplay: {
       autosaveCadence: oneOf(gameplay.autosaveCadence, ["off", "weekly", "5m", "15m"], defaults.gameplay.autosaveCadence),
       edgeScroll: bool(gameplay.edgeScroll, defaults.gameplay.edgeScroll),

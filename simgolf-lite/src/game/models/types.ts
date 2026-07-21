@@ -269,6 +269,7 @@ export interface DemandBreakdown {
     staff: number;
   };
   demandIndex: number; // 0..1.2-ish
+  architecture?: { score: number; multiplier: number };
   segments?: {
     casual: { share: number; demandIndex: number; baseVisitors: number };
     core: { share: number; demandIndex: number; baseVisitors: number; cap: number };

@@ -14,6 +14,8 @@ const METRIC_LABEL: Record<ConditionProgress["metric"], string> = {
   reputation: "Reputation",
   courseRating: "Course rating",
   holesBuilt: "Holes built",
+  publishedHoles: "Published holes",
+  publishedCourses: "Published courses",
   weeklyProfit: "Weekly profit",
   profitStreak: "Profitable weeks in a row",
   totalRounds: "Total rounds played",

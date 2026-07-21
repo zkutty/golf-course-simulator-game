@@ -9,15 +9,20 @@ import {
   selectLayout,
   updateLayout,
   validateDraftRouting,
+  courseForLayout,
 } from "../game/models/courseLayouts";
 import { useI18n } from "../i18n/useI18n";
 import { courseOperationalMetrics } from "../game/sim/courseOperations";
+import { analyzeArchitecture } from "../game/architecture/architecture";
+import type { MessageKey } from "../i18n/catalog";
 
 export function CourseManagerPanel(props: {
   course: Course;
   world: World;
   onChange: (course: Course) => void;
   onSelectHole: (holeId: string) => void;
+  onCenter: (point: { x: number; y: number }) => void;
+  onOpenGolfopedia: (entry: string) => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -29,6 +34,15 @@ export function CourseManagerPanel(props: {
   const available = props.course.holes.filter((hole) => hole.id && !assigned.has(hole.id));
   const validation = validateDraftRouting(props.course, active.id);
   const metrics = courseOperationalMetrics(props.course, props.world, active.id)[0];
+  const architecture = analyzeArchitecture(courseForLayout(props.course, active.id));
+  const componentCopy = (item: (typeof architecture.components)[keyof typeof architecture.components]) => {
+    const raw = item.raw;
+    if (item.id === "routing") return t("architecture.explanation.routing", { transfer: raw.averageTransferTiles, clubhouse: raw.firstTeeClubhouseTiles + raw.finalGreenClubhouseTiles });
+    if (item.id === "naturalFit") return t("architecture.explanation.naturalFit", { retained: raw.retainedTerrainPercent, earthwork: raw.earthworkStepsPer100Tiles });
+    if (item.id === "variety") return t("architecture.explanation.variety", { pars: raw.parTypes, lengths: raw.lengthBands, directions: raw.directionBuckets, shapes: raw.shapeTypes });
+    if (item.id === "safety") return t("architecture.explanation.safety", { crossings: raw.crossings, parallels: raw.parallelDangerZones, repetitions: raw.repetitions });
+    return t("architecture.explanation.walkability", { routed: raw.routedTransfers, transfers: raw.transferCount, total: raw.totalWalkingTiles });
+  };
 
   const change = (course: Course) => props.onChange(course);
   const reorder = (index: number, delta: number) => {
@@ -51,6 +65,25 @@ export function CourseManagerPanel(props: {
     </div>
     <p>{t("courses.routeSummary", { draft: active.draftHoleIds.length, published: active.publishedHoleIds.length })}</p>
     {metrics && <section data-testid="course-metrics"><h3>{t("courses.metrics")}</h3><p>{t("courses.metricLine", { rating: metrics.rating.toFixed(1), slope: metrics.slope, quality: Math.round(metrics.quality), demand: metrics.demand.toFixed(2), visitors: metrics.dailyVisitors, capacity: metrics.dailyCapacity })}</p></section>}
+    <section data-testid="architect-report" aria-labelledby="architect-report-title" style={{ border: "1px solid #b99b68", borderRadius: 10, padding: 10, background: "#f7edcf", margin: "12px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+        <h3 id="architect-report-title" style={{ margin: 0 }}>{t("architecture.title")}</h3>
+        <strong data-testid="architecture-total" aria-label={t("architecture.totalLabel", { score: architecture.total })} style={{ fontSize: "1.35rem" }}>{architecture.total}</strong>
+      </div>
+      <p style={{ margin: "4px 0 10px" }}>{t("architecture.subtitle")}</p>
+      <div style={{ display: "grid", gap: 7 }}>{Object.values(architecture.components).map((item) => <div key={item.id} data-testid={`architecture-${item.id}`}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><strong>{t(`architecture.component.${item.id}` as MessageKey)}</strong><span>{Math.round(item.score)} · {Math.round(item.weight * 100)}%</span></div>
+        <progress max={100} value={item.score} aria-label={`${t(`architecture.component.${item.id}` as MessageKey)}: ${Math.round(item.score)}`} style={{ width: "100%" }}/>
+        <small>{componentCopy(item)}</small>
+      </div>)}</div>
+      <h4>{t("architecture.findings", { count: architecture.warnings.length })}</h4>
+      {architecture.warnings.length ? <ul data-testid="architecture-warnings" style={{ paddingLeft: 20 }}>{architecture.warnings.map((warning) => <li key={warning.id} style={{ marginBottom: 7 }}>
+        <button style={{ textAlign: "left" }} onClick={() => { const holeId = warning.holeIds[0]; if (holeId) props.onSelectHole(holeId); if (warning.location) props.onCenter(warning.location); }}>
+          <strong>{t(`architecture.warning.${warning.kind}` as MessageKey)}</strong><br/><small>{warning.measurement} · {t("architecture.jump")}</small>
+        </button>
+      </li>)}</ul> : <p>{t("architecture.noWarnings")}</p>}
+      <button onClick={() => props.onOpenGolfopedia("management-architecture")}>{t("architecture.learn")}</button>
+    </section>
     <h3>{t("courses.draft")}</h3>
     <ol data-testid="draft-routing" style={{ display: "grid", gap: 6, paddingLeft: 24 }}>{active.draftHoleIds.map((holeId, index) => {
       const hole = props.course.holes.find((candidate) => candidate.id === holeId);

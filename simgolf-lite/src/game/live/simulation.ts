@@ -168,8 +168,24 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
 
 /** Seed 100 active golfers across one immutable round plan for render perf QA. */
 export function createRenderPerfLiveState(course: Course, world: World): LiveState {
-  const state = createLiveState(course, world, 0);
-  const template = spawnGolfer(state, course, { atMinute: LIVE.day.openMinute, archetype: "casual" });
+  // The render fixture measures sprites, culling, and frame work—not route
+  // planning. Build its one golfer template on a tiny synthetic course so a
+  // 220×140 release estate cannot spend minutes solving an irrelevant round.
+  const firstHole = course.holes.find((hole) => hole.tee && hole.green);
+  const templateCourse: Course = course.width * course.height > 12_000 ? {
+    ...course,
+    width: 24,
+    height: 18,
+    tiles: new Array(24 * 18).fill("fairway"),
+    elevations: new Array(24 * 18).fill(0),
+    holes: [{ id: "perf-hole", tee: { x: 3, y: 9 }, green: { x: 20, y: 9 }, parMode: "MANUAL", parManual: 4, name: firstHole?.name ?? "Performance Hole" }],
+    layouts: [{ id: "perf-course", name: "Performance Course", draftHoleIds: ["perf-hole"], publishedHoleIds: ["perf-hole"], roundLength: 9, state: "open", greenFee: course.baseGreenFee, legacyPartial: true }],
+    activeCourseId: "perf-course",
+    obstacles: [], buildings: [], decorations: [], estate: undefined,
+  } : course;
+  const state = createLiveState(templateCourse, world, 0);
+  const template = spawnGolfer(state, templateCourse, { atMinute: LIVE.day.openMinute, archetype: "casual" });
+  const active = activeCourseLayout(course);
   const colors = Object.values(ARCHETYPES).map((archetype) => archetype.color);
   state.golfers = Array.from({ length: 100 }, (_, index) => {
     const holeIndex = index % 18;
@@ -186,6 +202,10 @@ export function createRenderPerfLiveState(course: Course, world: World): LiveSta
       pos,
       ball: null,
       currentHole: holeIndex,
+      currentHoleId: active.publishedHoleIds[holeIndex % active.publishedHoleIds.length],
+      courseId: active.id,
+      courseName: active.name,
+      holeIds: active.publishedHoleIds,
       holePar: new Array(18).fill(5),
       holeStrokes: new Array(18).fill(5),
       mood: 0.2 + (index % 8) * 0.1,

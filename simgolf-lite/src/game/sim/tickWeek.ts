@@ -10,6 +10,8 @@ import { getEffectiveBalance } from "../balance/difficulty";
 import { distressExhausted, hitsLiquidityTrap } from "./runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
 import { operatingCourseViews } from "../models/courseLayouts";
+import { developedOwnedTileCount } from "../estate/estate";
+import { courseLayouts } from "../models/courseLayouts";
 
 function tickWeekSingle(
   course: Course,
@@ -55,7 +57,8 @@ function tickWeekSingle(
   const revenue = greenFeeRevenue + concessionRevenue;
 
   // Costs
-  const staffCost = BALANCE.ops.staffCostPerLevel * world.staffLevel;
+  const operatingCourses = courseLayouts(course).filter((layout) => layout.state === "open" && layout.publishedHoleIds.length > 0).length;
+  const staffCost = BALANCE.ops.staffCostPerLevel * world.staffLevel + Math.max(0, operatingCourses - 1) * BALANCE.ops.perAdditionalOperatingCourseStaff;
   const marketingCost = BALANCE.ops.marketingCostPerLevel * world.marketingLevel;
   const maintenanceCost = world.maintenanceBudget;
 
@@ -68,6 +71,8 @@ function tickWeekSingle(
   const avgWeight0 = totalWeight0 / (course.tiles.length || 1);
   const requiredMaintenance =
     BALANCE.requiredMaintenance.base +
+    developedOwnedTileCount(course) * BALANCE.requiredMaintenance.perDevelopedTile +
+    Math.max(0, operatingCourses - 1) * BALANCE.requiredMaintenance.perAdditionalOperatingCourse +
     visitors * avgWeight0 * BALANCE.requiredMaintenance.perVisitorK;
   const maintShortfall = requiredMaintenance - maintenanceCost; // >0 underfunded
 
