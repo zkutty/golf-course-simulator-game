@@ -14,6 +14,7 @@ import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } fro
 import { rollDiscretionaryWallet } from "./concessions";
 import type { CompletedRound } from "../retention/types";
 import { createLiveTournament, planTournamentDay, tournamentForDate, updateTournamentStanding } from "../tournaments/tournaments";
+import { getTeeBox, preferredTeeForArchetype } from "../models/courseSetup";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -94,6 +95,11 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   const profile = getGolferProfile(solverProfileForSkill(personality.skill), course);
   const entry = entryPoint(course);
   const wallet = rollDiscretionaryWallet(personality, rng);
+  const preferredTeeSet = preferredTeeForArchetype(arch.name);
+  const teeSet = course.holes.every((hole) => !getTeeBox(hole, "member") || !!getTeeBox(hole, preferredTeeSet))
+    ? preferredTeeSet
+    : "member";
+  const pinRotation = course.activePinRotation ?? "A";
   const round = buildGolferRound({
     course,
     profile,
@@ -102,11 +108,15 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     personality,
     route: makeRouter(course, state.walkCache),
     wallet,
+    teeSet,
+    pinRotation,
   });
   return {
     id,
     name: arrival.tournament?.name ?? golferName(rng(), rng()),
     archetype: arch.name,
+    teeSet,
+    pinRotation,
     personality,
     color: arch.color,
     segments: round.segments,
@@ -324,6 +334,8 @@ export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): 
       mood: g.mood,
       thought: g.thought,
       archetype: g.archetype,
+      teeSet: g.teeSet ?? preferredTeeForArchetype(g.archetype),
+      pinRotation: g.pinRotation ?? "A",
       segKind,
       segT,
       shot,
@@ -404,6 +416,8 @@ export function reconcileGolfers(state: LiveState, course: Course): void {
       exit,
       route: makeRouter(course, state.walkCache),
       wallet: g.wallet,
+      teeSet: g.teeSet,
+      pinRotation: g.pinRotation,
     });
 
     // Splice: keep scored holes, replace the unplayed tail with the new plan.

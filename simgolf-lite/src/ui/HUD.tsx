@@ -9,7 +9,7 @@ import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
-import { computeCourseRatingAndSlope } from "../game/sim/courseRating";
+import { computeCourseRatingAndSlope, computeRatingsByTee } from "../game/sim/courseRating";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
 import type { LegacyState } from "../utils/legacy";
 import { getEffectiveBalance, getDifficultyProfile } from "../game/balance/difficulty";
@@ -212,6 +212,7 @@ export function HUD(props: {
   }, [course.tiles]);
   const avgMaintWeight = totalMaintWeight / totalTiles;
   const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
+  const teeRatings = useMemo(() => computeRatingsByTee(course), [course]);
 
   const vibe = useMemo(() => {
     const complete = holeSummary.holes.filter((h) => h.isComplete && h.isValid);
@@ -1179,6 +1180,10 @@ export function HUD(props: {
               </div>
               <div data-tooltip="Expected scoring for scratch and bogey golfers; their gap drives the slope rating." style={{ fontSize: 12, color: "#6b7280" }}>
                 <T id="auto.ui.hud.scratch" />{rating.expectedScratchScore.toFixed(1)} <T id="auto.ui.hud.bogey.2" />{rating.expectedBogeyScore.toFixed(1)} <T id="auto.ui.hud.yards.tile" />{course.yardsPerTile}
+              </div>
+              <div aria-label={translateCurrent("courseSetup.ratingMatrix")} style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "3px 8px", marginTop: 9, padding: 7, background: "rgba(255,255,255,.55)", borderRadius: 6, fontSize: 11 }}>
+                <b>{translateCurrent("auto.ui.holeinspector.tee")}</b><b>{translateCurrent("courseSetup.rating")}</b><b>{translateCurrent("courseSetup.slope")}</b><b>{translateCurrent("courseSetup.yards")}</b>
+                {(["forward", "member", "championship"] as const).map((teeSet) => { const row = teeRatings[teeSet]; return <span key={teeSet} style={{ display: "contents", opacity: row.setupComplete ? 1 : .66 }}><span>{teeSet[0].toUpperCase() + teeSet.slice(1)}{row.setupComplete ? "" : " *"}</span><span>{row.courseRating.toFixed(1)}</span><span>{row.slope}</span><span>{row.effectiveYardage}</span></span>; })}
               </div>
               <div data-tooltip="Completed holes that currently fail route, placement, or shot-corridor validation." style={{ marginTop: 8, fontSize: 12, color: "#444" }}>
                 <T id="auto.ui.hud.layout.issues" />{holeSummary.holes.filter((h) => h.isComplete && !h.isValid).length} /{" "}

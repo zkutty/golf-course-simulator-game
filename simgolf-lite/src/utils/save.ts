@@ -10,6 +10,7 @@ import type {
   Obstacle,
   Decoration,
   DecorationKind,
+  PinRotation,
 } from "../game/models/types";
 import type { ObjectiveState } from "../game/models/objectives";
 import {
@@ -31,9 +32,10 @@ import { emptyCourseRecords, seedRecordsFromHistory } from "../game/retention/re
 import type { CourseRecords } from "../game/retention/types";
 import { normalizeTournamentCalendar } from "../game/tournaments/tournaments";
 import { DECORATION_KINDS, normalizedDecoration } from "../game/models/decorations";
+import { PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSetup } from "../game/models/courseSetup";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 6 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 7 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -74,6 +76,10 @@ export interface SaveV5 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV6 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 6;
+  records?: CourseRecords;
+}
+export interface SaveV7 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -97,7 +103,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV6 = {
+  const save: SaveV7 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -163,6 +169,8 @@ function migrateCourseGrid(oldCourse: Course): Course {
       ...hole,
       tee: clampPoint(hole.tee),
       green: clampPoint(hole.green),
+      teeBoxes: Object.fromEntries(TEE_SETS.map((set) => [set, clampPoint(hole.teeBoxes?.[set] ?? (set === "member" ? hole.tee : null))])),
+      pinPositions: Object.fromEntries(PIN_ROTATIONS.map((rotation) => [rotation, clampPoint(hole.pinPositions?.[rotation] ?? (rotation === "A" ? hole.green : null))])),
     };
   });
 
@@ -228,6 +236,12 @@ function validPoint(value: unknown, width: number, height: number): boolean {
   );
 }
 
+function validMarkerRecord(value: unknown, keys: readonly string[], width: number, height: number): boolean {
+  if (value == null) return true;
+  if (!isRecord(value)) return false;
+  return Object.keys(value).every((key) => keys.includes(key)) && keys.every((key) => validPoint(value[key] ?? null, width, height));
+}
+
 function validateCourseShape(raw: unknown): SaveLoadError | null {
   if (!isRecord(raw)) return { code: "INVALID_COURSE", message: "The save has no valid course data." };
   const { width, height, tiles, holes } = raw;
@@ -255,6 +269,9 @@ function validateCourseShape(raw: unknown): SaveLoadError | null {
   for (const hole of holes) {
     if (!isRecord(hole) || !validPoint(hole.tee ?? null, width as number, height as number) || !validPoint(hole.green ?? null, width as number, height as number)) {
       return { code: "INVALID_COURSE", message: "A saved tee or green position is invalid." };
+    }
+    if (!validMarkerRecord(hole.teeBoxes, TEE_SETS, width as number, height as number) || !validMarkerRecord(hole.pinPositions, PIN_ROTATIONS, width as number, height as number)) {
+      return { code: "INVALID_COURSE", message: "A saved tee set or pin rotation is invalid." };
     }
     if (hole.waypoints != null && (!Array.isArray(hole.waypoints) || hole.waypoints.some((p) => !validPoint(p, width as number, height as number)))) {
       return { code: "INVALID_COURSE", message: "A saved hole waypoint is invalid." };
@@ -290,6 +307,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V6 adds player-authored course decorations and walking structures.
   // The normalizer supplies an empty list for older courses.
   5: (save) => ({ ...save, schemaVersion: 6 }),
+  // V7 introduces typed tee sets and pin rotations. The normalizer mirrors
+  // every legacy tee/green into Member/A without altering terrain or routes.
+  6: (save) => ({ ...save, schemaVersion: 7 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World): CourseRecords {
@@ -429,9 +449,11 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       ...rawCourse,
       holes:
         rawCourse.holes?.map((h, i) => ({
-          ...DEFAULT_COURSE.holes[i],
-          ...h,
-          parMode: h.parMode ?? "AUTO",
+          ...withNormalizedHoleSetup({
+            ...DEFAULT_COURSE.holes[i],
+            ...h,
+            parMode: h.parMode ?? "AUTO",
+          }),
         })) ?? DEFAULT_COURSE.holes,
       obstacles: sanitizeObstacles(rawCourse.obstacles, rawWidth, rawHeight),
       elevations: Array.isArray(rawCourse.elevations)
@@ -445,11 +467,17 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       decorations: sanitizeDecorations(rawCourse.decorations, rawWidth, rawHeight),
       yardsPerTile: rawCourse.yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
       theme: oneOf<LandTheme>(rawCourse.theme, ["parkland", "links", "desert"], "parkland"),
+      activePinRotation: oneOf<PinRotation>(rawCourse.activePinRotation, PIN_ROTATIONS, "A"),
     };
 
     // Migrate if grid size differs, then guarantee a well-formed
     // elevations array (pre-elevation saves load flat — ZKU-143).
     const course = withNormalizedElevations(migrateCourseGrid(loadedCourse));
+    for (const hole of course.holes) {
+      if (validateHoleCourseSetup(course, hole).length > 0) {
+        return fail("INVALID_COURSE", "The saved tee and pin setup is invalid.");
+      }
+    }
 
     const rawWorld = parsed.world as unknown as World;
     const rawConstraints = rawWorld.constraints;

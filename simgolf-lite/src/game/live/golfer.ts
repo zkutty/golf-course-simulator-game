@@ -1,4 +1,4 @@
-import type { Course, Point } from "../models/types";
+import type { Course, PinRotation, Point, TeeSet } from "../models/types";
 import type { GolferProfile } from "../sim/golferProfiles";
 import { solveShotsToGreen } from "../sim/shots/solveShotsToGreen";
 import { scoreCourseHoles } from "../sim/holes";
@@ -7,10 +7,30 @@ import { mishitChance, puttOutcome, type Personality } from "./personality";
 import type { Golfer, Segment } from "./types";
 import type { ConcessionType } from "../models/types";
 import { planPurchase } from "./concessions";
+import { resolveCourseSetup } from "../models/courseSetup";
 
 // Optional tile-aware router; returns waypoints from just-after `from` to `to`,
 // or null to fall back to a straight-line walk.
 export type WalkRouter = (from: Point, to: Point) => Point[] | null;
+
+const setupCourseCache = new WeakMap<Course, Map<string, Course>>();
+
+function courseForRoundSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): Course {
+  let setups = setupCourseCache.get(course);
+  if (!setups) { setups = new Map(); setupCourseCache.set(course, setups); }
+  const key = `${teeSet}:${pinRotation}`;
+  const cached = setups.get(key);
+  if (cached) return cached;
+  const resolved: Course = {
+    ...course,
+    holes: course.holes.map((hole) => {
+      const setup = resolveCourseSetup(hole, teeSet, pinRotation);
+      return { ...hole, tee: setup.tee, green: setup.pin };
+    }),
+  };
+  setups.set(key, resolved);
+  return resolved;
+}
 
 function dist(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
@@ -48,6 +68,8 @@ export function buildGolferRound(args: {
   personality: Personality;
   wallet?: number;
   route?: WalkRouter;
+  teeSet?: TeeSet;
+  pinRotation?: PinRotation;
 }): BuiltRound {
   return planFromHole({
     course: args.course,
@@ -59,6 +81,8 @@ export function buildGolferRound(args: {
     exit: args.entry,
     route: args.route,
     wallet: args.wallet,
+    teeSet: args.teeSet,
+    pinRotation: args.pinRotation,
   });
 }
 
@@ -76,8 +100,12 @@ export function planFromHole(args: {
   exit: Point;
   route?: WalkRouter;
   wallet?: number;
+  teeSet?: TeeSet;
+  pinRotation?: PinRotation;
 }): BuiltRound {
-  const { course, profile, rng, personality, startHole, exit, route } = args;
+  const baseCourse = args.course;
+  const course = courseForRoundSetup(baseCourse, args.teeSet ?? "member", args.pinRotation ?? baseCourse.activePinRotation ?? "A");
+  const { profile, rng, personality, startHole, exit, route } = args;
   const summary = scoreCourseHoles(course);
   const segments: Segment[] = [];
   const holePar: number[] = [];

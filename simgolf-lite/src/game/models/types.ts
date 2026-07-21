@@ -35,7 +35,16 @@ export interface Point {
   y: number;
 }
 
+export const TEE_SETS = ["forward", "member", "championship"] as const;
+export type TeeSet = (typeof TEE_SETS)[number];
+export const PIN_ROTATIONS = ["A", "B", "C"] as const;
+export type PinRotation = (typeof PIN_ROTATIONS)[number];
+
 export interface Hole {
+  /** Authoritative M23 marker collections. Legacy tee/green aliases remain
+   * mirrored to Member/A while older fixtures and integrations transition. */
+  teeBoxes?: Partial<Record<TeeSet, Point | null>>;
+  pinPositions?: Partial<Record<PinRotation, Point | null>>;
   tee: Point | null;
   green: Point | null;
   waypoints?: Point[]; // Optional waypoints for dog legs (between tee and green)
@@ -104,6 +113,8 @@ export interface Course {
   // to a flat (all-zero) field on load.
   elevations: number[]; // length = width * height
   holes: Hole[]; // 9 or 18 (MVP: 9)
+  /** Course-wide operational pin used by ordinary live rounds. */
+  activePinRotation?: PinRotation;
   obstacles: Obstacle[]; // overlay layer (not terrain)
   // Multi-tile structures (ZKU-152; extended by M4 concessions). Older
   // saves migrate to an empty list on load.

@@ -63,6 +63,8 @@ function golfer(value: unknown): value is Golfer {
     if (!finite(value[key])) return false;
   }
   return typeof value.finished === "boolean" && (value.thought === null || typeof value.thought === "string") &&
+    (value.teeSet == null || value.teeSet === "forward" || value.teeSet === "member" || value.teeSet === "championship") &&
+    (value.pinRotation == null || value.pinRotation === "A" || value.pinRotation === "B" || value.pinRotation === "C") &&
     (value.wallet == null || finite(value.wallet)) &&
     (value.purchasedSegmentIndexes == null || (Array.isArray(value.purchasedSegmentIndexes) && value.purchasedSegmentIndexes.every(Number.isInteger))) &&
     (value.tournamentId == null || typeof value.tournamentId === "string") &&
@@ -134,6 +136,8 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
     ...g,
     wallet: g.wallet ?? 0,
     purchasedSegmentIndexes: g.purchasedSegmentIndexes ?? [],
+    teeSet: g.teeSet ?? "member",
+    pinRotation: g.pinRotation ?? "A",
   }));
   serializable.concessionCollected ??= 0;
   serializable.concessionTransactions ??= [];

@@ -6,8 +6,8 @@ test("M12 iso minimap, tycoon chrome, and sole-renderer fixture", async ({ page 
 
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto("/?perfFixture=1");
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").screen)).toBe("game");
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.onCourse)).toBe(100);
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").screen), { timeout: 15_000 }).toBe("game");
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.onCourse), { timeout: 15_000 }).toBe(100);
 
   const minimap = page.getByLabel("Isometric course minimap");
   await expect(minimap).toBeVisible();

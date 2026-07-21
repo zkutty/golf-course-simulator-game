@@ -6,6 +6,7 @@ import { TILE_H, TILE_W, worldToIso } from "../game/render/iso";
 import { getElevation } from "../game/models/elevation";
 import { translateCurrent } from "../i18n/core";
 import { MINIMAP_SIZE as SIZE, makeMinimapTransform, minimapCanvasPoint, minimapPointToWorld, type MinimapTransform } from "../game/render/minimap";
+import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
 
 const COLORS: Record<string, string> = {
   fairway: "#76ad58",
@@ -97,6 +98,27 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
           }
         }
       }
+      const markerHoles = hole ? [hole] : course.holes;
+      const activePin = course.activePinRotation ?? "A";
+      for (const markerHole of markerHoles) {
+        for (const teeSet of TEE_SETS) {
+          const marker = getTeeBox(markerHole, teeSet);
+          if (!marker) continue;
+          const point = minimapCanvasPoint(worldToIso(marker.x + .5, marker.y + .5, getElevation(course, marker.x, marker.y)), transform);
+          ctx.globalAlpha = teeSet === "member" ? 1 : .45;
+          ctx.fillStyle = teeSet === "forward" ? "#efcf6a" : teeSet === "championship" ? "#202722" : "#f7f4e8";
+          ctx.fillRect(point.x - 1.5, point.y - 1.5, 3, 3);
+        }
+        for (const rotation of PIN_ROTATIONS) {
+          const marker = getPinPosition(markerHole, rotation);
+          if (!marker) continue;
+          const point = minimapCanvasPoint(worldToIso(marker.x + .5, marker.y + .5, getElevation(course, marker.x, marker.y)), transform);
+          ctx.globalAlpha = rotation === activePin ? 1 : .35;
+          ctx.fillStyle = "#e44842";
+          ctx.beginPath(); ctx.arc(point.x, point.y, 1.8, 0, Math.PI * 2); ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
       baseRef.current = base;
     }, 420); // terrain/elevation edits regenerate without stalling paint input
     return () => window.clearTimeout(timer);

@@ -75,6 +75,7 @@ import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetric
 import { buildingSpec, buildingVisualFrame } from "../game/models/buildings";
 import { decorationTiles, decorationVisual } from "../game/models/decorations";
 import { getLandTheme } from "../game/models/themes";
+import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
 import type { AtlasFrame } from "../render/atlas";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
 import { getTerrainMaterial, pickTerrainBaseFrame, terrainTransitionFrame } from "../game/render/terrainMaterials";
@@ -1870,8 +1871,16 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     holes.forEach((hole) => {
-      if (hole.tee) drawTee(hole.tee, hole.green);
-      if (hole.green) drawCup(hole.green);
+      const activeRotation = course.activePinRotation ?? "A";
+      const activePin = getPinPosition(hole, activeRotation) ?? getPinPosition(hole, "A");
+      TEE_SETS.forEach((set) => {
+        const tee = getTeeBox(hole, set);
+        if (tee) drawTee(tee, activePin, set === "member" ? 1 : 0.34);
+      });
+      PIN_ROTATIONS.forEach((pinRotation) => {
+        const pin = getPinPosition(hole, pinRotation);
+        if (pin) drawCup(pin, pinRotation === activeRotation || (!getPinPosition(hole, activeRotation) && pinRotation === "A") ? 1 : 0.28);
+      });
     });
     if (draftTee) drawTee(draftTee, draftGreen, 0.55);
     if (draftGreen) drawMarker(draftGreen, 0x1b5e20, 0.55);

@@ -1,5 +1,6 @@
 import type { Course, World } from "../game/models/types";
 import type { LiveSimulationSnapshotV1 } from "../game/live/persistence";
+import { withNormalizedHoleSetup } from "../game/models/courseSetup";
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -23,7 +24,12 @@ export function hashGameState(value: {
   // Optional collection defaults are semantically empty both before and
   // after migration; canonicalize them so a lossless save/load does not
   // appear different merely because the loader materialized `[]`.
-  const course = { ...value.course, decorations: value.course.decorations ?? [] };
+  const course = {
+    ...value.course,
+    decorations: value.course.decorations ?? [],
+    activePinRotation: value.course.activePinRotation ?? "A",
+    holes: value.course.holes.map(withNormalizedHoleSetup),
+  };
   const text = canonical({ course, world: value.world, live: value.live });
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {

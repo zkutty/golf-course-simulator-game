@@ -1,4 +1,4 @@
-import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World } from "../game/models/types";
+import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation } from "../game/models/types";
 
 // Actions that mutate terrain (increment terrainVersion)
 export type TerrainMutationAction =
@@ -33,6 +33,11 @@ export type MarkerMutationAction =
   | { type: "MOVE_TEE"; holeIndex: number; position: Point; oldPosition: Point }
   | { type: "PLACE_GREEN"; holeIndex: number; position: Point }
   | { type: "MOVE_GREEN"; holeIndex: number; position: Point; oldPosition: Point }
+  | { type: "SET_TEE_BOX"; holeIndex: number; teeSet: TeeSet; position: Point }
+  | { type: "REMOVE_TEE_BOX"; holeIndex: number; teeSet: TeeSet }
+  | { type: "SET_PIN_POSITION"; holeIndex: number; pinRotation: PinRotation; position: Point }
+  | { type: "REMOVE_PIN_POSITION"; holeIndex: number; pinRotation: PinRotation }
+  | { type: "SET_ACTIVE_PIN_ROTATION"; pinRotation: PinRotation }
   | { type: "ADD_WAYPOINT"; holeIndex: number; position: Point; segmentIndex: number }
   | { type: "UPDATE_WAYPOINT"; holeIndex: number; waypointIndex: number; position: Point }
   | { type: "REMOVE_WAYPOINT"; holeIndex: number; waypointIndex: number }
@@ -47,6 +52,8 @@ export type EconomyMutationAction =
   | { type: "MOVE_TEE"; holeIndex: number; position: Point; oldPosition: Point }
   | { type: "PLACE_GREEN"; holeIndex: number; position: Point }
   | { type: "MOVE_GREEN"; holeIndex: number; position: Point; oldPosition: Point }
+  | { type: "SET_TEE_BOX"; holeIndex: number; teeSet: TeeSet; position: Point }
+  | { type: "REMOVE_TEE_BOX"; holeIndex: number; teeSet: TeeSet }
   | { type: "PLACE_BUILDING"; buildingType: BuildingType; x: number; y: number }
   | { type: "REMOVE_BUILDING"; x: number; y: number }
   | { type: "PLACE_DECORATION"; decoration: Decoration }

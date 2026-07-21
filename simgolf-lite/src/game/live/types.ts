@@ -1,4 +1,4 @@
-import type { ConcessionTransaction, ConcessionType, Difficulty, Point } from "../models/types";
+import type { ConcessionTransaction, ConcessionType, Difficulty, PinRotation, Point, TeeSet } from "../models/types";
 import type { Personality } from "./personality";
 import type { LiveTournamentState } from "../tournaments/types";
 
@@ -37,6 +37,8 @@ export interface Golfer {
   id: number;
   name: string;
   archetype: GolferArchetypeName;
+  teeSet?: TeeSet;
+  pinRotation?: PinRotation;
   personality: Personality;
   color: string;
   // Itinerary
@@ -127,6 +129,8 @@ export interface GolferRenderData {
   thought: string | null;
   // --- Animation facts (ZKU-153): raw, renderer-agnostic segment state. ---
   archetype: GolferArchetypeName;
+  teeSet?: TeeSet;
+  pinRotation?: PinRotation;
   /** Current itinerary segment kind, or null when idle/retired. */
   segKind: SegmentKind | null;
   /** Progress through the current segment, 0..1. */

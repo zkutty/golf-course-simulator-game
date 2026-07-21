@@ -7,7 +7,7 @@ import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
-import type { BuildingTier, ConcessionType, DecorationKind, DecorationRotation, Point, Terrain, WeekResult } from "./game/models/types";
+import type { BuildingTier, ConcessionType, DecorationKind, DecorationRotation, PinRotation, Point, TeeSet, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
 import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStore";
@@ -17,7 +17,7 @@ import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius }
 import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
-import { computeCourseRatingAndSlope } from "./game/sim/courseRating";
+import { computeCourseRatingAndSlope, computeRatingForSetup, computeRatingsByTee } from "./game/sim/courseRating";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "./game/sim/loanEligibility";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { getEffectiveBalance, terrainCostMult } from "./game/balance/difficulty";
@@ -47,7 +47,7 @@ import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
-import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
+import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
@@ -78,6 +78,7 @@ import { PauseOverlay } from "./ui/appShell/PauseOverlay";
 import { LoadingCard } from "./ui/appShell/LoadingCard";
 import { SettingsModal } from "./ui/SettingsModal";
 import type { SpeedName } from "./game/live/liveConfig";
+import { validateHoleCourseSetup, withNormalizedHoleSetup } from "./game/models/courseSetup";
 import { eventMatchesBinding } from "./accessibility/keybindings";
 import { T } from "./i18n/T";
 import { ambientMixFor, distanceVolume, musicContextFor } from "./audio/environment";
@@ -190,6 +191,7 @@ export default function App() {
   const [wizardStep, setWizardStep] = useState<WizardStep>("TEE");
   const [draftTee, setDraftTee] = useState<Point | null>(null);
   const [draftGreen, setDraftGreen] = useState<Point | null>(null);
+  const [setupPlacement, setSetupPlacement] = useState<{ kind: "tee"; key: TeeSet } | { kind: "pin"; key: PinRotation } | null>(null);
   const [obstacleType, setObstacleType] = useState<ObstacleType>("tree");
   const [sculptBrush, setSculptBrush] = useState<SculptBrush>("raise");
   const [sculptRadius, setSculptRadius] = useState<SculptRadius>(1);
@@ -395,13 +397,16 @@ export default function App() {
     const isM20Fixture = fixtureParams.get("m20Fixture") === "1";
     const isM21Fixture = fixtureParams.get("m21Fixture") === "1";
     const isM22Fixture = fixtureParams.get("m22Fixture") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture) return;
+    const isM23Fixture = fixtureParams.get("m23Fixture") === "1";
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
     const requestedTheme = fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = requestedTheme === "links" || requestedTheme === "desert" ? requestedTheme : "parkland";
-    const fixtureCourse = isM22Fixture
+    const fixtureCourse = isM23Fixture
+      ? createM23CourseSetupReferenceCourse()
+      : isM22Fixture
       ? createM22VisualReferenceCourse(fixtureTheme)
       : isM21Fixture
         ? createM21BiomeReferenceCourse(fixtureTheme)
@@ -421,6 +426,11 @@ export default function App() {
       mode: "sandbox" as const,
     };
     dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+    if (isM23Fixture) {
+      setActiveHoleIndex(0);
+      setHoleEditMode("hole");
+      setViewMode("ARCHITECT");
+    }
     if (isPerfFixture) {
       live.restoreSnapshot(snapshotLiveSimulation({
         state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),
@@ -982,6 +992,14 @@ export default function App() {
   }
 
   useEffect(() => {
+    const hasExpandedSetup = course.holes.some((hole) => hole.teeBoxes?.forward || hole.teeBoxes?.championship || hole.pinPositions?.B || hole.pinPositions?.C);
+    const textTeeRatings = hasExpandedSetup
+      ? computeRatingsByTee(course)
+      : {
+          forward: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
+          member: { courseRating: rating.courseRating, slope: rating.slope, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
+          championship: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
+        };
     const renderText = () => JSON.stringify({
       coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
       screen,
@@ -998,6 +1016,9 @@ export default function App() {
         terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>),
         obstacleCounts: course.obstacles.reduce((counts, obstacle) => ({ ...counts, [obstacle.type]: (counts[obstacle.type] ?? 0) + 1 }), {} as Partial<Record<ObstacleType, number>>),
         decorations: (course.decorations ?? []).map((decoration) => ({ kind: decoration.kind, x: decoration.x, y: decoration.y, rotation: decoration.rotation, span: decoration.span ?? null })),
+        activePinRotation: course.activePinRotation ?? "A",
+        teeRatings: Object.fromEntries(Object.entries(textTeeRatings).map(([teeSet, summary]) => [teeSet, { rating: summary.courseRating, slope: summary.slope, yardage: summary.effectiveYardage, complete: summary.setupComplete, deltas: summary.rotationDeltas }])),
+        holeSetups: course.holes.map((hole) => ({ teeBoxes: hole.teeBoxes ?? { member: hole.tee }, pinPositions: hole.pinPositions ?? { A: hole.green } })),
       },
       camera: { center: audioCameraCenter, viewMode, renderer: "pixi" },
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null },
@@ -1011,7 +1032,7 @@ export default function App() {
         scheduled: tournamentCalendar(world).events.filter((event) => event.status === "scheduled").length,
         active: live.status.tournament ? { name: live.status.tournament.name, standings: live.status.tournament.standings.slice(0, 5) } : null,
       },
-      golfers: live.golfersRef.current.slice(0, 24).map((golfer) => ({ id: golfer.id, x: Number(golfer.x.toFixed(2)), y: Number(golfer.y.toFixed(2)), segment: golfer.segKind, shot: golfer.shot, mood: Number(golfer.mood.toFixed(2)) })),
+      golfers: live.golfersRef.current.slice(0, 24).map((golfer) => ({ id: golfer.id, x: Number(golfer.x.toFixed(2)), y: Number(golfer.y.toFixed(2)), segment: golfer.segKind, shot: golfer.shot, mood: Number(golfer.mood.toFixed(2)), teeSet: golfer.teeSet, pinRotation: golfer.pinRotation })),
     });
     window.render_game_to_text = renderText;
     window.advanceTime = live.advanceTime;
@@ -1019,7 +1040,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, rating.courseRating, rating.slope, records, screen, selected, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1427,6 +1448,28 @@ export default function App() {
     confirmWizardWithValues(draftTee, draftGreen);
   }
 
+  function setTeeBox(teeSet: TeeSet, point: Point) {
+    const hole = course.holes[activeHoleIndex];
+    if (!hole) return;
+    const prospective = withNormalizedHoleSetup({ ...hole, teeBoxes: { ...hole.teeBoxes, [teeSet]: point }, ...(teeSet === "member" ? { tee: point } : {}) });
+    const issue = validateHoleCourseSetup(course, prospective).find((entry) => entry.code === "OUT_OF_BOUNDS" || entry.code === "DUPLICATE" || entry.code === "TEE_ORDER");
+    if (issue) { setPaintError(issue.message); return; }
+    dispatch({ type: "SET_TEE_BOX", holeIndex: activeHoleIndex, teeSet, position: point });
+    setPaintError(null);
+  }
+
+  function setPinPosition(pinRotation: PinRotation, point: Point) {
+    if (point.x < 0 || point.y < 0 || point.x >= course.width || point.y >= course.height) { setPaintError("Pin position is out of bounds."); return; }
+    if (course.tiles[point.y * course.width + point.x] !== "green") { setPaintError(`Pin ${pinRotation} must sit on existing green terrain.`); return; }
+    const hole = course.holes[activeHoleIndex];
+    if (!hole) return;
+    const prospective = withNormalizedHoleSetup({ ...hole, pinPositions: { ...hole.pinPositions, [pinRotation]: point }, ...(pinRotation === "A" ? { green: point } : {}) });
+    const issue = validateHoleCourseSetup(course, prospective).find((entry) => entry.code === "DUPLICATE");
+    if (issue) { setPaintError(issue.message); return; }
+    dispatch({ type: "SET_PIN_POSITION", holeIndex: activeHoleIndex, pinRotation, position: point });
+    setPaintError(null);
+  }
+
   function handleCanvasClick(x: number, y: number) {
     if (world.isBankrupt) return;
     // Unlock audio on first canvas interaction
@@ -1435,6 +1478,13 @@ export default function App() {
     // Check bounds (only for marker placement, not for painting which supports infinite canvas)
     if (editorMode === "HOLE_WIZARD" && (x < 0 || y < 0 || x >= course.width || y >= course.height)) {
       setPaintError(t("error.markersBounds"));
+      return;
+    }
+    if (setupPlacement) {
+      if (setupPlacement.kind === "tee") setTeeBox(setupPlacement.key, { x, y });
+      else setPinPosition(setupPlacement.key, { x, y });
+      setSetupPlacement(null);
+      void audio.playSfx("confirm");
       return;
     }
     
@@ -2126,9 +2176,12 @@ export default function App() {
               onOpenPauseMenu={openPauseMenu}
               onOpenOverview={() => setShowLiveOverview((open) => !open)}
               overviewOpen={showLiveOverview}
+              activePinRotation={course.activePinRotation ?? "A"}
+              onSetActivePinRotation={(pinRotation) => dispatch({ type: "SET_ACTIVE_PIN_ROTATION", pinRotation })}
             />
             <GolferInspector
               selected={live.status.selected}
+              setupDifficulty={live.status.selected ? computeRatingForSetup(course, live.status.selected.teeSet, live.status.selected.pinRotation).pinDifficultyDelta : undefined}
               following={followSelected}
               onToggleFollow={() => setFollowSelected((following) => !following)}
               onClose={() => { live.selectGolfer(null); setFollowSelected(false); }}
@@ -2227,6 +2280,13 @@ export default function App() {
                   setSelected={setSelected}
                   obstacleType={obstacleType}
                   setObstacleType={setObstacleType}
+                  onBeginTeePlacement={(teeSet) => { setSetupPlacement({ kind: "tee", key: teeSet }); setEditorMode("HOLE_WIZARD"); setPaintError(`Select the ${teeSet} tee location on the course.`); }}
+                  onBeginPinPlacement={(pinRotation) => { setSetupPlacement({ kind: "pin", key: pinRotation }); setEditorMode("HOLE_WIZARD"); setPaintError(`Select Pin ${pinRotation} on existing green terrain.`); }}
+                  onSetTeeBox={setTeeBox}
+                  onSetPinPosition={setPinPosition}
+                  onRemoveTeeBox={(teeSet) => dispatch({ type: "REMOVE_TEE_BOX", holeIndex: activeHoleIndex, teeSet })}
+                  onRemovePinPosition={(pinRotation) => dispatch({ type: "REMOVE_PIN_POSITION", holeIndex: activeHoleIndex, pinRotation })}
+                  onSetActivePinRotation={(pinRotation) => dispatch({ type: "SET_ACTIVE_PIN_ROTATION", pinRotation })}
                 />
               </div>
             </div>

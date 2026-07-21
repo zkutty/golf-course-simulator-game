@@ -14,6 +14,14 @@ import { getEffectiveBalance } from "../game/balance/difficulty";
 import { createLoan } from "../game/sim/loans";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
 import { canPlaceDecoration, decorationAtTile, decorationCost, decorationSpec } from "../game/models/decorations";
+import {
+  getPinPosition,
+  getTeeBox,
+  isSetupPointUsedByAnotherTee,
+  samePoint,
+  validateHoleCourseSetup,
+  withNormalizedHoleSetup,
+} from "../game/models/courseSetup";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -122,7 +130,11 @@ export function applyAction(state: GameState, action: Action): GameState {
       newTiles[idx] = "tee";
 
       const newHoles = state.course.holes.slice();
-      newHoles[action.holeIndex] = { ...hole, tee: action.position };
+      newHoles[action.holeIndex] = withNormalizedHoleSetup({
+        ...hole,
+        tee: action.position,
+        teeBoxes: { ...hole.teeBoxes, member: action.position },
+      });
 
       newState = {
         ...newState,
@@ -165,7 +177,11 @@ export function applyAction(state: GameState, action: Action): GameState {
       newTiles[newIdx] = "tee";
 
       const newHoles = state.course.holes.slice();
-      newHoles[action.holeIndex] = { ...hole, tee: action.position };
+      newHoles[action.holeIndex] = withNormalizedHoleSetup({
+        ...hole,
+        tee: action.position,
+        teeBoxes: { ...hole.teeBoxes, member: action.position },
+      });
 
       newState = {
         ...newState,
@@ -200,7 +216,11 @@ export function applyAction(state: GameState, action: Action): GameState {
       newTiles[idx] = "green";
 
       const newHoles = state.course.holes.slice();
-      newHoles[action.holeIndex] = { ...hole, green: action.position };
+      newHoles[action.holeIndex] = withNormalizedHoleSetup({
+        ...hole,
+        green: action.position,
+        pinPositions: { ...hole.pinPositions, A: action.position },
+      });
 
       newState = {
         ...newState,
@@ -229,21 +249,20 @@ export function applyAction(state: GameState, action: Action): GameState {
       const newIdx = action.position.y * state.course.width + action.position.x;
       if (oldIdx < 0 || oldIdx >= state.course.tiles.length || newIdx < 0 || newIdx >= state.course.tiles.length) break;
 
-      const oldTerrain = state.course.tiles[oldIdx];
       const newTerrain = state.course.tiles[newIdx];
-      
-      // Remove old marker (revert to rough)
-      const removeCost = computeTerrainChangeCost(oldTerrain, "rough", costMult, state.course.theme);
-      // Place new marker
+      // Pin moves never destroy the putting surface left behind.
       const placeCost = computeTerrainChangeCost(newTerrain, "green", costMult, state.course.theme);
-      const totalCost = removeCost.net + placeCost.net;
+      const totalCost = placeCost.net;
 
       const newTiles = state.course.tiles.slice();
-      newTiles[oldIdx] = "rough";
       newTiles[newIdx] = "green";
 
       const newHoles = state.course.holes.slice();
-      newHoles[action.holeIndex] = { ...hole, green: action.position };
+      newHoles[action.holeIndex] = withNormalizedHoleSetup({
+        ...hole,
+        green: action.position,
+        pinPositions: { ...hole.pinPositions, A: action.position },
+      });
 
       newState = {
         ...newState,
@@ -261,6 +280,110 @@ export function applyAction(state: GameState, action: Action): GameState {
       terrainVersion++;
       markersVersion++;
       economyVersion++;
+      break;
+    }
+
+    case "SET_TEE_BOX": {
+      const hole = state.course.holes[action.holeIndex];
+      if (!hole) break;
+      const { x, y } = action.position;
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= state.course.width || y >= state.course.height) break;
+      if (getTeeBox(hole, action.teeSet) && samePoint(getTeeBox(hole, action.teeSet), action.position)) break;
+      if (isSetupPointUsedByAnotherTee(hole, action.teeSet, action.position)) break;
+
+      const oldPosition = getTeeBox(hole, action.teeSet);
+      const prospective = withNormalizedHoleSetup({
+        ...hole,
+        teeBoxes: { ...hole.teeBoxes, [action.teeSet]: action.position },
+        ...(action.teeSet === "member" ? { tee: action.position } : {}),
+      });
+      if (validateHoleCourseSetup(state.course, prospective).some((issue) => issue.code === "TEE_ORDER" || issue.code === "DUPLICATE")) break;
+
+      const newTiles = state.course.tiles.slice();
+      let cashDelta = 0;
+      if (oldPosition && !isSetupPointUsedByAnotherTee(hole, action.teeSet, oldPosition)) {
+        const oldIdx = oldPosition.y * state.course.width + oldPosition.x;
+        cashDelta += computeTerrainChangeCost(newTiles[oldIdx], "rough", costMult, state.course.theme).net;
+        newTiles[oldIdx] = "rough";
+      }
+      const idx = y * state.course.width + x;
+      cashDelta += computeTerrainChangeCost(newTiles[idx], "tee", costMult, state.course.theme).net;
+      newTiles[idx] = "tee";
+      const holes = state.course.holes.slice();
+      holes[action.holeIndex] = prospective;
+      const cash = state.world.cash - cashDelta;
+      newState = {
+        ...newState,
+        course: { ...state.course, tiles: newTiles, holes },
+        world: { ...state.world, cash, isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash) },
+      };
+      terrainVersion++;
+      markersVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "REMOVE_TEE_BOX": {
+      const hole = state.course.holes[action.holeIndex];
+      const oldPosition = hole ? getTeeBox(hole, action.teeSet) : null;
+      if (!hole || !oldPosition) break;
+      const newTiles = state.course.tiles.slice();
+      let cashDelta = 0;
+      if (!isSetupPointUsedByAnotherTee(hole, action.teeSet, oldPosition)) {
+        const idx = oldPosition.y * state.course.width + oldPosition.x;
+        cashDelta = computeTerrainChangeCost(newTiles[idx], "rough", costMult, state.course.theme).net;
+        newTiles[idx] = "rough";
+      }
+      const holes = state.course.holes.slice();
+      holes[action.holeIndex] = withNormalizedHoleSetup({
+        ...hole,
+        teeBoxes: { ...hole.teeBoxes, [action.teeSet]: null },
+        ...(action.teeSet === "member" ? { tee: null } : {}),
+      });
+      const cash = state.world.cash - cashDelta;
+      newState = { ...newState, course: { ...state.course, tiles: newTiles, holes }, world: { ...state.world, cash } };
+      terrainVersion++;
+      markersVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "SET_PIN_POSITION": {
+      const hole = state.course.holes[action.holeIndex];
+      if (!hole) break;
+      const { x, y } = action.position;
+      if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= state.course.width || y >= state.course.height) break;
+      if (state.course.tiles[y * state.course.width + x] !== "green") break;
+      if (["A", "B", "C"].some((rotation) => rotation !== action.pinRotation && samePoint(getPinPosition(hole, rotation as "A" | "B" | "C"), action.position))) break;
+      const holes = state.course.holes.slice();
+      holes[action.holeIndex] = withNormalizedHoleSetup({
+        ...hole,
+        pinPositions: { ...hole.pinPositions, [action.pinRotation]: action.position },
+        ...(action.pinRotation === "A" ? { green: action.position } : {}),
+      });
+      newState = { ...newState, course: { ...state.course, holes } };
+      markersVersion++;
+      break;
+    }
+
+    case "REMOVE_PIN_POSITION": {
+      const hole = state.course.holes[action.holeIndex];
+      if (!hole || !getPinPosition(hole, action.pinRotation)) break;
+      const holes = state.course.holes.slice();
+      holes[action.holeIndex] = withNormalizedHoleSetup({
+        ...hole,
+        pinPositions: { ...hole.pinPositions, [action.pinRotation]: null },
+        ...(action.pinRotation === "A" ? { green: null } : {}),
+      });
+      newState = { ...newState, course: { ...state.course, holes } };
+      markersVersion++;
+      break;
+    }
+
+    case "SET_ACTIVE_PIN_ROTATION": {
+      if (state.course.activePinRotation === action.pinRotation) break;
+      newState = { ...newState, course: { ...state.course, activePinRotation: action.pinRotation } };
+      markersVersion++;
       break;
     }
 

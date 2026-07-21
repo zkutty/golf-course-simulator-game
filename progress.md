@@ -253,3 +253,22 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M22 remaining
 
 - None. ZK-226 through ZK-230 meet their implementation and acceptance criteria.
+
+## 2026-07-20 — M23 tee sets, pin rotations, and course standards
+
+- Current request: “implement M23 from linear project”. Linear scope resolved as ZK-231 through ZK-234.
+- Added typed Forward/Member/Championship tee sets, A/B/C pin rotations, shared resolution/validation helpers, active daily pin persistence, and compatibility aliases for legacy Member/A consumers.
+- Added reducer-backed marker editing, keyboard coordinate inputs plus map placement controls, subdued alternate isometric markers, archetype tee assignment, live-round setup persistence, and a per-tee rating matrix with per-rotation deltas.
+- Added schema-v7 migration and save validation for legacy Member/A layouts, deterministic state-hash canonicalization, complete marker migration, and focused migration/reducer/rating/live-assignment coverage.
+
+## M23 verification
+
+- Full unit suite: 43 files, 295 tests passed, one intentional skip. Production build and lint/i18n guards pass; lint reports six pre-existing React hook warnings and no errors.
+- Reducer fuzz passes. The 100-golfer performance fixture holds 60 fps at 17.6 ms p95 with 0.322 ms renderer work and 1,048 visible objects.
+- M23 Playwright acceptance passes keyboard tee editing, daily pin selection, deterministic text-state output, and screenshot coverage. Golden save compatibility and the M12 presentation regression both pass after focused fixes.
+- The bundled web-game client passed deterministic stepping against the M23 fixture; the course setup editor and isometric marker presentation were visually inspected.
+- A final combined sequential Playwright rerun was stopped after its web-server bootstrap stalled before any tests began; this was runner startup behavior, not a product assertion failure.
+
+## M23 remaining
+
+- None. ZK-231 through ZK-234 meet their implementation and acceptance criteria.

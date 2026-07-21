@@ -160,6 +160,17 @@ export const BALANCE = {
     // impassable on foot (matches the sculpting terracing constraint).
     walkSlopeCost: 0.8,
   },
+  courseSetup: {
+    pinDifficulty: {
+      edgeRadiusTiles: 4,
+      edgePenaltyMax: 0.38,
+      adjacentHazardPenalty: 0.14,
+      elevationPenaltyPerStep: 0.055,
+      penaltyCap: 0.75,
+      bogeySensitivity: 1.35,
+    },
+    ratingBands: { lowSlope: 90, averageSlope: 113, highSlope: 130 },
+  },
   shots: {
     utilizationThreshold: 0.9, // beyond this, dispersion ramps up
     dispersionRamp: 2.2, // multiplier slope vs utilization over threshold

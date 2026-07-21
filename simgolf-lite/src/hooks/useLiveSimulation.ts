@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Course, World } from "../game/models/types";
+import type { Course, PinRotation, TeeSet, World } from "../game/models/types";
 import { LIVE, type SpeedName } from "../game/live/liveConfig";
 import {
   createLiveState,
@@ -41,6 +41,8 @@ export interface SelectedGolferDetail {
   scoredHoles: number;
   spent: number;
   wallet: number;
+  teeSet: TeeSet;
+  pinRotation: PinRotation;
 }
 
 export interface LiveStatus {
@@ -87,6 +89,8 @@ function buildSelected(
     scoredHoles: g.scoredHoles,
     spent: g.spent,
     wallet: g.wallet,
+    teeSet: g.teeSet ?? "member",
+    pinRotation: g.pinRotation ?? "A",
   };
 }
 

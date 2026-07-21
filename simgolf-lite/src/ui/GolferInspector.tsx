@@ -41,6 +41,7 @@ export function GolferInspector(props: {
   onClose: () => void;
   following?: boolean;
   onToggleFollow?: () => void;
+  setupDifficulty?: number;
 }) {
   const { selected, onClose } = props;
   if (!selected) return null;
@@ -110,6 +111,10 @@ export function GolferInspector(props: {
         <Stat label={translateCurrent("golfer.thru")} value={`${played}`} />
         <Stat label={translateCurrent("golfer.spent")} value={formatCurrency(selected.spent)} accent="#bbf7d0" />
         <Stat label={translateCurrent("golfer.wallet")} value={formatCurrency(selected.wallet)} />
+      </div>
+      <div style={{ marginTop: 8, fontSize: 11, opacity: .78 }}>
+        {translateCurrent("courseSetup.golfer", { tee: selected.teeSet[0].toUpperCase() + selected.teeSet.slice(1), pin: selected.pinRotation })}
+        {props.setupDifficulty != null ? ` · ${translateCurrent("courseSetup.difficultyDelta", { delta: props.setupDifficulty.toFixed(1) })}` : ""}
       </div>
 
       {props.onToggleFollow && <button aria-pressed={props.following} aria-label={translateCurrent(props.following ? "live.stopFollowing" : "live.followGolfer")} onClick={props.onToggleFollow} style={{ width: "100%", marginTop: 10, padding: "7px 9px", borderRadius: 8, border: props.following ? "1px solid #86efac" : "1px solid rgba(255,255,255,.25)", background: props.following ? "rgba(134,239,172,.2)" : "rgba(255,255,255,.08)", color: "inherit", fontWeight: 800, cursor: "pointer" }}>{props.following ? `◎ ${translateCurrent("live.following")}` : `◉ ${translateCurrent("live.follow")}`}</button>}

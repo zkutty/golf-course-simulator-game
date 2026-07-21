@@ -79,6 +79,30 @@ export function createParklandVisualReferenceCourse(): Course {
   };
 }
 
+/** M23 visual/live acceptance scene with all tee sets and pin rotations. */
+export function createM23CourseSetupReferenceCourse(): Course {
+  const base = createParklandVisualReferenceCourse();
+  const hole = base.holes[0];
+  return {
+    ...base,
+    name: "M23 Course Standards Club",
+    activePinRotation: "B",
+    holes: [{
+      ...hole,
+      teeBoxes: {
+        forward: { x: 9, y: 17 },
+        member: hole.tee,
+        championship: { x: 5, y: 17 },
+      },
+      pinPositions: {
+        A: hole.green,
+        B: { x: 39, y: 20 },
+        C: { x: 41, y: 20 },
+      },
+    }],
+  };
+}
+
 /** M20 acceptance scene: all ten surfaces with identical geometry per theme. */
 export function createM20TerrainReferenceCourse(theme: Course["theme"] = "parkland"): Course {
   const base = createParklandVisualReferenceCourse();
