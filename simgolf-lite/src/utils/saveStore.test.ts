@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   __resetSaveStoreForTests,
+  __failNextManifestWriteForTests,
   autosave,
   deleteSlot,
   exportSlot,
@@ -50,6 +51,27 @@ describe("saveStore", () => {
     const slots = await listSlots();
     expect(slots).toHaveLength(1);
     expect(slots[0].week).toBe(9);
+  });
+
+  it("keeps the last known-good revision when a save is interrupted before manifest commit", async () => {
+    const meta = await saveToSlot(null, "manual", "Protected slot", payload(3, 28_000));
+    __failNextManifestWriteForTests();
+    await expect(saveToSlot(meta.id, "manual", meta.name, payload(9, 99_000))).rejects.toThrow("interrupted");
+
+    const slots = await listSlots();
+    expect(slots).toHaveLength(1);
+    expect(slots[0]).toMatchObject({ id: meta.id, week: 3, cash: 28_000 });
+    const loaded = await loadSlot(meta.id);
+    expect(loaded?.world).toMatchObject({ week: 3, cash: 28_000 });
+  });
+
+  it("keeps a slot readable when deletion is interrupted before manifest commit", async () => {
+    const meta = await saveToSlot(null, "manual", "Protected slot", payload(6, 44_000));
+    __failNextManifestWriteForTests();
+    await expect(deleteSlot(meta.id)).rejects.toThrow("interrupted");
+
+    expect(await listSlots()).toHaveLength(1);
+    expect((await loadSlot(meta.id))?.world).toMatchObject({ week: 6, cash: 44_000 });
   });
 
   it("autosave rotates through three slots, replacing the oldest", async () => {

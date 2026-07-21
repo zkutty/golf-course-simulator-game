@@ -370,3 +370,28 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M27 remaining
 
 - None. ZK-248 through ZK-252 meet their implementation and acceptance criteria.
+
+## 2026-07-21 — M28 release candidate and external playtest in progress
+
+- Current request: “Implement m28 from the linear project”. Linear scope resolved as ZK-253 through ZK-261. ZK-253 is In Progress; the remaining validation and gate issues retain their dependency order.
+- Release audit found GitHub Pages subpath breakage in service-worker registration, manifest scope/icons, precache URLs, navigation fallback, and cache identity. These are now base-aware and version-aware.
+- Rebuilt `npm run test:pwa` as a self-contained production smoke mounted at `/golf-course-simulator-game/`; it passes scoped service-worker control, manifest resolution, offline reload, and local progress preservation.
+- Save payloads now use revisioned storage committed by the manifest, so an interrupted overwrite cannot replace the active last-known-good payload. Focused save/migration coverage passes 15/15, including a simulated interrupted manifest commit.
+- Bundled web-game client passed against the M27 36-hole/100-golfer fixture. Text state confirmed two published 18-hole layouts and 100 golfers; the second screenshot rendered correctly. The first headless WebGL capture was black during initial load, consistent with prior SwiftShader behavior.
+- Existing modified/untracked historical visual and test artifacts predate M28 and remain preserved.
+
+## M28 next
+
+- Establish version `1.0.0-rc.1`, release evidence files, cross-browser runner, and the automated balance/accessibility/performance matrices.
+- Run the complete release suite, fix findings, commit the RC, deploy through GitHub Pages, and validate the exact deployed commit.
+- Moderated sessions with 5–10 unfamiliar human players and physical low-/mid-range device measurements require real participants/devices; prepare the protocols and keep the final gate at HOLD or RE-TEST until those results exist.
+
+## M28 local certification
+
+- Versioned `1.0.0-rc.1`; added release configuration, GitHub certification workflow, clean-profile Chrome/Firefox/WebKit coverage, human-playtest and physical-hardware protocols, and immutable save/PWA release hardening.
+- Unit suite passes: 48 files, 318 passed, 1 skipped. Onboarding playthrough A passed in 7.1m; playthrough B passed in 12.9m including reload/resume/rerun. Cross-engine release path passes 3/3.
+- Economy matrix passes 81 deterministic 104-week runs (8,424 weeks), with zero normal-path bankruptcies and every normal path profitable by week 2.
+- Parkland/links/desert performance evidence passes: 0.75–0.97s cold startup, 4.0–4.5s fixture load, and 0.29–0.32ms renderer work against the 8ms budget. Physical-device frame p95 remains outstanding.
+- Deterministic soak passes 7,519 rounds with 1.55MB post-GC retained heap growth. Production Pages-subpath PWA smoke passes scoped installation, offline reload, and local persistence.
+- Final visual smoke rendered the 36-hole estate with two open 18-hole layouts and 100 active golfers; no client error artifact was emitted.
+- External requirements remain: 5–10 unfamiliar-human moderated sessions, stable Safari clean-profile sign-off, and physical low/mid-range hardware baselines. The milestone remains HOLD/RE-TEST until those are supplied.

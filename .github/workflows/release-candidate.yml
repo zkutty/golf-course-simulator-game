@@ -1,0 +1,56 @@
+name: Release candidate certification
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*-rc.*"]
+
+defaults:
+  run:
+    working-directory: simgolf-lite
+
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Static and unit gates
+        run: npm run lint && npx tsc -b && npm test
+      - name: Reducer fuzz
+        run: npm run test:fuzz
+      - name: Full browser regression
+        run: npm run test:e2e
+      - name: Cross-engine clean-profile path
+        run: npm run test:release:browsers
+      - name: Long-form balance matrix
+        run: npm run test:balance
+      - name: Deterministic simulation soak
+        run: npm run test:soak
+      - name: 36-hole renderer performance
+        run: |
+          PERF_FIXTURE=m27 PERF_THEME=parkland npm run test:perf
+          PERF_FIXTURE=m27 PERF_THEME=links npm run test:perf
+          PERF_FIXTURE=m27 PERF_THEME=desert npm run test:perf
+      - name: Production PWA subpath/offline smoke
+        run: npm run test:pwa
+      - name: Build and audit exact Pages artifact
+        run: VITE_BASE=/golf-course-simulator-game/ npm run build && npm run release:audit
+      - name: Upload M28 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m28-release-candidate-evidence
+          path: |
+            simgolf-lite/artifacts/m28
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 90

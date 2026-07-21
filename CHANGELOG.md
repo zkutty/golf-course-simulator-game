@@ -6,6 +6,13 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0-rc.1] - 2026-07-21
+
+First external-playtest release candidate. This build freezes the completed
+M1–M27 feature set for M28 browser, persistence/PWA, onboarding, balance,
+performance, and accessibility validation. Release-candidate fixes require a
+new prerelease version and a targeted regression note here.
+
 ### Added
 - Render performance budget (ZKU-160): a dev perf HUD in the Pixi renderer
   (enable with `localStorage.coursecraft_perfhud = "on"`) showing fps,

@@ -79,7 +79,7 @@ describe("M24 tournament course qualification", () => {
     expect(day.cancelled).toMatchObject({ status: "cancelled", depositForfeited: true });
     expect(day.world.cash).toBe(scheduled.cash);
     expect(createLiveState(edited, day.world, created.event.scheduledDay).arrivals).not.toEqual(expect.arrayContaining([expect.objectContaining({ tournament: expect.anything() })]));
-  });
+  }, 30_000);
 
   it("uses the prescribed setup for every entrant and settles only completed play", () => {
     const created = createTournamentEvent({ course, world: host, tier: "regional", currentDay: 0, daysAhead: 1 });

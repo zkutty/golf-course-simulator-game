@@ -5,6 +5,8 @@ import { createReferenceCourse } from "./referenceCourse";
 import { hashGameState } from "../../utils/stateHash";
 
 const WEEKS = 30;
+const gc = (globalThis as typeof globalThis & { gc?: () => void }).gc;
+gc?.();
 const startHeap = process.memoryUsage().heapUsed;
 const startedAt = performance.now();
 const result = runLiveDaysHeadless({
@@ -14,6 +16,7 @@ const result = runLiveDaysHeadless({
   stepMinutes: 3,
 });
 const elapsedMs = performance.now() - startedAt;
+gc?.();
 const endHeap = process.memoryUsage().heapUsed;
 const heapGrowthMb = (endHeap - startHeap) / 1024 / 1024;
 
@@ -22,7 +25,7 @@ if (result.rounds <= 0) throw new Error("Soak completed without simulating any r
 if (!Number.isFinite(result.world.cash) || !Number.isFinite(result.world.reputation)) {
   throw new Error("Soak produced non-finite world state");
 }
-if (heapGrowthMb > 128) throw new Error(`Heap grew by ${heapGrowthMb.toFixed(1)} MB`);
+if (heapGrowthMb > 32) throw new Error(`Retained heap grew by ${heapGrowthMb.toFixed(1)} MB (32 MB RC budget)`);
 
 console.log(JSON.stringify({
   ok: true,
@@ -31,6 +34,7 @@ console.log(JSON.stringify({
   finalCash: Math.round(result.world.cash),
   finalReputation: Number(result.world.reputation.toFixed(2)),
   heapGrowthMb: Number(heapGrowthMb.toFixed(2)),
+  measurement: gc ? "post-gc retained heap" : "heap without explicit gc",
   elapsedMs: Math.round(elapsedMs),
   stateHash: hashGameState({ course: result.course, world: result.world }),
 }, null, 2));

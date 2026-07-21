@@ -44,6 +44,8 @@ export interface SaveSlotMeta {
   difficulty?: Difficulty;
   /** Land theme (ZKU-166). Absent on pre-M13 manifests. */
   theme?: LandTheme;
+  /** Revisioned payload key. Older manifests omit this and use the legacy id key. */
+  storageKey?: string;
 }
 
 export interface SaveFile {
@@ -149,12 +151,19 @@ function pickKV(): KV {
 let kv: KV = pickKV();
 let migrated = false;
 let writeSeq = 0;
+let failNextManifestWrite = false;
 
 /** Test hook: swap in a fresh in-memory driver. */
 export function __resetSaveStoreForTests(): void {
   kv = memoryKV();
   migrated = false;
   writeSeq = 0;
+  failNextManifestWrite = false;
+}
+
+/** Test hook for proving an interrupted commit preserves the active revision. */
+export function __failNextManifestWriteForTests(): void {
+  failNextManifestWrite = true;
 }
 
 // ---------------------------------------------------------------------
@@ -173,7 +182,15 @@ async function readManifest(): Promise<SaveSlotMeta[]> {
 }
 
 async function writeManifest(manifest: SaveSlotMeta[]): Promise<void> {
+  if (failNextManifestWrite) {
+    failNextManifestWrite = false;
+    throw new Error("Simulated interrupted manifest commit");
+  }
   await kv.set(MANIFEST_KEY, JSON.stringify(manifest));
+}
+
+function payloadKey(meta: SaveSlotMeta | undefined, id: string): string {
+  return meta?.storageKey ?? SLOT_PREFIX + id;
 }
 
 function metaFor(
@@ -249,12 +266,21 @@ export async function saveToSlot(
   await migrateLegacyOnce();
   const slotId = id ?? `${kind}-${Date.now().toString(36)}`;
   const meta = metaFor(slotId, kind, name, payload);
-  await kv.set(SLOT_PREFIX + slotId, JSON.stringify(payloadToFile(payload)));
   const manifest = await readManifest();
   const idx = manifest.findIndex((m) => m.id === slotId);
+  const previous = idx >= 0 ? manifest[idx] : undefined;
+  meta.storageKey = `${SLOT_PREFIX}${slotId}@${meta.savedAt.toString(36)}-${meta.seq.toString(36)}`;
+  await kv.set(meta.storageKey, JSON.stringify(payloadToFile(payload)));
   if (idx >= 0) manifest[idx] = meta;
   else manifest.push(meta);
-  await writeManifest(manifest);
+  try {
+    await writeManifest(manifest);
+  } catch (error) {
+    await kv.del(meta.storageKey).catch(() => undefined);
+    throw error;
+  }
+  const previousKey = payloadKey(previous, slotId);
+  if (previous && previousKey !== meta.storageKey) await kv.del(previousKey).catch(() => undefined);
   return meta;
 }
 
@@ -265,7 +291,8 @@ export async function loadSlot(id: string): Promise<SavePayload | null> {
 
 export async function loadSlotResult(id: string): Promise<SaveLoadResult> {
   await migrateLegacyOnce();
-  const raw = await kv.get(SLOT_PREFIX + id);
+  const manifest = await readManifest();
+  const raw = await kv.get(payloadKey(manifest.find((meta) => meta.id === id), id));
   if (!raw) {
     return { ok: false, error: { code: "INVALID_SHAPE", message: "That save slot is missing." } };
   }
@@ -273,9 +300,10 @@ export async function loadSlotResult(id: string): Promise<SaveLoadResult> {
 }
 
 export async function deleteSlot(id: string): Promise<void> {
-  await kv.del(SLOT_PREFIX + id);
   const manifest = await readManifest();
+  const meta = manifest.find((entry) => entry.id === id);
   await writeManifest(manifest.filter((m) => m.id !== id));
+  await kv.del(payloadKey(meta, id)).catch(() => undefined);
 }
 
 export async function renameSlot(id: string, name: string): Promise<void> {
@@ -314,7 +342,8 @@ export async function mostRecentSlot(): Promise<SaveSlotMeta | null> {
 // ---------------------------------------------------------------------
 
 export async function exportSlot(id: string): Promise<string | null> {
-  const raw = await kv.get(SLOT_PREFIX + id);
+  const manifest = await readManifest();
+  const raw = await kv.get(payloadKey(manifest.find((meta) => meta.id === id), id));
   return raw ?? null;
 }
 

@@ -19,7 +19,7 @@
 //        default 33, enforced only with PERF_ASSERT_FRAME=1),
 //        PERF_MEASURE_S (default 20)
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 
 const WORK_BUDGET_MS = Number(process.env.PERF_WORK_BUDGET_MS || 8);
 const BUDGET_MS = Number(process.env.PERF_BUDGET_MS || 33);
@@ -27,6 +27,7 @@ const ASSERT_FRAME = process.env.PERF_ASSERT_FRAME === "1";
 const MEASURE_S = Number(process.env.PERF_MEASURE_S || 20);
 const PERF_THEME = ["parkland", "links", "desert"].includes(process.env.PERF_THEME) ? process.env.PERF_THEME : "parkland";
 const PERF_FIXTURE = process.env.PERF_FIXTURE === "m27" ? "m27Fixture" : "perfFixture";
+const STARTUP_BUDGET_MS = Number(process.env.PERF_STARTUP_BUDGET_MS || 5000);
 const PORT = 5199;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -43,7 +44,7 @@ async function importPlaywright() {
 const { chromium } = await importPlaywright();
 
 console.log(`[perf-smoke] starting vite on :${PORT} …`);
-const vite = spawn("npm", ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"], {
+const vite = spawn(process.execPath, ["node_modules/vite/bin/vite.js", "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"], {
   stdio: "inherit",
   detached: false,
 });
@@ -52,7 +53,7 @@ let up = false;
 for (let i = 0; i < 60 && !up; i++) {
   await sleep(1000);
   try {
-    const res = await fetch(`http://localhost:${PORT}`);
+    const res = await fetch(`http://127.0.0.1:${PORT}`);
     up = res.ok;
   } catch {
     /* not yet */
@@ -62,31 +63,53 @@ if (!up) {
   console.error("[perf-smoke] vite never came up");
   process.exit(2);
 }
+console.log("[perf-smoke] vite ready; launching browser …");
 
 const execCandidate = [
   process.env.CHROMIUM_PATH,
   "/opt/pw-browsers/chromium",
-  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 ].find((candidate) => candidate && existsSync(candidate));
 const browser = await chromium.launch(
   execCandidate ? { executablePath: execCandidate } : {}
 );
+console.log("[perf-smoke] browser ready; loading fixture …");
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 await page.addInitScript(() => {
   localStorage.setItem("coursecraft_perfhud", "on");
   localStorage.setItem("coursecraft_ambience", "on");
 });
-await page.goto(`http://localhost:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}`);
+const coldStartedAt = performance.now();
+await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+await page.getByRole("button", { name: "Quick Start" }).waitFor({ state: "visible", timeout: 30_000 });
+const coldStartupMs = performance.now() - coldStartedAt;
+const fixtureStartedAt = performance.now();
+await page.goto(`http://127.0.0.1:${PORT}/?${PERF_FIXTURE}=1&perfTheme=${PERF_THEME}&perfMeasure=1`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+console.log("[perf-smoke] document loaded; waiting for game state …");
+await sleep(500);
+const canvasHandle = await page.evaluateHandle(() => {
+  let best = null;
+  let area = 0;
+  for (const canvas of document.querySelectorAll("canvas")) {
+    const candidateArea = (canvas.width || canvas.clientWidth) * (canvas.height || canvas.clientHeight);
+    if (candidateArea > area) { best = canvas; area = candidateArea; }
+  }
+  return best;
+});
+const canvas = canvasHandle.asElement();
+const box = canvas ? await canvas.boundingBox() : null;
 await page.waitForFunction(() => {
   const text = window.render_game_to_text?.();
   return text && JSON.parse(text).screen === "game";
 }, null, { timeout: 30_000 });
+const fixtureLoadMs = performance.now() - fixtureStartedAt;
+console.log(`[perf-smoke] game state ready in ${fixtureLoadMs.toFixed(0)}ms`);
 await sleep(1200);
-const box = await page.locator("canvas").first().boundingBox();
 if (!box) throw new Error("performance fixture did not create a renderer canvas");
 
 // Run the day at 3x with a slow keyboard pan; warm up, then measure.
 await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); // focus + skip any flyover
+await page.keyboard.press("Digit3");
+await page.waitForFunction(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.speed === "3x", null, { timeout: 10_000 });
 console.log("[perf-smoke] warmup 8s …");
 await sleep(8000);
 console.log(`[perf-smoke] measuring ${MEASURE_S}s with slow pan …`);
@@ -108,7 +131,14 @@ if (!perf) {
   process.exit(2);
 }
 console.log("[perf-smoke] result:", JSON.stringify(perf, null, 2));
+console.log(`[perf-smoke] cold startup ${coldStartupMs.toFixed(0)}ms; 36-hole fixture load ${fixtureLoadMs.toFixed(0)}ms`);
+mkdirSync(new URL("../artifacts/m28", import.meta.url), { recursive: true });
+writeFileSync(new URL(`../artifacts/m28/performance-${PERF_THEME}.json`, import.meta.url), `${JSON.stringify({ theme: PERF_THEME, fixture: PERF_FIXTURE, coldStartupMs: Math.round(coldStartupMs), fixtureLoadMs: Math.round(fixtureLoadMs), renderer: perf }, null, 2)}\n`);
 let failed = false;
+if (coldStartupMs > STARTUP_BUDGET_MS) {
+  console.error(`[perf-smoke] FAIL: cold startup ${coldStartupMs.toFixed(0)}ms > budget ${STARTUP_BUDGET_MS}ms`);
+  failed = true;
+}
 if (perf.workMs > WORK_BUDGET_MS) {
   console.error(`[perf-smoke] FAIL: renderer tick work ${perf.workMs.toFixed(2)}ms > budget ${WORK_BUDGET_MS}ms`);
   failed = true;

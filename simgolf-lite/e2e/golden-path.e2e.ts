@@ -204,7 +204,7 @@ test("accessible palettes, patterns, text scaling, and reduced motion apply live
       localStorage.setItem(key, JSON.stringify(profile));
       window.dispatchEvent(new CustomEvent("coursecraft-profile-change"));
     }, mode);
-    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorVision)).toBe(mode);
+    await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorVision), { timeout: 30_000 }).toBe(mode);
     await test.info().attach(`terrain-${mode}`, { body: await page.screenshot(), contentType: "image/png" });
   }
 

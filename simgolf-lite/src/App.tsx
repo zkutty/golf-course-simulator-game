@@ -422,6 +422,7 @@ export default function App() {
     const isM25Fixture = fixtureParams.get("m25Fixture") === "1";
     const isM26Fixture = fixtureParams.get("m26Fixture") === "1";
     const isM27Fixture = fixtureParams.get("m27Fixture") === "1";
+    const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
     if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
@@ -467,17 +468,17 @@ export default function App() {
       live.restoreSnapshot(snapshotLiveSimulation({
         state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),
         pendingCash: 0,
-        speed: "3x",
+        speed: isPerfMeasurement ? "paused" : "3x",
         selectedGolferId: null,
       }));
     }
     setAppProfile((current) => ({ ...current, tutorialOffered: true, tutorialCompleted: true }));
     setTutorialProgress(null);
     setShowTutorialOffer(false);
-    if (isM27Fixture) setShowCourseManager(true);
+    if (isM27Fixture && !isPerfMeasurement) setShowCourseManager(true);
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
     flowDispatch({ type: "ENTER_GAME" });
-    live.setSpeed(isPerfFixture || isM27Fixture ? "3x" : "paused");
+    live.setSpeed((isPerfFixture || isM27Fixture) && !isPerfMeasurement ? "3x" : "paused");
   }, [dispatch, live, t]);
 
   const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);

@@ -10,7 +10,7 @@ export function usePwa() {
     const install = (event: Event) => { event.preventDefault(); setInstallPrompt(event as InstallPromptEvent); };
     window.addEventListener("beforeinstallprompt", install);
     if ("storage" in navigator && navigator.storage.persist) void navigator.storage.persist().then(setStoragePersistent).catch(() => setStoragePersistent(false));
-    if ("serviceWorker" in navigator && import.meta.env.PROD) void navigator.serviceWorker.register("/sw.js").then((registration) => {
+    if ("serviceWorker" in navigator && import.meta.env.PROD) void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).then((registration) => {
       if (registration.waiting) setUpdateWorker(registration.waiting);
       registration.addEventListener("updatefound", () => registration.installing?.addEventListener("statechange", () => { if (registration.waiting && navigator.serviceWorker.controller) setUpdateWorker(registration.waiting); }));
     });

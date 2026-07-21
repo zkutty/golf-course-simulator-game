@@ -1,0 +1,35 @@
+{
+  "version": "1.0.0-rc.1",
+  "milestone": "M28: Release Candidate & External Playtest",
+  "sourceBranch": "main",
+  "deploymentBase": "/golf-course-simulator-game/",
+  "budgets": {
+    "startupMs": 5000,
+    "rendererWorkMs": 8,
+    "frameP95Ms": 33,
+    "interactionMs": 100,
+    "longTaskMs": 50,
+    "soakHeapGrowthMb": 32
+  },
+  "browserMatrix": [
+    "Latest stable Google Chrome on macOS",
+    "Latest stable Firefox on macOS",
+    "Latest stable Safari on macOS"
+  ],
+  "automatedBrowserProxies": [
+    "Installed Google Chrome",
+    "Playwright Firefox",
+    "Playwright WebKit (Safari engine proxy; not a substitute for stable Safari sign-off)"
+  ],
+  "requiredSuites": [
+    "lint",
+    "unit",
+    "build",
+    "e2e",
+    "fuzz",
+    "soak",
+    "performance",
+    "pwa",
+    "release-browser"
+  ]
+}

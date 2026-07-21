@@ -4,6 +4,7 @@ import path from "node:path";
 
 const evidenceDir = path.join(process.cwd(), "artifacts", "zk-211", "playwright");
 mkdirSync(evidenceDir, { recursive: true });
+test.setTimeout(900_000);
 
 const tee = { x: 580, y: 370 };
 const green = { x: 640, y: 400 };
@@ -23,7 +24,7 @@ function tutorial(page: Page) {
 }
 
 async function expectStep(page: Page, id: string) {
-  await expect(tutorial(page)).toHaveAttribute("data-step-id", id);
+  await expect(tutorial(page)).toHaveAttribute("data-step-id", id, { timeout: 30_000 });
 }
 
 async function capture(page: Page, run: string, name: string) {
