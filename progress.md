@@ -338,3 +338,10 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M26 remaining
 
 - None for implementation. ZK-243 through ZK-247 include completion notes and are marked Done in Linear.
+
+## 2026-07-21 — M26 CI follow-up
+
+- The first full GitHub Actions unit run exposed nine timeout-only failures under parallel load; 302 assertions passed and no behavioral assertion failed.
+- Root cause: repeated M26 layout normalization and course-view cloning defeated the existing identity-based scoring caches, while daily setup also recomputed the same course demand twice.
+- Memoized immutable normalized courses and draft/published layout views, reused operating views across live-day planning, and cached tournament qualification by course revision and tier.
+- Full CI-equivalent unit suite now passes: 46 files, 311 passed, 1 skipped, in 23.2s locally.

@@ -3,6 +3,12 @@ import { scoreCourseHoles } from "../sim/holes";
 
 export const MAX_ESTATE_HOLES = 36;
 
+// Course state is updated immutably throughout the reducer. Preserve one
+// normalized object and one published/draft view per revision so downstream
+// scoring WeakMaps keep working across repeated layout lookups.
+const normalizedCourseCache = new WeakMap<Course, Course>();
+const layoutViewCache = new WeakMap<Course, Map<string, Course>>();
+
 function slug(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "course";
 }
@@ -16,6 +22,8 @@ function uniqueId(base: string, used: Set<string>): string {
 }
 
 export function normalizeCourseLayouts(input: Course): Course {
+  const cached = normalizedCourseCache.get(input);
+  if (cached) return cached;
   const usedHoleIds = new Set<string>();
   const holes = input.holes.slice(0, MAX_ESTATE_HOLES).map((hole, index) => {
     const id = uniqueId(typeof hole.id === "string" && hole.id.trim() ? hole.id.trim() : `hole-${index + 1}`, usedHoleIds);
@@ -72,7 +80,10 @@ export function normalizeCourseLayouts(input: Course): Course {
     ? input.activeCourseId
     : layouts[0].id;
   const active = layouts.find((layout) => layout.id === activeCourseId)!;
-  return { ...input, holes, layouts, activeCourseId, baseGreenFee: active.greenFee };
+  const result = { ...input, holes, layouts, activeCourseId, baseGreenFee: active.greenFee };
+  normalizedCourseCache.set(input, result);
+  normalizedCourseCache.set(result, result);
+  return result;
 }
 
 export function courseLayouts(course: Course): CourseLayout[] {
@@ -92,15 +103,25 @@ export function layoutById(course: Course, courseId?: string): CourseLayout | un
 export function courseForLayout(course: Course, courseId?: string, draft = false): Course {
   const normalized = normalizeCourseLayouts(course);
   const layout = layoutById(normalized, courseId) ?? activeCourseLayout(normalized);
+  let views = layoutViewCache.get(normalized);
+  if (!views) {
+    views = new Map();
+    layoutViewCache.set(normalized, views);
+  }
+  const cacheKey = `${layout.id}:${draft ? "draft" : "published"}`;
+  const cached = views.get(cacheKey);
+  if (cached) return cached;
   const ids = draft ? layout.draftHoleIds : layout.publishedHoleIds;
   const byId = new Map(normalized.holes.map((hole) => [hole.id!, hole]));
-  return {
+  const result = {
     ...normalized,
     name: layout.name,
     holes: ids.map((id) => byId.get(id)).filter((hole): hole is Hole => !!hole),
     baseGreenFee: layout.greenFee,
     activeCourseId: layout.id,
   };
+  views.set(cacheKey, result);
+  return result;
 }
 
 export function courseForHoleIds(course: Course, holeIds: readonly string[], courseId?: string): Course {

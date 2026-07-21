@@ -34,8 +34,12 @@ export function planDay(course: Course, world: World, seed: number): Arrival[] {
 }
 
 /** Build one deterministic tee sheet per open published course. */
-export function planEstateDay(course: Course, world: World, seed: number): Arrival[] {
-  const views = operatingCourseViews(course);
+export function planEstateDay(
+  course: Course,
+  world: World,
+  seed: number,
+  views = operatingCourseViews(course),
+): Arrival[] {
   const arrivals = views.flatMap(({ layout, course: view }, index) =>
     planDay(view, world, seed + index * 104729).slice(0, layout.roundLength * 4).map((arrival) => ({ ...arrival, courseId: layout.id }))
   );

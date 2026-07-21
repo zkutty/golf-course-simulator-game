@@ -20,6 +20,8 @@ export const TOURNAMENT_COURSE_STANDARDS: Record<TournamentTier, TournamentCours
   championship: { teeSet: "championship", rotationChoice: "hardest", minimumCompleteRotations: 3, rating: [72, 80], slope: [120, 155] },
 };
 
+const qualificationCache = new WeakMap<Course, Partial<Record<TournamentTier, TournamentQualificationSnapshot>>>();
+
 export function meetsTournamentRange(value: number, bounds: readonly [number, number]): boolean {
   return value >= bounds[0] && value <= bounds[1];
 }
@@ -50,6 +52,8 @@ export function evaluateTournamentCourseQualification(
   course: Course,
   tier: TournamentTier,
 ): TournamentQualificationSnapshot {
+  const cached = qualificationCache.get(course)?.[tier];
+  if (cached) return cached;
   const standard = TOURNAMENT_COURSE_STANDARDS[tier];
   const setups = PIN_ROTATIONS.map((rotation) => computeRatingForSetup(course, standard.teeSet, rotation));
   const complete = setups.filter((setup) => setup.setupComplete);
@@ -69,7 +73,7 @@ export function evaluateTournamentCourseQualification(
     requirement({ id: "rating", label: "Course rating", passed: ratingPass, current: ratingValue.toFixed(1), required: rangeLabel(standard.rating), guidance: ratingValue < standard.rating[0] ? "Add strategic length or difficulty to the prescribed setup." : "Reduce excessive length or difficulty in the prescribed setup." }),
     requirement({ id: "slope", label: "Slope", passed: slopePass, current: `${slopeValue}`, required: `${standard.slope[0]}–${standard.slope[1]}`, guidance: slopeValue < standard.slope[0] ? "Add challenge that affects bogey golfers without overwhelming scratch golfers." : "Ease hazards and forced carries that disproportionately punish bogey golfers." }),
   ];
-  return {
+  const result: TournamentQualificationSnapshot = {
     eligible: requirements.every((item) => item.passed),
     teeSet: standard.teeSet,
     pinRotation: chosen?.pinRotation ?? "A",
@@ -80,6 +84,10 @@ export function evaluateTournamentCourseQualification(
     requirements,
     blockingReasons: requirements.filter((item) => !item.passed).map((item) => `${item.label}: ${item.current}; requires ${item.required}. ${item.guidance}`),
   };
+  const courseCache = qualificationCache.get(course) ?? {};
+  courseCache[tier] = result;
+  qualificationCache.set(course, courseCache);
+  return result;
 }
 
 export function revalidatePrescribedTournamentSetup(

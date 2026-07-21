@@ -37,11 +37,12 @@ export function createLiveState(
   dayIndex: number
 ): LiveState {
   const seed = (world.runSeed | 0) + dayIndex * 7919;
+  const courseViews = operatingCourseViews(course);
   const tournamentEvent = tournamentForDate(world, dayIndex, course);
   const arrivals = tournamentEvent
     ? planTournamentDay(tournamentEvent, LIVE.day.firstArrivalMinute, LIVE.day.teeGapMinutes)
-    : planEstateDay(course, world, seed);
-  const perCourse = Object.fromEntries(operatingCourseViews(course).map(({ layout, course: view }) => [layout.id, {
+    : planEstateDay(course, world, seed, courseViews);
+  const perCourse = Object.fromEntries(courseViews.map(({ layout, course: view }) => [layout.id, {
     courseName: layout.name,
     arrivals: tournamentEvent ? arrivals.filter((arrival) => arrival.courseId === layout.id).length : plannedGolfersForDay(view, world),
     roundsStarted: 0,
