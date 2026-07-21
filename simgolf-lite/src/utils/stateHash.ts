@@ -20,7 +20,11 @@ export function hashGameState(value: {
   // Callers often pass a full SavePayload. Hash only the persisted game-state
   // contract declared above; UI metadata such as tutorial/profile fields must
   // not make an otherwise lossless save/load round trip look different.
-  const text = canonical({ course: value.course, world: value.world, live: value.live });
+  // Optional collection defaults are semantically empty both before and
+  // after migration; canonicalize them so a lossless save/load does not
+  // appear different merely because the loader materialized `[]`.
+  const course = { ...value.course, decorations: value.course.decorations ?? [] };
+  const text = canonical({ course, world: value.world, live: value.live });
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     hash ^= text.charCodeAt(i);

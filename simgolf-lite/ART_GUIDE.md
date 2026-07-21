@@ -143,6 +143,13 @@ Supporting colors: trunk brown `#5d4330`, canopy greens `#3f8a3f`→`#77c46a`
 - [ ] Colors harmonize with the palette anchors
 - [ ] Transparent background, no baked drop shadow
 
+## M22 structures and course decor
+
+- The retained source sheet is `src/assets/props/source/m22-structures-decor-magenta.png`; `npm run gen:m22-art` removes the flat magenta key, trims cells, applies restrained parkland/links/desert grading, and emits building tier variants before atlas packing.
+- It was produced with the built-in image-generation workflow on 2026-07-20 as one original 4×4 modern-isometric source sheet: clubhouse, three concessions, nine furniture/ornamental pieces, bridge, boardwalk, and approach. The prompt required fixed NW light, isolated silhouettes, no text/people/copied assets, and a flat `#ff00ff` background.
+- Furniture density is intentionally player-authored. Keep maintained corridors, flags, selection outlines, and golfer silhouettes readable; the 320-decoration performance fixture is a stress certification, not a recommended landscaping density.
+- Buildings select `theme × type × tier` frames through the registry with parkland tier-one and legacy fallbacks. Normal identity never depends on runtime tinting.
+
 ## Parkland vertical-slice target (M19)
 
 The objective fixture is `createParklandVisualReferenceCourse()` with seed

@@ -227,3 +227,29 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M21 remaining
 
 - None. ZK-221 through ZK-225 meet their implementation and acceptance criteria.
+
+## 2026-07-20 — M22 structures, course decor, and visual release in progress
+
+- Current request: “Implement m22 from this project”. Linear scope resolved as ZK-226 through ZK-230; all five issues are In Progress.
+- Fast-forwarded the clean local `main` branch to completed M21 commit `dd576a8` before beginning M22.
+- Implementation order follows the milestone dependency graph: persisted decoration contract/editor → bridges and boardwalks → authored buildings/furniture → visual/performance certification.
+
+## M22 implementation checkpoint
+
+- Added schema-v6 typed decorations with 11 kinds, deterministic sanitization/migration, reducer-owned placement/rotation/removal and salvage economics, occupancy rules, editor controls, footprint previews, text-state output, and ground-cover exclusions.
+- Added validated bridge/boardwalk spans with dry approaches, hazard/elevation rules, path connectivity in both live and evaluation pathfinders, blocking furniture footprints, and rotation-aware depth sorting.
+- Generated one original 4×4 M22 structure/furniture source sheet with the built-in image workflow, retained its provenance source, added a deterministic chroma-key/theme/tier processor, expanded the buildings/decor atlas to 67 frames, and removed normal building runtime tinting.
+- Added an all-kinds/all-buildings M22 fixture, a 285-decoration performance fixture, focused unit tests, and browser acceptance for all themes/four rotations/editor controls.
+- Visual QA caught purple chroma spill in the first atlas; the processor now samples the actual generated border key and despills it. Clean parkland and desert rotation recaptures were inspected.
+
+## M22 verification so far
+
+- Full unit suite: 42 files, 291 tests passed, one intentional skip. Production build and lint/i18n guards pass; lint reports six pre-existing React hook warnings and no errors.
+- Reducer fuzz and the 30-week/8,719-round soak pass. Three-theme 100-golfer performance certification holds 60 fps at 17.0–17.3 ms p95 with 0.206–0.239 ms renderer work and 1,048 visible objects.
+- M22 acceptance plus the previously stressed presentation, save/load, migration, options, and accessibility paths pass together under parallel Playwright load: 8/8. The wider regression set passed across the initial and focused reruns.
+- PWA smoke passes controlled install, offline reload, and local save persistence. The bundled web-game client also passes with deterministic text state exposing all 11 decoration kinds.
+- The final theme/tier atlas is 3.3 MB (down from 8.6 MB during QA); parkland and desert captures were visually inspected after resize with clean transparency and no chroma spill.
+
+## M22 remaining
+
+- None. ZK-226 through ZK-230 meet their implementation and acceptance criteria.

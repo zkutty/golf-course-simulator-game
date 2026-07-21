@@ -8,4 +8,12 @@ describe("hashGameState", () => {
     const withUiMetadata = { ...base, history: [], tutorial: null, supportNote: "not game state" };
     expect(hashGameState(withUiMetadata)).toBe(hashGameState(base));
   });
+
+  it("treats a migrated empty decoration collection as semantic no-op", () => {
+    const without = { ...DEFAULT_STATE.course };
+    delete without.decorations;
+    expect(hashGameState({ course: without, world: DEFAULT_STATE.world })).toBe(
+      hashGameState({ course: { ...without, decorations: [] }, world: DEFAULT_STATE.world })
+    );
+  });
 });

@@ -144,6 +144,42 @@ export function createM21BiomeReferenceCourse(theme: NonNullable<Course["theme"]
   };
 }
 
+/** M22 course-only visual acceptance scene: every structure and decor kind. */
+export function createM22VisualReferenceCourse(theme: NonNullable<Course["theme"]> = "parkland"): Course {
+  const base = createM21BiomeReferenceCourse(theme);
+  const tiles = [...base.tiles];
+  const elevations = [...base.elevations];
+  for (const y of [6, 10]) for (let x = 9; x <= 13; x++) {
+    tiles[y * base.width + x] = x === 9 || x === 13 ? "path" : y === 6 ? "water" : "wetland";
+    elevations[y * base.width + x] = 1;
+  }
+  return {
+    ...base,
+    tiles,
+    elevations,
+    name: `M22 ${theme} Visual Release Club`,
+    buildings: [
+      { type: "clubhouse", x: 4, y: 29 },
+      { type: "pro_shop", x: 9, y: 29, tier: 3, price: 40 },
+      { type: "snack_bar", x: 13, y: 29, tier: 2, price: 15 },
+      { type: "cart_rental", x: 17, y: 29, tier: 1, price: 30 },
+    ],
+    decorations: [
+      { kind: "bridge", x: 9, y: 6, rotation: 0, span: 3 },
+      { kind: "boardwalk", x: 9, y: 10, rotation: 0, span: 3 },
+      { kind: "fence", x: 5, y: 34, rotation: 0 },
+      { kind: "bench", x: 7, y: 34, rotation: 1 },
+      { kind: "tee_sign", x: 8, y: 21, rotation: 0 },
+      { kind: "lamp", x: 10, y: 34, rotation: 0 },
+      { kind: "bin", x: 12, y: 34, rotation: 0 },
+      { kind: "parked_cart", x: 14, y: 34, rotation: 2 },
+      { kind: "flower_bed", x: 16, y: 34, rotation: 0 },
+      { kind: "planter", x: 18, y: 34, rotation: 3 },
+      { kind: "ornamental_feature", x: 20, y: 34, rotation: 0 },
+    ],
+  };
+}
+
 /** Deterministic, fully playable course used by QA, fuzz, and soak fixtures. */
 export function createReferenceCourse(): Course {
   const width = 110;
@@ -240,6 +276,13 @@ export function createRenderPerfCourse(theme: NonNullable<Course["theme"]> = "pa
     }
   }
 
+  const decorations: NonNullable<Course["decorations"]> = [];
+  for (let y = 2; y < height - 2 && decorations.length < 320; y += 2) for (let x = 2; x < width - 2 && decorations.length < 320; x += 3) {
+    const terrain = tiles[y * width + x];
+    if (terrain !== "rough" || obstacles.some((obstacle) => obstacle.x === x && obstacle.y === y)) continue;
+    decorations.push({ kind: decorations.length % 7 === 0 ? "flower_bed" : decorations.length % 5 === 0 ? "lamp" : "bench", x, y, rotation: (decorations.length % 4) as 0 | 1 | 2 | 3 });
+  }
+
   return {
     width,
     height,
@@ -253,6 +296,7 @@ export function createRenderPerfCourse(theme: NonNullable<Course["theme"]> = "pa
       { type: "snack_bar", x: 52, y: 31, tier: 3, price: 15 },
       { type: "cart_rental", x: 6, y: 36, tier: 3, price: 30 },
     ],
+    decorations,
     yardsPerTile: 4,
     name: "M12 Render Performance Club",
     baseGreenFee: 120,

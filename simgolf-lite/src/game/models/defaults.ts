@@ -15,6 +15,7 @@ export const DEFAULT_COURSE: Course = {
   })),
   obstacles: [],
   buildings: [],
+  decorations: [],
   yardsPerTile: 10,
   baseGreenFee: 65,
   condition: 0.75,
@@ -39,4 +40,3 @@ export const DEFAULT_WORLD: World = {
   difficulty: "normal",
   tournaments: { version: 1, events: [] },
 };
-

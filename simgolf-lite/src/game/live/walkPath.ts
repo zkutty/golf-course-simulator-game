@@ -1,5 +1,7 @@
 import type { Course, Point } from "../models/types";
 import { isWalkableTerrain } from "../models/terrainRules";
+import { bridgeTileSet, blockingDecorationSet } from "../models/decorations";
+import { buildingFootprintSet } from "../models/buildings";
 
 // Tile-aware walking routes for golfers so they path AROUND water instead of
 // straight-lining over it. A lightweight 8-directional BFS on the tile grid;
@@ -11,9 +13,11 @@ function inBounds(course: Course, x: number, y: number): boolean {
   return x >= 0 && y >= 0 && x < course.width && y < course.height;
 }
 
-function walkable(course: Course, x: number, y: number): boolean {
+function walkable(course: Course, x: number, y: number, bridges: Set<number>, blocked: Set<number>): boolean {
   if (!inBounds(course, x, y)) return false;
-  return isWalkableTerrain(course.tiles[y * course.width + x]);
+  const index = y * course.width + x;
+  if (blocked.has(index)) return false;
+  return bridges.has(index) || isWalkableTerrain(course.tiles[index]);
 }
 
 const DIRS: Array<[number, number]> = [
@@ -31,9 +35,12 @@ export function findWalkPath(
   const sy = Math.round(from.y);
   const tx = Math.round(to.x);
   const ty = Math.round(to.y);
+  const bridges = bridgeTileSet(course);
+  const blocked = buildingFootprintSet(course);
+  for (const index of blockingDecorationSet(course)) blocked.add(index);
 
   // If endpoints sit on water/out-of-bounds we can't route; caller falls back.
-  if (!walkable(course, sx, sy) || !walkable(course, tx, ty)) return null;
+  if (!walkable(course, sx, sy, bridges, blocked) || !walkable(course, tx, ty, bridges, blocked)) return null;
   if (sx === tx && sy === ty) return [{ x: to.x, y: to.y }];
 
   const W = course.width;
@@ -55,9 +62,9 @@ export function findWalkPath(
       for (const [dx, dy] of DIRS) {
         const nx = cx + dx;
         const ny = cy + dy;
-        if (!walkable(course, nx, ny)) continue;
+        if (!walkable(course, nx, ny, bridges, blocked)) continue;
         // Prevent squeezing diagonally through a water pinch.
-        if (dx !== 0 && dy !== 0 && (!walkable(course, cx + dx, cy) || !walkable(course, cx, cy + dy))) continue;
+        if (dx !== 0 && dy !== 0 && (!walkable(course, cx + dx, cy, bridges, blocked) || !walkable(course, cx, cy + dy, bridges, blocked))) continue;
         const nk = ny * W + nx;
         if (seen.has(nk)) continue;
         seen.add(nk);

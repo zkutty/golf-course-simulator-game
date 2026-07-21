@@ -265,6 +265,11 @@ export const en = {
   "tournament.reputation": "rep award", "tournament.payout": "Completion award: {amount}. Requires {reputation} reputation and nine open holes.", "tournament.book": "Book tournament", "tournament.booked": "Tournament booked.",
   "tournament.upcoming": "Upcoming", "tournament.results": "Recent results", "tournament.week": "Week {week}", "tournament.inOneDay": "in 1 day", "tournament.inDays": "in {days} days",
   "tournament.wonBy": "Won by {winner}", "tournament.repShort": "rep",
+  "decor.tool": "Decor", "decor.title": "Course decor & crossings", "decor.place": "Place", "decor.rotate": "Rotate", "decor.remove": "Remove",
+  "decor.direction": "Direction", "decor.rotation": "Rotate {rotation} degrees", "decor.span": "Hazard span: {span} tiles", "decor.spanLabel": "Bridge or boardwalk span",
+  "decor.placeHint": "Choose a piece, direction, and span, then click the course. Crossing placement starts on its dry approach.",
+  "decor.rotateHint": "Click placed decor to rotate it. Invalid crossing rotations are left unchanged.", "decor.removeHint": "Click any part of placed decor to salvage it.",
+  "decor.invalid": "Cannot place decor: {reason}.", "decor.noneHere": "There is no decoration here.",
 } as const;
 
 export type MessageKey = keyof typeof en;

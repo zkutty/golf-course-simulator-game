@@ -5,6 +5,7 @@ import type {
   ConcessionType,
   Course,
   Point,
+  LandTheme,
 } from "./types";
 import { maxSlopeInRect } from "./elevation";
 
@@ -29,6 +30,14 @@ export interface BuildingSpec {
   item?: string;
   serviceMinutes?: number;
   capacity?: number;
+}
+
+export type BuildingVisualFrame = `${LandTheme}_${BuildingType}_t${BuildingTier}`;
+
+/** Theme/tier visual selection is data-driven and always has a parkland T1 fallback. */
+export function buildingVisualFrame(building: Building, theme: LandTheme = "parkland"): BuildingVisualFrame {
+  const tier: BuildingTier = building.type === "clubhouse" ? 1 : (building.tier ?? 1);
+  return `${theme}_${building.type}_t${tier}`;
 }
 
 export const BUILDING_SPECS: Record<BuildingType, BuildingSpec> = {

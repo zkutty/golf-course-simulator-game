@@ -15,8 +15,10 @@ import { missingNaturalPropFrames, type NaturalPropFrame } from "../game/render/
  */
 
 export type PropFrame = NaturalPropFrame;
-export type BuildingFrame = "clubhouse" | "pro_shop" | "snack_bar" | "cart_rental";
-export type AtlasFrame = PropFrame | BuildingFrame;
+export type LegacyBuildingFrame = "clubhouse" | "pro_shop" | "snack_bar" | "cart_rental";
+export type BuildingFrame = LegacyBuildingFrame | `${"parkland" | "links" | "desert"}_${LegacyBuildingFrame}_t${1 | 2 | 3}`;
+export type DecorationFrame = `${"parkland" | "links" | "desert"}_${"fence" | "bench" | "tee_sign" | "lamp" | "bin" | "parked_cart" | "flower_bed" | "planter" | "ornamental_feature" | "bridge" | "boardwalk" | "bridge_approach"}`;
+export type AtlasFrame = PropFrame | BuildingFrame | DecorationFrame;
 
 /**
  * Golfer character frames (ZKU-153) live in their own atlas. Names follow

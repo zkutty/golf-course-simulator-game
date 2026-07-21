@@ -13,6 +13,7 @@ import {
 import { getEffectiveBalance } from "../game/balance/difficulty";
 import { createLoan } from "../game/sim/loans";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
+import { canPlaceDecoration, decorationAtTile, decorationCost, decorationSpec } from "../game/models/decorations";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -363,6 +364,47 @@ export function applyAction(state: GameState, action: Action): GameState {
       });
       newState = { ...newState, course: { ...state.course, buildings } };
       economyVersion++;
+      break;
+    }
+
+    case "PLACE_DECORATION": {
+      const validation = canPlaceDecoration(state.course, action.decoration);
+      if (!validation.ok) break;
+      const cost = decorationCost(action.decoration);
+      if (state.world.cash < cost) break;
+      const cash = state.world.cash - cost;
+      newState = {
+        ...newState,
+        course: { ...state.course, decorations: [...(state.course.decorations ?? []), action.decoration] },
+        world: { ...state.world, cash, isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash) },
+      };
+      terrainVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "REMOVE_DECORATION": {
+      const target = decorationAtTile(state.course, action.x, action.y);
+      if (!target) break;
+      const salvage = Math.round(decorationCost(target) * decorationSpec(target.kind).salvageRate);
+      newState = {
+        ...newState,
+        course: { ...state.course, decorations: (state.course.decorations ?? []).filter((entry) => entry !== target) },
+        world: { ...state.world, cash: state.world.cash + salvage },
+      };
+      terrainVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "ROTATE_DECORATION": {
+      const target = decorationAtTile(state.course, action.x, action.y);
+      if (!target) break;
+      const rotated = { ...target, rotation: ((target.rotation + 1) % 4) as 0 | 1 | 2 | 3 };
+      const withoutTarget = { ...state.course, decorations: (state.course.decorations ?? []).filter((entry) => entry !== target) };
+      if (!canPlaceDecoration(withoutTarget, rotated).ok) break;
+      newState = { ...newState, course: { ...state.course, decorations: (state.course.decorations ?? []).map((entry) => entry === target ? rotated : entry) } };
+      terrainVersion++;
       break;
     }
 

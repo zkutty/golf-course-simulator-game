@@ -115,5 +115,5 @@ function buildAtlas(srcDir, outName, include = () => true, scale = "1") {
 
 buildAtlas(TERRAIN_SRC, "terrain", () => true, "2");
 buildAtlas(NATURAL_SRC, "natural-props");
-buildAtlas(SRC, "buildings-decor", (name) => /^(clubhouse|pro_shop|snack_bar|cart_rental)\.png$/.test(name));
+buildAtlas(SRC, "buildings-decor", (name) => /^(clubhouse|pro_shop|snack_bar|cart_rental|(?:parkland|links|desert)_(?:clubhouse|pro_shop|snack_bar|cart_rental)_t[123]|(?:parkland|links|desert)_(?:fence|bench|tee_sign|lamp|bin|parked_cart|flower_bed|planter|ornamental_feature|bridge|boardwalk|bridge_approach))\.png$/.test(name));
 buildAtlas(path.join(SRC, "golfers"), "golfers");

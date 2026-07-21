@@ -8,6 +8,8 @@ import type {
   World,
   Point,
   Obstacle,
+  Decoration,
+  DecorationKind,
 } from "../game/models/types";
 import type { ObjectiveState } from "../game/models/objectives";
 import {
@@ -28,9 +30,10 @@ import { normalizeTutorialProgress, type TutorialProgress } from "../game/onboar
 import { emptyCourseRecords, seedRecordsFromHistory } from "../game/retention/records";
 import type { CourseRecords } from "../game/retention/types";
 import { normalizeTournamentCalendar } from "../game/tournaments/tournaments";
+import { DECORATION_KINDS, normalizedDecoration } from "../game/models/decorations";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 5 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 6 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -67,6 +70,10 @@ export interface SaveV4 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV5 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 5;
+  records?: CourseRecords;
+}
+export interface SaveV6 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -90,7 +97,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV5 = {
+  const save: SaveV6 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -178,6 +185,9 @@ function migrateCourseGrid(oldCourse: Course): Course {
     obstacles: migratedObstacles,
     buildings: (oldCourse.buildings ?? []).filter(
       (b) => b.x >= 0 && b.y >= 0 && b.x < newWidth && b.y < newHeight
+    ),
+    decorations: (oldCourse.decorations ?? []).filter((decoration) =>
+      decoration.x >= 0 && decoration.y >= 0 && decoration.x < newWidth && decoration.y < newHeight
     ),
   };
 }
@@ -277,6 +287,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V5 expands validation to waste-area and wetland terrain. Existing tile
   // arrays are deliberately retained by reference/value with no rewrites.
   4: (save) => ({ ...save, schemaVersion: 5 }),
+  // V6 adds player-authored course decorations and walking structures.
+  // The normalizer supplies an empty list for older courses.
+  5: (save) => ({ ...save, schemaVersion: 6 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World): CourseRecords {
@@ -360,6 +373,16 @@ function sanitizeObstacles(raw: unknown, width: number, height: number): Obstacl
   });
 }
 
+function sanitizeDecorations(raw: unknown, width: number, height: number): Decoration[] {
+  if (!Array.isArray(raw)) return [];
+  const allowed = DECORATION_KINDS as readonly string[];
+  return raw.filter((value): value is Decoration => {
+    if (!isRecord(value) || !allowed.includes(value.kind as string)) return false;
+    if (!Number.isInteger(value.x) || !Number.isInteger(value.y) || !Number.isInteger(value.rotation) || (value.rotation as number) < 0 || (value.rotation as number) > 3) return false;
+    return (value.x as number) >= 0 && (value.y as number) >= 0 && (value.x as number) < width && (value.y as number) < height;
+  }).map((value) => normalizedDecoration({ ...value, kind: value.kind as DecorationKind }));
+}
+
 /**
  * Objective state must be structurally sound or the goals panel / evaluator
  * would crash on first render. Pre-M13 saves have no field at all → null
@@ -419,6 +442,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
         rawCourse.width ?? DEFAULT_COURSE.width,
         rawCourse.height ?? DEFAULT_COURSE.height
       ),
+      decorations: sanitizeDecorations(rawCourse.decorations, rawWidth, rawHeight),
       yardsPerTile: rawCourse.yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
       theme: oneOf<LandTheme>(rawCourse.theme, ["parkland", "links", "desert"], "parkland"),
     };

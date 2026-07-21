@@ -3,6 +3,7 @@ import { BALANCE } from "../balance/balanceConfig";
 import { getElevation } from "../models/elevation";
 import { buildingFootprintSet } from "../models/buildings";
 import { terrainWalkingCost, isWaterHazard } from "../models/terrainRules";
+import { bridgeTileSet, blockingDecorationSet } from "../models/decorations";
 
 export interface PathResult {
   path: Point[]; // includes start and end
@@ -54,9 +55,9 @@ function obstaclePenalty(o: Obstacle | null): number {
   return o.type === "tree" ? 5.0 : 2.5;
 }
 
-function stepCost(course: Course, obstacles: Obstacle[], x: number, y: number): number {
+function stepCost(course: Course, obstacles: Obstacle[], x: number, y: number, bridges?: Set<number>): number {
   const t = tileAt(course, x, y);
-  const base = baseTraversalCost(t);
+  const base = bridges?.has(idx(course, x, y)) ? baseTraversalCost("path") : baseTraversalCost(t);
   if (!Number.isFinite(base)) return Infinity;
   return base + hazardAdjacencyPenalty(course, x, y) + obstaclePenalty(obstacleAt(obstacles, x, y));
 }
@@ -72,8 +73,10 @@ export function findBestPlayablePath(
   const obstacles = course.obstacles ?? [];
   // Building footprints are impassable on foot (ZKU-152).
   const blocked = buildingFootprintSet(course);
-  const startCost = stepCost(course, obstacles, start.x, start.y);
-  const goalCost = stepCost(course, obstacles, goal.x, goal.y);
+  for (const index of blockingDecorationSet(course)) blocked.add(index);
+  const bridges = bridgeTileSet(course);
+  const startCost = stepCost(course, obstacles, start.x, start.y, bridges);
+  const goalCost = stepCost(course, obstacles, goal.x, goal.y, bridges);
   if (!Number.isFinite(startCost) || !Number.isFinite(goalCost)) return null;
 
   const n = course.width * course.height;
@@ -149,7 +152,7 @@ export function findBestPlayablePath(
       const ni = idx(course, nx, ny);
       if (visited[ni]) continue;
       if (blocked.has(ni)) continue;
-      const sc = stepCost(course, obstacles, nx, ny);
+      const sc = stepCost(course, obstacles, nx, ny, bridges);
       if (!Number.isFinite(sc)) continue;
       // Slopes cost extra to walk; 2+ step cliffs are impassable (ZKU-146).
       const slope = Math.abs(getElevation(course, nx, ny) - getElevation(course, cx, cy));
@@ -178,7 +181,6 @@ export function findBestPlayablePath(
   const path: Point[] = pathIdxs.map((i) => ({ x: i % course.width, y: Math.floor(i / course.width) }));
   return { path, cost: dist[gIdx], steps: Math.max(0, path.length - 1) };
 }
-
 
 
 

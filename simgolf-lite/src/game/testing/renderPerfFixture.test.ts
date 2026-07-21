@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_STATE } from "../../game/gameState";
 import { createRenderPerfLiveState } from "../live/simulation";
-import { createM21BiomeReferenceCourse, createParklandVisualReferenceCourse, createRenderPerfCourse, PARKLAND_CAMERA_BOOKMARKS, PARKLAND_VISUAL_SEED } from "./referenceCourse";
+import { createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createParklandVisualReferenceCourse, createRenderPerfCourse, PARKLAND_CAMERA_BOOKMARKS, PARKLAND_VISUAL_SEED } from "./referenceCourse";
 
 describe("M12 render performance fixture", () => {
   it("is a reproducible dressed 18 with 500+ props and 100 concurrent golfers", () => {
@@ -12,6 +12,20 @@ describe("M12 render performance fixture", () => {
     expect(course.obstacles.filter((obstacle) => obstacle.type === "tree").length).toBeGreaterThanOrEqual(500);
     expect(live.golfers).toHaveLength(100);
     expect(live.golfers.every((golfer) => golfer.finished === false)).toBe(true);
+  }, 10_000);
+});
+
+describe("M22 visual release fixtures", () => {
+  it("include every decoration, all buildings, valid crossings, and 1,000+ scene objects", () => {
+    for (const theme of ["parkland", "links", "desert"] as const) {
+      const course = createM22VisualReferenceCourse(theme);
+      expect(createM22VisualReferenceCourse(theme)).toEqual(course);
+      expect(new Set(course.decorations?.map((decoration) => decoration.kind))).toEqual(new Set(["fence", "bench", "tee_sign", "lamp", "bin", "parked_cart", "flower_bed", "planter", "ornamental_feature", "bridge", "boardwalk"]));
+      expect(new Set(course.buildings.map((building) => building.type))).toEqual(new Set(["clubhouse", "pro_shop", "snack_bar", "cart_rental"]));
+    }
+    const perf = createRenderPerfCourse();
+    expect(perf.tiles.length + perf.obstacles.length + (perf.decorations?.length ?? 0) + perf.buildings.length).toBeGreaterThan(1_000);
+    expect(perf.decorations?.length).toBeGreaterThanOrEqual(250);
   });
 });
 

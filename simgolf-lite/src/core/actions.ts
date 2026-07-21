@@ -1,4 +1,4 @@
-import type { BuildingTier, BuildingType, Point, Terrain, ObstacleType, Course, World } from "../game/models/types";
+import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World } from "../game/models/types";
 
 // Actions that mutate terrain (increment terrainVersion)
 export type TerrainMutationAction =
@@ -22,6 +22,11 @@ export type BuildingMutationAction =
   | { type: "REMOVE_BUILDING"; x: number; y: number }
   | { type: "CONFIGURE_BUILDING"; x: number; y: number; tier?: BuildingTier; price?: number };
 
+export type DecorationMutationAction =
+  | { type: "PLACE_DECORATION"; decoration: Decoration }
+  | { type: "REMOVE_DECORATION"; x: number; y: number }
+  | { type: "ROTATE_DECORATION"; x: number; y: number };
+
 // Actions that mutate markers (increment markersVersion)
 export type MarkerMutationAction =
   | { type: "PLACE_TEE"; holeIndex: number; position: Point }
@@ -44,12 +49,14 @@ export type EconomyMutationAction =
   | { type: "MOVE_GREEN"; holeIndex: number; position: Point; oldPosition: Point }
   | { type: "PLACE_BUILDING"; buildingType: BuildingType; x: number; y: number }
   | { type: "REMOVE_BUILDING"; x: number; y: number }
+  | { type: "PLACE_DECORATION"; decoration: Decoration }
+  | { type: "REMOVE_DECORATION"; x: number; y: number }
   | { type: "TAKE_LOAN"; kind: "BRIDGE" | "EXPANSION" }
   | { type: "SIMULATE_WEEK"; course: Course; world: World };
 
 // UI-only actions (do not affect versions)
 export type UIAction =
-  | { type: "SET_MODE"; mode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" }
+  | { type: "SET_MODE"; mode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR" }
   | { type: "SET_ACTIVE_HOLE"; holeIndex: number }
   | { type: "SET_BRUSH"; terrain: Terrain };
 
@@ -58,6 +65,7 @@ export type Action =
   | TerrainMutationAction
   | ObstacleMutationAction
   | BuildingMutationAction
+  | DecorationMutationAction
   | MarkerMutationAction
   | EconomyMutationAction
   | UIAction;

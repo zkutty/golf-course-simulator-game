@@ -80,6 +80,21 @@ export interface Obstacle {
   type: ObstacleType;
 }
 
+export type DecorationKind =
+  | "fence" | "bench" | "tee_sign" | "lamp" | "bin" | "parked_cart"
+  | "flower_bed" | "planter" | "ornamental_feature" | "bridge" | "boardwalk";
+export type DecorationRotation = 0 | 1 | 2 | 3;
+
+export interface Decoration {
+  kind: DecorationKind;
+  x: number;
+  y: number;
+  rotation: DecorationRotation;
+  variant?: number;
+  /** Hazard tiles crossed by a bridge/boardwalk; omitted for 1×1 decor. */
+  span?: number;
+}
+
 export interface Course {
   width: number;
   height: number;
@@ -93,6 +108,9 @@ export interface Course {
   // Multi-tile structures (ZKU-152; extended by M4 concessions). Older
   // saves migrate to an empty list on load.
   buildings: Building[];
+  // Player-authored visual furniture and walking structures. Pre-M22 saves
+  // migrate to an empty list; visuals are selected through the theme registry.
+  decorations?: Decoration[];
   yardsPerTile: number; // distance model (default 10)
   name: string;
   baseGreenFee: number; // dollars

@@ -4,7 +4,7 @@ import type { TutorialTarget } from "../game/onboarding/tutorial";
 import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
 import { ELEVATION_COST_PER_STEP } from "../game/models/terrainEconomics";
 import { useAudio } from "../audio/audioContext";
-import type { BuildingTier, ConcessionType, Course, ObstacleType, Point, Terrain, WeekResult, World } from "../game/models/types";
+import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, ObstacleType, Point, Terrain, WeekResult, World } from "../game/models/types";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
@@ -18,6 +18,7 @@ import { IconBush, IconCash, IconCondition, IconHoles, IconReputation, IconRock,
 import { GameButton } from "@/ui/gameui";
 import { ObjectiveMiniTracker, ObjectivesPanel } from "./ObjectivesPanel";
 import { BUILDING_SPECS, isConcession } from "../game/models/buildings";
+import { DECORATION_KINDS, DECORATION_SPECS, decorationCost } from "../game/models/decorations";
 import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../game/models/terrainEconomics";
 import { Tooltip } from "./help/Tooltip";
 import { REPORT_HELP } from "./help/tooltipContent";
@@ -44,8 +45,8 @@ export function HUD(props: {
   setSelected: (t: Terrain) => void;
   setGreenFee: (n: number) => void;
   setMaintenance: (n: number) => void;
-  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
-  setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING") => void;
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
+  setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR") => void;
   sculptBrush?: SculptBrush;
   setSculptBrush?: (b: SculptBrush) => void;
   sculptRadius?: SculptRadius;
@@ -58,6 +59,14 @@ export function HUD(props: {
   buildingType: ConcessionType;
   setBuildingType: (t: ConcessionType) => void;
   concessionTypes: readonly ConcessionType[];
+  decorationKind: DecorationKind;
+  setDecorationKind: (kind: DecorationKind) => void;
+  decorationRotation: DecorationRotation;
+  setDecorationRotation: (rotation: DecorationRotation) => void;
+  decorationSpan: number;
+  setDecorationSpan: (span: number) => void;
+  decorationAction: "place" | "rotate" | "remove";
+  setDecorationAction: (action: "place" | "rotate" | "remove") => void;
   onConfigureBuilding: (x: number, y: number, tier: BuildingTier, price: number) => void;
   activeHoleIndex: number;
   setActiveHoleIndex: (n: number) => void;
@@ -117,6 +126,14 @@ export function HUD(props: {
     buildingType,
     setBuildingType,
     concessionTypes,
+    decorationKind,
+    setDecorationKind,
+    decorationRotation,
+    setDecorationRotation,
+    decorationSpan,
+    setDecorationSpan,
+    decorationAction,
+    setDecorationAction,
     onConfigureBuilding,
     activeHoleIndex,
     setActiveHoleIndex,
@@ -617,6 +634,20 @@ export function HUD(props: {
                   }}
                 >
                   <T id="auto.ui.hud.shops" /></button>
+                <button
+                  data-testid="decor-tool"
+                  onClick={() => setEditorMode("DECOR")}
+                  style={{
+                    flex: 1,
+                    padding: "8px 6px",
+                    borderRadius: 10,
+                    border: editorMode === "DECOR" ? "2px solid #000" : "1px solid #ccc",
+                    background: "#fff",
+                    fontSize: 12,
+                  }}
+                >
+                  {translateCurrent("decor.tool")}
+                </button>
               </div>
 
               {editorMode === "SCULPT" && props.sculptBrush && props.setSculptBrush && props.setSculptRadius && (
@@ -838,6 +869,45 @@ export function HUD(props: {
                     </button>
                   );})}
                 </div>
+              </Section>
+            ) : editorMode === "DECOR" ? (
+              <Section title={translateCurrent("decor.title")}>
+                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                  {(["place", "rotate", "remove"] as const).map((action) => (
+                    <button
+                      key={action}
+                      data-testid={`decor-action-${action}`}
+                      onClick={() => setDecorationAction(action)}
+                      style={{ flex: 1, padding: 7, borderRadius: 8, border: decorationAction === action ? "2px solid #000" : "1px solid #ccc", background: "#fff", textTransform: "capitalize" }}
+                    >
+                      {translateCurrent(`decor.${action}` as MessageKey)}
+                    </button>
+                  ))}
+                </div>
+                {decorationAction === "place" && <>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
+                    {DECORATION_KINDS.map((kind) => {
+                      const spec = DECORATION_SPECS[kind];
+                      const example = { kind, x: 0, y: 0, rotation: decorationRotation, ...(spec.defaultSpan ? { span: decorationSpan } : {}) };
+                      return <button
+                        key={kind}
+                        data-testid={`decor-kind-${kind}`}
+                        onClick={() => setDecorationKind(kind)}
+                        style={{ padding: 7, borderRadius: 8, border: decorationKind === kind ? "2px solid #000" : "1px solid #ccc", background: "#fff", textAlign: "left", fontSize: 11 }}
+                      ><b>{spec.name}</b><br />{formatCurrency(decorationCost(example))}</button>;
+                    })}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>
+                    <span style={{ fontSize: 12 }}>{translateCurrent("decor.direction")}</span>
+                    {([0, 1, 2, 3] as const).map((rotation) => <button key={rotation} aria-label={translateCurrent("decor.rotation", { rotation: rotation * 90 })} onClick={() => setDecorationRotation(rotation)} style={{ padding: 6, border: decorationRotation === rotation ? "2px solid #000" : "1px solid #ccc", background: "#fff" }}>{rotation * 90}°</button>)}
+                  </div>
+                  {(decorationKind === "bridge" || decorationKind === "boardwalk") && <label style={{ display: "grid", gap: 4, marginTop: 8, fontSize: 12 }}>
+                    {translateCurrent("decor.span", { span: decorationSpan })}
+                    <input aria-label={translateCurrent("decor.spanLabel")} type="range" min={1} max={decorationKind === "bridge" ? 6 : 8} value={decorationSpan} onChange={(event) => setDecorationSpan(Number(event.target.value))} />
+                  </label>}
+                  <div style={{ marginTop: 8, color: "#555", fontSize: 11 }}>{translateCurrent("decor.placeHint")}</div>
+                </>}
+                {decorationAction !== "place" && <div style={{ color: "#555", fontSize: 12 }}>{translateCurrent(decorationAction === "rotate" ? "decor.rotateHint" : "decor.removeHint")}</div>}
               </Section>
             ) : editorMode === "BUILDING" ? (
               <>

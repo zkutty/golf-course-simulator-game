@@ -18,6 +18,7 @@
     "gen:props": "node scripts/process-biome-props.mjs",
     "gen:terrain": "node scripts/gen-terrain-materials.mjs",
     "gen:audio": "node scripts/gen-audio.mjs",
+    "gen:m22-art": "node scripts/process-m22-assets.mjs",
     "build:atlas": "node scripts/build-atlas.mjs",
     "test:perf": "node scripts/perf-smoke.mjs",
     "test:pwa": "node scripts/pwa-smoke.mjs"

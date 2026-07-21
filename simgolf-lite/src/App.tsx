@@ -7,7 +7,7 @@ import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
-import type { BuildingTier, ConcessionType, Point, Terrain, WeekResult } from "./game/models/types";
+import type { BuildingTier, ConcessionType, DecorationKind, DecorationRotation, Point, Terrain, WeekResult } from "./game/models/types";
 import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
 import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStore";
@@ -47,7 +47,7 @@ import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
-import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
+import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse } from "./game/testing/referenceCourse";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
@@ -58,6 +58,7 @@ import {
   buildingAtTile,
   canPlaceBuilding,
 } from "./game/models/buildings";
+import { canPlaceDecoration, decorationAtTile, decorationCost } from "./game/models/decorations";
 import { GolfopediaModal } from "./ui/help/GolfopediaModal";
 import { TooltipSurface } from "./ui/help/TooltipSurface";
 import { AdvisorCard } from "./ui/onboarding/AdvisorCard";
@@ -104,7 +105,7 @@ import { createTournamentEvent, scheduleTournament, tournamentCalendar } from ".
 import type { TournamentTier } from "./game/tournaments/types";
 import { debugLog } from "./utils/debugLog";
 
-type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
+type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
 type ViewMode = "global" | "hole";
 
@@ -193,6 +194,10 @@ export default function App() {
   const [sculptBrush, setSculptBrush] = useState<SculptBrush>("raise");
   const [sculptRadius, setSculptRadius] = useState<SculptRadius>(1);
   const [buildingType, setBuildingType] = useState<ConcessionType>("snack_bar");
+  const [decorationKind, setDecorationKind] = useState<DecorationKind>("bench");
+  const [decorationRotation, setDecorationRotation] = useState<DecorationRotation>(0);
+  const [decorationSpan, setDecorationSpan] = useState(3);
+  const [decorationAction, setDecorationAction] = useState<"place" | "rotate" | "remove">("place");
 
   const [capital, setCapital] = useState(() => ({
     spent: 0,
@@ -389,14 +394,17 @@ export default function App() {
     const isM19Fixture = fixtureParams.get("m19Fixture") === "1";
     const isM20Fixture = fixtureParams.get("m20Fixture") === "1";
     const isM21Fixture = fixtureParams.get("m21Fixture") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture) return;
+    const isM22Fixture = fixtureParams.get("m22Fixture") === "1";
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
-    const requestedTheme = fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
+    const requestedTheme = fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = requestedTheme === "links" || requestedTheme === "desert" ? requestedTheme : "parkland";
-    const fixtureCourse = isM21Fixture
-      ? createM21BiomeReferenceCourse(fixtureTheme)
+    const fixtureCourse = isM22Fixture
+      ? createM22VisualReferenceCourse(fixtureTheme)
+      : isM21Fixture
+        ? createM21BiomeReferenceCourse(fixtureTheme)
       : isM20Fixture
         ? createM20TerrainReferenceCourse(fixtureTheme)
         : isM19Fixture
@@ -989,12 +997,13 @@ export default function App() {
         holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length,
         terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>),
         obstacleCounts: course.obstacles.reduce((counts, obstacle) => ({ ...counts, [obstacle.type]: (counts[obstacle.type] ?? 0) + 1 }), {} as Partial<Record<ObstacleType, number>>),
+        decorations: (course.decorations ?? []).map((decoration) => ({ kind: decoration.kind, x: decoration.x, y: decoration.y, rotation: decoration.rotation, span: decoration.span ?? null })),
       },
       camera: { center: audioCameraCenter, viewMode, renderer: "pixi" },
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null },
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       progression: { panelOpen: showProgression, tier: reputationTier(world.reputation).id, staffCap: reputationTier(world.reputation).staffCap, buildingTierCap: reputationTier(world.reputation).buildingTierCap },
-      editor: { mode: editorMode, selectedTerrain: selected, activeHole: activeHoleIndex + 1 },
+      editor: { mode: editorMode, selectedTerrain: selected, selectedDecoration: decorationKind, decorationRotation, decorationSpan, decorationAction, activeHole: activeHoleIndex + 1 },
       graphics: { animations: effectiveAnimations, waterAnimation: effectiveAnimations && appProfile.graphics.waterAnimation, treeSway: effectiveAnimations && appProfile.graphics.treeSway },
       retention: { photoMode, recordsOpen: showRetention, achievementsEarned: appProfile.achievements.earned.length, totalRounds: records.totalRounds, aces: records.aces.length, tickerVisible: appProfile.gameplay.tickerVisible },
       tournament: {
@@ -1010,7 +1019,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, photoMode, records, screen, selected, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1520,6 +1529,40 @@ export default function App() {
       void audio.playSfx("confirm");
       return;
     }
+    if (editorMode === "DECOR") {
+      const existing = decorationAtTile(course, x, y);
+      if (decorationAction === "remove") {
+        if (!existing) { setPaintError(t("decor.noneHere")); return; }
+        dispatch({ type: "REMOVE_DECORATION", x, y });
+        setPaintError(null);
+        return;
+      }
+      if (decorationAction === "rotate") {
+        if (!existing) { setPaintError(t("decor.noneHere")); return; }
+        const next = { ...existing, rotation: ((existing.rotation + 1) % 4) as DecorationRotation };
+        const withoutExisting = { ...course, decorations: (course.decorations ?? []).filter((entry) => entry !== existing) };
+        const validation = canPlaceDecoration(withoutExisting, next);
+        if (!validation.ok) { setPaintError(t("decor.invalid", { reason: validation.reason ?? "invalid placement" })); return; }
+        dispatch({ type: "ROTATE_DECORATION", x, y });
+        setPaintError(null);
+        return;
+      }
+      const decoration = {
+        kind: decorationKind,
+        x,
+        y,
+        rotation: decorationRotation,
+        ...((decorationKind === "bridge" || decorationKind === "boardwalk") ? { span: decorationSpan } : {}),
+      };
+      const validation = canPlaceDecoration(course, decoration);
+      if (!validation.ok) { setPaintError(t("decor.invalid", { reason: validation.reason ?? "invalid placement" })); return; }
+      const cost = decorationCost(decoration);
+      if (world.cash < cost) { setPaintError(t("error.insufficientFunds", { amount: formatCurrency(cost) })); return; }
+      dispatch({ type: "PLACE_DECORATION", decoration });
+      setPaintError(null);
+      void audio.playSfx("confirm");
+      return;
+    }
     // HOLE_WIZARD
     if (wizardStep === "TEE" || wizardStep === "MOVE_TEE") {
       // Validate: cannot place on water and must be in bounds
@@ -1821,12 +1864,10 @@ export default function App() {
       onSaved={() => markClean(payloadSequenceRef.current)}
       onLoaded={(payload) => {
         flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
-        window.setTimeout(() => {
-          applyLoadedGame(payload);
-          flowDispatch({ type: "ENTER_GAME" });
-          setPaintError(t("save.loaded"));
-          setTimeout(() => setPaintError(null), 2000);
-        }, 0);
+        applyLoadedGame(payload);
+        flowDispatch({ type: "ENTER_GAME" });
+        setPaintError(t("save.loaded"));
+        window.setTimeout(() => setPaintError(null), 2000);
       }}
     />
   );
@@ -2022,6 +2063,9 @@ export default function App() {
                 flyoverNonce={flyoverNonce}
                 showShotPlan={showShotPlan}
                 editorMode={editorMode}
+                selectedDecorationKind={decorationKind}
+                decorationRotation={decorationRotation}
+                decorationSpan={decorationSpan}
                 colorVision={appProfile.accessibility.colorVision}
                 terrainPatterns={appProfile.accessibility.terrainPatterns}
                 keybindings={appProfile.accessibility.keybindings}
@@ -2210,6 +2254,14 @@ export default function App() {
         buildingType={buildingType}
         setBuildingType={setBuildingType}
         concessionTypes={CONCESSION_TYPES}
+        decorationKind={decorationKind}
+        setDecorationKind={setDecorationKind}
+        decorationRotation={decorationRotation}
+        setDecorationRotation={setDecorationRotation}
+        decorationSpan={decorationSpan}
+        setDecorationSpan={setDecorationSpan}
+        decorationAction={decorationAction}
+        setDecorationAction={setDecorationAction}
         onConfigureBuilding={(x: number, y: number, tier: BuildingTier, price: number) => {
           const cap = reputationTier(world.reputation).buildingTierCap;
           if (tier > cap) {

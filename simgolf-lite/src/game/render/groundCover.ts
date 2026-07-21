@@ -48,6 +48,7 @@ function excluded(course: Course, x: number, y: number): boolean {
     const spec = BUILDING_SPECS[building.type];
     if (x >= building.x - 1 && y >= building.y - 1 && x <= building.x + spec.w && y <= building.y + spec.d) return true;
   }
+  if ((course.decorations ?? []).some((decoration) => Math.max(Math.abs(decoration.x - x), Math.abs(decoration.y - y)) <= 1)) return true;
   return false;
 }
 

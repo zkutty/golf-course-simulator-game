@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as PIXI from "pixi.js";
-import type { Course, Hole, Obstacle, Point, Terrain } from "../game/models/types";
+import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
 import type { CameraState, IsoCameraSnapshot } from "../game/render/camera";
@@ -72,7 +72,8 @@ import {
 import { FLYOVER_DURATION_MS, buildFlyoverKeys, sampleFlyover, type FlyoverKey } from "../game/render/flyover";
 import { PerfWindow } from "../game/render/perfStats";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
-import { buildingSpec } from "../game/models/buildings";
+import { buildingSpec, buildingVisualFrame } from "../game/models/buildings";
+import { decorationTiles, decorationVisual } from "../game/models/decorations";
 import { getLandTheme } from "../game/models/themes";
 import type { AtlasFrame } from "../render/atlas";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
@@ -336,7 +337,10 @@ export interface PixiStageProps {
   keybindings: Keybindings;
   flyoverNonce: number;
   showShotPlan: boolean;
-  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING";
+  editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
+  selectedDecorationKind?: DecorationKind;
+  decorationRotation?: DecorationRotation;
+  decorationSpan?: number;
   sculptRadius?: number;
   wizardStep: "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
   draftTee: Point | null;
@@ -508,6 +512,7 @@ export function PixiStage(props: PixiStageProps) {
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
   const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
   const buildingSpritesRef = useRef<PIXI.Sprite[]>([]);
+  const decorationSpritesRef = useRef<Array<{ sprite: PIXI.Sprite; shadow: PIXI.Graphics }>>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const ripplesRef = useRef<Array<{ x: number; y: number; t0: number }>>([]);
   const rippleGraphicsRef = useRef<PIXI.Graphics | null>(null);
@@ -1731,7 +1736,10 @@ export function PixiStage(props: PixiStageProps) {
 
     for (const b of course.buildings ?? []) {
       const spec = buildingSpec(b);
-      const tex = getPropFrame(spec.frame as AtlasFrame) ?? getPropFrame("clubhouse");
+      const tex = getPropFrame(buildingVisualFrame(b, course.theme ?? "parkland"))
+        ?? getPropFrame(buildingVisualFrame({ ...b, tier: 1 }, "parkland"))
+        ?? getPropFrame(spec.frame as AtlasFrame)
+        ?? getPropFrame("clubhouse");
       if (!tex) continue;
       const e = getElevation(course, b.x, b.y);
       const placement = placeObject({ x: b.x, y: b.y, w: spec.w, d: spec.d }, e, rotation);
@@ -1741,9 +1749,58 @@ export function PixiStage(props: PixiStageProps) {
       sprite.width = spec.w * TILE_W;
       sprite.height = (sprite.width * tex.height) / tex.width;
       sprite.zIndex = placement.zIndex;
-      sprite.tint = b.type === "snack_bar" ? 0xffd27a : b.type === "pro_shop" ? 0x9fc5e8 : b.type === "cart_rental" ? 0xb6d7a8 : 0xffffff;
       layers.objects.addChild(sprite);
       buildingSpritesRef.current.push(sprite);
+    }
+  }, [appReady, course, rotation]);
+
+  // ---------------------------------------------------------------------
+  // Objects layer — player-authored furniture, bridges, and boardwalks
+  // ---------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!appReady) return;
+    const layers = layersRef.current;
+    if (!layers) return;
+    for (const entry of decorationSpritesRef.current) {
+      entry.sprite.parent?.removeChild(entry.sprite);
+      entry.shadow.parent?.removeChild(entry.shadow);
+      entry.sprite.destroy();
+      entry.shadow.destroy();
+    }
+    decorationSpritesRef.current = [];
+
+    for (const decoration of course.decorations ?? []) {
+      const visual = decorationVisual(decoration, course.theme ?? "parkland");
+      const fallback = decorationVisual(decoration, "parkland");
+      const texture = getPropFrame(visual.frame as AtlasFrame) ?? getPropFrame(fallback.frame as AtlasFrame);
+      if (!texture) continue;
+      const tiles = decorationTiles(decoration);
+      const xs = tiles.map((tile) => tile.x);
+      const ys = tiles.map((tile) => tile.y);
+      const minX = Math.min(...xs); const maxX = Math.max(...xs);
+      const minY = Math.min(...ys); const maxY = Math.max(...ys);
+      const elevation = getElevation(course, decoration.x, decoration.y);
+      const placement = placeObject({ x: minX, y: minY, w: maxX - minX + 1, d: maxY - minY + 1 }, elevation, rotation);
+      const sprite = new PIXI.Sprite(texture);
+      sprite.anchor.set(visual.anchor[0], visual.anchor[1]);
+      sprite.position.set(placement.position.x, placement.position.y);
+      const structure = decoration.kind === "bridge" || decoration.kind === "boardwalk";
+      const logicalWidth = structure ? Math.max(2, tiles.length * .72) * TILE_W : TILE_W * visual.scale;
+      sprite.width = logicalWidth;
+      sprite.height = logicalWidth * texture.height / texture.width;
+      if ((decoration.rotation + rotation) % 2 === 1) sprite.scale.x *= -1;
+      sprite.zIndex = placement.zIndex + .05;
+      sprite.eventMode = "none";
+      layers.objects.addChild(sprite);
+
+      const shadow = new PIXI.Graphics();
+      shadow.ellipse(0, 0, structure ? logicalWidth * .38 : visual.shadow.radiusX, visual.shadow.radiusY);
+      shadow.fill({ color: 0x000000, alpha: visual.shadow.alpha });
+      shadow.position.set(placement.position.x + 3, placement.position.y - TILE_H / 2 + 2);
+      shadow.eventMode = "none";
+      layers.terrainDecals.addChild(shadow);
+      decorationSpritesRef.current.push({ sprite, shadow });
     }
   }, [appReady, course, rotation]);
 
@@ -1956,6 +2013,15 @@ export function PixiStage(props: PixiStageProps) {
                   if (d2 <= r * r + 1e-9) outlineTile(tx, ty, tx === hover.x && ty === hover.y ? 0.9 : 0.45);
                 }
               }
+            } else if (editorMode === "DECOR" && props.selectedDecorationKind) {
+              const preview = decorationTiles({
+                kind: props.selectedDecorationKind,
+                x: hover.x,
+                y: hover.y,
+                rotation: props.decorationRotation ?? 0,
+                ...((props.selectedDecorationKind === "bridge" || props.selectedDecorationKind === "boardwalk") ? { span: props.decorationSpan ?? 3 } : {}),
+              });
+              for (const tile of preview) if (tile.x >= 0 && tile.y >= 0 && tile.x < course.width && tile.y < course.height) outlineTile(tile.x, tile.y, .75);
             } else {
               outlineTile(hover.x, hover.y, 0.9);
             }
@@ -2724,7 +2790,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, clampCenter]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, clampCenter]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
