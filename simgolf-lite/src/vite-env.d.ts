@@ -18,8 +18,12 @@ interface Window {
       golferPositions: Array<[number, number, number]>;
       week: number;
       cash: number;
+      terrainVersion: number;
+      economyVersion: number;
+      terrainCounts: Partial<Record<import("./game/models/types").Terrain, number>>;
       courseHash: string;
     };
+    setPaintCash(cash: number): void;
     runGoldenWeek(): Promise<{
       beforeHash: string;
       afterHash: string;

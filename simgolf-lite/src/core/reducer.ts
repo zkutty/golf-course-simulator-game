@@ -1,6 +1,7 @@
 import type { GameState } from "../game/gameState";
 import type { Action } from "./actions";
 import { computeElevationChangeCost, computeTerrainChangeCost } from "../game/models/terrainEconomics";
+import { computeTerrainBatch } from "../game/models/terrainStroke";
 import { clampElevation } from "../game/models/elevation";
 import { hitsLiquidityTrap } from "../game/sim/runState";
 import { terrainCostMult } from "../game/balance/difficulty";
@@ -53,34 +54,27 @@ export function applyAction(state: GameState, action: Action): GameState {
 
   switch (action.type) {
     case "PAINT_TILES": {
-      // Update tiles and economy
+      const preview = computeTerrainBatch({
+        course: state.course,
+        tiles: action.tiles,
+        cash: state.world.cash,
+        costMult,
+        reputation: state.world.reputation,
+      });
+      // Affordability is atomic: no terrain, cash, or version mutation when
+      // even one otherwise-valid stroke would exceed available cash.
+      if (!preview.affordable || preview.changedCount === 0 || state.world.isBankrupt) break;
+
       const newTiles = state.course.tiles.slice();
-      let cashDelta = 0;
-      let changed = false;
-
-      for (const { x, y, terrain } of action.tiles) {
-        if (!isOwnedTile(state.course, x, y)) continue;
-        const idx = y * state.course.width + x;
-        if (idx >= 0 && idx < newTiles.length) {
-          const prev = newTiles[idx];
-          if (prev !== terrain) {
-            const cost = computeTerrainChangeCost(prev, terrain, costMult, state.course.theme);
-            cashDelta += cost.net;
-            newTiles[idx] = terrain;
-            changed = true;
-          }
-        }
-      }
-
-      if (!changed) break;
+      for (const { x, y, terrain } of preview.tiles) newTiles[y * state.course.width + x] = terrain;
 
       newState = {
         ...newState,
         course: { ...state.course, tiles: newTiles },
         world: {
           ...state.world,
-          cash: state.world.cash - cashDelta,
-          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cashDelta),
+          cash: preview.projectedCash,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(preview.projectedCash),
         },
       };
       terrainVersion++;

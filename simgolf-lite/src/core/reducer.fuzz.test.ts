@@ -15,6 +15,7 @@ import { createNewGame } from "../game/gen/newGame";
 import { hashGameState } from "../utils/stateHash";
 import { createReferenceCourse } from "../game/testing/referenceCourse";
 import { runLiveDaysHeadless } from "../game/live/headless";
+import { isTerrainUnlocked } from "../game/progression/progression";
 
 const terrains: Terrain[] = ["fairway", "rough", "deep_rough", "sand", "waste_area", "water", "wetland", "green", "tee", "path"];
 
@@ -76,10 +77,13 @@ describe("reducer property tests", () => {
         expect(Number.isFinite(next.world.cash)).toBe(true);
 
         if (op.kind === "paint") {
-          const expected = computeTerrainChangeCost(
+          const proposed = computeTerrainChangeCost(
             before.course.tiles[idx], op.terrain,
             terrainCostMult(before.world.difficulty), before.course.theme
           ).net;
+          const expected = !before.world.isBankrupt && isTerrainUnlocked(op.terrain, before.world.reputation) && proposed <= before.world.cash
+            ? proposed
+            : 0;
           expect(next.world.cash).toBeCloseTo(before.world.cash - expected, 8);
         }
         if (op.kind === "sculpt") {

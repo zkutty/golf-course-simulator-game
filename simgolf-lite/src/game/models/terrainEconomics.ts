@@ -42,6 +42,35 @@ export interface TerrainChangeCost {
   refunded: number;
 }
 
+export interface TerrainChangeBreakdown extends TerrainChangeCost {
+  /** Full construction spend before salvage is applied. */
+  gross: number;
+  /** Full salvage value credited by the replaced terrain. */
+  salvage: number;
+}
+
+export function computeTerrainChangeBreakdown(
+  prev: Terrain,
+  next: Terrain,
+  costMult = 1,
+  theme?: LandTheme
+): TerrainChangeBreakdown {
+  if (prev === next) return { net: 0, charged: 0, refunded: 0, gross: 0, salvage: 0 };
+
+  const salvage = (TERRAIN_SALVAGE_VALUE[prev] ?? 0) * costMult * themeBuildMult(theme, prev);
+  const gross = next === "rough"
+    ? 0
+    : (TERRAIN_BUILD_COST[next] ?? 0) * costMult * themeBuildMult(theme, next);
+  const net = gross - salvage;
+  return {
+    net,
+    charged: Math.max(0, net),
+    refunded: Math.max(0, -net),
+    gross,
+    salvage,
+  };
+}
+
 // Delta-based economics:
 // - switching to rough refunds salvage (rough is effectively "free" to paint)
 // - switching premium->premium refunds salvage then charges build difference
@@ -55,20 +84,7 @@ export function computeTerrainChangeCost(
   costMult = 1,
   theme?: LandTheme
 ): TerrainChangeCost {
-  if (prev === next) return { net: 0, charged: 0, refunded: 0 };
-
-  const salvage = (TERRAIN_SALVAGE_VALUE[prev] ?? 0) * costMult * themeBuildMult(theme, prev);
-
-  // Reverting to rough: refund salvage only (no rough build cost)
-  if (next === "rough") return { net: -salvage, charged: 0, refunded: salvage };
-
-  const build = (TERRAIN_BUILD_COST[next] ?? 0) * costMult * themeBuildMult(theme, next);
-  const net = build - salvage;
-  return {
-    net,
-    charged: Math.max(0, net),
-    refunded: Math.max(0, -net),
-  };
+  const { net, charged, refunded } = computeTerrainChangeBreakdown(prev, next, costMult, theme);
+  return { net, charged, refunded };
 }
-
 

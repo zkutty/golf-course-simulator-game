@@ -430,3 +430,17 @@ Previous prompt: Let’s do m14 in linear for this project
 - Replaced the links theme's competing inland pond plus 1–3-tile edge ribbon with one deterministic open-sea shelf covering 11–22% of the cross-map dimension, a low-frequency wandering shoreline, and a pale dune/deep-fescue first-dry-tile band. Parkland and desert generator branches/RNG paths are unchanged.
 - Added deterministic coverage for all-water edge connectivity, 10–28% sea coverage, non-uniform coastline depth, over 70% buildable land, and biome isolation. Final CI suite: 49 files, 323 passed, one intentional skip.
 - New-game preview regression passes. The regenerated links preview was visually inspected and clearly reads as a broad cold-water coast with an irregular shore. Production build, lint/i18n, typecheck, and `git diff --check` pass.
+
+## 2026-07-22 — ZK-267 terrain paint strokes
+
+- Implement click-and-drag terrain painting as one atomic, deduplicated stroke with pointer capture, cancellation, live economics, invalid-tile exclusions, and an all-or-nothing affordability guard.
+- Keep single-click painting as a one-tile stroke and make preview, confirmation, reducer validation, and final cash delta share one terrain-stroke calculation.
+- Add focused model/reducer tests plus browser coverage for affordable, unaffordable, deduplicated, and canceled strokes; then run the production validation loop.
+
+## ZK-267 completion
+
+- Terrain clicks and drags now use one pointer-captured, interpolated, deduplicated stroke. Valid tiles highlight live; Escape and pointer cancellation discard the stroke without touching terrain or cash.
+- A shared pure batch calculation supplies gross construction, salvage, net, projected cash, exclusions, and affordability to both the preview and reducer. The reducer rejects unaffordable/locked/bankrupt strokes atomically and increments terrain/economy versions once on success.
+- The localized floating preview communicates changed/invalid/unchanged/repeated tiles and exact shortfall. Single-click remains a one-tile stroke.
+- Full CI suite passes: 50 files, 327 tests passed, one intentional skip, including the 10,000-sequence reducer fuzz test. ZK-267 Playwright acceptance, production build, lint/i18n guards, typecheck, and `git diff --check` pass; lint retains seven pre-existing hook warnings and no errors.
+- Bundled-client smoke rendered/extracted a responsive 220×140 estate without an error artifact. Linear ZK-267 has the implementation evidence and is Done.

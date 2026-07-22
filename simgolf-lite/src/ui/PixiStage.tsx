@@ -26,6 +26,9 @@ import {
   loadAtlases,
 } from "../render/atlas";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
+import type { TerrainStrokePreview } from "../game/models/terrainStroke";
+import { formatCurrency } from "../i18n/format";
+import { useI18n } from "../i18n/useI18n";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth, placeObject } from "../game/render/objectPlacement";
 import {
@@ -354,6 +357,8 @@ export interface PixiStageProps {
   draftTee: Point | null;
   draftGreen: Point | null;
   onClickTile: (x: number, y: number) => void;
+  onPreviewTerrainStroke?: (points: Point[]) => TerrainStrokePreview;
+  onCommitTerrainStroke?: (points: Point[]) => void;
   selectedTerrain?: Terrain;
   worldCash?: number;
   flagColor?: string;
@@ -377,6 +382,25 @@ export interface PixiStageProps {
   followSelected?: boolean;
   /** Live game-clock minute (0..840) driving ambient time-of-day effects. */
   dayMinute?: number;
+}
+
+function rasterizeTileLine(from: Point, to: Point): Point[] {
+  const points: Point[] = [];
+  let x = from.x;
+  let y = from.y;
+  const dx = Math.abs(to.x - from.x);
+  const sx = from.x < to.x ? 1 : -1;
+  const dy = -Math.abs(to.y - from.y);
+  const sy = from.y < to.y ? 1 : -1;
+  let error = dx + dy;
+  for (;;) {
+    points.push({ x, y });
+    if (x === to.x && y === to.y) break;
+    const twice = 2 * error;
+    if (twice >= dy) { error += dy; x += sx; }
+    if (twice <= dx) { error += dx; y += sy; }
+  }
+  return points;
 }
 
 interface Layers {
@@ -495,6 +519,7 @@ function fitZoomForTileBounds(
 }
 
 export function PixiStage(props: PixiStageProps) {
+  const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const layersRef = useRef<Layers | null>(null);
@@ -594,6 +619,14 @@ export function PixiStage(props: PixiStageProps) {
     saved: { cx: number; cy: number; zoom: number };
   } | null>(null);
   const [flyoverCard, setFlyoverCard] = useState<{ hole: number; par: number; yards: number } | null>(null);
+  const [terrainStrokePreview, setTerrainStrokePreview] = useState<TerrainStrokePreview | null>(null);
+  const terrainStrokePreviewRef = useRef<TerrainStrokePreview | null>(null);
+  const terrainStrokeRef = useRef<{
+    pointerId: number;
+    points: Point[];
+    keys: Set<string>;
+    last: Point;
+  } | null>(null);
   const camRef = useRef({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false });
   const rotTweenRef = useRef<{ start: number; toDeg: number; next: IsoRotation } | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
@@ -610,6 +643,8 @@ export function PixiStage(props: PixiStageProps) {
     activePath,
     tileSize,
     onClickTile,
+    onPreviewTerrainStroke,
+    onCommitTerrainStroke,
     selectedTerrain,
     worldCash,
     editorMode,
@@ -2086,7 +2121,10 @@ export function PixiStage(props: PixiStageProps) {
               ]);
               highlight.stroke({ width: 2, color: 0xffffff, alpha });
             };
-            if (editorMode === "SCULPT" && props.sculptRadius && props.sculptRadius > 1) {
+            const strokePreview = terrainStrokePreviewRef.current;
+            if (editorMode === "PAINT" && strokePreview) {
+              for (const tile of strokePreview.tiles) outlineTile(tile.x, tile.y, 0.82);
+            } else if (editorMode === "SCULPT" && props.sculptRadius && props.sculptRadius > 1) {
               // Brush footprint preview (matches brushFootprint in sculpt.ts).
               const r = props.sculptRadius - 0.5;
               for (let ty = hover.y - props.sculptRadius; ty <= hover.y + props.sculptRadius; ty++) {
@@ -2883,6 +2921,8 @@ export function PixiStage(props: PixiStageProps) {
     if (!appReady) return;
     const app = appRef.current;
     if (!app) return;
+    const pointerSurface = containerRef.current;
+    if (!pointerSurface) return;
 
     const updateCursor = (t: { x: number; y: number } | null) => {
       const el = containerRef.current;
@@ -2896,7 +2936,101 @@ export function PixiStage(props: PixiStageProps) {
       el.style.cursor = cursor;
     };
 
-    const handleClick = (e: PIXI.FederatedPointerEvent) => {
+    const cancelTerrainStroke = () => {
+      terrainStrokeRef.current = null;
+      terrainStrokePreviewRef.current = null;
+      setTerrainStrokePreview(null);
+      overlayDirtyRef.current = true;
+    };
+
+    const beginTerrainStroke = (point: Point, pointerId: number) => {
+      if (!onPreviewTerrainStroke) return;
+      const points = [point];
+      terrainStrokeRef.current = {
+        pointerId,
+        points,
+        keys: new Set([`${point.x},${point.y}`]),
+        last: point,
+      };
+      const preview = onPreviewTerrainStroke(points);
+      terrainStrokePreviewRef.current = preview;
+      setTerrainStrokePreview(preview);
+      overlayDirtyRef.current = true;
+    };
+
+    const extendTerrainStroke = (point: Point, pointerId: number) => {
+      const stroke = terrainStrokeRef.current;
+      if (!stroke || stroke.pointerId !== pointerId || !onPreviewTerrainStroke) return;
+      for (const next of rasterizeTileLine(stroke.last, point)) {
+        const key = `${next.x},${next.y}`;
+        if (stroke.keys.has(key)) continue;
+        stroke.keys.add(key);
+        stroke.points.push(next);
+      }
+      stroke.last = point;
+      const preview = onPreviewTerrainStroke(stroke.points);
+      terrainStrokePreviewRef.current = preview;
+      setTerrainStrokePreview(preview);
+      overlayDirtyRef.current = true;
+    };
+
+    const finishTerrainStroke = (pointerId: number) => {
+      const stroke = terrainStrokeRef.current;
+      if (!stroke || stroke.pointerId !== pointerId) return;
+      terrainStrokeRef.current = null;
+      terrainStrokePreviewRef.current = null;
+      setTerrainStrokePreview(null);
+      overlayDirtyRef.current = true;
+      onCommitTerrainStroke?.(stroke.points);
+    };
+
+    const canvasPoint = (event: PointerEvent): Point | null => {
+      const rect = app.canvas.getBoundingClientRect();
+      return screenToTile(
+        (event.clientX - rect.left) * app.screen.width / rect.width,
+        (event.clientY - rect.top) * app.screen.height / rect.height
+      );
+    };
+
+    // Paint gestures use native pointer capture. Capturing before Pixi's
+    // federated event layer also guarantees release/cancel delivery when the
+    // pointer leaves the canvas or crosses an overlay.
+    const handleCanvasPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0 || editorMode !== "PAINT" || !selectedTerrain || !onPreviewTerrainStroke || !onCommitTerrainStroke) return;
+      if (flyoverRef.current) return;
+      const point = canvasPoint(event);
+      if (!point) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      beginTerrainStroke(point, event.pointerId);
+      try { pointerSurface.setPointerCapture(event.pointerId); } catch { /* synthetic/legacy pointer */ }
+    };
+
+    const handleCanvasPointerMove = (event: PointerEvent) => {
+      if (!terrainStrokeRef.current || terrainStrokeRef.current.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const point = canvasPoint(event);
+      if (point) extendTerrainStroke(point, event.pointerId);
+    };
+
+    const handleCanvasPointerUp = (event: PointerEvent) => {
+      if (!terrainStrokeRef.current || terrainStrokeRef.current.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      finishTerrainStroke(event.pointerId);
+      try {
+        if (pointerSurface.hasPointerCapture(event.pointerId)) pointerSurface.releasePointerCapture(event.pointerId);
+      } catch { /* capture may already be released */ }
+    };
+
+    const handleCanvasPointerCancel = (event: PointerEvent) => {
+      if (terrainStrokeRef.current?.pointerId !== event.pointerId) return;
+      event.stopImmediatePropagation();
+      cancelTerrainStroke();
+    };
+
+    const handlePointerDown = (e: PIXI.FederatedPointerEvent) => {
       if (e.button !== 0) return; // middle/right are camera pan, not editing
       // During a flyover, editor input is suspended — a click skips it.
       if (flyoverRef.current) {
@@ -2929,7 +3063,9 @@ export function PixiStage(props: PixiStageProps) {
         }
       }
       const t = screenToTile(e.global.x, e.global.y);
-      if (t) onClickTile(t.x, t.y);
+      if (!t) return;
+      if (editorMode === "PAINT") return; // handled by native captured pointer events above
+      onClickTile(t.x, t.y);
     };
 
     const handleMove = (e: PIXI.FederatedPointerEvent) => {
@@ -2942,14 +3078,44 @@ export function PixiStage(props: PixiStageProps) {
       }
     };
 
-    const stage = app.stage;
-    stage.on("pointerdown", handleClick);
-    stage.on("pointermove", handleMove);
-    return () => {
-      stage.off("pointerdown", handleClick);
-      stage.off("pointermove", handleMove);
+    const handlePointerUp = (e: PIXI.FederatedPointerEvent) => {
+      if (editorMode !== "PAINT") return;
+      finishTerrainStroke(e.pointerId);
     };
-  }, [appReady, screenToTile, screenToIsoPlane, onClickTile, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.showGolfers]);
+
+    const handlePointerCancel = (e: PIXI.FederatedPointerEvent) => {
+      const stroke = terrainStrokeRef.current;
+      if (stroke && stroke.pointerId === e.pointerId) cancelTerrainStroke();
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && terrainStrokeRef.current) cancelTerrainStroke();
+    };
+
+    const stage = app.stage;
+    stage.on("pointerdown", handlePointerDown);
+    stage.on("pointermove", handleMove);
+    stage.on("pointerup", handlePointerUp);
+    stage.on("pointerupoutside", handlePointerUp);
+    stage.on("pointercancel", handlePointerCancel);
+    pointerSurface.addEventListener("pointerdown", handleCanvasPointerDown, true);
+    pointerSurface.addEventListener("pointermove", handleCanvasPointerMove, true);
+    pointerSurface.addEventListener("pointerup", handleCanvasPointerUp, true);
+    pointerSurface.addEventListener("pointercancel", handleCanvasPointerCancel, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      stage.off("pointerdown", handlePointerDown);
+      stage.off("pointermove", handleMove);
+      stage.off("pointerup", handlePointerUp);
+      stage.off("pointerupoutside", handlePointerUp);
+      stage.off("pointercancel", handlePointerCancel);
+      pointerSurface.removeEventListener("pointerdown", handleCanvasPointerDown, true);
+      pointerSurface.removeEventListener("pointermove", handleCanvasPointerMove, true);
+      pointerSurface.removeEventListener("pointerup", handleCanvasPointerUp, true);
+      pointerSurface.removeEventListener("pointercancel", handleCanvasPointerCancel, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [appReady, screenToTile, screenToIsoPlane, onClickTile, onPreviewTerrainStroke, onCommitTerrainStroke, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.showGolfers]);
 
   return (
     <div
@@ -2971,6 +3137,49 @@ export function PixiStage(props: PixiStageProps) {
           cursor: "crosshair",
         }}
       />
+      {terrainStrokePreview && selectedTerrain && (
+        <div
+          data-testid="terrain-stroke-preview"
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "absolute",
+            top: 14,
+            right: 14,
+            minWidth: 250,
+            padding: "12px 14px",
+            borderRadius: 10,
+            pointerEvents: "none",
+            color: "#f7f1de",
+            background: terrainStrokePreview.affordable ? "rgba(22,30,22,0.94)" : "rgba(92,24,20,0.96)",
+            border: `1px solid ${terrainStrokePreview.affordable ? "rgba(242,232,201,0.35)" : "#ff9b86"}`,
+            boxShadow: "0 8px 28px rgba(0,0,0,0.42)",
+            fontSize: 12,
+            lineHeight: 1.45,
+            zIndex: 20,
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 14, textTransform: "capitalize" }}>
+            {t("terrainStroke.title", { terrain: selectedTerrain.replaceAll("_", " "), count: terrainStrokePreview.changedCount })}
+          </div>
+          <div>{t("terrainStroke.costs", { gross: formatCurrency(terrainStrokePreview.gross), salvage: formatCurrency(terrainStrokePreview.salvage) })}</div>
+          <div style={{ fontWeight: 700 }}>
+            {t("terrainStroke.net", { net: terrainStrokePreview.net >= 0 ? formatCurrency(terrainStrokePreview.net) : t("terrainStroke.refund", { amount: formatCurrency(-terrainStrokePreview.net) }) })}
+          </div>
+          <div>{t("terrainStroke.cash", { cash: formatCurrency(terrainStrokePreview.cash), projected: formatCurrency(terrainStrokePreview.projectedCash) })}</div>
+          {(terrainStrokePreview.excludedCount > 0 || terrainStrokePreview.unchangedCount > 0 || terrainStrokePreview.duplicateCount > 0) && (
+            <div style={{ opacity: 0.82 }}>
+              {t("terrainStroke.exclusions", { excluded: terrainStrokePreview.excludedCount, unchanged: terrainStrokePreview.unchangedCount, duplicates: terrainStrokePreview.duplicateCount })}
+            </div>
+          )}
+          {!terrainStrokePreview.affordable && (
+            <div style={{ marginTop: 4, fontWeight: 800 }}>
+              {t("terrainStroke.insufficient", { shortfall: formatCurrency(terrainStrokePreview.shortfall) })}
+            </div>
+          )}
+          <div style={{ opacity: 0.65, marginTop: 3 }}>{t("terrainStroke.instructions")}</div>
+        </div>
+      )}
       {flyoverCard && (
         <div
           style={{

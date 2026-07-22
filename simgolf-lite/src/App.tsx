@@ -13,6 +13,7 @@ import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./util
 import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStore";
 import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
+import { previewTerrainStroke, type TerrainStrokePreview } from "./game/models/terrainStroke";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
@@ -1143,8 +1144,17 @@ export default function App() {
           golferPositions: liveSnapshot?.state.golfers.map((golfer) => [golfer.id, golfer.pos.x, golfer.pos.y]) ?? [],
           week: current.world.week,
           cash: current.world.cash,
+          terrainVersion: current.terrainVersion,
+          economyVersion: current.economyVersion,
+          terrainCounts: current.course.tiles.reduce((counts, terrain) => ({
+            ...counts,
+            [terrain]: (counts[terrain] ?? 0) + 1,
+          }), {} as Partial<Record<Terrain, number>>),
           courseHash: hashGameState({ course: current.course, world: current.world, live: liveSnapshot }),
         };
+      },
+      setPaintCash: (cash: number) => {
+        setGameState((current) => ({ ...current, world: { ...current.world, cash } }));
       },
       runGoldenWeek: async () => {
         const current = gameStateRef.current;
@@ -1340,6 +1350,55 @@ export default function App() {
     const idx = y * course.width + x;
     applyTileChange(idx, next, opts);
   }
+
+  const getTerrainStrokePreview = useCallback((points: Point[]): TerrainStrokePreview => {
+    return previewTerrainStroke(course, points, selected, world.cash, costMult, world.reputation);
+  }, [course, selected, world.cash, costMult, world.reputation]);
+
+  const commitTerrainStroke = useCallback((points: Point[]) => {
+    if (world.isBankrupt) return;
+    const preview = getTerrainStrokePreview(points);
+    if (!preview.affordable) {
+      setPaintError(
+        `Terrain stroke needs ${formatCurrency(Math.ceil(preview.net))}; ` +
+        `${formatCurrency(Math.floor(preview.cash))} available (${formatCurrency(Math.ceil(preview.shortfall))} short).`
+      );
+      return;
+    }
+    if (preview.changedCount === 0) {
+      if (preview.excluded.locked > 0) {
+        setPaintError(t("progression.locked", { reputation: terrainMinReputation(selected) }));
+      } else if (preview.excluded.unowned > 0) {
+        setPaintError(t("land.buildBlocked"));
+      } else {
+        setPaintError(null);
+      }
+      return;
+    }
+
+    dispatch({ type: "PAINT_TILES", tiles: preview.tiles });
+    setCapital((capital) => ({
+      spent: capital.spent + preview.charged,
+      refunded: capital.refunded + preview.refunded,
+      byTerrainSpent: {
+        ...capital.byTerrainSpent,
+        [selected]: (capital.byTerrainSpent[selected] ?? 0) + preview.charged,
+      },
+      byTerrainTiles: {
+        ...capital.byTerrainTiles,
+        [selected]: (capital.byTerrainTiles[selected] ?? 0) + preview.changedCount,
+      },
+    }));
+    if (preview.excludedCount > 0) {
+      setPaintError(
+        `Painted ${preview.changedCount} tiles; skipped ${preview.excludedCount} invalid ` +
+        `(${preview.excluded.unowned} unowned, ${preview.excluded.outOfBounds} outside, ${preview.excluded.locked} locked).`
+      );
+    } else {
+      setPaintError(null);
+    }
+    void audio.playSfx("brush");
+  }, [world.isBankrupt, getTerrainStrokePreview, selected, dispatch, audio, t]);
 
   // Smart fairway painting: paint fairway along centerline with specified width in yards
   function smartPaintFairway(widthYards: number) {
@@ -2240,6 +2299,8 @@ export default function App() {
                 draftTee={draftTee}
                 draftGreen={draftGreen}
                 onClickTile={handleCanvasClick}
+                onPreviewTerrainStroke={getTerrainStrokePreview}
+                onCommitTerrainStroke={commitTerrainStroke}
                 selectedTerrain={selected}
                 worldCash={world.cash}
                 flagColor={legacy.selected.flagColor}
