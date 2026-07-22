@@ -1,4 +1,4 @@
-import type { Course, Hole, PinRotation, Point, TeeSet } from "./types";
+import type { Course, Hole, ParSetting, PinRotation, Point, TeeSet } from "./types";
 import { PIN_ROTATIONS, TEE_SETS } from "./types";
 
 export { PIN_ROTATIONS, TEE_SETS };
@@ -26,9 +26,33 @@ export function getPinPosition(hole: Hole, rotation: PinRotation = "A"): Point |
   return hole.pinPositions?.[rotation] ?? (rotation === "A" ? hole.green : null) ?? null;
 }
 
+export function getParSetting(hole: Hole, set: TeeSet = "member"): ParSetting {
+  const configured = hole.parByTee?.[set];
+  if (configured?.mode === "MANUAL") return { mode: "MANUAL", par: configured.par };
+  if (configured?.mode === "AUTO") return { mode: "AUTO" };
+  if (set === "member" && hole.parMode === "MANUAL") return { mode: "MANUAL", par: hole.parManual ?? 4 };
+  return { mode: "AUTO" };
+}
+
+export function holeForCourseSetup(hole: Hole, teeSet: TeeSet, pinRotation: PinRotation): Hole {
+  const par = getParSetting(hole, teeSet);
+  return {
+    ...hole,
+    tee: getTeeBox(hole, teeSet),
+    green: getPinPosition(hole, pinRotation),
+    parMode: par.mode,
+    parManual: par.mode === "MANUAL" ? par.par : undefined,
+  };
+}
+
+export function courseForCourseSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): Course {
+  return { ...course, holes: course.holes.map((hole) => holeForCourseSetup(hole, teeSet, pinRotation)) };
+}
+
 export function withNormalizedHoleSetup(hole: Hole): Hole {
   const member = getTeeBox(hole, "member");
   const pinA = getPinPosition(hole, "A");
+  const memberPar = getParSetting(hole, "member");
   return {
     ...hole,
     tee: member,
@@ -43,6 +67,13 @@ export function withNormalizedHoleSetup(hole: Hole): Hole {
       B: getPinPosition(hole, "B"),
       C: getPinPosition(hole, "C"),
     },
+    parByTee: {
+      forward: getParSetting(hole, "forward"),
+      member: memberPar,
+      championship: getParSetting(hole, "championship"),
+    },
+    parMode: memberPar.mode,
+    parManual: memberPar.mode === "MANUAL" ? memberPar.par : undefined,
   };
 }
 

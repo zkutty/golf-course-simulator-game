@@ -2,7 +2,7 @@ import type { Course, PinRotation, Point, TeeSet } from "../models/types";
 import { scoreCourseHoles } from "./holes";
 import { getGolferProfile, type GolferProfile } from "./golferProfiles";
 import { BALANCE } from "../balance/balanceConfig";
-import { getPinPosition, getTeeBox, PIN_ROTATIONS, samePoint, TEE_SETS } from "../models/courseSetup";
+import { courseForCourseSetup, getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../models/courseSetup";
 
 export interface RatingSummary {
   holesUsed: number; // 9 or 18
@@ -159,17 +159,7 @@ function pinDifficultyPenalty(course: Course, pin: Point | null): number {
 }
 
 function courseForSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): Course {
-  if (teeSet === "member" && pinRotation === "A" && course.holes.every((hole) => samePoint(getTeeBox(hole, "member"), hole.tee) && samePoint(getPinPosition(hole, "A"), hole.green))) {
-    return course;
-  }
-  return {
-    ...course,
-    holes: course.holes.map((hole) => ({
-      ...hole,
-      tee: getTeeBox(hole, teeSet),
-      green: getPinPosition(hole, pinRotation),
-    })),
-  };
+  return courseForCourseSetup(course, teeSet, pinRotation);
 }
 
 function round1(value: number): number {

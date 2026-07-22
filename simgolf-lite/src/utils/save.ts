@@ -38,7 +38,7 @@ import { createEstate, starterParcelOffset, validateEstate } from "../game/estat
 import { MAX_ESTATE_HOLES, normalizeCourseLayouts } from "../game/models/courseLayouts";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 9 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 10 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -91,6 +91,10 @@ export interface SaveV8 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV9 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 9;
+  records?: CourseRecords;
+}
+export interface SaveV10 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -114,7 +118,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV9 = {
+  const save: SaveV10 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -344,6 +348,17 @@ function validateCourseShape(raw: unknown): SaveLoadError | null {
     if (!validMarkerRecord(hole.teeBoxes, TEE_SETS, width as number, height as number) || !validMarkerRecord(hole.pinPositions, PIN_ROTATIONS, width as number, height as number)) {
       return { code: "INVALID_COURSE", message: "A saved tee set or pin rotation is invalid." };
     }
+    if (hole.parByTee != null) {
+      if (!isRecord(hole.parByTee)) return { code: "INVALID_COURSE", message: "A saved tee par setting is invalid." };
+      for (const teeSet of TEE_SETS) {
+        const setting = hole.parByTee[teeSet];
+        if (setting == null) continue;
+        if (!isRecord(setting) || (setting.mode !== "AUTO" && setting.mode !== "MANUAL") ||
+          (setting.mode === "MANUAL" && setting.par !== 3 && setting.par !== 4 && setting.par !== 5)) {
+          return { code: "INVALID_COURSE", message: "A saved tee par setting is invalid." };
+        }
+      }
+    }
     if (hole.waypoints != null && (!Array.isArray(hole.waypoints) || hole.waypoints.some((p) => !validPoint(p, width as number, height as number)))) {
       return { code: "INVALID_COURSE", message: "A saved hole waypoint is invalid." };
     }
@@ -417,6 +432,24 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
     ...save,
     schemaVersion: 9,
     ...(isRecord(save.course) ? { course: normalizeCourseLayouts(save.course as unknown as Course) } : {}),
+  }),
+  // V10 adds independent par policy for every tee set. Existing par settings
+  // remain the Member policy while Forward and Championship default to Auto.
+  9: (save) => ({
+    ...save,
+    schemaVersion: 10,
+    ...(isRecord(save.course) && Array.isArray(save.course.holes) ? {
+      course: {
+        ...save.course,
+        holes: save.course.holes.map((rawHole) => {
+          if (!isRecord(rawHole)) return rawHole;
+          const member = rawHole.parMode === "MANUAL"
+            ? { mode: "MANUAL", par: rawHole.parManual === 3 || rawHole.parManual === 5 ? rawHole.parManual : 4 }
+            : { mode: "AUTO" };
+          return { ...rawHole, parByTee: { forward: { mode: "AUTO" }, member, championship: { mode: "AUTO" } } };
+        }),
+      },
+    } : {}),
   }),
 };
 
@@ -579,13 +612,18 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       ...DEFAULT_COURSE,
       ...rawCourse,
       holes:
-        rawCourse.holes?.map((h, i) => ({
+        rawCourse.holes?.map((h, i) => {
+          const memberPar = h.parMode === "MANUAL"
+            ? { mode: "MANUAL" as const, par: h.parManual ?? 4 }
+            : { mode: "AUTO" as const };
+          return {
           ...withNormalizedHoleSetup({
             ...DEFAULT_COURSE.holes[i],
             ...h,
             parMode: h.parMode ?? "AUTO",
+            parByTee: { ...h.parByTee, member: memberPar },
           }),
-        })) ?? DEFAULT_COURSE.holes,
+        }; }) ?? DEFAULT_COURSE.holes,
       obstacles: sanitizeObstacles(rawCourse.obstacles, rawWidth, rawHeight),
       elevations: Array.isArray(rawCourse.elevations)
         ? rawCourse.elevations.map((value) => isFiniteNumber(value) ? value : 0)

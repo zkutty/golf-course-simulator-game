@@ -13,7 +13,9 @@ export const DEFAULT_COURSE: Course = {
     pinPositions: { A: null, B: null, C: null },
     tee: null,
     green: null,
+    parByTee: { forward: { mode: "AUTO" as const }, member: { mode: "AUTO" as const }, championship: { mode: "AUTO" as const } },
     parMode: "AUTO" as const,
+    parManual: undefined,
     name: `Hole ${i + 1}`,
   })),
   layouts: [{
@@ -24,6 +26,7 @@ export const DEFAULT_COURSE: Course = {
     roundLength: 9,
     state: "open",
     greenFee: 65,
+    legacyPartial: undefined,
   }],
   activeCourseId: "course-primary",
   activePinRotation: "A",

@@ -316,6 +316,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       }
       const idx = y * state.course.width + x;
       cashDelta += computeTerrainChangeCost(newTiles[idx], "tee", costMult, state.course.theme).net;
+      if (cashDelta > state.world.cash) break;
       newTiles[idx] = "tee";
       const holes = state.course.holes.slice();
       holes[action.holeIndex] = prospective;

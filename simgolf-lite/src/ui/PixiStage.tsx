@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as PIXI from "pixi.js";
-import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, Terrain } from "../game/models/types";
+import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, TeeSet, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
 import type { CameraState, IsoCameraSnapshot } from "../game/render/camera";
@@ -329,6 +329,7 @@ export interface PixiStageProps {
   activeHoleIndex: number;
   activePath?: Point[];
   activeShotPlan?: ShotPlanStep[];
+  selectedTeeSet?: TeeSet;
   tileSize: number;
   showGridOverlays: boolean;
   surveyMode?: boolean;
@@ -1951,7 +1952,7 @@ export function PixiStage(props: PixiStageProps) {
       const activePin = getPinPosition(hole, activeRotation) ?? getPinPosition(hole, "A");
       TEE_SETS.forEach((set) => {
         const tee = getTeeBox(hole, set);
-        if (tee) drawTee(tee, activePin, set === "member" ? 1 : 0.34);
+        if (tee) drawTee(tee, activePin, set === (props.selectedTeeSet ?? "member") ? 1 : 0.34);
       });
       PIN_ROTATIONS.forEach((pinRotation) => {
         const pin = getPinPosition(hole, pinRotation);
@@ -1960,7 +1961,7 @@ export function PixiStage(props: PixiStageProps) {
     });
     if (draftTee) drawTee(draftTee, draftGreen, 0.55);
     if (draftGreen) drawMarker(draftGreen, 0x1b5e20, 0.55);
-  }, [appReady, holes, draftTee, draftGreen, course, rotation, props.showMarkers]);
+  }, [appReady, holes, draftTee, draftGreen, course, rotation, props.showMarkers, props.selectedTeeSet]);
 
   useEffect(() => {
     if (!appReady) return;

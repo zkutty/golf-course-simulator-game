@@ -7,7 +7,7 @@ import { mishitChance, puttOutcome, type Personality } from "./personality";
 import type { Golfer, Segment } from "./types";
 import type { ConcessionType } from "../models/types";
 import { planPurchase } from "./concessions";
-import { resolveCourseSetup } from "../models/courseSetup";
+import { getParSetting, resolveCourseSetup } from "../models/courseSetup";
 
 // Optional tile-aware router; returns waypoints from just-after `from` to `to`,
 // or null to fall back to a straight-line walk.
@@ -25,7 +25,14 @@ function courseForRoundSetup(course: Course, teeSet: TeeSet, pinRotation: PinRot
     ...course,
     holes: course.holes.map((hole) => {
       const setup = resolveCourseSetup(hole, teeSet, pinRotation);
-      return { ...hole, tee: setup.tee, green: setup.pin };
+      const par = getParSetting(hole, setup.teeSet);
+      return {
+        ...hole,
+        tee: setup.tee,
+        green: setup.pin,
+        parMode: par.mode,
+        parManual: par.mode === "MANUAL" ? par.par : undefined,
+      };
     }),
   };
   setups.set(key, resolved);

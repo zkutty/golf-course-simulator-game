@@ -37,6 +37,9 @@ export interface Point {
 
 export const TEE_SETS = ["forward", "member", "championship"] as const;
 export type TeeSet = (typeof TEE_SETS)[number];
+export type ParSetting =
+  | { mode: "AUTO" }
+  | { mode: "MANUAL"; par: 3 | 4 | 5 };
 export const PIN_ROTATIONS = ["A", "B", "C"] as const;
 export type PinRotation = (typeof PIN_ROTATIONS)[number];
 
@@ -50,6 +53,9 @@ export interface Hole {
   tee: Point | null;
   green: Point | null;
   waypoints?: Point[]; // Optional waypoints for dog legs (between tee and green)
+  /** Tee-specific par policy. Legacy parMode/parManual remain mirrored to the
+   * Member tee for compatibility with older saves and integrations. */
+  parByTee?: Partial<Record<TeeSet, ParSetting>>;
   parMode: "AUTO" | "MANUAL";
   parManual?: 3 | 4 | 5;
   name?: string;
