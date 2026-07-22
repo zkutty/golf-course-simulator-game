@@ -68,6 +68,7 @@ import {
   TUTORIAL_STEPS,
   createTutorialProgress,
   loadTutorialProgress,
+  reconcileTutorialProgress,
   saveTutorialProgress,
   type TutorialProgress,
 } from "./game/onboarding/tutorial";
@@ -953,6 +954,20 @@ export default function App() {
     });
   }, [screen, course, world, history, records, tutorialProgress, getLiveSnapshot]);
 
+  // Milestones and resumed saves reconcile from authoritative course state,
+  // rather than relying on a one-shot ninth-hole event that may already have
+  // fired. The pure reconciler advances only the open-course lesson once.
+  useEffect(() => {
+    if (screen !== "game" || !tutorialProgress) return;
+    const reconciled = reconcileTutorialProgress(tutorialProgress, course);
+    if (reconciled === tutorialProgress) return;
+    setViewMode("ARCHITECT");
+    setTutorialProgress(reconciled);
+    saveTutorialProgress(reconciled);
+    const nextStep = TUTORIAL_STEPS[reconciled.stepIndex];
+    setA11yMessage(`${t(nextStep.titleKey)}. ${t(nextStep.bodyKey)}`);
+  }, [course, screen, t, tutorialProgress]);
+
   // `goals` overrides the mode's default goal set (defeat-retry keeps a
   // run's exact goals).
   function restartRun(setup: GameSetup, goals?: GoalDefinition[] | null) {
@@ -1028,6 +1043,16 @@ export default function App() {
     scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
     setTutorialProgress(loaded.tutorial ?? null);
     saveTutorialProgress(loaded.tutorial ?? null);
+    if (loaded.tutorial && TUTORIAL_STEPS[loaded.tutorial.stepIndex]?.id === "open-course") {
+      const nextIncompleteHole = loaded.course.holes.findIndex((hole) => !hole.tee || !hole.green);
+      if (nextIncompleteHole >= 0) {
+        setActiveHoleIndex(nextIncompleteHole);
+        setEditorMode("HOLE_WIZARD");
+        setWizardStep("TEE");
+        setDraftTee(null);
+        setDraftGreen(null);
+      }
+    }
     markClean();
   }
 

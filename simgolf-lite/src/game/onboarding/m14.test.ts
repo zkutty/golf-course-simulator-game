@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import type { Terrain, WeekResult } from "../models/types";
 import { advisorMessages, allowsMessage } from "../advisor/advisor";
-import { TUTORIAL_STEPS, createTutorialProgress } from "./tutorial";
+import { TUTORIAL_STEPS, createTutorialProgress, reconcileTutorialProgress } from "./tutorial";
 import { GOLFOPEDIA_ENTRIES } from "../../ui/help/golfopediaData";
 import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../models/terrainEconomics";
 import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/save";
@@ -53,6 +53,29 @@ describe("M14 onboarding data", () => {
       tutorial: progress,
     });
     expect(loaded?.tutorial).toEqual(progress);
+  });
+
+  it("reconciles a ninth valid hole exactly once, including after resume", () => {
+    const openCourseIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "open-course");
+    const progress = { ...createTutorialProgress(DEFAULT_COURSE, DEFAULT_WORLD), stepIndex: openCourseIndex };
+    const width = 60;
+    const height = 40;
+    const tiles: Terrain[] = Array.from({ length: width * height }, () => "fairway");
+    const holes = Array.from({ length: 9 }, (_, index) => ({
+      tee: { x: 4, y: 2 + index * 4 },
+      green: { x: 50, y: 2 + index * 4 },
+      parMode: "AUTO" as const,
+    }));
+    for (const hole of holes) {
+      tiles[hole.tee.y * width + hole.tee.x] = "tee";
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) tiles[(hole.green.y + dy) * width + hole.green.x + dx] = "green";
+    }
+    const course = { ...DEFAULT_COURSE, width, height, tiles, elevations: new Array(width * height).fill(0), holes };
+    expect(reconcileTutorialProgress(progress, { ...course, holes: holes.slice(0, 8) })).toBe(progress);
+    const reconciled = reconcileTutorialProgress(progress, course);
+    expect(TUTORIAL_STEPS[reconciled.stepIndex].id).toBe("watch-golfers");
+    expect(reconcileTutorialProgress(reconciled, course)).toBe(reconciled);
   });
 });
 

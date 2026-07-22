@@ -52,6 +52,7 @@ const STORAGE_KEY = "coursecraft_tutorial_progress_v1";
 
 const always = () => true;
 const validHoles = (course: Course) => scoreCourseHoles(course).holes.filter((hole) => hole.isComplete && hole.isValid).length;
+export const FULL_COURSE_HOLE_COUNT = 9;
 
 export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   {
@@ -159,6 +160,20 @@ export function createTutorialProgress(course: Course, world: World): TutorialPr
       week: world.week,
     },
   };
+}
+
+/**
+ * Reconcile event-driven tutorial progress against the authoritative course.
+ *
+ * The ninth-hole milestone can be awarded before React renders the tutorial
+ * CTA, and a save can be resumed after that edge has already happened. Keep
+ * this deliberately single-step: duplicate milestone/course updates move the
+ * lesson exactly once and can never skip the golfer-observation instruction.
+ */
+export function reconcileTutorialProgress(progress: TutorialProgress, course: Course): TutorialProgress {
+  if (TUTORIAL_STEPS[progress.stepIndex]?.id !== "open-course") return progress;
+  if (validHoles(course) < FULL_COURSE_HOLE_COUNT) return progress;
+  return { ...progress, stepIndex: progress.stepIndex + 1 };
 }
 
 export function loadTutorialProgress(): TutorialProgress | null {

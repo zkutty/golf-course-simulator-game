@@ -401,3 +401,32 @@ Previous prompt: Let’s do m14 in linear for this project
 - GitHub CI and RC certification for `92dfc82` failed only on CPU-heavy fixture timeouts; deployment itself succeeded. Logged the failures as ZK-263 and ZK-262.
 - Added a two-worker CI-specific Vitest command and bounded headroom for the scenario and tournament fixtures observed in the logs. The exact local CI command passes 48 files (318 passed, 1 skipped) in 37.4s; lint/typecheck remain green.
 - Advanced the immutable candidate to `1.0.0-rc.2`; `v1.0.0-rc.1` remains unchanged.
+
+## 2026-07-21 — active Linear bug sweep
+
+- Current request: “please squash all bugs listed in linear”. The active `golf-sim` Bug scope is ZK-262 through ZK-265; unrelated projects and completed/canceled bugs are excluded.
+- ZK-262/ZK-263 are already implemented by `c155855`: CI and RC workflows use `npm run test:ci` with two Vitest workers, and the three observed heavy fixtures have explicit bounded timeouts.
+- ZK-265 now reconciles the open-course tutorial lesson from authoritative nine-valid-hole course state. The handoff advances exactly once to the visible 1× speed instruction, including after save/load, without requiring an extra Continue click.
+- ZK-264 now normalizes pixel/line/page wheel deltas, bounds discrete wheel steps, accumulates against the latest camera target, preserves the target-space cursor anchor, and leaves current camera state to the existing animation-frame easing.
+- Focused onboarding and wheel-target tests pass (14/14); typecheck and `git diff --check` pass.
+- The first reload-enabled browser run exposed that an eight-hole save restored the tutorial but reset the editor to Hole 1; load reconciliation now focuses the first incomplete hole and restores Hole Wizard mode.
+- The corrected browser run passed the eight-hole reload, automatic ninth-hole handoff, and post-handoff reload. Its later rerun correctly skipped the already-satisfied open-course lesson, exposing one stale test expectation that is now aligned with current-state reconciliation.
+
+## Active bug sweep next
+
+- None for implementation. Add Linear completion notes and move ZK-262 through ZK-265 to Done.
+
+## Active bug sweep verification
+
+- Final CI-configured unit suite: 49 files, 322 passed, one intentional skip, using the same `--maxWorkers=2` command wired into CI and RC certification.
+- Production build and lint/i18n guards pass; lint reports the same seven pre-existing hook warnings and no errors. Typecheck and `git diff --check` pass.
+- Reload-enabled M14 playthrough B passes end to end in 13.2 minutes: visible UI through all nine holes, reload at eight, automatic handoff, reload after nine, graduation, already-complete rerun reconciliation, and late skip.
+- The ninth-hole capture was visually inspected: Lesson 7 is fully visible, names the 1× action, and spotlights the speed controls without toast/overlay obstruction.
+- The bundled game client passes against the M27 36-hole/100-golfer fixture with deterministic state advancement and no error artifact; its final rendered course screenshot was visually inspected.
+
+## ZK-266 links coast follow-up
+
+- A final Linear sweep found newly filed ZK-266 after the original four-ticket scope was completed.
+- Replaced the links theme's competing inland pond plus 1–3-tile edge ribbon with one deterministic open-sea shelf covering 11–22% of the cross-map dimension, a low-frequency wandering shoreline, and a pale dune/deep-fescue first-dry-tile band. Parkland and desert generator branches/RNG paths are unchanged.
+- Added deterministic coverage for all-water edge connectivity, 10–28% sea coverage, non-uniform coastline depth, over 70% buildable land, and biome isolation. Final CI suite: 49 files, 323 passed, one intentional skip.
+- New-game preview regression passes. The regenerated links preview was visually inspected and clearly reads as a broad cold-water coast with an irregular shore. Production build, lint/i18n, typecheck, and `git diff --check` pass.

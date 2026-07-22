@@ -135,11 +135,25 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
   await capture(page, run, "step-05-after-transition");
 
   await capture(page, run, "step-06-before-open-course");
-  for (const [start, end] of remainingHoleRoutes) await paintAndPlaceHole(page, start, end);
-  await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
-  await capture(page, run, "step-06-after-open-course");
-  await page.getByRole("button", { name: "Continue" }).click();
+  for (const [index, [start, end]] of remainingHoleRoutes.entries()) {
+    if (reloadStages && index === remainingHoleRoutes.length - 1) {
+      await expectStep(page, "open-course");
+      await page.reload();
+      await page.getByRole("button", { name: /Continue/ }).click();
+      await expectStep(page, "open-course");
+    }
+    await paintAndPlaceHole(page, start, end);
+  }
+  // Completing the ninth valid hole hands off automatically; no milestone
+  // edge or extra click is required, and a resumed save stays on this step.
   await expectStep(page, "watch-golfers");
+  await capture(page, run, "step-06-after-open-course");
+  if (reloadStages) {
+    await expect(tutorial(page).getByText("Progress saved")).toBeVisible();
+    await page.reload();
+    await page.getByRole("button", { name: /Continue/ }).click();
+    await expectStep(page, "watch-golfers");
+  }
 
   await capture(page, run, "step-07-before-watch-golfers");
   await page.getByTitle("Speed 1x").click();
@@ -246,8 +260,8 @@ test("complete fresh-state tutorial playthrough B with reload resume and rerun",
   await page.getByRole("button", { name: "Continue" }).click();
   await page.getByRole("button", { name: "I see it" }).click();
   await page.getByRole("button", { name: "Continue" }).click();
-  await expectStep(page, "open-course");
-  await page.getByRole("button", { name: "Continue" }).click();
+  // A rerun on an already completed nine-hole course reconciles immediately;
+  // it must not strand the player on an already-satisfied construction step.
   await expectStep(page, "watch-golfers");
   if (await page.getByRole("button", { name: "Continue" }).count() === 0) {
     await page.getByTitle("Speed 1x").click();

@@ -161,19 +161,36 @@ export function generateWildLand(
     }
   }
 
-  // Step 2b (links): coastal water band along one map edge, depth varying
-  // per row/column. Gated by theme so identity themes never touch the rng.
+  // Step 2b (links): a broad open-sea shelf with a wandering dune/rock shore.
+  // Gated by theme so parkland/desert retain their exact historical RNG path.
   if (cfg.water.coastalEdge) {
     const edge = rng.nextInt(0, 3); // 0=N 1=E 2=S 3=W
     const along = edge === 0 || edge === 2 ? width : height;
+    const across = edge === 0 || edge === 2 ? height : width;
+    const minDepth = Math.max(5, Math.floor(across * 0.11));
+    const maxDepth = Math.max(minDepth + 2, Math.floor(across * 0.22));
+    let depth = rng.nextInt(minDepth, maxDepth);
     for (let i = 0; i < along; i++) {
-      const depth = rng.nextInt(1, 3);
+      // Low-frequency random walk makes bays and headlands without isolated
+      // water pockets or the ruler-straight silhouette of the old 1–3 band.
+      const stepRoll = rng.next();
+      if (stepRoll < 0.24) depth--;
+      else if (stepRoll > 0.76) depth++;
+      if (i % 11 === 0) depth += rng.nextInt(-1, 1);
+      depth = Math.max(minDepth, Math.min(maxDepth, depth));
       for (let d = 0; d < depth; d++) {
         if (edge === 0) setTile(i, d, "water");
         else if (edge === 2) setTile(i, height - 1 - d, "water");
         else if (edge === 3) setTile(d, i, "water");
         else setTile(width - 1 - d, i, "water");
       }
+      // Pale dune beach with occasional exposed rocky/fescue breaks. This is
+      // the first dry tile inland, so it follows the same natural silhouette.
+      const shoreTerrain: Terrain = rng.next() < 0.72 ? "sand" : "deep_rough";
+      if (edge === 0) setTile(i, depth, shoreTerrain);
+      else if (edge === 2) setTile(i, height - 1 - depth, shoreTerrain);
+      else if (edge === 3) setTile(depth, i, shoreTerrain);
+      else setTile(width - 1 - depth, i, shoreTerrain);
     }
   }
 

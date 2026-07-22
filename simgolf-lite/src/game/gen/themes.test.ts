@@ -67,6 +67,58 @@ describe("land themes (ZKU-166)", () => {
     }
   });
 
+  it("links sea is edge-connected, naturally contoured, and leaves buildable land", () => {
+    for (const seed of SEEDS) {
+      const tiles = gen(seed, "links").tiles;
+      const water = tiles.reduce<number[]>((indices, tile, index) => tile === "water" ? [...indices, index] : indices, []);
+      expect(water.length / tiles.length).toBeGreaterThan(0.1);
+      expect(water.length / tiles.length).toBeLessThan(0.28);
+
+      const edgeWater = water.filter((index) => {
+        const x = index % W;
+        const y = Math.floor(index / W);
+        return x === 0 || y === 0 || x === W - 1 || y === H - 1;
+      });
+      const seen = new Set(edgeWater.map(String));
+      const queue = [...edgeWater];
+      while (queue.length) {
+        const index = queue.shift()!;
+        const x = index % W;
+        const y = Math.floor(index / W);
+        for (const next of [index - 1, index + 1, index - W, index + W]) {
+          const nx = next % W;
+          const ny = Math.floor(next / W);
+          if (next < 0 || next >= tiles.length || Math.abs(nx - x) + Math.abs(ny - y) !== 1) continue;
+          if (tiles[next] === "water" && !seen.has(String(next))) {
+            seen.add(String(next));
+            queue.push(next);
+          }
+        }
+      }
+      expect(seen.size).toBe(water.length);
+
+      const shorelineDepths: number[] = [];
+      for (let x = 0; x < W; x++) {
+        let north = 0;
+        while (north < H && tiles[north * W + x] === "water") north++;
+        if (north > 0) shorelineDepths.push(north);
+        let south = 0;
+        while (south < H && tiles[(H - 1 - south) * W + x] === "water") south++;
+        if (south > 0) shorelineDepths.push(south);
+      }
+      for (let y = 0; y < H; y++) {
+        let west = 0;
+        while (west < W && tiles[y * W + west] === "water") west++;
+        if (west > 0) shorelineDepths.push(west);
+        let east = 0;
+        while (east < W && tiles[y * W + W - 1 - east] === "water") east++;
+        if (east > 0) shorelineDepths.push(east);
+      }
+      expect(new Set(shorelineDepths).size).toBeGreaterThan(3);
+      expect(tiles.filter((tile) => !["water", "wetland"].includes(tile)).length / tiles.length).toBeGreaterThan(0.7);
+    }
+  });
+
   it("obstacle species mix follows the theme", () => {
     const share = (theme: LandTheme, type: "tree" | "bush" | "rock", seed: number) => {
       const { obstacles } = gen(seed, theme);

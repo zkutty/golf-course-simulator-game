@@ -85,6 +85,7 @@ import { isWaterHazard } from "../game/models/terrainRules";
 import { T } from "../i18n/T";
 import { decodeParcelMap } from "../game/estate/estate";
 import type { ArchitectureWarning } from "../game/architecture/architecture";
+import { nextWheelZoomTarget, normalizeWheelDelta } from "../game/render/wheelZoom";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -1086,25 +1087,19 @@ export function PixiStage(props: PixiStageProps) {
       const rect = el.getBoundingClientRect();
       const gx = e.clientX - rect.left;
       const gy = e.clientY - rect.top;
-      const under = screenToIsoPlane(gx, gy); // iso-plane point under cursor
-      const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, cam.tzoom * Math.exp(-e.deltaY * 0.0012)));
-      if (under && appRef.current) {
-        // Keep the point under the cursor stationary: solve for the center
-        // whose pivot places `under` back at the cursor after the zoom.
-        const sw = appRef.current.screen.width;
-        const sh = appRef.current.screen.height;
-        const pivotX = under.x - (gx - sw / 2) / newZoom;
-        const pivotY = under.y - (gy - sh / 2) / newZoom;
-        const centerTile = isoToWorld(pivotX, pivotY, rotation);
-        const clamped = clampCenter(centerTile.x, centerTile.y);
-        const cam2 = camRef.current;
-        cam2.cx = cam2.tcx = clamped.x;
-        cam2.cy = cam2.tcy = clamped.y;
-        cam2.zoom = cam2.tzoom = newZoom;
-      } else {
-        cam.tzoom = newZoom;
-      }
-      applyCamera();
+      const target = nextWheelZoomTarget({
+        camera: { cx: cam.tcx, cy: cam.tcy, zoom: cam.tzoom },
+        cursor: { x: gx, y: gy },
+        viewport: { width: app.screen.width, height: app.screen.height },
+        deltaPixels: normalizeWheelDelta(e.deltaY, e.deltaMode, app.screen.height),
+        rotation,
+        minZoom: MIN_ZOOM,
+        maxZoom: MAX_ZOOM,
+      });
+      const clamped = clampCenter(target.cx, target.cy);
+      cam.tcx = clamped.x;
+      cam.tcy = clamped.y;
+      cam.tzoom = target.zoom;
       overlayDirtyRef.current = true;
       reportCenter();
     };
@@ -1309,7 +1304,7 @@ export function PixiStage(props: PixiStageProps) {
       app.ticker?.remove(tickCamera);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appReady, rotation, cameraState, applyCamera, clampCenter, screenToIsoPlane, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing, props.keybindings, reportView]);
+  }, [appReady, rotation, cameraState, applyCamera, clampCenter, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing, props.keybindings, reportView]);
 
   // ---------------------------------------------------------------------
   // Terrain layer — tinted diamond sprites, back-to-front

@@ -68,7 +68,9 @@ export const LAND_THEMES: Record<LandTheme, LandThemeDefinition> = {
     blurb: "Windswept coastal dunes, deep rough, and barely a tree in sight.",
     generation: {
       deepRough: { clustersMin: 8, clustersMax: 14, sizeMin: 12, sizeMax: 28 },
-      water: { bodiesMin: 1, bodiesMax: 1, fracMin: 0.015, fracMax: 0.04, coastalEdge: true },
+      // The open sea is the links water identity; do not compete with it via
+      // a larger enclosed pond from the generic inland-water pass.
+      water: { bodiesMin: 0, bodiesMax: 0, fracMin: 0, fracMax: 0, coastalEdge: true },
       sand: { pocketsMin: 7, pocketsMax: 12, sizeMin: 3, sizeMax: 8 },
       environmental: { wetlandEdgeChance: 0.12, wasteAreaEdgeChance: 0.18 },
       obstacles: { density: 0.022, treeRatio: 0.12, bushRatio: 0.53, rockRatio: 0.35, clustersMin: 4, clustersMax: 8, lineBias: 0.42, shoreBushChance: 0.16, shoreTreeChance: 0.01 },
