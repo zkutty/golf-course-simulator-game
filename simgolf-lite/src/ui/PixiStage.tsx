@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+// Pixi's strict-CSP adapter replaces runtime-generated shader/uniform
+// functions with static implementations. Keep this before renderer startup so
+// Workers deployments can retain a script-src policy without 'unsafe-eval'.
+import "pixi.js/unsafe-eval";
 import * as PIXI from "pixi.js";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, TeeSet, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
@@ -620,6 +624,7 @@ export function PixiStage(props: PixiStageProps) {
     saved: { cx: number; cy: number; zoom: number };
   } | null>(null);
   const [flyoverCard, setFlyoverCard] = useState<{ hole: number; par: number; yards: number } | null>(null);
+  const [rendererError, setRendererError] = useState(false);
   const [terrainStrokePreview, setTerrainStrokePreview] = useState<TerrainStrokePreview | null>(null);
   const terrainStrokePreviewRef = useRef<TerrainStrokePreview | null>(null);
   const terrainStrokeRef = useRef<{
@@ -886,6 +891,7 @@ export function PixiStage(props: PixiStageProps) {
     const perfState = perfRef.current;
 
     const app = new PIXI.Application();
+    setRendererError(false);
 
     const init = async () => {
       const width = Math.max(container.clientWidth || 800, 100);
@@ -991,7 +997,12 @@ export function PixiStage(props: PixiStageProps) {
       devLog(`initialized ${width}x${height}`);
     };
 
-    void init();
+    void init().catch((error: unknown) => {
+      if (cancelled) return;
+      console.error("[PixiStage] Course renderer initialization failed", error);
+      setRendererError(true);
+      try { app.destroy(true, { children: true, texture: true }); } catch { /* partially initialized */ }
+    });
 
     return () => {
       cancelled = true;
@@ -3138,6 +3149,27 @@ export function PixiStage(props: PixiStageProps) {
           cursor: "crosshair",
         }}
       />
+      {rendererError && (
+        <div
+          data-testid="course-renderer-error"
+          role="alert"
+          style={{
+            position: "absolute",
+            inset: 24,
+            display: "grid",
+            placeContent: "center",
+            padding: 24,
+            borderRadius: 14,
+            background: "rgba(35, 47, 38, 0.94)",
+            color: "#f7f1de",
+            textAlign: "center",
+            zIndex: 30,
+          }}
+        >
+          <strong style={{ fontSize: 18 }}>{t("renderer.error.title")}</strong>
+          <span style={{ marginTop: 8 }}>{t("renderer.error.body")}</span>
+        </div>
+      )}
       {terrainStrokePreview && selectedTerrain && (
         <div
           data-testid="terrain-stroke-preview"

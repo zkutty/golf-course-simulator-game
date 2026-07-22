@@ -29,6 +29,8 @@ export const en = {
   "terrainStroke.exclusions": "Excluded {excluded} invalid · {unchanged} unchanged · {duplicates} repeats",
   "terrainStroke.insufficient": "Insufficient funds · {shortfall} short",
   "terrainStroke.instructions": "Release to apply · Esc to cancel",
+  "renderer.error.title": "The course view could not start",
+  "renderer.error.body": "Reload the page to try again. Your saved courses remain on this device.",
   "courses.open": "Courses",
   "courses.title": "Course Manager",
   "courses.close": "Close Course Manager",
