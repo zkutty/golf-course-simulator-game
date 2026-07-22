@@ -39,7 +39,7 @@ describe("M24 tournament course qualification", () => {
     const nineResult = evaluateTournamentCourseQualification(nine, "local");
     expect(nineResult.eligible).toBe(true);
     expect(nineResult.rating).toBeCloseTo(evaluateTournamentCourseQualification(course, "local").rating, 0);
-  }, 30_000);
+  }, 60_000);
 
   it("treats every configured rating and slope boundary as inclusive", () => {
     for (const standard of Object.values(TOURNAMENT_COURSE_STANDARDS)) {
@@ -61,7 +61,7 @@ describe("M24 tournament course qualification", () => {
     const booking = evaluateTournamentEligibility({ course, world: { ...host, cash: 0, reputation: 0 }, tier: "local", currentDay: 0, daysAhead: 1, minReputation: 25, bookingCost: 1_500 });
     expect(booking.blockingReasons.join(" ")).toContain("Reputation: 0; requires 25");
     expect(booking.blockingReasons.join(" ")).toContain("Hosting deposit: $0; requires $1,500");
-  });
+  }, 30_000);
 
   it("persists setup snapshots, revalidates edits, and forfeits an invalid event", () => {
     const created = createTournamentEvent({ course, world: host, tier: "regional", currentDay: 0, daysAhead: 1 });

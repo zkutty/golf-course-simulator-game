@@ -6,7 +6,7 @@ test("M28 clean-profile golden path survives save, reload, input, resize, and ac
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
 
   await page.goto("/");
-  await expect(page.getByText("v1.0.0-rc.1")).toBeVisible();
+  await expect(page.getByText("v1.0.0-rc.2")).toBeVisible();
   await page.getByRole("button", { name: "Options" }).click();
   await page.getByRole("tab", { name: "Audio" }).click();
   await page.getByLabel("Master volume").fill("0");

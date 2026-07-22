@@ -6,6 +6,14 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0-rc.2] - 2026-07-21
+
+### Fixed
+- GitHub-hosted unit gates now cap Vitest at two workers and give the known
+  synchronous scenario/tournament fixtures bounded low-core headroom. This
+  fixes timeout-only CI failures tracked by ZK-262 and ZK-263 without changing
+  game behavior or moving the immutable `v1.0.0-rc.1` tag.
+
 ## [1.0.0-rc.1] - 2026-07-21
 
 First external-playtest release candidate. This build freezes the completed

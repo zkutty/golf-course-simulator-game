@@ -395,3 +395,9 @@ Previous prompt: Let’s do m14 in linear for this project
 - Deterministic soak passes 7,519 rounds with 1.55MB post-GC retained heap growth. Production Pages-subpath PWA smoke passes scoped installation, offline reload, and local persistence.
 - Final visual smoke rendered the 36-hole estate with two open 18-hole layouts and 100 active golfers; no client error artifact was emitted.
 - External requirements remain: 5–10 unfamiliar-human moderated sessions, stable Safari clean-profile sign-off, and physical low/mid-range hardware baselines. The milestone remains HOLD/RE-TEST until those are supplied.
+
+## M28 RC.2 CI reliability follow-up
+
+- GitHub CI and RC certification for `92dfc82` failed only on CPU-heavy fixture timeouts; deployment itself succeeded. Logged the failures as ZK-263 and ZK-262.
+- Added a two-worker CI-specific Vitest command and bounded headroom for the scenario and tournament fixtures observed in the logs. The exact local CI command passes 48 files (318 passed, 1 skipped) in 37.4s; lint/typecheck remain green.
+- Advanced the immutable candidate to `1.0.0-rc.2`; `v1.0.0-rc.1` remains unchanged.

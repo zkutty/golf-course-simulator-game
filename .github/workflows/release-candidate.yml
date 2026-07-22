@@ -23,7 +23,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium firefox webkit
       - name: Static and unit gates
-        run: npm run lint && npx tsc -b && npm test
+        run: npm run lint && npx tsc -b && npm run test:ci
       - name: Reducer fuzz
         run: npm run test:fuzz
       - name: Full browser regression

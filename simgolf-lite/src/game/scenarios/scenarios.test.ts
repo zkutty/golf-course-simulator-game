@@ -62,7 +62,7 @@ describe("scenario definitions (ZKU-164)", () => {
     }
   });
 
-  it("prebuilt fixtures load with nine complete, valid holes", { timeout: 40_000 }, () => {
+  it("prebuilt fixtures load with nine complete, valid holes", { timeout: 90_000 }, () => {
     for (const id of ["muni-rescue", "members-club"]) {
       const s = getScenario(id)!;
       const { course } = createScenarioGame(s);
