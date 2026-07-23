@@ -1,5 +1,30 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+Current request (2026-07-22): Make the course canvas feel embedded in a larger SimCity-style region: never expose a floating map edge when zoomed out, keep the full estate boundary readable with scenic bleed, and continue Links ocean coherently beyond a boundary-connected coast.
+
+## 2026-07-22 — Seamless regional canvas in progress
+
+- Confirmed the Pixi renderer currently ends at the finite course diamond over a flat clear color and clamps camera centers to only six tiles of overscroll.
+- Direction locked: the full nine-parcel estate is the playable property; the surround is deterministic, living, biome-matched countryside with a natural seam and non-interactive scenery.
+- Links rule: only a substantial boundary-connected water body becomes open ocean; inland ponds remain contained.
+- Added deterministic parkland, links, and desert regional scenery beneath the playable estate, with an effectively unbounded base plane, field/wood/scrub patches, sparse biome props, roads, and a broken natural perimeter seam.
+- Camera overscroll is now viewport- and zoom-aware (capped at 48 tiles), with a viewport-aware minimum zoom; close views keep the estate edge present while overview views gain generous scenic bleed.
+- Links coast detection derives and extends the generated shoreline beyond both estate corners. Open water excludes regional land features and blends through a fading band of the authored water material into the regional ocean.
+- Removed the old exposed exterior cliff slab. Focused scenery/camera tests and the Links overview/edge Playwright test pass; parkland, desert, and Links screenshots were visually inspected.
+
+## Seamless regional canvas verification
+
+- Full unit suite: 54 files, 342 tests passed with one intentional skip.
+- Production build and i18n/lint guards pass; lint reports seven pre-existing React hook warnings and no errors.
+- Renderer regression: M12, M19, M20, M21, M22, M25, and the new regional-canvas suite all pass (eight browser tests total).
+- 100-golfer performance smoke passes at 0.27 ms renderer work; headless frame p95 is reported at 51 ms but remains intentionally non-asserted in software GL.
+- Bundled web-game client passes with camera zoom/rotation/visible-estate telemetry. Because its largest-canvas heuristic selects the minimap for this layout, full-page Playwright captures were also used and inspected for the main Pixi canvas.
+- Final evidence: `artifacts/scenic-parkland.png`, `scenic-desert.png`, `scenic-links-overview.png`, and `scenic-links-edge.png`.
+
+## Seamless regional canvas remaining
+
+- None.
+
 Current request (2026-07-22): Implement M29 Pace of Play & Hospitality Operations and create its Linear milestone/issues.
 
 ## 2026-07-22 — Pace of Play implementation in progress

@@ -93,6 +93,16 @@ import { T } from "../i18n/T";
 import { decodeParcelMap } from "../game/estate/estate";
 import type { ArchitectureWarning } from "../game/architecture/architecture";
 import { nextWheelZoomTarget, normalizeWheelDelta } from "../game/render/wheelZoom";
+import {
+  SCENIC_CAMERA_MARGIN_TILES,
+  SCENIC_GENERATION_BLEED_TILES,
+  SCENIC_PLANE_TILES,
+  clampScenicCameraCenter,
+  generateScenicSurround,
+  isScenicOceanPoint,
+  type CoastEdge,
+  type ScenicPatchKind,
+} from "../game/render/scenicSurround";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -102,7 +112,9 @@ import { nextWheelZoomTarget, normalizeWheelDelta } from "../game/render/wheelZo
  *   stage
  *   ├─ world                ← camera transform (pan/zoom) is applied HERE and
  *   │  │                      nowhere else; all world-space content lives below
+ *   │  ├─ surround          ← deterministic, non-interactive regional scenery
  *   │  ├─ terrain           ← one diamond sprite per tile (chunked in ZKU-142)
+ *   │  ├─ estateSeam        ← natural full-property boundary treatment
  *   │  ├─ terrainDecals     ← tee/green markers, route/corridor overlays,
  *   │  │                      hover highlight
  *   │  ├─ objects           ← obstacles, buildings, props (depth-sorted via
@@ -173,9 +185,30 @@ const ESTATE_LABEL = "estate-overlay";
 
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 8;
-const CAMERA_MARGIN_TILES = 6;
 const ROTATE_TWEEN_MS = 250;
 const KEY_PAN_SPEED = 900; // screen px/sec at zoom 1
+
+const SCENIC_COLORS: Record<NonNullable<Course["theme"]>, {
+  base: number;
+  ocean: number;
+  road: number;
+  seam: number;
+  hedge: number;
+  patches: Record<ScenicPatchKind, number>;
+}> = {
+  parkland: {
+    base: 0x356a3b, ocean: 0x2d769d, road: 0xa39982, seam: 0x496f3f, hedge: 0x244f2c,
+    patches: { meadow: 0x427b45, field: 0x71864c, wood: 0x285833, scrub: 0x3b7040, dune: 0xbaa977, wash: 0x6d7550 },
+  },
+  links: {
+    base: 0x65733e, ocean: 0x225782, road: 0x938c78, seam: 0x7d7a44, hedge: 0x46572d,
+    patches: { meadow: 0x738047, field: 0x8b8852, wood: 0x44552f, scrub: 0x77763e, dune: 0xcbbd8c, wash: 0x837b55 },
+  },
+  desert: {
+    base: 0xa77e4f, ocean: 0x3a9ec2, road: 0x8c704f, seam: 0x9a7045, hedge: 0x695638,
+    patches: { meadow: 0x8c844a, field: 0xa58b58, wood: 0x6d663b, scrub: 0x8d7445, dune: 0xc49a61, wash: 0x8b6243 },
+  },
+};
 
 // Dev-only logging, quiet by default (ZKU-85 convention).
 const DEV_LOG = false;
@@ -410,7 +443,9 @@ function rasterizeTileLine(from: Point, to: Point): Point[] {
 
 interface Layers {
   world: PIXI.Container;
+  surround: PIXI.Container;
   terrain: PIXI.Container;
+  estateSeam: PIXI.Container;
   terrainDecals: PIXI.Container;
   objects: PIXI.Container;
   fx: PIXI.Container;
@@ -672,11 +707,33 @@ export function PixiStage(props: PixiStageProps) {
   // ---------------------------------------------------------------------
 
   const clampCenter = useCallback(
-    (x: number, y: number): Point => ({
-      x: Math.max(-CAMERA_MARGIN_TILES, Math.min(course.width + CAMERA_MARGIN_TILES, x)),
-      y: Math.max(-CAMERA_MARGIN_TILES, Math.min(course.height + CAMERA_MARGIN_TILES, y)),
-    }),
-    [course.width, course.height]
+    (x: number, y: number, zoom = camRef.current.tzoom): Point => {
+      const app = appRef.current;
+      if (!app || zoom <= 0) {
+        return clampScenicCameraCenter(
+          { x, y }, course.width, course.height,
+          SCENIC_CAMERA_MARGIN_TILES, SCENIC_CAMERA_MARGIN_TILES,
+        );
+      }
+      const centerIso = worldToIso(0, 0, 0, rotation);
+      const halfW = app.screen.width / (2 * zoom);
+      const halfH = app.screen.height / (2 * zoom);
+      const corners = [
+        isoToWorld(centerIso.x - halfW, centerIso.y - halfH, rotation),
+        isoToWorld(centerIso.x + halfW, centerIso.y - halfH, rotation),
+        isoToWorld(centerIso.x + halfW, centerIso.y + halfH, rotation),
+        isoToWorld(centerIso.x - halfW, centerIso.y + halfH, rotation),
+      ];
+      const visibleX = Math.max(...corners.map((point) => Math.abs(point.x)));
+      const visibleY = Math.max(...corners.map((point) => Math.abs(point.y)));
+      // At close zoom the estate edge remains in frame; overview zoom earns
+      // the full regional margin without allowing the course to become lost.
+      return clampScenicCameraCenter(
+        { x, y }, course.width, course.height,
+        visibleX * 0.72, visibleY * 0.72,
+      );
+    },
+    [course.width, course.height, rotation]
   );
 
   /** Frustum culling: hide chunks whose iso-plane bounds miss the viewport. */
@@ -723,6 +780,18 @@ export function PixiStage(props: PixiStageProps) {
     world.scale.set(cam.zoom);
     cullChunks();
   }, [rotation, cullChunks]);
+
+  /** Keep the estate legible on very large/ultrawide displays while still
+   * allowing a generous overview ring around it. */
+  const minimumZoom = useCallback((): number => {
+    const app = appRef.current;
+    if (!app) return MIN_ZOOM;
+    const estateFit = fitZoomForTileBounds(
+      0, 0, course.width - 1, course.height - 1,
+      app.screen.width, app.screen.height, rotation,
+    );
+    return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, estateFit * 0.62));
+  }, [course.width, course.height, rotation]);
 
   /** Default whole-course fit (used at init and when no CameraState). */
   const fitWholeCourse = useCallback(
@@ -929,14 +998,16 @@ export function PixiStage(props: PixiStageProps) {
 
       // Build the layer tree (see header comment for architecture).
       const world = new PIXI.Container();
+      const surround = new PIXI.Container();
       const terrain = new PIXI.Container();
+      const estateSeam = new PIXI.Container();
       const terrainDecals = new PIXI.Container();
       const objects = new PIXI.Container();
       objects.sortableChildren = true;
       const fx = new PIXI.Container();
       const screenOverlay = new PIXI.Container();
 
-      world.addChild(terrain, terrainDecals, objects, fx);
+      world.addChild(surround, terrain, estateSeam, terrainDecals, objects, fx);
 
       // Ambient stack (ZKU-156): a full-screen multiply quad for the
       // time-of-day grade and a screen-space bird layer, both between the
@@ -992,7 +1063,7 @@ export function PixiStage(props: PixiStageProps) {
       app.stage.hitArea = app.screen;
 
       appRef.current = app;
-      layersRef.current = { world, terrain, terrainDecals, objects, fx, screenOverlay };
+      layersRef.current = { world, surround, terrain, estateSeam, terrainDecals, objects, fx, screenOverlay };
       setAppReady(true);
       devLog(`initialized ${width}x${height}`);
     };
@@ -1050,6 +1121,13 @@ export function PixiStage(props: PixiStageProps) {
       const height = Math.max(containerRef.current.clientHeight || 100, 100);
       appRef.current.renderer.resize(width, height);
       appRef.current.stage.hitArea = appRef.current.screen;
+      const cam = camRef.current;
+      const minZoom = minimumZoom();
+      cam.tzoom = Math.max(minZoom, cam.tzoom);
+      cam.zoom = Math.max(minZoom, cam.zoom);
+      const center = clampCenter(cam.tcx, cam.tcy, cam.tzoom);
+      cam.tcx = center.x;
+      cam.tcy = center.y;
       applyCamera();
     };
 
@@ -1057,7 +1135,7 @@ export function PixiStage(props: PixiStageProps) {
     ro.observe(container);
     resize();
     return () => ro.disconnect();
-  }, [appReady, applyCamera]);
+  }, [appReady, applyCamera, clampCenter, minimumZoom]);
 
   // One-time camera init: snap to a whole-course fit.
   useEffect(() => {
@@ -1140,10 +1218,10 @@ export function PixiStage(props: PixiStageProps) {
         viewport: { width: app.screen.width, height: app.screen.height },
         deltaPixels: normalizeWheelDelta(e.deltaY, e.deltaMode, app.screen.height),
         rotation,
-        minZoom: MIN_ZOOM,
+        minZoom: minimumZoom(),
         maxZoom: MAX_ZOOM,
       });
-      const clamped = clampCenter(target.cx, target.cy);
+      const clamped = clampCenter(target.cx, target.cy, target.zoom);
       cam.tcx = clamped.x;
       cam.tcy = clamped.y;
       cam.tzoom = target.zoom;
@@ -1174,7 +1252,7 @@ export function PixiStage(props: PixiStageProps) {
       const isoX = startIso.x - (e.clientX - panState.gx) / cam.zoom;
       const isoY = startIso.y - (e.clientY - panState.gy) / cam.zoom;
       const tile = isoToWorld(isoX, isoY, rotation);
-      const clamped = clampCenter(tile.x, tile.y);
+      const clamped = clampCenter(tile.x, tile.y, cam.zoom);
       cam.cx = cam.tcx = clamped.x;
       cam.cy = cam.tcy = clamped.y;
       applyCamera();
@@ -1241,10 +1319,10 @@ export function PixiStage(props: PixiStageProps) {
           endFlyover();
         } else {
           const s = sampleFlyover(flyover.keys, t);
-          const clamped = clampCenter(s.x, s.y);
+          const clamped = clampCenter(s.x, s.y, s.zoom);
           cam.tcx = clamped.x;
           cam.tcy = clamped.y;
-          cam.tzoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, s.zoom));
+          cam.tzoom = Math.max(minimumZoom(), Math.min(MAX_ZOOM, s.zoom));
           moved = true;
         }
       }
@@ -1351,7 +1429,239 @@ export function PixiStage(props: PixiStageProps) {
       app.ticker?.remove(tickCamera);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appReady, rotation, cameraState, applyCamera, clampCenter, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing, props.keybindings, reportView]);
+  }, [appReady, rotation, cameraState, applyCamera, clampCenter, minimumZoom, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing, props.keybindings, reportView]);
+
+  // ---------------------------------------------------------------------
+  // Regional surround — deterministic scenery beyond the playable estate
+  // ---------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!appReady) return;
+    const layers = layersRef.current;
+    if (!layers) return;
+    layers.surround.removeChildren().forEach((child) => child.destroy({ children: true }));
+    layers.estateSeam.removeChildren().forEach((child) => child.destroy({ children: true }));
+
+    const model = generateScenicSurround(course, props.worldSeed);
+    const palette = SCENIC_COLORS[model.theme];
+    const ground = new PIXI.Graphics();
+    ground.eventMode = "none";
+    const quad = (graphics: PIXI.Graphics, x: number, y: number, width: number, height: number) => {
+      const corners = [
+        worldToIso(x, y, 0, rotation),
+        worldToIso(x + width, y, 0, rotation),
+        worldToIso(x + width, y + height, 0, rotation),
+        worldToIso(x, y + height, 0, rotation),
+      ];
+      graphics.poly(corners.flatMap((point) => [point.x, point.y]));
+    };
+
+    // The base plane is deliberately far larger than any legal camera view.
+    // It is one four-vertex primitive, so the visual guarantee is effectively
+    // free and there is no finite scenic tile grid whose edge can be exposed.
+    quad(
+      ground,
+      -SCENIC_PLANE_TILES,
+      -SCENIC_PLANE_TILES,
+      course.width + SCENIC_PLANE_TILES * 2,
+      course.height + SCENIC_PLANE_TILES * 2,
+    );
+    ground.fill(palette.base);
+
+    for (const patch of model.patches) {
+      quad(ground, patch.x, patch.y, patch.width, patch.height);
+      ground.fill({ color: shade(palette.patches[patch.kind], 0.94 + patch.shade * 0.12), alpha: 0.82 });
+      quad(ground, patch.x, patch.y, patch.width, patch.height);
+      ground.stroke({ width: 1.1, color: darken(palette.patches[patch.kind], 0.72), alpha: 0.38 });
+    }
+
+    const drawOcean = (edge: CoastEdge) => {
+      const far = SCENIC_PLANE_TILES;
+      const first = model.coastline[0];
+      const last = model.coastline[model.coastline.length - 1];
+      if (!first || !last) return;
+      let worldPolygon: Point[];
+      if (edge === "north" || edge === "south") {
+        const farY = edge === "north" ? -far : course.height + far;
+        worldPolygon = [
+          { x: -far, y: farY },
+          { x: course.width + far, y: farY },
+          { x: course.width + far, y: last.y },
+          ...model.coastline.slice().reverse(),
+          { x: -far, y: first.y },
+        ];
+      } else {
+        const farX = edge === "west" ? -far : course.width + far;
+        worldPolygon = [
+          { x: farX, y: -far },
+          { x: farX, y: course.height + far },
+          { x: last.x, y: course.height + far },
+          ...model.coastline.slice().reverse(),
+          { x: first.x, y: -far },
+        ];
+      }
+      const projected = worldPolygon.map((point) => worldToIso(point.x, point.y, 0, rotation));
+      ground.poly(projected.flatMap((point) => [point.x, point.y]));
+      ground.fill(palette.ocean);
+    };
+    if (model.coast) drawOcean(model.coast);
+
+    for (const road of model.roads) {
+      const from = worldToIso(road.from.x, road.from.y, 0, rotation);
+      const to = worldToIso(road.to.x, road.to.y, 0, rotation);
+      ground.moveTo(from.x, from.y); ground.lineTo(to.x, to.y);
+      ground.stroke({ width: 8, color: darken(palette.road, 0.72), alpha: 0.45 });
+      ground.moveTo(from.x, from.y); ground.lineTo(to.x, to.y);
+      ground.stroke({ width: 5.5, color: palette.road, alpha: 0.88 });
+    }
+
+    layers.surround.addChild(ground);
+
+    // Continue the exact authored Links water material across the playable
+    // boundary, fading it into the regional ocean rather than exposing the
+    // estate as a darker, tile-textured triangle offshore.
+    if (model.coast) {
+      const oceanDetail = new PIXI.Container();
+      oceanDetail.eventMode = "none";
+      const band = 24;
+      const material = getTerrainMaterial("links", "water");
+      for (let y = -band; y < course.height + band; y++) for (let x = -band; x < course.width + band; x++) {
+        if (x >= 0 && y >= 0 && x < course.width && y < course.height) continue;
+        if (!isScenicOceanPoint(model.coast, { x: x + 0.5, y: y + 0.5 }, course.width, course.height, model.coastline)) continue;
+        const distance = Math.max(-x, x - course.width + 1, -y, y - course.height + 1, 0);
+        if (distance > band) continue;
+        const texture = getTerrainFrame(pickTerrainBaseFrame(material, x, y));
+        if (!texture) continue;
+        const position = worldToIso(x + 0.5, y, 0, rotation);
+        const tile = new PIXI.Sprite(texture);
+        tile.anchor.set(0.5, 0);
+        tile.position.set(position.x, position.y);
+        tile.width = TILE_W + 0.75;
+        tile.height = TILE_H + 0.5;
+        tile.alpha = Math.max(0.08, 1 - distance / (band + 1));
+        oceanDetail.addChild(tile);
+      }
+      layers.surround.addChild(oceanDetail);
+    }
+
+    // Sparse wavelets continue the authored Links water language offshore.
+    // Their positions are deterministic and stay far from the scenery cap.
+    if (model.coast) {
+      const waves = new PIXI.Graphics();
+      for (let i = 0; i < 180; i++) {
+        const a = ((i * 73 + props.worldSeed * 11) >>> 0) % 997 / 997;
+        const b = ((i * 151 + props.worldSeed * 7 + 31) >>> 0) % 991 / 991;
+        const length = 4 + (i % 7);
+        let from: Point;
+        let to: Point;
+        if (model.coast === "north" || model.coast === "south") {
+          const x = -SCENIC_GENERATION_BLEED_TILES + a * (course.width + SCENIC_GENERATION_BLEED_TILES * 2);
+          const y = model.coast === "north"
+            ? -4 - b * SCENIC_GENERATION_BLEED_TILES
+            : course.height + 4 + b * SCENIC_GENERATION_BLEED_TILES;
+          from = { x, y }; to = { x: x + length, y };
+        } else {
+          const x = model.coast === "west"
+            ? -4 - b * SCENIC_GENERATION_BLEED_TILES
+            : course.width + 4 + b * SCENIC_GENERATION_BLEED_TILES;
+          const y = -SCENIC_GENERATION_BLEED_TILES + a * (course.height + SCENIC_GENERATION_BLEED_TILES * 2);
+          from = { x, y }; to = { x, y: y + length };
+        }
+        const p1 = worldToIso(from.x, from.y, 0, rotation);
+        const p2 = worldToIso(to.x, to.y, 0, rotation);
+        waves.moveTo(p1.x, p1.y); waves.lineTo(p2.x, p2.y);
+      }
+      waves.stroke({ width: 1.25, color: 0xc9e6ee, alpha: 0.26 });
+      waves.eventMode = "none";
+      layers.surround.addChild(waves);
+    }
+
+    const scenicProps = new PIXI.Container();
+    scenicProps.sortableChildren = true;
+    scenicProps.eventMode = "none";
+    const scenicTerrain: Terrain = model.theme === "desert" ? "waste_area" : model.theme === "links" ? "deep_rough" : "rough";
+    for (const prop of model.props) {
+      const obstacle: Obstacle = { x: Math.round(prop.x), y: Math.round(prop.y), type: prop.type };
+      const picked = pickNaturalProp({
+        theme: model.theme,
+        runSeed: props.worldSeed,
+        obstacle,
+        terrain: scenicTerrain,
+        elevation: 0,
+        nearWater: false,
+        cultivated: false,
+      });
+      const fallback = pickNaturalProp({
+        theme: "parkland",
+        runSeed: props.worldSeed,
+        obstacle,
+        terrain: "rough",
+        elevation: 0,
+        nearWater: false,
+        cultivated: false,
+      });
+      const texture = getPropFrame(picked.variant.frame) ?? getPropFrame(fallback.variant.frame);
+      const position = worldToIso(prop.x, prop.y, 0, rotation);
+      if (texture) {
+        const sprite = new PIXI.Sprite(texture);
+        sprite.anchor.set(picked.variant.anchor[0], picked.variant.anchor[1]);
+        sprite.position.set(position.x, position.y);
+        const size = TILE_W * 0.58 * picked.scale;
+        sprite.width = size;
+        sprite.height = size * texture.height / texture.width;
+        sprite.zIndex = isoDepth(prop.x, prop.y, 0, rotation);
+        scenicProps.addChild(sprite);
+      } else {
+        const marker = new PIXI.Graphics();
+        marker.position.set(position.x, position.y);
+        marker.zIndex = isoDepth(prop.x, prop.y, 0, rotation);
+        if (prop.type === "tree") {
+          marker.poly([-5, 0, 0, -14, 5, 0]); marker.fill(darken(palette.base, 0.62));
+        } else if (prop.type === "rock") {
+          marker.ellipse(0, -2, 5, 3); marker.fill(darken(palette.base, 0.7));
+        } else {
+          marker.circle(0, -3, 4); marker.fill(darken(palette.base, 0.68));
+        }
+        scenicProps.addChild(marker);
+      }
+    }
+    scenicProps.sortChildren();
+    layers.surround.addChild(scenicProps);
+
+    // A broken landscape seam makes the property limit readable without a
+    // glowing rectangular outline. The ocean-facing side deliberately has
+    // no seam: the Links sea must remain visually continuous offshore.
+    const seam = new PIXI.Graphics();
+    const hedge = new PIXI.Graphics();
+    const drawEdge = (edge: CoastEdge, length: number) => {
+      if (edge === model.coast) return;
+      for (let i = 0; i < length; i++) {
+        const x = edge === "north" || edge === "south" ? i : edge === "west" ? 0 : course.width - 1;
+        const y = edge === "west" || edge === "east" ? i : edge === "north" ? 0 : course.height - 1;
+        const elevation = course.elevations[y * course.width + x] ?? 0;
+        const a = edge === "north" ? worldToIso(i, 0, elevation, rotation)
+          : edge === "south" ? worldToIso(i, course.height, elevation, rotation)
+          : edge === "west" ? worldToIso(0, i, elevation, rotation)
+          : worldToIso(course.width, i, elevation, rotation);
+        const b = edge === "north" ? worldToIso(i + 1, 0, elevation, rotation)
+          : edge === "south" ? worldToIso(i + 1, course.height, elevation, rotation)
+          : edge === "west" ? worldToIso(0, i + 1, elevation, rotation)
+          : worldToIso(course.width, i + 1, elevation, rotation);
+        seam.moveTo(a.x, a.y); seam.lineTo(b.x, b.y);
+        if (((i * 17 + props.worldSeed + edge.charCodeAt(0)) % 11 + 11) % 11 < 6) {
+          hedge.moveTo(a.x, a.y - 1); hedge.lineTo(b.x, b.y - 1);
+        }
+      }
+    };
+    drawEdge("north", course.width);
+    drawEdge("south", course.width);
+    drawEdge("west", course.height);
+    drawEdge("east", course.height);
+    seam.stroke({ width: 2.2, color: palette.seam, alpha: 0.72 });
+    hedge.stroke({ width: 3.4, color: palette.hedge, alpha: 0.78 });
+    seam.eventMode = "none"; hedge.eventMode = "none";
+    layers.estateSeam.addChild(seam, hedge);
+  }, [appReady, course, props.worldSeed, rotation]);
 
   // ---------------------------------------------------------------------
   // Terrain layer — tinted diamond sprites, back-to-front
@@ -1404,7 +1714,10 @@ export function PixiStage(props: PixiStageProps) {
         const e = elev(x, y);
         const nx = x + d.x;
         const ny = y + d.y;
-        const ne = nx < 0 || ny < 0 || nx >= w || ny >= h ? 0 : elev(nx, ny);
+        // The regional surround continues beyond the course. Treat exterior
+        // neighbors as level with the perimeter rather than exposing the old
+        // brown "cut slab" face around the whole map.
+        const ne = nx < 0 || ny < 0 || nx >= w || ny >= h ? e : elev(nx, ny);
         if (ne >= e || e <= 0) return;
         const [c1, c2] = edgeCorners(x, y, d.x, d.y);
         const a = worldToIso(c1.x, c1.y, e, rotation);
