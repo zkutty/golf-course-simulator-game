@@ -38,6 +38,6 @@ test("M19 parkland materials, rotations, and static-motion fallback", async ({ p
   await page.getByRole("button", { name: "Resume" }).click();
   await page.waitForTimeout(250);
   await canvas.screenshot({ path: "artifacts/m19-parkland-static-water.png" });
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").graphics)).toEqual({ animations: false, waterAnimation: false, treeSway: false });
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").graphics)).toMatchObject({ animations: false, waterAnimation: false, treeSway: false });
   expect(errors).toEqual([]);
 });

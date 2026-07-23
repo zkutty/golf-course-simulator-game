@@ -38,9 +38,10 @@ import { createEstate, starterParcelOffset, validateEstate } from "../game/estat
 import { MAX_ESTATE_HOLES, normalizeCourseLayouts } from "../game/models/courseLayouts";
 import { normalizedStaff } from "../game/live/pace";
 import { normalizePropertyCourse, normalizePropertyEnterprise, starterPropertyCourse } from "../game/property/property";
+import { normalizeSurfaceIntent } from "../game/models/surfaceIntent";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 12 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 13 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -105,6 +106,10 @@ export interface SaveV11 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV12 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 12;
+  records?: CourseRecords;
+}
+export interface SaveV13 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -128,7 +133,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV12 = {
+  const save: SaveV13 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -471,6 +476,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V12 adds the integrated commercial campus, access network, destination
   // resort, residential community, customer history, and property ledger.
   11: (save) => ({ ...save, schemaVersion: 12 }),
+  // V13 adds optional smooth terrain-authoring metadata. Course.tiles remains
+  // authoritative, so legacy saves need only advance the schema marker.
+  12: (save) => ({ ...save, schemaVersion: 13 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -656,6 +664,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       decorations: sanitizeDecorations(rawCourse.decorations, rawWidth, rawHeight),
       yardsPerTile: rawCourse.yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
       theme: oneOf<LandTheme>(rawCourse.theme, ["parkland", "links", "desert"], "parkland"),
+      surfaceIntent: normalizeSurfaceIntent(rawCourse.surfaceIntent, rawWidth, rawHeight, TERRAIN_VALUES),
       activePinRotation: oneOf<PinRotation>(rawCourse.activePinRotation, PIN_ROTATIONS, "A"),
       // Do not inherit DEFAULT_COURSE's starter routing when a valid legacy
       // course omitted M26 layout fields. Normalization must synthesize the

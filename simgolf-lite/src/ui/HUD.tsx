@@ -43,6 +43,12 @@ export function HUD(props: {
   prev?: WeekResult;
   selected: Terrain;
   setSelected: (t: Terrain) => void;
+  terrainTool: "curve" | "area";
+  setTerrainTool: (tool: "curve" | "area") => void;
+  terrainBrushWidth: number;
+  setTerrainBrushWidth: (width: number) => void;
+  onUndoTerrain: () => void;
+  onRedoTerrain: () => void;
   setGreenFee: (n: number) => void;
   setMaintenance: (n: number) => void;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
@@ -113,6 +119,12 @@ export function HUD(props: {
     prev,
     selected,
     setSelected,
+    terrainTool,
+    setTerrainTool,
+    terrainBrushWidth,
+    setTerrainBrushWidth,
+    onUndoTerrain,
+    onRedoTerrain,
     setGreenFee,
     setMaintenance,
     editorMode,
@@ -1129,6 +1141,41 @@ export function HUD(props: {
                 <div style={{ marginBottom: 8 }}>
                   <b><T id="auto.ui.hud.terrain.brush" /></b>
                 </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto auto", gap: 6, marginBottom: 8 }}>
+                  {(["curve", "area"] as const).map((tool) => (
+                    <button
+                      key={tool}
+                      type="button"
+                      aria-pressed={terrainTool === tool}
+                      onClick={() => setTerrainTool(tool)}
+                      style={{
+                        padding: "6px 8px",
+                        borderRadius: 8,
+                        border: terrainTool === tool ? "2px solid #2f4a35" : "1px solid #b8ad98",
+                        background: terrainTool === tool ? "#e5f0df" : "#fff",
+                        fontWeight: 700,
+                      }}
+                    >
+                      {translateCurrent(tool === "curve" ? "terrainEdit.curve" : "terrainEdit.area")}
+                    </button>
+                  ))}
+                  <button type="button" aria-label={translateCurrent("terrainEdit.undo")} onClick={onUndoTerrain}>↶</button>
+                  <button type="button" aria-label={translateCurrent("terrainEdit.redo")} onClick={onRedoTerrain}>↷</button>
+                </div>
+                <label style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center", marginBottom: 10, fontSize: 11 }}>
+                  <span>{translateCurrent("terrainEdit.width")}</span>
+                  <input
+                    aria-label={translateCurrent("terrainEdit.width")}
+                    type="range"
+                    min={1}
+                    max={12}
+                    step={1}
+                    value={terrainBrushWidth}
+                    disabled={terrainTool === "area"}
+                    onChange={(event) => setTerrainBrushWidth(Number(event.target.value))}
+                  />
+                  <b>{terrainBrushWidth}</b>
+                </label>
                 <div data-tutorial-target="terrain-palette" style={{ display: "grid", gap: 8 }}>
                   {TERRAIN_GROUPS.map((group) => <div key={group.label}><div style={{ fontSize: 10, fontWeight: 700, color: "#6c604d", marginBottom: 4 }}>{translateCurrent(group.label)}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{group.terrains.map((t) => {
                     const locked = !isTerrainUnlocked(t, world.reputation);

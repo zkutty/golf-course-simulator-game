@@ -104,6 +104,8 @@ import {
   type CoastEdge,
   type ScenicPatchKind,
 } from "../game/render/scenicSurround";
+import { sampleCorridor } from "../game/models/surfaceIntent";
+import { buildIntentUnderlayTiles, buildTerrainContours } from "../game/render/surfaceContours";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -374,6 +376,7 @@ export interface PixiStageProps {
   selectedParcelId?: string | null;
   architectureWarnings?: ArchitectureWarning[];
   animationsEnabled: boolean;
+  graphicsQuality: "high" | "medium" | "low";
   ambienceFx: boolean;
   waterAnimation: boolean;
   treeSway: boolean;
@@ -447,6 +450,7 @@ interface Layers {
   world: PIXI.Container;
   surround: PIXI.Container;
   terrain: PIXI.Container;
+  smoothSurfaces: PIXI.Container;
   estateSeam: PIXI.Container;
   terrainDecals: PIXI.Container;
   objects: PIXI.Container;
@@ -761,12 +765,17 @@ export function PixiStage(props: PixiStageProps) {
     for (const chunk of chunksRef.current) {
       const v = chunk.maxX >= left && chunk.minX <= right && chunk.maxY >= top && chunk.minY <= bottom;
       chunk.container.visible = v;
-      const coverTier = visibleGroundCoverTier(world.scale.x, props.resolutionScale);
+      const requestedTier = visibleGroundCoverTier(world.scale.x, props.resolutionScale);
+      const coverTier = props.graphicsQuality === "high"
+        ? requestedTier
+        : props.graphicsQuality === "medium"
+          ? Math.min(1, requestedTier) as 0 | 1
+          : 0;
       for (const cover of chunk.groundCoverSprites) cover.graphic.visible = v && cover.tier <= coverTier;
       if (v) visible++;
     }
     if (CHUNK_DEBUG) devLog(`chunks visible: ${visible}/${chunksRef.current.length}`);
-  }, [props.resolutionScale]);
+  }, [props.graphicsQuality, props.resolutionScale]);
 
   /** Push the camera's CURRENT values into the world container transform. */
   const applyCamera = useCallback(() => {
@@ -1003,6 +1012,7 @@ export function PixiStage(props: PixiStageProps) {
       const world = new PIXI.Container();
       const surround = new PIXI.Container();
       const terrain = new PIXI.Container();
+      const smoothSurfaces = new PIXI.Container();
       const estateSeam = new PIXI.Container();
       const terrainDecals = new PIXI.Container();
       const objects = new PIXI.Container();
@@ -1010,7 +1020,7 @@ export function PixiStage(props: PixiStageProps) {
       const fx = new PIXI.Container();
       const screenOverlay = new PIXI.Container();
 
-      world.addChild(surround, terrain, estateSeam, terrainDecals, objects, fx);
+      world.addChild(surround, terrain, smoothSurfaces, estateSeam, terrainDecals, objects, fx);
 
       // Ambient stack (ZKU-156): a full-screen multiply quad for the
       // time-of-day grade and a screen-space bird layer, both between the
@@ -1066,7 +1076,7 @@ export function PixiStage(props: PixiStageProps) {
       app.stage.hitArea = app.screen;
 
       appRef.current = app;
-      layersRef.current = { world, surround, terrain, estateSeam, terrainDecals, objects, fx, screenOverlay };
+      layersRef.current = { world, surround, terrain, smoothSurfaces, estateSeam, terrainDecals, objects, fx, screenOverlay };
       setAppReady(true);
       devLog(`initialized ${width}x${height}`);
     };
@@ -1682,6 +1692,20 @@ export function PixiStage(props: PixiStageProps) {
     const cols = Math.ceil(w / CHUNK_TILES);
     const rows = Math.ceil(h / CHUNK_TILES);
     const elev = (x: number, y: number) => getElevation(course, x, y);
+    // Intent-backed cells remain the simulation truth, but their legacy
+    // diamond tops must not poke through a continuous surface. Reconstruct a
+    // lightweight visual underlay from the nearest surrounding material; the
+    // smooth intent polygon is drawn over it by the next layer.
+    const underlayTiles = buildIntentUnderlayTiles(
+      course.tiles,
+      w,
+      h,
+      course.surfaceIntent?.features ?? [],
+    );
+    const visualTerrainAt = (x: number, y: number): Terrain => {
+      const index = y * w + x;
+      return underlayTiles[index];
+    };
 
     const dSE = unrotateWorld(1, 0, rotation); // world offset of screen-lower-right neighbor
     const dSW = unrotateWorld(0, 1, rotation); // world offset of screen-lower-left neighbor
@@ -1777,7 +1801,7 @@ export function PixiStage(props: PixiStageProps) {
       };
 
       for (const { x, y } of order) {
-        const terrain = course.tiles[y * w + x];
+        const terrain = visualTerrainAt(x, y);
         const material = getTerrainMaterial(course.theme, terrain);
         const e = elev(x, y);
         const p = worldToIso(x + 0.5, y, e, rotation);
@@ -1873,7 +1897,7 @@ export function PixiStage(props: PixiStageProps) {
           const nx = x + dx;
           const ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-          const nTerrain = course.tiles[ny * w + nx];
+          const nTerrain = visualTerrainAt(nx, ny);
           if (TERRAIN_PRIORITY[terrain] <= TERRAIN_PRIORITY[nTerrain]) continue;
           if (elev(nx, ny) !== e) continue;
           boundaryMask |= 1 << index;
@@ -1982,6 +2006,124 @@ export function PixiStage(props: PixiStageProps) {
     prevElevationsRef.current = course.elevations;
     cullChunks();
   }, [appReady, course, rotation, cullChunks, props.colorVision, props.terrainPatterns, props.worldSeed]);
+
+  // ---------------------------------------------------------------------
+  // M35 smooth surface intent — static GPU-triangulated curve/region layer
+  // ---------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!appReady) return;
+    const layer = layersRef.current?.smoothSurfaces;
+    if (!layer) return;
+    layer.removeChildren().forEach((child) => child.destroy());
+    const intent = course.surfaceIntent;
+
+    const colors: Record<Terrain, number> = props.colorVision === "standard"
+      ? { ...COLORS, ...getLandTheme(course.theme).tileTints }
+      : TERRAIN_PALETTES[props.colorVision];
+    const elevationAt = (point: { x: number; y: number }) => {
+      const x = Math.max(0, Math.min(course.width - 1, Math.floor(point.x)));
+      const y = Math.max(0, Math.min(course.height - 1, Math.floor(point.y)));
+      return getElevation(course, x, y);
+    };
+    const project = (point: { x: number; y: number }) =>
+      worldToIso(point.x, point.y, elevationAt(point), rotation);
+
+    // Legacy saves receive immediate continuous boundaries even before the
+    // player edits them. A translucent union fill preserves authored texture
+    // character while suppressing tile quilting and stair-step silhouettes.
+    const contourTiles = buildIntentUnderlayTiles(
+      course.tiles,
+      course.width,
+      course.height,
+      intent?.features ?? [],
+    );
+    const legacyContours = buildTerrainContours(contourTiles, course.width, course.height)
+      .sort((a, b) => TERRAIN_PRIORITY[a.terrain] - TERRAIN_PRIORITY[b.terrain]);
+    for (const contour of legacyContours) {
+      if (contour.points.length < 3) continue;
+      const graphic = new PIXI.Graphics();
+      graphic.eventMode = "none";
+      const polygon = contour.points.map(project);
+      graphic.poly(polygon.flatMap((point) => [point.x, point.y]));
+      graphic.fill({
+        color: colors[contour.terrain],
+        alpha: contour.terrain === "rough" ? 0.54 : 0.78,
+      });
+      if (contour.terrain !== "rough") {
+        graphic.stroke({
+          width: 0.9,
+          color: darken(colors[contour.terrain], 0.78),
+          alpha: 0.34,
+        });
+      }
+      layer.addChild(graphic);
+    }
+
+    for (const feature of [...(intent?.features ?? [])].sort((a, b) => a.order - b.order)) {
+      if (feature.coverage.length === 0) continue;
+      const valid = feature.coverage.reduce((count, index) => (
+        course.tiles[index] === feature.terrain ? count + 1 : count
+      ), 0);
+      // If later tile edits materially invalidate a curve, reveal the
+      // authoritative terrain instead of drawing stale intent over it.
+      if (valid / feature.coverage.length < 0.8) continue;
+
+      const graphic = new PIXI.Graphics();
+      graphic.eventMode = "none";
+      let polygon: Array<{ x: number; y: number }> = [];
+      if (feature.geometry.kind === "region") {
+        polygon = feature.geometry.ring.map(project);
+      } else {
+        const centerline = sampleCorridor(feature.geometry.knots, 0.14);
+        if (centerline.length < 2) continue;
+        const halfWidth = feature.geometry.width / 2;
+        const left: Array<{ x: number; y: number }> = [];
+        const right: Array<{ x: number; y: number }> = [];
+        for (let index = 0; index < centerline.length; index++) {
+          const before = centerline[Math.max(0, index - 1)];
+          const after = centerline[Math.min(centerline.length - 1, index + 1)];
+          const dx = after.x - before.x;
+          const dy = after.y - before.y;
+          const length = Math.max(1e-6, Math.hypot(dx, dy));
+          const nx = -dy / length * halfWidth;
+          const ny = dx / length * halfWidth;
+          left.push(project({ x: centerline[index].x + nx, y: centerline[index].y + ny }));
+          right.push(project({ x: centerline[index].x - nx, y: centerline[index].y - ny }));
+        }
+        const cap = (
+          center: { x: number; y: number },
+          tangent: { x: number; y: number },
+          startAngle: number,
+        ) => {
+          const heading = Math.atan2(tangent.y, tangent.x);
+          return Array.from({ length: 9 }, (_, index) => {
+            const angle = heading + startAngle - index * Math.PI / 8;
+            return project({
+              x: center.x + Math.cos(angle) * halfWidth,
+              y: center.y + Math.sin(angle) * halfWidth,
+            });
+          });
+        };
+        const first = centerline[0];
+        const second = centerline[1];
+        const last = centerline[centerline.length - 1];
+        const penultimate = centerline[centerline.length - 2];
+        const endCap = cap(last, { x: last.x - penultimate.x, y: last.y - penultimate.y }, Math.PI / 2);
+        const startCap = cap(first, { x: second.x - first.x, y: second.y - first.y }, -Math.PI / 2);
+        polygon = [...left, ...endCap.slice(1), ...right.reverse().slice(1), ...startCap.slice(1)];
+      }
+      if (polygon.length < 3) continue;
+      graphic.poly(polygon.flatMap((point) => [point.x, point.y]));
+      graphic.fill({ color: colors[feature.terrain], alpha: 0.94 });
+      graphic.stroke({
+        width: feature.terrain === "path" ? 1.8 : 1.2,
+        color: darken(colors[feature.terrain], feature.terrain === "water" ? 0.72 : 0.8),
+        alpha: 0.7,
+      });
+      layer.addChild(graphic);
+    }
+  }, [appReady, course, props.colorVision, rotation]);
 
   // ---------------------------------------------------------------------
   // Objects layer — obstacles, ground-anchored and depth-sorted

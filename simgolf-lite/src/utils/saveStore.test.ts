@@ -112,7 +112,7 @@ describe("saveStore", () => {
     const meta = await saveToSlot(null, "manual", "Exported", payload(12, 40_000));
     const text = await exportSlot(meta.id);
     expect(text).not.toBeNull();
-    expect(JSON.parse(text!).appProfile).toMatchObject({ version: 4, gameplay: { autosaveCadence: "weekly" }, achievements: { earned: [] } });
+    expect(JSON.parse(text!).appProfile).toMatchObject({ version: 5, gameplay: { autosaveCadence: "weekly" }, achievements: { earned: [] } });
 
     __resetSaveStoreForTests(); // fresh browser
     const imported = await importSave(text!, "Imported course");

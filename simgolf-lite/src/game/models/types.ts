@@ -36,6 +36,39 @@ export interface Point {
   y: number;
 }
 
+/** Continuous editor/rendering intent layered over the authoritative tile map.
+ * Gameplay, economics, routing, and collision continue to read `Course.tiles`. */
+export interface SurfacePoint {
+  x: number;
+  y: number;
+}
+
+export interface SurfaceCorridorGeometry {
+  kind: "corridor";
+  knots: SurfacePoint[];
+  width: number;
+}
+
+export interface SurfaceRegionGeometry {
+  kind: "region";
+  ring: SurfacePoint[];
+}
+
+export interface SurfaceFeature {
+  id: string;
+  terrain: Terrain;
+  order: number;
+  geometry: SurfaceCorridorGeometry | SurfaceRegionGeometry;
+  /** Row-major cells accepted when the feature was committed. */
+  coverage: number[];
+}
+
+export interface SurfaceIntentV1 {
+  version: 1;
+  nextId: number;
+  features: SurfaceFeature[];
+}
+
 export const TEE_SETS = ["forward", "member", "championship"] as const;
 export type TeeSet = (typeof TEE_SETS)[number];
 export type ParSetting =
@@ -229,6 +262,8 @@ export interface Course {
   // Land theme the wild land was generated with (ZKU-162/166). Older saves
   // migrate to "parkland" (the identity theme) on load.
   theme?: LandTheme;
+  /** Optional M35 smooth-authoring metadata. Tiles remain authoritative. */
+  surfaceIntent?: SurfaceIntentV1;
   /** M25 land ownership and immutable surveyed-land record. */
   estate?: Estate;
   /** M31-M33 commercial campus, access, resort, and community assets. */

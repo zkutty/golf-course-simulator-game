@@ -40,6 +40,20 @@ export default defineConfig({
     // Maps are generated only for authenticated Sentry CI builds and deleted
     // after upload by the plugin, so they never ship with the game.
     sourcemap: sentryBuildEnabled ? "hidden" : false,
+    rollupOptions: {
+      output: {
+        // Stable framework/renderer chunks stay browser-cacheable while game
+        // systems and visual tuning iterate. Keep Pixi isolated because its
+        // renderer backends already fan out into their own lazy chunks.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("/pixi.js/") || id.includes("/@pixi/")) return "pixi";
+          if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("/scheduler/")) return "react";
+          if (sentryBuildEnabled && id.includes("/@sentry/")) return "telemetry";
+          return "vendor";
+        },
+      },
+    },
   },
   resolve: {
     alias: {

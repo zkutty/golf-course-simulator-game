@@ -110,6 +110,7 @@ function GraphicsTab({ profile, change }: { profile: AppProfile; change: Change 
   const { t } = useI18n();
   const p = profile.graphics;
   return <div>
+    <Row label={t("settings.graphicsQuality")}><select aria-label={t("settings.graphicsQuality")} value={p.quality} onChange={(event) => change("graphics", { quality: event.target.value as typeof p.quality })} style={selectStyle}><option value="auto">{t("settings.graphicsQuality.auto")}</option><option value="high">{t("settings.graphicsQuality.high")}</option><option value="medium">{t("settings.graphicsQuality.medium")}</option><option value="low">{t("settings.graphicsQuality.low")}</option></select></Row>
     <Row label={t("settings.animations")}><Toggle label={t("settings.animations")} checked={p.animations} onChange={(animations) => change("graphics", { animations })} /></Row>
     <Row label={t("settings.ambientFx")}><Toggle label={t("settings.ambientFx")} checked={p.ambienceFx} onChange={(ambienceFx) => change("graphics", { ambienceFx })} /></Row>
     <Row label={t("settings.waterAnimation")}><Toggle label={t("settings.waterAnimation")} checked={p.waterAnimation} onChange={(waterAnimation) => change("graphics", { waterAnimation })} /></Row>

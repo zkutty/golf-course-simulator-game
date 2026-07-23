@@ -598,3 +598,21 @@ Previous prompt: Let’s do m14 in linear for this project
 ## M32 remaining
 
 - None.
+## 2026-07-23 — M35 continuous landscape implementation
+
+Current request: Implement the proposed M35 Continuous Landscape & Visual Polish plan.
+
+- Created Linear milestone `M35: Continuous Landscape & Visual Polish` and dependency-ordered issues ZK-324 through ZK-332.
+- Added save schema v13 with optional, sanitized `Course.surfaceIntent` metadata while keeping `Course.tiles` authoritative.
+- Added versioned corridor/region feature contracts, pointer-gesture simplification, fixed-step Catmull–Rom sampling, deterministic 4× coverage rasterization, ordered feature persistence, and focused tests.
+- Added Curve/Area terrain tools, continuous width control, shared preview/commit geometry, 20-step undo/redo with keyboard shortcuts, and cursor/footprint-only editing outlines.
+- Added a dedicated GPU surface layer with automatic tile-union contour extraction for legacy saves, closed-boundary simplification/rounding, smooth filled corridors/regions, rounded corridor caps, elevation-aware projection, stale-intent protection, and reconstructed visual underlays that suppress legacy diamond protrusions without changing authoritative simulation cells.
+- Added graphics-quality preferences and a stable Auto/High/Medium/Low capability ladder. Lower tiers scale render density and progressively remove ground-cover/ambient animation while leaving simulation deterministic.
+- Split React, Pixi, and third-party dependencies into stable cacheable production chunks; the game entry dropped from 409 KB to 251 KB gzip while the service worker continues to precache the full offline build.
+- Verification: 61 Vitest files / 375 passed with one intentional skip; reducer fuzz, TypeScript, lint/i18n, production build, focused M35 Playwright interaction/undo/redo, three-biome/four-rotation/detail benchmarks, persisted accessibility graphics modes, PWA install/offline/save persistence, bundled web-game-client state, and the 36-hole/100-golfer performance smoke pass. Renderer ticker work measured 0.37 ms against the 8 ms budget after legacy contours. `artifacts/m35-curved-terrain.png` and the parkland/links/desert detail benchmarks were visually inspected.
+
+## M35 remaining
+
+- Add richer terrain-to-terrain blend bands and elevation-aware bank/cliff art on top of the shipped automatic legacy contour layer.
+- Add editable control nodes/tangent handles and richer closed-region editing beyond the shipped freehand Area gesture.
+- Deliver the biome-specific art/animation pass, world dressing, and benchmark captures across all themes/viewports.

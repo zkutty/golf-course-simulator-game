@@ -35,10 +35,10 @@ test("M27 reports architecture for a live 36-hole, two-course estate", async ({ 
 test("M27 report remains usable with pseudo locale, text scaling, reduced motion, and color-safe terrain", async ({ page }, testInfo) => {
   await page.addInitScript(() => {
     localStorage.setItem("coursecraft_locale", "pseudo");
-    localStorage.setItem("coursecraft_app_profile_v4", JSON.stringify({
-      version: 4, tutorialOffered: true, tutorialCompleted: true, advisorFrequency: "normal", advisorSeen: [],
+    localStorage.setItem("coursecraft_app_profile_v5", JSON.stringify({
+      version: 5, tutorialOffered: true, tutorialCompleted: true, advisorFrequency: "normal", advisorSeen: [],
       gameplay: { autosaveCadence: "weekly", edgeScroll: true, edgeScrollSpeed: 1, cameraSmoothing: true, confirmBulldoze: true, confirmSalvage: true, defaultGameSpeed: "1x", tickerVisible: true, momentCamera: false },
-      graphics: { animations: true, ambienceFx: true, waterAnimation: true, treeSway: true, resolutionScale: 1, gridOverlays: false },
+      graphics: { quality: "auto", animations: true, ambienceFx: true, waterAnimation: true, treeSway: true, resolutionScale: 1, gridOverlays: false },
       audio: { masterVolume: 0, musicVolume: 0, sfxVolume: 0, ambienceVolume: 0, masterMuted: true, muteWhenHidden: true },
       accessibility: { colorVision: "deuteranopia", terrainPatterns: true, reducedMotion: true, textScale: 130, keybindings: {} },
       achievements: { earned: [] },

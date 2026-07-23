@@ -4,6 +4,7 @@ test("pseudo locale brackets shell, options, game, and pause copy and persists",
   await page.goto("/");
   await page.evaluate(() => {
     localStorage.removeItem("coursecraft_locale");
+    localStorage.removeItem("coursecraft_app_profile_v5");
     localStorage.removeItem("coursecraft_app_profile_v4");
   });
   await page.reload();

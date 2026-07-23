@@ -13,6 +13,8 @@ import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStor
 import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { previewTerrainStroke, type TerrainStrokePreview } from "./game/models/terrainStroke";
+import { corridorFeature, rasterizeSurfaceFeature, regionFeature, simplifySurfacePoints } from "./game/models/surfaceIntent";
+import { qualityResolutionMultiplier, resolveGraphicsQuality } from "./game/render/graphicsQuality";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
@@ -138,6 +140,26 @@ export default function App() {
     setDirty(false);
   }, []);
   const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
+  type TerrainEditSnapshot = Pick<GameState, "course" | "world"> & {
+    capital: {
+      spent: number;
+      refunded: number;
+      byTerrainSpent: Partial<Record<Terrain, number>>;
+      byTerrainTiles: Partial<Record<Terrain, number>>;
+    };
+  };
+  const terrainUndoRef = useRef<TerrainEditSnapshot[]>([]);
+  const terrainRedoRef = useRef<TerrainEditSnapshot[]>([]);
+  const [capital, setCapital] = useState<TerrainEditSnapshot["capital"]>(() => ({
+    spent: 0,
+    refunded: 0,
+    byTerrainSpent: {},
+    byTerrainTiles: {},
+  }));
+  const capitalRef = useRef(capital);
+  useEffect(() => {
+    capitalRef.current = capital;
+  }, [capital]);
   const [records, setRecords] = useState<CourseRecords>(() => emptyCourseRecords(DEFAULT_STATE.course.holes.length));
   const recordsRef = useRef(records);
   const sculptedRef = useRef(false);
@@ -157,7 +179,21 @@ export default function App() {
     if (DEBUG_PERF && (action.type !== "SET_MODE" && action.type !== "SET_ACTIVE_HOLE" && action.type !== "SET_BRUSH")) {
       logReducerDispatch();
     }
-    setGameState((prevState) => applyAction(prevState, action));
+    setGameState((prevState) => {
+      const nextState = applyAction(prevState, action);
+      if (action.type === "PAINT_TILES" && nextState !== prevState) {
+        terrainUndoRef.current = [...terrainUndoRef.current.slice(-19), {
+          course: prevState.course,
+          world: prevState.world,
+          capital: capitalRef.current,
+        }];
+        terrainRedoRef.current = [];
+      } else if (action.type === "NEW_GAME" || action.type === "LOAD_GAME") {
+        terrainUndoRef.current = [];
+        terrainRedoRef.current = [];
+      }
+      return nextState;
+    });
     if (action.type !== "NEW_GAME" && action.type !== "LOAD_GAME" && !action.type.startsWith("SET_")) markDirty();
   }, [markDirty]);
 
@@ -201,6 +237,8 @@ export default function App() {
   }, [gameState, history, records]);
 
   const [editorMode, setEditorMode] = useState<EditorMode>("PAINT");
+  const [terrainTool, setTerrainTool] = useState<"curve" | "area">("curve");
+  const [terrainBrushWidth, setTerrainBrushWidth] = useState(1);
   const [activeHoleIndex, setActiveHoleIndex] = useState(0); // 0..8
   const [selectedTeeSet, setSelectedTeeSet] = useState<TeeSet>("member");
   const [wizardStep, setWizardStep] = useState<WizardStep>("TEE");
@@ -218,12 +256,6 @@ export default function App() {
   const [decorationSpan, setDecorationSpan] = useState(3);
   const [decorationAction, setDecorationAction] = useState<"place" | "rotate" | "remove">("place");
 
-  const [capital, setCapital] = useState(() => ({
-    spent: 0,
-    refunded: 0,
-    byTerrainSpent: {} as Partial<Record<Terrain, number>>,
-    byTerrainTiles: {} as Partial<Record<Terrain, number>>,
-  }));
   const [pendingWeekReport, setPendingWeekReport] = useState<{
     week: number;
     result: WeekResult;
@@ -233,6 +265,62 @@ export default function App() {
   // Hover state moved to refs in canvas component to avoid React re-renders
 
   const [paintError, setPaintError] = useState<string | null>(null);
+  const undoTerrainEdit = useCallback(() => {
+    const snapshot = terrainUndoRef.current.pop();
+    if (!snapshot) return;
+    const current = gameStateRef.current;
+    terrainRedoRef.current = [...terrainRedoRef.current.slice(-19), {
+      course: current.course,
+      world: current.world,
+      capital,
+    }];
+    setGameState((state) => ({
+      ...state,
+      course: snapshot.course,
+      world: snapshot.world,
+      terrainVersion: state.terrainVersion + 1,
+      economyVersion: state.economyVersion + 1,
+    }));
+    setCapital(snapshot.capital);
+    setPaintError(t("terrainEdit.undone"));
+    markDirty();
+  }, [capital, markDirty, t]);
+
+  const redoTerrainEdit = useCallback(() => {
+    const snapshot = terrainRedoRef.current.pop();
+    if (!snapshot) return;
+    const current = gameStateRef.current;
+    terrainUndoRef.current = [...terrainUndoRef.current.slice(-19), {
+      course: current.course,
+      world: current.world,
+      capital,
+    }];
+    setGameState((state) => ({
+      ...state,
+      course: snapshot.course,
+      world: snapshot.world,
+      terrainVersion: state.terrainVersion + 1,
+      economyVersion: state.economyVersion + 1,
+    }));
+    setCapital(snapshot.capital);
+    setPaintError(t("terrainEdit.redone"));
+    markDirty();
+  }, [capital, markDirty, t]);
+
+  useEffect(() => {
+    if (screen !== "game" || editorMode !== "PAINT") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
+      const command = event.metaKey || event.ctrlKey;
+      if (!command || event.key.toLowerCase() !== "z") return;
+      event.preventDefault();
+      if (event.shiftKey) redoTerrainEdit();
+      else undoTerrainEdit();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [editorMode, redoTerrainEdit, screen, undoTerrainEdit]);
   const [saveModalCanSave, setSaveModalCanSave] = useState(false);
   const payloadSequenceRef = useRef(0);
   const [showObstacles, setShowObstacles] = useState(true);
@@ -249,6 +337,13 @@ export default function App() {
   const [flyoverNonce, setFlyoverNonce] = useState(0);
   const soundEnabled = !appProfile.audio.masterMuted && appProfile.audio.masterVolume > 0 && appProfile.audio.sfxVolume > 0;
   const effectiveAnimations = animationsEnabled && !appProfile.accessibility.reducedMotion;
+  const resolvedGraphicsQuality = useMemo(() => resolveGraphicsQuality(appProfile.graphics.quality, {
+    hardwareConcurrency: navigator.hardwareConcurrency || 4,
+    deviceMemory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+    devicePixelRatio: window.devicePixelRatio || 1,
+  }), [appProfile.graphics.quality]);
+  const effectiveResolutionScale = appProfile.graphics.resolutionScale *
+    qualityResolutionMultiplier(resolvedGraphicsQuality);
   const [showShotPlan, setShowShotPlan] = useState(true);
   const [peakCash, setPeakCash] = useState(DEFAULT_STATE.world.cash);
 
@@ -1132,6 +1227,7 @@ export default function App() {
         theme: course.theme ?? "parkland",
         width: course.width,
         height: course.height,
+        smoothSurfaceFeatures: course.surfaceIntent?.features.length ?? 0,
         holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length,
         terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>),
         obstacleCounts: course.obstacles.reduce((counts, obstacle) => ({ ...counts, [obstacle.type]: (counts[obstacle.type] ?? 0) + 1 }), {} as Partial<Record<ObstacleType, number>>),
@@ -1225,7 +1321,7 @@ export default function App() {
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       progression: { panelOpen: showProgression, tier: reputationTier(world.reputation).id, staffCap: reputationTier(world.reputation).staffCap, buildingTierCap: reputationTier(world.reputation).buildingTierCap },
       editor: { mode: editorMode, selectedTerrain: selected, selectedDecoration: decorationKind, decorationRotation, decorationSpan, decorationAction, activeHole: activeHoleIndex + 1, selectedTeeSet, teePlacementPending: pendingTeePlacement ? { teeSet: pendingTeePlacement.teeSet, point: pendingTeePlacement.point, netCost: pendingTeePlacement.netCost } : null },
-      graphics: { animations: effectiveAnimations, waterAnimation: effectiveAnimations && appProfile.graphics.waterAnimation, treeSway: effectiveAnimations && appProfile.graphics.treeSway },
+      graphics: { quality: appProfile.graphics.quality, resolvedQuality: resolvedGraphicsQuality, animations: effectiveAnimations, waterAnimation: effectiveAnimations && appProfile.graphics.waterAnimation, treeSway: effectiveAnimations && appProfile.graphics.treeSway },
       retention: { photoMode, recordsOpen: showRetention, achievementsEarned: appProfile.achievements.earned.length, totalRounds: records.totalRounds, aces: records.aces.length, tickerVisible: appProfile.gameplay.tickerVisible },
       tournament: {
         panelOpen: showTournaments,
@@ -1243,7 +1339,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, architectureReport, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, records, screen, selected, selectedParcelId, selectedTeeSet, showCourseManager, showLandOffice, showLiveOverview, showProgression, showPropertyManagement, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, architectureReport, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, showCourseManager, showLandOffice, showLiveOverview, showProgression, showPropertyManagement, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1654,9 +1750,25 @@ export default function App() {
     applyTileChange(idx, next, opts);
   }
 
+  const buildTerrainSurfaceFeature = useCallback((points: Point[]) => {
+    const maxKnots = 128;
+    const stride = Math.max(1, Math.ceil(points.length / maxKnots));
+    const sampled = points
+      .filter((_, index) => index % stride === 0 || index === points.length - 1)
+      .map((point) => ({ x: point.x + 0.5, y: point.y + 0.5 }));
+    const knots = simplifySurfacePoints(sampled, terrainTool === "area" ? 0.45 : 0.8);
+    const feature = terrainTool === "area" && knots.length >= 3
+      ? regionFeature(course, selected, knots)
+      : corridorFeature(course, selected, knots, Math.max(0.9, terrainBrushWidth));
+    const coveragePoints = rasterizeSurfaceFeature(feature, course.width, course.height);
+    feature.coverage = coveragePoints.map((point) => point.y * course.width + point.x);
+    return { feature, coveragePoints };
+  }, [course, selected, terrainBrushWidth, terrainTool]);
+
   const getTerrainStrokePreview = useCallback((points: Point[]): TerrainStrokePreview => {
-    return previewTerrainStroke(course, points, selected, world.cash, costMult, world.reputation);
-  }, [course, selected, world.cash, costMult, world.reputation]);
+    const { coveragePoints } = buildTerrainSurfaceFeature(points);
+    return previewTerrainStroke(course, coveragePoints, selected, world.cash, costMult, world.reputation);
+  }, [buildTerrainSurfaceFeature, course, selected, world.cash, costMult, world.reputation]);
 
   const commitTerrainStroke = useCallback((points: Point[]) => {
     if (world.isBankrupt) return;
@@ -1679,7 +1791,8 @@ export default function App() {
       return;
     }
 
-    dispatch({ type: "PAINT_TILES", tiles: preview.tiles });
+    const { feature } = buildTerrainSurfaceFeature(points);
+    dispatch({ type: "PAINT_TILES", tiles: preview.tiles, surfaceFeature: feature });
     setCapital((capital) => ({
       spent: capital.spent + preview.charged,
       refunded: capital.refunded + preview.refunded,
@@ -1701,7 +1814,7 @@ export default function App() {
       setPaintError(null);
     }
     void audio.playSfx("brush");
-  }, [world.isBankrupt, getTerrainStrokePreview, selected, dispatch, audio, t]);
+  }, [world.isBankrupt, getTerrainStrokePreview, buildTerrainSurfaceFeature, selected, dispatch, audio, t]);
 
   // Smart fairway painting: paint fairway along centerline with specified width in yards
   function smartPaintFairway(widthYards: number) {
@@ -2602,11 +2715,12 @@ export default function App() {
                 surveyMode={showLandOffice}
                 selectedParcelId={selectedParcelId}
                 architectureWarnings={architectureReport?.warnings}
-                animationsEnabled={effectiveAnimations}
-                ambienceFx={appProfile.graphics.ambienceFx}
-                waterAnimation={appProfile.graphics.waterAnimation}
-                treeSway={appProfile.graphics.treeSway}
-                resolutionScale={appProfile.graphics.resolutionScale}
+                animationsEnabled={effectiveAnimations && resolvedGraphicsQuality !== "low"}
+                graphicsQuality={resolvedGraphicsQuality}
+                ambienceFx={appProfile.graphics.ambienceFx && resolvedGraphicsQuality !== "low"}
+                waterAnimation={appProfile.graphics.waterAnimation && resolvedGraphicsQuality !== "low"}
+                treeSway={appProfile.graphics.treeSway && resolvedGraphicsQuality === "high"}
+                resolutionScale={effectiveResolutionScale}
                 worldSeed={world.runSeed}
                 cameraSmoothing={appProfile.gameplay.cameraSmoothing && !appProfile.accessibility.reducedMotion}
                 edgeScroll={appProfile.gameplay.edgeScroll}
@@ -2853,6 +2967,12 @@ export default function App() {
         prev={history.length >= 2 ? history[history.length - 2] : undefined}
         selected={selected}
         setSelected={setSelected}
+        terrainTool={terrainTool}
+        setTerrainTool={setTerrainTool}
+        terrainBrushWidth={terrainBrushWidth}
+        setTerrainBrushWidth={setTerrainBrushWidth}
+        onUndoTerrain={undoTerrainEdit}
+        onRedoTerrain={redoTerrainEdit}
         setGreenFee={(n) => {
           // Scenario constraint (ZKU-164): committee sets the fee, not you.
           if (world.constraints?.fixedGreenFee != null) return;

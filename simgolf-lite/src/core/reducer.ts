@@ -27,6 +27,7 @@ import {
 import { revalidateScheduledTournaments } from "../game/tournaments/tournaments";
 import { canPurchaseParcel, isOwnedTile } from "../game/estate/estate";
 import { applyPropertyCommand } from "../game/property/property";
+import { appendSurfaceFeature } from "../game/models/surfaceIntent";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -69,9 +70,12 @@ export function applyAction(state: GameState, action: Action): GameState {
       const newTiles = state.course.tiles.slice();
       for (const { x, y, terrain } of preview.tiles) newTiles[y * state.course.width + x] = terrain;
 
+      const paintedCourse = { ...state.course, tiles: newTiles };
       newState = {
         ...newState,
-        course: { ...state.course, tiles: newTiles },
+        course: action.surfaceFeature
+          ? { ...paintedCourse, surfaceIntent: appendSurfaceFeature(paintedCourse, action.surfaceFeature) }
+          : paintedCourse,
         world: {
           ...state.world,
           cash: preview.projectedCash,

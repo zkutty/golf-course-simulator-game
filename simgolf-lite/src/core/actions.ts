@@ -1,9 +1,9 @@
-import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation } from "../game/models/types";
+import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation, SurfaceFeature } from "../game/models/types";
 import type { PropertyCommand } from "../game/property/property";
 
 // Actions that mutate terrain (increment terrainVersion)
 export type TerrainMutationAction =
-  | { type: "PAINT_TILES"; tiles: Array<{ x: number; y: number; terrain: Terrain }> }
+  | { type: "PAINT_TILES"; tiles: Array<{ x: number; y: number; terrain: Terrain }>; surfaceFeature?: SurfaceFeature }
   | { type: "SCULPT_TILES"; deltas: Array<{ x: number; y: number; delta: number }> }
   | { type: "PLACE_TEE"; holeIndex: number; position: Point }
   | { type: "MOVE_TEE"; holeIndex: number; position: Point; oldPosition: Point }
@@ -47,7 +47,7 @@ export type MarkerMutationAction =
 
 // Actions that mutate economy (increment economyVersion)
 export type EconomyMutationAction =
-  | { type: "PAINT_TILES"; tiles: Array<{ x: number; y: number; terrain: Terrain }> }
+  | { type: "PAINT_TILES"; tiles: Array<{ x: number; y: number; terrain: Terrain }>; surfaceFeature?: SurfaceFeature }
   | { type: "SCULPT_TILES"; deltas: Array<{ x: number; y: number; delta: number }> }
   | { type: "PLACE_TEE"; holeIndex: number; position: Point }
   | { type: "MOVE_TEE"; holeIndex: number; position: Point; oldPosition: Point }

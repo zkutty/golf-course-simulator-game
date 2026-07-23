@@ -8,7 +8,7 @@ export type TextScale = 90 | 100 | 115 | 130;
 export interface EarnedAchievement { id: string; earnedAt: number; courseName: string }
 
 export interface AppProfile {
-  version: 4;
+  version: 5;
   tutorialOffered: boolean;
   tutorialCompleted: boolean;
   advisorFrequency: AdvisorFrequency;
@@ -26,6 +26,7 @@ export interface AppProfile {
     momentCamera: boolean;
   };
   graphics: {
+    quality: "auto" | "high" | "medium" | "low";
     animations: boolean;
     ambienceFx: boolean;
     waterAnimation: boolean;
@@ -51,15 +52,16 @@ export interface AppProfile {
   achievements: { earned: EarnedAchievement[] };
 }
 
-const PROFILE_KEY = "coursecraft_app_profile_v4";
-const LEGACY_PROFILE_KEY = "coursecraft_app_profile_v3";
-const OLDER_PROFILE_KEY = "coursecraft_app_profile_v2";
-const OLDEST_PROFILE_KEY = "coursecraft_app_profile_v1";
+const PROFILE_KEY = "coursecraft_app_profile_v5";
+const LEGACY_PROFILE_KEY = "coursecraft_app_profile_v4";
+const OLDER_PROFILE_KEY = "coursecraft_app_profile_v3";
+const OLDEST_PROFILE_KEY = "coursecraft_app_profile_v2";
+const ANCIENT_PROFILE_KEY = "coursecraft_app_profile_v1";
 const LEGACY_AUDIO_KEY = "coursecraft_audio_volumes";
 
 /** Shipping defaults. Keep additions migration-safe and covered by tests. */
 export const DEFAULT_APP_PROFILE: AppProfile = {
-  version: 4,
+  version: 5,
   tutorialOffered: false,
   tutorialCompleted: false,
   advisorFrequency: "normal",
@@ -76,6 +78,7 @@ export const DEFAULT_APP_PROFILE: AppProfile = {
     momentCamera: false,
   },
   graphics: {
+    quality: "auto",
     animations: true,
     ambienceFx: true,
     waterAnimation: true,
@@ -133,12 +136,12 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
   const achievements = record(raw.achievements);
 
   let legacyAudio: Record<string, unknown> = {};
-  if (storage && raw.version !== 4) {
+  if (storage && raw.version !== 5) {
     try { legacyAudio = record(JSON.parse(storage.getItem(LEGACY_AUDIO_KEY) ?? "null")); } catch { /* defaults */ }
   }
 
   return {
-    version: 4,
+    version: 5,
     tutorialOffered: raw.tutorialOffered === true,
     tutorialCompleted: raw.tutorialCompleted === true,
     advisorFrequency: oneOf(raw.advisorFrequency, ["chatty", "normal", "important", "off"], defaults.advisorFrequency),
@@ -157,6 +160,7 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
       momentCamera: bool(gameplay.momentCamera, defaults.gameplay.momentCamera),
     },
     graphics: {
+      quality: oneOf(graphics.quality, ["auto", "high", "medium", "low"], defaults.graphics.quality),
       animations: bool(graphics.animations, defaults.graphics.animations),
       ambienceFx: bool(graphics.ambienceFx, storage?.getItem("coursecraft_ambience") !== "off"),
       waterAnimation: bool(graphics.waterAnimation, defaults.graphics.waterAnimation),
@@ -198,7 +202,12 @@ export function loadAppProfile(storage = browserStorage()): AppProfile {
   if (!storage) return cloneDefaults();
   try {
     const current = storage.getItem(PROFILE_KEY);
-    const legacy = current == null ? storage.getItem(LEGACY_PROFILE_KEY) ?? storage.getItem(OLDER_PROFILE_KEY) ?? storage.getItem(OLDEST_PROFILE_KEY) : null;
+    const legacy = current == null
+      ? storage.getItem(LEGACY_PROFILE_KEY) ??
+        storage.getItem(OLDER_PROFILE_KEY) ??
+        storage.getItem(OLDEST_PROFILE_KEY) ??
+        storage.getItem(ANCIENT_PROFILE_KEY)
+      : null;
     const parsed = JSON.parse(current ?? legacy ?? "null");
     const profile = normalizeProfile(parsed, storage);
     const hasMotionPreference = "reducedMotion" in record(record(parsed).accessibility);

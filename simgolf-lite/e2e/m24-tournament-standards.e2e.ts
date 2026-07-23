@@ -58,9 +58,9 @@ test("M24 readiness remains usable at 130% text and in pseudo locale", async ({ 
   await page.goto("/?m24Fixture=1");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course?.name), { timeout: 45_000 }).toBe("M24 Tournament Standards Club");
   await page.evaluate(() => {
-    const profile = JSON.parse(localStorage.getItem("coursecraft_app_profile_v4") ?? "{}");
+    const profile = JSON.parse(localStorage.getItem("coursecraft_app_profile_v5") ?? "{}");
     profile.accessibility = { ...profile.accessibility, textScale: 130, reducedMotion: true };
-    localStorage.setItem("coursecraft_app_profile_v4", JSON.stringify(profile));
+    localStorage.setItem("coursecraft_app_profile_v5", JSON.stringify(profile));
     localStorage.setItem("coursecraft_locale", "pseudo");
   });
   await page.reload();
