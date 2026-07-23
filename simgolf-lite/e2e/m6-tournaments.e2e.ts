@@ -31,11 +31,10 @@ test("M6 schedules events and presents live tournament standings", async ({ page
   const shot = await page.screenshot({ fullPage: true, path: "artifacts/m6-tournament-live.png" });
   await testInfo.attach("m6-tournament-live", { body: shot, contentType: "image/png" });
 
-  for (let index = 0; index < 16; index++) {
+  await expect.poll(async () => {
     await page.evaluate(() => window.advanceTime?.(2_000));
-    const active = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active);
-    if (!active) break;
-  }
+    return page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active);
+  }, { timeout: 45_000 }).toBeNull();
   await expect(page.getByTestId("active-tournament")).toBeHidden();
   await expect(page.getByText("Recent results")).toBeVisible();
   await expect(page.getByTestId("tournament-panel").locator("details")).toHaveCount(1);

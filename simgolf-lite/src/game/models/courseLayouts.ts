@@ -26,10 +26,14 @@ export function normalizeCourseLayouts(input: Course): Course {
   const cached = normalizedCourseCache.get(input);
   if (cached) return cached;
   const usedHoleIds = new Set<string>();
-  const holes = input.holes.slice(0, MAX_ESTATE_HOLES).map((hole, index) => {
+  const normalizedHoles = input.holes.slice(0, MAX_ESTATE_HOLES).map((hole, index) => {
     const id = uniqueId(typeof hole.id === "string" && hole.id.trim() ? hole.id.trim() : `hole-${index + 1}`, usedHoleIds);
     return hole.id === id ? hole : { ...hole, id };
   });
+  const holes = normalizedHoles.length === input.holes.length &&
+    normalizedHoles.every((hole, index) => hole === input.holes[index])
+    ? input.holes
+    : normalizedHoles;
   const holeIds = new Set(holes.map((hole) => hole.id!));
   const usedLayoutIds = new Set<string>();
   const normalized: CourseLayout[] = [];
@@ -197,7 +201,9 @@ export function updateLayout(course: Course, courseId: string, patch: Partial<Pi
     ...(patch.draftHoleIds != null ? { draftHoleIds: [...new Set(patch.draftHoleIds.filter((id) => validIds.has(id)))] } : {}),
   });
   const active = layouts.find((layout) => layout.id === normalized.activeCourseId) ?? layouts[0];
-  return { ...normalized, layouts, baseGreenFee: active.greenFee };
+  const result = { ...normalized, layouts, baseGreenFee: active.greenFee };
+  normalizedCourseCache.set(result, result);
+  return result;
 }
 
 export function assignHoleToLayout(course: Course, courseId: string, holeId: string): Course {

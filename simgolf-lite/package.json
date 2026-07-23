@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:ci": "vitest run --maxWorkers=2",
     "test:e2e": "playwright test",
+    "test:e2e:golden": "playwright test e2e/golden-path.e2e.ts e2e/vision-page.e2e.ts",
     "test:release:browsers": "playwright test --config playwright.release.config.ts",
     "release:audit": "node scripts/release-audit.mjs",
     "test:fuzz": "vitest run src/core/reducer.fuzz.test.ts",

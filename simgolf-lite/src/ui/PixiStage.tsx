@@ -2123,7 +2123,21 @@ export function PixiStage(props: PixiStageProps) {
       });
       layer.addChild(graphic);
     }
-  }, [appReady, course, props.colorVision, rotation]);
+    // Course operations and layout metadata share the Course root object but
+    // cannot change any pixels in this layer. Rebuilding every triangulated
+    // surface for those updates can monopolize the browser main thread.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    appReady,
+    course.width,
+    course.height,
+    course.tiles,
+    course.elevations,
+    course.surfaceIntent,
+    course.theme,
+    props.colorVision,
+    rotation,
+  ]);
 
   // ---------------------------------------------------------------------
   // Objects layer — obstacles, ground-anchored and depth-sorted

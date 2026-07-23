@@ -166,11 +166,73 @@ function round1(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
-const setupRatingCache = new WeakMap<Course, Map<string, SetupRatingSummary>>();
+interface RatingGeometryCache {
+  elevations: Course["elevations"];
+  obstacles: Course["obstacles"];
+  width: number;
+  height: number;
+  yardsPerTile: number;
+  holeSignature: string;
+  setups: Map<string, SetupRatingSummary>;
+  ratings?: Record<TeeSet, PublishedTeeRating>;
+  rating?: RatingSummary;
+}
+
+// Operating policy, green fee, layout metadata, and other management state
+// live on the Course root but do not affect a physical course rating. Key the
+// expensive shot-solver work by immutable geometry instead of root identity so
+// operations-only updates reuse it.
+const ratingGeometryCache = new WeakMap<Course["tiles"], RatingGeometryCache[]>();
+const holeSignatureCache = new WeakMap<Course["holes"], string>();
+
+function ratingHoleSignature(course: Course): string {
+  const cached = holeSignatureCache.get(course.holes);
+  if (cached) return cached;
+  const point = (value: Point | null | undefined) => value ? `${value.x},${value.y}` : "-";
+  const signature = course.holes.map((hole) => [
+    ...TEE_SETS.map((teeSet) => point(getTeeBox(hole, teeSet))),
+    ...PIN_ROTATIONS.map((pinRotation) => point(getPinPosition(hole, pinRotation))),
+    ...TEE_SETS.map((teeSet) => {
+      const par = hole.parByTee?.[teeSet];
+      if (par?.mode === "MANUAL") return `M${par.par}`;
+      if (par?.mode === "AUTO") return "A";
+      if (teeSet === "member" && hole.parMode === "MANUAL") return `M${hole.parManual ?? 4}`;
+      return "A";
+    }),
+  ].join("|")).join(";");
+  holeSignatureCache.set(course.holes, signature);
+  return signature;
+}
+
+function ratingGeometry(course: Course): RatingGeometryCache {
+  const entries = ratingGeometryCache.get(course.tiles) ?? [];
+  if (entries.length === 0) ratingGeometryCache.set(course.tiles, entries);
+  const holeSignature = ratingHoleSignature(course);
+  const yardsPerTile = course.yardsPerTile ?? 10;
+  const cached = entries.find((entry) =>
+    entry.elevations === course.elevations &&
+    entry.obstacles === course.obstacles &&
+    entry.width === course.width &&
+    entry.height === course.height &&
+    entry.yardsPerTile === yardsPerTile &&
+    entry.holeSignature === holeSignature
+  );
+  if (cached) return cached;
+  const created: RatingGeometryCache = {
+    elevations: course.elevations,
+    obstacles: course.obstacles,
+    width: course.width,
+    height: course.height,
+    yardsPerTile,
+    holeSignature,
+    setups: new Map(),
+  };
+  entries.push(created);
+  return created;
+}
 
 export function computeRatingForSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): SetupRatingSummary {
-  let setups = setupRatingCache.get(course);
-  if (!setups) { setups = new Map(); setupRatingCache.set(course, setups); }
+  const setups = ratingGeometry(course).setups;
   const cacheKey = `${teeSet}:${pinRotation}`;
   const cached = setups.get(cacheKey);
   if (cached) return cached;
@@ -259,26 +321,24 @@ function emptyPublishedRating(course: Course, teeSet: TeeSet): PublishedTeeRatin
   };
 }
 
-const ratingsCache = new WeakMap<Course, Record<TeeSet, PublishedTeeRating>>();
-
 export function computeRatingsByTee(course: Course): Record<TeeSet, PublishedTeeRating> {
-  const cached = ratingsCache.get(course);
+  const geometry = ratingGeometry(course);
+  const cached = geometry.ratings;
   if (cached) return cached;
   const result = Object.fromEntries(TEE_SETS.map((teeSet) => {
     const configuredRotations = PIN_ROTATIONS.filter((rotation) => course.holes.some((hole) => getTeeBox(hole, teeSet) && getPinPosition(hole, rotation)));
     if (configuredRotations.length === 0) return [teeSet, emptyPublishedRating(course, teeSet)];
     return [teeSet, averageSetups(teeSet, configuredRotations.map((rotation) => computeRatingForSetup(course, teeSet, rotation)))];
   })) as Record<TeeSet, PublishedTeeRating>;
-  ratingsCache.set(course, result);
+  geometry.ratings = result;
   return result;
 }
 
 // Compatibility contract: all legacy consumers continue to see the stable
 // published Member rating, independent of the selected daily pin rotation.
-const ratingCache = new WeakMap<Course, RatingSummary>();
-
 export function computeCourseRatingAndSlope(course: Course): RatingSummary {
-  const cached = ratingCache.get(course);
+  const geometry = ratingGeometry(course);
+  const cached = geometry.rating;
   if (cached) return cached;
   const member = computeRatingsByTee(course).member;
   const result: RatingSummary = {
@@ -289,6 +349,6 @@ export function computeCourseRatingAndSlope(course: Course): RatingSummary {
     slopeRaw: member.slopeRaw,
     slope: member.slope,
   };
-  ratingCache.set(course, result);
+  geometry.rating = result;
   return result;
 }

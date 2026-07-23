@@ -64,6 +64,9 @@ describe("M26 multi-course property operations", () => {
   it("keeps draft edits separate and publishes only complete unique 9/18-hole routings", () => {
     const course = multiCourse();
     const north = course.layouts![0];
+    const operationsOnly = updateLayout(course, north.id, { greenFee: 130 });
+    expect(operationsOnly.holes).toBe(course.holes);
+    expect(normalizeCourseLayouts(operationsOnly)).toBe(operationsOnly);
     const shortened = updateLayout(course, north.id, { draftHoleIds: north.draftHoleIds.slice(0, 8) });
     expect(validateDraftRouting(shortened, north.id).reasons).toContain("Routing must contain exactly 9 or 18 holes.");
     expect(shortened.layouts![0].publishedHoleIds).toHaveLength(18);

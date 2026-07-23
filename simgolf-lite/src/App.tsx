@@ -614,6 +614,11 @@ export default function App() {
         holes: [withNormalizedHoleSetup({ ...first, teeBoxes: { ...first.teeBoxes, forward: null, championship: null } }), ...fixtureCourse.holes.slice(1)],
       };
     }
+    // Browser fixtures should enter the same normalized shape as migrated and
+    // newly created games. Otherwise the first management-only update adds
+    // layout IDs, looks like a physical hole edit, and needlessly replans every
+    // live golfer in the renderer stress scenes.
+    fixtureCourse = normalizeCourseLayouts(fixtureCourse);
     const fixtureWorld = {
       ...gameStateRef.current.world,
       week: 1,
@@ -623,6 +628,10 @@ export default function App() {
       isBankrupt: false,
       distressWeeks: 0,
       mode: "sandbox" as const,
+      ...(isPerfFixture ? {
+        staffLevel: 5,
+        staffRoster: staffFromLevel(5, activeCourseLayout(fixtureCourse).id),
+      } : {}),
       ...(isPropertyFixture ? { enterprise: emptyPropertyEnterprise() } : {}),
     };
     dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });

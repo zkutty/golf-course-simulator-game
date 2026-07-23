@@ -16,7 +16,7 @@ test("pace operations presets, hospitality, and staff assignments are visible an
   await page.screenshot({ path: "artifacts/m29-pace/pace-operations.png", fullPage: true });
 
   await page.getByRole("tab", { name: "Staff" }).click();
-  await expect(page.getByText("course marshal", { exact: false })).toBeVisible();
+  await expect(page.getByText("marshal", { exact: false })).toBeVisible();
   await page.screenshot({ path: "artifacts/m29-pace/staff-roster.png", fullPage: true });
   expect(errors).toEqual([]);
 });

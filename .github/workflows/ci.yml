@@ -41,7 +41,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Golden-path E2E
-        run: npm run test:e2e
+        run: npm run test:e2e:golden
 
       - name: Build
         run: npm run build

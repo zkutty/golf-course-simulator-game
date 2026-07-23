@@ -1,5 +1,16 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-07-23 — Golden-path deployment repair in progress
+
+- Reproduced the M29 pace-control hang locally and inspected its Playwright trace: the browser main thread stopped during the `brisk` course-operations update, with no network or console error.
+- Isolated the regression to M35's smooth-surface Pixi effect rebuilding every triangulated terrain surface whenever the root course object changed, including operations-only changes.
+- Narrowed the smooth-surface render dependencies to geometry, theme, accessibility palette, and camera rotation.
+- Corrected the CI deployment gate so its `Golden-path E2E` step runs the dedicated golden-path and vision-page specs instead of all 45 acceptance specs. The full suite remains available through `npm run test:e2e` for release/nightly regression.
+- A paused JavaScript stack exposed the dominant hang: an operations update invalidated root-identity course-rating caches, then fixture normalization looked like a geometry edit and replanned 100 golfers. Rating caches now key off immutable physical geometry, layout normalization preserves stable hole arrays, normalized results remain cached, and browser fixtures enter normalized state.
+- Restored the M29 stress fixture's intended five staff roles and replaced M6's arbitrary tournament step cutoff with deterministic completion polling.
+- Verification: 61 Vitest files / 375 passed with one intentional skip; typecheck; production build; lint/i18n with the same seven existing hook warnings and no errors; exact CI golden path and vision specs (9 passed in 34.5s); M29 acceptance (13.8s); M12/M21/M22/M24/M27 fixture regression at two workers; and M6 tournament acceptance.
+- Visually inspected desktop/mobile vision captures, M29 pace/staff panels, the M6 completion failure state used to repair its polling, and a headed bundled-client renderer capture. The bundled client also confirmed valid 18-hole/100-golfer text state with no console-error artifact.
+
 ## 2026-07-23 — Shareable game-vision page in progress
 
 Current request: “Create a slick html page that links from the home page which shows the vision of the game, functionality, features, depth, etc so I could share with friends so they know what the end product could be. Include renderings from buildings and tutorial caddie etc to make it feel like a storyboard”

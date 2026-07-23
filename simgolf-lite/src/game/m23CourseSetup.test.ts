@@ -86,6 +86,20 @@ describe("M23 course setup model", () => {
     expect(ratings.member.rotationsUsed).toEqual(["A", "B", "C"]);
     expect(ratings.member.holesUsed).toBe(9);
     expect(computeRatingsByTee(course)).toBe(ratings);
+    const operationsOnlyUpdate = {
+      ...course,
+      layouts: [{
+        id: "course-primary",
+        name: course.name,
+        draftHoleIds: [],
+        publishedHoleIds: [],
+        roundLength: 9 as const,
+        state: "open" as const,
+        greenFee: 95,
+      }],
+    };
+    expect(computeRatingsByTee(operationsOnlyUpdate)).toBe(ratings);
+    expect(computeCourseRatingAndSlope(operationsOnlyUpdate)).toBe(computeCourseRatingAndSlope(course));
     expect(computeCourseRatingAndSlope({ ...course, activePinRotation: "A" })).toEqual(computeCourseRatingAndSlope({ ...course, activePinRotation: "C" }));
     expect(computeRatingForSetup(course, "member", "B").pinDifficultyDelta).toBeGreaterThanOrEqual(0);
   }, 30_000);
