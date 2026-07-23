@@ -7,7 +7,7 @@ import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
-import type { BuildingTier, ConcessionType, DecorationKind, DecorationRotation, ParSetting, PinRotation, Point, TeeSet, Terrain, WeekResult } from "./game/models/types";
+import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, ParSetting, PinRotation, Point, TeeSet, Terrain, WeekResult, World } from "./game/models/types";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
 import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStore";
 import { SaveLoadModal } from "./ui/SaveLoadModal";
@@ -116,7 +116,7 @@ import { normalizedStaff, staffFromLevel } from "./game/live/pace";
 import { WeekCloseReport } from "./ui/WeekCloseReport";
 import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
-import { applyPropertyCommand, emptyPropertyEnterprise, propertySummary, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
+import { applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -1175,6 +1175,22 @@ export default function App() {
             professionals: summary.enterprise.professionals.length,
             membership: summary.enterprise.membership,
             reservations: summary.enterprise.reservations.length,
+            reservationDetails: summary.enterprise.reservations.map((reservation) => ({
+              id: reservation.id,
+              propertyId: reservation.assetId,
+              package: reservation.package,
+              status: reservation.status ?? "booked",
+              segment: reservation.travelerSegment ?? "tourist",
+              rooms: reservation.roomCount ?? 1,
+              guests: reservation.partySize ?? 1,
+              checkIn: [reservation.checkInWeek ?? reservation.week, reservation.checkInDay ?? 0],
+              checkOut: [reservation.checkOutWeek ?? reservation.week, reservation.checkOutDay ?? 6],
+              transport: reservation.transportMode ?? "self_drive",
+              itinerary: reservation.entitlements?.map((entitlement) => ({ kind: entitlement.kind, status: entitlement.status ?? (entitlement.redeemed ? "fulfilled" : "pending") })) ?? [],
+              folioTotal: (reservation.folio ?? []).reduce((sum, item) => sum + item.amount, 0),
+              refund: reservation.refund ?? 0,
+            })),
+            resort: summary.resortMetrics,
             outings: summary.enterprise.outings.filter((outing) => outing.status === "scheduled").length,
             occupiedHomes: summary.occupiedHomes,
             complaints: summary.openComplaints,
@@ -1323,6 +1339,71 @@ export default function App() {
           week: loaded.world.week,
           cash: loaded.world.cash,
           rounds: run.rounds,
+        };
+      },
+      runResortGoldenPath: async () => {
+        let fixtureCourse: Course = { ...createReferenceCourse(), property: starterPropertyCourse() };
+        let fixtureWorld: World = { ...gameStateRef.current.world, cash: 1_000_000, reputation: 82, enterprise: emptyPropertyEnterprise(), isBankrupt: false, distressWeeks: 0 };
+        const commands: PropertyCommand[] = [
+          { type: "BUILD", kind: "driving_range" },
+          { type: "BUILD", kind: "clubhouse" },
+          { type: "BUILD", kind: "restaurant" },
+          { type: "BUILD", kind: "lodge" },
+          { type: "BUILD", kind: "shuttle" },
+          { type: "HIRE_SERVICE", role: "frontDesk" },
+          { type: "HIRE_SERVICE", role: "housekeeping" },
+          { type: "HIRE_SERVICE", role: "maintenance" },
+          { type: "HIRE_SERVICE", role: "concierge" },
+          { type: "HIRE_SERVICE", role: "foodService" },
+          { type: "HIRE_SERVICE", role: "shuttleDrivers" },
+          { type: "BOOK_PACKAGE", package: "stay_and_play" },
+        ];
+        for (const command of commands) {
+          const result = applyPropertyCommand(fixtureCourse, fixtureWorld, command);
+          if (!result.ok) throw new Error(result.message);
+          fixtureCourse = result.course;
+          fixtureWorld = result.world;
+        }
+        fixtureWorld = {
+          ...fixtureWorld,
+          enterprise: {
+            ...fixtureWorld.enterprise!,
+            resort: { ...fixtureWorld.enterprise!.resort, dirtyRooms: 2, serviceQueue: 2 },
+          },
+        };
+        const recovered = applyPropertyCommand(fixtureCourse, fixtureWorld, { type: "RECOVER_SERVICE" });
+        if (!recovered.ok) throw new Error(recovered.message);
+        fixtureWorld = recovered.world;
+        fixtureWorld = { ...fixtureWorld, week: fixtureWorld.week + 1 };
+        const arrival = settlePropertyDay(fixtureCourse, fixtureWorld, 0, 0);
+        const saveWorld = { ...arrival.world, staffRoster: normalizedStaff(arrival.world, arrival.course) };
+        const midStayPayload: SavePayload = {
+          course: arrival.course,
+          world: saveWorld,
+          history: historyRef.current,
+          records: recordsRef.current,
+          live: snapshotLiveSimulation({ state: createLiveState(arrival.course, saveWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }),
+          tutorial: tutorialProgress,
+        };
+        const beforeHash = hashGameState(midStayPayload);
+        await saveToSlot("e2e-m32", "manual", "M32 mid-stay", midStayPayload);
+        const loaded = await loadSlot("e2e-m32");
+        if (!loaded) throw new Error("M32 mid-stay slot failed to reload");
+        const afterHash = hashGameState(loaded);
+        const serviceDay = settlePropertyDay(loaded.course, loaded.world, 1, 0);
+        const checkout = settlePropertyDay(serviceDay.course, serviceDay.world, 2, 0);
+        const reservation = checkout.world.enterprise?.reservations.find((candidate) => candidate.package === "stay_and_play");
+        dispatch({ type: "LOAD_GAME", course: checkout.course, world: checkout.world });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(checkout.course, checkout.world, 2), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        return {
+          beforeHash,
+          afterHash,
+          status: reservation?.status ?? "missing",
+          fulfilled: reservation?.entitlements?.filter((entitlement) => entitlement.status === "fulfilled").length ?? 0,
+          total: reservation?.entitlements?.length ?? 0,
+          folioTotal: reservation?.folio?.reduce((sum, item) => sum + item.amount, 0) ?? 0,
+          value: reservation?.value ?? 0,
+          serviceQueue: checkout.world.enterprise?.resort.serviceQueue ?? -1,
         };
       },
       validateFixture: (text: string) => {
@@ -2455,6 +2536,7 @@ export default function App() {
                 showGolfers={!photoMode || photoGolfers}
                 showMarkers={!photoMode || photoMarkers}
                 dayMinute={live.status.dayMinute}
+                resortOperations={world.enterprise?.resort}
                 sculptRadius={sculptRadius}
                 onCameraUpdate={(camera) => {
                   holeEditCameraManualRef.current = true;

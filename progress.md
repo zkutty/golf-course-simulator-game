@@ -565,3 +565,17 @@ Previous prompt: Let’s do m14 in linear for this project
 - Integrated access capacity into golfer demand and every commercial visitor stream; daily settlement now includes practice buckets/skill gains, lessons, memberships/churn, retail and food COGS, outings, lodging packages/room operations/service recovery, resident demand, valuations, ball-strike complaints/claims, property upkeep, wages, and core golf/concession entries in one bounded ledger.
 - Added the Property Enterprise management UI, world-space vector facilities, arrival/academy/destination/community/ledger reporting, safety analysis by contributing hole, and automation telemetry. The dedicated browser flow builds and upgrades the complete campus/resort/community chain and visually verifies the result.
 - Final verification: 56 Vitest files / 348 passed with one intentional skip; production build; lint/i18n with seven pre-existing hook warnings and no errors; save/reload golden path; M31–M33 Playwright acceptance; and the 36-hole/100-golfer performance smoke at 0.28ms renderer work against the 8ms budget. The full legacy Playwright sweep also exposed M6 and M29 failures that reproduce identically on a clean `main` checkout and are not regressions from this work.
+
+## 2026-07-23 — M32 destination resort completion
+
+- Upgraded the resort contract to version 2 with sanitized migration-safe room classes, room counts, traveler segments, companions, transport modes, luggage/vehicle state, scheduled entitlement status, revalidation outcomes, and bounded folio transactions.
+- Replaced arrival-week inventory checks with per-night overlap accounting, per-property occupancy, clean/out-of-order room constraints, exact deposits/balances/refunds, and deterministic check-in, service-day, checkout, and housekeeping transitions.
+- Added capacity-backed room-only, stay-and-play, academy, and event previews with coupled room/golf/practice/dining/access/shuttle blockers, current-demand rate ceilings, estimated cost/margin, and anti-overbuilding pressure. Remote parking now contributes only when a staffed shuttle connects it.
+- Included services execute only on their scheduled day and cannot redeem twice. Post-booking course, facility, staffing, or transport failures produce a visible queue, one deterministic component refund, a folio line, and a non-duplicating ledger adjustment.
+- Added resort staffing for maintenance and concierge/bag service, operational metrics for occupancy/ADR/RevPAR/length of stay/package margin/ancillary spend/transport cost/destination appeal, capacity guidance, and accessible reservation/itinerary/folio reporting.
+- Added themed parkland/links/desert lodge, hotel, cottage, spa, and shuttle vector presentation with tier detail, roof/window identity, route cues, closed-state marks, and non-color service-pressure hatching.
+- Verification: 57 Vitest files / 356 tests (355 passed, one intentional skip); focused M32 tests cover cross-week double-sell prevention, mid-stay execution/refunds, corrupted optional save data, staffed overflow transport, pricing exploits, and unsupported overbuilding. Production build and lint/i18n pass with seven pre-existing hook warnings. M31 regression, M32 save/reload golden path, keyboard-only save/load, accessibility scaling/color/reduced-motion, and pseudo-locale Playwright acceptance pass. The full-estate performance smoke measured 0.32 ms renderer work; M32 dashboard and itinerary screenshots plus bundled-client state/screenshot were inspected.
+
+## M32 remaining
+
+- None.

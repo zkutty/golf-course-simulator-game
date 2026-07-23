@@ -122,5 +122,5 @@ export function plannedGolfersForDay(course: Course, world: World): number {
   const planned = clamp(raw, LIVE.volume.minGolfers, LIVE.volume.maxGolfers);
   // Formal roads and parking can support a destination tee sheet; relying on
   // informal roadside/grass arrival constrains an otherwise busy course.
-  return Math.max(1, Math.round(planned * propertyAccessMultiplier(course, planned)));
+  return Math.max(1, Math.round(planned * propertyAccessMultiplier(course, planned, world)));
 }

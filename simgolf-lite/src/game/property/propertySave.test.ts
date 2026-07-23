@@ -39,4 +39,34 @@ describe("property save migration and bounds", () => {
     expect(normalized.customers.every((customer) => customer.skill >= 0 && customer.skill <= 100 && customer.loyalty >= 0 && customer.loyalty <= 100)).toBe(true);
     expect(normalized.customers.map((customer) => customer.id)).toEqual(normalizePropertyEnterprise({ ...emptyPropertyEnterprise(), customers }).customers.map((customer) => customer.id));
   });
+
+  it("migrates legacy reservations and drops corrupted optional itinerary data", () => {
+    const normalized = normalizePropertyEnterprise({
+      version: 1,
+      reservations: [{
+        id: "legacy-stay",
+        assetId: "property-lodge-1",
+        customerId: "customer-1",
+        week: 4,
+        nights: 2,
+        package: "stay_and_play",
+        value: 900,
+        partySize: 4,
+        status: "checked_in",
+        entitlements: [
+          { id: "legacy-room", kind: "room", redeemed: true },
+          { id: "legacy-room", kind: "room", redeemed: false },
+          { id: "broken", kind: "minibar", redeemed: false },
+        ],
+        folio: [{ id: "valid", week: 4, day: 0, category: "room", description: "Room", amount: 900, included: false }, { nope: true }],
+      }],
+      resort: { frontDesk: 1, housekeeping: 1, dirtyRooms: Number.NaN },
+    });
+    expect(normalized.version).toBe(2);
+    expect(normalized.reservations).toHaveLength(1);
+    expect(normalized.reservations[0]).toMatchObject({ roomCount: 2, roomClass: "standard", transportMode: "self_drive", checkOutWeek: 4, checkOutDay: 2 });
+    expect(normalized.reservations[0].entitlements).toEqual([expect.objectContaining({ id: "legacy-room", status: "fulfilled", redeemed: true })]);
+    expect(normalized.reservations[0].folio).toHaveLength(1);
+    expect(normalized.resort).toMatchObject({ frontDesk: 1, housekeeping: 1, dirtyRooms: 0, maintenance: 0, concierge: 0 });
+  });
 });

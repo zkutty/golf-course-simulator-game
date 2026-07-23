@@ -5,12 +5,13 @@ import {
   FACILITY_MODULE_SPECS,
   PROPERTY_ASSET_SPECS,
   propertyOutingPreview,
+  propertyPackagePreview,
   propertySummary,
   propertyUpgradePreview,
   type PropertyCommand,
   type PropertyCommandResult,
 } from "../game/property/property";
-import type { FacilityModuleKind, OutingBooking, PropertyAsset, PropertyAssetCategory, PropertyAssetKind } from "../game/property/types";
+import type { FacilityModuleKind, LodgingReservation, OutingBooking, PropertyAsset, PropertyAssetCategory, PropertyAssetKind } from "../game/property/types";
 import { translateCurrent } from "../i18n/core";
 
 type Tab = "campus" | "resort" | "community" | "ledger";
@@ -106,14 +107,15 @@ export function PropertyManagementPanel(props: {
           <h3 style={{ marginBottom: 5 }}>{translateCurrent("property.resort.operations")}</h3>
           <div style={{ fontSize: 11, color: "#687168", marginBottom: 8 }}>{translateCurrent("property.resort.help")}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
-            <ActionCard icon="🛎️" title={translateCurrent("property.resort.frontDesk")} detail={`${summary.enterprise.resort.frontDesk} staffed`} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "frontDesk" })} />
-            <ActionCard icon="🧹" title={translateCurrent("property.resort.housekeeping")} detail={`${summary.enterprise.resort.housekeeping} staffed · ${summary.enterprise.resort.dirtyRooms} dirty · ${summary.enterprise.resort.outOfOrderRooms} out of order`} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "housekeeping" })} />
-            <ActionCard icon="🚌" title={translateCurrent("property.resort.shuttle")} detail={`${summary.enterprise.resort.shuttleDrivers} drivers · ${summary.enterprise.resort.transportWaitMinutes} min current wait`} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "shuttleDrivers" })} />
-            <ActionCard icon="🍽️" title={translateCurrent("property.resort.food")} detail={`${summary.enterprise.resort.foodService} staffed`} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "foodService" })} />
+            <ActionCard testId="resort-staff-front-desk" icon="🛎️" title={translateCurrent("property.resort.frontDesk")} detail={`${summary.enterprise.resort.frontDesk} staffed`} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "frontDesk" })} />
+            <ActionCard testId="resort-staff-housekeeping" icon="🧹" title={translateCurrent("property.resort.housekeeping")} detail={`${summary.enterprise.resort.housekeeping} staffed · ${summary.enterprise.resort.dirtyRooms} dirty · ${summary.enterprise.resort.outOfOrderRooms} out of order`} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "housekeeping" })} />
+            <ActionCard testId="resort-staff-maintenance" icon="🔧" title={translateCurrent("property.resort.maintenance")} detail={translateCurrent("property.resort.maintenanceDetail", { count: summary.enterprise.resort.maintenance })} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "maintenance" })} />
+            <ActionCard testId="resort-staff-concierge" icon="🧳" title={translateCurrent("property.resort.concierge")} detail={translateCurrent("property.resort.conciergeDetail", { count: summary.enterprise.resort.concierge })} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "concierge" })} />
+            <ActionCard testId="resort-staff-shuttle" icon="🚌" title={translateCurrent("property.resort.shuttle")} detail={`${summary.enterprise.resort.shuttleDrivers} drivers · ${summary.enterprise.resort.transportWaitMinutes} min current wait`} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "shuttleDrivers" })} />
+            <ActionCard testId="resort-staff-food" icon="🍽️" title={translateCurrent("property.resort.food")} detail={`${summary.enterprise.resort.foodService} staffed`} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "foodService" })} />
             <ActionCard icon="🧰" title={translateCurrent("property.resort.recovery")} detail={`${summary.enterprise.resort.serviceQueue} guests waiting for recovery`} button="Clear rooms and queues" onClick={() => run({ type: "RECOVER_SERVICE" })} />
           </div>
-          <h3 style={{ marginBottom: 5 }}>{translateCurrent("property.resort.packages")}</h3>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{(["room_only", "stay_and_play", "academy", "event"] as const).map((kind) => <button key={kind} onClick={() => run({ type: "BOOK_PACKAGE", package: kind })} style={smallButton}>{translateCurrent("property.book", { name: kind.replaceAll("_", " ") })}</button>)}</div>
+          <ResortDashboard course={props.course} world={props.world} summary={summary} onCommand={run} />
         </section>}
         {tab === "community" && <section style={{ marginTop: 14, border: "1px solid #d4c6ae", borderRadius: 8, padding: 10, background: "#fffaf0" }}>
           <h3 style={{ margin: "0 0 5px" }}>{translateCurrent("property.safety.title")}</h3>
@@ -206,8 +208,56 @@ function OutingPlanner(props: { course: Course; world: World; outings: OutingBoo
   </section>;
 }
 
-function ActionCard(props: { icon: string; title: string; detail: string; button: string; onClick: () => void }) {
-  return <article style={{ border: "1px solid #d3cab6", borderRadius: 9, padding: 10, background: "#fffdf8" }}><strong>{props.icon} {props.title}</strong><p style={{ fontSize: 11, color: "#697269", minHeight: 28 }}>{props.detail}</p><button onClick={props.onClick} style={smallButton}>{props.button}</button></article>;
+function ResortDashboard(props: { course: Course; world: World; summary: ReturnType<typeof propertySummary>; onCommand: (command: PropertyCommand) => void }) {
+  const packages: LodgingReservation["package"][] = ["room_only", "stay_and_play", "academy", "event"];
+  const metrics = props.summary.resortMetrics;
+  const reservations = [...props.summary.enterprise.reservations].reverse().slice(0, 12);
+  return <section data-testid="resort-dashboard" style={{ marginTop: 14 }}>
+    <h3 style={{ margin: "0 0 6px" }}>{translateCurrent("property.resort.performance")}</h3>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6 }}>
+      <Metric label={translateCurrent("property.resort.occupancy")} value={`${Math.round(metrics.occupancyRate * 100)}% · ${metrics.occupiedRooms}/${metrics.totalRooms}`} />
+      <Metric label={translateCurrent("property.resort.adr")} value={formatCurrency(metrics.averageDailyRate)} />
+      <Metric label={translateCurrent("property.resort.revpar")} value={formatCurrency(metrics.revenuePerAvailableRoom)} />
+      <Metric label={translateCurrent("property.resort.averageStay")} value={translateCurrent("property.resort.nights", { value: metrics.averageLengthOfStay.toFixed(1) })} />
+      <Metric label={translateCurrent("property.resort.packageMargin")} value={formatCurrency(metrics.packageMargin)} warning={metrics.packageMargin < 0} />
+      <Metric label={translateCurrent("property.resort.ancillarySpend")} value={formatCurrency(metrics.ancillarySpend)} />
+      <Metric label={translateCurrent("property.resort.transportCost")} value={formatCurrency(metrics.transportCost)} />
+      <Metric label={translateCurrent("property.resort.destinationAppeal")} value={`${metrics.destinationAppeal}/100`} warning={metrics.destinationAppeal < 45} />
+    </div>
+    <div data-testid="resort-capacity" style={{ marginTop: 7, padding: 7, borderRadius: 7, background: "#eef3e8", fontSize: 10 }}>
+      <strong>{translateCurrent("property.resort.capacity", metrics.capacity)}</strong>
+    </div>
+    <h3 style={{ marginBottom: 5 }}>{translateCurrent("property.resort.packages")}</h3>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+      {packages.map((kind) => {
+        const preview = propertyPackagePreview(props.course, props.world, kind);
+        return <article key={kind} data-testid={`resort-package-${kind}`} style={{ border: "1px solid #d4cab4", borderRadius: 7, padding: 8, background: preview.blockers.length ? "#fbf1e8" : "#f3f8ee", fontSize: 10 }}>
+          <strong>{kind.replaceAll("_", " ")} · {preview.travelerSegment}</strong>
+          <div>{translateCurrent("property.resort.packageDetail", { nights: preview.nights, rooms: preview.roomCount, roomClass: preview.roomClass, guests: preview.partySize })}</div>
+          <div>{translateCurrent("property.resort.packageProperty", { property: preview.lodgingName ?? translateCurrent("property.resort.noProperty"), rooms: preview.roomsRemaining, margin: formatCurrency(preview.estimatedMargin) })}</div>
+          {preview.blockers.length > 0 && <div style={{ marginTop: 4, color: "#8a332b" }}>{preview.blockers.join(" ")}</div>}
+          <button disabled={preview.blockers.length > 0} onClick={() => props.onCommand({ type: "BOOK_PACKAGE", package: kind })} style={{ ...smallButton, marginTop: 6 }}>{translateCurrent("property.book", { name: kind.replaceAll("_", " ") })} · {formatCurrency(preview.deposit)}</button>
+        </article>;
+      })}
+    </div>
+    <h3 style={{ marginBottom: 5 }}>{translateCurrent("property.resort.reservations")}</h3>
+    {reservations.length === 0 ? <p style={{ fontSize: 11, color: "#687168" }}>{translateCurrent("property.resort.noReservations")}</p> : <div style={{ display: "grid", gap: 5 }}>
+      {reservations.map((reservation) => {
+        const fulfilled = reservation.entitlements?.filter((entitlement) => entitlement.status === "fulfilled" || entitlement.redeemed).length ?? 0;
+        const total = reservation.entitlements?.length ?? 0;
+        return <div key={reservation.id} data-testid={`resort-reservation-${reservation.id}`} style={{ padding: 7, border: "1px solid #d4cab4", borderRadius: 7, background: reservation.status === "cancelled" ? "#faeee9" : "#fffdf8", fontSize: 10 }}>
+          <strong>{reservation.package.replaceAll("_", " ")} · {reservation.status ?? "booked"}</strong>
+          <div>{translateCurrent("property.resort.reservationDates", { checkInWeek: reservation.checkInWeek ?? reservation.week, checkInDay: (reservation.checkInDay ?? 0) + 1, checkOutWeek: reservation.checkOutWeek ?? reservation.week, checkOutDay: (reservation.checkOutDay ?? 0) + 1, rooms: reservation.roomCount ?? 1, roomClass: reservation.roomClass ?? "standard", guests: reservation.partySize ?? 1 })}</div>
+          <div>{translateCurrent("property.resort.reservationMeta", { segment: reservation.travelerSegment ?? "tourist", transport: reservation.transportMode ?? "self drive", fulfilled, total, folio: formatCurrency((reservation.folio ?? []).reduce((sum, item) => sum + item.amount, 0)) })}</div>
+          {(reservation.refund ?? 0) > 0 && <div style={{ color: "#8a332b" }}>{translateCurrent("property.resort.refunded", { amount: formatCurrency(reservation.refund ?? 0), status: reservation.revalidation ?? "substituted" })}</div>}
+        </div>;
+      })}
+    </div>}
+  </section>;
+}
+
+function ActionCard(props: { testId?: string; icon: string; title: string; detail: string; button: string; onClick: () => void }) {
+  return <article data-testid={props.testId} style={{ border: "1px solid #d3cab6", borderRadius: 9, padding: 10, background: "#fffdf8" }}><strong>{props.icon} {props.title}</strong><p style={{ fontSize: 11, color: "#697269", minHeight: 28 }}>{props.detail}</p><button onClick={props.onClick} style={smallButton}>{props.button}</button></article>;
 }
 
 function PropertyMap(props: { course: Course; assets: PropertyAsset[] }) {

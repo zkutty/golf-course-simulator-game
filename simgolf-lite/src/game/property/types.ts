@@ -90,6 +90,33 @@ export interface PropertyCourseState {
 }
 
 export type CustomerSegment = "local" | "member" | "student" | "tourist" | "event_guest" | "resident";
+export type ResortTravelerSegment = "buddies" | "couples" | "family" | "tournament" | "academy" | "corporate" | "premium";
+export type LodgingRoomClass = "standard" | "deluxe" | "suite" | "villa";
+export type ResortTransportMode = "walk" | "self_drive" | "shuttle" | "coach";
+export type PackageEntitlementKind = "golf" | "practice" | "dining" | "spa" | "room";
+export type PackageEntitlementStatus = "pending" | "fulfilled" | "substituted" | "refunded" | "failed";
+
+export interface PackageEntitlement {
+  id: string;
+  kind: PackageEntitlementKind;
+  scheduledWeek?: number;
+  scheduledDay?: number;
+  quantity?: number;
+  status?: PackageEntitlementStatus;
+  redeemed: boolean;
+  refundAmount?: number;
+  note?: string;
+}
+
+export interface ResortFolioTransaction {
+  id: string;
+  week: number;
+  day: number;
+  category: "deposit" | "room" | "golf" | "practice" | "dining" | "spa" | "transport" | "refund";
+  description: string;
+  amount: number;
+  included: boolean;
+}
 
 export interface PropertyCustomer {
   id: string;
@@ -136,7 +163,16 @@ export interface LodgingReservation {
   deposit?: number;
   refund?: number;
   status?: "booked" | "checked_in" | "checked_out" | "cancelled";
-  entitlements?: Array<{ id: string; kind: "golf" | "practice" | "dining" | "spa" | "room"; redeemed: boolean }>;
+  roomClass?: LodgingRoomClass;
+  roomCount?: number;
+  travelerSegment?: ResortTravelerSegment;
+  companionCount?: number;
+  transportMode?: ResortTransportMode;
+  vehicleCount?: number;
+  luggageReady?: boolean;
+  revalidation?: "valid" | "substituted" | "cancelled";
+  entitlements?: PackageEntitlement[];
+  folio?: ResortFolioTransaction[];
 }
 
 export interface OutingBooking {
@@ -153,6 +189,8 @@ export interface OutingBooking {
 export interface ResortOperations {
   frontDesk: number;
   housekeeping: number;
+  maintenance: number;
+  concierge: number;
   shuttleDrivers: number;
   foodService: number;
   lockerAttendants: number;
@@ -219,7 +257,7 @@ export interface CommercialLedgerEntry {
 }
 
 export interface PropertyEnterpriseState {
-  version: 1;
+  version: 2;
   sequence: number;
   lastSettlementKey?: string;
   ledger: CommercialLedgerEntry[];

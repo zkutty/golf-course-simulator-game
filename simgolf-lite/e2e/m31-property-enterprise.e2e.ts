@@ -34,11 +34,11 @@ test("M31-M33 property enterprise builds access, campus, resort, and community",
 
   await page.getByTestId("property-tab-resort").click();
   await page.getByTestId("build-lodge").click();
-  await panel.locator("article").filter({ hasText: "Front desk" }).getByRole("button").click();
-  await panel.locator("article").filter({ hasText: "Housekeeping" }).getByRole("button").click();
-  await panel.locator("article").filter({ hasText: "Food service" }).getByRole("button").click();
+  await page.getByTestId("resort-staff-front-desk").getByRole("button").click();
+  await page.getByTestId("resort-staff-housekeeping").getByRole("button").click();
+  await page.getByTestId("resort-staff-food").getByRole("button").click();
   await panel.getByRole("button", { name: "Book stay and play" }).click();
-  await expect(page.getByTestId("property-notice")).toContainText("booked for week");
+  await expect(page.getByTestId("property-notice")).toContainText("package booked");
 
   await page.getByTestId("property-tab-community").click();
   await page.getByTestId("build-safety_buffer").click();

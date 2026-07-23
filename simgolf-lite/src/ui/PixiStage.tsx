@@ -67,6 +67,7 @@ import {
 import { forgetGolfer, recordEmote } from "../game/render/emoteFeed";
 import { TERRAIN_PALETTES, terrainPattern } from "../accessibility/terrainPalettes";
 import type { ColorVisionMode } from "../game/onboarding/profile";
+import type { ResortOperations } from "../game/property/types";
 import { bindingFromEvent, type BindingAction, type Keybindings } from "../accessibility/keybindings";
 import {
   CLOUD_COUNT,
@@ -420,6 +421,7 @@ export interface PixiStageProps {
   followSelected?: boolean;
   /** Live game-clock minute (0..840) driving ambient time-of-day effects. */
   dayMinute?: number;
+  resortOperations?: ResortOperations;
 }
 
 function rasterizeTileLine(from: Point, to: Point): Point[] {
@@ -2137,6 +2139,12 @@ export function PixiStage(props: PixiStageProps) {
     } as const;
     const surfaceColors = { grass: 0x779567, dirt: 0x8c7156, gravel: 0x8b8b83, asphalt: 0x555b5d, paver: 0x9a8068 } as const;
     const colors = themeColors[course.theme ?? "parkland"];
+    const resortPalette = {
+      parkland: { wall: 0xe5d7b5, roof: 0x5f2f28, accent: 0xf5cb63 },
+      links: { wall: 0xdad8cd, roof: 0x475d67, accent: 0xe0b653 },
+      desert: { wall: 0xd7a46f, roof: 0x8b4e36, accent: 0x52a19a },
+    }[course.theme ?? "parkland"];
+    const lodgingAssets = (course.property?.assets ?? []).filter((asset) => asset.enabled && ["lodge", "hotel", "cottages"].includes(asset.kind));
     for (const asset of course.property?.assets ?? []) {
       const elevation = getElevation(course, asset.x, asset.y);
       const corners = [
@@ -2149,6 +2157,77 @@ export function PixiStage(props: PixiStageProps) {
       graphic.poly(corners.flatMap((point) => [point.x, point.y]));
       graphic.fill({ color: asset.surface ? surfaceColors[asset.surface] : colors[asset.category], alpha: asset.enabled ? 0.88 : 0.38 });
       graphic.stroke({ width: asset.enabled ? 2 : 1, color: asset.enabled ? 0xfff6d7 : 0x5d625e, alpha: 0.9 });
+      if (asset.category === "resort" && ["lodge", "hotel", "cottages", "spa"].includes(asset.kind)) {
+        const structures = asset.kind === "cottages" ? Math.min(6, 2 + asset.tier) : 1;
+        for (let index = 0; index < structures; index++) {
+          const columns = structures > 3 ? 3 : structures;
+          const wx = asset.x + asset.width * ((index % columns) + 0.5) / columns;
+          const wy = asset.y + asset.height * (Math.floor(index / columns) + 0.55) / Math.ceil(structures / columns);
+          const center = worldToIso(wx, wy, elevation, rotation);
+          const structureWidth = asset.kind === "hotel" ? 34 + asset.tier * 5 : asset.kind === "lodge" ? 30 + asset.tier * 4 : asset.kind === "spa" ? 26 : 15;
+          const structureHeight = asset.kind === "hotel" ? 24 + asset.tier * 7 : asset.kind === "lodge" ? 20 + asset.tier * 4 : 13 + asset.tier * 2;
+          graphic.poly([
+            center.x - structureWidth / 2, center.y - structureHeight,
+            center.x, center.y - structureHeight - structureWidth * 0.22,
+            center.x + structureWidth / 2, center.y - structureHeight,
+            center.x + structureWidth / 2, center.y,
+            center.x, center.y + structureWidth * 0.22,
+            center.x - structureWidth / 2, center.y,
+          ]);
+          graphic.fill({ color: resortPalette.wall, alpha: asset.enabled ? 0.97 : 0.42 });
+          graphic.stroke({ width: 1.4, color: 0x493c32, alpha: 0.8 });
+          graphic.poly([
+            center.x - structureWidth / 2 - 2, center.y - structureHeight,
+            center.x, center.y - structureHeight - structureWidth * 0.25 - 3,
+            center.x + structureWidth / 2 + 2, center.y - structureHeight,
+            center.x, center.y - structureHeight + structureWidth * 0.22,
+          ]);
+          graphic.fill({ color: resortPalette.roof, alpha: asset.enabled ? 0.98 : 0.42 });
+          graphic.stroke({ width: 1.2, color: resortPalette.accent, alpha: 0.85 });
+          const windows = asset.kind === "hotel" ? Math.min(5, 2 + asset.tier) : 2;
+          for (let windowIndex = 0; windowIndex < windows; windowIndex++) {
+            const windowX = center.x - structureWidth * 0.32 + windowIndex * structureWidth * 0.64 / Math.max(1, windows - 1);
+            graphic.roundRect(windowX - 1.8, center.y - structureHeight * 0.48, 3.6, 4.5, 0.7);
+            graphic.fill({ color: 0x8fc5d6, alpha: asset.enabled ? 0.92 : 0.3 });
+          }
+        }
+        const servicePressure = (props.resortOperations?.dirtyRooms ?? 0) + (props.resortOperations?.outOfOrderRooms ?? 0);
+        if (servicePressure > 0) {
+          for (let stripe = 0; stripe < 3; stripe++) {
+            graphic.moveTo(corners[0].x + stripe * 8, corners[0].y - 5);
+            graphic.lineTo(corners[0].x + stripe * 8 + 10, corners[0].y + 5);
+          }
+          graphic.stroke({ width: 2, color: 0xfff2c4, alpha: 0.95 });
+        }
+      }
+      if (asset.kind === "shuttle") {
+        const center = worldToIso(asset.x + asset.width / 2, asset.y + asset.height / 2, elevation, rotation);
+        const destination = lodgingAssets[0];
+        if (destination) {
+          const target = worldToIso(destination.x + destination.width / 2, destination.y + destination.height / 2, getElevation(course, destination.x, destination.y), rotation);
+          graphic.moveTo(center.x, center.y - 5);
+          graphic.lineTo(target.x, target.y - 5);
+          graphic.stroke({ width: 2, color: resortPalette.accent, alpha: 0.78 });
+        }
+        graphic.roundRect(center.x - 15, center.y - 15, 30, 13, 3);
+        graphic.fill({ color: 0xf3e5bd, alpha: asset.enabled ? 0.98 : 0.38 });
+        graphic.stroke({ width: 2, color: 0x314d58, alpha: 0.9 });
+        for (let windowIndex = 0; windowIndex < 3; windowIndex++) {
+          graphic.roundRect(center.x - 10 + windowIndex * 8, center.y - 12, 6, 5, 1);
+          graphic.fill({ color: 0x79a9bb, alpha: 0.9 });
+        }
+        graphic.circle(center.x - 9, center.y - 1, 3);
+        graphic.circle(center.x + 9, center.y - 1, 3);
+        graphic.fill({ color: 0x2b2d2e, alpha: 0.95 });
+      }
+      if (!asset.enabled) {
+        const center = worldToIso(asset.x + asset.width / 2, asset.y + asset.height / 2, elevation, rotation);
+        graphic.moveTo(center.x - 10, center.y - 10);
+        graphic.lineTo(center.x + 10, center.y + 10);
+        graphic.moveTo(center.x + 10, center.y - 10);
+        graphic.lineTo(center.x - 10, center.y + 10);
+        graphic.stroke({ width: 3, color: 0xf3eee2, alpha: 0.95 });
+      }
       if (asset.category === "practice" && asset.route?.points.length) {
         asset.route.points.forEach((point, index) => {
           const iso = worldToIso(point.x + 0.5, point.y + 0.5, elevation, rotation);
@@ -2190,7 +2269,7 @@ export function PixiStage(props: PixiStageProps) {
       layers.objects.addChild(graphic);
       propertyGraphicsRef.current.push(graphic);
     }
-  }, [appReady, course, rotation]);
+  }, [appReady, course, props.resortOperations, rotation]);
 
   // Estate ownership veil and survey boundaries (M25). A single batched
   // Graphics object keeps the expanded 220x140 map inexpensive to inspect.

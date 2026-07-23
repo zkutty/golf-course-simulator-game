@@ -37,6 +37,16 @@ interface Window {
       cash: number;
       rounds: number;
     }>;
+    runResortGoldenPath(): Promise<{
+      beforeHash: string;
+      afterHash: string;
+      status: string;
+      fulfilled: number;
+      total: number;
+      folioTotal: number;
+      value: number;
+      serviceQueue: number;
+    }>;
     validateFixture(text: string):
       | { ok: true; migratedFrom: number | null }
       | { ok: false; error: string };

@@ -6,8 +6,10 @@ import type {
   FacilityModuleKind,
   FacilityUpkeepPolicy,
   InfrastructureSurface,
+  LodgingRoomClass,
   LodgingReservation,
   OutingBooking,
+  PackageEntitlement,
   PropertyAsset,
   PropertyAssetCategory,
   PropertyAssetKind,
@@ -19,6 +21,9 @@ import type {
   PropertyTier,
   ResidentialSafetyReport,
   ResidentHousehold,
+  ResortFolioTransaction,
+  ResortOperations,
+  ResortTravelerSegment,
 } from "./types";
 import { isOwnedTile } from "../estate/estate";
 import { buildingFootprintSet } from "../models/buildings";
@@ -119,7 +124,7 @@ export function starterPropertyCourse(): PropertyCourseState {
 
 export function emptyPropertyEnterprise(): PropertyEnterpriseState {
   return {
-    version: 1,
+    version: 2,
     sequence: 1,
     ledger: [],
     customers: CUSTOMER_NAMES.map((name, index) => ({
@@ -139,7 +144,7 @@ export function emptyPropertyEnterprise(): PropertyEnterpriseState {
     residents: [],
     incidents: [],
     outings: [],
-    resort: { frontDesk: 0, housekeeping: 0, shuttleDrivers: 0, foodService: 0, lockerAttendants: 0, dirtyRooms: 0, outOfOrderRooms: 0, serviceQueue: 0, transportWaitMinutes: 0 },
+    resort: { frontDesk: 0, housekeeping: 0, maintenance: 0, concierge: 0, shuttleDrivers: 0, foodService: 0, lockerAttendants: 0, dirtyRooms: 0, outOfOrderRooms: 0, serviceQueue: 0, transportWaitMinutes: 0 },
   };
 }
 
@@ -201,18 +206,108 @@ export function normalizePropertyEnterprise(raw: unknown): PropertyEnterpriseSta
   return {
     ...defaults,
     ...candidate,
-    version: 1,
+    version: 2,
     sequence: Number.isInteger(candidate.sequence) ? Math.max(1, candidate.sequence!) : 1,
     ledger: Array.isArray(candidate.ledger) ? candidate.ledger.slice(-420) : [],
     customers: normalizedCustomers(candidate.customers, defaults.customers),
     professionals: Array.isArray(candidate.professionals) ? candidate.professionals.slice(0, 8) : [],
-    reservations: Array.isArray(candidate.reservations) ? candidate.reservations.slice(-120) : [],
+    reservations: normalizedReservations(candidate.reservations),
     residents: Array.isArray(candidate.residents) ? candidate.residents.slice(0, 24) : [],
     incidents: Array.isArray(candidate.incidents) ? candidate.incidents.slice(-120) : [],
     outings: Array.isArray(candidate.outings) ? candidate.outings.slice(-80) : [],
-    resort: candidate.resort && typeof candidate.resort === "object" ? { ...defaults.resort, ...candidate.resort } : defaults.resort,
+    resort: normalizedResortOperations(candidate.resort, defaults.resort),
     membership: candidate.membership && typeof candidate.membership === "object" ? { ...defaults.membership, ...candidate.membership } : defaults.membership,
   };
+}
+
+function normalizedResortOperations(raw: unknown, defaults: ResortOperations): ResortOperations {
+  const candidate = raw && typeof raw === "object" ? raw as Partial<ResortOperations> : {};
+  const staff = (value: unknown) => Number.isFinite(value) ? clamp(Math.floor(value as number), 0, 8) : 0;
+  const count = (value: unknown, max = 1_000) => Number.isFinite(value) ? clamp(Math.floor(value as number), 0, max) : 0;
+  return {
+    ...defaults,
+    frontDesk: staff(candidate.frontDesk),
+    housekeeping: staff(candidate.housekeeping),
+    maintenance: staff(candidate.maintenance),
+    concierge: staff(candidate.concierge),
+    shuttleDrivers: staff(candidate.shuttleDrivers),
+    foodService: staff(candidate.foodService),
+    lockerAttendants: staff(candidate.lockerAttendants),
+    dirtyRooms: count(candidate.dirtyRooms),
+    outOfOrderRooms: count(candidate.outOfOrderRooms),
+    serviceQueue: count(candidate.serviceQueue),
+    transportWaitMinutes: count(candidate.transportWaitMinutes, 1_440),
+  };
+}
+
+function normalizedReservations(raw: unknown): LodgingReservation[] {
+  if (!Array.isArray(raw)) return [];
+  const validPackages = new Set<LodgingReservation["package"]>(["room_only", "stay_and_play", "academy", "event"]);
+  const validStatuses = new Set<NonNullable<LodgingReservation["status"]>>(["booked", "checked_in", "checked_out", "cancelled"]);
+  const validRoomClasses = new Set<LodgingRoomClass>(["standard", "deluxe", "suite", "villa"]);
+  const validEntitlements = new Set<PackageEntitlement["kind"]>(["room", "golf", "practice", "dining", "spa"]);
+  return raw.filter((value): value is LodgingReservation => {
+    if (!value || typeof value !== "object") return false;
+    const reservation = value as LodgingReservation;
+    return typeof reservation.id === "string"
+      && typeof reservation.assetId === "string"
+      && typeof reservation.customerId === "string"
+      && validPackages.has(reservation.package)
+      && Number.isFinite(reservation.week)
+      && Number.isFinite(reservation.nights)
+      && Number.isFinite(reservation.value);
+  }).map((reservation) => {
+    const checkInWeek = Math.max(0, Math.floor(reservation.checkInWeek ?? reservation.week));
+    const checkInDay = clamp(Math.floor(reservation.checkInDay ?? 0), 0, 6);
+    const nights = clamp(Math.floor(reservation.nights), 1, 14);
+    const checkout = ordinalToWeekDay(checkInWeek * 7 + checkInDay + nights);
+    const entitlementIds = new Set<string>();
+    const entitlements = (Array.isArray(reservation.entitlements) ? reservation.entitlements : [])
+      .filter((entitlement): entitlement is PackageEntitlement => {
+        if (!entitlement || typeof entitlement.id !== "string" || !validEntitlements.has(entitlement.kind) || entitlementIds.has(entitlement.id)) return false;
+        entitlementIds.add(entitlement.id);
+        return true;
+      })
+      .map((entitlement) => {
+        const redeemed = entitlement.redeemed === true || entitlement.status === "fulfilled" || entitlement.status === "substituted";
+        return {
+          ...entitlement,
+          quantity: clamp(Math.floor(entitlement.quantity ?? 1), 1, 16),
+          scheduledWeek: Math.max(0, Math.floor(entitlement.scheduledWeek ?? checkInWeek)),
+          scheduledDay: clamp(Math.floor(entitlement.scheduledDay ?? checkInDay), 0, 6),
+          status: entitlement.status ?? (redeemed ? "fulfilled" : "pending"),
+          redeemed,
+          refundAmount: Math.max(0, Math.round(entitlement.refundAmount ?? 0)),
+        };
+      });
+    const folio = (Array.isArray(reservation.folio) ? reservation.folio : [])
+      .filter((item): item is ResortFolioTransaction => !!item && typeof item.id === "string" && Number.isFinite(item.amount))
+      .slice(-80)
+      .map((item) => ({ ...item, amount: Math.round(item.amount * 100) / 100 }));
+    return {
+      ...reservation,
+      week: checkInWeek,
+      nights,
+      value: Math.max(0, Math.round(reservation.value)),
+      partySize: clamp(Math.floor(reservation.partySize ?? 1), 1, 16),
+      roomCount: clamp(Math.floor(reservation.roomCount ?? Math.ceil((reservation.partySize ?? 1) / 2)), 1, 64),
+      companionCount: clamp(Math.floor(reservation.companionCount ?? 0), 0, 12),
+      checkInWeek,
+      checkInDay,
+      checkOutWeek: Math.max(checkInWeek, Math.floor(reservation.checkOutWeek ?? checkout.week)),
+      checkOutDay: clamp(Math.floor(reservation.checkOutDay ?? checkout.day), 0, 6),
+      deposit: Math.max(0, Math.round(reservation.deposit ?? 0)),
+      refund: Math.max(0, Math.round(reservation.refund ?? 0)),
+      status: validStatuses.has(reservation.status ?? "booked") ? reservation.status ?? "booked" : "booked",
+      roomClass: validRoomClasses.has(reservation.roomClass ?? "standard") ? reservation.roomClass ?? "standard" : "standard",
+      transportMode: reservation.transportMode ?? "self_drive",
+      vehicleCount: clamp(Math.floor(reservation.vehicleCount ?? Math.ceil((reservation.partySize ?? 1) / 3)), 0, 6),
+      luggageReady: reservation.luggageReady !== false,
+      revalidation: reservation.revalidation ?? "valid",
+      entitlements,
+      folio,
+    };
+  }).slice(-120);
 }
 
 function normalizedCustomers(raw: unknown, fallback: PropertyCustomer[]): PropertyCustomer[] {
@@ -248,7 +343,7 @@ function assetOf(course: Course, kind: PropertyAssetKind): PropertyAsset | undef
   return normalizePropertyCourse(course.property).assets.find((asset) => asset.kind === kind && isOperational(asset));
 }
 
-export function propertyAccessCapacity(course: Course): number {
+export function propertyAccessCapacity(course: Course, world?: World): number {
   const assets = normalizePropertyCourse(course.property).assets;
   const road = assets.find((asset) => asset.kind === "road" && asset.enabled);
   const parking = assets.find((asset) => asset.kind === "parking" && asset.enabled);
@@ -258,15 +353,16 @@ export function propertyAccessCapacity(course: Course): number {
   const valet = assets.find((asset) => asset.kind === "valet" && asset.enabled);
   const overflow = assets.find((asset) => asset.kind === "overflow_parking" && asset.enabled);
   const shuttle = assets.find((asset) => asset.kind === "shuttle" && asset.enabled);
+  const shuttleDrivers = world ? normalizePropertyEnterprise(world.enterprise).resort.shuttleDrivers : 0;
   const quality = Math.min(surfaceLevel(road.surface), surfaceLevel(parking.surface));
   const condition = Math.min(road.condition, parking.condition);
-  const connectedOverflow = overflow && shuttle ? Math.min(overflow.capacity, shuttle.capacity) : 0;
+  const connectedOverflow = overflow && shuttle && shuttleDrivers > 0 ? Math.min(overflow.capacity, shuttle.capacity * shuttleDrivers) : 0;
   return Math.max(12, Math.floor(Math.min(road.capacity, parking.capacity + (valet?.capacity ?? 0) + connectedOverflow) * (0.7 + quality * 0.1) * condition));
 }
 
-export function propertyAccessMultiplier(course: Course, plannedGolfers: number): number {
+export function propertyAccessMultiplier(course: Course, plannedGolfers: number, world?: World): number {
   if (plannedGolfers <= 0) return 1;
-  return clamp(propertyAccessCapacity(course) / plannedGolfers, 0.55, 1.15);
+  return clamp(propertyAccessCapacity(course, world) / plannedGolfers, 0.55, 1.15);
 }
 
 function surfaceLevel(surface: InfrastructureSurface | undefined): number {
@@ -355,7 +451,7 @@ export type PropertyCommand =
   | { type: "HIRE_PRO" }
   | { type: "LAUNCH_MEMBERSHIP" }
   | { type: "UPGRADE_MEMBERSHIP" }
-  | { type: "HIRE_SERVICE"; role: "frontDesk" | "housekeeping" | "shuttleDrivers" | "foodService" | "lockerAttendants" }
+  | { type: "HIRE_SERVICE"; role: "frontDesk" | "housekeeping" | "maintenance" | "concierge" | "shuttleDrivers" | "foodService" | "lockerAttendants" }
   | { type: "BOOK_PACKAGE"; package: LodgingReservation["package"] }
   | { type: "BOOK_OUTING"; package?: OutingBooking["package"] }
   | { type: "CANCEL_OUTING"; outingId: string }
@@ -379,6 +475,124 @@ export interface OutingPreview {
   blockers: string[];
 }
 
+export interface ResortPackagePreview {
+  package: LodgingReservation["package"];
+  lodgingId?: string;
+  lodgingName?: string;
+  travelerSegment: ResortTravelerSegment;
+  roomClass: LodgingRoomClass;
+  partySize: number;
+  companionCount: number;
+  roomCount: number;
+  nights: number;
+  checkInWeek: number;
+  checkInDay: number;
+  checkOutWeek: number;
+  checkOutDay: number;
+  value: number;
+  deposit: number;
+  estimatedCost: number;
+  estimatedMargin: number;
+  roomsRemaining: number;
+  blockers: string[];
+}
+
+const PACKAGE_PROFILES: Record<LodgingReservation["package"], {
+  travelerSegment: ResortTravelerSegment;
+  partySize: number;
+  companionCount: number;
+  roomCount: number;
+  nights: number;
+}> = {
+  room_only: { travelerSegment: "couples", partySize: 2, companionCount: 1, roomCount: 1, nights: 2 },
+  stay_and_play: { travelerSegment: "buddies", partySize: 4, companionCount: 0, roomCount: 2, nights: 2 },
+  academy: { travelerSegment: "academy", partySize: 2, companionCount: 0, roomCount: 1, nights: 3 },
+  event: { travelerSegment: "corporate", partySize: 6, companionCount: 2, roomCount: 3, nights: 3 },
+};
+
+function reservationOrdinal(reservation: LodgingReservation, endpoint: "checkIn" | "checkOut"): number {
+  if (endpoint === "checkIn") return (reservation.checkInWeek ?? reservation.week) * 7 + (reservation.checkInDay ?? 0);
+  return (reservation.checkOutWeek ?? reservation.week) * 7 + (reservation.checkOutDay ?? 6);
+}
+
+function roomsReservedOn(reservations: LodgingReservation[], assetId: string, ordinal: number): number {
+  return reservations
+    .filter((reservation) => reservation.assetId === assetId
+      && reservation.status !== "cancelled"
+      && reservationOrdinal(reservation, "checkIn") <= ordinal
+      && reservationOrdinal(reservation, "checkOut") > ordinal)
+    .reduce((sum, reservation) => sum + (reservation.roomCount ?? Math.ceil((reservation.partySize ?? 1) / 2)), 0);
+}
+
+function lodgingPreference(packageKind: LodgingReservation["package"], asset: PropertyAsset): number {
+  if (packageKind === "event") return asset.kind === "hotel" ? 4 : asset.kind === "cottages" ? 3 : 2;
+  if (packageKind === "stay_and_play") return asset.kind === "cottages" ? 4 : asset.kind === "lodge" ? 3 : 2;
+  if (packageKind === "academy") return asset.kind === "lodge" ? 4 : asset.kind === "hotel" ? 3 : 2;
+  return asset.kind === "hotel" ? 4 : asset.kind === "lodge" ? 3 : 2;
+}
+
+function roomClassFor(asset: PropertyAsset): LodgingRoomClass {
+  if (asset.kind === "cottages") return "villa";
+  if (asset.kind === "hotel" && asset.tier >= 3) return "suite";
+  if (asset.tier >= 2) return "deluxe";
+  return "standard";
+}
+
+export function propertyPackagePreview(course: Course, world: World, packageKind: LodgingReservation["package"]): ResortPackagePreview {
+  const enterprise = normalizePropertyEnterprise(world.enterprise);
+  const profile = PACKAGE_PROFILES[packageKind];
+  const checkInWeek = world.week + 1;
+  const checkInDay = 0;
+  const checkInOrdinal = checkInWeek * 7 + checkInDay;
+  const checkout = ordinalToWeekDay(checkInOrdinal + profile.nights);
+  const lodging = normalizePropertyCourse(course.property).assets
+    .filter((asset) => isOperational(asset) && ["lodge", "hotel", "cottages"].includes(asset.kind))
+    .sort((a, b) => lodgingPreference(packageKind, b) - lodgingPreference(packageKind, a) || b.tier - a.tier || a.id.localeCompare(b.id))
+    .find((asset) => Array.from({ length: profile.nights }, (_, night) => asset.capacity - roomsReservedOn(enterprise.reservations, asset.id, checkInOrdinal + night))
+      .every((remaining) => remaining >= profile.roomCount));
+  const blockers: string[] = [];
+  if (!lodging) blockers.push("No lodging property has enough clean room nights for the complete stay.");
+  if (enterprise.resort.frontDesk < 1) blockers.push("Staff the front desk before selling rooms.");
+  if (enterprise.resort.housekeeping < 1) blockers.push("Staff housekeeping before selling rooms.");
+  if (packageKind === "stay_and_play" && !course.holes.some((hole) => hole.tee && hole.green)) blockers.push("Publish a playable course for stay-and-play.");
+  if (packageKind === "academy" && !normalizePropertyCourse(course.property).assets.some((asset) => isOperational(asset) && asset.category === "practice")) blockers.push("Open a practice facility for the academy itinerary.");
+  if (packageKind === "academy" && enterprise.professionals.length < 1) blockers.push("Hire a club professional for the academy itinerary.");
+  if (packageKind === "event" && !hasFacilityCapability(course, "event_space", "function_room")) blockers.push("Open function space for the event itinerary.");
+  if (packageKind !== "room_only" && (!hasFacilityCapability(course, "restaurant", "restaurant") || enterprise.resort.foodService < 1)) blockers.push("Open staffed dining for the included meal.");
+  if (propertyAccessCapacity(course, world) < profile.partySize + 8) blockers.push(`Provide arrival capacity for at least ${profile.partySize + 8} simultaneous guests.`);
+  const shuttle = normalizePropertyCourse(course.property).assets.find((asset) => isOperational(asset) && asset.kind === "shuttle");
+  if (lodging && (lodging.kind === "hotel" || lodging.kind === "cottages") && (!shuttle || enterprise.resort.shuttleDrivers < 1)) blockers.push("A staffed shuttle is required for hotel or cottage itineraries.");
+  const baseRate = lodging?.price ?? 0;
+  const amenityBonus = normalizePropertyCourse(course.property).assets.filter((asset) => isOperational(asset) && ["spa", "restaurant", "driving_range"].includes(asset.kind)).length * 0.06;
+  const marketCeiling = lodging ? Math.round(PROPERTY_ASSET_SPECS[lodging.kind].basePrice * (0.9 + world.reputation / 220 + amenityBonus)) : 0;
+  if (lodging && baseRate > marketCeiling * 1.25) blockers.push(`The ${lodging.name} rate is above the ${marketCeiling.toLocaleString()} market ceiling for current destination appeal.`);
+  const effectiveRate = Math.min(baseRate, marketCeiling || baseRate);
+  const roomRevenue = effectiveRate * profile.roomCount * profile.nights;
+  const packagePremium = packageKind === "room_only" ? 0 : packageKind === "stay_and_play" ? 240 * profile.partySize : packageKind === "academy" ? 210 * profile.partySize : 310 * profile.partySize;
+  const value = Math.round(roomRevenue + packagePremium);
+  const variableCost = Math.round(roomRevenue * 0.27 + packagePremium * (packageKind === "event" ? 0.38 : 0.24));
+  const serviceCost = Math.round(profile.roomCount * profile.nights * 28 + profile.partySize * (packageKind === "room_only" ? 4 : 18));
+  const estimatedCost = variableCost + serviceCost;
+  const roomsRemaining = lodging ? Math.min(...Array.from({ length: profile.nights }, (_, night) => lodging.capacity - roomsReservedOn(enterprise.reservations, lodging.id, checkInOrdinal + night))) : 0;
+  return {
+    package: packageKind,
+    lodgingId: lodging?.id,
+    lodgingName: lodging?.name,
+    ...profile,
+    roomClass: lodging ? roomClassFor(lodging) : "standard",
+    checkInWeek,
+    checkInDay,
+    checkOutWeek: checkout.week,
+    checkOutDay: checkout.day,
+    value,
+    deposit: Math.round(value * 0.25),
+    estimatedCost,
+    estimatedMargin: value - estimatedCost,
+    roomsRemaining,
+    blockers,
+  };
+}
+
 export function propertyOutingPreview(course: Course, world: World, packageKind: OutingBooking["package"]): OutingPreview {
   const enterprise = normalizePropertyEnterprise(world.enterprise);
   const venue = normalizePropertyCourse(course.property).assets.find((asset) => isOperational(asset) && asset.kind === "event_space");
@@ -392,7 +606,7 @@ export function propertyOutingPreview(course: Course, world: World, packageKind:
   if ((packageKind === "golf_clinic") && enterprise.professionals.length === 0) blockers.push("Hire a club professional for the clinic.");
   if ((packageKind === "golf_catering" || packageKind === "destination_event") && (!hasFacilityCapability(course, "restaurant", "restaurant") || enterprise.resort.foodService < 1)) blockers.push("Open staffed dining for catering.");
   if (packageKind === "destination_event" && !normalizePropertyCourse(course.property).assets.some((asset) => isOperational(asset) && ["lodge", "hotel", "cottages"].includes(asset.kind))) blockers.push("Open lodging for a destination event.");
-  if (propertyAccessCapacity(course) < guests + 16) blockers.push(`Expand arrival capacity to at least ${guests + 16}.`);
+  if (propertyAccessCapacity(course, world) < guests + 16) blockers.push(`Expand arrival capacity to at least ${guests + 16}.`);
   if (enterprise.outings.some((outing) => outing.week === world.week + 1 && outing.day === 5 && outing.status === "scheduled")) blockers.push("The peak outing slot next week is already booked.");
   return { package: packageKind, guests, gross, variableCost, deposit: Math.round(gross * 0.2), parkingDemand: Math.ceil(guests / 2.4), blockers };
 }
@@ -484,7 +698,7 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
   }
 
   if (command.type === "HIRE_SERVICE") {
-    const labels = { frontDesk: "front-desk agent", housekeeping: "housekeeper", shuttleDrivers: "shuttle driver", foodService: "food-service attendant", lockerAttendants: "locker attendant" } as const;
+    const labels = { frontDesk: "front-desk agent", housekeeping: "housekeeper", maintenance: "maintenance technician", concierge: "concierge", shuttleDrivers: "shuttle driver", foodService: "food-service attendant", lockerAttendants: "locker attendant" } as const;
     if (enterprise.resort[command.role] >= 8) return outcome(false, course, world, `The ${labels[command.role]} team is already at capacity.`);
     if (world.cash < 2_500) return outcome(false, course, world, "Need $2,500 for recruiting, uniforms, and training.");
     enterprise = { ...enterprise, resort: { ...enterprise.resort, [command.role]: enterprise.resort[command.role] + 1 } };
@@ -492,30 +706,57 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
   }
 
   if (command.type === "BOOK_PACKAGE") {
-    const lodging = property.assets.find((asset) => asset.enabled && ["lodge", "hotel", "cottages"].includes(asset.kind));
-    if (!lodging) return outcome(false, course, world, "Build and open lodging before selling an overnight package.");
-    if (enterprise.resort.frontDesk < 1 || enterprise.resort.housekeeping < 1) return outcome(false, course, world, "A staffed front desk and housekeeping team are required before rooms can be sold.");
-    if (command.package === "stay_and_play" && !course.holes.some((hole) => hole.tee && hole.green)) return outcome(false, course, world, "Stay-and-play requires an open golf course.");
-    if (command.package === "academy" && !property.assets.some((asset) => asset.enabled && asset.category === "practice")) return outcome(false, course, world, "The academy package requires an open practice facility.");
-    if (command.package === "event" && !assetOf(course, "event_space")) return outcome(false, course, world, "The event package requires open function space.");
-    const targetWeek = world.week + 1;
-    const alreadyBooked = enterprise.reservations.filter((reservation) => reservation.assetId === lodging.id && reservation.checkInWeek === targetWeek && reservation.status !== "cancelled").reduce((sum, reservation) => sum + (reservation.partySize ?? 1), 0);
-    const partySize = Math.min(4, lodging.capacity - alreadyBooked);
-    if (partySize <= 0) return outcome(false, course, world, `No ${lodging.name} inventory remains for week ${targetWeek}.`);
-    const nights = 2;
-    const value = lodging.price * nights * partySize;
-    const deposit = Math.round(value * 0.25);
+    const preview = propertyPackagePreview(course, world, command.package);
+    if (preview.blockers.length > 0 || !preview.lodgingId) return outcome(false, course, world, preview.blockers.join(" "));
+    const lodging = property.assets.find((asset) => asset.id === preview.lodgingId)!;
     const id = `reservation-${enterprise.sequence}`;
-    const entitlements: NonNullable<LodgingReservation["entitlements"]> = [
-      { id: `${id}-room`, kind: "room", redeemed: false },
-      ...(command.package === "stay_and_play" || command.package === "event" ? [{ id: `${id}-golf`, kind: "golf" as const, redeemed: false }] : []),
-      ...(command.package === "academy" ? [{ id: `${id}-practice`, kind: "practice" as const, redeemed: false }] : []),
-      ...(command.package !== "room_only" ? [{ id: `${id}-dining`, kind: "dining" as const, redeemed: false }] : []),
+    const serviceDay = ordinalToWeekDay(preview.checkInWeek * 7 + preview.checkInDay + 1);
+    const entitlements: PackageEntitlement[] = [
+      { id: `${id}-room`, kind: "room", scheduledWeek: preview.checkInWeek, scheduledDay: preview.checkInDay, quantity: preview.roomCount * preview.nights, status: "pending", redeemed: false },
+      ...(command.package === "stay_and_play" || command.package === "event" ? [{ id: `${id}-golf`, kind: "golf" as const, scheduledWeek: serviceDay.week, scheduledDay: serviceDay.day, quantity: preview.partySize - preview.companionCount, status: "pending" as const, redeemed: false }] : []),
+      ...(command.package === "academy" ? [{ id: `${id}-practice`, kind: "practice" as const, scheduledWeek: serviceDay.week, scheduledDay: serviceDay.day, quantity: preview.partySize, status: "pending" as const, redeemed: false }] : []),
+      ...(command.package !== "room_only" ? [{ id: `${id}-dining`, kind: "dining" as const, scheduledWeek: preview.checkInWeek, scheduledDay: preview.checkInDay, quantity: preview.partySize, status: "pending" as const, redeemed: false }] : []),
+      ...(command.package === "room_only" && property.assets.some((asset) => isOperational(asset) && asset.kind === "spa") ? [{ id: `${id}-spa`, kind: "spa" as const, scheduledWeek: serviceDay.week, scheduledDay: serviceDay.day, quantity: preview.partySize, status: "pending" as const, redeemed: false }] : []),
     ];
-    const reservation: LodgingReservation = { id, assetId: lodging.id, customerId: enterprise.customers[enterprise.sequence % enterprise.customers.length]?.id ?? "guest", week: targetWeek, nights, package: command.package, value, partySize, checkInWeek: targetWeek, checkInDay: 0, checkOutWeek: targetWeek, checkOutDay: 2, deposit, refund: 0, status: "booked", entitlements };
-    const entry = makeEntry(enterprise, world.week, 0, lodging.id, "lodging", `${command.package.replaceAll("_", " ")} package deposit`, deposit, 0, partySize);
+    const folio: ResortFolioTransaction[] = [{
+      id: `${id}-folio-deposit`,
+      week: world.week,
+      day: 0,
+      category: "deposit",
+      description: `${command.package.replaceAll("_", " ")} advance deposit`,
+      amount: preview.deposit,
+      included: false,
+    }];
+    const reservation: LodgingReservation = {
+      id,
+      assetId: lodging.id,
+      customerId: enterprise.customers[enterprise.sequence % enterprise.customers.length]?.id ?? "guest",
+      week: preview.checkInWeek,
+      nights: preview.nights,
+      package: command.package,
+      value: preview.value,
+      partySize: preview.partySize,
+      roomCount: preview.roomCount,
+      roomClass: preview.roomClass,
+      travelerSegment: preview.travelerSegment,
+      companionCount: preview.companionCount,
+      checkInWeek: preview.checkInWeek,
+      checkInDay: preview.checkInDay,
+      checkOutWeek: preview.checkOutWeek,
+      checkOutDay: preview.checkOutDay,
+      deposit: preview.deposit,
+      refund: 0,
+      status: "booked",
+      transportMode: lodging.kind === "hotel" || lodging.kind === "cottages" ? "shuttle" : "self_drive",
+      vehicleCount: lodging.kind === "cottages" ? Math.ceil(preview.partySize / 3) : 0,
+      luggageReady: true,
+      revalidation: "valid",
+      entitlements,
+      folio,
+    };
+    const entry = makeEntry(enterprise, world.week, 0, lodging.id, "lodging", `${command.package.replaceAll("_", " ")} package deposit`, preview.deposit, 0, preview.partySize);
     enterprise = { ...enterprise, sequence: enterprise.sequence + 1, reservations: [...enterprise.reservations, reservation].slice(-120), ledger: [...enterprise.ledger, entry].slice(-420) };
-    return outcome(true, course, { ...world, cash: world.cash + deposit, enterprise }, `${command.package.replaceAll("_", " ")} package booked for week ${targetWeek}; ${deposit.toLocaleString()} deposit collected.`);
+    return outcome(true, course, { ...world, cash: world.cash + preview.deposit, enterprise }, `${command.package.replaceAll("_", " ")} package booked at ${lodging.name} for week ${preview.checkInWeek}; ${preview.deposit.toLocaleString()} deposit collected.`);
   }
 
   if (command.type === "BOOK_OUTING") {
@@ -824,13 +1065,13 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
   const property = normalizePropertyCourse(course.property);
   let enterprise = normalizePropertyEnterprise(world.enterprise);
   const settlementKey = `${world.week}-${day}`;
-  if (enterprise.lastSettlementKey === settlementKey) return { course: { ...course, property }, world: { ...world, enterprise }, report: { revenue: 0, costs: 0, visitors: 0, accessCapacity: propertyAccessCapacity(course), demand: 0, denied: 0, entries: [], incidents: [] } };
+  if (enterprise.lastSettlementKey === settlementKey) return { course: { ...course, property }, world: { ...world, enterprise }, report: { revenue: 0, costs: 0, visitors: 0, accessCapacity: propertyAccessCapacity(course, world), demand: 0, denied: 0, entries: [], incidents: [] } };
   let sequence = enterprise.sequence;
   const entries: CommercialLedgerEntry[] = [];
   const incidents: PropertyIncident[] = [];
   const facilityStats = new Map<string, { demand: number; served: number; denied: number; revenue: number }>();
   const enabled = property.assets.filter(isOperational);
-  const accessCapacity = propertyAccessCapacity(course);
+  const accessCapacity = propertyAccessCapacity(course, world);
   const resortBeds = capacity(enabled, ["lodge", "hotel", "cottages"]);
   const residentCount = enterprise.residents.reduce((sum, resident) => sum + resident.occupied, 0);
   const baseDemand = Math.max(0, Math.round(4 + world.reputation * 0.13 + world.marketingLevel * 3 + residentCount * 0.12 + resortBeds * 0.1));
@@ -853,38 +1094,118 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
 
   const today = world.week * 7 + day;
   let dirtyRooms = Math.max(0, enterprise.resort.dirtyRooms - enterprise.resort.housekeeping * 6);
+  const outOfOrderRooms = Math.max(0, enterprise.resort.outOfOrderRooms - enterprise.resort.maintenance * 2);
   let serviceQueue = 0;
   let transportWaitMinutes = 0;
   const staffedLodging = enterprise.resort.frontDesk > 0 && enterprise.resort.housekeeping > 0;
-  let occupiedRooms = enterprise.reservations.filter((reservation) => reservation.status === "checked_in").reduce((sum, reservation) => sum + (reservation.partySize ?? 1), 0);
-  const reservationsState: LodgingReservation[] = enterprise.reservations.map((reservation) => {
+  let reservationsState: LodgingReservation[] = enterprise.reservations.map((reservation) => {
     const checkout = (reservation.checkOutWeek ?? reservation.week) * 7 + (reservation.checkOutDay ?? 6);
     if (reservation.status === "checked_in" && checkout <= today) {
-      dirtyRooms += Math.ceil((reservation.partySize ?? 1) / 2);
-      occupiedRooms = Math.max(0, occupiedRooms - (reservation.partySize ?? 1));
+      dirtyRooms += reservation.roomCount ?? Math.ceil((reservation.partySize ?? 1) / 2);
       return { ...reservation, status: "checked_out" as const };
     }
     return reservation;
-  }).map((reservation) => {
+  });
+  const occupiedByAsset = new Map<string, number>();
+  for (const reservation of reservationsState) {
+    if (reservation.status !== "checked_in") continue;
+    occupiedByAsset.set(reservation.assetId, (occupiedByAsset.get(reservation.assetId) ?? 0) + (reservation.roomCount ?? Math.ceil((reservation.partySize ?? 1) / 2)));
+  }
+  reservationsState = reservationsState.map((reservation) => {
     const checkin = (reservation.checkInWeek ?? reservation.week) * 7 + (reservation.checkInDay ?? 0);
     if (reservation.status !== "booked" || checkin !== today) return reservation;
     const lodging = property.assets.find((asset) => asset.id === reservation.assetId && isOperational(asset));
     const party = reservation.partySize ?? 1;
-    const roomsAvailable = Math.max(0, (lodging?.capacity ?? 0) - dirtyRooms - enterprise.resort.outOfOrderRooms - occupiedRooms);
-    if (!staffedLodging || !lodging || roomsAvailable < party || remainingAccess < party) {
+    const roomCount = reservation.roomCount ?? Math.ceil(party / 2);
+    const roomsAvailable = Math.max(0, (lodging?.capacity ?? 0) - dirtyRooms - outOfOrderRooms - (occupiedByAsset.get(reservation.assetId) ?? 0));
+    if (!staffedLodging || !lodging || roomsAvailable < roomCount || remainingAccess < party) {
       const refund = reservation.deposit ?? 0;
       serviceQueue += party;
       const incident: PropertyIncident = { id: `incident-${sequence++}`, week: world.week, day, assetId: lodging?.id ?? reservation.assetId, kind: "service_failure", severity: 2, cost: refund, description: !staffedLodging ? "An overnight package was cancelled because reception or housekeeping was not staffed." : "An overnight package was cancelled because room or arrival capacity was unavailable." };
       incidents.push(incident);
       add(lodging, "lodging", incident.description, 0, 0, refund, party);
-      return { ...reservation, refund, status: "cancelled" as const };
+      const refundFolio: ResortFolioTransaction = { id: `${reservation.id}-folio-refund`, week: world.week, day, category: "refund", description: "Cancelled-stay deposit refund", amount: -refund, included: false };
+      return {
+        ...reservation,
+        refund,
+        status: "cancelled" as const,
+        revalidation: "cancelled" as const,
+        folio: [...(reservation.folio ?? []), refundFolio],
+        entitlements: reservation.entitlements?.map((entitlement) => ({ ...entitlement, status: "refunded" as const, redeemed: false, refundAmount: entitlement.kind === "room" ? refund : 0, note: incident.description })),
+      };
     }
     remainingAccess -= party;
     propertyVisitors += party;
-    occupiedRooms += party;
+    occupiedByAsset.set(reservation.assetId, (occupiedByAsset.get(reservation.assetId) ?? 0) + roomCount);
     const balance = Math.max(0, reservation.value - (reservation.deposit ?? 0));
     add(lodging, "lodging", `${reservation.package.replaceAll("_", " ")} package check-in`, party, balance, 0, party);
-    return { ...reservation, status: "checked_in" as const, entitlements: reservation.entitlements?.map((entitlement) => ({ ...entitlement, redeemed: entitlement.kind === "room" || entitlement.kind === "golf" && course.holes.some((hole) => hole.tee && hole.green) || entitlement.kind === "practice" && practiceAssets.length > 0 || entitlement.kind === "dining" && !!assetOf(course, "restaurant") })) };
+    const roomFolio: ResortFolioTransaction = { id: `${reservation.id}-folio-room`, week: world.week, day, category: "room", description: `${roomCount} ${reservation.roomClass ?? "standard"} room${roomCount === 1 ? "" : "s"} for ${reservation.nights} nights`, amount: balance, included: false };
+    return {
+      ...reservation,
+      status: "checked_in" as const,
+      revalidation: "valid" as const,
+      folio: [...(reservation.folio ?? []), roomFolio],
+      entitlements: reservation.entitlements?.map((entitlement) => entitlement.kind === "room"
+        ? { ...entitlement, status: "fulfilled" as const, redeemed: true, note: "Room inventory assigned at check-in." }
+        : entitlement),
+    };
+  });
+
+  const shuttle = enabled.find((asset) => asset.kind === "shuttle");
+  const transportCapacity = (shuttle?.capacity ?? 0) * enterprise.resort.shuttleDrivers;
+  reservationsState = reservationsState.map((reservation) => {
+    if (reservation.status !== "checked_in") return reservation;
+    const scheduled = reservation.entitlements?.filter((entitlement) => (entitlement.status ?? (entitlement.redeemed ? "fulfilled" : "pending")) === "pending"
+      && (entitlement.scheduledWeek ?? reservation.checkInWeek ?? reservation.week) === world.week
+      && (entitlement.scheduledDay ?? reservation.checkInDay ?? 0) === day) ?? [];
+    if (scheduled.length === 0) return reservation;
+    const party = reservation.partySize ?? 1;
+    const transportReady = reservation.transportMode !== "shuttle" || transportCapacity >= party;
+    const nextFolio = [...(reservation.folio ?? [])];
+    let refund = reservation.refund ?? 0;
+    let disrupted = false;
+    const nextEntitlements = reservation.entitlements?.map((entitlement) => {
+      if (!scheduled.some((candidate) => candidate.id === entitlement.id)) return entitlement;
+      const quantity = entitlement.quantity ?? party;
+      const serviceAsset = entitlement.kind === "practice"
+        ? practiceAssets[0]
+        : entitlement.kind === "dining"
+          ? enabled.find((asset) => asset.kind === "restaurant" || asset.kind === "clubhouse")
+          : entitlement.kind === "spa"
+            ? enabled.find((asset) => asset.kind === "spa")
+            : property.assets.find((asset) => asset.id === reservation.assetId);
+      const serviceAvailable = transportReady && (
+        entitlement.kind === "golf" ? course.holes.some((hole) => hole.tee && hole.green)
+          : entitlement.kind === "practice" ? practiceAssets.length > 0
+            : entitlement.kind === "dining" ? hasFacilityCapability(course, "restaurant", "restaurant") && enterprise.resort.foodService > 0
+              : entitlement.kind === "spa" ? !!serviceAsset
+                : true
+      );
+      const category: CommercialCategory = entitlement.kind === "golf" ? "green_fee"
+        : entitlement.kind === "practice" ? "practice"
+          : entitlement.kind === "dining" ? "food_beverage"
+            : entitlement.kind === "spa" ? "lodging"
+              : "lodging";
+      if (serviceAvailable) {
+        add(serviceAsset, category, `Included ${entitlement.kind} entitlement fulfilled`, quantity, 0, 0, quantity);
+        nextFolio.push({ id: `${entitlement.id}-folio`, week: world.week, day, category: entitlement.kind === "golf" ? "golf" : entitlement.kind, description: `Included ${entitlement.kind} service`, amount: 0, included: true });
+        return { ...entitlement, status: "fulfilled" as const, redeemed: true, note: "Fulfilled through reserved package capacity." };
+      }
+      const ratio = entitlement.kind === "golf" ? 0.18 : entitlement.kind === "practice" ? 0.12 : entitlement.kind === "dining" ? 0.1 : 0.14;
+      const entitlementRefund = Math.min(Math.max(0, reservation.value - refund), Math.round(reservation.value * ratio));
+      refund += entitlementRefund;
+      disrupted = true;
+      serviceQueue += quantity;
+      const reason = transportReady ? `${entitlement.kind} capacity became unavailable after booking.` : "A shuttle overload caused the party to miss the included service.";
+      add(serviceAsset, category, `Package service refund: ${reason}`, 0, 0, entitlementRefund, quantity);
+      nextFolio.push({ id: `${entitlement.id}-folio-refund`, week: world.week, day, category: "refund", description: reason, amount: -entitlementRefund, included: false });
+      return { ...entitlement, status: "refunded" as const, redeemed: false, refundAmount: entitlementRefund, note: reason };
+    });
+    if (!transportReady) {
+      const waiting = Math.max(1, party - transportCapacity);
+      transportWaitMinutes = Math.max(transportWaitMinutes, Math.ceil(waiting / Math.max(1, transportCapacity)) * 18);
+    }
+    return { ...reservation, refund, revalidation: disrupted ? "substituted" as const : reservation.revalidation, entitlements: nextEntitlements, folio: nextFolio.slice(-80) };
   });
 
   let practiceVisitors = 0;
@@ -918,19 +1239,54 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
   let overnightGuests = reservationsState.filter((reservation) => reservation.status === "checked_in").reduce((sum, reservation) => sum + (reservation.partySize ?? 1), 0);
   for (const asset of lodgingAssets) {
     if (!staffedLodging) { serviceQueue += Math.round(asset.capacity * 0.25); continue; }
-    const availableRooms = Math.max(0, asset.capacity - dirtyRooms - enterprise.resort.outOfOrderRooms - occupiedRooms);
-    const guests = Math.min(remainingAccess, availableRooms, Math.round(asset.capacity * clamp(0.28 + world.reputation / 180 + enabled.filter((item) => item.category === "practice").length * 0.04, 0.25, 0.92)));
-    if (guests <= 0) continue;
+    const availableRooms = Math.max(0, asset.capacity - dirtyRooms - outOfOrderRooms - (occupiedByAsset.get(asset.id) ?? 0));
+    const baseRate = PROPERTY_ASSET_SPECS[asset.kind].basePrice;
+    const rateFit = clamp(1.3 - asset.price / Math.max(1, baseRate * 1.45), 0, 1.05);
+    const targetOccupancy = clamp((0.18 + world.reputation / 220 + enabled.filter((item) => item.category === "practice").length * 0.035) * rateFit, 0, 0.9);
+    const roomCount = Math.min(availableRooms, Math.ceil(remainingAccess / 2), Math.round(asset.capacity * targetOccupancy / Math.max(1, lodgingAssets.length)));
+    const guests = Math.min(remainingAccess, roomCount * 2);
+    if (guests <= 0 || roomCount <= 0) continue;
     remainingAccess -= guests;
     overnightGuests += guests;
     propertyVisitors += guests;
     const nights = 1 + ((world.week + day + asset.tier) % 3);
     const packageType: LodgingReservation["package"] = practiceAssets.length ? "stay_and_play" : "room_only";
-    const value = guests * asset.price * nights;
+    const value = roomCount * asset.price * nights;
     add(asset, "lodging", `${asset.name} ${packageType.replaceAll("_", " ")} stays`, guests, value);
     const checkout = ordinalToWeekDay(today + nights);
-    reservations.push({ id: `reservation-${sequence++}`, assetId: asset.id, customerId: enterprise.customers[(world.week + day) % enterprise.customers.length]?.id ?? "walk-in", week: world.week, nights, package: packageType, value: Math.round(value), partySize: guests, checkInWeek: world.week, checkInDay: day, checkOutWeek: checkout.week, checkOutDay: checkout.day, deposit: 0, refund: 0, status: "checked_in", entitlements: [{ id: `walkin-${sequence}-room`, kind: "room", redeemed: true }] });
-    occupiedRooms += guests;
+    const reservationId = `reservation-${sequence++}`;
+    const serviceDay = ordinalToWeekDay(today + 1);
+    reservations.push({
+      id: reservationId,
+      assetId: asset.id,
+      customerId: enterprise.customers[(world.week + day) % enterprise.customers.length]?.id ?? "walk-in",
+      week: world.week,
+      nights,
+      package: packageType,
+      value: Math.round(value),
+      partySize: guests,
+      roomCount,
+      roomClass: roomClassFor(asset),
+      travelerSegment: packageType === "stay_and_play" ? "buddies" : "couples",
+      companionCount: packageType === "stay_and_play" ? 0 : Math.floor(guests / 2),
+      checkInWeek: world.week,
+      checkInDay: day,
+      checkOutWeek: checkout.week,
+      checkOutDay: checkout.day,
+      deposit: 0,
+      refund: 0,
+      status: "checked_in",
+      transportMode: asset.kind === "hotel" || asset.kind === "cottages" ? "shuttle" : "self_drive",
+      vehicleCount: asset.kind === "cottages" ? Math.ceil(guests / 3) : 0,
+      luggageReady: true,
+      revalidation: "valid",
+      folio: [{ id: `${reservationId}-folio-room`, week: world.week, day, category: "room", description: `${roomCount} ${roomClassFor(asset)} room${roomCount === 1 ? "" : "s"} for ${nights} nights`, amount: Math.round(value), included: false }],
+      entitlements: [
+        { id: `${reservationId}-room`, kind: "room", scheduledWeek: world.week, scheduledDay: day, quantity: roomCount * nights, status: "fulfilled", redeemed: true, refundAmount: 0 },
+        ...(packageType === "stay_and_play" ? [{ id: `${reservationId}-golf`, kind: "golf" as const, scheduledWeek: serviceDay.week, scheduledDay: serviceDay.day, quantity: guests, status: "pending" as const, redeemed: false, refundAmount: 0 }] : []),
+      ],
+    });
+    occupiedByAsset.set(asset.id, (occupiedByAsset.get(asset.id) ?? 0) + roomCount);
   }
 
   const clubhouseGuests = coreGolfers + practiceVisitors + overnightGuests + Math.round(residentCount * 0.08);
@@ -990,12 +1346,14 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     return { ...outing, status: "fulfilled" as const };
   });
 
-  const shuttle = enabled.find((asset) => asset.kind === "shuttle");
-  if (overnightGuests > 0 && shuttle) {
-    const transportCapacity = shuttle.capacity * enterprise.resort.shuttleDrivers;
-    const waiting = Math.max(0, overnightGuests - transportCapacity);
-    transportWaitMinutes = waiting > 0 ? Math.ceil(waiting / Math.max(1, transportCapacity)) * 18 : 0;
+  const shuttleGuests = [...reservationsState, ...reservations]
+    .filter((reservation) => reservation.status === "checked_in" && reservation.transportMode === "shuttle")
+    .reduce((sum, reservation) => sum + (reservation.partySize ?? 1), 0);
+  if (shuttleGuests > 0) {
+    const waiting = Math.max(0, shuttleGuests - transportCapacity);
+    transportWaitMinutes = Math.max(transportWaitMinutes, waiting > 0 ? Math.ceil(waiting / Math.max(1, transportCapacity)) * 18 : 0);
     serviceQueue += waiting;
+    if (transportCapacity > 0) add(shuttle, "access", "Resort shuttle circulation", Math.min(shuttleGuests, transportCapacity), 0, Math.round(Math.min(shuttleGuests, transportCapacity) * 3), shuttleGuests);
   }
 
   if (enterprise.residents.length > 0) {
@@ -1038,7 +1396,7 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     const condition = clamp(asset.condition - baseWear * wearFactor * (1 + stats.served / Math.max(1, asset.capacity * 8)) + recovery, 0.25, 1);
     return { ...asset, condition, constructionDaysRemaining, lastDay: stats };
   });
-  const serviceHeadcount = enterprise.resort.frontDesk + enterprise.resort.housekeeping + enterprise.resort.shuttleDrivers + enterprise.resort.foodService + enterprise.resort.lockerAttendants;
+  const serviceHeadcount = enterprise.resort.frontDesk + enterprise.resort.housekeeping + enterprise.resort.maintenance + enterprise.resort.concierge + enterprise.resort.shuttleDrivers + enterprise.resort.foodService + enterprise.resort.lockerAttendants;
   const wages = enterprise.professionals.reduce((sum, pro) => sum + pro.weeklyWage / 7, 0) + serviceHeadcount * 590 / 7;
   add(undefined, "upkeep", "Property upkeep, utilities, and club-professional wages", 0, 0, upkeep + wages);
 
@@ -1078,7 +1436,7 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     reservations: [...reservationsState, ...reservations].slice(-120),
     incidents: [...enterprise.incidents, ...incidents].slice(-120),
     outings,
-    resort: { ...enterprise.resort, dirtyRooms, serviceQueue, transportWaitMinutes },
+    resort: { ...enterprise.resort, dirtyRooms, outOfOrderRooms, serviceQueue, transportWaitMinutes },
   };
   return {
     course: { ...course, property: { ...property, assets: nextAssets } },
@@ -1116,10 +1474,34 @@ export function propertySummary(course: Course, world: World) {
   const assets = normalizePropertyCourse(course.property).assets;
   const enterprise = normalizePropertyEnterprise(world.enterprise);
   const recent = enterprise.ledger.filter((entry) => entry.week >= world.week - 11);
+  const lodgingAssets = assets.filter((asset) => isOperational(asset) && ["lodge", "hotel", "cottages"].includes(asset.kind));
+  const totalRooms = lodgingAssets.reduce((sum, asset) => sum + asset.capacity, 0);
+  const activeReservations = enterprise.reservations.filter((reservation) => reservation.status === "checked_in");
+  const occupiedRooms = activeReservations.reduce((sum, reservation) => sum + (reservation.roomCount ?? Math.ceil((reservation.partySize ?? 1) / 2)), 0);
+  const completedStays = enterprise.reservations.filter((reservation) => reservation.status === "checked_in" || reservation.status === "checked_out");
+  const soldRoomNights = completedStays.reduce((sum, reservation) => sum + (reservation.roomCount ?? Math.ceil((reservation.partySize ?? 1) / 2)) * reservation.nights, 0);
+  const lodgingRevenue = recent.filter((entry) => entry.category === "lodging").reduce((sum, entry) => sum + entry.revenue, 0);
+  const lodgingCosts = recent.filter((entry) => entry.category === "lodging").reduce((sum, entry) => sum + entry.cost, 0);
+  const ancillarySpend = recent.filter((entry) => ["practice", "lessons", "retail", "food_beverage", "events"].includes(entry.category)).reduce((sum, entry) => sum + entry.revenue, 0);
+  const transportCost = recent.filter((entry) => entry.category === "access" && entry.description.toLowerCase().includes("shuttle")).reduce((sum, entry) => sum + entry.cost, 0);
+  const completeCourses = Math.max(0, normalizeCourseCount(course));
+  const practiceCapacity = assets.filter((asset) => isOperational(asset) && asset.category === "practice").reduce((sum, asset) => sum + asset.capacity, 0);
+  const diningCapacity = assets.filter((asset) => isOperational(asset) && ["restaurant", "bar"].includes(asset.kind)).reduce((sum, asset) => sum + asset.capacity, 0)
+    + assets.filter((asset) => isOperational(asset) && asset.kind === "clubhouse").reduce((sum, asset) => sum + (asset.modules ?? []).filter((module) => module.enabled && (module.kind === "restaurant" || module.kind === "bar")).reduce((moduleSum, module) => moduleSum + FACILITY_MODULE_SPECS[module.kind].capacity * module.tier, 0), 0);
+  const destinationAppeal = clamp(Math.round(
+    world.reputation * 0.32
+    + completeCourses * 10
+    + lodgingAssets.reduce((sum, asset) => sum + asset.tier * asset.condition * 4, 0)
+    + Math.min(12, practiceCapacity / 8)
+    + Math.min(10, diningCapacity / 10)
+    + (assets.some((asset) => isOperational(asset) && asset.kind === "spa") ? 8 : 0)
+    - enterprise.resort.serviceQueue * 0.35
+    - enterprise.resort.transportWaitMinutes * 0.12
+  ), 0, 100);
   return {
     assets,
     enterprise,
-    accessCapacity: propertyAccessCapacity(course),
+    accessCapacity: propertyAccessCapacity(course, world),
     recentRevenue: recent.reduce((sum, entry) => sum + entry.revenue, 0),
     recentCosts: recent.reduce((sum, entry) => sum + entry.cost, 0),
     averageCustomerSkill: enterprise.customers.reduce((sum, customer) => sum + customer.skill, 0) / Math.max(1, enterprise.customers.length),
@@ -1127,7 +1509,35 @@ export function propertySummary(course: Course, world: World) {
     openComplaints: enterprise.residents.reduce((sum, resident) => sum + resident.complaints, 0),
     safety: analyzeResidentialSafety(course),
     residentialValue: assets.filter((asset) => asset.kind === "houses" || asset.kind === "condos").reduce((sum, asset) => sum + propertyAssetValuation(course, world, asset), 0),
+    resortMetrics: {
+      totalRooms,
+      occupiedRooms,
+      occupancyRate: totalRooms > 0 ? occupiedRooms / totalRooms : 0,
+      averageDailyRate: soldRoomNights > 0 ? lodgingRevenue / soldRoomNights : 0,
+      revenuePerAvailableRoom: totalRooms > 0 ? lodgingRevenue / (totalRooms * 84) : 0,
+      averageLengthOfStay: completedStays.length > 0 ? completedStays.reduce((sum, reservation) => sum + reservation.nights, 0) / completedStays.length : 0,
+      packageMargin: lodgingRevenue - lodgingCosts,
+      ancillarySpend,
+      transportCost,
+      destinationAppeal,
+      activeStays: activeReservations.length,
+      arrivals: enterprise.reservations.filter((reservation) => reservation.status === "booked").length,
+      capacity: {
+        rooms: totalRooms,
+        arrivals: propertyAccessCapacity(course, world),
+        golf: completeCourses * 72,
+        practice: practiceCapacity,
+        dining: diningCapacity,
+        shuttle: assets.filter((asset) => isOperational(asset) && asset.kind === "shuttle").reduce((sum, asset) => sum + asset.capacity, 0) * enterprise.resort.shuttleDrivers,
+      },
+    },
   };
+}
+
+function normalizeCourseCount(course: Course): number {
+  const layouts = course.layouts;
+  if (Array.isArray(layouts) && layouts.length > 0) return layouts.filter((layout) => layout.state === "open" && layout.publishedHoleIds.length > 0).length;
+  return course.holes.some((hole) => hole.tee && hole.green) ? 1 : 0;
 }
 
 export function propertyAssetValuation(course: Course, world: World, asset: PropertyAsset): number {
