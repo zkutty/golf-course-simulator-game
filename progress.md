@@ -1,5 +1,17 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-07-23 — Shareable game-vision page in progress
+
+Current request: “Create a slick html page that links from the home page which shows the vision of the game, functionality, features, depth, etc so I could share with friends so they know what the end product could be. Include renderings from buildings and tutorial caddie etc to make it feel like a storyboard”
+
+- Added a standalone, shareable `?view=vision` presentation route linked from the title screen.
+- Built a responsive editorial/storyboard page covering course architecture, golfer simulation, property enterprise, hospitality, tournaments, community, progression, and legacy.
+- Reused the production tutorial caddie portrait sheet and generated three complementary concept renders for the destination hero, coastal course design, and clubhouse campus.
+- Added native-share/clipboard link handling, direct-link loading, back navigation, reduced-motion behavior, and responsive layouts.
+- Optimized the three concept renders from roughly 9 MB of PNGs to 2.4 MB of high-quality JPEGs.
+- Verification complete: production build and offline-asset injection pass; full lint/i18n passes with seven pre-existing hook warnings; two focused Playwright tests pass for title-link navigation, direct links, sticky chapter navigation, back behavior, console cleanliness, and phone layout.
+- Visually inspected the home link plus desktop hero, systems, clubhouse, phone hero, and phone systems captures. The required bundled web-game client also reached a fresh game with valid text state and no console-error artifact; its headless Pixi canvas capture was black under software GL, as expected.
+
 ## 2026-07-23 — M31 completion pass
 
 Current request: “Implant m31 from linear”
