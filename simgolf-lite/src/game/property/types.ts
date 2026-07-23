@@ -31,8 +31,31 @@ export type PropertyAssetKind =
 export type PropertyAssetCategory = "access" | "practice" | "clubhouse" | "resort" | "community" | "safety";
 
 export type FacilityCondition = "excellent" | "good" | "worn" | "unsafe";
+export type FacilityUpkeepPolicy = "lean" | "standard" | "premium";
+export type FacilityModuleKind =
+  | "check_in"
+  | "pro_shop"
+  | "restaurant"
+  | "kitchen"
+  | "bar"
+  | "lockers"
+  | "member_lounge"
+  | "pro_office"
+  | "fitting_studio"
+  | "function_room";
+export interface FacilityModule {
+  kind: FacilityModuleKind;
+  tier: PropertyTier;
+  enabled: boolean;
+}
 export interface PracticeRoute { id: string; points: Array<{ x: number; y: number }>; }
 export interface PracticeStation { id: string; kind: "tee" | "target" | "cup" | "bunker" | "lesson"; x: number; y: number; capacity: number; }
+export interface FacilityDayStats {
+  demand: number;
+  served: number;
+  denied: number;
+  revenue: number;
+}
 
 export interface PropertyAsset {
   id: string;
@@ -53,6 +76,12 @@ export interface PropertyAsset {
   tenure?: "operating" | "for_sale" | "sold" | "retained" | "partnered" | "reacquired";
   route?: PracticeRoute;
   stations?: PracticeStation[];
+  modules?: FacilityModule[];
+  upkeepPolicy?: FacilityUpkeepPolicy;
+  openHour?: number;
+  closeHour?: number;
+  constructionDaysRemaining?: number;
+  lastDay?: FacilityDayStats;
 }
 
 export interface PropertyCourseState {

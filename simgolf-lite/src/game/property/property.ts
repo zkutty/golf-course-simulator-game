@@ -3,8 +3,11 @@ import type {
   ClubProfessional,
   CommercialCategory,
   CommercialLedgerEntry,
+  FacilityModuleKind,
+  FacilityUpkeepPolicy,
   InfrastructureSurface,
   LodgingReservation,
+  OutingBooking,
   PropertyAsset,
   PropertyAssetCategory,
   PropertyAssetKind,
@@ -35,6 +38,30 @@ export interface PropertyAssetSpec {
 }
 
 export const SURFACE_ORDER: readonly InfrastructureSurface[] = ["grass", "dirt", "gravel", "asphalt", "paver"];
+
+export interface FacilityModuleSpec {
+  kind: FacilityModuleKind;
+  label: string;
+  requiredShellTier: PropertyTier;
+  buildCost: number;
+  capacity: number;
+  dailyUpkeep: number;
+  parkingDemand: number;
+  description: string;
+}
+
+export const FACILITY_MODULE_SPECS: Record<FacilityModuleKind, FacilityModuleSpec> = {
+  check_in: moduleSpec("check_in", "Check-in desk", 1, 2_500, 24, 22, 2, "Greets golfers and routes members, outings, and resort guests."),
+  pro_shop: moduleSpec("pro_shop", "Pro-shop room", 1, 5_500, 14, 52, 3, "Adds merchandise and rental capacity inside the clubhouse shell."),
+  restaurant: moduleSpec("restaurant", "Dining room", 2, 9_000, 28, 96, 8, "Adds seated dining; a kitchen and food-service coverage unlock full throughput."),
+  kitchen: moduleSpec("kitchen", "Commercial kitchen", 2, 7_500, 36, 88, 3, "Supports restaurant, catering, clinic, and function-room service."),
+  bar: moduleSpec("bar", "Club bar", 2, 6_500, 20, 70, 5, "Adds a staffed post-round and event beverage service."),
+  lockers: moduleSpec("lockers", "Locker rooms", 2, 8_000, 36, 65, 4, "Supports members, academy students, and premium outing packages."),
+  member_lounge: moduleSpec("member_lounge", "Member lounge", 3, 11_000, 24, 90, 4, "Raises member loyalty but consumes room, staff, and upkeep."),
+  pro_office: moduleSpec("pro_office", "Club-pro office", 2, 6_000, 8, 46, 2, "Adds lesson administration and professional booking capacity."),
+  fitting_studio: moduleSpec("fitting_studio", "Teaching and fitting studio", 3, 13_000, 10, 105, 3, "Unlocks premium fittings and reliable all-weather instruction."),
+  function_room: moduleSpec("function_room", "Function room", 3, 15_000, 54, 138, 14, "Hosts catered outings, clinics, meetings, and destination events."),
+};
 
 export const PROPERTY_ASSET_SPECS: Record<PropertyAssetKind, PropertyAssetSpec> = {
   road: spec("road", "Main road", "🛣️", "access", "Connects the estate to the regional road. Better surfaces improve throughput and reliability.", 2_500, 28, 0, 30, 5, [8, 2]),
@@ -68,6 +95,10 @@ function spec(kind: PropertyAssetKind, label: string, icon: string, category: Pr
   return { kind, label, icon, category, description, buildCost, baseCapacity, basePrice, dailyUpkeep, maxTier, footprint };
 }
 
+function moduleSpec(kind: FacilityModuleKind, label: string, requiredShellTier: PropertyTier, buildCost: number, capacity: number, dailyUpkeep: number, parkingDemand: number, description: string): FacilityModuleSpec {
+  return { kind, label, requiredShellTier, buildCost, capacity, dailyUpkeep, parkingDemand, description };
+}
+
 const CUSTOMER_NAMES = ["Maya Chen", "Theo Brooks", "Sam Rivera", "Priya Shah", "Jordan Reed", "Ana Torres", "Eli Martin", "Nora Kim", "Luis Bennett", "Jamie Patel", "Riley Foster", "Avery Walker"];
 
 export function emptyPropertyCourse(): PropertyCourseState {
@@ -80,8 +111,8 @@ export function starterPropertyCourse(): PropertyCourseState {
   return {
     version: 1,
     assets: [
-      { id: "property-road-starter", kind: "road", name: "Main road", category: "access", tier: 3, x: 4, y: 4, width: 8, height: 2, capacity: 64, condition: 1, price: 0, surface: "gravel", enabled: true },
-      { id: "property-parking-starter", kind: "parking", name: "Guest parking", category: "access", tier: 3, x: 13, y: 4, width: 6, height: 5, capacity: 72, condition: 1, price: 0, surface: "gravel", enabled: true },
+      { id: "property-road-starter", kind: "road", name: "Main road", category: "access", tier: 3, x: 4, y: 4, width: 8, height: 2, capacity: 64, condition: 1, price: 0, surface: "gravel", upkeepPolicy: "standard", openHour: 7, closeHour: 20, constructionDaysRemaining: 0, enabled: true },
+      { id: "property-parking-starter", kind: "parking", name: "Guest parking", category: "access", tier: 3, x: 13, y: 4, width: 6, height: 5, capacity: 72, condition: 1, price: 0, surface: "gravel", upkeepPolicy: "standard", openHour: 7, closeHour: 20, constructionDaysRemaining: 0, enabled: true },
     ],
   };
 }
@@ -121,10 +152,12 @@ export function normalizePropertyCourse(raw: unknown): PropertyCourseState {
     const surface = assetSpec.category === "access" && asset.kind !== "valet"
       ? (SURFACE_ORDER.includes(asset.surface as InfrastructureSurface) ? asset.surface as InfrastructureSurface : SURFACE_ORDER[Math.min(SURFACE_ORDER.length - 1, tier - 1)])
       : undefined;
+    const openHour = clamp(Math.floor(asset.openHour ?? 7), 5, 20);
+    const closeHour = clamp(Math.max(openHour + 4, Math.floor(asset.closeHour ?? 20)), 8, 24);
     return withPracticeGeometry({
       ...asset,
       id: asset.id || `property-${asset.kind}-${Math.floor(asset.x)}-${Math.floor(asset.y)}`,
-      name: assetSpec.label,
+      name: typeof asset.name === "string" && asset.name.trim().length >= 2 ? asset.name.trim().replace(/\s+/g, " ").slice(0, 40) : assetSpec.label,
       category: assetSpec.category,
       tier,
       x: Math.max(0, Math.floor(asset.x)),
@@ -134,6 +167,25 @@ export function normalizePropertyCourse(raw: unknown): PropertyCourseState {
       capacity: Math.max(0, Math.floor(Number.isFinite(asset.capacity) ? asset.capacity : assetSpec.baseCapacity)),
       condition: clamp(Number.isFinite(asset.condition) ? asset.condition : 1, 0, 1),
       price: Math.max(0, Number.isFinite(asset.price) ? Math.round(asset.price) : assetSpec.basePrice),
+      ...(asset.kind === "clubhouse" ? { modules: Array.isArray(asset.modules)
+        ? asset.modules.filter((module) => module && module.kind in FACILITY_MODULE_SPECS).map((module) => ({
+          kind: module.kind,
+          tier: clamp(Math.floor(module.tier || 1), 1, 4) as PropertyTier,
+          enabled: module.enabled !== false,
+        }))
+        : [] } : {}),
+      upkeepPolicy: (["lean", "standard", "premium"] as FacilityUpkeepPolicy[]).includes(asset.upkeepPolicy as FacilityUpkeepPolicy)
+        ? asset.upkeepPolicy
+        : "standard",
+      openHour,
+      closeHour,
+      constructionDaysRemaining: Math.max(0, Math.floor(asset.constructionDaysRemaining ?? 0)),
+      ...(asset.lastDay && Number.isFinite(asset.lastDay.demand) ? { lastDay: {
+        demand: Math.max(0, Math.floor(asset.lastDay.demand)),
+        served: Math.max(0, Math.floor(asset.lastDay.served)),
+        denied: Math.max(0, Math.floor(asset.lastDay.denied)),
+        revenue: Math.max(0, Math.round(asset.lastDay.revenue)),
+      } } : {}),
       ...(surface ? { surface } : {}),
       enabled: asset.enabled !== false,
     });
@@ -193,18 +245,19 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function assetOf(course: Course, kind: PropertyAssetKind): PropertyAsset | undefined {
-  return normalizePropertyCourse(course.property).assets.find((asset) => asset.kind === kind && asset.enabled);
+  return normalizePropertyCourse(course.property).assets.find((asset) => asset.kind === kind && isOperational(asset));
 }
 
 export function propertyAccessCapacity(course: Course): number {
-  const road = assetOf(course, "road");
-  const parking = assetOf(course, "parking");
+  const assets = normalizePropertyCourse(course.property).assets;
+  const road = assets.find((asset) => asset.kind === "road" && asset.enabled);
+  const parking = assets.find((asset) => asset.kind === "parking" && asset.enabled);
   // Before the player formalizes access, limited roadside/grass overflow keeps
   // existing courses playable while creating a clear capacity pressure.
   if (!road || !parking) return 18;
-  const valet = assetOf(course, "valet");
-  const overflow = assetOf(course, "overflow_parking");
-  const shuttle = assetOf(course, "shuttle");
+  const valet = assets.find((asset) => asset.kind === "valet" && asset.enabled);
+  const overflow = assets.find((asset) => asset.kind === "overflow_parking" && asset.enabled);
+  const shuttle = assets.find((asset) => asset.kind === "shuttle" && asset.enabled);
   const quality = Math.min(surfaceLevel(road.surface), surfaceLevel(parking.surface));
   const condition = Math.min(road.condition, parking.condition);
   const connectedOverflow = overflow && shuttle ? Math.min(overflow.capacity, shuttle.capacity) : 0;
@@ -220,11 +273,82 @@ function surfaceLevel(surface: InfrastructureSurface | undefined): number {
   return Math.max(1, SURFACE_ORDER.indexOf(surface ?? "grass") + 1);
 }
 
+function isOperational(asset: PropertyAsset): boolean {
+  return asset.enabled && (asset.constructionDaysRemaining ?? 0) <= 0;
+}
+
+function operatingHoursFactor(asset: PropertyAsset): number {
+  return clamp(((asset.closeHour ?? 20) - (asset.openHour ?? 7)) / 13, 0.25, 1.25);
+}
+
+function upkeepCostFactor(policy: FacilityUpkeepPolicy | undefined): number {
+  return policy === "lean" ? 0.65 : policy === "premium" ? 1.55 : 1;
+}
+
+function hasFacilityCapability(course: Course, standalone: PropertyAssetKind, module: FacilityModuleKind): boolean {
+  const property = normalizePropertyCourse(course.property);
+  return property.assets.some((asset) => isOperational(asset) && (
+    asset.kind === standalone
+    || asset.kind === "clubhouse" && asset.modules?.some((candidate) => candidate.kind === module && candidate.enabled)
+  ));
+}
+
+export interface PropertyUpgradePreview {
+  assetId: string;
+  nextTier: PropertyTier;
+  cost: number;
+  downtimeDays: number;
+  capacityDelta: number;
+  upkeepDelta: number;
+  parkingDemandDelta: number;
+  breakEvenVisitorsPerDay: number;
+  width: number;
+  height: number;
+  blocker?: string;
+}
+
+export function propertyUpgradePreview(course: Course, assetId: string): PropertyUpgradePreview | null {
+  const property = normalizePropertyCourse(course.property);
+  const asset = property.assets.find((candidate) => candidate.id === assetId);
+  if (!asset) return null;
+  const assetSpec = PROPERTY_ASSET_SPECS[asset.kind];
+  if (asset.tier >= assetSpec.maxTier) return null;
+  const nextTier = (asset.tier + 1) as PropertyTier;
+  const cost = Math.round(assetSpec.buildCost * (0.65 + asset.tier * 0.35));
+  const nextCapacity = Math.round(assetSpec.baseCapacity * (1 + (nextTier - 1) * 0.62));
+  const footprintGrowth = asset.kind === "clubhouse" && nextTier >= 3 ? 1 : 0;
+  const width = asset.width + footprintGrowth;
+  const height = asset.height + footprintGrowth;
+  const candidate = { ...asset, width, height };
+  const blocker = propertySiteBlocker(course, property.assets, candidate, asset.id) ?? undefined;
+  const upkeepDelta = Math.round(assetSpec.dailyUpkeep * 0.28 * upkeepCostFactor(asset.upkeepPolicy));
+  const contributionPerVisitor = Math.max(4, asset.price * (1 - categoryCogs(asset.kind === "pro_shop" ? "retail" : asset.kind === "restaurant" || asset.kind === "bar" ? "food_beverage" : asset.category === "practice" ? "practice" : "events")));
+  return {
+    assetId,
+    nextTier,
+    cost,
+    downtimeDays: Math.max(1, asset.tier),
+    capacityDelta: nextCapacity - asset.capacity,
+    upkeepDelta,
+    parkingDemandDelta: Math.max(1, Math.ceil((nextCapacity - asset.capacity) / 8)),
+    breakEvenVisitorsPerDay: Math.ceil((cost / 104 + upkeepDelta) / contributionPerVisitor),
+    width,
+    height,
+    blocker,
+  };
+}
+
 export type PropertyCommand =
   | { type: "BUILD"; kind: PropertyAssetKind }
   | { type: "UPGRADE"; assetId: string }
   | { type: "MAINTAIN"; assetId: string }
   | { type: "SET_PRICE"; assetId: string; price: number }
+  | { type: "SET_HOURS"; assetId: string; openHour: number; closeHour: number }
+  | { type: "SET_UPKEEP"; assetId: string; policy: FacilityUpkeepPolicy }
+  | { type: "RENAME"; assetId: string; name: string }
+  | { type: "ROTATE_PRACTICE"; assetId: string }
+  | { type: "INSTALL_MODULE"; module: FacilityModuleKind }
+  | { type: "TOGGLE_MODULE"; module: FacilityModuleKind }
   | { type: "TOGGLE"; assetId: string }
   | { type: "MOVE"; assetId: string; dx: number; dy: number }
   | { type: "REMOVE"; assetId: string }
@@ -233,7 +357,8 @@ export type PropertyCommand =
   | { type: "UPGRADE_MEMBERSHIP" }
   | { type: "HIRE_SERVICE"; role: "frontDesk" | "housekeeping" | "shuttleDrivers" | "foodService" | "lockerAttendants" }
   | { type: "BOOK_PACKAGE"; package: LodgingReservation["package"] }
-  | { type: "BOOK_OUTING" }
+  | { type: "BOOK_OUTING"; package?: OutingBooking["package"] }
+  | { type: "CANCEL_OUTING"; outingId: string }
   | { type: "RECOVER_SERVICE" }
   | { type: "BUYBACK"; assetId: string };
 
@@ -244,10 +369,60 @@ export interface PropertyCommandResult {
   message: string;
 }
 
+export interface OutingPreview {
+  package: OutingBooking["package"];
+  guests: number;
+  gross: number;
+  variableCost: number;
+  deposit: number;
+  parkingDemand: number;
+  blockers: string[];
+}
+
+export function propertyOutingPreview(course: Course, world: World, packageKind: OutingBooking["package"]): OutingPreview {
+  const enterprise = normalizePropertyEnterprise(world.enterprise);
+  const venue = normalizePropertyCourse(course.property).assets.find((asset) => isOperational(asset) && asset.kind === "event_space");
+  const guests = Math.min(venue?.capacity ?? 36, packageKind === "golf_only" ? 40 : packageKind === "golf_clinic" ? 24 : packageKind === "destination_event" ? 54 : 48);
+  const perGuest = packageKind === "golf_only" ? 92 : packageKind === "golf_clinic" ? 148 : packageKind === "destination_event" ? 235 : 175;
+  const gross = guests * perGuest;
+  const variableCost = Math.round(gross * (packageKind === "golf_only" ? 0.12 : 0.3));
+  const blockers: string[] = [];
+  if (!venue && !hasFacilityCapability(course, "event_space", "function_room")) blockers.push("Open function space or install a function-room module.");
+  if (!course.holes.some((hole) => hole.tee && hole.green)) blockers.push("Publish a playable golf routing.");
+  if ((packageKind === "golf_clinic") && enterprise.professionals.length === 0) blockers.push("Hire a club professional for the clinic.");
+  if ((packageKind === "golf_catering" || packageKind === "destination_event") && (!hasFacilityCapability(course, "restaurant", "restaurant") || enterprise.resort.foodService < 1)) blockers.push("Open staffed dining for catering.");
+  if (packageKind === "destination_event" && !normalizePropertyCourse(course.property).assets.some((asset) => isOperational(asset) && ["lodge", "hotel", "cottages"].includes(asset.kind))) blockers.push("Open lodging for a destination event.");
+  if (propertyAccessCapacity(course) < guests + 16) blockers.push(`Expand arrival capacity to at least ${guests + 16}.`);
+  if (enterprise.outings.some((outing) => outing.week === world.week + 1 && outing.day === 5 && outing.status === "scheduled")) blockers.push("The peak outing slot next week is already booked.");
+  return { package: packageKind, guests, gross, variableCost, deposit: Math.round(gross * 0.2), parkingDemand: Math.ceil(guests / 2.4), blockers };
+}
+
 export function applyPropertyCommand(course: Course, world: World, command: PropertyCommand): PropertyCommandResult {
   const property = normalizePropertyCourse(course.property);
   let enterprise = normalizePropertyEnterprise(world.enterprise);
   if (world.isBankrupt) return outcome(false, course, world, "The property cannot invest while bankrupt.");
+
+  if (command.type === "INSTALL_MODULE" || command.type === "TOGGLE_MODULE") {
+    const clubhouseIndex = property.assets.findIndex((asset) => asset.kind === "clubhouse");
+    if (clubhouseIndex < 0) return outcome(false, course, world, "Build a clubhouse shell before configuring room modules.");
+    const clubhouse = property.assets[clubhouseIndex];
+    const moduleSpec = FACILITY_MODULE_SPECS[command.module];
+    const existing = clubhouse.modules?.find((module) => module.kind === command.module);
+    if (command.type === "TOGGLE_MODULE") {
+      if (!existing) return outcome(false, course, world, `${moduleSpec.label} is not installed.`);
+      const modules = clubhouse.modules!.map((module) => module.kind === command.module ? { ...module, enabled: !module.enabled } : module);
+      const assets = property.assets.map((asset, index) => index === clubhouseIndex ? { ...clubhouse, modules } : asset);
+      return outcome(true, { ...course, property: { ...property, assets } }, world, `${moduleSpec.label} ${existing.enabled ? "closed" : "reopened"}.`);
+    }
+    if (existing) return outcome(false, course, world, `${moduleSpec.label} is already installed.`);
+    if (clubhouse.tier < moduleSpec.requiredShellTier) return outcome(false, course, world, `${moduleSpec.label} requires clubhouse shell tier ${moduleSpec.requiredShellTier}.`);
+    const roomSlots = clubhouse.tier + 1;
+    if ((clubhouse.modules?.length ?? 0) >= roomSlots) return outcome(false, course, world, `The tier ${clubhouse.tier} shell has no free room slots; expand it first.`);
+    if (world.cash < moduleSpec.buildCost) return outcome(false, course, world, `Need $${moduleSpec.buildCost.toLocaleString()} to install ${moduleSpec.label}.`);
+    const modules = [...(clubhouse.modules ?? []), { kind: command.module, tier: 1 as PropertyTier, enabled: true }];
+    const assets = property.assets.map((asset, index) => index === clubhouseIndex ? { ...clubhouse, modules, constructionDaysRemaining: Math.max(clubhouse.constructionDaysRemaining ?? 0, 1) } : asset);
+    return outcome(true, { ...course, property: { ...property, assets } }, { ...world, cash: world.cash - moduleSpec.buildCost }, `${moduleSpec.label} installed; the clubhouse will reopen after one construction day.`);
+  }
 
   if (command.type === "BUILD") {
     const assetSpec = PROPERTY_ASSET_SPECS[command.kind];
@@ -344,17 +519,24 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
   }
 
   if (command.type === "BOOK_OUTING") {
-    const venue = assetOf(course, "event_space");
-    if (!venue) return outcome(false, course, world, "Open function space before taking an outing booking.");
-    if (!course.holes.some((hole) => hole.tee && hole.green)) return outcome(false, course, world, "A playable golf routing is required for an outing.");
-    if (enterprise.outings.some((outing) => outing.week === world.week + 1 && outing.day === 5 && outing.status === "scheduled")) return outcome(false, course, world, "The peak outing slot next week is already booked.");
-    const guests = Math.min(venue.capacity, 48);
-    const gross = guests * (venue.price + 85);
-    const deposit = Math.round(gross * 0.2);
-    const outing = { id: `outing-${enterprise.sequence}`, week: world.week + 1, day: 5, guests, package: "golf_catering" as const, gross, deposit, status: "scheduled" as const };
-    const entry = makeEntry(enterprise, world.week, 0, venue.id, "events", "Golf outing deposit", deposit, 0, guests);
+    const packageKind = command.package ?? "golf_catering";
+    const preview = propertyOutingPreview(course, world, packageKind);
+    if (preview.blockers.length > 0) return outcome(false, course, world, preview.blockers.join(" "));
+    const venue = assetOf(course, "event_space") ?? property.assets.find((asset) => asset.kind === "clubhouse");
+    const outing = { id: `outing-${enterprise.sequence}`, week: world.week + 1, day: 5, guests: preview.guests, package: packageKind, gross: preview.gross, deposit: preview.deposit, status: "scheduled" as const };
+    const entry = makeEntry(enterprise, world.week, 0, venue?.id, "events", `${packageKind.replaceAll("_", " ")} outing deposit`, preview.deposit, 0, preview.guests);
     enterprise = { ...enterprise, sequence: enterprise.sequence + 1, outings: [...enterprise.outings, outing].slice(-80), ledger: [...enterprise.ledger, entry].slice(-420) };
-    return outcome(true, course, { ...world, cash: world.cash + deposit, enterprise }, `Outing booked for week ${outing.week}; ${deposit.toLocaleString()} deposit collected.`);
+    return outcome(true, course, { ...world, cash: world.cash + preview.deposit, enterprise }, `${packageKind.replaceAll("_", " ")} booked for week ${outing.week}; ${preview.deposit.toLocaleString()} deposit collected.`);
+  }
+
+  if (command.type === "CANCEL_OUTING") {
+    const outing = enterprise.outings.find((candidate) => candidate.id === command.outingId && candidate.status === "scheduled");
+    if (!outing) return outcome(false, course, world, "That outing is no longer scheduled.");
+    const refund = Math.round(outing.deposit * 0.8);
+    if (world.cash < refund) return outcome(false, course, world, `Need $${refund.toLocaleString()} cash to issue the outing refund.`);
+    const entry = makeEntry(enterprise, world.week, 0, undefined, "events", `${outing.package.replaceAll("_", " ")} cancellation refund`, 0, refund, outing.guests);
+    enterprise = { ...enterprise, sequence: enterprise.sequence + 1, outings: enterprise.outings.map((candidate) => candidate.id === outing.id ? { ...candidate, status: "cancelled" as const } : candidate), ledger: [...enterprise.ledger, entry].slice(-420) };
+    return outcome(true, course, { ...world, cash: world.cash - refund, enterprise }, `Outing cancelled; ${refund.toLocaleString()} refunded and the non-refundable planning fee retained.`);
   }
 
   if (command.type === "RECOVER_SERVICE") {
@@ -386,8 +568,38 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
     assets[index] = { ...asset, enabled: !asset.enabled };
     return outcome(true, { ...course, property: { ...property, assets } }, world, `${asset.name} ${assets[index].enabled ? "reopened" : "closed"}.`);
   }
+  if (command.type === "RENAME") {
+    const name = command.name.trim().replace(/\s+/g, " ").slice(0, 40);
+    if (name.length < 2) return outcome(false, course, world, "Facility names must contain at least two characters.");
+    assets[index] = { ...asset, name };
+    return outcome(true, { ...course, property: { ...property, assets } }, world, `${name} saved.`);
+  }
+  if (command.type === "SET_HOURS") {
+    const openHour = clamp(Math.floor(command.openHour), 5, 20);
+    const closeHour = clamp(Math.floor(command.closeHour), 8, 24);
+    if (closeHour - openHour < 4) return outcome(false, course, world, "Operating hours must span at least four hours.");
+    assets[index] = { ...asset, openHour, closeHour };
+    return outcome(true, { ...course, property: { ...property, assets } }, world, `${asset.name} will operate ${openHour}:00–${closeHour}:00.`);
+  }
+  if (command.type === "SET_UPKEEP") {
+    assets[index] = { ...asset, upkeepPolicy: command.policy };
+    return outcome(true, { ...course, property: { ...property, assets } }, world, `${asset.name} switched to ${command.policy} upkeep.`);
+  }
+  if (command.type === "ROTATE_PRACTICE") {
+    if (asset.category !== "practice") return outcome(false, course, world, "Only practice geometry has a hitting direction.");
+    assets[index] = rotatePracticeGeometry(asset);
+    return outcome(true, { ...course, property: { ...property, assets } }, world, `${asset.name} hitting direction rotated within its safety footprint.`);
+  }
   if (command.type === "MOVE") {
-    const next = { ...asset, x: asset.x + Math.sign(command.dx), y: asset.y + Math.sign(command.dy) };
+    const dx = Math.sign(command.dx);
+    const dy = Math.sign(command.dy);
+    const next = {
+      ...asset,
+      x: asset.x + dx,
+      y: asset.y + dy,
+      route: asset.route ? { ...asset.route, points: asset.route.points.map((point) => ({ x: point.x + dx, y: point.y + dy })) } : undefined,
+      stations: asset.stations?.map((station) => ({ ...station, x: station.x + dx, y: station.y + dy })),
+    };
     const blocker = propertySiteBlocker(course, property.assets, next, asset.id);
     if (blocker) return outcome(false, course, world, `Cannot move ${asset.name}: ${blocker}.`);
     const cost = 150 * asset.tier;
@@ -412,19 +624,23 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
     return outcome(true, { ...course, property: { ...property, assets } }, { ...world, cash: world.cash - cost }, `${asset.name} restored to excellent condition.`);
   }
   const assetSpec = PROPERTY_ASSET_SPECS[asset.kind];
-  if (asset.tier >= assetSpec.maxTier) return outcome(false, course, world, `${asset.name} is already at its maximum tier.`);
-  const cost = Math.round(assetSpec.buildCost * (0.65 + asset.tier * 0.35));
-  if (world.cash < cost) return outcome(false, course, world, `Need $${cost.toLocaleString()} for the tier upgrade.`);
-  const nextTier = (asset.tier + 1) as PropertyTier;
+  const preview = propertyUpgradePreview(course, asset.id);
+  if (!preview) return outcome(false, course, world, `${asset.name} is already at its maximum tier.`);
+  if (preview.blocker) return outcome(false, course, world, `Cannot expand ${asset.name}: ${preview.blocker}.`);
+  if (world.cash < preview.cost) return outcome(false, course, world, `Need $${preview.cost.toLocaleString()} for the tier upgrade.`);
+  const nextTier = preview.nextTier;
   assets[index] = {
     ...asset,
     tier: nextTier,
     capacity: Math.round(assetSpec.baseCapacity * (1 + (nextTier - 1) * 0.62)),
     condition: 1,
+    width: preview.width,
+    height: preview.height,
+    constructionDaysRemaining: preview.downtimeDays,
     surface: asset.surface ? SURFACE_ORDER[Math.min(SURFACE_ORDER.length - 1, nextTier - 1)] : undefined,
     units: asset.units ? Math.round(asset.units * 1.45) : undefined,
   };
-  return outcome(true, { ...course, property: { ...property, assets } }, { ...world, cash: world.cash - cost }, `${asset.name} upgraded to tier ${nextTier}${assets[index].surface ? ` ${assets[index].surface}` : ""}.`);
+  return outcome(true, { ...course, property: { ...property, assets } }, { ...world, cash: world.cash - preview.cost }, `${asset.name} upgraded to tier ${nextTier}${assets[index].surface ? ` ${assets[index].surface}` : ""}; ${preview.downtimeDays} construction day${preview.downtimeDays === 1 ? "" : "s"}.`);
 }
 
 function prerequisiteMessage(kind: PropertyAssetKind, course: Course, world: World): string | null {
@@ -461,6 +677,11 @@ function createAsset(assets: PropertyAsset[], assetSpec: PropertyAssetSpec, plac
     price: assetSpec.basePrice,
     surface: assetSpec.category === "access" && assetSpec.kind !== "valet" ? "grass" : undefined,
     units: assetSpec.kind === "houses" ? 16 : assetSpec.kind === "condos" ? 28 : undefined,
+    modules: assetSpec.kind === "clubhouse" ? [] : undefined,
+    upkeepPolicy: "standard",
+    openHour: assetSpec.category === "clubhouse" ? 8 : 7,
+    closeHour: assetSpec.kind === "bar" ? 23 : 20,
+    constructionDaysRemaining: 0,
     enabled: true,
   });
 }
@@ -505,6 +726,7 @@ function rectanglesOverlap(a: Pick<PropertyAsset, "x" | "y" | "width" | "height"
 
 function withPracticeGeometry(asset: PropertyAsset): PropertyAsset {
   if (asset.category !== "practice") return asset;
+  if (asset.route?.points.length && asset.stations?.length) return asset;
   const centerY = asset.y + Math.floor(asset.height / 2);
   return {
     ...asset,
@@ -512,6 +734,26 @@ function withPracticeGeometry(asset: PropertyAsset): PropertyAsset {
     stations: [
       { id: `station-${asset.id}-entry`, kind: asset.kind === "putting_green" ? "cup" : "tee", x: asset.x, y: centerY, capacity: Math.max(1, Math.floor(asset.capacity / 4)) },
       { id: `station-${asset.id}-target`, kind: asset.kind === "putting_green" ? "cup" : "target", x: asset.x + asset.width - 1, y: centerY, capacity: Math.max(1, Math.floor(asset.capacity / 4)) },
+    ],
+  };
+}
+
+function rotatePracticeGeometry(asset: PropertyAsset): PropertyAsset {
+  const horizontal = !asset.route || Math.abs((asset.route.points.at(-1)?.x ?? 0) - (asset.route.points[0]?.x ?? 0)) >= Math.abs((asset.route.points.at(-1)?.y ?? 0) - (asset.route.points[0]?.y ?? 0));
+  const start = horizontal
+    ? { x: asset.x + Math.floor(asset.width / 2), y: asset.y }
+    : { x: asset.x, y: asset.y + Math.floor(asset.height / 2) };
+  const end = horizontal
+    ? { x: start.x, y: asset.y + asset.height - 1 }
+    : { x: asset.x + asset.width - 1, y: start.y };
+  const firstKind = asset.kind === "putting_green" ? "cup" as const : "tee" as const;
+  const secondKind = asset.kind === "putting_green" ? "cup" as const : "target" as const;
+  return {
+    ...asset,
+    route: { id: asset.route?.id ?? `route-${asset.id}`, points: [start, end] },
+    stations: [
+      { id: `station-${asset.id}-entry`, kind: firstKind, ...start, capacity: Math.max(1, Math.floor(asset.capacity / 4)) },
+      { id: `station-${asset.id}-target`, kind: secondKind, ...end, capacity: Math.max(1, Math.floor(asset.capacity / 4)) },
     ],
   };
 }
@@ -586,7 +828,8 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
   let sequence = enterprise.sequence;
   const entries: CommercialLedgerEntry[] = [];
   const incidents: PropertyIncident[] = [];
-  const enabled = property.assets.filter((asset) => asset.enabled);
+  const facilityStats = new Map<string, { demand: number; served: number; denied: number; revenue: number }>();
+  const enabled = property.assets.filter(isOperational);
   const accessCapacity = propertyAccessCapacity(course);
   const resortBeds = capacity(enabled, ["lodge", "hotel", "cottages"]);
   const residentCount = enterprise.residents.reduce((sum, resident) => sum + resident.occupied, 0);
@@ -598,7 +841,12 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     const grossRevenue = Math.round(revenue);
     const variableCost = Math.round(grossRevenue * categoryCogs(category));
     const totalCost = Math.round(cost) + variableCost;
-    entries.push({ id: `commercial-${sequence++}`, week: world.week, day, assetId: asset?.id, category, description, revenue: grossRevenue, cost: totalCost, visitors, grossRevenue, variableCost, netContribution: grossRevenue - totalCost, demand, served: visitors, denied: Math.max(0, demand - visitors) });
+    const denied = Math.max(0, demand - visitors);
+    entries.push({ id: `commercial-${sequence++}`, week: world.week, day, assetId: asset?.id, category, description, revenue: grossRevenue, cost: totalCost, visitors, grossRevenue, variableCost, netContribution: grossRevenue - totalCost, demand, served: visitors, denied });
+    if (asset) {
+      const previous = facilityStats.get(asset.id) ?? { demand: 0, served: 0, denied: 0, revenue: 0 };
+      facilityStats.set(asset.id, { demand: previous.demand + demand, served: previous.served + visitors, denied: previous.denied + denied, revenue: previous.revenue + grossRevenue });
+    }
   };
   const practiceAssets = enabled.filter((asset) => asset.category === "practice");
   const memberShare = enterprise.customers.filter((customer) => customer.member).length / Math.max(1, enterprise.customers.length);
@@ -620,7 +868,7 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
   }).map((reservation) => {
     const checkin = (reservation.checkInWeek ?? reservation.week) * 7 + (reservation.checkInDay ?? 0);
     if (reservation.status !== "booked" || checkin !== today) return reservation;
-    const lodging = property.assets.find((asset) => asset.id === reservation.assetId && asset.enabled);
+    const lodging = property.assets.find((asset) => asset.id === reservation.assetId && isOperational(asset));
     const party = reservation.partySize ?? 1;
     const roomsAvailable = Math.max(0, (lodging?.capacity ?? 0) - dirtyRooms - enterprise.resort.outOfOrderRooms - occupiedRooms);
     if (!staffedLodging || !lodging || roomsAvailable < party || remainingAccess < party) {
@@ -641,7 +889,8 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
 
   let practiceVisitors = 0;
   for (const asset of practiceAssets) {
-    const visitors = Math.min(remainingAccess, asset.capacity, Math.max(0, Math.round(baseDemand * (0.32 + asset.tier * 0.1) * asset.condition / Math.max(1, practiceAssets.length))));
+    const serviceCapacity = Math.floor(asset.capacity * operatingHoursFactor(asset));
+    const visitors = Math.min(remainingAccess, serviceCapacity, Math.max(0, Math.round(baseDemand * (0.32 + asset.tier * 0.1) * asset.condition / Math.max(1, practiceAssets.length))));
     remainingAccess -= visitors;
     practiceVisitors += visitors;
     propertyVisitors += visitors;
@@ -649,7 +898,10 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     add(asset, "practice", `${asset.name} sessions and bucket sales`, visitors, visitors * asset.price * priceFit * (1 - memberShare * 0.1), 0, Math.max(visitors, Math.round(baseDemand / Math.max(1, practiceAssets.length))));
   }
 
-  const lessonCapacity = enterprise.professionals.length * 5;
+  const clubhouse = enabled.find((asset) => asset.kind === "clubhouse");
+  const proOffice = clubhouse?.modules?.some((module) => module.kind === "pro_office" && module.enabled);
+  const fittingStudio = clubhouse?.modules?.some((module) => module.kind === "fitting_studio" && module.enabled);
+  const lessonCapacity = enterprise.professionals.length * (proOffice ? 7 : 5);
   const lessons = Math.min(lessonCapacity, Math.floor(practiceVisitors * 0.28));
   if (lessons > 0) {
     const averagePrice = enterprise.professionals.reduce((sum, pro) => sum + pro.lessonPrice, 0) / enterprise.professionals.length;
@@ -686,16 +938,48 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     const share = asset.kind === "restaurant" ? 0.34 : asset.kind === "bar" ? 0.27 : asset.kind === "pro_shop" ? 0.22 : 0.06;
     const staffingCap = asset.kind === "restaurant" || asset.kind === "bar" ? enterprise.resort.foodService * 24 : asset.kind === "locker_room" ? enterprise.resort.lockerAttendants * 30 : Number.POSITIVE_INFINITY;
     const demand = Math.round(clubhouseGuests * share * asset.condition);
-    const visitors = Math.min(asset.capacity, staffingCap, demand);
+    const visitors = Math.min(Math.floor(asset.capacity * operatingHoursFactor(asset)), staffingCap, demand);
     const category: CommercialCategory = asset.kind === "pro_shop" ? "retail" : asset.kind === "event_space" ? "events" : "food_beverage";
-    add(asset, category, asset.kind === "event_space" ? "Function-space service" : `${asset.name} sales`, visitors, visitors * asset.price, 0, demand);
+    if (asset.kind === "pro_shop") {
+      const merchandise = Math.ceil(visitors * 0.58);
+      const rentals = asset.tier >= 2 ? Math.ceil(visitors * 0.18) : 0;
+      const repairs = asset.tier >= 3 ? Math.floor(visitors * 0.12) : 0;
+      const fittings = asset.tier >= 4 && enterprise.professionals.length > 0 ? Math.min(enterprise.professionals.length * (fittingStudio ? 3 : 1), Math.floor(visitors * 0.12)) : 0;
+      add(asset, "retail", "Equipment and apparel sales", merchandise, merchandise * asset.price, 0, Math.ceil(demand * 0.58));
+      if (asset.tier >= 2) add(asset, "retail", "Club rental service", rentals, rentals * Math.round(asset.price * 0.72), 0, Math.ceil(demand * 0.18));
+      if (asset.tier >= 3) add(asset, "retail", "Repair service", repairs, repairs * Math.round(asset.price * 0.9), 0, Math.ceil(demand * 0.12));
+      if (asset.tier >= 4) add(asset, "retail", "Club fittings", fittings, fittings * Math.round(asset.price * 1.85), 0, Math.ceil(demand * 0.12));
+    } else {
+      add(asset, category, asset.kind === "event_space" ? "Function-space service" : `${asset.name} sales`, visitors, visitors * asset.price, 0, demand);
+    }
+  }
+
+  if (clubhouse) {
+    const modules = clubhouse.modules?.filter((module) => module.enabled) ?? [];
+    const addModuleService = (moduleKind: FacilityModuleKind, standalone: PropertyAssetKind, category: CommercialCategory, share: number, price: number, staffingCap = Number.POSITIVE_INFINITY) => {
+      if (enabled.some((asset) => asset.kind === standalone)) return;
+      const module = modules.find((candidate) => candidate.kind === moduleKind);
+      if (!module) return;
+      const moduleSpec = FACILITY_MODULE_SPECS[moduleKind];
+      const demand = Math.round(clubhouseGuests * share * clubhouse.condition);
+      const visitors = Math.min(moduleSpec.capacity * module.tier, staffingCap, demand);
+      add(clubhouse, category, `${moduleSpec.label} service`, visitors, visitors * price, 0, demand);
+    };
+    addModuleService("pro_shop", "pro_shop", "retail", 0.16, 24);
+    addModuleService("restaurant", "restaurant", "food_beverage", 0.28, 25, enterprise.resort.foodService * 24);
+    addModuleService("bar", "bar", "food_beverage", 0.2, 18, enterprise.resort.foodService * 20);
+    addModuleService("function_room", "event_space", "events", 0.04, 62, enterprise.resort.foodService * 30);
   }
 
   const outings = enterprise.outings.map((outing) => {
     if (outing.status !== "scheduled" || outing.week !== world.week || outing.day !== day) return outing;
-    const venue = assetOf(course, "event_space");
-    const restaurant = assetOf(course, "restaurant");
-    const canFulfill = !!venue && !!restaurant && enterprise.resort.foodService > 0 && accessCapacity - coreGolfers - propertyVisitors >= outing.guests;
+    const venue = assetOf(course, "event_space") ?? clubhouse;
+    const needsFood = outing.package === "golf_catering" || outing.package === "destination_event";
+    const needsPro = outing.package === "golf_clinic";
+    const canFulfill = !!venue
+      && (!needsFood || hasFacilityCapability(course, "restaurant", "restaurant") && enterprise.resort.foodService > 0)
+      && (!needsPro || enterprise.professionals.length > 0)
+      && accessCapacity - coreGolfers - propertyVisitors >= outing.guests;
     if (!canFulfill) {
       add(venue, "events", "Cancelled outing refund", 0, 0, outing.deposit, outing.guests);
       serviceQueue += outing.guests;
@@ -741,11 +1025,18 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
 
   let upkeep = 0;
   const nextAssets = property.assets.map((asset) => {
-    if (!asset.enabled) return asset;
-    const daily = PROPERTY_ASSET_SPECS[asset.kind].dailyUpkeep * (0.8 + asset.tier * 0.28);
+    const constructionDaysRemaining = Math.max(0, (asset.constructionDaysRemaining ?? 0) - 1);
+    const stats = facilityStats.get(asset.id) ?? { demand: 0, served: 0, denied: 0, revenue: 0 };
+    if (!asset.enabled) return { ...asset, constructionDaysRemaining, lastDay: stats };
+    const policy = asset.upkeepPolicy ?? "standard";
+    const moduleUpkeep = asset.modules?.filter((module) => module.enabled).reduce((sum, module) => sum + FACILITY_MODULE_SPECS[module.kind].dailyUpkeep * module.tier, 0) ?? 0;
+    const daily = (PROPERTY_ASSET_SPECS[asset.kind].dailyUpkeep * (0.8 + asset.tier * 0.28) + moduleUpkeep) * upkeepCostFactor(policy);
     upkeep += daily;
-    const wear = asset.category === "access" ? 0.0028 : asset.category === "resort" ? 0.0022 : 0.0016;
-    return { ...asset, condition: clamp(asset.condition - wear * (1 + propertyVisitors / Math.max(1, asset.capacity * 8)), 0.35, 1) };
+    const baseWear = asset.category === "access" ? 0.0028 : asset.category === "resort" ? 0.0022 : 0.0016;
+    const wearFactor = policy === "lean" ? 1.65 : policy === "premium" ? 0.55 : 1;
+    const recovery = policy === "premium" ? 0.004 : policy === "standard" ? 0.001 : 0;
+    const condition = clamp(asset.condition - baseWear * wearFactor * (1 + stats.served / Math.max(1, asset.capacity * 8)) + recovery, 0.25, 1);
+    return { ...asset, condition, constructionDaysRemaining, lastDay: stats };
   });
   const serviceHeadcount = enterprise.resort.frontDesk + enterprise.resort.housekeeping + enterprise.resort.shuttleDrivers + enterprise.resort.foodService + enterprise.resort.lockerAttendants;
   const wages = enterprise.professionals.reduce((sum, pro) => sum + pro.weeklyWage / 7, 0) + serviceHeadcount * 590 / 7;

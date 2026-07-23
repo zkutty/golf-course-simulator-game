@@ -1,5 +1,22 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-07-23 — M31 completion pass
+
+Current request: “Implant m31 from linear”
+
+- Audited M31 (`ZK-285`–`ZK-298`) against the existing property-enterprise baseline and concentrated the implementation on the seven feature tickets plus certification that remained open.
+- Added persisted facility operating hours, lean/standard/premium upkeep, construction downtime, last-day demand/served/denied/revenue telemetry, facility renaming, and editable practice hitting direction while preserving stable route/station identity across moves and saves.
+- Added the shared clubhouse shell/module registry (check-in, retail, restaurant/kitchen/bar, lockers/lounge, pro office/fitting, and function rooms), room-slot and shell-tier gates, reducer-atomic module controls, module operating costs, and capability-backed service simulation.
+- Added expansion previews with footprint validation, cost, capacity/upkeep/parking deltas, downtime, and break-even guidance; upgrades now respect land/overlap blockers and expose construction state.
+- Expanded pro-shop economics into merchandise, rentals, repairs, and staffed fittings; added facility-hour, staffing, condition, queue/denial, COGS, and upkeep effects to practice and clubhouse service.
+- Added package-specific outing previews, exact blockers, deposits, shared arrival/staff/facility validation, fulfillment revalidation, and explicit cancellation/refund handling.
+- Added themed/surface-aware property rendering, visible practice routes/stations and construction cues, richer `render_game_to_text` property telemetry, and Golfopedia entries for estate access, practice academies, and club campuses.
+- Verification: 56 Vitest files passed (350 passed, one intentional skip); focused M31/save tests passed (14); production build passed; lint/i18n passed with seven pre-existing hook warnings; the M31 Playwright golden path passed; the bundled web-game client passed with no console error artifact. `m31-club-campus.png`, `m31-property-enterprise.png`, and `m31-final-smoke/` were visually inspected.
+
+## M31 remaining
+
+- None. Completion notes were added to the seven previously open implementation/presentation/certification tickets, and all M31 issues are Done in Linear.
+
 ## 2026-07-22 — Practice campus, destination resort, and golf community implementation
 
 User request: Implement the newly planned Linear features covering practice/revenue facilities, tiered access/parking/roads, destination lodging, and golf-course residential development; update the Linear tasks when verified; commit and push the completed work to `main`.

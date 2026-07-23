@@ -2130,7 +2130,13 @@ export function PixiStage(props: PixiStageProps) {
       graphic.destroy();
     }
     propertyGraphicsRef.current = [];
-    const colors = { access: 0x6f7775, practice: 0x78a95f, clubhouse: 0xb88c53, resort: 0x668da8, community: 0xc18c72, safety: 0x477a4d } as const;
+    const themeColors = {
+      parkland: { access: 0x6f7775, practice: 0x78a95f, clubhouse: 0xb88c53, resort: 0x668da8, community: 0xc18c72, safety: 0x477a4d },
+      links: { access: 0x777b79, practice: 0x91a65e, clubhouse: 0xa88d64, resort: 0x648ca1, community: 0xb79072, safety: 0x5d7848 },
+      desert: { access: 0x81756a, practice: 0x6f9c66, clubhouse: 0xb47a4f, resort: 0x66899a, community: 0xc38162, safety: 0x61784f },
+    } as const;
+    const surfaceColors = { grass: 0x779567, dirt: 0x8c7156, gravel: 0x8b8b83, asphalt: 0x555b5d, paver: 0x9a8068 } as const;
+    const colors = themeColors[course.theme ?? "parkland"];
     for (const asset of course.property?.assets ?? []) {
       const elevation = getElevation(course, asset.x, asset.y);
       const corners = [
@@ -2141,8 +2147,21 @@ export function PixiStage(props: PixiStageProps) {
       ];
       const graphic = new PIXI.Graphics();
       graphic.poly(corners.flatMap((point) => [point.x, point.y]));
-      graphic.fill({ color: colors[asset.category], alpha: asset.enabled ? 0.88 : 0.38 });
+      graphic.fill({ color: asset.surface ? surfaceColors[asset.surface] : colors[asset.category], alpha: asset.enabled ? 0.88 : 0.38 });
       graphic.stroke({ width: asset.enabled ? 2 : 1, color: asset.enabled ? 0xfff6d7 : 0x5d625e, alpha: 0.9 });
+      if (asset.category === "practice" && asset.route?.points.length) {
+        asset.route.points.forEach((point, index) => {
+          const iso = worldToIso(point.x + 0.5, point.y + 0.5, elevation, rotation);
+          if (index === 0) graphic.moveTo(iso.x, iso.y);
+          else graphic.lineTo(iso.x, iso.y);
+        });
+        graphic.stroke({ width: 2 + asset.tier * 0.4, color: 0xf7e9a8, alpha: asset.enabled ? 0.9 : 0.35 });
+        for (const station of asset.stations ?? []) {
+          const iso = worldToIso(station.x + 0.5, station.y + 0.5, elevation, rotation);
+          graphic.circle(iso.x, iso.y, station.kind === "target" ? 4 : 3);
+          graphic.fill({ color: station.kind === "target" ? 0xe9b84b : 0xfff6d7, alpha: asset.enabled ? 0.95 : 0.35 });
+        }
+      }
       if (asset.kind === "parking" || asset.kind === "overflow_parking") {
         const cars = Math.min(7, asset.tier + 2);
         for (let index = 0; index < cars; index++) {
@@ -2159,6 +2178,13 @@ export function PixiStage(props: PixiStageProps) {
         graphic.moveTo(from.x, from.y - 18 - asset.tier * 2);
         graphic.lineTo(to.x, to.y - 18 - asset.tier * 2);
         graphic.stroke({ width: 2, color: 0x355c3d, alpha: asset.condition });
+      }
+      if ((asset.constructionDaysRemaining ?? 0) > 0) {
+        const first = worldToIso(asset.x, asset.y + asset.height, elevation, rotation);
+        const second = worldToIso(asset.x + asset.width, asset.y, elevation, rotation);
+        graphic.moveTo(first.x, first.y - 4);
+        graphic.lineTo(second.x, second.y - 4);
+        graphic.stroke({ width: 4, color: 0xe0a32f, alpha: 0.9 });
       }
       graphic.zIndex = (asset.x + asset.width + asset.y + asset.height) * 10 + 5;
       layers.objects.addChild(graphic);

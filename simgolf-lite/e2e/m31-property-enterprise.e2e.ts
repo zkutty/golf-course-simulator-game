@@ -19,9 +19,18 @@ test("M31-M33 property enterprise builds access, campus, resort, and community",
     await page.getByTestId(`build-${kind}`).click();
     await expect(page.getByTestId(`upgrade-${kind}`)).toBeVisible();
   }
+  await page.getByTestId("rotate-driving_range").click();
+  await page.getByLabel("Driving range upkeep policy").selectOption("premium");
   await panel.locator("article").filter({ hasText: "Club professionals" }).getByRole("button").click();
   await panel.locator("article").filter({ hasText: "Memberships and lockers" }).getByRole("button").click();
-  await panel.locator("article").filter({ hasText: "Packaged golf outing" }).getByRole("button").click();
+  await page.getByTestId("outing-preview-golf_only").getByRole("button").click();
+  await expect(page.getByTestId("property-notice")).toContainText("booked for week");
+  await page.getByTestId("install-module-check_in").click();
+  await page.getByTestId("install-module-pro_shop").click();
+  await expect(page.getByTestId("property-module-check_in")).toContainText("Close module");
+  await page.getByTestId("property-shell-modules").evaluate((element) => element.scrollIntoView({ block: "start" }));
+  const campusShot = await page.screenshot({ fullPage: true, path: "artifacts/m31-club-campus.png" });
+  await testInfo.attach("club-campus", { body: campusShot, contentType: "image/png" });
 
   await page.getByTestId("property-tab-resort").click();
   await page.getByTestId("build-lodge").click();
@@ -43,6 +52,9 @@ test("M31-M33 property enterprise builds access, campus, resort, and community",
   expect(textState.course.property.professionals).toBe(1);
   expect(textState.course.property.membership.active).toBe(true);
   expect(textState.course.property.reservations).toBe(1);
+  expect(textState.course.property.outings).toBe(1);
+  expect(textState.course.property.assets.find((asset: { kind: string }) => asset.kind === "clubhouse").modules).toEqual(["check_in", "pro_shop"]);
+  expect(textState.course.property.assets.find((asset: { kind: string }) => asset.kind === "driving_range").upkeep).toBe("premium");
 
   const shot = await page.screenshot({ fullPage: true, path: "artifacts/m31-property-enterprise.png" });
   await testInfo.attach("property-enterprise", { body: shot, contentType: "image/png" });

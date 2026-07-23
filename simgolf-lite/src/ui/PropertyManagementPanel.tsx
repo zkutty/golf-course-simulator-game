@@ -2,12 +2,15 @@ import { useMemo, useState } from "react";
 import { formatCurrency, formatNumber } from "../i18n/format";
 import type { Course, World } from "../game/models/types";
 import {
+  FACILITY_MODULE_SPECS,
   PROPERTY_ASSET_SPECS,
+  propertyOutingPreview,
   propertySummary,
+  propertyUpgradePreview,
   type PropertyCommand,
   type PropertyCommandResult,
 } from "../game/property/property";
-import type { PropertyAsset, PropertyAssetCategory, PropertyAssetKind } from "../game/property/types";
+import type { FacilityModuleKind, OutingBooking, PropertyAsset, PropertyAssetCategory, PropertyAssetKind } from "../game/property/types";
 import { translateCurrent } from "../i18n/core";
 
 type Tab = "campus" | "resort" | "community" | "ledger";
@@ -50,7 +53,7 @@ export function PropertyManagementPanel(props: {
       aria-label={translateCurrent("property.aria")}
       data-testid="property-management-panel"
       className="cc-tycoon-panel"
-      style={{ position: "absolute", zIndex: 1200, top: 58, left: 12, width: "min(720px, calc(100vw - 390px))", minWidth: 520, maxHeight: "calc(100vh - 92px)", overflow: "hidden", display: "flex", flexDirection: "column", border: "3px solid #7b5b2d", boxShadow: "0 18px 50px rgba(20,28,20,.38)" }}
+      style={{ position: "absolute", zIndex: 1200, top: 58, left: 12, width: "min(720px, calc(100vw - 24px))", maxHeight: "calc(100vh - 70px)", overflow: "hidden", display: "flex", flexDirection: "column", border: "3px solid #7b5b2d", boxShadow: "0 18px 50px rgba(20,28,20,.38)" }}
     >
       <header style={{ padding: "14px 16px 10px", background: "linear-gradient(135deg,#f9edcc,#e4d09d)", borderBottom: "1px solid rgba(70,55,25,.28)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
@@ -88,7 +91,7 @@ export function PropertyManagementPanel(props: {
               <div data-tooltip={copy.help} style={{ fontSize: 11, color: "#677267", cursor: "help" }}>{copy.help}</div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
-              {kinds.map((kind) => <AssetCard key={kind} kind={kind} asset={summary.assets.find((candidate) => candidate.kind === kind)} onCommand={run} />)}
+              {kinds.map((kind) => <AssetCard key={kind} course={props.course} kind={kind} asset={summary.assets.find((candidate) => candidate.kind === kind)} onCommand={run} />)}
             </div>
           </section>;
         })}
@@ -96,8 +99,9 @@ export function PropertyManagementPanel(props: {
         {tab === "campus" && <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <ActionCard icon="🧑‍🏫" title={translateCurrent("property.professionals")} detail={`${summary.enterprise.professionals.length} hired · lessons improve customer skill and generate academy income.`} button="Hire professional · $4,000" onClick={() => run({ type: "HIRE_PRO" })} />
           <ActionCard icon="🎟️" title={translateCurrent("property.memberships")} detail={summary.enterprise.membership.active ? `Tier ${summary.enterprise.membership.tier} · ${summary.enterprise.membership.memberCount} members · ${formatCurrency(summary.enterprise.membership.monthlyFee)}/month` : "Recurring dues, repeat play, practice access, and clubhouse demand."} button={summary.enterprise.membership.active ? "Upgrade program" : "Launch · $2,500"} onClick={() => run({ type: summary.enterprise.membership.active ? "UPGRADE_MEMBERSHIP" : "LAUNCH_MEMBERSHIP" })} />
-          <ActionCard icon="🎉" title={translateCurrent("property.outing")} detail={`${summary.enterprise.outings.filter((outing) => outing.status === "scheduled").length} scheduled · uses real golf, function-space, food, parking, and staffing capacity.`} button="Book next-week outing" onClick={() => run({ type: "BOOK_OUTING" })} />
         </section>}
+        {tab === "campus" && <ShellModules assets={summary.assets} onCommand={run} />}
+        {tab === "campus" && <OutingPlanner course={props.course} world={props.world} outings={summary.enterprise.outings} onCommand={run} />}
         {tab === "resort" && <section style={{ marginTop: 14 }}>
           <h3 style={{ marginBottom: 5 }}>{translateCurrent("property.resort.operations")}</h3>
           <div style={{ fontSize: 11, color: "#687168", marginBottom: 8 }}>{translateCurrent("property.resort.help")}</div>
@@ -122,10 +126,10 @@ export function PropertyManagementPanel(props: {
   );
 }
 
-function AssetCard(props: { kind: PropertyAssetKind; asset?: PropertyAsset; onCommand: (command: PropertyCommand) => void }) {
+function AssetCard(props: { course: Course; kind: PropertyAssetKind; asset?: PropertyAsset; onCommand: (command: PropertyCommand) => void }) {
   const { asset } = props;
   const spec = PROPERTY_ASSET_SPECS[props.kind];
-  const upgradeCost = asset ? Math.round(spec.buildCost * (0.65 + asset.tier * 0.35)) : 0;
+  const preview = asset ? propertyUpgradePreview(props.course, asset.id) : null;
   return <article data-testid={`property-asset-${props.kind}`} style={{ border: "1px solid #d3cab6", borderRadius: 9, padding: 9, background: asset ? "#f7fbf3" : "#fffdf8", minHeight: 112 }}>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
       <div><span style={{ fontSize: 18 }}>{spec.icon}</span> <strong style={{ color: "#3c483d" }}>{spec.label}</strong></div>
@@ -136,17 +140,70 @@ function AssetCard(props: { kind: PropertyAssetKind; asset?: PropertyAsset; onCo
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, fontSize: 10, color: "#5a665b", marginBottom: 7 }}>
         <span>{translateCurrent("property.asset.cap", { value: asset.capacity })}</span><span>{translateCurrent("property.asset.condition", { value: Math.round(asset.condition * 100) })}</span><span>{translateCurrent("property.asset.price", { value: formatCurrency(asset.price) })}</span>
       </div>
+      {(asset.constructionDaysRemaining ?? 0) > 0 && <div role="status" style={{ marginBottom: 6, padding: 5, borderRadius: 5, background: "#fff0c9", color: "#704f16", fontSize: 10, fontWeight: 800 }}>{translateCurrent("property.asset.construction", { days: asset.constructionDaysRemaining ?? 0 })}</div>}
+      {asset.lastDay && <div style={{ marginBottom: 6, fontSize: 10, color: asset.lastDay.denied > 0 ? "#8a332b" : "#5a665b" }}>{translateCurrent("property.asset.lastDay", { served: asset.lastDay.served, demand: asset.lastDay.demand, denied: asset.lastDay.denied, revenue: formatCurrency(asset.lastDay.revenue) })}</div>}
+      {preview && <div data-testid={`upgrade-preview-${props.kind}`} style={{ marginBottom: 6, fontSize: 9, color: preview.blocker ? "#8a332b" : "#6b6555" }}>{translateCurrent("property.asset.upgradePreview", { tier: preview.nextTier, capacity: preview.capacityDelta, upkeep: formatCurrency(preview.upkeepDelta), parking: preview.parkingDemandDelta, days: preview.downtimeDays, breakEven: preview.breakEvenVisitorsPerDay })}{preview.blocker ? translateCurrent("property.asset.blocked", { reason: preview.blocker }) : ""}</div>}
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-        <button data-testid={`upgrade-${props.kind}`} onClick={() => props.onCommand({ type: "UPGRADE", assetId: asset.id })} disabled={asset.tier >= spec.maxTier} style={smallButton}>{asset.tier >= spec.maxTier ? "Max tier" : `Upgrade · ${formatCurrency(upgradeCost)}`}</button>
+        <button data-testid={`upgrade-${props.kind}`} onClick={() => props.onCommand({ type: "UPGRADE", assetId: asset.id })} disabled={!preview || !!preview.blocker} style={smallButton}>{!preview ? "Max tier" : `Upgrade · ${formatCurrency(preview.cost)}`}</button>
         {asset.condition < 0.94 && <button onClick={() => props.onCommand({ type: "MAINTAIN", assetId: asset.id })} style={smallButton}>{translateCurrent("property.asset.work")}</button>}
         <button aria-label={translateCurrent(asset.enabled ? "property.asset.close" : "property.asset.reopen", { name: spec.label })} onClick={() => props.onCommand({ type: "TOGGLE", assetId: asset.id })} style={smallButton}>{translateCurrent(asset.enabled ? "common.close" : "common.on")}</button>
         <span aria-label={translateCurrent("property.asset.move", { name: spec.label })} style={{ display: "inline-flex", gap: 2 }}><button title={translateCurrent("property.asset.west")} onClick={() => props.onCommand({ type: "MOVE", assetId: asset.id, dx: -1, dy: 0 })} style={smallButton}>←</button><button title={translateCurrent("property.asset.north")} onClick={() => props.onCommand({ type: "MOVE", assetId: asset.id, dx: 0, dy: -1 })} style={smallButton}>↑</button><button title={translateCurrent("property.asset.south")} onClick={() => props.onCommand({ type: "MOVE", assetId: asset.id, dx: 0, dy: 1 })} style={smallButton}>↓</button><button title={translateCurrent("property.asset.east")} onClick={() => props.onCommand({ type: "MOVE", assetId: asset.id, dx: 1, dy: 0 })} style={smallButton}>→</button></span>
         <button aria-label={translateCurrent("property.asset.remove", { name: spec.label })} onClick={() => props.onCommand({ type: "REMOVE", assetId: asset.id })} style={smallButton}>{translateCurrent("property.asset.removeShort")}</button>
         {(asset.kind === "houses" || asset.kind === "condos") && <button aria-label={translateCurrent("property.asset.buyback", { name: spec.label })} onClick={() => props.onCommand({ type: "BUYBACK", assetId: asset.id })} style={smallButton}>{translateCurrent("property.asset.buybackShort")}</button>}
+        {asset.category === "practice" && <button data-testid={`rotate-${props.kind}`} onClick={() => props.onCommand({ type: "ROTATE_PRACTICE", assetId: asset.id })} style={smallButton}>{translateCurrent("property.asset.rotatePractice")}</button>}
+        <input aria-label={translateCurrent("property.asset.nameLabel", { name: spec.label })} defaultValue={asset.name} maxLength={40} onBlur={(event) => {
+          if (event.target.value.trim() !== asset.name) props.onCommand({ type: "RENAME", assetId: asset.id, name: event.target.value });
+        }} style={{ width: 92, padding: 3, fontSize: 10, borderRadius: 5, border: "1px solid #b8b09f" }} />
         {asset.price > 0 && <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 3 }}>{translateCurrent("property.asset.price", { value: "" })} <input aria-label={translateCurrent("property.asset.priceLabel", { name: spec.label })} type="number" min={0} value={asset.price} onChange={(event) => props.onCommand({ type: "SET_PRICE", assetId: asset.id, price: Number(event.target.value) })} style={{ width: 52, padding: 3, borderRadius: 5, border: "1px solid #b8b09f" }} /></label>}
+        <label style={compactLabel}>{translateCurrent("property.asset.hours")} <select aria-label={translateCurrent("property.asset.hoursLabel", { name: spec.label })} value={`${asset.openHour ?? 7}-${asset.closeHour ?? 20}`} onChange={(event) => {
+          const [openHour, closeHour] = event.target.value.split("-").map(Number);
+          props.onCommand({ type: "SET_HOURS", assetId: asset.id, openHour, closeHour });
+        }}><option value="7-16">7–16</option><option value="7-20">7–20</option><option value="8-20">8–20</option><option value="9-23">9–23</option></select></label>
+        <label style={compactLabel}>{translateCurrent("property.asset.upkeep")} <select aria-label={translateCurrent("property.asset.upkeepLabel", { name: spec.label })} value={asset.upkeepPolicy ?? "standard"} onChange={(event) => props.onCommand({ type: "SET_UPKEEP", assetId: asset.id, policy: event.target.value as "lean" | "standard" | "premium" })}><option value="lean">{translateCurrent("property.asset.lean")}</option><option value="standard">{translateCurrent("property.asset.standard")}</option><option value="premium">{translateCurrent("property.asset.premium")}</option></select></label>
       </div>
     </> : <button data-testid={`build-${props.kind}`} onClick={() => props.onCommand({ type: "BUILD", kind: props.kind })} style={{ ...smallButton, background: "#3f6c43", color: "white", borderColor: "#315b35" }}>{translateCurrent("property.asset.build", { amount: formatCurrency(spec.buildCost) })}</button>}
   </article>;
+}
+
+function ShellModules(props: { assets: PropertyAsset[]; onCommand: (command: PropertyCommand) => void }) {
+  const clubhouse = props.assets.find((asset) => asset.kind === "clubhouse");
+  if (!clubhouse) return null;
+  const installed = new Map((clubhouse.modules ?? []).map((module) => [module.kind, module]));
+  return <section data-testid="property-shell-modules" style={{ marginTop: 14 }}>
+    <h3 style={{ margin: "0 0 4px" }}>{translateCurrent("property.modules.title")}</h3>
+    <div style={{ fontSize: 11, color: "#687168", marginBottom: 7 }}>{translateCurrent("property.modules.help", { tier: clubhouse.tier, slots: clubhouse.tier + 1 })}</div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+      {(Object.keys(FACILITY_MODULE_SPECS) as FacilityModuleKind[]).map((kind) => {
+        const spec = FACILITY_MODULE_SPECS[kind];
+        const module = installed.get(kind);
+        return <article key={kind} data-testid={`property-module-${kind}`} style={{ border: "1px solid #d4cab4", borderRadius: 7, padding: 7, background: module ? "#f0f7ea" : "#fffdf8", fontSize: 10 }}>
+          <strong>{spec.label}</strong> {translateCurrent("property.modules.meta", { tier: spec.requiredShellTier, capacity: spec.capacity })}
+          <div style={{ margin: "3px 0 6px", color: "#6b7269" }}>{spec.description}</div>
+          <button data-testid={`${module ? "toggle" : "install"}-module-${kind}`} disabled={!module && clubhouse.tier < spec.requiredShellTier} onClick={() => props.onCommand(module ? { type: "TOGGLE_MODULE", module: kind } : { type: "INSTALL_MODULE", module: kind })} style={smallButton}>{module ? translateCurrent(module.enabled ? "property.modules.close" : "property.modules.reopen") : translateCurrent("property.modules.install", { amount: formatCurrency(spec.buildCost) })}</button>
+        </article>;
+      })}
+    </div>
+  </section>;
+}
+
+function OutingPlanner(props: { course: Course; world: World; outings: OutingBooking[]; onCommand: (command: PropertyCommand) => void }) {
+  const packages: OutingBooking["package"][] = ["golf_only", "golf_clinic", "golf_catering", "destination_event"];
+  const scheduled = props.outings.filter((outing) => outing.status === "scheduled");
+  return <section style={{ marginTop: 14 }}>
+    <h3 style={{ margin: "0 0 4px" }}>🎉 {translateCurrent("property.outing")}</h3>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
+      {packages.map((packageKind) => {
+        const preview = propertyOutingPreview(props.course, props.world, packageKind);
+        return <article key={packageKind} data-testid={`outing-preview-${packageKind}`} style={{ border: "1px solid #d4cab4", borderRadius: 7, padding: 8, background: preview.blockers.length ? "#fbf1e8" : "#f3f8ee", fontSize: 10 }}>
+          <strong>{packageKind.replaceAll("_", " ")}</strong>
+          <div>{translateCurrent("property.outing.preview", { guests: preview.guests, gross: formatCurrency(preview.gross), cost: formatCurrency(preview.variableCost), parking: preview.parkingDemand })}</div>
+          {preview.blockers.length > 0 && <div style={{ marginTop: 4, color: "#8a332b" }}>{preview.blockers.join(" ")}</div>}
+          <button disabled={preview.blockers.length > 0} onClick={() => props.onCommand({ type: "BOOK_OUTING", package: packageKind })} style={{ ...smallButton, marginTop: 6 }}>{translateCurrent("property.outing.book", { deposit: formatCurrency(preview.deposit) })}</button>
+        </article>;
+      })}
+    </div>
+    {scheduled.map((outing) => <div key={outing.id} style={{ marginTop: 6, padding: 7, border: "1px solid #d4cab4", borderRadius: 7, fontSize: 10 }}>{translateCurrent("property.outing.scheduled", { week: outing.week, day: outing.day + 1, package: outing.package.replaceAll("_", " "), guests: outing.guests })} <button onClick={() => props.onCommand({ type: "CANCEL_OUTING", outingId: outing.id })} style={{ ...smallButton, marginLeft: 8 }}>{translateCurrent("property.outing.cancel")}</button></div>)}
+  </section>;
 }
 
 function ActionCard(props: { icon: string; title: string; detail: string; button: string; onClick: () => void }) {
@@ -189,3 +246,4 @@ const closeButton = { border: "1px solid #88754d", borderRadius: 8, background: 
 const tabButton = { border: "1px solid #c9c0ae", borderRadius: 7, padding: "7px 5px", background: "#fffdf8", color: "#536054", fontWeight: 800, fontSize: 11, cursor: "pointer" } as const;
 const activeTabButton = { background: "#466d49", color: "white" } as const;
 const smallButton = { border: "1px solid #9c927e", borderRadius: 6, padding: "5px 7px", background: "#fffaf0", color: "#3c493d", fontWeight: 800, fontSize: 10, cursor: "pointer" } as const;
+const compactLabel = { fontSize: 10, display: "flex", alignItems: "center", gap: 3 } as const;

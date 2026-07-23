@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import type { Course, World } from "../models/types";
 import {
+  FACILITY_MODULE_SPECS,
   applyPropertyCommand,
   analyzeResidentialSafety,
   emptyPropertyCourse,
   emptyPropertyEnterprise,
   propertyAccessCapacity,
+  propertyOutingPreview,
   propertySummary,
+  propertyUpgradePreview,
   settlePropertyDay,
   type PropertyCommand,
 } from "./property";
@@ -126,5 +129,76 @@ describe("property enterprise", () => {
     expect(bought.ok, bought.message).toBe(true);
     expect(isOwnedTile(bought.course, 21, 7)).toBe(true);
     expect(bought.world.enterprise?.residents).toHaveLength(0);
+  });
+
+  it("configures practice geometry, operating policy, shell modules, and construction previews atomically", () => {
+    let { course, world } = fixture();
+    for (const command of [
+      { type: "BUILD", kind: "road" },
+      { type: "BUILD", kind: "parking" },
+      { type: "BUILD", kind: "driving_range" },
+      { type: "BUILD", kind: "clubhouse" },
+    ] as PropertyCommand[]) ({ course, world } = run(course, world, command));
+
+    const range = course.property!.assets.find((asset) => asset.kind === "driving_range")!;
+    const originalRoute = range.route!.points;
+    ({ course, world } = run(course, world, { type: "RENAME", assetId: range.id, name: "North Academy Range" }));
+    ({ course, world } = run(course, world, { type: "ROTATE_PRACTICE", assetId: range.id }));
+    ({ course, world } = run(course, world, { type: "SET_HOURS", assetId: range.id, openHour: 7, closeHour: 16 }));
+    ({ course, world } = run(course, world, { type: "SET_UPKEEP", assetId: range.id, policy: "premium" }));
+    const configured = course.property!.assets.find((asset) => asset.id === range.id)!;
+    expect(configured.route!.points).not.toEqual(originalRoute);
+    expect(configured).toMatchObject({ name: "North Academy Range", openHour: 7, closeHour: 16, upkeepPolicy: "premium" });
+
+    ({ course, world } = run(course, world, { type: "INSTALL_MODULE", module: "check_in" }));
+    ({ course, world } = run(course, world, { type: "INSTALL_MODULE", module: "pro_shop" }));
+    expect(course.property!.assets.find((asset) => asset.kind === "clubhouse")!.modules).toHaveLength(2);
+    expect(applyPropertyCommand(course, world, { type: "INSTALL_MODULE", module: "restaurant" }).message).toMatch(/tier 2/i);
+    const clubhouse = course.property!.assets.find((asset) => asset.kind === "clubhouse")!;
+    const preview = propertyUpgradePreview(course, clubhouse.id)!;
+    expect(preview).toMatchObject({ nextTier: 2, capacityDelta: expect.any(Number), parkingDemandDelta: expect.any(Number), downtimeDays: 1 });
+    expect(preview.cost).toBeGreaterThan(FACILITY_MODULE_SPECS.check_in.buildCost);
+    ({ course, world } = run(course, world, { type: "UPGRADE", assetId: clubhouse.id }));
+    ({ course, world } = run(course, world, { type: "INSTALL_MODULE", module: "restaurant" }));
+    expect(course.property!.assets.find((asset) => asset.kind === "clubhouse")).toMatchObject({ tier: 2, constructionDaysRemaining: 1 });
+
+    const settled = settlePropertyDay(course, world, 1, 4);
+    const settledRange = settled.course.property!.assets.find((asset) => asset.id === range.id)!;
+    expect(settledRange.lastDay).toMatchObject({ demand: expect.any(Number), served: expect.any(Number), denied: expect.any(Number), revenue: expect.any(Number) });
+    expect(settled.course.property!.assets.find((asset) => asset.kind === "clubhouse")!.constructionDaysRemaining).toBe(0);
+  });
+
+  it("previews, books, persists, and refunds capacity-backed outing packages", () => {
+    let { course, world } = fixture();
+    course = {
+      ...course,
+      holes: course.holes.map((hole, index) => index === 0 ? { ...hole, tee: { x: 40, y: 40 }, green: { x: 52, y: 48 } } : hole),
+    };
+    for (const command of [
+      { type: "BUILD", kind: "road" },
+      { type: "BUILD", kind: "parking" },
+    ] as PropertyCommand[]) ({ course, world } = run(course, world, command));
+    for (let step = 0; step < 2; step++) {
+      for (const kind of ["road", "parking"] as const) {
+        const asset = course.property!.assets.find((candidate) => candidate.kind === kind)!;
+        ({ course, world } = run(course, world, { type: "UPGRADE", assetId: asset.id }));
+      }
+    }
+    for (const command of [
+      { type: "BUILD", kind: "clubhouse" },
+      { type: "BUILD", kind: "event_space" },
+    ] as PropertyCommand[]) ({ course, world } = run(course, world, command));
+
+    const preview = propertyOutingPreview(course, world, "golf_only");
+    expect(preview.blockers).toEqual([]);
+    expect(preview.gross).toBeGreaterThan(preview.variableCost);
+    const cashBefore = world.cash;
+    ({ course, world } = run(course, world, { type: "BOOK_OUTING", package: "golf_only" }));
+    const outing = world.enterprise!.outings.at(-1)!;
+    expect(outing).toMatchObject({ package: "golf_only", status: "scheduled", guests: preview.guests });
+    expect(world.cash).toBe(cashBefore + preview.deposit);
+    ({ course, world } = run(course, world, { type: "CANCEL_OUTING", outingId: outing.id }));
+    expect(world.enterprise!.outings.at(-1)?.status).toBe("cancelled");
+    expect(world.enterprise!.ledger.at(-1)).toMatchObject({ category: "events", grossRevenue: 0, netContribution: -Math.round(preview.deposit * 0.8) });
   });
 });
