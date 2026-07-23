@@ -67,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:
-      name: playtest
+      name: cloudflare
     permissions:
       contents: read
       deployments: write
