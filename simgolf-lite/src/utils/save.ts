@@ -37,9 +37,10 @@ import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
 import { createEstate, starterParcelOffset, validateEstate } from "../game/estate/estate";
 import { MAX_ESTATE_HOLES, normalizeCourseLayouts } from "../game/models/courseLayouts";
 import { normalizedStaff } from "../game/live/pace";
+import { normalizePropertyCourse, normalizePropertyEnterprise, starterPropertyCourse } from "../game/property/property";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 11 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 12 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -100,6 +101,10 @@ export interface SaveV10 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV11 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 11;
+  records?: CourseRecords;
+}
+export interface SaveV12 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -123,7 +128,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV11 = {
+  const save: SaveV12 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -218,6 +223,10 @@ function migrateCourseGrid(oldCourse: Course, runSeed: number): { course: Course
     obstacles: migratedObstacles,
     buildings: (oldCourse.buildings ?? []).map((b) => ({ ...b, x: b.x + offsetX, y: b.y + offsetY })),
     decorations: (oldCourse.decorations ?? []).map((decoration) => ({ ...decoration, x: decoration.x + offsetX, y: decoration.y + offsetY })),
+    property: oldCourse.property ? {
+      ...oldCourse.property,
+      assets: oldCourse.property.assets.map((asset) => ({ ...asset, x: asset.x + offsetX, y: asset.y + offsetY })),
+    } : undefined,
   };
   course.estate = createEstate(course, runSeed);
   return { course, offset: { x: offsetX, y: offsetY } };
@@ -459,6 +468,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V11 adds per-course pace operations, named operational staff, grouped tee
   // sheets, and hospitality state. Normalizers supply lossless defaults.
   10: (save) => ({ ...save, schemaVersion: 11 }),
+  // V12 adds the integrated commercial campus, access network, destination
+  // resort, residential community, customer history, and property ledger.
+  11: (save) => ({ ...save, schemaVersion: 12 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -650,6 +662,9 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       // layout from that save's own holes, name, and green fee.
       layouts: Array.isArray(rawCourse.layouts) ? rawCourse.layouts : undefined,
       activeCourseId: typeof rawCourse.activeCourseId === "string" ? rawCourse.activeCourseId : undefined,
+      property: migrated.migratedFrom != null && migrated.migratedFrom < 12 && !rawCourse.property
+        ? starterPropertyCourse()
+        : normalizePropertyCourse(rawCourse.property),
     };
 
     // Migrate if grid size differs, then guarantee a well-formed
@@ -679,18 +694,18 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       objectives: sanitizeObjectives(rawWorld.objectives),
       mode: oneOf<PlayMode>(rawWorld.mode, ["sandbox", "challenge", "career"], "sandbox"),
       difficulty: oneOf<Difficulty>(rawWorld.difficulty, ["easy", "normal", "hard"], "normal"),
-      scenarioId: typeof rawWorld.scenarioId === "string" ? rawWorld.scenarioId : undefined,
-      constraints:
-        rawConstraints && typeof rawConstraints === "object" && !Array.isArray(rawConstraints)
-          ? {
+      ...(typeof rawWorld.scenarioId === "string" ? { scenarioId: rawWorld.scenarioId } : {}),
+      ...(rawConstraints && typeof rawConstraints === "object" && !Array.isArray(rawConstraints)
+          ? { constraints: {
               noLoans: rawConstraints.noLoans === true,
               ...(typeof rawConstraints.fixedGreenFee === "number"
                 ? { fixedGreenFee: rawConstraints.fixedGreenFee }
                 : {}),
               protectedTrees: rawConstraints.protectedTrees === true,
-            }
-          : undefined,
+            } }
+          : {}),
       tournaments: normalizeTournamentCalendar(rawWorld.tournaments, course),
+      enterprise: normalizePropertyEnterprise(rawWorld.enterprise),
     };
     world.staffRoster = normalizedStaff(world, course);
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;

@@ -72,15 +72,16 @@ export function isConcession(building: Building): building is Building & { type:
 }
 
 export function normalizedBuilding(building: Building): Building {
-  if (!isConcession(building)) return building;
-  const spec = BUILDING_SPECS[building.type];
-  const tier = ([1, 2, 3] as BuildingTier[]).includes(building.tier as BuildingTier)
-    ? building.tier as BuildingTier
+  const identified = { ...building, id: building.id || `building-${building.type}-${building.x}-${building.y}` };
+  if (!isConcession(identified)) return identified;
+  const spec = BUILDING_SPECS[identified.type];
+  const tier = ([1, 2, 3] as BuildingTier[]).includes(identified.tier as BuildingTier)
+    ? identified.tier as BuildingTier
     : 1;
-  const price = Number.isFinite(building.price)
-    ? Math.max(1, Math.round(building.price as number))
+  const price = Number.isFinite(identified.price)
+    ? Math.max(1, Math.round(identified.price as number))
     : spec.defaultPrice!;
-  return { ...building, tier, price };
+  return { ...identified, tier, price };
 }
 
 export function buildingSpec(b: Building): BuildingSpec {

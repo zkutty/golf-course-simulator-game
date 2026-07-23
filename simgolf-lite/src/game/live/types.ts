@@ -226,6 +226,9 @@ export interface DayResult {
     greenFees: number;
     concessions: number;
     tournaments?: number;
+    property?: number;
+    propertyCosts?: number;
+    propertyVisitors?: number;
     byConcession: Partial<Record<ConcessionType, number>>;
     transactions: ConcessionTransaction[];
   };

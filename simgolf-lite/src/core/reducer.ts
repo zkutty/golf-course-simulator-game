@@ -26,6 +26,7 @@ import {
 } from "../game/models/courseSetup";
 import { revalidateScheduledTournaments } from "../game/tournaments/tournaments";
 import { canPurchaseParcel, isOwnedTile } from "../game/estate/estate";
+import { applyPropertyCommand } from "../game/property/property";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -449,6 +450,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       const spec = BUILDING_SPECS[action.buildingType];
       if (state.world.cash < spec.buildCost) break;
       const building = {
+        id: `building-${action.buildingType}-${action.x}-${action.y}`,
         type: action.buildingType,
         x: action.x,
         y: action.y,
@@ -501,6 +503,15 @@ export function applyAction(state: GameState, action: Action): GameState {
         };
       });
       newState = { ...newState, course: { ...state.course, buildings } };
+      economyVersion++;
+      break;
+    }
+
+    case "PROPERTY_COMMAND": {
+      const result = applyPropertyCommand(state.course, state.world, action.command);
+      if (!result.ok) break;
+      newState = { ...newState, course: result.course, world: result.world };
+      terrainVersion++;
       economyVersion++;
       break;
     }

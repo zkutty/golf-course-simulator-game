@@ -189,6 +189,11 @@ export function parcelAt(course: Course, point: Point): EstateParcel | null {
 }
 
 export function isOwnedTile(course: Course, x: number, y: number): boolean {
+  const transferred = course.property?.assets.some((asset) =>
+    (asset.tenure === "sold" || asset.tenure === "partnered") &&
+    x >= asset.x && x < asset.x + asset.width && y >= asset.y && y < asset.y + asset.height
+  );
+  if (transferred) return false;
   if (!course.estate) return x >= 0 && y >= 0 && x < course.width && y < course.height;
   const parcel = parcelAt(course, { x, y });
   return !!parcel && course.estate.ownedParcelIds.includes(parcel.id);

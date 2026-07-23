@@ -1,4 +1,5 @@
 import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation } from "../game/models/types";
+import type { PropertyCommand } from "../game/property/property";
 
 // Actions that mutate terrain (increment terrainVersion)
 export type TerrainMutationAction =
@@ -60,6 +61,7 @@ export type EconomyMutationAction =
   | { type: "REMOVE_DECORATION"; x: number; y: number }
   | { type: "TAKE_LOAN"; kind: "BRIDGE" | "EXPANSION" }
   | { type: "PURCHASE_PARCEL"; parcelId: string }
+  | { type: "PROPERTY_COMMAND"; command: PropertyCommand }
   | { type: "SIMULATE_WEEK"; course: Course; world: World };
 
 // UI-only actions (do not affect versions)

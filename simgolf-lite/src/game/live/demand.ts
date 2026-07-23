@@ -7,6 +7,7 @@ import { ARCHETYPES } from "./archetypes";
 import { LIVE } from "./liveConfig";
 import type { GolferArchetypeName } from "./types";
 import { courseOperations } from "./pace";
+import { propertyAccessMultiplier } from "../property/property";
 
 function clamp(x: number, a: number, b: number): number {
   return Math.max(a, Math.min(b, x));
@@ -118,5 +119,8 @@ export function plannedGolfersForDay(course: Course, world: World): number {
   const span = LIVE.volume.maxGolfers - LIVE.volume.minGolfers;
   // Difficulty scales the day's tee sheet (ZKU-165); identity on normal.
   const raw = (LIVE.volume.minGolfers + norm * span) * getDifficultyProfile(world.difficulty).demandMult;
-  return Math.round(clamp(raw, LIVE.volume.minGolfers, LIVE.volume.maxGolfers));
+  const planned = clamp(raw, LIVE.volume.minGolfers, LIVE.volume.maxGolfers);
+  // Formal roads and parking can support a destination tee sheet; relying on
+  // informal roadside/grass arrival constrains an otherwise busy course.
+  return Math.max(1, Math.round(planned * propertyAccessMultiplier(course, planned)));
 }

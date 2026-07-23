@@ -1,5 +1,19 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-07-22 — Practice campus, destination resort, and golf community implementation
+
+User request: Implement the newly planned Linear features covering practice/revenue facilities, tiered access/parking/roads, destination lodging, and golf-course residential development; update the Linear tasks when verified; commit and push the completed work to `main`.
+
+- Audited the repository and confirmed a clean `main` branch tracking `origin/main`.
+- Loaded the web-game and Linear workflows and mapped the work to M31 (ZK-285–ZK-298), M32 (ZK-299–ZK-307), and M33 (ZK-308–ZK-317).
+- Identified the versioned save model, economy simulation, reducer, and management HUD as the primary integration seams.
+- Added save schema v12 with deterministic legacy access, stable building/property IDs, bounded member-first customer retention, resort reservations, residents, incidents, and a bounded category-level commercial ledger.
+- Added reducer-atomic property commands for tiered roads/parking, practice facilities, clubhouse modules, pricing, closures, relocation, maintenance, pros, memberships, outings, resort staffing/packages, residential development, mitigation, and buybacks.
+- Integrated shared arrival/parking capacity with the core tee sheet and daily economy; commercial gross revenue, COGS, upkeep, wages, refunds, claims, reputation, condition, and weekly reports now settle together.
+- Added multi-day lodging inventory/entitlements, housekeeping/front-desk/shuttle constraints, outing fulfillment, resident demand/complaints, corridor-derived safety eligibility, sold-land edit protection, and attributed deterministic claims.
+- Added the localized Property Enterprise UI, vector-rendered themed campus footprints/representative parked cars/netting, text-state telemetry, and weekly/property ledger reporting.
+- Verification so far: production build passes; lint/i18n passes (existing hook warnings only); 348 unit/integration tests pass with one pre-existing skip; M31-M33 browser golden path passes with a visually inspected screenshot and no console errors.
+
 Current request (2026-07-22): Make the course canvas feel embedded in a larger SimCity-style region: never expose a floating map edge when zoomed out, keep the full estate boundary readable with scenic bleed, and continue Links ocean coherently beyond a boundary-connected coast.
 
 ## 2026-07-22 — Seamless regional canvas in progress
@@ -526,3 +540,11 @@ Previous prompt: Let’s do m14 in linear for this project
 - Verification passes: 53 Vitest files / 339 tests with one intentional skip; 80 focused live-clock/ledger/persistence tests; nine focused Playwright golden/live-progression scenarios; production build; typecheck; lint/i18n with seven pre-existing hook warnings and no errors; `git diff --check`; bundled 100-golfer client smoke; and the 36-hole/100-golfer performance fixture at 0.34ms renderer work against the 8ms budget.
 - The legacy M14 end-to-end tutorial fixture still stalls while constructing its nine-hole course before it reaches the changed weekly-report step. Dedicated Sunday report/progression coverage passes, and the M14 week-close calls have been migrated away from the removed instant-week button.
 - Created Linear milestone `M31: Live-Time Authority & Weekly Consolidation` at 100% with ZK-318 through ZK-322 Done. Dependencies encode clock → ledger → live-only/UI → certification, and the ledger/certification tickets relate to M30 daylight settlement and historical reporting.
+
+## 2026-07-22 — M31–M33 property enterprise, resort, and community
+
+- Added save schema v12 with stable facility identities plus bounded persistence for commercial assets, customer profiles, professionals, memberships, bookings, stays, residents, incidents, outings, and the shared transaction ledger. Pre-v12 courses receive deterministic gravel road and parking access without a cash rewrite.
+- Added atomic core commands and tiered estate placement for roads/parking/valet/overflow/shuttles, practice facilities, expandable clubhouse modules, retail/dining/locker/event facilities, lodging/spa, residential phases, safety buffers, and netting. Placement respects ownership, terrain, golf geometry, existing structures, prerequisites, cash, close/reopen, relocation, removal, and buyback rules.
+- Integrated access capacity into golfer demand and every commercial visitor stream; daily settlement now includes practice buckets/skill gains, lessons, memberships/churn, retail and food COGS, outings, lodging packages/room operations/service recovery, resident demand, valuations, ball-strike complaints/claims, property upkeep, wages, and core golf/concession entries in one bounded ledger.
+- Added the Property Enterprise management UI, world-space vector facilities, arrival/academy/destination/community/ledger reporting, safety analysis by contributing hole, and automation telemetry. The dedicated browser flow builds and upgrades the complete campus/resort/community chain and visually verifies the result.
+- Final verification: 56 Vitest files / 348 passed with one intentional skip; production build; lint/i18n with seven pre-existing hook warnings and no errors; save/reload golden path; M31–M33 Playwright acceptance; and the 36-hole/100-golfer performance smoke at 0.28ms renderer work against the 8ms budget. The full legacy Playwright sweep also exposed M6 and M29 failures that reproduce identically on a clean `main` checkout and are not regressions from this work.

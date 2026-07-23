@@ -585,6 +585,7 @@ export function PixiStage(props: PixiStageProps) {
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
   const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
   const buildingSpritesRef = useRef<PIXI.Sprite[]>([]);
+  const propertyGraphicsRef = useRef<PIXI.Graphics[]>([]);
   const decorationSpritesRef = useRef<Array<{ sprite: PIXI.Sprite; shadow: PIXI.Graphics }>>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const ripplesRef = useRef<Array<{ x: number; y: number; t0: number }>>([]);
@@ -1088,6 +1089,7 @@ export function PixiStage(props: PixiStageProps) {
       golferPoolRef.current.clear();
       flagPoolRef.current.clear();
       buildingSpritesRef.current = [];
+      propertyGraphicsRef.current = [];
       rippleGraphicsRef.current = null;
       ripplesRef.current = [];
       impactsRef.current = [];
@@ -2113,6 +2115,54 @@ export function PixiStage(props: PixiStageProps) {
       sprite.zIndex = placement.zIndex;
       layers.objects.addChild(sprite);
       buildingSpritesRef.current.push(sprite);
+    }
+  }, [appReady, course, rotation]);
+
+  // M31-M33 property assets use lightweight deterministic vector footprints.
+  // They rotate/zoom/depth-sort with the world and never create one entity per
+  // guest or parked car, keeping a full destination estate inexpensive.
+  useEffect(() => {
+    if (!appReady) return;
+    const layers = layersRef.current;
+    if (!layers) return;
+    for (const graphic of propertyGraphicsRef.current) {
+      layers.objects.removeChild(graphic);
+      graphic.destroy();
+    }
+    propertyGraphicsRef.current = [];
+    const colors = { access: 0x6f7775, practice: 0x78a95f, clubhouse: 0xb88c53, resort: 0x668da8, community: 0xc18c72, safety: 0x477a4d } as const;
+    for (const asset of course.property?.assets ?? []) {
+      const elevation = getElevation(course, asset.x, asset.y);
+      const corners = [
+        worldToIso(asset.x, asset.y, elevation, rotation),
+        worldToIso(asset.x + asset.width, asset.y, elevation, rotation),
+        worldToIso(asset.x + asset.width, asset.y + asset.height, elevation, rotation),
+        worldToIso(asset.x, asset.y + asset.height, elevation, rotation),
+      ];
+      const graphic = new PIXI.Graphics();
+      graphic.poly(corners.flatMap((point) => [point.x, point.y]));
+      graphic.fill({ color: colors[asset.category], alpha: asset.enabled ? 0.88 : 0.38 });
+      graphic.stroke({ width: asset.enabled ? 2 : 1, color: asset.enabled ? 0xfff6d7 : 0x5d625e, alpha: 0.9 });
+      if (asset.kind === "parking" || asset.kind === "overflow_parking") {
+        const cars = Math.min(7, asset.tier + 2);
+        for (let index = 0; index < cars; index++) {
+          const wx = asset.x + 0.8 + (index % 4) * Math.max(0.8, (asset.width - 1.6) / 4);
+          const wy = asset.y + 0.8 + Math.floor(index / 4) * 1.2;
+          const car = worldToIso(wx, wy, elevation, rotation);
+          graphic.roundRect(car.x - 4, car.y - 2, 8, 4, 1);
+          graphic.fill({ color: [0xe8d7a8, 0x7e9faf, 0xa46357][index % 3], alpha: asset.enabled ? 0.95 : 0.35 });
+        }
+      }
+      if (asset.kind === "netting") {
+        const from = worldToIso(asset.x, asset.y, elevation, rotation);
+        const to = worldToIso(asset.x + asset.width, asset.y + asset.height, elevation, rotation);
+        graphic.moveTo(from.x, from.y - 18 - asset.tier * 2);
+        graphic.lineTo(to.x, to.y - 18 - asset.tier * 2);
+        graphic.stroke({ width: 2, color: 0x355c3d, alpha: asset.condition });
+      }
+      graphic.zIndex = (asset.x + asset.width + asset.y + asset.height) * 10 + 5;
+      layers.objects.addChild(graphic);
+      propertyGraphicsRef.current.push(graphic);
     }
   }, [appReady, course, rotation]);
 

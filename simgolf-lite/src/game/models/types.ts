@@ -1,5 +1,6 @@
 import type { ObjectiveState } from "./objectives";
 import type { TournamentCalendar } from "../tournaments/types";
+import type { PropertyCourseState, PropertyEnterpriseState } from "../property/types";
 
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
@@ -110,6 +111,8 @@ export type BuildingTier = 1 | 2 | 3;
 // Multi-tile structure anchored at its top-left footprint tile; footprint
 // dimensions come from BUILDING_SPECS (src/game/models/buildings.ts).
 export interface Building {
+  /** Stable deterministic identity used by saves, ledgers, and facility links. */
+  id?: string;
   type: BuildingType;
   x: number;
   y: number;
@@ -228,6 +231,8 @@ export interface Course {
   theme?: LandTheme;
   /** M25 land ownership and immutable surveyed-land record. */
   estate?: Estate;
+  /** M31-M33 commercial campus, access, resort, and community assets. */
+  property?: PropertyCourseState;
 }
 
 export interface World {
@@ -258,9 +263,11 @@ export interface World {
   constraints?: ScenarioConstraints;
   // Scheduled and completed hosted events (M6). Optional for pre-M6 saves.
   tournaments?: TournamentCalendar;
+  /** M31-M33 customers, bookings, residents, incidents, and commercial ledger. */
+  enterprise?: PropertyEnterpriseState;
 }
 
-export type StaffRole = "groundskeeper" | "cart_attendant" | "pro_shop" | "marshal" | "tournament_director";
+export type StaffRole = "groundskeeper" | "cart_attendant" | "pro_shop" | "marshal" | "tournament_director" | "club_pro" | "food_service" | "locker_attendant" | "front_desk" | "housekeeping" | "shuttle_driver";
 
 export interface StaffMember {
   id: string;
@@ -345,6 +352,9 @@ export interface WeekResult {
     greenFees: number;
     concessions: number;
     tournaments?: number;
+    property?: number;
+    propertyCosts?: number;
+    propertyVisitors?: number;
     byConcession: Partial<Record<ConcessionType, number>>;
     transactions: ConcessionTransaction[];
   };

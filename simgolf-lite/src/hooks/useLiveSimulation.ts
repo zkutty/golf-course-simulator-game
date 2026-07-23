@@ -149,10 +149,6 @@ function clockLabel(dayMinute: number): string {
   return `${hour12}:${minute.toString().padStart(2, "0")} ${period}`;
 }
 
-function clamp(x: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, x));
-}
-
 // Drives the real-time "living course": a game clock that spawns golfers, walks
 // them through their rounds, banks green fees live, and commits each finished
 // day into the economy/reputation model.
@@ -340,7 +336,7 @@ export function useLiveSimulation(args: {
     flushCash();
     const tournament = completeTournament(worldRef.current, live);
     const revenue = live.greenFeeCollected + live.concessionCollected + tournament.revenue;
-    const { result, world: committedWorld } = commitDay({
+    const { result, world: committedWorld, course: committedCourse } = commitDay({
       course: courseRef.current,
       // Green fees/concessions are already banked live. Tournament awards
       // settle at the results ceremony, so include that cash for objective
@@ -370,7 +366,7 @@ export function useLiveSimulation(args: {
     }
 
     const nextDayIndex = (live.dayIndex + 1) % DAYS_PER_WEEK;
-    const nextCourse = { ...courseRef.current, condition: clamp(courseRef.current.condition + result.conditionDelta, 0, 1) };
+    const nextCourse = committedCourse;
     courseRef.current = nextCourse;
     setCourse(() => nextCourse);
     const nextCalendarWorld: World = {

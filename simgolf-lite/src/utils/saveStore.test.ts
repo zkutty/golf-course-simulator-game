@@ -142,7 +142,7 @@ describe("saveStore", () => {
     const meta = await importSave(file, "sneaky");
     expect(meta).not.toBeNull();
     const loaded = await loadSlot(meta!.id);
-    expect(loaded!.course.buildings).toEqual([{ type: "clubhouse", x: 3, y: 4 }]);
+    expect(loaded!.course.buildings).toEqual([{ id: "building-clubhouse-3-4", type: "clubhouse", x: 3, y: 4 }]);
 
     const nonArray = JSON.stringify({
       schemaVersion: 1,

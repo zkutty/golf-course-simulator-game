@@ -28,6 +28,7 @@ interface Window {
       courseHash: string;
     };
     setPaintCash(cash: number): void;
+    setPropertyFixture(): void;
     startWeekCloseFixture(weekOverride?: number): Promise<void>;
     runGoldenWeek(): Promise<{
       beforeHash: string;

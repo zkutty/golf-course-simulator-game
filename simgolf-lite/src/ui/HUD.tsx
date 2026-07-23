@@ -1234,6 +1234,8 @@ export function HUD(props: {
                   <div data-tooltip="The sources that make up this week's total revenue." style={{ marginTop: 4, padding: 7, borderRadius: 7, background: "#f7f3e8", fontSize: 12 }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span><T id="auto.ui.hud.green.fees" /></span><b>{formatCurrency(last.revenueBreakdown.greenFees)}</b>
+                      {(last.revenueBreakdown.property ?? 0) > 0 && <><span>{translateCurrent("property.report.revenue")}</span><b>{formatCurrency(last.revenueBreakdown.property ?? 0)}</b></>}
+                      {(last.revenueBreakdown.propertyCosts ?? 0) > 0 && <><span>{translateCurrent("property.report.costs")}</span><b>{formatCurrency(last.revenueBreakdown.propertyCosts ?? 0)}</b></>}
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span><T id="auto.ui.hud.concessions" />{last.revenueBreakdown.transactions.length} <T id="auto.ui.hud.sales" /></span>

@@ -7,6 +7,7 @@ import type { DayResult, RoundReactions } from "./types";
 import type { LiveState } from "./types";
 import type { PaceDayMetrics } from "./types";
 import { layoutById } from "../models/courseLayouts";
+import { recordCoreCommerce, settlePropertyDay } from "../property/property";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -38,17 +39,26 @@ export function commitDay(args: {
   dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
   pace?: PaceDayMetrics;
 }): { world: World; course: Course; result: DayResult } {
-  const { course, world, revenue, reactions, dayIndex } = args;
+  const { course, world, reactions, dayIndex } = args;
+  const propertySettlement = settlePropertyDay(course, world, dayIndex ?? 0, reactions.rounds);
+  const operatingCourse = propertySettlement.course;
+  const operatingWorld = recordCoreCommerce(propertySettlement.world, dayIndex ?? 0, {
+    greenFees: args.greenFees ?? args.revenue,
+    concessions: args.concessionRevenue ?? 0,
+    tournaments: args.tournamentRevenue ?? 0,
+    byConcession: args.concessionByType ?? {},
+  });
+  const revenue = args.revenue + propertySettlement.report.revenue;
   // Difficulty-resolved balance (ZKU-165): identity for normal.
-  const BALANCE = getEffectiveBalance(world.difficulty);
+  const BALANCE = getEffectiveBalance(operatingWorld.difficulty);
   const rounds = reactions.rounds;
   const avgSatisfaction = reactions.avgSatisfaction;
 
   // ---- Costs (per-day slice of weekly overhead + per-round variable) ----
-  const staffCost = (BALANCE.ops.staffCostPerLevel * world.staffLevel) / DAYS_PER_WEEK;
+  const staffCost = (BALANCE.ops.staffCostPerLevel * operatingWorld.staffLevel) / DAYS_PER_WEEK;
   const marketingCost =
-    (BALANCE.ops.marketingCostPerLevel * world.marketingLevel) / DAYS_PER_WEEK;
-  const maintenanceCost = world.maintenanceBudget / DAYS_PER_WEEK;
+    (BALANCE.ops.marketingCostPerLevel * operatingWorld.marketingLevel) / DAYS_PER_WEEK;
+  const maintenanceCost = operatingWorld.maintenanceBudget / DAYS_PER_WEEK;
   const overhead = BALANCE.overhead;
   const overheadTotal =
     (overhead.insurance + overhead.utilities + overhead.admin + overhead.baseStaff) /
@@ -57,7 +67,7 @@ export function commitDay(args: {
   const laborPerRound = Math.max(
     BALANCE.variableCosts.laborPerRoundMin,
     BALANCE.variableCosts.laborPerRoundBase -
-      world.staffLevel * BALANCE.variableCosts.laborPerRoundStaffBonusPerLevel
+      operatingWorld.staffLevel * BALANCE.variableCosts.laborPerRoundStaffBonusPerLevel
   );
   const laborVariable = rounds * laborPerRound;
   const consumablesVariable = rounds * BALANCE.variableCosts.consumablesPerRound;
@@ -70,12 +80,12 @@ export function commitDay(args: {
   const profitPreTax = revenue - costsPreTax;
   const tax =
     BALANCE.tax.enabled && profitPreTax > 0 ? profitPreTax * BALANCE.tax.profitTaxRate : 0;
-  const costs = costsPreTax + tax;
+  const costs = costsPreTax + tax + propertySettlement.report.costs;
   const profit = revenue - costs;
 
   // ---- Condition: wear from traffic vs. maintenance recovery (per day) ----
-  const totalWeight = course.tiles.reduce((acc, t) => acc + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
-  const avgWeight = totalWeight / (course.tiles.length || 1);
+  const totalWeight = operatingCourse.tiles.reduce((acc, t) => acc + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
+  const avgWeight = totalWeight / (operatingCourse.tiles.length || 1);
   const wear = Math.min(
     BALANCE.condition.wearCap / DAYS_PER_WEEK,
     (rounds / BALANCE.condition.wearDivisor) * avgWeight
@@ -93,25 +103,28 @@ export function commitDay(args: {
   const returnBias = (reactions.willReturnRate - 0.5) * 0.5; // -0.25..0.25
   const sentiment = clamp(nps + returnBias, -1, 1);
   const dailyRepCap = Math.max(1, BALANCE.reputation.capPerWeek / DAYS_PER_WEEK);
-  const profile = getDifficultyProfile(world.difficulty);
+  const profile = getDifficultyProfile(operatingWorld.difficulty);
   const repAsym = sentiment >= 0 ? profile.repGainMult : profile.repLossMult;
   const audienceRepDelta =
     rounds > 0 ? clamp(sentiment * BALANCE.reputation.npsGain * repAsym, -dailyRepCap, dailyRepCap) : 0;
-  const repDelta = audienceRepDelta + (args.tournamentReputation ?? 0);
-  const nextRep = clamp(world.reputation + repDelta, 0, 100);
+  const liabilityRep = propertySettlement.report.incidents.reduce((sum, incident) => sum + incident.severity * 0.08, 0);
+  const repDelta = audienceRepDelta + (args.tournamentReputation ?? 0) - liabilityRep;
+  const nextRep = clamp(operatingWorld.reputation + repDelta, 0, 100);
 
-  const nextCashRaw = world.cash - costs; // revenue already banked live
+  // Core revenue is already banked live. Property revenue settles here beside
+  // its upkeep, staffing, access failures, and liability costs.
+  const nextCashRaw = operatingWorld.cash + propertySettlement.report.revenue - costs;
   const bankrupt = hitsLiquidityTrap(nextCashRaw);
 
-  const nextCourse = { ...course, condition: nextCondition };
+  const nextCourse = { ...operatingCourse, condition: nextCondition };
   const nextWorldBase: World = {
-    ...world,
+    ...operatingWorld,
     cash: nextCashRaw,
     reputation: nextRep,
     // The hook replaces this with the seven-day ledger total at Sunday close.
     // Midweek consumers must continue to see the last completed week.
-    lastWeekProfit: world.lastWeekProfit,
-    isBankrupt: world.isBankrupt || bankrupt,
+    lastWeekProfit: operatingWorld.lastWeekProfit,
+    isBankrupt: operatingWorld.isBankrupt || bankrupt,
   };
   // Objective evaluation at the sim commit point (ZKU-163). The last day of
   // the week closes it, which is when streaks advance and deadlines can fire.
@@ -119,7 +132,7 @@ export function commitDay(args: {
   const nextWorld = withEvaluatedObjectives(nextCourse, nextWorldBase, {
     rounds,
     profit,
-    ...(closesWeek ? { weekCompleted: world.week } : {}),
+    ...(closesWeek ? { weekCompleted: operatingWorld.week } : {}),
   });
   const courseEntries = Object.entries(args.perCourse ?? {});
   let allocatedRevenue = 0;
@@ -155,9 +168,12 @@ export function commitDay(args: {
       rounds,
       revenue,
       revenueBreakdown: {
-        greenFees: args.greenFees ?? revenue,
+        greenFees: args.greenFees ?? args.revenue,
         concessions: args.concessionRevenue ?? 0,
         tournaments: args.tournamentRevenue ?? 0,
+        property: propertySettlement.report.revenue,
+        propertyCosts: propertySettlement.report.costs,
+        propertyVisitors: propertySettlement.report.visitors,
         byConcession: args.concessionByType ?? {},
         transactions: args.transactions ?? [],
       },

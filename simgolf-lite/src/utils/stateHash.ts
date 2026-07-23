@@ -2,6 +2,7 @@ import type { Course, World } from "../game/models/types";
 import type { LiveSimulationSnapshotV1 } from "../game/live/persistence";
 import { withNormalizedHoleSetup } from "../game/models/courseSetup";
 import { normalizeCourseLayouts } from "../game/models/courseLayouts";
+import { normalizedBuilding } from "../game/models/buildings";
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -29,6 +30,7 @@ export function hashGameState(value: {
   const course = {
     ...normalized,
     decorations: value.course.decorations ?? [],
+    buildings: (value.course.buildings ?? []).map(normalizedBuilding),
     activePinRotation: value.course.activePinRotation ?? "A",
     holes: normalized.holes.map(withNormalizedHoleSetup),
   };

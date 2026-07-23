@@ -2,6 +2,7 @@ import type { Course, Terrain, World } from "./types";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "./constants";
 import { normalizeOperations } from "./courseOperations";
 import { staffFromLevel } from "../live/pace";
+import { emptyPropertyEnterprise, starterPropertyCourse } from "../property/property";
 
 export const DEFAULT_COURSE: Course = {
   name: "West Village Municipal",
@@ -40,6 +41,7 @@ export const DEFAULT_COURSE: Course = {
   baseGreenFee: 65,
   condition: 0.75,
   theme: "parkland",
+  property: starterPropertyCourse(),
 };
 
 export const DEFAULT_WORLD: World = {
@@ -60,4 +62,5 @@ export const DEFAULT_WORLD: World = {
   mode: "sandbox",
   difficulty: "normal",
   tournaments: { version: 2, events: [] },
+  enterprise: emptyPropertyEnterprise(),
 };

@@ -9,7 +9,10 @@ export function courseOperations(course: Course, courseId?: string): CourseOpera
 
 const STAFF_ROLES: StaffRole[] = ["groundskeeper", "cart_attendant", "pro_shop", "marshal", "tournament_director"];
 const STAFF_NAMES = ["Avery", "Morgan", "Sam", "Jordan", "Riley"];
-const STAFF_WAGES: Record<StaffRole, number> = { groundskeeper: 500, cart_attendant: 420, pro_shop: 480, marshal: 560, tournament_director: 650 };
+const STAFF_WAGES: Record<StaffRole, number> = {
+  groundskeeper: 500, cart_attendant: 420, pro_shop: 480, marshal: 560, tournament_director: 650,
+  club_pro: 1_050, food_service: 620, locker_attendant: 440, front_desk: 590, housekeeping: 560, shuttle_driver: 540,
+};
 
 export function staffFromLevel(level: number, courseId?: string): StaffMember[] {
   return STAFF_ROLES.slice(0, Math.max(0, Math.min(5, Math.floor(level)))).map((role, index) => ({

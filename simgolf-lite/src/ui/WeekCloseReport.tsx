@@ -7,6 +7,8 @@ export function WeekCloseReport(props: { week: number; result: WeekResult; resum
   const rows = [
     [translateCurrent("weekClose.rounds"), formatNumber(result.visitors)],
     [translateCurrent("weekClose.revenue"), formatCurrency(result.revenue)],
+    ...(result.revenueBreakdown?.property ? [[translateCurrent("property.report.revenue"), formatCurrency(result.revenueBreakdown.property)]] : []),
+    ...(result.revenueBreakdown?.propertyVisitors ? [[translateCurrent("property.report.guests"), formatNumber(result.revenueBreakdown.propertyVisitors)]] : []),
     [translateCurrent("weekClose.costs"), formatCurrency(result.costs)],
     [translateCurrent("weekClose.satisfaction"), `${Math.round(result.avgSatisfaction)}%`],
   ];
