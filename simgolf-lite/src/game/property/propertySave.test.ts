@@ -62,7 +62,7 @@ describe("property save migration and bounds", () => {
       }],
       resort: { frontDesk: 1, housekeeping: 1, dirtyRooms: Number.NaN },
     });
-    expect(normalized.version).toBe(2);
+    expect(normalized.version).toBe(3);
     expect(normalized.reservations).toHaveLength(1);
     expect(normalized.reservations[0]).toMatchObject({ roomCount: 2, roomClass: "standard", transportMode: "self_drive", checkOutWeek: 4, checkOutDay: 2 });
     expect(normalized.reservations[0].entitlements).toEqual([expect.objectContaining({ id: "legacy-room", status: "fulfilled", redeemed: true })]);

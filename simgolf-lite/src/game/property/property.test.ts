@@ -114,20 +114,23 @@ describe("property enterprise", () => {
     const course: Course = {
       ...base,
       holes: base.holes.map((hole, index) => index === 0 ? { ...hole, tee: { x: 0, y: 5 }, green: { x: 100, y: 5 } } : hole),
-      property: { version: 1, assets: [homes] },
+      property: { ...emptyPropertyCourse(), assets: [homes] },
     };
     const exposed = analyzeResidentialSafety(course, homes.id);
     expect(exposed.eligibility).toBe("blocked");
     expect(exposed.contributions[0].holeId).toBe(course.holes[0].id);
     expect(isOwnedTile(course, 21, 7)).toBe(false);
 
-    const protectedCourse: Course = { ...course, property: { version: 1, assets: [...course.property!.assets, { id: "net", kind: "netting", name: "Protective netting", category: "safety", tier: 4, x: 19, y: 6, width: 10, height: 1, capacity: 0, condition: 1, price: 0, enabled: true }] } };
+    const protectedCourse: Course = { ...course, property: { ...emptyPropertyCourse(), assets: [...course.property!.assets, { id: "net", kind: "netting", name: "Protective netting", category: "safety", tier: 4, x: 19, y: 6, width: 10, height: 1, capacity: 0, condition: 1, price: 0, enabled: true }] } };
     expect(analyzeResidentialSafety(protectedCourse, homes.id).score).toBeLessThan(exposed.score);
 
     const world: World = { ...baseWorld, enterprise: { ...emptyPropertyEnterprise(), residents: [{ id: "residents-homes-risk", assetId: homes.id, units: 300, occupied: 100, satisfaction: 70, complaints: 2 }] } };
     const bought = applyPropertyCommand(protectedCourse, world, { type: "BUYBACK", assetId: homes.id });
     expect(bought.ok, bought.message).toBe(true);
-    expect(isOwnedTile(bought.course, 21, 7)).toBe(true);
+    expect(isOwnedTile(bought.course, 21, 7)).toBe(false);
+    const remediatedOnce = settlePropertyDay(bought.course, bought.world, 0, 0);
+    const remediated = settlePropertyDay(remediatedOnce.course, remediatedOnce.world, 1, 0);
+    expect(isOwnedTile(remediated.course, 21, 7)).toBe(true);
     expect(bought.world.enterprise?.residents).toHaveLength(0);
   });
 

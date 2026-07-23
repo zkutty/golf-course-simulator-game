@@ -48,6 +48,15 @@ export function runLiveDaysHeadless(args: {
       transactions: live.concessionTransactions,
       reactions: roundReactions(live),
       dayIndex,
+      shotTraces: live.golfers.flatMap((golfer) => golfer.segments.filter((segment) => segment.kind === "flight" && segment.shot !== "putt").map((segment) => ({
+        golferId: golfer.id,
+        holeId: segment.holeId,
+        holeName: course.holes.find((hole) => hole.id === segment.holeId)?.name,
+        teeSet: golfer.teeSet,
+        shotType: segment.holeIndex >= 0 && segment.from.x === (course.holes[segment.holeIndex]?.tee?.x ?? Number.NaN) && segment.from.y === (course.holes[segment.holeIndex]?.tee?.y ?? Number.NaN) ? "drive" as const : "approach" as const,
+        from: segment.from,
+        to: segment.to,
+      }))),
     });
     ledger = appendDayToLedger(ledger, { ...committed.result, dayIndex });
     const closesWeek = dayIndex === 6;

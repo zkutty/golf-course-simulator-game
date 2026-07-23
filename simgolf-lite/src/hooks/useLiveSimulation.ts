@@ -353,6 +353,15 @@ export function useLiveSimulation(args: {
       reactions: roundReactions(live),
       dayIndex: live.dayIndex,
       pace: live.pace,
+      shotTraces: live.golfers.flatMap((golfer) => golfer.segments.filter((segment) => segment.kind === "flight" && segment.shot !== "putt").map((segment) => ({
+        golferId: golfer.id,
+        holeId: segment.holeId,
+        holeName: courseRef.current.holes.find((hole) => hole.id === segment.holeId)?.name,
+        teeSet: golfer.teeSet,
+        shotType: segment.holeIndex >= 0 && segment.from.x === (courseRef.current.holes[segment.holeIndex]?.tee?.x ?? Number.NaN) && segment.from.y === (courseRef.current.holes[segment.holeIndex]?.tee?.y ?? Number.NaN) ? "drive" as const : "approach" as const,
+        from: segment.from,
+        to: segment.to,
+      }))),
     });
     result.dayIndex = live.dayIndex;
     weekLedgerRef.current = appendDayToLedger(weekLedgerRef.current, result);

@@ -6,12 +6,14 @@ import {
   PROPERTY_ASSET_SPECS,
   propertyOutingPreview,
   propertyPackagePreview,
+  propertyAssetValuationBreakdown,
+  residentialDevelopmentPreview,
   propertySummary,
   propertyUpgradePreview,
   type PropertyCommand,
   type PropertyCommandResult,
 } from "../game/property/property";
-import type { FacilityModuleKind, LodgingReservation, OutingBooking, PropertyAsset, PropertyAssetCategory, PropertyAssetKind } from "../game/property/types";
+import type { FacilityModuleKind, LodgingReservation, OutingBooking, PropertyAsset, PropertyAssetCategory, PropertyAssetKind, ResidentialStrategy } from "../game/property/types";
 import { translateCurrent } from "../i18n/core";
 
 type Tab = "campus" | "resort" | "community" | "ledger";
@@ -82,10 +84,10 @@ export function PropertyManagementPanel(props: {
       {notice && <div role="status" data-testid="property-notice" style={{ padding: "8px 13px", fontSize: 12, fontWeight: 800, color: notice.ok ? "#245c34" : "#8a332b", background: notice.ok ? "#e7f3e7" : "#fbe9e5", borderBottom: "1px solid rgba(50,50,50,.12)" }}>{notice.message}</div>}
 
       <div style={{ overflowY: "auto", padding: 12, background: "rgba(255,252,243,.96)" }}>
-        {tab !== "ledger" && <PropertyMap course={props.course} assets={summary.assets} />}
+        {tab !== "ledger" && <PropertyMap course={props.course} summary={summary} />}
         {tab === "ledger" ? <LedgerView summary={summary} world={props.world} /> : tabInfo.categories.map((category) => {
           const copy = CATEGORY_COPY[category]!;
-          const kinds = (Object.keys(PROPERTY_ASSET_SPECS) as PropertyAssetKind[]).filter((kind) => PROPERTY_ASSET_SPECS[kind].category === category);
+          const kinds = (Object.keys(PROPERTY_ASSET_SPECS) as PropertyAssetKind[]).filter((kind) => PROPERTY_ASSET_SPECS[kind].category === category && !(tab === "community" && (kind === "houses" || kind === "condos")));
           return <section key={category} style={{ marginTop: 14 }}>
             <div style={{ marginBottom: 7 }}>
               <h3 style={{ margin: 0, fontSize: 15, color: "#3e4c40" }}>{copy.title}</h3>
@@ -123,6 +125,7 @@ export function PropertyManagementPanel(props: {
           <div style={{ marginTop: 7, fontSize: 11 }}><strong>{translateCurrent("property.safety.value")}</strong> {formatCurrency(summary.residentialValue)} {translateCurrent("property.safety.valueHelp")}</div>
           {summary.safety.contributions.slice(0, 4).map((item) => <div key={item.holeId} style={{ fontSize: 10, marginTop: 4 }}>{item.holeName}: {translateCurrent("property.safety.hole", { distance: item.distanceTiles.toFixed(1), expected: item.expectedRisk.toFixed(1), outlier: item.outlierRisk.toFixed(1) })}</div>)}
         </section>}
+        {tab === "community" && <CommunityDashboard course={props.course} world={props.world} summary={summary} onCommand={run} />}
       </div>
     </section>
   );
@@ -256,19 +259,148 @@ function ResortDashboard(props: { course: Course; world: World; summary: ReturnT
   </section>;
 }
 
+function CommunityDashboard(props: { course: Course; world: World; summary: ReturnType<typeof propertySummary>; onCommand: (command: PropertyCommand) => void }) {
+  const strategies: Array<{ id: ResidentialStrategy; label: string; detail: string }> = [
+    { id: "sell", label: translateCurrent("property.community.strategy.sell"), detail: translateCurrent("property.community.strategy.sellDetail") },
+    { id: "retain", label: translateCurrent("property.community.strategy.retain"), detail: translateCurrent("property.community.strategy.retainDetail") },
+    { id: "partner", label: translateCurrent("property.community.strategy.partner"), detail: translateCurrent("property.community.strategy.partnerDetail") },
+  ];
+  const openComplaints = [...props.summary.enterprise.complaints].filter((complaint) => complaint.status === "open" || complaint.status === "acknowledged").reverse().slice(0, 10);
+  const openClaims = [...props.summary.enterprise.claims].filter((claim) => claim.status === "open" || claim.status === "filed").reverse().slice(0, 10);
+  const residentialAssets = props.summary.assets.filter((asset) => asset.kind === "houses" || asset.kind === "condos");
+  const approve = (kind: "houses" | "condos", strategy: ResidentialStrategy) => {
+    const preview = residentialDevelopmentPreview(props.course, props.world, kind, strategy);
+    const outcome = strategy === "partner"
+      ? translateCurrent("property.community.confirm.partner", { share: Math.round(preview.partnerShare * 100) })
+      : strategy === "retain"
+        ? translateCurrent("property.community.confirm.retain", { rent: formatCurrency(preview.projectedWeeklyRent) })
+        : translateCurrent("property.community.confirm.sell", { low: formatCurrency(preview.projectedValueLow), high: formatCurrency(preview.projectedValueHigh) });
+    const consequence = translateCurrent("property.community.confirm", {
+      property: translateCurrent(kind === "houses" ? "property.community.confirm.houses" : "property.community.confirm.condos"),
+      units: preview.units,
+      capital: formatCurrency(preview.playerCapital),
+      days: preview.constructionDays + preview.releaseDays,
+      outcome,
+    });
+    if (window.confirm(consequence)) props.onCommand({ type: "PLAN_DEVELOPMENT", kind, strategy, confirmed: true });
+  };
+  const toggleTee = (teeSet: "championship" | "member" | "forward") => {
+    const current = props.summary.safetyPolicy.restrictedTeeSets;
+    props.onCommand({ type: "SET_SAFETY_POLICY", restrictedTeeSets: current.includes(teeSet) ? current.filter((candidate) => candidate !== teeSet) : [...current, teeSet] });
+  };
+  return <div data-testid="m33-community-dashboard">
+    <section style={{ marginTop: 14 }}>
+      <h3 style={{ margin: "0 0 4px" }}>{translateCurrent("property.community.pipeline")}</h3>
+      <div style={{ fontSize: 11, color: "#687168", marginBottom: 7 }}>{translateCurrent("property.community.pipelineHelp")}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 6 }}>
+        {(["houses", "condos"] as const).flatMap((kind) => strategies.map((strategy) => {
+          const preview = residentialDevelopmentPreview(props.course, props.world, kind, strategy.id);
+          return <article key={`${kind}-${strategy.id}`} data-testid={`development-preview-${kind}-${strategy.id}`} style={{ border: "1px solid #d4cab4", borderRadius: 7, padding: 7, background: preview.blockers.length ? "#fbf1e8" : "#f3f8ee", fontSize: 10 }}>
+            <strong>{translateCurrent("property.community.previewTitle", { property: translateCurrent(kind === "houses" ? "property.community.preview.houses" : "property.community.preview.condos"), strategy: strategy.label })}</strong>
+            <div>{translateCurrent("property.community.previewMeta", { units: preview.units, capital: formatCurrency(preview.playerCapital), days: preview.constructionDays + preview.releaseDays })}</div>
+            <div>{translateCurrent("property.community.previewValue", { low: formatCurrency(preview.projectedValueLow), high: formatCurrency(preview.projectedValueHigh), risk: Math.round(preview.safety.score) })}</div>
+            <div style={{ marginTop: 3, color: "#687168" }}>{strategy.detail}</div>
+            {preview.blockers.length > 0 && <div style={{ marginTop: 4, color: "#8a332b" }}>{preview.blockers.join(" ")}</div>}
+            <button disabled={preview.blockers.length > 0} onClick={() => approve(kind, strategy.id)} style={{ ...smallButton, marginTop: 5 }}>{translateCurrent("property.community.review")}</button>
+          </article>;
+        }))}
+      </div>
+      {props.summary.developments.length > 0 && <div data-testid="development-pipeline" style={{ display: "grid", gap: 5, marginTop: 8 }}>
+        {props.summary.developments.map((development) => {
+          const units = props.summary.units.filter((unit) => unit.developmentId === development.id);
+          const occupied = units.filter((unit) => !!unit.householdId).length;
+          return <article key={development.id} style={{ border: "1px solid #cbbfa9", borderRadius: 7, padding: 7, background: "#fffdf8", fontSize: 10 }}>
+            <strong>{development.name}</strong> · {translateCurrent(development.strategy === "retain" ? "property.community.tenure.retain" : development.strategy === "partner" ? "property.community.tenure.partner" : "property.community.tenure.sell")} · {development.status}
+            <div>{translateCurrent("property.community.phaseProgress", { units: units.length, occupied, construction: development.constructionDaysRemaining, release: development.releaseDaysRemaining })}</div>
+            <div>{translateCurrent("property.community.phaseCapital", { capital: formatCurrency(development.playerCapital), common: formatCurrency(development.commonUpkeepDaily) })}</div>
+          </article>;
+        })}
+      </div>}
+    </section>
+
+    <section style={{ marginTop: 14, border: "1px solid #d4c6ae", borderRadius: 8, padding: 9, background: "#f8fbf3" }}>
+      <h3 style={{ margin: "0 0 5px" }}>{translateCurrent("property.community.exposure")}</h3>
+      <SafetyHeatmap course={props.course} summary={props.summary} />
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
+        {(["championship", "member", "forward"] as const).map((teeSet) => <button key={teeSet} aria-pressed={props.summary.safetyPolicy.restrictedTeeSets.includes(teeSet)} onClick={() => toggleTee(teeSet)} style={{ ...smallButton, background: props.summary.safetyPolicy.restrictedTeeSets.includes(teeSet) ? "#7b3e35" : "#fffaf0", color: props.summary.safetyPolicy.restrictedTeeSets.includes(teeSet) ? "white" : "#3c493d" }}>{translateCurrent("property.community.restrict", { tee: teeSet })}</button>)}
+        {props.summary.safety.contributions[0] && <button onClick={() => props.onCommand({ type: "SET_SAFETY_POLICY", closedHoleIds: [...new Set([...props.summary.safetyPolicy.closedHoleIds, props.summary.safety.contributions[0].holeId])] })} style={smallButton}>{translateCurrent("property.community.closeHole", { hole: props.summary.safety.contributions[0].holeName })}</button>}
+      </div>
+      <div style={{ marginTop: 5, fontSize: 10 }}>{translateCurrent("property.community.setback", { setback: Number.isFinite(props.summary.safety.measuredSetback) ? `${props.summary.safety.measuredSetback.toFixed(1)} tiles` : "n/a" })}</div>
+      {props.summary.safety.blockingReasons.map((reason) => <div key={reason} style={{ color: "#8a332b", fontSize: 10 }}>{reason}</div>)}
+    </section>
+
+    {residentialAssets.map((asset) => {
+      const valuation = propertyAssetValuationBreakdown(props.course, props.world, asset);
+      return <section key={asset.id} data-testid={`valuation-${asset.id}`} style={{ marginTop: 10, border: "1px solid #d4c6ae", borderRadius: 8, padding: 8, background: "#fffdf8", fontSize: 10 }}>
+        <strong>{translateCurrent("property.community.valuation", { name: asset.name, total: formatCurrency(valuation.total) })}</strong>
+        <div>{translateCurrent("property.community.valuationDetail", { perUnit: formatCurrency(valuation.perUnit), scenery: signed(valuation.components.scenery), golf: signed(valuation.components.golf), access: signed(valuation.components.access), amenities: signed(valuation.components.amenities), prestige: signed(valuation.components.prestige), safety: signed(valuation.components.safety), traffic: signed(valuation.components.traffic), density: signed(valuation.components.density) })}</div>
+      </section>;
+    })}
+
+    <section style={{ marginTop: 14 }}>
+      <h3 style={{ margin: "0 0 5px" }}>{translateCurrent("property.community.residents")}</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, marginBottom: 7 }}>
+        <Metric label={translateCurrent("property.community.households")} value={`${props.summary.enterprise.residents.length}`} />
+        <Metric label={translateCurrent("property.community.satisfaction")} value={`${Math.round(props.summary.communitySatisfaction)}/100`} warning={props.summary.communitySatisfaction < 55} />
+        <Metric label={translateCurrent("property.community.localSpending")} value={formatCurrency(props.summary.residentLocalSpend)} />
+      </div>
+      {props.summary.enterprise.residents.slice(0, 8).map((resident) => <div key={resident.id} style={{ padding: 6, marginBottom: 4, borderRadius: 6, background: "#fffdf8", border: "1px solid #ddd2bd", fontSize: 10 }}>{translateCurrent("property.community.residentRow", { archetype: resident.archetype?.replaceAll("_", " ") ?? translateCurrent("property.community.residentFallback"), home: resident.unitIds?.[0] ?? resident.assetId, satisfaction: Math.round(resident.satisfaction), golf: Math.round(resident.golfInterest ?? 0), advocacy: Math.round(resident.advocacy ?? 0), opposition: Math.round(resident.opposition ?? 0) })}</div>)}
+      {props.summary.enterprise.residents.length === 0 && <div style={{ fontSize: 11, color: "#687168" }}>{translateCurrent("property.community.residentEmpty")}</div>}
+    </section>
+
+    <section style={{ marginTop: 14 }}>
+      <h3 style={{ margin: "0 0 5px" }}>{translateCurrent("property.community.complaints")}</h3>
+      {openComplaints.map((complaint) => <article key={complaint.id} data-testid={`complaint-${complaint.id}`} style={{ marginBottom: 6, border: "1px solid #dfc2b6", borderRadius: 7, padding: 7, background: "#fff7f2", fontSize: 10 }}>
+        <strong>{translateCurrent("property.community.complaintMeta", { source: complaint.source.replaceAll("_", " "), severity: complaint.severity, recurrence: complaint.recurrence })}</strong>
+        <div>{complaint.evidence}</div>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 5 }}>{(["acknowledge", "compensate", "restrict", "repair", "easement"] as const).map((response) => <button key={response} onClick={() => props.onCommand({ type: "RESPOND_COMPLAINT", complaintId: complaint.id, response })} style={smallButton}>{response}</button>)}</div>
+      </article>)}
+      {openComplaints.length === 0 && <div style={{ fontSize: 11, color: "#687168" }}>{translateCurrent("property.community.complaintEmpty")}</div>}
+    </section>
+
+    <section style={{ marginTop: 14 }}>
+      <h3 style={{ margin: "0 0 5px" }}>{translateCurrent("property.community.claims")}</h3>
+      <div style={{ fontSize: 10, marginBottom: 6 }}>{translateCurrent("property.community.insurance", { deductible: formatCurrency(props.summary.enterprise.insurance.deductible), limit: formatCurrency(props.summary.enterprise.insurance.coverageLimit), premium: formatCurrency(props.summary.enterprise.insurance.dailyPremium * props.summary.enterprise.insurance.riskMultiplier), settled: props.summary.enterprise.insurance.claimsSettled })}</div>
+      {openClaims.map((claim) => <article key={claim.id} data-testid={`claim-${claim.id}`} style={{ marginBottom: 5, border: "1px solid #d5c5b7", borderRadius: 7, padding: 7, background: "#fffdf8", fontSize: 10 }}>
+        <strong>{translateCurrent("property.community.claimMeta", { id: claim.id, status: claim.status, damage: formatCurrency(claim.damage) })}</strong>
+        <div>{translateCurrent("property.community.claimWarnings", { warnings: claim.priorWarnings, deductible: formatCurrency(claim.deductible) })}</div>
+        <button onClick={() => props.onCommand({ type: claim.status === "open" ? "FILE_CLAIM" : "SETTLE_CLAIM", claimId: claim.id })} style={{ ...smallButton, marginTop: 4 }}>{translateCurrent(claim.status === "open" ? "property.community.fileClaim" : "property.community.settleClaim")}</button>
+      </article>)}
+      {openClaims.length === 0 && <div style={{ fontSize: 11, color: "#687168" }}>{translateCurrent("property.community.claimEmpty")}</div>}
+    </section>
+  </div>;
+}
+
+function SafetyHeatmap(props: { course: Course; summary: ReturnType<typeof propertySummary> }) {
+  const cells = props.summary.safety.heatmap;
+  if (cells.length === 0) return <div style={{ fontSize: 10, color: "#687168" }}>{translateCurrent("property.community.heatEmpty")}</div>;
+  const colors = { low: "#8cbf7d", guarded: "#e2c65f", high: "#dc8a4b", severe: "#b24d43" } as const;
+  return <svg data-testid="m33-safety-heatmap" role="img" aria-label={translateCurrent("property.community.heatAria")} viewBox={`0 0 ${props.course.width} ${props.course.height}`} style={{ width: "100%", height: 120, background: "#e8eddf", border: "1px solid #c8c3ad" }} preserveAspectRatio="none">
+    {cells.map((cell) => <g key={`${cell.x}-${cell.y}`}><rect x={cell.x} y={cell.y} width="2" height="2" fill={colors[cell.class]} opacity=".8" /><title>{translateCurrent("property.community.heatCell", { class: cell.class, risk: Math.round(cell.mitigatedRisk), holes: cell.contributingHoleIds.join(", ") })}</title></g>)}
+    {props.summary.easements.filter((easement) => easement.protected).map((easement) => <rect key={easement.id} x={easement.x} y={easement.y} width={easement.width} height={easement.height} fill="none" stroke="#3d5c72" strokeDasharray="1 1" strokeWidth=".7"><title>{translateCurrent("property.community.easement", { kind: easement.kind })}</title></rect>)}
+  </svg>;
+}
+
+function signed(value: number): string {
+  return `${value >= 0 ? "+" : ""}${Math.round(value * 100)}%`;
+}
+
 function ActionCard(props: { testId?: string; icon: string; title: string; detail: string; button: string; onClick: () => void }) {
   return <article data-testid={props.testId} style={{ border: "1px solid #d3cab6", borderRadius: 9, padding: 10, background: "#fffdf8" }}><strong>{props.icon} {props.title}</strong><p style={{ fontSize: 11, color: "#697269", minHeight: 28 }}>{props.detail}</p><button onClick={props.onClick} style={smallButton}>{props.button}</button></article>;
 }
 
-function PropertyMap(props: { course: Course; assets: PropertyAsset[] }) {
-  if (props.assets.length === 0) return <div data-testid="property-map" style={{ padding: 10, border: "1px dashed #aaa58f", borderRadius: 8, color: "#77705f", fontSize: 11 }}>{translateCurrent("property.map.empty")}</div>;
+function PropertyMap(props: { course: Course; summary: ReturnType<typeof propertySummary> }) {
+  const assets = props.summary.assets;
+  if (assets.length === 0) return <div data-testid="property-map" style={{ padding: 10, border: "1px dashed #aaa58f", borderRadius: 8, color: "#77705f", fontSize: 11 }}>{translateCurrent("property.map.empty")}</div>;
   const colors: Record<PropertyAssetCategory, string> = { access: "#848b86", practice: "#74a85b", clubhouse: "#b88d52", resort: "#678fa8", community: "#c58f76", safety: "#497c49" };
   return <figure data-testid="property-map" style={{ margin: 0, border: "1px solid #cfc6b2", borderRadius: 8, overflow: "hidden", background: "#dce8c8" }}>
     <svg role="img" aria-label={translateCurrent("property.map.aria")} viewBox={`0 0 ${props.course.width} ${props.course.height}`} style={{ display: "block", width: "100%", height: 112 }} preserveAspectRatio="none">
+      <defs><pattern id="private-land-hatch" width="2" height="2" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0V2" stroke="#56372f" strokeWidth=".45" /></pattern><pattern id="committed-land-hatch" width="3" height="3" patternUnits="userSpaceOnUse"><path d="M0 0L3 3M3 0L0 3" stroke="#7a6635" strokeWidth=".35" /></pattern></defs>
       <rect width={props.course.width} height={props.course.height} fill="#dce8c8" />
-      {props.assets.map((asset) => <g key={asset.id}><rect x={asset.x} y={asset.y} width={asset.width} height={asset.height} rx="1" fill={colors[asset.category]} stroke="#fff" strokeWidth=".5" opacity={0.92} /><title>{translateCurrent("property.map.asset", { name: asset.name, tier: asset.tier })}</title></g>)}
+      {assets.map((asset) => <g key={asset.id}><rect x={asset.x} y={asset.y} width={asset.width} height={asset.height} rx="1" fill={colors[asset.category]} stroke={asset.tenure === "sold" || asset.tenure === "partnered" ? "#56372f" : asset.tenure === "reacquired" ? "#315b35" : "#fff"} strokeDasharray={asset.tenure === "reacquired" ? "1 1" : undefined} strokeWidth=".7" opacity={asset.enabled ? 0.92 : 0.56} />{(asset.tenure === "sold" || asset.tenure === "partnered" || asset.tenure === "retained") && <rect x={asset.x} y={asset.y} width={asset.width} height={asset.height} rx="1" fill="url(#private-land-hatch)" />}{asset.tenure === "committed" && <rect x={asset.x} y={asset.y} width={asset.width} height={asset.height} rx="1" fill="url(#committed-land-hatch)" />}<text x={asset.x + .5} y={asset.y + 1.5} fontSize="1.35" fontWeight="900" fill="#fff">{asset.tenure === "sold" ? "S" : asset.tenure === "retained" ? "R" : asset.tenure === "partnered" ? "P" : asset.tenure === "committed" ? "C" : asset.tenure === "reacquired" ? "↺" : ""}</text><title>{translateCurrent("property.map.asset", { name: asset.name, tier: asset.tier })}{asset.tenure ? ` · ${translateCurrent("property.community.mapTenure", { tenure: asset.tenure })}` : ""}</title></g>)}
+      {props.summary.easements.filter((easement) => easement.protected).map((easement) => <rect key={easement.id} x={easement.x} y={easement.y} width={easement.width} height={easement.height} fill="none" stroke="#314e6b" strokeDasharray="1 1" strokeWidth=".8"><title>{translateCurrent("property.community.easementProtected", { kind: easement.kind })}</title></rect>)}
     </svg>
-    <figcaption style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "5px 8px", fontSize: 9, background: "#f8f5ea" }}>{Object.entries(colors).map(([category, color]) => <span key={category}><i style={{ display: "inline-block", width: 7, height: 7, background: color, marginRight: 3 }} />{category}</span>)}</figcaption>
+    <figcaption style={{ display: "flex", flexWrap: "wrap", gap: 8, padding: "5px 8px", fontSize: 9, background: "#f8f5ea" }}>{Object.entries(colors).map(([category, color]) => <span key={category}><i style={{ display: "inline-block", width: 7, height: 7, background: color, marginRight: 3 }} />{category}</span>)}<span>{translateCurrent("property.community.legendCommitted")}</span><span>{translateCurrent("property.community.legendSold")}</span><span>{translateCurrent("property.community.legendRental")}</span><span>{translateCurrent("property.community.legendPartner")}</span><span>{translateCurrent("property.community.legendReacquired")}</span><span>{translateCurrent("property.community.legendEasement")}</span></figcaption>
   </figure>;
 }
 

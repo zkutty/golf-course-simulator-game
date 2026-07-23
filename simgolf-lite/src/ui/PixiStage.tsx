@@ -2157,6 +2157,58 @@ export function PixiStage(props: PixiStageProps) {
       graphic.poly(corners.flatMap((point) => [point.x, point.y]));
       graphic.fill({ color: asset.surface ? surfaceColors[asset.surface] : colors[asset.category], alpha: asset.enabled ? 0.88 : 0.38 });
       graphic.stroke({ width: asset.enabled ? 2 : 1, color: asset.enabled ? 0xfff6d7 : 0x5d625e, alpha: 0.9 });
+      if (asset.category === "community" && (asset.kind === "houses" || asset.kind === "condos")) {
+        const unitState = (course.property?.units ?? []).filter((unit) => unit.assetId === asset.id);
+        const occupiedRatio = unitState.length ? unitState.filter((unit) => !!unit.householdId).length / unitState.length : asset.tenure === "sold" ? 0.72 : 0;
+        const structures = asset.kind === "houses" ? Math.min(8, 3 + asset.tier) : Math.min(4, 1 + asset.tier);
+        const communityPalette = {
+          parkland: { wall: 0xe5cfad, roof: 0x77483c, trim: 0xf2e7cf },
+          links: { wall: 0xd8d4c5, roof: 0x55666d, trim: 0xf1eee1 },
+          desert: { wall: 0xd59c69, roof: 0x8b553c, trim: 0xf1d3a5 },
+        }[course.theme ?? "parkland"];
+        for (let index = 0; index < structures; index++) {
+          const columns = asset.kind === "houses" ? Math.min(4, structures) : 2;
+          const rows = Math.ceil(structures / columns);
+          const wx = asset.x + asset.width * ((index % columns) + 0.5) / columns;
+          const wy = asset.y + asset.height * (Math.floor(index / columns) + 0.55) / rows;
+          const center = worldToIso(wx, wy, elevation, rotation);
+          const width = asset.kind === "houses" ? 12 + asset.tier : 19 + asset.tier * 2;
+          const height = asset.kind === "houses" ? 10 + asset.tier * 1.5 : 18 + asset.tier * 4;
+          graphic.roundRect(center.x - width / 2, center.y - height, width, height, asset.kind === "houses" ? 1.5 : 1);
+          graphic.fill({ color: communityPalette.wall, alpha: asset.enabled ? 0.98 : 0.42 });
+          graphic.stroke({ width: 1, color: 0x503f35, alpha: 0.82 });
+          graphic.poly([center.x - width / 2 - 1, center.y - height, center.x, center.y - height - width * 0.28, center.x + width / 2 + 1, center.y - height]);
+          graphic.fill({ color: communityPalette.roof, alpha: asset.enabled ? 0.98 : 0.42 });
+          if (index / structures < occupiedRatio) {
+            graphic.rect(center.x - 2, center.y - height * 0.48, 4, 4);
+            graphic.fill({ color: 0xf4d77b, alpha: 0.95 });
+          } else {
+            graphic.rect(center.x - 2, center.y - height * 0.48, 4, 4);
+            graphic.fill({ color: 0x6f817d, alpha: 0.72 });
+            graphic.moveTo(center.x - 2, center.y - height * 0.48);
+            graphic.lineTo(center.x + 2, center.y - height * 0.48 + 4);
+            graphic.stroke({ width: 0.8, color: communityPalette.trim, alpha: 0.85 });
+          }
+        }
+        if (asset.tenure === "sold" || asset.tenure === "partnered" || asset.tenure === "retained") {
+          for (let stripe = 0; stripe < 6; stripe++) {
+            const a = corners[stripe % 4];
+            const b = corners[(stripe + 1) % 4];
+            const t = (stripe + 1) / 7;
+            graphic.circle(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, 1.5);
+          }
+          graphic.fill({ color: asset.tenure === "sold" ? 0xefe2c7 : asset.tenure === "partnered" ? 0xd5c5ea : 0xb9d8e0, alpha: 0.95 });
+        }
+        if (asset.tenure === "reacquired") {
+          const center = worldToIso(asset.x + asset.width / 2, asset.y + asset.height / 2, elevation, rotation);
+          graphic.circle(center.x, center.y - 9, 8);
+          graphic.stroke({ width: 2.5, color: 0x3f7750, alpha: 0.95 });
+          graphic.moveTo(center.x - 8, center.y - 9);
+          graphic.lineTo(center.x - 3, center.y - 14);
+          graphic.lineTo(center.x - 2, center.y - 7);
+          graphic.stroke({ width: 2.5, color: 0x3f7750, alpha: 0.95 });
+        }
+      }
       if (asset.category === "resort" && ["lodge", "hotel", "cottages", "spa"].includes(asset.kind)) {
         const structures = asset.kind === "cottages" ? Math.min(6, 2 + asset.tier) : 1;
         for (let index = 0; index < structures; index++) {
@@ -2257,6 +2309,29 @@ export function PixiStage(props: PixiStageProps) {
         graphic.moveTo(from.x, from.y - 18 - asset.tier * 2);
         graphic.lineTo(to.x, to.y - 18 - asset.tier * 2);
         graphic.stroke({ width: 2, color: 0x355c3d, alpha: asset.condition });
+      }
+      if (asset.kind === "screening" || asset.kind === "safety_buffer") {
+        const count = Math.min(12, 4 + asset.tier * 2);
+        for (let index = 0; index < count; index++) {
+          const wx = asset.x + asset.width * (index + 0.5) / count;
+          const wy = asset.y + asset.height * (0.35 + (index % 2) * 0.3);
+          const center = worldToIso(wx, wy, elevation, rotation);
+          graphic.circle(center.x, center.y - 5 - (asset.coverageHeight ?? 4), 3.5 + asset.tier * 0.35);
+          graphic.fill({ color: asset.kind === "screening" ? 0x2f663d : 0x4d7d48, alpha: asset.condition });
+        }
+      }
+      if (asset.kind === "safety_fence" || asset.kind === "berm") {
+        const from = worldToIso(asset.x, asset.y + asset.height / 2, elevation, rotation);
+        const to = worldToIso(asset.x + asset.width, asset.y + asset.height / 2, elevation, rotation);
+        graphic.moveTo(from.x, from.y - (asset.kind === "berm" ? 7 : 4));
+        graphic.lineTo(to.x, to.y - (asset.kind === "berm" ? 7 : 4));
+        graphic.stroke({ width: asset.kind === "berm" ? 7 : 2, color: asset.kind === "berm" ? 0x806a42 : 0x5c5d57, alpha: asset.condition });
+      }
+      if (asset.kind === "warning_signage") {
+        const center = worldToIso(asset.x + asset.width / 2, asset.y + asset.height / 2, elevation, rotation);
+        graphic.poly([center.x, center.y - 13, center.x - 6, center.y - 2, center.x + 6, center.y - 2]);
+        graphic.fill({ color: 0xe6b942, alpha: asset.condition });
+        graphic.stroke({ width: 1.5, color: 0x55472f, alpha: 0.9 });
       }
       if ((asset.constructionDaysRemaining ?? 0) > 0) {
         const first = worldToIso(asset.x, asset.y + asset.height, elevation, rotation);

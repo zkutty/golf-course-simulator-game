@@ -1,11 +1,14 @@
 import type { ConcessionType, Course, World } from "../models/types";
 import type {
   ClubProfessional,
+  CommunityComplaint,
   CommercialCategory,
   CommercialLedgerEntry,
+  ComplaintSource,
   FacilityModuleKind,
   FacilityUpkeepPolicy,
   InfrastructureSurface,
+  LiabilityClaim,
   LodgingRoomClass,
   LodgingReservation,
   OutingBooking,
@@ -16,9 +19,15 @@ import type {
   PropertyCourseState,
   PropertyCustomer,
   PropertyDayReport,
+  PropertyEasement,
   PropertyEnterpriseState,
   PropertyIncident,
+  PropertyInsurance,
+  PropertyShotTrace,
   PropertyTier,
+  ResidentialDevelopment,
+  ResidentialStrategy,
+  ResidentialUnit,
   ResidentialSafetyReport,
   ResidentHousehold,
   ResortFolioTransaction,
@@ -94,6 +103,10 @@ export const PROPERTY_ASSET_SPECS: Record<PropertyAssetKind, PropertyAssetSpec> 
   community_club: spec("community_club", "Community club", "🤝", "community", "Resident amenity that improves sales, satisfaction, memberships, and dining.", 24_000, 42, 12, 205, 4, [7, 6]),
   safety_buffer: spec("safety_buffer", "Safety buffer", "🌲", "safety", "Landscaped setbacks reduce ball-strike frequency without changing course play.", 9_000, 0, 0, 35, 4, [10, 3]),
   netting: spec("netting", "Protective netting", "🥅", "safety", "Targeted protection strongly reduces incidents but carries visible upkeep.", 13_000, 0, 0, 75, 4, [10, 1]),
+  screening: spec("screening", "Vegetation screening", "🌳", "safety", "Dense screening intercepts low shots, softens views, and needs healthy continuous coverage.", 7_500, 0, 0, 42, 4, [8, 2]),
+  safety_fence: spec("safety_fence", "Safety fence", "🚧", "safety", "A durable low barrier limits access and redirects retrieval without stopping high shots.", 6_500, 0, 0, 28, 4, [8, 1]),
+  berm: spec("berm", "Safety berm", "⛰️", "safety", "An earth berm intercepts low trajectories and adds separation at a substantial landscape cost.", 15_000, 0, 0, 38, 4, [10, 3]),
+  warning_signage: spec("warning_signage", "Warning signage", "⚠️", "safety", "Discloses residual exposure and redirects pedestrians but does not physically stop a ball.", 1_800, 0, 0, 8, 2, [2, 1]),
 };
 
 function spec(kind: PropertyAssetKind, label: string, icon: string, category: PropertyAssetCategory, description: string, buildCost: number, baseCapacity: number, basePrice: number, dailyUpkeep: number, maxTier: PropertyTier, footprint: [number, number]): PropertyAssetSpec {
@@ -107,24 +120,35 @@ function moduleSpec(kind: FacilityModuleKind, label: string, requiredShellTier: 
 const CUSTOMER_NAMES = ["Maya Chen", "Theo Brooks", "Sam Rivera", "Priya Shah", "Jordan Reed", "Ana Torres", "Eli Martin", "Nora Kim", "Luis Bennett", "Jamie Patel", "Riley Foster", "Avery Walker"];
 
 export function emptyPropertyCourse(): PropertyCourseState {
-  return { version: 1, assets: [] };
+  return {
+    version: 2,
+    assets: [],
+    developments: [],
+    units: [],
+    easements: [],
+    safetyPolicy: { restrictedTeeSets: [], closedHoleIds: [], exposureLimit: 70 },
+  };
 }
 
 /** Deterministic municipal access granted to new and pre-M31 courses so the
  * existing tee sheet keeps equivalent baseline demand without manual repair. */
 export function starterPropertyCourse(): PropertyCourseState {
   return {
-    version: 1,
+    version: 2,
     assets: [
       { id: "property-road-starter", kind: "road", name: "Main road", category: "access", tier: 3, x: 4, y: 4, width: 8, height: 2, capacity: 64, condition: 1, price: 0, surface: "gravel", upkeepPolicy: "standard", openHour: 7, closeHour: 20, constructionDaysRemaining: 0, enabled: true },
       { id: "property-parking-starter", kind: "parking", name: "Guest parking", category: "access", tier: 3, x: 13, y: 4, width: 6, height: 5, capacity: 72, condition: 1, price: 0, surface: "gravel", upkeepPolicy: "standard", openHour: 7, closeHour: 20, constructionDaysRemaining: 0, enabled: true },
     ],
+    developments: [],
+    units: [],
+    easements: [],
+    safetyPolicy: { restrictedTeeSets: [], closedHoleIds: [], exposureLimit: 70 },
   };
 }
 
 export function emptyPropertyEnterprise(): PropertyEnterpriseState {
   return {
-    version: 2,
+    version: 3,
     sequence: 1,
     ledger: [],
     customers: CUSTOMER_NAMES.map((name, index) => ({
@@ -143,6 +167,9 @@ export function emptyPropertyEnterprise(): PropertyEnterpriseState {
     reservations: [],
     residents: [],
     incidents: [],
+    complaints: [],
+    claims: [],
+    insurance: { policyId: "course-liability-1", deductible: 1_250, coverageLimit: 250_000, dailyPremium: 95, riskMultiplier: 1, claimsFiled: 0, claimsSettled: 0 },
     outings: [],
     resort: { frontDesk: 0, housekeeping: 0, maintenance: 0, concierge: 0, shuttleDrivers: 0, foodService: 0, lockerAttendants: 0, dirtyRooms: 0, outOfOrderRooms: 0, serviceQueue: 0, transportWaitMinutes: 0 },
   };
@@ -196,7 +223,30 @@ export function normalizePropertyCourse(raw: unknown): PropertyCourseState {
     });
   }) : [];
   const unique = new Map(assets.map((asset) => [asset.id, asset]));
-  return { version: 1, assets: [...unique.values()] };
+  const assetIds = new Set(unique.keys());
+  const developments = normalizeDevelopments(candidate.developments, assetIds);
+  const developmentIds = new Set(developments.map((development) => development.id));
+  const units = normalizeResidentialUnits(candidate.units, developmentIds, assetIds);
+  const unitIds = new Set(units.map((unit) => unit.id));
+  const normalizedDevelopments = developments.map((development) => ({
+    ...development,
+    unitIds: development.unitIds.filter((id) => unitIds.has(id)).slice(0, 160),
+  }));
+  const easements = normalizeEasements(candidate.easements, developmentIds, assetIds);
+  const rawPolicy = candidate.safetyPolicy && typeof candidate.safetyPolicy === "object" ? candidate.safetyPolicy : undefined;
+  const teeSets = new Set(["championship", "member", "forward"]);
+  return {
+    version: 2,
+    assets: [...unique.values()],
+    developments: normalizedDevelopments,
+    units,
+    easements,
+    safetyPolicy: {
+      restrictedTeeSets: Array.isArray(rawPolicy?.restrictedTeeSets) ? rawPolicy.restrictedTeeSets.filter((value): value is "championship" | "member" | "forward" => teeSets.has(value)).slice(0, 3) : [],
+      closedHoleIds: Array.isArray(rawPolicy?.closedHoleIds) ? [...new Set(rawPolicy.closedHoleIds.filter((value): value is string => typeof value === "string"))].slice(0, 36) : [],
+      exposureLimit: clamp(Number.isFinite(rawPolicy?.exposureLimit) ? rawPolicy!.exposureLimit : 70, 20, 90),
+    },
+  };
 }
 
 export function normalizePropertyEnterprise(raw: unknown): PropertyEnterpriseState {
@@ -206,14 +256,17 @@ export function normalizePropertyEnterprise(raw: unknown): PropertyEnterpriseSta
   return {
     ...defaults,
     ...candidate,
-    version: 2,
+    version: 3,
     sequence: Number.isInteger(candidate.sequence) ? Math.max(1, candidate.sequence!) : 1,
     ledger: Array.isArray(candidate.ledger) ? candidate.ledger.slice(-420) : [],
     customers: normalizedCustomers(candidate.customers, defaults.customers),
     professionals: Array.isArray(candidate.professionals) ? candidate.professionals.slice(0, 8) : [],
     reservations: normalizedReservations(candidate.reservations),
-    residents: Array.isArray(candidate.residents) ? candidate.residents.slice(0, 24) : [],
-    incidents: Array.isArray(candidate.incidents) ? candidate.incidents.slice(-120) : [],
+    residents: normalizedResidents(candidate.residents),
+    incidents: normalizedIncidents(candidate.incidents),
+    complaints: normalizedComplaints(candidate.complaints),
+    claims: normalizedClaims(candidate.claims),
+    insurance: normalizedInsurance(candidate.insurance, defaults.insurance),
     outings: Array.isArray(candidate.outings) ? candidate.outings.slice(-80) : [],
     resort: normalizedResortOperations(candidate.resort, defaults.resort),
     membership: candidate.membership && typeof candidate.membership === "object" ? { ...defaults.membership, ...candidate.membership } : defaults.membership,
@@ -237,6 +290,191 @@ function normalizedResortOperations(raw: unknown, defaults: ResortOperations): R
     outOfOrderRooms: count(candidate.outOfOrderRooms),
     serviceQueue: count(candidate.serviceQueue),
     transportWaitMinutes: count(candidate.transportWaitMinutes, 1_440),
+  };
+}
+
+function normalizeDevelopments(raw: unknown, assetIds: Set<string>): ResidentialDevelopment[] {
+  if (!Array.isArray(raw)) return [];
+  const strategies = new Set<ResidentialStrategy>(["sell", "retain", "partner"]);
+  const statuses = new Set<ResidentialDevelopment["status"]>(["planned", "construction", "releasing", "complete", "sold_out", "reacquired"]);
+  const seen = new Set<string>();
+  return raw.filter((value): value is ResidentialDevelopment => {
+    if (!value || typeof value !== "object") return false;
+    const item = value as ResidentialDevelopment;
+    return typeof item.id === "string" && !seen.has(item.id) && typeof item.assetId === "string" && assetIds.has(item.assetId);
+  }).map((item) => {
+    seen.add(item.id);
+    return {
+      ...item,
+      strategy: strategies.has(item.strategy) ? item.strategy : "sell",
+      status: statuses.has(item.status) ? item.status : "construction",
+      phaseNumber: clamp(Math.floor(item.phaseNumber || 1), 1, 12),
+      unitIds: Array.isArray(item.unitIds) ? [...new Set(item.unitIds.filter((id): id is string => typeof id === "string"))] : [],
+      approvedWeek: Math.max(0, Math.floor(item.approvedWeek || 0)),
+      constructionDaysRemaining: clamp(Math.floor(item.constructionDaysRemaining || 0), 0, 365),
+      releaseDaysRemaining: clamp(Math.floor(item.releaseDaysRemaining || 0), 0, 90),
+      developmentCost: Math.max(0, Math.round(item.developmentCost || 0)),
+      playerCapital: Math.max(0, Math.round(item.playerCapital || 0)),
+      partnerShare: clamp(item.partnerShare || 0, 0, 0.8),
+      projectedValueLow: Math.max(0, Math.round(item.projectedValueLow || 0)),
+      projectedValueHigh: Math.max(0, Math.round(item.projectedValueHigh || 0)),
+      safetyAtApproval: clamp(item.safetyAtApproval || 0, 0, 100),
+      disclosedRisk: item.disclosedRisk === true,
+      publicRoadConnected: item.publicRoadConnected !== false,
+      emergencyAccess: item.emergencyAccess !== false,
+      utilitiesEligible: item.utilitiesEligible !== false,
+      parkingSpaces: Math.max(0, Math.floor(item.parkingSpaces || 0)),
+      commonUpkeepDaily: Math.max(0, Math.round(item.commonUpkeepDaily || 0)),
+      taxRate: clamp(item.taxRate || 0.012, 0, 0.05),
+      insurancePremiumDaily: Math.max(0, Math.round(item.insurancePremiumDaily || 0)),
+    };
+  }).slice(0, 24);
+}
+
+function normalizeResidentialUnits(raw: unknown, developmentIds: Set<string>, assetIds: Set<string>): ResidentialUnit[] {
+  if (!Array.isArray(raw)) return [];
+  const statuses = new Set<ResidentialUnit["status"]>(["construction", "available", "sold", "leased", "partnered", "vacant", "reacquired"]);
+  const types = new Set<ResidentialUnit["type"]>(["detached_home", "villa", "townhome", "condo"]);
+  const tenures = new Set<ResidentialUnit["tenure"]>(["player", "private", "partner"]);
+  const seen = new Set<string>();
+  return raw.filter((value): value is ResidentialUnit => {
+    if (!value || typeof value !== "object") return false;
+    const item = value as ResidentialUnit;
+    return typeof item.id === "string" && !seen.has(item.id) && developmentIds.has(item.developmentId) && assetIds.has(item.assetId);
+  }).map((item) => {
+    seen.add(item.id);
+    return {
+      ...item,
+      lotNumber: Math.max(1, Math.floor(item.lotNumber || 1)),
+      type: types.has(item.type) ? item.type : "detached_home",
+      status: statuses.has(item.status) ? item.status : "construction",
+      tenure: tenures.has(item.tenure) ? item.tenure : "player",
+      marketValue: Math.max(0, Math.round(item.marketValue || 0)),
+      closedValue: item.closedValue == null ? undefined : Math.max(0, Math.round(item.closedValue)),
+      weeklyRent: item.weeklyRent == null ? undefined : Math.max(0, Math.round(item.weeklyRent)),
+    };
+  }).slice(0, 720);
+}
+
+function normalizeEasements(raw: unknown, developmentIds: Set<string>, assetIds: Set<string>): PropertyEasement[] {
+  if (!Array.isArray(raw)) return [];
+  const kinds = new Set<PropertyEasement["kind"]>(["safety", "maintenance", "access", "utility"]);
+  const seen = new Set<string>();
+  return raw.filter((value): value is PropertyEasement => {
+    if (!value || typeof value !== "object") return false;
+    const item = value as PropertyEasement;
+    return typeof item.id === "string" && !seen.has(item.id)
+      && (!item.developmentId || developmentIds.has(item.developmentId))
+      && (!item.assetId || assetIds.has(item.assetId));
+  }).map((item) => {
+    seen.add(item.id);
+    return {
+      ...item,
+      kind: kinds.has(item.kind) ? item.kind : "safety",
+      x: Math.max(0, Math.floor(item.x || 0)),
+      y: Math.max(0, Math.floor(item.y || 0)),
+      width: Math.max(1, Math.floor(item.width || 1)),
+      height: Math.max(1, Math.floor(item.height || 1)),
+      protected: item.protected !== false,
+      compensation: item.compensation == null ? undefined : Math.max(0, Math.round(item.compensation)),
+    };
+  }).slice(0, 120);
+}
+
+function normalizedResidents(raw: unknown): ResidentHousehold[] {
+  if (!Array.isArray(raw)) return [];
+  const archetypes = new Set<NonNullable<ResidentHousehold["archetype"]>>(["golf_family", "retiree", "professional", "second_home", "non_golfer"]);
+  const seen = new Set<string>();
+  return raw.filter((value): value is ResidentHousehold => {
+    if (!value || typeof value !== "object") return false;
+    const item = value as ResidentHousehold;
+    return typeof item.id === "string" && !seen.has(item.id) && typeof item.assetId === "string";
+  }).map((item) => {
+    seen.add(item.id);
+    return {
+      ...item,
+      units: clamp(Math.floor(item.units || 0), 0, 720),
+      occupied: clamp(Math.floor(item.occupied || 0), 0, Math.max(0, Math.floor(item.units || 0))),
+      satisfaction: clamp(item.satisfaction || 0, 0, 100),
+      complaints: clamp(Math.floor(item.complaints || 0), 0, 999),
+      unitIds: Array.isArray(item.unitIds) ? [...new Set(item.unitIds.filter((id): id is string => typeof id === "string"))].slice(0, 80) : [],
+      customerIds: Array.isArray(item.customerIds) ? [...new Set(item.customerIds.filter((id): id is string => typeof id === "string"))].slice(0, 8) : [],
+      archetype: archetypes.has(item.archetype ?? "non_golfer") ? item.archetype : "non_golfer",
+      golfInterest: clamp(item.golfInterest ?? 35, 0, 100),
+      riskTolerance: clamp(item.riskTolerance ?? 45, 0, 100),
+      serviceExpectation: clamp(item.serviceExpectation ?? 60, 0, 100),
+      advocacy: clamp(item.advocacy ?? 0, -100, 100),
+      opposition: clamp(item.opposition ?? 0, 0, 100),
+      localSpend: Math.max(0, item.localSpend ?? 0),
+      membershipPropensity: clamp(item.membershipPropensity ?? 25, 0, 100),
+    };
+  }).slice(0, 240);
+}
+
+function normalizedIncidents(raw: unknown): PropertyIncident[] {
+  if (!Array.isArray(raw)) return [];
+  const kinds = new Set<PropertyIncident["kind"]>(["ball_strike", "boundary_entry", "near_miss", "roof_strike", "window_damage", "vehicle_damage", "serious_safety", "parking_overflow", "service_failure"]);
+  return raw.filter((value): value is PropertyIncident => !!value && typeof value === "object" && typeof (value as PropertyIncident).id === "string")
+    .map((item) => ({
+      ...item,
+      kind: kinds.has(item.kind) ? item.kind : "service_failure",
+      week: Math.max(0, Math.floor(item.week || 0)),
+      day: clamp(Math.floor(item.day || 0), 0, 6),
+      severity: clamp(Math.floor(item.severity || 1), 1, 5),
+      cost: Math.max(0, Math.round(item.cost || 0)),
+      priorWarnings: Math.max(0, Math.floor(item.priorWarnings || 0)),
+    })).slice(-240);
+}
+
+function normalizedComplaints(raw: unknown): CommunityComplaint[] {
+  if (!Array.isArray(raw)) return [];
+  const sources = new Set<ComplaintSource>(["errant_ball", "noise", "maintenance", "lights", "traffic", "dust", "alcohol", "tournament", "landscaping", "access", "common_area"]);
+  const statuses = new Set<CommunityComplaint["status"]>(["open", "acknowledged", "mitigated", "compensated", "resolved"]);
+  const seen = new Set<string>();
+  return raw.filter((value): value is CommunityComplaint => !!value && typeof value === "object" && typeof (value as CommunityComplaint).id === "string" && !seen.has((value as CommunityComplaint).id))
+    .map((item) => {
+      seen.add(item.id);
+      return {
+        ...item,
+        source: sources.has(item.source) ? item.source : "common_area",
+        severity: clamp(Math.floor(item.severity || 1), 1, 5),
+        recurrence: clamp(Math.floor(item.recurrence || 1), 1, 99),
+        status: statuses.has(item.status) ? item.status : "open",
+        location: item.location && Number.isFinite(item.location.x) && Number.isFinite(item.location.y) ? item.location : { x: 0, y: 0 },
+        cost: item.cost == null ? undefined : Math.max(0, Math.round(item.cost)),
+      };
+    }).slice(-240);
+}
+
+function normalizedClaims(raw: unknown): LiabilityClaim[] {
+  if (!Array.isArray(raw)) return [];
+  const statuses = new Set<LiabilityClaim["status"]>(["open", "filed", "settled", "denied"]);
+  const seen = new Set<string>();
+  return raw.filter((value): value is LiabilityClaim => !!value && typeof value === "object" && typeof (value as LiabilityClaim).id === "string" && !seen.has((value as LiabilityClaim).id))
+    .map((item) => {
+      seen.add(item.id);
+      return {
+        ...item,
+        status: statuses.has(item.status) ? item.status : "open",
+        damage: Math.max(0, Math.round(item.damage || 0)),
+        deductible: Math.max(0, Math.round(item.deductible || 0)),
+        insurerPayment: Math.max(0, Math.round(item.insurerPayment || 0)),
+        playerPayment: Math.max(0, Math.round(item.playerPayment || 0)),
+        priorWarnings: Math.max(0, Math.floor(item.priorWarnings || 0)),
+      };
+    }).slice(-160);
+}
+
+function normalizedInsurance(raw: unknown, defaults: PropertyInsurance): PropertyInsurance {
+  const item = raw && typeof raw === "object" ? raw as Partial<PropertyInsurance> : {};
+  return {
+    policyId: typeof item.policyId === "string" ? item.policyId : defaults.policyId,
+    deductible: Math.max(0, Math.round(item.deductible ?? defaults.deductible)),
+    coverageLimit: Math.max(0, Math.round(item.coverageLimit ?? defaults.coverageLimit)),
+    dailyPremium: Math.max(0, Math.round(item.dailyPremium ?? defaults.dailyPremium)),
+    riskMultiplier: clamp(item.riskMultiplier ?? defaults.riskMultiplier, 0.5, 6),
+    claimsFiled: Math.max(0, Math.floor(item.claimsFiled ?? defaults.claimsFiled)),
+    claimsSettled: Math.max(0, Math.floor(item.claimsSettled ?? defaults.claimsSettled)),
   };
 }
 
@@ -403,6 +641,71 @@ export interface PropertyUpgradePreview {
   blocker?: string;
 }
 
+export interface ResidentialDevelopmentPreview {
+  kind: "houses" | "condos";
+  strategy: ResidentialStrategy;
+  units: number;
+  developmentCost: number;
+  playerCapital: number;
+  partnerShare: number;
+  constructionDays: number;
+  releaseDays: number;
+  projectedValueLow: number;
+  projectedValueHigh: number;
+  projectedWeeklyRent: number;
+  parkingSpaces: number;
+  safety: ResidentialSafetyReport;
+  placement?: { x: number; y: number };
+  blockers: string[];
+}
+
+export function residentialDevelopmentPreview(course: Course, world: World, kind: "houses" | "condos", strategy: ResidentialStrategy): ResidentialDevelopmentPreview {
+  const property = normalizePropertyCourse(course.property);
+  const assetSpec = PROPERTY_ASSET_SPECS[kind];
+  const placement = findResidentialPlacement(course, property.assets, assetSpec) ?? undefined;
+  const units = kind === "houses" ? 16 : 28;
+  const candidate = placement ? createAsset(property.assets, assetSpec, placement) : undefined;
+  const previewCourse = candidate ? { ...course, property: { ...property, assets: [...property.assets, candidate] } } : course;
+  const safety = candidate ? analyzeResidentialSafety(previewCourse, candidate.id) : analyzeResidentialSafety(course);
+  const infrastructure = Math.round(assetSpec.buildCost * 0.22 + units * (kind === "houses" ? 1_150 : 780));
+  const developmentCost = assetSpec.buildCost + infrastructure;
+  const partnerShare = strategy === "partner" ? 0.42 : 0;
+  const playerCapital = Math.round(developmentCost * (strategy === "partner" ? 0.46 : 1));
+  const access = propertyAccessCapacity(course, world);
+  const amenityCount = property.assets.filter((asset) => isOperational(asset) && ["clubhouse", "restaurant", "community_club", "spa", "driving_range"].includes(asset.kind)).length;
+  const perUnit = Math.round((kind === "houses" ? 72_000 : 48_000) * clamp(0.72 + world.reputation / 180 + amenityCount * 0.035 + access / 600 - safety.score / 260, 0.62, 1.48));
+  const blockers: string[] = [];
+  const prerequisite = prerequisiteMessage(kind, course, world);
+  if (prerequisite) blockers.push(prerequisite);
+  if (property.assets.some((asset) => asset.kind === kind && asset.tenure !== "reacquired")) blockers.push(`${assetSpec.label} already has an active phase.`);
+  if (!placement) blockers.push(`No valid owned site can fit ${assetSpec.label}.`);
+  if (safety.eligibility === "blocked") blockers.push(safety.blockingReasons.join(" ") || `Shot exposure ${Math.round(safety.score)}/100 blocks development.`);
+  if (placement) {
+    const elevations: number[] = [];
+    for (let y = placement.y; y < placement.y + assetSpec.footprint[1]; y++) for (let x = placement.x; x < placement.x + assetSpec.footprint[0]; x++) elevations.push(course.elevations[y * course.width + x] ?? 0);
+    if (Math.max(...elevations) - Math.min(...elevations) > 8) blockers.push("The proposed phase exceeds the supported residential slope.");
+  }
+  if (world.cash < playerCapital) blockers.push(`Need $${playerCapital.toLocaleString()} of available capital.`);
+  const gross = perUnit * units;
+  return {
+    kind,
+    strategy,
+    units,
+    developmentCost,
+    playerCapital,
+    partnerShare,
+    constructionDays: kind === "houses" ? 3 : 4,
+    releaseDays: 2,
+    projectedValueLow: Math.round(gross * 0.88),
+    projectedValueHigh: Math.round(gross * 1.08),
+    projectedWeeklyRent: Math.round(perUnit * units * 0.00145),
+    parkingSpaces: Math.ceil(units * (kind === "houses" ? 2.1 : 1.35)),
+    safety,
+    placement,
+    blockers,
+  };
+}
+
 export function propertyUpgradePreview(course: Course, assetId: string): PropertyUpgradePreview | null {
   const property = normalizePropertyCourse(course.property);
   const asset = property.assets.find((candidate) => candidate.id === assetId);
@@ -456,7 +759,12 @@ export type PropertyCommand =
   | { type: "BOOK_OUTING"; package?: OutingBooking["package"] }
   | { type: "CANCEL_OUTING"; outingId: string }
   | { type: "RECOVER_SERVICE" }
-  | { type: "BUYBACK"; assetId: string };
+  | { type: "BUYBACK"; assetId: string }
+  | { type: "PLAN_DEVELOPMENT"; kind: "houses" | "condos"; strategy: ResidentialStrategy; confirmed?: boolean }
+  | { type: "SET_SAFETY_POLICY"; restrictedTeeSets?: Array<"championship" | "member" | "forward">; closedHoleIds?: string[]; exposureLimit?: number }
+  | { type: "RESPOND_COMPLAINT"; complaintId: string; response: "acknowledge" | "compensate" | "restrict" | "repair" | "easement" }
+  | { type: "FILE_CLAIM"; claimId: string }
+  | { type: "SETTLE_CLAIM"; claimId: string };
 
 export interface PropertyCommandResult {
   ok: boolean;
@@ -616,6 +924,160 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
   let enterprise = normalizePropertyEnterprise(world.enterprise);
   if (world.isBankrupt) return outcome(false, course, world, "The property cannot invest while bankrupt.");
 
+  if (command.type === "PLAN_DEVELOPMENT") {
+    if (!command.confirmed) return outcome(false, course, world, "Confirm the permanent land commitment, development capital, and residential tenure before approving this phase.");
+    const preview = residentialDevelopmentPreview(course, world, command.kind, command.strategy);
+    if (preview.blockers.length > 0 || !preview.placement) return outcome(false, course, world, preview.blockers.join(" "));
+    const spec = PROPERTY_ASSET_SPECS[command.kind];
+    const developmentId = `development-${enterprise.sequence}`;
+    const asset = {
+      ...createAsset(property.assets, spec, preview.placement),
+      id: `property-${command.kind}-${enterprise.sequence}`,
+      name: command.kind === "houses" ? `Fairway Homes Phase ${property.developments.length + 1}` : `Golf Condominiums Phase ${property.developments.length + 1}`,
+      developmentId,
+      tenure: "committed" as const,
+      constructionDaysRemaining: preview.constructionDays,
+    };
+    const unitType: ResidentialUnit["type"] = command.kind === "condos" ? "condo" : property.developments.length % 2 ? "villa" : "detached_home";
+    const baseValue = Math.round((preview.projectedValueLow + preview.projectedValueHigh) / Math.max(1, preview.units * 2));
+    const units: ResidentialUnit[] = Array.from({ length: preview.units }, (_, index) => ({
+      id: `${developmentId}-unit-${index + 1}`,
+      developmentId,
+      assetId: asset.id,
+      lotNumber: index + 1,
+      type: unitType,
+      status: "construction",
+      tenure: command.strategy === "partner" ? "partner" : "player",
+      marketValue: Math.round(baseValue * (0.94 + ((index * 17) % 13) / 100)),
+      ...(command.strategy === "retain" ? { weeklyRent: Math.round(baseValue * 0.00145) } : {}),
+    }));
+    const development: ResidentialDevelopment = {
+      id: developmentId,
+      assetId: asset.id,
+      name: asset.name,
+      strategy: command.strategy,
+      status: "construction",
+      phaseNumber: property.developments.length + 1,
+      unitIds: units.map((unit) => unit.id),
+      approvedWeek: world.week,
+      constructionDaysRemaining: preview.constructionDays,
+      releaseDaysRemaining: preview.releaseDays,
+      developmentCost: preview.developmentCost,
+      playerCapital: preview.playerCapital,
+      partnerShare: preview.partnerShare,
+      projectedValueLow: preview.projectedValueLow,
+      projectedValueHigh: preview.projectedValueHigh,
+      safetyAtApproval: preview.safety.score,
+      disclosedRisk: preview.safety.eligibility === "marginal",
+      publicRoadConnected: true,
+      emergencyAccess: propertyAccessCapacity(course, world) >= 32,
+      utilitiesEligible: true,
+      parkingSpaces: preview.parkingSpaces,
+      commonUpkeepDaily: Math.round(preview.units * (command.kind === "houses" ? 7 : 5)),
+      taxRate: 0.012,
+      insurancePremiumDaily: Math.round(preview.units * 1.5),
+    };
+    const easements: PropertyEasement[] = [
+      { id: `${developmentId}-access`, developmentId, assetId: asset.id, kind: "access", x: asset.x, y: asset.y, width: asset.width, height: 1, protected: true },
+      { id: `${developmentId}-utility`, developmentId, assetId: asset.id, kind: "utility", x: asset.x, y: asset.y + asset.height - 1, width: asset.width, height: 1, protected: true },
+      { id: `${developmentId}-safety`, developmentId, assetId: asset.id, kind: "safety", x: asset.x, y: asset.y, width: 1, height: asset.height, protected: true },
+    ];
+    const entry = makeEntry(enterprise, world.week, 0, asset.id, "real_estate", `${asset.name} approval and construction capital`, 0, preview.playerCapital, preview.units);
+    enterprise = { ...enterprise, sequence: enterprise.sequence + 1, ledger: [...enterprise.ledger, entry].slice(-420) };
+    const nextProperty: PropertyCourseState = {
+      ...property,
+      assets: [...property.assets, asset],
+      developments: [...property.developments, development],
+      units: [...property.units, ...units],
+      easements: [...property.easements, ...easements],
+    };
+    return outcome(true, { ...course, property: nextProperty }, { ...world, cash: world.cash - preview.playerCapital, enterprise }, `${asset.name} approved for ${command.strategy === "sell" ? "sale" : command.strategy === "retain" ? "retained rental" : "developer partnership"}; ${preview.constructionDays} construction days remain.`);
+  }
+
+  if (command.type === "SET_SAFETY_POLICY") {
+    const validTeeSets = new Set(["championship", "member", "forward"]);
+    const safetyPolicy = {
+      restrictedTeeSets: command.restrictedTeeSets
+        ? [...new Set(command.restrictedTeeSets.filter((teeSet) => validTeeSets.has(teeSet)))].slice(0, 4)
+        : property.safetyPolicy.restrictedTeeSets,
+      closedHoleIds: command.closedHoleIds
+        ? [...new Set(command.closedHoleIds.filter((holeId) => course.holes.some((hole) => hole.id === holeId)))].slice(0, 36)
+        : property.safetyPolicy.closedHoleIds,
+      exposureLimit: clamp(command.exposureLimit ?? property.safetyPolicy.exposureLimit, 20, 90),
+    };
+    return outcome(true, { ...course, property: { ...property, safetyPolicy } }, world, `Safety policy updated: ${safetyPolicy.restrictedTeeSets.length} tee set restriction(s), ${safetyPolicy.closedHoleIds.length} hole closure(s), development limit ${Math.round(safetyPolicy.exposureLimit)}/100.`);
+  }
+
+  if (command.type === "RESPOND_COMPLAINT") {
+    const complaint = enterprise.complaints.find((candidate) => candidate.id === command.complaintId && candidate.status !== "resolved");
+    if (!complaint) return outcome(false, course, world, "That complaint is already resolved or no longer exists.");
+    const cost = command.response === "acknowledge" ? 0
+      : command.response === "compensate" ? complaint.severity * 750
+        : command.response === "repair" ? complaint.severity * 520
+          : command.response === "easement" ? complaint.severity * 1_100
+            : 300;
+    if (world.cash < cost) return outcome(false, course, world, `Need $${cost.toLocaleString()} to complete this response.`);
+    const status: CommunityComplaint["status"] = command.response === "acknowledge" ? "acknowledged"
+      : command.response === "compensate" ? "compensated"
+        : "mitigated";
+    const entry = makeEntry(enterprise, world.week, 0, complaint.assetId, "liability", `Community response: ${command.response} (${complaint.source.replaceAll("_", " ")})`, 0, cost, 1);
+    const residents = enterprise.residents.map((resident) => resident.id === complaint.householdId ? {
+      ...resident,
+      satisfaction: clamp(resident.satisfaction + (command.response === "acknowledge" ? 2 : 6), 0, 100),
+      opposition: clamp((resident.opposition ?? 0) - (command.response === "acknowledge" ? 3 : 10), 0, 100),
+    } : resident);
+    let nextProperty = property;
+    if (command.response === "restrict" && complaint.sourceId) {
+      nextProperty = { ...property, safetyPolicy: { ...property.safetyPolicy, closedHoleIds: [...new Set([...property.safetyPolicy.closedHoleIds, complaint.sourceId])].slice(0, 36) } };
+    } else if (command.response === "easement") {
+      const easement: PropertyEasement = { id: `complaint-easement-${complaint.id}`, assetId: complaint.assetId, kind: "safety", x: Math.max(0, Math.floor(complaint.location.x) - 1), y: Math.max(0, Math.floor(complaint.location.y) - 1), width: 3, height: 3, protected: true, compensation: cost };
+      nextProperty = { ...property, easements: [...property.easements.filter((candidate) => candidate.id !== easement.id), easement] };
+    }
+    enterprise = {
+      ...enterprise,
+      sequence: enterprise.sequence + 1,
+      residents,
+      complaints: enterprise.complaints.map((candidate) => candidate.id === complaint.id ? { ...candidate, response: command.response, status, cost } : candidate),
+      ledger: [...enterprise.ledger, entry].slice(-420),
+    };
+    return outcome(true, { ...course, property: nextProperty }, { ...world, cash: world.cash - cost, enterprise }, `${command.response.replaceAll("_", " ")} response recorded for ${complaint.source.replaceAll("_", " ")} complaint.`);
+  }
+
+  if (command.type === "FILE_CLAIM") {
+    const claim = enterprise.claims.find((candidate) => candidate.id === command.claimId && candidate.status === "open");
+    if (!claim) return outcome(false, course, world, "That claim is not open for filing.");
+    enterprise = {
+      ...enterprise,
+      claims: enterprise.claims.map((candidate) => candidate.id === claim.id ? { ...candidate, status: "filed" as const } : candidate),
+      insurance: { ...enterprise.insurance, claimsFiled: enterprise.insurance.claimsFiled + 1 },
+    };
+    return outcome(true, course, { ...world, enterprise }, `${claim.id} filed with the course liability insurer.`);
+  }
+
+  if (command.type === "SETTLE_CLAIM") {
+    const claim = enterprise.claims.find((candidate) => candidate.id === command.claimId && (candidate.status === "open" || candidate.status === "filed"));
+    if (!claim) return outcome(false, course, world, "That claim has already settled or is unavailable.");
+    const playerPayment = Math.min(claim.damage, enterprise.insurance.deductible);
+    const insurerPayment = Math.min(Math.max(0, claim.damage - playerPayment), enterprise.insurance.coverageLimit);
+    const uncovered = Math.max(0, claim.damage - playerPayment - insurerPayment);
+    const cashCost = playerPayment + uncovered;
+    if (world.cash < cashCost) return outcome(false, course, world, `Need $${cashCost.toLocaleString()} to settle the deductible and uncovered loss.`);
+    const entry = makeEntry(enterprise, world.week, 0, claim.assetId, "liability", `Claim settlement ${claim.id}`, 0, cashCost, 1);
+    enterprise = {
+      ...enterprise,
+      sequence: enterprise.sequence + 1,
+      claims: enterprise.claims.map((candidate) => candidate.id === claim.id ? { ...candidate, status: "settled" as const, playerPayment: cashCost, insurerPayment, settledWeek: world.week } : candidate),
+      insurance: {
+        ...enterprise.insurance,
+        claimsSettled: enterprise.insurance.claimsSettled + 1,
+        riskMultiplier: clamp(enterprise.insurance.riskMultiplier + 0.08 + claim.priorWarnings * 0.03, 0.5, 6),
+        dailyPremium: Math.round(enterprise.insurance.dailyPremium * (1.06 + claim.priorWarnings * 0.02)),
+      },
+      ledger: [...enterprise.ledger, entry].slice(-420),
+    };
+    return outcome(true, course, { ...world, cash: world.cash - cashCost, enterprise }, `${claim.id} settled once: ${cashCost.toLocaleString()} player cost and ${insurerPayment.toLocaleString()} insurer payment.`);
+  }
+
   if (command.type === "INSTALL_MODULE" || command.type === "TOGGLE_MODULE") {
     const clubhouseIndex = property.assets.findIndex((asset) => asset.kind === "clubhouse");
     if (clubhouseIndex < 0) return outcome(false, course, world, "Build a clubhouse shell before configuring room modules.");
@@ -644,7 +1106,9 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
     const blocked = prerequisiteMessage(command.kind, course, world);
     if (blocked) return outcome(false, course, world, blocked);
     if (world.cash < assetSpec.buildCost) return outcome(false, course, world, `Need $${assetSpec.buildCost.toLocaleString()} to build ${assetSpec.label}.`);
-    const placement = findPlacement(course, property.assets, assetSpec);
+    const placement = command.kind === "houses" || command.kind === "condos"
+      ? findResidentialPlacement(course, property.assets, assetSpec)
+      : findPlacement(course, property.assets, assetSpec);
     if (!placement) return outcome(false, course, world, `No valid owned site can fit ${assetSpec.label}; clear water, buildings, holes, or overlapping facilities.`);
     let asset = createAsset(property.assets, assetSpec, placement);
     if (command.kind === "houses" || command.kind === "condos") {
@@ -795,16 +1259,31 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
     if (!asset || !residents || residents.occupied <= 0) return outcome(false, course, world, "No sold residential units are available for buyback.");
     const cost = Math.round(PROPERTY_ASSET_SPECS[asset.kind].buildCost * 1.45 + residents.occupied * 2_500);
     if (world.cash < cost) return outcome(false, course, world, `Need $${cost.toLocaleString()} for negotiated buybacks and relocation.`);
-    const assets = property.assets.map((candidate) => candidate.id === asset.id ? { ...candidate, tenure: "reacquired" as const } : candidate);
+    const assets = property.assets.map((candidate) => candidate.id === asset.id ? { ...candidate, tenure: "reacquired" as const, constructionDaysRemaining: 2 } : candidate);
+    const development = property.developments.find((candidate) => candidate.assetId === asset.id);
+    const developments = property.developments.map((candidate) => candidate.assetId === asset.id ? { ...candidate, status: "reacquired" as const, constructionDaysRemaining: 2 } : candidate);
+    const units = property.units.map((candidate) => candidate.assetId === asset.id ? { ...candidate, status: "reacquired" as const, tenure: "player" as const, householdId: undefined } : candidate);
+    const easements = property.easements.map((candidate) => candidate.assetId === asset.id ? { ...candidate, protected: false } : candidate);
     const entry = makeEntry(enterprise, world.week, 0, asset.id, "real_estate", "Residential buyback and relocation", 0, cost, residents.occupied);
-    enterprise = { ...enterprise, sequence: enterprise.sequence + 1, residents: enterprise.residents.filter((resident) => resident.assetId !== asset.id), ledger: [...enterprise.ledger, entry].slice(-420) };
-    return outcome(true, { ...course, property: { ...property, assets } }, { ...world, cash: world.cash - cost, enterprise }, `${asset.name} reacquired; the land can now be repurposed.`);
+    enterprise = {
+      ...enterprise,
+      sequence: enterprise.sequence + 1,
+      residents: enterprise.residents.filter((resident) => resident.assetId !== asset.id),
+      complaints: enterprise.complaints.map((complaint) => complaint.assetId === asset.id && complaint.status !== "resolved" ? { ...complaint, status: "resolved" as const } : complaint),
+      ledger: [...enterprise.ledger, entry].slice(-420),
+    };
+    return outcome(true, { ...course, property: { ...property, assets, developments, units, easements } }, { ...world, cash: world.cash - cost, enterprise }, `${asset.name} and ${development?.unitIds.length ?? residents.units} unit(s) reacquired; two remediation days remain before normal estate editing.`);
   }
 
   const index = property.assets.findIndex((asset) => "assetId" in command && asset.id === command.assetId);
   if (index < 0) return outcome(false, course, world, "That property asset no longer exists.");
   const asset = property.assets[index];
   const assets = property.assets.slice();
+  if ((asset.kind === "houses" || asset.kind === "condos")
+    && asset.tenure !== "reacquired"
+    && ["TOGGLE", "MOVE", "REMOVE", "UPGRADE", "MAINTAIN"].includes(command.type)) {
+    return outcome(false, course, world, `${asset.name} is ${asset.tenure ?? "committed"} residential land; only community, safety, claims, and negotiated buyback actions are permitted.`);
+  }
   if (command.type === "TOGGLE") {
     assets[index] = { ...asset, enabled: !asset.enabled };
     return outcome(true, { ...course, property: { ...property, assets } }, world, `${asset.name} ${assets[index].enabled ? "reopened" : "closed"}.`);
@@ -880,6 +1359,7 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
     constructionDaysRemaining: preview.downtimeDays,
     surface: asset.surface ? SURFACE_ORDER[Math.min(SURFACE_ORDER.length - 1, nextTier - 1)] : undefined,
     units: asset.units ? Math.round(asset.units * 1.45) : undefined,
+    coverageHeight: asset.coverageHeight ? Math.round(asset.coverageHeight * 1.18) : asset.coverageHeight,
   };
   return outcome(true, { ...course, property: { ...property, assets } }, { ...world, cash: world.cash - preview.cost }, `${asset.name} upgraded to tier ${nextTier}${assets[index].surface ? ` ${assets[index].surface}` : ""}; ${preview.downtimeDays} construction day${preview.downtimeDays === 1 ? "" : "s"}.`);
 }
@@ -918,6 +1398,18 @@ function createAsset(assets: PropertyAsset[], assetSpec: PropertyAssetSpec, plac
     price: assetSpec.basePrice,
     surface: assetSpec.category === "access" && assetSpec.kind !== "valet" ? "grass" : undefined,
     units: assetSpec.kind === "houses" ? 16 : assetSpec.kind === "condos" ? 28 : undefined,
+    mitigationKind: assetSpec.kind === "netting" ? "netting"
+      : assetSpec.kind === "screening" ? "screening"
+        : assetSpec.kind === "safety_fence" ? "fence"
+          : assetSpec.kind === "berm" ? "berm"
+            : assetSpec.kind === "warning_signage" ? "signage"
+              : assetSpec.kind === "safety_buffer" ? "landscape_buffer"
+                : undefined,
+    coverageHeight: assetSpec.kind === "netting" ? 18
+      : assetSpec.kind === "screening" ? 7
+        : assetSpec.kind === "safety_fence" ? 3
+          : assetSpec.kind === "berm" ? 5
+            : 0,
     modules: assetSpec.kind === "clubhouse" ? [] : undefined,
     upkeepPolicy: "standard",
     openHour: assetSpec.category === "clubhouse" ? 8 : 7,
@@ -940,6 +1432,28 @@ function findPlacement(course: Course, assets: PropertyAsset[], assetSpec: Prope
     }
   }
   return null;
+}
+
+function findResidentialPlacement(course: Course, assets: PropertyAsset[], assetSpec: PropertyAssetSpec): { x: number; y: number } | null {
+  const parcel = course.estate?.parcels.find((candidate) => candidate.id === course.estate?.starterParcelId);
+  const minX = parcel?.bounds.minX ?? 3;
+  const minY = parcel?.bounds.minY ?? 3;
+  const maxX = parcel?.bounds.maxX ?? course.width - 3;
+  const maxY = parcel?.bounds.maxY ?? course.height - 3;
+  let best: { x: number; y: number; score: number; setback: number } | null = null;
+  let inspected = 0;
+  for (let y = minY; y <= maxY - assetSpec.footprint[1] + 1; y += 3) {
+    for (let x = minX; x <= maxX - assetSpec.footprint[0] + 1; x += 3) {
+      const candidate = createAsset(assets, assetSpec, { x, y });
+      if (propertySiteBlocker(course, assets, candidate)) continue;
+      const safety = analyzeResidentialSafety({ ...course, property: { ...normalizePropertyCourse(course.property), assets: [...assets, candidate] } }, candidate.id);
+      const rank = safety.score + (safety.measuredSetback < 4 ? 100 : 0);
+      if (!best || rank < best.score || rank === best.score && safety.measuredSetback > best.setback) best = { x, y, score: rank, setback: safety.measuredSetback };
+      if (safety.eligibility === "safe" && safety.score < 12 && safety.measuredSetback >= 8) return { x, y };
+      if (++inspected >= 240) return best ? { x: best.x, y: best.y } : null;
+    }
+  }
+  return best ? { x: best.x, y: best.y } : null;
 }
 
 function propertySiteBlocker(course: Course, assets: PropertyAsset[], candidate: PropertyAsset, excludeId?: string): string | null {
@@ -1000,51 +1514,120 @@ function rotatePracticeGeometry(asset: PropertyAsset): PropertyAsset {
 }
 
 export function analyzeResidentialSafety(course: Course, assetId?: string): ResidentialSafetyReport {
-  const assets = normalizePropertyCourse(course.property).assets;
+  const property = normalizePropertyCourse(course.property);
+  const assets = property.assets;
   const residential = assets.filter((asset) => (asset.kind === "houses" || asset.kind === "condos") && (!assetId || asset.id === assetId));
-  if (residential.length === 0) return { score: 0, eligibility: "safe", expectedExposure: 0, outlierExposure: 0, mitigation: 0, contributions: [] };
+  if (residential.length === 0) return { score: 0, eligibility: "safe", expectedExposure: 0, outlierExposure: 0, mitigation: 0, contributions: [], heatmap: [], measuredSetback: Number.POSITIVE_INFINITY, blockingReasons: [] };
   const safetyAssets = assets.filter((asset) => asset.enabled && asset.category === "safety");
   const contributionMap = new Map<string, { holeId: string; holeName: string; distanceTiles: number; expectedRisk: number; outlierRisk: number }>();
+  const heatmap: ResidentialSafetyReport["heatmap"] = [];
   let expectedExposure = 0;
   let outlierExposure = 0;
   let mitigation = 0;
+  let measuredSetback = Number.POSITIVE_INFINITY;
   for (const homes of residential) {
     const target = { x: homes.x + homes.width / 2, y: homes.y + homes.height / 2 };
     const unitFactor = Math.sqrt(Math.max(1, homes.units ?? 1)) / 4;
     for (const [index, hole] of course.holes.entries()) {
       if (!hole.tee || !hole.green) continue;
-      const distance = pointSegmentDistance(target, hole.tee, hole.green);
-      const expected = distance < 4 ? 42 : distance < 8 ? 26 : distance < 14 ? 11 : distance < 22 ? 3 : 0;
-      const outlier = distance < 10 ? 18 : distance < 18 ? 10 : distance < 30 ? 4 : 0;
-      if (expected + outlier <= 0) continue;
       const key = hole.id ?? `hole-${index + 1}`;
+      if (property.safetyPolicy.closedHoleIds.includes(key)) continue;
+      const teeEntries = Object.entries(hole.teeBoxes ?? {}).filter(([teeSet, tee]) => !!tee && !property.safetyPolicy.restrictedTeeSets.includes(teeSet as "championship" | "member" | "forward"));
+      if (teeEntries.length === 0) teeEntries.push(["member", hole.tee]);
+      let holeDistance = Number.POSITIVE_INFINITY;
+      let holeExpected = 0;
+      let holeOutlier = 0;
+      for (const [teeSet, rawTee] of teeEntries) {
+        const tee = rawTee ?? hole.tee;
+        const dx = hole.green.x - tee.x;
+        const dy = hole.green.y - tee.y;
+        const length = Math.max(1, Math.hypot(dx, dy));
+        const normal = { x: -dy / length, y: dx / length };
+        const firstLanding = { x: tee.x + dx * 0.58, y: tee.y + dy * 0.58 };
+        const recovery = { x: firstLanding.x + normal.x * 3, y: firstLanding.y + normal.y * 3 };
+        const segments = [
+          [tee, firstLanding, 1],
+          [firstLanding, hole.green, 0.82],
+          [recovery, hole.green, 0.48],
+        ] as const;
+        const teeWidth = teeSet === "championship" ? 1.12 : teeSet === "forward" ? 0.88 : 1;
+        for (const [from, to, segmentWeight] of segments) {
+          const distance = pointSegmentDistance(target, from, to);
+          holeDistance = Math.min(holeDistance, distance);
+          measuredSetback = Math.min(measuredSetback, distance);
+          const expected = (distance < 4 ? 38 : distance < 8 ? 23 : distance < 14 ? 9 : distance < 22 ? 2.5 : 0) * teeWidth * segmentWeight / teeEntries.length;
+          const outlier = (distance < 10 ? 17 : distance < 18 ? 9 : distance < 30 ? 3.5 : 0) * teeWidth * segmentWeight / teeEntries.length;
+          holeExpected += expected;
+          holeOutlier += outlier;
+        }
+      }
+      if (holeExpected + holeOutlier <= 0) continue;
       const previous = contributionMap.get(key);
       contributionMap.set(key, {
         holeId: key,
         holeName: hole.name ?? `Hole ${index + 1}`,
-        distanceTiles: previous ? Math.min(previous.distanceTiles, distance) : distance,
-        expectedRisk: (previous?.expectedRisk ?? 0) + expected * unitFactor,
-        outlierRisk: (previous?.outlierRisk ?? 0) + outlier * unitFactor,
+        distanceTiles: previous ? Math.min(previous.distanceTiles, holeDistance) : holeDistance,
+        expectedRisk: (previous?.expectedRisk ?? 0) + holeExpected * unitFactor,
+        outlierRisk: (previous?.outlierRisk ?? 0) + holeOutlier * unitFactor,
       });
-      expectedExposure += expected * unitFactor;
-      outlierExposure += outlier * unitFactor;
+      expectedExposure += holeExpected * unitFactor;
+      outlierExposure += holeOutlier * unitFactor;
     }
     for (const safety of safetyAssets) {
       const center = { x: safety.x + safety.width / 2, y: safety.y + safety.height / 2 };
       const distance = Math.hypot(center.x - target.x, center.y - target.y);
-      if (distance > 26) continue;
-      const base = safety.kind === "netting" ? 18 : 10;
-      mitigation += base * safety.tier * safety.condition * (1 - distance / 32);
+      if (distance > 30) continue;
+      const base = safety.kind === "netting" ? 19
+        : safety.kind === "berm" ? 12
+          : safety.kind === "screening" ? 9
+            : safety.kind === "safety_buffer" ? 8
+              : safety.kind === "safety_fence" ? 4
+                : 1.5;
+      const heightFactor = safety.kind === "netting" ? clamp((safety.coverageHeight ?? 18) / 18, 0.25, 1.2)
+        : safety.kind === "warning_signage" ? 0.3
+          : clamp((safety.coverageHeight ?? 5) / 7, 0.35, 1);
+      mitigation += base * safety.tier * safety.condition * heightFactor * (1 - distance / 36);
+    }
+    for (let y = homes.y; y < homes.y + homes.height; y += 2) for (let x = homes.x; x < homes.x + homes.width; x += 2) {
+      const point = { x: x + 0.5, y: y + 0.5 };
+      const contributingHoleIds: string[] = [];
+      let rawRisk = 0;
+      for (const [index, hole] of course.holes.entries()) {
+        if (!hole.tee || !hole.green) continue;
+        const holeId = hole.id ?? `hole-${index + 1}`;
+        if (property.safetyPolicy.closedHoleIds.includes(holeId)) continue;
+        const distance = pointSegmentDistance(point, hole.tee, hole.green);
+        if (distance < 26) {
+          rawRisk += distance < 5 ? 25 : distance < 10 ? 14 : distance < 18 ? 6 : 2;
+          contributingHoleIds.push(holeId);
+        }
+      }
+      const localMitigation = safetyAssets.reduce((sum, safety) => {
+        const distance = Math.hypot(point.x - (safety.x + safety.width / 2), point.y - (safety.y + safety.height / 2));
+        if (distance > 20) return sum;
+        const strength = safety.kind === "netting" ? 18 : safety.kind === "berm" ? 11 : safety.kind === "screening" ? 8 : safety.kind === "safety_buffer" ? 7 : 2;
+        return sum + strength * safety.tier * safety.condition * (1 - distance / 24);
+      }, 0);
+      const mitigatedRisk = clamp(rawRisk - localMitigation, 0, 100);
+      heatmap.push({ x, y, risk: clamp(rawRisk, 0, 100), mitigatedRisk, class: mitigatedRisk >= 70 ? "severe" : mitigatedRisk >= 40 ? "high" : mitigatedRisk >= 18 ? "guarded" : "low", contributingHoleIds: contributingHoleIds.slice(0, 6) });
     }
   }
   const score = clamp(expectedExposure * 0.7 + outlierExposure * 0.3 - mitigation, 0, 100);
+  const exposureLimit = property.safetyPolicy.exposureLimit;
+  const blockingReasons = [
+    ...(score >= exposureLimit ? [`Residual exposure ${Math.round(score)}/100 exceeds policy limit ${Math.round(exposureLimit)}/100.`] : []),
+    ...(measuredSetback < 4 ? [`Measured setback ${measuredSetback.toFixed(1)} tiles is below the four-tile hard minimum.`] : []),
+  ];
   return {
     score,
-    eligibility: score >= 70 ? "blocked" : score >= 35 ? "marginal" : "safe",
+    eligibility: blockingReasons.length > 0 ? "blocked" : score >= 35 ? "marginal" : "safe",
     expectedExposure,
     outlierExposure,
     mitigation,
-    contributions: [...contributionMap.values()].sort((a, b) => b.expectedRisk + b.outlierRisk - (a.expectedRisk + a.outlierRisk)).slice(0, 12),
+    contributions: [...contributionMap.values()].sort((a, b) => b.expectedRisk + b.outlierRisk - (a.expectedRisk + a.outlierRisk)).slice(0, 12).map((item) => ({ ...item, normalRisk: item.expectedRisk, extremeRisk: item.outlierRisk, exposedAssets: residential.map((asset) => asset.id) })),
+    heatmap: heatmap.slice(0, 360),
+    measuredSetback,
+    blockingReasons,
   };
 }
 
@@ -1061,7 +1644,7 @@ function outcome(ok: boolean, course: Course, world: World, message: string): Pr
   return { ok, course, world, message };
 }
 
-export function settlePropertyDay(course: Course, world: World, day: number, coreGolfers: number): { course: Course; world: World; report: PropertyDayReport } {
+export function settlePropertyDay(course: Course, world: World, day: number, coreGolfers: number, shotTraces: readonly PropertyShotTrace[] = []): { course: Course; world: World; report: PropertyDayReport } {
   const property = normalizePropertyCourse(course.property);
   let enterprise = normalizePropertyEnterprise(world.enterprise);
   const settlementKey = `${world.week}-${day}`;
@@ -1069,6 +1652,8 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
   let sequence = enterprise.sequence;
   const entries: CommercialLedgerEntry[] = [];
   const incidents: PropertyIncident[] = [];
+  const newComplaints: CommunityComplaint[] = [];
+  const newClaims: LiabilityClaim[] = [];
   const facilityStats = new Map<string, { demand: number; served: number; denied: number; revenue: number }>();
   const enabled = property.assets.filter(isOperational);
   const accessCapacity = propertyAccessCapacity(course, world);
@@ -1091,6 +1676,107 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
   };
   const practiceAssets = enabled.filter((asset) => asset.category === "practice");
   const memberShare = enterprise.customers.filter((customer) => customer.member).length / Math.max(1, enterprise.customers.length);
+
+  const phaseAssetUpdates = new Map<string, Pick<PropertyAsset, "tenure" | "constructionDaysRemaining">>();
+  let nextUnits = property.units.slice();
+  const nextDevelopments = property.developments.map((development) => {
+    if (development.status === "reacquired" || development.status === "sold_out" || development.status === "complete") {
+      const activeUnits = nextUnits.filter((unit) => unit.developmentId === development.id);
+      if (development.strategy === "retain" && activeUnits.length > 0) {
+        const leased = activeUnits.filter((unit) => unit.status === "leased");
+        const rent = leased.reduce((sum, unit) => sum + (unit.weeklyRent ?? 0) / 7, 0);
+        const assessed = activeUnits.reduce((sum, unit) => sum + unit.marketValue, 0);
+        const costs = development.commonUpkeepDaily + development.insurancePremiumDaily + assessed * development.taxRate / 365;
+        add(property.assets.find((asset) => asset.id === development.assetId), "real_estate", `${development.name} retained rent (${leased.length}/${activeUnits.length} occupied)`, leased.length, rent, costs, activeUnits.length);
+      } else if (development.strategy === "partner" && activeUnits.length > 0 && day === 0) {
+        const occupied = activeUnits.filter((unit) => unit.status === "partnered").length;
+        const communityFees = occupied * 38 * (1 - development.partnerShare);
+        add(property.assets.find((asset) => asset.id === development.assetId), "real_estate", `${development.name} partner revenue share`, occupied, communityFees, development.commonUpkeepDaily * 7 * (1 - development.partnerShare), activeUnits.length);
+      }
+      return development;
+    }
+    const constructionDaysRemaining = Math.max(0, development.constructionDaysRemaining - 1);
+    const releaseDaysRemaining = constructionDaysRemaining === 0 ? Math.max(0, development.releaseDaysRemaining - 1) : development.releaseDaysRemaining;
+    if (constructionDaysRemaining > 0) {
+      phaseAssetUpdates.set(development.assetId, { tenure: "committed", constructionDaysRemaining });
+      return { ...development, constructionDaysRemaining };
+    }
+    if (releaseDaysRemaining > 0) {
+      phaseAssetUpdates.set(development.assetId, { tenure: "committed", constructionDaysRemaining: 0 });
+      nextUnits = nextUnits.map((unit) => unit.developmentId === development.id && unit.status === "construction" ? { ...unit, status: "available" as const } : unit);
+      return { ...development, status: "releasing" as const, constructionDaysRemaining: 0, releaseDaysRemaining };
+    }
+    const developmentUnits = nextUnits.filter((unit) => unit.developmentId === development.id);
+    const occupancyRate = development.strategy === "sell" ? 0.78 : development.strategy === "retain" ? 0.68 : 0.82;
+    const occupiedCount = Math.max(1, Math.floor(developmentUnits.length * occupancyRate));
+    const occupiedIds = new Set(developmentUnits.slice(0, occupiedCount).map((unit) => unit.id));
+    const tenure = development.strategy === "sell" ? "sold" as const : development.strategy === "retain" ? "retained" as const : "partnered" as const;
+    nextUnits = nextUnits.map((unit) => {
+      if (unit.developmentId !== development.id) return unit;
+      const occupied = occupiedIds.has(unit.id);
+      return {
+        ...unit,
+        status: development.strategy === "sell" ? "sold" as const
+          : development.strategy === "partner" ? "partnered" as const
+            : occupied ? "leased" as const : "vacant" as const,
+        tenure: development.strategy === "sell" ? "private" as const : development.strategy === "partner" ? "partner" as const : "player" as const,
+        closedValue: development.strategy === "sell" || development.strategy === "partner" ? unit.marketValue : undefined,
+        householdId: occupied ? `household-${unit.id}` : undefined,
+      };
+    });
+    const existingHouseholdIds = new Set(enterprise.residents.map((resident) => resident.id));
+    const archetypes: NonNullable<ResidentHousehold["archetype"]>[] = ["golf_family", "retiree", "professional", "second_home", "non_golfer"];
+    const newHouseholds = developmentUnits.filter((unit) => occupiedIds.has(unit.id) && !existingHouseholdIds.has(`household-${unit.id}`)).map((unit, index): ResidentHousehold => {
+      const archetype = archetypes[(unit.lotNumber + development.phaseNumber) % archetypes.length];
+      const golfInterest = archetype === "golf_family" ? 82 : archetype === "retiree" ? 62 : archetype === "non_golfer" ? 12 : 42;
+      return {
+        id: `household-${unit.id}`,
+        developmentId: development.id,
+        assetId: development.assetId,
+        units: 1,
+        occupied: 1,
+        satisfaction: 74 + (index % 5),
+        complaints: 0,
+        unitIds: [unit.id],
+        customerIds: [`resident-customer-${unit.id}`],
+        archetype,
+        golfInterest,
+        riskTolerance: 28 + ((unit.lotNumber * 11) % 50),
+        serviceExpectation: 52 + ((unit.lotNumber * 7) % 35),
+        advocacy: 4,
+        opposition: 0,
+        localSpend: 0,
+        membershipPropensity: Math.round(golfInterest * 0.72),
+      };
+    });
+    const customerIds = new Set(enterprise.customers.map((customer) => customer.id));
+    const newCustomers: PropertyCustomer[] = newHouseholds.flatMap((household, index) => (household.customerIds ?? []).filter((id) => !customerIds.has(id)).map((id) => ({
+      id,
+      name: `Resident ${development.phaseNumber}-${index + 1}`,
+      segment: "resident",
+      skill: Math.round((household.golfInterest ?? 30) * 0.55),
+      loyalty: 58,
+      visits: 0,
+      totalSpend: 0,
+      member: false,
+      lastVisitWeek: world.week,
+    })));
+    enterprise = {
+      ...enterprise,
+      residents: [...enterprise.residents, ...newHouseholds].slice(0, 240),
+      customers: normalizedCustomers([...enterprise.customers, ...newCustomers], enterprise.customers),
+    };
+    const gross = developmentUnits.reduce((sum, unit) => sum + unit.marketValue, 0);
+    if (development.strategy === "sell") add(property.assets.find((asset) => asset.id === development.assetId), "real_estate", `${development.name} unit closings`, occupiedCount, gross, 0, developmentUnits.length);
+    if (development.strategy === "partner") add(property.assets.find((asset) => asset.id === development.assetId), "real_estate", `${development.name} developer-partner closing share`, occupiedCount, gross * (1 - development.partnerShare), 0, developmentUnits.length);
+    phaseAssetUpdates.set(development.assetId, { tenure, constructionDaysRemaining: 0 });
+    return {
+      ...development,
+      status: development.strategy === "sell" ? "sold_out" as const : "complete" as const,
+      constructionDaysRemaining: 0,
+      releaseDaysRemaining: 0,
+    };
+  });
 
   const today = world.week * 7 + day;
   let dirtyRooms = Math.max(0, enterprise.resort.dirtyRooms - enterprise.resort.housekeeping * 6);
@@ -1358,17 +2044,107 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
 
   if (enterprise.residents.length > 0) {
     const safety = analyzeResidentialSafety({ ...course, property });
-    const exposure = safety.score;
-    const strikeChance = clamp(exposure * 0.0035, 0, 0.42);
-    const roll = ((world.runSeed + world.week * 31 + day * 17 + sequence * 13) >>> 0) % 1000 / 1000;
-    if (exposure > 0 && roll < strikeChance) {
-      const resident = enterprise.residents[(world.week + day) % enterprise.residents.length];
-      const source = safety.contributions[0];
-      const cost = Math.round(180 + exposure * 24);
-      const incident: PropertyIncident = { id: `incident-${sequence++}`, week: world.week, day, assetId: resident.assetId, kind: "ball_strike", severity: clamp(Math.ceil(exposure / 18), 1, 5), cost, description: `An errant ball from ${source?.holeName ?? "a live golf corridor"} struck residential property; the owner filed a complaint.` };
+    const residentialAssets = property.assets.filter((asset) => asset.kind === "houses" || asset.kind === "condos");
+    const modeledTraces: PropertyShotTrace[] = shotTraces.length > 0 ? [...shotTraces] : coreGolfers > 0 ? course.holes.flatMap((hole, holeIndex) => {
+      if (!hole.tee || !hole.green) return [];
+      const holeId = hole.id ?? `hole-${holeIndex + 1}`;
+      if (property.safetyPolicy.closedHoleIds.includes(holeId)) return [];
+      return [{
+        golferId: holeIndex,
+        holeId,
+        holeName: hole.name ?? `Hole ${holeIndex + 1}`,
+        teeSet: "member" as const,
+        shotType: "drive" as const,
+        from: hole.tee,
+        to: hole.green,
+      }];
+    }) : [];
+    const exposed = modeledTraces.flatMap((trace) => residentialAssets.map((asset) => {
+      const target = { x: asset.x + asset.width / 2, y: asset.y + asset.height / 2 };
+      return { trace, asset, distance: pointSegmentDistance(target, trace.from, trace.to), target };
+    }).filter((candidate) => candidate.distance < 22))
+      .sort((a, b) => a.distance - b.distance || (a.trace.holeId ?? "").localeCompare(b.trace.holeId ?? "") || a.asset.id.localeCompare(b.asset.id));
+    const candidate = exposed[0];
+    const roll = ((world.runSeed + world.week * 31 + day * 17 + sequence * 13 + (candidate?.trace.golferId ?? 0) * 7) >>> 0) % 1000 / 1000;
+    const geometricMitigation = candidate ? property.assets.filter((asset) => asset.enabled && asset.category === "safety").reduce((sum, mitigationAsset) => {
+      const center = { x: mitigationAsset.x + mitigationAsset.width / 2, y: mitigationAsset.y + mitigationAsset.height / 2 };
+      const onTrajectory = pointSegmentDistance(center, candidate.trace.from, candidate.trace.to) <= Math.max(2, mitigationAsset.width / 2 + 1);
+      const nearHome = Math.hypot(center.x - candidate.target.x, center.y - candidate.target.y) < 26;
+      if (!onTrajectory || !nearHome) return sum;
+      const height = mitigationAsset.coverageHeight ?? (mitigationAsset.kind === "netting" ? 18 : 5);
+      const strength = mitigationAsset.kind === "netting" ? 0.14 : mitigationAsset.kind === "berm" ? 0.09 : mitigationAsset.kind === "screening" ? 0.07 : mitigationAsset.kind === "safety_buffer" ? 0.05 : mitigationAsset.kind === "safety_fence" ? 0.025 : 0.01;
+      return sum + strength * mitigationAsset.tier * mitigationAsset.condition * clamp(height / 12, 0.2, 1.2);
+    }, 0) : 0;
+    const strikeChance = candidate ? clamp((22 - candidate.distance) * 0.006 + safety.score * 0.0012 - geometricMitigation, 0, 0.34) : 0;
+    if (candidate && roll < strikeChance) {
+      const resident = enterprise.residents.find((item) => item.assetId === candidate.asset.id) ?? enterprise.residents[(world.week + day) % enterprise.residents.length];
+      const previousWarnings = enterprise.incidents.filter((incident) => incident.assetId === resident.assetId && incident.sourceHoleId === candidate.trace.holeId).length;
+      const severity = clamp(Math.ceil((22 - candidate.distance) / 4) + Math.min(2, previousWarnings), 1, 5);
+      const kinds = ["boundary_entry", "near_miss", "roof_strike", "window_damage", "vehicle_damage", "serious_safety"] as const;
+      const kind = kinds[Math.min(kinds.length - 1, Math.max(0, severity - 1))];
+      const cost = kind === "boundary_entry" || kind === "near_miss" ? 0 : Math.round(320 + severity * severity * 540);
+      const incidentId = `incident-${sequence++}`;
+      const claimId = cost > 0 ? `claim-${sequence++}` : undefined;
+      const incident: PropertyIncident = {
+        id: incidentId,
+        week: world.week,
+        day,
+        assetId: resident.assetId,
+        householdId: resident.id,
+        claimId,
+        kind,
+        severity,
+        cost,
+        sourceHoleId: candidate.trace.holeId,
+        sourceHoleName: candidate.trace.holeName,
+        teeSet: candidate.trace.teeSet,
+        shotType: candidate.trace.shotType,
+        from: candidate.trace.from,
+        to: candidate.trace.to,
+        impact: candidate.target,
+        mitigated: geometricMitigation > 0.05,
+        priorWarnings: previousWarnings,
+        description: `${kind.replaceAll("_", " ")} from ${candidate.trace.holeName ?? candidate.trace.holeId ?? "a live shot"} at ${candidate.asset.name}; ${geometricMitigation > 0.05 ? "mitigation reduced impact energy but residual exposure remained" : "no effective mitigation intersected the trajectory"}.`,
+      };
       incidents.push(incident);
-      add(undefined, "liability", incident.description, 0, 0, cost);
-      enterprise = { ...enterprise, residents: enterprise.residents.map((item) => item.id === resident.id ? { ...item, complaints: item.complaints + 1, satisfaction: clamp(item.satisfaction - incident.severity * 2, 0, 100) } : item) };
+      const recurrence = enterprise.complaints.filter((complaint) => complaint.householdId === resident.id && complaint.source === "errant_ball").length + 1;
+      newComplaints.push({
+        id: `complaint-${sequence++}`,
+        householdId: resident.id,
+        assetId: resident.assetId,
+        week: world.week,
+        day,
+        source: "errant_ball",
+        severity,
+        recurrence,
+        evidence: `${candidate.trace.shotType} trace from ${candidate.trace.holeName ?? candidate.trace.holeId ?? "unknown hole"} passed ${candidate.distance.toFixed(1)} tiles from the occupied unit and produced a ${kind.replaceAll("_", " ")}.`,
+        sourceId: candidate.trace.holeId,
+        location: candidate.target,
+        status: "open",
+      });
+      if (claimId) newClaims.push({
+        id: claimId,
+        incidentId,
+        assetId: resident.assetId,
+        householdId: resident.id,
+        week: world.week,
+        status: "open",
+        damage: cost,
+        deductible: enterprise.insurance.deductible,
+        insurerPayment: 0,
+        playerPayment: 0,
+        priorWarnings: previousWarnings,
+      });
+      enterprise = {
+        ...enterprise,
+        residents: enterprise.residents.map((item) => item.id === resident.id ? {
+          ...item,
+          complaints: item.complaints,
+          satisfaction: clamp(item.satisfaction - severity * 2 - recurrence, 0, 100),
+          opposition: clamp((item.opposition ?? 0) + severity * 3 + recurrence, 0, 100),
+          advocacy: clamp((item.advocacy ?? 0) - severity * 2, -100, 100),
+        } : item),
+      };
     }
   }
 
@@ -1379,13 +2155,41 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     const incident: PropertyIncident = { id: `incident-${sequence++}`, week: world.week, day, assetId: assetOf(course, "parking")?.id ?? "informal-parking", kind: "parking_overflow", severity: clamp(Math.ceil(overflow / 12), 1, 5), cost, description: `${overflow} arrivals could not find formal parking.` };
     incidents.push(incident);
     add(assetOf(course, "parking"), "access", incident.description, 0, 0, cost);
+    const resident = enterprise.residents[0];
+    if (resident) newComplaints.push({ id: `complaint-${sequence++}`, householdId: resident.id, assetId: resident.assetId, week: world.week, day, source: "traffic", severity: incident.severity, recurrence: enterprise.complaints.filter((complaint) => complaint.householdId === resident.id && complaint.source === "traffic").length + 1, evidence: `${overflow} arrivals exceeded measured formal parking capacity ${accessCapacity}.`, sourceId: incident.assetId, location: { x: assetOf(course, "parking")?.x ?? 0, y: assetOf(course, "parking")?.y ?? 0 }, status: "open" });
+  }
+
+  if (day === 6 && enterprise.residents.length > 0) {
+    const lean = property.assets.find((asset) => asset.upkeepPolicy === "lean" && asset.category !== "safety");
+    const resident = enterprise.residents[(world.week + enterprise.residents.length) % enterprise.residents.length];
+    if (lean && lean.condition < 0.8) {
+      const recurrence = enterprise.complaints.filter((complaint) => complaint.householdId === resident.id && complaint.source === "maintenance").length + 1;
+      newComplaints.push({ id: `complaint-${sequence++}`, householdId: resident.id, assetId: resident.assetId, week: world.week, day, source: "maintenance", severity: clamp(Math.ceil((0.85 - lean.condition) * 10), 1, 4), recurrence, evidence: `${lean.name} condition fell to ${Math.round(lean.condition * 100)}% under lean upkeep.`, sourceId: lean.id, location: { x: lean.x, y: lean.y }, status: "open" });
+    }
+  }
+  if (newComplaints.length > 0) {
+    enterprise = {
+      ...enterprise,
+      residents: enterprise.residents.map((resident) => {
+        const householdComplaints = newComplaints.filter((complaint) => complaint.householdId === resident.id);
+        if (householdComplaints.length === 0) return resident;
+        const severity = householdComplaints.reduce((sum, complaint) => sum + complaint.severity, 0);
+        return {
+          ...resident,
+          complaints: resident.complaints + householdComplaints.length,
+          satisfaction: clamp(resident.satisfaction - severity * 0.8, 0, 100),
+          opposition: clamp((resident.opposition ?? 0) + severity, 0, 100),
+        };
+      }),
+    };
   }
 
   let upkeep = 0;
   const nextAssets = property.assets.map((asset) => {
-    const constructionDaysRemaining = Math.max(0, (asset.constructionDaysRemaining ?? 0) - 1);
+    const phaseUpdate = phaseAssetUpdates.get(asset.id);
+    const constructionDaysRemaining = phaseUpdate?.constructionDaysRemaining ?? Math.max(0, (asset.constructionDaysRemaining ?? 0) - 1);
     const stats = facilityStats.get(asset.id) ?? { demand: 0, served: 0, denied: 0, revenue: 0 };
-    if (!asset.enabled) return { ...asset, constructionDaysRemaining, lastDay: stats };
+    if (!asset.enabled) return { ...asset, ...phaseUpdate, constructionDaysRemaining, lastDay: stats };
     const policy = asset.upkeepPolicy ?? "standard";
     const moduleUpkeep = asset.modules?.filter((module) => module.enabled).reduce((sum, module) => sum + FACILITY_MODULE_SPECS[module.kind].dailyUpkeep * module.tier, 0) ?? 0;
     const daily = (PROPERTY_ASSET_SPECS[asset.kind].dailyUpkeep * (0.8 + asset.tier * 0.28) + moduleUpkeep) * upkeepCostFactor(policy);
@@ -1394,11 +2198,12 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     const wearFactor = policy === "lean" ? 1.65 : policy === "premium" ? 0.55 : 1;
     const recovery = policy === "premium" ? 0.004 : policy === "standard" ? 0.001 : 0;
     const condition = clamp(asset.condition - baseWear * wearFactor * (1 + stats.served / Math.max(1, asset.capacity * 8)) + recovery, 0.25, 1);
-    return { ...asset, condition, constructionDaysRemaining, lastDay: stats };
+    return { ...asset, ...phaseUpdate, condition, constructionDaysRemaining, lastDay: stats };
   });
   const serviceHeadcount = enterprise.resort.frontDesk + enterprise.resort.housekeeping + enterprise.resort.maintenance + enterprise.resort.concierge + enterprise.resort.shuttleDrivers + enterprise.resort.foodService + enterprise.resort.lockerAttendants;
   const wages = enterprise.professionals.reduce((sum, pro) => sum + pro.weeklyWage / 7, 0) + serviceHeadcount * 590 / 7;
   add(undefined, "upkeep", "Property upkeep, utilities, and club-professional wages", 0, 0, upkeep + wages);
+  if (enterprise.residents.length > 0) add(undefined, "liability", "Course liability insurance premium", 0, 0, enterprise.insurance.dailyPremium * enterprise.insurance.riskMultiplier);
 
   const visitPool = Math.min(enterprise.customers.length, Math.max(0, practiceVisitors + Math.floor(overnightGuests / 2)));
   const customerSpend = entries.filter((entry) => entry.revenue > 0).reduce((sum, entry) => sum + entry.revenue, 0) / Math.max(1, propertyVisitors);
@@ -1412,14 +2217,30 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     totalSpend: customer.totalSpend + customerSpend,
     lastVisitWeek: world.week,
   } : customer);
+  const residentSpend = Math.round(entries.filter((entry) => ["practice", "lessons", "retail", "food_beverage", "membership"].includes(entry.category)).reduce((sum, entry) => sum + entry.revenue, 0) * clamp(residentCount / Math.max(1, coreGolfers + propertyVisitors + residentCount), 0, 0.65));
+  if (enterprise.residents.length > 0 && residentSpend > 0) {
+    const perHousehold = residentSpend / enterprise.residents.length;
+    enterprise = { ...enterprise, residents: enterprise.residents.map((resident) => ({
+      ...resident,
+      localSpend: (resident.localSpend ?? 0) + perHousehold,
+      advocacy: clamp((resident.advocacy ?? 0) + (servicePenalty < 0.15 ? 0.4 : -0.2), -100, 100),
+    })) };
+  }
 
   let membership = enterprise.membership;
-  let retainedCustomers = customers;
+  let retainedCustomers = customers.map((customer) => {
+    if (!enterprise.membership.active || customer.segment !== "resident" || customer.member) return customer;
+    const household = enterprise.residents.find((resident) => resident.customerIds?.includes(customer.id));
+    const threshold = (household?.membershipPropensity ?? 0) / 100;
+    const roll = ((world.runSeed + world.week * 19 + customer.id.length * 13) >>> 0) % 100 / 100;
+    return roll < threshold && enterprise.membership.memberCount < enterprise.membership.capacity ? { ...customer, member: true } : customer;
+  });
+  membership = { ...membership, memberCount: Math.min(membership.capacity, Math.max(membership.memberCount, retainedCustomers.filter((customer) => customer.member).length)) };
   if (membership.active && day === 6) {
-    const memberCustomers = customers.filter((customer) => customer.member);
+    const memberCustomers = retainedCustomers.filter((customer) => customer.member);
     const churn = memberCustomers.filter((customer) => customer.loyalty < 32 || servicePenalty > 0.45).slice(0, Math.ceil(memberCustomers.length * clamp(servicePenalty * 0.35, 0, 0.2)));
     const churnIds = new Set(churn.map((customer) => customer.id));
-    retainedCustomers = customers.map((customer) => churnIds.has(customer.id) ? { ...customer, member: false, segment: "local" as const } : customer);
+    retainedCustomers = retainedCustomers.map((customer) => churnIds.has(customer.id) ? { ...customer, member: false, segment: "local" as const } : customer);
     const growth = servicePenalty < 0.12 && enabled.some((asset) => asset.kind === "locker_room") ? Math.min(3, membership.capacity - membership.memberCount) : 0;
     membership = { ...membership, memberCount: clamp(membership.memberCount - churn.length + growth, 0, membership.capacity) };
   }
@@ -1434,12 +2255,14 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     customers: retainedCustomers,
     membership,
     reservations: [...reservationsState, ...reservations].slice(-120),
-    incidents: [...enterprise.incidents, ...incidents].slice(-120),
+    incidents: [...enterprise.incidents, ...incidents].slice(-240),
+    complaints: [...enterprise.complaints, ...newComplaints].slice(-240),
+    claims: [...enterprise.claims, ...newClaims].slice(-160),
     outings,
     resort: { ...enterprise.resort, dirtyRooms, outOfOrderRooms, serviceQueue, transportWaitMinutes },
   };
   return {
-    course: { ...course, property: { ...property, assets: nextAssets } },
+    course: { ...course, property: { ...property, assets: nextAssets, developments: nextDevelopments, units: nextUnits } },
     world: { ...world, enterprise },
     report: { revenue, costs, visitors: propertyVisitors, accessCapacity, demand: baseDemand, denied: entries.reduce((sum, entry) => sum + (entry.denied ?? 0), 0), entries, incidents },
   };
@@ -1471,7 +2294,8 @@ function categoryCogs(category: CommercialCategory): number {
 }
 
 export function propertySummary(course: Course, world: World) {
-  const assets = normalizePropertyCourse(course.property).assets;
+  const property = normalizePropertyCourse(course.property);
+  const assets = property.assets;
   const enterprise = normalizePropertyEnterprise(world.enterprise);
   const recent = enterprise.ledger.filter((entry) => entry.week >= world.week - 11);
   const lodgingAssets = assets.filter((asset) => isOperational(asset) && ["lodge", "hotel", "cottages"].includes(asset.kind));
@@ -1500,13 +2324,20 @@ export function propertySummary(course: Course, world: World) {
   ), 0, 100);
   return {
     assets,
+    developments: property.developments,
+    units: property.units,
+    easements: property.easements,
+    safetyPolicy: property.safetyPolicy,
     enterprise,
     accessCapacity: propertyAccessCapacity(course, world),
     recentRevenue: recent.reduce((sum, entry) => sum + entry.revenue, 0),
     recentCosts: recent.reduce((sum, entry) => sum + entry.cost, 0),
     averageCustomerSkill: enterprise.customers.reduce((sum, customer) => sum + customer.skill, 0) / Math.max(1, enterprise.customers.length),
     occupiedHomes: enterprise.residents.reduce((sum, resident) => sum + resident.occupied, 0),
-    openComplaints: enterprise.residents.reduce((sum, resident) => sum + resident.complaints, 0),
+    openComplaints: enterprise.complaints.filter((complaint) => complaint.status === "open" || complaint.status === "acknowledged").length,
+    openClaims: enterprise.claims.filter((claim) => claim.status === "open" || claim.status === "filed").length,
+    communitySatisfaction: enterprise.residents.reduce((sum, resident) => sum + resident.satisfaction, 0) / Math.max(1, enterprise.residents.length),
+    residentLocalSpend: enterprise.residents.reduce((sum, resident) => sum + (resident.localSpend ?? 0), 0),
     safety: analyzeResidentialSafety(course),
     residentialValue: assets.filter((asset) => asset.kind === "houses" || asset.kind === "condos").reduce((sum, asset) => sum + propertyAssetValuation(course, world, asset), 0),
     resortMetrics: {
@@ -1542,6 +2373,10 @@ function normalizeCourseCount(course: Course): number {
 
 export function propertyAssetValuation(course: Course, world: World, asset: PropertyAsset): number {
   if (asset.kind !== "houses" && asset.kind !== "condos") return 0;
+  return propertyAssetValuationBreakdown(course, world, asset).total;
+}
+
+export function propertyAssetValuationBreakdown(course: Course, world: World, asset: PropertyAsset) {
   const safety = analyzeResidentialSafety(course, asset.id);
   const scenery = course.estate?.parcels.find((parcel) => asset.x >= parcel.bounds.minX && asset.x <= parcel.bounds.maxX && asset.y >= parcel.bounds.minY && asset.y <= parcel.bounds.maxY)?.sceneryScore ?? 50;
   const access = clamp(propertyAccessCapacity(course) / 80, 0.55, 1.35);
@@ -1549,8 +2384,23 @@ export function propertyAssetValuation(course: Course, world: World, asset: Prop
   const prestige = clamp(world.reputation / 100, 0.4, 1.1);
   const riskPenalty = safety.score / 100 * 0.42;
   const trafficPenalty = propertyAccessCapacity(course) < 40 ? 0.08 : 0;
-  const perUnit = (asset.kind === "houses" ? 310_000 : 215_000) * (0.72 + scenery / 200 + golfBenefit - riskPenalty - trafficPenalty) * access * prestige;
-  return Math.max(0, Math.round(perUnit * (asset.units ?? 0)));
+  const amenityCount = normalizePropertyCourse(course.property).assets.filter((candidate) => isOperational(candidate) && ["clubhouse", "restaurant", "community_club", "spa", "driving_range"].includes(candidate.kind)).length;
+  const densityPenalty = asset.kind === "condos" ? 0.06 : 0;
+  const basePerUnit = asset.kind === "houses" ? 310_000 : 215_000;
+  const components = {
+    basePerUnit,
+    scenery: scenery / 200,
+    golf: golfBenefit,
+    access: access - 1,
+    amenities: amenityCount * 0.025,
+    prestige: prestige - 0.72,
+    safety: -riskPenalty,
+    traffic: -trafficPenalty,
+    density: -densityPenalty,
+  };
+  const multiplier = clamp(0.72 + components.scenery + components.golf + components.access + components.amenities + components.prestige + components.safety + components.traffic + components.density, 0.42, 1.75);
+  const perUnit = Math.round(basePerUnit * multiplier);
+  return { perUnit, units: asset.units ?? 0, total: Math.max(0, Math.round(perUnit * (asset.units ?? 0))), multiplier, components, safety };
 }
 
 /** Append the pre-M31 golf/concession streams to the same bounded audit trail

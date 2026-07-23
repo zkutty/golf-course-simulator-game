@@ -43,7 +43,8 @@ test("M31-M33 property enterprise builds access, campus, resort, and community",
   await page.getByTestId("property-tab-community").click();
   await page.getByTestId("build-safety_buffer").click();
   await page.getByTestId("build-netting").click();
-  await page.getByTestId("build-houses").click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("development-preview-houses-sell").getByRole("button", { name: "Review & approve" }).click();
 
   const textState = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}"));
   expect(textState.course.property.panelOpen).toBe(true);

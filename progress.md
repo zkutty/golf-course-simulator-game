@@ -17,6 +17,25 @@ Current request: “Implant m31 from linear”
 
 - None. Completion notes were added to the seven previously open implementation/presentation/certification tickets, and all M31 issues are Done in Linear.
 
+## 2026-07-23 — M33 golf community, real estate, and safety complete
+
+Current request: “Implement m33 from linear”
+
+- Resolved M33 as ZK-308 through ZK-317, “Golf Community, Real Estate & Safety,” and read the existing foundation notes plus every remaining acceptance gap.
+- Added migration-safe v2 property and v3 enterprise contracts for developments, units, easements, tenure, safety policy, enriched households, complaints, incidents, claims, and insurance.
+- Added explicit sell/retain/partner phase previews and confirmed approvals, phased construction/release, stable unit and household/customer identities, atomic closings, retained rent/vacancy, partner revenue share, common costs/taxes/insurance, and protected committed/private/easement land.
+- Reworked residential safety across every tee set plus landing/approach/recovery segments, spatial heat cells, measured setbacks, exact blocking reasons, operating restrictions, and height/condition/geometry-sensitive mitigation.
+- Live-day settlement now receives actual played shot traces and creates deterministic attributed boundary-entry/near-miss/damage incidents, evidence-backed recurring complaints, open claims, one-time claim settlement, and premium escalation.
+- Added screening, fencing, berm, and signage mitigation assets, complaint response actions, operational hole/tee restrictions, and remediation-delayed negotiated buyback.
+- Added a localized, accessible community dashboard with irreversible-plan previews, phase/unit/easement telemetry, tenure-safe map cues, shot-exposure heatmaps, restriction controls, valuation components, household/HOA rows, complaint commitments, and claims/insurance operations.
+- Added themed residential occupancy/vacancy and tenure presentation, mitigation states, expanded text-state automation, and a real golden path that proves retained residents use the club economy, survives an open-claim save/reload, settles once, and reduces risk through physical mitigation.
+- Verification passes: 58 Vitest files / 363 passed with one intentional skip; production build; lint/i18n with the same seven existing hook warnings and no errors; M31, M32, and M33 browser acceptance; and the 36-hole/100-golfer performance smoke at 0.28 ms renderer work against the 8 ms budget.
+- Both M33 dashboard captures were visually inspected with no panel overflow or console errors. The bundled web-game client replay completed without an error artifact, and its text state confirmed the property panel, migrated safety policy, insurance, and stable empty starter collections.
+
+## M33 remaining
+
+- None. ZK-308 through ZK-317 meet their implementation and acceptance criteria.
+
 ## 2026-07-22 — Practice campus, destination resort, and golf community implementation
 
 User request: Implement the newly planned Linear features covering practice/revenue facilities, tiered access/parking/roads, destination lodging, and golf-course residential development; update the Linear tasks when verified; commit and push the completed work to `main`.

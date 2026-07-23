@@ -26,7 +26,11 @@ export type PropertyAssetKind =
   | "condos"
   | "community_club"
   | "safety_buffer"
-  | "netting";
+  | "netting"
+  | "screening"
+  | "safety_fence"
+  | "berm"
+  | "warning_signage";
 
 export type PropertyAssetCategory = "access" | "practice" | "clubhouse" | "resort" | "community" | "safety";
 
@@ -73,7 +77,10 @@ export interface PropertyAsset {
   surface?: InfrastructureSurface;
   units?: number;
   enabled: boolean;
-  tenure?: "operating" | "for_sale" | "sold" | "retained" | "partnered" | "reacquired";
+  tenure?: "operating" | "committed" | "for_sale" | "sold" | "retained" | "partnered" | "common" | "reacquired";
+  developmentId?: string;
+  mitigationKind?: SafetyMitigationKind;
+  coverageHeight?: number;
   route?: PracticeRoute;
   stations?: PracticeStation[];
   modules?: FacilityModule[];
@@ -84,9 +91,80 @@ export interface PropertyAsset {
   lastDay?: FacilityDayStats;
 }
 
+export type ResidentialStrategy = "sell" | "retain" | "partner";
+export type DevelopmentStatus = "planned" | "construction" | "releasing" | "complete" | "sold_out" | "reacquired";
+export type ResidentialUnitStatus = "construction" | "available" | "sold" | "leased" | "partnered" | "vacant" | "reacquired";
+export type ResidentialUnitType = "detached_home" | "villa" | "townhome" | "condo";
+export type SafetyMitigationKind = "landscape_buffer" | "netting" | "screening" | "fence" | "berm" | "signage";
+export type EasementKind = "safety" | "maintenance" | "access" | "utility";
+
+export interface ResidentialUnit {
+  id: string;
+  developmentId: string;
+  assetId: string;
+  lotNumber: number;
+  type: ResidentialUnitType;
+  status: ResidentialUnitStatus;
+  tenure: "player" | "private" | "partner";
+  householdId?: string;
+  marketValue: number;
+  closedValue?: number;
+  weeklyRent?: number;
+}
+
+export interface ResidentialDevelopment {
+  id: string;
+  assetId: string;
+  name: string;
+  strategy: ResidentialStrategy;
+  status: DevelopmentStatus;
+  phaseNumber: number;
+  unitIds: string[];
+  approvedWeek: number;
+  constructionDaysRemaining: number;
+  releaseDaysRemaining: number;
+  developmentCost: number;
+  playerCapital: number;
+  partnerShare: number;
+  projectedValueLow: number;
+  projectedValueHigh: number;
+  safetyAtApproval: number;
+  disclosedRisk: boolean;
+  publicRoadConnected: boolean;
+  emergencyAccess: boolean;
+  utilitiesEligible: boolean;
+  parkingSpaces: number;
+  commonUpkeepDaily: number;
+  taxRate: number;
+  insurancePremiumDaily: number;
+}
+
+export interface PropertyEasement {
+  id: string;
+  developmentId?: string;
+  assetId?: string;
+  kind: EasementKind;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  protected: boolean;
+  compensation?: number;
+}
+
+export interface SafetyOperatingPolicy {
+  restrictedTeeSets: Array<"championship" | "member" | "forward">;
+  closedHoleIds: string[];
+  exposureLimit: number;
+}
+
 export interface PropertyCourseState {
-  version: 1;
+  version: 1 | 2;
   assets: PropertyAsset[];
+  developments: ResidentialDevelopment[];
+  units: ResidentialUnit[];
+  easements: PropertyEasement[];
+  safetyPolicy: SafetyOperatingPolicy;
 }
 
 export type CustomerSegment = "local" | "member" | "student" | "tourist" | "event_guest" | "resident";
@@ -207,17 +285,84 @@ export interface ResidentHousehold {
   occupied: number;
   satisfaction: number;
   complaints: number;
+  developmentId?: string;
+  unitIds?: string[];
+  customerIds?: string[];
+  archetype?: "golf_family" | "retiree" | "professional" | "second_home" | "non_golfer";
+  golfInterest?: number;
+  riskTolerance?: number;
+  serviceExpectation?: number;
+  advocacy?: number;
+  opposition?: number;
+  localSpend?: number;
+  membershipPropensity?: number;
 }
+
+export type PropertyIncidentKind = "boundary_entry" | "near_miss" | "roof_strike" | "window_damage" | "vehicle_damage" | "serious_safety" | "parking_overflow" | "service_failure";
 
 export interface PropertyIncident {
   id: string;
   week: number;
   day: number;
   assetId: string;
-  kind: "ball_strike" | "parking_overflow" | "service_failure";
+  kind: PropertyIncidentKind | "ball_strike";
   severity: number;
   cost: number;
   description: string;
+  householdId?: string;
+  claimId?: string;
+  sourceHoleId?: string;
+  sourceHoleName?: string;
+  teeSet?: "championship" | "member" | "forward";
+  shotType?: "drive" | "approach" | "recovery" | "putt";
+  from?: { x: number; y: number };
+  to?: { x: number; y: number };
+  impact?: { x: number; y: number };
+  mitigated?: boolean;
+  priorWarnings?: number;
+}
+
+export type ComplaintSource = "errant_ball" | "noise" | "maintenance" | "lights" | "traffic" | "dust" | "alcohol" | "tournament" | "landscaping" | "access" | "common_area";
+export interface CommunityComplaint {
+  id: string;
+  householdId: string;
+  assetId: string;
+  week: number;
+  day: number;
+  source: ComplaintSource;
+  severity: number;
+  recurrence: number;
+  evidence: string;
+  sourceId?: string;
+  location: { x: number; y: number };
+  status: "open" | "acknowledged" | "mitigated" | "compensated" | "resolved";
+  response?: "acknowledge" | "compensate" | "restrict" | "repair" | "easement";
+  cost?: number;
+}
+
+export interface LiabilityClaim {
+  id: string;
+  incidentId: string;
+  assetId: string;
+  householdId?: string;
+  week: number;
+  status: "open" | "filed" | "settled" | "denied";
+  damage: number;
+  deductible: number;
+  insurerPayment: number;
+  playerPayment: number;
+  priorWarnings: number;
+  settledWeek?: number;
+}
+
+export interface PropertyInsurance {
+  policyId: string;
+  deductible: number;
+  coverageLimit: number;
+  dailyPremium: number;
+  riskMultiplier: number;
+  claimsFiled: number;
+  claimsSettled: number;
 }
 
 export type CommercialCategory =
@@ -257,7 +402,7 @@ export interface CommercialLedgerEntry {
 }
 
 export interface PropertyEnterpriseState {
-  version: 2;
+  version: 3;
   sequence: number;
   lastSettlementKey?: string;
   ledger: CommercialLedgerEntry[];
@@ -267,6 +412,9 @@ export interface PropertyEnterpriseState {
   reservations: LodgingReservation[];
   residents: ResidentHousehold[];
   incidents: PropertyIncident[];
+  complaints: CommunityComplaint[];
+  claims: LiabilityClaim[];
+  insurance: PropertyInsurance;
   outings: OutingBooking[];
   resort: ResortOperations;
 }
@@ -277,6 +425,18 @@ export interface SafetyContribution {
   distanceTiles: number;
   expectedRisk: number;
   outlierRisk: number;
+  normalRisk?: number;
+  extremeRisk?: number;
+  exposedAssets?: string[];
+}
+
+export interface SafetyHeatCell {
+  x: number;
+  y: number;
+  risk: number;
+  class: "low" | "guarded" | "high" | "severe";
+  contributingHoleIds: string[];
+  mitigatedRisk: number;
 }
 
 export interface ResidentialSafetyReport {
@@ -286,6 +446,19 @@ export interface ResidentialSafetyReport {
   outlierExposure: number;
   mitigation: number;
   contributions: SafetyContribution[];
+  heatmap: SafetyHeatCell[];
+  measuredSetback: number;
+  blockingReasons: string[];
+}
+
+export interface PropertyShotTrace {
+  golferId: number;
+  holeId?: string;
+  holeName?: string;
+  teeSet?: "championship" | "member" | "forward";
+  shotType: "drive" | "approach" | "recovery" | "putt";
+  from: { x: number; y: number };
+  to: { x: number; y: number };
 }
 
 export interface PropertyDayReport {

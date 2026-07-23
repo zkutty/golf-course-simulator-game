@@ -8,6 +8,7 @@ import type { LiveState } from "./types";
 import type { PaceDayMetrics } from "./types";
 import { layoutById } from "../models/courseLayouts";
 import { recordCoreCommerce, settlePropertyDay } from "../property/property";
+import type { PropertyShotTrace } from "../property/types";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -38,9 +39,10 @@ export function commitDay(args: {
   reactions: RoundReactions; // real observed reactions from finished rounds
   dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
   pace?: PaceDayMetrics;
+  shotTraces?: PropertyShotTrace[];
 }): { world: World; course: Course; result: DayResult } {
   const { course, world, reactions, dayIndex } = args;
-  const propertySettlement = settlePropertyDay(course, world, dayIndex ?? 0, reactions.rounds);
+  const propertySettlement = settlePropertyDay(course, world, dayIndex ?? 0, reactions.rounds, args.shotTraces);
   const operatingCourse = propertySettlement.course;
   const operatingWorld = recordCoreCommerce(propertySettlement.world, dayIndex ?? 0, {
     greenFees: args.greenFees ?? args.revenue,

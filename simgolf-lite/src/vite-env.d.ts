@@ -47,6 +47,26 @@ interface Window {
       value: number;
       serviceQueue: number;
     }>;
+    runM33GoldenPath(): Promise<{
+      beforeHash: string;
+      afterHash: string;
+      strategy: string;
+      status: string;
+      units: number;
+      households: number;
+      tenure: string;
+      incidentKind: string;
+      complaintStatus: string;
+      claimStatus: string;
+      riskWithoutMitigation: number;
+      riskWithMitigation: number;
+      protectedEasements: number;
+      realEstateRevenue: number;
+      realEstateCosts: number;
+      residentLocalSpend: number;
+      residentMembers: number;
+      cash: number;
+    }>;
     validateFixture(text: string):
       | { ok: true; migratedFrom: number | null }
       | { ok: false; error: string };

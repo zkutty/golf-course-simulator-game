@@ -116,7 +116,7 @@ import { normalizedStaff, staffFromLevel } from "./game/live/pace";
 import { WeekCloseReport } from "./ui/WeekCloseReport";
 import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
-import { applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
+import { analyzeResidentialSafety, applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -1171,6 +1171,9 @@ export default function App() {
               constructionDays: asset.constructionDaysRemaining ?? 0,
               modules: asset.modules?.filter((module) => module.enabled).map((module) => module.kind) ?? [],
               lastDay: asset.lastDay ?? null,
+              tenure: asset.tenure ?? "operating",
+              developmentId: asset.developmentId ?? null,
+              mitigation: asset.mitigationKind ? { kind: asset.mitigationKind, height: asset.coverageHeight ?? 0 } : null,
             })),
             professionals: summary.enterprise.professionals.length,
             membership: summary.enterprise.membership,
@@ -1194,6 +1197,15 @@ export default function App() {
             outings: summary.enterprise.outings.filter((outing) => outing.status === "scheduled").length,
             occupiedHomes: summary.occupiedHomes,
             complaints: summary.openComplaints,
+            communitySatisfaction: summary.communitySatisfaction,
+            developments: summary.developments.map((development) => ({ id: development.id, assetId: development.assetId, strategy: development.strategy, status: development.status, constructionDays: development.constructionDaysRemaining, releaseDays: development.releaseDaysRemaining, unitIds: development.unitIds })),
+            units: summary.units.map((unit) => ({ id: unit.id, developmentId: unit.developmentId, status: unit.status, tenure: unit.tenure, householdId: unit.householdId ?? null, marketValue: unit.marketValue, rent: unit.weeklyRent ?? 0 })),
+            easements: summary.easements.map((easement) => ({ id: easement.id, kind: easement.kind, protected: easement.protected, bounds: [easement.x, easement.y, easement.width, easement.height] })),
+            safety: { score: summary.safety.score, eligibility: summary.safety.eligibility, expected: summary.safety.expectedExposure, outlier: summary.safety.outlierExposure, mitigation: summary.safety.mitigation, setback: summary.safety.measuredSetback, heatCells: summary.safety.heatmap.length, blockingReasons: summary.safety.blockingReasons, policy: summary.safetyPolicy },
+            households: summary.enterprise.residents.map((resident) => ({ id: resident.id, home: resident.unitIds?.[0] ?? resident.assetId, archetype: resident.archetype ?? "resident", satisfaction: resident.satisfaction, complaints: resident.complaints, advocacy: resident.advocacy ?? 0, opposition: resident.opposition ?? 0 })),
+            complaintDetails: summary.enterprise.complaints.slice(-10).map((complaint) => ({ id: complaint.id, source: complaint.source, severity: complaint.severity, recurrence: complaint.recurrence, status: complaint.status, sourceId: complaint.sourceId ?? null })),
+            claims: summary.enterprise.claims.slice(-10).map((claim) => ({ id: claim.id, incidentId: claim.incidentId, status: claim.status, damage: claim.damage, playerPayment: claim.playerPayment, insurerPayment: claim.insurerPayment, priorWarnings: claim.priorWarnings })),
+            insurance: summary.enterprise.insurance,
             recentRevenue: summary.recentRevenue,
             recentCosts: summary.recentCosts,
             incidents: summary.enterprise.incidents.slice(-5),
@@ -1404,6 +1416,99 @@ export default function App() {
           folioTotal: reservation?.folio?.reduce((sum, item) => sum + item.amount, 0) ?? 0,
           value: reservation?.value ?? 0,
           serviceQueue: checkout.world.enterprise?.resort.serviceQueue ?? -1,
+        };
+      },
+      runM33GoldenPath: async () => {
+        let fixtureCourse: Course = { ...createReferenceCourse(), property: starterPropertyCourse() };
+        let fixtureWorld: World = { ...gameStateRef.current.world, cash: 2_000_000, reputation: 86, enterprise: emptyPropertyEnterprise(), isBankrupt: false, distressWeeks: 0, week: 3 };
+        const runCommand = (command: PropertyCommand) => {
+          const result = applyPropertyCommand(fixtureCourse, fixtureWorld, command);
+          if (!result.ok) throw new Error(result.message);
+          fixtureCourse = result.course;
+          fixtureWorld = result.world;
+        };
+        runCommand({ type: "BUILD", kind: "driving_range" });
+        runCommand({ type: "BUILD", kind: "clubhouse" });
+        runCommand({ type: "BUILD", kind: "restaurant" });
+        runCommand({ type: "HIRE_SERVICE", role: "foodService" });
+        runCommand({ type: "LAUNCH_MEMBERSHIP" });
+        runCommand({ type: "BUILD", kind: "safety_buffer" });
+        runCommand({ type: "BUILD", kind: "netting" });
+        runCommand({ type: "PLAN_DEVELOPMENT", kind: "houses", strategy: "retain", confirmed: true });
+        for (let day = 0; day < 5; day++) {
+          const result = settlePropertyDay(fixtureCourse, fixtureWorld, day, 0);
+          fixtureCourse = result.course;
+          fixtureWorld = { ...result.world, cash: result.world.cash + result.report.revenue - result.report.costs };
+        }
+        const home = fixtureCourse.property!.assets.find((asset) => asset.kind === "houses");
+        if (!home) throw new Error("M33 phase did not create a residential asset");
+        const safetyAssets = fixtureCourse.property!.assets.filter((asset) => asset.category === "safety");
+        for (const asset of safetyAssets) runCommand({ type: "TOGGLE", assetId: asset.id });
+        const riskWithoutMitigation = analyzeResidentialSafety(fixtureCourse, home.id).score;
+        const center = { x: home.x + home.width / 2, y: home.y + home.height / 2 };
+        const incidentDay = 5;
+        const sequence = fixtureWorld.enterprise!.sequence;
+        fixtureWorld = { ...fixtureWorld, runSeed: (1000 - ((fixtureWorld.week * 31 + incidentDay * 17 + sequence * 13) % 1000)) % 1000 };
+        const incident = settlePropertyDay(fixtureCourse, fixtureWorld, incidentDay, 1, [{
+          golferId: 0,
+          holeId: "m33-live-hole",
+          holeName: "Community 1st",
+          teeSet: "member",
+          shotType: "drive",
+          from: { x: Math.max(0, home.x - 30), y: center.y },
+          to: { x: Math.min(fixtureCourse.width - 1, home.x + home.width + 30), y: center.y },
+        }]);
+        fixtureCourse = incident.course;
+        fixtureWorld = { ...incident.world, cash: incident.world.cash + incident.report.revenue - incident.report.costs };
+        const midIncidentWorld = { ...fixtureWorld, staffRoster: normalizedStaff(fixtureWorld, fixtureCourse) };
+        const midIncidentPayload: SavePayload = {
+          course: fixtureCourse,
+          world: midIncidentWorld,
+          history: historyRef.current,
+          records: recordsRef.current,
+          live: snapshotLiveSimulation({ state: createLiveState(fixtureCourse, midIncidentWorld, 6), pendingCash: 0, speed: "paused", selectedGolferId: null }),
+          tutorial: tutorialProgress,
+        };
+        const beforeHash = hashGameState(midIncidentPayload);
+        await saveToSlot("e2e-m33", "manual", "M33 open resident claim", midIncidentPayload);
+        const loadedMidIncident = await loadSlot("e2e-m33");
+        if (!loadedMidIncident) throw new Error("M33 open-claim slot failed to reload");
+        const afterHash = hashGameState(loadedMidIncident);
+        fixtureCourse = loadedMidIncident.course;
+        fixtureWorld = loadedMidIncident.world;
+        const complaint = fixtureWorld.enterprise!.complaints.at(-1);
+        const claim = fixtureWorld.enterprise!.claims.at(-1);
+        if (!complaint || !claim) throw new Error("M33 incident did not create its complaint and claim evidence");
+        runCommand({ type: "RESPOND_COMPLAINT", complaintId: complaint.id, response: "compensate" });
+        runCommand({ type: "FILE_CLAIM", claimId: claim.id });
+        runCommand({ type: "SETTLE_CLAIM", claimId: claim.id });
+        for (const asset of safetyAssets) runCommand({ type: "TOGGLE", assetId: asset.id });
+        const riskWithMitigation = analyzeResidentialSafety(fixtureCourse, home.id).score;
+        const finalWorld = { ...fixtureWorld, staffRoster: normalizedStaff(fixtureWorld, fixtureCourse) };
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: finalWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, finalWorld, 6), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        const loadedProperty = fixtureCourse.property!;
+        const loadedEnterprise = finalWorld.enterprise!;
+        const realEstateEntries = loadedEnterprise.ledger.filter((entry) => entry.category === "real_estate");
+        return {
+          beforeHash,
+          afterHash,
+          strategy: loadedProperty.developments[0]?.strategy ?? "missing",
+          status: loadedProperty.developments[0]?.status ?? "missing",
+          units: loadedProperty.units.length,
+          households: loadedEnterprise.residents.length,
+          tenure: loadedProperty.assets.find((asset) => asset.id === home.id)?.tenure ?? "missing",
+          incidentKind: loadedEnterprise.incidents.at(-1)?.kind ?? "missing",
+          complaintStatus: loadedEnterprise.complaints.at(-1)?.status ?? "missing",
+          claimStatus: loadedEnterprise.claims.at(-1)?.status ?? "missing",
+          riskWithoutMitigation,
+          riskWithMitigation,
+          protectedEasements: loadedProperty.easements.filter((easement) => easement.protected).length,
+          realEstateRevenue: realEstateEntries.reduce((sum, entry) => sum + entry.revenue, 0),
+          realEstateCosts: realEstateEntries.reduce((sum, entry) => sum + entry.cost, 0),
+          residentLocalSpend: loadedEnterprise.residents.reduce((sum, resident) => sum + (resident.localSpend ?? 0), 0),
+          residentMembers: loadedEnterprise.customers.filter((customer) => customer.segment === "resident" && customer.member).length,
+          cash: finalWorld.cash,
         };
       },
       validateFixture: (text: string) => {
