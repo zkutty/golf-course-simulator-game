@@ -11,6 +11,13 @@ type Feature = {
   detail: MessageKey;
 };
 
+type FutureFeature = {
+  milestone: MessageKey;
+  title: MessageKey;
+  body: MessageKey;
+  detail: MessageKey;
+};
+
 const FEATURES: Feature[] = [
   { icon: "⌁", title: "vision.feature.design.title", body: "vision.feature.design.body", detail: "vision.feature.design.detail" },
   { icon: "◉", title: "vision.feature.golfers.title", body: "vision.feature.golfers.body", detail: "vision.feature.golfers.detail" },
@@ -18,6 +25,15 @@ const FEATURES: Feature[] = [
   { icon: "↗", title: "vision.feature.business.title", body: "vision.feature.business.body", detail: "vision.feature.business.detail" },
   { icon: "♜", title: "vision.feature.events.title", body: "vision.feature.events.body", detail: "vision.feature.events.detail" },
   { icon: "✦", title: "vision.feature.legacy.title", body: "vision.feature.legacy.body", detail: "vision.feature.legacy.detail" },
+];
+
+const FUTURE_FEATURES: FutureFeature[] = [
+  { milestone: "vision.future.play.milestone", title: "vision.future.play.title", body: "vision.future.play.body", detail: "vision.future.play.detail" },
+  { milestone: "vision.future.feedback.milestone", title: "vision.future.feedback.title", body: "vision.future.feedback.body", detail: "vision.future.feedback.detail" },
+  { milestone: "vision.future.people.milestone", title: "vision.future.people.title", body: "vision.future.people.body", detail: "vision.future.people.detail" },
+  { milestone: "vision.future.seasons.milestone", title: "vision.future.seasons.title", body: "vision.future.seasons.body", detail: "vision.future.seasons.detail" },
+  { milestone: "vision.future.campaign.milestone", title: "vision.future.campaign.title", body: "vision.future.campaign.body", detail: "vision.future.campaign.detail" },
+  { milestone: "vision.future.premium.milestone", title: "vision.future.premium.title", body: "vision.future.premium.body", detail: "vision.future.premium.detail" },
 ];
 
 const CHAPTERS = [
@@ -71,6 +87,7 @@ export function VisionPage({ onClose }: { onClose: () => void }) {
         <div className="cc-vision-nav-links">
           <a href="#vision-story">{t("vision.nav.story")}</a>
           <a href="#vision-systems">{t("vision.nav.systems")}</a>
+          <a href="#vision-play">{t("vision.nav.play")}</a>
           <a href="#vision-world">{t("vision.nav.world")}</a>
         </div>
         <div className="cc-vision-nav-actions">
@@ -129,6 +146,40 @@ export function VisionPage({ onClose }: { onClose: () => void }) {
               <span>{t("vision.course.beat4")}</span>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="cc-vision-future" id="vision-play">
+        <div className="cc-vision-future-intro">
+          <div>
+            <p className="cc-vision-kicker">{t("vision.future.kicker")}</p>
+            <h2>{t("vision.future.title")}</h2>
+          </div>
+          <div>
+            <p>{t("vision.future.body")}</p>
+            <div className="cc-vision-future-loop" aria-label={t("vision.future.loopAria")}>
+              <span>{t("vision.future.loop.build")}</span>
+              <i aria-hidden="true">→</i>
+              <span>{t("vision.future.loop.play")}</span>
+              <i aria-hidden="true">→</i>
+              <span>{t("vision.future.loop.learn")}</span>
+              <i aria-hidden="true">→</i>
+              <span>{t("vision.future.loop.redesign")}</span>
+            </div>
+          </div>
+        </div>
+        <div className="cc-vision-future-grid">
+          {FUTURE_FEATURES.map((feature, index) => (
+            <article key={feature.title} className="cc-vision-future-card">
+              <div className="cc-vision-future-card-topline">
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <small>{t(feature.milestone)}</small>
+              </div>
+              <h3>{t(feature.title)}</h3>
+              <p>{t(feature.body)}</p>
+              <strong>{t(feature.detail)}</strong>
+            </article>
+          ))}
         </div>
       </section>
 

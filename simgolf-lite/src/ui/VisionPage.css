@@ -275,13 +275,15 @@
 
 .cc-vision-manifesto,
 .cc-vision-systems,
-.cc-vision-arc {
+.cc-vision-arc,
+.cc-vision-future {
   width: min(1240px, calc(100% - 48px));
   margin-inline: auto;
 }
 
 .cc-vision-manifesto,
 .cc-vision-systems,
+.cc-vision-future,
 .cc-vision-world {
   scroll-margin-top: 88px;
 }
@@ -489,6 +491,135 @@
   font-size: 10px;
   font-weight: 900;
   letter-spacing: .075em;
+  text-transform: uppercase;
+}
+
+.cc-vision-future {
+  margin-top: clamp(100px, 12vw, 170px);
+  border-radius: 30px;
+  padding: clamp(42px, 6vw, 78px);
+  overflow: hidden;
+  color: #fff9ec;
+  background:
+    radial-gradient(circle at 5% 0, rgba(224, 183, 90, .28), transparent 340px),
+    radial-gradient(circle at 100% 100%, rgba(72, 126, 87, .28), transparent 420px),
+    linear-gradient(135deg, #10291c, #173d2a 58%, #0f2419);
+  box-shadow: 0 32px 90px rgba(19, 40, 28, .22);
+}
+
+.cc-vision-future-intro {
+  display: grid;
+  grid-template-columns: minmax(0, .92fr) minmax(360px, 1.08fr);
+  gap: clamp(42px, 7vw, 96px);
+  align-items: end;
+}
+
+.cc-vision-future .cc-vision-kicker {
+  color: #ebc76c;
+}
+
+.cc-vision-future h2 {
+  max-width: 660px;
+  margin: 0;
+  color: #fff9ec;
+  font-size: clamp(45px, 5.7vw, 78px);
+  letter-spacing: -.05em;
+  line-height: .98;
+}
+
+.cc-vision-future-intro > div:last-child > p {
+  margin: 0;
+  color: rgba(255, 249, 236, .75);
+  font-size: 17px;
+  line-height: 1.72;
+}
+
+.cc-vision-future-loop {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+}
+
+.cc-vision-future-loop span {
+  border: 1px solid rgba(238, 205, 116, .42);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: #f1d889;
+  background: rgba(255, 255, 255, .055);
+  font-size: 10px;
+  font-weight: 1000;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.cc-vision-future-loop i {
+  color: rgba(255, 255, 255, .38);
+  font-style: normal;
+}
+
+.cc-vision-future-grid {
+  margin-top: clamp(48px, 7vw, 82px);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-top: 1px solid rgba(255, 255, 255, .2);
+  border-left: 1px solid rgba(255, 255, 255, .2);
+}
+
+.cc-vision-future-card {
+  min-height: 330px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid rgba(255, 255, 255, .2);
+  border-bottom: 1px solid rgba(255, 255, 255, .2);
+  padding: clamp(25px, 3vw, 38px);
+  background: rgba(255, 255, 255, .025);
+  transition: background .2s ease;
+}
+
+.cc-vision-future-card:hover {
+  background: rgba(255, 255, 255, .065);
+}
+
+.cc-vision-future-card-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  color: #e7c668;
+  font-size: 10px;
+  font-weight: 1000;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.cc-vision-future-card-topline small {
+  color: rgba(255, 249, 236, .5);
+  font: inherit;
+  text-align: right;
+}
+
+.cc-vision-future-card h3 {
+  margin: 44px 0 14px;
+  color: #fff9ec;
+  font-size: 27px;
+  letter-spacing: -.025em;
+}
+
+.cc-vision-future-card p {
+  margin: 0;
+  color: rgba(255, 249, 236, .68);
+  line-height: 1.65;
+}
+
+.cc-vision-future-card strong {
+  margin-top: auto;
+  padding-top: 30px;
+  color: #ebc873;
+  font-size: 10px;
+  font-weight: 1000;
+  letter-spacing: .08em;
+  line-height: 1.55;
   text-transform: uppercase;
 }
 
@@ -786,6 +917,12 @@
   .cc-vision-feature-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .cc-vision-future-intro {
+    grid-template-columns: 1fr;
+  }
+  .cc-vision-future-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
   .cc-vision-arc-line {
     grid-template-columns: repeat(2, 1fr);
     row-gap: 54px;
@@ -878,8 +1015,19 @@
     padding: 42px 26px 34px;
   }
   .cc-vision-systems,
-  .cc-vision-arc {
+  .cc-vision-arc,
+  .cc-vision-future {
     width: calc(100% - 36px);
+  }
+  .cc-vision-future {
+    border-radius: 20px;
+    padding: 40px 22px 22px;
+  }
+  .cc-vision-future-grid {
+    grid-template-columns: 1fr;
+  }
+  .cc-vision-future-card {
+    min-height: 0;
   }
   .cc-vision-feature-grid {
     grid-template-columns: 1fr;
