@@ -119,6 +119,7 @@ import { WeekCloseReport } from "./ui/WeekCloseReport";
 import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
 import { analyzeResidentialSafety, applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
+import { VisionPage } from "./ui/VisionPage";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -127,6 +128,7 @@ type ViewMode = "global" | "hole";
 export default function App() {
   const { t } = useI18n();
   const [flow, flowDispatch] = useReducer(reduceScreenFlow, INITIAL_SCREEN_FLOW);
+  const [showVision, setShowVision] = useState(() => new URLSearchParams(window.location.search).get("view") === "vision");
   const [appProfile, setAppProfile] = useState<AppProfile>(() => loadAppProfile());
   const screen = flow.base === "title" ? "menu" : flow.base === "setup-wizard" ? "setup" : flow.base === "in-game" ? "game" : "loading";
   const changeSequenceRef = useRef(0);
@@ -140,6 +142,30 @@ export default function App() {
     setDirty(false);
   }, []);
   const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
+
+  useEffect(() => {
+    const syncVisionRoute = () => setShowVision(new URLSearchParams(window.location.search).get("view") === "vision");
+    window.addEventListener("popstate", syncVisionRoute);
+    return () => window.removeEventListener("popstate", syncVisionRoute);
+  }, []);
+
+  const openVision = useCallback(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", "vision");
+    window.history.pushState({ coursecraftView: "vision" }, "", url);
+    setShowVision(true);
+  }, []);
+
+  const closeVision = useCallback(() => {
+    if (window.history.state?.coursecraftView === "vision") {
+      window.history.back();
+      return;
+    }
+    const url = new URL(window.location.href);
+    url.searchParams.delete("view");
+    window.history.replaceState({}, "", url);
+    setShowVision(false);
+  }, []);
   type TerrainEditSnapshot = Pick<GameState, "course" | "world"> & {
     capital: {
       spent: number;
@@ -2576,6 +2602,10 @@ export default function App() {
     return <LoadingCard label={flow.loadingLabel ?? "Loading CourseCraft…"} />;
   }
 
+  if (screen === "menu" && showVision) {
+    return <VisionPage onClose={closeVision} />;
+  }
+
   if (screen === "menu") {
     return (
       <>
@@ -2587,6 +2617,7 @@ export default function App() {
         onContinue={() => void continueFromMenu()}
         onOptions={() => flowDispatch({ type: "OPEN_MODAL", modal: "options" })}
         onAchievements={() => setShowRetention(true)}
+        onVision={openVision}
         canInstall={pwa.canInstall}
         onInstall={() => void pwa.install()}
         onButtonClick={() => {

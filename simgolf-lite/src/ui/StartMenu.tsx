@@ -12,6 +12,7 @@ export interface StartMenuProps {
   onContinue: () => void;
   onOptions: () => void;
   onAchievements: () => void;
+  onVision: () => void;
   canInstall?: boolean;
   onInstall?: () => void;
   onButtonClick?: () => void;
@@ -24,6 +25,34 @@ export function StartMenu(props: StartMenuProps) {
   return (
     <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
       <StartMenuBackground />
+
+      <button
+        onClick={() => {
+          props.onButtonClick?.();
+          props.onVision();
+        }}
+        style={{
+          position: "absolute",
+          top: 20,
+          right: 20,
+          zIndex: 20,
+          display: "grid",
+          gap: 1,
+          minWidth: 154,
+          border: "1px solid rgba(255,255,255,.46)",
+          borderRadius: 999,
+          padding: "10px 18px",
+          background: "rgba(28,58,39,.72)",
+          color: "#fffaf0",
+          boxShadow: "0 10px 30px rgba(18,38,25,.22), inset 0 1px rgba(255,255,255,.18)",
+          backdropFilter: "blur(12px)",
+          cursor: "pointer",
+          font: "inherit",
+        }}
+      >
+        <strong style={{ fontFamily: "var(--font-heading)", fontSize: 14 }}>{t("title.vision")}</strong>
+        <span style={{ color: "#ead08b", fontSize: 9, fontWeight: 900, letterSpacing: ".05em", textTransform: "uppercase" }}>{t("title.visionHint")}</span>
+      </button>
 
       <div style={{ position: "relative", zIndex: 10, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ width: "min(720px, 100%)", padding: 24 }}>
