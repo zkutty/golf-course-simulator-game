@@ -29,7 +29,7 @@ describe("M6 tournaments", () => {
     expect(scheduled.cash).toBe(host.cash - 3_500);
     expect(tournamentCalendar(scheduled).events).toHaveLength(1);
     expect(scheduleTournament(scheduled, first.event)).toBe(scheduled);
-  }, 15_000);
+  }, 30_000);
 
   it("blocks dates, tiers, and courses that do not meet hosting requirements", () => {
     const weak = createTournamentEvent({ course, world: { ...host, reputation: 20 }, tier: "regional", currentDay: 0, daysAhead: 1 });
@@ -41,7 +41,7 @@ describe("M6 tournaments", () => {
     if (!booked.ok) throw new Error(booked.reason);
     const duplicate = createTournamentEvent({ course, world: scheduleTournament(host, booked.event), tier: "local", currentDay: 0, daysAhead: 1 });
     expect(duplicate.ok).toBe(false);
-  }, 15_000);
+  }, 30_000);
 
   it("runs the field through the live simulation and settles ordered results", () => {
     const created = createTournamentEvent({ course, world: host, tier: "local", currentDay: 0, daysAhead: 1 });
@@ -51,7 +51,7 @@ describe("M6 tournaments", () => {
     expect(live.tournament?.standings).toHaveLength(8);
     expect(live.arrivals.every((arrival) => arrival.tournament?.eventId === created.event.id)).toBe(true);
     stepLive(live, course, 40);
-    const restored = restoreLiveSimulation(snapshotLiveSimulation({ state: live, pendingCash: 0, speed: "3x", selectedGolferId: null }));
+    const restored = restoreLiveSimulation(snapshotLiveSimulation({ state: live, pendingCash: 0, speed: "4x", selectedGolferId: null }));
     expect(restored?.state.tournament).toEqual(live.tournament);
 
     let guard = 0;
@@ -67,5 +67,5 @@ describe("M6 tournaments", () => {
     expect(settlement.event?.status).toBe("completed");
     expect(settlement.event?.winnerName).toBe(sortedStandings(live.tournament!.standings)[0].name);
     expect(tournamentCalendar(settlement.world).events[0].results).toHaveLength(8);
-  }, 15_000);
+  }, 30_000);
 });

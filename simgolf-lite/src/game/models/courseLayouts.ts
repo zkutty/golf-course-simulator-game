@@ -1,5 +1,6 @@
 import type { Course, CourseLayout, Hole } from "./types";
 import { scoreCourseHoles } from "../sim/holes";
+import { normalizeOperations } from "./courseOperations";
 
 export const MAX_ESTATE_HOLES = 36;
 
@@ -48,6 +49,7 @@ export function normalizeCourseLayouts(input: Course): Course {
       roundLength: raw.roundLength === 18 ? 18 : 9,
       state: raw.state === "closed" ? "closed" : "open",
       greenFee: Number.isFinite(raw.greenFee) ? Math.max(0, Math.round(raw.greenFee)) : input.baseGreenFee,
+      operations: normalizeOperations(raw.operations),
       legacyPartial: raw.legacyPartial === true || undefined,
     });
   }
@@ -61,6 +63,7 @@ export function normalizeCourseLayouts(input: Course): Course {
       roundLength: all.length >= 18 ? 18 : 9,
       state: "open",
       greenFee: input.baseGreenFee,
+      operations: normalizeOperations(),
       legacyPartial: all.length !== 9 && all.length !== 18 ? true : undefined,
     });
     usedLayoutIds.add("course-primary");
@@ -169,7 +172,7 @@ export function createLayout(course: Course, name?: string): Course {
   const used = new Set(normalized.layouts!.map((layout) => layout.id));
   const label = name?.trim() || `Course ${normalized.layouts!.length + 1}`;
   const id = uniqueId(`course-${slug(label)}`, used);
-  const layout: CourseLayout = { id, name: label, draftHoleIds: [], publishedHoleIds: [], roundLength: 9, state: "closed", greenFee: normalized.baseGreenFee };
+  const layout: CourseLayout = { id, name: label, draftHoleIds: [], publishedHoleIds: [], roundLength: 9, state: "closed", greenFee: normalized.baseGreenFee, operations: normalizeOperations() };
   return { ...normalized, layouts: [...normalized.layouts!, layout], activeCourseId: id, baseGreenFee: layout.greenFee };
 }
 
@@ -182,7 +185,7 @@ export function addEstateHole(course: Course, courseId: string): Course {
   return assignHoleToLayout({ ...normalized, holes: [...normalized.holes, hole] }, courseId, id);
 }
 
-export function updateLayout(course: Course, courseId: string, patch: Partial<Pick<CourseLayout, "name" | "draftHoleIds" | "state" | "greenFee">>): Course {
+export function updateLayout(course: Course, courseId: string, patch: Partial<Pick<CourseLayout, "name" | "draftHoleIds" | "state" | "greenFee" | "operations">>): Course {
   const normalized = normalizeCourseLayouts(course);
   const validIds = new Set(normalized.holes.map((hole) => hole.id!));
   const layouts = normalized.layouts!.map((layout) => layout.id !== courseId ? layout : {
@@ -190,6 +193,7 @@ export function updateLayout(course: Course, courseId: string, patch: Partial<Pi
     ...(patch.name != null ? { name: patch.name.trim() || layout.name } : {}),
     ...(patch.state != null ? { state: patch.state } : {}),
     ...(patch.greenFee != null ? { greenFee: Math.max(0, Math.round(patch.greenFee)) } : {}),
+    ...(patch.operations != null ? { operations: normalizeOperations(patch.operations) } : {}),
     ...(patch.draftHoleIds != null ? { draftHoleIds: [...new Set(patch.draftHoleIds.filter((id) => validIds.has(id)))] } : {}),
   });
   const active = layouts.find((layout) => layout.id === normalized.activeCourseId) ?? layouts[0];

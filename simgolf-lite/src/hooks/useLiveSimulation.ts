@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Course, PinRotation, TeeSet, World } from "../game/models/types";
+import type { Course, CourseOperations, PacePreset, PinRotation, TeeSet, WeekResult, World } from "../game/models/types";
 import { LIVE, type SpeedName } from "../game/live/liveConfig";
 import {
   createLiveState,
@@ -9,7 +9,6 @@ import {
   stepLive,
 } from "../game/live/simulation";
 import { commitDay } from "../game/live/commitDay";
-import { hitsLiquidityTrap } from "../game/sim/runState";
 import { isCoursePlayable } from "../game/sim/isCoursePlayable";
 import { planEstateDay } from "../game/live/spawn";
 import type { DayResult, GolferRenderData, LiveState } from "../game/live/types";
@@ -22,9 +21,14 @@ import { deriveLiveAudioEvents, type LiveAudioEvent } from "../audio/liveEvents"
 import type { CompletedRound } from "../game/retention/types";
 import { completeTournament, prepareTournamentDay, sortedStandings } from "../game/tournaments/tournaments";
 import type { TournamentStanding, TournamentTier } from "../game/tournaments/types";
+import { activeCourseLayout, updateLayout } from "../game/models/courseLayouts";
+import { courseOperations, PACE_PRESETS } from "../game/live/pace";
+import { consumeClock, FIXED_GAME_STEP_MINUTES } from "../game/live/clock";
+import { appendDayToLedger, createWeekLedger, weekResultFromLedger } from "../game/live/weeklyLedger";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
+export type CourseOperationsPatch = Partial<Omit<CourseOperations, "beverage">> & { beverage?: Partial<CourseOperations["beverage"]> };
 
 export interface SelectedGolferDetail {
   id: number;
@@ -69,6 +73,40 @@ export interface LiveStatus {
     teeSet: TeeSet;
     pinRotation: PinRotation;
     standings: TournamentStanding[];
+  };
+  pace: {
+    courseId: string;
+    preset: PacePreset;
+    teeIntervalMinutes: number;
+    maxGroupSize: number;
+    groupsOnCourse: number;
+    blockedGroups: number;
+    averageWaitMinutes: number;
+    interventions: number;
+    pickups: number;
+    beverageRevenue: number;
+    alcoholicDrinks: number;
+    incidents: number;
+    marshalCoverage: number;
+    beverageCoverage: number;
+    beverageMenu: CourseOperations["beverage"]["menu"];
+  };
+}
+
+function paceStatus(live: LiveState, course: Course): LiveStatus["pace"] {
+  const layout = activeCourseLayout(course);
+  const operations = courseOperations(course, layout.id);
+  const active = (live.groups ?? []).filter((group) => group.courseId === layout.id && group.startedAt != null && group.finishedAt == null);
+  return {
+    courseId: layout.id, preset: operations.preset, teeIntervalMinutes: operations.teeIntervalMinutes,
+    maxGroupSize: operations.maxGroupSize, groupsOnCourse: active.length,
+    blockedGroups: active.filter((group) => group.blocked).length,
+    averageWaitMinutes: active.length ? active.reduce((sum, group) => sum + group.waitMinutes, 0) / active.length : 0,
+    interventions: live.pace?.marshalInterventions ?? 0, pickups: live.pace?.forcedPickups ?? 0,
+    beverageRevenue: live.pace?.beverageRevenue ?? 0, alcoholicDrinks: live.pace?.alcoholicDrinks ?? 0,
+    incidents: live.pace?.disorderIncidents ?? 0,
+    marshalCoverage: live.marshalCoverageByCourse?.[layout.id] ?? 0,
+    beverageCoverage: live.beverageCoverageByCourse?.[layout.id] ?? 0, beverageMenu: operations.beverage.menu,
   };
 }
 
@@ -124,7 +162,13 @@ export function useLiveSimulation(args: {
   world: World;
   setWorld: (updater: (w: World) => World) => void;
   setCourse: (updater: (c: Course) => Course) => void;
-  onDayCommitted?: (result: DayResult, live: LiveSimulationSnapshotV1) => void;
+  onDayCommitted?: (result: DayResult, live: LiveSimulationSnapshotV1, completedWeek?: {
+    week: number;
+    result: WeekResult;
+    resumeSpeed: Exclude<SpeedName, "paused">;
+    cash: number;
+    reputation: number;
+  }) => void;
   onCashTick?: () => void;
   onAudioEvent?: (event: LiveAudioEvent) => void;
   onRoundCompleted?: (round: CompletedRound, dayIndex: number) => void;
@@ -147,11 +191,13 @@ export function useLiveSimulation(args: {
     selected: null,
     golfers: [],
     tournament: null,
+    pace: { courseId: "course-primary", preset: "balanced", teeIntervalMinutes: 10, maxGroupSize: 4, groupsOnCourse: 0, blockedGroups: 0, averageWaitMinutes: 0, interventions: 0, pickups: 0, beverageRevenue: 0, alcoholicDrinks: 0, incidents: 0, marshalCoverage: 0, beverageCoverage: 0, beverageMenu: "refreshments" },
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  // Latest inputs, mirrored into refs so the rAF loop never restarts. Synced in
-  // an effect (not during render) per the rules of hooks.
+  // Latest inputs, mirrored into refs so the rAF loop never restarts. Speed is
+  // updated synchronously by setSpeed/restore so a stale React effect can never
+  // overwrite a just-selected tier at a day boundary.
   const courseRef = useRef(course);
   const worldRef = useRef(world);
   const speedRef = useRef<SpeedName>(speed);
@@ -165,6 +211,8 @@ export function useLiveSimulation(args: {
   const rafRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
   const pendingCashRef = useRef(0);
+  const clockRemainderRef = useRef(0);
+  const weekLedgerRef = useRef(createWeekLedger(world.week));
   const lastStatusAtRef = useRef(0);
   const selectedIdRef = useRef<number | null>(null);
   const onDayRef = useRef(onDayCommitted);
@@ -182,7 +230,6 @@ export function useLiveSimulation(args: {
   useEffect(() => {
     courseRef.current = course;
     worldRef.current = world;
-    speedRef.current = speed;
     onDayRef.current = onDayCommitted;
     onCashRef.current = onCashTick;
     onAudioRef.current = onAudioEvent;
@@ -234,6 +281,7 @@ export function useLiveSimulation(args: {
     const d = pendingCashRef.current;
     if (d === 0) return;
     pendingCashRef.current = 0;
+    worldRef.current = { ...worldRef.current, cash: worldRef.current.cash + d };
     setWorld((w) => ({ ...w, cash: w.cash + d }));
     onCashRef.current?.();
   }, [setWorld]);
@@ -276,6 +324,7 @@ export function useLiveSimulation(args: {
         pinRotation: live.tournament.pinRotation,
         standings: sortedStandings(live.tournament.standings),
       } : null,
+      pace: paceStatus(live, courseRef.current),
     });
   }, [status.lastDay]);
 
@@ -307,45 +356,53 @@ export function useLiveSimulation(args: {
       perCourse: live.perCourse,
       reactions: roundReactions(live),
       dayIndex: live.dayIndex,
+      pace: live.pace,
     });
     result.dayIndex = live.dayIndex;
+    weekLedgerRef.current = appendDayToLedger(weekLedgerRef.current, result);
+    const closesWeek = live.dayIndex + 1 >= DAYS_PER_WEEK;
+    const completedWeek = closesWeek ? weekResultFromLedger(weekLedgerRef.current) : undefined;
+    const completedWeekNumber = weekLedgerRef.current.week;
+    const resumeSpeed: Exclude<SpeedName, "paused"> = speedRef.current === "paused" ? "1x" : speedRef.current;
+    if (closesWeek) {
+      speedRef.current = "paused";
+      setSpeedState("paused");
+    }
 
-    setCourse((c) => ({ ...c, condition: clamp(c.condition + result.conditionDelta, 0, 1) }));
-    setWorld((w) => {
-      const completedTournament = completeTournament(w, live);
-      const nextCash = w.cash - result.costs + completedTournament.revenue;
-      const rolloverWeek = live.dayIndex + 1 >= DAYS_PER_WEEK;
-      const updated: World = {
-        ...w,
-        cash: nextCash,
-        reputation: clamp(w.reputation + result.reputationDelta, 0, 100),
-        lastWeekProfit: result.profit,
-        week: rolloverWeek ? w.week + 1 : w.week,
-        isBankrupt: w.isBankrupt || hitsLiquidityTrap(nextCash),
-        // Objective state was evaluated inside commitDay (the sim commit
-        // point); the hook only stores the result.
-        objectives: committedWorld.objectives,
-        tournaments: completedTournament.world.tournaments,
-      };
-      return prepareTournamentDay(courseRef.current, updated, nextDayIndex).world;
-    });
     const nextDayIndex = (live.dayIndex + 1) % DAYS_PER_WEEK;
+    const nextCourse = { ...courseRef.current, condition: clamp(courseRef.current.condition + result.conditionDelta, 0, 1) };
+    courseRef.current = nextCourse;
+    setCourse(() => nextCourse);
     const nextCalendarWorld: World = {
-      ...tournament.world,
-      week: nextDayIndex === 0 ? tournament.world.week + 1 : tournament.world.week,
+      ...committedWorld,
+      week: closesWeek ? committedWorld.week + 1 : committedWorld.week,
+      lastWeekProfit: closesWeek && completedWeek ? completedWeek.profit : worldRef.current.lastWeekProfit,
+      tournaments: tournament.world.tournaments,
     };
-    const preparedNext = prepareTournamentDay(courseRef.current, nextCalendarWorld, nextDayIndex);
-    const next = createLiveState(courseRef.current, preparedNext.world, nextDayIndex);
+    const preparedNext = prepareTournamentDay(nextCourse, nextCalendarWorld, nextDayIndex);
+    worldRef.current = preparedNext.world;
+    setWorld(() => preparedNext.world);
+    if (closesWeek) weekLedgerRef.current = createWeekLedger(preparedNext.world.week);
+    const next = createLiveState(nextCourse, preparedNext.world, nextDayIndex);
     liveRef.current = next;
     golfersRef.current = [];
     selectedIdRef.current = null;
     setSelectedId(null);
-    onDayRef.current?.(result, snapshotLiveSimulation({
+    const snapshot = snapshotLiveSimulation({
       state: next,
       pendingCash: 0,
       speed: speedRef.current,
       selectedGolferId: null,
-    }));
+      clockRemainderMinutes: clockRemainderRef.current,
+      weekLedger: weekLedgerRef.current,
+    });
+    onDayRef.current?.(result, snapshot, completedWeek ? {
+      week: completedWeekNumber,
+      result: completedWeek,
+      resumeSpeed,
+      cash: preparedNext.world.cash,
+      reputation: preparedNext.world.reputation,
+    } : undefined);
     setStatus((s) => ({
       ...s,
       dayIndex: next.dayIndex,
@@ -370,6 +427,27 @@ export function useLiveSimulation(args: {
     }));
   }, [flushCash, setCourse, setWorld]);
 
+  const advanceSimulation = useCallback((live: LiveState, realMs: number) => {
+    const clock = consumeClock(realMs, speedRef.current, clockRemainderRef.current);
+    clockRemainderRef.current = clock.remainderMinutes;
+    if (clock.steps === 0) return;
+    const previousRender = golfersRef.current;
+    for (let step = 0; step < clock.steps && !live.dayOver; step++) {
+      const ev = stepLive(live, courseRef.current, FIXED_GAME_STEP_MINUTES);
+      for (const round of ev.completedRounds) onRoundRef.current?.(round, live.dayIndex);
+      if (ev.cashDelta > 0) {
+        pendingCashRef.current += ev.cashDelta;
+        onCashRef.current?.();
+      }
+    }
+    const nextRender = buildRenderData(live);
+    golfersRef.current = nextRender;
+    const eventCap = speedRef.current === "4x" ? 2 : speedRef.current === "2x" ? 3 : 6;
+    for (const audioEvent of deriveLiveAudioEvents(previousRender, nextRender, courseRef.current).slice(0, eventCap)) {
+      onAudioRef.current?.(audioEvent);
+    }
+  }, [buildRenderData]);
+
   // Main clock loop.
   useEffect(() => {
     if (!enabled) return;
@@ -389,23 +467,7 @@ export function useLiveSimulation(args: {
       const realDtSec = Math.min(0.1, (ts - last) / 1000); // clamp big gaps
       lastTsRef.current = ts;
 
-      const gmPerSec = LIVE.speed[speedRef.current];
-      if (gmPerSec > 0) {
-        const dtMin = realDtSec * gmPerSec;
-        const previousRender = golfersRef.current;
-        const ev = stepLive(live, courseRef.current, dtMin);
-        for (const round of ev.completedRounds) onRoundRef.current?.(round, live.dayIndex);
-        if (ev.cashDelta > 0) {
-          pendingCashRef.current += ev.cashDelta;
-          onCashRef.current?.();
-        }
-        const nextRender = buildRenderData(live);
-        golfersRef.current = nextRender;
-        const eventCap = speedRef.current === "3x" ? 2 : speedRef.current === "2x" ? 3 : 6;
-        for (const audioEvent of deriveLiveAudioEvents(previousRender, nextRender, courseRef.current).slice(0, eventCap)) {
-          onAudioRef.current?.(audioEvent);
-        }
-      }
+      advanceSimulation(live, realDtSec * 1000);
 
       // Publish status (clock, on-course, selected golfer) on a throttle even
       // while paused, so the inspector and clock stay responsive.
@@ -425,7 +487,7 @@ export function useLiveSimulation(args: {
       rafRef.current = null;
       lastTsRef.current = null;
     };
-  }, [buildRenderData, enabled, flushCash, publishStatus, finishDay]);
+  }, [advanceSimulation, enabled, flushCash, publishStatus, finishDay]);
 
   const liveActive = speed !== "paused" || status.onCourse > 0;
 
@@ -437,6 +499,8 @@ export function useLiveSimulation(args: {
       pendingCash: pendingCashRef.current,
       speed: speedRef.current,
       selectedGolferId: selectedIdRef.current,
+      clockRemainderMinutes: clockRemainderRef.current,
+      weekLedger: weekLedgerRef.current,
     });
   }, []);
 
@@ -445,6 +509,8 @@ export function useLiveSimulation(args: {
       liveRef.current = null;
       golfersRef.current = [];
       pendingCashRef.current = 0;
+      clockRemainderRef.current = 0;
+      weekLedgerRef.current = createWeekLedger(worldRef.current.week);
       selectedIdRef.current = null;
       setSelectedId(null);
       speedRef.current = "paused";
@@ -456,6 +522,10 @@ export function useLiveSimulation(args: {
     liveRef.current = restored.state;
     golfersRef.current = buildRenderData(restored.state);
     pendingCashRef.current = restored.pendingCash;
+    clockRemainderRef.current = restored.clockRemainderMinutes;
+    weekLedgerRef.current = restored.weekLedger.days.length === 0 && restored.weekLedger.week === 1 && worldRef.current.week !== 1
+      ? createWeekLedger(worldRef.current.week)
+      : restored.weekLedger;
     speedRef.current = restored.speed;
     setSpeedState(restored.speed);
     const selected = buildSelected(restored.state, restored.selectedGolferId);
@@ -493,6 +563,7 @@ export function useLiveSimulation(args: {
         pinRotation: restored.state.tournament.pinRotation,
         standings: sortedStandings(restored.state.tournament.standings),
       } : null,
+      pace: paceStatus(restored.state, courseRef.current),
     });
     return true;
   }, [buildRenderData]);
@@ -501,22 +572,11 @@ export function useLiveSimulation(args: {
     if (!enabled || !Number.isFinite(ms) || ms <= 0) return;
     const live = liveRef.current ?? createLiveState(courseRef.current, worldRef.current, 0);
     liveRef.current = live;
-    const gmPerSec = LIVE.speed[speedRef.current];
-    if (gmPerSec <= 0) return;
-    const previousRender = golfersRef.current;
-    const ev = stepLive(live, courseRef.current, Math.min(2, ms / 1000) * gmPerSec);
-    for (const round of ev.completedRounds) onRoundRef.current?.(round, live.dayIndex);
-    if (ev.cashDelta > 0) pendingCashRef.current += ev.cashDelta;
-    const nextRender = buildRenderData(live);
-    golfersRef.current = nextRender;
-    const eventCap = speedRef.current === "3x" ? 2 : speedRef.current === "2x" ? 3 : 6;
-    for (const audioEvent of deriveLiveAudioEvents(previousRender, nextRender, courseRef.current).slice(0, eventCap)) {
-      onAudioRef.current?.(audioEvent);
-    }
+    advanceSimulation(live, Math.min(2_000, ms));
     flushCash();
     publishStatus(live);
     if (live.dayOver) finishDay(live);
-  }, [buildRenderData, enabled, finishDay, flushCash, publishStatus]);
+  }, [advanceSimulation, enabled, finishDay, flushCash, publishStatus]);
 
   const setSpeed = useCallback((next: SpeedName) => {
     // Update the loop's ref synchronously. App-shell pause must freeze the
@@ -525,6 +585,17 @@ export function useLiveSimulation(args: {
     setSpeedState(next);
     setStatus((current) => ({ ...current, speed: next }));
   }, []);
+
+  const setPacePreset = useCallback((preset: PacePreset) => {
+    const courseId = activeCourseLayout(courseRef.current).id;
+    setCourse((current) => updateLayout(current, courseId, { operations: PACE_PRESETS[preset] }));
+  }, [setCourse]);
+
+  const updatePaceOperations = useCallback((patch: CourseOperationsPatch) => {
+    const courseId = activeCourseLayout(courseRef.current).id;
+    const current = courseOperations(courseRef.current, courseId);
+    setCourse((course) => updateLayout(course, courseId, { operations: { ...current, ...patch, beverage: { ...current.beverage, ...patch.beverage } } }));
+  }, [setCourse]);
 
   return {
     status,
@@ -537,5 +608,7 @@ export function useLiveSimulation(args: {
     getSnapshot,
     restoreSnapshot,
     advanceTime,
+    setPacePreset,
+    updatePaceOperations,
   };
 }

@@ -1,16 +1,19 @@
 import type { SpeedName } from "./liveConfig";
 import type { Arrival, Golfer, LiveState, Segment } from "./types";
+import { createWeekLedger, normalizeWeekLedger, type LiveWeekLedger } from "./weeklyLedger";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
 const MAX_SEGMENTS_PER_GOLFER = 5_000;
 
 export interface LiveSimulationSnapshotV1 {
-  version: 1;
+  version: 1 | 2 | 3;
   state: Omit<LiveState, "walkCache">;
   pendingCash: number;
   speed: SpeedName;
   selectedGolferId: number | null;
+  clockRemainderMinutes?: number;
+  weekLedger?: LiveWeekLedger;
 }
 
 export interface RestoredLiveSimulation {
@@ -18,6 +21,8 @@ export interface RestoredLiveSimulation {
   pendingCash: number;
   speed: SpeedName;
   selectedGolferId: number | null;
+  clockRemainderMinutes: number;
+  weekLedger: LiveWeekLedger;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -99,8 +104,9 @@ function tournament(value: unknown): boolean {
     finite(row.scoreToPar) && typeof row.finished === "boolean");
 }
 
-function validSpeed(value: unknown): value is SpeedName {
-  return value === "paused" || value === "1x" || value === "2x" || value === "3x";
+function normalizedSpeed(value: unknown): SpeedName | null {
+  if (value === "3x") return "4x";
+  return value === "paused" || value === "1x" || value === "2x" || value === "4x" ? value : null;
 }
 
 function cloneSerializableState(state: Omit<LiveState, "walkCache">): Omit<LiveState, "walkCache"> {
@@ -112,20 +118,24 @@ export function snapshotLiveSimulation(args: {
   pendingCash: number;
   speed: SpeedName;
   selectedGolferId: number | null;
+  clockRemainderMinutes?: number;
+  weekLedger?: LiveWeekLedger;
 }): LiveSimulationSnapshotV1 {
   const { walkCache: _walkCache, ...serializable } = args.state;
   void _walkCache;
   return {
-    version: 1,
+    version: 3,
     state: cloneSerializableState(serializable),
     pendingCash: args.pendingCash,
     speed: args.speed,
     selectedGolferId: args.selectedGolferId,
+    clockRemainderMinutes: Math.max(0, args.clockRemainderMinutes ?? 0),
+    weekLedger: args.weekLedger ?? createWeekLedger(1),
   };
 }
 
 export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | null {
-  if (!isRecord(input) || input.version !== 1 || !isRecord(input.state)) return null;
+  if (!isRecord(input) || (input.version !== 1 && input.version !== 2 && input.version !== 3) || !isRecord(input.state)) return null;
   const state = input.state;
   if (!Array.isArray(state.golfers) || state.golfers.length > MAX_GOLFERS || state.golfers.some((g) => !golfer(g))) return null;
   if (!Array.isArray(state.arrivals) || state.arrivals.length > MAX_ARRIVALS || state.arrivals.some((a) => !arrival(a))) return null;
@@ -143,7 +153,9 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
     if (!finite(state[key])) return null;
   }
   if (typeof state.dayOver !== "boolean") return null;
-  if (!finite(input.pendingCash) || input.pendingCash < 0 || !validSpeed(input.speed)) return null;
+  const speed = normalizedSpeed(input.speed);
+  if (!finite(input.pendingCash) || input.pendingCash < 0 || !speed) return null;
+  if (input.clockRemainderMinutes != null && (!finite(input.clockRemainderMinutes) || input.clockRemainderMinutes < 0)) return null;
   if (input.selectedGolferId !== null && !Number.isInteger(input.selectedGolferId)) return null;
 
   const serializable = cloneSerializableState(state as unknown as Omit<LiveState, "walkCache">);
@@ -153,7 +165,23 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
     purchasedSegmentIndexes: g.purchasedSegmentIndexes ?? [],
     teeSet: g.teeSet ?? "member",
     pinRotation: g.pinRotation ?? "A",
+    groupId: g.groupId ?? `${g.courseId ?? "course"}-solo-${g.id}`,
+    groupStartedAt: g.groupStartedAt ?? serializable.dayMinute,
+    waitMinutes: g.waitMinutes ?? 0,
+    pacePreference: g.pacePreference ?? g.personality.skill,
+    marshalInterventions: g.marshalInterventions ?? 0,
+    forcedPickups: g.forcedPickups ?? 0,
+    drinksServed: g.drinksServed ?? 0,
+    alcoholUnits: g.alcoholUnits ?? 0,
+    hospitalityDelay: g.hospitalityDelay ?? 0,
+    disorderIncidents: g.disorderIncidents ?? 0,
   }));
+  serializable.arrivals = serializable.arrivals.map((arrival, index) => ({ ...arrival, groupId: arrival.groupId ?? `${arrival.courseId ?? "course"}-solo-arrival-${index}` }));
+  serializable.groups ??= serializable.golfers.map((g) => ({ id: g.groupId!, courseId: g.courseId ?? "course-primary", bookedAt: g.groupStartedAt ?? serializable.dayMinute, startedAt: g.groupStartedAt ?? serializable.dayMinute, golferIds: [g.id], waitMinutes: g.waitMinutes ?? 0, blocked: false, interventions: g.marshalInterventions ?? 0, pickups: g.forcedPickups ?? 0, finishedAt: null }));
+  serializable.pace ??= { groupsStarted: serializable.groups.length, groupsFinished: 0, totalWaitMinutes: 0, marshalInterventions: 0, forcedPickups: 0, beverageRevenue: 0, alcoholicDrinks: 0, serviceRefusals: 0, disorderIncidents: 0 };
+  serializable.marshalCoverageByCourse ??= {};
+  serializable.beverageCoverageByCourse ??= {};
+  serializable.operationsByCourse ??= {};
   serializable.concessionCollected ??= 0;
   serializable.concessionTransactions ??= [];
   serializable.concessionByType ??= {};
@@ -176,7 +204,9 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
   return {
     state: { ...serializable, walkCache: new Map() },
     pendingCash: input.pendingCash,
-    speed: input.speed,
+    speed,
     selectedGolferId: input.selectedGolferId as number | null,
+    clockRemainderMinutes: finite(input.clockRemainderMinutes) ? input.clockRemainderMinutes : 0,
+    weekLedger: normalizeWeekLedger(input.weekLedger, 1),
   };
 }

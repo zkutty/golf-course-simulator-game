@@ -37,10 +37,13 @@ const checks = {
   immutableVersionedCache: worker.includes(`coursecraft-${pkg.version}`),
   scopedPrecache: worker.includes(".map(scoped)") && worker.includes("self.registration.scope"),
   relativeManifest: manifest.id === "./" && manifest.start_url === "./" && manifest.scope === "./" && manifest.icons.every((icon) => !icon.src.startsWith("/")),
-  deploymentBaseBuilt: index.includes(config.deploymentBase),
+  deploymentBaseBuilt: config.deploymentBase === "/"
+    ? /(?:src|href)="\/(?:assets|icons|manifest)/.test(index) && !index.includes("/golf-course-simulator-game/")
+    : index.includes(config.deploymentBase),
   noSourceMaps: !readdirSync(new URL("dist/assets", root)).some((name) => name.endsWith(".map")),
   noSecretPatterns: secretHits.length === 0,
   noRoutineConsoleOutsideReviewedGuards: consoleHits.length === 0,
+  playtestNoIndex: index.includes('name="robots" content="noindex, nofollow, noarchive"'),
   releaseSourceClean: releaseSourceChanges.length === 0,
 };
 const report = {
@@ -55,7 +58,7 @@ const report = {
   findings: { secretHits, consoleHits, releaseSourceChanges },
   acceptedWarnings: [
     "Vite reports the existing saveStore static/dynamic import overlap.",
-    "The main minified application chunk is approximately 1.08 MB (approximately 338 KB gzip).",
+    "The main minified application chunk is approximately 1.10 MB (approximately 343 KB gzip).",
     "ESLint reports seven pre-existing react-hooks warnings and zero errors."
   ]
 };

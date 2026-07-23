@@ -16,6 +16,7 @@ export interface Personality {
   patience: number; // 0..1 tolerance for slow play and hard holes
   spendPropensity: number; // 0..1 likelihood to spend on concessions (M4)
   prefs: StylePrefs;
+  pacePreference?: number; // 0 enjoys a social pace .. 1 expects brisk play
 }
 
 // Per-archetype centre of the personality distribution. Individuals are sampled
@@ -60,6 +61,7 @@ export function rollPersonality(
       scenery: clampSigned(base.prefs.scenery + bell(rng) * s),
       price: clampSigned(base.prefs.price + bell(rng) * s),
     },
+    pacePreference: clamp01(base.skill * 0.55 + (1 - base.patience) * 0.25 + 0.2 + bell(rng) * s),
   };
 }
 

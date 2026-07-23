@@ -1,5 +1,27 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+Current request (2026-07-22): Implement M29 Pace of Play & Hospitality Operations and create its Linear milestone/issues.
+
+## 2026-07-22 — Pace of Play implementation in progress
+
+- Added per-course Relaxed/Balanced/Brisk operating policies, adjustable tee intervals, group sizes, starter gaps, enforcement, tee guidance, and beverage service.
+- Replaced solo tee-sheet planning with deterministic booked groups and downstream group blocking; tracked group wait, interventions, pickups, beverage revenue, alcohol, refusals, and incidents.
+- Added named persisted staff roster migration from staff level, course assignments, marshal coverage, beverage-cart coverage, live pace controls, and a pace dashboard.
+- Advanced saves to schema v11 and live snapshots to v2 with migration defaults for policies, groups, pace data, staff, and golfer hospitality state.
+- Focused live/save tests and production build pass. Full regression, browser interaction/visual verification, and Linear creation remain.
+
+Current prompt: Implement M29 Cloudflare playtest hosting and create the Linear milestone/issues.
+
+## 2026-07-22 — M29 Cloudflare playtest hosting implemented
+
+- Hosting direction: Cloudflare Workers Static Assets on an unlisted `workers.dev` URL, local saves only, automatic deployment after successful `main` CI.
+- Added root-path PWA hosting configuration, security/cache/noindex headers, optional Cloudflare Web Analytics, privacy-sanitized Sentry error reporting, and tested-artifact deployment gating.
+- GitHub Pages remains a temporary fallback until two consecutive Cloudflare deployments and deployed browser/PWA acceptance pass.
+- Published the clean production build at `https://coursecraft-playtest.zbkutlow.workers.dev` (Cloudflare version `25e8ee12-b118-46d5-aa3a-ff2e1faef1fd`). Live root/deep-route headers, offline reload, and local save persistence pass.
+- Verification passes: typecheck, 51 Vitest files / 328 passed with one intentional skip, production build, lint with seven pre-existing hook warnings and no errors, Wrangler dry run, PWA smoke, and the bundled web-game client. Title and gameplay captures were visually inspected.
+- Production dependency audit is clean after pinning the transitive XML parser fix. Sentry and Cloudflare Web Analytics remain dormant until their external projects and repository variables are configured.
+- Created Linear milestone `M29: Cloudflare Playtest Hosting & Telemetry`: parent ZK-271 with children ZK-272 through ZK-275. ZK-272 is Done; CI activation, telemetry credentials, cross-browser/cutover validation, and the two-deployment stability gate remain tracked.
+
 Previous prompt: Let’s do m14 in linear for this project
 
 ## 2026-07-18 — M14 implementation
@@ -444,3 +466,38 @@ Previous prompt: Let’s do m14 in linear for this project
 - The localized floating preview communicates changed/invalid/unchanged/repeated tiles and exact shortfall. Single-click remains a one-tile stroke.
 - Full CI suite passes: 50 files, 327 tests passed, one intentional skip, including the 10,000-sequence reducer fuzz test. ZK-267 Playwright acceptance, production build, lint/i18n guards, typecheck, and `git diff --check` pass; lint retains seven pre-existing hook warnings and no errors.
 - Bundled-client smoke rendered/extracted a responsive 220×140 estate without an error artifact. Linear ZK-267 has the implementation evidence and is Done.
+
+## 2026-07-22 — direct additional tee-box management complete
+
+- Added schema-v10 tee-specific Auto/Manual par settings while preserving Member `parMode`/`parManual` compatibility.
+- Projected each selected tee/pin/par combination through the shared shot solver for independent route, yardage, par, ratings, and live-round planning.
+- Added direct selection for every tee marker, a post-hole additional-tee offer, priced two-step map placement, move/removal controls, last-tee warning, and atomic reducer affordability.
+- Added localized, accessible setup/par controls and concise `render_game_to_text` coverage for selected tee and pending construction.
+- Verification passes: 51 Vitest files / 329 tests with one intentional skip, production build, typecheck, lint/i18n, two M23 Playwright scenarios, and the bundled web-game client. The full setup UI and rendered course captures were visually inspected.
+- Created Linear follow-up ZK-270 in Backlog with High priority, agreed labels/relations, complete acceptance criteria, and implementation evidence.
+
+## 2026-07-22 — ZK-276 Workers blank course renderer
+
+- Reproduced the deployed blank viewport at `coursecraft-playtest.zbkutlow.workers.dev`; React menus load, but Pixi aborts initialization because the strict production CSP disallows runtime `unsafe-eval`.
+- Preserved the strict CSP and installed Pixi's supported strict-CSP adapter before renderer startup. Also surfaced a localized renderer failure card instead of leaving a silent blank viewport.
+- Added PWA regression coverage that launches gameplay under the deployed CSP, rejects a blank canvas using sampled pixel diversity, and fails on page errors before exercising service-worker offline reload and local save persistence.
+- Deployed Cloudflare Workers version `d9d85b96-612e-4e67-b9ad-229c27f22bdc`. Production verification passes with a rendered course, no page-error artifact, strict live headers without `unsafe-eval`, service-worker install, offline reload, and saved-state persistence.
+- Final gates: typecheck, production build/Wrangler dry run, focused ESLint (three existing hook-cleanup warnings, no errors), 51 Vitest files / 332 passed with one intentional skip, and `git diff --check`. Repository-wide i18n remains blocked by unrelated uncommitted M29 strings in `LiveOverview.tsx`.
+
+## 2026-07-22 — M30 pace of play and hospitality operations
+
+- Added versioned course operations with relaxed/balanced/brisk pace presets, grouped tee sheets, downstream blocking, time-par tracking, skill/tee/recovery pace effects, and segment-specific demand response.
+- Added named course-assigned staff, marshal coverage and graduated enforcement that excludes traffic-blocked groups, plus beverage coverage, service delays, revenue, alcohol impairment/refusals, and deterministic disorder incidents.
+- Added a localized Pace tab with policy controls and live wait/coverage/enforcement/hospitality metrics; staff assignments and all new live state persist through save schema v11 and live snapshot v2 migrations.
+- Verification passes: production build, i18n/lint guards (seven existing hook warnings, no errors), `git diff --check`, browser render/state smoke, and 51 Vitest files with 332 passed and one intentional skip.
+- Created Linear milestone `M30: Pace of Play & Hospitality Operations` with ZK-277 and ZK-278 Done and ZK-279 In Progress. The workspace free-plan issue cap prevented creating the longer issue series, so ZK-279 carries the remaining rolling-history, daylight/refund, bottleneck/advisor, reporting, and certification checklist.
+
+## 2026-07-22 — M31 live-time authority and weekly consolidation
+
+- Replaced frame-sized live advancement with one deterministic 0.05-game-minute fixed-step accumulator shared by animation-frame and test/manual advancement. Pause, 1×, 2×, and 4× are now the literal player-facing tiers; legacy 3× preferences and snapshots migrate to 4×.
+- Added a versioned, persisted seven-day ledger. Daily closes append once, while only Sunday aggregates revenue, costs, profit, satisfaction, concessions, and per-course performance into the authoritative weekly result.
+- Removed the player-facing instant-week action from App, HUD, and sidebar paths. Weekly history, events, achievements, capital reset, and tutorial progression now consume the live Sunday completion callback.
+- Added Week/Day context to the clock and an accessible Sunday report that pauses time, advances to the next Monday, and resumes the player's prior running speed after Continue.
+- Verification passes: 53 Vitest files / 339 tests with one intentional skip; 80 focused live-clock/ledger/persistence tests; nine focused Playwright golden/live-progression scenarios; production build; typecheck; lint/i18n with seven pre-existing hook warnings and no errors; `git diff --check`; bundled 100-golfer client smoke; and the 36-hole/100-golfer performance fixture at 0.34ms renderer work against the 8ms budget.
+- The legacy M14 end-to-end tutorial fixture still stalls while constructing its nine-hole course before it reaches the changed weekly-report step. Dedicated Sunday report/progression coverage passes, and the M14 week-close calls have been migrated away from the removed instant-week button.
+- Created Linear milestone `M31: Live-Time Authority & Weekly Consolidation` at 100% with ZK-318 through ZK-322 Done. Dependencies encode clock → ledger → live-only/UI → certification, and the ledger/certification tickets relate to M30 daylight settlement and historical reporting.

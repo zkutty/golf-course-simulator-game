@@ -8,7 +8,6 @@ import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import type { BuildingTier, ConcessionType, DecorationKind, DecorationRotation, ParSetting, PinRotation, Point, TeeSet, Terrain, WeekResult } from "./game/models/types";
-import { tickWeek } from "./game/sim/tickWeek";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
 import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStore";
 import { SaveLoadModal } from "./ui/SaveLoadModal";
@@ -79,7 +78,7 @@ import { INITIAL_SCREEN_FLOW, reduceScreenFlow } from "./app/screenFlow";
 import { PauseOverlay } from "./ui/appShell/PauseOverlay";
 import { LoadingCard } from "./ui/appShell/LoadingCard";
 import { SettingsModal } from "./ui/SettingsModal";
-import type { SpeedName } from "./game/live/liveConfig";
+import { LIVE, type SpeedName } from "./game/live/liveConfig";
 import { courseForCourseSetup, getParSetting, getTeeBox, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSetup } from "./game/models/courseSetup";
 import { eventMatchesBinding } from "./accessibility/keybindings";
 import { T } from "./i18n/T";
@@ -113,6 +112,9 @@ import { debugLog } from "./utils/debugLog";
 import { CourseManagerPanel } from "./ui/CourseManagerPanel";
 import { activeCourseLayout, courseForLayout, normalizeCourseLayouts, selectLayout, updateLayout } from "./game/models/courseLayouts";
 import { analyzeArchitecture } from "./game/architecture/architecture";
+import { normalizedStaff, staffFromLevel } from "./game/live/pace";
+import { WeekCloseReport } from "./ui/WeekCloseReport";
+import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -220,6 +222,11 @@ export default function App() {
     byTerrainSpent: {} as Partial<Record<Terrain, number>>,
     byTerrainTiles: {} as Partial<Record<Terrain, number>>,
   }));
+  const [pendingWeekReport, setPendingWeekReport] = useState<{
+    week: number;
+    result: WeekResult;
+    resumeSpeed: Exclude<SpeedName, "paused">;
+  } | null>(null);
 
   // Hover state moved to refs in canvas component to avoid React re-renders
 
@@ -312,39 +319,43 @@ export default function App() {
     world,
     setWorld,
     setCourse,
-    onDayCommitted: (result, liveSnapshot) => {
-      const report: WeekResult = {
-        visitors: result.rounds,
-        revenue: result.revenue,
-        revenueBreakdown: result.revenueBreakdown,
-        costs: result.costs,
-        profit: result.profit,
-        avgSatisfaction: result.avgSatisfaction,
-        reputationDelta: result.reputationDelta,
-        visitorNoise: 0,
-        perCourse: result.perCourse,
-      };
-      setLast(report);
-      setHistory((h) => [...h, report]);
-      const nextRecords = recordWeek(recordsRef.current, {
-        week: gameStateRef.current.world.week,
-        cash: gameStateRef.current.world.cash + result.profit,
-        rating: computeCourseRatingAndSlope(gameStateRef.current.course).courseRating,
-        reputation: gameStateRef.current.world.reputation + result.reputationDelta,
-        result: report,
-      });
-      recordsRef.current = nextRecords;
-      setRecords(nextRecords);
-      publishRetentionEvent({
-        type: result.profit >= 0 ? "profitable-week" : "loss-week",
-        category: "economy",
-        severity: Math.abs(result.profit) >= 10_000 ? "notable" : "routine",
-        message: t("retention.weekProfit", { week: gameStateRef.current.world.week, profit: formatCurrency(result.profit) }),
-        week: gameStateRef.current.world.week,
-        day: result.dayIndex,
-      });
-      if (nextRecords.attendanceRecord?.week === gameStateRef.current.world.week) publishRetentionEvent({ type: "attendance-record", category: "milestone", severity: "notable", message: t("retention.attendance", { rounds: result.rounds }), week: gameStateRef.current.world.week, day: result.dayIndex });
-      checkAchievements(nextRecords);
+    onDayCommitted: (result, liveSnapshot, completedWeek) => {
+      if (completedWeek) {
+        const report: WeekResult = {
+          ...completedWeek.result,
+          capitalSpending: {
+            spent: capital.spent,
+            refunded: capital.refunded,
+            net: capital.spent - capital.refunded,
+            byTerrainSpent: capital.byTerrainSpent,
+            byTerrainTiles: capital.byTerrainTiles,
+          },
+        };
+        setLast(report);
+        historyRef.current = [...historyRef.current, report];
+        setHistory(historyRef.current);
+        const nextRecords = recordWeek(recordsRef.current, {
+          week: completedWeek.week,
+          cash: completedWeek.cash,
+          rating: computeCourseRatingAndSlope(gameStateRef.current.course).courseRating,
+          reputation: completedWeek.reputation,
+          result: report,
+        });
+        recordsRef.current = nextRecords;
+        setRecords(nextRecords);
+        publishRetentionEvent({
+          type: report.profit >= 0 ? "profitable-week" : "loss-week",
+          category: "economy",
+          severity: Math.abs(report.profit) >= 10_000 ? "notable" : "routine",
+          message: t("retention.weekProfit", { week: completedWeek.week, profit: formatCurrency(report.profit) }),
+          week: completedWeek.week,
+          day: 6,
+        });
+        if (nextRecords.attendanceRecord?.week === completedWeek.week) publishRetentionEvent({ type: "attendance-record", category: "milestone", severity: "notable", message: t("retention.attendance", { rounds: report.visitors }), week: completedWeek.week, day: 6 });
+        setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
+        setPendingWeekReport({ week: completedWeek.week, result: report, resumeSpeed: completedWeek.resumeSpeed });
+        checkAchievements(nextRecords);
+      }
       // Rotating autosave after every committed game day (ZKU-174). The
       // setState reader snapshots post-commit state without extra renders.
       if (appProfile.gameplay.autosaveCadence === "off") return;
@@ -488,7 +499,7 @@ export default function App() {
       live.restoreSnapshot(snapshotLiveSimulation({
         state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),
         pendingCash: 0,
-        speed: isPerfMeasurement ? "paused" : "3x",
+        speed: isPerfMeasurement ? "paused" : "4x",
         selectedGolferId: null,
       }));
     }
@@ -498,7 +509,7 @@ export default function App() {
     if (isM27Fixture && !isPerfMeasurement) setShowCourseManager(true);
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
     flowDispatch({ type: "ENTER_GAME" });
-    live.setSpeed((isPerfFixture || isM27Fixture) && !isPerfMeasurement ? "3x" : "paused");
+    live.setSpeed((isPerfFixture || isM27Fixture) && !isPerfMeasurement ? "4x" : "paused");
   }, [dispatch, live, t]);
 
   const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);
@@ -574,11 +585,11 @@ export default function App() {
         event.preventDefault();
         toggleClock();
       } else if (eventMatchesBinding(event, bindings.speed1)) {
-        event.preventDefault(); live.setSpeed("1x");
+        event.preventDefault(); resumeSpeedRef.current = "1x"; live.setSpeed("1x");
       } else if (eventMatchesBinding(event, bindings.speed2)) {
-        event.preventDefault(); live.setSpeed("2x");
+        event.preventDefault(); resumeSpeedRef.current = "2x"; live.setSpeed("2x");
       } else if (eventMatchesBinding(event, bindings.speed3)) {
-        event.preventDefault(); live.setSpeed("3x");
+        event.preventDefault(); resumeSpeedRef.current = "4x"; live.setSpeed("4x");
       } else if (eventMatchesBinding(event, bindings.terrainTool)) {
         event.preventDefault(); setEditorMode("PAINT");
       } else if (eventMatchesBinding(event, bindings.obstacleTool)) {
@@ -942,6 +953,7 @@ export default function App() {
     recordsRef.current = freshRecords;
     setRecords(freshRecords);
     setLast(undefined);
+    setPendingWeekReport(null);
     setEditorMode("PAINT");
     setActiveHoleIndex(0);
     setWizardStep("TEE");
@@ -1054,6 +1066,7 @@ export default function App() {
     live.restoreSnapshot(loaded.live);
     setHistory(loaded.history ?? []);
     setLast(loaded.history?.[loaded.history.length - 1]);
+    setPendingWeekReport(null);
     const loadedRecords = loaded.records ?? emptyCourseRecords(loaded.course.holes.length);
     recordsRef.current = loadedRecords;
     setRecords(loadedRecords);
@@ -1123,7 +1136,7 @@ export default function App() {
         } : null,
       },
       camera: { center: audioCameraCenter, viewMode, renderer: "pixi" },
-      simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
+      simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, weekReport: pendingWeekReport ? { week: pendingWeekReport.week, profit: pendingWeekReport.result.profit } : null, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, pace: live.status.pace, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       progression: { panelOpen: showProgression, tier: reputationTier(world.reputation).id, staffCap: reputationTier(world.reputation).staffCap, buildingTierCap: reputationTier(world.reputation).buildingTierCap },
       editor: { mode: editorMode, selectedTerrain: selected, selectedDecoration: decorationKind, decorationRotation, decorationSpan, decorationAction, activeHole: activeHoleIndex + 1, selectedTeeSet, teePlacementPending: pendingTeePlacement ? { teeSet: pendingTeePlacement.teeSet, point: pendingTeePlacement.point, netCost: pendingTeePlacement.netCost } : null },
@@ -1145,7 +1158,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, architectureReport, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, pendingTeePlacement, photoMode, records, screen, selected, selectedParcelId, selectedTeeSet, showCourseManager, showLandOffice, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, architectureReport, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, pendingTeePlacement, pendingWeekReport, photoMode, records, screen, selected, selectedParcelId, selectedTeeSet, showCourseManager, showLandOffice, showLiveOverview, showProgression, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1161,6 +1174,7 @@ export default function App() {
           dirty,
           speed: live.speed,
           dayMinute: liveSnapshot?.state.dayMinute ?? 0,
+          weekReportOpen: pendingWeekReport != null,
           golferPositions: liveSnapshot?.state.golfers.map((golfer) => [golfer.id, golfer.pos.x, golfer.pos.y]) ?? [],
           week: current.world.week,
           cash: current.world.cash,
@@ -1175,6 +1189,26 @@ export default function App() {
       },
       setPaintCash: (cash: number) => {
         setGameState((current) => ({ ...current, world: { ...current.world, cash } }));
+      },
+      startWeekCloseFixture: async (weekOverride?: number) => {
+        const course = gameStateRef.current.course;
+        const world = { ...gameStateRef.current.world, week: weekOverride ?? gameStateRef.current.world.week, cash: Math.max(100_000, gameStateRef.current.world.cash), runSeed: 424242, isBankrupt: false, distressWeeks: 0 };
+        dispatch({ type: "LOAD_GAME", course, world });
+        await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+        const state = createLiveState(course, world, 6);
+        state.arrivals = [];
+        state.nextArrivalIdx = 0;
+        state.golfers = [];
+        state.dayMinute = LIVE.day.closeMinute;
+        let weekLedger = createWeekLedger(world.week);
+        for (let dayIndex = 0; dayIndex < 6; dayIndex++) weekLedger = appendDayToLedger(weekLedger, {
+          dayIndex, rounds: 4, revenue: 400,
+          revenueBreakdown: { greenFees: 320, concessions: 80, byConcession: { snack_bar: 80 }, transactions: [] },
+          costs: 250, profit: 150, avgSatisfaction: 82, reputationDelta: .25, conditionDelta: -.001,
+          promoters: 3, detractors: 0, willReturnRate: .8,
+        });
+        live.restoreSnapshot(snapshotLiveSimulation({ state, pendingCash: 0, speed: "4x", selectedGolferId: null, weekLedger }));
+        live.setSpeed("4x");
       },
       runGoldenWeek: async () => {
         const current = gameStateRef.current;
@@ -1191,7 +1225,7 @@ export default function App() {
         const liveSnapshot = snapshotLiveSimulation({
           state: run.live,
           pendingCash: 0,
-          speed: "3x",
+          speed: "4x",
           selectedGolferId: null,
         });
         const payload: SavePayload = {
@@ -1245,10 +1279,10 @@ export default function App() {
         live.restoreSnapshot(snapshotLiveSimulation({
           state: createLiveState(current.course, tournamentWorld, live.status.dayIndex),
           pendingCash: 0,
-          speed: "3x",
+          speed: "4x",
           selectedGolferId: null,
         }));
-        live.setSpeed("3x");
+        live.setSpeed("4x");
       },
       invalidateAndCancelTournamentFixture: () => {
         const current = gameStateRef.current;
@@ -1265,7 +1299,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, screen, t, tutorialProgress]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, pendingWeekReport, screen, t, tutorialProgress]);
 
   function newGameFromMenu() {
     void audio.unlock();
@@ -1965,6 +1999,7 @@ export default function App() {
         ...w,
         cash: nextCash,
         staffLevel: w.staffLevel + 1,
+        staffRoster: staffFromLevel(w.staffLevel + 1, activeLayout.id),
         isBankrupt: w.isBankrupt || nextCash < -10_000,
       };
     });
@@ -2000,31 +2035,6 @@ export default function App() {
     resetSave();
     // Fresh land, same run framing (mode/theme/difficulty), new seed.
     restartRun(currentRunSetup((Date.now() % 1_000_000) | 0));
-  }
-
-  function simulate() {
-    if (world.isBankrupt) return;
-    void audio.unlock();
-    if (soundEnabled) void audio.playSfx("driver");
-    const { course: c2, world: w2, result } = tickWeek(course, world, world.runSeed);
-    const cap = {
-      spent: capital.spent,
-      refunded: capital.refunded,
-      net: capital.spent - capital.refunded,
-      byTerrainSpent: capital.byTerrainSpent,
-      byTerrainTiles: capital.byTerrainTiles,
-    };
-    dispatch({ type: "SIMULATE_WEEK", course: c2, world: w2 });
-    const withCap: WeekResult = { ...result, capitalSpending: cap };
-    setLast(withCap);
-    setHistory((h) => [...h, withCap]);
-    const nextRecords = recordWeek(recordsRef.current, { week: w2.week, cash: w2.cash, rating: computeCourseRatingAndSlope(c2).courseRating, reputation: w2.reputation, result: withCap });
-    recordsRef.current = nextRecords;
-    setRecords(nextRecords);
-    publishRetentionEvent({ type: result.profit >= 0 ? "profitable-week" : "loss-week", category: "economy", severity: Math.abs(result.profit) >= 10_000 ? "notable" : "routine", message: t("retention.weekProfit", { week: w2.week, profit: formatCurrency(result.profit) }), week: w2.week, day: 6 });
-    checkAchievements(nextRecords);
-    setCapital({ spent: 0, refunded: 0, byTerrainSpent: {}, byTerrainTiles: {} });
-    if (result.profit > 0) void audio.playSfx("cash");
   }
 
   const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
@@ -2404,7 +2414,7 @@ export default function App() {
             {showTournaments && !tutorialProgress && <TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
             {showLandOffice && !tutorialProgress && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
             {showCourseManager && !tutorialProgress && <CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onClose={() => setShowCourseManager(false)} />}
-            {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
+            {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
             {teeSetupPrompt && !tutorialProgress && (
               <div data-testid="tee-setup-offer" role="dialog" aria-label={t("courseSetup.offerAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 145, top: 64, right: 16, width: 280, padding: 14 }}>
                 <strong>{t("courseSetup.offerTitle")}</strong>
@@ -2453,9 +2463,16 @@ export default function App() {
             <LiveControls
               status={live.status}
               speed={live.speed}
-              onSetSpeed={live.setSpeed}
+              onSetSpeed={(next) => {
+                if (next === "paused") toggleClock();
+                else {
+                  resumeSpeedRef.current = next;
+                  live.setSpeed(next);
+                }
+              }}
               cash={world.cash}
               reputation={world.reputation}
+              week={world.week}
               onOpenPauseMenu={openPauseMenu}
               onOpenOverview={() => setShowLiveOverview((open) => !open)}
               overviewOpen={showLiveOverview}
@@ -2636,7 +2653,6 @@ export default function App() {
         onSave={onSave}
         onLoad={onLoad}
         onResetSave={onResetSave}
-        simulate={simulate}
         paintError={paintError}
         sculptBrush={sculptBrush}
         setSculptBrush={setSculptBrush}
@@ -2686,6 +2702,11 @@ export default function App() {
         </div>
         </div>
         <NewsTicker visible={!tutorialProgress && !photoMode && appProfile.gameplay.tickerVisible} onJump={jumpToEvent} onHide={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: false } })} />
+        {pendingWeekReport && <WeekCloseReport week={pendingWeekReport.week} result={pendingWeekReport.result} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={() => {
+          const resumeSpeed = pendingWeekReport.resumeSpeed;
+          setPendingWeekReport(null);
+          live.setSpeed(resumeSpeed);
+        }} />}
         {flow.paused && (
           <PauseOverlay
             career={world.mode === "career"}

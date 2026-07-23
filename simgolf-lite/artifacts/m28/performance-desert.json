@@ -1,0 +1,24 @@
+{
+  "theme": "desert",
+  "fixture": "perfFixture",
+  "coldStartupMs": 967,
+  "fixtureLoadMs": 4544,
+  "renderer": {
+    "fps": 29.43196311193956,
+    "meanMs": 33.976666666666674,
+    "p95Ms": 50.099999999998545,
+    "maxMs": 66.70000000000073,
+    "workMs": 0.2938888927300771,
+    "sections": {
+      "hover+flags": 0.07888889180289374,
+      "water+sway": 0.08277777896987068,
+      "ambient": 0.01277777718173133,
+      "golfers+emotes": 0.11944444477558136
+    },
+    "golfers": 100,
+    "bubbles": 0,
+    "chunksVisible": 20,
+    "chunksTotal": 35,
+    "objects": 1048
+  }
+}

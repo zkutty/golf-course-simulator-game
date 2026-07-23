@@ -117,9 +117,8 @@ describe("M14 Golfopedia", () => {
 describe("M14 shared tooltip content", () => {
   it("provides meaningful help for representative control types", () => {
     expect(tooltipForControl("Help")).toMatch(/Golfopedia/);
-    expect(tooltipForControl("Simulate week")).toMatch(/aggregate week/);
     expect(tooltipForControl("Green fee", "input")).toMatch(/Adjust/);
-    expect(tooltipForControl("Speed 3x")).toMatch(/triple speed/);
+    expect(tooltipForControl("Speed 4x")).toMatch(/speed/i);
     expect(tooltipForControl("Editor")).toMatch(/terrain/);
     expect(tooltipForControl("Results")).toMatch(/revenue/);
     expect(tooltipForControl("Quick Start")).toMatch(/sandbox/);

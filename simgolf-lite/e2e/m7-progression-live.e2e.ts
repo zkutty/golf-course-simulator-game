@@ -18,7 +18,7 @@ test("M7 reputation progression, clock, live overview, and follow flow", async (
   await page.screenshot({ path: "/tmp/coursecraft-m7-progression.png", fullPage: true });
   await progression.getByRole("button", { name: "Close progression" }).click();
 
-  for (const speed of ["paused", "1x", "2x", "3x"] as const) {
+  for (const speed of ["paused", "1x", "2x", "4x"] as const) {
     await page.getByTestId(`speed-${speed}`).click();
     await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.speed)).toBe(speed);
   }

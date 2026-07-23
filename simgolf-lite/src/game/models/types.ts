@@ -64,6 +64,28 @@ export interface Hole {
 
 export type CourseOperatingState = "open" | "closed";
 
+export type PacePreset = "relaxed" | "balanced" | "brisk";
+export type TimeParStyle = "relaxed" | "standard" | "brisk";
+export type TeeGuidance = "open" | "recommended" | "required";
+export type PaceEnforcement = "advisory" | "active" | "strict";
+export type BeverageMenu = "off" | "refreshments" | "beer_wine";
+
+export interface CourseOperations {
+  preset: PacePreset;
+  teeIntervalMinutes: number;
+  maxGroupSize: 2 | 3 | 4;
+  starterGapEveryGroups: number;
+  timeParStyle: TimeParStyle;
+  teeGuidance: TeeGuidance;
+  enforcement: PaceEnforcement;
+  beverage: {
+    menu: BeverageMenu;
+    passes: 0 | 1 | 2 | 3;
+    alcoholLimit: 1 | 2 | 3 | 4;
+    price: number;
+  };
+}
+
 /** A named operating routing on the shared estate. Hole geometry remains in
  * `Course.holes`; layouts own ordering, publication, price, and availability. */
 export interface CourseLayout {
@@ -74,6 +96,7 @@ export interface CourseLayout {
   roundLength: 9 | 18;
   state: CourseOperatingState;
   greenFee: number;
+  operations?: CourseOperations;
   /** Migrated partial routings may keep operating until their first publish. */
   legacyPartial?: boolean;
 }
@@ -212,6 +235,8 @@ export interface World {
   cash: number;
   reputation: number; // 0..100
   staffLevel: number; // 0..5
+  /** Named operational staff. Older saves synthesize this from staffLevel. */
+  staffRoster?: StaffMember[];
   marketingLevel: number; // 0..5
   maintenanceBudget: number; // dollars per week
   // Run state
@@ -233,6 +258,18 @@ export interface World {
   constraints?: ScenarioConstraints;
   // Scheduled and completed hosted events (M6). Optional for pre-M6 saves.
   tournaments?: TournamentCalendar;
+}
+
+export type StaffRole = "groundskeeper" | "cart_attendant" | "pro_shop" | "marshal" | "tournament_director";
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: StaffRole;
+  courseId?: string;
+  shiftStart: number;
+  shiftEnd: number;
+  weeklyWage: number;
 }
 
 export type LoanKind = "BRIDGE" | "EXPANSION";

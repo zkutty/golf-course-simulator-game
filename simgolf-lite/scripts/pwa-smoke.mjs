@@ -9,8 +9,9 @@ import { PNG } from "pngjs";
 const STRICT_CSP = "default-src 'self'; base-uri 'self'; connect-src 'self' https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://cloudflareinsights.com; font-src 'self' data: https://fonts.gstatic.com; frame-ancestors 'none'; img-src 'self' data: blob:; manifest-src 'self'; media-src 'self' blob:; object-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; worker-src 'self' blob:";
 
 const port = Number(process.env.COURSECRAFT_PWA_PORT ?? 4175);
-const basePath = process.env.COURSECRAFT_PWA_BASE ?? "/golf-course-simulator-game/";
-const normalizedBase = `/${basePath.replace(/^\/+|\/+$/g, "")}/`;
+const basePath = process.env.COURSECRAFT_PWA_BASE ?? "/";
+const trimmedBase = basePath.replace(/^\/+|\/+$/g, "");
+const normalizedBase = trimmedBase ? `/${trimmedBase}/` : "/";
 const baseURL = process.env.COURSECRAFT_PWA_URL ?? `http://127.0.0.1:${port}${normalizedBase}`;
 
 async function run(command, args, options = {}) {

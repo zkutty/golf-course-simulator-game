@@ -21,6 +21,7 @@ import { rollPersonality, type Personality } from "./personality";
 import { ARCHETYPES } from "./archetypes";
 import { mulberry32 } from "../../utils/rng";
 import type { Golfer } from "./types";
+import { normalizeOperations, PACE_PRESETS, staffFromLevel } from "./pace";
 
 // A neutral, middling personality for tests that don't care about spread.
 function testPersonality(over: Partial<Personality> = {}): Personality {
@@ -494,5 +495,55 @@ describe("tee-time queueing (ZKU-110)", () => {
     // Advancing a minute at a time, the rest drain ~one per tee gap.
     for (let i = 0; i < 45; i++) stepLive(live, course, 1);
     expect(live.roundsStarted).toBe(5);
+  });
+});
+
+describe("M29 grouped pace operations", () => {
+  it("normalizes policy bounds and preserves the three operating identities", () => {
+    expect(PACE_PRESETS.relaxed.teeIntervalMinutes).toBe(12);
+    expect(PACE_PRESETS.brisk.maxGroupSize).toBe(3);
+    expect(normalizeOperations({ teeIntervalMinutes: 99, maxGroupSize: 2 }).teeIntervalMinutes).toBe(15);
+    expect(normalizeOperations({ teeIntervalMinutes: 1 }).teeIntervalMinutes).toBe(7);
+  });
+
+  it("creates named legacy staff with marshal and beverage coverage roles", () => {
+    const staff = staffFromLevel(4, "course-primary");
+    expect(staff.map((member) => member.role)).toEqual(["groundskeeper", "cart_attendant", "pro_shop", "marshal"]);
+    expect(staff.every((member) => member.courseId === "course-primary")).toBe(true);
+  });
+
+  it("tees a booked party together and records a downstream blocked group", () => {
+    const course = makeTestCourse();
+    const live = createLiveState(course, { ...DEFAULT_WORLD, staffLevel: 4 }, 0);
+    live.arrivals = [
+      { atMinute: 20, archetype: "casual", groupId: "a" },
+      { atMinute: 20, archetype: "senior", groupId: "a" },
+      { atMinute: 30, archetype: "lowHandicap", groupId: "b" },
+    ];
+    live.groups = [
+      { id: "a", courseId: "course-primary", bookedAt: 20, startedAt: null, golferIds: [], waitMinutes: 0, blocked: false, interventions: 0, pickups: 0, finishedAt: null },
+      { id: "b", courseId: "course-primary", bookedAt: 30, startedAt: null, golferIds: [], waitMinutes: 0, blocked: false, interventions: 0, pickups: 0, finishedAt: null },
+    ];
+    live.nextArrivalIdx = 0; live.dayMinute = 0; live.nextTeeFreeAt = 0; live.nextTeeFreeAtByCourse = {};
+    stepLive(live, course, 19);
+    stepLive(live, course, 1);
+    expect(live.golfers).toHaveLength(2);
+    expect(new Set(live.golfers.map((golfer) => golfer.groupId))).toEqual(new Set(["a"]));
+    for (const golfer of live.golfers) {
+      golfer.currentHole = 0;
+      golfer.segments = [{ kind: "pause", from: golfer.pos, to: golfer.pos, holeIndex: 0, dur: 100 }];
+      golfer.segIndex = 0; golfer.segElapsed = 0;
+    }
+    stepLive(live, course, 9);
+    stepLive(live, course, 1);
+    expect(live.golfers).toHaveLength(3);
+    for (const golfer of live.golfers) {
+      golfer.currentHole = 0;
+      golfer.segments = [{ kind: "pause", from: golfer.pos, to: golfer.pos, holeIndex: 0, dur: 100 }];
+      golfer.segIndex = 0; golfer.segElapsed = 0; golfer.finished = false;
+    }
+    stepLive(live, course, 1);
+    expect(live.groups.find((group) => group.id === "b")?.blocked).toBe(true);
+    expect(live.groups.find((group) => group.id === "b")?.waitMinutes).toBeGreaterThan(0);
   });
 });

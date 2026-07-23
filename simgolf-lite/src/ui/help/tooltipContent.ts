@@ -70,7 +70,7 @@ const HELP: Array<[RegExp, string]> = [
   [/pause/i, "Pause the living-course simulation."],
   [/speed 1x/i, "Run the living-course simulation at normal speed."],
   [/speed 2x/i, "Run the living-course simulation at double speed."],
-  [/speed 3x/i, "Run the living-course simulation at triple speed."],
+  [/speed 4x/i, "Run the living-course simulation at four times normal speed."],
 ];
 
 export function tooltipForControl(label: string, kind: "button" | "input" | "select" = "button"): string {

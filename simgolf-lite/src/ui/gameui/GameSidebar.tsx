@@ -10,7 +10,6 @@ export type GameMode = "editor" | "metrics" | "results" | "upgrades";
 export interface GameSidebarProps {
   currentMode: GameMode;
   onModeChange: (mode: GameMode) => void;
-  onSimulate?: () => void;
   onSave?: () => void;
   onLoad?: () => void;
   onReset?: () => void;
@@ -28,7 +27,6 @@ function pct(v: number) {
 export function GameSidebar({
   currentMode,
   onModeChange,
-  onSimulate,
   onSave,
   onLoad,
   onReset,
@@ -119,9 +117,6 @@ export function GameSidebar({
           </div>
         </Card>
 
-        <GameButton variant="primary" size="lg" onClick={onSimulate} style={{ width: "100%", borderRadius: 18 }}>
-          <T id="auto.ui.gameui.gamesidebar.simulate.week" /></GameButton>
-
         {children}
       </div>
 
@@ -184,6 +179,5 @@ function StatRow(props: { icon: ReactNode; label: string; value: string }) {
     </div>
   );
 }
-
 
 

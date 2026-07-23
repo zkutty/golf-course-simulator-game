@@ -6,7 +6,7 @@ import { BALANCE } from "../balance/balanceConfig";
  *
  * The sim's "flight" segment moves the ball linearly from -> to over its
  * duration; the render layer replaces that straight track with a richer
- * profile driven ENTIRELY by segment progress t (so 2x/3x game speeds
+ * profile driven ENTIRELY by segment progress t (so 2x/4x game speeds
  * compress it naturally and it stays deterministic per frame):
  *
  *   t in [0, AIR_FRAC):   airborne — ground track runs from -> L (the

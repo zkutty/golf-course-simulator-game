@@ -2,6 +2,9 @@
 
 /** App version injected at build time from package.json (see vite.config.ts). */
 declare const __APP_VERSION__: string;
+/** Release and commit identifiers injected by Vite for deployment telemetry. */
+declare const __APP_RELEASE__: string;
+declare const __COMMIT_SHA__: string;
 
 interface Window {
   render_game_to_text?: () => string;
@@ -13,8 +16,9 @@ interface Window {
       paused: boolean;
       modal: "options" | "save-load" | "golfopedia" | "scenario-select" | null;
       dirty: boolean;
-      speed: "paused" | "1x" | "2x" | "3x";
+      speed: "paused" | "1x" | "2x" | "4x";
       dayMinute: number;
+      weekReportOpen: boolean;
       golferPositions: Array<[number, number, number]>;
       week: number;
       cash: number;
@@ -24,6 +28,7 @@ interface Window {
       courseHash: string;
     };
     setPaintCash(cash: number): void;
+    startWeekCloseFixture(weekOverride?: number): Promise<void>;
     runGoldenWeek(): Promise<{
       beforeHash: string;
       afterHash: string;

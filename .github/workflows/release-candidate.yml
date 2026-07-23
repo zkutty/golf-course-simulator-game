@@ -42,7 +42,7 @@ jobs:
       - name: Production PWA subpath/offline smoke
         run: npm run test:pwa
       - name: Build and audit exact Pages artifact
-        run: VITE_BASE=/golf-course-simulator-game/ npm run build && npm run release:audit
+        run: VITE_BASE=/ npm run build && npm run release:audit
       - name: Upload M28 evidence
         if: always()
         uses: actions/upload-artifact@v4

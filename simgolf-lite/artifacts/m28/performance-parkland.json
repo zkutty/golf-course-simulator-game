@@ -1,0 +1,24 @@
+{
+  "theme": "parkland",
+  "fixture": "m27Fixture",
+  "coldStartupMs": 744,
+  "fixtureLoadMs": 26380,
+  "renderer": {
+    "fps": 15.43011444001543,
+    "meanMs": 64.80833333333334,
+    "p95Ms": 99.90000000000146,
+    "maxMs": 100,
+    "workMs": 0.33611110978656344,
+    "sections": {
+      "hover+flags": 0.12666666640175714,
+      "water+sway": 0.08611110945542653,
+      "ambient": 0.012777777844005161,
+      "golfers+emotes": 0.11055555608537462
+    },
+    "golfers": 100,
+    "bubbles": 0,
+    "chunksVisible": 36,
+    "chunksTotal": 126,
+    "objects": 1067
+  }
+}

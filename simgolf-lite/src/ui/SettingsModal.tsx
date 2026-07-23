@@ -102,7 +102,7 @@ function GameplayTab({ profile, change, onProfileChange }: { profile: AppProfile
     <Row label={t("settings.momentCamera")} hint={t("settings.momentCameraHint")}><Toggle label={t("settings.momentCamera")} checked={p.momentCamera} onChange={(momentCamera) => change("gameplay", { momentCamera })} /></Row>
     <Row label={t("settings.confirmBulldoze")}><Toggle label={t("settings.confirmBulldoze")} checked={p.confirmBulldoze} onChange={(confirmBulldoze) => change("gameplay", { confirmBulldoze })} /></Row>
     <Row label={t("settings.confirmSalvage")}><Toggle label={t("settings.confirmSalvage")} checked={p.confirmSalvage} onChange={(confirmSalvage) => change("gameplay", { confirmSalvage })} /></Row>
-    <Row label={t("settings.defaultSpeed")}><select aria-label={t("settings.defaultSpeed")} value={p.defaultGameSpeed} onChange={(e) => change("gameplay", { defaultGameSpeed: e.target.value as typeof p.defaultGameSpeed })} style={selectStyle}><option value="1x">1×</option><option value="2x">2×</option><option value="3x">3×</option></select></Row>
+    <Row label={t("settings.defaultSpeed")}><select aria-label={t("settings.defaultSpeed")} value={p.defaultGameSpeed} onChange={(e) => change("gameplay", { defaultGameSpeed: e.target.value as typeof p.defaultGameSpeed })} style={selectStyle}><option value="1x">1×</option><option value="2x">2×</option><option value="4x">4×</option></select></Row>
   </div>;
 }
 

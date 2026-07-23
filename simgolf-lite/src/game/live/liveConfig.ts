@@ -2,15 +2,15 @@
 // All durations are in GAME-MINUTES; the clock converts real seconds into
 // game-minutes based on the selected speed.
 
-export type SpeedName = "paused" | "1x" | "2x" | "3x";
+export type SpeedName = "paused" | "1x" | "2x" | "4x";
 
 export const LIVE = {
   // How many game-minutes elapse per real second at each speed.
   speed: {
     paused: 0,
-    "1x": 3,
-    "2x": 9,
-    "3x": 24,
+    "1x": 2.8,
+    "2x": 5.6,
+    "4x": 11.2,
   } as Record<SpeedName, number>,
 
   day: {
@@ -38,6 +38,7 @@ export const LIVE = {
     puttPause: 0.3,
     puttFlight: 0.2,
     puttWalk: 0.2,
+    recoverySearchPause: 2.5,
   },
 
   scoring: {

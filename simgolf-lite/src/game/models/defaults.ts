@@ -1,5 +1,7 @@
 import type { Course, Terrain, World } from "./types";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "./constants";
+import { normalizeOperations } from "./courseOperations";
+import { staffFromLevel } from "../live/pace";
 
 export const DEFAULT_COURSE: Course = {
   name: "West Village Municipal",
@@ -26,6 +28,7 @@ export const DEFAULT_COURSE: Course = {
     roundLength: 9,
     state: "open",
     greenFee: 65,
+    operations: normalizeOperations(),
     legacyPartial: undefined,
   }],
   activeCourseId: "course-primary",
@@ -44,6 +47,7 @@ export const DEFAULT_WORLD: World = {
   cash: 25_000,
   reputation: 40,
   staffLevel: 1,
+  staffRoster: staffFromLevel(1, "course-primary"),
   marketingLevel: 0,
   maintenanceBudget: 900,
   runSeed: 1337,

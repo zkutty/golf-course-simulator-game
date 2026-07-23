@@ -166,8 +166,9 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
   await expectStep(page, "weekly-report");
 
   await capture(page, run, "step-08-before-weekly-report");
-  await page.getByRole("button", { name: /Simulate week/ }).click();
-  await expect(page.getByText(/Profit:/)).toBeVisible();
+  await page.evaluate(() => window.__coursecraftTest!.startWeekCloseFixture());
+  await expect(page.getByTestId("week-close-report")).toBeVisible();
+  await page.getByTestId("week-close-continue").click();
   await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
   await capture(page, run, "step-08-after-weekly-report");
   await page.getByRole("button", { name: "Continue" }).click();
@@ -197,8 +198,9 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
 
   await capture(page, run, "step-11-before-first-profit");
   for (let week = 0; week < 3 && await page.getByRole("button", { name: "Continue" }).count() === 0; week++) {
-    await page.getByRole("button", { name: /Simulate week/ }).click();
-    await expect(page.getByText(/Profit:/)).toBeVisible();
+    await page.evaluate(() => window.__coursecraftTest!.startWeekCloseFixture());
+    await expect(page.getByTestId("week-close-report")).toBeVisible();
+    await page.getByTestId("week-close-continue").click();
   }
   await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
   await capture(page, run, "step-11-after-first-profit");

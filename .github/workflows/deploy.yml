@@ -1,6 +1,8 @@
 name: Deploy
 
-# Deploys the production build to GitHub Pages on every push to main.
+# Temporary fallback while the Cloudflare playtest deployment is validated.
+# Remove this workflow after two successful Cloudflare main deployments and
+# the deployed PWA/browser acceptance checks pass.
 # Requires Pages to be enabled for this repo with "Source: GitHub Actions"
 # (Settings → Pages). Until then this workflow simply fails at the deploy
 # step and can be ignored.

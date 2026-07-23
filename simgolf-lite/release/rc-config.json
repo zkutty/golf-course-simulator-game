@@ -2,7 +2,7 @@
   "version": "1.0.0-rc.2",
   "milestone": "M28: Release Candidate & External Playtest",
   "sourceBranch": "main",
-  "deploymentBase": "/golf-course-simulator-game/",
+  "deploymentBase": "/",
   "budgets": {
     "startupMs": 5000,
     "rendererWorkMs": 8,

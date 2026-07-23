@@ -21,6 +21,27 @@ test("quick start → playable course → live week → save → reload", async 
   await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
+test("Sunday closes one authoritative week, pauses, and resumes explicitly", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Quick Start" }).click();
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
+  const tutorialOffer = page.getByRole("dialog", { name: "First-launch tutorial" });
+  if (await tutorialOffer.count()) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
+  await page.evaluate(() => window.__coursecraftTest!.startWeekCloseFixture(3));
+
+  const report = page.getByTestId("week-close-report");
+  await expect(report).toBeVisible({ timeout: 15_000 });
+  await expect(report.getByText("Week 3 complete")).toBeVisible();
+  await expect(report).toHaveAttribute("data-resume-speed", "4x");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("paused");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().week)).toBe(4);
+  await page.screenshot({ path: "/tmp/coursecraft-m31-week-close.png", fullPage: true });
+
+  await page.getByTestId("week-close-continue").click();
+  await expect(report).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("4x");
+});
+
 test("screen flow, hard pause, dirty guard, and save acknowledgement", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "New Game" }).click();
@@ -69,7 +90,7 @@ test("screen flow, hard pause, dirty guard, and save acknowledgement", async ({ 
   await expect(page.getByTestId("pause-overlay")).toBeVisible();
   await page.keyboard.press("Escape"); // resume
   await expect(page.getByTestId("pause-overlay")).toHaveCount(0);
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("3x");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().speed)).toBe("4x");
 });
 
 test("every checked-in historical save fixture migrates", async ({ page }) => {
@@ -163,7 +184,7 @@ test("keyboard-only options, remapping, conflicts, and save/load round-trip", as
   await page.keyboard.press("KeyP");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().speed)).toBe("1x");
   await page.keyboard.press("Control+KeyS");
-  await expect(page.getByRole("status")).toContainText("Quick save complete");
+  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
 
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /load game/i }).focus();

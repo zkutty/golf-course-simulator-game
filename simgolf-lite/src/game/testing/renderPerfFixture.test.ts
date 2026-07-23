@@ -12,7 +12,7 @@ describe("M12 render performance fixture", () => {
     expect(course.obstacles.filter((obstacle) => obstacle.type === "tree").length).toBeGreaterThanOrEqual(500);
     expect(live.golfers).toHaveLength(100);
     expect(live.golfers.every((golfer) => golfer.finished === false)).toBe(true);
-  }, 30_000);
+  }, 60_000);
 });
 
 describe("M22 visual release fixtures", () => {

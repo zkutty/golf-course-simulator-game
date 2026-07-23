@@ -1,5 +1,5 @@
 import { LIVE, type SpeedName } from "../game/live/liveConfig";
-import { formatCurrency, formatDayLabel } from "../i18n/format";
+import { formatCurrency, formatDayLabel, formatWeekLabel } from "../i18n/format";
 import type { LiveStatus } from "../hooks/useLiveSimulation";
 import { translateCurrent } from "../i18n/core";
 import type { PinRotation } from "../game/models/types";
@@ -9,7 +9,7 @@ const SPEEDS: { key: SpeedName; label: string }[] = [
   { key: "paused", label: "❚❚" },
   { key: "1x", label: "1×" },
   { key: "2x", label: "2×" },
-  { key: "3x", label: "3×" },
+  { key: "4x", label: "4×" },
 ];
 
 function money(n: number): string {
@@ -25,6 +25,7 @@ export function LiveControls(props: {
   onSetSpeed: (s: SpeedName) => void;
   cash: number;
   reputation: number;
+  week: number;
   onOpenPauseMenu?: () => void;
   onOpenOverview?: () => void;
   overviewOpen?: boolean;
@@ -63,7 +64,7 @@ export function LiveControls(props: {
     >
       <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1, minWidth: 88 }}>
         <span style={{ fontWeight: 700, fontSize: 15 }}>{status.clockLabel}</span>
-        <span style={{ opacity: 0.7, fontSize: 11 }}>{formatDayLabel(status.dayIndex + 1)}</span>
+        <span style={{ opacity: 0.7, fontSize: 11 }}>{formatWeekLabel(props.week)} · {formatDayLabel(status.dayIndex + 1)}</span>
         <div aria-hidden="true" style={{ height: 3, borderRadius: 3, background: "rgba(255,255,255,.14)", marginTop: 4, overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(100, Math.max(0, status.dayMinute / LIVE.day.closeMinute * 100))}%`, background: "#86efac" }} /></div>
         {props.onSetActivePinRotation && <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, opacity: .9, marginTop: 4 }}>{translateCurrent("courseSetup.dailyPin")}<select data-testid="daily-pin-rotation" aria-label={translateCurrent("courseSetup.activePin")} value={props.activePinRotation ?? "A"} onChange={(event) => props.onSetActivePinRotation?.(event.target.value as PinRotation)} style={{ background: "#23352a", color: "white", border: "1px solid rgba(255,255,255,.3)", borderRadius: 5, fontSize: 10 }}>{PIN_ROTATIONS.map((rotation) => <option key={rotation}>{rotation}</option>)}</select></label>}
       </div>
@@ -75,7 +76,7 @@ export function LiveControls(props: {
             <button
               key={s.key}
               onClick={() => onSetSpeed(s.key)}
-              title={s.key === "paused" ? "Pause" : `Speed ${s.key}`}
+              title={s.key === "paused" ? (active ? "Resume" : "Pause") : `Speed ${s.key}`}
               aria-pressed={active}
               data-testid={`speed-${s.key}`}
               style={{

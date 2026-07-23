@@ -9,6 +9,7 @@ import {
 } from "./demand";
 import type { Arrival } from "./types";
 import { activeCourseLayout, operatingCourseViews } from "../models/courseLayouts";
+import { courseOperations } from "./pace";
 
 // Re-exported so callers/tests keep a single import surface for spawning.
 export { plannedGolfersForDay } from "./demand";
@@ -23,11 +24,23 @@ export function planDay(course: Course, world: World, seed: number): Arrival[] {
   const appeal = archetypeAppeal(courseProfile(course, world));
   const arrivals: Arrival[] = [];
   const { firstArrivalMinute, lastArrivalMinute } = LIVE.day;
-  for (let i = 0; i < count; i++) {
-    const atMinute =
-      firstArrivalMinute + rng() * (lastArrivalMinute - firstArrivalMinute);
-    const archetype = pickArchetypeFrom(appeal, rng());
-    arrivals.push({ atMinute, archetype, courseId: activeCourseLayout(course).id });
+  const layout = activeCourseLayout(course);
+  const operations = courseOperations(course, layout.id);
+  let golferIndex = 0;
+  let groupIndex = 0;
+  let slotMinute = firstArrivalMinute;
+  while (golferIndex < count && slotMinute <= lastArrivalMinute) {
+    const remaining = count - golferIndex;
+    const desired = 1 + Math.floor(rng() * operations.maxGroupSize);
+    const groupSize = Math.min(remaining, operations.maxGroupSize, Math.max(1, desired));
+    const groupId = `${layout.id}-g${groupIndex + 1}`;
+    for (let member = 0; member < groupSize; member++) {
+      arrivals.push({ atMinute: slotMinute, archetype: pickArchetypeFrom(appeal, rng()), courseId: layout.id, groupId });
+      golferIndex++;
+    }
+    groupIndex++;
+    slotMinute += operations.teeIntervalMinutes;
+    if (operations.starterGapEveryGroups > 0 && groupIndex % operations.starterGapEveryGroups === 0) slotMinute += operations.teeIntervalMinutes;
   }
   arrivals.sort((a, b) => a.atMinute - b.atMinute);
   return arrivals;

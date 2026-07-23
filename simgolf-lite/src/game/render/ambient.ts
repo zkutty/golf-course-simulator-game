@@ -3,7 +3,7 @@ import type { Course, Point } from "../models/types";
 /**
  * Ambient world life (ZKU-156) — pure math, no PIXI.
  *
- * Everything time-of-day-shaped runs off the GAME clock (dayMinute) so 2x/3x
+ * Everything time-of-day-shaped runs off the GAME clock (dayMinute) so 2x/4x
  * speeds scale it; purely cosmetic micro-motion (bird flaps, shimmer sweep)
  * stays real-time in the renderer.
  */

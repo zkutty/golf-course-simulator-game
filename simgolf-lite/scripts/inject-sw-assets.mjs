@@ -7,7 +7,7 @@ const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url),
 const files = [];
 function walk(directory) {
   for (const name of readdirSync(directory)) {
-    if (name.startsWith(".") || name === "vite.svg") continue;
+    if (name.startsWith(".") || name === "vite.svg" || name === "_headers" || name === "_redirects") continue;
     const path = join(directory, name);
     if (statSync(path).isDirectory()) walk(path);
     else {

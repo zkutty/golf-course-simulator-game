@@ -47,6 +47,11 @@ describe("versioned app profile", () => {
     expect(profile.accessibility.keybindings.pause).toBe("Space");
     expect(profile.audio.masterVolume).toBe(1);
   });
+
+  it("migrates the retired third speed preset from 3x to 4x", () => {
+    const store = storage({ coursecraft_app_profile_v4: JSON.stringify({ version: 4, gameplay: { defaultGameSpeed: "3x" } }) });
+    expect(loadAppProfile(store).gameplay.defaultGameSpeed).toBe("4x");
+  });
 });
   it("honors the operating-system reduced-motion preference on first boot", () => {
     vi.stubGlobal("window", {

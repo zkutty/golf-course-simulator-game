@@ -49,7 +49,7 @@ describe("live simulation persistence", () => {
     const snapshot = snapshotLiveSimulation({
       state,
       pendingCash,
-      speed: "3x",
+      speed: "4x",
       selectedGolferId,
     });
     const restored = restoreLiveSimulation(JSON.parse(JSON.stringify(snapshot)));
@@ -61,7 +61,7 @@ describe("live simulation persistence", () => {
     expect(restored!.state.walkCache).toBeInstanceOf(Map);
     expect(restored!.state.walkCache.size).toBe(0);
     expect(restored!.pendingCash).toBe(pendingCash);
-    expect(restored!.speed).toBe("3x");
+    expect(restored!.speed).toBe("4x");
     expect(restored!.selectedGolferId).toBe(selectedGolferId);
   });
 
@@ -79,6 +79,12 @@ describe("live simulation persistence", () => {
     expect(snapshotLiveSimulation({ ...a, selectedGolferId: null })).toEqual(
       snapshotLiveSimulation({ ...b, selectedGolferId: null })
     );
+  });
+
+  it("migrates the retired 3x snapshot tier to the third 4x tier", () => {
+    const { state } = midRound();
+    const legacy = { ...snapshotLiveSimulation({ state, pendingCash: 0, speed: "1x", selectedGolferId: null }), version: 2, speed: "3x" };
+    expect(restoreLiveSimulation(legacy)?.speed).toBe("4x");
   });
 
   it("persists live state through the main save normalization pipeline", () => {

@@ -88,7 +88,6 @@ export function HUD(props: {
   onSave: () => void;
   onLoad: () => void;
   onResetSave: () => void;
-  simulate: () => void;
   paintError?: string | null;
   viewMode: "COZY" | "ARCHITECT";
   setViewMode: (m: "COZY" | "ARCHITECT") => void;
@@ -155,7 +154,6 @@ export function HUD(props: {
     onSave,
     onLoad,
     onResetSave,
-    simulate,
     paintError,
     viewMode,
     setViewMode,
@@ -1217,7 +1215,7 @@ export function HUD(props: {
 
         {activeTab === "Results" && (
           <div data-tutorial-target="weekly-report">
-            {!last && <div style={{ color: "#555", fontSize: 13 }}><T id="auto.ui.hud.simulate.a.week.to.see.results" /></div>}
+            {!last && <div style={{ color: "#555", fontSize: 13 }}><T id="weekClose.resultsHint" /></div>}
             {last && (
               <Section title={translateCurrent("auto.ui.hud.last.week")}>
                 <div data-tooltip="Golfers who completed a visit during the simulated week."><T id="auto.ui.hud.visitors" />{last.visitors}</div>
@@ -1781,15 +1779,6 @@ export function HUD(props: {
             <T id="auto.ui.hud.reset" /></GameButton>
         </div>
 
-        <div data-tutorial-target="weekly-report"><GameButton
-          onClick={simulate}
-          disabled={isBankrupt}
-          variant="primary"
-          size="lg"
-          style={{ width: "100%", borderRadius: 18 }}
-        >
-          {isBankrupt ? "Run ended" : "⏩ Simulate week"}
-        </GameButton></div>
       </div>
     </div>
   );

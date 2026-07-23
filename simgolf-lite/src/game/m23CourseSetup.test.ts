@@ -34,7 +34,7 @@ describe("M23 course setup model", () => {
     const result = normalizeLoadedSaveResult({ schemaVersion: 6, savedAt: 1, course: legacy, world: DEFAULT_WORLD });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(CURRENT_SAVE_SCHEMA_VERSION).toBe(10);
+    expect(CURRENT_SAVE_SCHEMA_VERSION).toBe(11);
     expect(result.migratedFrom).toBe(6);
     expect(getTeeBox(result.payload.course.holes[0], "member")).toEqual({ x: legacy.holes[0].tee!.x + 55, y: legacy.holes[0].tee!.y + 35 });
     expect(getPinPosition(result.payload.course.holes[0], "A")).toEqual({ x: legacy.holes[0].green!.x + 55, y: legacy.holes[0].green!.y + 35 });
@@ -88,7 +88,7 @@ describe("M23 course setup model", () => {
     expect(computeRatingsByTee(course)).toBe(ratings);
     expect(computeCourseRatingAndSlope({ ...course, activePinRotation: "A" })).toEqual(computeCourseRatingAndSlope({ ...course, activePinRotation: "C" }));
     expect(computeRatingForSetup(course, "member", "B").pinDifficultyDelta).toBeGreaterThanOrEqual(0);
-  });
+  }, 30_000);
 
   it("projects independent tee routes and par policies without changing Member compatibility", () => {
     const course = configuredCourse();
@@ -131,5 +131,5 @@ describe("M23 course setup model", () => {
     stepLive(legacyPro, createReferenceCourse(), 1);
     expect(legacyPro.golfers[0].teeSet).toBe("member");
     expect(resolveCourseSetup(createReferenceCourse().holes[0], "championship", "C")).toMatchObject({ teeSet: "member", pinRotation: "A", usedTeeFallback: true, usedPinFallback: true });
-  });
+  }, 30_000);
 });

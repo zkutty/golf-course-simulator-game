@@ -36,9 +36,10 @@ import { PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSet
 import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
 import { createEstate, starterParcelOffset, validateEstate } from "../game/estate/estate";
 import { MAX_ESTATE_HOLES, normalizeCourseLayouts } from "../game/models/courseLayouts";
+import { normalizedStaff } from "../game/live/pace";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 10 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 11 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -95,6 +96,10 @@ export interface SaveV9 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV10 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 10;
+  records?: CourseRecords;
+}
+export interface SaveV11 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -118,7 +123,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV10 = {
+  const save: SaveV11 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -451,6 +456,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
       },
     } : {}),
   }),
+  // V11 adds per-course pace operations, named operational staff, grouped tee
+  // sheets, and hospitality state. Normalizers supply lossless defaults.
+  10: (save) => ({ ...save, schemaVersion: 11 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -684,6 +692,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
           : undefined,
       tournaments: normalizeTournamentCalendar(rawWorld.tournaments, course),
     };
+    world.staffRoster = normalizedStaff(world, course);
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
     const records = normalizeRecords(parsed.records, history, world, course);
     const tutorial = normalizeTutorialProgress(parsed.tutorial);

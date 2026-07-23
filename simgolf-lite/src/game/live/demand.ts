@@ -6,6 +6,7 @@ import { getDifficultyProfile } from "../balance/difficulty";
 import { ARCHETYPES } from "./archetypes";
 import { LIVE } from "./liveConfig";
 import type { GolferArchetypeName } from "./types";
+import { courseOperations } from "./pace";
 
 function clamp(x: number, a: number, b: number): number {
   return Math.max(a, Math.min(b, x));
@@ -24,6 +25,7 @@ export interface CourseProfile {
   scenery: number; // 0..1 aesthetics
   premium: number; // -1..1 green fee relative to market price
   prestige: number; // 0..1 reputation
+  pace: number; // 0 relaxed .. 1 brisk operating identity
 }
 
 export function courseProfile(course: Course, world: World): CourseProfile {
@@ -45,6 +47,7 @@ export function courseProfile(course: Course, world: World): CourseProfile {
     scenery,
     premium,
     prestige: clamp01(world.reputation / 100),
+    pace: courseOperations(course).preset === "relaxed" ? 0 : courseOperations(course).preset === "brisk" ? 1 : .5,
   };
 }
 
@@ -69,8 +72,10 @@ export function archetypeAppeal(profile: CourseProfile): ArchetypeAppeal {
     const priceAppeal = clamp01(0.5 + profile.premium * p.prefs.price * 0.8);
     // High-skill archetypes are gated by reputation; casual players are not.
     const prestigeGate = clamp01(1 - Math.max(0, p.skill - profile.prestige) * 1.5);
+    const pacePreference = clamp01(p.skill * .6 + (1 - p.patience) * .3 + .1);
+    const paceMatch = 1 - Math.abs(pacePreference - profile.pace);
 
-    const w = a.weight * difficultyMatch * sceneryAppeal * priceAppeal * prestigeGate;
+    const w = a.weight * difficultyMatch * sceneryAppeal * priceAppeal * prestigeGate * (.65 + paceMatch * .35);
     raw[a.name] = w;
     total += w;
   }

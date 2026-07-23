@@ -1,7 +1,7 @@
 // Render performance smoke (ZKU-160).
 //
 // Boots the app headless (Chromium via Playwright), builds a hole, runs the
-// live day at 3x with a slow camera pan, then reads the renderer's perf
+// live day at 4x with a slow camera pan, then reads the renderer's perf
 // counters (window.__ccPerf, exposed when the perf HUD flag is on) and
 // asserts the p95 frame time stays under a generous budget. The goal is
 // catching order-of-magnitude regressions, not micro-drift — headless GL
@@ -106,10 +106,10 @@ console.log(`[perf-smoke] game state ready in ${fixtureLoadMs.toFixed(0)}ms`);
 await sleep(1200);
 if (!box) throw new Error("performance fixture did not create a renderer canvas");
 
-// Run the day at 3x with a slow keyboard pan; warm up, then measure.
+// Run the day at 4x with a slow keyboard pan; warm up, then measure.
 await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2); // focus + skip any flyover
 await page.keyboard.press("Digit3");
-await page.waitForFunction(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.speed === "3x", null, { timeout: 10_000 });
+await page.waitForFunction(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.speed === "4x", null, { timeout: 10_000 });
 console.log("[perf-smoke] warmup 8s …");
 await sleep(8000);
 console.log(`[perf-smoke] measuring ${MEASURE_S}s with slow pan …`);

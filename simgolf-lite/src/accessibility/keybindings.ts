@@ -14,7 +14,7 @@ export const DEFAULT_KEYBINDINGS: Keybindings = {
 
 export const BINDING_LABELS: Record<BindingAction, string> = {
   panUp: "Pan up", panDown: "Pan down", panLeft: "Pan left", panRight: "Pan right",
-  rotateLeft: "Rotate left", rotateRight: "Rotate right", speed1: "Speed 1×", speed2: "Speed 2×", speed3: "Speed 3×",
+  rotateLeft: "Rotate left", rotateRight: "Rotate right", speed1: "Speed 1×", speed2: "Speed 2×", speed3: "Speed 4×",
   pause: "Pause / resume", terrainTool: "Terrain tool", obstacleTool: "Obstacle tool", buildingTool: "Building tool", quicksave: "Quick save",
 };
 export const BINDING_LABEL_KEYS = {

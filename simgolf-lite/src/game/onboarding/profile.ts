@@ -150,7 +150,9 @@ function normalizeProfile(value: unknown, storage?: StorageLike): AppProfile {
       cameraSmoothing: bool(gameplay.cameraSmoothing, defaults.gameplay.cameraSmoothing),
       confirmBulldoze: bool(gameplay.confirmBulldoze, defaults.gameplay.confirmBulldoze),
       confirmSalvage: bool(gameplay.confirmSalvage, defaults.gameplay.confirmSalvage),
-      defaultGameSpeed: oneOf(gameplay.defaultGameSpeed, ["1x", "2x", "3x"], defaults.gameplay.defaultGameSpeed),
+      defaultGameSpeed: gameplay.defaultGameSpeed === "3x"
+        ? "4x"
+        : oneOf(gameplay.defaultGameSpeed, ["1x", "2x", "4x"], defaults.gameplay.defaultGameSpeed),
       tickerVisible: bool(gameplay.tickerVisible, defaults.gameplay.tickerVisible),
       momentCamera: bool(gameplay.momentCamera, defaults.gameplay.momentCamera),
     },
@@ -202,7 +204,7 @@ export function loadAppProfile(storage = browserStorage()): AppProfile {
     const hasMotionPreference = "reducedMotion" in record(record(parsed).accessibility);
     if (!hasMotionPreference && typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches)
       profile.accessibility.reducedMotion = true;
-    if (current == null) storage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    storage.setItem(PROFILE_KEY, JSON.stringify(profile));
     return profile;
   } catch {
     return cloneDefaults();

@@ -188,7 +188,12 @@ export function planFromHole(args: {
         segments.push(flightSeg(step.from, step.to, i));
         pushWalk(step.from, step.to, i); // walk to the ball, routed around water
         shots++;
-        if (rng() < mishitChance(personality)) penalties++; // sprayed shot
+        if (rng() < mishitChance(personality)) {
+          penalties++; // sprayed shot
+          // Searching, choosing a recovery, and getting back into position is
+          // a real pace cost rather than a scorecard-only penalty (M29).
+          segments.push(pauseSeg(step.to, i, LIVE.pace.recoverySearchPause * (1.15 - personality.skill * .35)));
+        }
       }
     } else {
       // Unreachable (e.g. water-blocked): a single frustrated hack straight up.

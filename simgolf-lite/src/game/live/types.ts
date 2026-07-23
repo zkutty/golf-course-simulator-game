@@ -1,4 +1,4 @@
-import type { ConcessionTransaction, ConcessionType, Difficulty, PinRotation, Point, TeeSet } from "../models/types";
+import type { ConcessionTransaction, ConcessionType, CourseOperations, Difficulty, PinRotation, Point, TeeSet } from "../models/types";
 import type { Personality } from "./personality";
 import type { LiveTournamentState } from "../tournaments/types";
 
@@ -71,6 +71,16 @@ export interface Golfer {
   purchasedSegmentIndexes: number[];
   tournamentId?: string;
   tournamentEntrantId?: string;
+  groupId?: string;
+  groupStartedAt?: number;
+  waitMinutes?: number;
+  pacePreference?: number;
+  marshalInterventions?: number;
+  forcedPickups?: number;
+  drinksServed?: number;
+  alcoholUnits?: number;
+  hospitalityDelay?: number;
+  disorderIncidents?: number;
 }
 
 export interface Arrival {
@@ -78,6 +88,34 @@ export interface Arrival {
   archetype: GolferArchetypeName;
   courseId?: string;
   tournament?: { eventId: string; entrantId: string; name: string; skill: number; teeSet?: TeeSet; pinRotation?: PinRotation };
+  groupId?: string;
+}
+
+export interface TeeGroupState {
+  id: string;
+  courseId: string;
+  bookedAt: number;
+  startedAt: number | null;
+  golferIds: number[];
+  waitMinutes: number;
+  blocked: boolean;
+  interventions: number;
+  pickups: number;
+  finishedAt: number | null;
+  lastMarshalMinute?: number;
+  lastPickupHole?: number;
+}
+
+export interface PaceDayMetrics {
+  groupsStarted: number;
+  groupsFinished: number;
+  totalWaitMinutes: number;
+  marshalInterventions: number;
+  forcedPickups: number;
+  beverageRevenue: number;
+  alcoholicDrinks: number;
+  serviceRefusals: number;
+  disorderIncidents: number;
 }
 
 export interface LiveState {
@@ -119,6 +157,11 @@ export interface LiveState {
   // Run difficulty at day start (ZKU-165) — scales rolled patience/spend.
   difficulty?: Difficulty;
   tournament?: LiveTournamentState;
+  groups?: TeeGroupState[];
+  pace?: PaceDayMetrics;
+  marshalCoverageByCourse?: Record<string, number>;
+  beverageCoverageByCourse?: Record<string, number>;
+  operationsByCourse?: Record<string, CourseOperations>;
 }
 
 // Aggregated reactions from the golfers who actually finished a round today.
@@ -206,4 +249,5 @@ export interface DayResult {
     profit: number;
     avgSatisfaction: number;
   }>;
+  pace?: PaceDayMetrics;
 }

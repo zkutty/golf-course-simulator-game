@@ -17,6 +17,7 @@ import { createLiveTournament, planTournamentDay, tournamentForDate, updateTourn
 import { getTeeBox, preferredTeeForArchetype } from "../models/courseSetup";
 import { activeCourseLayout, courseForHoleIds, courseForLayout, layoutById, operatingCourseViews } from "../models/courseLayouts";
 import { plannedGolfersForDay } from "./demand";
+import { courseOperations, groupTimeParMinutes, normalizedStaff } from "./pace";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -39,9 +40,10 @@ export function createLiveState(
   const seed = (world.runSeed | 0) + dayIndex * 7919;
   const courseViews = operatingCourseViews(course);
   const tournamentEvent = tournamentForDate(world, dayIndex, course);
-  const arrivals = tournamentEvent
+  const rawArrivals = tournamentEvent
     ? planTournamentDay(tournamentEvent, LIVE.day.firstArrivalMinute, LIVE.day.teeGapMinutes)
     : planEstateDay(course, world, seed, courseViews);
+  const arrivals = rawArrivals.map((arrival, index) => ({ ...arrival, groupId: arrival.groupId ?? `${arrival.courseId ?? "course"}-solo-${index + 1}` }));
   const perCourse = Object.fromEntries(courseViews.map(({ layout, course: view }) => [layout.id, {
     courseName: layout.name,
     arrivals: tournamentEvent ? arrivals.filter((arrival) => arrival.courseId === layout.id).length : plannedGolfersForDay(view, world),
@@ -53,6 +55,20 @@ export function createLiveState(
     detractors: 0,
     willReturnCount: 0,
   }]));
+  const staff = normalizedStaff(world, course);
+  const marshalCoverageByCourse: Record<string, number> = {};
+  const beverageCoverageByCourse: Record<string, number> = {};
+  for (const member of staff) {
+    const courseId = member.courseId ?? courseViews[0]?.layout.id;
+    if (!courseId) continue;
+    if (member.role === "marshal") marshalCoverageByCourse[courseId] = (marshalCoverageByCourse[courseId] ?? 0) + 1;
+    if (member.role === "cart_attendant") beverageCoverageByCourse[courseId] = (beverageCoverageByCourse[courseId] ?? 0) + 1;
+  }
+  const groups = [...new Map(arrivals.map((arrival) => [arrival.groupId!, {
+    id: arrival.groupId!, courseId: arrival.courseId ?? courseViews[0]?.layout.id ?? "course-primary",
+    bookedAt: arrival.atMinute, startedAt: null, golferIds: [], waitMinutes: 0, blocked: false,
+    interventions: 0, pickups: 0, finishedAt: null,
+  }])).values()];
   return {
     difficulty: world.difficulty,
     dayIndex,
@@ -79,6 +95,11 @@ export function createLiveState(
     dayOver: false,
     seed,
     tournament: tournamentEvent ? createLiveTournament(tournamentEvent, course) : undefined,
+    groups,
+    pace: { groupsStarted: 0, groupsFinished: 0, totalWaitMinutes: 0, marshalInterventions: 0, forcedPickups: 0, beverageRevenue: 0, alcoholicDrinks: 0, serviceRefusals: 0, disorderIncidents: 0 },
+    marshalCoverageByCourse,
+    beverageCoverageByCourse,
+    operationsByCourse: Object.fromEntries(courseViews.map(({ layout }) => [layout.id, courseOperations(course, layout.id)])),
   };
 }
 
@@ -115,8 +136,12 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   const entry = entryPoint(roundCourse);
   const wallet = rollDiscretionaryWallet(personality, rng);
   const preferredTeeSet = preferredTeeForArchetype(arch.name);
-  const teeSet = arrival.tournament?.teeSet ?? (roundCourse.holes.every((hole) => !getTeeBox(hole, "member") || !!getTeeBox(hole, preferredTeeSet))
-    ? preferredTeeSet
+  const operations = state.operationsByCourse?.[courseId] ?? courseOperations(course, courseId);
+  const guidedTeeSet = operations.teeGuidance === "required"
+    ? personality.skill < .48 ? "forward" : personality.skill > .86 ? "championship" : "member"
+    : preferredTeeSet;
+  const teeSet = arrival.tournament?.teeSet ?? (roundCourse.holes.every((hole) => !getTeeBox(hole, "member") || !!getTeeBox(hole, guidedTeeSet))
+    ? guidedTeeSet
     : "member");
   const pinRotation = arrival.tournament?.pinRotation ?? roundCourse.activePinRotation ?? "A";
   const round = buildGolferRound({
@@ -163,6 +188,16 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     purchasedSegmentIndexes: [],
     tournamentId: arrival.tournament?.eventId,
     tournamentEntrantId: arrival.tournament?.entrantId,
+    groupId: arrival.groupId ?? `${courseId}-solo-${id}`,
+    groupStartedAt: state.dayMinute,
+    waitMinutes: 0,
+    pacePreference: personality.pacePreference ?? personality.skill,
+    marshalInterventions: 0,
+    forcedPickups: 0,
+    drinksServed: 0,
+    alcoholUnits: 0,
+    hospitalityDelay: 0,
+    disorderIncidents: 0,
   };
 }
 
@@ -249,32 +284,100 @@ export function stepLive(
     state.dayMinute <= LIVE.day.closeMinute &&
     state.dayMinute >= (state.nextTeeFreeAtByCourse?.[state.arrivals[state.nextArrivalIdx].courseId ?? activeCourseLayout(course).id] ?? 0)
   ) {
-    const arrival = state.arrivals[state.nextArrivalIdx++];
-    const golfer = spawnGolfer(state, course, arrival);
-    state.golfers.push(golfer);
-    state.roundsStarted++;
-    const courseId = golfer.courseId ?? arrival.courseId ?? activeCourseLayout(course).id;
+    const firstIndex = state.nextArrivalIdx;
+    const first = state.arrivals[firstIndex];
+    const groupId = first.groupId ?? `${first.courseId ?? "course"}-solo-${firstIndex}`;
+    const batch: Arrival[] = [];
+    while (state.nextArrivalIdx < state.arrivals.length && (state.arrivals[state.nextArrivalIdx].groupId ?? `${state.arrivals[state.nextArrivalIdx].courseId ?? "course"}-solo-${state.nextArrivalIdx}`) === groupId) {
+      batch.push(state.arrivals[state.nextArrivalIdx++]);
+    }
+    const golfers = batch.map((arrival) => spawnGolfer(state, course, { ...arrival, groupId }));
+    state.golfers.push(...golfers);
+    state.roundsStarted += golfers.length;
+    const courseId = golfers[0]?.courseId ?? first.courseId ?? activeCourseLayout(course).id;
+    const operations = state.operationsByCourse?.[courseId] ?? courseOperations(course, courseId);
     state.nextTeeFreeAtByCourse ??= {};
-    state.nextTeeFreeAtByCourse[courseId] = state.dayMinute + LIVE.day.teeGapMinutes;
+    state.nextTeeFreeAtByCourse[courseId] = state.dayMinute + operations.teeIntervalMinutes;
     state.nextTeeFreeAt = Math.min(...Object.values(state.nextTeeFreeAtByCourse));
     const courseStats = state.perCourse?.[courseId];
-    if (courseStats) courseStats.roundsStarted++;
+    if (courseStats) courseStats.roundsStarted += golfers.length;
+    const group = state.groups?.find((candidate) => candidate.id === groupId);
+    if (group) { group.startedAt = state.dayMinute; group.golferIds = golfers.map((golfer) => golfer.id); }
+    if (state.pace) state.pace.groupsStarted++;
     // Hosted-event players are in the contracted field; the sponsor/hosting
     // award is settled after results instead of charging each entrant a fee.
-    if (!arrival.tournament) {
+    if (!first.tournament) {
       const fee = layoutById(course, courseId)?.greenFee ?? course.baseGreenFee;
-      cashDelta += fee;
-      state.greenFeeCollected += fee;
-      golfer.spent += fee;
-      if (courseStats) courseStats.greenFees += fee;
+      cashDelta += fee * golfers.length;
+      state.greenFeeCollected += fee * golfers.length;
+      golfers.forEach((golfer) => { golfer.spent += fee; });
+      if (courseStats) courseStats.greenFees += fee * golfers.length;
     }
   }
 
   // Advance every golfer; retire finished ones.
+  const activeByGroup = new Map<string, Golfer[]>();
+  for (const golfer of state.golfers) {
+    const id = golfer.groupId ?? `${golfer.courseId}-solo-${golfer.id}`;
+    const list = activeByGroup.get(id) ?? [];
+    list.push(golfer); activeByGroup.set(id, list);
+  }
+  const blockedGroups = new Set<string>();
+  for (const courseId of new Set(state.golfers.map((golfer) => golfer.courseId).filter(Boolean) as string[])) {
+    const ordered = (state.groups ?? []).filter((group) => group.courseId === courseId && group.startedAt != null && group.finishedAt == null).sort((a, b) => a.startedAt! - b.startedAt!);
+    for (let index = 1; index < ordered.length; index++) {
+      const current = activeByGroup.get(ordered[index].id) ?? [];
+      const ahead = activeByGroup.get(ordered[index - 1].id) ?? [];
+      const currentHole = Math.min(...current.map((golfer) => golfer.currentHole).filter((hole) => hole >= 0));
+      const aheadHole = Math.min(...ahead.map((golfer) => golfer.currentHole).filter((hole) => hole >= 0));
+      if (Number.isFinite(currentHole) && Number.isFinite(aheadHole) && aheadHole <= currentHole) blockedGroups.add(ordered[index].id);
+    }
+  }
+  for (const group of state.groups ?? []) {
+    group.blocked = blockedGroups.has(group.id);
+    if (group.blocked) {
+      group.waitMinutes += dtMin;
+      if (state.pace) { state.pace.totalWaitMinutes += dtMin; }
+    }
+  }
   const stillPlaying: Golfer[] = [];
   for (const g of state.golfers) {
     const previousSegment = g.segIndex;
-    advanceGolfer(g, dtMin, course.condition);
+    const previousScored = g.scoredHoles;
+    const group = state.groups?.find((candidate) => candidate.id === g.groupId);
+    const operations = state.operationsByCourse?.[g.courseId ?? ""] ?? courseOperations(course, g.courseId);
+    const blocked = !!g.groupId && blockedGroups.has(g.groupId);
+    if (blocked) {
+      g.waitMinutes = (g.waitMinutes ?? 0) + dtMin;
+      g.hospitalityDelay = Math.max(0, (g.hospitalityDelay ?? 0) - dtMin);
+      g.mood = Math.max(0, g.mood - dtMin * (0.00015 + (g.pacePreference ?? .5) * .00035));
+    } else if ((g.hospitalityDelay ?? 0) > 0) {
+      g.hospitalityDelay = Math.max(0, (g.hospitalityDelay ?? 0) - dtMin);
+    } else {
+      let paceDt = dtMin;
+      if (group?.startedAt != null && g.currentHole >= 0 && (state.marshalCoverageByCourse?.[g.courseId ?? ""] ?? 0) > 0 && operations.enforcement !== "advisory") {
+        const holes = Math.max(1, g.holePar.length);
+        const expected = groupTimeParMinutes(holes, group.golferIds.length || 1, operations) * ((g.currentHole + 1) / holes);
+        const behind = state.dayMinute - group.startedAt - expected;
+        const tolerance = operations.enforcement === "strict" ? 6 : 12;
+        if (behind > tolerance && state.dayMinute - (group.lastMarshalMinute ?? -999) >= 20) {
+          group.lastMarshalMinute = state.dayMinute; group.interventions++;
+          g.marshalInterventions = (g.marshalInterventions ?? 0) + 1;
+          if (state.pace) state.pace.marshalInterventions++;
+          g.thought = "A course marshal asked our group to close the gap"; g.thoughtUntil = state.dayMinute + 20;
+          g.mood = Math.max(0, g.mood - .015);
+          if (behind > 30 && group.interventions >= 2 && group.lastPickupHole !== g.currentHole) {
+            group.lastPickupHole = g.currentHole; group.pickups++;
+            g.forcedPickups = (g.forcedPickups ?? 0) + 1;
+            if (state.pace) state.pace.forcedPickups++;
+            for (let index = g.segIndex; index < g.segments.length && g.segments[index].holeIndex === g.currentHole; index++) g.segments[index].dur = Math.min(g.segments[index].dur, .02);
+            g.thought = "Picked up to restore position"; g.mood = Math.max(0, g.mood - .07);
+          }
+        }
+        if (behind > tolerance) paceDt *= 1.2;
+      }
+      advanceGolfer(g, paceDt, course.condition);
+    }
     if (state.tournament) updateTournamentStanding(state.tournament, g);
     for (let i = previousSegment; i <= Math.min(g.segIndex, g.segments.length - 1); i++) {
       const concession = g.segments[i]?.concession;
@@ -300,6 +403,31 @@ export function stepLive(
       state.concessionByType[concession.buildingType] =
         (state.concessionByType[concession.buildingType] ?? 0) + concession.amount;
       cashDelta += concession.amount;
+    }
+    if (g.scoredHoles > previousScored && (state.beverageCoverageByCourse?.[g.courseId ?? ""] ?? 0) > 0 && operations.beverage.menu !== "off" && operations.beverage.passes > 0) {
+      const interval = Math.max(1, Math.ceil(g.holePar.length / operations.beverage.passes));
+      if (g.scoredHoles % interval === 0 && g.wallet >= operations.beverage.price) {
+        const alcoholic = operations.beverage.menu === "beer_wine" && g.archetype !== "junior";
+        if (alcoholic && (g.alcoholUnits ?? 0) >= operations.beverage.alcoholLimit) {
+          if (state.pace) state.pace.serviceRefusals++;
+          g.thought = "Beverage service declined another drink"; g.thoughtUntil = state.dayMinute + 18;
+        } else {
+          const amount = operations.beverage.price;
+          g.wallet -= amount; g.spent += amount; g.drinksServed = (g.drinksServed ?? 0) + 1;
+          g.hospitalityDelay = (g.hospitalityDelay ?? 0) + 2;
+          if (alcoholic) { g.alcoholUnits = (g.alcoholUnits ?? 0) + 1; if (state.pace) state.pace.alcoholicDrinks++; }
+          g.mood = Math.min(1, g.mood + .025);
+          const transaction = { id: `${state.seed}-${g.id}-bev-${g.scoredHoles}`, golferId: g.id, golferName: g.name, buildingType: "snack_bar" as const, buildingX: Math.round(g.pos.x), buildingY: Math.round(g.pos.y), item: alcoholic ? "Beer & snack" : "Refreshment", amount, atMinute: state.dayMinute };
+          state.concessionTransactions.push(transaction); state.concessionCollected += amount; state.concessionByType.snack_bar = (state.concessionByType.snack_bar ?? 0) + amount;
+          cashDelta += amount;
+          if (state.pace) state.pace.beverageRevenue += amount;
+          if ((g.alcoholUnits ?? 0) >= 3 && ((state.seed + g.id * 17 + g.scoredHoles * 13) % 11 === 0)) {
+            g.disorderIncidents = (g.disorderIncidents ?? 0) + 1; g.mood = Math.max(0, g.mood - .1); g.hospitalityDelay += 5;
+            g.thought = "The group became disruptive"; g.thoughtUntil = state.dayMinute + 25;
+            if (state.pace) state.pace.disorderIncidents++;
+          }
+        }
+      }
     }
     if (g.finished) {
       state.satisfactionSum += g.mood * 100;
@@ -337,6 +465,11 @@ export function stepLive(
     }
   }
   state.golfers = stillPlaying;
+  const activeIds = new Set(stillPlaying.map((golfer) => golfer.id));
+  for (const group of state.groups ?? []) if (group.startedAt != null && group.finishedAt == null && group.golferIds.length > 0 && group.golferIds.every((id) => !activeIds.has(id))) {
+    group.finishedAt = state.dayMinute;
+    if (state.pace) state.pace.groupsFinished++;
+  }
 
   const allArrived = state.nextArrivalIdx >= state.arrivals.length;
   if (state.dayMinute >= LIVE.day.closeMinute && allArrived && state.golfers.length === 0) {

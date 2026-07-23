@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "version": "1.0.0-rc.2",
+  "commit": "c1558556a5a7a85065107132c62e52eb242970b1",
+  "branch": "main",
+  "generatedAt": "2026-07-22T00:16:22.061Z",
+  "node": "v25.8.2",
+  "platform": "darwin-arm64",
+  "checks": {
+    "versionMatches": true,
+    "immutableVersionedCache": true,
+    "scopedPrecache": true,
+    "relativeManifest": true,
+    "deploymentBaseBuilt": true,
+    "noSourceMaps": true,
+    "noSecretPatterns": true,
+    "noRoutineConsoleOutsideReviewedGuards": true,
+    "releaseSourceClean": true
+  },
+  "findings": {
+    "secretHits": [],
+    "consoleHits": [],
+    "releaseSourceChanges": []
+  },
+  "acceptedWarnings": [
+    "Vite reports the existing saveStore static/dynamic import overlap.",
+    "The main minified application chunk is approximately 1.08 MB (approximately 338 KB gzip).",
+    "ESLint reports seven pre-existing react-hooks warnings and zero errors."
+  ]
+}

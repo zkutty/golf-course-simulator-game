@@ -5,6 +5,7 @@ import { hitsLiquidityTrap } from "../sim/runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
 import type { DayResult, RoundReactions } from "./types";
 import type { LiveState } from "./types";
+import type { PaceDayMetrics } from "./types";
 import { layoutById } from "../models/courseLayouts";
 
 function clamp(x: number, a: number, b: number) {
@@ -35,6 +36,7 @@ export function commitDay(args: {
   perCourse?: LiveState["perCourse"];
   reactions: RoundReactions; // real observed reactions from finished rounds
   dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
+  pace?: PaceDayMetrics;
 }): { world: World; course: Course; result: DayResult } {
   const { course, world, revenue, reactions, dayIndex } = args;
   // Difficulty-resolved balance (ZKU-165): identity for normal.
@@ -106,7 +108,9 @@ export function commitDay(args: {
     ...world,
     cash: nextCashRaw,
     reputation: nextRep,
-    lastWeekProfit: profit,
+    // The hook replaces this with the seven-day ledger total at Sunday close.
+    // Midweek consumers must continue to see the last completed week.
+    lastWeekProfit: world.lastWeekProfit,
     isBankrupt: world.isBankrupt || bankrupt,
   };
   // Objective evaluation at the sim commit point (ZKU-163). The last day of
@@ -166,6 +170,7 @@ export function commitDay(args: {
       detractors: reactions.detractors,
       willReturnRate: reactions.willReturnRate,
       perCourse,
+      pace: args.pace,
     },
   };
 }

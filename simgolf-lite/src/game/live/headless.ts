@@ -2,6 +2,7 @@ import type { Course, World } from "../models/types";
 import { commitDay } from "./commitDay";
 import { createLiveState, roundReactions, stepLive } from "./simulation";
 import type { DayResult, LiveState } from "./types";
+import { appendDayToLedger, createWeekLedger, weekResultFromLedger } from "./weeklyLedger";
 
 export interface HeadlessRunResult {
   course: Course;
@@ -23,6 +24,7 @@ export function runLiveDaysHeadless(args: {
   let rounds = 0;
   const results: DayResult[] = [];
   let live = createLiveState(course, world, 0);
+  let ledger = createWeekLedger(world.week);
 
   for (let day = 0; day < args.days; day++) {
     const dayIndex = day % 7;
@@ -47,11 +49,16 @@ export function runLiveDaysHeadless(args: {
       reactions: roundReactions(live),
       dayIndex,
     });
+    ledger = appendDayToLedger(ledger, { ...committed.result, dayIndex });
+    const closesWeek = dayIndex === 6;
+    const completedWeek = closesWeek ? weekResultFromLedger(ledger) : null;
     course = committed.course;
     world = {
       ...committed.world,
-      week: dayIndex === 6 ? committed.world.week + 1 : committed.world.week,
+      week: closesWeek ? committed.world.week + 1 : committed.world.week,
+      lastWeekProfit: completedWeek?.profit ?? committed.world.lastWeekProfit,
     };
+    if (closesWeek) ledger = createWeekLedger(world.week);
     results.push({ ...committed.result, dayIndex });
   }
 

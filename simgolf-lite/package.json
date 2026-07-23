@@ -25,9 +25,11 @@
     "gen:m22-art": "node scripts/process-m22-assets.mjs",
     "build:atlas": "node scripts/build-atlas.mjs",
     "test:perf": "node scripts/perf-smoke.mjs",
-    "test:pwa": "node scripts/pwa-smoke.mjs"
+    "test:pwa": "node scripts/pwa-smoke.mjs",
+    "deploy:check": "wrangler deploy --dry-run"
   },
   "dependencies": {
+    "@sentry/react": "^10.67.0",
     "pixi.js": "^8.14.3",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
@@ -35,6 +37,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.61.1",
+    "@sentry/vite-plugin": "^5.4.0",
     "@types/node": "^24.10.1",
     "@types/pngjs": "^6.0.5",
     "@types/react": "^19.2.5",
@@ -49,6 +52,10 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.113.0"
+  },
+  "overrides": {
+    "@xmldom/xmldom": "0.8.13"
   }
 }
