@@ -123,6 +123,7 @@ import { VisionPage } from "./ui/VisionPage";
 import { PlayerProPanel, PlayerShotHud } from "./ui/PlayerProPanel";
 import { ArchitectureReviewPanel } from "./ui/ArchitectureReviewPanel";
 import { LivingClubPanel } from "./ui/LivingClubPanel";
+import { SeasonsLegacyPanel } from "./ui/SeasonsLegacyPanel";
 import type { PlayerProCareer, PlayerProPoint } from "./game/models/playerProTypes";
 import {
   activatePlayerChallenge,
@@ -157,6 +158,8 @@ import {
   resolveStoryChoice,
   setReturnToDesignContext,
 } from "./game/livingClub/livingClub";
+import { absoluteDayFor, activeWeather, advanceSeasonalDay, applySeasonCommand, createSeasonalState, seasonalState, weatherModifiers } from "./game/seasons/seasons";
+import type { SeasonCommand } from "./game/seasons/types";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -460,6 +463,7 @@ export default function App() {
     setArchitectureFilters(defaultArchitectureFilters(course));
   }, [architectureFilters.courseId, course]);
   const [showLivingClub, setShowLivingClub] = useState(false);
+  const [showSeasonsLegacy, setShowSeasonsLegacy] = useState(false);
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [showProgression, setShowProgression] = useState(false);
   const [showPlayerPro, setShowPlayerPro] = useState(false);
@@ -498,6 +502,25 @@ export default function App() {
     }
     return result;
   }, [dispatch]);
+
+  const runSeasonCommand = useCallback((command: SeasonCommand) => {
+    const current = gameStateRef.current;
+    const result = applySeasonCommand(current.course, current.world, command);
+    if (!result.ok) return result;
+    setGameState((latest) => {
+      const next = latest === current ? result : applySeasonCommand(latest.course, latest.world, command);
+      if (!next.ok) return latest;
+      return {
+        ...latest,
+        course: next.course,
+        world: next.world,
+        terrainVersion: latest.terrainVersion + (next.course !== latest.course ? 1 : 0),
+        economyVersion: latest.economyVersion + 1,
+      };
+    });
+    markDirty();
+    return result;
+  }, [markDirty]);
 
   const achievementContext = useCallback((nextRecords = recordsRef.current, perfectMood = false): AchievementContext => ({
     course: gameStateRef.current.course,
@@ -1803,7 +1826,25 @@ export default function App() {
         renderer: "pixi",
         regionalSurround: true,
       },
-      simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, weekReport: pendingWeekReport ? { week: pendingWeekReport.week, profit: pendingWeekReport.result.profit } : null, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, pace: live.status.pace, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
+      simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, weekReport: pendingWeekReport ? { week: pendingWeekReport.week, profit: pendingWeekReport.result.profit, weather: pendingWeekReport.result.weatherSummary ?? null } : null, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, pace: live.status.pace, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
+      seasons: (() => {
+        const state = seasonalState(world, course, live.status.dayIndex);
+        const weather = activeWeather(world, course, live.status.dayIndex);
+        const modifiers = weatherModifiers(weather, state.operations.drainageLevel);
+        return {
+          panelOpen: showSeasonsLegacy,
+          calendar: state.calendar,
+          weather,
+          modifiers,
+          forecast: state.forecast,
+          charter: state.charter,
+          automation: state.automation,
+          operations: state.operations,
+          yearbooks: state.yearbooks.map((book) => ({ id: book.id, year: book.year, charter: book.charter, awards: book.awards, ranking: book.rankings.find((ranking) => ranking.player)?.rank ?? null, dismissed: book.dismissed })),
+          timelineEntries: state.timeline.length,
+          hallOfFame: state.hallOfFame.length,
+        };
+      })(),
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       architectureReview: {
         panelOpen: showArchitectureReview,
@@ -1900,7 +1941,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, showArchitectureReview, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, showArchitectureReview, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1953,6 +1994,27 @@ export default function App() {
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
         setShowPlayerPro(false);
         setPlayerShotAim(null);
+      },
+      setM39Fixture: () => {
+        const fixtureCourse = createPlayerProReferenceCourse();
+        const baseWorld: World = {
+          ...gameStateRef.current.world,
+          week: 32,
+          cash: 750_000,
+          reputation: 84,
+          runSeed: 390040,
+          isBankrupt: false,
+          distressWeeks: 0,
+          seasonal: {
+            ...createSeasonalState({ runSeed: 390040, theme: fixtureCourse.theme, week: 32, day: 6 }),
+            charter: "destination-retreat",
+            lastCommittedAbsoluteDay: absoluteDayFor(32, 5),
+          },
+        };
+        const fixture = advanceSeasonalDay(fixtureCourse, baseWorld, 6);
+        dispatch({ type: "LOAD_GAME", course: fixture.course, world: fixture.world });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixture.course, fixture.world, 6), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setShowSeasonsLegacy(true);
       },
       startWeekCloseFixture: async (weekOverride?: number) => {
         const course = gameStateRef.current.course;
@@ -3362,6 +3424,7 @@ export default function App() {
               <button data-testid="open-player-pro" aria-pressed={showPlayerPro} onClick={() => setShowPlayerPro((open) => !open)}>🏌️ {t("playerPro.open")}{activePlayerRound ? " •" : ""}</button>
               <button data-testid="open-architecture-review" aria-pressed={showArchitectureReview} onClick={() => setShowArchitectureReview((open) => !open)}>📐 {t("architecture.review.title")}</button>
               <button data-testid="open-living-club" aria-pressed={showLivingClub} onClick={() => setShowLivingClub(true)}>👥 {t("livingClub.title")}{normalizeLivingClub(world.livingClub).story.instances.some((instance) => ["pending", "presented", "deferred"].includes(instance.status)) ? " •" : ""}</button>
+              <button data-testid="open-seasons-legacy" aria-pressed={showSeasonsLegacy} onClick={() => setShowSeasonsLegacy((open) => !open)}>🍂 {t("season.open")}{world.seasonal?.pendingYearbookId ? " •" : ""}</button>
               <button data-testid="open-progression" aria-pressed={showProgression} onClick={() => setShowProgression((open) => !open)}>⭐ {t("progression.open")} · {reputationTier(world.reputation).name}</button>
               <button data-testid="open-tournaments" aria-pressed={showTournaments} onClick={() => setShowTournaments((open) => !open)}>⛳ {t("tournament.open")}{live.status.tournament ? " •" : ""}</button>
               <button data-testid="open-land-office" disabled={playerRoundLocksEditing} aria-pressed={showLandOffice} onClick={() => { setShowLandOffice((open) => !open); setSelectedParcelId((current) => current ?? course.estate?.starterParcelId ?? null); }}>🗺️ {t("land.open")}</button>
@@ -3435,6 +3498,13 @@ export default function App() {
               onChooseStory={chooseStory}
               onDeferStory={deferStory}
               onClose={closeLivingClub}
+            />}
+            {showSeasonsLegacy && !tutorialProgress && <SeasonsLegacyPanel
+              course={course}
+              world={world}
+              day={live.status.dayIndex}
+              onCommand={runSeasonCommand}
+              onClose={() => setShowSeasonsLegacy(false)}
             />}
             {showPropertyManagement && !tutorialProgress && <PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} />}
             {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}

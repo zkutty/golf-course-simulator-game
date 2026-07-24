@@ -4,6 +4,7 @@ import { normalizeOperations } from "./courseOperations";
 import { staffFromLevel } from "../live/pace";
 import { emptyPropertyEnterprise, starterPropertyCourse } from "../property/property";
 import { emptyLivingClubState } from "../livingClub/livingClub";
+import { createSeasonalState } from "../seasons/seasons";
 
 export const DEFAULT_COURSE: Course = {
   name: "West Village Municipal",
@@ -65,4 +66,5 @@ export const DEFAULT_WORLD: World = {
   tournaments: { version: 2, events: [] },
   enterprise: emptyPropertyEnterprise(),
   livingClub: emptyLivingClubState(),
+  seasonal: createSeasonalState({ runSeed: 1337, theme: "parkland" }),
 };

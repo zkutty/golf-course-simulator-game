@@ -11,6 +11,7 @@ import type { Arrival } from "./types";
 import { activeCourseLayout, operatingCourseViews } from "../models/courseLayouts";
 import { courseOperations } from "./pace";
 import { normalizeLivingClub } from "../livingClub/livingClub";
+import { activeWeather, charterBenefits, seasonalState, weatherModifiers } from "../seasons/seasons";
 
 // Re-exported so callers/tests keep a single import surface for spawning.
 export { plannedGolfersForDay } from "./demand";
@@ -19,8 +20,12 @@ export { plannedGolfersForDay } from "./demand";
 // The archetype mix is drawn from the course's personality-appeal distribution,
 // so a premium, challenging, high-reputation course pulls in more pros and
 // low-handicappers while a cheap, scenic, easy one skews casual/tourist.
-export function planDay(course: Course, world: World, seed: number): Arrival[] {
-  const count = plannedGolfersForDay(course, world);
+export function planDay(course: Course, world: World, seed: number, dayIndex = 0): Arrival[] {
+  const seasonal = seasonalState(world, course, dayIndex);
+  const weather = activeWeather(world, course, dayIndex);
+  const demandMultiplier = weatherModifiers(weather, seasonal.operations.drainageLevel).demandMultiplier
+    * charterBenefits(world, course, dayIndex).demandMultiplier;
+  const count = Math.max(0, Math.floor(plannedGolfersForDay(course, world) * demandMultiplier));
   const rng = mulberry32(seed);
   const appeal = archetypeAppeal(courseProfile(course, world));
   const arrivals: Arrival[] = [];
@@ -53,9 +58,10 @@ export function planEstateDay(
   world: World,
   seed: number,
   views = operatingCourseViews(course),
+  dayIndex = 0,
 ): Arrival[] {
   const arrivals = views.flatMap(({ layout, course: view }, index) =>
-    planDay(view, world, seed + index * 104729).slice(0, layout.roundLength * 4).map((arrival) => ({ ...arrival, courseId: layout.id }))
+    planDay(view, world, seed + index * 104729, dayIndex).slice(0, layout.roundLength * 4).map((arrival) => ({ ...arrival, courseId: layout.id }))
   );
   // Persistent regulars reuse their stable person identity and appearance when
   // they revisit. They replace a bounded share of the ordinary tee sheet, so

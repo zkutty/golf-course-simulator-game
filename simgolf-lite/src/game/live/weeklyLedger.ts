@@ -25,6 +25,7 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
   const satisfactionWeight = ledger.days.reduce((sum, day) => sum + day.avgSatisfaction * day.rounds, 0);
   const byConcession: Partial<Record<ConcessionType, number>> = {};
   const perCourse = new Map<string, NonNullable<WeekResult["perCourse"]>[number] & { satisfactionWeight: number }>();
+  const weatherDays = ledger.days.flatMap((day) => day.weather ? [day.weather] : []);
 
   for (const day of ledger.days) {
     for (const [type, amount] of Object.entries(day.revenueBreakdown.byConcession) as Array<[ConcessionType, number]>) {
@@ -67,6 +68,16 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
     reputationDelta: ledger.days.reduce((sum, day) => sum + day.reputationDelta, 0),
     perCourse: [...perCourse.values()].map(({ satisfactionWeight: _weight, ...row }) => row),
     visitorNoise: 0,
+    ...(weatherDays.length ? {
+      weatherSummary: {
+        playableDays: weatherDays.filter((weather) => weather.modifiers.demandMultiplier >= 0.5).length,
+        rainDays: weatherDays.filter((weather) => ["rain", "heavy_rain", "storm"].includes(weather.kind)).length,
+        severeDays: weatherDays.filter((weather) => weather.modifiers.eventCancellationRisk >= 0.3).length,
+        averageDemandMultiplier: weatherDays.reduce((sum, weather) => sum + weather.modifiers.demandMultiplier, 0) / weatherDays.length,
+        averageTurfWearMultiplier: weatherDays.reduce((sum, weather) => sum + weather.modifiers.turfWearMultiplier, 0) / weatherDays.length,
+        kinds: weatherDays.map((weather) => weather.kind),
+      },
+    } : {}),
   };
 }
 

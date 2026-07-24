@@ -242,6 +242,12 @@ export function PlayerShotHud(props: {
         <div style={{ padding: 8, borderRadius: 8, background: preview.risk === "high" ? "#f4d5c8" : preview.risk === "medium" ? "#f4e4b8" : "#dcebd5" }}>
           <strong>{t("playerPro.shot.aim", { x: Math.round(props.aim.x), y: Math.round(props.aim.y) })}</strong>
           <div>{t("playerPro.shot.preview", { carry: Math.round(preview.carryYards), dispersion: preview.dispersionTiles.toFixed(1), risk: preview.risk })}</div>
+          {props.round.course.weather && <div data-testid="player-shot-weather">{t("season.shot.weather", {
+            kind: props.round.course.weather.kind.replaceAll("_", " "),
+            wind: props.round.course.weather.windMph,
+            carry: Math.round((props.round.course.weather.carryMultiplier - 1) * 100),
+            dispersion: Math.round((props.round.course.weather.dispersionMultiplier - 1) * 100),
+          })}</div>}
           <small>{t("playerPro.shot.target", { yards: Math.round(preview.targetYards), penalty: preview.expectedPenalty.toFixed(2) })}</small>
           {preview.blocker && <div role="alert">{t("playerPro.shot.blocked", { reason: preview.blocker })}</div>}
         </div>

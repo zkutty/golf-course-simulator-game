@@ -61,6 +61,15 @@ export interface PlayerRoundCourseSnapshot {
   elevations: number[];
   obstacles: Array<PlayerProPoint & { type: string }>;
   holes: PlayerRoundHoleSnapshot[];
+  weather?: {
+    kind: string;
+    temperatureF: number;
+    windMph: number;
+    rainInches: number;
+    carryMultiplier: number;
+    dispersionMultiplier: number;
+    paceMultiplier: number;
+  };
 }
 
 export interface PlayerShotTrace {

@@ -11,6 +11,7 @@ import { generateWildLandWithObstacles } from "./generateWildLand";
 import { createEstate, starterParcelOffset } from "../estate/estate";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { createDefaultPlayerPro } from "../playerPro/playerPro";
+import { createSeasonalState } from "../seasons/seasons";
 
 /**
  * THE new-game path (ZKU-162): every fresh run — wizard, quick start, defeat
@@ -137,6 +138,7 @@ export function createNewGame(
       handedness: setup.playerPro?.handedness,
       background: setup.playerPro?.background,
     }),
+    seasonal: createSeasonalState({ runSeed: seed, theme: setup.theme }),
   };
   if (setup.founderName?.trim()) world.founderName = setup.founderName.trim();
 

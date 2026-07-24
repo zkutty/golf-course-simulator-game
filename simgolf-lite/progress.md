@@ -1,5 +1,16 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## M39 implementation — 2026-07-24
+
+- Added a timezone-independent 32-week club calendar advanced only by live-day settlement.
+- Added deterministic biome/season weather and stable seven-day forecasts with bounded severe cooldowns.
+- Connected one weather modifier contract to live demand, AI shot planning, Player Pro shot snapshots/previews, pace, turf, hospitality, and weekly reports.
+- Added four annual club charters, stable-baseline enterprise automation, Advanced Operations/manual overrides, and forecast response previews/commands.
+- Added atomic closure/rescheduling cascades plus immutable annual awards, rankings, yearbooks, timeline, Hall of Fame, and one-time rewards.
+- Advanced saves to schema v16 with migration preserving explicit M30–M33 settings.
+- Final verification passes: 64 Vitest files with 405 tests passed and one intentional skip; production build; lint/i18n with seven pre-existing hook warnings and no errors; eight M24/M31/M32/M33/M36/M38/M39 Playwright regressions; focused M39 browser rerun; bundled-client structured state; visual inspection of the forecast, charter/automation, yearbook, and client captures; and `git diff --check`.
+- Certification record: `docs/M39_CERTIFICATION.md`.
+
 ## 2026-07-23
 
 - Identified `golf-sim` as the matching Linear project.

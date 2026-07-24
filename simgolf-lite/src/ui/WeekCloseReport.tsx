@@ -11,6 +11,14 @@ export function WeekCloseReport(props: { week: number; result: WeekResult; resum
     ...(result.revenueBreakdown?.propertyVisitors ? [[translateCurrent("property.report.guests"), formatNumber(result.revenueBreakdown.propertyVisitors)]] : []),
     [translateCurrent("weekClose.costs"), formatCurrency(result.costs)],
     [translateCurrent("weekClose.satisfaction"), `${Math.round(result.avgSatisfaction)}%`],
+    ...(result.weatherSummary ? [[
+      translateCurrent("season.report.weather"),
+      translateCurrent("season.report.weatherValue", {
+        playable: result.weatherSummary.playableDays,
+        rain: result.weatherSummary.rainDays,
+        severe: result.weatherSummary.severeDays,
+      }),
+    ]] : []),
   ];
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="week-close-title" data-testid="week-close-report" data-resume-speed={props.resumeSpeed} style={{ position: "fixed", inset: 0, zIndex: 99960, display: "grid", placeItems: "center", padding: 20, background: "rgba(16,24,18,.72)" }}>

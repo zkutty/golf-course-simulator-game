@@ -3,6 +3,7 @@ import type { TournamentCalendar } from "../tournaments/types";
 import type { PropertyCourseState, PropertyEnterpriseState } from "../property/types";
 import type { PlayerProCareer } from "./playerProTypes";
 import type { LivingClubState } from "../livingClub/types";
+import type { SeasonalState } from "../seasons/types";
 
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
@@ -306,6 +307,8 @@ export interface World {
   playerPro?: PlayerProCareer;
   /** M38 bounded people, story, callback, and architecture-evidence state. */
   livingClub?: LivingClubState;
+  /** M39 calendar, weather, charter, automation, and immutable annual legacy. */
+  seasonal?: SeasonalState;
 }
 
 export type StaffRole = "groundskeeper" | "cart_attendant" | "pro_shop" | "marshal" | "tournament_director" | "club_pro" | "food_service" | "locker_attendant" | "front_desk" | "housekeeping" | "shuttle_driver";
@@ -454,6 +457,14 @@ export interface WeekResult {
   }>;
   reputationMomentum?: string;
   visitorNoise: number; // signed
+  weatherSummary?: {
+    playableDays: number;
+    rainDays: number;
+    severeDays: number;
+    averageDemandMultiplier: number;
+    averageTurfWearMultiplier: number;
+    kinds: string[];
+  };
   demand?: DemandBreakdown;
   satisfaction?: SatisfactionBreakdown;
   tips?: string[];

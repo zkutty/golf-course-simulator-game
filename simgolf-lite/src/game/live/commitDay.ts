@@ -10,6 +10,7 @@ import { layoutById } from "../models/courseLayouts";
 import { recordCoreCommerce, settlePropertyDay } from "../property/property";
 import type { PropertyShotTrace } from "../property/types";
 import { advanceLivingClubDay } from "../livingClub/livingClub";
+import { advanceSeasonalDay, charterDefinition, seasonalState } from "../seasons/seasons";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -43,7 +44,10 @@ export function commitDay(args: {
   shotTraces?: PropertyShotTrace[];
 }): { world: World; course: Course; result: DayResult } {
   const { course, world, reactions, dayIndex } = args;
-  const propertySettlement = settlePropertyDay(course, world, dayIndex ?? 0, reactions.rounds, args.shotTraces);
+  const seasonalCommit = advanceSeasonalDay(course, world, dayIndex ?? 0);
+  const season = seasonalState(seasonalCommit.world, seasonalCommit.course, dayIndex ?? 0);
+  const charter = charterDefinition(season.charter).benefits;
+  const propertySettlement = settlePropertyDay(seasonalCommit.course, seasonalCommit.world, dayIndex ?? 0, reactions.rounds, args.shotTraces);
   const operatingCourse = propertySettlement.course;
   const operatingWorld = recordCoreCommerce(propertySettlement.world, dayIndex ?? 0, {
     greenFees: args.greenFees ?? args.revenue,
@@ -51,7 +55,8 @@ export function commitDay(args: {
     tournaments: args.tournamentRevenue ?? 0,
     byConcession: args.concessionByType ?? {},
   });
-  const revenue = args.revenue + propertySettlement.report.revenue;
+  const hospitalityWeatherAdjustment = propertySettlement.report.revenue * (seasonalCommit.modifiers.lodgingMultiplier - 1);
+  const revenue = args.revenue + propertySettlement.report.revenue + hospitalityWeatherAdjustment;
   // Difficulty-resolved balance (ZKU-165): identity for normal.
   const BALANCE = getEffectiveBalance(operatingWorld.difficulty);
   const rounds = reactions.rounds;
@@ -76,28 +81,38 @@ export function commitDay(args: {
   const consumablesVariable = rounds * BALANCE.variableCosts.consumablesPerRound;
   const merchantFees = revenue * BALANCE.variableCosts.merchantFeeRate;
 
+  const waterPolicyCost = season.operations.waterPolicy === "irrigate" ? 95 : season.operations.waterPolicy === "conserve" ? 12 : 42;
+  const presentationCost = season.operations.turfPriority === "presentation" ? 65 : season.operations.turfPriority === "recovery" ? 38 : 20;
   const costsPreTax =
     staffCost + marketingCost + maintenanceCost + overheadTotal +
-    laborVariable + consumablesVariable + merchantFees;
+    laborVariable + consumablesVariable + merchantFees + waterPolicyCost + presentationCost;
 
   const profitPreTax = revenue - costsPreTax;
   const tax =
     BALANCE.tax.enabled && profitPreTax > 0 ? profitPreTax * BALANCE.tax.profitTaxRate : 0;
-  const costs = costsPreTax + tax + propertySettlement.report.costs;
+  const costs = (costsPreTax + tax + propertySettlement.report.costs) * charter.operatingCostMultiplier;
   const profit = revenue - costs;
 
   // ---- Condition: wear from traffic vs. maintenance recovery (per day) ----
   const totalWeight = operatingCourse.tiles.reduce((acc, t) => acc + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
   const avgWeight = totalWeight / (operatingCourse.tiles.length || 1);
+  const priorityWearMultiplier = season.operations.turfPriority === "recovery" ? 0.82 : season.operations.turfPriority === "presentation" ? 0.94 : 1;
   const wear = Math.min(
     BALANCE.condition.wearCap / DAYS_PER_WEEK,
-    (rounds / BALANCE.condition.wearDivisor) * avgWeight
+    (rounds / BALANCE.condition.wearDivisor) * avgWeight * seasonalCommit.modifiers.turfWearMultiplier * priorityWearMultiplier
   );
+  const waterRecoveryMultiplier = season.operations.waterPolicy === "irrigate"
+    ? seasonalCommit.weather.kind === "heat" || seasonalCommit.weather.kind === "drought" ? 1.35 : 1.08
+    : season.operations.waterPolicy === "conserve" ? 0.86 : 1;
+  const priorityRecoveryMultiplier = season.operations.turfPriority === "recovery" ? 1.22 : season.operations.turfPriority === "presentation" ? 1.08 : 1;
   const maintEffect = Math.min(
     BALANCE.condition.maintEffectCap / DAYS_PER_WEEK,
-    maintenanceCost / BALANCE.condition.maintEffectDivisor
+    (maintenanceCost / BALANCE.condition.maintEffectDivisor)
+      * seasonalCommit.modifiers.turfRecoveryMultiplier
+      * waterRecoveryMultiplier
+      * priorityRecoveryMultiplier
   );
-  const nextCondition = clamp01(course.condition - wear + maintEffect);
+  const nextCondition = clamp01(seasonalCommit.course.condition - wear + maintEffect);
 
   // ---- Reputation: driven by the day's real net-promoter balance ----
   // Net promoter score of the golfers who actually finished, nudged by how many
@@ -111,12 +126,12 @@ export function commitDay(args: {
   const audienceRepDelta =
     rounds > 0 ? clamp(sentiment * BALANCE.reputation.npsGain * repAsym, -dailyRepCap, dailyRepCap) : 0;
   const liabilityRep = propertySettlement.report.incidents.reduce((sum, incident) => sum + incident.severity * 0.08, 0);
-  const repDelta = audienceRepDelta + (args.tournamentReputation ?? 0) - liabilityRep;
+  const repDelta = (audienceRepDelta + (args.tournamentReputation ?? 0)) * charter.reputationMultiplier - liabilityRep;
   const nextRep = clamp(operatingWorld.reputation + repDelta, 0, 100);
 
   // Core revenue is already banked live. Property revenue settles here beside
   // its upkeep, staffing, access failures, and liability costs.
-  const nextCashRaw = operatingWorld.cash + propertySettlement.report.revenue - costs;
+  const nextCashRaw = operatingWorld.cash + propertySettlement.report.revenue + hospitalityWeatherAdjustment - costs;
   const bankrupt = hitsLiquidityTrap(nextCashRaw);
 
   const conditionCourse = { ...operatingCourse, condition: nextCondition };
@@ -187,12 +202,19 @@ export function commitDay(args: {
       profit,
       avgSatisfaction,
       reputationDelta: repDelta,
-      conditionDelta: nextCondition - course.condition,
+      conditionDelta: nextCondition - seasonalCommit.course.condition,
       promoters: reactions.promoters,
       detractors: reactions.detractors,
       willReturnRate: reactions.willReturnRate,
       perCourse,
       pace: args.pace,
+      weather: {
+        kind: seasonalCommit.weather.kind,
+        temperatureF: seasonalCommit.weather.temperatureF,
+        windMph: seasonalCommit.weather.windMph,
+        rainInches: seasonalCommit.weather.rainInches,
+        modifiers: seasonalCommit.modifiers,
+      },
     },
   };
 }

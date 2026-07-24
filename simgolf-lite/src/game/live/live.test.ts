@@ -22,6 +22,7 @@ import { ARCHETYPES } from "./archetypes";
 import { mulberry32 } from "../../utils/rng";
 import type { Golfer } from "./types";
 import { normalizeOperations, PACE_PRESETS, staffFromLevel } from "./pace";
+import { activeWeather, charterBenefits, seasonalState, weatherModifiers } from "../seasons/seasons";
 
 // A neutral, middling personality for tests that don't care about spread.
 function testPersonality(over: Partial<Personality> = {}): Personality {
@@ -247,7 +248,11 @@ describe("planDay + volume", () => {
     expect(n).toBeGreaterThanOrEqual(3);
     expect(n).toBeLessThanOrEqual(42);
     const arrivals = planDay(course, world, 123);
-    expect(arrivals.length).toBe(n);
+    const season = seasonalState(world, course, 0);
+    const expected = Math.floor(n
+      * weatherModifiers(activeWeather(world, course, 0), season.operations.drainageLevel).demandMultiplier
+      * charterBenefits(world, course, 0).demandMultiplier);
+    expect(arrivals.length).toBe(expected);
     // sorted ascending
     for (let i = 1; i < arrivals.length; i++) {
       expect(arrivals[i].atMinute).toBeGreaterThanOrEqual(arrivals[i - 1].atMinute);

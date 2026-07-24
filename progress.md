@@ -1,5 +1,14 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-07-24 — M39 and M40 completion in progress
+
+Current request: “Implement M39 and then continue to implement rest of M40, commit each separately and then merge to main”
+
+- Resolved M39 as ZK-358 through ZK-365 and M40 as ZK-366 through ZK-374 in Linear.
+- Preserved the pre-existing uncommitted M40–M44 implementation in a named Git stash before starting M39 on `codex/m39-m40`.
+- Completed M39: 32-week calendar, deterministic weather/forecasts, shared golf and operating modifiers, charter and automation state, forecast response reducer, annual yearbooks/rankings/timeline, save v16 migration, UI, text state, focused browser coverage, and ten-year certification tests.
+- M39 verification passes: 405 Vitest tests with one intentional skip, production build, lint/i18n guards with seven pre-existing hook warnings and no errors, eight milestone Playwright regressions, focused browser rerun, bundled-client state capture, screenshot inspection, and `git diff --check`.
+
 ## 2026-07-23 — M38 Architecture Feedback & Living Club Stories complete
 
 Current request: “Implement m38 from linear”

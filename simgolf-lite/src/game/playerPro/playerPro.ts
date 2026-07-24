@@ -35,6 +35,7 @@ import { computeAutoPar } from "../sim/holeMetrics";
 import { mulberry32 } from "../../utils/rng";
 import { tournamentCalendar, TOURNAMENT_TIERS } from "../tournaments/tournaments";
 import type { TournamentEvent, TournamentStanding, TournamentTier } from "../tournaments/types";
+import { activeWeather, seasonalState, weatherModifiers } from "../seasons/seasons";
 
 const DEFAULT_SKILL = 40;
 const XP_PER_LEVEL = 12;
@@ -210,7 +211,7 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
   };
 }
 
-function snapshotCourse(course: Course, layoutId: string, teeSet: TeeSet, pinRotation: PinRotation): PlayerRoundCourseSnapshot | null {
+function snapshotCourse(course: Course, world: World, day: number, layoutId: string, teeSet: TeeSet, pinRotation: PinRotation): PlayerRoundCourseSnapshot | null {
   const layout = layoutById(course, layoutId);
   if (!layout || layout.state !== "open") return null;
   const view = courseForLayout(course, layout.id);
@@ -231,6 +232,9 @@ function snapshotCourse(course: Course, layoutId: string, teeSet: TeeSet, pinRot
     };
   });
   if (holes.some((hole) => !hole)) return null;
+  const season = seasonalState(world, course, day);
+  const weather = activeWeather(world, course, day);
+  const modifiers = weatherModifiers(weather, season.operations.drainageLevel);
   return {
     courseId: layout.id,
     courseName: layout.name,
@@ -243,6 +247,15 @@ function snapshotCourse(course: Course, layoutId: string, teeSet: TeeSet, pinRot
     elevations: course.elevations.slice(),
     obstacles: course.obstacles.map((obstacle) => ({ ...obstacle })),
     holes: holes as PlayerRoundCourseSnapshot["holes"],
+    weather: {
+      kind: weather.kind,
+      temperatureF: weather.temperatureF,
+      windMph: weather.windMph,
+      rainInches: weather.rainInches,
+      carryMultiplier: modifiers.carryMultiplier,
+      dispersionMultiplier: modifiers.dispersionMultiplier,
+      paceMultiplier: modifiers.paceMultiplier,
+    },
   };
 }
 
@@ -262,7 +275,7 @@ export function startPlayableRound(args: {
   if (layout.publishedHoleIds.length < 3) return { ok: false, reason: "Publish at least three complete holes before starting a Player Pro round." };
   const teeSet = args.teeSet ?? "member";
   const pinRotation = args.pinRotation ?? args.course.activePinRotation ?? "A";
-  const snapshot = snapshotCourse(args.course, layout.id, teeSet, pinRotation);
+  const snapshot = snapshotCourse(args.course, args.world, args.day ?? 0, layout.id, teeSet, pinRotation);
   if (!snapshot) return { ok: false, reason: "Every routed hole needs a valid tee, pin, and playable setup." };
   const id = `pro-round-${args.world.runSeed >>> 0}-${args.world.week}-${args.day ?? 0}-${args.kind ?? "casual"}-${(args.world.playerPro?.rounds.length ?? 0) + 1}`;
   return {
@@ -359,8 +372,8 @@ function profileForPlayer(snapshot: PlayerRoundCourseSnapshot, skills: PlayerPro
     yardsPerTile: snapshot.yardsPerTile,
     clubs: [{
       ...club,
-      carryYards: club.carryYards * (0.82 + power / 500),
-      dispersionTilesBase: club.dispersionTilesBase * (1.42 - value / 180),
+      carryYards: club.carryYards * (0.82 + power / 500) * (snapshot.weather?.carryMultiplier ?? 1),
+      dispersionTilesBase: club.dispersionTilesBase * (1.42 - value / 180) * (snapshot.weather?.dispersionMultiplier ?? 1),
     }],
     ratingMultipliers: {
       hazard: 1.35 - skills.recovery / 180,
@@ -489,6 +502,11 @@ export function resolvePlayableShot(args: {
   const hazard = outside || landingTerrain === "water" || landingTerrain === "wetland";
   const behavior = landingBehavior(landingTerrain === "out_of_play" ? null : landingTerrain as Terrain);
   let rollTiles = hazard || club.name === "Putter" ? 0 : behavior.rollTiles;
+  if (args.snapshot.weather) {
+    if (["rain", "heavy_rain", "storm"].includes(args.snapshot.weather.kind)) rollTiles *= 0.55;
+    else if (args.snapshot.weather.kind === "drought" || args.snapshot.weather.kind === "heat") rollTiles *= 1.22;
+    else if (args.snapshot.weather.kind === "frost") rollTiles *= 0.78;
+  }
   if (args.selection.technique === "backspin" || args.selection.technique === "flop") rollTiles *= 0.25;
   if (args.selection.technique === "punch") rollTiles *= 1.65;
   if (club.name === "Chip") rollTiles *= 0.55;

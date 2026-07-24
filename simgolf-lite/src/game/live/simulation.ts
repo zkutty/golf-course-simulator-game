@@ -16,8 +16,8 @@ import type { CompletedRound } from "../retention/types";
 import { createLiveTournament, planTournamentDay, tournamentForDate, updateTournamentStanding } from "../tournaments/tournaments";
 import { getTeeBox, preferredTeeForArchetype } from "../models/courseSetup";
 import { activeCourseLayout, courseForHoleIds, courseForLayout, layoutById, operatingCourseViews } from "../models/courseLayouts";
-import { plannedGolfersForDay } from "./demand";
 import { courseOperations, groupTimeParMinutes, normalizedStaff } from "./pace";
+import { activeWeather, seasonalState, weatherModifiers } from "../seasons/seasons";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -42,11 +42,14 @@ export function createLiveState(
   const tournamentEvent = tournamentForDate(world, dayIndex, course);
   const rawArrivals = tournamentEvent
     ? planTournamentDay(tournamentEvent, LIVE.day.firstArrivalMinute, LIVE.day.teeGapMinutes)
-    : planEstateDay(course, world, seed, courseViews);
+    : planEstateDay(course, world, seed, courseViews, dayIndex);
+  const seasonal = seasonalState(world, course, dayIndex);
+  const dailyWeather = activeWeather(world, course, dayIndex);
+  const dailyWeatherModifiers = weatherModifiers(dailyWeather, seasonal.operations.drainageLevel);
   const arrivals = rawArrivals.map((arrival, index) => ({ ...arrival, groupId: arrival.groupId ?? `${arrival.courseId ?? "course"}-solo-${index + 1}` }));
-  const perCourse = Object.fromEntries(courseViews.map(({ layout, course: view }) => [layout.id, {
+  const perCourse = Object.fromEntries(courseViews.map(({ layout }) => [layout.id, {
     courseName: layout.name,
-    arrivals: tournamentEvent ? arrivals.filter((arrival) => arrival.courseId === layout.id).length : plannedGolfersForDay(view, world),
+    arrivals: arrivals.filter((arrival) => arrival.courseId === layout.id).length,
     roundsStarted: 0,
     roundsFinished: 0,
     greenFees: 0,
@@ -100,6 +103,7 @@ export function createLiveState(
     marshalCoverageByCourse,
     beverageCoverageByCourse,
     operationsByCourse: Object.fromEntries(courseViews.map(({ layout }) => [layout.id, courseOperations(course, layout.id)])),
+    weather: { daily: dailyWeather, modifiers: dailyWeatherModifiers },
   };
 }
 
@@ -132,7 +136,15 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   const courseId = arrival.courseId ?? state.tournament?.courseId ?? activeCourseLayout(course).id;
   const roundCourse = courseForLayout(course, courseId);
   const layout = layoutById(course, courseId) ?? activeCourseLayout(course);
-  const profile = getGolferProfile(solverProfileForSkill(personality.skill), roundCourse);
+  const baseProfile = getGolferProfile(solverProfileForSkill(personality.skill), roundCourse);
+  const profile = state.weather ? {
+    ...baseProfile,
+    clubs: baseProfile.clubs.map((club) => ({
+      ...club,
+      carryYards: club.carryYards * state.weather!.modifiers.carryMultiplier,
+      dispersionTilesBase: club.dispersionTilesBase * state.weather!.modifiers.dispersionMultiplier,
+    })),
+  } : baseProfile;
   const entry = entryPoint(roundCourse);
   const wallet = rollDiscretionaryWallet(personality, rng);
   const preferredTeeSet = preferredTeeForArchetype(arch.name);
@@ -155,6 +167,11 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     teeSet,
     pinRotation,
   });
+  if (state.weather && state.weather.modifiers.paceMultiplier !== 1) {
+    round.segments = round.segments.map((segment) => segment.kind === "walk" || segment.kind === "pause"
+      ? { ...segment, dur: segment.dur * state.weather!.modifiers.paceMultiplier }
+      : segment);
+  }
   const holeIds = roundCourse.holes.map((hole) => hole.id!).filter(Boolean);
   round.segments = round.segments.map((segment) => ({ ...segment, holeId: segment.holeIndex >= 0 ? holeIds[segment.holeIndex] : undefined }));
   return {

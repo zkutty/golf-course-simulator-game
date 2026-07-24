@@ -1,6 +1,7 @@
 import type { ConcessionTransaction, ConcessionType, CourseOperations, Difficulty, PinRotation, Point, TeeSet } from "../models/types";
 import type { Personality } from "./personality";
 import type { LiveTournamentState } from "../tournaments/types";
+import type { DailyWeather, WeatherKind, WeatherModifiers } from "../seasons/types";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -165,6 +166,7 @@ export interface LiveState {
   marshalCoverageByCourse?: Record<string, number>;
   beverageCoverageByCourse?: Record<string, number>;
   operationsByCourse?: Record<string, CourseOperations>;
+  weather?: { daily: DailyWeather; modifiers: WeatherModifiers };
 }
 
 // Aggregated reactions from the golfers who actually finished a round today.
@@ -257,4 +259,11 @@ export interface DayResult {
     avgSatisfaction: number;
   }>;
   pace?: PaceDayMetrics;
+  weather?: {
+    kind: WeatherKind;
+    temperatureF: number;
+    windMph: number;
+    rainInches: number;
+    modifiers: WeatherModifiers;
+  };
 }

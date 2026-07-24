@@ -1,0 +1,197 @@
+import { useMemo, useState } from "react";
+import type { Course, World } from "../game/models/types";
+import {
+  CHARTER_DEFINITIONS,
+  activeWeather,
+  applySeasonCommand,
+  formatClubDate,
+  previewSeasonCommand,
+  seasonalState,
+  weatherModifiers,
+} from "../game/seasons/seasons";
+import {
+  CLUB_CHARTERS,
+  type AutomationPreset,
+  type AutomationSystem,
+  type ClubCharter,
+  type SeasonCommand,
+  type TurfPriority,
+  type WaterPolicy,
+} from "../game/seasons/types";
+import { formatCurrency } from "../i18n/format";
+import { translateCurrent } from "../i18n/core";
+
+const AUTOMATION_SYSTEMS: AutomationSystem[] = ["hours", "upkeep", "pricing", "staffing", "parking", "lodging", "community", "safety"];
+const TURF_PRIORITIES: TurfPriority[] = ["playability", "recovery", "presentation"];
+const WATER_POLICIES: WaterPolicy[] = ["conserve", "balanced", "irrigate"];
+
+const card = {
+  border: "1px solid #c8b98e",
+  borderRadius: 10,
+  background: "rgba(255,253,244,.9)",
+  padding: 10,
+} as const;
+
+const button = {
+  border: "1px solid #6c5a32",
+  borderRadius: 7,
+  background: "#f8efd2",
+  color: "#332b1d",
+  padding: "7px 9px",
+  fontWeight: 800,
+  cursor: "pointer",
+} as const;
+
+function percent(value: number) {
+  const rounded = Math.round((value - 1) * 100);
+  return `${rounded >= 0 ? "+" : ""}${rounded}%`;
+}
+
+export function SeasonsLegacyPanel(props: {
+  course: Course;
+  world: World;
+  day: number;
+  onCommand: (command: SeasonCommand) => ReturnType<typeof applySeasonCommand>;
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"season" | "identity" | "legacy">("season");
+  const [message, setMessage] = useState<string | null>(null);
+  const state = useMemo(() => seasonalState(props.world, props.course, props.day), [props.course, props.day, props.world]);
+  const weather = activeWeather(props.world, props.course, props.day);
+  const modifiers = weatherModifiers(weather, state.operations.drainageLevel);
+  const run = (command: SeasonCommand) => {
+    const result = props.onCommand(command);
+    setMessage(result.message);
+  };
+  const charterCost = (charter: ClubCharter) => previewSeasonCommand(props.course, props.world, {
+    type: "SELECT_CHARTER",
+    charter,
+    confirmed: true,
+  });
+
+  return (
+    <aside
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="season-legacy-title"
+      data-testid="seasons-legacy-panel"
+      style={{ position: "absolute", zIndex: 205, top: 58, right: 14, width: "min(620px,calc(100% - 28px))", maxHeight: "calc(100% - 86px)", overflow: "auto", border: "3px solid #755824", borderRadius: 14, background: "linear-gradient(145deg,#fbf1d0,#dbe7cf)", color: "#302819", boxShadow: "0 20px 55px rgba(0,0,0,.45)", padding: 14 }}
+    >
+      <header style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
+        <div>
+          <small style={{ textTransform: "uppercase", letterSpacing: ".11em", fontWeight: 900 }}>{translateCurrent("season.eyebrow")}</small>
+          <h2 id="season-legacy-title" style={{ margin: "2px 0" }}>{translateCurrent("season.title")}</h2>
+          <div data-testid="club-calendar-date">{formatClubDate(state.calendar)}</div>
+        </div>
+        <button aria-label={translateCurrent("common.close")} onClick={props.onClose} style={button}>×</button>
+      </header>
+
+      <nav aria-label={translateCurrent("season.tabs")} style={{ display: "flex", gap: 6, margin: "12px 0" }}>
+        {(["season", "identity", "legacy"] as const).map((id) => (
+          <button key={id} aria-pressed={tab === id} onClick={() => setTab(id)} style={{ ...button, background: tab === id ? "#49634b" : button.background, color: tab === id ? "white" : button.color }}>
+            {translateCurrent(`season.tab.${id}`)}
+          </button>
+        ))}
+      </nav>
+      {message && <div role="status" style={{ ...card, marginBottom: 10, background: "#e8efd9" }}>{message}</div>}
+
+      {tab === "season" && <div style={{ display: "grid", gap: 10 }}>
+        <section style={card}>
+          <h3 style={{ margin: "0 0 7px" }}>{translateCurrent("season.weather.current")}</h3>
+          <strong data-testid="current-weather">{translateCurrent("season.weather.summary", {
+            kind: weather.kind.replaceAll("_", " "),
+            temperature: weather.temperatureF,
+            wind: weather.windMph,
+            rain: weather.rainInches.toFixed(2),
+          })}</strong>
+          <div style={{ marginTop: 6, fontSize: 12 }}>{translateCurrent("season.weather.effects", {
+            carry: percent(modifiers.carryMultiplier),
+            dispersion: percent(modifiers.dispersionMultiplier),
+            demand: percent(modifiers.demandMultiplier),
+            pace: percent(modifiers.paceMultiplier),
+            wear: percent(modifiers.turfWearMultiplier),
+          })}</div>
+        </section>
+        <section style={card}>
+          <h3 style={{ margin: "0 0 7px" }}>{translateCurrent("season.forecast.title")}</h3>
+          <div data-testid="seven-day-forecast" style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(62px,1fr))", gap: 5, overflowX: "auto" }}>
+            {state.forecast.map((day, index) => <div key={day.absoluteDay} style={{ border: "1px solid #d6c99f", borderRadius: 7, padding: 6, minWidth: 62, background: day.severity >= .55 ? "#f0cfb9" : "#f7f1da" }}>
+              <strong>{translateCurrent("season.forecast.day", { day: index + 1 })}</strong>
+              <div>{day.kind.replaceAll("_", " ")}</div>
+              <small>{day.temperatureF}° · {day.windMph}</small>
+            </div>)}
+          </div>
+        </section>
+        <section style={card}>
+          <h3 style={{ margin: "0 0 7px" }}>{translateCurrent("season.response.title")}</h3>
+          <div style={{ display: "grid", gap: 8 }}>
+            <label>{translateCurrent("season.response.turf")}<select data-testid="turf-priority" value={state.operations.turfPriority} onChange={(event) => run({ type: "SET_TURF_PRIORITY", priority: event.target.value as TurfPriority })}>{TURF_PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}</select></label>
+            <label>{translateCurrent("season.response.water")}<select data-testid="water-policy" value={state.operations.waterPolicy} onChange={(event) => run({ type: "SET_WATER_POLICY", policy: event.target.value as WaterPolicy })}>{WATER_POLICIES.map((policy) => <option key={policy}>{policy}</option>)}</select></label>
+            {(() => {
+              const preview = previewSeasonCommand(props.course, props.world, { type: "IMPROVE_DRAINAGE" });
+              return <div>
+                <strong>{translateCurrent("season.response.drainage", { level: state.operations.drainageLevel })}</strong>
+                <div>{translateCurrent("season.response.preview", { cost: formatCurrency(preview.cost), days: preview.days, risk: Math.round(preview.riskReduction * 100) })}</div>
+                <button data-testid="improve-drainage" disabled={!preview.ok} onClick={() => run({ type: "IMPROVE_DRAINAGE" })} style={button}>{translateCurrent("season.response.improve")}</button>
+                {!preview.ok && <small style={{ display: "block", color: "#8b3328" }}>{preview.blockers.join(" ")}</small>}
+              </div>;
+            })()}
+            <div style={{ display: "grid", gap: 5 }}>
+              {props.course.layouts?.map((layout) => {
+                const closed = layout.state === "closed";
+                const preview = previewSeasonCommand(props.course, props.world, { type: "SET_COURSE_CLOSED", courseId: layout.id, closed: !closed, currentDay: props.day });
+                return <div key={layout.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <span>{layout.name} · {translateCurrent(closed ? "season.response.closed" : "season.response.open")}</span>
+                  <button disabled={!preview.ok} onClick={() => run({ type: "SET_COURSE_CLOSED", courseId: layout.id, closed: !closed, currentDay: props.day })} style={button}>{translateCurrent(closed ? "season.response.reopen" : "season.response.close")}</button>
+                </div>;
+              })}
+            </div>
+          </div>
+        </section>
+      </div>}
+
+      {tab === "identity" && <div style={{ display: "grid", gap: 10 }}>
+        <section style={card}>
+          <h3 style={{ margin: "0 0 8px" }}>{translateCurrent("season.charter.title")}</h3>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 8 }}>
+            {CLUB_CHARTERS.map((charter) => {
+              const definition = CHARTER_DEFINITIONS[charter];
+              const preview = charterCost(charter);
+              const selected = state.charter === charter;
+              return <article key={charter} data-testid={`charter-${charter}`} style={{ ...card, border: selected ? "2px solid #426143" : card.border }}>
+                <strong>{definition.name}</strong>
+                <p style={{ margin: "5px 0" }}>{definition.promise}</p>
+                <small>{definition.tradeoff}</small>
+                <div style={{ marginTop: 5 }}>{translateCurrent("season.charter.cost", { cost: formatCurrency(preview.cost) })}</div>
+                <button disabled={selected || !preview.ok} onClick={() => run({ type: "SELECT_CHARTER", charter, confirmed: true })} style={{ ...button, marginTop: 6 }}>{translateCurrent(selected ? "season.charter.selected" : "season.charter.adopt")}</button>
+                {!preview.ok && !selected && <small style={{ display: "block", color: "#8b3328" }}>{preview.blockers.join(" ")}</small>}
+              </article>;
+            })}
+          </div>
+        </section>
+        <section style={card}>
+          <h3 style={{ margin: "0 0 8px" }}>{translateCurrent("season.automation.title")}</h3>
+          <label>{translateCurrent("season.automation.preset")}<select data-testid="automation-preset" value={state.automation.preset} onChange={(event) => run({ type: "SET_AUTOMATION", preset: event.target.value as AutomationPreset })}>{(["stewardship", "balanced", "growth"] as AutomationPreset[]).map((preset) => <option key={preset}>{preset}</option>)}</select></label>
+          <label style={{ display: "block", marginTop: 7 }}><input type="checkbox" checked={state.automation.advancedOperations} onChange={(event) => run({ type: "SET_ADVANCED_OPERATIONS", enabled: event.target.checked })} /> {translateCurrent("season.automation.advanced")}</label>
+          <div style={{ marginTop: 7 }}>{state.automation.decisions.map((decision) => <div key={decision}>• {decision}</div>)}</div>
+          {state.automation.advancedOperations && <details style={{ marginTop: 8 }}><summary>{translateCurrent("season.automation.overrides")}</summary>{AUTOMATION_SYSTEMS.map((system) => <label key={system} style={{ display: "block" }}><input type="checkbox" checked={state.automation.overrides.includes(system)} onChange={(event) => run({ type: "SET_AUTOMATION_OVERRIDE", system, manual: event.target.checked })} /> {system}</label>)}</details>}
+        </section>
+      </div>}
+
+      {tab === "legacy" && <div style={{ display: "grid", gap: 10 }}>
+        {state.yearbooks.length === 0 && <section style={card}>{translateCurrent("season.legacy.empty")}</section>}
+        {[...state.yearbooks].reverse().map((book) => <section key={book.id} data-testid={`yearbook-${book.year}`} style={card}>
+          <h3 style={{ margin: 0 }}>{translateCurrent("season.yearbook.title", { year: book.year })}</h3>
+          <div>{CHARTER_DEFINITIONS[book.charter].name} · {formatCurrency(book.cash)} · {Math.round(book.reputation)} {translateCurrent("season.yearbook.reputation")}</div>
+          <ol>{book.rankings.map((ranking) => <li key={ranking.clubId}><strong>{ranking.clubName}</strong> · {ranking.score}</li>)}</ol>
+          <ul>{book.awards.map((annualAward) => <li key={annualAward.id}><strong>{annualAward.title}</strong> — {annualAward.recipient}<br /><small>{annualAward.fact}</small></li>)}</ul>
+          {!book.dismissed && <button data-testid="acknowledge-yearbook" onClick={() => run({ type: "ACKNOWLEDGE_YEARBOOK", yearbookId: book.id })} style={button}>{translateCurrent("season.yearbook.acknowledge")}</button>}
+        </section>)}
+        <section style={card}>
+          <h3 style={{ margin: "0 0 7px" }}>{translateCurrent("season.timeline.title")}</h3>
+          {state.timeline.length === 0 ? <div>{translateCurrent("season.timeline.empty")}</div> : <ol>{[...state.timeline].reverse().slice(0, 30).map((entry) => <li key={entry.id}><strong>{entry.title}</strong><br /><small>{entry.detail}</small></li>)}</ol>}
+        </section>
+      </div>}
+    </aside>
+  );
+}

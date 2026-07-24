@@ -41,9 +41,10 @@ import { normalizePropertyCourse, normalizePropertyEnterprise, starterPropertyCo
 import { normalizeSurfaceIntent } from "../game/models/surfaceIntent";
 import { normalizePlayerPro } from "../game/playerPro/playerPro";
 import { normalizeLivingClub } from "../game/livingClub/livingClub";
+import { normalizeSeasonalState } from "../game/seasons/seasons";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 15 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 16 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -120,6 +121,10 @@ export interface SaveV14 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV15 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 15;
+  records?: CourseRecords;
+}
+export interface SaveV16 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -143,7 +148,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV15 = {
+  const save: SaveV16 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -497,6 +502,10 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // architecture evidence. Normalization provides a neutral deterministic
   // state, so old saves do not replay events or fabricate past relationships.
   14: (save) => ({ ...save, schemaVersion: 15 }),
+  // V16 adds M39 calendar/weather/charter/automation/annual-legacy state.
+  // Migration starts immediately before the saved live date, preserving the
+  // next authoritative daily settlement without replaying earlier years.
+  15: (save) => ({ ...save, schemaVersion: 16 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -715,6 +724,9 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
 
     const rawWorld = parsed.world as unknown as World;
     const rawConstraints = rawWorld.constraints;
+    const rawLiveDay = typeof (parsed.live as { state?: { dayIndex?: unknown } } | undefined)?.state?.dayIndex === "number"
+      ? (parsed.live as { state: { dayIndex: number } }).state.dayIndex
+      : 0;
     const world: World = {
       ...DEFAULT_WORLD,
       ...rawWorld,
@@ -738,6 +750,13 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
         founderName: typeof rawWorld.founderName === "string" ? rawWorld.founderName : undefined,
       }),
       livingClub: normalizeLivingClub(rawWorld.livingClub),
+      seasonal: normalizeSeasonalState(rawWorld.seasonal, {
+        runSeed: typeof rawWorld.runSeed === "number" ? rawWorld.runSeed : 1337,
+        theme: course.theme,
+        week: typeof rawWorld.week === "number" ? rawWorld.week : 1,
+        day: rawLiveDay,
+        migrated: rawWorld.seasonal == null,
+      }),
     };
     world.staffRoster = normalizedStaff(world, course);
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
