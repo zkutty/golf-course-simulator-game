@@ -24,6 +24,13 @@ export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) 
         const unlocked = isScenarioUnlocked(career, ladder, s.id);
         const rec = career.scenarios[s.id];
         const completed = rec?.completed === true;
+        const medal = rec?.bestMedal === "gold"
+          ? t("campaign.medal.gold")
+          : rec?.bestMedal === "silver"
+            ? t("campaign.medal.silver")
+            : rec?.bestMedal === "bronze"
+              ? t("campaign.medal.bronze")
+              : null;
         return (
           <button
             key={s.id}
@@ -68,7 +75,7 @@ export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) 
               </div>
               {completed && (
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#8a6d1a", marginTop: 4 }}>
-                  <T id="auto.ui.scenarioselect.completed" />{rec?.bestWeek != null ? ` — best: week ${rec.bestWeek}` : ""}
+                  <T id="auto.ui.scenarioselect.completed" />{medal ? ` · ${medal}` : ""}{rec?.bestWeek != null ? ` — best: week ${rec.bestWeek}` : ""}
                   {rec?.bestCash != null ? `, ${formatCurrency(rec.bestCash)}` : ""}
                   {t("scenario.replayable")}
                 </div>

@@ -1,6 +1,6 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
-## 2026-07-24 — M39 and M40 completion in progress
+## 2026-07-24 — M39 and M40 implementation complete
 
 Current request: “Implement M39 and then continue to implement rest of M40, commit each separately and then merge to main”
 
@@ -8,6 +8,10 @@ Current request: “Implement M39 and then continue to implement rest of M40, co
 - Preserved the pre-existing uncommitted M40–M44 implementation in a named Git stash before starting M39 on `codex/m39-m40`.
 - Completed M39: 32-week calendar, deterministic weather/forecasts, shared golf and operating modifiers, charter and automation state, forecast response reducer, annual yearbooks/rankings/timeline, save v16 migration, UI, text state, focused browser coverage, and ten-year certification tests.
 - M39 verification passes: 405 Vitest tests with one intentional skip, production build, lint/i18n guards with seven pre-existing hook warnings and no errors, eight milestone Playwright regressions, focused browser rerun, bundled-client state capture, screenshot inspection, and `git diff --check`.
+- Committed M39 separately as `72eaf03` (`Implement M39 seasons and annual legacy`).
+- Completed M40: six authored chapters and 18 phases, recurring cast/story bible, phase choices and consequences, actual Player Pro matches and championship finale, all four M39 charter paths, live cross-system facts, recovery guidance, persistent relationships/choices/epilogues, retry-safe medals/unlocks, Sandbox continuation, save v17 migration, certification report, UI, structured text state, and browser coverage.
+- M40 verification passes: 65 Vitest files / 415 passed with one intentional skip, production build, lint/i18n guards with the same seven pre-existing warnings and no errors, M36/M38/M39/M40 Playwright regressions, campaign opening/dashboard visual inspection, bundled-client structured state and renderer capture, and `git diff --check`.
+- Automated and internal M40 certification is complete. ZK-374’s explicitly external moderated 12–18 hour first-time-player study remains a human playtest gate and is documented separately from the completed implementation.
 
 ## 2026-07-23 — M38 Architecture Feedback & Living Club Stories complete
 

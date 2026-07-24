@@ -35,7 +35,7 @@ import { createNewGame } from "./game/gen/newGame";
 import type { GameSetup } from "./game/models/setup";
 import { createScenarioGame, getScenario } from "./game/scenarios/scenarios";
 import type { ScenarioDefinition } from "./game/scenarios/types";
-import { recordScenarioAttempt, recordScenarioCompleted } from "./utils/careerStore";
+import { recordCampaignChoice, recordScenarioAttempt, recordScenarioCompleted } from "./utils/careerStore";
 import { NewGameWizard } from "./ui/NewGameWizard";
 import { generateCourseName } from "./utils/courseNames";
 import { applyAction } from "./core/reducer";
@@ -160,6 +160,18 @@ import {
 } from "./game/livingClub/livingClub";
 import { absoluteDayFor, activeWeather, advanceSeasonalDay, applySeasonCommand, createSeasonalState, seasonalState, weatherModifiers } from "./game/seasons/seasons";
 import type { SeasonCommand } from "./game/seasons/types";
+import {
+  activeCampaignMatch,
+  advanceCampaign,
+  campaignPhaseBlockers,
+  campaignScene,
+  continueCampaignInSandbox,
+  registerCampaignMatch,
+  resolveCampaignChoice,
+} from "./game/campaign/campaign";
+import { CAMPAIGN_CHAPTER_BY_ID } from "./game/campaign/content";
+import { CampaignSceneModal } from "./ui/CampaignSceneModal";
+import { CampaignPanel } from "./ui/CampaignPanel";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -464,6 +476,7 @@ export default function App() {
   }, [architectureFilters.courseId, course]);
   const [showLivingClub, setShowLivingClub] = useState(false);
   const [showSeasonsLegacy, setShowSeasonsLegacy] = useState(false);
+  const [showCampaign, setShowCampaign] = useState(false);
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [showProgression, setShowProgression] = useState(false);
   const [showPlayerPro, setShowPlayerPro] = useState(false);
@@ -471,6 +484,8 @@ export default function App() {
   const playerRoundResumeSpeedRef = useRef<SpeedName>("1x");
   const storyResumeSpeedRef = useRef<SpeedName>("1x");
   const majorStoryPausedRef = useRef(false);
+  const campaignResumeSpeedRef = useRef<SpeedName>("1x");
+  const campaignPausedRef = useRef(false);
   const [showLiveOverview, setShowLiveOverview] = useState(false);
   const [followSelected, setFollowSelected] = useState(false);
   const [achievementQueue, setAchievementQueue] = useState<AchievementDefinition[]>([]);
@@ -645,6 +660,7 @@ export default function App() {
     ) ?? null,
     [world.livingClub],
   );
+  const activeCampaignScene = useMemo(() => campaignScene(world.campaign), [world.campaign]);
 
   useEffect(() => {
     if (!pendingMajorStory) return;
@@ -654,6 +670,20 @@ export default function App() {
     setShowLivingClub(true);
     setWorld((current) => acknowledgeStoryEvent(current, pendingMajorStory.id));
   }, [live, pendingMajorStory, setWorld]);
+
+  useEffect(() => {
+    if (activeCampaignScene) {
+      if (!campaignPausedRef.current) {
+        campaignResumeSpeedRef.current = live.speed;
+        campaignPausedRef.current = true;
+        live.setSpeed("paused");
+      }
+      return;
+    }
+    if (!campaignPausedRef.current) return;
+    campaignPausedRef.current = false;
+    live.setSpeed(campaignResumeSpeedRef.current);
+  }, [activeCampaignScene, live]);
 
   const updatePlayerPro = useCallback((updater: (career: PlayerProCareer) => PlayerProCareer) => {
     setWorld((current) => {
@@ -693,6 +723,85 @@ export default function App() {
     enterPlayerRoundView(next);
     return null;
   }, [enterPlayerRoundView, live.status.dayIndex, updatePlayerPro]);
+
+  const startCampaignMatch = useCallback((): string | null => {
+    const current = gameStateRef.current;
+    const match = activeCampaignMatch(current.world.campaign);
+    if (!match || !current.world.campaign) return t("campaign.match.unavailable");
+    const nonMatchBlockers = campaignPhaseBlockers(current.course, current.world).filter((blocker) => !blocker.startsWith("campaign.blocker.match:"));
+    if (nonMatchBlockers.length) return t("campaign.match.objectivesFirst");
+    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
+    if (career.careerPoints < match.minCareerPoints) return t("campaign.match.pointsRequired", { points: match.minCareerPoints });
+
+    if (match.opponent) {
+      const created = createPlayerChallenge(career, {
+        id: match.opponent.id,
+        name: match.opponent.name,
+        skill: match.opponent.skill,
+        relationship: current.world.campaign.relationships[match.opponent.characterId],
+      }, "friendly", 0);
+      const started = startPlayableRound({
+        course: current.course,
+        world: current.world,
+        kind: "friendly",
+        layoutId: activeCourseLayout(current.course).id,
+        teeSet: "member",
+        pinRotation: current.course.activePinRotation ?? "A",
+        day: live.status.dayIndex,
+        opponent: {
+          id: match.opponent.id,
+          name: match.opponent.name,
+          skill: match.opponent.skill,
+          relationshipDelta: 0,
+          wager: 0,
+          projectedStrokes: 0,
+        },
+      });
+      if (!started.ok) return started.reason;
+      const nextCareer = {
+        ...activatePlayerChallenge(created.career, created.challenge.id, started.round.id),
+        activeRound: started.round,
+      };
+      const nextWorld = registerCampaignMatch({ ...current.world, playerPro: nextCareer }, match.id, started.round.id);
+      setGameState((latest) => latest === current ? { ...latest, world: nextWorld, economyVersion: latest.economyVersion + 1 } : latest);
+      enterPlayerRoundView(nextCareer);
+      markDirty();
+      return null;
+    }
+
+    const created = createTournamentEvent({
+      course: current.course,
+      world: current.world,
+      tier: "championship",
+      currentDay: live.status.dayIndex,
+      daysAhead: 1,
+      courseId: activeCourseLayout(current.course).id,
+    });
+    if (!created.ok) return created.reason;
+    const event = { ...created.event, name: t("campaign.match.championship.eventName") };
+    const scheduledWorld = scheduleTournament(current.world, event);
+    const registered = registerPlayerTournament(career, event, { campaignQualified: true });
+    const started = startPlayableRound({
+      course: current.course,
+      world: scheduledWorld,
+      kind: "tournament",
+      layoutId: event.courseId ?? activeCourseLayout(current.course).id,
+      teeSet: event.teeSet ?? "championship",
+      pinRotation: event.pinRotation ?? current.course.activePinRotation ?? "A",
+      day: live.status.dayIndex,
+      tournament: { id: event.id, name: event.name },
+    });
+    if (!started.ok) return started.reason;
+    const nextCareer = {
+      ...activatePlayerTournament(registered, event.id, started.round.id),
+      activeRound: started.round,
+    };
+    const nextWorld = registerCampaignMatch({ ...scheduledWorld, playerPro: nextCareer }, match.id, started.round.id, event.id);
+    setGameState((latest) => latest === current ? { ...latest, world: nextWorld, economyVersion: latest.economyVersion + 1 } : latest);
+    enterPlayerRoundView(nextCareer);
+    markDirty();
+    return null;
+  }, [enterPlayerRoundView, live.status.dayIndex, markDirty, t]);
 
   const trainPlayerPro = useCallback((option: PlayerTrainingOption): string | null => {
     const current = gameStateRef.current.world;
@@ -845,7 +954,7 @@ export default function App() {
       const events = settlement.tournamentEvent
         ? tournamentCalendar(current).events.map((candidate) => candidate.id === settlement.tournamentEvent!.id ? settlement.tournamentEvent! : candidate)
         : null;
-      return {
+      return advanceCampaign(gameStateRef.current.course, {
         ...recorded.world,
         cash: recorded.world.cash + settlement.cashDelta,
         reputation: Math.max(0, Math.min(100, recorded.world.reputation + settlement.reputationDelta)),
@@ -854,7 +963,7 @@ export default function App() {
           ...recordedCareer,
           activeRound: { ...authoritative, rewardsApplied: true },
         },
-      };
+      });
     });
   }, [activePlayerRound, setWorld]);
 
@@ -928,6 +1037,29 @@ export default function App() {
     });
     markDirty();
   }, [markDirty]);
+
+  const chooseCampaign = useCallback((sceneId: string, choiceId: string) => {
+    setGameState((current) => {
+      const result = resolveCampaignChoice(current.course, current.world, sceneId, choiceId);
+      if (!result.ok) return current;
+      const recorded = result.world.campaign?.choices.at(-1);
+      if (recorded && result.world.scenarioId) recordCampaignChoice(result.world.scenarioId, recorded);
+      return {
+        ...current,
+        course: result.course,
+        world: result.world,
+        terrainVersion: current.terrainVersion + (result.course === current.course ? 0 : 1),
+        economyVersion: current.economyVersion + 1,
+      };
+    });
+    markDirty();
+  }, [markDirty]);
+
+  const continueCampaign = useCallback(() => {
+    setWorld((current) => continueCampaignInSandbox(current));
+    setShowCampaign(false);
+    markDirty();
+  }, [markDirty, setWorld]);
 
   const deferStory = useCallback((instanceId: string) => {
     setWorld((current) => acknowledgeStoryEvent(current, instanceId, true));
@@ -1417,7 +1549,9 @@ export default function App() {
 
   // Victory celebration fires once on the OPEN → WON transition (render
   // adjustment; restart/load reset prevOutcome so it can't re-fire).
-  const objectiveOutcome: RunOutcome = world.objectives?.outcome ?? "OPEN";
+  const objectiveOutcome: RunOutcome = world.campaign && !world.campaign.completed
+    ? "OPEN"
+    : world.objectives?.outcome ?? "OPEN";
   if (objectiveOutcome !== prevOutcome) {
     setPrevOutcome(objectiveOutcome);
     if (objectiveOutcome === "WON" && prevOutcome === "OPEN") setShowVictory(true);
@@ -1425,7 +1559,9 @@ export default function App() {
 
   // Career medal (ZKU-164): record the win once per run; replays keep the
   // best (earliest) week via the store.
-  const objectivesOutcomeForRecord = world.objectives?.outcome;
+  const objectivesOutcomeForRecord: RunOutcome = world.campaign
+    ? world.campaign.completed ? "WON" : "OPEN"
+    : world.objectives?.outcome ?? "OPEN";
   useEffect(() => {
     if (showVictory) void audio.playSting("celebration");
   }, [audio, showVictory]);
@@ -1435,9 +1571,15 @@ export default function App() {
     if (scenarioRecordedRef.current) return;
     if (world.mode !== "career" || !world.scenarioId) return;
     scenarioRecordedRef.current = true;
+    const campaign = world.campaign;
+    const chapter = campaign ? CAMPAIGN_CHAPTER_BY_ID.get(campaign.chapterId) : undefined;
     recordScenarioCompleted(world.scenarioId, {
       week: world.objectives?.wonWeek ?? world.week,
       cash: world.cash,
+      medal: campaign?.medal,
+      choices: campaign?.choices,
+      rewards: chapter ? [...chapter.rewards] : undefined,
+      epilogueFacts: campaign?.epilogueFacts,
     });
   }, [objectivesOutcomeForRecord, world]);
 
@@ -1685,7 +1827,7 @@ export default function App() {
     // the medal (the store keeps best results anyway).
     setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
     setShowVictory(false);
-    scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
+    scenarioRecordedRef.current = loaded.world.campaign?.completed ?? loaded.world.objectives?.outcome === "WON";
     setTutorialProgress(loaded.tutorial ?? null);
     saveTutorialProgress(loaded.tutorial ?? null);
     const loadedRound = loaded.world.playerPro?.activeRound;
@@ -1896,6 +2038,22 @@ export default function App() {
         };
       })(),
       progression: { panelOpen: showProgression, tier: reputationTier(world.reputation).id, staffCap: reputationTier(world.reputation).staffCap, buildingTierCap: reputationTier(world.reputation).buildingTierCap },
+      campaign: world.campaign ? {
+        panelOpen: showCampaign,
+        chapterId: world.campaign.chapterId,
+        phaseIndex: world.campaign.phaseIndex,
+        pendingSceneId: world.campaign.pendingSceneIds[0] ?? null,
+        choices: world.campaign.choices,
+        priorChoices: world.campaign.priorChoices.length,
+        relationships: world.campaign.relationships,
+        eventPool: world.campaign.eventPool,
+        matches: world.campaign.matches,
+        pendingCallbacks: world.campaign.scheduledScenes.length,
+        completed: world.campaign.completed,
+        medal: world.campaign.medal ?? null,
+        outcome: world.campaign.outcome ?? null,
+        epilogueFacts: world.campaign.epilogueFacts,
+      } : null,
       playerPro: {
         panelOpen: showPlayerPro,
         identity: playerPro.identity,
@@ -1941,7 +2099,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, showArchitectureReview, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -2075,7 +2233,7 @@ export default function App() {
         setLast(loaded.history?.[loaded.history.length - 1]);
         setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
         setShowVictory(false);
-        scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
+        scenarioRecordedRef.current = loaded.world.campaign?.completed ?? loaded.world.objectives?.outcome === "WON";
         flowDispatch({ type: "BACK_TO_TITLE" });
         flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
         flowDispatch({ type: "ENTER_GAME" });
@@ -3332,7 +3490,15 @@ export default function App() {
           courseRating={rating.courseRating}
           careerNote={
             world.mode === "career" && world.scenarioId
-              ? "Medal earned — the next scenario is unlocked."
+              ? world.campaign?.medal
+                ? t("campaign.victory.note", {
+                    medal: t(world.campaign.medal === "gold"
+                      ? "campaign.medal.gold"
+                      : world.campaign.medal === "silver"
+                        ? "campaign.medal.silver"
+                        : "campaign.medal.bronze"),
+                  })
+                : t("campaign.victory.legacyNote")
               : undefined
           }
           onContinue={() => setShowVictory(false)}
@@ -3425,6 +3591,7 @@ export default function App() {
               <button data-testid="open-architecture-review" aria-pressed={showArchitectureReview} onClick={() => setShowArchitectureReview((open) => !open)}>📐 {t("architecture.review.title")}</button>
               <button data-testid="open-living-club" aria-pressed={showLivingClub} onClick={() => setShowLivingClub(true)}>👥 {t("livingClub.title")}{normalizeLivingClub(world.livingClub).story.instances.some((instance) => ["pending", "presented", "deferred"].includes(instance.status)) ? " •" : ""}</button>
               <button data-testid="open-seasons-legacy" aria-pressed={showSeasonsLegacy} onClick={() => setShowSeasonsLegacy((open) => !open)}>🍂 {t("season.open")}{world.seasonal?.pendingYearbookId ? " •" : ""}</button>
+              {world.campaign && <button data-testid="open-campaign" aria-pressed={showCampaign} onClick={() => setShowCampaign((open) => !open)}>📖 {t("campaign.open")}{world.campaign.pendingSceneIds.length ? " •" : ""}</button>}
               <button data-testid="open-progression" aria-pressed={showProgression} onClick={() => setShowProgression((open) => !open)}>⭐ {t("progression.open")} · {reputationTier(world.reputation).name}</button>
               <button data-testid="open-tournaments" aria-pressed={showTournaments} onClick={() => setShowTournaments((open) => !open)}>⛳ {t("tournament.open")}{live.status.tournament ? " •" : ""}</button>
               <button data-testid="open-land-office" disabled={playerRoundLocksEditing} aria-pressed={showLandOffice} onClick={() => { setShowLandOffice((open) => !open); setSelectedParcelId((current) => current ?? course.estate?.starterParcelId ?? null); }}>🗺️ {t("land.open")}</button>
@@ -3505,6 +3672,20 @@ export default function App() {
               day={live.status.dayIndex}
               onCommand={runSeasonCommand}
               onClose={() => setShowSeasonsLegacy(false)}
+            />}
+            {showCampaign && world.campaign && !tutorialProgress && <CampaignPanel
+              course={course}
+              world={world}
+              onStartMatch={startCampaignMatch}
+              onContinueSandbox={continueCampaign}
+              onClose={() => setShowCampaign(false)}
+            />}
+            {activeCampaignScene && world.campaign && !tutorialProgress && <CampaignSceneModal
+              campaign={world.campaign}
+              scene={activeCampaignScene}
+              course={course}
+              world={world}
+              onChoose={chooseCampaign}
             />}
             {showPropertyManagement && !tutorialProgress && <PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} />}
             {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}

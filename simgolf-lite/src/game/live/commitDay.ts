@@ -11,6 +11,7 @@ import { recordCoreCommerce, settlePropertyDay } from "../property/property";
 import type { PropertyShotTrace } from "../property/types";
 import { advanceLivingClubDay } from "../livingClub/livingClub";
 import { advanceSeasonalDay, charterDefinition, seasonalState } from "../seasons/seasons";
+import { advanceCampaign } from "../campaign/campaign";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -154,7 +155,7 @@ export function commitDay(args: {
   });
   const livingClubCommit = advanceLivingClubDay(conditionCourse, objectiveWorld, dayIndex ?? 0);
   const nextCourse = livingClubCommit.course;
-  const nextWorld = livingClubCommit.world;
+  const nextWorld = advanceCampaign(livingClubCommit.course, livingClubCommit.world);
   const courseEntries = Object.entries(args.perCourse ?? {});
   let allocatedRevenue = 0;
   let allocatedCosts = 0;

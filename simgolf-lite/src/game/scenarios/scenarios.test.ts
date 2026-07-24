@@ -7,11 +7,13 @@ import {
   __resetCareerForTests,
   isScenarioUnlocked,
   loadCareer,
+  recordCampaignChoice,
   recordScenarioAttempt,
   recordScenarioCompleted,
 } from "../../utils/careerStore";
 import { normalizeLoadedSave } from "../../utils/save";
 import { isOwnedTile } from "../estate/estate";
+import { CAMPAIGN_CHAPTER_BY_ID } from "../campaign/content";
 
 const METRICS = [
   "cash",
@@ -55,7 +57,7 @@ describe("scenario definitions (ZKU-164)", () => {
       expect(a.world.scenarioId).toBe(s.id);
       expect(a.world.difficulty).toBe(s.difficulty);
       expect(a.course.theme).toBe(s.theme);
-      expect(a.world.objectives?.goals).toEqual(s.goals);
+      expect(a.world.objectives?.goals).toEqual(CAMPAIGN_CHAPTER_BY_ID.get(s.id)?.phases[0].goals ?? s.goals);
       expect(a.world.objectives?.outcome).toBe("OPEN");
       if (s.startingCash != null) expect(a.world.cash).toBe(s.startingCash);
       if (s.constraints) expect(a.world.constraints).toEqual(s.constraints);
@@ -92,7 +94,8 @@ describe("scenario definitions (ZKU-164)", () => {
       fixedGreenFee: 110,
       protectedTrees: false,
     });
-    expect(loaded!.world.objectives?.goals).toEqual(getScenario("members-club")!.goals);
+    expect(loaded!.world.objectives?.goals).toEqual(CAMPAIGN_CHAPTER_BY_ID.get("members-club")!.phases[0].goals);
+    expect(loaded!.world.campaign?.chapterId).toBe("members-club");
   });
 });
 
@@ -144,5 +147,38 @@ describe("career store", () => {
     recordScenarioCompleted("back-nine", { week: 9, cash: 10_000 });
     recordScenarioAttempt("back-nine"); // replay
     expect(loadCareer().scenarios["back-nine"].completed).toBe(true);
+  });
+
+  it("keeps the best medal, unlocks rewards once, and carries choices into later chapters", () => {
+    const choice = {
+      chapterId: "back-nine",
+      sceneId: "back-nine-discover-intro",
+      choiceId: "listen",
+      week: 1,
+      facts: { cash: 35_000 },
+      callbackFact: "heard-rowan",
+    };
+    recordCampaignChoice("back-nine", choice);
+    recordCampaignChoice("back-nine", choice);
+    recordScenarioCompleted("back-nine", {
+      week: 20,
+      cash: 40_000,
+      medal: "silver",
+      choices: [choice],
+      rewards: ["campaign-unlock-back-nine"],
+      epilogueFacts: ["charter:public-gem"],
+    });
+    recordScenarioCompleted("back-nine", {
+      week: 24,
+      cash: 50_000,
+      medal: "bronze",
+      rewards: ["campaign-unlock-back-nine"],
+    });
+    const career = loadCareer();
+    expect(career.campaignChoices).toEqual([choice]);
+    expect(career.unlocks).toEqual(["campaign-unlock-back-nine"]);
+    expect(career.scenarios["back-nine"].bestMedal).toBe("silver");
+    expect(career.scenarios["back-nine"].epilogueFacts).toEqual(["charter:public-gem"]);
+    expect(createScenarioGame(getScenario("muni-rescue")!).world.campaign?.priorChoices).toEqual([choice]);
   });
 });

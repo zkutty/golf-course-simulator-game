@@ -12,6 +12,7 @@ import { withEvaluatedObjectives } from "../objectives/evaluate";
 import { operatingCourseViews } from "../models/courseLayouts";
 import { developedOwnedTileCount } from "../estate/estate";
 import { courseLayouts } from "../models/courseLayouts";
+import { advanceCampaign } from "../campaign/campaign";
 
 function tickWeekSingle(
   course: Course,
@@ -185,12 +186,13 @@ function tickWeekSingle(
   };
   // Objective evaluation happens at the sim commit point (ZKU-163); the
   // week that just finished is the pre-increment week number.
-  const nextWorld = withEvaluatedObjectives(nextCourse, nextWorldBase, {
+  const objectiveWorld = withEvaluatedObjectives(nextCourse, nextWorldBase, {
     rounds: visitors,
     profit,
     weekCompleted: world.week,
     holeSummary: holeSummary0,
   });
+  const nextWorld = advanceCampaign(nextCourse, objectiveWorld);
 
   return {
     course: nextCourse,

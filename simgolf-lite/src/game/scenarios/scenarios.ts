@@ -4,6 +4,9 @@ import { createNewGame } from "../gen/newGame";
 import { buildFixtureCourse } from "./fixtures";
 import type { ScenarioDefinition } from "./types";
 import { translate } from "../../i18n/core";
+import { loadCareer } from "../../utils/careerStore";
+import { CAMPAIGN_CHAPTER_BY_ID } from "../campaign/content";
+import { createCampaignRun } from "../campaign/campaign";
 
 const text = (key: Parameters<typeof translate>[1]) => translate("en", key);
 
@@ -183,6 +186,8 @@ export function getScenario(id: string | undefined): ScenarioDefinition | undefi
  * scenario's goals, constraints, and world tweaks. Deterministic.
  */
 export function createScenarioGame(s: ScenarioDefinition): { course: Course; world: World } {
+  const campaign = CAMPAIGN_CHAPTER_BY_ID.get(s.id);
+  const initialGoals = campaign?.phases[0].goals ?? s.goals;
   const base = createNewGame(
     {
       mode: "career",
@@ -191,7 +196,7 @@ export function createScenarioGame(s: ScenarioDefinition): { course: Course; wor
       theme: s.theme,
       difficulty: s.difficulty,
     },
-    s.goals
+    initialGoals
   );
 
   const course = s.fixture ? buildFixtureCourse(s.fixture, s.seed) : base.course;
@@ -202,8 +207,45 @@ export function createScenarioGame(s: ScenarioDefinition): { course: Course; wor
     ...(s.startingReputation != null ? { reputation: s.startingReputation } : {}),
     scenarioId: s.id,
     ...(s.constraints ? { constraints: s.constraints } : {}),
-    objectives: createObjectiveState(s.goals),
+    objectives: createObjectiveState(initialGoals),
+    ...(campaign ? {
+      campaign: createCampaignRun(
+        s.id,
+        base.world.seasonal?.charter ?? "public-gem",
+        loadCareer().campaignChoices,
+        base.world.week,
+      ),
+    } : {}),
   };
+  if (s.id === "muni-rescue" && world.livingClub && !world.livingClub.regulars.some((regular) => regular.id === "campaign-jamie")) {
+    world.livingClub = {
+      ...world.livingClub,
+      regulars: [{
+        id: "campaign-jamie",
+        kind: "regular",
+        name: "Jamie Chen",
+        archetype: "junior",
+        appearance: { portrait: "sport", palette: 3, accent: 1 },
+        skill: 0.52,
+        preferences: { pace: "balanced", challenge: "competitive", hospitality: "simple" },
+        loyalty: 62,
+        visits: 3,
+        rounds: 3,
+        bestToPar: 5,
+        member: false,
+        relationship: { score: 12, tier: "acquaintance", interactionIds: [] },
+        memories: [{
+          id: "campaign-jamie-muni-promise",
+          week: 1,
+          kind: "relationship",
+          summary: text("campaign.muni.jamie.memory"),
+          immutable: true,
+        }],
+        recentThoughts: [text("campaign.muni.jamie.thought")],
+        history: [],
+      }, ...world.livingClub.regulars],
+    };
+  }
   if (s.constraints?.fixedGreenFee != null) course.baseGreenFee = s.constraints.fixedGreenFee;
 
   return { course, world };

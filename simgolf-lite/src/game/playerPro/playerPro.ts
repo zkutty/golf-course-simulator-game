@@ -1006,8 +1006,14 @@ export function playerTournamentEligibility(career: PlayerProCareer, event: Tour
   return { eligible: true, reason: null };
 }
 
-export function registerPlayerTournament(career: PlayerProCareer, event: TournamentEvent): PlayerProCareer {
-  const eligibility = playerTournamentEligibility(career, event);
+export function registerPlayerTournament(
+  career: PlayerProCareer,
+  event: TournamentEvent,
+  options: { campaignQualified?: boolean } = {},
+): PlayerProCareer {
+  const eligibility = options.campaignQualified && event.status === "scheduled"
+    ? { eligible: true, reason: null }
+    : playerTournamentEligibility(career, event);
   if (!eligibility.eligible) return career;
   const record: PlayerTournamentRecord = {
     id: `pro-event-${event.id}`,

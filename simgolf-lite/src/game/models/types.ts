@@ -4,6 +4,7 @@ import type { PropertyCourseState, PropertyEnterpriseState } from "../property/t
 import type { PlayerProCareer } from "./playerProTypes";
 import type { LivingClubState } from "../livingClub/types";
 import type { SeasonalState } from "../seasons/types";
+import type { CampaignRunState } from "../campaign/types";
 
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
@@ -309,6 +310,8 @@ export interface World {
   livingClub?: LivingClubState;
   /** M39 calendar, weather, charter, automation, and immutable annual legacy. */
   seasonal?: SeasonalState;
+  /** M40 phased authored chapter state. Campaign meta remains profile-scoped. */
+  campaign?: CampaignRunState;
 }
 
 export type StaffRole = "groundskeeper" | "cart_attendant" | "pro_shop" | "marshal" | "tournament_director" | "club_pro" | "food_service" | "locker_attendant" | "front_desk" | "housekeeping" | "shuttle_driver";
