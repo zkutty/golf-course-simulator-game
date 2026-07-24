@@ -1729,13 +1729,16 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    audio.setPaused(flow.paused || live.speed === "paused");
+    const worldAudioEnabled = screen === "game";
+    const worldAudioPaused = worldAudioEnabled && (flow.paused || live.speed === "paused");
+    audio.setPaused(worldAudioPaused);
     audio.setAmbientMix(ambientMixFor({
       course,
       center: audioCameraCenter,
       dayMinute: live.status.dayMinute,
       visibleGolfers: live.status.onCourse,
-      paused: flow.paused || live.speed === "paused",
+      paused: worldAudioPaused,
+      enabled: worldAudioEnabled,
       weatherKind: activeWeather(world, course, live.status.dayIndex).kind,
       season: seasonalState(world, course, live.status.dayIndex).calendar.season,
     }));
@@ -1748,6 +1751,7 @@ export default function App() {
     live.status.dayIndex,
     live.status.dayMinute,
     live.status.onCourse,
+    screen,
     world,
   ]);
 

@@ -29,6 +29,7 @@ export function ambientMixFor(input: {
   dayMinute: number;
   visibleGolfers: number;
   paused: boolean;
+  enabled?: boolean;
   weatherKind?: WeatherKind;
   season?: SeasonName;
   radius?: number;
@@ -69,6 +70,7 @@ export function ambientMixFor(input: {
   else if (nearCampus) bed = "campus";
   else if (share("water") + share("wetland") * .8 >= .12) bed = "water";
   return {
+    enabled: input.enabled ?? true,
     birds: clamp01(obstacleCount / 18 + dawn * .42),
     water: clamp01((share("water") + share("wetland") * .8) * 3.2),
     wind: clamp01((share("rough") + share("deep_rough") + share("sand") + share("waste_area")) * 1.35 + .12),

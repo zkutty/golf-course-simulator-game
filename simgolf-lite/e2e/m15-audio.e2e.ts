@@ -1,4 +1,49 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+type AuditedAudio = {
+  src: string;
+  paused: boolean;
+  currentTime: number;
+  volume: number;
+};
+
+async function installAudioAudit(page: Page) {
+  await page.addInitScript(() => {
+    const NativeAudio = window.Audio;
+    const elements: HTMLAudioElement[] = [];
+    Object.defineProperty(window, "__coursecraftAudioElements", { value: elements });
+    function AuditedAudioElement(src?: string) {
+      const audio = new NativeAudio(src);
+      elements.push(audio);
+      return audio;
+    }
+    AuditedAudioElement.prototype = NativeAudio.prototype;
+    Object.setPrototypeOf(AuditedAudioElement, NativeAudio);
+    Object.defineProperty(window, "Audio", {
+      configurable: true,
+      writable: true,
+      value: AuditedAudioElement,
+    });
+  });
+}
+
+async function audioState(page: Page): Promise<AuditedAudio[]> {
+  return page.evaluate(() => {
+    const elements = (window as Window & {
+      __coursecraftAudioElements: HTMLAudioElement[];
+    }).__coursecraftAudioElements;
+    return elements.map((audio) => ({
+      src: audio.currentSrc || audio.src,
+      paused: audio.paused,
+      currentTime: audio.currentTime,
+      volume: audio.volume,
+    }));
+  });
+}
+
+function audible(elements: AuditedAudio[]) {
+  return elements.filter((audio) => !audio.paused && audio.currentTime > 0 && audio.volume > .001);
+}
 
 test("audio is lazy, mixer controls persist, and live play stays error-free", async ({ page }, testInfo) => {
   const audioRequests: string[] = [];
@@ -51,4 +96,46 @@ test("audio is lazy, mixer controls persist, and live play stays error-free", as
   await testInfo.attach("m15-live-course", { body: await page.screenshot({ fullPage: true }), contentType: "image/png" });
 
   expect(consoleErrors).toEqual([]);
+});
+
+test("Vision owns one Suno background stream and rapid game transitions settle cleanly", async ({ page }) => {
+  await installAudioAudit(page);
+  const mediaRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/\/audio\/.*\.(?:m4a|mp3|ogg|wav)(?:\?|$)/.test(request.url())) {
+      mediaRequests.push(request.url().split("?")[0]);
+    }
+  });
+
+  await page.goto("/?view=vision");
+  expect(mediaRequests).toEqual([]);
+  await page.getByRole("link", { name: "The Story", exact: true }).click();
+  await expect.poll(async () => audible(await audioState(page)).length).toBe(1);
+
+  const visionAudio = audible(await audioState(page));
+  expect(visionAudio).toHaveLength(1);
+  expect(visionAudio[0].src).toContain("/audio/music/suno/title-01.mp3");
+  expect(mediaRequests.some((url) => url.includes("/audio/ambience/"))).toBe(false);
+
+  await page.locator(".cc-vision-brand").click();
+  await expect(page.getByRole("button", { name: "Quick Start" })).toBeVisible();
+  await page.getByRole("button", { name: "Quick Start" }).click();
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Skip tutorial" }).click();
+  await expect.poll(async () => audible(await audioState(page)).length).toBe(2);
+
+  await page.getByRole("button", { name: "Architect", exact: true }).click();
+  await page.getByRole("button", { name: "Cozy", exact: true }).click();
+  await page.getByRole("button", { name: "Architect", exact: true }).click();
+  await page.getByRole("button", { name: "Cozy", exact: true }).click();
+  await page.waitForTimeout(2_700);
+
+  const settled = await audioState(page);
+  const settledAudible = audible(settled);
+  expect(settledAudible).toHaveLength(2);
+  expect(settled.filter((audio) => !audio.paused)).toHaveLength(2);
+  expect(settledAudible.filter((audio) => audio.src.includes("/audio/music/suno/"))).toHaveLength(1);
+  expect(settledAudible.filter((audio) => audio.src.includes("/audio/ambience/suno/"))).toHaveLength(1);
+  expect(mediaRequests.every((url) => /\/audio\/(?:music|ambience)\/suno\/.+\.mp3$/.test(url))).toBe(true);
 });
