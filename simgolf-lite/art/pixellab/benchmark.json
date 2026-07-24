@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "status": "awaiting-live-generation",
+  "target": "CourseCraft cart-rental facility and golfer animation contract",
+  "scale": {
+    "minimum": 1,
+    "maximum": 5,
+    "higherIsBetter": true
+  },
+  "criteria": [
+    { "id": "in-game-readability", "weight": 20 },
+    { "id": "style-consistency", "weight": 20 },
+    { "id": "mechanical-correctness", "weight": 20 },
+    { "id": "cleanup-efficiency", "weight": 15 },
+    { "id": "repeatability", "weight": 10 },
+    { "id": "directional-control", "weight": 5 },
+    { "id": "alpha-quality", "weight": 5 },
+    { "id": "provenance-confidence", "weight": 5 }
+  ],
+  "providers": [
+    {
+      "id": "pixellab",
+      "role": "pixel-art specialist",
+      "status": "blocked-missing-rotated-credential",
+      "scores": {}
+    },
+    {
+      "id": "layer-or-scenario",
+      "role": "style-trained high-resolution game art",
+      "status": "not-run",
+      "scores": {}
+    },
+    {
+      "id": "high-resolution-image-generator",
+      "role": "portraits, concept art, and painted facility ideation",
+      "status": "facility-candidate-generated",
+      "scores": {
+        "in-game-readability": 5,
+        "style-consistency": 4,
+        "mechanical-correctness": 3,
+        "cleanup-efficiency": 2,
+        "alpha-quality": 3
+      },
+      "measurements": {
+        "generationMinutes": 3,
+        "candidateCount": 1,
+        "manualCleanupMinutes": 4,
+        "rejectedOutputRate": 0,
+        "atlasIntegrationMinutes": 2,
+        "estimatedCostUsd": null,
+        "reviewNotes": "Strong facility identity and silhouette. Default soft-matte cleanup damaged warm cart/body colors; hard chroma removal plus premultiplied downsampling preserved the object. The normalized 192x160 candidate passed isolated-atlas integration and real M22 overview/close-up rendering without console or asset errors. It is more painterly and softer than the current crisp sprites, so it remains benchmark evidence rather than a production replacement."
+      },
+      "evidence": {
+        "file": "artifacts/pixellab-pilot/high-res-cart-rental-192x160.png",
+        "sha256": "383db49ff6fd772201403b8181c5b04cb73f9ac4be910a392654453e5c0d7434",
+        "width": 192,
+        "height": 160,
+        "provider": "built-in image generation"
+      }
+    },
+    {
+      "id": "coursecraft-procedural-manual",
+      "role": "deterministic baseline",
+      "status": "reference-ready",
+      "scores": {
+        "in-game-readability": 5,
+        "style-consistency": 5,
+        "mechanical-correctness": 5,
+        "cleanup-efficiency": 5,
+        "repeatability": 5,
+        "directional-control": 5,
+        "alpha-quality": 5,
+        "provenance-confidence": 5
+      },
+      "measurements": {
+        "generationMinutes": 0,
+        "candidateCount": 1,
+        "manualCleanupMinutes": 0,
+        "rejectedOutputRate": 0,
+        "atlasIntegrationMinutes": 0,
+        "estimatedCostUsd": 0,
+        "reviewNotes": "Checked-in deterministic reference. It already satisfies the renderer footprint, alpha, anchor, and provenance contracts and establishes the incumbent quality bar."
+      }
+    }
+  ],
+  "requiredMeasurements": [
+    "generationMinutes",
+    "candidateCount",
+    "manualCleanupMinutes",
+    "rejectedOutputRate",
+    "atlasIntegrationMinutes",
+    "estimatedCostUsd",
+    "reviewNotes"
+  ]
+}

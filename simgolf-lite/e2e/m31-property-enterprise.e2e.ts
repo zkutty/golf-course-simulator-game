@@ -7,6 +7,7 @@ test("M31-M33 property enterprise builds access, campus, resort, and community",
   await page.goto("/?propertyFixture=1");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), { timeout: 30_000 }).toBe("game");
 
+  await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-property-management").click();
   const panel = page.getByTestId("property-management-panel");
   await expect(panel).toBeVisible();

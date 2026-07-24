@@ -7,6 +7,7 @@ test("M24 explains readiness, books a prescribed setup, and runs it", async ({ p
   await page.goto("/?m24Fixture=1");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course?.name), { timeout: 45_000 }).toBe("M24 Tournament Standards Club");
 
+  await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-tournaments").click();
   const panel = page.getByTestId("tournament-panel");
   await expect(panel.getByTestId("tournament-readiness")).toBeVisible();
@@ -39,6 +40,7 @@ test("M24 warns and cancels after a prescribed setup is invalidated", async ({ p
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?m24Fixture=1");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course?.name), { timeout: 45_000 }).toBe("M24 Tournament Standards Club");
+  await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-tournaments").click();
   await page.getByTestId("tournament-tier").selectOption("regional");
   await page.getByTestId("schedule-tournament").click();
@@ -65,6 +67,7 @@ test("M24 readiness remains usable at 130% text and in pseudo locale", async ({ 
   });
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-locale", "pseudo");
+  await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-tournaments").click();
   const panel = page.getByTestId("tournament-panel");
   await expect(panel).toBeVisible();

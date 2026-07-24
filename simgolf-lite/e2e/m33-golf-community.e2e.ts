@@ -27,6 +27,7 @@ test("M33 safe retained phase, resident claim, mitigation, and save reconciliati
   expect(result.residentMembers).toBeGreaterThan(0);
   expect(result.cash).toBeGreaterThan(0);
 
+  await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-property-management").click();
   await page.getByTestId("property-tab-community").click();
   const dashboard = page.getByTestId("m33-community-dashboard");

@@ -12,6 +12,7 @@ test("M32 resort package survives a mid-stay save and completes its itinerary", 
   expect(result).toMatchObject({ status: "checked_out", fulfilled: 3, total: 3, serviceQueue: 0 });
   expect(result.folioTotal).toBe(result.value);
 
+  await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-property-management").click();
   await page.getByTestId("property-tab-resort").click();
   const dashboard = page.getByTestId("resort-dashboard");

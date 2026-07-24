@@ -14,6 +14,7 @@ import { ScenarioSelect } from "./ScenarioSelect";
 import type { ScenarioDefinition } from "../game/scenarios/types";
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
+import { IS_DEMO } from "../config/edition";
 
 // New-game setup wizard (ZKU-162): Mode → Land → Difficulty → Details.
 // Output is a typed GameSetup consumed by the single createNewGame path.
@@ -180,7 +181,7 @@ export function NewGameWizard(props: {
   onStart: (setup: GameSetup) => void;
   onStartScenario: (scenario: ScenarioDefinition) => void;
 }) {
-  const [step, setStep] = useState<Step>("MODE");
+  const [step, setStep] = useState<Step>(IS_DEMO ? "SCENARIOS" : "MODE");
   const [mode, setMode] = useState<PlayMode>("challenge");
   const [theme, setTheme] = useState<LandTheme>("parkland");
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
@@ -223,7 +224,10 @@ export function NewGameWizard(props: {
     else setStep(STEPS[Math.min(STEPS.length - 1, stepIdx + 1)]);
   };
   const back = () => {
-    if (step === "SCENARIOS") setStep("MODE");
+    if (step === "SCENARIOS") {
+      if (IS_DEMO) props.onCancel();
+      else setStep("MODE");
+    }
     else if (stepIdx === 0) props.onCancel();
     else setStep(STEPS[stepIdx - 1]);
   };

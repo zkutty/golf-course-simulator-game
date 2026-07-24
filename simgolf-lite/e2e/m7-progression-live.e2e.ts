@@ -10,6 +10,7 @@ test("M7 reputation progression, clock, live overview, and follow flow", async (
     { timeout: 30_000 },
   ).toBe(100);
 
+  await page.getByTestId("workspace-legacy").click();
   await page.getByTestId("open-progression").click();
   const progression = page.getByTestId("progression-panel");
   await expect(progression).toBeVisible();

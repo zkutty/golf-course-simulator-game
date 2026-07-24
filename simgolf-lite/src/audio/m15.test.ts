@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Course } from "../game/models/types";
 import type { GolferRenderData } from "../game/live/types";
-import { MUSIC_PLAYLISTS } from "./AudioManager";
+import { AMBIENCE_PLAYLISTS, MUSIC_PLAYLISTS } from "./AudioManager";
 import { ambientMixFor, distanceVolume, musicContextFor } from "./environment";
 import { deriveLiveAudioEvents } from "./liveEvents";
 
@@ -31,17 +31,27 @@ function golfer(patch: Partial<GolferRenderData> = {}): GolferRenderData {
 describe("M15 contextual music", () => {
   it("maps app state through one deterministic context selector", () => {
     expect(musicContextFor({ screen: "menu", viewMode: "COZY", cash: 10, liveRunning: false, won: false })).toBe("title");
-    expect(musicContextFor({ screen: "game", viewMode: "ARCHITECT", cash: 10, liveRunning: true, won: false })).toBe("build");
+    expect(musicContextFor({ screen: "game", viewMode: "ARCHITECT", cash: 10, liveRunning: true, won: false })).toBe("build-parkland");
+    expect(musicContextFor({ screen: "game", viewMode: "ARCHITECT", cash: 10, liveRunning: true, won: false, theme: "links" })).toBe("build-links");
     expect(musicContextFor({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: false })).toBe("live");
+    expect(musicContextFor({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: false, playerRoundActive: true })).toBe("play");
+    expect(musicContextFor({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: false, playerRoundActive: true, tournamentTier: "championship" })).toBe("tournament-championship");
     expect(musicContextFor({ screen: "game", viewMode: "COZY", cash: -1, liveRunning: true, won: false })).toBe("tension");
+    expect(musicContextFor({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: true })).toBe("victory");
   });
 
-  it("ships seven unique tracks with lazy dual-format sources", () => {
+  it("ships the complete lazy Suno music and ambience library", () => {
     const tracks = new Map(Object.values(MUSIC_PLAYLISTS).flat().map((item) => [item.id, item]));
-    expect(tracks.size).toBe(7);
+    const ambience = new Map(Object.values(AMBIENCE_PLAYLISTS).flat().map((item) => [item.id, item]));
+    expect(tracks.size).toBe(22);
+    expect(ambience.size).toBe(18);
     for (const item of tracks.values()) {
-      expect(item.ogg).toMatch(/\.ogg$/);
-      expect(item.m4a).toMatch(/\.m4a$/);
+      expect(item.src).toMatch(/^\/audio\/music\/suno\/.+\.mp3$/);
+      expect(item.sourceUrl).toMatch(/^https:\/\/suno\.com\/song\//);
+    }
+    for (const item of ambience.values()) {
+      expect(item.src).toMatch(/^\/audio\/ambience\/suno\/.+\.mp3$/);
+      expect(item.sourceUrl).toMatch(/^https:\/\/suno\.com\/song\//);
     }
   });
 });
@@ -56,7 +66,32 @@ describe("M15 ambient mix", () => {
     expect(lake.water).toBeGreaterThan(forest.water);
     expect(dusk.crickets).toBeGreaterThan(.5);
     expect(dusk.murmur).toBeGreaterThan(.5);
+    expect(forest.bed).toBe("parkland");
+    expect(lake.bed).toBe("water");
+    expect(dusk.bed).toBe("night");
     expect(dusk.paused).toBe(true);
+  });
+
+  it("prioritizes authored weather and season beds over terrain", () => {
+    const c = course();
+    expect(ambientMixFor({
+      course: c,
+      center: { x: 1, y: 0 },
+      dayMinute: 300,
+      visibleGolfers: 0,
+      paused: false,
+      weatherKind: "heavy_rain",
+      season: "summer",
+    }).bed).toBe("rain");
+    expect(ambientMixFor({
+      course: c,
+      center: { x: 1, y: 0 },
+      dayMinute: 300,
+      visibleGolfers: 0,
+      paused: false,
+      weatherKind: "clear",
+      season: "winter",
+    }).bed).toBe("winter");
   });
 
   it("attenuates world sounds linearly from the camera", () => {

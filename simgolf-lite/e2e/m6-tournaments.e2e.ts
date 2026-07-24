@@ -10,6 +10,7 @@ test("M6 schedules events and presents live tournament standings", async ({ page
     { timeout: 30_000 },
   ).toBe("game");
 
+  await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-tournaments").click();
   await expect(page.getByTestId("tournament-panel")).toBeVisible();
   await page.getByTestId("tournament-tier").selectOption("regional");

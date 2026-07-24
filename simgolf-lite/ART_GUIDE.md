@@ -143,6 +143,23 @@ Supporting colors: trunk brown `#5d4330`, canopy greens `#3f8a3f`→`#77c46a`
 - [ ] Colors harmonize with the palette anchors
 - [ ] Transparent background, no baked drop shadow
 
+## AI-assisted production boundary
+
+- AI generation is a source workflow, never a runtime service. Shipped builds
+  must not call an image provider or depend on a provider credential.
+- Raw, candidate, cleaned, approved, and production assets are distinct
+  stages. Generated output cannot skip human alpha, anchor, silhouette,
+  palette, projection, and animation review.
+- Every AI-assisted asset records provider/model, generation time,
+  prompt/reference identifiers, source hash, cleanup history, reviewer,
+  approval state, and licensing notes. Secrets are prohibited in metadata.
+- PixelLab-specific staging, validation, prompts, benchmark criteria, and
+  adoption decisions live in `docs/PIXELLAB_ART_PIPELINE.md` and
+  `art/pixellab/`.
+- Terrain/autotile generation remains deterministic unless a separately
+  certified workflow proves seamless cardinal/convex/concave transitions in
+  all rotations. A plausible single tile is not a terrain-system replacement.
+
 ## M22 structures and course decor
 
 - The retained source sheet is `src/assets/props/source/m22-structures-decor-magenta.png`; `npm run gen:m22-art` removes the flat magenta key, trims cells, applies restrained parkland/links/desert grading, and emits building tier variants before atlas packing.

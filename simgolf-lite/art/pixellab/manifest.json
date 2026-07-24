@@ -1,0 +1,361 @@
+{
+  "$schema": "./manifest.schema.json",
+  "version": 1,
+  "pipeline": "pixellab-pilot",
+  "policy": {
+    "runtimeGeneration": false,
+    "promotionRequiresReview": true,
+    "secretsAllowed": false
+  },
+  "assets": [
+    {
+      "id": "reference-golfer-walk",
+      "category": "golfer-animation",
+      "provider": "coursecraft-procedural",
+      "model": null,
+      "state": "reference",
+      "file": "src/assets/sprites/golfers/golfer0_walk.grid6x5.png",
+      "sha256": "49ad12a39bb8881b74339edeedf35501138fd1e656a63a6be27c2c9d8edefa2b",
+      "generatedAt": null,
+      "promptRef": "ART_GUIDE.md#golfer-characters-m11--zku-153",
+      "sourceReferences": [],
+      "cleanup": [],
+      "requirements": {
+        "width": 288,
+        "height": 360,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "grid": {
+          "columns": 6,
+          "rows": 5,
+          "frameWidth": 48,
+          "frameHeight": 72
+        },
+        "bottomPaddingMax": 4
+      },
+      "review": {
+        "reviewer": "CourseCraft",
+        "decision": "approved",
+        "notes": "Mechanical baseline for direction rows, frame size, feet line, and walk cadence."
+      },
+      "licenseNotes": "Original deterministic CourseCraft source."
+    },
+    {
+      "id": "reference-parkland-cart-rental",
+      "category": "facility",
+      "provider": "coursecraft-existing",
+      "model": null,
+      "state": "reference",
+      "file": "src/assets/sprites/parkland_cart_rental_t1.png",
+      "sha256": "b519087c6637cd3040a54503b6b42973fdb23eca8bc941c3b24f1257b86046f3",
+      "generatedAt": null,
+      "promptRef": "ART_GUIDE.md#m22-structures-and-course-decor",
+      "sourceReferences": [
+        "src/assets/props/source/m22-structures-decor-magenta.png"
+      ],
+      "cleanup": [
+        "Chroma-key removal",
+        "Parkland grade",
+        "Nearest-neighbor footprint fit"
+      ],
+      "requirements": {
+        "width": 192,
+        "height": 160,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": "CourseCraft",
+        "decision": "approved",
+        "notes": "Facility silhouette, fixed NW light, and bottom-center anchor baseline."
+      },
+      "licenseNotes": "Original CourseCraft AI-assisted source with documented cleanup in ART_GUIDE.md."
+    },
+    {
+      "id": "reference-parkland-oak",
+      "category": "natural-prop",
+      "provider": "coursecraft-existing",
+      "model": null,
+      "state": "reference",
+      "file": "src/assets/props/natural/parkland_tree_oak.png",
+      "sha256": "6c04095828db75086c93e2817b0f5caa0de1a0f39395fd979308613a9ae82ea5",
+      "generatedAt": null,
+      "promptRef": "ART_GUIDE.md#biome-identity-and-natural-props-m21",
+      "sourceReferences": [
+        "src/assets/props/source/parkland-sheet-magenta.png"
+      ],
+      "cleanup": [
+        "Chroma-key removal",
+        "Alpha cleanup",
+        "Bilinear downsample"
+      ],
+      "requirements": {
+        "width": 128,
+        "height": 125,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": "CourseCraft",
+        "decision": "approved",
+        "notes": "Tall natural-prop silhouette and alpha baseline."
+      },
+      "licenseNotes": "Original CourseCraft AI-assisted source with documented cleanup in ART_GUIDE.md."
+    },
+    {
+      "id": "target-facility-cart-rental-desert",
+      "category": "facility",
+      "provider": "pixellab",
+      "model": null,
+      "state": "planned",
+      "generatedAt": null,
+      "promptRef": "prompts.md#facility-pilot",
+      "sourceReferences": [
+        "src/assets/sprites/parkland_cart_rental_t1.png"
+      ],
+      "cleanup": [],
+      "requirements": {
+        "width": 192,
+        "height": 160,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "Generate only after the secure MCP doctor passes."
+      },
+      "licenseNotes": "Pending generation and review."
+    },
+    {
+      "id": "target-facility-cart-rental-links",
+      "category": "facility",
+      "provider": "pixellab",
+      "model": null,
+      "state": "planned",
+      "generatedAt": null,
+      "promptRef": "prompts.md#facility-pilot",
+      "sourceReferences": [
+        "src/assets/sprites/parkland_cart_rental_t1.png"
+      ],
+      "cleanup": [],
+      "requirements": {
+        "width": 192,
+        "height": 160,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "Generate only after the secure MCP doctor passes."
+      },
+      "licenseNotes": "Pending generation and review."
+    },
+    {
+      "id": "target-facility-cart-rental-parkland",
+      "category": "facility",
+      "provider": "pixellab",
+      "model": null,
+      "state": "planned",
+      "generatedAt": null,
+      "promptRef": "prompts.md#facility-pilot",
+      "sourceReferences": [
+        "src/assets/sprites/parkland_cart_rental_t1.png"
+      ],
+      "cleanup": [],
+      "requirements": {
+        "width": 192,
+        "height": 160,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "Generate only after the secure MCP doctor passes."
+      },
+      "licenseNotes": "Pending generation and review."
+    },
+    {
+      "id": "target-golfer-idle",
+      "category": "golfer-animation",
+      "provider": "pixellab",
+      "model": null,
+      "state": "planned",
+      "generatedAt": null,
+      "promptRef": "prompts.md#golfer-animation-pilot",
+      "sourceReferences": [
+        "src/assets/sprites/golfers/golfer0_idle.grid2x5.png",
+        "src/assets/sprites/golfers/golfer0_walk.grid6x5.png"
+      ],
+      "cleanup": [],
+      "requirements": {
+        "width": 96,
+        "height": 360,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "grid": {
+          "columns": 2,
+          "rows": 5,
+          "frameWidth": 48,
+          "frameHeight": 72
+        },
+        "bottomPaddingMax": 4
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "Feet must remain on y=69 in every authored direction."
+      },
+      "licenseNotes": "Pending generation and review."
+    },
+    {
+      "id": "target-golfer-swing",
+      "category": "golfer-animation",
+      "provider": "pixellab",
+      "model": null,
+      "state": "planned",
+      "generatedAt": null,
+      "promptRef": "prompts.md#golfer-animation-pilot",
+      "sourceReferences": [
+        "src/assets/sprites/golfers/golfer0_swing.grid8x5.png"
+      ],
+      "cleanup": [],
+      "requirements": {
+        "width": 384,
+        "height": 360,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "grid": {
+          "columns": 8,
+          "rows": 5,
+          "frameWidth": 48,
+          "frameHeight": 72
+        },
+        "bottomPaddingMax": 4
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "Frame 5 is contact; frames 6-7 are follow-through and finish."
+      },
+      "licenseNotes": "Pending generation and review."
+    },
+    {
+      "id": "target-golfer-walk",
+      "category": "golfer-animation",
+      "provider": "pixellab",
+      "model": null,
+      "state": "planned",
+      "generatedAt": null,
+      "promptRef": "prompts.md#golfer-animation-pilot",
+      "sourceReferences": [
+        "src/assets/sprites/golfers/golfer0_walk.grid6x5.png"
+      ],
+      "cleanup": [],
+      "requirements": {
+        "width": 288,
+        "height": 360,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "grid": {
+          "columns": 6,
+          "rows": 5,
+          "frameWidth": 48,
+          "frameHeight": 72
+        },
+        "bottomPaddingMax": 4
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "No foot sliding, scale jump, direction drift, or club flicker."
+      },
+      "licenseNotes": "Pending generation and review."
+    },
+    {
+      "id": "target-prop-bush",
+      "category": "natural-prop",
+      "provider": "pixellab",
+      "model": null,
+      "state": "planned",
+      "generatedAt": null,
+      "promptRef": "prompts.md#natural-prop-pilot",
+      "sourceReferences": [
+        "src/assets/props/natural/parkland_bush_wild_shrub.png"
+      ],
+      "cleanup": [],
+      "requirements": {
+        "width": 128,
+        "height": 192,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "Low silhouette must remain readable at 50% zoom."
+      },
+      "licenseNotes": "Pending generation and review."
+    },
+    {
+      "id": "target-prop-rock",
+      "category": "natural-prop",
+      "provider": "pixellab",
+      "model": null,
+      "state": "planned",
+      "generatedAt": null,
+      "promptRef": "prompts.md#natural-prop-pilot",
+      "sourceReferences": [
+        "src/assets/props/natural/parkland_rock_granite.png"
+      ],
+      "cleanup": [],
+      "requirements": {
+        "width": 128,
+        "height": 192,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "Hard silhouette and fixed NW light baseline."
+      },
+      "licenseNotes": "Pending generation and review."
+    },
+    {
+      "id": "target-prop-tree",
+      "category": "natural-prop",
+      "provider": "pixellab",
+      "model": null,
+      "state": "planned",
+      "generatedAt": null,
+      "promptRef": "prompts.md#natural-prop-pilot",
+      "sourceReferences": [
+        "src/assets/props/natural/parkland_tree_oak.png"
+      ],
+      "cleanup": [],
+      "requirements": {
+        "width": 128,
+        "height": 192,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "Tall silhouette, trunk-to-ground contact, and separate-shadow compatibility."
+      },
+      "licenseNotes": "Pending generation and review."
+    }
+  ]
+}

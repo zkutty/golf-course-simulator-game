@@ -7,6 +7,7 @@ declare const __APP_RELEASE__: string;
 declare const __COMMIT_SHA__: string;
 
 interface Window {
+  coursecraftDesktop?: import("./platform/types").CourseCraftDesktopBridge;
   render_game_to_text?: () => string;
   advanceTime?: (ms: number) => void;
   __coursecraftTest?: {

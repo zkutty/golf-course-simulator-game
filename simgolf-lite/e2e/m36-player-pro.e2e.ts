@@ -11,6 +11,7 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   if (await tutorialOffer.count()) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
   await page.evaluate(() => window.__coursecraftTest!.setPlayerProFixture());
 
+  await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-player-pro").click();
   const panel = page.getByTestId("player-pro-panel");
   await expect(panel).toBeVisible();
@@ -23,6 +24,7 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   const hud = page.getByTestId("player-shot-hud");
   await expect(hud).toBeVisible();
   await expect(hud).toContainText("Hole 1 of 3");
+  await page.getByTestId("workspace-design").click();
   await expect(page.getByTestId("open-course-manager")).toBeDisabled();
 
   const stage = page.locator(".cc-pixi-stage");

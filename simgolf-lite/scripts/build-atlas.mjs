@@ -19,9 +19,14 @@ import path from "node:path";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(ROOT, "src/assets/sprites");
+const BUILDING_SRC = process.env.COURSECRAFT_BUILDING_SOURCE_DIR
+  ? path.resolve(process.env.COURSECRAFT_BUILDING_SOURCE_DIR)
+  : SRC;
 const NATURAL_SRC = path.join(ROOT, "src/assets/props/natural");
 const TERRAIN_SRC = path.join(ROOT, "src/assets/terrain/materials");
-const OUT_DIR = path.join(ROOT, "public/atlases");
+const OUT_DIR = process.env.COURSECRAFT_ATLAS_OUT_DIR
+  ? path.resolve(process.env.COURSECRAFT_ATLAS_OUT_DIR)
+  : path.join(ROOT, "public/atlases");
 mkdirSync(OUT_DIR, { recursive: true });
 
 const PAD = 2; // gutter to avoid bleeding when scaled
@@ -115,5 +120,5 @@ function buildAtlas(srcDir, outName, include = () => true, scale = "1") {
 
 buildAtlas(TERRAIN_SRC, "terrain", () => true, "2");
 buildAtlas(NATURAL_SRC, "natural-props");
-buildAtlas(SRC, "buildings-decor", (name) => /^(clubhouse|pro_shop|snack_bar|cart_rental|(?:parkland|links|desert)_(?:clubhouse|pro_shop|snack_bar|cart_rental)_t[123]|(?:parkland|links|desert)_(?:fence|bench|tee_sign|lamp|bin|parked_cart|flower_bed|planter|ornamental_feature|bridge|boardwalk|bridge_approach))\.png$/.test(name));
+buildAtlas(BUILDING_SRC, "buildings-decor", (name) => /^(clubhouse|pro_shop|snack_bar|cart_rental|(?:parkland|links|desert)_(?:clubhouse|pro_shop|snack_bar|cart_rental)_t[123]|(?:parkland|links|desert)_(?:fence|bench|tee_sign|lamp|bin|parked_cart|flower_bed|planter|ornamental_feature|bridge|boardwalk|bridge_approach))\.png$/.test(name));
 buildAtlas(path.join(SRC, "golfers"), "golfers");

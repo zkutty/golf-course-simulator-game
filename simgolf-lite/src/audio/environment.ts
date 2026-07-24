@@ -1,5 +1,7 @@
 import type { Course, Point, Terrain } from "../game/models/types";
+import type { SeasonName, WeatherKind } from "../game/seasons/types";
 import type { AmbientMix, MusicContext } from "./AudioManager";
+import type { SunoAmbienceContext } from "./sunoLibrary";
 
 export function musicContextFor(input: {
   screen: "menu" | "setup" | "game" | "loading";
@@ -7,12 +9,18 @@ export function musicContextFor(input: {
   cash: number;
   liveRunning: boolean;
   won: boolean;
+  theme?: Course["theme"];
+  playerRoundActive?: boolean;
+  tournamentTier?: "local" | "regional" | "championship";
 }): MusicContext {
   if (input.screen === "loading") return "silent";
   if (input.screen === "menu" || input.screen === "setup") return "title";
-  if (input.won) return "live";
+  if (input.won) return "victory";
   if (input.cash < 0) return "tension";
-  return input.viewMode === "ARCHITECT" || !input.liveRunning ? "build" : "live";
+  if (input.tournamentTier) return `tournament-${input.tournamentTier}`;
+  if (input.playerRoundActive) return "play";
+  if (input.viewMode === "ARCHITECT" || !input.liveRunning) return `build-${input.theme ?? "parkland"}`;
+  return "live";
 }
 
 export function ambientMixFor(input: {
@@ -21,6 +29,8 @@ export function ambientMixFor(input: {
   dayMinute: number;
   visibleGolfers: number;
   paused: boolean;
+  weatherKind?: WeatherKind;
+  season?: SeasonName;
   radius?: number;
 }): AmbientMix {
   const radius = input.radius ?? 9;
@@ -43,12 +53,28 @@ export function ambientMixFor(input: {
   const share = (terrain: Terrain) => (counts[terrain] ?? 0) / Math.max(1, total);
   const dawn = 1 - Math.min(1, Math.abs(input.dayMinute - 100) / 230);
   const dusk = Math.max(0, (input.dayMinute - 620) / 220);
+  const nearbyProperty = input.course.property?.assets.filter((asset) =>
+    Math.hypot(asset.x - input.center.x, asset.y - input.center.y) <= radius
+  ) ?? [];
+  const nearResort = nearbyProperty.some((asset) => asset.category === "resort" || asset.category === "community");
+  const nearCampus = nearbyProperty.some((asset) =>
+    asset.category === "access" || asset.category === "practice" || asset.category === "clubhouse"
+  );
+  const wet = input.weatherKind === "rain" || input.weatherKind === "heavy_rain" || input.weatherKind === "storm";
+  let bed: SunoAmbienceContext = input.course.theme ?? "parkland";
+  if (wet) bed = "rain";
+  else if (input.season === "winter" || input.weatherKind === "frost") bed = "winter";
+  else if (input.dayMinute >= 700 || input.dayMinute < 45) bed = "night";
+  else if (nearResort) bed = "resort";
+  else if (nearCampus) bed = "campus";
+  else if (share("water") + share("wetland") * .8 >= .12) bed = "water";
   return {
     birds: clamp01(obstacleCount / 18 + dawn * .42),
     water: clamp01((share("water") + share("wetland") * .8) * 3.2),
     wind: clamp01((share("rough") + share("deep_rough") + share("sand") + share("waste_area")) * 1.35 + .12),
     murmur: clamp01(input.visibleGolfers / 16),
     crickets: clamp01(dusk),
+    bed,
     paused: input.paused,
   };
 }

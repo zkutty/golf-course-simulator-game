@@ -1,0 +1,100 @@
+{
+  "ok": true,
+  "schemaVersion": 1,
+  "release": "1.0.0-rc.2",
+  "decision": "HOLD",
+  "generatedAt": "2026-07-24T11:37:54.584Z",
+  "blockers": [
+    "unit",
+    "production-build",
+    "demo-build",
+    "desktop-store",
+    "content-packages",
+    "fuzz",
+    "signing-notarization",
+    "licensing-store-review",
+    "hardware-matrix",
+    "ten-player-playtest",
+    "release-council"
+  ],
+  "errors": [],
+  "gates": [
+    {
+      "id": "unit",
+      "owner": "engineering",
+      "kind": "automated",
+      "command": "npm run test:ci",
+      "status": "ready"
+    },
+    {
+      "id": "production-build",
+      "owner": "engineering",
+      "kind": "automated",
+      "command": "npm run build",
+      "status": "ready"
+    },
+    {
+      "id": "demo-build",
+      "owner": "engineering",
+      "kind": "automated",
+      "command": "npm run build:demo",
+      "status": "ready"
+    },
+    {
+      "id": "desktop-store",
+      "owner": "engineering",
+      "kind": "automated",
+      "command": "npm run test:desktop",
+      "status": "ready"
+    },
+    {
+      "id": "content-packages",
+      "owner": "engineering",
+      "kind": "automated",
+      "command": "npx vitest run src/game/contentPackages/packageFormat.test.ts",
+      "status": "ready"
+    },
+    {
+      "id": "fuzz",
+      "owner": "engineering",
+      "kind": "automated",
+      "command": "npm run test:fuzz",
+      "status": "ready"
+    },
+    {
+      "id": "signing-notarization",
+      "owner": "release",
+      "kind": "external",
+      "status": "blocked",
+      "evidence": null
+    },
+    {
+      "id": "licensing-store-review",
+      "owner": "publishing",
+      "kind": "external",
+      "status": "blocked",
+      "evidence": null
+    },
+    {
+      "id": "hardware-matrix",
+      "owner": "qa",
+      "kind": "external",
+      "status": "blocked",
+      "evidence": null
+    },
+    {
+      "id": "ten-player-playtest",
+      "owner": "research",
+      "kind": "external",
+      "status": "blocked",
+      "evidence": null
+    },
+    {
+      "id": "release-council",
+      "owner": "release",
+      "kind": "external",
+      "status": "blocked",
+      "evidence": null
+    }
+  ]
+}

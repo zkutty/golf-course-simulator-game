@@ -11,6 +11,7 @@ import {
 import type { TutorialProgress } from "../game/onboarding/tutorial";
 import { loadAppProfile, type AppProfile } from "../game/onboarding/profile";
 import type { CourseRecords } from "../game/retention/types";
+import { platformServices } from "../platform";
 
 /**
  * Save repository (ZKU-174): named slots + rotating autosaves + quicksave.
@@ -94,6 +95,14 @@ function localStorageKV(): KV {
   };
 }
 
+function nativePlatformKV(): KV {
+  return {
+    get: (key) => platformServices.files.readText(key),
+    set: (key, value) => platformServices.files.writeTextAtomic(key, value),
+    del: (key) => platformServices.files.delete(key),
+  };
+}
+
 function indexedDbKV(): KV & { ready: Promise<void> } {
   const open = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open("coursecraft-saves", 1);
@@ -128,6 +137,7 @@ function fallbackKV(): KV {
 }
 
 function pickKV(): KV {
+  if (platformServices.capabilities.nativeFiles) return nativePlatformKV();
   try {
     if (typeof indexedDB === "undefined") return fallbackKV();
     const idb = indexedDbKV();

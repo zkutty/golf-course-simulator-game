@@ -1,0 +1,38 @@
+name: Desktop smoke
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: simgolf-lite
+
+jobs:
+  desktop:
+    name: ${{ matrix.os }} desktop
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-2022]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npm run test:desktop
+      - run: npm run build
+      - name: Package unsigned smoke artifact
+        run: npx electron-builder --dir --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coursecraft-${{ matrix.os }}-unsigned
+          path: simgolf-lite/desktop-dist
+          retention-days: 7

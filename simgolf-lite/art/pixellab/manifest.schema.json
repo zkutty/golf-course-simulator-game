@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://coursecraft.local/schemas/pixellab-asset-manifest-v1.json",
+  "title": "CourseCraft AI-assisted art manifest",
+  "type": "object",
+  "required": ["version", "pipeline", "policy", "assets"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "version": { "const": 1 },
+    "pipeline": { "const": "pixellab-pilot" },
+    "policy": {
+      "type": "object",
+      "required": ["runtimeGeneration", "promotionRequiresReview", "secretsAllowed"],
+      "properties": {
+        "runtimeGeneration": { "const": false },
+        "promotionRequiresReview": { "const": true },
+        "secretsAllowed": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "provider",
+          "state",
+          "promptRef",
+          "requirements",
+          "review"
+        ],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
+          "category": {
+            "enum": ["natural-prop", "facility", "golfer-animation"]
+          },
+          "provider": { "type": "string", "minLength": 1 },
+          "model": { "type": ["string", "null"] },
+          "state": {
+            "enum": ["planned", "raw", "candidate", "cleaned", "approved", "rejected", "reference", "production"]
+          },
+          "file": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "generatedAt": { "type": ["string", "null"], "format": "date-time" },
+          "promptRef": { "type": "string", "minLength": 1 },
+          "sourceReferences": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "cleanup": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "requirements": {
+            "type": "object",
+            "required": ["width", "height", "transparent", "anchor"],
+            "properties": {
+              "width": { "type": "integer", "minimum": 1 },
+              "height": { "type": "integer", "minimum": 1 },
+              "transparent": { "const": true },
+              "anchor": {
+                "type": "array",
+                "prefixItems": [{ "const": 0.5 }, { "const": 1 }],
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "grid": {
+                "type": "object",
+                "required": ["columns", "rows", "frameWidth", "frameHeight"],
+                "properties": {
+                  "columns": { "type": "integer", "minimum": 1 },
+                  "rows": { "type": "integer", "minimum": 1 },
+                  "frameWidth": { "type": "integer", "minimum": 1 },
+                  "frameHeight": { "type": "integer", "minimum": 1 }
+                },
+                "additionalProperties": false
+              },
+              "bottomPaddingMax": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          },
+          "review": {
+            "type": "object",
+            "required": ["reviewer", "decision", "notes"],
+            "properties": {
+              "reviewer": { "type": ["string", "null"] },
+              "decision": {
+                "enum": ["pending", "approved", "rejected"]
+              },
+              "notes": { "type": "string" }
+            },
+            "additionalProperties": false
+          },
+          "licenseNotes": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

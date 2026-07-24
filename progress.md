@@ -665,3 +665,20 @@ Current request: Implement the proposed M35 Continuous Landscape & Visual Polish
 - Add richer terrain-to-terrain blend bands and elevation-aware bank/cliff art on top of the shipped automatic legacy contour layer.
 - Add editable control nodes/tangent handles and richer closed-region editing beyond the shipped freehand Area gesture.
 - Deliver the biome-specific art/animation pass, world dressing, and benchmark captures across all themes/viewports.
+
+## 2026-07-24 — PixelLab Art Pipeline Pilot
+
+Current request: Implement the `PixelLab Art Pipeline Pilot` milestone.
+
+- Added a secret-safe, ignored PixelLab staging boundary, a tracked provenance manifest/schema, reusable prop/facility/golfer prompt contracts, and a pinned `mcp-remote@0.1.38` setup guide. The credential pasted during planning is treated as compromised and was not reused; live PixelLab generation requires a rotated `PIXELLAB_AUTH_HEADER` and a Codex restart.
+- Added `art:pixellab:doctor`, `art:pixellab:validate`, and `art:pixellab:certify` commands. Validation covers hashes, PNG dimensions/alpha/anchors, animation grid contracts, review states, prompt references, benchmark completeness, and secret hygiene.
+- Added deterministic candidate normalization and isolated one-frame atlas preview tooling. Production sprite sources and production atlases are never modified during review.
+- Generated a high-resolution cart-rental comparison candidate with the built-in image generator, normalized it to the existing 192×160 frame, and rendered it through an intercepted isolated atlas in the real M22 parkland scene. Overview and close-up captures are under `simgolf-lite/artifacts/pixellab-pilot/`; visual review found strong identity/readability but a softer, more painterly finish than the incumbent crisp sprites.
+- Verification passes: 64 Vitest files / 401 tests with one intentional skip, including six focused PixelLab checks; the PixelLab manifest/benchmark validator; PixelLab Playwright atlas/render acceptance; production build; lint/i18n (seven pre-existing hook warnings, no errors); bundled-client fixture smoke; and the 36-hole/100-golfer performance check at 0.31 ms renderer work against the 8 ms budget.
+- The first repository-wide Vitest run overlapped a concurrent M38 commit and observed one stale living-club assertion. The focused test and complete suite both pass after the working tree stabilized.
+
+## PixelLab pilot remaining
+
+- Rotate/revoke the exposed PixelLab token, export the replacement as `PIXELLAB_AUTH_HEADER`, configure the documented MCP block, and restart Codex.
+- Generate and review the three facility treatments, natural props, and idle/walk/swing golfer sheets; promote only reviewed candidates through the manifest.
+- Run the same-target PixelLab/Layer-or-Scenario comparison, finish the weighted benchmark and adoption matrix, then pass the strict `art:pixellab:certify` gate and close the remaining Linear issues.

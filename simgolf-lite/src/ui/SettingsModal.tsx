@@ -10,6 +10,7 @@ import { useFocusTrap } from "./accessibility/useFocusTrap";
 import { useI18n } from "../i18n/useI18n";
 import { T } from "../i18n/T";
 import { useAudio } from "../audio/audioContext";
+import type { MusicContext } from "../audio/AudioManager";
 
 export interface SettingsModalProps {
   open: boolean;
@@ -132,7 +133,7 @@ function AudioTab({ profile, change }: { profile: AppProfile; change: Change }) 
     <AudioRange label={t("settings.soundEffects")} value={p.sfxVolume} onChange={(sfxVolume) => change("audio", { sfxVolume })} onTest={() => audio.testChannel("sfx")} testLabel={t("settings.testSfx")} />
     <AudioRange label={t("settings.ambienceVolume")} value={p.ambienceVolume} onChange={(ambienceVolume) => change("audio", { ambienceVolume })} onTest={() => audio.testChannel("ambience")} testLabel={t("settings.testAmbience")} />
     <Row label={t("settings.muteWhenHidden")} hint={t("settings.muteWhenHiddenHint")}><Toggle label={t("settings.muteWhenHidden")} checked={p.muteWhenHidden} onChange={(muteWhenHidden) => change("audio", { muteWhenHidden })} /></Row>
-    {import.meta.env.DEV && <Row label={t("settings.musicOverride")} hint={t("settings.musicOverrideHint")}><select aria-label={t("settings.musicOverride")} value={devOverride} onChange={(event) => { const value = event.target.value; setDevOverride(value); void audio.setMusicOverride(value === "auto" ? null : value as "silent" | "title" | "build" | "live" | "tension"); }} style={selectStyle}><option value="auto">{t("settings.musicContext.auto")}</option><option value="silent">{t("settings.musicContext.silent")}</option><option value="title">{t("settings.musicContext.title")}</option><option value="build">{t("settings.musicContext.build")}</option><option value="live">{t("settings.musicContext.live")}</option><option value="tension">{t("settings.musicContext.tension")}</option></select></Row>}
+    {import.meta.env.DEV && <Row label={t("settings.musicOverride")} hint={t("settings.musicOverrideHint")}><select aria-label={t("settings.musicOverride")} value={devOverride} onChange={(event) => { const value = event.target.value; setDevOverride(value); void audio.setMusicOverride(value === "auto" ? null : value as MusicContext); }} style={selectStyle}><option value="auto">{t("settings.musicContext.auto")}</option><option value="silent">{t("settings.musicContext.silent")}</option><option value="title">{t("settings.musicContext.title")}</option><option value="build-parkland">{t("settings.musicContext.build")}</option><option value="live">{t("settings.musicContext.live")}</option><option value="tension">{t("settings.musicContext.tension")}</option></select></Row>}
   </div>;
 }
 

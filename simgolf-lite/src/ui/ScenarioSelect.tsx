@@ -7,6 +7,7 @@ import { getLandTheme } from "../game/models/themes";
 import { getDifficultyProfile } from "../game/balance/difficulty";
 import { T } from "../i18n/T";
 import { useI18n } from "../i18n/useI18n";
+import { IS_DEMO, scenarioAvailableInEdition } from "../config/edition";
 
 // Career scenario ladder (ZKU-164): card list with medal states —
 // locked / unlocked / completed (+ best-result stats), sequential unlock.
@@ -16,10 +17,13 @@ const THEME_ICON: Record<string, string> = { parkland: "🌳", links: "🌾", de
 export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) => void }) {
   const { t } = useI18n();
   const career = useMemo(() => loadCareer(), []);
-  const ladder = useMemo(() => [...SCENARIOS].sort((a, b) => a.order - b.order), []);
+  const ladder = useMemo(() => [...SCENARIOS]
+    .filter((scenario) => scenarioAvailableInEdition(scenario.id))
+    .sort((a, b) => a.order - b.order), []);
 
   return (
     <div style={{ display: "grid", gap: 10, maxHeight: "56vh", overflowY: "auto", padding: 2 }}>
+      {IS_DEMO && <p style={{ margin: 0, padding: "8px 10px", borderRadius: 9, background: "rgba(255,255,255,.82)", color: "#3d4a3e" }}>{t("demo.chapterNotice")}</p>}
       {ladder.map((s) => {
         const unlocked = isScenarioUnlocked(career, ladder, s.id);
         const rec = career.scenarios[s.id];

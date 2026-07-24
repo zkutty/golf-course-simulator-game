@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { configDefaults, defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import path from "node:path";
@@ -35,6 +35,11 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(pkg.version),
     __APP_RELEASE__: JSON.stringify(appRelease),
     __COMMIT_SHA__: JSON.stringify(commitSha),
+  },
+  test: {
+    // Desktop shell tests use Node's built-in test runner so they can verify
+    // fsync/rename behavior without Vitest transforming the Electron modules.
+    exclude: [...configDefaults.exclude, "desktop/**"],
   },
   build: {
     // Maps are generated only for authenticated Sentry CI builds and deleted

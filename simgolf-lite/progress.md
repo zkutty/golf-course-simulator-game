@@ -68,3 +68,58 @@ Original prompt: Update my vision HTML for the new features from the new milesto
 - Bundled web-game client emits structured Player Pro state without an error artifact.
 - Visually inspected `artifacts/m36-player-pro-shot.png` and `artifacts/m36-player-pro-complete.png`.
 - Certification report: `docs/M36_M37_CERTIFICATION.md`.
+
+## Suno soundtrack and ambience integration — 2026-07-24
+
+Current request: “I’ve created all the songs and added them as comments to the issues as links to Suno. Give me a quick cover art prompt and let’s wire up these tracks.”
+
+- Read the comments on ZK-409 through ZK-428 and resolved 40 unique public Suno songs: 22 music generations and 18 environmental generations.
+- Downloaded locally hosted runtime copies and normalized them to 96 kbps MP3 for a 93 MB lazy-loaded library; the high-quality published masters remain recoverable from Linear/Suno.
+- Added `src/audio/sunoLibrary.ts` as the authoritative title, Suno ID, source URL, Linear issue, local path, playlist, and provenance manifest.
+- Replaced the generated runtime music playlists with contexts for title, three biome design modes, normal operations, Player Pro, three tournament tiers, financial tension, and victory.
+- Added crossfaded authored ambience playlists selected by biome, camera-near water/campus/resort property, rain, dusk/night, and winter. The prior procedural layers remain as quiet camera-reactive detail.
+- Updated audio credits and the development music override for the new context contract.
+- Focused verification in a clean HEAD validation copy: six audio tests pass, production build passes, lint/i18n passes with the seven existing hook warnings, M15 Playwright acceptance passes, the bundled web-game client emits valid structured state with no error artifact, and its screenshot was visually inspected.
+
+### Integration note
+
+- The shared checkout already contained unresolved user merge conflicts before this request. Audio-specific files and assets are complete, but whole-checkout verification must be rerun after those unrelated conflicts are resolved.
+
+## M40–M44 implementation — 2026-07-24
+
+- Implemented a deterministic, save-versioned six-chapter campaign with three
+  objective phases per chapter, recurring cast, state-grounded scenes,
+  callbacks, durable choices, medals, rewards, and epilogue facts.
+- Replaced the flat in-game feature toolbar with stable Design, Operate, and
+  Legacy workspaces, owned SVG iconography, URL-addressable state, alerts, and
+  responsive overflow.
+- Added a typed browser/desktop/Steam platform boundary and an Electron shell
+  with a sandboxed renderer, allowlisted IPC, atomic native storage, rotating
+  backups, crash recovery, safe-mode/support plumbing, display bounds, and
+  unsigned macOS/Windows CI packaging.
+- Added a checksummed, JSON-only content-package format with hostile-input
+  limits, identity remapping, quarantine, persistent local library,
+  import/export, isolated test play, and optional Workshop publishing.
+- Added a demo edition that exposes the complete opening chapter, rejects
+  full-only saves, and remains forward-compatible with the full edition.
+- Added a single M44 certification manifest and validator. The ship decision
+  remains `HOLD` until signing/notarization, licensed-media/store review,
+  hardware, ten-player moderated testing, and release-council evidence exist.
+
+### Verification
+
+- Full Vitest suite: 68 files, 414 passed, one intentional skip.
+- Native desktop-store tests: 2 passed.
+- Full and demo production builds pass with the existing Vite save-store and
+  chunk-size warnings.
+- Unsigned macOS arm64 application packaging passes; code signing is correctly
+  reported as unavailable without a release identity.
+- Focused browser acceptance passes for the M40 campaign choice, M43 local
+  package/test-play flow, Player Pro/workspace switching, Living Club, and the
+  three tournament standards paths.
+- The bundled web-game client reports the Legacy workspace, a running
+  100-golfer fixture, and no console-error artifact. Campaign, workspace, and
+  content-library captures were visually inspected.
+- Lint and both localization guards pass with seven pre-existing hook warnings
+  and no errors.
+- Certification-manifest validation passes and correctly reports `HOLD`.

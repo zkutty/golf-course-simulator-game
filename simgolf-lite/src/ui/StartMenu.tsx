@@ -3,6 +3,7 @@ import { MenuButton } from "./MenuButton";
 import { StartMenuBackground } from "./StartMenuBackground";
 import { useI18n } from "../i18n/useI18n";
 import { T } from "../i18n/T";
+import { IS_DEMO } from "../config/edition";
 
 export interface StartMenuProps {
   canLoad: boolean;
@@ -156,6 +157,7 @@ export function StartMenu(props: StartMenuProps) {
             >
               {t("title.tagline")}
             </div>
+            {IS_DEMO && <div style={{ marginTop: 8, display: "inline-block", padding: "4px 10px", borderRadius: 999, background: "#f2c14e", color: "#2f3b30", fontWeight: 900, letterSpacing: ".08em" }}>{t("demo.badge")}</div>}
           </div>
 
           {/* Buttons */}

@@ -10,9 +10,18 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+desktop-dist/
 soak-dist/
 test-results/
 *.local
+.env*
+!.env.example
+
+# AI-assisted art is generated into an isolated, review-only workspace.
+# Only manifests, prompts, benchmarks, and approved production assets belong
+# in Git; raw/candidate/cleaned files may contain provider metadata.
+art/pixellab/staging/**
+!art/pixellab/staging/.gitkeep
 
 # Editor directories and files
 .vscode/*
