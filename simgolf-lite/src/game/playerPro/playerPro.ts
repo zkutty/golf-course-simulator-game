@@ -25,6 +25,7 @@ import {
   type PlayerTournamentRecord,
   type PlayerTrainingRecord,
 } from "../models/playerProTypes";
+import { courseGeometryVersion } from "../livingClub/livingClub";
 import type { ClubSpec, GolferProfile } from "../sim/golferProfiles";
 import { evalShotExpectedCost } from "../sim/shots/evalShotExpectedCost";
 import { landingBehavior } from "../render/ballFlight";
@@ -233,6 +234,7 @@ function snapshotCourse(course: Course, layoutId: string, teeSet: TeeSet, pinRot
   return {
     courseId: layout.id,
     courseName: layout.name,
+    geometryVersion: courseGeometryVersion(view),
     theme: course.theme ?? "parkland",
     width: course.width,
     height: course.height,

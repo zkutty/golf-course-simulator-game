@@ -86,7 +86,7 @@ import { eventMatchesBinding } from "./accessibility/keybindings";
 import { T } from "./i18n/T";
 import { ambientMixFor, distanceVolume, musicContextFor } from "./audio/environment";
 import { emptyCourseRecords, recordCompletedRound, recordWeek } from "./game/retention/records";
-import type { CourseRecords, RetentionEvent } from "./game/retention/types";
+import type { CompletedRound, CourseRecords, RetentionEvent } from "./game/retention/types";
 import { publishRetentionEvent, subscribeRetentionEvents } from "./game/retention/eventBus";
 import { evaluateAchievements, type AchievementContext, type AchievementDefinition } from "./game/retention/achievements";
 import { RetentionHub } from "./ui/retention/RetentionHub";
@@ -121,6 +121,8 @@ import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
 import { analyzeResidentialSafety, applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
 import { VisionPage } from "./ui/VisionPage";
 import { PlayerProPanel, PlayerShotHud } from "./ui/PlayerProPanel";
+import { ArchitectureReviewPanel } from "./ui/ArchitectureReviewPanel";
+import { LivingClubPanel } from "./ui/LivingClubPanel";
 import type { PlayerProCareer, PlayerProPoint } from "./game/models/playerProTypes";
 import {
   activatePlayerChallenge,
@@ -144,6 +146,17 @@ import {
   type PlayerTrainingOption,
 } from "./game/playerPro/playerPro";
 import type { TournamentEvent } from "./game/tournaments/types";
+import { buildArchitectureReview, defaultArchitectureFilters } from "./game/architecture/review";
+import {
+  acknowledgeStoryEvent,
+  advanceLivingClubDay,
+  applyStaffCommand,
+  normalizeLivingClub,
+  recordLivingClubRound,
+  recordPlayerRoundArchitecture,
+  resolveStoryChoice,
+  setReturnToDesignContext,
+} from "./game/livingClub/livingClub";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -436,11 +449,24 @@ export default function App() {
   const [showCourseManager, setShowCourseManager] = useState(false);
   const [showPropertyManagement, setShowPropertyManagement] = useState(false);
   const architectureReport = useMemo(() => showCourseManager ? analyzeArchitecture(activeOperatingCourse) : null, [activeOperatingCourse, showCourseManager]);
+  const [showArchitectureReview, setShowArchitectureReview] = useState(false);
+  const [architectureFilters, setArchitectureFilters] = useState(() => defaultArchitectureFilters(course));
+  const architectureReview = useMemo(
+    () => buildArchitectureReview(course, world, architectureFilters),
+    [architectureFilters, course, world],
+  );
+  useEffect(() => {
+    if (normalizeCourseLayouts(course).layouts!.some((layout) => layout.id === architectureFilters.courseId)) return;
+    setArchitectureFilters(defaultArchitectureFilters(course));
+  }, [architectureFilters.courseId, course]);
+  const [showLivingClub, setShowLivingClub] = useState(false);
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [showProgression, setShowProgression] = useState(false);
   const [showPlayerPro, setShowPlayerPro] = useState(false);
   const [playerShotAim, setPlayerShotAim] = useState<PlayerProPoint | null>(null);
   const playerRoundResumeSpeedRef = useRef<SpeedName>("1x");
+  const storyResumeSpeedRef = useRef<SpeedName>("1x");
+  const majorStoryPausedRef = useRef(false);
   const [showLiveOverview, setShowLiveOverview] = useState(false);
   const [followSelected, setFollowSelected] = useState(false);
   const [achievementQueue, setAchievementQueue] = useState<AchievementDefinition[]>([]);
@@ -590,6 +616,21 @@ export default function App() {
     },
   });
   const getLiveSnapshot = live.getSnapshot;
+  const pendingMajorStory = useMemo(
+    () => normalizeLivingClub(world.livingClub).story.instances.find((instance) =>
+      instance.priority === "major" && instance.status === "pending"
+    ) ?? null,
+    [world.livingClub],
+  );
+
+  useEffect(() => {
+    if (!pendingMajorStory) return;
+    storyResumeSpeedRef.current = live.speed;
+    majorStoryPausedRef.current = true;
+    live.setSpeed("paused");
+    setShowLivingClub(true);
+    setWorld((current) => acknowledgeStoryEvent(current, pendingMajorStory.id));
+  }, [live, pendingMajorStory, setWorld]);
 
   const updatePlayerPro = useCallback((updater: (career: PlayerProCareer) => PlayerProCareer) => {
     setWorld((current) => {
@@ -771,16 +812,23 @@ export default function App() {
       const event = currentPlayerTournament(current, authoritative.tournamentId);
       const settlement = settlePlayerRound(career, authoritative, event);
       if (!settlement.round) return current;
+      const recorded = recordPlayerRoundArchitecture(current, authoritative, settlement.round);
+      const recordedCareer = {
+        ...settlement.career,
+        rounds: settlement.career.rounds.map((careerRound) =>
+          careerRound.id === recorded.careerRound.id ? recorded.careerRound : careerRound
+        ),
+      };
       const events = settlement.tournamentEvent
         ? tournamentCalendar(current).events.map((candidate) => candidate.id === settlement.tournamentEvent!.id ? settlement.tournamentEvent! : candidate)
         : null;
       return {
-        ...current,
-        cash: current.cash + settlement.cashDelta,
-        reputation: Math.max(0, Math.min(100, current.reputation + settlement.reputationDelta)),
+        ...recorded.world,
+        cash: recorded.world.cash + settlement.cashDelta,
+        reputation: Math.max(0, Math.min(100, recorded.world.reputation + settlement.reputationDelta)),
         tournaments: events ? { version: 2, events } : current.tournaments,
         playerPro: {
-          ...settlement.career,
+          ...recordedCareer,
           activeRound: { ...authoritative, rewardsApplied: true },
         },
       };
@@ -816,11 +864,64 @@ export default function App() {
       const center = selectedTrace?.rest ?? gameStateRef.current.course.holes[holeIndex]?.green;
       if (center) setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }));
     }
-    updatePlayerPro((career) => ({ ...career, activeRound: null }));
+    setWorld((current) => {
+      const contextual = setReturnToDesignContext(current, round, selectedTrace?.id ?? null);
+      const career = normalizePlayerPro(contextual.playerPro, { seed: contextual.runSeed, founderName: contextual.founderName });
+      return { ...contextual, playerPro: { ...career, activeRound: null } };
+    });
+    setArchitectureFilters({
+      kind: "traces",
+      courseId: round.course.courseId,
+      holeId: holeId ?? "all",
+      teeSet: round.teeSet,
+      sourceSegment: "player-pro",
+      recency: "all",
+    });
+    setShowArchitectureReview(true);
     setPlayerShotAim(null);
     setShowPlayerPro(false);
     live.setSpeed(playerRoundResumeSpeedRef.current);
-  }, [live, updatePlayerPro]);
+  }, [live, setWorld]);
+
+  const runStaffCommand = useCallback((command: Parameters<typeof applyStaffCommand>[1]): string | null => {
+    const snapshot = gameStateRef.current.world;
+    const initial = applyStaffCommand(snapshot, command);
+    if (!initial.ok) return initial.reason ?? "missing";
+    setWorld((current) => current === snapshot ? initial.world : applyStaffCommand(current, command).world);
+    return null;
+  }, [setWorld]);
+
+  const chooseStory = useCallback((instanceId: string, choiceId: string) => {
+    setGameState((current) => {
+      const result = resolveStoryChoice(current.course, current.world, instanceId, choiceId);
+      if (!result.ok) return current;
+      return {
+        ...current,
+        course: result.course,
+        world: result.world,
+        terrainVersion: current.terrainVersion + 1,
+        economyVersion: current.economyVersion + 1,
+      };
+    });
+    markDirty();
+  }, [markDirty]);
+
+  const deferStory = useCallback((instanceId: string) => {
+    setWorld((current) => acknowledgeStoryEvent(current, instanceId, true));
+  }, [setWorld]);
+
+  const closeLivingClub = useCallback(() => {
+    const living = normalizeLivingClub(gameStateRef.current.world.livingClub);
+    const presentedMajor = living.story.instances.find((instance) =>
+      instance.priority === "major" && instance.status === "presented"
+    );
+    if (presentedMajor) setWorld((current) => acknowledgeStoryEvent(current, presentedMajor.id, true));
+    setShowLivingClub(false);
+    if (majorStoryPausedRef.current) {
+      majorStoryPausedRef.current = false;
+      live.setSpeed(storyResumeSpeedRef.current);
+    }
+  }, [live, setWorld]);
 
   const bookTournament = useCallback((tier: TournamentTier, daysAhead: number): string | null => {
     const current = gameStateRef.current;
@@ -853,9 +954,10 @@ export default function App() {
     const isM25Fixture = fixtureParams.get("m25Fixture") === "1";
     const isM26Fixture = fixtureParams.get("m26Fixture") === "1";
     const isM27Fixture = fixtureParams.get("m27Fixture") === "1";
+    const isM38Fixture = fixtureParams.get("m38Fixture") === "1";
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isPropertyFixture) return;
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM38Fixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
@@ -863,6 +965,8 @@ export default function App() {
     const fixtureTheme = requestedTheme === "links" || requestedTheme === "desert" ? requestedTheme : "parkland";
     let fixtureCourse = isPropertyFixture
       ? { ...createReferenceCourse(), property: starterPropertyCourse() }
+      : isM38Fixture
+      ? createPlayerProReferenceCourse()
       : isM27Fixture
       ? createM27ReleaseReferenceCourse(fixtureTheme)
       : isM26Fixture
@@ -900,7 +1004,7 @@ export default function App() {
     // layout IDs, looks like a physical hole edit, and needlessly replans every
     // live golfer in the renderer stress scenes.
     fixtureCourse = normalizeCourseLayouts(fixtureCourse);
-    const fixtureWorld = {
+    let fixtureWorld: World = {
       ...gameStateRef.current.world,
       week: 1,
       cash: isPropertyFixture ? 1_000_000 : isM25Fixture ? 500_000 : 250_000,
@@ -915,6 +1019,44 @@ export default function App() {
       } : {}),
       ...(isPropertyFixture ? { enterprise: emptyPropertyEnterprise() } : {}),
     };
+    if (isM38Fixture) {
+      const evidenceHoles = fixtureCourse.holes.filter((hole) => hole.id && hole.tee && hole.green);
+      const makeRound = (visit: number): CompletedRound => ({
+        golferId: 38,
+        golferName: "Morgan Links",
+        archetype: "lowHandicap",
+        score: 35 + visit,
+        scoreToPar: visit - 2,
+        holePar: evidenceHoles.map(() => 4),
+        holeStrokes: evidenceHoles.map(() => 4),
+        mood: 0.9,
+        courseId: fixtureCourse.activeCourseId,
+        courseName: fixtureCourse.name,
+        holeIds: evidenceHoles.map((hole) => hole.id!),
+        teeSet: "member",
+        waitMinutes: 8,
+        shots: Array.from({ length: 12 }, (_, index) => {
+          const hole = evidenceHoles[index % evidenceHoles.length];
+          const from = hole.tee!;
+          const green = hole.green!;
+          const progress = (index % 4 + 1) / 5;
+          return {
+            id: `m38-${visit}-${index}`,
+            holeId: hole.id!,
+            shotNumber: index % 4 + 1,
+            shotType: index % 4 === 0 ? "drive" as const : index % 4 === 3 ? "recovery" as const : "approach" as const,
+            from: { x: from.x + index % 2, y: from.y },
+            landing: { x: from.x + (green.x - from.x) * progress, y: from.y + (green.y - from.y) * progress },
+            rest: { x: from.x + (green.x - from.x) * progress + 0.5, y: from.y + (green.y - from.y) * progress + (index % 2 ? 0.5 : -0.5) },
+            lieBefore: index % 4 === 3 ? "rough" : "fairway",
+            lieAfter: index % 4 === 3 ? "sand" : "fairway",
+          };
+        }),
+      });
+      fixtureWorld = recordLivingClubRound(fixtureWorld, fixtureCourse, makeRound(1), 1);
+      fixtureWorld = recordLivingClubRound(fixtureWorld, fixtureCourse, makeRound(2), 4);
+      fixtureWorld = advanceLivingClubDay(fixtureCourse, fixtureWorld, 5).world;
+    }
     dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
     if (isM23Fixture) {
       setActiveHoleIndex(0);
@@ -927,6 +1069,13 @@ export default function App() {
         state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),
         pendingCash: 0,
         speed: isPerfMeasurement ? "paused" : "4x",
+        selectedGolferId: null,
+      }));
+    } else if (isM38Fixture) {
+      live.restoreSnapshot(snapshotLiveSimulation({
+        state: createLiveState(fixtureCourse, fixtureWorld, 5),
+        pendingCash: 0,
+        speed: "paused",
         selectedGolferId: null,
       }));
     }
@@ -1656,6 +1805,55 @@ export default function App() {
       },
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, weekReport: pendingWeekReport ? { week: pendingWeekReport.week, profit: pendingWeekReport.result.profit } : null, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, pace: live.status.pace, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
+      architectureReview: {
+        panelOpen: showArchitectureReview,
+        filters: architectureReview.filters,
+        status: architectureReview.status,
+        currentEvidence: architectureReview.currentEvidence,
+        historicalEvidence: architectureReview.historicalEvidence,
+        selectedTraceId: architectureReview.selectedTraceId,
+        overlay: {
+          kind: architectureReview.overlay.kind,
+          traces: architectureReview.overlay.traces.length,
+          cells: architectureReview.overlay.cells.length,
+          points: architectureReview.overlay.points.length,
+        },
+        revisions: architectureReview.revisions.map((revision) => ({
+          geometryVersion: revision.geometryVersion,
+          rounds: revision.rounds,
+          shots: revision.shots,
+          averageToPar: revision.averageToPar,
+        })),
+      },
+      livingClub: (() => {
+        const living = normalizeLivingClub(world.livingClub);
+        return {
+          panelOpen: showLivingClub,
+          regulars: living.regulars.map((regular) => ({
+            id: regular.id,
+            name: regular.name,
+            archetype: regular.archetype,
+            rounds: regular.rounds,
+            loyalty: regular.loyalty,
+            relationship: regular.relationship,
+            memories: regular.memories.length,
+          })),
+          staff: (world.staffRoster ?? []).map((member) => ({
+            id: member.id,
+            name: member.name,
+            role: member.role,
+            proficiency: member.proficiency ?? null,
+            morale: member.morale ?? null,
+          })),
+          pendingStories: living.story.instances.filter((instance) => ["pending", "presented", "deferred"].includes(instance.status)).map((instance) => ({
+            id: instance.id,
+            definitionId: instance.definitionId,
+            priority: instance.priority,
+            status: instance.status,
+          })),
+          journalEntries: living.story.journal.length,
+        };
+      })(),
       progression: { panelOpen: showProgression, tier: reputationTier(world.reputation).id, staffCap: reputationTier(world.reputation).staffCap, buildingTierCap: reputationTier(world.reputation).buildingTierCap },
       playerPro: {
         panelOpen: showPlayerPro,
@@ -1702,7 +1900,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, showCourseManager, showLandOffice, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, showArchitectureReview, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -3099,6 +3297,7 @@ export default function App() {
                 surveyMode={showLandOffice}
                 selectedParcelId={selectedParcelId}
                 architectureWarnings={architectureReport?.warnings}
+                architectureOverlay={showArchitectureReview ? architectureReview.overlay : null}
                 animationsEnabled={effectiveAnimations && resolvedGraphicsQuality !== "low"}
                 graphicsQuality={resolvedGraphicsQuality}
                 ambienceFx={appProfile.graphics.ambienceFx && resolvedGraphicsQuality !== "low"}
@@ -3158,9 +3357,11 @@ export default function App() {
                 onViewChange={setMinimapView}
                 cameraJump={minimapJump}
             />
-            {!tutorialProgress && <div className="cc-retention-toolbar" style={{ position: "absolute", top: 10, left: 10, zIndex: 110, display: "flex", gap: 6 }}>
+            {!tutorialProgress && <div className="cc-retention-toolbar" style={{ position: "absolute", top: 10, left: 10, zIndex: 110, display: "flex", gap: 6, flexWrap: "wrap", maxWidth: "calc(100% - 20px)" }}>
               <button onClick={() => setShowRetention(true)}>🏆 {t("retention.open")}</button>
               <button data-testid="open-player-pro" aria-pressed={showPlayerPro} onClick={() => setShowPlayerPro((open) => !open)}>🏌️ {t("playerPro.open")}{activePlayerRound ? " •" : ""}</button>
+              <button data-testid="open-architecture-review" aria-pressed={showArchitectureReview} onClick={() => setShowArchitectureReview((open) => !open)}>📐 {t("architecture.review.title")}</button>
+              <button data-testid="open-living-club" aria-pressed={showLivingClub} onClick={() => setShowLivingClub(true)}>👥 {t("livingClub.title")}{normalizeLivingClub(world.livingClub).story.instances.some((instance) => ["pending", "presented", "deferred"].includes(instance.status)) ? " •" : ""}</button>
               <button data-testid="open-progression" aria-pressed={showProgression} onClick={() => setShowProgression((open) => !open)}>⭐ {t("progression.open")} · {reputationTier(world.reputation).name}</button>
               <button data-testid="open-tournaments" aria-pressed={showTournaments} onClick={() => setShowTournaments((open) => !open)}>⛳ {t("tournament.open")}{live.status.tournament ? " •" : ""}</button>
               <button data-testid="open-land-office" disabled={playerRoundLocksEditing} aria-pressed={showLandOffice} onClick={() => { setShowLandOffice((open) => !open); setSelectedParcelId((current) => current ?? course.estate?.starterParcelId ?? null); }}>🗺️ {t("land.open")}</button>
@@ -3197,7 +3398,44 @@ export default function App() {
             {showProgression && !tutorialProgress && <ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} />}
             {showTournaments && !tutorialProgress && <TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
             {showLandOffice && !tutorialProgress && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
-            {showCourseManager && !tutorialProgress && <CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onClose={() => setShowCourseManager(false)} />}
+            {showCourseManager && !tutorialProgress && <CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onOpenArchitectureReview={() => { setShowArchitectureReview(true); setShowCourseManager(false); }} onClose={() => setShowCourseManager(false)} />}
+            {showArchitectureReview && !tutorialProgress && <ArchitectureReviewPanel
+              course={course}
+              review={architectureReview}
+              onFilters={setArchitectureFilters}
+              onJump={(point, holeId) => {
+                if (holeId) {
+                  const index = course.holes.findIndex((hole) => hole.id === holeId);
+                  if (index >= 0) {
+                    setActiveHoleIndex(index);
+                    setHoleEditMode("hole");
+                  }
+                }
+                setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 }));
+              }}
+              onPracticeRound={(courseId) => {
+                const reason = beginPlayerRound(courseId, "member", "A");
+                if (!reason) setShowArchitectureReview(false);
+                return reason;
+              }}
+              onClose={() => setShowArchitectureReview(false)}
+            />}
+            {showLivingClub && !tutorialProgress && <LivingClubPanel
+              course={course}
+              world={world}
+              profile={appProfile}
+              activeGolferPersonIds={live.golfersRef.current.map((golfer) => ({ id: golfer.id, personId: golfer.personId }))}
+              onProfile={handleProfileChange}
+              onFollow={(golferId) => {
+                live.selectGolfer(golferId);
+                setFollowSelected(true);
+                closeLivingClub();
+              }}
+              onStaffCommand={runStaffCommand}
+              onChooseStory={chooseStory}
+              onDeferStory={deferStory}
+              onClose={closeLivingClub}
+            />}
             {showPropertyManagement && !tutorialProgress && <PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} />}
             {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
             {teeSetupPrompt && !tutorialProgress && (

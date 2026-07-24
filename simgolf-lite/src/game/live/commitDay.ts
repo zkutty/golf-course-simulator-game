@@ -9,6 +9,7 @@ import type { PaceDayMetrics } from "./types";
 import { layoutById } from "../models/courseLayouts";
 import { recordCoreCommerce, settlePropertyDay } from "../property/property";
 import type { PropertyShotTrace } from "../property/types";
+import { advanceLivingClubDay } from "../livingClub/livingClub";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -118,7 +119,7 @@ export function commitDay(args: {
   const nextCashRaw = operatingWorld.cash + propertySettlement.report.revenue - costs;
   const bankrupt = hitsLiquidityTrap(nextCashRaw);
 
-  const nextCourse = { ...operatingCourse, condition: nextCondition };
+  const conditionCourse = { ...operatingCourse, condition: nextCondition };
   const nextWorldBase: World = {
     ...operatingWorld,
     cash: nextCashRaw,
@@ -131,11 +132,14 @@ export function commitDay(args: {
   // Objective evaluation at the sim commit point (ZKU-163). The last day of
   // the week closes it, which is when streaks advance and deadlines can fire.
   const closesWeek = dayIndex != null && dayIndex + 1 >= DAYS_PER_WEEK;
-  const nextWorld = withEvaluatedObjectives(nextCourse, nextWorldBase, {
+  const objectiveWorld = withEvaluatedObjectives(conditionCourse, nextWorldBase, {
     rounds,
     profit,
     ...(closesWeek ? { weekCompleted: operatingWorld.week } : {}),
   });
+  const livingClubCommit = advanceLivingClubDay(conditionCourse, objectiveWorld, dayIndex ?? 0);
+  const nextCourse = livingClubCommit.course;
+  const nextWorld = livingClubCommit.world;
   const courseEntries = Object.entries(args.perCourse ?? {});
   let allocatedRevenue = 0;
   let allocatedCosts = 0;

@@ -51,6 +51,8 @@ export interface PlayerRoundHoleSnapshot {
 export interface PlayerRoundCourseSnapshot {
   courseId: string;
   courseName: string;
+  /** Canonical identity of the routed course at round start. */
+  geometryVersion?: string;
   theme: "parkland" | "links" | "desert";
   width: number;
   height: number;
@@ -149,6 +151,11 @@ export interface PlayerCareerRound {
   shots: PlayerShotTrace[];
   evidence: PlayerSkillEvidence[];
   skillGains: Partial<PlayerProSkills>;
+  /** Immutable M38 design identity for every retained trace. */
+  geometryVersion?: string;
+  teeSet?: "forward" | "member" | "championship";
+  pinRotation?: "A" | "B" | "C";
+  holeSnapshots?: PlayerRoundHoleSnapshot[];
 }
 
 export interface PlayerTrainingRecord {

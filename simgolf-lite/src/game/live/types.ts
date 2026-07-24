@@ -37,6 +37,7 @@ export type GolferArchetypeName =
 export interface Golfer {
   id: number;
   name: string;
+  personId?: string;
   archetype: GolferArchetypeName;
   teeSet?: TeeSet;
   pinRotation?: PinRotation;
@@ -89,6 +90,8 @@ export interface Arrival {
   courseId?: string;
   tournament?: { eventId: string; entrantId: string; name: string; skill: number; teeSet?: TeeSet; pinRotation?: PinRotation };
   groupId?: string;
+  personId?: string;
+  name?: string;
 }
 
 export interface TeeGroupState {
@@ -178,6 +181,7 @@ export interface RoundReactions {
 // the canvas never triggers React re-renders.
 export interface GolferRenderData {
   id: number;
+  personId?: string;
   x: number;
   y: number;
   ballX: number | null;

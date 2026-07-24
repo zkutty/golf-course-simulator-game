@@ -2,6 +2,7 @@ import type { ObjectiveState } from "./objectives";
 import type { TournamentCalendar } from "../tournaments/types";
 import type { PropertyCourseState, PropertyEnterpriseState } from "../property/types";
 import type { PlayerProCareer } from "./playerProTypes";
+import type { LivingClubState } from "../livingClub/types";
 
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
@@ -303,6 +304,8 @@ export interface World {
   enterprise?: PropertyEnterpriseState;
   /** M36-M37 player-owned golfer, resumable rounds, progression, and competition. */
   playerPro?: PlayerProCareer;
+  /** M38 bounded people, story, callback, and architecture-evidence state. */
+  livingClub?: LivingClubState;
 }
 
 export type StaffRole = "groundskeeper" | "cart_attendant" | "pro_shop" | "marshal" | "tournament_director" | "club_pro" | "food_service" | "locker_attendant" | "front_desk" | "housekeeping" | "shuttle_driver";
@@ -315,7 +318,26 @@ export interface StaffMember {
   shiftStart: number;
   shiftEnd: number;
   weeklyWage: number;
+  /** M38 character identity layered over the existing coverage economics. */
+  appearance?: { portrait: "workwear" | "formal" | "sport"; palette: number; accent: number };
+  traits?: [StaffTrait, StaffTrait];
+  proficiency?: number;
+  tenureStartWeek?: number;
+  morale?: number;
+  training?: Array<{ id: string; week: number; focus: string; gain: number; cost: number }>;
+  compensationHistory?: Array<{ week: number; weeklyWage: number; reason: "hire" | "raise" | "migration" }>;
+  notableActions?: Array<{ id: string; week: number; summary: string; evidenceId?: string }>;
 }
+
+export type StaffTrait =
+  | "steady"
+  | "meticulous"
+  | "mentor"
+  | "inventive"
+  | "warm"
+  | "frugal"
+  | "competitive"
+  | "safetyMinded";
 
 export type LoanKind = "BRIDGE" | "EXPANSION";
 export type LoanStatus = "ACTIVE" | "PAID" | "DEFAULTED";

@@ -25,6 +25,7 @@ import { activeCourseLayout, updateLayout } from "../game/models/courseLayouts";
 import { courseOperations, PACE_PRESETS } from "../game/live/pace";
 import { consumeClock, FIXED_GAME_STEP_MINUTES } from "../game/live/clock";
 import { appendDayToLedger, createWeekLedger, weekResultFromLedger } from "../game/live/weeklyLedger";
+import { recordLivingClubRound } from "../game/livingClub/livingClub";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
@@ -32,6 +33,7 @@ export type CourseOperationsPatch = Partial<Omit<CourseOperations, "beverage">> 
 
 export interface SelectedGolferDetail {
   id: number;
+  personId?: string;
   name: string;
   archetype: string;
   color: string;
@@ -65,7 +67,7 @@ export interface LiveStatus {
   nextArrivalMinute: number | null;
   lastDay: DayResult | null;
   selected: SelectedGolferDetail | null;
-  golfers: Array<Pick<SelectedGolferDetail, "id" | "name" | "archetype" | "currentHole" | "scoreToPar" | "mood" | "courseId" | "currentHoleId">>;
+  golfers: Array<Pick<SelectedGolferDetail, "id" | "personId" | "name" | "archetype" | "currentHole" | "scoreToPar" | "mood" | "courseId" | "currentHoleId">>;
   tournament: null | {
     eventId: string;
     name: string;
@@ -119,6 +121,7 @@ function buildSelected(
   if (!g) return null;
   return {
     id: g.id,
+    personId: g.personId,
     name: g.name,
     archetype: g.archetype,
     color: g.color,
@@ -304,6 +307,7 @@ export function useLiveSimulation(args: {
       selected,
       golfers: live.golfers.map((g) => ({
         id: g.id,
+        personId: g.personId,
         name: g.name,
         archetype: g.archetype,
         currentHole: g.currentHole,
@@ -439,7 +443,12 @@ export function useLiveSimulation(args: {
     const previousRender = golfersRef.current;
     for (let step = 0; step < clock.steps && !live.dayOver; step++) {
       const ev = stepLive(live, courseRef.current, FIXED_GAME_STEP_MINUTES);
-      for (const round of ev.completedRounds) onRoundRef.current?.(round, live.dayIndex);
+      for (const round of ev.completedRounds) {
+        const recordedWorld = recordLivingClubRound(worldRef.current, courseRef.current, round, live.dayIndex);
+        worldRef.current = recordedWorld;
+        setWorld(() => recordedWorld);
+        onRoundRef.current?.(round, live.dayIndex);
+      }
       if (ev.cashDelta > 0) {
         pendingCashRef.current += ev.cashDelta;
         onCashRef.current?.();
@@ -451,7 +460,7 @@ export function useLiveSimulation(args: {
     for (const audioEvent of deriveLiveAudioEvents(previousRender, nextRender, courseRef.current).slice(0, eventCap)) {
       onAudioRef.current?.(audioEvent);
     }
-  }, [buildRenderData]);
+  }, [buildRenderData, setWorld]);
 
   // Main clock loop.
   useEffect(() => {

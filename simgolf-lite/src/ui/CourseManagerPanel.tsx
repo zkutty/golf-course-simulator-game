@@ -23,6 +23,7 @@ export function CourseManagerPanel(props: {
   onSelectHole: (holeId: string) => void;
   onCenter: (point: { x: number; y: number }) => void;
   onOpenGolfopedia: (entry: string) => void;
+  onOpenArchitectureReview: () => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -82,7 +83,10 @@ export function CourseManagerPanel(props: {
           <strong>{t(`architecture.warning.${warning.kind}` as MessageKey)}</strong><br/><small>{warning.measurement} · {t("architecture.jump")}</small>
         </button>
       </li>)}</ul> : <p>{t("architecture.noWarnings")}</p>}
-      <button onClick={() => props.onOpenGolfopedia("management-architecture")}>{t("architecture.learn")}</button>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <button onClick={() => props.onOpenGolfopedia("management-architecture")}>{t("architecture.learn")}</button>
+        <button data-testid="architecture-review-from-report" onClick={props.onOpenArchitectureReview}>{t("architecture.review.open")}</button>
+      </div>
     </section>
     <h3>{t("courses.draft")}</h3>
     <ol data-testid="draft-routing" style={{ display: "grid", gap: 6, paddingLeft: 24 }}>{active.draftHoleIds.map((holeId, index) => {

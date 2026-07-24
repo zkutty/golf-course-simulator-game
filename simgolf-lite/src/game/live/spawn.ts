@@ -10,6 +10,7 @@ import {
 import type { Arrival } from "./types";
 import { activeCourseLayout, operatingCourseViews } from "../models/courseLayouts";
 import { courseOperations } from "./pace";
+import { normalizeLivingClub } from "../livingClub/livingClub";
 
 // Re-exported so callers/tests keep a single import surface for spawning.
 export { plannedGolfersForDay } from "./demand";
@@ -56,6 +57,39 @@ export function planEstateDay(
   const arrivals = views.flatMap(({ layout, course: view }, index) =>
     planDay(view, world, seed + index * 104729).slice(0, layout.roundLength * 4).map((arrival) => ({ ...arrival, courseId: layout.id }))
   );
+  // Persistent regulars reuse their stable person identity and appearance when
+  // they revisit. They replace a bounded share of the ordinary tee sheet, so
+  // living-club continuity never creates extra demand or duplicate customers.
+  const regulars = normalizeLivingClub(world.livingClub).regulars
+    .filter((regular) => !regular.favoriteCourseId || views.some(({ layout }) => layout.id === regular.favoriteCourseId))
+    .sort((a, b) => b.loyalty - a.loyalty || a.id.localeCompare(b.id))
+    .slice(0, Math.min(4, Math.floor(arrivals.length / 5)));
+  const claimedArrivalIndices = new Set<number>();
+  regulars.forEach((regular, index) => {
+    const eligibleIndices = arrivals
+      .map((arrival, arrivalIndex) => ({ arrival, arrivalIndex }))
+      .filter(({ arrival, arrivalIndex }) =>
+        !claimedArrivalIndices.has(arrivalIndex) &&
+        !arrival.tournament &&
+        (!regular.favoriteCourseId || arrival.courseId === regular.favoriteCourseId)
+      )
+      .map(({ arrivalIndex }) => arrivalIndex);
+    if (!eligibleIndices.length) return;
+    const chosenIndex = eligibleIndices[(hashCode(`${seed}:${regular.id}`) + index * 7) % eligibleIndices.length];
+    claimedArrivalIndices.add(chosenIndex);
+    arrivals[chosenIndex] = {
+      ...arrivals[chosenIndex],
+      personId: regular.id,
+      name: regular.name,
+      archetype: regular.archetype,
+    };
+  });
   arrivals.sort((a, b) => a.atMinute - b.atMinute || (a.courseId ?? "").localeCompare(b.courseId ?? ""));
   return arrivals;
+}
+
+function hashCode(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index++) hash = (Math.imul(hash, 31) + value.charCodeAt(index)) | 0;
+  return Math.abs(hash);
 }

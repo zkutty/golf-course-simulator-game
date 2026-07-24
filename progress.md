@@ -1,5 +1,18 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-07-23 — M38 Architecture Feedback & Living Club Stories complete
+
+Current request: “Implement m38 from linear”
+
+- Resolved M38 in Linear as ZK-349 through ZK-357 and read all nine specifications, relations, and acceptance criteria; there are no issue comments or attachments.
+- Mapped the implementation onto M36/M37 controlled-shot snapshots, the existing Architect Report, live completed-round events, named operational staff, profile persistence, save v14 normalization, and the shared Pixi overlay layer.
+- Added save schema v15 with bounded, hostile-data-safe persistence for named regulars, enriched staff, relationships, immutable memories/round history, story facts/callbacks/journal, architecture evidence, revision summaries, and Return to Design context.
+- Added eight filterable architecture overlays (shot traces, dispersion, landing heatmaps, recovery, tee scoring, hazards, walking, and congestion), truthful current/historical revision labeling, sparse/empty explanations, before/after summaries, evidence jump-back, and practice-round entry.
+- Connected both live rounds and Player Pro settlement to canonical routed-geometry evidence. Player Pro snapshots retain the exact geometry version and hole setup, and Return to Design restores the revealing hole, trace, camera destination, and evidence filters without mutating the played snapshot.
+- Added deterministic regular promotion/reappearance, profile-persistent favorites, explicit on-course follow actions, enriched staff portraits/traits/proficiency/tenure/morale/training/compensation/history, and atomic hire/train/reassign/raise/dismiss commands.
+- Added a validated declarative pack of 26 systemic events across eight categories and six two-stage chains, with predicate facts, participant binding, cooldowns/mutexes, exact-once effect settlement, callbacks, expiration defaults, consequence previews, major-event pause, defer, and an accessible club journal.
+- Verification: 64 Vitest files / 401 passed with one intentional skip; production build; lint/i18n with seven pre-existing hook warnings and no errors; `git diff --check`; M36 Player Pro regression plus M38 Playwright acceptance; ten-year bounded soak; schema 14 migration; bundled-client text state with 24 current traces and no error artifact. The Living Club and Architecture Review captures were visually inspected.
+
 ## 2026-07-23 — Golden-path deployment repair in progress
 
 - Reproduced the M29 pace-control hang locally and inspected its Playwright trace: the browser main thread stopped during the `brisk` course-operations update, with no network or console error.

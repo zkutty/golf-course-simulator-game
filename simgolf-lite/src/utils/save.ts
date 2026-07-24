@@ -40,9 +40,10 @@ import { normalizedStaff } from "../game/live/pace";
 import { normalizePropertyCourse, normalizePropertyEnterprise, starterPropertyCourse } from "../game/property/property";
 import { normalizeSurfaceIntent } from "../game/models/surfaceIntent";
 import { normalizePlayerPro } from "../game/playerPro/playerPro";
+import { normalizeLivingClub } from "../game/livingClub/livingClub";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 14 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 15 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -115,6 +116,10 @@ export interface SaveV13 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV14 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 14;
+  records?: CourseRecords;
+}
+export interface SaveV15 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -138,7 +143,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV14 = {
+  const save: SaveV15 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -488,6 +493,10 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // The normalizer supplies a neutral profile and safely drops malformed
   // optional round state without invalidating the last good course save.
   13: (save) => ({ ...save, schemaVersion: 14 }),
+  // V15 adds bounded living-club people, staff history, story callbacks, and
+  // architecture evidence. Normalization provides a neutral deterministic
+  // state, so old saves do not replay events or fabricate past relationships.
+  14: (save) => ({ ...save, schemaVersion: 15 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -728,6 +737,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
         seed: rawWorld.runSeed,
         founderName: typeof rawWorld.founderName === "string" ? rawWorld.founderName : undefined,
       }),
+      livingClub: normalizeLivingClub(rawWorld.livingClub),
     };
     world.staffRoster = normalizedStaff(world, course);
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;

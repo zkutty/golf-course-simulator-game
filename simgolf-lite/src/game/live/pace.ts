@@ -1,6 +1,7 @@
 import type { Course, CourseOperations, StaffMember, StaffRole, World } from "../models/types";
 import { activeCourseLayout, layoutById } from "../models/courseLayouts";
 import { normalizeOperations } from "../models/courseOperations";
+import { normalizeStaffCharacter } from "../livingClub/livingClub";
 export { normalizeOperations, PACE_PRESETS } from "../models/courseOperations";
 
 export function courseOperations(course: Course, courseId?: string): CourseOperations {
@@ -15,7 +16,7 @@ const STAFF_WAGES: Record<StaffRole, number> = {
 };
 
 export function staffFromLevel(level: number, courseId?: string): StaffMember[] {
-  return STAFF_ROLES.slice(0, Math.max(0, Math.min(5, Math.floor(level)))).map((role, index) => ({
+  return STAFF_ROLES.slice(0, Math.max(0, Math.min(5, Math.floor(level)))).map((role, index) => normalizeStaffCharacter({
     id: `legacy-staff-${index + 1}`,
     name: STAFF_NAMES[index],
     role,
@@ -23,7 +24,7 @@ export function staffFromLevel(level: number, courseId?: string): StaffMember[] 
     shiftStart: 0,
     shiftEnd: 840,
     weeklyWage: STAFF_WAGES[role],
-  }));
+  }, index));
 }
 
 export function normalizedStaff(world: World, course?: Course): StaffMember[] {
@@ -34,7 +35,7 @@ export function normalizedStaff(world: World, course?: Course): StaffMember[] {
   if (world.staffRoster.every((member) => member.id.startsWith("legacy-staff-")) && world.staffRoster.length !== world.staffLevel) {
     return staffFromLevel(world.staffLevel, courseId);
   }
-  return world.staffRoster;
+  return world.staffRoster.map((member, index) => normalizeStaffCharacter(member, index, world.week));
 }
 
 export function hasOnDutyStaff(world: World, role: StaffRole, courseId: string, minute: number, course?: Course): boolean {

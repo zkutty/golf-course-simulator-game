@@ -94,6 +94,7 @@ import { isWaterHazard } from "../game/models/terrainRules";
 import { T } from "../i18n/T";
 import { decodeParcelMap } from "../game/estate/estate";
 import type { ArchitectureWarning } from "../game/architecture/architecture";
+import type { ArchitectureOverlayRender } from "../game/architecture/reviewTypes";
 import { nextWheelZoomTarget, normalizeWheelDelta } from "../game/render/wheelZoom";
 import {
   SCENIC_CAMERA_MARGIN_TILES,
@@ -376,6 +377,7 @@ export interface PixiStageProps {
   surveyMode?: boolean;
   selectedParcelId?: string | null;
   architectureWarnings?: ArchitectureWarning[];
+  architectureOverlay?: ArchitectureOverlayRender | null;
   animationsEnabled: boolean;
   graphicsQuality: "high" | "medium" | "low";
   ambienceFx: boolean;
@@ -2783,6 +2785,52 @@ export function PixiStage(props: PixiStageProps) {
       layers.terrainDecals.addChild(g);
     }
 
+    if (props.architectureOverlay) {
+      const g = new PIXI.Graphics();
+      const project = (point: Point) => {
+        const x = Math.max(0, Math.min(course.width - 1, Math.round(point.x)));
+        const y = Math.max(0, Math.min(course.height - 1, Math.round(point.y)));
+        return tileCenterIso(point.x, point.y, getElevation(course, x, y), rotation);
+      };
+      for (const cell of props.architectureOverlay.cells) {
+        const top = worldToIso(cell.x + 0.5, cell.y, getElevation(course, Math.round(cell.x), Math.round(cell.y)), rotation);
+        const intensity = Math.min(1, 0.22 + Math.log2(cell.value + 1) * 0.16);
+        g.poly([
+          top.x, top.y,
+          top.x + TILE_W / 2, top.y + TILE_H / 2,
+          top.x, top.y + TILE_H,
+          top.x - TILE_W / 2, top.y + TILE_H / 2,
+        ]);
+        g.fill({
+          color: cell.current ? 0xf0a51a : 0x7b6aa8,
+          alpha: cell.current ? intensity : Math.min(0.48, intensity),
+        });
+        if (!cell.current) g.stroke({ width: 1, color: 0xf6e8ff, alpha: 0.75 });
+      }
+      for (const trace of props.architectureOverlay.traces) {
+        const from = project(trace.from);
+        const to = project(trace.to);
+        g.moveTo(from.x, from.y);
+        g.lineTo(to.x, to.y);
+        g.stroke({
+          width: trace.emphasized ? 5 : 2.5,
+          color: trace.emphasized ? 0xfff08a : trace.current ? 0x29d7c0 : 0x9a7bc1,
+          alpha: trace.current ? 0.9 : 0.6,
+        });
+        g.circle(to.x, to.y, trace.emphasized ? 6 : 3);
+        g.fill({ color: trace.current ? 0x29d7c0 : 0x9a7bc1, alpha: 0.9 });
+      }
+      for (const point of props.architectureOverlay.points) {
+        const projected = project(point);
+        const radius = Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35));
+        g.circle(projected.x, projected.y, radius);
+        g.fill({ color: point.current ? 0x36cfc9 : 0x8d77b7, alpha: 0.35 });
+        g.stroke({ width: 2, color: point.current ? 0xeafffb : 0xf1e9ff, alpha: 0.9 });
+      }
+      g.label = ROUTE_LABEL;
+      layers.terrainDecals.addChild(g);
+    }
+
     // Failing-corridor overlay: red translucent diamonds.
     if (showFixOverlay && failingCorridorSegments && failingCorridorSegments.length > 0) {
       const g = new PIXI.Graphics();
@@ -2815,7 +2863,7 @@ export function PixiStage(props: PixiStageProps) {
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
     }
-  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, rotation, props.showMarkers, props.architectureWarnings]);
+  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, rotation, props.showMarkers, props.architectureWarnings, props.architectureOverlay]);
 
   // ---------------------------------------------------------------------
   // Ticker pass — hover highlight/line + live golfer dots

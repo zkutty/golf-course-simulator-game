@@ -35,6 +35,19 @@ export interface CompletedRound {
   holeIds?: string[];
   tournamentId?: string;
   tournamentEntrantId?: string;
+  teeSet?: "forward" | "member" | "championship";
+  waitMinutes?: number;
+  shots?: Array<{
+    id: string;
+    holeId: string;
+    shotNumber: number;
+    shotType: "drive" | "approach" | "recovery" | "putt";
+    from: { x: number; y: number };
+    landing: { x: number; y: number };
+    rest: { x: number; y: number };
+    lieBefore?: string;
+    lieAfter?: string;
+  }>;
 }
 
 /** Compact numeric rows keep long-running saves bounded: [week,cash,rating,reputation,profit,attendance]. */

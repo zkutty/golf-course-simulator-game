@@ -159,7 +159,8 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   round.segments = round.segments.map((segment) => ({ ...segment, holeId: segment.holeIndex >= 0 ? holeIds[segment.holeIndex] : undefined }));
   return {
     id,
-    name: arrival.tournament?.name ?? golferName(rng(), rng()),
+    personId: arrival.personId,
+    name: arrival.tournament?.name ?? arrival.name ?? golferName(rng(), rng()),
     archetype: arch.name,
     teeSet,
     pinRotation,
@@ -459,6 +460,37 @@ export function stepLive(
         holeIds: g.holeIds?.slice(),
         tournamentId: g.tournamentId,
         tournamentEntrantId: g.tournamentEntrantId,
+        teeSet: g.teeSet,
+        waitMinutes: g.waitMinutes ?? 0,
+        shots: (() => {
+          const numbers = new Map<string, number>();
+          return g.segments.filter((segment) => segment.kind === "flight").map((segment) => {
+            const holeId = segment.holeId ?? g.holeIds?.[segment.holeIndex] ?? `hole-${segment.holeIndex + 1}`;
+            const shotNumber = (numbers.get(holeId) ?? 0) + 1;
+            numbers.set(holeId, shotNumber);
+            const x = Math.max(0, Math.min(course.width - 1, Math.round(segment.from.x)));
+            const y = Math.max(0, Math.min(course.height - 1, Math.round(segment.from.y)));
+            const lie = course.tiles[y * course.width + x] ?? "rough";
+            const shotType = segment.shot === "putt"
+              ? "putt" as const
+              : shotNumber === 1 && lie === "tee"
+                ? "drive" as const
+                : ["rough", "deep_rough", "sand", "waste_area", "water", "wetland"].includes(lie)
+                  ? "recovery" as const
+                  : "approach" as const;
+            return {
+              id: `live-shot-${g.id}-${holeId}-${shotNumber}`,
+              holeId,
+              shotNumber,
+              shotType,
+              from: { ...segment.from },
+              landing: { ...segment.to },
+              rest: { ...segment.to },
+              lieBefore: lie,
+              lieAfter: course.tiles[Math.max(0, Math.min(course.height - 1, Math.round(segment.to.y))) * course.width + Math.max(0, Math.min(course.width - 1, Math.round(segment.to.x)))] ?? "rough",
+            };
+          });
+        })(),
       });
     } else {
       stillPlaying.push(g);
@@ -519,6 +551,7 @@ export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): 
     }
     const next: GolferRenderData = {
       id: g.id,
+      personId: g.personId,
       x: g.pos.x,
       y: g.pos.y,
       ballX: g.ball ? g.ball.x : null,

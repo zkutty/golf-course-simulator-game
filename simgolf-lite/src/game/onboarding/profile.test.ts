@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_APP_PROFILE, loadAppProfile, resetProfileTab, updateProfileTab } from "./profile";
+import { DEFAULT_APP_PROFILE, loadAppProfile, resetProfileTab, saveAppProfile, updateProfileTab } from "./profile";
 
 function storage(seed: Record<string, string> = {}): Storage {
   const values = new Map(Object.entries(seed));
@@ -52,6 +52,12 @@ describe("versioned app profile", () => {
   it("migrates the retired third speed preset from 3x to 4x", () => {
     const store = storage({ coursecraft_app_profile_v4: JSON.stringify({ version: 4, gameplay: { defaultGameSpeed: "3x" } }) });
     expect(loadAppProfile(store).gameplay.defaultGameSpeed).toBe("4x");
+  });
+
+  it("persists bounded Living Club favorites across reloads", () => {
+    const store = storage();
+    saveAppProfile({ ...DEFAULT_APP_PROFILE, favoritePersonIds: ["regular-one", "regular-two", "regular-one"] }, store);
+    expect(loadAppProfile(store).favoritePersonIds).toEqual(["regular-one", "regular-two"]);
   });
 });
   it("honors the operating-system reduced-motion preference on first boot", () => {
