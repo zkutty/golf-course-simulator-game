@@ -37,7 +37,8 @@
     "art:pixellab:certify": "node scripts/pixellab-pilot.mjs certify",
     "test:perf": "node scripts/perf-smoke.mjs",
     "test:pwa": "node scripts/pwa-smoke.mjs",
-    "deploy:check": "wrangler deploy --dry-run"
+    "deploy:check": "wrangler deploy --dry-run --env=\"\"",
+    "deploy:check:staging": "wrangler deploy --dry-run --env staging"
   },
   "dependencies": {
     "@sentry/react": "^10.67.0",

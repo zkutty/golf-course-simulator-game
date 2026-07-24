@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
 
 defaults:
@@ -61,11 +61,46 @@ jobs:
           retention-days: 7
 
   deploy-playtest:
-    name: Deploy tested artifact to Cloudflare
+    name: Deploy tested artifact to Cloudflare playtest
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: cloudflare-playtest
+      cancel-in-progress: true
+    environment:
+      name: playtest
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download tested build
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: simgolf-lite/dist
+
+      - name: Deploy static assets
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: simgolf-lite
+          wranglerVersion: "4.113.0"
+          command: deploy --env staging
+
+  deploy-production:
+    name: Deploy tested artifact to Cloudflare production
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: cloudflare-production
+      cancel-in-progress: false
     environment:
       name: cloudflare
     permissions:
@@ -87,4 +122,4 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: simgolf-lite
           wranglerVersion: "4.113.0"
-          command: deploy
+          command: deploy --env=""
