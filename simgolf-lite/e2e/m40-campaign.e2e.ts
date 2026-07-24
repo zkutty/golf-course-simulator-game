@@ -22,6 +22,7 @@ test("M40 starts an authored chapter and records its opening choice", async ({ p
   await expect(scene).toBeHidden();
   const skipTutorial = page.getByRole("button", { name: "Skip tutorial" });
   if (await skipTutorial.isVisible()) await skipTutorial.click();
+  await page.getByTestId("workspace-legacy").click();
   await page.getByTestId("open-campaign").click();
   const panel = page.getByTestId("campaign-panel");
   await expect(panel).toBeVisible();
