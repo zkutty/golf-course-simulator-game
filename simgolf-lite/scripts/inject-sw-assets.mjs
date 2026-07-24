@@ -1,8 +1,9 @@
 import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const dist = new URL("../dist/", import.meta.url);
-const worker = new URL("../dist/sw.js", import.meta.url);
+const dist = fileURLToPath(new URL("../dist/", import.meta.url));
+const worker = fileURLToPath(new URL("../dist/sw.js", import.meta.url));
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const files = [];
 function walk(directory) {
@@ -11,12 +12,12 @@ function walk(directory) {
     const path = join(directory, name);
     if (statSync(path).isDirectory()) walk(path);
     else {
-      const url = relative(dist.pathname, path).split(sep).join("/");
+      const url = relative(dist, path).split(sep).join("/");
       if (url !== "sw.js" && !url.startsWith("audio/")) files.push(url);
     }
   }
 }
-walk(dist.pathname);
+walk(dist);
 const source = readFileSync(worker, "utf8");
 writeFileSync(worker, source
   .replace("__APP_VERSION__", pkg.version)
