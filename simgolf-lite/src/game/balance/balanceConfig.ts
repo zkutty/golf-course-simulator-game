@@ -64,6 +64,26 @@ export const BALANCE = {
     merchantFeeRate: 0.03, // fraction of revenue
   },
 
+  paceOperations: {
+    /** A neutral prior prevents one unusual day from redefining course identity. */
+    identityPriorDays: 4,
+    identityRecentWeight: 1.6,
+    repeatIntentMatchWeight: 0.12,
+    historyDays: 28,
+    abandonmentWaitMinutes: 60,
+    abandonmentMood: 0.25,
+    overtimePremium: 1.5,
+    staffHoursPerWeek: 40,
+    marshalPickupCreditRate: 0.15,
+    daylightLateRefundRate: 0.5,
+    daylightEarlyRefundRate: 1,
+    congestionCreditRate: 0.4,
+    goodwillVoucherRate: 0.2,
+    bottleneckMinimumMinutes: 2,
+    bottleneckSevereMinutes: 8,
+    maxDurationSamplesPerDay: 160,
+  },
+
   // Condition wear & recovery
   condition: {
     wearCap: 0.06,

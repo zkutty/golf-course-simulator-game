@@ -9,8 +9,10 @@ const TAB_LABELS = { golfers: "live.tab.golfers", leaderboard: "live.tab.leaderb
 
 function score(value: number) { return value === 0 ? "E" : value > 0 ? `+${value}` : `${value}`; }
 
-export function LiveOverview(props: { status: LiveStatus; reputation: number; staffLevel: number; staffRoster?: StaffMember[]; courses?: Array<{ id: string; name: string }>; onAssignStaff?: (staffId: string, courseId: string) => void; onSelectGolfer: (id: number) => void; onSetPacePreset?: (preset: PacePreset) => void; onUpdatePaceOperations?: (patch: CourseOperationsPatch) => void; onClose: () => void }) {
+export function LiveOverview(props: { status: LiveStatus; reputation: number; staffLevel: number; staffRoster?: StaffMember[]; courses?: Array<{ id: string; name: string }>; onAssignStaff?: (staffId: string, courseId: string) => void; onSelectGolfer: (id: number) => void; onFocusHole?: (holeId: string) => void; onSetPacePreset?: (preset: PacePreset) => void; onUpdatePaceOperations?: (patch: CourseOperationsPatch) => void; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>("golfers");
+  const [reportDays, setReportDays] = useState<7 | 28>(7);
+  const [reportCourseId, setReportCourseId] = useState(props.status.pace.courseId);
   const golfers = [...props.status.golfers];
   const leaderboard = props.status.tournament
     ? props.status.tournament.standings.map((row) => ({ id: row.entrantId, name: row.name, scoreToPar: row.scoreToPar, thru: row.holesCompleted }))
@@ -27,9 +29,50 @@ export function LiveOverview(props: { status: LiveStatus; reputation: number; st
     {tab === "pace" && <div data-testid="pace-operations" style={{ display: "grid", gap: 9 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 5 }}>{(["relaxed", "balanced", "brisk"] as PacePreset[]).map((preset) => <button key={preset} aria-pressed={props.status.pace.preset === preset} onClick={() => props.onSetPacePreset?.(preset)} style={{ textTransform: "capitalize", padding: 8, borderRadius: 7, color: "inherit", border: props.status.pace.preset === preset ? "1px solid #9bd18a" : "1px solid rgba(255,255,255,.18)", background: props.status.pace.preset === preset ? "rgba(112,171,91,.28)" : "rgba(255,255,255,.06)" }}>{preset}</button>)}</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}><label style={{ display: "grid", gap: 3, fontSize: 11 }}>{translateCurrent("live.pace.teeInterval")}<input aria-label={translateCurrent("live.pace.teeIntervalAria")} type="number" min={7} max={15} value={props.status.pace.teeIntervalMinutes} onChange={(event) => props.onUpdatePaceOperations?.({ teeIntervalMinutes: Number(event.target.value) })}/></label><label style={{ display: "grid", gap: 3, fontSize: 11 }}>{translateCurrent("live.pace.beverageService")}<select aria-label={translateCurrent("live.pace.beverageService")} value={props.status.pace.beverageMenu} onChange={(event) => props.onUpdatePaceOperations?.({ beverage: { menu: event.target.value as CourseOperations["beverage"]["menu"] } })}><option value="off">{translateCurrent("common.off")}</option><option value="refreshments">{translateCurrent("live.pace.refreshments")}</option><option value="beer_wine">{translateCurrent("live.pace.beerWine")}</option></select></label></div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
+        <label style={{ display: "grid", gap: 3, fontSize: 11 }}>{translateCurrent("live.pace.lastTee")}<input aria-label={translateCurrent("live.pace.lastTee")} type="number" min={240} max={720} step={15} value={props.status.pace.lastTeeMinute} onChange={(event) => props.onUpdatePaceOperations?.({ lastTeeMinute: Number(event.target.value) })}/></label>
+        <label style={{ display: "grid", gap: 3, fontSize: 11 }}>{translateCurrent("live.pace.daylight")}<select aria-label={translateCurrent("live.pace.daylight")} value={props.status.pace.daylightPolicy} onChange={(event) => props.onUpdatePaceOperations?.({ daylightPolicy: event.target.value as CourseOperations["daylightPolicy"] })}><option value="finish_started">{translateCurrent("live.pace.finishStarted")}</option><option value="strict_sunset">{translateCurrent("live.pace.strictSunset")}</option></select></label>
+        <label style={{ display: "grid", gap: 3, fontSize: 11, gridColumn: "1 / -1" }}>{translateCurrent("live.pace.compensation")}<select aria-label={translateCurrent("live.pace.compensation")} value={props.status.pace.compensationPolicy} onChange={(event) => props.onUpdatePaceOperations?.({ compensationPolicy: event.target.value as CourseOperations["compensationPolicy"] })}><option value="refund">{translateCurrent("live.pace.refund")}</option><option value="credit">{translateCurrent("live.pace.credit")}</option><option value="goodwill">{translateCurrent("live.pace.goodwill")}</option></select></label>
+      </div>
       <div style={{ padding: 9, borderRadius: 8, background: "rgba(255,255,255,.07)", display: "grid", gridTemplateColumns: "1fr auto", gap: 5, fontSize: 12 }}>
         <span>{translateCurrent("live.pace.teeInterval")}</span><b>{translateCurrent("live.pace.minutes", { minutes: props.status.pace.teeIntervalMinutes })}</b><span>{translateCurrent("live.pace.maximumGroup")}</span><b>{props.status.pace.maxGroupSize}</b><span>{translateCurrent("live.pace.groupsBlocked")}</span><b>{props.status.pace.groupsOnCourse} / {props.status.pace.blockedGroups}</b><span>{translateCurrent("live.pace.averageWait")}</span><b>{translateCurrent("live.pace.minutes", { minutes: props.status.pace.averageWaitMinutes.toFixed(1) })}</b><span>{translateCurrent("live.pace.marshalCoverage")}</span><b>{props.status.pace.marshalCoverage}</b><span>{translateCurrent("live.pace.interventionsPickups")}</span><b>{props.status.pace.interventions} / {props.status.pace.pickups}</b><span>{translateCurrent("live.pace.beverageCoverage")}</span><b>{props.status.pace.beverageCoverage}</b><span>{translateCurrent("live.pace.beverageRevenue")}</span><b>${props.status.pace.beverageRevenue}</b><span>{translateCurrent("live.pace.alcoholIncidents")}</span><b>{props.status.pace.alcoholicDrinks} / {props.status.pace.incidents}</b>
       </div>
+      <section data-testid="pace-identity" style={{ padding: 9, borderRadius: 8, border: "1px solid rgba(255,255,255,.16)" }}>
+        <strong>{translateCurrent("live.pace.identity")}: {props.status.pace.identity.label}</strong>
+        <div style={{ fontSize: 11, opacity: .75 }}>{translateCurrent("live.pace.identityDetail", { days: props.status.pace.identity.samples, skilled: Math.round(props.status.pace.identity.cohorts.skilled_impatient * 100), novice: Math.round(props.status.pace.identity.cohorts.novice_social * 100) })}</div>
+      </section>
+      <section data-testid="pace-bottlenecks" aria-label={translateCurrent("live.pace.bottlenecks")} style={{ display: "grid", gap: 6 }}>
+        <strong>{translateCurrent("live.pace.bottlenecks")}</strong>
+        {props.status.pace.bottlenecks.length === 0
+          ? <small style={{ opacity: .72 }}>{translateCurrent("live.pace.noBottlenecks")}</small>
+          : props.status.pace.bottlenecks.map((finding) => <button key={finding.holeId} onClick={() => props.onFocusHole?.(finding.holeId)} style={{ color: "inherit", textAlign: "left", padding: 8, borderRadius: 7, border: "1px solid rgba(255,255,255,.16)", background: "rgba(255,255,255,.05)" }}>
+            <span style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{translateCurrent("live.hole", { hole: finding.holeIndex + 1 })}</b><span>{finding.severity.toUpperCase()} · {translateCurrent("live.pace.minutes", { minutes: finding.intensity.toFixed(1) })}</span></span>
+            <span style={{ display: "block", height: 5, borderRadius: 4, background: "rgba(255,255,255,.12)", margin: "6px 0" }}><span style={{ display: "block", height: "100%", width: `${Math.min(100, finding.intensity * 8)}%`, borderRadius: 4, background: "#e7b95d" }}/></span>
+            <span style={{ display: "block", fontSize: 11 }}>{finding.reason}</span>
+            <span style={{ display: "block", fontSize: 11, marginTop: 4 }}><b>{translateCurrent("live.pace.action")}:</b> {finding.recommendation}</span>
+            <span style={{ display: "block", fontSize: 10, opacity: .72 }}>{finding.tradeoff}</span>
+          </button>)}
+      </section>
+      <section data-testid="pace-history" style={{ display: "grid", gap: 6, padding: 9, borderRadius: 8, background: "rgba(255,255,255,.07)" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6 }}>
+          <label style={{ display: "grid", gap: 2, fontSize: 11 }}>{translateCurrent("live.pace.reportCourse")}<select value={reportCourseId} onChange={(event) => setReportCourseId(event.target.value)}>{props.status.pace.reports28.map((report) => <option key={report.courseId} value={report.courseId}>{report.courseName}</option>)}</select></label>
+          <label style={{ display: "grid", gap: 2, fontSize: 11 }}>{translateCurrent("live.pace.period")}<select value={reportDays} onChange={(event) => setReportDays(Number(event.target.value) as 7 | 28)}><option value={7}>{translateCurrent("live.pace.sevenDays")}</option><option value={28}>{translateCurrent("live.pace.twentyEightDays")}</option></select></label>
+        </div>
+        {(() => {
+          const reports = reportDays === 7 ? props.status.pace.reports7 : props.status.pace.reports28;
+          const report = reports.find((candidate) => candidate.courseId === reportCourseId) ?? reports[0];
+          if (!report) return <small>{translateCurrent("live.pace.noHistory")}</small>;
+          return <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 4, fontSize: 11 }}>
+            {report.sparse && <small style={{ gridColumn: "1 / -1", opacity: .75 }}>{translateCurrent("live.pace.sparse")}</small>}
+            <span>{translateCurrent("live.pace.roundsComplete")}</span><b>{report.roundsCompleted} / {report.roundsIncomplete}</b>
+            <span>{translateCurrent("live.pace.durationP90")}</span><b>{translateCurrent("live.pace.durationPair", { average: report.averageDurationMinutes.toFixed(0), p90: report.p90DurationMinutes.toFixed(0) })}</b>
+            <span>{translateCurrent("live.pace.waitPickups")}</span><b>{translateCurrent("live.pace.waitPickupValue", { wait: report.averageWaitMinutes.toFixed(1), pickups: report.pickups })}</b>
+            <span>{translateCurrent("live.pace.teeHourRevenue")}</span><b>${report.revenuePerTeeHour.toFixed(0)} / ${report.netRevenuePerTeeHour.toFixed(0)}</b>
+            <span>{translateCurrent("live.pace.overtimeComp")}</span><b>${report.overtimeCost.toFixed(0)} / ${report.compensationCost.toFixed(0)}</b>
+            <span>{translateCurrent("live.pace.beverageNet")}</span><b>${report.beverageRevenue.toFixed(0)} / ${report.netRevenue.toFixed(0)}</b>
+          </div>;
+        })()}
+      </section>
       <small style={{ opacity: .72 }}>{translateCurrent("live.pace.policyHint")}</small>
     </div>}
   </aside>;

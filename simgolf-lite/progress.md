@@ -130,3 +130,34 @@ Current request: “I’ve created all the songs and added them as comments to t
 - Lint and both localization guards pass with seven pre-existing hook warnings
   and no errors.
 - Certification-manifest validation passes and correctly reports `HOLD`.
+
+## M28 and M30 completion pass — 2026-07-24
+
+Current request: “Implement rest of M28 and M30 now”
+
+- Resolved the authoritative remaining scope from Linear: M30 ZK-280–ZK-284 and M28 ZK-253–ZK-261.
+- Added the M30 data foundation: bounded per-course 7/28-day pace history, cohort-specific identity, save schema v18 migration, deterministic tee-hour reports, and history normalization.
+- Added live operational consequences: configurable last tee/daylight/guest-recovery policies, tournament groups, strict-sunset and congestion exits, marshal pickup recovery, exact course-attributed compensation, and staff overtime.
+- Added measured hole occupancy/queue/recovery evidence, spillback-suppressed bottleneck diagnosis, ranked actions/tradeoffs, accessible live heat markers, and grouped pace-report UI.
+
+### Verification and release status
+
+- M30 focused coverage passes alongside live, save, and tournament regressions:
+  46/46 tests. The full suite passes 438 tests across 70 files with one
+  intentional skip.
+- Production build and localization/lint gates pass; lint retains the seven
+  pre-existing Hook warnings and no errors.
+- M30 browser acceptance passes for identity, measured local peaks, map focus,
+  7/28-day filters, and multi-course reporting. The fixture screenshot was
+  visually inspected, and the bundled web-game client emitted structured state
+  without a console-error artifact.
+- M28 clean-profile release acceptance passes on installed Chrome, Playwright
+  Firefox, and WebKit (3/3). Golden save/migration/options/accessibility paths
+  pass 9/9; PWA offline/install/save persistence and fuzz pass.
+- The 81-run, 104-week balance matrix passes. The final-code 30-week soak
+  completes 4,638 rounds with 3.01 MB retained-heap growth. Headless renderer work is 0.35 ms
+  against the 8 ms budget; headless frame p95 remains report-only.
+- Added an evidence-enforcing M28 manifest and validator for `1.0.0-rc.3`.
+  Its valid decision is `HOLD`: exact-main deployment, 5–10 unfamiliar-player
+  sessions, stable Firefox/Safari sign-off, physical low/mid hardware, and
+  resulting triage remain external. No human gate was fabricated.

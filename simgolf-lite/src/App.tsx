@@ -112,9 +112,10 @@ import { evaluateTournamentCourseQualification } from "./game/tournaments/eligib
 import type { TournamentTier } from "./game/tournaments/types";
 import { debugLog } from "./utils/debugLog";
 import { CourseManagerPanel } from "./ui/CourseManagerPanel";
-import { activeCourseLayout, courseForLayout, normalizeCourseLayouts, selectLayout, updateLayout } from "./game/models/courseLayouts";
+import { activeCourseLayout, courseForLayout, courseLayouts, normalizeCourseLayouts, selectLayout, updateLayout } from "./game/models/courseLayouts";
 import { analyzeArchitecture } from "./game/architecture/architecture";
-import { normalizedStaff, staffFromLevel } from "./game/live/pace";
+import { emptyPaceDayMetrics, ensureCoursePaceMetrics, normalizedStaff, staffFromLevel } from "./game/live/pace";
+import { recordPaceDay } from "./game/live/paceHistory";
 import { WeekCloseReport } from "./ui/WeekCloseReport";
 import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
@@ -1167,10 +1168,11 @@ export default function App() {
     const isM25Fixture = fixtureParams.get("m25Fixture") === "1";
     const isM26Fixture = fixtureParams.get("m26Fixture") === "1";
     const isM27Fixture = fixtureParams.get("m27Fixture") === "1";
+    const isM30Fixture = fixtureParams.get("m30Fixture") === "1";
     const isM38Fixture = fixtureParams.get("m38Fixture") === "1";
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM38Fixture && !isPropertyFixture) return;
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
@@ -1182,6 +1184,8 @@ export default function App() {
       ? createPlayerProReferenceCourse()
       : isM27Fixture
       ? createM27ReleaseReferenceCourse(fixtureTheme)
+      : isM30Fixture
+      ? createM26MultiCourseReferenceCourse()
       : isM26Fixture
       ? createM26MultiCourseReferenceCourse()
       : isM25Fixture
@@ -1232,6 +1236,53 @@ export default function App() {
       } : {}),
       ...(isPropertyFixture ? { enterprise: emptyPropertyEnterprise() } : {}),
     };
+    if (isM30Fixture) {
+      const layouts = courseLayouts(fixtureCourse);
+      for (let day = 0; day < 10; day++) {
+        const metrics = emptyPaceDayMetrics(layouts.map((layout) => layout.id));
+        for (const [courseIndex, layout] of layouts.entries()) {
+          const pace = ensureCoursePaceMetrics(metrics, layout.id);
+          const rounds = courseIndex === 0 ? 16 : 8;
+          const delay = courseIndex === 0 ? 18 + day : 6 + day / 2;
+          pace.groupsStarted = Math.ceil(rounds / 4);
+          pace.groupsFinished = pace.groupsStarted;
+          pace.roundsCompleted = rounds;
+          pace.roundDurations = [112 + delay, 118 + delay, 124 + delay, 132 + delay];
+          pace.totalWaitMinutes = rounds * delay;
+          pace.greenFeeRevenue = rounds * layout.greenFee;
+          pace.beverageRevenue = rounds * (courseIndex === 0 ? 14 : 8);
+          pace.occupiedTeeMinutes = pace.groupsStarted * 120;
+          pace.satisfaction = rounds * (courseIndex === 0 ? 66 : 82);
+          const bottleneckHoleId = layout.publishedHoleIds[Math.min(2, layout.publishedHoleIds.length - 1)];
+          pace.holes[bottleneckHoleId] = {
+            holeId: bottleneckHoleId,
+            queueMinutes: (courseIndex === 0 ? 74 : 24) + day,
+            occupancyMinutes: 88,
+            recoveryDelayMinutes: courseIndex === 0 ? 18 : 4,
+            visits: 8,
+          };
+          pace.cohorts.skilled_impatient = {
+            samples: Math.ceil(rounds / 2),
+            durationMinutes: Math.ceil(rounds / 2) * (118 + delay),
+            timeParVarianceMinutes: Math.ceil(rounds / 2) * delay,
+            waitMinutes: Math.ceil(rounds / 2) * delay,
+            pickups: courseIndex === 0 ? 1 : 0,
+            abandonments: 0,
+            satisfaction: Math.ceil(rounds / 2) * (courseIndex === 0 ? 58 : 80),
+          };
+          pace.cohorts.novice_social = {
+            samples: Math.floor(rounds / 2),
+            durationMinutes: Math.floor(rounds / 2) * (132 + delay / 2),
+            timeParVarianceMinutes: Math.floor(rounds / 2) * delay / 2,
+            waitMinutes: Math.floor(rounds / 2) * delay,
+            pickups: 0,
+            abandonments: 0,
+            satisfaction: Math.floor(rounds / 2) * (courseIndex === 0 ? 73 : 86),
+          };
+        }
+        fixtureWorld = recordPaceDay({ ...fixtureWorld, week: 1 + Math.floor(day / 7) }, fixtureCourse, day % 7, metrics);
+      }
+    }
     if (isM38Fixture) {
       const evidenceHoles = fixtureCourse.holes.filter((hole) => hole.id && hole.tee && hole.green);
       const makeRound = (visit: number): CompletedRound => ({
@@ -1284,9 +1335,9 @@ export default function App() {
         speed: isPerfMeasurement ? "paused" : "4x",
         selectedGolferId: null,
       }));
-    } else if (isM38Fixture) {
+    } else if (isM38Fixture || isM30Fixture) {
       live.restoreSnapshot(snapshotLiveSimulation({
-        state: createLiveState(fixtureCourse, fixtureWorld, 5),
+        state: createLiveState(fixtureCourse, fixtureWorld, isM38Fixture ? 5 : 0),
         pendingCash: 0,
         speed: "paused",
         selectedGolferId: null,
@@ -3622,6 +3673,7 @@ export default function App() {
                 selectedParcelId={selectedParcelId}
                 architectureWarnings={architectureReport?.warnings}
                 architectureOverlay={showArchitectureReview ? architectureReview.overlay : null}
+                paceBottlenecks={live.status.pace.bottlenecks}
                 animationsEnabled={effectiveAnimations && resolvedGraphicsQuality !== "low"}
                 graphicsQuality={resolvedGraphicsQuality}
                 ambienceFx={appProfile.graphics.ambienceFx && resolvedGraphicsQuality !== "low"}
@@ -3818,7 +3870,7 @@ export default function App() {
               onChoose={chooseCampaign}
             />}
             {showPropertyManagement && !tutorialProgress && <PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} />}
-            {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
+            {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
             {teeSetupPrompt && !tutorialProgress && (
               <div data-testid="tee-setup-offer" role="dialog" aria-label={t("courseSetup.offerAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 145, top: 64, right: 16, width: 280, padding: 14 }}>
                 <strong>{t("courseSetup.offerTitle")}</strong>

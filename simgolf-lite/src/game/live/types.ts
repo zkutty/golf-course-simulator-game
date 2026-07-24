@@ -1,4 +1,4 @@
-import type { ConcessionTransaction, ConcessionType, CourseOperations, Difficulty, PinRotation, Point, TeeSet } from "../models/types";
+import type { ConcessionTransaction, ConcessionType, CourseOperations, Difficulty, PaceCohort, PinRotation, Point, TeeSet } from "../models/types";
 import type { Personality } from "./personality";
 import type { LiveTournamentState } from "../tournaments/types";
 import type { DailyWeather, WeatherKind, WeatherModifiers } from "../seasons/types";
@@ -77,12 +77,14 @@ export interface Golfer {
   groupStartedAt?: number;
   waitMinutes?: number;
   pacePreference?: number;
+  paceIdentityAtVisit?: number;
   marshalInterventions?: number;
   forcedPickups?: number;
   drinksServed?: number;
   alcoholUnits?: number;
   hospitalityDelay?: number;
   disorderIncidents?: number;
+  completionStatus?: "completed" | "daylight" | "congestion_abandonment";
 }
 
 export interface Arrival {
@@ -91,6 +93,7 @@ export interface Arrival {
   courseId?: string;
   tournament?: { eventId: string; entrantId: string; name: string; skill: number; teeSet?: TeeSet; pinRotation?: PinRotation };
   groupId?: string;
+  paceIdentityAtVisit?: number;
   personId?: string;
   name?: string;
 }
@@ -108,6 +111,7 @@ export interface TeeGroupState {
   finishedAt: number | null;
   lastMarshalMinute?: number;
   lastPickupHole?: number;
+  lastRecordedHoleId?: string;
 }
 
 export interface PaceDayMetrics {
@@ -120,6 +124,49 @@ export interface PaceDayMetrics {
   alcoholicDrinks: number;
   serviceRefusals: number;
   disorderIncidents: number;
+  perCourse: Record<string, CoursePaceDayMetrics>;
+}
+
+export interface PaceCohortDayMetrics {
+  samples: number;
+  durationMinutes: number;
+  timeParVarianceMinutes: number;
+  waitMinutes: number;
+  pickups: number;
+  abandonments: number;
+  satisfaction: number;
+}
+
+export interface PaceHoleDayMetrics {
+  holeId: string;
+  queueMinutes: number;
+  occupancyMinutes: number;
+  recoveryDelayMinutes: number;
+  visits: number;
+}
+
+export interface CoursePaceDayMetrics {
+  courseId: string;
+  groupsStarted: number;
+  groupsFinished: number;
+  roundsCompleted: number;
+  roundsIncomplete: number;
+  roundDurations: number[];
+  totalWaitMinutes: number;
+  pickups: number;
+  incidents: number;
+  refunds: number;
+  credits: number;
+  goodwillVouchers: number;
+  overtimeCost: number;
+  compensationCost: number;
+  greenFeeRevenue: number;
+  beverageRevenue: number;
+  occupiedTeeMinutes: number;
+  satisfaction: number;
+  lastStartedAt?: number;
+  cohorts: Record<PaceCohort, PaceCohortDayMetrics>;
+  holes: Record<string, PaceHoleDayMetrics>;
 }
 
 export interface LiveState {
@@ -165,6 +212,7 @@ export interface LiveState {
   pace?: PaceDayMetrics;
   marshalCoverageByCourse?: Record<string, number>;
   beverageCoverageByCourse?: Record<string, number>;
+  overtimeRateByCourse?: Record<string, number>;
   operationsByCourse?: Record<string, CourseOperations>;
   weather?: { daily: DailyWeather; modifiers: WeatherModifiers };
 }
@@ -235,6 +283,8 @@ export interface DayResult {
     property?: number;
     propertyCosts?: number;
     propertyVisitors?: number;
+    paceOvertime?: number;
+    paceCompensation?: number;
     byConcession: Partial<Record<ConcessionType, number>>;
     transactions: ConcessionTransaction[];
   };
@@ -257,6 +307,8 @@ export interface DayResult {
     costs: number;
     profit: number;
     avgSatisfaction: number;
+    paceOvertime?: number;
+    paceCompensation?: number;
   }>;
   pace?: PaceDayMetrics;
   weather?: {

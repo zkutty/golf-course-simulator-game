@@ -43,9 +43,10 @@ import { normalizePlayerPro } from "../game/playerPro/playerPro";
 import { normalizeLivingClub } from "../game/livingClub/livingClub";
 import { normalizeSeasonalState } from "../game/seasons/seasons";
 import { normalizeCampaignRun } from "../game/campaign/campaign";
+import { normalizePaceOperationsState } from "../game/live/paceHistory";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 17 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 18 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -130,6 +131,10 @@ export interface SaveV16 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV17 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 17;
+  records?: CourseRecords;
+}
+export interface SaveV18 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -153,7 +158,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV17 = {
+  const save: SaveV18 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -514,6 +519,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V17 adds optional, bounded M40 authored-campaign run state. Cross-chapter
   // choices and unlocks remain profile-scoped so retrying never copies saves.
   16: (save) => ({ ...save, schemaVersion: 17 }),
+  // V18 adds bounded per-course pace identity, bottleneck, compensation, and
+  // revenue-per-tee-hour history. Legacy saves start with a neutral history.
+  17: (save) => ({ ...save, schemaVersion: 18 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -772,6 +780,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
           ? rawWorld.seasonal.charter as import("../game/seasons/types").ClubCharter
           : undefined,
       ),
+      paceOperations: normalizePaceOperationsState(rawWorld.paceOperations),
     };
     world.staffRoster = normalizedStaff(world, course);
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;

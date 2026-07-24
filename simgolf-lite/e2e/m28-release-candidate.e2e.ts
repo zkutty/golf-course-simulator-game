@@ -6,7 +6,7 @@ test("M28 clean-profile golden path survives save, reload, input, resize, and ac
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
 
   await page.goto("/");
-  await expect(page.getByText("v1.0.0-rc.2")).toBeVisible();
+  await expect(page.getByText("v1.0.0-rc.3")).toBeVisible();
   await page.getByRole("button", { name: "Options" }).click();
   await page.getByRole("tab", { name: "Audio" }).click();
   await page.getByLabel("Master volume").fill("0");
@@ -19,12 +19,12 @@ test("M28 clean-profile golden path survives save, reload, input, resize, and ac
   await page.getByRole("button", { name: "Quick Start" }).focus();
   await page.keyboard.press("Enter");
   const tutorial = page.getByRole("dialog", { name: "First-launch tutorial" });
-  if (await tutorial.count()) {
-    page.once("dialog", (dialog) => dialog.accept());
-    await tutorial.getByRole("button", { name: "Skip tutorial" }).focus();
-    await page.keyboard.press("Enter");
-  }
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screenBase), { timeout: 30_000 }).toBe("in-game");
+  await expect(tutorial).toBeVisible();
+  page.once("dialog", (dialog) => dialog.accept());
+  await tutorial.getByRole("button", { name: "Skip tutorial" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(tutorial).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tutorialStep ?? null), { timeout: 30_000 }).toBeNull();
   const result = await page.evaluate(() => window.__coursecraftTest!.runGoldenWeek());
   expect(result).toMatchObject({ week: 2 });

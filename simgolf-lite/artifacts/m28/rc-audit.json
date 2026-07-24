@@ -1,9 +1,9 @@
 {
-  "ok": true,
-  "version": "1.0.0-rc.2",
-  "commit": "c1558556a5a7a85065107132c62e52eb242970b1",
-  "branch": "main",
-  "generatedAt": "2026-07-22T00:16:22.061Z",
+  "ok": false,
+  "version": "1.0.0-rc.3",
+  "commit": "a155ea0e6c908fe349b75f95a01446cf16dd23e5",
+  "branch": "agent/fix-windows-sw-path",
+  "generatedAt": "2026-07-24T19:22:26.591Z",
   "node": "v25.8.2",
   "platform": "darwin-arm64",
   "checks": {
@@ -15,16 +15,51 @@
     "noSourceMaps": true,
     "noSecretPatterns": true,
     "noRoutineConsoleOutsideReviewedGuards": true,
-    "releaseSourceClean": true
+    "playtestNoIndex": true,
+    "releaseSourceClean": false
   },
   "findings": {
     "secretHits": [],
     "consoleHits": [],
-    "releaseSourceChanges": []
+    "releaseSourceChanges": [
+      " M simgolf-lite/e2e/m28-release-candidate.e2e.ts",
+      " M simgolf-lite/package-lock.json",
+      " M simgolf-lite/package.json",
+      " M simgolf-lite/progress.md",
+      " M simgolf-lite/release/M28_PLAYTEST_PROTOCOL.md",
+      " M simgolf-lite/release/rc-config.json",
+      " M simgolf-lite/src/App.tsx",
+      " M simgolf-lite/src/game/balance/balanceConfig.ts",
+      " M simgolf-lite/src/game/live/commitDay.ts",
+      " M simgolf-lite/src/game/live/demand.ts",
+      " M simgolf-lite/src/game/live/headless.ts",
+      " M simgolf-lite/src/game/live/pace.ts",
+      " M simgolf-lite/src/game/live/persistence.ts",
+      " M simgolf-lite/src/game/live/simulation.ts",
+      " M simgolf-lite/src/game/live/types.ts",
+      " M simgolf-lite/src/game/live/weeklyLedger.ts",
+      " M simgolf-lite/src/game/m23CourseSetup.test.ts",
+      " M simgolf-lite/src/game/models/courseOperations.ts",
+      " M simgolf-lite/src/game/models/defaults.ts",
+      " M simgolf-lite/src/game/models/types.ts",
+      " M simgolf-lite/src/game/tournaments/tournaments.ts",
+      " M simgolf-lite/src/hooks/useLiveSimulation.ts",
+      " M simgolf-lite/src/i18n/catalog.ts",
+      " M simgolf-lite/src/ui/LiveOverview.tsx",
+      " M simgolf-lite/src/ui/PixiStage.tsx",
+      " M simgolf-lite/src/utils/save.ts",
+      "?? simgolf-lite/docs/M30_CERTIFICATION.md",
+      "?? simgolf-lite/e2e/m30-pace-history.e2e.ts",
+      "?? simgolf-lite/release/M28_GATE_STATUS.md",
+      "?? simgolf-lite/release/m28-certification.json",
+      "?? simgolf-lite/scripts/m28-certify.mjs",
+      "?? simgolf-lite/src/game/live/m30Pace.test.ts",
+      "?? simgolf-lite/src/game/live/paceHistory.ts"
+    ]
   },
   "acceptedWarnings": [
     "Vite reports the existing saveStore static/dynamic import overlap.",
-    "The main minified application chunk is approximately 1.08 MB (approximately 338 KB gzip).",
+    "The main minified application chunk is approximately 1.10 MB (approximately 343 KB gzip).",
     "ESLint reports seven pre-existing react-hooks warnings and zero errors."
   ]
 }

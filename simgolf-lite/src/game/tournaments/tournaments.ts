@@ -203,11 +203,13 @@ export function prepareTournamentDay(course: Course, world: World, dayIndex: num
   };
 }
 
-export function planTournamentDay(event: TournamentEvent, openMinute: number, teeGapMinutes: number): Arrival[] {
+export function planTournamentDay(event: TournamentEvent, openMinute: number, teeGapMinutes: number, groupSize = 3): Arrival[] {
+  const size = Math.max(2, Math.min(4, Math.floor(groupSize)));
   return event.field.map((entrant, index) => ({
-    atMinute: openMinute + index * teeGapMinutes,
+    atMinute: openMinute + Math.floor(index / size) * teeGapMinutes,
     archetype: entrant.archetype,
     courseId: event.courseId,
+    groupId: `${event.id}-group-${Math.floor(index / size) + 1}`,
     tournament: {
       eventId: event.id,
       entrantId: entrant.id,

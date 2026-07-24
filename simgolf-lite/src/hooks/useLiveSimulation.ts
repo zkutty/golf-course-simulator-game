@@ -26,6 +26,14 @@ import { courseOperations, PACE_PRESETS } from "../game/live/pace";
 import { consumeClock, FIXED_GAME_STEP_MINUTES } from "../game/live/clock";
 import { appendDayToLedger, createWeekLedger, weekResultFromLedger } from "../game/live/weeklyLedger";
 import { recordLivingClubRound } from "../game/livingClub/livingClub";
+import {
+  diagnosePaceBottlenecks,
+  paceIdentity,
+  paceReports,
+  type PaceAdvisorFinding,
+  type PaceIdentitySummary,
+  type PaceReportSummary,
+} from "../game/live/paceHistory";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
@@ -92,13 +100,26 @@ export interface LiveStatus {
     marshalCoverage: number;
     beverageCoverage: number;
     beverageMenu: CourseOperations["beverage"]["menu"];
+    lastTeeMinute: number;
+    daylightPolicy: CourseOperations["daylightPolicy"];
+    compensationPolicy: CourseOperations["compensationPolicy"];
+    identity: PaceIdentitySummary;
+    bottlenecks: PaceAdvisorFinding[];
+    reports7: PaceReportSummary[];
+    reports28: PaceReportSummary[];
+    overtimeCost: number;
+    compensationCost: number;
+    refunds: number;
+    credits: number;
+    goodwillVouchers: number;
   };
 }
 
-function paceStatus(live: LiveState, course: Course): LiveStatus["pace"] {
+function paceStatus(live: LiveState, course: Course, world: World): LiveStatus["pace"] {
   const layout = activeCourseLayout(course);
   const operations = courseOperations(course, layout.id);
   const active = (live.groups ?? []).filter((group) => group.courseId === layout.id && group.startedAt != null && group.finishedAt == null);
+  const coursePace = live.pace?.perCourse[layout.id];
   return {
     courseId: layout.id, preset: operations.preset, teeIntervalMinutes: operations.teeIntervalMinutes,
     maxGroupSize: operations.maxGroupSize, groupsOnCourse: active.length,
@@ -109,6 +130,18 @@ function paceStatus(live: LiveState, course: Course): LiveStatus["pace"] {
     incidents: live.pace?.disorderIncidents ?? 0,
     marshalCoverage: live.marshalCoverageByCourse?.[layout.id] ?? 0,
     beverageCoverage: live.beverageCoverageByCourse?.[layout.id] ?? 0, beverageMenu: operations.beverage.menu,
+    lastTeeMinute: operations.lastTeeMinute,
+    daylightPolicy: operations.daylightPolicy,
+    compensationPolicy: operations.compensationPolicy,
+    identity: paceIdentity(world, layout.id, operations.preset === "relaxed" ? 0 : operations.preset === "brisk" ? 1 : 0.5),
+    bottlenecks: diagnosePaceBottlenecks(world, course, layout.id, coursePace, live.marshalCoverageByCourse?.[layout.id] ?? 0),
+    reports7: paceReports(world, course, 7),
+    reports28: paceReports(world, course, 28),
+    overtimeCost: coursePace?.overtimeCost ?? 0,
+    compensationCost: coursePace?.compensationCost ?? 0,
+    refunds: coursePace?.refunds ?? 0,
+    credits: coursePace?.credits ?? 0,
+    goodwillVouchers: coursePace?.goodwillVouchers ?? 0,
   };
 }
 
@@ -190,7 +223,16 @@ export function useLiveSimulation(args: {
     selected: null,
     golfers: [],
     tournament: null,
-    pace: { courseId: "course-primary", preset: "balanced", teeIntervalMinutes: 10, maxGroupSize: 4, groupsOnCourse: 0, blockedGroups: 0, averageWaitMinutes: 0, interventions: 0, pickups: 0, beverageRevenue: 0, alcoholicDrinks: 0, incidents: 0, marshalCoverage: 0, beverageCoverage: 0, beverageMenu: "refreshments" },
+    pace: {
+      courseId: "course-primary", preset: "balanced", teeIntervalMinutes: 10, maxGroupSize: 4,
+      groupsOnCourse: 0, blockedGroups: 0, averageWaitMinutes: 0, interventions: 0,
+      pickups: 0, beverageRevenue: 0, alcoholicDrinks: 0, incidents: 0, marshalCoverage: 0,
+      beverageCoverage: 0, beverageMenu: "refreshments", lastTeeMinute: 600,
+      daylightPolicy: "finish_started", compensationPolicy: "credit",
+      identity: { score: 0.5, label: "balanced", samples: 0, cohorts: { skilled_impatient: 0.5, novice_social: 0.5, general: 0.5 } },
+      bottlenecks: [], reports7: [], reports28: [], overtimeCost: 0, compensationCost: 0,
+      refunds: 0, credits: 0, goodwillVouchers: 0,
+    },
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -324,7 +366,7 @@ export function useLiveSimulation(args: {
         pinRotation: live.tournament.pinRotation,
         standings: sortedStandings(live.tournament.standings),
       } : null,
-      pace: paceStatus(live, courseRef.current),
+      pace: paceStatus(live, courseRef.current, worldRef.current),
     });
   }, [status.lastDay]);
 
@@ -577,7 +619,7 @@ export function useLiveSimulation(args: {
         pinRotation: restored.state.tournament.pinRotation,
         standings: sortedStandings(restored.state.tournament.standings),
       } : null,
-      pace: paceStatus(restored.state, courseRef.current),
+      pace: paceStatus(restored.state, courseRef.current, worldRef.current),
     });
     return true;
   }, [buildRenderData]);

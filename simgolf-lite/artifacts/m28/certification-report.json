@@ -1,0 +1,94 @@
+{
+  "ok": true,
+  "schemaVersion": 1,
+  "release": "1.0.0-rc.3",
+  "decision": "HOLD",
+  "decisionReason": "The exact main-branch deployment, stable Firefox/Safari profiles, unfamiliar-player sessions, physical hardware runs, and resulting triage evidence remain external gates.",
+  "generatedAt": "2026-07-24T19:21:36.681Z",
+  "blockers": [
+    "ZK-253",
+    "ZK-255",
+    "ZK-256",
+    "ZK-259",
+    "ZK-260"
+  ],
+  "errors": [],
+  "gates": [
+    {
+      "id": "ZK-253",
+      "name": "Exact main-branch RC deployment",
+      "owner": "release",
+      "kind": "external",
+      "status": "blocked",
+      "evidence": null
+    },
+    {
+      "id": "ZK-254",
+      "name": "Clean-profile save, reload, import, and offline continuity",
+      "owner": "engineering",
+      "kind": "automated",
+      "command": "npm run test:pwa && npm run test:e2e:golden",
+      "status": "passed",
+      "evidence": "release/M28_GATE_STATUS.md#local-automated-evidence--2026-07-24"
+    },
+    {
+      "id": "ZK-255",
+      "name": "Five to ten unfamiliar-player moderated sessions",
+      "owner": "research",
+      "kind": "external",
+      "status": "blocked",
+      "evidence": null
+    },
+    {
+      "id": "ZK-256",
+      "name": "Stable desktop browser matrix",
+      "owner": "qa",
+      "kind": "automated",
+      "command": "npm run test:release:browsers",
+      "status": "blocked",
+      "evidence": "Automated Chrome, Playwright Firefox, and WebKit proxy passed locally; stable Firefox and Safari sign-off remains required."
+    },
+    {
+      "id": "ZK-257",
+      "name": "Deterministic balance acceptance matrix",
+      "owner": "design",
+      "kind": "automated",
+      "command": "npm run test:balance",
+      "status": "passed",
+      "evidence": "release/M28_GATE_STATUS.md#local-automated-evidence--2026-07-24"
+    },
+    {
+      "id": "ZK-258",
+      "name": "Keyboard, reduced-motion, terrain-pattern, and text-scale regression",
+      "owner": "qa",
+      "kind": "automated",
+      "command": "npx playwright test e2e/m28-release-candidate.e2e.ts",
+      "status": "passed",
+      "evidence": "release/M28_GATE_STATUS.md#local-automated-evidence--2026-07-24"
+    },
+    {
+      "id": "ZK-259",
+      "name": "Low-range and mid-range physical hardware performance",
+      "owner": "qa",
+      "kind": "external",
+      "status": "blocked",
+      "evidence": null
+    },
+    {
+      "id": "ZK-260",
+      "name": "Playtest finding triage and blocker closure",
+      "owner": "production",
+      "kind": "external",
+      "status": "blocked",
+      "evidence": null
+    },
+    {
+      "id": "ZK-261",
+      "name": "Final release decision",
+      "owner": "release",
+      "kind": "decision",
+      "status": "blocked",
+      "evidence": "release/M28_GATE_STATUS.md"
+    }
+  ]
+}

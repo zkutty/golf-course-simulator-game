@@ -12,6 +12,7 @@ import type { PropertyShotTrace } from "../property/types";
 import { advanceLivingClubDay } from "../livingClub/livingClub";
 import { advanceSeasonalDay, charterDefinition, seasonalState } from "../seasons/seasons";
 import { advanceCampaign } from "../campaign/campaign";
+import { recordPaceDay } from "./paceHistory";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -84,6 +85,9 @@ export function commitDay(args: {
 
   const waterPolicyCost = season.operations.waterPolicy === "irrigate" ? 95 : season.operations.waterPolicy === "conserve" ? 12 : 42;
   const presentationCost = season.operations.turfPriority === "presentation" ? 65 : season.operations.turfPriority === "recovery" ? 38 : 20;
+  const paceOvertime = Object.values(args.pace?.perCourse ?? {}).reduce((sum, metrics) => sum + metrics.overtimeCost, 0);
+  const paceCompensation = Object.values(args.pace?.perCourse ?? {}).reduce((sum, metrics) => sum + metrics.compensationCost, 0);
+  const paceCosts = paceOvertime + paceCompensation;
   const costsPreTax =
     staffCost + marketingCost + maintenanceCost + overheadTotal +
     laborVariable + consumablesVariable + merchantFees + waterPolicyCost + presentationCost;
@@ -91,7 +95,8 @@ export function commitDay(args: {
   const profitPreTax = revenue - costsPreTax;
   const tax =
     BALANCE.tax.enabled && profitPreTax > 0 ? profitPreTax * BALANCE.tax.profitTaxRate : 0;
-  const costs = (costsPreTax + tax + propertySettlement.report.costs) * charter.operatingCostMultiplier;
+  const sharedCosts = (costsPreTax + tax + propertySettlement.report.costs) * charter.operatingCostMultiplier;
+  const costs = sharedCosts + paceCosts;
   const profit = revenue - costs;
 
   // ---- Condition: wear from traffic vs. maintenance recovery (per day) ----
@@ -148,7 +153,8 @@ export function commitDay(args: {
   // Objective evaluation at the sim commit point (ZKU-163). The last day of
   // the week closes it, which is when streaks advance and deadlines can fire.
   const closesWeek = dayIndex != null && dayIndex + 1 >= DAYS_PER_WEEK;
-  const objectiveWorld = withEvaluatedObjectives(conditionCourse, nextWorldBase, {
+  const historyWorld = recordPaceDay(nextWorldBase, conditionCourse, dayIndex ?? 0, args.pace);
+  const objectiveWorld = withEvaluatedObjectives(conditionCourse, historyWorld, {
     rounds,
     profit,
     ...(closesWeek ? { weekCompleted: operatingWorld.week } : {}),
@@ -158,15 +164,20 @@ export function commitDay(args: {
   const nextWorld = advanceCampaign(livingClubCommit.course, livingClubCommit.world);
   const courseEntries = Object.entries(args.perCourse ?? {});
   let allocatedRevenue = 0;
-  let allocatedCosts = 0;
+  let allocatedSharedCosts = 0;
   const weightTotal = courseEntries.reduce((sum, [, stats]) => sum + (stats.greenFees || stats.roundsFinished || 1), 0);
   const perCourse = courseEntries.map(([courseId, stats], index) => {
     const last = index === courseEntries.length - 1;
     const weight = (stats.greenFees || stats.roundsFinished || 1) / Math.max(1, weightTotal);
     const courseRevenue = last ? revenue - allocatedRevenue : Math.round(revenue * weight * 100) / 100;
-    const courseCosts = last ? costs - allocatedCosts : Math.round(costs * weight * 100) / 100;
+    const paceMetrics = args.pace?.perCourse[courseId];
+    const exactPaceCosts = (paceMetrics?.overtimeCost ?? 0) + (paceMetrics?.compensationCost ?? 0);
+    const allocated = last
+      ? sharedCosts - allocatedSharedCosts
+      : Math.round(sharedCosts * weight * 100) / 100;
+    const courseCosts = allocated + exactPaceCosts;
     allocatedRevenue += courseRevenue;
-    allocatedCosts += courseCosts;
+    allocatedSharedCosts += allocated;
     const layout = layoutById(course, courseId);
     const capacity = (layout?.roundLength ?? 9) * 4;
     return {
@@ -179,6 +190,8 @@ export function commitDay(args: {
       costs: courseCosts,
       profit: courseRevenue - courseCosts,
       avgSatisfaction: stats.roundsFinished ? stats.satisfactionSum / stats.roundsFinished : 0,
+      paceOvertime: paceMetrics?.overtimeCost ?? 0,
+      paceCompensation: paceMetrics?.compensationCost ?? 0,
     };
   });
 
@@ -196,6 +209,8 @@ export function commitDay(args: {
         property: propertySettlement.report.revenue,
         propertyCosts: propertySettlement.report.costs,
         propertyVisitors: propertySettlement.report.visitors,
+        paceOvertime,
+        paceCompensation,
         byConcession: args.concessionByType ?? {},
         transactions: args.transactions ?? [],
       },

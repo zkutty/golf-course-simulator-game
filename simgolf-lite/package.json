@@ -1,7 +1,7 @@
 {
   "name": "simgolf-lite",
   "private": true,
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "type": "module",
   "main": "desktop/main.mjs",
   "scripts": {
@@ -21,6 +21,7 @@
     "desktop:pack:dir": "npm run build && electron-builder --dir",
     "desktop:dist": "npm run build && electron-builder",
     "release:audit": "node scripts/release-audit.mjs",
+    "release:certify:m28": "node scripts/m28-certify.mjs",
     "release:certify": "node scripts/m44-certify.mjs",
     "test:fuzz": "vitest run src/core/reducer.fuzz.test.ts",
     "test:soak": "vite build --ssr src/game/testing/soakCli.ts --outDir soak-dist --emptyOutDir --minify false && node --expose-gc soak-dist/soakCli.js",

@@ -59,6 +59,8 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
       property: ledger.days.reduce((sum, day) => sum + (day.revenueBreakdown.property ?? 0), 0),
       propertyCosts: ledger.days.reduce((sum, day) => sum + (day.revenueBreakdown.propertyCosts ?? 0), 0),
       propertyVisitors: ledger.days.reduce((sum, day) => sum + (day.revenueBreakdown.propertyVisitors ?? 0), 0),
+      paceOvertime: ledger.days.reduce((sum, day) => sum + (day.revenueBreakdown.paceOvertime ?? 0), 0),
+      paceCompensation: ledger.days.reduce((sum, day) => sum + (day.revenueBreakdown.paceCompensation ?? 0), 0),
       byConcession,
       transactions: ledger.days.flatMap((day) => day.revenueBreakdown.transactions),
     },

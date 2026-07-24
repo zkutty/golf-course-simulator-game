@@ -16,8 +16,17 @@ import type { CompletedRound } from "../retention/types";
 import { createLiveTournament, planTournamentDay, tournamentForDate, updateTournamentStanding } from "../tournaments/tournaments";
 import { getTeeBox, preferredTeeForArchetype } from "../models/courseSetup";
 import { activeCourseLayout, courseForHoleIds, courseForLayout, layoutById, operatingCourseViews } from "../models/courseLayouts";
-import { courseOperations, groupTimeParMinutes, normalizedStaff } from "./pace";
+import {
+  cohortFromGolfer,
+  courseOperations,
+  emptyPaceDayMetrics,
+  ensureCoursePaceMetrics,
+  groupTimeParMinutes,
+  normalizedStaff,
+} from "./pace";
 import { activeWeather, seasonalState, weatherModifiers } from "../seasons/seasons";
+import { BALANCE } from "../balance/balanceConfig";
+import { paceIdentity, paceRepeatIntentModifier } from "./paceHistory";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -41,12 +50,24 @@ export function createLiveState(
   const courseViews = operatingCourseViews(course);
   const tournamentEvent = tournamentForDate(world, dayIndex, course);
   const rawArrivals = tournamentEvent
-    ? planTournamentDay(tournamentEvent, LIVE.day.firstArrivalMinute, LIVE.day.teeGapMinutes)
+    ? planTournamentDay(
+      tournamentEvent,
+      LIVE.day.firstArrivalMinute,
+      LIVE.day.teeGapMinutes,
+      courseOperations(course, tournamentEvent.courseId).maxGroupSize,
+    )
     : planEstateDay(course, world, seed, courseViews, dayIndex);
   const seasonal = seasonalState(world, course, dayIndex);
   const dailyWeather = activeWeather(world, course, dayIndex);
   const dailyWeatherModifiers = weatherModifiers(dailyWeather, seasonal.operations.drainageLevel);
-  const arrivals = rawArrivals.map((arrival, index) => ({ ...arrival, groupId: arrival.groupId ?? `${arrival.courseId ?? "course"}-solo-${index + 1}` }));
+  const arrivals = rawArrivals.map((arrival, index) => {
+    const courseId = arrival.courseId ?? tournamentEvent?.courseId ?? activeCourseLayout(course).id;
+    return {
+      ...arrival,
+      groupId: arrival.groupId ?? `${courseId}-solo-${index + 1}`,
+      paceIdentityAtVisit: paceIdentity(world, courseId).score,
+    };
+  });
   const perCourse = Object.fromEntries(courseViews.map(({ layout }) => [layout.id, {
     courseName: layout.name,
     arrivals: arrivals.filter((arrival) => arrival.courseId === layout.id).length,
@@ -61,11 +82,14 @@ export function createLiveState(
   const staff = normalizedStaff(world, course);
   const marshalCoverageByCourse: Record<string, number> = {};
   const beverageCoverageByCourse: Record<string, number> = {};
+  const overtimeRateByCourse: Record<string, number> = {};
   for (const member of staff) {
     const courseId = member.courseId ?? courseViews[0]?.layout.id;
     if (!courseId) continue;
     if (member.role === "marshal") marshalCoverageByCourse[courseId] = (marshalCoverageByCourse[courseId] ?? 0) + 1;
     if (member.role === "cart_attendant") beverageCoverageByCourse[courseId] = (beverageCoverageByCourse[courseId] ?? 0) + 1;
+    overtimeRateByCourse[courseId] = (overtimeRateByCourse[courseId] ?? 0)
+      + member.weeklyWage / BALANCE.paceOperations.staffHoursPerWeek * BALANCE.paceOperations.overtimePremium;
   }
   const groups = [...new Map(arrivals.map((arrival) => [arrival.groupId!, {
     id: arrival.groupId!, courseId: arrival.courseId ?? courseViews[0]?.layout.id ?? "course-primary",
@@ -99,10 +123,16 @@ export function createLiveState(
     seed,
     tournament: tournamentEvent ? createLiveTournament(tournamentEvent, course) : undefined,
     groups,
-    pace: { groupsStarted: 0, groupsFinished: 0, totalWaitMinutes: 0, marshalInterventions: 0, forcedPickups: 0, beverageRevenue: 0, alcoholicDrinks: 0, serviceRefusals: 0, disorderIncidents: 0 },
+    pace: emptyPaceDayMetrics(courseViews.map(({ layout }) => layout.id)),
     marshalCoverageByCourse,
     beverageCoverageByCourse,
-    operationsByCourse: Object.fromEntries(courseViews.map(({ layout }) => [layout.id, courseOperations(course, layout.id)])),
+    overtimeRateByCourse,
+    operationsByCourse: Object.fromEntries(courseViews.map(({ layout }) => {
+      const operations = courseOperations(course, layout.id);
+      return [layout.id, tournamentEvent?.courseId === layout.id || (!tournamentEvent?.courseId && tournamentEvent)
+        ? { ...operations, daylightPolicy: "finish_started" as const }
+        : operations];
+    })),
     weather: { daily: dailyWeather, modifiers: dailyWeatherModifiers },
   };
 }
@@ -111,7 +141,9 @@ export function createLiveState(
 // (not on the golfer) so it reads only final state and stays deterministic.
 function classifyReaction(g: Golfer): { promoter: boolean; detractor: boolean; willReturn: boolean } {
   const r = LIVE.reactions;
-  const returnScore = g.mood + (g.personality.patience - 0.5) * r.returnPatienceNudge;
+  const returnScore = g.mood
+    + (g.personality.patience - 0.5) * r.returnPatienceNudge
+    + paceRepeatIntentModifier(g.paceIdentityAtVisit ?? 0.5, g.pacePreference ?? 0.5);
   return {
     promoter: g.mood >= r.promoterMood,
     detractor: g.mood <= r.detractorMood,
@@ -210,12 +242,14 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     groupStartedAt: state.dayMinute,
     waitMinutes: 0,
     pacePreference: personality.pacePreference ?? personality.skill,
+    paceIdentityAtVisit: arrival.paceIdentityAtVisit ?? 0.5,
     marshalInterventions: 0,
     forcedPickups: 0,
     drinksServed: 0,
     alcoholUnits: 0,
     hospitalityDelay: 0,
     disorderIncidents: 0,
+    completionStatus: "completed",
   };
 }
 
@@ -298,22 +332,26 @@ export function stepLive(
   // all teeing off together (ZKU-110).
   while (
     state.nextArrivalIdx < state.arrivals.length &&
-    state.arrivals[state.nextArrivalIdx].atMinute <= state.dayMinute &&
-    state.dayMinute <= LIVE.day.closeMinute &&
-    state.dayMinute >= (state.nextTeeFreeAtByCourse?.[state.arrivals[state.nextArrivalIdx].courseId ?? activeCourseLayout(course).id] ?? 0)
+    state.arrivals[state.nextArrivalIdx].atMinute <= state.dayMinute
   ) {
     const firstIndex = state.nextArrivalIdx;
     const first = state.arrivals[firstIndex];
     const groupId = first.groupId ?? `${first.courseId ?? "course"}-solo-${firstIndex}`;
     const batch: Arrival[] = [];
+    const courseId = first.courseId ?? activeCourseLayout(course).id;
+    const operations = state.operationsByCourse?.[courseId] ?? courseOperations(course, courseId);
+    if (state.dayMinute < (state.nextTeeFreeAtByCourse?.[courseId] ?? 0)) break;
     while (state.nextArrivalIdx < state.arrivals.length && (state.arrivals[state.nextArrivalIdx].groupId ?? `${state.arrivals[state.nextArrivalIdx].courseId ?? "course"}-solo-${state.nextArrivalIdx}`) === groupId) {
       batch.push(state.arrivals[state.nextArrivalIdx++]);
+    }
+    if (state.dayMinute > operations.lastTeeMinute || state.dayMinute > LIVE.day.closeMinute) {
+      const group = state.groups?.find((candidate) => candidate.id === groupId);
+      if (group) group.finishedAt = state.dayMinute;
+      continue;
     }
     const golfers = batch.map((arrival) => spawnGolfer(state, course, { ...arrival, groupId }));
     state.golfers.push(...golfers);
     state.roundsStarted += golfers.length;
-    const courseId = golfers[0]?.courseId ?? first.courseId ?? activeCourseLayout(course).id;
-    const operations = state.operationsByCourse?.[courseId] ?? courseOperations(course, courseId);
     state.nextTeeFreeAtByCourse ??= {};
     state.nextTeeFreeAtByCourse[courseId] = state.dayMinute + operations.teeIntervalMinutes;
     state.nextTeeFreeAt = Math.min(...Object.values(state.nextTeeFreeAtByCourse));
@@ -321,7 +359,12 @@ export function stepLive(
     if (courseStats) courseStats.roundsStarted += golfers.length;
     const group = state.groups?.find((candidate) => candidate.id === groupId);
     if (group) { group.startedAt = state.dayMinute; group.golferIds = golfers.map((golfer) => golfer.id); }
-    if (state.pace) state.pace.groupsStarted++;
+    if (state.pace) {
+      state.pace.groupsStarted++;
+      const coursePace = ensureCoursePaceMetrics(state.pace, courseId);
+      coursePace.groupsStarted++;
+      coursePace.lastStartedAt = state.dayMinute;
+    }
     // Hosted-event players are in the contracted field; the sponsor/hosting
     // award is settled after results instead of charging each entrant a fee.
     if (!first.tournament) {
@@ -330,6 +373,7 @@ export function stepLive(
       state.greenFeeCollected += fee * golfers.length;
       golfers.forEach((golfer) => { golfer.spent += fee; });
       if (courseStats) courseStats.greenFees += fee * golfers.length;
+      if (state.pace) ensureCoursePaceMetrics(state.pace, courseId).greenFeeRevenue += fee * golfers.length;
     }
   }
 
@@ -353,9 +397,42 @@ export function stepLive(
   }
   for (const group of state.groups ?? []) {
     group.blocked = blockedGroups.has(group.id);
+    const activeGolfers = activeByGroup.get(group.id) ?? [];
+    if (group.startedAt != null && group.finishedAt == null && activeGolfers.length && state.pace) {
+      const coursePace = ensureCoursePaceMetrics(state.pace, group.courseId);
+      coursePace.occupiedTeeMinutes += dtMin;
+      const lead = [...activeGolfers].sort((left, right) => right.currentHole - left.currentHole)[0];
+      const holeId = lead?.currentHoleId ?? lead?.holeIds?.[lead.currentHole];
+      if (holeId) {
+        const hole = coursePace.holes[holeId] ??= { holeId, queueMinutes: 0, occupancyMinutes: 0, recoveryDelayMinutes: 0, visits: 0 };
+        hole.occupancyMinutes += dtMin;
+        if (group.blocked) hole.queueMinutes += dtMin;
+        const recoveryDelay = activeGolfers.some((golfer) => {
+          const segment = golfer.segments[golfer.segIndex];
+          if (!segment || segment.kind !== "pause") return false;
+          const x = Math.max(0, Math.min(course.width - 1, Math.round(segment.from.x)));
+          const y = Math.max(0, Math.min(course.height - 1, Math.round(segment.from.y)));
+          return ["rough", "deep_rough", "sand", "waste_area", "water", "wetland"].includes(course.tiles[y * course.width + x]);
+        });
+        if (recoveryDelay) hole.recoveryDelayMinutes += dtMin;
+        if (group.lastRecordedHoleId !== holeId) {
+          group.lastRecordedHoleId = holeId;
+          hole.visits++;
+        }
+      }
+    }
     if (group.blocked) {
       group.waitMinutes += dtMin;
-      if (state.pace) { state.pace.totalWaitMinutes += dtMin; }
+      if (state.pace) state.pace.totalWaitMinutes += dtMin;
+    }
+  }
+  const overtimeMinutes = Math.max(0, state.dayMinute - Math.max(LIVE.day.closeMinute, state.dayMinute - dtMin));
+  if (overtimeMinutes > 0 && state.pace) {
+    for (const courseId of new Set((state.groups ?? []).filter((group) =>
+      group.courseId && group.startedAt != null && group.finishedAt == null
+    ).map((group) => group.courseId))) {
+      ensureCoursePaceMetrics(state.pace, courseId).overtimeCost +=
+        (state.overtimeRateByCourse?.[courseId] ?? 0) * overtimeMinutes / 60;
     }
   }
   const stillPlaying: Golfer[] = [];
@@ -365,10 +442,23 @@ export function stepLive(
     const group = state.groups?.find((candidate) => candidate.id === g.groupId);
     const operations = state.operationsByCourse?.[g.courseId ?? ""] ?? courseOperations(course, g.courseId);
     const blocked = !!g.groupId && blockedGroups.has(g.groupId);
+    if (!g.finished && state.dayMinute >= LIVE.day.closeMinute && operations.daylightPolicy === "strict_sunset") {
+      g.completionStatus = "daylight";
+      g.finished = true;
+      g.thought = "Play ended at the daylight cutoff";
+      g.thoughtUntil = state.dayMinute + 25;
+    }
     if (blocked) {
       g.waitMinutes = (g.waitMinutes ?? 0) + dtMin;
       g.hospitalityDelay = Math.max(0, (g.hospitalityDelay ?? 0) - dtMin);
       g.mood = Math.max(0, g.mood - dtMin * (0.00015 + (g.pacePreference ?? .5) * .00035));
+      if (state.pace && g.courseId) ensureCoursePaceMetrics(state.pace, g.courseId).totalWaitMinutes += dtMin;
+      if (!g.finished && (g.waitMinutes ?? 0) >= BALANCE.paceOperations.abandonmentWaitMinutes && g.mood <= BALANCE.paceOperations.abandonmentMood) {
+        g.completionStatus = "congestion_abandonment";
+        g.finished = true;
+        g.thought = "The group left after an excessive wait";
+        g.thoughtUntil = state.dayMinute + 25;
+      }
     } else if ((g.hospitalityDelay ?? 0) > 0) {
       g.hospitalityDelay = Math.max(0, (g.hospitalityDelay ?? 0) - dtMin);
     } else {
@@ -387,7 +477,10 @@ export function stepLive(
           if (behind > 30 && group.interventions >= 2 && group.lastPickupHole !== g.currentHole) {
             group.lastPickupHole = g.currentHole; group.pickups++;
             g.forcedPickups = (g.forcedPickups ?? 0) + 1;
-            if (state.pace) state.pace.forcedPickups++;
+            if (state.pace) {
+              state.pace.forcedPickups++;
+              if (g.courseId) ensureCoursePaceMetrics(state.pace, g.courseId).pickups++;
+            }
             for (let index = g.segIndex; index < g.segments.length && g.segments[index].holeIndex === g.currentHole; index++) g.segments[index].dur = Math.min(g.segments[index].dur, .02);
             g.thought = "Picked up to restore position"; g.mood = Math.max(0, g.mood - .07);
           }
@@ -439,15 +532,63 @@ export function stepLive(
           state.concessionTransactions.push(transaction); state.concessionCollected += amount; state.concessionByType.snack_bar = (state.concessionByType.snack_bar ?? 0) + amount;
           cashDelta += amount;
           if (state.pace) state.pace.beverageRevenue += amount;
+          if (state.pace && g.courseId) ensureCoursePaceMetrics(state.pace, g.courseId).beverageRevenue += amount;
           if ((g.alcoholUnits ?? 0) >= 3 && ((state.seed + g.id * 17 + g.scoredHoles * 13) % 11 === 0)) {
             g.disorderIncidents = (g.disorderIncidents ?? 0) + 1; g.mood = Math.max(0, g.mood - .1); g.hospitalityDelay += 5;
             g.thought = "The group became disruptive"; g.thoughtUntil = state.dayMinute + 25;
             if (state.pace) state.pace.disorderIncidents++;
+            if (state.pace && g.courseId) ensureCoursePaceMetrics(state.pace, g.courseId).incidents++;
           }
         }
       }
     }
     if (g.finished) {
+      const completed = g.completionStatus !== "daylight" &&
+        g.completionStatus !== "congestion_abandonment" &&
+        g.scoredHoles >= g.holePar.length;
+      const courseId = g.courseId ?? activeCourseLayout(course).id;
+      if (state.pace) {
+        const coursePace = ensureCoursePaceMetrics(state.pace, courseId);
+        const duration = Math.max(0, state.dayMinute - (g.groupStartedAt ?? group?.startedAt ?? state.dayMinute));
+        const expected = groupTimeParMinutes(Math.max(1, g.holePar.length), group?.golferIds.length || 1, operations);
+        const cohort = cohortFromGolfer(g.personality.skill, g.personality.patience);
+        const cohortMetrics = coursePace.cohorts[cohort];
+        coursePace.roundDurations.push(duration);
+        if (coursePace.roundDurations.length > BALANCE.paceOperations.maxDurationSamplesPerDay) coursePace.roundDurations.shift();
+        if (completed) {
+          coursePace.roundsCompleted++;
+          coursePace.satisfaction += g.mood * 100;
+        } else {
+          coursePace.roundsIncomplete++;
+        }
+        cohortMetrics.samples++;
+        cohortMetrics.durationMinutes += duration;
+        cohortMetrics.timeParVarianceMinutes += duration - expected;
+        cohortMetrics.waitMinutes += g.waitMinutes ?? 0;
+        cohortMetrics.pickups += g.forcedPickups ?? 0;
+        cohortMetrics.abandonments += completed ? 0 : 1;
+        cohortMetrics.satisfaction += g.mood * 100;
+
+        const fee = layoutById(course, courseId)?.greenFee ?? course.baseGreenFee;
+        const progress = g.holePar.length ? g.scoredHoles / g.holePar.length : 0;
+        let compensationRate = 0;
+        if (g.completionStatus === "daylight") {
+          compensationRate = progress < 0.5
+            ? BALANCE.paceOperations.daylightEarlyRefundRate
+            : BALANCE.paceOperations.daylightLateRefundRate;
+        } else if (g.completionStatus === "congestion_abandonment") {
+          compensationRate = BALANCE.paceOperations.congestionCreditRate;
+        } else if ((g.forcedPickups ?? 0) > 0) {
+          compensationRate = Math.min(0.5, (g.forcedPickups ?? 0) * BALANCE.paceOperations.marshalPickupCreditRate);
+        }
+        if (compensationRate > 0) {
+          const amount = Math.round(fee * compensationRate * 100) / 100;
+          coursePace.compensationCost += amount;
+          if (operations.compensationPolicy === "refund" || g.completionStatus === "daylight") coursePace.refunds += amount;
+          else if (operations.compensationPolicy === "credit") coursePace.credits += amount;
+          else coursePace.goodwillVouchers += amount;
+        }
+      }
       state.satisfactionSum += g.mood * 100;
       state.roundsFinished++;
       const reaction = classifyReaction(g);
@@ -456,14 +597,14 @@ export function stepLive(
       if (reaction.willReturn) state.willReturnCount++;
       const courseStats = g.courseId ? state.perCourse?.[g.courseId] : undefined;
       if (courseStats) {
-        courseStats.roundsFinished++;
+        if (completed) courseStats.roundsFinished++;
         courseStats.satisfactionSum += g.mood * 100;
         if (reaction.promoter) courseStats.promoters++;
         if (reaction.detractor) courseStats.detractors++;
         if (reaction.willReturn) courseStats.willReturnCount++;
       }
       finishedThisStep++;
-      completedRounds.push({
+      if (completed) completedRounds.push({
         golferId: g.id,
         golferName: g.name,
         archetype: g.archetype,
@@ -517,7 +658,10 @@ export function stepLive(
   const activeIds = new Set(stillPlaying.map((golfer) => golfer.id));
   for (const group of state.groups ?? []) if (group.startedAt != null && group.finishedAt == null && group.golferIds.length > 0 && group.golferIds.every((id) => !activeIds.has(id))) {
     group.finishedAt = state.dayMinute;
-    if (state.pace) state.pace.groupsFinished++;
+    if (state.pace) {
+      state.pace.groupsFinished++;
+      ensureCoursePaceMetrics(state.pace, group.courseId).groupsFinished++;
+    }
   }
 
   const allArrived = state.nextArrivalIdx >= state.arrivals.length;

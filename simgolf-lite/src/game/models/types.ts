@@ -107,6 +107,8 @@ export type TimeParStyle = "relaxed" | "standard" | "brisk";
 export type TeeGuidance = "open" | "recommended" | "required";
 export type PaceEnforcement = "advisory" | "active" | "strict";
 export type BeverageMenu = "off" | "refreshments" | "beer_wine";
+export type DaylightPolicy = "finish_started" | "strict_sunset";
+export type PaceCompensationPolicy = "refund" | "credit" | "goodwill";
 
 export interface CourseOperations {
   preset: PacePreset;
@@ -116,12 +118,77 @@ export interface CourseOperations {
   timeParStyle: TimeParStyle;
   teeGuidance: TeeGuidance;
   enforcement: PaceEnforcement;
+  /** Minutes after the 6:00 AM operating-day origin. No group starts later. */
+  lastTeeMinute: number;
+  daylightPolicy: DaylightPolicy;
+  compensationPolicy: PaceCompensationPolicy;
   beverage: {
     menu: BeverageMenu;
     passes: 0 | 1 | 2 | 3;
     alcoholLimit: 1 | 2 | 3 | 4;
     price: number;
   };
+}
+
+export type PaceCohort = "skilled_impatient" | "novice_social" | "general";
+
+export interface PaceCohortHistory {
+  samples: number;
+  averageDurationMinutes: number;
+  averageTimeParVarianceMinutes: number;
+  averageWaitMinutes: number;
+  pickupRate: number;
+  abandonmentRate: number;
+  averageSatisfaction: number;
+}
+
+export interface PaceHoleHistory {
+  holeId: string;
+  queueMinutes: number;
+  occupancyMinutes: number;
+  recoveryDelayMinutes: number;
+  visits: number;
+}
+
+export interface PaceHistorySample {
+  id: string;
+  week: number;
+  day: number;
+  courseId: string;
+  preset: PacePreset;
+  staffing: string;
+  groupsStarted: number;
+  groupsFinished: number;
+  roundsCompleted: number;
+  roundsIncomplete: number;
+  averageDurationMinutes: number;
+  p50DurationMinutes: number;
+  p90DurationMinutes: number;
+  averageWaitMinutes: number;
+  pickups: number;
+  incidents: number;
+  refunds: number;
+  credits: number;
+  goodwillVouchers: number;
+  overtimeCost: number;
+  compensationCost: number;
+  greenFeeRevenue: number;
+  beverageRevenue: number;
+  occupiedTeeHours: number;
+  averageSatisfaction: number;
+  cohorts: Record<PaceCohort, PaceCohortHistory>;
+  holes: PaceHoleHistory[];
+}
+
+export interface CoursePaceHistory {
+  courseId: string;
+  /** The latest 28 operating days, oldest first. */
+  samples: PaceHistorySample[];
+}
+
+export interface PaceOperationsState {
+  version: 1;
+  courses: Record<string, CoursePaceHistory>;
 }
 
 /** A named operating routing on the shared estate. Hole geometry remains in
@@ -312,6 +379,8 @@ export interface World {
   seasonal?: SeasonalState;
   /** M40 phased authored chapter state. Campaign meta remains profile-scoped. */
   campaign?: CampaignRunState;
+  /** M30 bounded rolling pace, cohort, and tee-hour operating history. */
+  paceOperations?: PaceOperationsState;
 }
 
 export type StaffRole = "groundskeeper" | "cart_attendant" | "pro_shop" | "marshal" | "tournament_director" | "club_pro" | "food_service" | "locker_attendant" | "front_desk" | "housekeeping" | "shuttle_driver";
@@ -421,6 +490,8 @@ export interface WeekResult {
     property?: number;
     propertyCosts?: number;
     propertyVisitors?: number;
+    paceOvertime?: number;
+    paceCompensation?: number;
     byConcession: Partial<Record<ConcessionType, number>>;
     transactions: ConcessionTransaction[];
   };

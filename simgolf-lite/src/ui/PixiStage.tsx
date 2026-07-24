@@ -108,6 +108,7 @@ import {
 } from "../game/render/scenicSurround";
 import { sampleCorridor } from "../game/models/surfaceIntent";
 import { buildIntentUnderlayTiles, buildTerrainContours } from "../game/render/surfaceContours";
+import type { PaceAdvisorFinding } from "../game/live/paceHistory";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -378,6 +379,7 @@ export interface PixiStageProps {
   selectedParcelId?: string | null;
   architectureWarnings?: ArchitectureWarning[];
   architectureOverlay?: ArchitectureOverlayRender | null;
+  paceBottlenecks?: PaceAdvisorFinding[];
   animationsEnabled: boolean;
   graphicsQuality: "high" | "medium" | "low";
   ambienceFx: boolean;
@@ -2831,6 +2833,32 @@ export function PixiStage(props: PixiStageProps) {
       layers.terrainDecals.addChild(g);
     }
 
+    if (props.paceBottlenecks?.length) {
+      const g = new PIXI.Graphics();
+      for (const finding of props.paceBottlenecks) {
+        const hole = holes.find((candidate) => candidate.id === finding.holeId);
+        const point = hole ? getPinPosition(hole, course.activePinRotation ?? "A") ?? hole.green ?? hole.tee : null;
+        if (!point) continue;
+        const center = tileCenterIso(point.x, point.y, getElevation(course, point.x, point.y), rotation);
+        const radius = Math.min(18, 8 + finding.intensity * 0.6);
+        const color = finding.severity === "severe" ? 0xd8563a : finding.severity === "high" ? 0xe7a83e : 0xf2d36f;
+        g.circle(center.x, center.y, radius);
+        g.fill({ color, alpha: 0.18 });
+        g.stroke({ width: finding.severity === "severe" ? 4 : 2.5, color, alpha: 0.95 });
+        // Radial ticks keep severity/intensity legible when hue differences
+        // disappear under a color-vision palette.
+        const ticks = finding.severity === "severe" ? 6 : finding.severity === "high" ? 4 : 2;
+        for (let index = 0; index < ticks; index++) {
+          const angle = (Math.PI * 2 * index) / ticks;
+          g.moveTo(center.x + Math.cos(angle) * (radius + 2), center.y + Math.sin(angle) * (radius + 2));
+          g.lineTo(center.x + Math.cos(angle) * (radius + 7), center.y + Math.sin(angle) * (radius + 7));
+        }
+        g.stroke({ width: 2, color: 0xffffff, alpha: 0.92 });
+      }
+      g.label = ROUTE_LABEL;
+      layers.terrainDecals.addChild(g);
+    }
+
     // Failing-corridor overlay: red translucent diamonds.
     if (showFixOverlay && failingCorridorSegments && failingCorridorSegments.length > 0) {
       const g = new PIXI.Graphics();
@@ -2863,7 +2891,7 @@ export function PixiStage(props: PixiStageProps) {
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
     }
-  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, rotation, props.showMarkers, props.architectureWarnings, props.architectureOverlay]);
+  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, holes, rotation, props.showMarkers, props.architectureWarnings, props.architectureOverlay, props.paceBottlenecks]);
 
   // ---------------------------------------------------------------------
   // Ticker pass — hover highlight/line + live golfer dots
