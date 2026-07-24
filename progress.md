@@ -1,5 +1,13 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-07-24 — Golden-path save/reload CI repair
+
+- Reproduced the pushed GitHub Actions failure locally and inspected the Playwright trace; there were no browser console or network errors.
+- Queried the failed slot through `loadSlotResult` and isolated the rejection to `INVALID_COURSE: Stable hole identities are missing or duplicated`.
+- Fixed M39 automation to return the fully normalized course rather than combining normalized layouts with the original ID-less holes.
+- Added regression coverage that advances the exact legacy QA course and validates the resulting current-schema save.
+- Verification passes: focused seasons/save tests (17), exact `npm run test:e2e:golden` workflow (9), full Vitest suite (432 passed with one intentional skip), production build, lint/i18n with seven existing warnings and no errors, and bundled-client structured gameplay state.
+
 ## 2026-07-24 — M39 and M40 implementation complete
 
 Current request: “Implement M39 and then continue to implement rest of M40, commit each separately and then merge to main”

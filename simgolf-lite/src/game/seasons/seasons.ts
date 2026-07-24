@@ -406,7 +406,7 @@ function applyAutomation(course: Course, world: World, state: SeasonalState, wea
     ...Object.fromEntries(normalized.layouts!.map((layout) => [layout.id, layout.greenFee])),
     ...state.automation.baselineGreenFees,
   };
-  const property = normalizePropertyCourse(course.property);
+  const property = normalizePropertyCourse(normalized.property);
   const baselineAssetPrices = {
     ...Object.fromEntries(property.assets.map((asset) => [asset.id, asset.price])),
     ...state.automation.baselineAssetPrices,
@@ -415,9 +415,9 @@ function applyAutomation(course: Course, world: World, state: SeasonalState, wea
     ? { ...layout, greenFee: Math.max(10, Math.round((baselineGreenFees[layout.id] ?? layout.greenFee) * policy.priceMultiplier)) }
     : layout);
   const nextCourse: Course = {
-    ...course,
+    ...normalized,
     layouts,
-    baseGreenFee: layouts.find((layout) => layout.id === course.activeCourseId)?.greenFee ?? course.baseGreenFee,
+    baseGreenFee: layouts.find((layout) => layout.id === normalized.activeCourseId)?.greenFee ?? normalized.baseGreenFee,
     property: { ...property, assets: property.assets.map((asset) => automatedAsset(asset, baselineAssetPrices[asset.id] ?? asset.price, policy, overrides)) },
   };
   const baseMaintenance = Math.max(350, state.automation.baselineMaintenanceBudget || world.maintenanceBudget);

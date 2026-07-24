@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import type { Course, LandTheme, World } from "../models/types";
 import { startPlayableRound } from "../playerPro/playerPro";
+import { createReferenceCourse } from "../testing/referenceCourse";
+import { CURRENT_SAVE_SCHEMA_VERSION, parseSaveText } from "../../utils/save";
 import {
   DAYS_PER_YEAR,
   WEEKS_PER_YEAR,
@@ -169,6 +171,25 @@ describe("M39 charters, automation, responses, and annual legacy", () => {
     const fee = manual.course.layouts![0].greenFee;
     const next = advanceSeasonalDay(manual.course, { ...manual.world, week: manual.world.week + 1 }, 0);
     expect(next.course.layouts![0].greenFee).toBe(fee);
+  });
+
+  it("keeps normalized hole identities when automation upgrades a legacy course", () => {
+    const { world } = fixture();
+    const legacyCourse = createReferenceCourse();
+
+    const advanced = advanceSeasonalDay(legacyCourse, world, 0);
+    const holeIds = advanced.course.holes.map((hole) => hole.id);
+    expect(holeIds.every((id): id is string => typeof id === "string" && id.length > 0)).toBe(true);
+    expect(new Set(holeIds).size).toBe(holeIds.length);
+    expect(advanced.course.layouts?.flatMap((layout) => layout.publishedHoleIds)).toEqual(holeIds);
+
+    const reloaded = parseSaveText(JSON.stringify({
+      schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
+      savedAt: 0,
+      course: advanced.course,
+      world: advanced.world,
+    }));
+    expect(reloaded.ok, reloaded.ok ? undefined : `${reloaded.error.code}: ${reloaded.error.message}`).toBe(true);
   });
 
   it("previews drainage and cascades a course closure through schedules exactly once", () => {

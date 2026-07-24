@@ -1,5 +1,12 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## Golden-path save/reload CI repair — 2026-07-24
+
+- Corrected seasonal automation so layout normalization retains the matching stable hole IDs and active course identity.
+- Added a regression that advances the ID-less QA reference course and proves its current-schema save validates.
+- Exact golden-path/vision CI passes all nine tests; the full suite passes 432 tests with one intentional skip; build and lint/i18n pass.
+- Bundled-client state confirms a normalized `course-primary` layout whose draft and published IDs match all nine stable holes. Its headless Pixi canvas capture was black under software GL, with valid structured state and no reported client error.
+
 ## M40 implementation — 2026-07-24
 
 - Added six original authored campaign chapters with three phases each, 12 complications, all four M39 charter variants, cross-chapter facts, scheduled callbacks, consequence previews, recovery guidance, and coherent victory/honorable-loss epilogues.
