@@ -25,6 +25,7 @@ export type SfxName =
   | "land-rough" | "tree" | "cup" | "crowd-cheer" | "crowd-groan";
 
 export interface AmbientMix {
+  enabled: boolean;
   birds: number;
   water: number;
   wind: number;
@@ -54,6 +55,7 @@ class AudioManager {
   private unlocked = false;
   private volumes: AudioVolumes = loadVolumes();
   private hidden = typeof document !== "undefined" && document.hidden;
+  private paused = false;
   private pauseDuck = 1;
   private stingDuck = 1;
   private context: MusicContext = "silent";
@@ -63,18 +65,22 @@ class AudioManager {
   private contextPositions = new Map<MusicContext, number>();
   private musicSlots: [HTMLAudioElement, HTMLAudioElement] | null = null;
   private activeSlot = 0;
-  private musicFadeToken = 0;
+  private musicSwitchVersion = 0;
+  private musicPlayClaims = new WeakMap<HTMLAudioElement, number>();
   private ambienceSlots: [HTMLAudioElement, HTMLAudioElement] | null = null;
   private activeAmbienceSlot = 0;
-  private ambienceFadeToken = 0;
+  private ambienceSwitchVersion = 0;
+  private ambiencePlayClaims = new WeakMap<HTMLAudioElement, number>();
   private playingAmbience: SunoAmbienceContext | null = null;
   private ambienceTrackIndex = new Map<SunoAmbienceContext, number>();
+  private fadeVersions = new WeakMap<HTMLAudioElement, number>();
   private ctx: AudioContext | null = null;
   private sfxBus: GainNode | null = null;
   private ambienceBus: GainNode | null = null;
-  private ambienceLayers = new Map<keyof Omit<AmbientMix, "paused">, GainNode>();
+  private ambienceLayers = new Map<"birds" | "water" | "wind" | "murmur" | "crickets", GainNode>();
   private ambienceSources: AudioBufferSourceNode[] = [];
   private ambientMix: AmbientMix = {
+    enabled: false,
     birds: 0,
     water: 0,
     wind: 0,
@@ -130,6 +136,7 @@ class AudioManager {
   }
 
   private ambientSampleLevel(): number {
+    if (!this.ambientMix.enabled) return 0;
     const activity = Math.max(
       this.ambientMix.birds,
       this.ambientMix.water,
@@ -150,23 +157,25 @@ class AudioManager {
   }
 
   private rampAll(seconds = 0.08): void {
-    const music = this.effective("musicVolume");
+    const musicEnabled = this.resolvedContext() !== "silent";
+    const music = musicEnabled ? this.effective("musicVolume") : 0;
     this.musicSlots?.forEach((slot, index) => {
-      this.fadeElement(slot, index === this.activeSlot ? music : 0, seconds * 1000, false, this.musicFadeToken);
+      const active = musicEnabled && index === this.activeSlot;
+      this.fadeElement(slot, active ? music : 0, seconds * 1000, !active);
     });
     const ambience = this.ambientSampleLevel();
     this.ambienceSlots?.forEach((slot, index) => {
-      this.fadeElement(
-        slot,
-        index === this.activeAmbienceSlot ? ambience : 0,
-        seconds * 1000,
-        false,
-        this.ambienceFadeToken,
-        "ambience",
-      );
+      const active = this.ambientMix.enabled && index === this.activeAmbienceSlot;
+      this.fadeElement(slot, active ? ambience : 0, seconds * 1000, !active);
     });
     if (this.sfxBus) this.rampParam(this.sfxBus.gain, this.effective("sfxVolume"), seconds);
-    if (this.ambienceBus) this.rampParam(this.ambienceBus.gain, this.effective("ambienceVolume"), seconds);
+    if (this.ambienceBus) {
+      this.rampParam(
+        this.ambienceBus.gain,
+        this.ambientMix.enabled ? this.effective("ambienceVolume") : 0,
+        seconds,
+      );
+    }
   }
 
   async unlock(): Promise<void> {
@@ -177,7 +186,7 @@ class AudioManager {
       this.sfxBus = this.ctx.createGain();
       this.ambienceBus = this.ctx.createGain();
       this.sfxBus.gain.value = this.effective("sfxVolume");
-      this.ambienceBus.gain.value = this.effective("ambienceVolume");
+      this.ambienceBus.gain.value = this.ambientMix.enabled ? this.effective("ambienceVolume") : 0;
       this.sfxBus.connect(this.ctx.destination);
       this.ambienceBus.connect(this.ctx.destination);
       await this.ctx.resume().catch(() => undefined);
@@ -186,7 +195,7 @@ class AudioManager {
     }
     this.unlocked = true;
     if (this.resolvedContext() !== "silent") await this.switchPlaylist(this.resolvedContext());
-    await this.switchAmbience(this.ambientMix.bed);
+    if (this.ambientMix.enabled) await this.switchAmbience(this.ambientMix.bed);
   }
 
   setVolumes(volumes: Partial<AudioVolumes>): void {
@@ -207,18 +216,26 @@ class AudioManager {
   }
 
   setPaused(paused: boolean): void {
+    if (paused === this.paused) return;
+    this.paused = paused;
     this.pauseDuck = paused ? 0.45 : 1;
     this.rampAll(0.25);
   }
 
   setMusicContext(context: MusicContext): Promise<void> {
+    const previous = this.resolvedContext();
     this.context = context;
-    return this.switchPlaylist(this.resolvedContext());
+    const next = this.resolvedContext();
+    if (next === previous && this.playingContext === next) return Promise.resolve();
+    return this.switchPlaylist(next);
   }
 
   setMusicOverride(context: MusicContext | null): Promise<void> {
+    const previous = this.resolvedContext();
     this.override = context;
-    return this.switchPlaylist(this.resolvedContext());
+    const next = this.resolvedContext();
+    if (next === previous && this.playingContext === next) return Promise.resolve();
+    return this.switchPlaylist(next);
   }
 
   private resolvedContext(): MusicContext {
@@ -227,11 +244,12 @@ class AudioManager {
 
   private async switchPlaylist(context: MusicContext): Promise<void> {
     if (!this.unlocked || !this.musicSlots) return;
+    const switchVersion = ++this.musicSwitchVersion;
     const old = this.musicSlots[this.activeSlot];
     if (this.playingContext !== "silent" && old.currentTime > 0 && !old.ended) this.contextPositions.set(this.playingContext, old.currentTime);
     if (context === "silent") {
-      const token = ++this.musicFadeToken;
-      this.fadeElement(old, 0, 450, true, token);
+      this.playingContext = "silent";
+      this.musicSlots.forEach((slot) => this.fadeElement(slot, 0, 450, true));
       return;
     }
     const list = MUSIC_PLAYLISTS[context];
@@ -239,7 +257,7 @@ class AudioManager {
     const selected = list[index % list.length];
     const src = selected.src;
     if (old.dataset.trackId === selected.id && !old.paused) {
-      this.rampAll();
+      this.playingContext = context;
       return;
     }
     const nextSlot = this.activeSlot === 0 ? 1 : 0;
@@ -248,16 +266,23 @@ class AudioManager {
     next.dataset.trackId = selected.id;
     next.currentTime = this.contextPositions.get(context) ?? 0;
     next.volume = 0;
-    const token = ++this.musicFadeToken;
+    this.musicPlayClaims.set(next, switchVersion);
     try {
       await next.play();
     } catch {
       return;
     }
+    if (switchVersion !== this.musicSwitchVersion) {
+      if (this.musicPlayClaims.get(next) === switchVersion) {
+        next.volume = 0;
+        next.pause();
+      }
+      return;
+    }
     this.activeSlot = nextSlot;
     this.playingContext = context;
-    this.fadeElement(old, 0, 2000, true, token);
-    this.fadeElement(next, this.effective("musicVolume"), 2000, false, token);
+    this.fadeElement(old, 0, 2000, true);
+    this.fadeElement(next, this.effective("musicVolume"), 2000, false);
   }
 
   private fadeElement(
@@ -265,14 +290,13 @@ class AudioManager {
     target: number,
     durationMs: number,
     pauseAtEnd: boolean,
-    token: number,
-    channel: "music" | "ambience" = "music",
   ): void {
+    const version = (this.fadeVersions.get(audio) ?? 0) + 1;
+    this.fadeVersions.set(audio, version);
     const from = audio.volume;
     const start = nowMs();
     const tick = () => {
-      const activeToken = channel === "music" ? this.musicFadeToken : this.ambienceFadeToken;
-      if (token !== activeToken && pauseAtEnd) return;
+      if (this.fadeVersions.get(audio) !== version) return;
       const p = Math.min(1, (nowMs() - start) / Math.max(1, durationMs));
       audio.volume = clamp01(from + (target - from) * (p * p * (3 - 2 * p)));
       if (p < 1) requestAnimationFrame(tick);
@@ -294,6 +318,11 @@ class AudioManager {
 
   private async switchAmbience(bed: SunoAmbienceContext): Promise<void> {
     if (!this.unlocked || !this.ambienceSlots) return;
+    if (!this.ambientMix.enabled) {
+      this.stopAmbience();
+      return;
+    }
+    const switchVersion = ++this.ambienceSwitchVersion;
     const old = this.ambienceSlots[this.activeAmbienceSlot];
     const list = AMBIENCE_PLAYLISTS[bed];
     const index = this.ambienceTrackIndex.get(bed) ?? 0;
@@ -308,19 +337,42 @@ class AudioManager {
     next.dataset.trackId = selected.id;
     next.currentTime = 0;
     next.volume = 0;
-    const token = ++this.ambienceFadeToken;
+    this.ambiencePlayClaims.set(next, switchVersion);
     try {
       await next.play();
     } catch {
       return;
     }
+    if (switchVersion !== this.ambienceSwitchVersion || !this.ambientMix.enabled) {
+      if (this.ambiencePlayClaims.get(next) === switchVersion) {
+        next.volume = 0;
+        next.pause();
+      }
+      return;
+    }
     this.activeAmbienceSlot = nextSlot;
     this.playingAmbience = bed;
-    this.fadeElement(old, 0, 2400, true, token, "ambience");
-    this.fadeElement(next, this.ambientSampleLevel(), 2400, false, token, "ambience");
+    this.fadeElement(old, 0, 2400, true);
+    this.fadeElement(next, this.ambientSampleLevel(), 2400, false);
+  }
+
+  private stopAmbience(): void {
+    this.ambienceSwitchVersion += 1;
+    this.playingAmbience = null;
+    this.ambienceSlots?.forEach((slot) => this.fadeElement(slot, 0, 450, true));
+  }
+
+  private rampActiveAmbience(seconds = 0.8): void {
+    if (!this.ambientMix.enabled || this.playingAmbience == null) return;
+    const active = this.ambienceSlots?.[this.activeAmbienceSlot];
+    if (active) this.fadeElement(active, this.ambientSampleLevel(), seconds * 1000, false);
+    if (this.ambienceBus) {
+      this.rampParam(this.ambienceBus.gain, this.effective("ambienceVolume"), seconds);
+    }
   }
 
   private async advanceAmbienceTrack(): Promise<void> {
+    if (!this.ambientMix.enabled) return;
     const bed = this.ambientMix.bed;
     const list = AMBIENCE_PLAYLISTS[bed];
     const current = this.ambienceTrackIndex.get(bed) ?? 0;
@@ -418,7 +470,7 @@ class AudioManager {
       brown = (brown + (Math.random() * 2 - 1) * .035) * .995;
       data[i] = brown;
     }
-    const configs: Array<[keyof Omit<AmbientMix, "paused">, BiquadFilterType, number]> = [
+    const configs: Array<["birds" | "water" | "wind" | "murmur" | "crickets", BiquadFilterType, number]> = [
       ["birds", "highpass", 1900], ["water", "bandpass", 760], ["wind", "lowpass", 520],
       ["murmur", "bandpass", 340], ["crickets", "highpass", 3100],
     ];
@@ -449,7 +501,7 @@ class AudioManager {
   private playAmbientAccent(): void {
     const ctx = this.ctx;
     const bus = this.ambienceBus;
-    if (!ctx || !bus || this.ambientMix.paused || this.effective("ambienceVolume") <= 0) return;
+    if (!ctx || !bus || !this.ambientMix.enabled || this.ambientMix.paused || this.effective("ambienceVolume") <= 0) return;
     const t = ctx.currentTime;
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -468,16 +520,18 @@ class AudioManager {
 
   setAmbientMix(mix: AmbientMix): void {
     const bedChanged = mix.bed !== this.ambientMix.bed;
+    const wasEnabled = this.ambientMix.enabled;
     this.ambientMix = { ...mix };
     if (this.unlocked) {
-      if (bedChanged || this.playingAmbience == null) void this.switchAmbience(mix.bed);
-      else this.rampAll(0.8);
+      if (!mix.enabled) this.stopAmbience();
+      else if (!wasEnabled || bedChanged || this.playingAmbience == null) void this.switchAmbience(mix.bed);
+      else this.rampActiveAmbience();
     }
     if (!this.ctx) return;
     // The authored Suno beds provide the broad soundscape. The procedural
     // layers remain as quiet, camera-reactive detail rather than competing
     // with the recordings.
-    const scale = mix.paused ? 0.025 : 0.22;
+    const scale = !mix.enabled ? 0 : mix.paused ? 0.025 : 0.22;
     for (const name of ["birds", "water", "wind", "murmur", "crickets"] as const) {
       const gain = this.ambienceLayers.get(name);
       if (gain) this.rampParam(gain.gain, clamp01(mix[name]) * scale, 1);
@@ -491,6 +545,7 @@ class AudioManager {
       else {
         const previous = { ...this.ambientMix };
         this.setAmbientMix({
+          enabled: true,
           birds: .65,
           water: .45,
           wind: .35,

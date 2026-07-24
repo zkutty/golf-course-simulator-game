@@ -38,9 +38,10 @@ the game:
 - Golden Green
 - Last Light
 
-Each track ships as Ogg Vorbis and AAC/M4A. The playlist loads only after the
-first audio-unlocking user gesture. These tracks are retained as legacy project
-assets but are superseded in the runtime playlists by the Suno library above.
+Archived Ogg Vorbis and AAC/M4A renders are retained under
+`art/audio/legacy-generated/` for provenance and experimentation. They are not
+copied into the application, build artifact, or deployment. Runtime playlists
+use only the Suno library above.
 
 ## Sound effects and ambience
 
@@ -50,21 +51,29 @@ sound designs are released under CC0-1.0 with the game.
 
 ## Legacy files
 
-The older MP3 files directly under `public/audio/` predate M15 and are no longer
-referenced by the application. They are intentionally excluded from the M15
-soundtrack and should be removed once their historical provenance is confirmed.
+The older untracked MP3 files that previously lived directly under
+`public/audio/` predate M15 and are not referenced by the application. Local
+copies are quarantined under the ignored `art/audio/legacy-untracked/`
+directory pending provenance review, so Vite cannot copy them into `dist`.
 
 ## Mixer path audit
 
 - Music uses two lazy `HTMLAudioElement` slots for overlap crossfades. Their
   volume is always computed from master × music × visibility/pause/sting duck.
+- Title, setup, loading, and Vision surfaces disable world ambience. They can
+  have at most one audible background stream after a transition settles.
+- Per-element fade ownership ensures an interrupted transition cannot strand
+  an outgoing slot in an audible or unpaused state.
 - Runtime golf, interface, crowd, and sting voices connect only to the WebAudio
   SFX gain bus, capped at eight voices.
-- Wind, water, birds, crickets, and crowd beds connect only to the WebAudio
-  ambience gain bus. Pausing retains a quiet 12% idle bed rather than fully
-  stopping the course atmosphere.
+- During gameplay, wind, water, birds, crickets, and crowd beds connect only to
+  the WebAudio ambience gain bus. Pausing retains a quiet 12% idle bed rather
+  than fully stopping the course atmosphere.
 - The SFX and ambience buses connect directly to the destination; there are no
   source nodes connected around them. The compatibility sound facade delegates
   back to the same SFX bus.
 - Master mute sets both music slots and both WebAudio buses to zero immediately.
   Other gain changes use short ramps to avoid clicks and pops.
+- `scripts/audit-audio-assets.mjs` requires both `public/` and the production
+  `dist/` artifact to contain exactly the 40 paths declared by
+  `src/audio/sunoLibrary.ts`.

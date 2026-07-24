@@ -38,3 +38,5 @@ art/pixellab/staging/**
 public/audio/*.mp3
 public/audio/*.wav
 public/audio/*.ogg
+art/audio/legacy-untracked/*
+!art/audio/legacy-untracked/README.md

@@ -70,6 +70,15 @@ describe("M15 ambient mix", () => {
     expect(lake.bed).toBe("water");
     expect(dusk.bed).toBe("night");
     expect(dusk.paused).toBe(true);
+    expect(forest.enabled).toBe(true);
+    expect(ambientMixFor({
+      course: c,
+      center: { x: 1, y: 0 },
+      dayMinute: 80,
+      visibleGolfers: 0,
+      paused: false,
+      enabled: false,
+    }).enabled).toBe(false);
   });
 
   it("prioritizes authored weather and season beds over terrain", () => {
