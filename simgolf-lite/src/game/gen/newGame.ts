@@ -10,6 +10,7 @@ import { getDifficultyProfile } from "../balance/difficulty";
 import { generateWildLandWithObstacles } from "./generateWildLand";
 import { createEstate, starterParcelOffset } from "../estate/estate";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
+import { createDefaultPlayerPro } from "../playerPro/playerPro";
 
 /**
  * THE new-game path (ZKU-162): every fresh run — wizard, quick start, defeat
@@ -129,6 +130,13 @@ export function createNewGame(
     mode: setup.mode,
     difficulty: setup.difficulty,
     objectives: effectiveGoals && effectiveGoals.length > 0 ? createObjectiveState(effectiveGoals) : null,
+    playerPro: createDefaultPlayerPro({
+      seed,
+      name: setup.playerPro?.name ?? setup.founderName,
+      appearance: setup.playerPro?.appearance,
+      handedness: setup.playerPro?.handedness,
+      background: setup.playerPro?.background,
+    }),
   };
   if (setup.founderName?.trim()) world.founderName = setup.founderName.trim();
 

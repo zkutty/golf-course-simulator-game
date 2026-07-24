@@ -1,6 +1,7 @@
 import type { ObjectiveState } from "./objectives";
 import type { TournamentCalendar } from "../tournaments/types";
 import type { PropertyCourseState, PropertyEnterpriseState } from "../property/types";
+import type { PlayerProCareer } from "./playerProTypes";
 
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
@@ -300,6 +301,8 @@ export interface World {
   tournaments?: TournamentCalendar;
   /** M31-M33 customers, bookings, residents, incidents, and commercial ledger. */
   enterprise?: PropertyEnterpriseState;
+  /** M36-M37 player-owned golfer, resumable rounds, progression, and competition. */
+  playerPro?: PlayerProCareer;
 }
 
 export type StaffRole = "groundskeeper" | "cart_attendant" | "pro_shop" | "marshal" | "tournament_director" | "club_pro" | "food_service" | "locker_attendant" | "front_desk" | "housekeeping" | "shuttle_driver";

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
+import { createDefaultPlayerPro } from "../game/playerPro/playerPro";
 import {
   CURRENT_SAVE_SCHEMA_VERSION,
   normalizeLoadedSaveResult,
@@ -11,7 +12,10 @@ function file(overrides: Record<string, unknown> = {}) {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: 123,
     course: DEFAULT_COURSE,
-    world: DEFAULT_WORLD,
+    world: {
+      ...DEFAULT_WORLD,
+      playerPro: createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed, name: DEFAULT_WORLD.founderName }),
+    },
     history: [],
     ...overrides,
   };
@@ -23,7 +27,7 @@ describe("save validation and migrations", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.payload.course).toEqual(DEFAULT_COURSE);
-    expect(result.payload.world).toEqual(DEFAULT_WORLD);
+    expect(result.payload.world).toEqual(file().world);
     expect(result.migratedFrom).toBeUndefined();
   });
 

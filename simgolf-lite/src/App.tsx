@@ -49,7 +49,7 @@ import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
-import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createM26MultiCourseReferenceCourse, createM27ReleaseReferenceCourse, createParklandVisualReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
+import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createM26MultiCourseReferenceCourse, createM27ReleaseReferenceCourse, createParklandVisualReferenceCourse, createPlayerProReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
@@ -120,6 +120,30 @@ import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
 import { analyzeResidentialSafety, applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
 import { VisionPage } from "./ui/VisionPage";
+import { PlayerProPanel, PlayerShotHud } from "./ui/PlayerProPanel";
+import type { PlayerProCareer, PlayerProPoint } from "./game/models/playerProTypes";
+import {
+  activatePlayerChallenge,
+  activatePlayerTournament,
+  advancePlayerRound,
+  autoFinishPlayerRound,
+  caddieRecommendation,
+  commitPlayerShot,
+  completePlayerTraining,
+  concedePlayerRound,
+  createDefaultPlayerPro,
+  createPlayerChallenge,
+  currentPlayerTournament,
+  finishPlayerShot,
+  normalizePlayerPro,
+  registerPlayerTournament,
+  settlePlayerRound,
+  startPlayableRound,
+  type PlayerOpponent,
+  type PlayerShotSelection,
+  type PlayerTrainingOption,
+} from "./game/playerPro/playerPro";
+import type { TournamentEvent } from "./game/tournaments/types";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -206,6 +230,15 @@ export default function App() {
       logReducerDispatch();
     }
     setGameState((prevState) => {
+      const controlledRound = prevState.world.playerPro?.activeRound;
+      const editingLocked = controlledRound && controlledRound.phase !== "round_complete" && controlledRound.phase !== "conceded";
+      const physicalEdit = new Set([
+        "PAINT_TILES", "SCULPT_TILES", "PLACE_TEE", "MOVE_TEE", "PLACE_GREEN", "MOVE_GREEN",
+        "SET_TEE_BOX", "REMOVE_TEE_BOX", "SET_PIN_POSITION", "REMOVE_PIN_POSITION", "ADD_WAYPOINT",
+        "UPDATE_WAYPOINT", "REMOVE_WAYPOINT", "PLACE_OBSTACLE", "REMOVE_OBSTACLE", "PLACE_BUILDING",
+        "REMOVE_BUILDING", "PLACE_DECORATION", "REMOVE_DECORATION", "ROTATE_DECORATION", "SET_COURSE_LAYOUTS",
+      ]).has(action.type);
+      if (editingLocked && physicalEdit) return prevState;
       const nextState = applyAction(prevState, action);
       if (action.type === "PAINT_TILES" && nextState !== prevState) {
         terrainUndoRef.current = [...terrainUndoRef.current.slice(-19), {
@@ -405,6 +438,9 @@ export default function App() {
   const architectureReport = useMemo(() => showCourseManager ? analyzeArchitecture(activeOperatingCourse) : null, [activeOperatingCourse, showCourseManager]);
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [showProgression, setShowProgression] = useState(false);
+  const [showPlayerPro, setShowPlayerPro] = useState(false);
+  const [playerShotAim, setPlayerShotAim] = useState<PlayerProPoint | null>(null);
+  const playerRoundResumeSpeedRef = useRef<SpeedName>("1x");
   const [showLiveOverview, setShowLiveOverview] = useState(false);
   const [followSelected, setFollowSelected] = useState(false);
   const [achievementQueue, setAchievementQueue] = useState<AchievementDefinition[]>([]);
@@ -413,6 +449,20 @@ export default function App() {
   const [photoMarkers, setPhotoMarkers] = useState(false);
   const lastCourseCardRef = useRef<Blob | null>(null);
   const pwa = usePwa();
+  const playerPro = useMemo(
+    () => world.playerPro ?? createDefaultPlayerPro({ seed: world.runSeed, name: world.founderName }),
+    [world.founderName, world.playerPro, world.runSeed],
+  );
+  const activePlayerRound = playerPro.activeRound;
+  const playerRoundLocksEditing = !!activePlayerRound && activePlayerRound.phase !== "round_complete" && activePlayerRound.phase !== "conceded";
+
+  useEffect(() => {
+    if (world.playerPro) return;
+    setWorld((current) => current.playerPro ? current : {
+      ...current,
+      playerPro: createDefaultPlayerPro({ seed: current.runSeed, name: current.founderName }),
+    });
+  }, [setWorld, world.playerPro]);
 
   const runPropertyCommand = useCallback((command: PropertyCommand) => {
     const current = gameStateRef.current;
@@ -540,6 +590,237 @@ export default function App() {
     },
   });
   const getLiveSnapshot = live.getSnapshot;
+
+  const updatePlayerPro = useCallback((updater: (career: PlayerProCareer) => PlayerProCareer) => {
+    setWorld((current) => {
+      const career = normalizePlayerPro(current.playerPro, { seed: current.runSeed, founderName: current.founderName });
+      const next = updater(career);
+      return next === career ? current : { ...current, playerPro: next };
+    });
+  }, [setWorld]);
+
+  const enterPlayerRoundView = useCallback((career: PlayerProCareer) => {
+    const round = career.activeRound;
+    if (!round) return;
+    const recommendation = caddieRecommendation(round, career.skills);
+    setPlayerShotAim(recommendation.aim);
+    setShowPlayerPro(false);
+    setShowCourseManager(false);
+    setShowPropertyManagement(false);
+    setShowLandOffice(false);
+    playerRoundResumeSpeedRef.current = live.speed === "paused" ? "1x" : live.speed;
+    live.setSpeed("paused");
+  }, [live]);
+
+  const beginPlayerRound = useCallback((layoutId: string, teeSet: TeeSet, pinRotation: PinRotation): string | null => {
+    const current = gameStateRef.current;
+    const started = startPlayableRound({
+      course: current.course,
+      world: current.world,
+      layoutId,
+      teeSet,
+      pinRotation,
+      day: live.status.dayIndex,
+    });
+    if (!started.ok) return started.reason;
+    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
+    const next = { ...career, activeRound: started.round };
+    updatePlayerPro(() => next);
+    enterPlayerRoundView(next);
+    return null;
+  }, [enterPlayerRoundView, live.status.dayIndex, updatePlayerPro]);
+
+  const trainPlayerPro = useCallback((option: PlayerTrainingOption): string | null => {
+    const current = gameStateRef.current.world;
+    const career = normalizePlayerPro(current.playerPro, { seed: current.runSeed, founderName: current.founderName });
+    const trained = completePlayerTraining(career, current, option, live.status.dayIndex);
+    if (trained.cost <= 0) return option.blocker ?? (current.cash < option.cost ? "cash" : "unavailable");
+    const previousSpeed = live.speed;
+    live.setSpeed("1x");
+    let remainingMinutes = option.minutes;
+    while (remainingMinutes > 0) {
+      const realMs = Math.min(2_000, remainingMinutes / LIVE.speed["1x"] * 1_000);
+      live.advanceTime(realMs);
+      remainingMinutes -= realMs / 1_000 * LIVE.speed["1x"];
+    }
+    live.setSpeed(previousSpeed);
+    setWorld((worldNow) => ({
+      ...worldNow,
+      cash: worldNow.cash - trained.cost,
+      playerPro: trained.career,
+    }));
+    if (soundEnabled) void audio.playSfx("cash");
+    return null;
+  }, [audio, live, setWorld, soundEnabled]);
+
+  const challengePlayerPro = useCallback((opponent: PlayerOpponent, kind: "friendly" | "wager", wager: number): string | null => {
+    const current = gameStateRef.current;
+    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
+    if (kind === "wager" && current.world.cash < wager) return "cash";
+    const created = createPlayerChallenge(career, opponent, kind, wager);
+    const layout = activeCourseLayout(current.course);
+    const started = startPlayableRound({
+      course: current.course,
+      world: current.world,
+      kind,
+      layoutId: layout.id,
+      teeSet: "member",
+      pinRotation: current.course.activePinRotation ?? "A",
+      day: live.status.dayIndex,
+      opponent: {
+        id: opponent.id,
+        name: opponent.name,
+        skill: opponent.skill,
+        relationshipDelta: 0,
+        wager: created.challenge.wager,
+        projectedStrokes: 0,
+      },
+    });
+    if (!started.ok) return started.reason;
+    const next = {
+      ...activatePlayerChallenge(created.career, created.challenge.id, started.round.id),
+      activeRound: started.round,
+    };
+    updatePlayerPro(() => next);
+    enterPlayerRoundView(next);
+    return null;
+  }, [enterPlayerRoundView, live.status.dayIndex, updatePlayerPro]);
+
+  const enterPlayerTournament = useCallback((event: TournamentEvent): string | null => {
+    const current = gameStateRef.current;
+    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
+    const registered = registerPlayerTournament(career, event);
+    if (registered === career) return "eligibility";
+    const started = startPlayableRound({
+      course: current.course,
+      world: current.world,
+      kind: "tournament",
+      layoutId: event.courseId ?? activeCourseLayout(current.course).id,
+      teeSet: event.teeSet ?? "member",
+      pinRotation: event.pinRotation ?? current.course.activePinRotation ?? "A",
+      day: live.status.dayIndex,
+      tournament: { id: event.id, name: event.name },
+    });
+    if (!started.ok) return started.reason;
+    const next = {
+      ...activatePlayerTournament(registered, event.id, started.round.id),
+      activeRound: started.round,
+    };
+    updatePlayerPro(() => next);
+    enterPlayerRoundView(next);
+    return null;
+  }, [enterPlayerRoundView, live.status.dayIndex, updatePlayerPro]);
+
+  const commitControlledShot = useCallback((selection: PlayerShotSelection) => {
+    updatePlayerPro((career) => {
+      if (!career.activeRound) return career;
+      const round = commitPlayerShot(career.activeRound, career.skills, selection);
+      if (round === career.activeRound) return career;
+      if (soundEnabled) void audio.playSfx(selection.club === "Putter" ? "putt" : selection.club === "Driver" ? "driver" : "iron");
+      return { ...career, activeRound: round };
+    });
+  }, [audio, soundEnabled, updatePlayerPro]);
+
+  const advanceControlledRound = useCallback(() => {
+    updatePlayerPro((career) => {
+      if (!career.activeRound) return career;
+      const round = advancePlayerRound(career.activeRound);
+      if (round !== career.activeRound && round.phase === "awaiting_shot") {
+        setPlayerShotAim(caddieRecommendation(round, career.skills).aim);
+      }
+      return { ...career, activeRound: round };
+    });
+  }, [updatePlayerPro]);
+
+  const autoFinishControlledRound = useCallback(() => {
+    updatePlayerPro((career) => career.activeRound
+      ? { ...career, activeRound: autoFinishPlayerRound(career.activeRound, career.skills) }
+      : career);
+  }, [updatePlayerPro]);
+
+  const concedeControlledRound = useCallback(() => {
+    updatePlayerPro((career) => career.activeRound
+      ? { ...career, activeRound: concedePlayerRound(career.activeRound) }
+      : career);
+  }, [updatePlayerPro]);
+
+  useEffect(() => {
+    const round = activePlayerRound;
+    if (!round || round.phase !== "flight" || !round.pendingShot) return;
+    const delay = appProfile.accessibility.reducedMotion ? 40 : 720;
+    const timer = window.setTimeout(() => {
+      updatePlayerPro((career) => career.activeRound?.id === round.id
+        ? { ...career, activeRound: finishPlayerShot(career.activeRound) }
+        : career);
+      const landing = round.pendingShot;
+      if (landing) {
+        const sfx = landing.penaltyStrokes > 0 ? "land-water" : landing.lieAfter === "sand" ? "land-sand" : landing.holed ? "cup" : landing.lieAfter === "green" ? "land-green" : "land-fairway";
+        void audio.playSfx(sfx, { force: landing.holed });
+      }
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [activePlayerRound, appProfile.accessibility.reducedMotion, audio, updatePlayerPro]);
+
+  useEffect(() => {
+    const round = activePlayerRound;
+    if (!round || round.rewardsApplied || (round.phase !== "round_complete" && round.phase !== "conceded")) return;
+    setWorld((current) => {
+      const career = normalizePlayerPro(current.playerPro, { seed: current.runSeed, founderName: current.founderName });
+      const authoritative = career.activeRound;
+      if (!authoritative || authoritative.id !== round.id || authoritative.rewardsApplied) return current;
+      const event = currentPlayerTournament(current, authoritative.tournamentId);
+      const settlement = settlePlayerRound(career, authoritative, event);
+      if (!settlement.round) return current;
+      const events = settlement.tournamentEvent
+        ? tournamentCalendar(current).events.map((candidate) => candidate.id === settlement.tournamentEvent!.id ? settlement.tournamentEvent! : candidate)
+        : null;
+      return {
+        ...current,
+        cash: current.cash + settlement.cashDelta,
+        reputation: Math.max(0, Math.min(100, current.reputation + settlement.reputationDelta)),
+        tournaments: events ? { version: 2, events } : current.tournaments,
+        playerPro: {
+          ...settlement.career,
+          activeRound: { ...authoritative, rewardsApplied: true },
+        },
+      };
+    });
+  }, [activePlayerRound, setWorld]);
+
+  useEffect(() => {
+    const round = activePlayerRound;
+    if (!round || round.phase === "flight") return;
+    const timer = window.setTimeout(() => {
+      const current = gameStateRef.current;
+      void autosave({
+        course: current.course,
+        world: current.world,
+        history: historyRef.current,
+        records: recordsRef.current,
+        live: live.getSnapshot(),
+        tutorial: tutorialProgress,
+      });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [activePlayerRound, live, tutorialProgress]);
+
+  const returnPlayerToDesign = useCallback(() => {
+    const round = gameStateRef.current.world.playerPro?.activeRound;
+    if (!round) return;
+    const selectedTrace = round.shots[round.shots.length - 1] ?? null;
+    const holeId = selectedTrace?.holeId ?? round.course.holes[round.currentHoleIndex]?.id;
+    const holeIndex = gameStateRef.current.course.holes.findIndex((hole) => hole.id === holeId);
+    if (holeIndex >= 0) {
+      setActiveHoleIndex(holeIndex);
+      setHoleEditMode("hole");
+      const center = selectedTrace?.rest ?? gameStateRef.current.course.holes[holeIndex]?.green;
+      if (center) setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }));
+    }
+    updatePlayerPro((career) => ({ ...career, activeRound: null }));
+    setPlayerShotAim(null);
+    setShowPlayerPro(false);
+    live.setSpeed(playerRoundResumeSpeedRef.current);
+  }, [live, updatePlayerPro]);
 
   const bookTournament = useCallback((tier: TournamentTier, daysAhead: number): string | null => {
     const current = gameStateRef.current;
@@ -1091,7 +1372,11 @@ export default function App() {
   }
 
   function startRun(newCourse: typeof course, newWorld: typeof world) {
-    dispatch({ type: "NEW_GAME", course: newCourse, world: newWorld });
+    const worldWithPlayerPro = newWorld.playerPro ? newWorld : {
+      ...newWorld,
+      playerPro: createDefaultPlayerPro({ seed: newWorld.runSeed, name: newWorld.founderName }),
+    };
+    dispatch({ type: "NEW_GAME", course: newCourse, world: worldWithPlayerPro });
     markClean();
     setHistory([]);
     sculptedRef.current = false;
@@ -1119,6 +1404,8 @@ export default function App() {
     scenarioRecordedRef.current = false;
     setPrevOutcome("OPEN");
     setShowVictory(false);
+    setShowPlayerPro(false);
+    setPlayerShotAim(null);
     if (!loadAppProfile().tutorialOffered) setShowTutorialOffer(true);
   }
 
@@ -1180,6 +1467,12 @@ export default function App() {
       seed,
       theme: course.theme ?? "parkland",
       difficulty: world.difficulty ?? "normal",
+      playerPro: world.playerPro ? {
+        name: world.playerPro.identity.name,
+        appearance: world.playerPro.identity.appearance,
+        handedness: world.playerPro.identity.handedness,
+        background: world.playerPro.identity.background,
+      } : undefined,
     };
   }
 
@@ -1223,6 +1516,15 @@ export default function App() {
     scenarioRecordedRef.current = loaded.world.objectives?.outcome === "WON";
     setTutorialProgress(loaded.tutorial ?? null);
     saveTutorialProgress(loaded.tutorial ?? null);
+    const loadedRound = loaded.world.playerPro?.activeRound;
+    setShowPlayerPro(false);
+    setPlayerShotAim(loadedRound
+      ? caddieRecommendation(loadedRound, loaded.world.playerPro!.skills).aim
+      : null);
+    if (loadedRound) {
+      playerRoundResumeSpeedRef.current = loaded.live?.speed === "paused" ? "1x" : loaded.live?.speed ?? "1x";
+      live.setSpeed("paused");
+    }
     if (loaded.tutorial && TUTORIAL_STEPS[loaded.tutorial.stepIndex]?.id === "open-course") {
       const nextIncompleteHole = loaded.course.holes.findIndex((hole) => !hole.tee || !hole.green);
       if (nextIncompleteHole >= 0) {
@@ -1355,6 +1657,32 @@ export default function App() {
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, weekReport: pendingWeekReport ? { week: pendingWeekReport.week, profit: pendingWeekReport.result.profit } : null, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, pace: live.status.pace, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       progression: { panelOpen: showProgression, tier: reputationTier(world.reputation).id, staffCap: reputationTier(world.reputation).staffCap, buildingTierCap: reputationTier(world.reputation).buildingTierCap },
+      playerPro: {
+        panelOpen: showPlayerPro,
+        identity: playerPro.identity,
+        skills: playerPro.skills,
+        techniques: playerPro.unlockedTechniques,
+        careerPoints: playerPro.careerPoints,
+        earnings: playerPro.earnings,
+        rounds: playerPro.rounds.length,
+        activeRound: activePlayerRound ? {
+          id: activePlayerRound.id,
+          kind: activePlayerRound.kind,
+          phase: activePlayerRound.phase,
+          courseId: activePlayerRound.course.courseId,
+          currentHole: activePlayerRound.currentHoleIndex + 1,
+          holes: activePlayerRound.course.holes.length,
+          ball: activePlayerRound.ball,
+          lie: activePlayerRound.lie,
+          aim: playerShotAim,
+          strokes: activePlayerRound.strokes,
+          penalties: activePlayerRound.penalties,
+          scorecard: activePlayerRound.scorecard,
+          pendingShot: activePlayerRound.pendingShot,
+          recentTrace: activePlayerRound.shots.at(-1) ?? null,
+          editingLocked: playerRoundLocksEditing,
+        } : null,
+      },
       editor: { mode: editorMode, selectedTerrain: selected, selectedDecoration: decorationKind, decorationRotation, decorationSpan, decorationAction, activeHole: activeHoleIndex + 1, selectedTeeSet, teePlacementPending: pendingTeePlacement ? { teeSet: pendingTeePlacement.teeSet, point: pendingTeePlacement.point, netCost: pendingTeePlacement.netCost } : null },
       graphics: { quality: appProfile.graphics.quality, resolvedQuality: resolvedGraphicsQuality, animations: effectiveAnimations, waterAnimation: effectiveAnimations && appProfile.graphics.waterAnimation, treeSway: effectiveAnimations && appProfile.graphics.treeSway },
       retention: { photoMode, recordsOpen: showRetention, achievementsEarned: appProfile.achievements.earned.length, totalRounds: records.totalRounds, aces: records.aces.length, tickerVisible: appProfile.gameplay.tickerVisible },
@@ -1374,7 +1702,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, architectureReport, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, showCourseManager, showLandOffice, showLiveOverview, showProgression, showPropertyManagement, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, showCourseManager, showLandOffice, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showTournaments, tutorialProgress?.stepIndex, viewMode, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -1411,6 +1739,22 @@ export default function App() {
         const fixtureWorld = { ...gameStateRef.current.world, cash: 1_000_000, reputation: 82, enterprise: emptyPropertyEnterprise(), isBankrupt: false, distressWeeks: 0 };
         dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+      },
+      setPlayerProFixture: () => {
+        const fixtureCourse = createPlayerProReferenceCourse();
+        const fixtureWorld = {
+          ...gameStateRef.current.world,
+          cash: 250_000,
+          reputation: 75,
+          runSeed: 360037,
+          isBankrupt: false,
+          distressWeeks: 0,
+          playerPro: createDefaultPlayerPro({ seed: 360037, name: "Casey Fairway", background: "architect" }),
+        };
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setShowPlayerPro(false);
+        setPlayerShotAim(null);
       },
       startWeekCloseFixture: async (weekOverride?: number) => {
         const course = gameStateRef.current.course;
@@ -2777,7 +3121,13 @@ export default function App() {
                 wizardStep={wizardStep}
                 draftTee={draftTee}
                 draftGreen={draftGreen}
-                onClickTile={handleCanvasClick}
+                onClickTile={(x, y) => {
+                  if (playerRoundLocksEditing) {
+                    if (activePlayerRound?.phase === "awaiting_shot") setPlayerShotAim({ x, y });
+                    return;
+                  }
+                  handleCanvasClick(x, y);
+                }}
                 onPreviewTerrainStroke={getTerrainStrokePreview}
                 onCommitTerrainStroke={commitTerrainStroke}
                 selectedTerrain={selected}
@@ -2796,6 +3146,9 @@ export default function App() {
                 showMarkers={!photoMode || photoMarkers}
                 dayMinute={live.status.dayMinute}
                 resortOperations={world.enterprise?.resort}
+                playerRound={activePlayerRound}
+                playerShotAim={playerShotAim}
+                playableShotMode={activePlayerRound?.phase === "awaiting_shot"}
                 sculptRadius={sculptRadius}
                 onCameraUpdate={(camera) => {
                   holeEditCameraManualRef.current = true;
@@ -2807,14 +3160,40 @@ export default function App() {
             />
             {!tutorialProgress && <div className="cc-retention-toolbar" style={{ position: "absolute", top: 10, left: 10, zIndex: 110, display: "flex", gap: 6 }}>
               <button onClick={() => setShowRetention(true)}>🏆 {t("retention.open")}</button>
+              <button data-testid="open-player-pro" aria-pressed={showPlayerPro} onClick={() => setShowPlayerPro((open) => !open)}>🏌️ {t("playerPro.open")}{activePlayerRound ? " •" : ""}</button>
               <button data-testid="open-progression" aria-pressed={showProgression} onClick={() => setShowProgression((open) => !open)}>⭐ {t("progression.open")} · {reputationTier(world.reputation).name}</button>
               <button data-testid="open-tournaments" aria-pressed={showTournaments} onClick={() => setShowTournaments((open) => !open)}>⛳ {t("tournament.open")}{live.status.tournament ? " •" : ""}</button>
-              <button data-testid="open-land-office" aria-pressed={showLandOffice} onClick={() => { setShowLandOffice((open) => !open); setSelectedParcelId((current) => current ?? course.estate?.starterParcelId ?? null); }}>🗺️ {t("land.open")}</button>
-              <button data-testid="open-course-manager" aria-pressed={showCourseManager} onClick={() => setShowCourseManager((open) => !open)}>⛳ {t("courses.open")}</button>
+              <button data-testid="open-land-office" disabled={playerRoundLocksEditing} aria-pressed={showLandOffice} onClick={() => { setShowLandOffice((open) => !open); setSelectedParcelId((current) => current ?? course.estate?.starterParcelId ?? null); }}>🗺️ {t("land.open")}</button>
+              <button data-testid="open-course-manager" disabled={playerRoundLocksEditing} aria-pressed={showCourseManager} onClick={() => setShowCourseManager((open) => !open)}>⛳ {t("courses.open")}</button>
               <button data-testid="open-property-management" aria-pressed={showPropertyManagement} onClick={() => setShowPropertyManagement((open) => !open)}>🏨 {t("property.open")}</button>
               <button aria-pressed={appProfile.gameplay.tickerVisible} onClick={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: !appProfile.gameplay.tickerVisible } })}>📰 {t("retention.ticker")}</button>
               <button onClick={() => enterPhotoMode(false)}>📷 {t("retention.photo")}</button>
             </div>}
+            {showPlayerPro && !tutorialProgress && <PlayerProPanel
+              career={playerPro}
+              course={course}
+              world={world}
+              day={live.status.dayIndex}
+              onUpdateIdentity={(identity) => updatePlayerPro((career) => ({ ...career, identity }))}
+              onStartRound={beginPlayerRound}
+              onTrain={trainPlayerPro}
+              onChallenge={challengePlayerPro}
+              onTournament={enterPlayerTournament}
+              onResume={() => enterPlayerRoundView(playerPro)}
+              onClose={() => setShowPlayerPro(false)}
+            />}
+            {activePlayerRound && !showPlayerPro && !tutorialProgress && playerShotAim && <PlayerShotHud
+              career={playerPro}
+              round={activePlayerRound}
+              aim={playerShotAim}
+              onAim={setPlayerShotAim}
+              onCommit={commitControlledShot}
+              onAdvance={advanceControlledRound}
+              onAutoFinish={autoFinishControlledRound}
+              onConcede={concedeControlledRound}
+              onReturnToDesign={returnPlayerToDesign}
+            />}
+            {playerRoundLocksEditing && <div role="status" style={{ position: "absolute", left: "50%", top: 54, transform: "translateX(-50%)", zIndex: 112, padding: "6px 10px", borderRadius: 8, background: "rgba(54,69,48,.92)", color: "white", fontSize: 12 }}>{t("playerPro.round.editLocked")}</div>}
             {showProgression && !tutorialProgress && <ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} />}
             {showTournaments && !tutorialProgress && <TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
             {showLandOffice && !tutorialProgress && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}

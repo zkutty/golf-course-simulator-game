@@ -7,6 +7,7 @@ import * as PIXI from "pixi.js";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, TeeSet, Terrain } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
+import type { PlayerPlayableRound, PlayerProPoint } from "../game/models/playerProTypes";
 import type { CameraState, IsoCameraSnapshot } from "../game/render/camera";
 import {
   ELEVATION_STEP_PX,
@@ -425,6 +426,10 @@ export interface PixiStageProps {
   /** Live game-clock minute (0..840) driving ambient time-of-day effects. */
   dayMinute?: number;
   resortOperations?: ResortOperations;
+  /** M36 direct-play overlay and input seam. */
+  playerRound?: PlayerPlayableRound | null;
+  playerShotAim?: PlayerProPoint | null;
+  playableShotMode?: boolean;
 }
 
 function rasterizeTileLine(from: Point, to: Point): Point[] {
@@ -592,6 +597,7 @@ export function PixiStage(props: PixiStageProps) {
   const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
   const buildingSpritesRef = useRef<PIXI.Sprite[]>([]);
   const propertyGraphicsRef = useRef<PIXI.Graphics[]>([]);
+  const playerShotOverlayRef = useRef<PIXI.Container | null>(null);
   const decorationSpritesRef = useRef<Array<{ sprite: PIXI.Sprite; shadow: PIXI.Graphics }>>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const ripplesRef = useRef<Array<{ x: number; y: number; t0: number }>>([]);
@@ -1102,6 +1108,7 @@ export function PixiStage(props: PixiStageProps) {
       flagPoolRef.current.clear();
       buildingSpritesRef.current = [];
       propertyGraphicsRef.current = [];
+      playerShotOverlayRef.current = null;
       rippleGraphicsRef.current = null;
       ripplesRef.current = [];
       impactsRef.current = [];
@@ -2502,6 +2509,64 @@ export function PixiStage(props: PixiStageProps) {
     }
   }, [appReady, course, props.resortOperations, rotation]);
 
+  // Player Pro shot decision overlay. It is one retained container rebuilt
+  // only when the decision changes, never per frame. Preview and animation
+  // facts come from the same pure resolver used by the authoritative round.
+  useEffect(() => {
+    if (!appReady) return;
+    const layers = layersRef.current;
+    if (!layers) return;
+    if (playerShotOverlayRef.current) {
+      layers.fx.removeChild(playerShotOverlayRef.current);
+      playerShotOverlayRef.current.destroy({ children: true });
+      playerShotOverlayRef.current = null;
+    }
+    const round = props.playerRound;
+    if (!round) return;
+    const overlay = new PIXI.Container();
+    overlay.label = "player-pro-shot-overlay";
+    const graphics = new PIXI.Graphics();
+    const ballElevation = getElevation(course, Math.round(round.ball.x), Math.round(round.ball.y));
+    const ball = worldToIso(round.ball.x + 0.5, round.ball.y + 0.5, ballElevation, rotation);
+    graphics.circle(ball.x, ball.y - 7, 7);
+    graphics.fill({ color: 0xffd25b, alpha: 0.95 });
+    graphics.stroke({ width: 2.5, color: 0x253c2b, alpha: 1 });
+    graphics.circle(ball.x, ball.y - 7, 11);
+    graphics.stroke({ width: 2, color: 0xfff0a0, alpha: 0.75 });
+
+    if (props.playerShotAim && round.phase === "awaiting_shot") {
+      const aimElevation = getElevation(course, Math.round(props.playerShotAim.x), Math.round(props.playerShotAim.y));
+      const aim = worldToIso(props.playerShotAim.x + 0.5, props.playerShotAim.y + 0.5, aimElevation, rotation);
+      graphics.moveTo(ball.x, ball.y - 7);
+      graphics.lineTo(aim.x, aim.y - 5);
+      graphics.stroke({ width: 2.2, color: 0xffe27a, alpha: 0.9 });
+      graphics.ellipse(aim.x, aim.y - 5, TILE_W * 1.4, TILE_H * 1.1);
+      graphics.fill({ color: 0xffd25b, alpha: 0.13 });
+      graphics.stroke({ width: 2, color: 0x6f4e16, alpha: 0.9 });
+      graphics.circle(aim.x, aim.y - 5, 3.5);
+      graphics.fill({ color: 0xffffff, alpha: 0.95 });
+    }
+
+    const trace = round.pendingShot ?? round.shots[round.shots.length - 1];
+    if (trace) {
+      const from = worldToIso(trace.from.x + 0.5, trace.from.y + 0.5, getElevation(course, Math.round(trace.from.x), Math.round(trace.from.y)), rotation);
+      const rest = worldToIso(trace.rest.x + 0.5, trace.rest.y + 0.5, getElevation(course, Math.round(trace.rest.x), Math.round(trace.rest.y)), rotation);
+      graphics.moveTo(from.x, from.y - 5);
+      graphics.lineTo(rest.x, rest.y - 5);
+      graphics.stroke({ width: 2.5, color: trace.penaltyStrokes > 0 ? 0xc84a37 : 0xf7f0c2, alpha: 0.78 });
+      graphics.circle(rest.x, rest.y - 5, 5);
+      graphics.fill({ color: trace.penaltyStrokes > 0 ? 0xd34b39 : 0xffffff, alpha: 0.95 });
+    }
+    overlay.addChild(graphics);
+    layers.fx.addChild(overlay);
+    playerShotOverlayRef.current = overlay;
+    return () => {
+      if (playerShotOverlayRef.current === overlay) playerShotOverlayRef.current = null;
+      overlay.parent?.removeChild(overlay);
+      overlay.destroy({ children: true });
+    };
+  }, [appReady, course, props.playerRound, props.playerShotAim, rotation]);
+
   // Estate ownership veil and survey boundaries (M25). A single batched
   // Graphics object keeps the expanded 220x140 map inexpensive to inspect.
   useEffect(() => {
@@ -3707,7 +3772,7 @@ export function PixiStage(props: PixiStageProps) {
     // federated event layer also guarantees release/cancel delivery when the
     // pointer leaves the canvas or crosses an overlay.
     const handleCanvasPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || editorMode !== "PAINT" || !selectedTerrain || !onPreviewTerrainStroke || !onCommitTerrainStroke) return;
+      if (event.button !== 0 || props.playableShotMode || editorMode !== "PAINT" || !selectedTerrain || !onPreviewTerrainStroke || !onCommitTerrainStroke) return;
       if (flyoverRef.current) return;
       const point = canvasPoint(event);
       if (!point) return;
@@ -3775,7 +3840,7 @@ export function PixiStage(props: PixiStageProps) {
       }
       const t = screenToTile(e.global.x, e.global.y);
       if (!t) return;
-      if (editorMode === "PAINT") return; // handled by native captured pointer events above
+      if (editorMode === "PAINT" && !props.playableShotMode) return; // handled by native captured pointer events above
       onClickTile(t.x, t.y);
     };
 
@@ -3826,11 +3891,11 @@ export function PixiStage(props: PixiStageProps) {
       pointerSurface.removeEventListener("pointercancel", handleCanvasPointerCancel, true);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [appReady, screenToTile, screenToIsoPlane, onClickTile, onPreviewTerrainStroke, onCommitTerrainStroke, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.showGolfers]);
+  }, [appReady, screenToTile, screenToIsoPlane, onClickTile, onPreviewTerrainStroke, onCommitTerrainStroke, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.showGolfers, props.playableShotMode]);
 
   return (
     <div
-      className={`cc-pixi-stage cc-tool-${editorMode.toLowerCase()}`}
+      className={`cc-pixi-stage cc-tool-${props.playableShotMode ? "player-shot" : editorMode.toLowerCase()}`}
       style={{
         width: "100%",
         height: "100%",

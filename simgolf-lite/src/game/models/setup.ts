@@ -1,4 +1,5 @@
 import type { Difficulty, LandTheme, PlayMode } from "./types";
+import type { PlayerProAppearance, PlayerProBackground, PlayerProHandedness } from "./playerProTypes";
 
 // New-game setup (ZKU-162): the wizard's output. One typed object, one
 // creation path (game/gen/newGame.ts createNewGame) — no scattered init.
@@ -16,6 +17,12 @@ export interface GameSetup {
   seed: number;
   theme: LandTheme;
   difficulty: Difficulty;
+  playerPro?: {
+    name: string;
+    appearance: PlayerProAppearance;
+    handedness: PlayerProHandedness;
+    background: PlayerProBackground;
+  };
   sandboxOverrides?: SandboxOverrides;
 }
 

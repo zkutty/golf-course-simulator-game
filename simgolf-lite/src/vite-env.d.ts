@@ -29,6 +29,7 @@ interface Window {
     };
     setPaintCash(cash: number): void;
     setPropertyFixture(): void;
+    setPlayerProFixture(): void;
     startWeekCloseFixture(weekOverride?: number): Promise<void>;
     runGoldenWeek(): Promise<{
       beforeHash: string;

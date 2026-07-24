@@ -248,6 +248,37 @@ export function createReferenceCourse(): Course {
   };
 }
 
+/** M36 deterministic build → play → redesign acceptance routing. */
+export function createPlayerProReferenceCourse(): Course {
+  const base = createRenderPerfCourse("parkland");
+  const holes = base.holes.slice(0, 3).map((hole, index) => ({
+    ...hole,
+    id: `player-pro-hole-${index + 1}`,
+    name: `Player Pro ${index + 1}`,
+    teeBoxes: { member: hole.tee },
+    pinPositions: { A: hole.green },
+    parByTee: { member: { mode: "MANUAL" as const, par: hole.parManual ?? 5 } },
+  }));
+  const ids = holes.map((hole) => hole.id);
+  return {
+    ...base,
+    name: "Player Pro Three-Hole",
+    holes,
+    layouts: [{
+      id: "player-pro-slice",
+      name: "Player Pro Three-Hole",
+      draftHoleIds: ids,
+      publishedHoleIds: ids,
+      roundLength: 9,
+      state: "open",
+      greenFee: 0,
+      legacyPartial: true,
+    }],
+    activeCourseId: "player-pro-slice",
+    activePinRotation: "A",
+  };
+}
+
 /** Reproducible renderer stress scene for M12 (`?perfFixture=1`). */
 export function createRenderPerfCourse(theme: NonNullable<Course["theme"]> = "parkland"): Course {
   const width = 110;

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { formatCurrency } from "../i18n/format";
 import type { Difficulty, LandTheme, PlayMode, Terrain } from "../game/models/types";
 import type { GameSetup } from "../game/models/setup";
+import type { PlayerProAppearance, PlayerProBackground, PlayerProHandedness } from "../game/models/playerProTypes";
 import { SANDBOX_STARTING_CASH } from "../game/models/setup";
 import { DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
@@ -189,6 +190,10 @@ export function NewGameWizard(props: {
   const [selectedSeedIdx, setSelectedSeedIdx] = useState(0);
   const [courseName, setCourseName] = useState(() => generateCourseName());
   const [founderName, setFounderName] = useState("");
+  const [proName, setProName] = useState("");
+  const [proAppearance, setProAppearance] = useState<PlayerProAppearance>("classic");
+  const [proHandedness, setProHandedness] = useState<PlayerProHandedness>("right");
+  const [proBackground, setProBackground] = useState<PlayerProBackground>("architect");
   const [startingCash, setStartingCash] = useState(DEFAULT_WORLD.cash);
 
   const seed = candidateSeeds[selectedSeedIdx] ?? candidateSeeds[0];
@@ -201,6 +206,12 @@ export function NewGameWizard(props: {
     seed,
     theme,
     difficulty,
+    playerPro: {
+      name: proName.trim() || founderName.trim() || translateCurrent("playerPro.defaultName"),
+      appearance: proAppearance,
+      handedness: proHandedness,
+      background: proBackground,
+    },
     sandboxOverrides:
       mode === "sandbox" && startingCash !== DEFAULT_WORLD.cash
         ? { startingCash }
@@ -481,6 +492,47 @@ export function NewGameWizard(props: {
                   }}
                 />
               </label>
+
+              <fieldset data-testid="player-pro-creation" style={{ border: "1px solid rgba(61,74,62,.22)", borderRadius: 12, padding: 12, display: "grid", gap: 10 }}>
+                <legend style={{ padding: "0 6px", fontWeight: 800, color: "#3d4a3e" }}>{translateCurrent("playerPro.creation.title")}</legend>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "#3d4a3e" }}>
+                  {translateCurrent("playerPro.creation.name")}
+                  <input
+                    data-testid="player-pro-name"
+                    value={proName}
+                    onChange={(event) => setProName(event.target.value)}
+                    maxLength={30}
+                    placeholder={founderName || translateCurrent("playerPro.defaultName")}
+                    style={{ display: "block", width: "100%", marginTop: 4, padding: "8px 10px", borderRadius: 8, border: "1px solid rgba(0,0,0,.2)" }}
+                  />
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 8 }}>
+                  <label style={{ display: "grid", gap: 4, fontSize: 11, fontWeight: 700 }}>
+                    {translateCurrent("playerPro.creation.appearance")}
+                    <select value={proAppearance} onChange={(event) => setProAppearance(event.target.value as PlayerProAppearance)} style={{ padding: 7, borderRadius: 7 }}>
+                      <option value="classic">{translateCurrent("playerPro.appearance.classic")}</option>
+                      <option value="sport">{translateCurrent("playerPro.appearance.sport")}</option>
+                      <option value="heritage">{translateCurrent("playerPro.appearance.heritage")}</option>
+                    </select>
+                  </label>
+                  <label style={{ display: "grid", gap: 4, fontSize: 11, fontWeight: 700 }}>
+                    {translateCurrent("playerPro.creation.handedness")}
+                    <select value={proHandedness} onChange={(event) => setProHandedness(event.target.value as PlayerProHandedness)} style={{ padding: 7, borderRadius: 7 }}>
+                      <option value="right">{translateCurrent("playerPro.handedness.right")}</option>
+                      <option value="left">{translateCurrent("playerPro.handedness.left")}</option>
+                    </select>
+                  </label>
+                  <label style={{ display: "grid", gap: 4, fontSize: 11, fontWeight: 700 }}>
+                    {translateCurrent("playerPro.creation.background")}
+                    <select value={proBackground} onChange={(event) => setProBackground(event.target.value as PlayerProBackground)} style={{ padding: 7, borderRadius: 7 }}>
+                      <option value="architect">{translateCurrent("playerPro.background.architect")}</option>
+                      <option value="operator">{translateCurrent("playerPro.background.operator")}</option>
+                      <option value="host">{translateCurrent("playerPro.background.host")}</option>
+                    </select>
+                  </label>
+                </div>
+                <small style={{ color: "#5d685e" }}>{translateCurrent(`playerPro.background.${proBackground}.benefit`)}</small>
+              </fieldset>
 
               {mode === "sandbox" && (
                 <label style={{ fontSize: 13, fontWeight: 700, color: "#3d4a3e" }}>

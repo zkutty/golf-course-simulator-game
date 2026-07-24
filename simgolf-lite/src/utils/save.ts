@@ -39,9 +39,10 @@ import { MAX_ESTATE_HOLES, normalizeCourseLayouts } from "../game/models/courseL
 import { normalizedStaff } from "../game/live/pace";
 import { normalizePropertyCourse, normalizePropertyEnterprise, starterPropertyCourse } from "../game/property/property";
 import { normalizeSurfaceIntent } from "../game/models/surfaceIntent";
+import { normalizePlayerPro } from "../game/playerPro/playerPro";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 13 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 14 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -110,6 +111,10 @@ export interface SaveV12 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV13 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 13;
+  records?: CourseRecords;
+}
+export interface SaveV14 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -133,7 +138,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV13 = {
+  const save: SaveV14 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -479,6 +484,10 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V13 adds optional smooth terrain-authoring metadata. Course.tiles remains
   // authoritative, so legacy saves need only advance the schema marker.
   12: (save) => ({ ...save, schemaVersion: 13 }),
+  // V14 adds one stable Player Pro identity plus resumable controlled rounds.
+  // The normalizer supplies a neutral profile and safely drops malformed
+  // optional round state without invalidating the last good course save.
+  13: (save) => ({ ...save, schemaVersion: 14 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -715,6 +724,10 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
           : {}),
       tournaments: normalizeTournamentCalendar(rawWorld.tournaments, course),
       enterprise: normalizePropertyEnterprise(rawWorld.enterprise),
+      playerPro: normalizePlayerPro(rawWorld.playerPro, {
+        seed: rawWorld.runSeed,
+        founderName: typeof rawWorld.founderName === "string" ? rawWorld.founderName : undefined,
+      }),
     };
     world.staffRoster = normalizedStaff(world, course);
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
