@@ -1,4 +1,16 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+// Workspace actions past the third are collapsed behind the "More" overflow, so
+// reach one by selecting its workspace and expanding the overflow when needed.
+async function openWorkspaceAction(page: Page, workspace: string, testId: string) {
+  await page.getByTestId(`workspace-${workspace}`).click();
+  const action = page.getByTestId(testId);
+  if (!(await action.isVisible())) {
+    await page.getByRole("button", { name: "More" }).click();
+  }
+  await action.click();
+}
 
 test("M17 records, achievements, ticker, photo mode, and PWA identity", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -19,7 +31,7 @@ test("M17 records, achievements, ticker, photo mode, and PWA identity", async ({
   await page.getByRole("button", { name: "Quick Start" }).click();
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
   await page.getByRole("button", { name: "Skip tutorial" }).click();
-  await page.getByRole("button", { name: /Records/ }).click();
+  await openWorkspaceAction(page, "legacy", "workspace-action-records");
   await expect(page.getByRole("button", { name: "Course History" })).toBeVisible();
   await page.getByRole("button", { name: "Records", exact: true }).click();
   const recordsShot = await page.screenshot({ fullPage: true, path: "artifacts/m17-records.png" });
