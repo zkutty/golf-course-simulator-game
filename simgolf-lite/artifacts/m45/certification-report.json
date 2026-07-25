@@ -1,7 +1,20 @@
 {
+  "ok": true,
   "schemaVersion": 1,
   "milestone": "M45: Closed-Loop Bug Capture & Repair",
   "decision": "HOLD",
+  "generatedAt": "2026-07-25T04:03:50.003Z",
+  "source": {
+    "commit": "ee45f82a4e7a972a2789c5b2f17d11df56c05ae4",
+    "dirty": true
+  },
+  "blockers": [
+    "uncommitted-workspace",
+    "manual-staging-golden-path",
+    "sentry-staging-group",
+    "human-approved-draft-repair"
+  ],
+  "errors": [],
   "records": {
     "linearIssue": null,
     "sentryGroup": null,

@@ -711,3 +711,29 @@ Current request: Implement the `PixelLab Art Pipeline Pilot` milestone.
 - Rotate/revoke the exposed PixelLab token, export the replacement as `PIXELLAB_AUTH_HEADER`, configure the documented MCP block, and restart Codex.
 - Generate and review the three facility treatments, natural props, and idle/walk/swing golfer sheets; promote only reviewed candidates through the manifest.
 - Run the same-target PixelLab/Layer-or-Scenario comparison, finish the weighted benchmark and adoption matrix, then pass the strict `art:pixellab:certify` gate and close the remaining Linear issues.
+
+## 2026-07-25 — M45 closed-loop bug capture and repair implementation complete; external certification on HOLD
+
+Current request: implement the complete `M45: Closed-Loop Bug Capture & Repair` milestone.
+
+- Re-audited the existing M45 milestone, its ten dependency-ordered issues, the current Cloudflare static-assets deployment, Sentry sanitizer, React crash boundary, reducer dispatch boundary, PWA/build checks, and unrelated dirty worktree.
+- Added the shared `BugReportV1` contract with explicit source/severity/environment enums, byte and string limits, consent gates, safe deterministic context, and typed validation failures.
+- Added a strict allowlist sanitizer that constructs a fresh output object and cannot emit full saves, cookies, tokens, headers, query strings, arbitrary local storage, nonconsented diagnostics, or nonconsented screenshots.
+- Added a memory-only bounded diagnostic recorder for safe game context, reducer action names and scalar fields, React/window/unhandled-rejection errors, app build identity, route path, browser family, and viewport. New-game/load clears the historical action ring; no report data is persisted locally.
+- Created the Linear workflow labels `autofix-ready`, `needs-repro`, `reporter-verified`, and `needs-human-review` with explicit safety semantics. ZK-448 and ZK-449 are now In Progress.
+- Added the consent-first in-game and crash reporter: feature-gated launcher and shortcut, accessible focus-contained dialog, exact payload/diagnostic previews, separate screenshot and diagnostics consent, renderer-only PNG capture, offline/timeout/cancel/retry handling, and canonical Linear success links.
+- Added a same-origin Cloudflare Worker intake with fail-closed runtime flags, origin/content/body/rate validation, server-side sanitization and fingerprinting, two-level Durable Object sharding, exact idempotency, duplicate occurrence comments, completed/canceled regression issue creation, and explicit stop-on-ambiguous-external-mutation behavior.
+- Added private evidence processing that structurally validates PNG chunks/CRCs, strips metadata, attempts Linear's private upload flow, and falls back to text-only reporting on an explicit provider rejection. Screenshots are never placed in public/static storage.
+- Added the allowlisted Sentry-group route with shared dedupe/issue semantics and a configurable minimum occurrence threshold.
+- Added the guarded Linear-to-Codex dispatcher. It requires the canonical marker, `autofix-ready`, complete reproduction/acceptance evidence, safe file scope, trusted attachments, and an allowlisted human `/autofix approve`; execution claims a remote branch, uses an isolated worktree and secret-filtered environment, reruns install/test/build/lint, and can only push a branch plus draft PR.
+- Added the M45 operational runbook, privacy/retention/incident/kill-switch policy, repair-result schema, certification manifest, and machine-readable HOLD/GO report.
+- Hardened the fingerprint contract against cross-seed merges, added transient-versus-ambiguous mutation recovery, authenticated operator reconciliation, deleted/archived canonical recovery, concurrent submission convergence, conservative authentication/access-control exclusions, workflow-state fallback, Markdown escaping, and realistic Sentry payload-shape handling.
+- Verification passes: 78 Vitest files / 495 tests with one intentional skip; 25 Worker unit tests plus six workerd/Durable Object integrations; ten dispatcher policy tests; six M45 Playwright scenarios; production build; application/Node/Worker TypeScript; lint/i18n with seven pre-existing Hook warnings; strict-CSP PWA install/offline/save smoke; staging Wrangler dry-run; `git diff --check`; and the 36-hole/100-golfer performance smoke at 0.27 ms renderer work against the 8 ms budget.
+- Visually inspected the manual and controlled React-crash reporter via Playwright and the required bundled game client. The dialog is readable, keyboard-ready, clearly explains privacy defaults, keeps optional evidence unchecked, and remains available outside the failed React tree.
+
+## M45 certification remaining
+
+- Deploy the Worker to staging with `LINEAR_API_KEY`, `SENTRY_WEBHOOK_SECRET`, and `BUG_REPORT_OPERATOR_SECRET` configured, then record a real manual-report golden path and its private Linear evidence.
+- Route a real allowlisted staging Sentry group through the intake and record the resulting Linear issue/comment behavior.
+- Add `autofix-ready` to a purpose-built safe staging issue, obtain a separate allowlisted human `/autofix approve`, and record the dispatcher-created draft PR. Human review, merge, deploy, verification, and issue closure remain deliberately outside automation.
+- Keep the milestone certification decision at `HOLD` until those three provider-backed records exist and the release candidate is committed from a clean workspace.
