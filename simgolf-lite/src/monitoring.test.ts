@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { cloudflareBeaconConfiguration, sanitizeSentryEvent } from "./monitoring";
+import {
+  cloudflareBeaconConfiguration,
+  resolveSentryEnvironment,
+  sanitizeSentryEvent,
+} from "./monitoring";
 
 describe("monitoring privacy", () => {
   it("keeps only allowlisted diagnostic fields", () => {
@@ -63,5 +67,40 @@ describe("monitoring privacy", () => {
       token: "site-token",
       spa: true,
     });
+  });
+});
+
+describe("sentry environment resolution", () => {
+  it("tags every hostname the production Worker is served from", () => {
+    // wrangler.jsonc keeps workers_dev enabled for the production environment,
+    // so the workers.dev URL stays reachable whether or not a custom domain
+    // is bound. Both must report production.
+    expect(resolveSentryEnvironment("coursecraft-playtest.zbkutlow.workers.dev")).toBe("production");
+    expect(resolveSentryEnvironment("coursecraftgame.com")).toBe("production");
+    expect(resolveSentryEnvironment("www.coursecraftgame.com")).toBe("production");
+  });
+
+  it("tags the pre-production Worker as staging", () => {
+    expect(resolveSentryEnvironment("coursecraft-dev.zbkutlow.workers.dev")).toBe("staging");
+  });
+
+  it("never reports an unrecognized hostname as production", () => {
+    for (const hostname of ["localhost", "127.0.0.1", "example.com", ""]) {
+      expect(resolveSentryEnvironment(hostname)).toBe("unknown");
+    }
+  });
+
+  it("lets an explicit build-time environment win over the hostname", () => {
+    // The GitHub Pages fallback build set this explicitly; keep the override
+    // path working for any deploy lane that can tag itself at build time.
+    expect(resolveSentryEnvironment("coursecraftgame.com", "github-pages")).toBe("github-pages");
+    expect(resolveSentryEnvironment("coursecraft-dev.zbkutlow.workers.dev", "  staging  ")).toBe(
+      "staging",
+    );
+  });
+
+  it("ignores a blank override instead of tagging releases with an empty string", () => {
+    expect(resolveSentryEnvironment("coursecraftgame.com", "   ")).toBe("production");
+    expect(resolveSentryEnvironment("coursecraftgame.com", undefined)).toBe("production");
   });
 });
