@@ -42,9 +42,9 @@ describe("M19 terrain material registry", () => {
   it("anchors broad mowing bands to world-space route distance", () => {
     const axes = [{ ax: 0, ay: 8, dx: 36, dy: 0, len2: 36 * 36 }];
     const shades = Array.from({ length: 36 }, (_, x) => mowingShadeAt(x, 8, axes));
-    expect(new Set(shades)).toEqual(new Set([0.94, 1.075]));
+    expect(new Set(shades)).toEqual(new Set([0.98, 1.035]));
     expect(shades[0]).toBe(shades[1]);
-    expect(shades[2]).not.toBe(shades[1]);
+    expect(shades[4]).not.toBe(shades[1]);
     // Crossing the renderer's 16-tile chunk boundary follows the same world
     // phase calculation rather than restarting a local pattern.
     expect(shades.slice(14, 19)).toEqual(

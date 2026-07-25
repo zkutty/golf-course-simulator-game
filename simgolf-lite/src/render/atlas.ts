@@ -1,5 +1,6 @@
 import { Assets, Spritesheet, Texture } from "pixi.js";
 import type { TerrainAtlasFrame } from "../game/render/terrainMaterials";
+import type { TerrainDetailFrame } from "../game/render/terrainDetails";
 import { missingNaturalPropFrames, type NaturalPropFrame } from "../game/render/naturalProps";
 
 /**
@@ -30,6 +31,7 @@ export type GolferAnimName = "walk" | "idle" | "swing" | "putt" | "cheer" | "mad
 export type GolferFrame = `golfer${number}_${GolferAnimName}${"" | "_t"}_${number}_${number}`;
 
 let terrainSheet: Spritesheet | null = null;
+let terrainDetailsSheet: Spritesheet | null = null;
 let naturalPropsSheet: Spritesheet | null = null;
 let buildingsSheet: Spritesheet | null = null;
 let golfersSheet: Spritesheet | null = null;
@@ -51,8 +53,9 @@ export async function loadAtlases(): Promise<void> {
       return null;
     }
   };
-  [terrainSheet, naturalPropsSheet, buildingsSheet, golfersSheet] = await Promise.all([
+  [terrainSheet, terrainDetailsSheet, naturalPropsSheet, buildingsSheet, golfersSheet] = await Promise.all([
     load("terrain"),
+    load("terrain-details"),
     load("natural-props"),
     load("buildings-decor"),
     load("golfers"),
@@ -86,6 +89,16 @@ export function getTerrainFrame(name: TerrainAtlasFrame): Texture | null {
   return tex;
 }
 
+/** Optional @2× terrain-dressing sprite. Missing detail never affects play. */
+export function getTerrainDetailFrame(name: TerrainDetailFrame): Texture | null {
+  const tex = terrainDetailsSheet?.textures[name] ?? null;
+  if (!tex && terrainDetailsSheet && import.meta.env.DEV && !warned.has(name)) {
+    warned.add(name);
+    console.warn(`[atlas] missing terrain detail frame "${name}" — omitting optional dressing`);
+  }
+  return tex;
+}
+
 /** True when the golfer character atlas loaded (else render the dot tier). */
 export function golfersAtlasReady(): boolean {
   return golfersSheet !== null;
@@ -104,6 +117,7 @@ export function getGolferFrame(name: GolferFrame): Texture | null {
 /** Test hook: reset module state (unit tests only). */
 export function __resetAtlasForTests(): void {
   terrainSheet = null;
+  terrainDetailsSheet = null;
   naturalPropsSheet = null;
   buildingsSheet = null;
   golfersSheet = null;

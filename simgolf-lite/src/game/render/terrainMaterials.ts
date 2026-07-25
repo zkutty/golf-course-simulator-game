@@ -166,9 +166,11 @@ export function mowingShadeAt(
     along = t * Math.sqrt(axis.len2);
   }
   const band = along === null
-    ? ((Math.floor((x - y) / 2.25) % 2) + 2) % 2
-    : Math.floor(along / 2.25) % 2;
-  return band === 0 ? 1.075 : 0.94;
+    ? ((Math.floor((x - y) / 3.75) % 2) + 2) % 2
+    : Math.floor(along / 3.75) % 2;
+  // Broad, low-contrast bands read as one mown surface instead of alternating
+  // light/dark diamonds. The texture atlas supplies the finer blade detail.
+  return band === 0 ? 1.035 : 0.98;
 }
 
 /** Spatially coherent water phase; neighboring tiles form one moving field. */
