@@ -1174,6 +1174,9 @@ export default function App() {
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
     if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
+    const m25SeedParam = fixtureParams.get("m25Seed");
+    const parsedM25Seed = m25SeedParam == null ? Number.NaN : Number(m25SeedParam);
+    const m25Seed = Number.isInteger(parsedM25Seed) ? parsedM25Seed | 0 : 250025;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
     const requestedTheme = fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
@@ -1189,7 +1192,7 @@ export default function App() {
       : isM26Fixture
       ? createM26MultiCourseReferenceCourse()
       : isM25Fixture
-      ? createNewGame({ mode: "sandbox", courseName: "M25 Survey Estate", seed: 250025, theme: fixtureTheme, difficulty: "normal", sandboxOverrides: { startingCash: 500_000 } }).course
+      ? createNewGame({ mode: "sandbox", courseName: "M25 Survey Estate", seed: m25Seed, theme: fixtureTheme, difficulty: "normal", sandboxOverrides: { startingCash: 500_000 } }).course
       : isM24Fixture
       ? createTournamentStandardsCourse()
       : isM23Fixture
@@ -1226,7 +1229,7 @@ export default function App() {
       week: 1,
       cash: isPropertyFixture ? 1_000_000 : isM25Fixture ? 500_000 : 250_000,
       reputation: Number.isFinite(fixtureRep) ? Math.max(0, Math.min(100, fixtureRep)) : 95,
-      runSeed: 12160,
+      runSeed: isM25Fixture ? m25Seed : 12160,
       isBankrupt: false,
       distressWeeks: 0,
       mode: "sandbox" as const,

@@ -1,5 +1,23 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-07-24 — ZK-444 estate-wide Links coastline fix in progress
+
+Current request: “ok lets go fix that please”
+
+- Confirmed fresh-game generation created a 220×140 natural estate and then overwrote the centered 110×70 starter property with a second independently generated map.
+- Removed the starter-map terrain/elevation/obstacle splice so every parcel now inherits one estate-wide natural baseline.
+- Expanded Links coastline depth variation so some full-estate seeds reach the central starter property while others remain inland, without making the starter generate its own ocean.
+- Added focused regression coverage for exact estate-baseline inheritance and edge-connected ocean continuity across the starter-property boundary.
+- Focused new-game, theme, estate, and scenic-surround verification passes: 30 tests.
+- Added a seed-selectable M25 browser fixture and pinned the scenic Links regression to seed 25, where the starter parcel includes estate-generated ocean.
+- The dedicated scenic-surround Playwright test passes; full-page overview and edge captures were inspected and show one continuous estate/regional coast with no starter-map rectangle.
+- The required bundled web-game client reports valid Links estate state with a water-bearing starter parcel and no console-error artifact. Its headed minimap capture was inspected; the direct main-canvas headless capture remains black under software WebGL, while the full-page Playwright renderer capture is correct.
+- Final verification passes: 70 Vitest files / 441 tests with one intentional skip, production build and asset audits, lint/i18n with seven existing hook warnings and no errors, `git diff --check`, and the focused scenic-surround browser regression.
+
+## ZK-444 remaining
+
+- None. The code fix and automated/visual regression coverage are complete.
+
 ## 2026-07-24 — Golden-path save/reload CI repair
 
 - Reproduced the pushed GitHub Actions failure locally and inspected the Playwright trace; there were no browser console or network errors.

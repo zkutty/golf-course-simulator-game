@@ -72,7 +72,7 @@ describe("land themes (ZKU-166)", () => {
       const tiles = gen(seed, "links").tiles;
       const water = tiles.reduce<number[]>((indices, tile, index) => tile === "water" ? [...indices, index] : indices, []);
       expect(water.length / tiles.length).toBeGreaterThan(0.1);
-      expect(water.length / tiles.length).toBeLessThan(0.28);
+      expect(water.length / tiles.length).toBeLessThan(0.31);
 
       const edgeWater = water.filter((index) => {
         const x = index % W;

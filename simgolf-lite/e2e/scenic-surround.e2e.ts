@@ -4,8 +4,10 @@ test("regional canvas keeps Links ocean and countryside continuous at overview a
   const consoleErrors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/?m25Fixture=1&m22Theme=links");
+  await page.goto("/?m25Fixture=1&m22Theme=links&m25Seed=25");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").screen)).toBe("game");
+  const starter = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course.estate.parcels.find((parcel: { id: string }) => parcel.id === "parcel-5"));
+  expect(starter.traits).toContain("water");
 
   const canvas = page.locator(".cc-pixi-stage canvas").first();
   await expect(canvas).toBeVisible();
