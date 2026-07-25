@@ -16,3 +16,34 @@ Review/cleanup is reproducible: run `npm run gen:terrain && npm run build:atlas`
 then inspect `?m19Fixture=1` at the fixed bookmarks and all four rotations.
 Generated sources have transparent alpha outside the 128×64 diamond, exact
 logical anchors, restrained stepped values, and typed frame names.
+
+## Vendored typefaces (ZK-501)
+
+`src/assets/fonts/` holds the two UI typefaces, self-hosted rather than fetched
+from `fonts.googleapis.com` at runtime. Both are variable fonts, so one file per
+family per Unicode subset covers the whole 400–700 weight range the UI uses.
+
+| File | Family | Subset | Bytes |
+| --- | --- | --- | --- |
+| `merriweather-latin.woff2` | Merriweather | latin | 97,548 |
+| `merriweather-latin-ext.woff2` | Merriweather | latin-ext | 74,960 |
+| `nunito-latin.woff2` | Nunito | latin | 39,128 |
+| `nunito-latin-ext.woff2` | Nunito | latin-ext | 35,588 |
+
+- **Source:** Google Fonts, retrieved 2026-07-25 from the `css2` API response for
+  `family=Merriweather:wght@400;700&family=Nunito:wght@400;600;700&display=swap`,
+  which serves the upstream release binaries unmodified.
+- **Licence:** SIL Open Font License 1.1 for both families. Merriweather by Sorkin
+  Type; Nunito by Vernon Adams, Cyreal, and Jacques Le Bailly. The OFL permits
+  redistribution and bundling; the fonts are not modified, renamed, or sold.
+- **Subsets:** `latin` and `latin-ext` only. `latin-ext` is required — the `pseudo`
+  locale maps `Y` to `Ÿ` (U+0178), which falls outside the `latin` range. Cyrillic,
+  Greek, and Vietnamese subsets are omitted because no locale uses them.
+- **Reproducible:** re-fetch the `css2` URL above with a modern browser
+  `User-Agent` (an older one yields TTF instead of WOFF2), keep one `@font-face`
+  per family/subset pair, and download the `src` URL from each. The `unicode-range`
+  values in `src/index.css` are copied verbatim from that response.
+
+`cozyLayout.css` requests weight 800 in two places. That weight was never fetched
+from Google either — the declared faces stopped at 700 — so it continues to resolve
+to 700, unchanged by this migration.
