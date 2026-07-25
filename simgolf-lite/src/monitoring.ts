@@ -70,6 +70,24 @@ export function cloudflareBeaconConfiguration(token: string): { token: string; s
   return { token, spa: true };
 }
 
+/**
+ * The staging and production Cloudflare deploys ship the identical build
+ * artifact (tested once, deployed as-is), so the environment tag can't be
+ * baked in at build time — it has to be resolved from the serving hostname.
+ */
+function resolveSentryEnvironment(): string {
+  const override = import.meta.env.VITE_SENTRY_ENVIRONMENT?.trim();
+  if (override) return override;
+  switch (window.location.hostname) {
+    case "coursecraftgame.com":
+      return "production";
+    case "coursecraft-dev.zbkutlow.workers.dev":
+      return "staging";
+    default:
+      return "unknown";
+  }
+}
+
 function installCloudflareWebAnalytics(): void {
   const token = import.meta.env.VITE_CF_WEB_ANALYTICS_TOKEN?.trim();
   if (!import.meta.env.PROD || !token || document.querySelector("script[data-cf-beacon]")) return;
@@ -88,7 +106,7 @@ export function initializeMonitoring(): void {
   Sentry.init({
     dsn,
     enabled: true,
-    environment: import.meta.env.VITE_SENTRY_ENVIRONMENT?.trim() || "playtest",
+    environment: resolveSentryEnvironment(),
     release: __APP_RELEASE__,
     sendDefaultPii: false,
     tracesSampleRate: 0,
