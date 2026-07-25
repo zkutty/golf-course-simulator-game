@@ -143,7 +143,23 @@ defect:
 four call sites of overflow-bound legacy actions were checked, so the fix set is complete.
 The shared helper is `e2e/workspace.ts`.
 
-### Every browser spec fails on an external font fetch here
+### Final state after the ZK-501 font fix
+
+| Spec | Result |
+| --- | --- |
+| M17 | **PASS** |
+| M7 | **PASS** |
+| M6 | Fail — `tournament.active` still non-null after the 45 s poll, twice on a clean tree |
+| M27 | Fail — now times out at 60 s loading the 36-hole fixture (`:9`), before reaching the renderer-budget assertion it previously failed at `:20` |
+
+M17 and M7 are genuinely green. M6's failure is now reproducible rather than
+incidental — same assertion, two clean runs — so it is worth its own issue: either
+a tournament whose entrants have all finished does not conclude, or the 45 s poll
+cannot deliver enough sim time. M27 got *worse* rather than better, failing earlier
+at fixture load, which is characteristic of container slowness rather than a code
+change. Neither is safe to judge here.
+
+### The external font fetch that used to mask all of this (fixed, ZK-501)
 
 After the navigation fixes, M17 and M7 both run to their final line and then fail on
 `expect(errors).toEqual([])` catching `net::ERR_CONNECTION_RESET`. A direct probe
@@ -159,11 +175,11 @@ cannot reach it, and routing Chromium through the environment's HTTPS proxy does
 — the browser's CONNECT is reset too. Any spec asserting zero console errors will fail in
 any network-restricted environment.
 
-That is an environment limitation for certification purposes, but it also points at a
-real robustness gap worth its own issue: the app takes a hard runtime dependency on an
-external font CDN while shipping a PWA that claims offline support. Self-hosting the two
-font families would remove the dependency and make these specs runnable offline. Not
-changed here — it affects type rendering and belongs in a scoped issue.
+This was tracked as ZK-501 and is now fixed in `8bd20f7`: both families are vendored into
+`src/assets/fonts/` and declared with local `@font-face`, and the two CSP allowances that
+existed only for the CDN are gone. A request probe records zero external requests and zero
+console errors. That is what let M17 and M7 turn green above — until then, the font error
+masked whether any browser gate actually passed.
 
 The handoff's pending item #2 named `m35-landscape-details`, `m35-surface-authoring`, and
 `m35-water-grading`. Those specs do not exist in this repository (§1). The surviving M35
