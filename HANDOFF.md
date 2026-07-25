@@ -80,7 +80,17 @@ Commands (run from `simgolf-lite/`): `npm run dev` / `npm run build` (runs `tsc 
    exists before building it.
 7. **Definition of done, every issue:** acceptance criteria met, `npm run build` and
    `npm run test` green, no new lint errors, no console spam in production builds
-   (dev-flag gating — ZKU-85 convention), issue's Linear status updated.
+   (dev-flag gating — ZKU-85 convention), work **committed and pushed**, and the issue's
+   Linear status updated with the commit SHA.
+8. **Nothing is Done until it is pushed.** An issue moves to Done only when a pushed commit
+   SHA is recorded on it. Work that exists only in a working tree does not count as
+   complete, no matter how thoroughly it was tested — sessions run in ephemeral containers
+   and an uncommitted tree is one restart away from gone.
+9. **Never hand off an uncommitted tree.** A handoff comment must name a commit, never a
+   dirty working directory. If you are out of time, commit the work in progress to your
+   branch and push it; a messy pushed commit is infinitely more valuable than a clean tree
+   that no longer exists. Do not describe results measured against a tree you did not push —
+   the next agent cannot reproduce them and will not know the difference.
 
 ## Known landmines
 
@@ -102,6 +112,11 @@ Commands (run from `simgolf-lite/`): `npm run dev` / `npm run build` (runs `tsc 
 - Branch per issue using Linear's suggested branch name (each issue has `gitBranchName`).
 - Small PRs, one issue per PR, issue ID in the title (e.g. `ZKU-137: iso projection core`).
 - Update the Linear issue as you go (In Progress → Done); note any scope deviations on the
-  issue itself so the plan stays truthful.
+  issue itself so the plan stays truthful. Push before you mark anything Done, and put the
+  SHA on the issue — see hard rules 8 and 9. On 2026-07-25 five rendering issues
+  (ZK-468–472) were marked Done from an uncommitted tree that was then lost with its
+  container; the specs survived only because they lived in Linear.
+- Commit as you go rather than accumulating one large tree. If a session is interrupted
+  mid-issue, the pushed prefix is what the next agent inherits.
 - If an issue's assumptions turn out wrong against the current code (things move fast here),
   fix the plan in Linear first, then implement — don't silently diverge.
