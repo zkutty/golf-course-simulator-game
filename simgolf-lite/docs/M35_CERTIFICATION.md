@@ -2,7 +2,9 @@
 
 **Milestone:** M35 — Continuous Landscape & Visual Polish
 **Tracking issues:** ZK-332 (certification), ZK-327 (parent), ZK-466 (human visual gate), ZK-473 (agent parity gate)
-**Baseline commit for this report:** `9981588` (`main`)
+**Baseline commit for this report:** `3e65380` (`claude/linear-handoff-completion-phzqf2`,
+`main` + `develop` reconciled). Gate results in §3 were measured on `9981588` (`main` alone)
+and re-measured on the merged tree where noted.
 **Report date:** 2026-07-25
 
 ---
@@ -30,10 +32,15 @@ Verified against every ref in this repository:
 
 Corroborating signal — suite sizes shrink by exactly the missing work:
 
-| Gate | Handoff claim (lost tree) | This repository (`9981588`) |
-| --- | --- | --- |
-| Vitest | 88 files, 552 passed, 1 skipped | 69 files, 432 passed, 1 skipped |
-| ESLint warnings | 11 | 7 |
+| Gate | Handoff claim (lost tree) | `main` @ `9981588` | Merged @ `3e65380` |
+| --- | --- | --- | --- |
+| Vitest files | 88 | 69 | 80 |
+| Vitest passed | 552 | 432 | 502 |
+| ESLint warnings | 11 | 7 | 7 |
+
+Reconciling `main` and `develop` recovers 11 files and 70 tests, which confirms part of the
+earlier gap was simply the branch divergence. The remaining shortfall against the handoff's
+claim — 8 files and 50 tests — is the lost M35 work itself.
 
 `git stash list`, `git reflog`, and `git status --porcelain --ignored` are all empty in a
 fresh clone. Nothing is recoverable from this checkout.
@@ -51,16 +58,24 @@ committed higher-definition Parkland build to review. ZK-466 correctly remains b
 
 ---
 
-## 2. Branch topology
+## 2. Branch topology — reconciled
 
-- `main` @ `9981588` — carries the release lane (M36–M40, premium systems, Sentry, deploy).
-- `develop` @ `6944abe` — carries the M35 terrain lane (terrain relief, detail atlas, M45).
-- Merge base: `a155ea0`. `develop` is 12 commits ahead of `main`; `main` is 5 ahead of
-  `develop`. The M35 terrain-relief baseline has never been merged into `main`.
+Before this session:
 
-Any re-landing of the ZK-468–472 work has to pick a lane and reconcile this divergence
-first; certifying M35 against `main` today certifies a build that does not contain the
-M35 terrain baseline.
+- `main` @ `9981588` — the release lane (M36–M40, premium systems, Sentry, CI, deploy).
+- `develop` @ `6944abe` — the M35 terrain lane (M28/M30, M45, coastlines, terrain relief).
+- Merge base `a155ea0`; `develop` 12 ahead, `main` 5 ahead. Neither branch alone could be
+  certified, because each was missing half the product.
+
+`3e65380` merges `develop` into the release lane. Conflict resolutions:
+
+| File | Resolution |
+| --- | --- |
+| `src/monitoring.ts` | Both sides added a function at the same position and both are still called below — keep `resolveSentryEnvironment` (main) and `cloudflareBeaconConfiguration` (develop). |
+| `AudioManager.ts`, `m15-audio.e2e.ts`, `CREDITS.md` | main's `cf4136b` is a cherry-pick of develop's `0dcd96c`, but develop then refined it with `2aaa4ff` (`authoredAmbienceAllowed`, `stopMusicSlots`, single-stream enforcement, 350 ms fades) which main never received. Took develop's strictly-newer side. |
+| `progress.md` | Both conflict hunks are pure additions from develop; taking them is a union and drops nothing from main. |
+
+The reconciled tree is the correct base for re-landing ZK-468–472.
 
 ---
 
@@ -71,7 +86,7 @@ no discrete GPU.
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Unit | `npx vitest run --reporter=dot` | **Pass** — 69 files, 432 passed, 1 skipped |
+| Unit | `npx vitest run --reporter=dot` | **Pass** — 69 files, 432 passed, 1 skipped on `9981588`; **80 files, 502 passed, 1 skipped** on merged `3e65380` |
 | Fuzz | `npm run test:fuzz` | **Pass** — 3 properties |
 | Types | `npx tsc -b --pretty false` | **Pass** |
 | Lint + i18n | `npm run lint` | **Pass** — 0 errors, 7 React Hook warnings |
