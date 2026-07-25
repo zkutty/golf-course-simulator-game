@@ -102,6 +102,7 @@ describe('Sentry routing', () => {
           id: 'string-count',
           title: 'RangeError in golfer update',
           count: '5',
+          permalink: 'https://sentry.io/organizations/coursecraft/issues/string-count/',
         },
         event: {
           message: 'Maximum call stack exceeded',

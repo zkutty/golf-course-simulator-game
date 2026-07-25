@@ -259,4 +259,28 @@ describe('sanitizeBugReport', () => {
       ]),
     })
   })
+
+  it('reserves Sentry group metadata for authenticated Sentry reports', () => {
+    const input = validReport()
+    if (!input.diagnostics) throw new Error('Expected diagnostics fixture.')
+    input.diagnostics.sentryGroup = {
+      count: 12,
+      firstSeen: '2026-07-24T11:00:00.000Z',
+      id: 'COURSECRAFT-12',
+      lastSeen: '2026-07-24T12:00:00.000Z',
+      url: 'https://sentry.io/organizations/example/issues/12/',
+    }
+
+    const result = sanitizeBugReport(input)
+
+    expect(result).toEqual({
+      ok: false,
+      issues: expect.arrayContaining([
+        expect.objectContaining({
+          code: 'invalid_value',
+          path: 'diagnostics.sentryGroup',
+        }),
+      ]),
+    })
+  })
 })

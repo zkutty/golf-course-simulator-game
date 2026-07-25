@@ -141,15 +141,26 @@ function issueRef(
   }
 }
 
-function markdownText(value: string): string {
+function plainText(value: string): string {
   return value
     .replace(/\0/g, '')
     .replace(/<!--/g, '&lt;!--')
     .replace(/-->/g, '--&gt;')
 }
 
+function markdownText(value: string): string {
+  return plainText(value)
+    .replace(/\\/g, '\\\\')
+    .replace(/([`*_{}[\]<>#+!|])/g, '\\$1')
+    .replace(/@/g, '&#64;')
+}
+
 function oneLine(value: string): string {
-  return markdownText(value).replace(/\s+/g, ' ').trim()
+  return plainText(value).replace(/\s+/g, ' ').trim()
+}
+
+function markdownInline(value: string): string {
+  return markdownText(oneLine(value))
 }
 
 function sourceLabel(source: BugReportV1['source']): string {
@@ -170,10 +181,10 @@ function sourceLabel(source: BugReportV1['source']): string {
 function formatAction(action: BugActionRecord): string {
   const fields = action.fields
     ? Object.entries(action.fields)
-        .map(([key, value]) => `${key}=${String(value)}`)
+        .map(([key, value]) => `${key}=${markdownInline(String(value))}`)
         .join(', ')
     : ''
-  return `- ${action.type}${fields ? ` (${fields})` : ''}`
+  return `- ${markdownInline(action.type)}${fields ? ` (${fields})` : ''}`
 }
 
 function formatDiagnostics(report: BugReportV1): string {
@@ -188,8 +199,9 @@ function formatDiagnostics(report: BugReportV1): string {
       diagnostics.app.environment,
     ]
       .filter(Boolean)
+      .map((value) => markdownInline(String(value)))
       .join(' / ')}`,
-    diagnostics.route ? `- Route: ${diagnostics.route}` : undefined,
+    diagnostics.route ? `- Route: ${markdownInline(diagnostics.route)}` : undefined,
     diagnostics.browser
       ? `- Runtime: ${[
           diagnostics.browser.name,
@@ -199,19 +211,20 @@ function formatDiagnostics(report: BugReportV1): string {
             : undefined,
         ]
           .filter(Boolean)
+          .map((value) => markdownInline(String(value)))
           .join(' / ')}`
       : undefined,
     diagnostics.game
       ? `- Game: ${Object.entries(diagnostics.game)
           .filter(([key]) => key !== 'camera')
-          .map(([key, value]) => `${key}=${String(value)}`)
+          .map(([key, value]) => `${key}=${markdownInline(String(value))}`)
           .join(', ')}`
       : undefined,
     diagnostics.game?.camera
       ? `- Camera: x=${diagnostics.game.camera.centerX}, y=${diagnostics.game.camera.centerY}, zoom=${diagnostics.game.camera.zoom}, rotation=${diagnostics.game.camera.rotation}`
       : undefined,
     diagnostics.error
-      ? `- Error: ${oneLine(
+      ? `- Error: ${markdownInline(
           `${diagnostics.error.name ?? 'Error'}: ${diagnostics.error.message}`,
         )}`
       : undefined,
@@ -229,7 +242,7 @@ function formatDiagnostics(report: BugReportV1): string {
       '<details><summary>Bounded stack</summary>',
       '',
       '```text',
-      markdownText(diagnostics.error.stack).replace(/```/g, "'''"),
+      plainText(diagnostics.error.stack).replace(/```/g, "'''"),
       '```',
       '</details>',
     )
@@ -240,7 +253,7 @@ function formatDiagnostics(report: BugReportV1): string {
       '<details><summary>React component stack</summary>',
       '',
       '```text',
-      markdownText(diagnostics.error.componentStack).replace(/```/g, "'''"),
+      plainText(diagnostics.error.componentStack).replace(/```/g, "'''"),
       '```',
       '</details>',
     )
@@ -281,7 +294,7 @@ export function formatIssueDescription(
   const evidence = report.screenshot
     ? `![Consented CourseCraft screenshot](${report.screenshot.dataUrl})`
     : evidenceFailure
-      ? `_Screenshot omitted: ${oneLine(evidenceFailure)}_`
+      ? `_Screenshot omitted: ${markdownInline(evidenceFailure)}_`
       : '_No screenshot included._'
   const regression = regressionOf
     ? `\n- Regression of: [${regressionOf.identifier}](${regressionOf.url})`
@@ -301,13 +314,13 @@ ${markdownText(report.summary.expected)}
 ## Reproduction
 
 ${report.summary.steps
-  .map((step, index) => `${index + 1}. ${markdownText(step)}`)
+  .map((step, index) => `${index + 1}. ${markdownInline(step)}`)
   .join('\n')}
 
 ## Acceptance
 
 - [ ] A focused regression test reproduces this report before the fix and passes after it.
-- [ ] ${markdownText(report.summary.expected)}
+- [ ] ${markdownInline(report.summary.expected)}
 - [ ] No save data, privacy boundary, or unrelated deterministic simulation behavior regresses.
 
 ## Safe diagnostic capsule
@@ -339,8 +352,8 @@ export function formatOccurrenceComment(
 - Report ID: ${report.reportId}
 - Occurred: ${report.createdAt}
 - Reporter severity: ${report.summary.severity}
-- Build: ${diagnostics?.app.version ?? 'not consented'}${
-    diagnostics?.app.commit ? ` / ${diagnostics.app.commit}` : ''
+- Build: ${markdownInline(diagnostics?.app.version ?? 'not consented')}${
+    diagnostics?.app.commit ? ` / ${markdownInline(diagnostics.app.commit)}` : ''
   }
 - Location: ${[
     diagnostics?.route,
@@ -349,6 +362,7 @@ export function formatOccurrenceComment(
     diagnostics?.game?.tool,
   ]
     .filter(Boolean)
+    .map((value) => markdownInline(String(value)))
     .join(' / ') || 'not consented'}
 
 Screenshot and full stack are intentionally not duplicated.`

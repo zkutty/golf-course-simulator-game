@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BugReportV1 } from '../src/bug-reporting/contracts'
 import {
   createLinearIssue,
+  formatIssueDescription,
   getLinearIssue,
   LinearAmbiguousMutationError,
   LinearIssueMissingError,
@@ -47,6 +48,24 @@ function environment() {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('Linear issue creation', () => {
+  it('renders reporter-authored Markdown as literal text except for consented evidence', () => {
+    const input = report()
+    input.summary.actual =
+      'Saw ![remote](https://attacker.example/pixel.png) @maintainer <!-- injected -->'
+    input.summary.expected = 'Continue safely\n## forged heading'
+    input.summary.steps = ['Open [credential link](https://attacker.example)']
+
+    const description = formatIssueDescription(input, 'safe-fingerprint')
+
+    expect(description).not.toContain('![remote]')
+    expect(description).not.toContain('@maintainer')
+    expect(description).not.toContain('<!-- injected')
+    expect(description).toContain('\\!\\[remote\\]')
+    expect(description).toContain('&#64;maintainer')
+    expect(description).toContain('\\#\\# forged heading')
+    expect(description).toContain(screenshotDataUrl)
+  })
+
   it('falls back once to a text-only issue after an explicit evidence rejection', async () => {
     const descriptions: string[] = []
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {

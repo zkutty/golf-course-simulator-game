@@ -1073,6 +1073,13 @@ export function sanitizeBugReport(input: unknown): BugReportValidationResult {
       diagnostics = sanitizeDiagnostics(input.diagnostics, issues)
     }
   }
+  if (diagnostics?.sentryGroup && source !== 'sentry-group') {
+    addIssue(issues, {
+      code: 'invalid_value',
+      path: 'diagnostics.sentryGroup',
+      message: 'Sentry group metadata is reserved for the authenticated Sentry route.',
+    })
+  }
 
   let screenshot: BugReportScreenshot | undefined
   if (input.screenshot !== undefined) {
