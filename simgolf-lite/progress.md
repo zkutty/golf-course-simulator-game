@@ -239,3 +239,37 @@ game to ensure we only have the suno songs we created so there isn’t overlap.�
   inspected; both emitted structured state without a console-error artifact.
 - The source and local production artifact are fixed. Publishing that artifact
   to production remains a separate deployment action.
+
+## ZK-443 follow-up: tutorial/game music ownership — 2026-07-24
+
+Current request: “there is a larger problem that more music starts overlapping
+in the game. when i click through to tutorial now sounds like there are 3
+different music sounds going on”
+
+- Reproduced the screenshot's Quick Start tutorial-offer path with every
+  `HTMLAudioElement` instrumented. The first samples contained three audible
+  recordings: `title-01`, `operate-01`, and `rain-01`; after the title fade,
+  `operate-01` and `rain-01` remained layered.
+- Tightened the product policy from “one score plus one authored ambience bed”
+  to one file-backed background recording total. Score context changes now stop
+  the outgoing slot before starting the incoming track, and authored Suno
+  ambience is allowed only when the music context is silent.
+- Procedural camera-aware wind, water, birds, crickets, and crowd detail remains
+  on the WebAudio ambience bus because it is environmental texture rather than
+  another file-backed song.
+- Extended Playwright coverage to sample active audio every 50 ms through
+  Vision → Quick Start → tutorial offer → guided tutorial, separate menu →
+  game entry, and rapid Cozy/Architect changes. The focused suite passes 3/3
+  with no sample containing more than one file-backed background recording and
+  no authored ambience request during scored gameplay.
+- Final production build passes and still verifies exactly the 40 manifest
+  Suno assets in `public/` and `dist/`. Full Vitest passes 441 tests across 70
+  files with one intentional skip; lint/i18n passes with the seven pre-existing
+  Hook warnings and no errors.
+- The bundled web-game client reached the game with structured state and no
+  console-error artifact. Its canvas-only capture remained black under both
+  headless and headed software GL, so the local tutorial was also verified in
+  the full-page in-app browser: the course, guided overlay, highlighted task,
+  and controls rendered correctly with no console errors.
+- TODO: publish this follow-up and re-run the same active-stream audit against
+  the deployed Workers URL before closing ZK-443.

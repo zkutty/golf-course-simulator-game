@@ -45,6 +45,23 @@ function audible(elements: AuditedAudio[]) {
   return elements.filter((audio) => !audio.paused && audio.currentTime > 0 && audio.volume > .001);
 }
 
+async function audibleTimeline(page: Page, durationMs: number, intervalMs = 50) {
+  const timeline: AuditedAudio[][] = [];
+  const samples = Math.ceil(durationMs / intervalMs);
+  for (let index = 0; index < samples; index++) {
+    timeline.push(audible(await audioState(page)));
+    await page.waitForTimeout(intervalMs);
+  }
+  return timeline;
+}
+
+function expectSingleBackgroundStream(timeline: AuditedAudio[][], label: string) {
+  const overlaps = timeline
+    .filter((sample) => sample.length > 1)
+    .map((sample) => sample.map((audio) => audio.src.split("/audio/")[1] ?? audio.src));
+  expect(overlaps, `${label} must never overlap file-backed background tracks`).toEqual([]);
+}
+
 test("audio is lazy, mixer controls persist, and live play stays error-free", async ({ page }, testInfo) => {
   const audioRequests: string[] = [];
   const consoleErrors: string[] = [];
@@ -98,7 +115,7 @@ test("audio is lazy, mixer controls persist, and live play stays error-free", as
   expect(consoleErrors).toEqual([]);
 });
 
-test("Vision owns one Suno background stream and rapid game transitions settle cleanly", async ({ page }) => {
+test("Vision, tutorial, and game own one Suno background stream through rapid transitions", async ({ page }) => {
   await installAudioAudit(page);
   const mediaRequests: string[] = [];
   page.on("request", (request) => {
@@ -121,21 +138,47 @@ test("Vision owns one Suno background stream and rapid game transitions settle c
   await expect(page.getByRole("button", { name: "Quick Start" })).toBeVisible();
   await page.getByRole("button", { name: "Quick Start" }).click();
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
+  await expect(page.getByRole("button", { name: "Start guided course" })).toBeVisible();
+  expectSingleBackgroundStream(await audibleTimeline(page, 3_000), "Tutorial offer");
+  expect(audible(await audioState(page))).toHaveLength(1);
+
+  await page.getByRole("button", { name: "Start guided course" }).click();
+  expectSingleBackgroundStream(await audibleTimeline(page, 1_500), "Guided tutorial");
+  expect(audible(await audioState(page))).toHaveLength(1);
+  expect(mediaRequests.some((url) => url.includes("/audio/ambience/"))).toBe(false);
+  expect(mediaRequests.every((url) => /\/audio\/music\/suno\/.+\.mp3$/.test(url))).toBe(true);
+});
+
+test("rapid game music transitions never overlap file-backed tracks", async ({ page }) => {
+  await installAudioAudit(page);
+  const mediaRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/\/audio\/.*\.(?:m4a|mp3|ogg|wav)(?:\?|$)/.test(request.url())) {
+      mediaRequests.push(request.url().split("?")[0]);
+    }
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Quick Start" }).click();
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
+  await expect(page.getByRole("button", { name: "Skip tutorial" })).toBeVisible();
+  expectSingleBackgroundStream(await audibleTimeline(page, 1_000), "Game entry");
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Skip tutorial" }).click();
-  await expect.poll(async () => audible(await audioState(page)).length).toBe(2);
+  await expect.poll(async () => audible(await audioState(page)).length).toBe(1);
 
   await page.getByRole("button", { name: "Architect", exact: true }).click();
   await page.getByRole("button", { name: "Cozy", exact: true }).click();
   await page.getByRole("button", { name: "Architect", exact: true }).click();
   await page.getByRole("button", { name: "Cozy", exact: true }).click();
-  await page.waitForTimeout(2_700);
+  expectSingleBackgroundStream(await audibleTimeline(page, 2_700), "Rapid mode changes");
 
   const settled = await audioState(page);
   const settledAudible = audible(settled);
-  expect(settledAudible).toHaveLength(2);
-  expect(settled.filter((audio) => !audio.paused)).toHaveLength(2);
+  expect(settledAudible).toHaveLength(1);
+  expect(settled.filter((audio) => !audio.paused)).toHaveLength(1);
   expect(settledAudible.filter((audio) => audio.src.includes("/audio/music/suno/"))).toHaveLength(1);
-  expect(settledAudible.filter((audio) => audio.src.includes("/audio/ambience/suno/"))).toHaveLength(1);
-  expect(mediaRequests.every((url) => /\/audio\/(?:music|ambience)\/suno\/.+\.mp3$/.test(url))).toBe(true);
+  expect(settledAudible.filter((audio) => audio.src.includes("/audio/ambience/suno/"))).toHaveLength(0);
+  expect(mediaRequests.some((url) => url.includes("/audio/ambience/"))).toBe(false);
+  expect(mediaRequests.every((url) => /\/audio\/music\/suno\/.+\.mp3$/.test(url))).toBe(true);
 });
