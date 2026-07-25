@@ -46,8 +46,10 @@ jobs:
       - name: Build
         run: npm run build
         env:
+          # No VITE_SENTRY_ENVIRONMENT override here: this artifact is reused
+          # unmodified by both the staging and production deploy jobs below,
+          # so the environment tag is resolved from hostname at runtime instead.
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
-          VITE_SENTRY_ENVIRONMENT: playtest
           VITE_CF_WEB_ANALYTICS_TOKEN: ${{ vars.VITE_CF_WEB_ANALYTICS_TOKEN }}
           SENTRY_ORG: ${{ vars.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
