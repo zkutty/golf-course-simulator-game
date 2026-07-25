@@ -13,7 +13,7 @@ import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStor
 import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { previewTerrainStroke, type TerrainStrokePreview } from "./game/models/terrainStroke";
-import { corridorFeature, rasterizeSurfaceFeature, regionFeature, simplifySurfacePoints } from "./game/models/surfaceIntent";
+import { corridorFeature, rasterizeSurfaceFeatureDetailed, regionFeature, simplifySurfacePoints } from "./game/models/surfaceIntent";
 import { qualityResolutionMultiplier, resolveGraphicsQuality } from "./game/render/graphicsQuality";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
@@ -2030,6 +2030,13 @@ export default function App() {
         width: course.width,
         height: course.height,
         smoothSurfaceFeatures: course.surfaceIntent?.features.length ?? 0,
+        surfaceFeatures: (course.surfaceIntent?.features ?? []).map((feature) => ({
+          id: feature.id,
+          terrain: feature.terrain,
+          kind: feature.geometry.kind,
+          coverage: feature.coverage.length,
+          renderRings: feature.renderRings?.length ?? 0,
+        })),
         holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length,
         terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>),
         obstacleCounts: course.obstacles.reduce((counts, obstacle) => ({ ...counts, [obstacle.type]: (counts[obstacle.type] ?? 0) + 1 }), {} as Partial<Record<ObstacleType, number>>),
@@ -2233,6 +2240,7 @@ export default function App() {
       },
       editor: {
         mode: editorMode,
+        terrainTool,
         selectedTerrain: selected,
         selectedDecoration: decorationKind,
         decorationRotation,
@@ -2261,7 +2269,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -2288,6 +2296,20 @@ export default function App() {
             [terrain]: (counts[terrain] ?? 0) + 1,
           }), {} as Partial<Record<Terrain, number>>),
           courseHash: hashGameState({ course: current.course, world: current.world, live: liveSnapshot }),
+        };
+      },
+      terrainSurfaceState: () => {
+        const current = gameStateRef.current.course;
+        return {
+          width: current.width,
+          height: current.height,
+          features: (current.surfaceIntent?.features ?? []).map((feature) => ({
+            id: feature.id,
+            terrain: feature.terrain,
+            kind: feature.geometry.kind,
+            coverage: [...feature.coverage],
+            renderRings: feature.renderRings?.map((ring) => ring.map((point) => ({ ...point }))) ?? [],
+          })),
         };
       },
       setPaintCash: (cash: number) => {
@@ -2714,13 +2736,28 @@ export default function App() {
     const stride = Math.max(1, Math.ceil(points.length / maxKnots));
     const sampled = points
       .filter((_, index) => index % stride === 0 || index === points.length - 1)
-      .map((point) => ({ x: point.x + 0.5, y: point.y + 0.5 }));
-    const knots = simplifySurfacePoints(sampled, terrainTool === "area" ? 0.45 : 0.8);
+      .map((point) => ({ ...point }));
+    if (sampled.length === 1) {
+      sampled[0] = {
+        x: Math.floor(sampled[0].x) + 0.5,
+        y: Math.floor(sampled[0].y) + 0.5,
+      };
+    }
+    let knots = simplifySurfacePoints(sampled, terrainTool === "area" ? 0.28 : 0.42);
+    if (terrainTool === "area" && knots.length >= 3) {
+      const first = knots[0];
+      const last = knots[knots.length - 1];
+      if (Math.hypot(last.x - first.x, last.y - first.y) <= 1) {
+        knots = [...knots.slice(0, -1), { ...first }];
+      }
+    }
     const feature = terrainTool === "area" && knots.length >= 3
       ? regionFeature(course, selected, knots)
       : corridorFeature(course, selected, knots, Math.max(0.9, terrainBrushWidth));
-    const coveragePoints = rasterizeSurfaceFeature(feature, course.width, course.height);
+    const raster = rasterizeSurfaceFeatureDetailed(feature, course.width, course.height);
+    const coveragePoints = raster.tiles;
     feature.coverage = coveragePoints.map((point) => point.y * course.width + point.x);
+    feature.renderRings = raster.rings;
     return { feature, coveragePoints };
   }, [course, selected, terrainBrushWidth, terrainTool]);
 
@@ -2751,6 +2788,17 @@ export default function App() {
     }
 
     const { feature } = buildTerrainSurfaceFeature(points);
+    const acceptedIndices = new Set(
+      preview.acceptedTiles.map((point) => point.y * course.width + point.x),
+    );
+    const acceptedRaster = rasterizeSurfaceFeatureDetailed(
+      feature,
+      course.width,
+      course.height,
+      acceptedIndices,
+    );
+    feature.coverage = acceptedRaster.tiles.map((point) => point.y * course.width + point.x);
+    feature.renderRings = acceptedRaster.rings;
     dispatch({ type: "PAINT_TILES", tiles: preview.tiles, surfaceFeature: feature });
     setCapital((capital) => ({
       spent: capital.spent + preview.charged,
@@ -2773,7 +2821,7 @@ export default function App() {
       setPaintError(null);
     }
     void audio.playSfx("brush");
-  }, [world.isBankrupt, getTerrainStrokePreview, buildTerrainSurfaceFeature, selected, dispatch, audio, t]);
+  }, [world.isBankrupt, getTerrainStrokePreview, buildTerrainSurfaceFeature, selected, course.width, course.height, dispatch, audio, t]);
 
   // Smart fairway painting: paint fairway along centerline with specified width in yards
   function smartPaintFairway(widthYards: number) {

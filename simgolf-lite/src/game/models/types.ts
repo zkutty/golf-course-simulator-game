@@ -65,6 +65,12 @@ export interface SurfaceFeature {
   geometry: SurfaceCorridorGeometry | SurfaceRegionGeometry;
   /** Row-major cells accepted when the feature was committed. */
   coverage: number[];
+  /**
+   * Optional mask-derived visual contours. New authoring stores these rings
+   * after validity clipping so rendering, economics, and simulation coverage
+   * cannot disagree. Legacy v1 features continue to render from `geometry`.
+   */
+  renderRings?: SurfacePoint[][];
 }
 
 export interface SurfaceIntentV1 {

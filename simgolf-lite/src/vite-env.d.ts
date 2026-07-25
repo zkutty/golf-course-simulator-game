@@ -28,6 +28,17 @@ interface Window {
       terrainCounts: Partial<Record<import("./game/models/types").Terrain, number>>;
       courseHash: string;
     };
+    terrainSurfaceState(): {
+      width: number;
+      height: number;
+      features: Array<{
+        id: string;
+        terrain: import("./game/models/types").Terrain;
+        kind: "corridor" | "region";
+        coverage: number[];
+        renderRings: Array<Array<{ x: number; y: number }>>;
+      }>;
+    };
     setPaintCash(cash: number): void;
     setPropertyFixture(): void;
     setPlayerProFixture(): void;

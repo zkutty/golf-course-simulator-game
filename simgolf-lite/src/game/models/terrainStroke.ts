@@ -9,6 +9,8 @@ export interface TerrainPaintTile extends Point {
 
 export interface TerrainStrokePreview {
   tiles: TerrainPaintTile[];
+  /** Valid coverage including already-matching cells, used to clip visual intent. */
+  acceptedTiles: TerrainPaintTile[];
   changedCount: number;
   duplicateCount: number;
   unchangedCount: number;
@@ -46,6 +48,7 @@ export function computeTerrainBatch(input: TerrainBatchInput): TerrainStrokePrev
   const costMult = input.costMult ?? 1;
   const seen = new Set<string>();
   const tiles: TerrainPaintTile[] = [];
+  const acceptedTiles: TerrainPaintTile[] = [];
   const excluded = { outOfBounds: 0, unowned: 0, locked: 0 };
   let duplicateCount = 0;
   let unchangedCount = 0;
@@ -74,6 +77,7 @@ export function computeTerrainBatch(input: TerrainBatchInput): TerrainStrokePrev
       excluded.locked++;
       continue;
     }
+    acceptedTiles.push(tile);
     const prev = course.tiles[tile.y * course.width + tile.x];
     if (prev === tile.terrain) {
       unchangedCount++;
@@ -92,6 +96,7 @@ export function computeTerrainBatch(input: TerrainBatchInput): TerrainStrokePrev
   const shortfall = Math.max(0, net - cash);
   return {
     tiles,
+    acceptedTiles,
     changedCount: tiles.length,
     duplicateCount,
     unchangedCount,
