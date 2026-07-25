@@ -12,7 +12,9 @@ test("M19 parkland materials, rotations, and static-motion fallback", async ({ p
   const box = await canvas.boundingBox();
   expect(box?.width).toBeGreaterThan(700);
   expect(box?.height).toBeGreaterThan(500);
-  await page.getByRole("button", { name: "Photo" }).click();
+  // Photo mode remains available from its documented keyboard shortcut even
+  // when the compact workspace toolbar does not render a dedicated button.
+  await page.keyboard.press("p");
   await expect(page.getByTestId("photo-mode")).toBeVisible();
   await page.getByTestId("photo-mode").evaluate((element) => { element.style.display = "none"; });
   const overview = await canvas.screenshot({ path: "artifacts/m19-parkland-overview.png" });

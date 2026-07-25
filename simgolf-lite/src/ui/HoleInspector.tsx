@@ -1,11 +1,10 @@
 import type { HoleEvaluation } from "../game/eval/evaluateHole";
 import { formatCurrency } from "../i18n/format";
-import type { Course, Hole, ParSetting, PinRotation, Point, TeeSet, Terrain, ObstacleType } from "../game/models/types";
+import type { Course, Hole, ParSetting, PinRotation, TeeSet, Terrain, ObstacleType } from "../game/models/types";
 import { computeHoleTerrainStats, type TerrainComposition } from "../game/eval/terrainStats";
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
 import type { ReactNode } from "react";
-import { useState } from "react";
 import { getParSetting, getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup } from "../game/models/courseSetup";
 
 interface HoleInspectorProps {
@@ -29,8 +28,6 @@ interface HoleInspectorProps {
   setObstacleType?: (type: ObstacleType) => void;
   onBeginTeePlacement?: (teeSet: TeeSet) => void;
   onBeginPinPlacement?: (pinRotation: PinRotation) => void;
-  onSetTeeBox?: (teeSet: TeeSet, point: Point) => void;
-  onSetPinPosition?: (pinRotation: PinRotation, point: Point) => void;
   onRemoveTeeBox?: (teeSet: TeeSet) => void;
   onRemovePinPosition?: (pinRotation: PinRotation) => void;
   onSetActivePinRotation?: (pinRotation: PinRotation) => void;
@@ -39,15 +36,26 @@ interface HoleInspectorProps {
   onSetTeePar?: (teeSet: TeeSet, setting: ParSetting) => void;
 }
 
-function MarkerRow(props: { label: string; point: Point | null; onPlace: () => void; onSave: (point: Point) => void; onRemove: () => void }) {
-  const [x, setX] = useState(props.point?.x ?? 0);
-  const [y, setY] = useState(props.point?.y ?? 0);
-  return <div style={{ display: "grid", gridTemplateColumns: "minmax(88px,1fr) 48px 48px auto auto", gap: 5, alignItems: "center" }}>
-    <strong style={{ fontSize: 11 }}>{props.label}</strong>
-    <input aria-label={translateCurrent("courseSetup.coordX", { marker: props.label })} type="number" value={x} onChange={(event) => setX(Number(event.target.value))} style={{ width: 46 }} />
-    <input aria-label={translateCurrent("courseSetup.coordY", { marker: props.label })} type="number" value={y} onChange={(event) => setY(Number(event.target.value))} style={{ width: 46 }} />
-    <button onClick={() => props.onSave({ x, y })} style={{ fontSize: 10 }}>{translateCurrent("courseSetup.save")}</button>
-    <span style={{ display: "flex", gap: 3 }}><button onClick={props.onPlace} style={{ fontSize: 10 }}>{translateCurrent("courseSetup.map")}</button>{props.point && <button aria-label={translateCurrent("courseSetup.remove", { marker: props.label })} onClick={props.onRemove} style={{ fontSize: 10 }}>×</button>}</span>
+function MarkerRow(props: { id: string; label: string; placed: boolean; onPlace: () => void; onRemove: () => void }) {
+  const action = translateCurrent(props.placed ? "courseSetup.move" : "courseSetup.place");
+  return <div style={{ display: "grid", gridTemplateColumns: "minmax(112px,1fr) auto", gap: 8, alignItems: "center" }}>
+    <span style={{ minWidth: 0 }}>
+      <strong style={{ display: "block", fontSize: 11 }}>{props.label}</strong>
+      <small style={{ display: "block", marginTop: 1, color: props.placed ? "#3f6d35" : "#746b5c" }}>
+        {translateCurrent(props.placed ? "courseSetup.placed" : "courseSetup.notPlaced")}
+      </small>
+    </span>
+    <span style={{ display: "flex", gap: 4 }}>
+      <button
+        data-testid={`place-${props.id}`}
+        aria-label={translateCurrent("courseSetup.markerActionAria", { action, marker: props.label })}
+        onClick={props.onPlace}
+        style={{ minWidth: 52, fontSize: 10 }}
+      >
+        {action}
+      </button>
+      {props.placed && <button aria-label={translateCurrent("courseSetup.remove", { marker: props.label })} onClick={props.onRemove} style={{ fontSize: 10 }}>×</button>}
+    </span>
   </div>;
 }
 
@@ -71,8 +79,6 @@ export function HoleInspector({
   setObstacleType,
   onBeginTeePlacement,
   onBeginPinPlacement,
-  onSetTeeBox,
-  onSetPinPosition,
   onRemoveTeeBox,
   onRemovePinPosition,
   onSetActivePinRotation,
@@ -217,7 +223,7 @@ export function HoleInspector({
             const point = getTeeBox(hole, teeSet);
             const selected = teeSet === selectedTeeSet;
             return <div key={`${teeSet}-${point?.x ?? "x"}-${point?.y ?? "y"}`} data-testid={`tee-row-${teeSet}`} style={{ padding: 6, borderRadius: 6, border: selected ? "2px solid #7b5429" : "1px solid #d7c8aa", background: selected ? "#fff7e6" : "rgba(255,255,255,.55)" }} onClick={() => onSelectTeeSet?.(teeSet)}>
-              <MarkerRow label={`${teeSet[0].toUpperCase() + teeSet.slice(1)} ${translateCurrent("courseSetup.tee")}`} point={point} onPlace={() => onBeginTeePlacement?.(teeSet)} onSave={(next) => onSetTeeBox?.(teeSet, next)} onRemove={() => onRemoveTeeBox?.(teeSet)} />
+              <MarkerRow id={`${teeSet}-tee`} label={`${teeSet[0].toUpperCase() + teeSet.slice(1)} ${translateCurrent("courseSetup.tee")}`} placed={!!point} onPlace={() => onBeginTeePlacement?.(teeSet)} onRemove={() => onRemoveTeeBox?.(teeSet)} />
               {selected && <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 6, fontSize: 11 }}>
                 <span>{point ? translateCurrent("courseSetup.routeSummary", { yards: Math.round(effectiveDistanceYards), status: translateCurrent(isPlayable ? "courseSetup.playable" : "courseSetup.routeBlocked") }) : translateCurrent("courseSetup.notErected")}</span>
                 <span style={{ marginLeft: "auto" }}>{translateCurrent("courseSetup.par")}</span>
@@ -231,7 +237,7 @@ export function HoleInspector({
               </div>}
             </div>;
           })}
-          {PIN_ROTATIONS.map((pinRotation) => { const point = getPinPosition(hole, pinRotation); return <MarkerRow key={`${pinRotation}-${point?.x ?? "x"}-${point?.y ?? "y"}`} label={translateCurrent("courseSetup.pin", { rotation: pinRotation })} point={point} onPlace={() => onBeginPinPlacement?.(pinRotation)} onSave={(next) => onSetPinPosition?.(pinRotation, next)} onRemove={() => onRemovePinPosition?.(pinRotation)} />; })}
+          {PIN_ROTATIONS.map((pinRotation) => { const point = getPinPosition(hole, pinRotation); return <MarkerRow key={`${pinRotation}-${point?.x ?? "x"}-${point?.y ?? "y"}`} id={`pin-${pinRotation}`} label={translateCurrent("courseSetup.pin", { rotation: pinRotation })} placed={!!point} onPlace={() => onBeginPinPlacement?.(pinRotation)} onRemove={() => onRemovePinPosition?.(pinRotation)} />; })}
         </div>
         {setupIssues.length > 0 && <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: "#8b2e1b", fontSize: 11 }}>{setupIssues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>}
         <small style={{ display: "block", marginTop: 7, opacity: .68 }}>{translateCurrent("courseSetup.help")}</small>

@@ -48,6 +48,11 @@ describe("terrain paint strokes", () => {
       { x: 0, y: 0, terrain: "fairway" },
       { x: 3, y: 2, terrain: "fairway" },
     ]);
+    expect(preview.acceptedTiles).toEqual([
+      { x: 0, y: 0, terrain: "fairway" },
+      { x: 1, y: 0, terrain: "fairway" },
+      { x: 3, y: 2, terrain: "fairway" },
+    ]);
     expect(preview).toMatchObject({ changedCount: 2, duplicateCount: 1, unchangedCount: 1, excludedCount: 1 });
     expect(preview.excluded.outOfBounds).toBe(1);
 

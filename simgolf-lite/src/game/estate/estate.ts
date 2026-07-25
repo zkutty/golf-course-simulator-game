@@ -1,7 +1,12 @@
 import type { Course, Estate, EstateParcel, LandTheme, Point, Terrain } from "../models/types";
 import { COURSE_HEIGHT, COURSE_WIDTH, STARTER_PARCEL_HEIGHT, STARTER_PARCEL_WIDTH } from "../models/constants";
 
-export const ESTATE_GENERATION_VERSION = 1 as const;
+/**
+ * V2 removes the separately generated starter-property terrain overlay. The
+ * complete estate now comes from one generation pass, so coasts and other
+ * natural features cannot stop at the starter parcel boundary.
+ */
+export const ESTATE_GENERATION_VERSION = 2 as const;
 const TERRAIN_CODES: Record<Terrain, string> = {
   fairway: "f", rough: "r", deep_rough: "d", sand: "s", waste_area: "a",
   water: "w", wetland: "l", green: "g", tee: "t", path: "p",
@@ -241,7 +246,7 @@ export function starterParcelOffset(width = COURSE_WIDTH, height = COURSE_HEIGHT
 
 export function validateEstate(estate: Estate | undefined, width: number, height: number): boolean {
   const expected = width * height;
-  if (!estate || estate.generationVersion !== 1 || !Number.isFinite(estate.seed) || estate.parcels.length !== 9) return false;
+  if (!estate || (estate.generationVersion !== 1 && estate.generationVersion !== 2) || !Number.isFinite(estate.seed) || estate.parcels.length !== 9) return false;
   if (!estate.parcels.some((p) => p.id === estate.starterParcelId) || !estate.ownedParcelIds.includes(estate.starterParcelId)) return false;
   if (new Set(estate.parcels.map((p) => p.id)).size !== 9 || estate.ownedParcelIds.some((id) => !estate.parcels.some((p) => p.id === id))) return false;
   const map = decodeParcelMap(estate, expected);

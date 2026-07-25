@@ -156,3 +156,75 @@ export function buildTerrainContours(
   }
   return contours;
 }
+
+/**
+ * Extracts rounded rings for an arbitrary row-major coverage set. This is the
+ * rendering counterpart to terrain-stroke coverage: adjacent authored
+ * features can be drawn as one union without internal stroke seams.
+ */
+export function buildCoverageContours(
+  coverage: readonly number[],
+  width: number,
+  height: number,
+): SurfacePoint[][] {
+  const remaining = new Set(coverage.filter((index) => (
+    Number.isInteger(index) && index >= 0 && index < width * height
+  )));
+  const rings: SurfacePoint[][] = [];
+  while (remaining.size > 0) {
+    const seed = remaining.values().next().value as number;
+    const component = [seed];
+    remaining.delete(seed);
+    for (let cursor = 0; cursor < component.length; cursor++) {
+      const index = component[cursor];
+      const x = index % width;
+      const y = Math.floor(index / width);
+      for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbor = ny * width + nx;
+        if (!remaining.delete(neighbor)) continue;
+        component.push(neighbor);
+      }
+    }
+
+    const inComponent = new Set(component);
+    const edges: Edge[] = [];
+    for (const index of component) {
+      const x = index % width;
+      const y = Math.floor(index / width);
+      const contains = (nx: number, ny: number) => (
+        nx >= 0 && ny >= 0 && nx < width && ny < height &&
+        inComponent.has(ny * width + nx)
+      );
+      if (!contains(x, y - 1)) edges.push({ start: { x, y }, end: { x: x + 1, y } });
+      if (!contains(x + 1, y)) edges.push({ start: { x: x + 1, y }, end: { x: x + 1, y: y + 1 } });
+      if (!contains(x, y + 1)) edges.push({ start: { x: x + 1, y: y + 1 }, end: { x, y: y + 1 } });
+      if (!contains(x - 1, y)) edges.push({ start: { x, y: y + 1 }, end: { x, y } });
+    }
+
+    const byStart = new Map<string, number[]>();
+    edges.forEach((edge, index) => {
+      const edgeKey = key(edge.start);
+      byStart.set(edgeKey, [...(byStart.get(edgeKey) ?? []), index]);
+    });
+    const unused = new Set(edges.map((_, index) => index));
+    while (unused.size > 0) {
+      const firstIndex = unused.values().next().value as number;
+      const first = edges[firstIndex];
+      const ring: SurfacePoint[] = [{ ...first.start }];
+      let edgeIndex = firstIndex;
+      while (unused.delete(edgeIndex)) {
+        const end = edges[edgeIndex].end;
+        if (key(end) === key(first.start)) break;
+        ring.push({ ...end });
+        const next = (byStart.get(key(end)) ?? []).find((candidate) => unused.has(candidate));
+        if (next == null) break;
+        edgeIndex = next;
+      }
+      if (ring.length >= 3) rings.push(smoothClosedContour(ring));
+    }
+  }
+  return rings;
+}

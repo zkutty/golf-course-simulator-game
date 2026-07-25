@@ -8,6 +8,8 @@ import { LIVE } from "./liveConfig";
 import type { GolferArchetypeName } from "./types";
 import { courseOperations } from "./pace";
 import { propertyAccessMultiplier } from "../property/property";
+import { activeCourseLayout } from "../models/courseLayouts";
+import { paceIdentity } from "./paceHistory";
 
 function clamp(x: number, a: number, b: number): number {
   return Math.max(a, Math.min(b, x));
@@ -42,13 +44,17 @@ export function courseProfile(course: Course, world: World): CourseProfile {
     -1,
     1
   );
+  const layout = activeCourseLayout(course);
+  const presetFallback = courseOperations(course, layout.id).preset === "relaxed"
+    ? 0
+    : courseOperations(course, layout.id).preset === "brisk" ? 1 : .5;
   return {
     quality: clamp01(summary.courseQuality / 100),
     difficulty,
     scenery,
     premium,
     prestige: clamp01(world.reputation / 100),
-    pace: courseOperations(course).preset === "relaxed" ? 0 : courseOperations(course).preset === "brisk" ? 1 : .5,
+    pace: paceIdentity(world, layout.id, presetFallback).score,
   };
 }
 

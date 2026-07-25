@@ -167,8 +167,12 @@ export function generateWildLand(
     const edge = rng.nextInt(0, 3); // 0=N 1=E 2=S 3=W
     const along = edge === 0 || edge === 2 ? width : height;
     const across = edge === 0 || edge === 2 ? height : width;
-    const minDepth = Math.max(5, Math.floor(across * 0.11));
-    const maxDepth = Math.max(minDepth + 2, Math.floor(across * 0.22));
+    // Estates need both shallow coastal sites and occasional bays that reach
+    // the central starter property. Keeping the range proportional makes the
+    // same generator work for previews and full 220×140 maps while leaving
+    // most of every estate buildable.
+    const minDepth = Math.max(5, Math.floor(across * 0.16));
+    const maxDepth = Math.max(minDepth + 2, Math.floor(across * 0.32));
     let depth = rng.nextInt(minDepth, maxDepth);
     for (let i = 0; i < along; i++) {
       // Low-frequency random walk makes bays and headlands without isolated

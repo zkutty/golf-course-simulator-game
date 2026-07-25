@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { worldToIso } from "./iso";
-import { MAX_WHEEL_DELTA_PX, nextWheelZoomTarget, normalizeWheelDelta } from "./wheelZoom";
+import {
+  MAX_WHEEL_DELTA_PX,
+  gestureScaleToWheelDelta,
+  nextWheelZoomTarget,
+  normalizeWheelDelta,
+} from "./wheelZoom";
 
 const viewport = { width: 1200, height: 800 };
 const cursor = { x: 330, y: 245 };
@@ -44,5 +49,31 @@ describe("wheel zoom targeting", () => {
     }
     camera = nextWheelZoomTarget({ camera, cursor, viewport, deltaPixels: -1_000_000, rotation: 0, minZoom: 0.15, maxZoom: 8 });
     expect(camera.zoom).toBeLessThanOrEqual(8);
+  });
+
+  it("maps Safari pinch scale to the same zoom target contract", () => {
+    const camera = { cx: 32, cy: 32, zoom: 1 };
+    const zoomedIn = nextWheelZoomTarget({
+      camera,
+      cursor,
+      viewport,
+      deltaPixels: gestureScaleToWheelDelta(1.5),
+      rotation: 0,
+      minZoom: 0.15,
+      maxZoom: 8,
+    });
+    expect(zoomedIn.zoom).toBeCloseTo(1.5, 8);
+
+    const zoomedOut = nextWheelZoomTarget({
+      camera: zoomedIn,
+      cursor,
+      viewport,
+      deltaPixels: gestureScaleToWheelDelta(0.5),
+      rotation: 0,
+      minZoom: 0.15,
+      maxZoom: 8,
+    });
+    expect(zoomedOut.zoom).toBeCloseTo(0.75, 8);
+    expect(gestureScaleToWheelDelta(0)).toBe(0);
   });
 });

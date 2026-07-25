@@ -143,6 +143,37 @@ Current request: “I’ve created all the songs and added them as comments to t
   and no errors.
 - Certification-manifest validation passes and correctly reports `HOLD`.
 
+## M28 and M30 completion pass — 2026-07-24
+
+Current request: “Implement rest of M28 and M30 now”
+
+- Resolved the authoritative remaining scope from Linear: M30 ZK-280–ZK-284 and M28 ZK-253–ZK-261.
+- Added the M30 data foundation: bounded per-course 7/28-day pace history, cohort-specific identity, save schema v18 migration, deterministic tee-hour reports, and history normalization.
+- Added live operational consequences: configurable last tee/daylight/guest-recovery policies, tournament groups, strict-sunset and congestion exits, marshal pickup recovery, exact course-attributed compensation, and staff overtime.
+- Added measured hole occupancy/queue/recovery evidence, spillback-suppressed bottleneck diagnosis, ranked actions/tradeoffs, accessible live heat markers, and grouped pace-report UI.
+
+### Verification and release status
+
+- M30 focused coverage passes alongside live, save, and tournament regressions:
+  46/46 tests. The full suite passes 438 tests across 70 files with one
+  intentional skip.
+- Production build and localization/lint gates pass; lint retains the seven
+  pre-existing Hook warnings and no errors.
+- M30 browser acceptance passes for identity, measured local peaks, map focus,
+  7/28-day filters, and multi-course reporting. The fixture screenshot was
+  visually inspected, and the bundled web-game client emitted structured state
+  without a console-error artifact.
+- M28 clean-profile release acceptance passes on installed Chrome, Playwright
+  Firefox, and WebKit (3/3). Golden save/migration/options/accessibility paths
+  pass 9/9; PWA offline/install/save persistence and fuzz pass.
+- The 81-run, 104-week balance matrix passes. The final-code 30-week soak
+  completes 4,638 rounds with 3.01 MB retained-heap growth. Headless renderer work is 0.35 ms
+  against the 8 ms budget; headless frame p95 remains report-only.
+- Added an evidence-enforcing M28 manifest and validator for `1.0.0-rc.3`.
+  Its valid decision is `HOLD`: exact-main deployment, 5–10 unfamiliar-player
+  sessions, stable Firefox/Safari sign-off, physical low/mid hardware, and
+  resulting triage remain external. No human gate was fabricated.
+
 ## Vision/audio audit and Linear bug — 2026-07-24
 
 Current request: “Open a bug in linear that the vision page of the site has two
@@ -208,3 +239,74 @@ game to ensure we only have the suno songs we created so there isn’t overlap.�
   inspected; both emitted structured state without a console-error artifact.
 - The source and local production artifact are fixed. Publishing that artifact
   to production remains a separate deployment action.
+
+## ZK-443 follow-up: tutorial/game music ownership — 2026-07-24
+
+Current request: “there is a larger problem that more music starts overlapping
+in the game. when i click through to tutorial now sounds like there are 3
+different music sounds going on”
+
+- Reproduced the screenshot's Quick Start tutorial-offer path with every
+  `HTMLAudioElement` instrumented. The first samples contained three audible
+  recordings: `title-01`, `operate-01`, and `rain-01`; after the title fade,
+  `operate-01` and `rain-01` remained layered.
+- Tightened the product policy from “one score plus one authored ambience bed”
+  to one file-backed background recording total. Score context changes now stop
+  the outgoing slot before starting the incoming track, and authored Suno
+  ambience is allowed only when the music context is silent.
+- Procedural camera-aware wind, water, birds, crickets, and crowd detail remains
+  on the WebAudio ambience bus because it is environmental texture rather than
+  another file-backed song.
+- Extended Playwright coverage to sample active audio every 50 ms through
+  Vision → Quick Start → tutorial offer → guided tutorial, separate menu →
+  game entry, and rapid Cozy/Architect changes. The focused suite passes 3/3
+  with no sample containing more than one file-backed background recording and
+  no authored ambience request during scored gameplay.
+- Final production build passes and still verifies exactly the 40 manifest
+  Suno assets in `public/` and `dist/`. Full Vitest passes 441 tests across 70
+  files with one intentional skip; lint/i18n passes with the seven pre-existing
+  Hook warnings and no errors.
+- The bundled web-game client reached the game with structured state and no
+  console-error artifact. Its canvas-only capture remained black under both
+  headless and headed software GL, so the local tutorial was also verified in
+  the full-page in-app browser: the course, guided overlay, highlighted task,
+  and controls rendered correctly with no console errors.
+- TODO: publish this follow-up and re-run the same active-stream audit against
+  the deployed Workers URL before closing ZK-443.
+
+## ZK-445 Hole Wizard zoom ownership — 2026-07-24
+
+Current request: “record a bug in linear that when in hole wizard it won't let
+you zoom (looks like it tries to snap to the entire hole). then try to fix the
+bug”
+
+- Opened high-priority Linear bug ZK-445 in `golf-sim`, related it to the
+  completed general trackpad issue ZK-264, marked it In Progress, and attached
+  the user screenshot.
+- Reproduced the hole-editor camera feedback defect with a focused Playwright
+  regression: a centered manual zoom caused the explicit Fit command to be
+  discarded because Pixi classified camera echoes by matching center
+  coordinates.
+- Replaced coordinate-based echo detection with exact object-identity
+  ownership. Manual camera reports now persist the live target zoom and drop
+  the auto-fit bounds, preventing a later state round-trip from reapplying the
+  whole-hole framing.
+- Added Safari `gesturestart`/`gesturechange`/`gestureend` pinch support on the
+  course surface, with native page zoom suppressed and pinch scale translated
+  into the same cursor-anchored logarithmic zoom contract as wheel input.
+- Focused unit coverage and TypeScript checks pass. The targeted browser
+  regression now covers wheel zoom, stable settling, explicit Fit after manual
+  zoom, Safari-style pinch zoom, and post-pinch persistence.
+- The required bundled web-game client completed on the M23 hole-editor fixture
+  with structured state, a rendered course capture, and no console-error
+  artifact.
+
+### ZK-445 remaining
+
+- None for the scoped fix. The final focused screenshot was inspected; the M12,
+  scenic-surround, and ZK-445 browser regressions pass 3/3; focused lint has no
+  errors; and a direct production Vite bundle passes.
+- Verification evidence was posted to Linear and ZK-445 is Done.
+- The aggregate `npm run build` remains blocked by an unrelated concurrent
+  `App.tsx` edit that calls `getPinPosition` without importing it. That file is
+  outside the ZK-445 change set and was left untouched.

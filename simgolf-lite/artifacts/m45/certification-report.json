@@ -1,0 +1,87 @@
+{
+  "ok": true,
+  "schemaVersion": 1,
+  "milestone": "M45: Closed-Loop Bug Capture & Repair",
+  "decision": "HOLD",
+  "generatedAt": "2026-07-25T04:03:50.003Z",
+  "source": {
+    "commit": "ee45f82a4e7a972a2789c5b2f17d11df56c05ae4",
+    "dirty": true
+  },
+  "blockers": [
+    "uncommitted-workspace",
+    "manual-staging-golden-path",
+    "sentry-staging-group",
+    "human-approved-draft-repair"
+  ],
+  "errors": [],
+  "records": {
+    "linearIssue": null,
+    "sentryGroup": null,
+    "draftPullRequest": null,
+    "stagingDeployment": null,
+    "cleanupDisposition": null
+  },
+  "gates": [
+    {
+      "id": "contract-and-privacy",
+      "kind": "automated",
+      "command": "npm run test:ci -- src/bug-reporting",
+      "status": "passed",
+      "evidence": "Contract, sanitizer, diagnostics, client, feature, screenshot, and event coverage passed inside the repository-wide Vitest run: 78 files, 495 tests passed, and one intentional skip."
+    },
+    {
+      "id": "worker-intake-runtime",
+      "kind": "automated",
+      "command": "npm run test:worker",
+      "status": "passed",
+      "evidence": "Five Worker suites passed 25 unit tests and the workerd/Durable Object runtime suite passed six integration tests, including concurrency convergence, completed-regression routing, deleted-canonical recovery, and both ambiguous-mutation reconciliation outcomes."
+    },
+    {
+      "id": "dispatcher-dry-runs",
+      "kind": "automated",
+      "command": "npm run test:dispatcher",
+      "status": "passed",
+      "evidence": "Ten dispatcher policy tests passed, including human approval, authentication/access-control exclusions, workflow-state fallback, reproduction and required-check failures, distributed claims, dry-run behavior, and draft-PR-only success."
+    },
+    {
+      "id": "reporter-and-crash-e2e",
+      "kind": "automated",
+      "command": "npx playwright test e2e/m45-bug-reporter.e2e.ts e2e/m45-bug-reporting.e2e.ts",
+      "status": "passed",
+      "evidence": "Six Playwright scenarios passed: required-only reporting, exact consented preview, separate diagnostics/screenshot consent, keyboard focus restoration, cancel/retry report-ID stability, and React crash handoff."
+    },
+    {
+      "id": "build-lint-unit",
+      "kind": "automated",
+      "command": "npm run build && npm run lint && npm run test:ci",
+      "status": "passed",
+      "evidence": "Production build, audio/offline injection, application/Node/Worker TypeScript, lint/i18n, and all 495 non-skipped tests passed. Lint reported only seven pre-existing React Hook warnings."
+    },
+    {
+      "id": "pwa-performance-deploy",
+      "kind": "automated",
+      "command": "npm run test:pwa && npm run test:perf && npm run deploy:check:staging",
+      "status": "passed",
+      "evidence": "Strict-CSP install/offline/save PWA smoke passed; 36-hole/100-golfer renderer work measured 0.27 ms against the 8 ms budget; staging Wrangler dry-run passed with the intended Worker, assets, Durable Object, rate-limit, routing, and feature-flag bindings."
+    },
+    {
+      "id": "manual-staging-golden-path",
+      "kind": "external",
+      "status": "not-run",
+      "evidence": null
+    },
+    {
+      "id": "sentry-staging-group",
+      "kind": "external",
+      "status": "not-run",
+      "evidence": null
+    },
+    {
+      "id": "human-approved-draft-repair",
+      "kind": "external",
+      "status": "not-run",
+      "evidence": null
+    }
+  ]
+}

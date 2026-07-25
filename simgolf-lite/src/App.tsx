@@ -13,7 +13,7 @@ import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStor
 import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { previewTerrainStroke, type TerrainStrokePreview } from "./game/models/terrainStroke";
-import { corridorFeature, rasterizeSurfaceFeature, regionFeature, simplifySurfacePoints } from "./game/models/surfaceIntent";
+import { corridorFeature, rasterizeSurfaceFeatureDetailed, regionFeature, simplifySurfacePoints } from "./game/models/surfaceIntent";
 import { qualityResolutionMultiplier, resolveGraphicsQuality } from "./game/render/graphicsQuality";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
@@ -81,7 +81,7 @@ import { PauseOverlay } from "./ui/appShell/PauseOverlay";
 import { LoadingCard } from "./ui/appShell/LoadingCard";
 import { SettingsModal } from "./ui/SettingsModal";
 import { LIVE, type SpeedName } from "./game/live/liveConfig";
-import { courseForCourseSetup, getParSetting, getTeeBox, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSetup } from "./game/models/courseSetup";
+import { courseForCourseSetup, getParSetting, getPinPosition, getTeeBox, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSetup } from "./game/models/courseSetup";
 import { eventMatchesBinding } from "./accessibility/keybindings";
 import { T } from "./i18n/T";
 import { ambientMixFor, distanceVolume, musicContextFor } from "./audio/environment";
@@ -112,9 +112,10 @@ import { evaluateTournamentCourseQualification } from "./game/tournaments/eligib
 import type { TournamentTier } from "./game/tournaments/types";
 import { debugLog } from "./utils/debugLog";
 import { CourseManagerPanel } from "./ui/CourseManagerPanel";
-import { activeCourseLayout, courseForLayout, normalizeCourseLayouts, selectLayout, updateLayout } from "./game/models/courseLayouts";
+import { activeCourseLayout, courseForLayout, courseLayouts, normalizeCourseLayouts, selectLayout, updateLayout } from "./game/models/courseLayouts";
 import { analyzeArchitecture } from "./game/architecture/architecture";
-import { normalizedStaff, staffFromLevel } from "./game/live/pace";
+import { emptyPaceDayMetrics, ensureCoursePaceMetrics, normalizedStaff, staffFromLevel } from "./game/live/pace";
+import { recordPaceDay } from "./game/live/paceHistory";
 import { WeekCloseReport } from "./ui/WeekCloseReport";
 import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
@@ -175,6 +176,10 @@ import { CampaignPanel } from "./ui/CampaignPanel";
 import { WorkspaceNav, type WorkspaceActionId, type WorkspaceId } from "./ui/WorkspaceNav";
 import { ContentLibraryPanel } from "./ui/ContentLibraryPanel";
 import { IS_DEMO, saveAvailableInEdition } from "./config/edition";
+import {
+  recordBugAction,
+  updateBugDiagnosticContext,
+} from "./bug-reporting/diagnostics";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -256,6 +261,7 @@ export default function App() {
   // Dispatch function for actions
   const dispatch = useCallback((action: Action) => {
     if (action.type === "SCULPT_TILES") sculptedRef.current = true;
+    recordBugAction(action);
     // Log reducer dispatch count (only for mutations, not UI-only actions)
     if (DEBUG_PERF && (action.type !== "SET_MODE" && action.type !== "SET_ACTIVE_HOLE" && action.type !== "SET_BRUSH")) {
       logReducerDispatch();
@@ -486,6 +492,7 @@ export default function App() {
     const candidate = new URLSearchParams(window.location.search).get("workspace");
     return candidate === "operate" || candidate === "legacy" ? candidate : "design";
   });
+
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [showProgression, setShowProgression] = useState(false);
   const [showPlayerPro, setShowPlayerPro] = useState(false);
@@ -712,6 +719,72 @@ export default function App() {
     },
   });
   const getLiveSnapshot = live.getSnapshot;
+
+  useEffect(() => {
+    const activeModal = flow.modal
+      ?? (showArchitectureReview ? "architecture-review"
+        : showCampaign ? "campaign"
+        : showContentLibrary ? "content-library"
+        : showCourseManager ? "course-manager"
+        : showLandOffice ? "land-office"
+        : showLivingClub ? "living-club"
+        : showLiveOverview ? "live-overview"
+        : showPlayerPro ? "player-pro"
+        : showProgression ? "progression"
+        : showPropertyManagement ? "property-management"
+        : showRetention ? "records"
+        : showSeasonsLegacy ? "seasons"
+        : showTournaments ? "tournaments"
+        : undefined);
+    updateBugDiagnosticContext({
+      activeCourseId: activeLayout.id,
+      day: live.status.dayIndex,
+      holeIndex: activeHoleIndex,
+      ...(activeModal ? { modal: activeModal } : {}),
+      mode: world.mode ?? "sandbox",
+      screen,
+      seed: String(world.runSeed),
+      tool: editorMode === "PAINT" ? `PAINT:${terrainTool}:${selected}` : editorMode,
+      week: world.week,
+      ...(minimapView
+        ? {
+            camera: {
+              centerX: minimapView.center.x,
+              centerY: minimapView.center.y,
+              rotation: minimapView.rotation,
+              zoom: minimapView.zoom,
+            },
+          }
+        : {}),
+    });
+  }, [
+    activeHoleIndex,
+    activeLayout.id,
+    editorMode,
+    flow.modal,
+    live.status.dayIndex,
+    minimapView,
+    screen,
+    selected,
+    showArchitectureReview,
+    showCampaign,
+    showContentLibrary,
+    showCourseManager,
+    showLandOffice,
+    showLivingClub,
+    showLiveOverview,
+    showPlayerPro,
+    showProgression,
+    showPropertyManagement,
+    showRetention,
+    showSeasonsLegacy,
+    showTournaments,
+    terrainTool,
+    world.mode,
+    world.runSeed,
+    world.week,
+  ]);
+
   const pendingMajorStory = useMemo(
     () => normalizeLivingClub(world.livingClub).story.instances.find((instance) =>
       instance.priority === "major" && instance.status === "pending"
@@ -1167,11 +1240,15 @@ export default function App() {
     const isM25Fixture = fixtureParams.get("m25Fixture") === "1";
     const isM26Fixture = fixtureParams.get("m26Fixture") === "1";
     const isM27Fixture = fixtureParams.get("m27Fixture") === "1";
+    const isM30Fixture = fixtureParams.get("m30Fixture") === "1";
     const isM38Fixture = fixtureParams.get("m38Fixture") === "1";
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM38Fixture && !isPropertyFixture) return;
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
+    const m25SeedParam = fixtureParams.get("m25Seed");
+    const parsedM25Seed = m25SeedParam == null ? Number.NaN : Number(m25SeedParam);
+    const m25Seed = Number.isInteger(parsedM25Seed) ? parsedM25Seed | 0 : 250025;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
     const requestedTheme = fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
@@ -1182,10 +1259,12 @@ export default function App() {
       ? createPlayerProReferenceCourse()
       : isM27Fixture
       ? createM27ReleaseReferenceCourse(fixtureTheme)
+      : isM30Fixture
+      ? createM26MultiCourseReferenceCourse()
       : isM26Fixture
       ? createM26MultiCourseReferenceCourse()
       : isM25Fixture
-      ? createNewGame({ mode: "sandbox", courseName: "M25 Survey Estate", seed: 250025, theme: fixtureTheme, difficulty: "normal", sandboxOverrides: { startingCash: 500_000 } }).course
+      ? createNewGame({ mode: "sandbox", courseName: "M25 Survey Estate", seed: m25Seed, theme: fixtureTheme, difficulty: "normal", sandboxOverrides: { startingCash: 500_000 } }).course
       : isM24Fixture
       ? createTournamentStandardsCourse()
       : isM23Fixture
@@ -1222,7 +1301,7 @@ export default function App() {
       week: 1,
       cash: isPropertyFixture ? 1_000_000 : isM25Fixture ? 500_000 : 250_000,
       reputation: Number.isFinite(fixtureRep) ? Math.max(0, Math.min(100, fixtureRep)) : 95,
-      runSeed: 12160,
+      runSeed: isM25Fixture ? m25Seed : 12160,
       isBankrupt: false,
       distressWeeks: 0,
       mode: "sandbox" as const,
@@ -1232,6 +1311,53 @@ export default function App() {
       } : {}),
       ...(isPropertyFixture ? { enterprise: emptyPropertyEnterprise() } : {}),
     };
+    if (isM30Fixture) {
+      const layouts = courseLayouts(fixtureCourse);
+      for (let day = 0; day < 10; day++) {
+        const metrics = emptyPaceDayMetrics(layouts.map((layout) => layout.id));
+        for (const [courseIndex, layout] of layouts.entries()) {
+          const pace = ensureCoursePaceMetrics(metrics, layout.id);
+          const rounds = courseIndex === 0 ? 16 : 8;
+          const delay = courseIndex === 0 ? 18 + day : 6 + day / 2;
+          pace.groupsStarted = Math.ceil(rounds / 4);
+          pace.groupsFinished = pace.groupsStarted;
+          pace.roundsCompleted = rounds;
+          pace.roundDurations = [112 + delay, 118 + delay, 124 + delay, 132 + delay];
+          pace.totalWaitMinutes = rounds * delay;
+          pace.greenFeeRevenue = rounds * layout.greenFee;
+          pace.beverageRevenue = rounds * (courseIndex === 0 ? 14 : 8);
+          pace.occupiedTeeMinutes = pace.groupsStarted * 120;
+          pace.satisfaction = rounds * (courseIndex === 0 ? 66 : 82);
+          const bottleneckHoleId = layout.publishedHoleIds[Math.min(2, layout.publishedHoleIds.length - 1)];
+          pace.holes[bottleneckHoleId] = {
+            holeId: bottleneckHoleId,
+            queueMinutes: (courseIndex === 0 ? 74 : 24) + day,
+            occupancyMinutes: 88,
+            recoveryDelayMinutes: courseIndex === 0 ? 18 : 4,
+            visits: 8,
+          };
+          pace.cohorts.skilled_impatient = {
+            samples: Math.ceil(rounds / 2),
+            durationMinutes: Math.ceil(rounds / 2) * (118 + delay),
+            timeParVarianceMinutes: Math.ceil(rounds / 2) * delay,
+            waitMinutes: Math.ceil(rounds / 2) * delay,
+            pickups: courseIndex === 0 ? 1 : 0,
+            abandonments: 0,
+            satisfaction: Math.ceil(rounds / 2) * (courseIndex === 0 ? 58 : 80),
+          };
+          pace.cohorts.novice_social = {
+            samples: Math.floor(rounds / 2),
+            durationMinutes: Math.floor(rounds / 2) * (132 + delay / 2),
+            timeParVarianceMinutes: Math.floor(rounds / 2) * delay / 2,
+            waitMinutes: Math.floor(rounds / 2) * delay,
+            pickups: 0,
+            abandonments: 0,
+            satisfaction: Math.floor(rounds / 2) * (courseIndex === 0 ? 73 : 86),
+          };
+        }
+        fixtureWorld = recordPaceDay({ ...fixtureWorld, week: 1 + Math.floor(day / 7) }, fixtureCourse, day % 7, metrics);
+      }
+    }
     if (isM38Fixture) {
       const evidenceHoles = fixtureCourse.holes.filter((hole) => hole.id && hole.tee && hole.green);
       const makeRound = (visit: number): CompletedRound => ({
@@ -1284,9 +1410,9 @@ export default function App() {
         speed: isPerfMeasurement ? "paused" : "4x",
         selectedGolferId: null,
       }));
-    } else if (isM38Fixture) {
+    } else if (isM38Fixture || isM30Fixture) {
       live.restoreSnapshot(snapshotLiveSimulation({
-        state: createLiveState(fixtureCourse, fixtureWorld, 5),
+        state: createLiveState(fixtureCourse, fixtureWorld, isM38Fixture ? 5 : 0),
         pendingCash: 0,
         speed: "paused",
         selectedGolferId: null,
@@ -1976,6 +2102,13 @@ export default function App() {
         width: course.width,
         height: course.height,
         smoothSurfaceFeatures: course.surfaceIntent?.features.length ?? 0,
+        surfaceFeatures: (course.surfaceIntent?.features ?? []).map((feature) => ({
+          id: feature.id,
+          terrain: feature.terrain,
+          kind: feature.geometry.kind,
+          coverage: feature.coverage.length,
+          renderRings: feature.renderRings?.length ?? 0,
+        })),
         holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length,
         terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>),
         obstacleCounts: course.obstacles.reduce((counts, obstacle) => ({ ...counts, [obstacle.type]: (counts[obstacle.type] ?? 0) + 1 }), {} as Partial<Record<ObstacleType, number>>),
@@ -2177,7 +2310,19 @@ export default function App() {
           editingLocked: playerRoundLocksEditing,
         } : null,
       },
-      editor: { mode: editorMode, selectedTerrain: selected, selectedDecoration: decorationKind, decorationRotation, decorationSpan, decorationAction, activeHole: activeHoleIndex + 1, selectedTeeSet, teePlacementPending: pendingTeePlacement ? { teeSet: pendingTeePlacement.teeSet, point: pendingTeePlacement.point, netCost: pendingTeePlacement.netCost } : null },
+      editor: {
+        mode: editorMode,
+        terrainTool,
+        selectedTerrain: selected,
+        selectedDecoration: decorationKind,
+        decorationRotation,
+        decorationSpan,
+        decorationAction,
+        activeHole: activeHoleIndex + 1,
+        selectedTeeSet,
+        setupPlacement: setupPlacement ? { kind: setupPlacement.kind, key: setupPlacement.key } : null,
+        teePlacementPending: pendingTeePlacement ? { teeSet: pendingTeePlacement.teeSet, point: pendingTeePlacement.point, netCost: pendingTeePlacement.netCost } : null,
+      },
       graphics: { quality: appProfile.graphics.quality, resolvedQuality: resolvedGraphicsQuality, animations: effectiveAnimations, waterAnimation: effectiveAnimations && appProfile.graphics.waterAnimation, treeSway: effectiveAnimations && appProfile.graphics.treeSway },
       retention: { photoMode, recordsOpen: showRetention, achievementsEarned: appProfile.achievements.earned.length, totalRounds: records.totalRounds, aces: records.aces.length, tickerVisible: appProfile.gameplay.tickerVisible },
       tournament: {
@@ -2196,7 +2341,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -2223,6 +2368,20 @@ export default function App() {
             [terrain]: (counts[terrain] ?? 0) + 1,
           }), {} as Partial<Record<Terrain, number>>),
           courseHash: hashGameState({ course: current.course, world: current.world, live: liveSnapshot }),
+        };
+      },
+      terrainSurfaceState: () => {
+        const current = gameStateRef.current.course;
+        return {
+          width: current.width,
+          height: current.height,
+          features: (current.surfaceIntent?.features ?? []).map((feature) => ({
+            id: feature.id,
+            terrain: feature.terrain,
+            kind: feature.geometry.kind,
+            coverage: [...feature.coverage],
+            renderRings: feature.renderRings?.map((ring) => ring.map((point) => ({ ...point }))) ?? [],
+          })),
         };
       },
       setPaintCash: (cash: number) => {
@@ -2649,13 +2808,28 @@ export default function App() {
     const stride = Math.max(1, Math.ceil(points.length / maxKnots));
     const sampled = points
       .filter((_, index) => index % stride === 0 || index === points.length - 1)
-      .map((point) => ({ x: point.x + 0.5, y: point.y + 0.5 }));
-    const knots = simplifySurfacePoints(sampled, terrainTool === "area" ? 0.45 : 0.8);
+      .map((point) => ({ ...point }));
+    if (sampled.length === 1) {
+      sampled[0] = {
+        x: Math.floor(sampled[0].x) + 0.5,
+        y: Math.floor(sampled[0].y) + 0.5,
+      };
+    }
+    let knots = simplifySurfacePoints(sampled, terrainTool === "area" ? 0.28 : 0.42);
+    if (terrainTool === "area" && knots.length >= 3) {
+      const first = knots[0];
+      const last = knots[knots.length - 1];
+      if (Math.hypot(last.x - first.x, last.y - first.y) <= 1) {
+        knots = [...knots.slice(0, -1), { ...first }];
+      }
+    }
     const feature = terrainTool === "area" && knots.length >= 3
       ? regionFeature(course, selected, knots)
       : corridorFeature(course, selected, knots, Math.max(0.9, terrainBrushWidth));
-    const coveragePoints = rasterizeSurfaceFeature(feature, course.width, course.height);
+    const raster = rasterizeSurfaceFeatureDetailed(feature, course.width, course.height);
+    const coveragePoints = raster.tiles;
     feature.coverage = coveragePoints.map((point) => point.y * course.width + point.x);
+    feature.renderRings = raster.rings;
     return { feature, coveragePoints };
   }, [course, selected, terrainBrushWidth, terrainTool]);
 
@@ -2686,6 +2860,17 @@ export default function App() {
     }
 
     const { feature } = buildTerrainSurfaceFeature(points);
+    const acceptedIndices = new Set(
+      preview.acceptedTiles.map((point) => point.y * course.width + point.x),
+    );
+    const acceptedRaster = rasterizeSurfaceFeatureDetailed(
+      feature,
+      course.width,
+      course.height,
+      acceptedIndices,
+    );
+    feature.coverage = acceptedRaster.tiles.map((point) => point.y * course.width + point.x);
+    feature.renderRings = acceptedRaster.rings;
     dispatch({ type: "PAINT_TILES", tiles: preview.tiles, surfaceFeature: feature });
     setCapital((capital) => ({
       spent: capital.spent + preview.charged,
@@ -2708,7 +2893,7 @@ export default function App() {
       setPaintError(null);
     }
     void audio.playSfx("brush");
-  }, [world.isBankrupt, getTerrainStrokePreview, buildTerrainSurfaceFeature, selected, dispatch, audio, t]);
+  }, [world.isBankrupt, getTerrainStrokePreview, buildTerrainSurfaceFeature, selected, course.width, course.height, dispatch, audio, t]);
 
   // Smart fairway painting: paint fairway along centerline with specified width in yards
   function smartPaintFairway(widthYards: number) {
@@ -2935,16 +3120,17 @@ export default function App() {
     return remove + place;
   }
 
-  function previewTeeBox(teeSet: TeeSet, point: Point) {
+  function previewTeeBox(teeSet: TeeSet, point: Point): boolean {
     const hole = course.holes[activeHoleIndex];
-    if (!hole) return;
+    if (!hole) return false;
     const prospective = withNormalizedHoleSetup({ ...hole, teeBoxes: { ...hole.teeBoxes, [teeSet]: point }, ...(teeSet === "member" ? { tee: point } : {}) });
     const issue = validateHoleCourseSetup(course, prospective).find((entry) => entry.code === "OUT_OF_BOUNDS" || entry.code === "DUPLICATE" || entry.code === "TEE_ORDER");
-    if (issue) { setPaintError(issue.message); return; }
+    if (issue) { setPaintError(issue.message); return false; }
     const netCost = teePlacementCost(activeHoleIndex, teeSet, point);
-    if (!Number.isFinite(netCost)) { setPaintError("Tee location is out of bounds."); return; }
+    if (!Number.isFinite(netCost)) { setPaintError("Tee location is out of bounds."); return false; }
     setPendingTeePlacement({ holeIndex: activeHoleIndex, teeSet, point, netCost });
     setPaintError(null);
+    return true;
   }
 
   function commitTeeBox(holeIndex: number, teeSet: TeeSet, point: Point, netCost: number) {
@@ -2991,16 +3177,17 @@ export default function App() {
     });
   }
 
-  function setPinPosition(pinRotation: PinRotation, point: Point) {
-    if (point.x < 0 || point.y < 0 || point.x >= course.width || point.y >= course.height) { setPaintError("Pin position is out of bounds."); return; }
-    if (course.tiles[point.y * course.width + point.x] !== "green") { setPaintError(`Pin ${pinRotation} must sit on existing green terrain.`); return; }
+  function setPinPosition(pinRotation: PinRotation, point: Point): boolean {
+    if (point.x < 0 || point.y < 0 || point.x >= course.width || point.y >= course.height) { setPaintError("Pin position is out of bounds."); return false; }
+    if (course.tiles[point.y * course.width + point.x] !== "green") { setPaintError(`Pin ${pinRotation} must sit on existing green terrain.`); return false; }
     const hole = course.holes[activeHoleIndex];
-    if (!hole) return;
+    if (!hole) return false;
     const prospective = withNormalizedHoleSetup({ ...hole, pinPositions: { ...hole.pinPositions, [pinRotation]: point }, ...(pinRotation === "A" ? { green: point } : {}) });
     const issue = validateHoleCourseSetup(course, prospective).find((entry) => entry.code === "DUPLICATE");
-    if (issue) { setPaintError(issue.message); return; }
+    if (issue) { setPaintError(issue.message); return false; }
     dispatch({ type: "SET_PIN_POSITION", holeIndex: activeHoleIndex, pinRotation, position: point });
     setPaintError(null);
+    return true;
   }
 
   function handleCanvasClick(x: number, y: number) {
@@ -3018,10 +3205,13 @@ export default function App() {
       return;
     }
     if (setupPlacement) {
-      if (setupPlacement.kind === "tee") previewTeeBox(setupPlacement.key, { x, y });
-      else setPinPosition(setupPlacement.key, { x, y });
-      setSetupPlacement(null);
-      if (setupPlacement.kind === "pin") void audio.playSfx("confirm");
+      const accepted = setupPlacement.kind === "tee"
+        ? previewTeeBox(setupPlacement.key, { x, y })
+        : setPinPosition(setupPlacement.key, { x, y });
+      if (accepted) {
+        setSetupPlacement(null);
+        if (setupPlacement.kind === "pin") void audio.playSfx("confirm");
+      }
       return;
     }
     
@@ -3459,13 +3649,22 @@ export default function App() {
     saveTutorialProgress(next);
   }
 
+  if (
+    import.meta.env.MODE === "e2e" &&
+    new URLSearchParams(window.location.search).get("crash-test") === "react"
+  ) {
+    throw new Error("M45 controlled React crash");
+  }
+
   if (screen === "setup") {
     return (
-      <NewGameWizard
-        onCancel={() => flowDispatch({ type: "BACK_TO_TITLE" })}
-        onStart={startNewGame}
-        onStartScenario={startScenario}
-      />
+      <>
+        <NewGameWizard
+          onCancel={() => flowDispatch({ type: "BACK_TO_TITLE" })}
+          onStart={startNewGame}
+          onStartScenario={startScenario}
+        />
+      </>
     );
   }
 
@@ -3626,6 +3825,7 @@ export default function App() {
                 selectedParcelId={selectedParcelId}
                 architectureWarnings={architectureReport?.warnings}
                 architectureOverlay={showArchitectureReview ? architectureReview.overlay : null}
+                paceBottlenecks={live.status.pace.bottlenecks}
                 animationsEnabled={effectiveAnimations && resolvedGraphicsQuality !== "low"}
                 graphicsQuality={resolvedGraphicsQuality}
                 ambienceFx={appProfile.graphics.ambienceFx && resolvedGraphicsQuality !== "low"}
@@ -3822,7 +4022,7 @@ export default function App() {
               onChoose={chooseCampaign}
             />}
             {showPropertyManagement && !tutorialProgress && <PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} />}
-            {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
+            {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
             {teeSetupPrompt && !tutorialProgress && (
               <div data-testid="tee-setup-offer" role="dialog" aria-label={t("courseSetup.offerAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 145, top: 64, right: 16, width: 280, padding: 14 }}>
                 <strong>{t("courseSetup.offerTitle")}</strong>
@@ -3838,7 +4038,7 @@ export default function App() {
                       enterHoleEditMode(teeSetupPrompt.holeIndex, teeSet);
                       setSetupPlacement({ kind: "tee", key: teeSet });
                       setEditorMode("HOLE_WIZARD");
-                      setPaintError(`Select the ${teeSet} tee location on the course.`);
+                      setPaintError(null);
                       setTeeSetupPrompt(null);
                     }}>{t("courseSetup.offerBuild", { tee: teeSet[0].toUpperCase() + teeSet.slice(1), cost: formatCurrency(Math.max(0, estimate)) })}</button>;
                   })}
@@ -3846,14 +4046,32 @@ export default function App() {
                 </div>
               </div>
             )}
+            {setupPlacement && !pendingTeePlacement && !tutorialProgress && (() => {
+              const hole = course.holes[activeHoleIndex];
+              const existing = setupPlacement.kind === "tee"
+                ? getTeeBox(hole, setupPlacement.key)
+                : getPinPosition(hole, setupPlacement.key);
+              const marker = setupPlacement.kind === "tee"
+                ? `${setupPlacement.key[0].toUpperCase()}${setupPlacement.key.slice(1)} ${t("courseSetup.tee")}`
+                : t("courseSetup.pin", { rotation: setupPlacement.key });
+              const action = t(existing ? "courseSetup.move" : "courseSetup.place");
+              return (
+                <div data-testid="setup-placement-prompt" role="dialog" aria-label={t("courseSetup.placementAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 150, bottom: 88, left: "50%", transform: "translateX(-50%)", width: 320, padding: 14 }}>
+                  <strong>{t("courseSetup.placementTitle", { action, marker })}</strong>
+                  <p style={{ margin: "6px 0 10px", fontSize: 12 }}>{t("courseSetup.placementHelp")}</p>
+                  {paintError && <div role="alert" style={{ color: "#8b2e1b", fontSize: 12, marginBottom: 8 }}>{paintError}</div>}
+                  <button onClick={() => { setSetupPlacement(null); setPaintError(null); }}>{t("courseSetup.cancelPlacement")}</button>
+                </div>
+              );
+            })()}
             {pendingTeePlacement && !tutorialProgress && (
               <div data-testid="tee-placement-confirm" role="dialog" aria-label={t("courseSetup.confirmAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 150, bottom: 88, left: "50%", transform: "translateX(-50%)", width: 300, padding: 14 }}>
                 <strong>{t("courseSetup.confirmTitle", { action: t(getTeeBox(course.holes[pendingTeePlacement.holeIndex], pendingTeePlacement.teeSet) ? "courseSetup.actionMove" : "courseSetup.actionErect"), tee: pendingTeePlacement.teeSet })}</strong>
-                <div style={{ margin: "7px 0", fontSize: 12 }}>{pendingTeePlacement.netCost >= 0 ? t("courseSetup.tileCost", { x: pendingTeePlacement.point.x, y: pendingTeePlacement.point.y, cost: formatCurrency(pendingTeePlacement.netCost) }) : t("courseSetup.tileSalvage", { x: pendingTeePlacement.point.x, y: pendingTeePlacement.point.y, value: formatCurrency(-pendingTeePlacement.netCost) })}</div>
+                <div style={{ margin: "7px 0", fontSize: 12 }}>{pendingTeePlacement.netCost >= 0 ? t("courseSetup.placementCost", { cost: formatCurrency(pendingTeePlacement.netCost) }) : t("courseSetup.placementSalvage", { value: formatCurrency(-pendingTeePlacement.netCost) })}</div>
                 {pendingTeePlacement.netCost > world.cash && <div role="alert" style={{ color: "#8b2e1b", fontSize: 12, marginBottom: 7 }}>{t("courseSetup.shortfall", { amount: formatCurrency(pendingTeePlacement.netCost - world.cash) })}</div>}
                 <div style={{ display: "flex", gap: 6 }}>
                   <button disabled={pendingTeePlacement.netCost > world.cash} onClick={() => commitTeeBox(pendingTeePlacement.holeIndex, pendingTeePlacement.teeSet, pendingTeePlacement.point, pendingTeePlacement.netCost)}>{t("courseSetup.confirm")}</button>
-                  <button onClick={() => { setSetupPlacement({ kind: "tee", key: pendingTeePlacement.teeSet }); setPendingTeePlacement(null); setPaintError("Select another tee location on the course."); }}>{t("courseSetup.chooseAnother")}</button>
+                  <button onClick={() => { setSetupPlacement({ kind: "tee", key: pendingTeePlacement.teeSet }); setPendingTeePlacement(null); setPaintError(null); }}>{t("courseSetup.chooseAnother")}</button>
                   <button onClick={() => { setPendingTeePlacement(null); setPaintError(null); }}>{t("courseSetup.cancel")}</button>
                 </div>
               </div>
@@ -3988,13 +4206,11 @@ export default function App() {
                   setSelected={setSelected}
                   obstacleType={obstacleType}
                   setObstacleType={setObstacleType}
-                  onBeginTeePlacement={(teeSet) => { setSetupPlacement({ kind: "tee", key: teeSet }); setEditorMode("HOLE_WIZARD"); setPaintError(`Select the ${teeSet} tee location on the course.`); }}
-                  onBeginPinPlacement={(pinRotation) => { setSetupPlacement({ kind: "pin", key: pinRotation }); setEditorMode("HOLE_WIZARD"); setPaintError(`Select Pin ${pinRotation} on existing green terrain.`); }}
+                  onBeginTeePlacement={(teeSet) => { setSetupPlacement({ kind: "tee", key: teeSet }); setEditorMode("HOLE_WIZARD"); setPaintError(null); }}
+                  onBeginPinPlacement={(pinRotation) => { setSetupPlacement({ kind: "pin", key: pinRotation }); setEditorMode("HOLE_WIZARD"); setPaintError(null); }}
                   selectedTeeSet={selectedTeeSet}
                   onSelectTeeSet={setSelectedTeeSet}
-                  onSetTeeBox={previewTeeBox}
                   onSetTeePar={setTeePar}
-                  onSetPinPosition={setPinPosition}
                   onRemoveTeeBox={removeTeeBox}
                   onRemovePinPosition={(pinRotation) => dispatch({ type: "REMOVE_PIN_POSITION", holeIndex: activeHoleIndex, pinRotation })}
                   onSetActivePinRotation={(pinRotation) => dispatch({ type: "SET_ACTIVE_PIN_ROTATION", pinRotation })}

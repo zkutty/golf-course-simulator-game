@@ -58,17 +58,22 @@ directory pending provenance review, so Vite cannot copy them into `dist`.
 
 ## Mixer path audit
 
-- Music uses two lazy `HTMLAudioElement` slots for overlap crossfades. Their
-  volume is always computed from master × music × visibility/pause/sting duck.
-- Title, setup, loading, and Vision surfaces disable world ambience. They can
-  have at most one audible background stream after a transition settles.
-- Per-element fade ownership ensures an interrupted transition cannot strand
-  an outgoing slot in an audible or unpaused state.
+- Music uses two lazy alternating `HTMLAudioElement` slots. A context switch
+  stops the outgoing slot before the incoming recording starts; file-backed
+  tracks never crossfade or overlap.
+- Every surface, including Vision, game entry, the tutorial, design, operations,
+  Player Pro, tournaments, tension, and victory, owns at most one audible
+  file-backed background recording at any instant.
+- Authored Suno ambience recordings may play only while the music context is
+  silent. They never layer beneath a score track.
+- Per-element fade and async-play ownership ensures an interrupted transition
+  cannot strand an outgoing slot in an audible or unpaused state.
 - Runtime golf, interface, crowd, and sting voices connect only to the WebAudio
   SFX gain bus, capped at eight voices.
-- During gameplay, wind, water, birds, crickets, and crowd beds connect only to
-  the WebAudio ambience gain bus. Pausing retains a quiet 12% idle bed rather
-  than fully stopping the course atmosphere.
+- During gameplay, procedural wind, water, birds, crickets, and crowd detail
+  connects only to the WebAudio ambience gain bus. These environmental textures
+  contain no file-backed song. Pausing retains a quiet idle bed rather than
+  fully stopping the course atmosphere.
 - The SFX and ambience buses connect directly to the destination; there are no
   source nodes connected around them. The compatibility sound facade delegates
   back to the same SFX bus.

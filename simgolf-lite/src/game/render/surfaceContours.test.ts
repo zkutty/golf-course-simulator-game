@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildIntentUnderlayTiles, buildTerrainContours, smoothClosedContour } from "./surfaceContours";
+import { buildCoverageContours, buildIntentUnderlayTiles, buildTerrainContours, smoothClosedContour } from "./surfaceContours";
 
 describe("continuous legacy terrain contours", () => {
   it("merges adjacent cells into one rounded component", () => {
@@ -39,5 +39,11 @@ describe("continuous legacy terrain contours", () => {
     const source = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }];
     smoothClosedContour(source);
     expect(source).toEqual([{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }]);
+  });
+
+  it("unions touching authored coverage into one shared contour", () => {
+    const contours = buildCoverageContours([0, 1, 4, 5, 6, 9, 10], 4, 3);
+    expect(contours).toHaveLength(1);
+    expect(contours[0].some((point) => !Number.isInteger(point.x) || !Number.isInteger(point.y))).toBe(true);
   });
 });

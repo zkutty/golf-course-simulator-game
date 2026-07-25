@@ -1,6 +1,6 @@
 # M28 external playtest protocol
 
-Use the exact deployed `1.0.0-rc.2` URL and a clean browser profile for every
+Use the exact deployed `1.0.0-rc.3` URL and a clean browser profile for every
 session. Recruit 5–10 people who have not played or watched this build. Record
 only a participant code and the minimum useful observations; do not retain
 names, contact details, recordings, or verbatim personal information here.

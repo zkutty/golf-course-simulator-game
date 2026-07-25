@@ -3,7 +3,16 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "./autotile";
-import { LAND_THEME_KINDS, TERRAIN_KINDS, TERRAIN_MATERIALS, getTerrainMaterial, pickTerrainBaseFrame } from "./terrainMaterials";
+import {
+  LAND_THEME_KINDS,
+  TERRAIN_KINDS,
+  TERRAIN_MATERIALS,
+  getTerrainMaterial,
+  mowingShadeAt,
+  pickTerrainBaseFrame,
+  terrainBoundaryFor,
+  waterShimmerPhase,
+} from "./terrainMaterials";
 
 describe("M19 terrain material registry", () => {
   it("is complete for every land theme and terrain", () => {
@@ -28,6 +37,44 @@ describe("M19 terrain material registry", () => {
     const material = getTerrainMaterial("parkland", "fairway");
     expect(pickTerrainBaseFrame(material, 12, 9)).toBe(pickTerrainBaseFrame(material, 12, 9));
     expect(new Set(Array.from({ length: 100 }, (_, x) => pickTerrainBaseFrame(material, x, 7))).size).toBeGreaterThan(3);
+  });
+
+  it("anchors broad mowing bands to world-space route distance", () => {
+    const axes = [{ ax: 0, ay: 8, dx: 36, dy: 0, len2: 36 * 36 }];
+    const shades = Array.from({ length: 36 }, (_, x) => mowingShadeAt(x, 8, axes));
+    expect(new Set(shades)).toEqual(new Set([0.98, 1.035]));
+    expect(shades[0]).toBe(shades[1]);
+    expect(shades[4]).not.toBe(shades[1]);
+    // Crossing the renderer's 16-tile chunk boundary follows the same world
+    // phase calculation rather than restarting a local pattern.
+    expect(shades.slice(14, 19)).toEqual(
+      [14, 15, 16, 17, 18].map((x) => mowingShadeAt(x, 8, axes)),
+    );
+    expect(mowingShadeAt(12, 8, axes)).toBe(mowingShadeAt(12, 8, axes));
+  });
+
+  it("assigns terrain-pair seams to one semantic edge owner", () => {
+    const cases = [
+      ["water", "green", "water", "shore"],
+      ["wetland", "rough", "wetland", "shore"],
+      ["sand", "fairway", "sand", "bunker-lip"],
+      ["path", "rough", "path", "path-shoulder"],
+      ["green", "rough", "green", "fringe"],
+      ["fairway", "deep_rough", "fairway", "fringe"],
+      ["deep_rough", "rough", "deep_rough", "natural-feather"],
+    ] as const;
+    for (const [a, b, owner, role] of cases) {
+      expect(terrainBoundaryFor(a, b)).toEqual({ owner, role });
+      expect(terrainBoundaryFor(b, a)).toEqual({ owner, role });
+    }
+    expect(terrainBoundaryFor("green", "green")).toBeNull();
+  });
+
+  it("keeps animated water phase coherent between neighboring tiles", () => {
+    const phase = waterShimmerPhase(12, 9);
+    expect(waterShimmerPhase(12, 9)).toBe(phase);
+    expect(Math.abs(waterShimmerPhase(13, 9) - phase)).toBeLessThan(0.5);
+    expect(Math.abs(waterShimmerPhase(12, 10) - phase)).toBeLessThan(0.5);
   });
 });
 

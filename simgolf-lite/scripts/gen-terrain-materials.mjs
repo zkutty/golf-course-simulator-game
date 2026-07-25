@@ -12,8 +12,8 @@ const W = 128;
 const H = 64;
 const THEMES = {
   parkland: {
-    colors: { fairway: "#55a959", rough: "#3e823f", deep_rough: "#296733", sand: "#d9c58e", waste_area: "#a98757", water: "#347faf", wetland: "#4f806b", green: "#63b96a", tee: "#62a85b", path: "#9a907e" },
-    special: { fairway: "#3f8746", rough: "#2d6a34", deep_rough: "#1e542a", sand: "#aa8956", waste_area: "#735737", water: "#6f9fa9", wetland: "#315949", green: "#4a9952", tee: "#e7dfc5", path: "#6f6658" },
+    colors: { fairway: "#55a959", rough: "#3e823f", deep_rough: "#34743a", sand: "#d9c58e", waste_area: "#a98757", water: "#347faf", wetland: "#4f806b", green: "#63b96a", tee: "#62a85b", path: "#9a907e" },
+    special: { fairway: "#3f8746", rough: "#2d6a34", deep_rough: "#285f31", sand: "#aa8956", waste_area: "#735737", water: "#6f9fa9", wetland: "#315949", green: "#4a9952", tee: "#e7dfc5", path: "#6f6658" },
     texture: "parkland",
   },
   links: {
@@ -28,6 +28,11 @@ const THEMES = {
   },
 };
 const TERRAIN_SALT = { rough: 0, deep_rough: 1, fairway: 2, sand: 3, water: 4, green: 5, tee: 6, path: 7, waste_area: 8, wetland: 9 };
+const BOUNDARY_COLORS = {
+  parkland: { sand: "#987747", water: "#60775d", wetland: "#385747", path: "#675f53" },
+  links: { sand: "#a38c57", water: "#657565", wetland: "#465b4d", path: "#675f53" },
+  desert: { sand: "#a8733e", water: "#677e67", wetland: "#405b43", path: "#705d49" },
+};
 const EDGES = ["n", "e", "s", "w"];
 const CORNERS = ["ne", "se", "sw", "nw"];
 const rgb = (hex) => [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16));
@@ -54,17 +59,18 @@ function baseTile(theme, config, terrain, variant, themeSalt) {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (!inside(x, y)) continue;
     const h = hash(x, y, variant * 97 + TERRAIN_SALT[terrain] * 13 + themeSalt);
-    let factor = h % 43 === 0 ? 1.08 : h % 29 === 0 ? 0.92 : 1;
-    if (terrain === "fairway" && ((x + y * 2 + variant * 11) % 26 < 3)) factor *= 1.045;
-    if (terrain === "green" && ((x - y + variant * 7 + 256) % 32 < 2)) factor *= 1.035;
-    if (terrain === "deep_rough" && h % 67 < (config.texture === "links" ? 8 : 4)) factor *= 1.12;
-    if ((terrain === "sand" || terrain === "waste_area") && h % 71 < 3) factor *= 0.82;
-    if (terrain === "path" && h % 61 < 4) factor *= h % 2 ? 0.8 : 1.12;
+    let factor = h % 59 === 0 ? 1.045 : h % 47 === 0 ? 0.96 : 1;
+    if (terrain === "fairway" && ((x + y * 2 + variant * 11) % 38 < 2)) factor *= 1.025;
+    if (terrain === "green" && ((x - y + variant * 7 + 256) % 44 < 2)) factor *= 1.02;
+    if (terrain === "rough" && h % 73 < 4) factor *= h % 2 ? 1.07 : 0.94;
+    if (terrain === "deep_rough" && h % 61 < (config.texture === "links" ? 10 : 6)) factor *= h % 2 ? 1.13 : 0.9;
+    if ((terrain === "sand" || terrain === "waste_area") && h % 67 < 4) factor *= h % 2 ? 0.79 : 1.09;
+    if (terrain === "path" && h % 53 < 5) factor *= h % 2 ? 0.82 : 1.1;
     if (config.texture === "desert" && (terrain === "rough" || terrain === "waste_area") && h % 53 < 3) factor *= 1.13;
     if (config.texture === "links" && terrain === "deep_rough" && (x + y * 3 + variant) % 19 < 2) factor *= 1.08;
     if (terrain === "water" || terrain === "wetland") {
-      factor *= 0.985 + (variant % 3) * 0.008;
-      if ((x * 3 + y + variant * 17) % 113 < 2) factor *= 1.1;
+      factor *= 0.99 + (variant % 3) * 0.005;
+      if ((x * 3 + y + variant * 17) % 58 < 3) factor *= 1.09;
     }
     put(png, x, y, shade(base, factor));
   }
@@ -87,7 +93,7 @@ function cornerPoint(direction) {
 }
 function transition(theme, config, terrain, kind, direction, themeSalt) {
   const png = new PNG({ width: W, height: H });
-  const accent = rgb(config.special[terrain]);
+  const accent = rgb(BOUNDARY_COLORS[theme][terrain] ?? config.special[terrain]);
   const base = rgb(config.colors[terrain]);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     if (!inside(x, y)) continue;
@@ -97,7 +103,7 @@ function transition(theme, config, terrain, kind, direction, themeSalt) {
       const distance = edgeDistance(x, y, direction);
       const wave = ((hash(x, y, TERRAIN_SALT[terrain] * 19 + themeSalt) % 5) - 2) / 250;
       visible = distance >= 0 && distance < 0.13 + wave;
-      factor = distance < 0.035 ? 0.75 : 1;
+      factor = distance < 0.035 ? 0.7 : distance < 0.075 ? 0.9 : 1.04;
     } else {
       const [cx, cy] = cornerPoint(direction);
       const nx = (x - cx) / 24;
@@ -107,8 +113,14 @@ function transition(theme, config, terrain, kind, direction, themeSalt) {
       factor = kind === "inner" ? 0.86 : 1.04;
     }
     if (!visible) continue;
-    const color = terrain === "water" || terrain === "wetland" || terrain === "tee" ? accent : shade(accent, factor);
-    put(png, x, y, color, kind === "inner" ? 150 : terrain === "water" || terrain === "wetland" ? 95 : 205);
+    let color = shade(accent, factor);
+    let alpha = kind === "inner" ? 150 : 215;
+    if ((terrain === "water" || terrain === "wetland") && kind === "edge") {
+      const distance = edgeDistance(x, y, direction);
+      color = distance > 0.08 ? shade(rgb(config.special[terrain]), 1.12) : shade(accent, factor);
+      alpha = distance > 0.08 ? 150 : 230;
+    }
+    put(png, x, y, color, alpha);
     if (terrain === "sand" && kind === "edge" && hash(x, y, 3 + themeSalt) % 13 === 0) put(png, x, y, shade(base, 0.68), 235);
   }
   save(png, `${theme}_${terrain}_${kind}_${direction}`);

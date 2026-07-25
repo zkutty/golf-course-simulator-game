@@ -6,6 +6,11 @@ declare const __APP_VERSION__: string;
 declare const __APP_RELEASE__: string;
 declare const __COMMIT_SHA__: string;
 
+interface ImportMetaEnv {
+  readonly VITE_APP_ENVIRONMENT?: string;
+  readonly VITE_BUG_REPORTING?: string;
+}
+
 interface Window {
   coursecraftDesktop?: import("./platform/types").CourseCraftDesktopBridge;
   render_game_to_text?: () => string;
@@ -27,6 +32,17 @@ interface Window {
       economyVersion: number;
       terrainCounts: Partial<Record<import("./game/models/types").Terrain, number>>;
       courseHash: string;
+    };
+    terrainSurfaceState(): {
+      width: number;
+      height: number;
+      features: Array<{
+        id: string;
+        terrain: import("./game/models/types").Terrain;
+        kind: "corridor" | "region";
+        coverage: number[];
+        renderRings: Array<Array<{ x: number; y: number }>>;
+      }>;
     };
     setPaintCash(cash: number): void;
     setPropertyFixture(): void;

@@ -39,7 +39,15 @@ export default defineConfig({
   test: {
     // Desktop shell tests use Node's built-in test runner so they can verify
     // fsync/rename behavior without Vitest transforming the Electron modules.
-    exclude: [...configDefaults.exclude, "desktop/**"],
+    exclude: [
+      ...configDefaults.exclude,
+      "desktop/**",
+      "scripts/**/*.test.mjs",
+      "worker/**/*.integration.test.ts",
+    ],
+    alias: {
+      "cloudflare:workers": path.resolve(__dirname, "worker/cloudflare-workers-test.ts"),
+    },
   },
   build: {
     // Maps are generated only for authenticated Sentry CI builds and deleted

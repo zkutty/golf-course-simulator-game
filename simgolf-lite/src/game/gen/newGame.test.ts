@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "./newGame";
+import { generateWildLandWithObstacles } from "./generateWildLand";
 import type { GameSetup } from "../models/setup";
 import { CHALLENGE_GOALS } from "../objectives/goals";
 import { DEFAULT_WORLD } from "../models/defaults";
+import { COURSE_HEIGHT, COURSE_WIDTH, STARTER_PARCEL_HEIGHT, STARTER_PARCEL_WIDTH } from "../models/constants";
+import { starterParcelOffset } from "../estate/estate";
 
 function setup(over: Partial<GameSetup> = {}): GameSetup {
   return {
@@ -27,6 +30,71 @@ describe("createNewGame (ZKU-162)", () => {
     const a = createNewGame(setup({ seed: 1 }));
     const b = createNewGame(setup({ seed: 2 }));
     expect(a.course.tiles).not.toEqual(b.course.tiles);
+  });
+
+  it("uses one estate-wide natural baseline instead of regenerating the starter parcel", () => {
+    const seed = 250025;
+    const generated = generateWildLandWithObstacles(COURSE_WIDTH, COURSE_HEIGHT, seed, [], "links");
+    const { course } = createNewGame(setup({ seed, theme: "links" }));
+
+    expect(course.tiles).toEqual(generated.tiles);
+    expect(course.elevations).toEqual(generated.elevations);
+    for (const obstacle of generated.obstacles) {
+      expect(course.obstacles).toContainEqual(obstacle);
+    }
+  });
+
+  it("lets an estate coastline cross the starter boundary without a clipped water seam", () => {
+    const { course } = createNewGame(setup({ seed: 7, theme: "links" }));
+    const offset = starterParcelOffset();
+    const insideStarter = (index: number) => {
+      const x = index % course.width;
+      const y = Math.floor(index / course.width);
+      return x >= offset.x && x < offset.x + STARTER_PARCEL_WIDTH
+        && y >= offset.y && y < offset.y + STARTER_PARCEL_HEIGHT;
+    };
+    const water = course.tiles
+      .map((terrain, index) => terrain === "water" ? index : -1)
+      .filter((index) => index >= 0);
+    const edgeWater = water.filter((index) => {
+      const x = index % course.width;
+      const y = Math.floor(index / course.width);
+      return x === 0 || y === 0 || x === course.width - 1 || y === course.height - 1;
+    });
+    const connected = new Set(edgeWater);
+    const queue = [...edgeWater];
+    while (queue.length > 0) {
+      const index = queue.shift()!;
+      const x = index % course.width;
+      const y = Math.floor(index / course.width);
+      const neighbors = [
+        x > 0 ? index - 1 : -1,
+        x + 1 < course.width ? index + 1 : -1,
+        y > 0 ? index - course.width : -1,
+        y + 1 < course.height ? index + course.width : -1,
+      ];
+      for (const next of neighbors) {
+        if (next >= 0 && course.tiles[next] === "water" && !connected.has(next)) {
+          connected.add(next);
+          queue.push(next);
+        }
+      }
+    }
+
+    expect(water.some(insideStarter)).toBe(true);
+    expect(water.some((index) => !insideStarter(index))).toBe(true);
+    expect(water.every((index) => connected.has(index))).toBe(true);
+    expect(water.some((index) => {
+      if (!insideStarter(index)) return false;
+      const x = index % course.width;
+      const y = Math.floor(index / course.width);
+      return [
+        x > 0 ? index - 1 : -1,
+        x + 1 < course.width ? index + 1 : -1,
+        y > 0 ? index - course.width : -1,
+        y + 1 < course.height ? index + course.width : -1,
+      ].some((next) => next >= 0 && !insideStarter(next) && course.tiles[next] === "water");
+    })).toBe(true);
   });
 
   it("records name, theme, mode, difficulty, founder on the run", () => {

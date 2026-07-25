@@ -5,6 +5,12 @@ export const TERRAIN_KINDS = ["fairway", "rough", "deep_rough", "sand", "waste_a
 export const LAND_THEME_KINDS = ["parkland", "links", "desert"] as const satisfies readonly LandTheme[];
 
 export type PaletteRole = "playing" | "natural" | "hazard" | "path";
+export type TerrainBoundaryRole =
+  | "fringe"
+  | "bunker-lip"
+  | "shore"
+  | "path-shoulder"
+  | "natural-feather";
 export type TerrainBaseFrame = `${LandTheme}_${Terrain}_base_${0 | 1 | 2 | 3 | 4 | 5}`;
 export type TerrainTransitionFrame = `${LandTheme}_${Terrain}_${"edge" | "outer" | "inner"}_${"n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw"}`;
 export type TerrainAtlasFrame = TerrainBaseFrame | TerrainTransitionFrame;
@@ -12,6 +18,14 @@ export type TerrainAtlasFrame = TerrainBaseFrame | TerrainTransitionFrame;
 export interface WeightedTerrainFrame {
   frame: TerrainBaseFrame;
   weight: number;
+}
+
+export interface MowingAxis {
+  ax: number;
+  ay: number;
+  dx: number;
+  dy: number;
+  len2: number;
 }
 
 export interface TerrainMaterialDefinition {
@@ -49,6 +63,32 @@ const DECALS: Record<Terrain, TerrainMaterialDefinition["decals"]> = {
   green: ["mowing", "fringe"],
   tee: ["mowing"],
   path: ["path-shoulder"],
+};
+
+const BOUNDARY_OWNER_ORDER: readonly Terrain[] = [
+  "water",
+  "wetland",
+  "sand",
+  "path",
+  "green",
+  "tee",
+  "fairway",
+  "waste_area",
+  "deep_rough",
+  "rough",
+];
+
+const BOUNDARY_ROLE: Record<Terrain, TerrainBoundaryRole> = {
+  water: "shore",
+  wetland: "shore",
+  sand: "bunker-lip",
+  path: "path-shoulder",
+  green: "fringe",
+  tee: "fringe",
+  fairway: "fringe",
+  waste_area: "natural-feather",
+  deep_rough: "natural-feather",
+  rough: "natural-feather",
 };
 
 function material(theme: LandTheme, terrain: Terrain): TerrainMaterialDefinition {
@@ -100,6 +140,58 @@ export function pickTerrainBaseFrame(material: TerrainMaterialDefinition, x: num
     target -= candidate.weight;
   }
   return material.baseFrames[0].frame;
+}
+
+/**
+ * World-anchored mowing bands. Because phase is derived only from course
+ * coordinates and routed hole axes, it never resets at tile/chunk boundaries
+ * or changes when the camera rotates.
+ */
+export function mowingShadeAt(
+  x: number,
+  y: number,
+  axes: readonly MowingAxis[],
+): number {
+  let along: number | null = null;
+  let bestDistance2 = 100; // nearest routed surface within ten tiles
+  for (const axis of axes) {
+    const px = x + 0.5 - axis.ax;
+    const py = y + 0.5 - axis.ay;
+    const t = Math.max(0, Math.min(1, (px * axis.dx + py * axis.dy) / axis.len2));
+    const acrossX = px - t * axis.dx;
+    const acrossY = py - t * axis.dy;
+    const distance2 = acrossX * acrossX + acrossY * acrossY;
+    if (distance2 >= bestDistance2) continue;
+    bestDistance2 = distance2;
+    along = t * Math.sqrt(axis.len2);
+  }
+  const band = along === null
+    ? ((Math.floor((x - y) / 3.75) % 2) + 2) % 2
+    : Math.floor(along / 3.75) % 2;
+  // Broad, low-contrast bands read as one mown surface instead of alternating
+  // light/dark diamonds. The texture atlas supplies the finer blade detail.
+  return band === 0 ? 1.035 : 0.98;
+}
+
+/** Spatially coherent water phase; neighboring tiles form one moving field. */
+export function waterShimmerPhase(x: number, y: number): number {
+  const tau = Math.PI * 2;
+  return ((x * 0.37 + y * 0.23) % tau + tau) % tau;
+}
+
+/**
+ * Selects exactly one visual owner for a same-elevation terrain seam.
+ * Ownership is semantic rather than numeric: water always supplies its bank,
+ * sand its bunker lip, paths their shoulder, and maintained turf its fringe.
+ */
+export function terrainBoundaryFor(
+  a: Terrain,
+  b: Terrain,
+): { owner: Terrain; role: TerrainBoundaryRole } | null {
+  if (a === b) return null;
+  const owner = BOUNDARY_OWNER_ORDER.find((terrain) => terrain === a || terrain === b);
+  if (!owner) return null;
+  return { owner, role: BOUNDARY_ROLE[owner] };
 }
 
 export function terrainTransitionFrame(material: TerrainMaterialDefinition, feature: AutotileFeature): TerrainTransitionFrame {

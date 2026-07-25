@@ -1,7 +1,8 @@
-import type { Course, CourseOperations, StaffMember, StaffRole, World } from "../models/types";
+import type { Course, CourseOperations, PaceCohort, StaffMember, StaffRole, World } from "../models/types";
 import { activeCourseLayout, layoutById } from "../models/courseLayouts";
 import { normalizeOperations } from "../models/courseOperations";
 import { normalizeStaffCharacter } from "../livingClub/livingClub";
+import type { CoursePaceDayMetrics, PaceCohortDayMetrics, PaceDayMetrics } from "./types";
 export { normalizeOperations, PACE_PRESETS } from "../models/courseOperations";
 
 export function courseOperations(course: Course, courseId?: string): CourseOperations {
@@ -47,4 +48,62 @@ export function groupTimeParMinutes(holeCount: number, groupSize: number, operat
   const sizeFactor = 0.7 + Math.max(1, groupSize) * 0.075;
   const styleFactor = operations.timeParStyle === "relaxed" ? 1.1 : operations.timeParStyle === "brisk" ? 0.92 : 1;
   return holeCount * perHole * sizeFactor * styleFactor;
+}
+
+function emptyCohortDay(): PaceCohortDayMetrics {
+  return { samples: 0, durationMinutes: 0, timeParVarianceMinutes: 0, waitMinutes: 0, pickups: 0, abandonments: 0, satisfaction: 0 };
+}
+
+export function emptyCoursePaceDayMetrics(courseId: string): CoursePaceDayMetrics {
+  return {
+    courseId,
+    groupsStarted: 0,
+    groupsFinished: 0,
+    roundsCompleted: 0,
+    roundsIncomplete: 0,
+    roundDurations: [],
+    totalWaitMinutes: 0,
+    pickups: 0,
+    incidents: 0,
+    refunds: 0,
+    credits: 0,
+    goodwillVouchers: 0,
+    overtimeCost: 0,
+    compensationCost: 0,
+    greenFeeRevenue: 0,
+    beverageRevenue: 0,
+    occupiedTeeMinutes: 0,
+    satisfaction: 0,
+    cohorts: {
+      skilled_impatient: emptyCohortDay(),
+      novice_social: emptyCohortDay(),
+      general: emptyCohortDay(),
+    },
+    holes: {},
+  };
+}
+
+export function emptyPaceDayMetrics(courseIds: readonly string[] = []): PaceDayMetrics {
+  return {
+    groupsStarted: 0,
+    groupsFinished: 0,
+    totalWaitMinutes: 0,
+    marshalInterventions: 0,
+    forcedPickups: 0,
+    beverageRevenue: 0,
+    alcoholicDrinks: 0,
+    serviceRefusals: 0,
+    disorderIncidents: 0,
+    perCourse: Object.fromEntries(courseIds.map((courseId) => [courseId, emptyCoursePaceDayMetrics(courseId)])),
+  };
+}
+
+export function ensureCoursePaceMetrics(pace: PaceDayMetrics, courseId: string): CoursePaceDayMetrics {
+  return pace.perCourse[courseId] ??= emptyCoursePaceDayMetrics(courseId);
+}
+
+export function cohortFromGolfer(skill: number, patience: number): PaceCohort {
+  if (skill >= 0.65 || patience <= 0.35) return "skilled_impatient";
+  if (skill <= 0.45 || patience >= 0.7) return "novice_social";
+  return "general";
 }

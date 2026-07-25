@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local Worker development. Never prefix Worker secrets
+# with VITE_; Vite variables are compiled into browser assets.
+LINEAR_API_KEY="lin_api_replace_me"
+SENTRY_WEBHOOK_SECRET="replace-with-a-long-random-secret"
+BUG_REPORT_OPERATOR_SECRET="replace-with-a-separate-long-random-secret"

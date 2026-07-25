@@ -1,23 +1,23 @@
 {
   "theme": "parkland",
   "fixture": "perfFixture",
-  "coldStartupMs": 721,
-  "fixtureLoadMs": 7553,
+  "coldStartupMs": 940,
+  "fixtureLoadMs": 5309,
   "renderer": {
-    "fps": 25.90077126741109,
-    "meanMs": 38.60888888888886,
-    "p95Ms": 66.69999999999709,
+    "fps": 21.429336762027223,
+    "meanMs": 46.664999999999985,
+    "p95Ms": 83.39999999999782,
     "maxMs": 100,
-    "workMs": 0.27500000132454766,
+    "workMs": 0.3516666673951679,
     "sections": {
-      "hover+flags": 0.0816666669315762,
-      "water+sway": 0.10222222076521979,
-      "ambient": 0.01222222215599484,
-      "golfers+emotes": 0.07888889147175683
+      "hover+flags": 0.08944444325235155,
+      "water+sway": 0.16333333518770005,
+      "ambient": 0.014444445239173041,
+      "golfers+emotes": 0.08444444371594323
     },
     "golfers": 100,
     "bubbles": 0,
-    "chunksVisible": 2,
+    "chunksVisible": 3,
     "chunksTotal": 35,
     "objects": 1048
   }

@@ -67,4 +67,5 @@ export const DEFAULT_WORLD: World = {
   enterprise: emptyPropertyEnterprise(),
   livingClub: emptyLivingClubState(),
   seasonal: createSeasonalState({ runSeed: 1337, theme: "parkland" }),
+  paceOperations: { version: 1, courses: {} },
 };

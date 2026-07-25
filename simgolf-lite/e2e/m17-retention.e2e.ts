@@ -1,16 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Page } from "@playwright/test";
-
-// Workspace actions past the third are collapsed behind the "More" overflow, so
-// reach one by selecting its workspace and expanding the overflow when needed.
-async function openWorkspaceAction(page: Page, workspace: string, testId: string) {
-  await page.getByTestId(`workspace-${workspace}`).click();
-  const action = page.getByTestId(testId);
-  if (!(await action.isVisible())) {
-    await page.getByRole("button", { name: "More" }).click();
-  }
-  await action.click();
-}
+import { openWorkspaceAction } from "./workspace";
 
 test("M17 records, achievements, ticker, photo mode, and PWA identity", async ({ page }, testInfo) => {
   const errors: string[] = [];

@@ -26,6 +26,7 @@ import { getObstacleSprite } from "../render/iconSprites";
 import {
   getGolferFrame,
   getPropFrame,
+  getTerrainDetailFrame,
   getTerrainFrame,
   golfersAtlasReady,
   loadAtlases,
@@ -87,15 +88,28 @@ import { getLandTheme } from "../game/models/themes";
 import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
 import type { AtlasFrame } from "../render/atlas";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
-import { getTerrainMaterial, pickTerrainBaseFrame, terrainTransitionFrame } from "../game/render/terrainMaterials";
+import {
+  getTerrainMaterial,
+  mowingShadeAt,
+  pickTerrainBaseFrame,
+  terrainBoundaryFor,
+  terrainTransitionFrame,
+  waterShimmerPhase,
+} from "../game/render/terrainMaterials";
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
+import { deriveTerrainDetail } from "../game/render/terrainDetails";
+import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
 import { pickNaturalProp, shouldFadeTallProp, type NaturalPropVariant } from "../game/render/naturalProps";
 import { isWaterHazard } from "../game/models/terrainRules";
 import { T } from "../i18n/T";
 import { decodeParcelMap } from "../game/estate/estate";
 import type { ArchitectureWarning } from "../game/architecture/architecture";
 import type { ArchitectureOverlayRender } from "../game/architecture/reviewTypes";
-import { nextWheelZoomTarget, normalizeWheelDelta } from "../game/render/wheelZoom";
+import {
+  gestureScaleToWheelDelta,
+  nextWheelZoomTarget,
+  normalizeWheelDelta,
+} from "../game/render/wheelZoom";
 import {
   SCENIC_CAMERA_MARGIN_TILES,
   SCENIC_GENERATION_BLEED_TILES,
@@ -106,8 +120,7 @@ import {
   type CoastEdge,
   type ScenicPatchKind,
 } from "../game/render/scenicSurround";
-import { sampleCorridor } from "../game/models/surfaceIntent";
-import { buildIntentUnderlayTiles, buildTerrainContours } from "../game/render/surfaceContours";
+import type { PaceAdvisorFinding } from "../game/live/paceHistory";
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -168,21 +181,6 @@ const COLORS: Record<Terrain, number> = {
 
 // Legacy/error fallback shading; normal parkland rendering uses authored art.
 const EDGE_DARKEN = 0.88;
-
-// Material-boundary ownership: one higher-priority surface draws the seam,
-// preventing doubled banks/lips where two terrain types meet.
-const TERRAIN_PRIORITY: Record<Terrain, number> = {
-  green: 8,
-  fairway: 7,
-  sand: 6,
-  waste_area: 3,
-  water: 5,
-  wetland: 5,
-  path: 4,
-  tee: 3,
-  rough: 2,
-  deep_rough: 1,
-};
 
 const MARKER_LABEL = "hole-marker";
 const ROUTE_LABEL = "route-overlay";
@@ -378,6 +376,7 @@ export interface PixiStageProps {
   selectedParcelId?: string | null;
   architectureWarnings?: ArchitectureWarning[];
   architectureOverlay?: ArchitectureOverlayRender | null;
+  paceBottlenecks?: PaceAdvisorFinding[];
   animationsEnabled: boolean;
   graphicsQuality: "high" | "medium" | "low";
   ambienceFx: boolean;
@@ -434,23 +433,17 @@ export interface PixiStageProps {
   playableShotMode?: boolean;
 }
 
-function rasterizeTileLine(from: Point, to: Point): Point[] {
-  const points: Point[] = [];
-  let x = from.x;
-  let y = from.y;
-  const dx = Math.abs(to.x - from.x);
-  const sx = from.x < to.x ? 1 : -1;
-  const dy = -Math.abs(to.y - from.y);
-  const sy = from.y < to.y ? 1 : -1;
-  let error = dx + dy;
-  for (;;) {
-    points.push({ x, y });
-    if (x === to.x && y === to.y) break;
-    const twice = 2 * error;
-    if (twice >= dy) { error += dy; x += sx; }
-    if (twice <= dx) { error += dx; y += sy; }
-  }
-  return points;
+function resampleWorldLine(from: Point, to: Point, step = 0.25): Point[] {
+  const distance = Math.hypot(to.x - from.x, to.y - from.y);
+  if (distance < 0.04) return [];
+  const divisions = Math.max(1, Math.ceil(distance / step));
+  return Array.from({ length: divisions }, (_, index) => {
+    const t = (index + 1) / divisions;
+    return {
+      x: from.x + (to.x - from.x) * t,
+      y: from.y + (to.y - from.y) * t,
+    };
+  });
 }
 
 interface Layers {
@@ -543,7 +536,7 @@ interface TerrainChunk {
   waterSprites: Array<{ sprite: PIXI.Sprite; baseTint: number; phase: number; gx: number; gy: number }>;
   /** Shore-foam lips on water tiles along land edges, alpha-oscillated. */
   foamSprites: Array<{ sprite: PIXI.Sprite; phase: number }>;
-  groundCoverSprites: Array<{ graphic: PIXI.Graphics; tier: 1 | 2 }>;
+  groundCoverSprites: Array<{ display: PIXI.Container; tier: 1 | 2 }>;
 }
 
 /** Fit zoom for a world-tile bbox projected to the iso plane. */
@@ -602,6 +595,13 @@ export function PixiStage(props: PixiStageProps) {
   const playerShotOverlayRef = useRef<PIXI.Container | null>(null);
   const decorationSpritesRef = useRef<Array<{ sprite: PIXI.Sprite; shadow: PIXI.Graphics }>>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
+  const surfaceWaterSpritesRef = useRef<Array<{
+    sprite: PIXI.Sprite;
+    baseTint: number;
+    phase: number;
+    gx: number;
+    gy: number;
+  }>>([]);
   const ripplesRef = useRef<Array<{ x: number; y: number; t0: number }>>([]);
   const rippleGraphicsRef = useRef<PIXI.Graphics | null>(null);
   // Touchdown particle bursts (ZKU-154): sand puffs, grass flecks, green
@@ -680,14 +680,13 @@ export function PixiStage(props: PixiStageProps) {
   const terrainStrokeRef = useRef<{
     pointerId: number;
     points: Point[];
-    keys: Set<string>;
     last: Point;
   } | null>(null);
   const camRef = useRef({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false });
   const rotTweenRef = useRef<{ start: number; toDeg: number; next: IsoRotation } | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
-  const lastReportedCenterRef = useRef<Point | null>(null);
+  const lastReportedCameraStateRef = useRef<CameraState | null>(null);
   const lastAmbientReportAtRef = useRef(0);
   const lastCameraStateRef = useRef<CameraState | null | undefined>(undefined);
 
@@ -779,7 +778,7 @@ export function PixiStage(props: PixiStageProps) {
         : props.graphicsQuality === "medium"
           ? Math.min(1, requestedTier) as 0 | 1
           : 0;
-      for (const cover of chunk.groundCoverSprites) cover.graphic.visible = v && cover.tier <= coverTier;
+      for (const cover of chunk.groundCoverSprites) cover.display.visible = v && cover.tier <= coverTier;
       if (v) visible++;
     }
     if (CHUNK_DEBUG) devLog(`chunks visible: ${visible}/${chunksRef.current.length}`);
@@ -950,6 +949,26 @@ export function PixiStage(props: PixiStageProps) {
       return null;
     },
     [course, rotation, screenToIsoPlane]
+  );
+
+  /**
+   * Elevation-aware continuous world position for terrain gestures. Tile
+   * picking remains integer-based elsewhere, but authoring must retain
+   * sub-tile motion and revisit order so loops can close and fill correctly.
+   */
+  const screenToWorldPoint = useCallback(
+    (globalX: number, globalY: number): Point | null => {
+      const iso = screenToIsoPlane(globalX, globalY);
+      const tile = screenToTile(globalX, globalY);
+      if (!iso || !tile) return null;
+      const elevation = getElevation(course, tile.x, tile.y);
+      const point = isoToWorld(iso.x, iso.y + elevation * ELEVATION_STEP_PX, rotation);
+      return {
+        x: Math.max(0, Math.min(course.width - 1e-6, point.x)),
+        y: Math.max(0, Math.min(course.height - 1e-6, point.y)),
+      };
+    },
+    [course, rotation, screenToIsoPlane, screenToTile],
   );
 
   /** Continuous world tile coords → global screen coords (for screen overlays). */
@@ -1191,12 +1210,10 @@ export function PixiStage(props: PixiStageProps) {
       fitWholeCourse(false);
       return;
     }
-    const reported = lastReportedCenterRef.current;
-    const isEcho =
-      reported &&
-      Math.abs(reported.x - cameraState.center.x) < 1e-6 &&
-      Math.abs(reported.y - cameraState.center.y) < 1e-6;
-    if (isEcho) return;
+    // App stores the exact object we report after manual input. Ignore that
+    // identity echo, but never mistake a later explicit Fit command for one
+    // merely because it happens to share the same center.
+    if (lastReportedCameraStateRef.current === cameraState) return;
 
     cam.tcx = cameraState.center.x;
     cam.tcy = cameraState.center.y;
@@ -1206,8 +1223,10 @@ export function PixiStage(props: PixiStageProps) {
         b.minX, b.minY, b.maxX, b.maxY,
         app.screen.width, app.screen.height, rotation
       );
+    } else if (Number.isFinite(cameraState.zoom)) {
+      cam.tzoom = Math.max(minimumZoom(), Math.min(MAX_ZOOM, cameraState.zoom));
     }
-  }, [appReady, cameraState, rotation, fitWholeCourse]);
+  }, [appReady, cameraState, rotation, fitWholeCourse, minimumZoom]);
 
   // Camera controls: wheel zoom-to-cursor, drag pan, WASD/QE, smoothing.
   useEffect(() => {
@@ -1216,30 +1235,33 @@ export function PixiStage(props: PixiStageProps) {
     const el = containerRef.current;
     if (!app || !el) return;
 
-    const reportCenter = () => {
+    const reportCamera = () => {
       const cam = camRef.current;
       const center = { x: cam.tcx, y: cam.tcy };
       props.onCameraCenter?.(center);
       if (!cameraState || !props.onCameraUpdate) return;
-      lastReportedCenterRef.current = center;
-      props.onCameraUpdate({ ...cameraState, center });
+      const reported = {
+        ...cameraState,
+        center,
+        zoom: cam.tzoom,
+        // Manual camera ownership must not carry an auto-fit box that a later
+        // state round-trip could reapply over the user's chosen zoom.
+        bounds: undefined,
+      };
+      lastReportedCameraStateRef.current = reported;
+      props.onCameraUpdate(reported);
     };
 
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      if (flyoverRef.current) {
-        endFlyover(); // any input skips the flyover
-        return;
-      }
+    const applyZoomInput = (deltaPixels: number, clientX: number, clientY: number) => {
       const cam = camRef.current;
       const rect = el.getBoundingClientRect();
-      const gx = e.clientX - rect.left;
-      const gy = e.clientY - rect.top;
+      const gx = clientX - rect.left;
+      const gy = clientY - rect.top;
       const target = nextWheelZoomTarget({
         camera: { cx: cam.tcx, cy: cam.tcy, zoom: cam.tzoom },
         cursor: { x: gx, y: gy },
         viewport: { width: app.screen.width, height: app.screen.height },
-        deltaPixels: normalizeWheelDelta(e.deltaY, e.deltaMode, app.screen.height),
+        deltaPixels,
         rotation,
         minZoom: minimumZoom(),
         maxZoom: MAX_ZOOM,
@@ -1249,7 +1271,53 @@ export function PixiStage(props: PixiStageProps) {
       cam.tcy = clamped.y;
       cam.tzoom = target.zoom;
       overlayDirtyRef.current = true;
-      reportCenter();
+      reportCamera();
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (flyoverRef.current) {
+        endFlyover(); // any input skips the flyover
+        return;
+      }
+      applyZoomInput(
+        normalizeWheelDelta(e.deltaY, e.deltaMode, app.screen.height),
+        e.clientX,
+        e.clientY,
+      );
+    };
+
+    type SafariGestureEvent = Event & {
+      scale?: number;
+      clientX?: number;
+      clientY?: number;
+    };
+    let gestureScale = 1;
+    const handleGestureStart = (event: Event) => {
+      event.preventDefault();
+      const gesture = event as SafariGestureEvent;
+      gestureScale = Number.isFinite(gesture.scale) && gesture.scale! > 0 ? gesture.scale! : 1;
+      if (flyoverRef.current) endFlyover();
+    };
+    const handleGestureChange = (event: Event) => {
+      event.preventDefault();
+      if (flyoverRef.current) {
+        endFlyover();
+        return;
+      }
+      const gesture = event as SafariGestureEvent;
+      const nextScale = Number.isFinite(gesture.scale) && gesture.scale! > 0 ? gesture.scale! : gestureScale;
+      const rect = el.getBoundingClientRect();
+      applyZoomInput(
+        gestureScaleToWheelDelta(nextScale / gestureScale),
+        gesture.clientX ?? rect.left + rect.width / 2,
+        gesture.clientY ?? rect.top + rect.height / 2,
+      );
+      gestureScale = nextScale;
+    };
+    const handleGestureEnd = (event: Event) => {
+      event.preventDefault();
+      gestureScale = 1;
     };
 
     // Drag-to-pan with middle or right button (left stays editing).
@@ -1286,7 +1354,7 @@ export function PixiStage(props: PixiStageProps) {
       panState = null;
       el.releasePointerCapture?.(e.pointerId);
       el.style.cursor = "crosshair";
-      reportCenter();
+      reportCamera();
     };
     const handleContextMenu = (e: MouseEvent) => e.preventDefault();
 
@@ -1429,6 +1497,9 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     el.addEventListener("wheel", handleWheel, { passive: false });
+    el.addEventListener("gesturestart", handleGestureStart, { passive: false });
+    el.addEventListener("gesturechange", handleGestureChange, { passive: false });
+    el.addEventListener("gestureend", handleGestureEnd, { passive: false });
     el.addEventListener("pointerdown", handlePointerDown);
     el.addEventListener("pointermove", handlePointerMove);
     el.addEventListener("pointerup", handlePointerUp);
@@ -1441,6 +1512,9 @@ export function PixiStage(props: PixiStageProps) {
 
     return () => {
       el.removeEventListener("wheel", handleWheel);
+      el.removeEventListener("gesturestart", handleGestureStart);
+      el.removeEventListener("gesturechange", handleGestureChange);
+      el.removeEventListener("gestureend", handleGestureEnd);
       el.removeEventListener("pointerdown", handlePointerDown);
       el.removeEventListener("pointermove", handlePointerMove);
       el.removeEventListener("pointerup", handlePointerUp);
@@ -1701,16 +1775,10 @@ export function PixiStage(props: PixiStageProps) {
     const cols = Math.ceil(w / CHUNK_TILES);
     const rows = Math.ceil(h / CHUNK_TILES);
     const elev = (x: number, y: number) => getElevation(course, x, y);
-    // Intent-backed cells remain the simulation truth, but their legacy
-    // diamond tops must not poke through a continuous surface. Reconstruct a
-    // lightweight visual underlay from the nearest surrounding material; the
-    // smooth intent polygon is drawn over it by the next layer.
-    const underlayTiles = buildIntentUnderlayTiles(
-      course.tiles,
-      w,
-      h,
-      course.surfaceIntent?.features ?? [],
-    );
+    // Whole-tile terrain is the visual source of truth. Surface intent is
+    // retained for editor history and backwards-compatible saves, but it no
+    // longer substitutes an underlay or clips a second terrain layer.
+    const underlayTiles = course.tiles;
     const visualTerrainAt = (x: number, y: number): Terrain => {
       const index = y * w + x;
       return underlayTiles[index];
@@ -1747,6 +1815,9 @@ export function PixiStage(props: PixiStageProps) {
       // Cliff faces render behind this chunk's tile tops.
       const cliffs = new PIXI.Graphics();
       chunk.container.addChild(cliffs);
+      const reliefBanks = new PIXI.Graphics();
+      chunk.container.addChild(reliefBanks);
+      const hillCaps = new PIXI.Graphics();
       const face = (x: number, y: number, d: Point, color: number) => {
         const e = elev(x, y);
         const nx = x + d.x;
@@ -1763,6 +1834,29 @@ export function PixiStage(props: PixiStageProps) {
         cliffs.poly([a.x, a.y, b.x, b.y, b.x, b.y + drop, a.x, a.y + drop]);
         cliffs.fill(color);
       };
+      const recessedFace = (x: number, y: number, d: Point) => {
+        const terrain = visualTerrainAt(x, y);
+        const style = terrainReliefStyle(course.theme, terrain);
+        if (!style) return;
+        const nx = x + d.x;
+        const ny = y + d.y;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h || elev(nx, ny) !== elev(x, y)) return;
+        const neighborInset = terrainSurfaceInsetPx(visualTerrainAt(nx, ny));
+        if (neighborInset >= style.surfaceInsetPx) return;
+        const [c1, c2] = edgeCorners(x, y, d.x, d.y);
+        const a = worldToIso(c1.x, c1.y, elev(x, y), rotation);
+        const b = worldToIso(c2.x, c2.y, elev(x, y), rotation);
+        reliefBanks.poly([
+          a.x, a.y + neighborInset,
+          b.x, b.y + neighborInset,
+          b.x, b.y + style.surfaceInsetPx,
+          a.x, a.y + style.surfaceInsetPx,
+        ]);
+        const isFront =
+          (d.x === dSW.x && d.y === dSW.y) ||
+          (d.x === dSE.x && d.y === dSE.y);
+        reliefBanks.fill(isFront ? style.bankDark : style.bankLight);
+      };
 
       // Depth-ordered tile list within the chunk.
       const order: Array<{ x: number; y: number }> = [];
@@ -1774,6 +1868,9 @@ export function PixiStage(props: PixiStageProps) {
       for (const { x, y } of order) {
         face(x, y, dSW, cliffFaces.sw);
         face(x, y, dSE, cliffFaces.se);
+        for (const direction of AUTOTILE_DIRECTIONS.filter((entry) => entry.dx === 0 || entry.dy === 0)) {
+          recessedFace(x, y, { x: direction.dx, y: direction.dy });
+        }
       }
       // Mow stripes (ZKU-149): fairway/green tiles get alternating light/dark
       // bands oriented along the nearest hole's tee→green axis; fairway far
@@ -1789,36 +1886,20 @@ export function PixiStage(props: PixiStageProps) {
           const len2 = Math.max(1e-6, dx * dx + dy * dy);
           return { ax, ay, dx, dy, len2 };
         });
-      const stripeShade = (x: number, y: number): number => {
-        let band: number | null = null;
-        let bestDist = 64; // squared distance gate (~8 tiles from the axis)
-        for (const axis of holeAxes) {
-          const px = x - axis.ax;
-          const py = y - axis.ay;
-          const t = Math.max(0, Math.min(1, (px * axis.dx + py * axis.dy) / axis.len2));
-          const cx2 = px - t * axis.dx;
-          const cy2 = py - t * axis.dy;
-          const d2 = cx2 * cx2 + cy2 * cy2;
-          if (d2 < bestDist) {
-            bestDist = d2;
-            const along = t * Math.sqrt(axis.len2); // tiles along the axis
-            band = Math.floor(along / 1.5) % 2;
-          }
-        }
-        if (band === null) band = ((Math.floor((x - y) / 2) % 2) + 2) % 2; // global diagonal
-        return band === 0 ? 1.035 : 0.965; // subtle per ART_GUIDE
-      };
-
       for (const { x, y } of order) {
         const terrain = visualTerrainAt(x, y);
         const material = getTerrainMaterial(course.theme, terrain);
         const e = elev(x, y);
-        const p = worldToIso(x + 0.5, y, e, rotation);
+        const groundPosition = worldToIso(x + 0.5, y, e, rotation);
+        const surfaceInset = terrainSurfaceInsetPx(terrain);
+        const p = { x: groundPosition.x, y: groundPosition.y + surfaceInset };
         // NW-sun slope shade from central-difference normals (world-fixed sun).
         const dzdx = (elev(x + 1, y) - elev(x - 1, y)) / 2;
         const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
         let slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
-        if (terrain === "fairway" || terrain === "green") slopeShade *= stripeShade(x, y);
+        if (terrain === "fairway" || terrain === "green" || terrain === "tee") {
+          slopeShade *= mowingShadeAt(x, y, holeAxes);
+        }
         const legacyTint = shade(darken(THEMED_COLORS[terrain], EDGE_DARKEN), slopeShade);
 
         // Authored parkland sources are @2× but remain 64×32 in world space.
@@ -1858,29 +1939,44 @@ export function PixiStage(props: PixiStageProps) {
           chunk.container.addChild(pattern);
         }
 
-        const cover = deriveGroundCover(course, props.worldSeed, x, y);
-        if (cover) {
-          const detail = new PIXI.Graphics();
+        const terrainDetail = deriveTerrainDetail(course, props.worldSeed, x, y);
+        const terrainDetailTexture = terrainDetail ? getTerrainDetailFrame(terrainDetail.frame) : null;
+        if (terrainDetail && terrainDetailTexture) {
+          const detail = new PIXI.Sprite(terrainDetailTexture);
           detail.eventMode = "none";
-          detail.position.set(p.x + cover.offsetX, p.y + cover.offsetY);
-          detail.alpha = .78;
-          if (cover.kind === "native_grass") {
-            detail.moveTo(-3, 2); detail.lineTo(-1, -4); detail.moveTo(0, 2); detail.lineTo(1, -5); detail.moveTo(3, 2); detail.lineTo(5, -3);
-            detail.stroke({ width: 1.2, color: 0x315f2f });
-          } else if (cover.kind === "flowers") {
-            detail.circle(-2, 0, 1.3); detail.circle(2, -1, 1.1); detail.fill(0xf4d86b);
-          } else if (cover.kind === "reeds") {
-            detail.moveTo(-4, 3); detail.lineTo(-4, -7); detail.moveTo(0, 3); detail.lineTo(1, -9); detail.moveTo(4, 3); detail.lineTo(5, -5);
-            detail.stroke({ width: 1.35, color: 0x6e7433 });
-          } else if (cover.kind === "leaf_litter") {
-            detail.ellipse(-3, 0, 2.2, 1); detail.ellipse(2, 2, 1.8, .9); detail.fill(0x795735);
-          } else if (cover.kind === "pebbles") {
-            detail.circle(-3, 1, 1.4); detail.circle(2, -1, 1.7); detail.fill(0x756b5d);
-          } else {
-            detail.ellipse(0, 1, 5, 2.2); detail.fill({ color: 0x76563a, alpha: .5 });
-          }
+          detail.anchor.set(0.5, 1);
+          detail.position.set(
+            p.x + terrainDetail.offsetX,
+            p.y + 12 + terrainDetail.offsetY,
+          );
+          detail.scale.set(terrainDetail.scale);
           chunk.container.addChild(detail);
-          chunk.groundCoverSprites.push({ graphic: detail, tier: cover.detailTier });
+          chunk.groundCoverSprites.push({ display: detail, tier: terrainDetail.detailTier });
+        } else {
+          const cover = deriveGroundCover(course, props.worldSeed, x, y);
+          if (cover) {
+            const detail = new PIXI.Graphics();
+            detail.eventMode = "none";
+            detail.position.set(p.x + cover.offsetX, p.y + cover.offsetY);
+            detail.alpha = .78;
+            if (cover.kind === "native_grass") {
+              detail.moveTo(-3, 2); detail.lineTo(-1, -4); detail.moveTo(0, 2); detail.lineTo(1, -5); detail.moveTo(3, 2); detail.lineTo(5, -3);
+              detail.stroke({ width: 1.2, color: 0x315f2f });
+            } else if (cover.kind === "flowers") {
+              detail.circle(-2, 0, 1.3); detail.circle(2, -1, 1.1); detail.fill(0xf4d86b);
+            } else if (cover.kind === "reeds") {
+              detail.moveTo(-4, 3); detail.lineTo(-4, -7); detail.moveTo(0, 3); detail.lineTo(1, -9); detail.moveTo(4, 3); detail.lineTo(5, -5);
+              detail.stroke({ width: 1.35, color: 0x6e7433 });
+            } else if (cover.kind === "leaf_litter") {
+              detail.ellipse(-3, 0, 2.2, 1); detail.ellipse(2, 2, 1.8, .9); detail.fill(0x795735);
+            } else if (cover.kind === "pebbles") {
+              detail.circle(-3, 1, 1.4); detail.circle(2, -1, 1.7); detail.fill(0x756b5d);
+            } else {
+              detail.ellipse(0, 1, 5, 2.2); detail.fill({ color: 0x76563a, alpha: .5 });
+            }
+            chunk.container.addChild(detail);
+            chunk.groundCoverSprites.push({ display: detail, tier: cover.detailTier });
+          }
         }
 
         // Animated water registration (ZKU-150): shimmer phase from position
@@ -1890,7 +1986,7 @@ export function PixiStage(props: PixiStageProps) {
           chunk.waterSprites.push({
             sprite,
             baseTint: sprite.tint,
-            phase: ((x * 13 + y * 7) % 32) / 32 * Math.PI * 2,
+            phase: waterShimmerPhase(x, y),
             gx: x,
             gy: y,
           });
@@ -1907,7 +2003,8 @@ export function PixiStage(props: PixiStageProps) {
           const ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
           const nTerrain = visualTerrainAt(nx, ny);
-          if (TERRAIN_PRIORITY[terrain] <= TERRAIN_PRIORITY[nTerrain]) continue;
+          const boundary = terrainBoundaryFor(terrain, nTerrain);
+          if (!boundary || boundary.owner !== terrain) continue;
           if (elev(nx, ny) !== e) continue;
           boundaryMask |= 1 << index;
         }
@@ -1919,7 +2016,9 @@ export function PixiStage(props: PixiStageProps) {
           if (!transitionTexture) continue;
           const lip = new PIXI.Sprite(transitionTexture);
           lip.anchor.set(0.5, 0);
-          lip.position.set(p.x, p.y);
+          // Recessed hazards keep their lip on the surrounding ground plane;
+          // the base material sits below it and the bank face bridges the gap.
+          lip.position.set(groundPosition.x, groundPosition.y);
           lip.width = TILE_W;
           lip.height = TILE_H;
           lip.tint = props.colorVision === "standard" ? shade(0xffffff, slopeShade) : legacyTint;
@@ -1928,7 +2027,31 @@ export function PixiStage(props: PixiStageProps) {
             chunk.foamSprites.push({ sprite: lip, phase: ((x * 5 + y * 11) % 16) / 16 * Math.PI * 2 });
           }
         }
+
+        // A restrained bevel on the higher tile softens elevation steps into
+        // rounded hill caps. Links intentionally carries the strongest cue.
+        const capStrength = hillReliefStrength(course.theme);
+        for (const direction of AUTOTILE_DIRECTIONS.filter((entry) => entry.dx === 0 || entry.dy === 0)) {
+          const nx = x + direction.dx;
+          const ny = y + direction.dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h || elev(nx, ny) >= e) continue;
+          const [c1, c2] = edgeCorners(x, y, direction.dx, direction.dy);
+          const a = worldToIso(c1.x, c1.y, e, rotation);
+          const b = worldToIso(c2.x, c2.y, e, rotation);
+          const isFront =
+            (direction.dx === dSW.x && direction.dy === dSW.y) ||
+            (direction.dx === dSE.x && direction.dy === dSE.y);
+          hillCaps.moveTo(a.x, a.y + surfaceInset);
+          hillCaps.lineTo(b.x, b.y + surfaceInset);
+          hillCaps.stroke({
+            width: isFront ? 2.4 : 1.5,
+            color: isFront ? 0x263b2d : 0xe8e2af,
+            alpha: (isFront ? 0.3 : 0.22) * capStrength,
+            cap: "round",
+          });
+        }
       }
+      chunk.container.addChild(hillCaps);
 
       // Culling bounds: projected rect corners + elevation headroom.
       const corners = [
@@ -2016,135 +2139,190 @@ export function PixiStage(props: PixiStageProps) {
     cullChunks();
   }, [appReady, course, rotation, cullChunks, props.colorVision, props.terrainPatterns, props.worldSeed]);
 
-  // ---------------------------------------------------------------------
-  // M35 smooth surface intent — static GPU-triangulated curve/region layer
-  // ---------------------------------------------------------------------
-
+  // Material-clipped surface intent. New Curve/Area contours use their 4×
+  // accepted mask for the silhouette, but their interior remains the same
+  // deterministic atlas-tile field used by legacy terrain.
   useEffect(() => {
     if (!appReady) return;
     const layer = layersRef.current?.smoothSurfaces;
     if (!layer) return;
     layer.removeChildren().forEach((child) => child.destroy());
-    const intent = course.surfaceIntent;
-
-    const colors: Record<Terrain, number> = props.colorVision === "standard"
-      ? { ...COLORS, ...getLandTheme(course.theme).tileTints }
-      : TERRAIN_PALETTES[props.colorVision];
-    const elevationAt = (point: { x: number; y: number }) => {
-      const x = Math.max(0, Math.min(course.width - 1, Math.floor(point.x)));
-      const y = Math.max(0, Math.min(course.height - 1, Math.floor(point.y)));
-      return getElevation(course, x, y);
-    };
-    const project = (point: { x: number; y: number }) =>
-      worldToIso(point.x, point.y, elevationAt(point), rotation);
-
-    // Legacy saves receive immediate continuous boundaries even before the
-    // player edits them. A translucent union fill preserves authored texture
-    // character while suppressing tile quilting and stair-step silhouettes.
-    const contourTiles = buildIntentUnderlayTiles(
-      course.tiles,
-      course.width,
-      course.height,
-      intent?.features ?? [],
+    surfaceWaterSpritesRef.current = [];
+    const styles: Partial<Record<Terrain, { color: number; width: number; alpha: number }>> = {};
+    const features = (course.surfaceIntent?.features ?? []).filter(() => false);
+    const elevationAt = (point: Point) => getElevation(
+      course,
+      Math.max(0, Math.min(course.width - 1, Math.floor(point.x))),
+      Math.max(0, Math.min(course.height - 1, Math.floor(point.y))),
     );
-    const legacyContours = buildTerrainContours(contourTiles, course.width, course.height)
-      .sort((a, b) => TERRAIN_PRIORITY[a.terrain] - TERRAIN_PRIORITY[b.terrain]);
-    for (const contour of legacyContours) {
-      if (contour.points.length < 3) continue;
-      const graphic = new PIXI.Graphics();
-      graphic.eventMode = "none";
-      const polygon = contour.points.map(project);
-      graphic.poly(polygon.flatMap((point) => [point.x, point.y]));
-      graphic.fill({
-        color: colors[contour.terrain],
-        alpha: contour.terrain === "rough" ? 0.54 : 0.78,
+    const project = (point: Point) => worldToIso(point.x, point.y, elevationAt(point), rotation);
+    const holeAxes = course.holes
+      .filter((hole) => hole.tee && hole.green)
+      .map((hole) => {
+        const ax = hole.tee!.x;
+        const ay = hole.tee!.y;
+        const dx = hole.green!.x - ax;
+        const dy = hole.green!.y - ay;
+        return { ax, ay, dx, dy, len2: Math.max(1e-6, dx * dx + dy * dy) };
       });
-      if (contour.terrain !== "rough") {
-        graphic.stroke({
-          width: 0.9,
-          color: darken(colors[contour.terrain], 0.78),
-          alpha: 0.34,
-        });
+    const ringArea = (ring: readonly Point[]) => {
+      let area = 0;
+      for (let index = 0; index < ring.length; index++) {
+        const point = ring[index];
+        const next = ring[(index + 1) % ring.length];
+        area += point.x * next.y - next.x * point.y;
       }
-      layer.addChild(graphic);
-    }
-
-    for (const feature of [...(intent?.features ?? [])].sort((a, b) => a.order - b.order)) {
-      if (feature.coverage.length === 0) continue;
-      const valid = feature.coverage.reduce((count, index) => (
-        course.tiles[index] === feature.terrain ? count + 1 : count
-      ), 0);
-      // If later tile edits materially invalidate a curve, reveal the
-      // authoritative terrain instead of drawing stale intent over it.
-      if (valid / feature.coverage.length < 0.8) continue;
-
-      const graphic = new PIXI.Graphics();
-      graphic.eventMode = "none";
-      let polygon: Array<{ x: number; y: number }> = [];
-      if (feature.geometry.kind === "region") {
-        polygon = feature.geometry.ring.map(project);
-      } else {
-        const centerline = sampleCorridor(feature.geometry.knots, 0.14);
-        if (centerline.length < 2) continue;
-        const halfWidth = feature.geometry.width / 2;
-        const left: Array<{ x: number; y: number }> = [];
-        const right: Array<{ x: number; y: number }> = [];
-        for (let index = 0; index < centerline.length; index++) {
-          const before = centerline[Math.max(0, index - 1)];
-          const after = centerline[Math.min(centerline.length - 1, index + 1)];
-          const dx = after.x - before.x;
-          const dy = after.y - before.y;
-          const length = Math.max(1e-6, Math.hypot(dx, dy));
-          const nx = -dy / length * halfWidth;
-          const ny = dx / length * halfWidth;
-          left.push(project({ x: centerline[index].x + nx, y: centerline[index].y + ny }));
-          right.push(project({ x: centerline[index].x - nx, y: centerline[index].y - ny }));
+      return area / 2;
+    };
+    const ringContains = (ring: readonly Point[], point: Point) => {
+      let inside = false;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const a = ring[i];
+        const b = ring[j];
+        if (
+          (a.y > point.y) !== (b.y > point.y) &&
+          point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y || Number.EPSILON) + a.x
+        ) inside = !inside;
+      }
+      return inside;
+    };
+    const buildMask = (rings: readonly (readonly Point[])[]) => {
+      const mask = new PIXI.Graphics();
+      mask.eventMode = "none";
+      const nodes = rings
+        .filter((ring) => ring.length >= 3)
+        .map((ring) => ({ ring, area: Math.abs(ringArea(ring)), parent: -1, depth: 0 }))
+        .sort((a, b) => b.area - a.area);
+      for (let index = 0; index < nodes.length; index++) {
+        const point = nodes[index].ring[0];
+        for (let parent = index - 1; parent >= 0; parent--) {
+          if (!ringContains(nodes[parent].ring, point)) continue;
+          nodes[index].parent = parent;
+          nodes[index].depth = nodes[parent].depth + 1;
+          break;
         }
-        const cap = (
-          center: { x: number; y: number },
-          tangent: { x: number; y: number },
-          startAngle: number,
-        ) => {
-          const heading = Math.atan2(tangent.y, tangent.x);
-          return Array.from({ length: 9 }, (_, index) => {
-            const angle = heading + startAngle - index * Math.PI / 8;
-            return project({
-              x: center.x + Math.cos(angle) * halfWidth,
-              y: center.y + Math.sin(angle) * halfWidth,
-            });
-          });
-        };
-        const first = centerline[0];
-        const second = centerline[1];
-        const last = centerline[centerline.length - 1];
-        const penultimate = centerline[centerline.length - 2];
-        const endCap = cap(last, { x: last.x - penultimate.x, y: last.y - penultimate.y }, Math.PI / 2);
-        const startCap = cap(first, { x: second.x - first.x, y: second.y - first.y }, -Math.PI / 2);
-        polygon = [...left, ...endCap.slice(1), ...right.reverse().slice(1), ...startCap.slice(1)];
       }
-      if (polygon.length < 3) continue;
-      graphic.poly(polygon.flatMap((point) => [point.x, point.y]));
-      graphic.fill({ color: colors[feature.terrain], alpha: 0.94 });
-      graphic.stroke({
-        width: feature.terrain === "path" ? 1.8 : 1.2,
-        color: darken(colors[feature.terrain], feature.terrain === "water" ? 0.72 : 0.8),
-        alpha: 0.7,
-      });
-      layer.addChild(graphic);
+      for (let index = 0; index < nodes.length; index++) {
+        const node = nodes[index];
+        if (node.depth % 2 !== 0) continue;
+        const outer = node.ring.map(project);
+        mask.poly(outer.flatMap((point) => [point.x, point.y]));
+        mask.fill(0xffffff);
+        for (let holeIndex = 0; holeIndex < nodes.length; holeIndex++) {
+          const hole = nodes[holeIndex];
+          if (hole.parent !== index || hole.depth % 2 !== 1) continue;
+          const points = hole.ring.map(project);
+          mask.poly(points.flatMap((point) => [point.x, point.y]));
+          mask.cut();
+        }
+      }
+      return mask;
+    };
+
+    const diamond = diamondTextureRef.current;
+    for (const feature of [...features].sort((a, b) => a.order - b.order)) {
+      const validCoverage = feature.coverage.filter((index) => course.tiles[index] === feature.terrain);
+      if (validCoverage.length === 0 || !feature.renderRings?.length) continue;
+      const material = getTerrainMaterial(course.theme, feature.terrain);
+      const materialLayer = new PIXI.Container();
+      materialLayer.eventMode = "none";
+      for (const index of validCoverage) {
+        const x = index % course.width;
+        const y = Math.floor(index / course.width);
+        const elevation = getElevation(course, x, y);
+        const position = worldToIso(x + 0.5, y, elevation, rotation);
+        const authored = material.source === "atlas-2x"
+          ? getTerrainFrame(pickTerrainBaseFrame(material, x, y))
+          : null;
+        if (!authored && !diamond) continue;
+        const sprite = new PIXI.Sprite(authored ?? diamond!);
+        sprite.anchor.set(0.5, 0);
+        sprite.position.set(position.x, position.y);
+        sprite.width = authored ? TILE_W + 0.75 : TILE_W;
+        sprite.height = authored ? TILE_H + 0.5 : TILE_H;
+        const dzdx = (getElevation(course, x + 1, y) - getElevation(course, x - 1, y)) / 2;
+        const dzdy = (getElevation(course, x, y + 1) - getElevation(course, x, y - 1)) / 2;
+        let slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
+        if (feature.terrain === "fairway" || feature.terrain === "green" || feature.terrain === "tee") {
+          slopeShade *= mowingShadeAt(x, y, holeAxes);
+        }
+        sprite.tint = shade(0xffffff, slopeShade);
+        materialLayer.addChild(sprite);
+        if (feature.terrain === "water" || feature.terrain === "wetland") {
+          surfaceWaterSpritesRef.current.push({
+            sprite,
+            baseTint: sprite.tint,
+            phase: waterShimmerPhase(x, y),
+            gx: x,
+            gy: y,
+          });
+        }
+      }
+      const mask = buildMask(feature.renderRings);
+      materialLayer.mask = mask;
+      layer.addChild(materialLayer, mask);
+      const style = styles[feature.terrain];
+      if (style) {
+        const outline = new PIXI.Graphics();
+        outline.eventMode = "none";
+        const sampleTerrain = (point: Point): Terrain | null => {
+          const x = Math.floor(point.x);
+          const y = Math.floor(point.y);
+          if (x < 0 || y < 0 || x >= course.width || y >= course.height) return null;
+          return course.tiles[y * course.width + x];
+        };
+        for (const ring of feature.renderRings) {
+          let drawing = false;
+          for (let index = 0; index < ring.length; index++) {
+            const start = ring[index];
+            const end = ring[(index + 1) % ring.length];
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+            const length = Math.hypot(dx, dy);
+            if (length <= 1e-6) continue;
+            const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+            const normal = { x: -dy / length * 0.9, y: dx / length * 0.9 };
+            const sideA = sampleTerrain({ x: midpoint.x + normal.x, y: midpoint.y + normal.y });
+            const sideB = sampleTerrain({ x: midpoint.x - normal.x, y: midpoint.y - normal.y });
+            const ownsBoundary =
+              (sideA === feature.terrain && sideB !== feature.terrain) ||
+              (sideB === feature.terrain && sideA !== feature.terrain);
+            if (!ownsBoundary) {
+              drawing = false;
+              continue;
+            }
+            const projectedStart = project(start);
+            const projectedEnd = project(end);
+            if (!drawing) outline.moveTo(projectedStart.x, projectedStart.y);
+            outline.lineTo(projectedEnd.x, projectedEnd.y);
+            drawing = true;
+          }
+        }
+        outline.stroke({
+          width: style.width,
+          color: style.color,
+          alpha: style.alpha,
+          join: "round",
+          cap: "round",
+        });
+        layer.addChild(outline);
+      }
     }
-    // Course operations and layout metadata share the Course root object but
-    // cannot change any pixels in this layer. Rebuilding every triangulated
-    // surface for those updates can monopolize the browser main thread.
+
+    // Operations metadata shares the Course root but cannot alter this layer;
+    // depend only on the visual fields below to avoid costly rebuilds.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     appReady,
-    course.width,
-    course.height,
     course.tiles,
     course.elevations,
+    course.width,
+    course.height,
+    course.holes,
     course.surfaceIntent,
     course.theme,
     props.colorVision,
+    props.terrainPatterns,
     rotation,
   ]);
 
@@ -2831,6 +3009,32 @@ export function PixiStage(props: PixiStageProps) {
       layers.terrainDecals.addChild(g);
     }
 
+    if (props.paceBottlenecks?.length) {
+      const g = new PIXI.Graphics();
+      for (const finding of props.paceBottlenecks) {
+        const hole = holes.find((candidate) => candidate.id === finding.holeId);
+        const point = hole ? getPinPosition(hole, course.activePinRotation ?? "A") ?? hole.green ?? hole.tee : null;
+        if (!point) continue;
+        const center = tileCenterIso(point.x, point.y, getElevation(course, point.x, point.y), rotation);
+        const radius = Math.min(18, 8 + finding.intensity * 0.6);
+        const color = finding.severity === "severe" ? 0xd8563a : finding.severity === "high" ? 0xe7a83e : 0xf2d36f;
+        g.circle(center.x, center.y, radius);
+        g.fill({ color, alpha: 0.18 });
+        g.stroke({ width: finding.severity === "severe" ? 4 : 2.5, color, alpha: 0.95 });
+        // Radial ticks keep severity/intensity legible when hue differences
+        // disappear under a color-vision palette.
+        const ticks = finding.severity === "severe" ? 6 : finding.severity === "high" ? 4 : 2;
+        for (let index = 0; index < ticks; index++) {
+          const angle = (Math.PI * 2 * index) / ticks;
+          g.moveTo(center.x + Math.cos(angle) * (radius + 2), center.y + Math.sin(angle) * (radius + 2));
+          g.lineTo(center.x + Math.cos(angle) * (radius + 7), center.y + Math.sin(angle) * (radius + 7));
+        }
+        g.stroke({ width: 2, color: 0xffffff, alpha: 0.92 });
+      }
+      g.label = ROUTE_LABEL;
+      layers.terrainDecals.addChild(g);
+    }
+
     // Failing-corridor overlay: red translucent diamonds.
     if (showFixOverlay && failingCorridorSegments && failingCorridorSegments.length > 0) {
       const g = new PIXI.Graphics();
@@ -2863,7 +3067,7 @@ export function PixiStage(props: PixiStageProps) {
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
     }
-  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, rotation, props.showMarkers, props.architectureWarnings, props.architectureOverlay]);
+  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, holes, rotation, props.showMarkers, props.architectureWarnings, props.architectureOverlay, props.paceBottlenecks]);
 
   // ---------------------------------------------------------------------
   // Ticker pass — hover highlight/line + live golfer dots
@@ -2947,7 +3151,7 @@ export function PixiStage(props: PixiStageProps) {
             };
             const strokePreview = terrainStrokePreviewRef.current;
             if (editorMode === "PAINT" && strokePreview) {
-              for (const tile of strokePreview.tiles) outlineTile(tile.x, tile.y, 0.82);
+              for (const tile of strokePreview.acceptedTiles) outlineTile(tile.x, tile.y, 0.82);
             } else if (editorMode === "SCULPT" && props.sculptRadius && props.sculptRadius > 1) {
               // Brush footprint preview (matches brushFootprint in sculpt.ts).
               const r = props.sculptRadius - 0.5;
@@ -3064,6 +3268,11 @@ export function PixiStage(props: PixiStageProps) {
               fs.sprite.alpha = 0.16 + 0.14 * (0.5 + 0.5 * Math.sin(t * 2.1 + fs.phase));
             }
           }
+          for (const ws of surfaceWaterSpritesRef.current) {
+            let f = 1 + 0.05 * Math.sin(t * 1.6 + ws.phase);
+            if ((ws.gx * 31 + ws.gy * 57 + bucket) % 89 === 0) f = 1.22;
+            ws.sprite.tint = shade(ws.baseTint, f);
+          }
         }
       } else if (waterAnim.wasAnimating) {
         waterAnim.wasAnimating = false;
@@ -3071,6 +3280,7 @@ export function PixiStage(props: PixiStageProps) {
           for (const ws of chunk.waterSprites) ws.sprite.tint = ws.baseTint;
           for (const fs of chunk.foamSprites) fs.sprite.alpha = 0.26;
         }
+        for (const ws of surfaceWaterSpritesRef.current) ws.sprite.tint = ws.baseTint;
       }
 
       // Wind sway (ZKU-151): subtle skew oscillation on tree canopies.
@@ -3773,7 +3983,6 @@ export function PixiStage(props: PixiStageProps) {
       terrainStrokeRef.current = {
         pointerId,
         points,
-        keys: new Set([`${point.x},${point.y}`]),
         last: point,
       };
       const preview = onPreviewTerrainStroke(points);
@@ -3785,11 +3994,11 @@ export function PixiStage(props: PixiStageProps) {
     const extendTerrainStroke = (point: Point, pointerId: number) => {
       const stroke = terrainStrokeRef.current;
       if (!stroke || stroke.pointerId !== pointerId || !onPreviewTerrainStroke) return;
-      for (const next of rasterizeTileLine(stroke.last, point)) {
-        const key = `${next.x},${next.y}`;
-        if (stroke.keys.has(key)) continue;
-        stroke.keys.add(key);
-        stroke.points.push(next);
+      const nextPoints = resampleWorldLine(stroke.last, point);
+      if (nextPoints.length === 0) return;
+      stroke.points.push(...nextPoints);
+      if (stroke.points.length > 2048) {
+        stroke.points = stroke.points.filter((_, index) => index % 2 === 0 || index === stroke.points.length - 1);
       }
       stroke.last = point;
       const preview = onPreviewTerrainStroke(stroke.points);
@@ -3810,7 +4019,7 @@ export function PixiStage(props: PixiStageProps) {
 
     const canvasPoint = (event: PointerEvent): Point | null => {
       const rect = app.canvas.getBoundingClientRect();
-      return screenToTile(
+      return screenToWorldPoint(
         (event.clientX - rect.left) * app.screen.width / rect.width,
         (event.clientY - rect.top) * app.screen.height / rect.height
       );
@@ -3842,6 +4051,8 @@ export function PixiStage(props: PixiStageProps) {
       if (!terrainStrokeRef.current || terrainStrokeRef.current.pointerId !== event.pointerId) return;
       event.preventDefault();
       event.stopImmediatePropagation();
+      const point = canvasPoint(event);
+      if (point) extendTerrainStroke(point, event.pointerId);
       finishTerrainStroke(event.pointerId);
       try {
         if (pointerSurface.hasPointerCapture(event.pointerId)) pointerSurface.releasePointerCapture(event.pointerId);
@@ -3939,7 +4150,7 @@ export function PixiStage(props: PixiStageProps) {
       pointerSurface.removeEventListener("pointercancel", handleCanvasPointerCancel, true);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [appReady, screenToTile, screenToIsoPlane, onClickTile, onPreviewTerrainStroke, onCommitTerrainStroke, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.showGolfers, props.playableShotMode]);
+  }, [appReady, screenToTile, screenToWorldPoint, screenToIsoPlane, onClickTile, onPreviewTerrainStroke, onCommitTerrainStroke, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.showGolfers, props.playableShotMode]);
 
   return (
     <div
@@ -3959,6 +4170,7 @@ export function PixiStage(props: PixiStageProps) {
           position: "relative",
           overflow: "hidden",
           cursor: "crosshair",
+          touchAction: "none",
         }}
       />
       {rendererError && (

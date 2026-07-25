@@ -135,8 +135,12 @@ class AudioManager {
     return clamp01(this.volumes.masterVolume * this.volumes[channel] * duck);
   }
 
+  private authoredAmbienceAllowed(): boolean {
+    return this.ambientMix.enabled && this.resolvedContext() === "silent";
+  }
+
   private ambientSampleLevel(): number {
-    if (!this.ambientMix.enabled) return 0;
+    if (!this.authoredAmbienceAllowed()) return 0;
     const activity = Math.max(
       this.ambientMix.birds,
       this.ambientMix.water,
@@ -165,7 +169,7 @@ class AudioManager {
     });
     const ambience = this.ambientSampleLevel();
     this.ambienceSlots?.forEach((slot, index) => {
-      const active = this.ambientMix.enabled && index === this.activeAmbienceSlot;
+      const active = this.authoredAmbienceAllowed() && index === this.activeAmbienceSlot;
       this.fadeElement(slot, active ? ambience : 0, seconds * 1000, !active);
     });
     if (this.sfxBus) this.rampParam(this.sfxBus.gain, this.effective("sfxVolume"), seconds);
@@ -195,7 +199,7 @@ class AudioManager {
     }
     this.unlocked = true;
     if (this.resolvedContext() !== "silent") await this.switchPlaylist(this.resolvedContext());
-    if (this.ambientMix.enabled) await this.switchAmbience(this.ambientMix.bed);
+    if (this.authoredAmbienceAllowed()) await this.switchAmbience(this.ambientMix.bed);
   }
 
   setVolumes(volumes: Partial<AudioVolumes>): void {
@@ -242,6 +246,16 @@ class AudioManager {
     return this.override ?? this.context;
   }
 
+  private stopElement(audio: HTMLAudioElement): void {
+    this.fadeVersions.set(audio, (this.fadeVersions.get(audio) ?? 0) + 1);
+    audio.volume = 0;
+    audio.pause();
+  }
+
+  private stopMusicSlots(): void {
+    this.musicSlots?.forEach((slot) => this.stopElement(slot));
+  }
+
   private async switchPlaylist(context: MusicContext): Promise<void> {
     if (!this.unlocked || !this.musicSlots) return;
     const switchVersion = ++this.musicSwitchVersion;
@@ -249,17 +263,26 @@ class AudioManager {
     if (this.playingContext !== "silent" && old.currentTime > 0 && !old.ended) this.contextPositions.set(this.playingContext, old.currentTime);
     if (context === "silent") {
       this.playingContext = "silent";
-      this.musicSlots.forEach((slot) => this.fadeElement(slot, 0, 450, true));
+      this.stopMusicSlots();
       return;
     }
+    // CourseCraft owns one file-backed background recording at a time.
+    // Stop authored ambience and the outgoing score before starting the next
+    // context so route/tutorial transitions cannot sound like layered songs.
+    this.stopAmbience();
     const list = MUSIC_PLAYLISTS[context];
     const index = this.trackIndex.get(context) ?? 0;
     const selected = list[index % list.length];
     const src = selected.src;
     if (old.dataset.trackId === selected.id && !old.paused) {
+      this.musicSlots.forEach((slot, slotIndex) => {
+        if (slotIndex !== this.activeSlot) this.stopElement(slot);
+      });
       this.playingContext = context;
+      this.fadeElement(old, this.effective("musicVolume"), 120, false);
       return;
     }
+    this.stopMusicSlots();
     const nextSlot = this.activeSlot === 0 ? 1 : 0;
     const next = this.musicSlots[nextSlot];
     next.src = src;
@@ -281,8 +304,7 @@ class AudioManager {
     }
     this.activeSlot = nextSlot;
     this.playingContext = context;
-    this.fadeElement(old, 0, 2000, true);
-    this.fadeElement(next, this.effective("musicVolume"), 2000, false);
+    this.fadeElement(next, this.effective("musicVolume"), 350, false);
   }
 
   private fadeElement(
@@ -318,7 +340,7 @@ class AudioManager {
 
   private async switchAmbience(bed: SunoAmbienceContext): Promise<void> {
     if (!this.unlocked || !this.ambienceSlots) return;
-    if (!this.ambientMix.enabled) {
+    if (!this.authoredAmbienceAllowed()) {
       this.stopAmbience();
       return;
     }
@@ -328,9 +350,14 @@ class AudioManager {
     const index = this.ambienceTrackIndex.get(bed) ?? 0;
     const selected = list[index % list.length];
     if (this.playingAmbience === bed && old.dataset.trackId === selected.id && !old.paused) {
-      this.rampAll(0.5);
+      this.ambienceSlots.forEach((slot, slotIndex) => {
+        if (slotIndex !== this.activeAmbienceSlot) this.stopElement(slot);
+      });
+      this.rampActiveAmbience(0.5);
       return;
     }
+    this.ambienceSlots.forEach((slot) => this.stopElement(slot));
+    this.playingAmbience = null;
     const nextSlot = this.activeAmbienceSlot === 0 ? 1 : 0;
     const next = this.ambienceSlots[nextSlot];
     next.src = selected.src;
@@ -343,7 +370,7 @@ class AudioManager {
     } catch {
       return;
     }
-    if (switchVersion !== this.ambienceSwitchVersion || !this.ambientMix.enabled) {
+    if (switchVersion !== this.ambienceSwitchVersion || !this.authoredAmbienceAllowed()) {
       if (this.ambiencePlayClaims.get(next) === switchVersion) {
         next.volume = 0;
         next.pause();
@@ -352,18 +379,17 @@ class AudioManager {
     }
     this.activeAmbienceSlot = nextSlot;
     this.playingAmbience = bed;
-    this.fadeElement(old, 0, 2400, true);
-    this.fadeElement(next, this.ambientSampleLevel(), 2400, false);
+    this.fadeElement(next, this.ambientSampleLevel(), 350, false);
   }
 
   private stopAmbience(): void {
     this.ambienceSwitchVersion += 1;
     this.playingAmbience = null;
-    this.ambienceSlots?.forEach((slot) => this.fadeElement(slot, 0, 450, true));
+    this.ambienceSlots?.forEach((slot) => this.stopElement(slot));
   }
 
   private rampActiveAmbience(seconds = 0.8): void {
-    if (!this.ambientMix.enabled || this.playingAmbience == null) return;
+    if (!this.authoredAmbienceAllowed() || this.playingAmbience == null) return;
     const active = this.ambienceSlots?.[this.activeAmbienceSlot];
     if (active) this.fadeElement(active, this.ambientSampleLevel(), seconds * 1000, false);
     if (this.ambienceBus) {
@@ -372,7 +398,7 @@ class AudioManager {
   }
 
   private async advanceAmbienceTrack(): Promise<void> {
-    if (!this.ambientMix.enabled) return;
+    if (!this.authoredAmbienceAllowed()) return;
     const bed = this.ambientMix.bed;
     const list = AMBIENCE_PLAYLISTS[bed];
     const current = this.ambienceTrackIndex.get(bed) ?? 0;
@@ -523,14 +549,13 @@ class AudioManager {
     const wasEnabled = this.ambientMix.enabled;
     this.ambientMix = { ...mix };
     if (this.unlocked) {
-      if (!mix.enabled) this.stopAmbience();
+      if (!this.authoredAmbienceAllowed()) this.stopAmbience();
       else if (!wasEnabled || bedChanged || this.playingAmbience == null) void this.switchAmbience(mix.bed);
       else this.rampActiveAmbience();
     }
     if (!this.ctx) return;
-    // The authored Suno beds provide the broad soundscape. The procedural
-    // layers remain as quiet, camera-reactive detail rather than competing
-    // with the recordings.
+    // Procedural layers provide quiet, camera-reactive environmental detail
+    // beneath the sole file-backed score without introducing another song.
     const scale = !mix.enabled ? 0 : mix.paused ? 0.025 : 0.22;
     for (const name of ["birds", "water", "wind", "murmur", "crickets"] as const) {
       const gain = this.ambienceLayers.get(name);

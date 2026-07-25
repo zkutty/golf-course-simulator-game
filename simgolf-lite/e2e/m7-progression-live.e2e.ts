@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { openWorkspaceAction } from "./workspace";
 
 test("M7 reputation progression, clock, live overview, and follow flow", async ({ page }) => {
   const consoleErrors: string[] = [];
@@ -10,8 +11,7 @@ test("M7 reputation progression, clock, live overview, and follow flow", async (
     { timeout: 30_000 },
   ).toBe(100);
 
-  await page.getByTestId("workspace-legacy").click();
-  await page.getByTestId("open-progression").click();
+  await openWorkspaceAction(page, "legacy", "open-progression");
   const progression = page.getByTestId("progression-panel");
   await expect(progression).toBeVisible();
   await expect(progression.getByRole("heading", { name: "Local Favorite" })).toBeVisible();

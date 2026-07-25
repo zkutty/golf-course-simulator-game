@@ -1,6 +1,7 @@
 import type { SpeedName } from "./liveConfig";
 import type { Arrival, Golfer, LiveState, Segment } from "./types";
 import { createWeekLedger, normalizeWeekLedger, type LiveWeekLedger } from "./weeklyLedger";
+import { emptyPaceDayMetrics } from "./pace";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
@@ -74,6 +75,7 @@ function golfer(value: unknown): value is Golfer {
     (value.courseName == null || typeof value.courseName === "string") &&
     (value.holeIds == null || (Array.isArray(value.holeIds) && value.holeIds.every((id) => typeof id === "string"))) &&
     (value.currentHoleId == null || typeof value.currentHoleId === "string") &&
+    (value.paceIdentityAtVisit == null || (finite(value.paceIdentityAtVisit) && value.paceIdentityAtVisit >= 0 && value.paceIdentityAtVisit <= 1)) &&
     (value.wallet == null || finite(value.wallet)) &&
     (value.purchasedSegmentIndexes == null || (Array.isArray(value.purchasedSegmentIndexes) && value.purchasedSegmentIndexes.every(Number.isInteger))) &&
     (value.tournamentId == null || typeof value.tournamentId === "string") &&
@@ -83,6 +85,7 @@ function golfer(value: unknown): value is Golfer {
 function arrival(value: unknown): value is Arrival {
   if (!isRecord(value) || !finite(value.atMinute) || typeof value.archetype !== "string") return false;
   if (value.courseId != null && typeof value.courseId !== "string") return false;
+  if (value.paceIdentityAtVisit != null && (!finite(value.paceIdentityAtVisit) || value.paceIdentityAtVisit < 0 || value.paceIdentityAtVisit > 1)) return false;
   if (value.tournament == null) return true;
   return isRecord(value.tournament) && typeof value.tournament.eventId === "string" &&
     typeof value.tournament.entrantId === "string" && typeof value.tournament.name === "string" && finite(value.tournament.skill) &&
@@ -169,18 +172,28 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
     groupStartedAt: g.groupStartedAt ?? serializable.dayMinute,
     waitMinutes: g.waitMinutes ?? 0,
     pacePreference: g.pacePreference ?? g.personality.skill,
+    paceIdentityAtVisit: g.paceIdentityAtVisit ?? 0.5,
     marshalInterventions: g.marshalInterventions ?? 0,
     forcedPickups: g.forcedPickups ?? 0,
     drinksServed: g.drinksServed ?? 0,
     alcoholUnits: g.alcoholUnits ?? 0,
     hospitalityDelay: g.hospitalityDelay ?? 0,
     disorderIncidents: g.disorderIncidents ?? 0,
+    completionStatus: g.completionStatus === "daylight" || g.completionStatus === "congestion_abandonment"
+      ? g.completionStatus
+      : "completed",
   }));
-  serializable.arrivals = serializable.arrivals.map((arrival, index) => ({ ...arrival, groupId: arrival.groupId ?? `${arrival.courseId ?? "course"}-solo-arrival-${index}` }));
+  serializable.arrivals = serializable.arrivals.map((arrival, index) => ({
+    ...arrival,
+    groupId: arrival.groupId ?? `${arrival.courseId ?? "course"}-solo-arrival-${index}`,
+    paceIdentityAtVisit: arrival.paceIdentityAtVisit ?? 0.5,
+  }));
   serializable.groups ??= serializable.golfers.map((g) => ({ id: g.groupId!, courseId: g.courseId ?? "course-primary", bookedAt: g.groupStartedAt ?? serializable.dayMinute, startedAt: g.groupStartedAt ?? serializable.dayMinute, golferIds: [g.id], waitMinutes: g.waitMinutes ?? 0, blocked: false, interventions: g.marshalInterventions ?? 0, pickups: g.forcedPickups ?? 0, finishedAt: null }));
-  serializable.pace ??= { groupsStarted: serializable.groups.length, groupsFinished: 0, totalWaitMinutes: 0, marshalInterventions: 0, forcedPickups: 0, beverageRevenue: 0, alcoholicDrinks: 0, serviceRefusals: 0, disorderIncidents: 0 };
+  serializable.pace ??= emptyPaceDayMetrics();
+  serializable.pace.perCourse ??= {};
   serializable.marshalCoverageByCourse ??= {};
   serializable.beverageCoverageByCourse ??= {};
+  serializable.overtimeRateByCourse ??= {};
   serializable.operationsByCourse ??= {};
   serializable.concessionCollected ??= 0;
   serializable.concessionTransactions ??= [];

@@ -1,7 +1,7 @@
 {
   "name": "simgolf-lite",
   "private": true,
-  "version": "1.0.0-rc.2",
+  "version": "1.0.0-rc.3",
   "type": "module",
   "main": "desktop/main.mjs",
   "scripts": {
@@ -21,14 +21,16 @@
     "desktop:pack:dir": "npm run build && electron-builder --dir",
     "desktop:dist": "npm run build && electron-builder",
     "release:audit": "node scripts/release-audit.mjs",
+    "release:certify:m28": "node scripts/m28-certify.mjs",
     "release:certify": "node scripts/m44-certify.mjs",
+    "release:certify:m45": "node scripts/m45-certify.mjs",
     "test:fuzz": "vitest run src/core/reducer.fuzz.test.ts",
     "test:soak": "vite build --ssr src/game/testing/soakCli.ts --outDir soak-dist --emptyOutDir --minify false && node --expose-gc soak-dist/soakCli.js",
     "test:balance": "vite build --ssr src/game/testing/releaseBalanceCli.ts --outDir balance-dist --emptyOutDir --minify false && node balance-dist/releaseBalanceCli.js",
     "tune": "vite build --ssr src/game/tuning/tuneCli.ts --outDir tune-dist --emptyOutDir --minify false && node tune-dist/tuneCli.js",
-    "gen:sprites": "node scripts/gen-placeholder-sprites.mjs && node scripts/gen-terrain-materials.mjs && node scripts/process-biome-props.mjs && node scripts/gen-golfer-sprites.mjs",
+    "gen:sprites": "node scripts/gen-placeholder-sprites.mjs && node scripts/gen-terrain-materials.mjs && node scripts/gen-terrain-details.mjs && node scripts/process-biome-props.mjs && node scripts/gen-golfer-sprites.mjs",
     "gen:props": "node scripts/process-biome-props.mjs",
-    "gen:terrain": "node scripts/gen-terrain-materials.mjs",
+    "gen:terrain": "node scripts/gen-terrain-materials.mjs && node scripts/gen-terrain-details.mjs",
     "gen:audio": "node scripts/gen-audio.mjs",
     "audit:audio": "node scripts/audit-audio-assets.mjs",
     "gen:m22-art": "node scripts/process-m22-assets.mjs",
@@ -38,8 +40,15 @@
     "art:pixellab:certify": "node scripts/pixellab-pilot.mjs certify",
     "test:perf": "node scripts/perf-smoke.mjs",
     "test:pwa": "node scripts/pwa-smoke.mjs",
-    "deploy:check": "wrangler deploy --dry-run --env=\"\"",
-    "deploy:check:staging": "wrangler deploy --dry-run --env staging"
+    "test:worker": "npm run test:worker:unit && npm run test:worker:runtime",
+    "test:worker:unit": "vitest run worker",
+    "test:worker:runtime": "WRANGLER_LOG_PATH=/tmp/coursecraft-worker-tests.log vitest run --config vitest.worker.config.ts",
+    "test:dispatcher": "node --test scripts/m45-repair-dispatcher.test.mjs",
+    "typecheck:worker": "tsc -p tsconfig.worker.json --noEmit",
+    "repair:dispatch": "node scripts/bug-repair-dispatcher.mjs",
+    "repair:dispatch:execute": "node scripts/bug-repair-dispatcher.mjs --execute",
+    "deploy:check": "WRANGLER_LOG_PATH=/tmp/coursecraft-deploy-check.log wrangler deploy --dry-run --env=\"\"",
+    "deploy:check:staging": "WRANGLER_LOG_PATH=/tmp/coursecraft-deploy-check-staging.log wrangler deploy --dry-run --env staging"
   },
   "dependencies": {
     "@sentry/react": "^10.67.0",
@@ -48,6 +57,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.8",
     "@eslint/js": "^9.39.1",
     "@playwright/test": "^1.61.1",
     "@sentry/vite-plugin": "^5.4.0",

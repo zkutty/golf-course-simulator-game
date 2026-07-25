@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("M35 curved terrain authoring persists smooth intent and hides the global grid", async ({ page }, testInfo) => {
+test("M35 curved terrain authoring persists connected material intent", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
