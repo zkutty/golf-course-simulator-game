@@ -95,7 +95,11 @@ import { T } from "../i18n/T";
 import { decodeParcelMap } from "../game/estate/estate";
 import type { ArchitectureWarning } from "../game/architecture/architecture";
 import type { ArchitectureOverlayRender } from "../game/architecture/reviewTypes";
-import { nextWheelZoomTarget, normalizeWheelDelta } from "../game/render/wheelZoom";
+import {
+  gestureScaleToWheelDelta,
+  nextWheelZoomTarget,
+  normalizeWheelDelta,
+} from "../game/render/wheelZoom";
 import {
   SCENIC_CAMERA_MARGIN_TILES,
   SCENIC_GENERATION_BLEED_TILES,
@@ -689,7 +693,7 @@ export function PixiStage(props: PixiStageProps) {
   const rotTweenRef = useRef<{ start: number; toDeg: number; next: IsoRotation } | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
-  const lastReportedCenterRef = useRef<Point | null>(null);
+  const lastReportedCameraStateRef = useRef<CameraState | null>(null);
   const lastAmbientReportAtRef = useRef(0);
   const lastCameraStateRef = useRef<CameraState | null | undefined>(undefined);
 
@@ -1193,12 +1197,10 @@ export function PixiStage(props: PixiStageProps) {
       fitWholeCourse(false);
       return;
     }
-    const reported = lastReportedCenterRef.current;
-    const isEcho =
-      reported &&
-      Math.abs(reported.x - cameraState.center.x) < 1e-6 &&
-      Math.abs(reported.y - cameraState.center.y) < 1e-6;
-    if (isEcho) return;
+    // App stores the exact object we report after manual input. Ignore that
+    // identity echo, but never mistake a later explicit Fit command for one
+    // merely because it happens to share the same center.
+    if (lastReportedCameraStateRef.current === cameraState) return;
 
     cam.tcx = cameraState.center.x;
     cam.tcy = cameraState.center.y;
@@ -1208,8 +1210,10 @@ export function PixiStage(props: PixiStageProps) {
         b.minX, b.minY, b.maxX, b.maxY,
         app.screen.width, app.screen.height, rotation
       );
+    } else if (Number.isFinite(cameraState.zoom)) {
+      cam.tzoom = Math.max(minimumZoom(), Math.min(MAX_ZOOM, cameraState.zoom));
     }
-  }, [appReady, cameraState, rotation, fitWholeCourse]);
+  }, [appReady, cameraState, rotation, fitWholeCourse, minimumZoom]);
 
   // Camera controls: wheel zoom-to-cursor, drag pan, WASD/QE, smoothing.
   useEffect(() => {
@@ -1218,30 +1222,33 @@ export function PixiStage(props: PixiStageProps) {
     const el = containerRef.current;
     if (!app || !el) return;
 
-    const reportCenter = () => {
+    const reportCamera = () => {
       const cam = camRef.current;
       const center = { x: cam.tcx, y: cam.tcy };
       props.onCameraCenter?.(center);
       if (!cameraState || !props.onCameraUpdate) return;
-      lastReportedCenterRef.current = center;
-      props.onCameraUpdate({ ...cameraState, center });
+      const reported = {
+        ...cameraState,
+        center,
+        zoom: cam.tzoom,
+        // Manual camera ownership must not carry an auto-fit box that a later
+        // state round-trip could reapply over the user's chosen zoom.
+        bounds: undefined,
+      };
+      lastReportedCameraStateRef.current = reported;
+      props.onCameraUpdate(reported);
     };
 
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      if (flyoverRef.current) {
-        endFlyover(); // any input skips the flyover
-        return;
-      }
+    const applyZoomInput = (deltaPixels: number, clientX: number, clientY: number) => {
       const cam = camRef.current;
       const rect = el.getBoundingClientRect();
-      const gx = e.clientX - rect.left;
-      const gy = e.clientY - rect.top;
+      const gx = clientX - rect.left;
+      const gy = clientY - rect.top;
       const target = nextWheelZoomTarget({
         camera: { cx: cam.tcx, cy: cam.tcy, zoom: cam.tzoom },
         cursor: { x: gx, y: gy },
         viewport: { width: app.screen.width, height: app.screen.height },
-        deltaPixels: normalizeWheelDelta(e.deltaY, e.deltaMode, app.screen.height),
+        deltaPixels,
         rotation,
         minZoom: minimumZoom(),
         maxZoom: MAX_ZOOM,
@@ -1251,7 +1258,53 @@ export function PixiStage(props: PixiStageProps) {
       cam.tcy = clamped.y;
       cam.tzoom = target.zoom;
       overlayDirtyRef.current = true;
-      reportCenter();
+      reportCamera();
+    };
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      if (flyoverRef.current) {
+        endFlyover(); // any input skips the flyover
+        return;
+      }
+      applyZoomInput(
+        normalizeWheelDelta(e.deltaY, e.deltaMode, app.screen.height),
+        e.clientX,
+        e.clientY,
+      );
+    };
+
+    type SafariGestureEvent = Event & {
+      scale?: number;
+      clientX?: number;
+      clientY?: number;
+    };
+    let gestureScale = 1;
+    const handleGestureStart = (event: Event) => {
+      event.preventDefault();
+      const gesture = event as SafariGestureEvent;
+      gestureScale = Number.isFinite(gesture.scale) && gesture.scale! > 0 ? gesture.scale! : 1;
+      if (flyoverRef.current) endFlyover();
+    };
+    const handleGestureChange = (event: Event) => {
+      event.preventDefault();
+      if (flyoverRef.current) {
+        endFlyover();
+        return;
+      }
+      const gesture = event as SafariGestureEvent;
+      const nextScale = Number.isFinite(gesture.scale) && gesture.scale! > 0 ? gesture.scale! : gestureScale;
+      const rect = el.getBoundingClientRect();
+      applyZoomInput(
+        gestureScaleToWheelDelta(nextScale / gestureScale),
+        gesture.clientX ?? rect.left + rect.width / 2,
+        gesture.clientY ?? rect.top + rect.height / 2,
+      );
+      gestureScale = nextScale;
+    };
+    const handleGestureEnd = (event: Event) => {
+      event.preventDefault();
+      gestureScale = 1;
     };
 
     // Drag-to-pan with middle or right button (left stays editing).
@@ -1288,7 +1341,7 @@ export function PixiStage(props: PixiStageProps) {
       panState = null;
       el.releasePointerCapture?.(e.pointerId);
       el.style.cursor = "crosshair";
-      reportCenter();
+      reportCamera();
     };
     const handleContextMenu = (e: MouseEvent) => e.preventDefault();
 
@@ -1431,6 +1484,9 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     el.addEventListener("wheel", handleWheel, { passive: false });
+    el.addEventListener("gesturestart", handleGestureStart, { passive: false });
+    el.addEventListener("gesturechange", handleGestureChange, { passive: false });
+    el.addEventListener("gestureend", handleGestureEnd, { passive: false });
     el.addEventListener("pointerdown", handlePointerDown);
     el.addEventListener("pointermove", handlePointerMove);
     el.addEventListener("pointerup", handlePointerUp);
@@ -1443,6 +1499,9 @@ export function PixiStage(props: PixiStageProps) {
 
     return () => {
       el.removeEventListener("wheel", handleWheel);
+      el.removeEventListener("gesturestart", handleGestureStart);
+      el.removeEventListener("gesturechange", handleGestureChange);
+      el.removeEventListener("gestureend", handleGestureEnd);
       el.removeEventListener("pointerdown", handlePointerDown);
       el.removeEventListener("pointermove", handlePointerMove);
       el.removeEventListener("pointerup", handlePointerUp);
@@ -3987,6 +4046,7 @@ export function PixiStage(props: PixiStageProps) {
           position: "relative",
           overflow: "hidden",
           cursor: "crosshair",
+          touchAction: "none",
         }}
       />
       {rendererError && (

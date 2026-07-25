@@ -273,3 +273,40 @@ different music sounds going on”
   and controls rendered correctly with no console errors.
 - TODO: publish this follow-up and re-run the same active-stream audit against
   the deployed Workers URL before closing ZK-443.
+
+## ZK-445 Hole Wizard zoom ownership — 2026-07-24
+
+Current request: “record a bug in linear that when in hole wizard it won't let
+you zoom (looks like it tries to snap to the entire hole). then try to fix the
+bug”
+
+- Opened high-priority Linear bug ZK-445 in `golf-sim`, related it to the
+  completed general trackpad issue ZK-264, marked it In Progress, and attached
+  the user screenshot.
+- Reproduced the hole-editor camera feedback defect with a focused Playwright
+  regression: a centered manual zoom caused the explicit Fit command to be
+  discarded because Pixi classified camera echoes by matching center
+  coordinates.
+- Replaced coordinate-based echo detection with exact object-identity
+  ownership. Manual camera reports now persist the live target zoom and drop
+  the auto-fit bounds, preventing a later state round-trip from reapplying the
+  whole-hole framing.
+- Added Safari `gesturestart`/`gesturechange`/`gestureend` pinch support on the
+  course surface, with native page zoom suppressed and pinch scale translated
+  into the same cursor-anchored logarithmic zoom contract as wheel input.
+- Focused unit coverage and TypeScript checks pass. The targeted browser
+  regression now covers wheel zoom, stable settling, explicit Fit after manual
+  zoom, Safari-style pinch zoom, and post-pinch persistence.
+- The required bundled web-game client completed on the M23 hole-editor fixture
+  with structured state, a rendered course capture, and no console-error
+  artifact.
+
+### ZK-445 remaining
+
+- None for the scoped fix. The final focused screenshot was inspected; the M12,
+  scenic-surround, and ZK-445 browser regressions pass 3/3; focused lint has no
+  errors; and a direct production Vite bundle passes.
+- Verification evidence was posted to Linear and ZK-445 is Done.
+- The aggregate `npm run build` remains blocked by an unrelated concurrent
+  `App.tsx` edit that calls `getPinPosition` without importing it. That file is
+  outside the ZK-445 change set and was left untouched.

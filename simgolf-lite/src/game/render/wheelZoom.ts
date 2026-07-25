@@ -31,6 +31,15 @@ export function normalizeWheelDelta(deltaY: number, deltaMode: number, pageHeigh
 }
 
 /**
+ * Convert Safari's relative pinch scale into the same logarithmic delta used
+ * by wheel zoom. A scale above 1 zooms in; below 1 zooms out.
+ */
+export function gestureScaleToWheelDelta(scaleRatio: number): number {
+  if (!Number.isFinite(scaleRatio) || scaleRatio <= 0) return 0;
+  return -Math.log(scaleRatio) / WHEEL_ZOOM_RATE;
+}
+
+/**
  * Build the next camera target while preserving the iso-plane point under the
  * cursor. The caller must pass the previous *target*, not the rendered camera,
  * so dense trackpad streams accumulate monotonically while rendering eases.
