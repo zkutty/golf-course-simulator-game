@@ -129,12 +129,41 @@ npx playwright test --config playwright.sandbox.config.ts \
   e2e/m6-tournaments.e2e.ts:3 e2e/m7-progression-live.e2e.ts:3 --workers=1
 ```
 
-**Status: still unresolved.** The first attempt failed to launch (sandbox browser
-mismatch, fixed below). The second attempt was interrupted by a container restart while
-running, and a third attempt was still executing `m17-retention` when this report was
-committed. No verdict has been produced for these four specs in this session, and the
-handoff's "61 passed / 8 failed" repository-wide snapshot therefore remains the last known
-state. **Do not record these four as green.**
+**Results on the merged tree.** Three distinct root causes, only one of them a product
+defect:
+
+| Spec | Failure | Cause |
+| --- | --- | --- |
+| M17 | Was: 600 s timeout on `/Records/`. Now: reaches line 42, the final assertion | **Stale pre-M40 navigation — fixed.** `records` is 5th of seven `legacy` actions, so it sits behind the "More" overflow |
+| M7 | Was: 600 s timeout on `open-progression`. Now: reaches line 41, the final assertion | **Same stale navigation — fixed.** `progression` is 4th of seven, also in the overflow |
+| M6 | `tournament.active` not null after a 45 s `advanceTime` poll, with all five entrants at `finished: true, holesCompleted: 18` | Unresolved. `completeTournament` has one non-test caller (`useLiveSimulation.ts:383`, `finishDay`), so a tournament clears only at day end — the assertion is really "45 s of polling advances enough sim time". Needs real hardware to separate a genuine hang from container slowness |
+| M27 | Renderer `workMs` 27.27 vs the 8 ms budget | Unresolved. Timing-bound; `npm run test:perf` measured 0.90 ms on the same container, so this is not credible here |
+
+`506b1bd` updated `m40` and `m43` for the new navigation but missed `m17` and `m7`. All
+four call sites of overflow-bound legacy actions were checked, so the fix set is complete.
+The shared helper is `e2e/workspace.ts`.
+
+### Every browser spec fails on an external font fetch here
+
+After the navigation fixes, M17 and M7 both run to their final line and then fail on
+`expect(errors).toEqual([])` catching `net::ERR_CONNECTION_RESET`. A direct probe
+identifies the request precisely:
+
+```
+FAILED: net::ERR_CONNECTION_RESET
+  https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Nunito:...
+```
+
+`index.html:19` loads Merriweather and Nunito from `fonts.googleapis.com`. This container
+cannot reach it, and routing Chromium through the environment's HTTPS proxy does not help
+— the browser's CONNECT is reset too. Any spec asserting zero console errors will fail in
+any network-restricted environment.
+
+That is an environment limitation for certification purposes, but it also points at a
+real robustness gap worth its own issue: the app takes a hard runtime dependency on an
+external font CDN while shipping a PWA that claims offline support. Self-hosting the two
+font families would remove the dependency and make these specs runnable offline. Not
+changed here — it affects type rendering and belongs in a scoped issue.
 
 The handoff's pending item #2 named `m35-landscape-details`, `m35-surface-authoring`, and
 `m35-water-grading`. Those specs do not exist in this repository (§1). The surviving M35
