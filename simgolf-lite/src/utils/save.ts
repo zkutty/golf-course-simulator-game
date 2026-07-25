@@ -34,7 +34,13 @@ import { normalizeTournamentCalendar } from "../game/tournaments/tournaments";
 import { DECORATION_KINDS, normalizedDecoration } from "../game/models/decorations";
 import { PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSetup } from "../game/models/courseSetup";
 import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
-import { createEstate, starterParcelOffset, validateEstate } from "../game/estate/estate";
+import {
+  createEstate,
+  decodeElevationBaseline,
+  decodeTerrainBaseline,
+  starterParcelOffset,
+  validateEstate,
+} from "../game/estate/estate";
 import { MAX_ESTATE_HOLES, normalizeCourseLayouts } from "../game/models/courseLayouts";
 import { normalizedStaff } from "../game/live/pace";
 import { normalizePropertyCourse, normalizePropertyEnterprise, starterPropertyCourse } from "../game/property/property";
@@ -46,7 +52,7 @@ import { normalizeCampaignRun } from "../game/campaign/campaign";
 import { normalizePaceOperationsState } from "../game/live/paceHistory";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 18 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 19 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -135,6 +141,10 @@ export interface SaveV17 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV18 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 18;
+  records?: CourseRecords;
+}
+export interface SaveV19 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -158,7 +168,7 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV18 = {
+  const save: SaveV19 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -260,6 +270,65 @@ function migrateCourseGrid(oldCourse: Course, runSeed: number): { course: Course
   };
   course.estate = createEstate(course, runSeed);
   return { course, offset: { x: offsetX, y: offsetY } };
+}
+
+/**
+ * V18 Links saves may contain a second 110×70 terrain generation pasted into
+ * the starter property. Upgrade only an entirely untouched natural estate:
+ * the immutable estate baseline gives us an exact, inexpensive proof that no
+ * terrain or elevation authoring would be overwritten.
+ */
+function upgradeUntouchedLegacyLinksEstate(course: Course, world: World): Course {
+  const estate = course.estate;
+  if (
+    course.theme !== "links" ||
+    !estate ||
+    estate.generationVersion !== 1 ||
+    estate.seed !== world.runSeed ||
+    estate.ownedParcelIds.length !== 1 ||
+    estate.ownedParcelIds[0] !== estate.starterParcelId ||
+    course.holes.some((hole) =>
+      hole.tee != null ||
+      hole.green != null ||
+      Object.values(hole.teeBoxes ?? {}).some((point) => point != null) ||
+      Object.values(hole.pinPositions ?? {}).some((point) => point != null) ||
+      (hole.waypoints?.length ?? 0) > 0
+    ) ||
+    (course.decorations?.length ?? 0) > 0 ||
+    course.buildings.some((building) => building.type !== "clubhouse") ||
+    course.buildings.length > 1
+  ) return course;
+
+  const expected = course.width * course.height;
+  const naturalTiles = decodeTerrainBaseline(estate.naturalBaseline.terrainRle, expected);
+  const naturalElevations = decodeElevationBaseline(estate.naturalBaseline.elevationRle, expected);
+  if (
+    !naturalTiles ||
+    !naturalElevations ||
+    course.tiles.some((tile, index) => tile !== naturalTiles[index]) ||
+    course.elevations.some((elevation, index) => elevation !== naturalElevations[index])
+  ) return course;
+
+  const regenerated = generateWildLandWithObstacles(
+    course.width,
+    course.height,
+    world.runSeed,
+    [],
+    "links",
+  );
+  const naturalCourse = {
+    ...course,
+    tiles: regenerated.tiles,
+    elevations: regenerated.elevations,
+  };
+  return {
+    ...naturalCourse,
+    // Obstacles are not included in the immutable estate baseline, so retain
+    // them verbatim rather than risk deleting a player-placed tree or rock.
+    obstacles: course.obstacles,
+    buildings: course.buildings,
+    estate: createEstate(naturalCourse, world.runSeed),
+  };
 }
 
 function translateLiveSnapshot(raw: unknown, offset: Point): unknown {
@@ -522,6 +591,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V18 adds bounded per-course pace identity, bottleneck, compensation, and
   // revenue-per-tee-hour history. Legacy saves start with a neutral history.
   17: (save) => ({ ...save, schemaVersion: 18 }),
+  // V19 removes the independently generated starter-property overlay. The
+  // normalizer can safely regenerate an untouched Links estate from its seed.
+  18: (save) => ({ ...save, schemaVersion: 19 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -782,6 +854,9 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       ),
       paceOperations: normalizePaceOperationsState(rawWorld.paceOperations),
     };
+    if (migrated.migratedFrom != null && migrated.migratedFrom <= 18) {
+      course = upgradeUntouchedLegacyLinksEstate(course, world);
+    }
     world.staffRoster = normalizedStaff(world, course);
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
     const records = normalizeRecords(parsed.records, history, world, course);

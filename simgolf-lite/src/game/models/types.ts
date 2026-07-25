@@ -294,7 +294,7 @@ export interface EstateBaseline {
 }
 
 export interface Estate {
-  generationVersion: 1;
+  generationVersion: 1 | 2;
   seed: number;
   starterParcelId: string;
   ownedParcelIds: string[];

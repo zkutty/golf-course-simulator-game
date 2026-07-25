@@ -13,6 +13,9 @@ Current request: “ok lets go fix that please”
 - The dedicated scenic-surround Playwright test passes; full-page overview and edge captures were inspected and show one continuous estate/regional coast with no starter-map rectangle.
 - The required bundled web-game client reports valid Links estate state with a water-bearing starter parcel and no console-error artifact. Its headed minimap capture was inspected; the direct main-canvas headless capture remains black under software WebGL, while the full-page Playwright renderer capture is correct.
 - Final verification passes: 70 Vitest files / 441 tests with one intentional skip, production build and asset audits, lint/i18n with seven existing hook warnings and no errors, `git diff --check`, and the focused scenic-surround browser regression.
+- After the first deployment, confirmed the reported screenshot was an untouched schema-v18 save restoring the pre-fix 110×70 overlay rather than a stale deployment: a clean live seed-25 Links course already rendered one continuous estate-wide coast.
+- Added save schema v19 and estate generation v2. Loading an untouched v18 Links estate now regenerates its natural terrain, elevations, and immutable baseline from the original seed while retaining its obstacles and clubhouse. The upgrade is gated by exact baseline equality, empty hole geometry/decorations, clubhouse-only construction, and starter-only ownership, so authored terrain and developed courses remain unchanged.
+- Added migration regressions for both automatic repair and authored-terrain preservation. Final migration verification passes: 70 Vitest files / 443 tests with one intentional skip, production build and asset audits, lint/i18n with seven existing warnings and no errors, and the required bundled-client Links render/state check at estate generation v2 with no console errors.
 
 ## ZK-444 remaining
 
