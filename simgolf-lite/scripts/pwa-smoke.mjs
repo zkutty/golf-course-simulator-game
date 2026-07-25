@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
+import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,7 +47,16 @@ if (!process.env.COURSECRAFT_PWA_URL) {
   await new Promise((resolve, reject) => { preview.once("error", reject); preview.listen(port, "127.0.0.1", resolve); });
 }
 
-const browser = await chromium.launch({ headless: true });
+// Match perf-smoke: prefer an explicitly provided or preinstalled Chromium so the
+// gate runs in sandboxes whose browser build differs from the Playwright default.
+const execCandidate = [
+  process.env.CHROMIUM_PATH,
+  "/opt/pw-browsers/chromium",
+].find((candidate) => candidate && existsSync(candidate));
+const browser = await chromium.launch({
+  headless: true,
+  ...(execCandidate ? { executablePath: execCandidate } : {}),
+});
 const context = await browser.newContext();
 const page = await context.newPage();
 const pageErrors = [];
