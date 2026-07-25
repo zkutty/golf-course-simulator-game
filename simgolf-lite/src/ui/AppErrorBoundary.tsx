@@ -1,12 +1,15 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { resetSave } from "../utils/save";
 import { T } from "../i18n/T";
+import { captureBugError } from "../bug-reporting/diagnostics";
+import { isBugReportingEnabled } from "../bug-reporting/feature";
+import { openBugReporter } from "../bug-reporting/events";
 
 interface AppErrorBoundaryProps {
   children: ReactNode;
   resetSaveFn?: () => void;
   reloadFn?: () => void;
-  onError?: (error: Error, info: ErrorInfo) => void;
+  onError?: (error: Error, info: ErrorInfo) => string | undefined | void;
 }
 
 interface AppErrorBoundaryState {
@@ -38,7 +41,11 @@ export class AppErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error("CourseCraft crashed inside the React tree", error, info.componentStack);
-    this.props.onError?.(error, info);
+    const sentryEventId = this.props.onError?.(error, info);
+    captureBugError("react-crash", error, {
+      componentStack: info.componentStack,
+      ...(typeof sentryEventId === "string" ? { sentryEventId } : {}),
+    });
   }
 
   private reload = (): void => {
@@ -81,6 +88,15 @@ export class AppErrorBoundary extends Component<
           <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
             <button type="button" onClick={this.reload} style={buttonStyle}>
               <T id="auto.ui.apperrorboundary.reload" /></button>
+            {isBugReportingEnabled() && (
+              <button
+                type="button"
+                onClick={() => openBugReporter("react-crash")}
+                style={buttonStyle}
+              >
+                <T id="bugReporter.crashButton" />
+              </button>
+            )}
             <button
               type="button"
               onClick={this.resetAndReload}

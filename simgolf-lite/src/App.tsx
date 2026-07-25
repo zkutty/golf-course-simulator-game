@@ -176,6 +176,10 @@ import { CampaignPanel } from "./ui/CampaignPanel";
 import { WorkspaceNav, type WorkspaceActionId, type WorkspaceId } from "./ui/WorkspaceNav";
 import { ContentLibraryPanel } from "./ui/ContentLibraryPanel";
 import { IS_DEMO, saveAvailableInEdition } from "./config/edition";
+import {
+  recordBugAction,
+  updateBugDiagnosticContext,
+} from "./bug-reporting/diagnostics";
 
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
@@ -257,6 +261,7 @@ export default function App() {
   // Dispatch function for actions
   const dispatch = useCallback((action: Action) => {
     if (action.type === "SCULPT_TILES") sculptedRef.current = true;
+    recordBugAction(action);
     // Log reducer dispatch count (only for mutations, not UI-only actions)
     if (DEBUG_PERF && (action.type !== "SET_MODE" && action.type !== "SET_ACTIVE_HOLE" && action.type !== "SET_BRUSH")) {
       logReducerDispatch();
@@ -487,6 +492,7 @@ export default function App() {
     const candidate = new URLSearchParams(window.location.search).get("workspace");
     return candidate === "operate" || candidate === "legacy" ? candidate : "design";
   });
+
   const [selectedParcelId, setSelectedParcelId] = useState<string | null>(null);
   const [showProgression, setShowProgression] = useState(false);
   const [showPlayerPro, setShowPlayerPro] = useState(false);
@@ -713,6 +719,72 @@ export default function App() {
     },
   });
   const getLiveSnapshot = live.getSnapshot;
+
+  useEffect(() => {
+    const activeModal = flow.modal
+      ?? (showArchitectureReview ? "architecture-review"
+        : showCampaign ? "campaign"
+        : showContentLibrary ? "content-library"
+        : showCourseManager ? "course-manager"
+        : showLandOffice ? "land-office"
+        : showLivingClub ? "living-club"
+        : showLiveOverview ? "live-overview"
+        : showPlayerPro ? "player-pro"
+        : showProgression ? "progression"
+        : showPropertyManagement ? "property-management"
+        : showRetention ? "records"
+        : showSeasonsLegacy ? "seasons"
+        : showTournaments ? "tournaments"
+        : undefined);
+    updateBugDiagnosticContext({
+      activeCourseId: activeLayout.id,
+      day: live.status.dayIndex,
+      holeIndex: activeHoleIndex,
+      ...(activeModal ? { modal: activeModal } : {}),
+      mode: world.mode ?? "sandbox",
+      screen,
+      seed: String(world.runSeed),
+      tool: editorMode === "PAINT" ? `PAINT:${terrainTool}:${selected}` : editorMode,
+      week: world.week,
+      ...(minimapView
+        ? {
+            camera: {
+              centerX: minimapView.center.x,
+              centerY: minimapView.center.y,
+              rotation: minimapView.rotation,
+              zoom: minimapView.zoom,
+            },
+          }
+        : {}),
+    });
+  }, [
+    activeHoleIndex,
+    activeLayout.id,
+    editorMode,
+    flow.modal,
+    live.status.dayIndex,
+    minimapView,
+    screen,
+    selected,
+    showArchitectureReview,
+    showCampaign,
+    showContentLibrary,
+    showCourseManager,
+    showLandOffice,
+    showLivingClub,
+    showLiveOverview,
+    showPlayerPro,
+    showProgression,
+    showPropertyManagement,
+    showRetention,
+    showSeasonsLegacy,
+    showTournaments,
+    terrainTool,
+    world.mode,
+    world.runSeed,
+    world.week,
+  ]);
+
   const pendingMajorStory = useMemo(
     () => normalizeLivingClub(world.livingClub).story.instances.find((instance) =>
       instance.priority === "major" && instance.status === "pending"
@@ -3577,13 +3649,22 @@ export default function App() {
     saveTutorialProgress(next);
   }
 
+  if (
+    import.meta.env.MODE === "e2e" &&
+    new URLSearchParams(window.location.search).get("crash-test") === "react"
+  ) {
+    throw new Error("M45 controlled React crash");
+  }
+
   if (screen === "setup") {
     return (
-      <NewGameWizard
-        onCancel={() => flowDispatch({ type: "BACK_TO_TITLE" })}
-        onStart={startNewGame}
-        onStartScenario={startScenario}
-      />
+      <>
+        <NewGameWizard
+          onCancel={() => flowDispatch({ type: "BACK_TO_TITLE" })}
+          onStart={startNewGame}
+          onStartScenario={startScenario}
+        />
+      </>
     );
   }
 

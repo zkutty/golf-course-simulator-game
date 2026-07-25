@@ -6,8 +6,11 @@ import { AudioProvider } from './audio/AudioProvider'
 import { AppErrorBoundary } from './ui/AppErrorBoundary'
 import { I18nProvider } from './i18n/I18nProvider'
 import { initializeMonitoring, reportAppError } from './monitoring'
+import { installGlobalBugCapture } from './bug-reporting/diagnostics'
+import { BugReportLauncher } from './ui/BugReportDialog'
 
 initializeMonitoring()
+installGlobalBugCapture()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -17,6 +20,7 @@ createRoot(document.getElementById('root')!).render(
           <App />
         </AudioProvider>
       </AppErrorBoundary>
+      <BugReportLauncher />
     </I18nProvider>
   </StrictMode>,
 )

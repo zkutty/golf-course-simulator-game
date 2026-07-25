@@ -14,6 +14,9 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   const relativePath = url.origin === location.origin && url.pathname.startsWith(scopeUrl.pathname) ? url.pathname.slice(scopeUrl.pathname.length) : url.pathname;
+  // Runtime controls and report responses must always reach the Worker and
+  // must never enter the offline cache.
+  if (relativePath.startsWith("api/")) return;
   const cacheFirst = relativePath.startsWith("audio/") || relativePath.startsWith("atlases/") || relativePath.startsWith("icons/") || url.origin !== location.origin;
   if (cacheFirst) event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => { if (response.ok || response.type === "opaque") caches.open(VERSION).then((cache) => cache.put(event.request, response.clone())); return response; })));
   else event.respondWith(fetch(event.request).then((response) => { if (response.ok) caches.open(VERSION).then((cache) => cache.put(event.request, response.clone())); return response; }).catch(() => caches.match(event.request)));

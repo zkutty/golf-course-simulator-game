@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 1,
+  "milestone": "M45: Closed-Loop Bug Capture & Repair",
+  "decision": "HOLD",
+  "records": {
+    "linearIssue": null,
+    "sentryGroup": null,
+    "draftPullRequest": null,
+    "stagingDeployment": null,
+    "cleanupDisposition": null
+  },
+  "gates": [
+    {
+      "id": "contract-and-privacy",
+      "kind": "automated",
+      "command": "npm run test:ci -- src/bug-reporting",
+      "status": "passed",
+      "evidence": "Focused contract, sanitizer, diagnostics, client, feature, screenshot, and event tests passed; the repository-wide Vitest run also passed 477 tests with one intentional skip."
+    },
+    {
+      "id": "worker-intake-runtime",
+      "kind": "automated",
+      "command": "npm run test:worker",
+      "status": "passed",
+      "evidence": "Five Worker suites passed 14 unit tests plus one workerd/Durable Object runtime integration test."
+    },
+    {
+      "id": "dispatcher-dry-runs",
+      "kind": "automated",
+      "command": "npm run test:dispatcher",
+      "status": "passed",
+      "evidence": "Seven dispatcher policy tests passed, including label, approval, evidence, path-scope, attachment, and canonical-marker gates."
+    },
+    {
+      "id": "reporter-and-crash-e2e",
+      "kind": "automated",
+      "command": "npx playwright test e2e/m45-bug-reporter.e2e.ts e2e/m45-bug-reporting.e2e.ts",
+      "status": "passed",
+      "evidence": "Four Playwright scenarios passed: required-only reporting, explicit diagnostics/screenshot consent, preview privacy filtering, and React crash handoff."
+    },
+    {
+      "id": "build-lint-unit",
+      "kind": "automated",
+      "command": "npm run build && npm run lint && npm run test:ci",
+      "status": "passed",
+      "evidence": "Production build, audio/offline injection, application/Node/Worker TypeScript, lint/i18n, and all 477 non-skipped unit tests passed. Lint reported only seven pre-existing React Hook warnings."
+    },
+    {
+      "id": "pwa-performance-deploy",
+      "kind": "automated",
+      "command": "npm run test:pwa && npm run test:perf && npm run deploy:check:staging",
+      "status": "passed",
+      "evidence": "Strict-CSP install/offline/save PWA smoke passed; 36-hole/100-golfer renderer work measured 0.35 ms against the 8 ms budget; staging Wrangler dry-run passed with the intended Worker, assets, Durable Object, rate-limit, and feature-flag bindings."
+    },
+    {
+      "id": "manual-staging-golden-path",
+      "kind": "external",
+      "status": "not-run",
+      "evidence": null
+    },
+    {
+      "id": "sentry-staging-group",
+      "kind": "external",
+      "status": "not-run",
+      "evidence": null
+    },
+    {
+      "id": "human-approved-draft-repair",
+      "kind": "external",
+      "status": "not-run",
+      "evidence": null
+    }
+  ]
+}

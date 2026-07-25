@@ -6,6 +6,11 @@ declare const __APP_VERSION__: string;
 declare const __APP_RELEASE__: string;
 declare const __COMMIT_SHA__: string;
 
+interface ImportMetaEnv {
+  readonly VITE_APP_ENVIRONMENT?: string;
+  readonly VITE_BUG_REPORTING?: string;
+}
+
 interface Window {
   coursecraftDesktop?: import("./platform/types").CourseCraftDesktopBridge;
   render_game_to_text?: () => string;
