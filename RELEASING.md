@@ -14,9 +14,10 @@ A release should take about ten minutes.
    git tag vX.Y.Z
    git push origin main --tags
    ```
-5. **Deploy:** pushing to `main` deploys automatically via
-   `.github/workflows/deploy.yml` (GitHub Pages). Verify the deployed title
-   screen shows the new version string.
+5. **Deploy:** pushing to `main` deploys automatically via the
+   `deploy-production` job in `.github/workflows/ci.yml`, which promotes the
+   exact artifact CI already tested to the `coursecraft-playtest` Cloudflare
+   Worker. Verify the deployed title screen shows the new version string.
 6. **Smoke test the deployment:**
    - New Game → paint terrain → place a hole via the wizard
    - Run the live sim at 1x and 3x for a game day

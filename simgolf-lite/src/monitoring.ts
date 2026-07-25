@@ -74,12 +74,22 @@ export function cloudflareBeaconConfiguration(token: string): { token: string; s
  * The staging and production Cloudflare deploys ship the identical build
  * artifact (tested once, deployed as-is), so the environment tag can't be
  * baked in at build time — it has to be resolved from the serving hostname.
+ *
+ * Every hostname a deploy can actually be served from must be listed here.
+ * `wrangler.jsonc` sets `workers_dev: true` for both environments, so the
+ * `workers.dev` hostnames stay reachable even once a custom domain is bound
+ * and are what `docs/M29_CLOUDFLARE_PLAYTEST.md` documents as the stable
+ * production and pre-production URLs. An unlisted hostname reports "unknown"
+ * rather than guessing, so a missing entry shows up as an untagged release
+ * instead of silently mislabelling staging traffic as production.
  */
-function resolveSentryEnvironment(): string {
-  const override = import.meta.env.VITE_SENTRY_ENVIRONMENT?.trim();
-  if (override) return override;
-  switch (window.location.hostname) {
+export function resolveSentryEnvironment(hostname: string, override?: string): string {
+  const explicit = override?.trim();
+  if (explicit) return explicit;
+  switch (hostname) {
     case "coursecraftgame.com":
+    case "www.coursecraftgame.com":
+    case "coursecraft-playtest.zbkutlow.workers.dev":
       return "production";
     case "coursecraft-dev.zbkutlow.workers.dev":
       return "staging";
@@ -106,7 +116,10 @@ export function initializeMonitoring(): void {
   Sentry.init({
     dsn,
     enabled: true,
-    environment: resolveSentryEnvironment(),
+    environment: resolveSentryEnvironment(
+      window.location.hostname,
+      import.meta.env.VITE_SENTRY_ENVIRONMENT,
+    ),
     release: __APP_RELEASE__,
     sendDefaultPii: false,
     tracesSampleRate: 0,

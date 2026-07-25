@@ -37,4 +37,6 @@ Sentry receives errors, release/commit tags, browser context, and React componen
 - Confirm Cloudflare Web Analytics receives a page view and Web Vitals.
 - Roll back from Workers & Pages > Deployments by selecting the last known-good version and promoting it. Re-run online, offline, and save/load smoke checks afterward.
 
-Keep GitHub Pages as a fallback until two consecutive Cloudflare deployments and the cross-browser/PWA checks pass. Then disable `.github/workflows/deploy.yml`; browser storage remains origin-scoped and is not migrated from the Pages hostname.
+The temporary GitHub Pages fallback (`.github/workflows/deploy.yml`) has been removed. Its gate — two consecutive successful Cloudflare `main` deployments — was met on 2026-07-25 (`cf4136b` at 00:39 UTC and `9981588` at 16:31 UTC), and Cloudflare is now the only deployment lane. Browser storage is origin-scoped and was never migrated from the Pages hostname, which never served a successful deployment.
+
+Sentry tags each deploy from its serving hostname (`resolveSentryEnvironment` in `src/monitoring.ts`) because staging and production ship the identical artifact. Any new hostname — a custom domain, a renamed Worker, a changed account subdomain — must be added there, or its traffic reports as `unknown`.
