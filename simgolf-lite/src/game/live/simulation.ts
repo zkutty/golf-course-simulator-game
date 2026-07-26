@@ -665,7 +665,12 @@ export function stepLive(
   }
 
   const allArrived = state.nextArrivalIdx >= state.arrivals.length;
-  if (state.dayMinute >= LIVE.day.closeMinute && allArrived && state.golfers.length === 0) {
+  // Tournament days only ever arrive the field (no walk-up traffic), so once
+  // every entrant is off the course the event is over — waiting for the
+  // ordinary closeMinute leaves the tournament (and its `active` status)
+  // hanging for the rest of the in-game day after the last group holes out.
+  const closedForBusiness = state.tournament ? true : state.dayMinute >= LIVE.day.closeMinute;
+  if (closedForBusiness && allArrived && state.golfers.length === 0) {
     state.dayOver = true;
   }
 
