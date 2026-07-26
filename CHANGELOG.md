@@ -6,6 +6,33 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- Rounded terrain silhouettes (ZK-468): rendering now derives one deterministic
+  silhouette per 4-connected whole-tile component — outer rings and holes traced
+  with stable winding, corners rounded by a terrain-configurable 0.25–0.5 tile
+  radius, and geometry cached by component topology so a brush stroke rebuilds
+  only the components it touched. Adjacent terrains resolve the same shared
+  contour bit-for-bit, so a seam cannot crack or draw twice. `Course.tiles`
+  remains authoritative: coverage, save schema, course hash, simulation and
+  paint cost are unchanged, and nothing derived here is persisted.
+- World-anchored material fields and contour transitions (ZK-469): macro colour,
+  grain, wear and mowing are sampled from continuous world coordinates instead
+  of per-tile variants, so texture phase no longer resets at a cell or chunk
+  boundary and is invariant under all four rotations, camera movement and
+  rebuilds. Each seam resolves to a single owner that draws the whole ordered
+  band stack — turf shelf / soil bank / reeds / shallow / deep for water, grass
+  overhang / soil face / lip / floor for bunkers, shoulder / gravel / core for
+  paths, apron / fringe / collar for mown turf, and progressively taller,
+  noisier silhouettes for rough, deep rough and waste. Edge motifs are placed by
+  contour arc length rather than once per tile. Reduced-detail and
+  colour-vision-safe profiles change colour and density only, never geometry.
+
+### Changed
+- The per-tile autotile transition strip is no longer drawn for same-elevation
+  material seams; the component contour layer replaces it. The autotile frames
+  stay in the atlas as the low-quality fallback path, and elevation joins remain
+  the cliff layer's.
+
 ## [1.0.0-rc.2] - 2026-07-21
 
 ### Fixed

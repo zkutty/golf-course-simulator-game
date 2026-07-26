@@ -65,7 +65,11 @@ const DECALS: Record<Terrain, TerrainMaterialDefinition["decals"]> = {
   path: ["path-shoulder"],
 };
 
-const BOUNDARY_OWNER_ORDER: readonly Terrain[] = [
+/**
+ * Seam ownership, highest priority first. Exported because silhouette rounding
+ * (ZK-468) and contour bands (ZK-469) must resolve the same owner this does.
+ */
+export const TERRAIN_BOUNDARY_PRIORITY: readonly Terrain[] = [
   "water",
   "wetland",
   "sand",
@@ -189,7 +193,7 @@ export function terrainBoundaryFor(
   b: Terrain,
 ): { owner: Terrain; role: TerrainBoundaryRole } | null {
   if (a === b) return null;
-  const owner = BOUNDARY_OWNER_ORDER.find((terrain) => terrain === a || terrain === b);
+  const owner = TERRAIN_BOUNDARY_PRIORITY.find((terrain) => terrain === a || terrain === b);
   if (!owner) return null;
   return { owner, role: BOUNDARY_ROLE[owner] };
 }
