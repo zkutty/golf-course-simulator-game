@@ -310,3 +310,25 @@ bug”
 - The aggregate `npm run build` remains blocked by an unrelated concurrent
   `App.tsx` edit that calls `getPinPosition` without importing it. That file is
   outside the ZK-445 change set and was left untouched.
+## 2026-07-28 — ZK-485 dependency implementation pass
+
+- Audited all local branches plus the two additional live remote refs; neither
+  contained ZK-480–ZK-484 implementation work, so the missing contracts were
+  integrated on `develop` without resetting the pre-existing dirty worktree.
+- Added seeded multidimensional golfer capabilities, deterministic strategic
+  options with rejected alternatives and facts, shared Player Pro physics for
+  live shots, per-hole evidence-based reactions, v4 live-save migration, and
+  completed-round evidence retention.
+- Expanded the Golfer Inspector with localized identity, capability, plan,
+  alternative, outcome-fact, and reaction surfaces. Course-edit replanning now
+  preserves committed M47 evidence while rebuilding only the unplayed tail.
+- Focused verification passes: M47/live/persistence suites — 3 files, 38
+  tests passed; TypeScript build passed. Full M47 certification remains HOLD
+  pending release-scale determinism, performance, accessibility, and browser
+  evidence listed in `docs/M47_CERTIFICATION.md`.
+- Final repository test pass: 92 files, 786 passed, 1 skipped; lint and
+  production build remain green.
+- Additional regression checks pass: reducer fuzz (3 tests) and the 81-run
+  release balance matrix (all states finite; no normal-path bankruptcies).
+- The 100-golfer performance smoke also passes at 0.37 ms renderer tick work
+  against the 8 ms budget; the 36-hole fixture loaded in 5.27 s.

@@ -1,4 +1,5 @@
 import type { GolferArchetypeName } from "../live/types";
+import type { GolferCapabilities, HoleReaction, LiveShotOutcome, StrategicHolePlan } from "../live/m47Types";
 
 export type RetentionEventCategory = "play" | "economy" | "milestone";
 export type RetentionEventSeverity = "routine" | "notable" | "major";
@@ -37,6 +38,11 @@ export interface CompletedRound {
   tournamentEntrantId?: string;
   teeSet?: "forward" | "member" | "championship";
   waitMinutes?: number;
+  /** M47 evidence is retained with completed rounds for later review and club history. */
+  capabilities?: GolferCapabilities;
+  holePlans?: StrategicHolePlan[];
+  shotOutcomes?: LiveShotOutcome[];
+  holeReactions?: HoleReaction[];
   shots?: Array<{
     id: string;
     holeId: string;
