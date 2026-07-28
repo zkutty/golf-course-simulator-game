@@ -2,6 +2,7 @@ import { useEffect, useMemo, useReducer, useRef, useState, useCallback } from "r
 import { formatCurrency } from "./i18n/format";
 import { useI18n } from "./i18n/useI18n";
 import { perfProfiler } from "./utils/performanceProfiler";
+import { lastItem } from "./utils/array";
 import "./ui/cozyLayout.css";
 import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
@@ -690,8 +691,8 @@ export default function App() {
         publishRetentionEvent({ type: "hole-in-one", category: "play", severity: "major", message: t("retention.holeInOne", { golfer: round.golferName, hole: holeIndex + 1 }), week: gameStateRef.current.world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, holeIndex: globalIndex, holeId, courseId: round.courseId, point });
       }
       if (captured.courseRecord) {
-        const lastHoleId = round.holeIds?.at(-1);
-        const lastHole = lastHoleId ? gameStateRef.current.course.holes.find((hole) => hole.id === lastHoleId) : gameStateRef.current.course.holes.at(-1);
+        const lastHoleId = lastItem(round.holeIds);
+        const lastHole = lastHoleId ? gameStateRef.current.course.holes.find((hole) => hole.id === lastHoleId) : lastItem(gameStateRef.current.course.holes);
         publishRetentionEvent({ type: "course-record", category: "play", severity: "major", message: t("retention.courseRecord", { golfer: round.golferName, score: round.scoreToPar > 0 ? `+${round.scoreToPar}` : round.scoreToPar }), week: gameStateRef.current.world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, courseId: round.courseId, holeId: lastHoleId, point: lastHole?.green ?? undefined });
       }
       checkAchievements(captured.records, round.mood >= .99);
@@ -1173,7 +1174,7 @@ export default function App() {
     setGameState((current) => {
       const result = resolveCampaignChoice(current.course, current.world, sceneId, choiceId);
       if (!result.ok) return current;
-      const recorded = result.world.campaign?.choices.at(-1);
+      const recorded = lastItem(result.world.campaign?.choices);
       if (recorded && result.world.scenarioId) recordCampaignChoice(result.world.scenarioId, recorded);
       return {
         ...current,
@@ -2306,7 +2307,7 @@ export default function App() {
           penalties: activePlayerRound.penalties,
           scorecard: activePlayerRound.scorecard,
           pendingShot: activePlayerRound.pendingShot,
-          recentTrace: activePlayerRound.shots.at(-1) ?? null,
+          recentTrace: lastItem(activePlayerRound.shots) ?? null,
           editingLocked: playerRoundLocksEditing,
         } : null,
       },
@@ -2625,8 +2626,8 @@ export default function App() {
         const afterHash = hashGameState(loadedMidIncident);
         fixtureCourse = loadedMidIncident.course;
         fixtureWorld = loadedMidIncident.world;
-        const complaint = fixtureWorld.enterprise!.complaints.at(-1);
-        const claim = fixtureWorld.enterprise!.claims.at(-1);
+        const complaint = lastItem(fixtureWorld.enterprise!.complaints);
+        const claim = lastItem(fixtureWorld.enterprise!.claims);
         if (!complaint || !claim) throw new Error("M33 incident did not create its complaint and claim evidence");
         runCommand({ type: "RESPOND_COMPLAINT", complaintId: complaint.id, response: "compensate" });
         runCommand({ type: "FILE_CLAIM", claimId: claim.id });
@@ -2647,9 +2648,9 @@ export default function App() {
           units: loadedProperty.units.length,
           households: loadedEnterprise.residents.length,
           tenure: loadedProperty.assets.find((asset) => asset.id === home.id)?.tenure ?? "missing",
-          incidentKind: loadedEnterprise.incidents.at(-1)?.kind ?? "missing",
-          complaintStatus: loadedEnterprise.complaints.at(-1)?.status ?? "missing",
-          claimStatus: loadedEnterprise.claims.at(-1)?.status ?? "missing",
+          incidentKind: lastItem(loadedEnterprise.incidents)?.kind ?? "missing",
+          complaintStatus: lastItem(loadedEnterprise.complaints)?.status ?? "missing",
+          claimStatus: lastItem(loadedEnterprise.claims)?.status ?? "missing",
           riskWithoutMitigation,
           riskWithMitigation,
           protectedEasements: loadedProperty.easements.filter((easement) => easement.protected).length,

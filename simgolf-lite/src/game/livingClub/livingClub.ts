@@ -11,6 +11,7 @@ import { analyzeArchitecture } from "../architecture/architecture";
 import { normalizeTournamentCalendar } from "../tournaments/tournaments";
 import { courseForLayout } from "../models/courseLayouts";
 import { STORY_DEFINITION_BY_ID, SYSTEMIC_EVENT_DEFINITIONS } from "./content";
+import { lastItem } from "../../utils/array";
 import type {
   ArchitectureRevisionSummary,
   ArchitectureShotEvidence,
@@ -687,7 +688,7 @@ export function setReturnToDesignContext(
   shotId: string | null,
 ): World {
   const living = normalizeLivingClub(world.livingClub);
-  const shot = shotId ? round.shots.find((item) => item.id === shotId) : round.shots.at(-1);
+  const shot = shotId ? round.shots.find((item) => item.id === shotId) : lastItem(round.shots);
   const holeId = shot?.holeId ?? round.course.holes[round.currentHoleIndex]?.id;
   if (!holeId) return world;
   const point = shot?.rest ?? round.course.holes.find((hole) => hole.id === holeId)?.pin;

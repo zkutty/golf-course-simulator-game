@@ -41,6 +41,24 @@ describe("M24 tournament course qualification", () => {
     expect(nineResult.rating).toBeCloseTo(evaluateTournamentCourseQualification(course, "local").rating, 0);
   }, 60_000);
 
+  it("keeps championship selection working without Array.prototype.at", () => {
+    const base = createTournamentStandardsCourse();
+    const tied = {
+      ...base,
+      holes: base.holes.map((hole) => ({
+        ...hole,
+        pinPositions: { A: hole.green, B: hole.green, C: hole.green },
+      })),
+    };
+    const descriptor = Object.getOwnPropertyDescriptor(Array.prototype, "at");
+    try {
+      Object.defineProperty(Array.prototype, "at", { configurable: true, value: undefined });
+      expect(evaluateTournamentCourseQualification(tied, "championship").pinRotation).toBe("C");
+    } finally {
+      if (descriptor) Object.defineProperty(Array.prototype, "at", descriptor);
+    }
+  }, 60_000);
+
   it("treats every configured rating and slope boundary as inclusive", () => {
     for (const standard of Object.values(TOURNAMENT_COURSE_STANDARDS)) {
       for (const bounds of [standard.rating, standard.slope] as const) {
