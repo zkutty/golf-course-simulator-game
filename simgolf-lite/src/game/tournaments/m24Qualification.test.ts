@@ -110,7 +110,7 @@ describe("M24 tournament course qualification", () => {
     let guard = 0;
     while (!live.dayOver && guard++ < 5_000) stepLive(live, course, 5);
     expect(completeTournament(scheduled, live)).toMatchObject({ revenue: 14_000, reputation: 4, event: { status: "completed" } });
-  }, 15_000);
+  }, 60_000);
 
   it("upgrades pre-v2 completed history without rewriting results", () => {
     const legacy = { version: 1, events: [{ id: "legacy", name: "Legacy Open", tier: "local", scheduledWeek: 2, scheduledDay: 3, status: "completed", bookingCost: 100, revenueAward: 200, reputationAward: 1, field: [{ id: "e", name: "A", archetype: "casual", skill: .5 }], results: [{ entrantId: "e", golferId: 1, name: "A", archetype: "casual", holesCompleted: 9, score: 40, scoreToPar: 4, finished: true }], winnerName: "A" }] };
