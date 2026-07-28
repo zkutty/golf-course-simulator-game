@@ -51,6 +51,7 @@ import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
 import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createM26MultiCourseReferenceCourse, createM27ReleaseReferenceCourse, createParklandVisualReferenceCourse, createPlayerProReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
+import { createM47CertificationCourse } from "./game/testing/m47Certification";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
@@ -1242,10 +1243,11 @@ export default function App() {
     const isM26Fixture = fixtureParams.get("m26Fixture") === "1";
     const isM27Fixture = fixtureParams.get("m27Fixture") === "1";
     const isM30Fixture = fixtureParams.get("m30Fixture") === "1";
+    const isM47Fixture = fixtureParams.get("m47Fixture") === "1";
     const isM38Fixture = fixtureParams.get("m38Fixture") === "1";
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isPropertyFixture) return;
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
     const m25SeedParam = fixtureParams.get("m25Seed");
     const parsedM25Seed = m25SeedParam == null ? Number.NaN : Number(m25SeedParam);
@@ -1258,6 +1260,8 @@ export default function App() {
       ? { ...createReferenceCourse(), property: starterPropertyCourse() }
       : isM38Fixture
       ? createPlayerProReferenceCourse()
+      : isM47Fixture
+      ? createM47CertificationCourse(18)
       : isM27Fixture
       ? createM27ReleaseReferenceCourse(fixtureTheme)
       : isM30Fixture
@@ -1411,7 +1415,7 @@ export default function App() {
         speed: isPerfMeasurement ? "paused" : "4x",
         selectedGolferId: null,
       }));
-    } else if (isM38Fixture || isM30Fixture) {
+    } else if (isM38Fixture || isM30Fixture || isM47Fixture) {
       live.restoreSnapshot(snapshotLiveSimulation({
         state: createLiveState(fixtureCourse, fixtureWorld, isM38Fixture ? 5 : 0),
         pendingCash: 0,

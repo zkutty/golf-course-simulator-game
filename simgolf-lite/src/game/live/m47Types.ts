@@ -1,6 +1,9 @@
 import type { Point } from "../models/types";
 
 export const M47_CAPABILITY_VERSION = 1 as const;
+export const M47_MAX_PLANS = 36 as const;
+export const M47_MAX_OUTCOMES = 240 as const;
+export const M47_MAX_REACTIONS = 36 as const;
 
 export type RiskStyle = "aggressive" | "conservative" | "balanced";
 export type StrategicIntentKind = "safe" | "hero" | "positional" | "recovery" | "approach";

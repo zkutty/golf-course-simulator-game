@@ -3,14 +3,11 @@ import type { Arrival, Golfer, LiveState, Segment } from "./types";
 import { createWeekLedger, normalizeWeekLedger, type LiveWeekLedger } from "./weeklyLedger";
 import { emptyPaceDayMetrics } from "./pace";
 import { createGolferCapabilities, normalizeGolferCapabilities, stableGolferSeed } from "./capabilities";
-import type { StrategicIntentKind } from "./m47Types";
+import { M47_MAX_OUTCOMES, M47_MAX_PLANS, M47_MAX_REACTIONS, type StrategicIntentKind } from "./m47Types";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
 const MAX_SEGMENTS_PER_GOLFER = 5_000;
-const MAX_M47_PLANS = 36;
-const MAX_M47_OUTCOMES = 240;
-const MAX_M47_REACTIONS = 36;
 
 export interface LiveSimulationSnapshotV1 {
   version: 1 | 2 | 3 | 4;
@@ -126,9 +123,9 @@ function golfer(value: unknown): value is Golfer {
     (value.tournamentEntrantId == null || typeof value.tournamentEntrantId === "string") &&
     (value.capabilities == null || isRecord(value.capabilities)) &&
     (value.currentIntent == null || shotIntent(value.currentIntent)) &&
-    (value.holePlans == null || (Array.isArray(value.holePlans) && value.holePlans.length <= MAX_M47_PLANS && value.holePlans.every(holePlan))) &&
-    (value.shotOutcomes == null || (Array.isArray(value.shotOutcomes) && value.shotOutcomes.length <= MAX_M47_OUTCOMES && value.shotOutcomes.every(shotOutcome))) &&
-    (value.holeReactions == null || (Array.isArray(value.holeReactions) && value.holeReactions.length <= MAX_M47_REACTIONS && value.holeReactions.every(holeReaction)));
+    (value.holePlans == null || (Array.isArray(value.holePlans) && value.holePlans.length <= M47_MAX_PLANS && value.holePlans.every(holePlan))) &&
+    (value.shotOutcomes == null || (Array.isArray(value.shotOutcomes) && value.shotOutcomes.length <= M47_MAX_OUTCOMES && value.shotOutcomes.every(shotOutcome))) &&
+    (value.holeReactions == null || (Array.isArray(value.holeReactions) && value.holeReactions.length <= M47_MAX_REACTIONS && value.holeReactions.every(holeReaction)));
 }
 
 function arrival(value: unknown): value is Arrival {
@@ -220,9 +217,9 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
     return {
     ...g,
     capabilities: normalizeGolferCapabilities(g.capabilities, fallbackCapabilities),
-    holePlans: Array.isArray(g.holePlans) ? g.holePlans.slice(-MAX_M47_PLANS) : [],
-    shotOutcomes: Array.isArray(g.shotOutcomes) ? g.shotOutcomes.slice(-MAX_M47_OUTCOMES) : [],
-    holeReactions: Array.isArray(g.holeReactions) ? g.holeReactions.slice(-MAX_M47_REACTIONS) : [],
+    holePlans: Array.isArray(g.holePlans) ? g.holePlans.slice(-M47_MAX_PLANS) : [],
+    shotOutcomes: Array.isArray(g.shotOutcomes) ? g.shotOutcomes.slice(-M47_MAX_OUTCOMES) : [],
+    holeReactions: Array.isArray(g.holeReactions) ? g.holeReactions.slice(-M47_MAX_REACTIONS) : [],
     wallet: g.wallet ?? 0,
     purchasedSegmentIndexes: g.purchasedSegmentIndexes ?? [],
     teeSet: g.teeSet ?? "member",
