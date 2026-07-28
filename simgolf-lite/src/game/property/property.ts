@@ -36,6 +36,7 @@ import type {
 } from "./types";
 import { isOwnedTile } from "../estate/estate";
 import { buildingFootprintSet } from "../models/buildings";
+import { lastItem } from "../../utils/array";
 
 export interface PropertyAssetSpec {
   kind: PropertyAssetKind;
@@ -1494,7 +1495,8 @@ function withPracticeGeometry(asset: PropertyAsset): PropertyAsset {
 }
 
 function rotatePracticeGeometry(asset: PropertyAsset): PropertyAsset {
-  const horizontal = !asset.route || Math.abs((asset.route.points.at(-1)?.x ?? 0) - (asset.route.points[0]?.x ?? 0)) >= Math.abs((asset.route.points.at(-1)?.y ?? 0) - (asset.route.points[0]?.y ?? 0));
+  const finalPoint = lastItem(asset.route?.points);
+  const horizontal = !asset.route || Math.abs((finalPoint?.x ?? 0) - (asset.route.points[0]?.x ?? 0)) >= Math.abs((finalPoint?.y ?? 0) - (asset.route.points[0]?.y ?? 0));
   const start = horizontal
     ? { x: asset.x + Math.floor(asset.width / 2), y: asset.y }
     : { x: asset.x, y: asset.y + Math.floor(asset.height / 2) };

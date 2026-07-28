@@ -4,6 +4,7 @@ import { decodeElevationBaseline, decodeTerrainBaseline } from "../estate/estate
 import { getPinPosition, getTeeBox } from "../models/courseSetup";
 import { computeAutoPar, computePathDistanceTiles } from "../sim/holeMetrics";
 import { findWalkPath } from "../live/walkPath";
+import { lastItem } from "../../utils/array";
 
 export type ArchitectureComponentId = "routing" | "naturalFit" | "variety" | "safety" | "walkability";
 export type ArchitectureWarningKind = "transfer" | "clubhouse" | "repetition" | "crossing" | "parallel" | "earthwork" | "terrain";
@@ -174,7 +175,7 @@ function analyzeFlow(course: Course, warnings: ArchitectureWarning[]): { routing
   const routingScore = transferScore * .42 + homeScore * .38 + compactScore * .20;
   const walkabilityScore = transferScore * .58 + compactScore * .27 + (routedTransfers / Math.max(1, transfers.length) * 100) * .15;
   if (home && firstDistance > 18) warnings.push({ id: "clubhouse-first", kind: "clubhouse", severity: "warning", message: "The first tee sits far from the shared clubhouse.", holeIds: holes[0]?.id ? [holes[0].id] : [], location: tee(holes[0])!, geometry: [home, tee(holes[0])!], measurement: `${round(firstDistance)} routed tiles` });
-  if (home && finalDistance > 18) warnings.push({ id: "clubhouse-final", kind: "clubhouse", severity: "warning", message: "The final green finishes far from the shared clubhouse.", holeIds: holes.at(-1)?.id ? [holes.at(-1)!.id!] : [], location: green(holes.at(-1)!)!, geometry: [green(holes.at(-1)!)!, home], measurement: `${round(finalDistance)} routed tiles` });
+  if (home && finalDistance > 18) warnings.push({ id: "clubhouse-final", kind: "clubhouse", severity: "warning", message: "The final green finishes far from the shared clubhouse.", holeIds: lastItem(holes)?.id ? [lastItem(holes)!.id!] : [], location: green(lastItem(holes)!)!, geometry: [green(lastItem(holes)!)!, home], measurement: `${round(finalDistance)} routed tiles` });
   return {
     routing: component("routing", "Routing", routingScore, `Published order averages ${round(averageTransfer)} tiles between holes; first/final clubhouse access totals ${round(firstDistance + finalDistance)} tiles.`, { averageTransferTiles: round(averageTransfer), firstTeeClubhouseTiles: round(firstDistance), finalGreenClubhouseTiles: round(finalDistance), ninthGreenClubhouseTiles: round(ninthDistance), totalTransferTiles: round(totalWalk), compactnessScore: round(compactScore) }),
     walkability: component("walkability", "Walkability", walkabilityScore, `${routedTransfers} of ${transfers.length} green-to-tee transfers use playable routed paths; total off-hole walking is ${round(totalWalk)} tiles.`, { routedTransfers, transferCount: transfers.length, averageTransferTiles: round(averageTransfer), totalWalkingTiles: round(totalWalk) }),
@@ -189,7 +190,7 @@ function analyzeSafety(course: Course, warnings: ArchitectureWarning[]): Archite
   for (let index = 1; index < holes.length; index++) {
     const previous = route(holes[index - 1]);
     const current = route(holes[index]);
-    const directionDelta = angleDifference(angle(previous[0], previous.at(-1)!), angle(current[0], current.at(-1)!));
+    const directionDelta = angleDifference(angle(previous[0], lastItem(previous)!), angle(current[0], lastItem(current)!));
     const lengthDelta = Math.abs(computePathDistanceTiles(previous) - computePathDistanceTiles(current));
     if (directionDelta < 18 && lengthDelta < 5) {
       repetitions++;

@@ -1,5 +1,6 @@
 import { PIN_ROTATIONS, type Course, type TeeSet, type World } from "../models/types";
 import { computeRatingForSetup, type SetupRatingSummary } from "../sim/courseRating";
+import { lastItem } from "../../utils/array";
 import type {
   TournamentQualificationSnapshot,
   TournamentRequirement,
@@ -44,7 +45,7 @@ function chooseSetup(
     PIN_ROTATIONS.indexOf(a.pinRotation) - PIN_ROTATIONS.indexOf(b.pinRotation)
   );
   if (choice === "easiest") return sorted[0];
-  if (choice === "hardest") return sorted.at(-1);
+  if (choice === "hardest") return lastItem(sorted);
   return sorted[Math.floor(sorted.length / 2)];
 }
 
