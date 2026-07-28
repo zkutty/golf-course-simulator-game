@@ -87,15 +87,22 @@ import { decorationTiles, decorationVisual } from "../game/models/decorations";
 import { getLandTheme } from "../game/models/themes";
 import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
 import type { AtlasFrame } from "../render/atlas";
-import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
+import { AUTOTILE_DIRECTIONS } from "../game/render/autotile";
 import {
   getTerrainMaterial,
   mowingShadeAt,
   pickTerrainBaseFrame,
-  terrainBoundaryFor,
-  terrainTransitionFrame,
   waterShimmerPhase,
 } from "../game/render/terrainMaterials";
+import {
+  contourProfileFor,
+  detailsAlongContour,
+  sampleMaterialField,
+  silhouetteOffsetAt,
+  waterFieldPhase,
+  wildnessProfile,
+} from "../game/render/materialFields";
+import { createSilhouetteCache, type TerrainComponent } from "../game/render/terrainSilhouettes";
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
 import { deriveTerrainDetail } from "../game/render/terrainDetails";
 import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
@@ -450,6 +457,8 @@ interface Layers {
   world: PIXI.Container;
   surround: PIXI.Container;
   terrain: PIXI.Container;
+  /** ZK-468/469 component silhouettes and their pair-aware contour bands. */
+  terrainContours: PIXI.Container;
   smoothSurfaces: PIXI.Container;
   estateSeam: PIXI.Container;
   terrainDecals: PIXI.Container;
@@ -573,6 +582,19 @@ export function PixiStage(props: PixiStageProps) {
 
   const diamondTextureRef = useRef<PIXI.Texture | null>(null);
   const chunksRef = useRef<TerrainChunk[]>([]);
+  /** ZK-468 derived silhouettes, cached by component topology. */
+  const silhouetteCacheRef = useRef(createSilhouetteCache());
+  const contourGraphicsRef = useRef<Map<string, {
+    holder: PIXI.Container;
+    rotation: IsoRotation;
+    profile: "high" | "medium" | "low";
+  }>>(new Map());
+  /** Shallow-water bands, alpha-oscillated as the shoreline animation. */
+  const contourFoamRef = useRef<Array<{
+    graphics: PIXI.Graphics;
+    phase: number;
+    baseAlpha: number;
+  }>>([]);
   const prevTilesRef = useRef<Terrain[] | null>(null);
   const prevElevationsRef = useRef<number[] | null>(null);
   const builtRotationRef = useRef<IsoRotation | null>(null);
@@ -997,6 +1019,8 @@ export function PixiStage(props: PixiStageProps) {
     const emoteSprites = emoteSpritesRef.current;
     const ambient = ambientRef.current;
     const perfState = perfRef.current;
+    const contourGraphics = contourGraphicsRef.current;
+    const silhouetteCache = silhouetteCacheRef.current;
 
     const app = new PIXI.Application();
     setRendererError(false);
@@ -1039,6 +1063,7 @@ export function PixiStage(props: PixiStageProps) {
       const world = new PIXI.Container();
       const surround = new PIXI.Container();
       const terrain = new PIXI.Container();
+      const terrainContours = new PIXI.Container();
       const smoothSurfaces = new PIXI.Container();
       const estateSeam = new PIXI.Container();
       const terrainDecals = new PIXI.Container();
@@ -1047,7 +1072,7 @@ export function PixiStage(props: PixiStageProps) {
       const fx = new PIXI.Container();
       const screenOverlay = new PIXI.Container();
 
-      world.addChild(surround, terrain, smoothSurfaces, estateSeam, terrainDecals, objects, fx);
+      world.addChild(surround, terrain, terrainContours, smoothSurfaces, estateSeam, terrainDecals, objects, fx);
 
       // Ambient stack (ZKU-156): a full-screen multiply quad for the
       // time-of-day grade and a screen-space bird layer, both between the
@@ -1103,7 +1128,7 @@ export function PixiStage(props: PixiStageProps) {
       app.stage.hitArea = app.screen;
 
       appRef.current = app;
-      layersRef.current = { world, surround, terrain, smoothSurfaces, estateSeam, terrainDecals, objects, fx, screenOverlay };
+      layersRef.current = { world, surround, terrain, terrainContours, smoothSurfaces, estateSeam, terrainDecals, objects, fx, screenOverlay };
       setAppReady(true);
       devLog(`initialized ${width}x${height}`);
     };
@@ -1120,6 +1145,9 @@ export function PixiStage(props: PixiStageProps) {
       setAppReady(false);
       layersRef.current = null;
       chunksRef.current = [];
+      contourGraphics.clear();
+      contourFoamRef.current = [];
+      silhouetteCache.clear();
       prevTilesRef.current = null;
       prevElevationsRef.current = null;
       obstacleSpritesRef.current.clear();
@@ -1793,6 +1821,10 @@ export function PixiStage(props: PixiStageProps) {
       return [{ x, y }, { x: x + 1, y }];
     };
 
+    // Quality tier drives how much of the material field and contour detail is
+    // sampled; it never changes the derived geometry.
+    const detailProfile = props.graphicsQuality;
+
     // Accessibility and legacy-biome tint fallback. Theme/material selection
     // itself is data-driven through the exhaustive terrain material registry.
     const THEMED_COLORS: Record<Terrain, number> = props.colorVision === "standard"
@@ -1897,9 +1929,15 @@ export function PixiStage(props: PixiStageProps) {
         const dzdx = (elev(x + 1, y) - elev(x - 1, y)) / 2;
         const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
         let slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
-        if (terrain === "fairway" || terrain === "green" || terrain === "tee") {
-          slopeShade *= mowingShadeAt(x, y, holeAxes);
-        }
+        // ZK-469: macro colour, grain, wear and mowing come from a continuous
+        // world-space field sampled at the tile's centre, not from a per-tile
+        // random variant. Neighbouring cells therefore land on neighbouring
+        // values and the surface stops reading as a quilt of diamonds.
+        const field = sampleMaterialField(terrain, x + 0.5, y + 0.5, {
+          axes: holeAxes,
+          profile: detailProfile,
+        });
+        slopeShade *= field.shade;
         const legacyTint = shade(darken(THEMED_COLORS[terrain], EDGE_DARKEN), slopeShade);
 
         // Authored parkland sources are @2× but remain 64×32 in world space.
@@ -1992,41 +2030,14 @@ export function PixiStage(props: PixiStageProps) {
           });
         }
 
-        // True 8-neighbor material boundary. The higher-priority surface owns
-        // the seam, so banks/lips never double-render. Elevation joins remain
-        // exclusively the cliff layer. Rotation maps all 256 masks into the
-        // fixed screen-oriented atlas frame set.
-        let boundaryMask = 0;
-        for (let index = 0; index < AUTOTILE_DIRECTIONS.length; index++) {
-          const { dx, dy } = AUTOTILE_DIRECTIONS[index];
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-          const nTerrain = visualTerrainAt(nx, ny);
-          const boundary = terrainBoundaryFor(terrain, nTerrain);
-          if (!boundary || boundary.owner !== terrain) continue;
-          if (elev(nx, ny) !== e) continue;
-          boundaryMask |= 1 << index;
-        }
-        const features = autotileFeatures(rotateAutotileMask(boundaryMask, rotation));
-        for (const feature of features) {
-          const transitionTexture = material.source === "atlas-2x"
-            ? getTerrainFrame(terrainTransitionFrame(material, feature))
-            : null;
-          if (!transitionTexture) continue;
-          const lip = new PIXI.Sprite(transitionTexture);
-          lip.anchor.set(0.5, 0);
-          // Recessed hazards keep their lip on the surrounding ground plane;
-          // the base material sits below it and the bank face bridges the gap.
-          lip.position.set(groundPosition.x, groundPosition.y);
-          lip.width = TILE_W;
-          lip.height = TILE_H;
-          lip.tint = props.colorVision === "standard" ? shade(0xffffff, slopeShade) : legacyTint;
-          chunk.container.addChild(lip);
-          if ((terrain === "water" || terrain === "wetland") && feature.kind === "edge") {
-            chunk.foamSprites.push({ sprite: lip, phase: ((x * 5 + y * 11) % 16) / 16 * Math.PI * 2 });
-          }
-        }
+        // Same-elevation material seams are no longer drawn here. ZK-468/469
+        // replaced the per-tile autotile strip — which could only ever be one
+        // diamond-edged band and re-cornered every cell — with the component
+        // contour layer below, where one owner draws the whole ordered stack
+        // along a single rounded boundary. The autotile frames stay in the
+        // atlas as the low-quality fallback path.
+        //
+        // Elevation joins remain exclusively the cliff layer.
 
         // A restrained bevel on the higher tile softens elevation steps into
         // rounded hill caps. Links intentionally carries the strongest cue.
@@ -2137,7 +2148,200 @@ export function PixiStage(props: PixiStageProps) {
     prevTilesRef.current = course.tiles;
     prevElevationsRef.current = course.elevations;
     cullChunks();
-  }, [appReady, course, rotation, cullChunks, props.colorVision, props.terrainPatterns, props.worldSeed]);
+  }, [appReady, course, rotation, cullChunks, props.colorVision, props.graphicsQuality, props.terrainPatterns, props.worldSeed]);
+
+  // ---------------------------------------------------------------------
+  // Component silhouettes and contour bands (ZK-468 / ZK-469)
+  //
+  // One rounded silhouette per connected whole-tile component, and one ordered
+  // band stack per seam drawn by that seam's single owner. Geometry is derived
+  // from `course.tiles` alone, so it survives reload, undo/redo and rotation
+  // unchanged; rotation only re-projects it.
+  //
+  // Graphics are keyed by component topology: a repaint that leaves a
+  // component's cells and halo alone reuses its display object untouched, so a
+  // brush stroke rebuilds the components it actually touched, not the course.
+  // ---------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!appReady) return;
+    const layer = layersRef.current?.terrainContours;
+    if (!layer) return;
+
+    const snapshot = silhouetteCacheRef.current.update(
+      course.tiles,
+      course.width,
+      course.height,
+    );
+    const profile = props.graphicsQuality;
+    const live = new Set<string>();
+    const drawn = contourGraphicsRef.current;
+    contourFoamRef.current = [];
+
+    const elevationAt = (x: number, y: number) => getElevation(
+      course,
+      Math.max(0, Math.min(course.width - 1, Math.floor(x))),
+      Math.max(0, Math.min(course.height - 1, Math.floor(y))),
+    );
+    const project = (x: number, y: number, inset: number) => {
+      const point = worldToIso(x, y, elevationAt(x, y), rotation);
+      return { x: point.x, y: point.y + inset };
+    };
+
+    /**
+     * Offsets a contour run along its own normals and draws it as a filled
+     * ribbon. Because every band of a seam is generated from the same shared
+     * contour, adjacent bands cannot separate and the two terrains cannot each
+     * draw their own edge.
+     */
+    const ribbon = (
+      graphics: PIXI.Graphics,
+      points: readonly { x: number; y: number }[],
+      terrain: Terrain,
+      inner: number,
+      outer: number,
+      inset: number,
+      wobble: number,
+    ) => {
+      if (points.length < 2) return;
+      const near: Array<{ x: number; y: number }> = [];
+      const far: Array<{ x: number; y: number }> = [];
+      let travelled = 0;
+      for (let index = 0; index < points.length; index++) {
+        const current = points[index];
+        const previous = points[Math.max(0, index - 1)];
+        const next = points[Math.min(points.length - 1, index + 1)];
+        const dx = next.x - previous.x;
+        const dy = next.y - previous.y;
+        const length = Math.hypot(dx, dy) || 1;
+        // Inward normal of a clockwise ring in y-down world space. Band offsets
+        // are signed with negative meaning *outside* the owner, so the offset
+        // axis has to point into the owner — using the outward normal here
+        // mirrors every band stack and paints the neighbour's apron inside the
+        // surface it belongs to.
+        const nx = -dy / length;
+        const ny = dx / length;
+        if (index > 0) travelled += Math.hypot(current.x - previous.x, current.y - previous.y);
+        // Deterministic silhouette noise: a function of arc length and world
+        // position, so a stretch of edge keeps its shape across rebuilds.
+        const jitter = wobble === 0
+          ? 0
+          : silhouetteOffsetAt(terrain, travelled, current.x, current.y) * wobble;
+        near.push(project(current.x + nx * (inner + jitter), current.y + ny * (inner + jitter), inset));
+        far.push(project(current.x + nx * (outer + jitter), current.y + ny * (outer + jitter), inset));
+      }
+      const polygon: number[] = [];
+      for (const point of near) polygon.push(point.x, point.y);
+      for (let index = far.length - 1; index >= 0; index--) polygon.push(far[index].x, far[index].y);
+      graphics.poly(polygon);
+    };
+
+    const drawComponent = (component: TerrainComponent): PIXI.Container => {
+      const holder = new PIXI.Container();
+      holder.eventMode = "none";
+      const wild = wildnessProfile(component.terrain);
+
+      for (const segment of component.boundarySegments) {
+        if (!segment.other) continue;
+        const seam = contourProfileFor(segment.terrain, segment.other, {
+          theme: course.theme,
+          colorVision: props.colorVision,
+          profile,
+        });
+        // Exactly one side of a seam owns it. The other side draws nothing,
+        // which is what makes a doubled edge structurally impossible.
+        if (!seam || seam.owner !== segment.terrain) continue;
+
+        for (const band of seam.bands) {
+          const graphics = new PIXI.Graphics();
+          graphics.eventMode = "none";
+          // Bands sit progressively lower for recessed hazards, which is what
+          // reads as a layered depression rather than a flat colour change.
+          const inset = band.depth * terrainSurfaceInsetPx(seam.owner) / 3;
+          ribbon(
+            graphics,
+            segment.points,
+            segment.terrain,
+            band.offset,
+            band.offset + band.width,
+            inset,
+            band.offset < 0 ? 1 : 0.5,
+          );
+          graphics.fill({ color: band.color, alpha: band.alpha });
+          holder.addChild(graphics);
+          if (band.role === "water-shallow") {
+            contourFoamRef.current.push({
+              graphics,
+              phase: waterFieldPhase(segment.points[0].x, segment.points[0].y, 0),
+              baseAlpha: band.alpha,
+            });
+          }
+
+          // Arc-length motifs: density follows the length of the boundary, not
+          // the number of cells it happens to cross.
+          if (band.detail === "none") continue;
+          const motifs = detailsAlongContour(segment.points, {
+            motif: band.detail,
+            profile,
+            spacingScale: 1 / Math.max(0.25, wild.density || 0.5),
+          });
+          if (motifs.length === 0) continue;
+          const decor = new PIXI.Graphics();
+          decor.eventMode = "none";
+          for (const motif of motifs) {
+            const at = band.offset + band.width / 2;
+            const position = project(motif.x + motif.nx * at, motif.y + motif.ny * at, inset);
+            const height = (band.detail === "reeds" ? 9 : band.detail === "tufts" ? 6 : 3) * motif.scale;
+            if (band.detail === "reeds" || band.detail === "tufts" || band.detail === "blades") {
+              decor.moveTo(position.x, position.y);
+              decor.lineTo(position.x + motif.lean * height, position.y - height);
+            } else {
+              decor.circle(position.x, position.y, 1.1 * motif.scale);
+            }
+          }
+          if (band.detail === "pebbles" || band.detail === "stones") {
+            decor.fill({ color: band.color, alpha: 0.85 });
+          } else {
+            decor.stroke({ width: 1.1, color: band.color, alpha: 0.8, cap: "round" });
+          }
+          holder.addChild(decor);
+        }
+      }
+      return holder;
+    };
+
+    for (const component of snapshot.components) {
+      live.add(component.topologyKey);
+      const existing = drawn.get(component.topologyKey);
+      if (existing && existing.rotation === rotation && existing.profile === profile) {
+        // Unchanged topology at the same rotation and quality: reuse verbatim.
+        existing.holder.zIndex = component.bounds.minX + component.bounds.minY;
+        continue;
+      }
+      existing?.holder.destroy({ children: true });
+      const holder = drawComponent(component);
+      holder.zIndex = component.bounds.minX + component.bounds.minY;
+      layer.addChild(holder);
+      drawn.set(component.topologyKey, { holder, rotation, profile });
+    }
+    for (const [key, entry] of drawn) {
+      if (live.has(key)) continue;
+      entry.holder.destroy({ children: true });
+      drawn.delete(key);
+    }
+    layer.sortableChildren = true;
+    layer.sortChildren();
+    devLog(
+      `contours: ${snapshot.stats.components} components, ` +
+      `${snapshot.stats.hits} cached, ${snapshot.stats.misses} rebuilt`,
+    );
+  }, [
+    appReady,
+    course,
+    rotation,
+    props.colorVision,
+    props.graphicsQuality,
+  ]);
 
   // Material-clipped surface intent. New Curve/Area contours use their 4×
   // accepted mask for the silhouette, but their interior remains the same
@@ -3273,6 +3477,12 @@ export function PixiStage(props: PixiStageProps) {
             if ((ws.gx * 31 + ws.gy * 57 + bucket) % 89 === 0) f = 1.22;
             ws.sprite.tint = shade(ws.baseTint, f);
           }
+          // Shoreline breathing now lives on the shallow-water contour band,
+          // which follows the rounded silhouette rather than a per-tile lip.
+          for (const foam of contourFoamRef.current) {
+            foam.graphics.alpha =
+              foam.baseAlpha * (0.82 + 0.18 * (0.5 + 0.5 * Math.sin(t * 2.1 + foam.phase)));
+          }
         }
       } else if (waterAnim.wasAnimating) {
         waterAnim.wasAnimating = false;
@@ -3281,6 +3491,7 @@ export function PixiStage(props: PixiStageProps) {
           for (const fs of chunk.foamSprites) fs.sprite.alpha = 0.26;
         }
         for (const ws of surfaceWaterSpritesRef.current) ws.sprite.tint = ws.baseTint;
+        for (const foam of contourFoamRef.current) foam.graphics.alpha = foam.baseAlpha;
       }
 
       // Wind sway (ZKU-151): subtle skew oscillation on tree canopies.

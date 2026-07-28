@@ -11,9 +11,9 @@ export function usePwa() {
     window.addEventListener("beforeinstallprompt", install);
     if ("storage" in navigator && navigator.storage.persist) void navigator.storage.persist().then(setStoragePersistent).catch(() => setStoragePersistent(false));
     if ("serviceWorker" in navigator && import.meta.env.PROD) void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).then((registration) => {
-      if (registration.waiting) setUpdateWorker(registration.waiting);
-      registration.addEventListener("updatefound", () => registration.installing?.addEventListener("statechange", () => { if (registration.waiting && navigator.serviceWorker.controller) setUpdateWorker(registration.waiting); }));
-    });
+      if (registration?.waiting) setUpdateWorker(registration.waiting);
+      registration?.addEventListener("updatefound", () => registration.installing?.addEventListener("statechange", () => { if (registration.waiting && navigator.serviceWorker.controller) setUpdateWorker(registration.waiting); }));
+    }).catch(() => undefined);
     return () => window.removeEventListener("beforeinstallprompt", install);
   }, []);
   return {
