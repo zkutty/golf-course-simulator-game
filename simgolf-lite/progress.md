@@ -332,3 +332,24 @@ bug”
   release balance matrix (all states finite; no normal-path bankruptcies).
 - The 100-golfer performance smoke also passes at 0.37 ms renderer tick work
   against the 8 ms budget; the 36-hole fixture loaded in 5.27 s.
+
+## 2026-07-28 — ZK-485 M47 certification PASS
+
+- Added deterministic M47 certification fixtures for 9-, 18-, and 36-hole
+  rounds, the tournament field, and ten reference-golfer strategy-matrix rows.
+  Plan, physical outcome, reaction, and save hashes are written to
+  `artifacts/m47/certification.json`.
+- Added bounded persistence limits for 36 plans, 240 outcomes, and 36
+  reactions, plus save/reload coverage that preserves golfer evidence.
+- Added the M47 Inspector browser fixture and release-browser coverage for
+  evidence text, rejected alternatives, follow-toggle focus, pseudo locale,
+  color-vision, terrain patterns, reduced motion, 130% text, responsive bounds,
+  and visual captures at desktop and 390px widths.
+- Certification passes: M47 CLI; 30-week/3,854-round soak with 3.02 MiB
+  post-GC retained-heap growth; 93 Vitest files / 792 passed / 1 skipped;
+  TypeScript; lint/i18n; production build; fuzz; 81-run balance; 0.38 ms
+  renderer performance; PWA/offline/save; targeted M47 browser; and 6/6
+  Chrome/Firefox/WebKit release-browser tests.
+- Updated `docs/M47_CERTIFICATION.md` with exact hashes, counts, screenshots,
+  gate results, and the M48 handoff contract. ZK-485 is ready for Done and the
+  ZK-486 blocking relation is ready to remove.

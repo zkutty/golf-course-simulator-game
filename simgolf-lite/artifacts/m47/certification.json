@@ -1,0 +1,275 @@
+{
+  "ok": true,
+  "referenceGolfers": [
+    {
+      "id": "power",
+      "seed": 470101
+    },
+    {
+      "id": "accuracy",
+      "seed": 470102
+    },
+    {
+      "id": "irons",
+      "seed": 470103
+    },
+    {
+      "id": "short-game",
+      "seed": 470104
+    },
+    {
+      "id": "recovery",
+      "seed": 470105
+    },
+    {
+      "id": "consistency",
+      "seed": 470106
+    },
+    {
+      "id": "aggressive",
+      "seed": 470107
+    },
+    {
+      "id": "conservative",
+      "seed": 470108
+    },
+    {
+      "id": "casual",
+      "seed": 470109
+    },
+    {
+      "id": "balanced",
+      "seed": 470110
+    }
+  ],
+  "rounds": [
+    {
+      "holeCount": 9,
+      "deterministic": true,
+      "hashes": {
+        "planHash": "d586c6a9",
+        "outcomeHash": "d6212e74",
+        "reactionHash": "2ad3dcf6",
+        "saveHash": "35de7eed"
+      },
+      "planCount": 9,
+      "outcomeCount": 81,
+      "reactionCount": 9,
+      "score": 86
+    },
+    {
+      "holeCount": 18,
+      "deterministic": true,
+      "hashes": {
+        "planHash": "a2b4fb8e",
+        "outcomeHash": "e20c6be6",
+        "reactionHash": "3f1a1305",
+        "saveHash": "4bc46a86"
+      },
+      "planCount": 18,
+      "outcomeCount": 162,
+      "reactionCount": 18,
+      "score": 170
+    },
+    {
+      "holeCount": 36,
+      "deterministic": true,
+      "hashes": {
+        "planHash": "fb0b07e6",
+        "outcomeHash": "3bb529f9",
+        "reactionHash": "065527ec",
+        "saveHash": "6ef88db9"
+      },
+      "planCount": 36,
+      "outcomeCount": 240,
+      "reactionCount": 36,
+      "score": 344
+    }
+  ],
+  "strategyMatrix": {
+    "rows": [
+      {
+        "golferId": "power",
+        "riskStyle": "aggressive",
+        "strengths": [
+          "power",
+          "irons"
+        ],
+        "chosen": "positional",
+        "rejected": [
+          "recovery",
+          "hero",
+          "safe"
+        ],
+        "expectedScore": 4.391,
+        "hazardRisk": 0.45272543663911236
+      },
+      {
+        "golferId": "accuracy",
+        "riskStyle": "balanced",
+        "strengths": [
+          "consistency",
+          "recovery"
+        ],
+        "chosen": "recovery",
+        "rejected": [
+          "positional",
+          "safe",
+          "approach"
+        ],
+        "expectedScore": 4.799,
+        "hazardRisk": 0.34285588639209247
+      },
+      {
+        "golferId": "irons",
+        "riskStyle": "balanced",
+        "strengths": [
+          "recovery",
+          "shortGame"
+        ],
+        "chosen": "recovery",
+        "rejected": [
+          "positional",
+          "safe",
+          "hero"
+        ],
+        "expectedScore": 4.738,
+        "hazardRisk": 0.342096986396737
+      },
+      {
+        "golferId": "short-game",
+        "riskStyle": "balanced",
+        "strengths": [
+          "consistency",
+          "recovery"
+        ],
+        "chosen": "recovery",
+        "rejected": [
+          "hero",
+          "approach",
+          "safe"
+        ],
+        "expectedScore": 5.141,
+        "hazardRisk": 0.5527636378623787
+      },
+      {
+        "golferId": "recovery",
+        "riskStyle": "balanced",
+        "strengths": [
+          "consistency",
+          "recovery"
+        ],
+        "chosen": "recovery",
+        "rejected": [
+          "hero",
+          "approach",
+          "safe"
+        ],
+        "expectedScore": 5.16,
+        "hazardRisk": 0.5742701654414926
+      },
+      {
+        "golferId": "consistency",
+        "riskStyle": "balanced",
+        "strengths": [
+          "consistency",
+          "recovery"
+        ],
+        "chosen": "recovery",
+        "rejected": [
+          "positional",
+          "safe",
+          "hero"
+        ],
+        "expectedScore": 4.827,
+        "hazardRisk": 0.3453751691776958
+      },
+      {
+        "golferId": "aggressive",
+        "riskStyle": "aggressive",
+        "strengths": [
+          "power",
+          "consistency"
+        ],
+        "chosen": "positional",
+        "rejected": [
+          "recovery",
+          "hero",
+          "safe"
+        ],
+        "expectedScore": 4.319,
+        "hazardRisk": 0.45579570720016466
+      },
+      {
+        "golferId": "conservative",
+        "riskStyle": "conservative",
+        "strengths": [
+          "consistency",
+          "recovery"
+        ],
+        "chosen": "recovery",
+        "rejected": [
+          "positional",
+          "safe",
+          "hero"
+        ],
+        "expectedScore": 5.059,
+        "hazardRisk": 0.3449515496204833
+      },
+      {
+        "golferId": "casual",
+        "riskStyle": "conservative",
+        "strengths": [
+          "shortGame",
+          "recovery"
+        ],
+        "chosen": "recovery",
+        "rejected": [
+          "safe",
+          "hero",
+          "approach"
+        ],
+        "expectedScore": 5.698,
+        "hazardRisk": 0.6575623677699585
+      },
+      {
+        "golferId": "balanced",
+        "riskStyle": "balanced",
+        "strengths": [
+          "recovery",
+          "shortGame"
+        ],
+        "chosen": "recovery",
+        "rejected": [
+          "approach",
+          "hero",
+          "safe"
+        ],
+        "expectedScore": 5.065,
+        "hazardRisk": 0.540388695124304
+      }
+    ],
+    "chosenCounts": {
+      "positional": 2,
+      "recovery": 8
+    }
+  },
+  "saveReload": {
+    "beforeHash": "a477c6cc",
+    "afterHash": "a477c6cc",
+    "saveBytes": 241001,
+    "golferEvidence": {
+      "plans": 9,
+      "outcomes": 81,
+      "reactions": 9
+    }
+  },
+  "tournament": {
+    "field": 12,
+    "roundsFinished": 12,
+    "daySteps": 61,
+    "allFinished": true,
+    "status": "completed",
+    "winner": "Avery H."
+  }
+}

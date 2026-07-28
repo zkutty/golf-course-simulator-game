@@ -4,7 +4,7 @@ import { getParSetting, resolveCourseSetup } from "../models/courseSetup";
 import { planPurchase } from "./concessions";
 import { LIVE } from "./liveConfig";
 import type { BuiltRound, WalkRouter } from "./golfer";
-import type { GolferCapabilities } from "./m47Types";
+import { M47_MAX_OUTCOMES, type GolferCapabilities } from "./m47Types";
 import { generateStrategicHolePlan, followUpIntent } from "./strategicOptions";
 import { liveCourseSnapshot, resolveLiveShot, terrainAt } from "./livePhysics";
 import { evaluateHoleReaction } from "./reactions";
@@ -155,7 +155,12 @@ export function buildStrategicGolferRound(args: {
         seed: (args.rng() * 0xffffffff) >>> 0,
       });
       outcomes.push(outcome);
+      // Long 36-hole rounds can legitimately produce more physical attempts
+      // than a save should retain. Keep the most recent bounded evidence while
+      // preserving the current hole's complete local outcome list for scoring
+      // and reaction evaluation.
       shotOutcomes.push(outcome);
+      if (shotOutcomes.length > M47_MAX_OUTCOMES) shotOutcomes.shift();
       const putting = lie === "green" || intent.kind === "approach" && distance(from, hole.green) <= 5;
       segments.push(pauseSeg(from, holeIndex, putting ? LIVE.pace.puttPause : LIVE.pace.swingPause));
       segments.push(flightSeg(outcome.from, outcome.landing, holeIndex, putting ? "putt" : "swing"));

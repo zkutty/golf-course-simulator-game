@@ -15,6 +15,17 @@ function canonical(value: unknown): string {
     .join(",")}}`;
 }
 
+/** Stable, order-independent FNV-1a hash for persisted certification evidence. */
+export function hashCanonicalValue(value: unknown): string {
+  const text = canonical(value);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 export function hashGameState(value: {
   course: Course;
   world: World;
@@ -34,11 +45,5 @@ export function hashGameState(value: {
     activePinRotation: value.course.activePinRotation ?? "A",
     holes: normalized.holes.map(withNormalizedHoleSetup),
   };
-  const text = canonical({ course, world: value.world, live: value.live });
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  return hashCanonicalValue({ course, world: value.world, live: value.live });
 }
