@@ -51,6 +51,10 @@ export function GolferInspector(props: {
   const holeText =
     selected.currentHole >= 0 ? `Hole ${selected.currentHole + 1}` : "Clubhouse";
   const played = selected.scoredHoles;
+  const capabilities = selected.capabilities;
+  const currentPlan = selected.currentHoleId ? selected.holePlans?.find((plan) => plan.holeId === selected.currentHoleId) : undefined;
+  const latestReaction = selected.scoredHoles > 0 ? selected.holeReactions?.[selected.scoredHoles - 1] : undefined;
+  const latestOutcome = selected.shotOutcomes?.[selected.shotOutcomes.length - 1];
 
   return (
     <div className="cc-golfer-inspector"
@@ -164,6 +168,30 @@ export function GolferInspector(props: {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {capabilities && (
+        <div style={{ marginTop: 12, borderTop: "1px solid rgba(255,255,255,.12)", paddingTop: 9 }}>
+          <div style={{ fontSize: 11, opacity: .7, marginBottom: 4 }}>{translateCurrent("golfer.identityApproach")}</div>
+          <div style={{ fontSize: 11, lineHeight: 1.45 }}>
+            <div><strong>{translateCurrent("golfer.riskStyle", { style: capabilities.riskStyle, power: Math.round(capabilities.power), accuracy: Math.round(capabilities.accuracy) })}</strong></div>
+            <div>{translateCurrent("golfer.skillLine", { irons: Math.round(capabilities.irons), shortGame: Math.round(capabilities.shortGame), recovery: Math.round(capabilities.recovery) })}</div>
+            <div style={{ opacity: .72 }}>{translateCurrent("golfer.strengths", { values: capabilities.strengths.join(", ") || translateCurrent("golfer.balanced") })}</div>
+          </div>
+          {currentPlan && <div style={{ marginTop: 7, fontSize: 11 }}>
+            <div><strong>{translateCurrent("golfer.planLine", { kind: currentPlan.chosen.kind, club: currentPlan.chosen.club, risk: Math.round(currentPlan.chosen.hazardRisk * 100) })}</strong></div>
+            <div style={{ opacity: .72 }}>{translateCurrent("golfer.rejected", { values: currentPlan.rejected.map((alternative) => alternative.kind).join(", ") || translateCurrent("golfer.none") })}</div>
+            <div style={{ opacity: .72 }}>{currentPlan.chosen.facts.map((fact) => fact.detail).join(" · ")}</div>
+          </div>}
+          {latestReaction && <div style={{ marginTop: 7, fontSize: 11 }}>
+            <div><strong>{translateCurrent("golfer.reaction", { outcome: latestReaction.outcome, satisfaction: Math.round(latestReaction.satisfaction) })}</strong></div>
+            <div style={{ opacity: .72 }}>{latestReaction.thought}</div>
+            <div style={{ opacity: .72 }}>{latestReaction.facts.map((fact) => fact.detail).join(" · ")}</div>
+          </div>}
+          {latestOutcome && <div style={{ marginTop: 7, fontSize: 11, opacity: .72 }}>
+            {translateCurrent("golfer.outcomeLine", { club: latestOutcome.club, before: latestOutcome.lieBefore, after: latestOutcome.lieAfter, penalty: latestOutcome.penaltyStrokes })}
+          </div>}
         </div>
       )}
 

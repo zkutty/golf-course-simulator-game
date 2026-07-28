@@ -8,6 +8,8 @@ import type { Golfer, Segment } from "./types";
 import type { ConcessionType } from "../models/types";
 import { planPurchase } from "./concessions";
 import { getParSetting, resolveCourseSetup } from "../models/courseSetup";
+import type { GolferCapabilities, HoleReaction, LiveShotOutcome, StrategicHolePlan } from "./m47Types";
+import { buildStrategicGolferRound } from "./m47Round";
 
 // Optional tile-aware router; returns waypoints from just-after `from` to `to`,
 // or null to fall back to a straight-line walk.
@@ -62,6 +64,10 @@ export interface BuiltRound {
   segments: Segment[];
   holePar: number[];
   holeStrokes: number[];
+  capabilities?: GolferCapabilities;
+  holePlans?: StrategicHolePlan[];
+  shotOutcomes?: LiveShotOutcome[];
+  holeReactions?: HoleReaction[];
 }
 
 // Build a golfer's full itinerary across all valid holes, reusing the existing
@@ -77,7 +83,9 @@ export function buildGolferRound(args: {
   route?: WalkRouter;
   teeSet?: TeeSet;
   pinRotation?: PinRotation;
+  capabilities?: GolferCapabilities;
 }): BuiltRound {
+  if (args.capabilities) return buildStrategicGolferRound({ ...args, capabilities: args.capabilities });
   return planFromHole({
     course: args.course,
     profile: args.profile,
@@ -109,6 +117,7 @@ export function planFromHole(args: {
   wallet?: number;
   teeSet?: TeeSet;
   pinRotation?: PinRotation;
+  capabilities?: GolferCapabilities;
 }): BuiltRound {
   const baseCourse = args.course;
   const course = courseForRoundSetup(baseCourse, args.teeSet ?? "member", args.pinRotation ?? baseCourse.activePinRotation ?? "A");
@@ -296,6 +305,9 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
       g.pos = seg.from;
       g.ball = null;
     }
+    if (g.holePlans && seg.holeIndex >= 0) {
+      g.currentIntent = g.holePlans.find((plan) => plan.holeId === (seg.holeId ?? g.holeIds?.[seg.holeIndex]))?.chosen;
+    }
   }
 }
 
@@ -315,6 +327,12 @@ function scoreNextHole(g: Golfer, condition: number): void {
       ? LIVE.mood.perStrokeOverPar * delta * patienceRelief
       : LIVE.mood.perStrokeUnderPar * -delta;
   g.mood = clamp01(g.mood + m + (condition - 0.6) * 0.02);
+  const reaction = g.holeReactions?.[i];
+  if (reaction) {
+    g.mood = clamp01(g.mood * 0.55 + (reaction.satisfaction / 100) * 0.45);
+    g.thought = reaction.thought;
+    g.thoughtUntil = Math.max(g.thoughtUntil, reaction.satisfaction >= 70 ? 18 : 24);
+  }
   g.scoredHoles++;
 }
 

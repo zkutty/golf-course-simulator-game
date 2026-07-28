@@ -2,6 +2,7 @@ import type { ConcessionTransaction, ConcessionType, CourseOperations, Difficult
 import type { Personality } from "./personality";
 import type { LiveTournamentState } from "../tournaments/types";
 import type { DailyWeather, WeatherKind, WeatherModifiers } from "../seasons/types";
+import type { GolferCapabilities, HoleReaction, LiveShotOutcome, ShotIntent, StrategicHolePlan } from "./m47Types";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -85,6 +86,13 @@ export interface Golfer {
   hospitalityDelay?: number;
   disorderIncidents?: number;
   completionStatus?: "completed" | "daylight" | "congestion_abandonment";
+  /** M47 identity contract; legacy saves omit this and are migrated on load. */
+  capabilities?: GolferCapabilities;
+  /** Bounded strategic decisions and physical evidence for this round. */
+  holePlans?: StrategicHolePlan[];
+  shotOutcomes?: LiveShotOutcome[];
+  holeReactions?: HoleReaction[];
+  currentIntent?: ShotIntent;
 }
 
 export interface Arrival {
@@ -269,6 +277,7 @@ export interface GolferRenderData {
   scoredHoles: number;
   /** Strokes over/under par on the most recently scored hole (0 if none). */
   lastHoleDelta: number;
+  intent?: string | null;
 }
 
 // Result of committing a finished day into the economy/reputation model.

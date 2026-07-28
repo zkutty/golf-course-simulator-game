@@ -130,4 +130,11 @@ describe("live simulation persistence", () => {
     });
     expect(result).toMatchObject({ ok: false, error: { code: "INVALID_LIVE_STATE" } });
   });
+
+  it("rejects malformed M47 evidence instead of exposing unsafe inspector data", () => {
+    const { state } = midRound();
+    const snapshot = JSON.parse(JSON.stringify(snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null })));
+    snapshot.state.golfers[0].holePlans = [{ version: 1, holeId: "broken" }];
+    expect(restoreLiveSimulation(snapshot)).toBeNull();
+  });
 });

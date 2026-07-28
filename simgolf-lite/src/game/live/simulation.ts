@@ -4,8 +4,10 @@ import { getGolferProfile } from "../sim/golferProfiles";
 import { scoreCourseHoles } from "../sim/holes";
 import { ARCHETYPES, golferName } from "./archetypes";
 import { rollPersonality, solverProfileForSkill } from "./personality";
+import { createGolferCapabilities, stableGolferSeed } from "./capabilities";
 import { getDifficultyProfile } from "../balance/difficulty";
 import { buildGolferRound, entryPoint, planFromHole } from "./golfer";
+import { buildStrategicGolferRound } from "./m47Round";
 import { advanceGolfer } from "./golfer";
 import { planEstateDay } from "./spawn";
 import { findWalkPath } from "./walkPath";
@@ -13,6 +15,7 @@ import { LIVE } from "./liveConfig";
 import type { Arrival, Golfer, GolferRenderData, LiveState, RoundReactions } from "./types";
 import { rollDiscretionaryWallet } from "./concessions";
 import type { CompletedRound } from "../retention/types";
+import type { LiveShotOutcome } from "./m47Types";
 import { createLiveTournament, planTournamentDay, tournamentForDate, updateTournamentStanding } from "../tournaments/tournaments";
 import { getTeeBox, preferredTeeForArchetype } from "../models/courseSetup";
 import { activeCourseLayout, courseForHoleIds, courseForLayout, layoutById, operatingCourseViews } from "../models/courseLayouts";
@@ -165,6 +168,10 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   const personality = arrival.tournament
     ? { ...rolledPersonality, skill: Math.max(0, Math.min(1, arrival.tournament.skill)), consistency: Math.max(rolledPersonality.consistency, .62) }
     : rolledPersonality;
+  const capabilities = createGolferCapabilities({
+    personality,
+    seed: stableGolferSeed(arrival.personId ?? arrival.tournament?.entrantId ?? `${state.seed}:${id}`, state.seed + id),
+  });
   const courseId = arrival.courseId ?? state.tournament?.courseId ?? activeCourseLayout(course).id;
   const roundCourse = courseForLayout(course, courseId);
   const layout = layoutById(course, courseId) ?? activeCourseLayout(course);
@@ -198,6 +205,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     wallet,
     teeSet,
     pinRotation,
+    capabilities,
   });
   if (state.weather && state.weather.modifiers.paceMultiplier !== 1) {
     round.segments = round.segments.map((segment) => segment.kind === "walk" || segment.kind === "pause"
@@ -250,6 +258,10 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     hospitalityDelay: 0,
     disorderIncidents: 0,
     completionStatus: "completed",
+    capabilities: round.capabilities ?? capabilities,
+    holePlans: round.holePlans,
+    shotOutcomes: round.shotOutcomes,
+    holeReactions: round.holeReactions,
   };
 }
 
@@ -620,7 +632,11 @@ export function stepLive(
         tournamentEntrantId: g.tournamentEntrantId,
         teeSet: g.teeSet,
         waitMinutes: g.waitMinutes ?? 0,
-        shots: (() => {
+        capabilities: g.capabilities,
+        holePlans: g.holePlans?.slice(),
+        shotOutcomes: g.shotOutcomes?.slice(),
+        holeReactions: g.holeReactions?.slice(),
+        shots: g.shotOutcomes?.length ? g.shotOutcomes.map((outcome) => shotRecordFromOutcome(outcome)) : (() => {
           const numbers = new Map<string, number>();
           return g.segments.filter((segment) => segment.kind === "flight").map((segment) => {
             const holeId = segment.holeId ?? g.holeIds?.[segment.holeIndex] ?? `hole-${segment.holeIndex + 1}`;
@@ -675,6 +691,27 @@ export function stepLive(
   }
 
   return { cashDelta, finishedThisStep, completedRounds };
+}
+
+function shotRecordFromOutcome(outcome: LiveShotOutcome): NonNullable<CompletedRound["shots"]>[number] {
+  const shotType = outcome.technique === "normal" && outcome.shotNumber === 1 && outcome.lieBefore === "tee"
+    ? "drive" as const
+    : outcome.intent === "recovery" || ["rough", "deep_rough", "sand", "waste_area", "water", "wetland"].includes(outcome.lieBefore)
+      ? "recovery" as const
+      : outcome.club === "Putter" || outcome.lieBefore === "green"
+        ? "putt" as const
+        : "approach" as const;
+  return {
+    id: outcome.id,
+    holeId: outcome.holeId,
+    shotNumber: outcome.shotNumber,
+    shotType,
+    from: { ...outcome.from },
+    landing: { ...outcome.landing },
+    rest: { ...outcome.rest },
+    lieBefore: outcome.lieBefore,
+    lieAfter: outcome.lieAfter,
+  };
 }
 
 export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): GolferRenderData[] {
@@ -742,6 +779,7 @@ export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): 
         g.scoredHoles > 0
           ? (g.holeStrokes[g.scoredHoles - 1] ?? 0) - (g.holePar[g.scoredHoles - 1] ?? 0)
           : 0,
+      intent: g.currentIntent?.kind ?? null,
     };
     if (out[outIndex]) Object.assign(out[outIndex], next);
     else out.push(next);
@@ -801,26 +839,47 @@ export function reconcileGolfers(state: LiveState, course: Course): void {
     if (startHole < 0) continue; // nothing left to play; let them walk off
 
     const rng = mulberry32(state.seed + g.id * 911 + state.reconcileEpoch * 17);
-    const profile = getGolferProfile(solverProfileForSkill(g.personality.skill), routing);
     const from: Point = { x: g.pos.x, y: g.pos.y };
-    const replanned = planFromHole({
-      course: routing,
-      profile,
-      personality: g.personality,
-      rng,
-      startHole,
-      cursor: from,
-      exit,
-      route: makeRouter(routing, state.walkCache),
-      wallet: g.wallet,
-      teeSet: g.teeSet,
-      pinRotation: g.pinRotation,
-    });
+    const replanned = g.capabilities
+      ? buildStrategicGolferRound({
+          course: routing,
+          entry: from,
+          exit,
+          rng,
+          personality: g.personality,
+          capabilities: g.capabilities,
+          route: makeRouter(routing, state.walkCache),
+          wallet: g.wallet,
+          teeSet: g.teeSet,
+          pinRotation: g.pinRotation,
+          startHole,
+          skipPreRoundPurchases: true,
+        })
+      : planFromHole({
+          course: routing,
+          profile: getGolferProfile(solverProfileForSkill(g.personality.skill), routing),
+          personality: g.personality,
+          rng,
+          startHole,
+          cursor: from,
+          exit,
+          route: makeRouter(routing, state.walkCache),
+          wallet: g.wallet,
+          teeSet: g.teeSet,
+          pinRotation: g.pinRotation,
+        });
     replanned.segments = replanned.segments.map((segment) => ({ ...segment, holeId: segment.holeIndex >= 0 ? routing.holes[segment.holeIndex]?.id : undefined }));
 
     // Splice: keep scored holes, replace the unplayed tail with the new plan.
     g.holePar = g.holePar.slice(0, g.scoredHoles).concat(replanned.holePar);
     g.holeStrokes = g.holeStrokes.slice(0, g.scoredHoles).concat(replanned.holeStrokes);
+    if (g.capabilities) {
+      const completedHoleIds = new Set((g.holePlans ?? []).slice(0, g.scoredHoles).map((plan) => plan.holeId));
+      g.holePlans = (g.holePlans ?? []).slice(0, g.scoredHoles).concat(replanned.holePlans ?? []);
+      g.shotOutcomes = (g.shotOutcomes ?? []).filter((outcome) => completedHoleIds.has(outcome.holeId)).concat(replanned.shotOutcomes ?? []);
+      g.holeReactions = (g.holeReactions ?? []).slice(0, g.scoredHoles).concat(replanned.holeReactions ?? []);
+      g.currentIntent = replanned.holePlans?.[0]?.chosen;
+    }
     g.segments = replanned.segments;
     g.segIndex = 0;
     g.segElapsed = 0;

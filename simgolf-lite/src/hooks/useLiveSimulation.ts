@@ -19,6 +19,7 @@ import {
 } from "../game/live/persistence";
 import { deriveLiveAudioEvents, type LiveAudioEvent } from "../audio/liveEvents";
 import type { CompletedRound } from "../game/retention/types";
+import type { GolferCapabilities, HoleReaction, ShotIntent, StrategicHolePlan, LiveShotOutcome } from "../game/live/m47Types";
 import { completeTournament, prepareTournamentDay, sortedStandings } from "../game/tournaments/tournaments";
 import type { TournamentStanding, TournamentTier } from "../game/tournaments/types";
 import { activeCourseLayout, updateLayout } from "../game/models/courseLayouts";
@@ -60,6 +61,11 @@ export interface SelectedGolferDetail {
   courseId?: string;
   courseName?: string;
   currentHoleId?: string;
+  capabilities?: GolferCapabilities;
+  currentIntent?: ShotIntent;
+  holePlans?: StrategicHolePlan[];
+  shotOutcomes?: LiveShotOutcome[];
+  holeReactions?: HoleReaction[];
 }
 
 export interface LiveStatus {
@@ -173,6 +179,11 @@ function buildSelected(
     courseId: g.courseId,
     courseName: g.courseName,
     currentHoleId: g.currentHoleId,
+    capabilities: g.capabilities,
+    currentIntent: g.currentIntent,
+    holePlans: g.holePlans,
+    shotOutcomes: g.shotOutcomes,
+    holeReactions: g.holeReactions,
   };
 }
 

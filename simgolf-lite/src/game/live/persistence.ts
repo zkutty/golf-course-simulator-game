@@ -2,13 +2,18 @@ import type { SpeedName } from "./liveConfig";
 import type { Arrival, Golfer, LiveState, Segment } from "./types";
 import { createWeekLedger, normalizeWeekLedger, type LiveWeekLedger } from "./weeklyLedger";
 import { emptyPaceDayMetrics } from "./pace";
+import { createGolferCapabilities, normalizeGolferCapabilities, stableGolferSeed } from "./capabilities";
+import type { StrategicIntentKind } from "./m47Types";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
 const MAX_SEGMENTS_PER_GOLFER = 5_000;
+const MAX_M47_PLANS = 36;
+const MAX_M47_OUTCOMES = 240;
+const MAX_M47_REACTIONS = 36;
 
 export interface LiveSimulationSnapshotV1 {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   state: Omit<LiveState, "walkCache">;
   pendingCash: number;
   speed: SpeedName;
@@ -57,6 +62,45 @@ function segment(value: unknown): value is Segment {
   );
 }
 
+const intentKinds = new Set<StrategicIntentKind>(["safe", "hero", "positional", "recovery", "approach"]);
+const techniques = new Set(["normal", "draw", "fade", "punch", "flop", "backspin"]);
+
+function fact(value: unknown): boolean {
+  return isRecord(value) && ["capability-fit", "risk", "terrain", "next-shot", "context", "outcome"].includes(String(value.code)) && typeof value.detail === "string";
+}
+
+function shotIntent(value: unknown): boolean {
+  return isRecord(value) && typeof value.id === "string" && intentKinds.has(value.kind as StrategicIntentKind) &&
+    point(value.from) && point(value.target) && typeof value.club === "string" && techniques.has(String(value.technique)) &&
+    ["power", "expectedStrokes", "variance", "hazardRisk", "nextShotQuality"].every((key) => finite(value[key])) &&
+    Array.isArray(value.facts) && value.facts.length <= 8 && value.facts.every(fact);
+}
+
+function holePlan(value: unknown): boolean {
+  return isRecord(value) && value.version === 1 && typeof value.holeId === "string" && finite(value.par) && finite(value.expectedScore) &&
+    shotIntent(value.chosen) && Array.isArray(value.rejected) && value.rejected.length <= 5 && value.rejected.every((alternative) =>
+      isRecord(alternative) && intentKinds.has(alternative.kind as StrategicIntentKind) && finite(alternative.expectedStrokes) &&
+      typeof alternative.reason === "string" && Array.isArray(alternative.facts) && alternative.facts.length <= 8 && alternative.facts.every(fact)
+    );
+}
+
+function shotOutcome(value: unknown): boolean {
+  return isRecord(value) && value.version === 1 && typeof value.id === "string" && typeof value.holeId === "string" &&
+    finite(value.shotNumber) && Number.isInteger(value.shotNumber) && value.shotNumber > 0 && intentKinds.has(value.intent as StrategicIntentKind) &&
+    typeof value.intentId === "string" && typeof value.club === "string" && techniques.has(String(value.technique)) &&
+    point(value.from) && point(value.aim) && point(value.landing) && point(value.rest) && typeof value.lieBefore === "string" &&
+    typeof value.lieAfter === "string" && ["carryYards", "rollYards", "penaltyStrokes", "seed"].every((key) => finite(value[key])) &&
+    typeof value.holed === "boolean" && Array.isArray(value.facts) && value.facts.length <= 12 && value.facts.every(fact);
+}
+
+function holeReaction(value: unknown): boolean {
+  return isRecord(value) && value.version === 1 && typeof value.holeId === "string" &&
+    ["expectedScore", "actualScore", "satisfaction"].every((key) => finite(value[key])) &&
+    ["delighted", "pleased", "neutral", "frustrated", "unfair"].includes(String(value.outcome)) &&
+    Array.isArray(value.facts) && value.facts.length <= 12 && value.facts.every(fact) && typeof value.thought === "string" &&
+    (value.memory == null || typeof value.memory === "string");
+}
+
 function golfer(value: unknown): value is Golfer {
   if (!isRecord(value)) return false;
   if (!Number.isInteger(value.id) || typeof value.name !== "string" || typeof value.archetype !== "string") return false;
@@ -79,7 +123,12 @@ function golfer(value: unknown): value is Golfer {
     (value.wallet == null || finite(value.wallet)) &&
     (value.purchasedSegmentIndexes == null || (Array.isArray(value.purchasedSegmentIndexes) && value.purchasedSegmentIndexes.every(Number.isInteger))) &&
     (value.tournamentId == null || typeof value.tournamentId === "string") &&
-    (value.tournamentEntrantId == null || typeof value.tournamentEntrantId === "string");
+    (value.tournamentEntrantId == null || typeof value.tournamentEntrantId === "string") &&
+    (value.capabilities == null || isRecord(value.capabilities)) &&
+    (value.currentIntent == null || shotIntent(value.currentIntent)) &&
+    (value.holePlans == null || (Array.isArray(value.holePlans) && value.holePlans.length <= MAX_M47_PLANS && value.holePlans.every(holePlan))) &&
+    (value.shotOutcomes == null || (Array.isArray(value.shotOutcomes) && value.shotOutcomes.length <= MAX_M47_OUTCOMES && value.shotOutcomes.every(shotOutcome))) &&
+    (value.holeReactions == null || (Array.isArray(value.holeReactions) && value.holeReactions.length <= MAX_M47_REACTIONS && value.holeReactions.every(holeReaction)));
 }
 
 function arrival(value: unknown): value is Arrival {
@@ -127,7 +176,7 @@ export function snapshotLiveSimulation(args: {
   const { walkCache: _walkCache, ...serializable } = args.state;
   void _walkCache;
   return {
-    version: 3,
+    version: 4,
     state: cloneSerializableState(serializable),
     pendingCash: args.pendingCash,
     speed: args.speed,
@@ -138,7 +187,7 @@ export function snapshotLiveSimulation(args: {
 }
 
 export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | null {
-  if (!isRecord(input) || (input.version !== 1 && input.version !== 2 && input.version !== 3) || !isRecord(input.state)) return null;
+  if (!isRecord(input) || (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4) || !isRecord(input.state)) return null;
   const state = input.state;
   if (!Array.isArray(state.golfers) || state.golfers.length > MAX_GOLFERS || state.golfers.some((g) => !golfer(g))) return null;
   if (!Array.isArray(state.arrivals) || state.arrivals.length > MAX_ARRIVALS || state.arrivals.some((a) => !arrival(a))) return null;
@@ -162,8 +211,18 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
   if (input.selectedGolferId !== null && !Number.isInteger(input.selectedGolferId)) return null;
 
   const serializable = cloneSerializableState(state as unknown as Omit<LiveState, "walkCache">);
-  serializable.golfers = serializable.golfers.map((g) => ({
+  const stateSeed = finite(state.seed) ? state.seed : 0;
+  serializable.golfers = serializable.golfers.map((g) => {
+    const fallbackCapabilities = createGolferCapabilities({
+      personality: g.personality,
+      seed: stableGolferSeed(g.personId ?? `${g.name}:${g.id}`, stateSeed + g.id),
+    });
+    return {
     ...g,
+    capabilities: normalizeGolferCapabilities(g.capabilities, fallbackCapabilities),
+    holePlans: Array.isArray(g.holePlans) ? g.holePlans.slice(-MAX_M47_PLANS) : [],
+    shotOutcomes: Array.isArray(g.shotOutcomes) ? g.shotOutcomes.slice(-MAX_M47_OUTCOMES) : [],
+    holeReactions: Array.isArray(g.holeReactions) ? g.holeReactions.slice(-MAX_M47_REACTIONS) : [],
     wallet: g.wallet ?? 0,
     purchasedSegmentIndexes: g.purchasedSegmentIndexes ?? [],
     teeSet: g.teeSet ?? "member",
@@ -182,7 +241,8 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
     completionStatus: g.completionStatus === "daylight" || g.completionStatus === "congestion_abandonment"
       ? g.completionStatus
       : "completed",
-  }));
+  };
+  });
   serializable.arrivals = serializable.arrivals.map((arrival, index) => ({
     ...arrival,
     groupId: arrival.groupId ?? `${arrival.courseId ?? "course"}-solo-arrival-${index}`,
