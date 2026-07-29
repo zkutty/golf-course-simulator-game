@@ -6,10 +6,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/assets/terrain/materials");
+const DEFAULT_OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/assets/terrain/materials");
+const OUT = path.resolve(process.env.COURSECRAFT_TERRAIN_OUTPUT_DIR || DEFAULT_OUT);
 mkdirSync(OUT, { recursive: true });
-const W = 128;
-const H = 64;
+const W = Number(process.env.COURSECRAFT_TERRAIN_WIDTH || 128);
+const H = Number(process.env.COURSECRAFT_TERRAIN_HEIGHT || 64);
+if (!Number.isInteger(W) || !Number.isInteger(H) || W < 2 || H < 2 || W % 2 !== 0 || H % 2 !== 0) {
+  throw new Error(`terrain dimensions must be positive even integers, got ${W}x${H}`);
+}
 const THEMES = {
   parkland: {
     colors: { fairway: "#55a959", rough: "#3e823f", deep_rough: "#34743a", sand: "#d9c58e", waste_area: "#a98757", water: "#347faf", wetland: "#4f806b", green: "#63b96a", tee: "#62a85b", path: "#9a907e" },
@@ -78,18 +82,18 @@ function baseTile(theme, config, terrain, variant, themeSalt) {
 }
 
 function edgeDistance(x, y, direction) {
-  const dx = (x + 0.5 - 64) / 64;
-  const dy = (y + 0.5 - 32) / 32;
+  const dx = (x + 0.5 - W / 2) / (W / 2);
+  const dy = (y + 0.5 - H / 2) / (H / 2);
   if (direction === "n") return 1 - (dx - dy);
   if (direction === "e") return 1 - (dx + dy);
   if (direction === "s") return 1 - (-dx + dy);
   return 1 - (-dx - dy);
 }
 function cornerPoint(direction) {
-  if (direction === "ne") return [127, 32];
-  if (direction === "se") return [64, 63];
-  if (direction === "sw") return [0, 32];
-  return [64, 0];
+  if (direction === "ne") return [W - 1, H / 2];
+  if (direction === "se") return [W / 2, H - 1];
+  if (direction === "sw") return [0, H / 2];
+  return [W / 2, 0];
 }
 function transition(theme, config, terrain, kind, direction, themeSalt) {
   const png = new PNG({ width: W, height: H });
@@ -126,8 +130,12 @@ function transition(theme, config, terrain, kind, direction, themeSalt) {
   save(png, `${theme}_${terrain}_${kind}_${direction}`);
 }
 
+const requestedThemes = process.env.COURSECRAFT_TERRAIN_THEMES
+  ? new Set(process.env.COURSECRAFT_TERRAIN_THEMES.split(",").map((theme) => theme.trim()).filter(Boolean))
+  : null;
 let count = 0;
 for (const [theme, config] of Object.entries(THEMES)) {
+  if (requestedThemes && !requestedThemes.has(theme)) continue;
   const themeSalt = theme === "parkland" ? 0 : theme === "links" ? 1009 : 2027;
   for (const terrain of Object.keys(config.colors)) {
     for (let variant = 0; variant < 6; variant++) baseTile(theme, config, terrain, variant, themeSalt);
@@ -139,4 +147,4 @@ for (const [theme, config] of Object.entries(THEMES)) {
     count += 18;
   }
 }
-console.log(`wrote ${count} original @2x terrain sources to ${OUT}`);
+console.log(`wrote ${count} ${W}x${H} terrain sources to ${OUT}`);

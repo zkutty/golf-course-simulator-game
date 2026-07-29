@@ -44,20 +44,27 @@ const PROFILE_RANK: Record<DetailProfile, number> = { low: 0, medium: 1, high: 2
  * Source-art contract for the material fields.
  *
  * A patch spans `tileSpan` tiles in each world axis, so its phase repeats on a
- * 4-tile lattice that is independent of the cell grid. `target` is the 4×
- * presentation tier ZK-472 authors; `shipped` describes the 2× art currently in
- * the repository. The renderer resolves the best available tier rather than
+ * 4-tile lattice that is independent of the cell grid. `target` is the Parkland
+ * 4× contract in ZK-472; `shipped` describes the 2× art currently in the
+ * repository. The renderer resolves the best available tier rather than
  * assuming either, and both downsample by an integer factor — the pixel-art-safe
  * case, where no source texel is resampled across a fractional boundary.
  */
+export const MATERIAL_PATCH_TILE_SPAN = 4;
+
+export const PARKLAND_4X_MATERIAL_CONTRACT = {
+  patchWidth: 256,
+  patchHeight: 128,
+  presentationScale: 4,
+  tileSpan: MATERIAL_PATCH_TILE_SPAN,
+} as const;
+
 export const MATERIAL_SOURCE_TIERS = {
-  target: { patchWidth: 256, patchHeight: 128, presentationScale: 4 },
+  target: PARKLAND_4X_MATERIAL_CONTRACT,
   shipped: { patchWidth: 128, patchHeight: 64, presentationScale: 2 },
 } as const;
 
 export type MaterialSourceTier = keyof typeof MATERIAL_SOURCE_TIERS;
-
-export const MATERIAL_PATCH_TILE_SPAN = 4;
 
 /** Per-quality atlas ceilings; `low` is the M35 gate the shipped atlas must clear. */
 export const ATLAS_BUDGET_BYTES: Record<DetailProfile, number> = {

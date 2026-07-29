@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "release": "1.0.0-rc.3",
+  "release": "1.0.0-rc.4",
   "decision": "HOLD",
   "decisionReason": "The exact main-branch deployment, stable Firefox/Safari profiles, unfamiliar-player sessions, physical hardware runs, and resulting triage evidence remain external gates.",
   "gates": [

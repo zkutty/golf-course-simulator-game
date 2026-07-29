@@ -38,10 +38,10 @@ the game:
 - Golden Green
 - Last Light
 
-Archived Ogg Vorbis and AAC/M4A renders are retained under
-`art/audio/legacy-generated/` for provenance and experimentation. They are not
-copied into the application, build artifact, or deployment. Runtime playlists
-use only the Suno library above.
+Archived Ogg Vorbis and AAC/M4A renders are retained only in the ignored local
+quarantine at `art/audio/legacy-untracked/` for provenance and experimentation.
+They are not copied into the application, build artifact, or deployment.
+Runtime playlists use only the Suno library above.
 
 ## Sound effects and ambience
 
@@ -54,7 +54,8 @@ sound designs are released under CC0-1.0 with the game.
 The older untracked MP3 files that previously lived directly under
 `public/audio/` predate M15 and are not referenced by the application. Local
 copies are quarantined under the ignored `art/audio/legacy-untracked/`
-directory pending provenance review, so Vite cannot copy them into `dist`.
+directory pending provenance review. The build removes any root-level media
+that may still be present in `public/audio/` before the shipped-artifact audit.
 
 ## Mixer path audit
 

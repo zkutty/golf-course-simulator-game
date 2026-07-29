@@ -289,6 +289,7 @@ class AudioManager {
     if (context === "silent") {
       this.playingContext = "silent";
       this.stopMusicSlots();
+      if (this.authoredAmbienceAllowed()) await this.switchAmbience(this.ambientMix.bed);
       return;
     }
     // CourseCraft owns one file-backed background recording at a time.

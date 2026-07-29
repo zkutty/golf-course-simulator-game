@@ -6,7 +6,13 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0-rc.4] - 2026-07-29
+
 ### Added
+- Parkland 4× terrain art contract (ZK-472): a deterministic CourseCraft-authored
+  source generator, provenance manifest, duplicate/dimension/transparency/budget
+  audit, and the existing 2× runtime fallback remain reproducible without
+  adopting provider output or making a human visual-approval claim.
 - Rounded terrain silhouettes (ZK-468): rendering now derives one deterministic
   silhouette per 4-connected whole-tile component — outer rings and holes traced
   with stable winding, corners rounded by a terrain-configurable 0.25–0.5 tile
@@ -28,6 +34,9 @@ versioning follows [SemVer](https://semver.org/).
   colour-vision-safe profiles change colour and density only, never geometry.
 
 ### Changed
+- Audio surface routing and release hygiene (ZK-443): title/Vision/setup/loading
+  surfaces keep world ambience off, legacy generated media is quarantined outside
+  the build, and the release audit verifies the exact 40-asset Suno manifest.
 - The per-tile autotile transition strip is no longer drawn for same-elevation
   material seams; the component contour layer replaces it. The autotile frames
   stay in the atlas as the low-quality fallback path, and elevation joins remain

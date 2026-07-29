@@ -8,7 +8,7 @@ const seconds = 40;
 // These deterministic M15 compositions are retained for provenance and
 // experimentation only. Runtime audio is exclusively sourced from the Suno
 // manifest, so regeneration must never place them back under public/.
-const output = new URL("../art/audio/legacy-generated/", import.meta.url);
+const output = new URL("../art/audio/legacy-untracked/", import.meta.url);
 mkdirSync(output, { recursive: true });
 
 const songs = [

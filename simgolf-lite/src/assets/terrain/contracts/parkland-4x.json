@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "id": "parkland-terrain-4x",
+  "theme": "parkland",
+  "source": {
+    "root": "src/assets/terrain/parkland-4x-fallback",
+    "kind": "deterministic-coursecraft-fallback",
+    "authoredBy": "CourseCraft",
+    "generator": "scripts/gen-parkland-4x-fallback.mjs",
+    "algorithm": "scripts/gen-terrain-materials.mjs",
+    "externalProvider": "none",
+    "referencePixelsCopied": false,
+    "reviewStatus": "machine-contract-only"
+  },
+  "frame": {
+    "width": 256,
+    "height": 128,
+    "presentationScale": 4,
+    "tileSpan": 4,
+    "format": "RGBA8888",
+    "naming": "parkland_{terrain}_{base|edge|outer|inner}_{variant-or-direction}.png",
+    "baseVariants": 6,
+    "edgeDirections": ["n", "e", "s", "w"],
+    "cornerDirections": ["ne", "se", "sw", "nw"],
+    "transparentCorners": true,
+    "visiblePixels": true,
+    "allowPartialAlpha": true
+  },
+  "atlas": {
+    "gutterPx": 2,
+    "maxWidth": 1024,
+    "maxHeight": 8192,
+    "name": "terrain-parkland-4x"
+  },
+  "fallback": {
+    "root": "src/assets/terrain/materials",
+    "width": 128,
+    "height": 64,
+    "presentationScale": 2,
+    "generator": "scripts/gen-terrain-materials.mjs"
+  },
+  "budgets": {
+    "sourceBytesMax": 4194304,
+    "atlasBytesMax": 6291456,
+    "selectedTransferBytesMax": 6291456,
+    "criticalTransferBytesMax": 8388608
+  }
+}
