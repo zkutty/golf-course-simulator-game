@@ -114,6 +114,7 @@ import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from ".
 import {
   buildLandscapeComponents,
   buildVisualHeightfield,
+  createLandscapeComponentCache,
   pointInLandscapeRing,
   ringSignedArea,
   sampleLandscapeSurfaceHeight,
@@ -1203,14 +1204,23 @@ export function PixiStage(props: PixiStageProps) {
     () => buildVisualHeightfield(course),
     [course],
   );
-  const landscapeComponents = useMemo(() => (
-    props.graphicsQuality === "low"
-      ? []
-      : buildLandscapeComponents(course.tiles, course.width, course.height, {
-        cornerRadius: props.graphicsQuality === "high" ? 0.4 : 0.32,
-        cornerSegments: props.graphicsQuality === "high" ? 4 : 2,
-      })
-  ), [
+  const landscapeComponentCacheRef = useRef(createLandscapeComponentCache());
+  const landscapeComponents = useMemo(() => {
+    if (props.graphicsQuality === "low") return [];
+    const startedAt = performance.now();
+    const options = {
+      cornerRadius: props.graphicsQuality === "high" ? 0.4 : 0.32,
+      cornerSegments: props.graphicsQuality === "high" ? 4 : 2,
+    };
+    const snapshot = landscapeComponentCacheRef.current.update(
+      course.tiles,
+      course.width,
+      course.height,
+      options,
+    );
+    recordM35Metric("connectedRebuild", performance.now() - startedAt);
+    return snapshot.components;
+  }, [
     course.height,
     course.tiles,
     course.width,

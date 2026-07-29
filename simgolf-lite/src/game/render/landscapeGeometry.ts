@@ -31,6 +31,29 @@ export interface LandscapeOptions {
   cornerSegments?: number;
 }
 
+export interface LandscapeComponentCacheStats {
+  hits: number;
+  misses: number;
+  components: number;
+}
+
+export interface LandscapeComponentCacheSnapshot {
+  components: LandscapeComponent[];
+  /** Components whose topology or presentation geometry changed. */
+  changed: LandscapeComponent[];
+  stats: LandscapeComponentCacheStats;
+}
+
+export interface LandscapeComponentCache {
+  update(
+    tiles: readonly Terrain[],
+    width: number,
+    height: number,
+    options?: LandscapeOptions,
+  ): LandscapeComponentCacheSnapshot;
+  clear(): void;
+}
+
 export interface VisualHeightfield {
   width: number;
   height: number;
@@ -245,15 +268,21 @@ function traceComponentRings(
   return rings;
 }
 
-export function buildLandscapeComponents(
+interface LandscapeComponentSkeleton {
+  terrain: Terrain;
+  cells: number[];
+  bounds: LandscapeBounds;
+  topologyKey: string;
+}
+
+function buildLandscapeComponentSkeletons(
   tiles: readonly Terrain[],
   width: number,
   height: number,
-  options: LandscapeOptions = {},
-): LandscapeComponent[] {
+): LandscapeComponentSkeleton[] {
   if (width <= 0 || height <= 0 || tiles.length !== width * height) return [];
   const visited = new Uint8Array(tiles.length);
-  const components: LandscapeComponent[] = [];
+  const components: LandscapeComponentSkeleton[] = [];
   for (let seed = 0; seed < tiles.length; seed++) {
     if (visited[seed]) continue;
     const terrain = tiles[seed];
@@ -276,14 +305,6 @@ export function buildLandscapeComponents(
       }
     }
     cells.sort((a, b) => a - b);
-    const exactRings = traceComponentRings(cells, width, height);
-    const rings = exactRings
-      .map((ring) => roundLandscapeRing(
-        ring,
-        options.cornerRadius ?? 0.36,
-        options.cornerSegments ?? 3,
-      ))
-      .sort((a, b) => Math.abs(ringSignedArea(b)) - Math.abs(ringSignedArea(a)));
     let minX = width;
     let minY = height;
     let maxX = 0;
@@ -299,12 +320,82 @@ export function buildLandscapeComponents(
     components.push({
       terrain,
       cells,
-      rings,
       bounds: { minX, minY, maxX, maxY },
       topologyKey: `${terrain}-${fnv1a(`${width}x${height}:${cells.join(",")}`)}`,
     });
   }
   return components;
+}
+
+function materializeLandscapeComponent(
+  skeleton: LandscapeComponentSkeleton,
+  width: number,
+  height: number,
+  options: LandscapeOptions,
+): LandscapeComponent {
+  const exactRings = traceComponentRings(skeleton.cells, width, height);
+  const rings = exactRings
+    .map((ring) => roundLandscapeRing(
+      ring,
+      options.cornerRadius ?? 0.36,
+      options.cornerSegments ?? 3,
+    ))
+    .sort((a, b) => Math.abs(ringSignedArea(b)) - Math.abs(ringSignedArea(a)));
+  return { ...skeleton, rings };
+}
+
+export function buildLandscapeComponents(
+  tiles: readonly Terrain[],
+  width: number,
+  height: number,
+  options: LandscapeOptions = {},
+): LandscapeComponent[] {
+  return buildLandscapeComponentSkeletons(tiles, width, height)
+    .map((skeleton) => materializeLandscapeComponent(skeleton, width, height, options));
+}
+
+/**
+ * Reuses rounded component geometry across dirty terrain updates. The flood
+ * fill still runs for the authoritative tile array, but unchanged component
+ * topology skips ring tracing and rounding. Presentation options are part of
+ * the cache namespace because quality tiers intentionally use different
+ * corner sampling.
+ */
+export function createLandscapeComponentCache(): LandscapeComponentCache {
+  let previous = new Map<string, LandscapeComponent>();
+  return {
+    update(tiles, width, height, options = {}) {
+      const styleKey = `${width}x${height}:${options.cornerRadius ?? 0.36}:${options.cornerSegments ?? 3}`;
+      const skeletons = buildLandscapeComponentSkeletons(tiles, width, height);
+      const components: LandscapeComponent[] = [];
+      const changed: LandscapeComponent[] = [];
+      let hits = 0;
+      const next = new Map<string, LandscapeComponent>();
+      for (const skeleton of skeletons) {
+        const key = `${styleKey}:${skeleton.topologyKey}`;
+        const cached = previous.get(key);
+        if (cached) {
+          hits++;
+          components.push(cached);
+          next.set(key, cached);
+        } else {
+          const component = materializeLandscapeComponent(skeleton, width, height, options);
+          changed.push(component);
+          components.push(component);
+          next.set(key, component);
+        }
+      }
+      previous = next;
+      return {
+        components,
+        changed,
+        stats: { hits, misses: changed.length, components: components.length },
+      };
+    },
+    clear() {
+      previous = new Map();
+    },
+  };
 }
 
 function median(values: readonly number[]): number {

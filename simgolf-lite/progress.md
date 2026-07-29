@@ -2,6 +2,13 @@ Original prompt: Update my vision HTML for the new features from the new milesto
 
 ## ZK-326 terrain-authoring completion slice — 2026-07-29
 
+## ZK-377 visual system machine-verification slice — 2026-07-29
+
+- Inventoried the shared workspace navigation and contextual inspector. The workspace/action icons were already owned SVG paths; the remaining native glyphs were the inspect trigger and inspector close control.
+- Replaced those glyphs with the shared owned SVG icon component, added tabpanel relationships, and centralized workspace/inspector default, selected, focus, disabled, warning, positive, and reserved destructive visual-state tokens. No terrain, renderer, audio, or gameplay code is in scope.
+- Focused pseudo-locale browser coverage initially surfaced a brittle hard-coded transformed-string assertion; the contract now checks the pseudo-localized accessible label format instead.
+- The pseudo-locale mobile run found a genuine containment defect: a viewport-derived inspector width overflowed its narrower course-pane containing block. The panel now uses border-box sizing and a containing-block-relative width; the focused desktop and pseudo-locale browser scenarios both pass after the fix.
+
 - Closed a post-commit edit integrity gap: a curved surface dragged wholly into unowned/protected land now remains unchanged instead of committing an empty clipped feature and restoring its former underlay. Partial legal coverage remains clipped and commit-capable.
 - Added reducer-level regression coverage for the fully unowned case. Focused surface intent/feature edit/terrain stroke tests pass (26 tests), and the production build/typecheck passes. The existing M35 node/tangent browser test was attempted twice; its first run aborted during the pre-existing first drag with Playwright's `Execution context was destroyed` navigation error, before the new model guard was reached. The failure capture showed a blank Pixi canvas; this needs renderer/test-harness investigation outside this bounded model slice.
 
@@ -596,3 +603,29 @@ classic course-builder references.
   no errors), build, M35 asset audit, and the bundled client capture passed.
 - Visual evidence was inspected locally; the remaining M35 fresh-context and
   human visual gates are still required and are not claimed by this work.
+
+## 2026-07-29 — Ranked implementation wave 2
+
+- Added a topology-skeleton cache for connected landscape components. Dirty
+  terrain updates still flood-fill authoritative cells, but unchanged
+  components now reuse their rounded rings and bounds; quality-tier corner
+  options remain isolated cache namespaces.
+- Added cache hit/miss and quality-switch regressions in
+  `src/game/render/landscapeGeometry.test.ts` and wired the cache into
+  `PixiStage` without changing gameplay ownership, elevation, picking, saves,
+  or hashes.
+- Focused landscape geometry tests (12), TypeScript, M35 surface-authoring
+  browser coverage, and the ZK-470/ZK-471 visual-foundation browser coverage
+  passed. The bundled web-game client also loaded without a console-error
+  artifact; its latest screenshot was visually inspected.
+- Parkland 4× contract hardening was integrated in commit `350fef4`; its
+  audit, typecheck, lint/i18n, focused terrain/accessibility tests, and
+  production build passed. Generated candidates remain review-only.
+- UI iconography/design-system hardening was integrated in commit `40a223d`;
+  shared workspace/inspector SVG chrome, state tokens, accessible tabpanels,
+  and pseudo-locale overflow coverage passed its focused browser contracts.
+- Combined verification now passes: 98 Vitest files / 821 passed / 1 skipped,
+  lint with 0 errors and 11 existing React Hook warnings, production build,
+  audio/M35/Parkland audits, and independent ZK-376/ZK-377 browser runs.
+- Human visual parity, physical-GPU, provider, and release-owner gates remain
+  intentionally open.

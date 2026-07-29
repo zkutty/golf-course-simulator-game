@@ -9,5 +9,5 @@ export { IconSand } from "./IconSand";
 export { IconTree } from "./IconTree";
 export { IconWater } from "./IconWater";
 export { LogoCourseCraft } from "./LogoCourseCraft";
-
+export { IconUi, type UiIconName } from "./IconUi";
 

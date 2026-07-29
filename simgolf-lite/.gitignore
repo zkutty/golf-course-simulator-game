@@ -26,6 +26,11 @@ test-results/
 art/pixellab/staging/**
 !art/pixellab/staging/.gitkeep
 
+# ZK-472's deterministic 4x source is review-only. The generator may recreate
+# it locally for an audit, but it must never enter the runtime asset tree.
+art/parkland-4x-fallback/**
+!art/parkland-4x-fallback/.gitkeep
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
