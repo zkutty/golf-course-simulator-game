@@ -5,6 +5,8 @@ import { getPinPosition, getTeeBox } from "../models/courseSetup";
 import { computeAutoPar, computePathDistanceTiles } from "../sim/holeMetrics";
 import { findWalkPath } from "../live/walkPath";
 import { lastItem } from "../../utils/array";
+import { buildStrategicPortfolio } from "./portfolio";
+import type { M48StrategicPortfolio } from "./m48Types";
 
 export type ArchitectureComponentId = "routing" | "naturalFit" | "variety" | "safety" | "walkability";
 export type ArchitectureWarningKind = "transfer" | "clubhouse" | "repetition" | "crossing" | "parallel" | "earthwork" | "terrain";
@@ -34,6 +36,8 @@ export interface ArchitectureReport {
   components: Record<ArchitectureComponentId, ArchitectureComponent>;
   warnings: ArchitectureWarning[];
   generatedFor: { courseId?: string; holeIds: string[] };
+  /** M48 strategy facts are additive so M27 consumers and old saves keep their shape. */
+  strategic?: M48StrategicPortfolio;
 }
 
 const WEIGHTS: Record<ArchitectureComponentId, number> = {
@@ -245,8 +249,13 @@ export function analyzeArchitecture(course: Course): ArchitectureReport {
   const variety = analyzeVariety(course);
   const safety = analyzeSafety(course, warnings);
   const components: ArchitectureReport["components"] = { routing: flow.routing, naturalFit, variety, safety, walkability: flow.walkability };
-  const total = round(Object.values(components).reduce((sum, item) => sum + item.score * item.weight, 0));
-  const report = { total, components, warnings: warnings.sort((a, b) => Number(b.severity === "warning") - Number(a.severity === "warning") || a.id.localeCompare(b.id)), generatedFor: { courseId: course.activeCourseId, holeIds: course.holes.map((hole) => hole.id!).filter(Boolean) } } satisfies ArchitectureReport;
+  const baseTotal = round(Object.values(components).reduce((sum, item) => sum + item.score * item.weight, 0));
+  const strategic = buildStrategicPortfolio(course);
+  // M48 replaces the old single difficulty/ease intuition without erasing the
+  // established routing, safety, and natural-fit report. The blend is bounded
+  // and explainable, while `strategic` exposes the cohort facts to newer UI.
+  const total = round(strategic.evaluation.holes.length ? baseTotal * .58 + strategic.summary.total * .42 : baseTotal);
+  const report = { total, components, strategic, warnings: warnings.sort((a, b) => Number(b.severity === "warning") - Number(a.severity === "warning") || a.id.localeCompare(b.id)), generatedFor: { courseId: course.activeCourseId, holeIds: course.holes.map((hole) => hole.id!).filter(Boolean) } } satisfies ArchitectureReport;
   cache.set(course, report);
   return report;
 }

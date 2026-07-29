@@ -27,6 +27,7 @@
     "test:fuzz": "vitest run src/core/reducer.fuzz.test.ts",
     "test:soak": "vite build --ssr src/game/testing/soakCli.ts --outDir soak-dist --emptyOutDir --minify false && node --expose-gc soak-dist/soakCli.js",
     "test:cert:m47": "vite build --ssr src/game/testing/m47CertificationCli.ts --outDir m47-cert-dist --emptyOutDir --minify false && node m47-cert-dist/m47CertificationCli.js",
+    "test:cert:m48": "vitest run src/game/architecture/m48.test.ts",
     "test:balance": "vite build --ssr src/game/testing/releaseBalanceCli.ts --outDir balance-dist --emptyOutDir --minify false && node balance-dist/releaseBalanceCli.js",
     "tune": "vite build --ssr src/game/tuning/tuneCli.ts --outDir tune-dist --emptyOutDir --minify false && node tune-dist/tuneCli.js",
     "gen:sprites": "node scripts/gen-placeholder-sprites.mjs && node scripts/gen-terrain-materials.mjs && node scripts/gen-terrain-details.mjs && node scripts/process-biome-props.mjs && node scripts/gen-golfer-sprites.mjs",

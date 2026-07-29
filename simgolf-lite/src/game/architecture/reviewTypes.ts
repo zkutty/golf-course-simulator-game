@@ -6,7 +6,12 @@ export type ArchitectureOverlayKind =
   | "scoring"
   | "hazards"
   | "walking"
-  | "congestion";
+  | "congestion"
+  | "options"
+  | "advantage"
+  | "bailouts"
+  | "carries"
+  | "misses";
 
 export interface ArchitectureOverlayTrace {
   id: string;
