@@ -107,6 +107,7 @@ import { AchievementToasts } from "./ui/retention/AchievementToasts";
 import { NewsTicker } from "./ui/retention/NewsTicker";
 import { PhotoModeOverlay } from "./ui/retention/PhotoModeOverlay";
 import { captureCourseCanvas, createCourseCard, downloadBlob, shareBlob } from "./utils/photoCapture";
+import { platformServices } from "./platform";
 import { usePwa } from "./hooks/usePwa";
 import { TournamentPanel } from "./ui/TournamentPanel";
 import { LandOfficePanel } from "./ui/LandOfficePanel";
@@ -468,7 +469,8 @@ export default function App() {
   const [animationsEnabled, setAnimationsEnabled] = useState(() => appProfile.graphics.animations);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
   const soundEnabled = !appProfile.audio.masterMuted && appProfile.audio.masterVolume > 0 && appProfile.audio.sfxVolume > 0;
-  const effectiveAnimations = animationsEnabled && !appProfile.accessibility.reducedMotion;
+  const [safeMode, setSafeMode] = useState(false);
+  const effectiveAnimations = animationsEnabled && !appProfile.accessibility.reducedMotion && !safeMode;
   const startupGraphicsQuality = useMemo(() => resolveGraphicsQuality("auto", {
     hardwareConcurrency: navigator.hardwareConcurrency || 4,
     deviceMemory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
@@ -485,8 +487,9 @@ export default function App() {
     adaptiveGraphicsRef.current.reset(startupGraphicsQuality);
     setAutoGraphicsQuality(startupGraphicsQuality);
   }, [appProfile.graphics.quality, startupGraphicsQuality]);
-  const resolvedGraphicsQuality: ResolvedGraphicsQuality =
-    appProfile.graphics.quality === "auto"
+  const resolvedGraphicsQuality: ResolvedGraphicsQuality = safeMode
+    ? "low"
+    : appProfile.graphics.quality === "auto"
       ? autoGraphicsQuality
       : appProfile.graphics.quality;
   const handleGraphicsFrame = useCallback((frameMs: number) => {
@@ -678,8 +681,30 @@ export default function App() {
     saveAppProfile(evaluated.profile);
     setAppProfile(evaluated.profile);
     setAchievementQueue((queue) => [...queue, ...evaluated.earned]);
+    void platformServices.achievements.unlock(evaluated.earned.map((achievement) => achievement.id)).catch(() => undefined);
     void audio.playSting("celebration");
   }, [achievementContext, audio]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void platformServices.app.safeMode().then((enabled) => {
+      if (!cancelled) setSafeMode(enabled);
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const presence = screen !== "game"
+      ? "title"
+      : activePlayerRound
+        ? (activePlayerRound.tournamentId ? "tournament" : "playing")
+        : world.mode === "career"
+          ? "campaign"
+          : viewMode === "ARCHITECT"
+            ? "designing"
+            : "operating";
+    void platformServices.presence.set(presence).catch(() => undefined);
+  }, [activePlayerRound, screen, viewMode, world.mode]);
 
   // Real-time "living course" simulation: golfers arrive, play, and pay live.
   const live = useLiveSimulation({
@@ -775,6 +800,31 @@ export default function App() {
       }
     },
   });
+
+  useEffect(() => {
+    const removeQuitListener = platformServices.app.onQuitRequested(async () => {
+      try {
+        if (dirty && flow.base === "in-game") {
+          const sequence = changeSequenceRef.current;
+          const current = gameStateRef.current;
+          await autosave({
+            course: current.course,
+            world: current.world,
+            history: historyRef.current,
+            records: recordsRef.current,
+            live: live.getSnapshot(),
+            tutorial: tutorialProgress,
+          });
+          markClean(sequence);
+        }
+        await platformServices.app.requestQuit({ dirty: false, resumableBoundary: true });
+      } catch {
+        setA11yMessage("CourseCraft could not reach a safe save boundary; the game remains open.");
+        await platformServices.app.requestQuit({ dirty: true, resumableBoundary: false }).catch(() => undefined);
+      }
+    });
+    return removeQuitListener;
+  }, [dirty, flow.base, live, markClean, tutorialProgress]);
   const getLiveSnapshot = live.getSnapshot;
 
   useEffect(() => {
@@ -3797,7 +3847,20 @@ export default function App() {
     const canvas = photoCanvas();
     if (!canvas) return;
     const blob = await captureCourseCanvas(canvas, 2);
-    downloadBlob(blob, `${course.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-course.png`);
+    const name = `${course.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-course.png`;
+    downloadBlob(blob, name);
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("Screenshot encoding failed"));
+        reader.onerror = () => reject(reader.error ?? new Error("Screenshot encoding failed"));
+        reader.readAsDataURL(blob);
+      });
+      await platformServices.screenshots.save(dataUrl, name);
+    } catch {
+      // The browser download above remains the local fallback when native or
+      // Steam screenshot capture is unavailable.
+    }
     setA11yMessage(t("photo.saved"));
     void audio.playSfx("confirm", { force: true });
   }

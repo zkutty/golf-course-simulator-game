@@ -136,11 +136,11 @@
     }
   },
   "initialCritical": {
-    "bytes": 3717617,
+    "bytes": 3717622,
     "mib": 3.545,
     "files": [
       "assets/index-5zxKKFvX.css",
-      "assets/index-DyZFWeJm.js",
+      "assets/index-COIf6Y2s.js",
       "assets/pixi-D8n702SF.js",
       "assets/react-CJopdd0D.js",
       "assets/vendor-ugxaKWoA.js",

@@ -18,8 +18,9 @@
     "test:release:browsers": "playwright test --config playwright.release.config.ts",
     "test:desktop": "node --test desktop/*.test.mjs",
     "desktop": "npm run build && electron .",
-    "desktop:pack:dir": "npm run build && electron-builder --dir",
-    "desktop:dist": "npm run build && electron-builder",
+    "desktop:pack:dir": "npm run build && electron-builder --dir --publish never && npm run desktop:package:smoke",
+    "desktop:dist": "npm run build && electron-builder --publish never && npm run desktop:package:smoke",
+    "desktop:package:smoke": "node scripts/desktop-package-smoke.mjs",
     "release:audit": "node scripts/release-audit.mjs",
     "release:certify:m28": "node scripts/m28-certify.mjs",
     "release:certify": "node scripts/m44-certify.mjs",
@@ -87,5 +88,25 @@
   },
   "overrides": {
     "@xmldom/xmldom": "0.8.13"
+  },
+  "build": {
+    "appId": "com.coursecraft.game",
+    "productName": "CourseCraft",
+    "asar": true,
+    "directories": {
+      "output": "desktop-dist"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": ["dir"],
+      "category": "public.app-category.games"
+    },
+    "win": {
+      "target": ["dir"]
+    }
   }
 }

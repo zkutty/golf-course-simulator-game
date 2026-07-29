@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "namespace": "coursecraft",
+  "quotaBytes": 104857600,
+  "portableBuckets": ["saves", "profile"],
+  "excludedBuckets": ["settings", "content", "state", "screenshots", "logs", "cache"],
+  "sharing": {
+    "demoReads": "compatible-only",
+    "demoWrites": "demo-marked",
+    "fullReads": "demo-or-full",
+    "sharedNamespace": true
+  },
+  "conflictPolicy": "preserve-both-until-explicit-selection",
+  "pathFormat": "coursecraft/{bucket}/{portable-key}.json"
+}

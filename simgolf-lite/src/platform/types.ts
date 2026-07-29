@@ -12,6 +12,7 @@ export interface PlatformCapabilities {
 
 export interface PlatformFileStore {
   readText(key: string): Promise<string | null>;
+  recovery?(key: string): Promise<{ key: string; selected: string | null; recovered: boolean; invalid: string[] } | null>;
   writeTextAtomic(key: string, value: string): Promise<void>;
   delete(key: string): Promise<void>;
   list(prefix: string): Promise<string[]>;
@@ -68,6 +69,7 @@ export interface PlatformServices {
     safeMode(): Promise<boolean>;
     markCleanExit(): Promise<void>;
     requestQuit(input: { dirty: boolean; resumableBoundary: boolean }): Promise<"quit" | "cancel">;
+    onQuitRequested(handler: () => void | Promise<void>): () => void;
     setWindowMode(mode: "windowed" | "borderless" | "fullscreen"): Promise<void>;
   };
   achievements: {
@@ -89,5 +91,6 @@ export interface PlatformServices {
 export interface CourseCraftDesktopBridge {
   version: 1;
   invoke<T>(channel: string, payload?: unknown): Promise<T>;
+  onQuitRequested(handler: () => void | Promise<void>): () => void;
   capabilities: PlatformCapabilities;
 }

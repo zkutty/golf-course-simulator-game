@@ -12,6 +12,12 @@ export const DEFAULT_KEYBINDINGS: Keybindings = {
   pause: "Space", terrainTool: "KeyT", obstacleTool: "KeyO", buildingTool: "KeyB", quicksave: "Ctrl+KeyS",
 };
 
+/** Browser/Electron and OS-reserved combinations stay available to the shell. */
+export const RESERVED_KEYBINDINGS = new Set([
+  "Alt+F4", "Ctrl+W", "Ctrl+R", "Ctrl+Shift+R", "Ctrl+L", "Ctrl+Shift+I",
+  "Ctrl+Tab", "Ctrl+Shift+Tab", "Meta+Q", "Meta+W", "Meta+R", "Meta+L",
+]);
+
 export const BINDING_LABELS: Record<BindingAction, string> = {
   panUp: "Pan up", panDown: "Pan down", panLeft: "Pan left", panRight: "Pan right",
   rotateLeft: "Rotate left", rotateRight: "Rotate right", speed1: "Speed 1×", speed2: "Speed 2×", speed3: "Speed 4×",
@@ -25,7 +31,10 @@ export const BINDING_LABEL_KEYS = {
 
 export function normalizeKeybindings(value: unknown): Keybindings {
   const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
-  return Object.fromEntries(BINDING_ACTIONS.map((action) => [action, typeof raw[action] === "string" && raw[action] ? raw[action] : DEFAULT_KEYBINDINGS[action]])) as Keybindings;
+  return Object.fromEntries(BINDING_ACTIONS.map((action) => {
+    const candidate = typeof raw[action] === "string" && raw[action] ? raw[action] : DEFAULT_KEYBINDINGS[action];
+    return [action, RESERVED_KEYBINDINGS.has(candidate) ? DEFAULT_KEYBINDINGS[action] : candidate];
+  })) as Keybindings;
 }
 
 export function bindingFromEvent(event: Pick<KeyboardEvent, "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): string {

@@ -84,6 +84,7 @@ export const browserPlatform: PlatformServices = {
   },
   files: {
     readText: async (key) => stored(key),
+    recovery: async () => null,
     writeTextAtomic: async (key, value) => store(key, value),
     delete: async (key) => remove(key),
     list: async (prefix) => keys(prefix),
@@ -101,6 +102,7 @@ export const browserPlatform: PlatformServices = {
     safeMode: async () => false,
     markCleanExit: async () => undefined,
     requestQuit: async () => "cancel",
+    onQuitRequested: () => () => undefined,
     setWindowMode: async (mode) => {
       if (typeof document === "undefined") return;
       if (mode === "fullscreen") await document.documentElement.requestFullscreen?.();
