@@ -185,6 +185,71 @@ export function normalizeSurfaceIntent(
   return { version: 1, nextId, features: features.sort((a, b) => a.order - b.order) };
 }
 
+/**
+ * Translates persisted M35 geometry when a legacy course grid is moved into
+ * the centered estate parcel. Surface intent is render/editor metadata, but
+ * its points and row-major coverage must follow the authoritative terrain or
+ * a save migration would leave the two representations out of alignment.
+ */
+export function translateSurfaceIntent(
+  intent: SurfaceIntentV1 | undefined,
+  fromWidth: number,
+  fromHeight: number,
+  toWidth: number,
+  toHeight: number,
+  offset: Point,
+): SurfaceIntentV1 | undefined {
+  if (
+    !intent ||
+    fromWidth <= 0 ||
+    fromHeight <= 0 ||
+    toWidth <= 0 ||
+    toHeight <= 0
+  ) return intent;
+
+  const translatePoint = (point: SurfacePoint): SurfacePoint => clampPoint({
+    x: point.x + offset.x,
+    y: point.y + offset.y,
+  }, toWidth, toHeight);
+  const translateIndex = (index: number): number | null => {
+    if (!Number.isInteger(index) || index < 0 || index >= fromWidth * fromHeight) return null;
+    const x = index % fromWidth;
+    const y = Math.floor(index / fromWidth);
+    const nextX = x + offset.x;
+    const nextY = y + offset.y;
+    if (nextX < 0 || nextY < 0 || nextX >= toWidth || nextY >= toHeight) return null;
+    return nextY * toWidth + nextX;
+  };
+
+  return {
+    ...intent,
+    features: intent.features.map((feature) => ({
+      ...feature,
+      coverage: [...new Set(feature.coverage
+        .map(translateIndex)
+        .filter((index): index is number => index != null))].sort((a, b) => a - b),
+      renderRings: feature.renderRings?.map((ring) => ring.map(translatePoint)),
+      geometry: feature.geometry.kind === "corridor"
+        ? {
+          ...feature.geometry,
+          knots: feature.geometry.knots.map(translatePoint),
+          tangents: feature.geometry.tangents?.map((handles) => ({
+            in: translatePoint(handles.in),
+            out: translatePoint(handles.out),
+          })),
+        }
+        : {
+          ...feature.geometry,
+          ring: feature.geometry.ring.map(translatePoint),
+          tangents: feature.geometry.tangents?.map((handles) => ({
+            in: translatePoint(handles.in),
+            out: translatePoint(handles.out),
+          })),
+        },
+    })),
+  };
+}
+
 function lerpPoint(a: SurfacePoint, b: SurfacePoint, t: number): SurfacePoint {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }

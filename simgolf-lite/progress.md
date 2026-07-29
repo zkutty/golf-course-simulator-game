@@ -535,3 +535,26 @@ classic course-builder references.
   also passed on `coursecraft-playtest.zbkutlow.workers.dev`.
 - Attached `artifacts/m29-production-smoke-final-2026-07-29.md` to ZK-271 and
   ZK-274, added closure comments, and moved both Linear issues to Done.
+
+## 2026-07-29 — M35 terrain hardening handoff
+
+- Preserved the completed M35 implementation and hardened two agent-verifiable
+  edges: legacy 110×70 grid migration now translates surface knots, tangents,
+  render rings, and row-major coverage into the centered estate; valid
+  same-terrain authoring gestures now persist visual intent instead of being
+  treated as no-ops; mismatched feature/stroke metadata is ignored safely; and
+  failed lazy biome bundle requests can retry after a transient error.
+- Added focused regressions for same-terrain feature persistence and legacy
+  surface-intent migration. `npx vitest run` on the relevant 13 files passed
+  264 tests; `npx tsc -b --pretty false` passed; `npm run audit:m35-assets`
+  passed with all three biome tiers, 10 high/medium fields, low-tier field
+  omission, and the 3.54 MiB initial-critical report; `git diff --check`
+  passed.
+- The pre-change M35 browser rerun passed all 3 required suites in 2.1m. After
+  the hardening patch, landscape details and surface authoring passed (2/3);
+  water grading was intentionally interrupted at the user's wrap-up request
+  and is not reported as green. The inspected M35 screenshots show connected
+  water/bunker silhouettes, banks, material fields, and node editing.
+- No build or lint was started after the final patch, and no production,
+  provider, Linear, or human visual approval was claimed. ZK-466 remains
+  explicitly deferred; ZK-473 and physical-GPU certification remain open.

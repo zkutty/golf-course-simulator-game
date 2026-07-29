@@ -5,6 +5,7 @@ import { DEFAULT_COURSE, DEFAULT_WORLD } from "./defaults";
 import type { Course, Terrain } from "./types";
 import { previewTerrainStroke } from "./terrainStroke";
 import { computeElevationChangeCost } from "./terrainEconomics";
+import { corridorFeature, rasterizeSurfaceFeatureDetailed } from "./surfaceIntent";
 
 function course(tiles: Terrain[] = new Array(12).fill("rough")): Course {
   return {
@@ -84,6 +85,31 @@ describe("terrain paint strokes", () => {
     expect(after.terrainVersion).toBe(before.terrainVersion + 1);
     expect(after.economyVersion).toBe(before.economyVersion + 1);
     expect(after.course.tiles.slice(0, 3)).toEqual(["green", "green", "green"]);
+  });
+
+  it("persists a valid visual feature even when its terrain already matches", () => {
+    const c = course(new Array(12).fill("fairway"));
+    c.surfaceIntent = { version: 1, nextId: 1, features: [] };
+    const feature = corridorFeature(
+      c,
+      "fairway",
+      [{ x: 0.5, y: 1.5 }, { x: 3.5, y: 1.5 }],
+      1.5,
+    );
+    const raster = rasterizeSurfaceFeatureDetailed(feature, c.width, c.height);
+    const before = state(c);
+    const after = applyAction(before, {
+      type: "PAINT_TILES",
+      tiles: raster.tiles.map((point) => ({ ...point, terrain: "fairway" as const })),
+      surfaceFeature: feature,
+    });
+
+    expect(after.course.tiles).toEqual(before.course.tiles);
+    expect(after.course.surfaceIntent?.features).toHaveLength(1);
+    expect(after.course.surfaceIntent?.features[0].coverage.length).toBeGreaterThan(0);
+    expect(after.world.cash).toBe(before.world.cash);
+    expect(after.terrainVersion).toBe(before.terrainVersion + 1);
+    expect(after.economyVersion).toBe(before.economyVersion + 1);
   });
 
   it("rejects an unaffordable batch without any terrain, cash, or version mutation", () => {

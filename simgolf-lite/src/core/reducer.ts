@@ -70,6 +70,22 @@ export function applyAction(state: GameState, action: Action): GameState {
         reputation: state.world.reputation,
         protectedTrees: state.world.constraints?.protectedTrees,
       });
+      const featureMatchesStroke = Boolean(
+        action.surfaceFeature &&
+        action.tiles.length > 0 &&
+        action.tiles.every((tile) => tile.terrain === action.surfaceFeature?.terrain),
+      );
+      const acceptedFeatureIndices = featureMatchesStroke
+        ? new Set(preview.acceptedTiles.map((tile) => tile.y * state.course.width + tile.x))
+        : null;
+      const clippedSurfaceFeature = featureMatchesStroke && acceptedFeatureIndices
+        ? rasterizeSurfaceFeatureDetailed(
+          action.surfaceFeature!,
+          state.course.width,
+          state.course.height,
+          acceptedFeatureIndices,
+        )
+        : null;
       // Affordability is atomic: no terrain, cash, or version mutation when
       // even one otherwise-valid stroke would exceed available cash.
       if (
@@ -78,6 +94,7 @@ export function applyAction(state: GameState, action: Action): GameState {
           preview.changedCount === 0
           && preview.elevationDeltas.length === 0
           && preview.removedObstacles.length === 0
+          && !(clippedSurfaceFeature && clippedSurfaceFeature.tiles.length > 0)
         )
         || state.world.isBankrupt
       ) break;
@@ -106,22 +123,13 @@ export function applyAction(state: GameState, action: Action): GameState {
         obstacles: newObstacles,
       };
       let committedCourse = paintedCourse;
-      if (action.surfaceFeature) {
-        const acceptedIndices = new Set(
-          preview.acceptedTiles.map((tile) => tile.y * state.course.width + tile.x),
-        );
-        const clipped = rasterizeSurfaceFeatureDetailed(
-          action.surfaceFeature,
-          state.course.width,
-          state.course.height,
-          acceptedIndices,
-        );
+      if (action.surfaceFeature && clippedSurfaceFeature) {
         committedCourse = {
           ...paintedCourse,
           surfaceIntent: appendSurfaceFeature(paintedCourse, {
             ...action.surfaceFeature,
-            coverage: clipped.tiles.map((point) => point.y * state.course.width + point.x),
-            renderRings: clipped.rings,
+            coverage: clippedSurfaceFeature.tiles.map((point) => point.y * state.course.width + point.x),
+            renderRings: clippedSurfaceFeature.rings,
           }),
         };
       }

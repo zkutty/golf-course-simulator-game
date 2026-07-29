@@ -172,7 +172,14 @@ export async function loadAtlases(
       })();
       bundlePromises.set(key, promise);
     }
-    await promise;
+    try {
+      await promise;
+    } catch (error) {
+      // A transient network/offline failure must not poison this key forever;
+      // the next theme/quality request should be able to retry the bundle.
+      if (bundlePromises.get(key) === promise) bundlePromises.delete(key);
+      throw error;
+    }
     const props = naturalPropsSheets.get(key);
     if (props && import.meta.env.DEV) {
       const missing = missingNaturalPropFrames((frame) => (
