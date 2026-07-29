@@ -151,6 +151,8 @@ import {
 } from "./game/playerPro/playerPro";
 import type { TournamentEvent } from "./game/tournaments/types";
 import { buildArchitectureReview, defaultArchitectureFilters } from "./game/architecture/review";
+import { compareM48DesignTest, createM48DesignTestSession, refreshM48DesignTestSession } from "./game/architecture/comparison";
+import { strategicGeometryVersion } from "./game/architecture/strategic";
 import {
   acknowledgeStoryEvent,
   advanceLivingClubDay,
@@ -857,6 +859,60 @@ export default function App() {
     return null;
   }, [enterPlayerRoundView, live.status.dayIndex, updatePlayerPro]);
 
+  const beginArchitectureTestRound = useCallback((layoutId: string): string | null => {
+    const current = gameStateRef.current;
+    const holeId = architectureFilters.holeId === "all"
+      ? current.course.holes.find((hole) => hole.id)?.id
+      : architectureFilters.holeId;
+    if (!holeId) return t("architecture.review.testNeedsHole");
+    const session = createM48DesignTestSession({
+      course: current.course,
+      courseId: layoutId,
+      holeId,
+      teeSet: architectureFilters.teeSet === "all" ? "member" : architectureFilters.teeSet,
+      pinRotation: architectureFilters.pinRotation === "all" ? "A" : architectureFilters.pinRotation,
+      week: current.world.week,
+      seed: current.world.runSeed ^ 0x48_0001,
+    });
+    if (!session) return t("architecture.review.testNeedsCompleteHole");
+    const started = startPlayableRound({
+      course: current.course,
+      world: current.world,
+      layoutId,
+      teeSet: session.teeSet,
+      pinRotation: session.pinRotation,
+      kind: "exhibition",
+      day: live.status.dayIndex,
+    });
+    if (!started.ok) return started.reason;
+    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
+    setWorld((world) => {
+      const living = normalizeLivingClub(world.livingClub);
+      return {
+        ...world,
+        livingClub: { ...living, architecture: { ...living.architecture, testSession: session, comparison: null } },
+        playerPro: { ...career, activeRound: started.round },
+      };
+    });
+    enterPlayerRoundView({ ...career, activeRound: started.round });
+    return null;
+  }, [architectureFilters, enterPlayerRoundView, live.status.dayIndex, setWorld, t]);
+
+  useEffect(() => {
+    const living = normalizeLivingClub(world.livingClub);
+    const session = living.architecture.testSession;
+    if (!session || (session.stage !== "returned" && session.stage !== "played" && session.stage !== "compared")) return;
+    if (session.after?.geometryVersion === strategicGeometryVersion(course)) return;
+    const refreshed = refreshM48DesignTestSession({ course, session });
+    if (!refreshed.after || refreshed.after.geometryVersion === session.after?.geometryVersion) return;
+    const comparison = compareM48DesignTest(refreshed);
+    setWorld((current) => {
+      const currentLiving = normalizeLivingClub(current.livingClub);
+      if (currentLiving.architecture.testSession?.id !== session.id) return current;
+      return { ...current, livingClub: { ...currentLiving, architecture: { ...currentLiving.architecture, testSession: refreshed, comparison } } };
+    });
+  }, [course, setWorld, world.livingClub]);
+
   const startCampaignMatch = useCallback((): string | null => {
     const current = gameStateRef.current;
     const match = activeCampaignMatch(current.world.campaign);
@@ -1132,7 +1188,15 @@ export default function App() {
     setWorld((current) => {
       const contextual = setReturnToDesignContext(current, round, selectedTrace?.id ?? null);
       const career = normalizePlayerPro(contextual.playerPro, { seed: contextual.runSeed, founderName: contextual.founderName });
-      return { ...contextual, playerPro: { ...career, activeRound: null } };
+      const living = normalizeLivingClub(contextual.livingClub);
+      const session = living.architecture.testSession;
+      if (!session) return { ...contextual, playerPro: { ...career, activeRound: null } };
+      const returnedSession = refreshM48DesignTestSession({ course: gameStateRef.current.course, session: { ...session, stage: "returned" } });
+      return {
+        ...contextual,
+        playerPro: { ...career, activeRound: null },
+        livingClub: { ...living, architecture: { ...living.architecture, testSession: returnedSession, comparison: compareM48DesignTest(returnedSession) } },
+      };
     });
     setArchitectureFilters({
       kind: "traces",
@@ -1141,6 +1205,7 @@ export default function App() {
       teeSet: round.teeSet,
       sourceSegment: "player-pro",
       recency: "all",
+      pinRotation: round.pinRotation,
     });
     setShowArchitectureReview(true);
     setPlayerShotAim(null);
@@ -2229,6 +2294,13 @@ export default function App() {
         status: architectureReview.status,
         currentEvidence: architectureReview.currentEvidence,
         historicalEvidence: architectureReview.historicalEvidence,
+        strategic: {
+          score: architectureReview.strategic.summary.total,
+          fairnessFloor: architectureReview.strategic.summary.fairnessFloor,
+          genuineChoice: architectureReview.strategic.summary.genuineChoice,
+          opportunityRotation: architectureReview.strategic.summary.opportunityRotation,
+          recommendations: architectureReview.recommendations.length,
+        },
         selectedTraceId: architectureReview.selectedTraceId,
         overlay: {
           kind: architectureReview.overlay.kind,
@@ -3983,7 +4055,7 @@ export default function App() {
                 setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 }));
               }}
               onPracticeRound={(courseId) => {
-                const reason = beginPlayerRound(courseId, "member", "A");
+                const reason = beginArchitectureTestRound(courseId);
                 if (!reason) setShowArchitectureReview(false);
                 return reason;
               }}

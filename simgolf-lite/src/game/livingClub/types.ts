@@ -1,3 +1,5 @@
+import type { M48DesignComparison, M48DesignTestSession } from "../architecture/m48Types";
+
 export type LivingGolferArchetype =
   | "casual"
   | "lowHandicap"
@@ -265,6 +267,9 @@ export interface ArchitectureEvidenceState {
   evidence: ArchitectureShotEvidence[];
   revisions: ArchitectureRevisionSummary[];
   returnContext: ReturnToDesignContext | null;
+  /** M48 design-test context is bounded, optional, and explicitly no-economy. */
+  testSession?: M48DesignTestSession | null;
+  comparison?: M48DesignComparison | null;
 }
 
 export interface LivingClubState {

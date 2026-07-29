@@ -10,6 +10,9 @@ import type {
 } from "./reviewTypes";
 import { courseGeometryVersion, normalizeLivingClub } from "../livingClub/livingClub";
 import type { ArchitectureRevisionSummary, ArchitectureShotEvidence } from "../livingClub/types";
+import { buildStrategicPortfolio } from "./portfolio";
+import { buildStrategicRecommendations } from "./recommendations";
+import type { M48DesignComparison, M48StrategicHoleEvaluation, M48StrategicPortfolio } from "./m48Types";
 
 export interface ArchitectureReviewFilters {
   kind: ArchitectureOverlayKind;
@@ -18,6 +21,7 @@ export interface ArchitectureReviewFilters {
   teeSet: "all" | "forward" | "member" | "championship";
   sourceSegment: "all" | string;
   recency: "all" | "recent" | "current" | "historical";
+  pinRotation: "all" | "A" | "B" | "C";
 }
 
 export interface ArchitectureReviewData {
@@ -33,6 +37,10 @@ export interface ArchitectureReviewData {
   scoring: Array<{ teeSet: string; rounds: number; averageToPar: number }>;
   sourceSegments: string[];
   selectedTraceId: string | null;
+  strategic: M48StrategicPortfolio;
+  recommendations: ReturnType<typeof buildStrategicRecommendations>;
+  selectedStrategicHole: M48StrategicHoleEvaluation | null;
+  comparison: M48DesignComparison | null;
 }
 
 const HAZARDS = new Set<Terrain>(["sand", "waste_area", "water", "wetland", "deep_rough"]);
@@ -175,6 +183,7 @@ export function defaultArchitectureFilters(course: Course): ArchitectureReviewFi
     teeSet: "all",
     sourceSegment: "all",
     recency: "current",
+    pinRotation: "A",
   };
 }
 
@@ -186,6 +195,12 @@ export function buildArchitectureReview(
   const living = normalizeLivingClub(world.livingClub);
   const selectedCourse = courseForLayout(course, filters.courseId);
   const currentGeometryVersion = courseGeometryVersion(selectedCourse);
+  const strategic = buildStrategicPortfolio(selectedCourse, { courseId: filters.courseId });
+  const selectedTee = filters.teeSet === "all" ? "member" : filters.teeSet;
+  const selectedPin = filters.pinRotation === "all" ? "A" : filters.pinRotation;
+  const selectedStrategicHole = filters.holeId === "all"
+    ? null
+    : strategic.evaluation.holes.find((hole) => hole.holeId === filters.holeId && hole.setup.teeSet === selectedTee && hole.setup.pinRotation === selectedPin) ?? null;
   const selectedTraceId = living.architecture.returnContext?.shotId
     ? living.architecture.evidence.find((item) =>
         item.roundId === living.architecture.returnContext!.roundId &&
@@ -216,6 +231,23 @@ export function buildArchitectureReview(
   else if (filters.kind === "walking") overlay.traces = walkingTraces(selectedCourse);
   else overlay.points = congestionPoints(evidence, currentGeometryVersion);
 
+  if (filters.kind === "options" || filters.kind === "advantage" || filters.kind === "bailouts" || filters.kind === "carries" || filters.kind === "misses") {
+    const selected = selectedStrategicHole
+      ? [selectedStrategicHole]
+      : strategic.evaluation.holes.filter((hole) => hole.setup.teeSet === selectedTee && hole.setup.pinRotation === selectedPin);
+    if (filters.kind === "options") {
+      overlay.traces = bounded(selected.flatMap((hole) => hole.options.flatMap((option) => option.geometry.slice(1).map((point, index) => ({ id: `${option.id}-${index}`, from: option.geometry[index], to: point, current: hole.geometryVersion === currentGeometryVersion, emphasized: option.kind === "hero" })) )), 320);
+    } else if (filters.kind === "advantage") {
+      overlay.points = bounded(selected.flatMap((hole) => hole.cohorts.map((cohort) => ({ id: `${hole.id}-${cohort.cohortId}`, x: hole.options[0]?.location.x ?? 0, y: hole.options[0]?.location.y ?? 0, value: cohort.skillAdvantageDelta, current: true, label: `${cohort.cohortId} ${cohort.skillAdvantageDelta > 0 ? "+" : ""}${cohort.skillAdvantageDelta.toFixed(1)}` }))), 180);
+    } else if (filters.kind === "bailouts") {
+      overlay.points = bounded(selected.flatMap((hole) => hole.options.filter((option) => option.kind === "safe" || option.kind === "recovery").map((option) => ({ id: option.id, x: option.location.x, y: option.location.y, value: option.bailoutQuality, current: true, label: `${Math.round(option.bailoutQuality * 100)}%` }))), 180);
+    } else if (filters.kind === "carries") {
+      overlay.points = bounded(selected.flatMap((hole) => hole.options.filter((option) => option.kind === "hero").map((option) => ({ id: option.id, x: option.location.x, y: option.location.y, value: option.forcedCarryBurden, current: true, label: `${Math.round(option.forcedCarryBurden * 100)}%` }))), 180);
+    } else {
+      overlay.points = bounded(selected.flatMap((hole) => hole.cohorts.map((cohort) => ({ id: `${hole.id}-miss-${cohort.cohortId}`, x: hole.options[0]?.location.x ?? 0, y: hole.options[0]?.location.y ?? 0, value: cohort.recoveryBurden, current: true, label: `${cohort.cohortId} ${Math.round(cohort.recoveryBurden * 100)}%` }))), 180);
+    }
+  }
+
   const byTee = new Map<string, { total: number; roundIds: Set<string> }>();
   for (const item of evidence) {
     const current = byTee.get(item.teeSet) ?? { total: 0, roundIds: new Set<string>() };
@@ -243,5 +275,9 @@ export function buildArchitectureReview(
     scoring,
     sourceSegments: [...new Set(living.architecture.evidence.filter((item) => item.courseId === filters.courseId).map((item) => item.sourceSegment))].sort(),
     selectedTraceId,
+    strategic,
+    recommendations: buildStrategicRecommendations(selectedCourse, strategic),
+    selectedStrategicHole,
+    comparison: living.architecture.comparison ?? null,
   };
 }

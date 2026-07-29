@@ -7,7 +7,7 @@ import { useI18n } from "../i18n/useI18n";
 import type { MessageKey } from "../i18n/catalog";
 
 const OVERLAYS: ArchitectureOverlayKind[] = [
-  "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "congestion",
+  "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "congestion", "options", "advantage", "bailouts", "carries", "misses",
 ];
 
 export function ArchitectureReviewPanel(props: {
@@ -23,6 +23,8 @@ export function ArchitectureReviewPanel(props: {
   const [comparisonId, setComparisonId] = useState(props.review.revisions[1]?.id ?? "");
   const selectedRevision = props.review.revisions.find((revision) => revision.id === comparisonId);
   const currentRevision = props.review.revisions.find((revision) => revision.geometryVersion === props.review.currentGeometryVersion);
+  const strategicComparison = props.review.comparison;
+  const signed = (value: number) => value > 0 ? `+${value}` : `${value}`;
   const holes = useMemo(() => props.course.holes.filter((hole) => hole.id), [props.course.holes]);
   const set = <K extends keyof ArchitectureReviewFilters>(key: K, value: ArchitectureReviewFilters[K]) =>
     props.onFilters({ ...props.review.filters, [key]: value });
@@ -53,6 +55,7 @@ export function ArchitectureReviewPanel(props: {
       <label>{t("architecture.review.course")}<select value={props.review.filters.courseId} onChange={(event) => set("courseId", event.target.value)}>{courseLayouts(props.course).map((layout) => <option value={layout.id} key={layout.id}>{layout.name}</option>)}</select></label>
       <label>{t("architecture.review.hole")}<select data-testid="architecture-hole-filter" value={props.review.filters.holeId} onChange={(event) => set("holeId", event.target.value)}><option value="all">{t("architecture.review.all")}</option>{holes.map((hole) => <option key={hole.id} value={hole.id}>{hole.name ?? hole.id}</option>)}</select></label>
       <label>{t("architecture.review.tee")}<select value={props.review.filters.teeSet} onChange={(event) => set("teeSet", event.target.value as ArchitectureReviewFilters["teeSet"])}>{(["all", "forward", "member", "championship"] as const).map((value) => <option value={value} key={value}>{value === "all" ? t("architecture.review.all") : value}</option>)}</select></label>
+      <label>{t("architecture.review.pin")}<select value={props.review.filters.pinRotation} onChange={(event) => set("pinRotation", event.target.value as ArchitectureReviewFilters["pinRotation"])}>{(["A", "B", "C", "all"] as const).map((value) => <option value={value} key={value}>{value === "all" ? t("architecture.review.all") : value}</option>)}</select></label>
       <label>{t("architecture.review.segment")}<select value={props.review.filters.sourceSegment} onChange={(event) => set("sourceSegment", event.target.value)}><option value="all">{t("architecture.review.all")}</option>{props.review.sourceSegments.map((value) => <option key={value}>{value}</option>)}</select></label>
       <label style={{ gridColumn: "1 / -1" }}>{t("architecture.review.evidenceAge")}<select data-testid="architecture-age-filter" value={props.review.filters.recency} onChange={(event) => set("recency", event.target.value as ArchitectureReviewFilters["recency"])}>{(["current", "recent", "historical", "all"] as const).map((value) => <option value={value} key={value}>{t(`architecture.review.age.${value}` as MessageKey)}</option>)}</select></label>
     </div>
@@ -64,6 +67,36 @@ export function ArchitectureReviewPanel(props: {
         <span>{t("architecture.review.currentCount", { count: props.review.currentEvidence })}</span>
         <span>{t("architecture.review.historicalCount", { count: props.review.historicalEvidence })}</span>
       </div>
+    </section>
+
+    <section style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#eef3df", border: "1px solid #b9aa91" }}>
+      <strong>{t("architecture.review.strategy")}</strong>
+      <div style={{ display: "grid", gap: 4, marginTop: 6, fontSize: 12 }}>
+        <span>{t("architecture.review.strategyScore", { score: Math.round(props.review.strategic.summary.total) })}</span>
+        <span>{t("architecture.review.fairness", { score: Math.round(props.review.strategic.summary.fairnessFloor) })} · {t("architecture.review.options", { count: Math.round(props.review.strategic.summary.genuineChoice / 33) })}</span>
+        <span>{t("architecture.review.rotation", { score: Math.round(props.review.strategic.summary.opportunityRotation) })}</span>
+      </div>
+    </section>
+
+    {props.review.selectedStrategicHole && <section style={{ marginTop: 12 }}>
+      <strong>{t("architecture.review.matrix")}</strong>
+      <div style={{ display: "grid", gap: 5, marginTop: 6 }}>
+        {props.review.selectedStrategicHole.cohorts.map((cohort) => <button key={cohort.cohortId} onClick={() => {
+          const option = props.review.selectedStrategicHole?.options.find((candidate) => candidate.kind === cohort.preferredOption);
+          if (option) props.onJump(option.location, props.review.selectedStrategicHole?.holeId);
+        }} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 7, alignItems: "center", textAlign: "left", background: "#fffdf6" }}>
+          <span>{cohort.cohortId}</span><span>{Math.round(cohort.viability)}%</span><b>{cohort.expectedStrokes.toFixed(2)}</b>
+        </button>)}
+      </div>
+    </section>}
+
+    <section style={{ marginTop: 12 }}>
+      <strong>{t("architecture.review.recommendations")}</strong>
+      {props.review.recommendations.length ? <div style={{ display: "grid", gap: 6, marginTop: 6 }}>{props.review.recommendations.slice(0, 5).map((recommendation) => <div key={recommendation.id} style={{ padding: 8, background: "#fffdf6", border: "1px solid #c8b999", borderRadius: 7 }}>
+        <b>{t(recommendation.titleKey as MessageKey)}</b>
+        <p style={{ margin: "4px 0", fontSize: 12 }}>{t(recommendation.detailKey as MessageKey)}</p>
+        <button onClick={() => props.onJump(recommendation.location, recommendation.holeId)}>{t("architecture.review.recommendationLocation")}</button>
+      </div>)}</div> : <p style={{ fontSize: 12 }}>{t("architecture.review.noRecommendations")}</p>}
     </section>
 
     {props.review.scoring.length > 0 && <section style={{ marginTop: 12 }}>
@@ -82,6 +115,22 @@ export function ArchitectureReviewPanel(props: {
             <b>→</b>
             <span>{currentRevision ? `${currentRevision.averageToPar > 0 ? "+" : ""}${currentRevision.averageToPar}` : t("architecture.review.awaiting")}<small style={{ display: "block" }}>{currentRevision?.shots ?? 0} {t("architecture.review.shots")}</small></span>
           </div>}
+        </>}
+    </section>
+
+    <section data-testid="architecture-strategic-comparison" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#f0e9dc", border: "1px solid #b9aa91" }}>
+      <strong>{t("architecture.review.testComparison")}</strong>
+      {!strategicComparison
+        ? <p style={{ margin: "5px 0 0", fontSize: 12 }}>{t("architecture.review.testComparisonEmpty")}</p>
+        : <>
+          <div style={{ display: "grid", gap: 4, marginTop: 6, fontSize: 12 }}>
+            <span>{t("architecture.review.testEvidence", { state: strategicComparison.evidenceLabel === "current" ? t("architecture.review.current") : t("architecture.review.provisional") })}</span>
+            <span>{t("architecture.review.testGeometry", { before: strategicComparison.beforeGeometryVersion, after: strategicComparison.afterGeometryVersion })}</span>
+            <span>{t("architecture.review.testFairnessDelta", { delta: signed(strategicComparison.fairnessFloorDelta) })} · {t("architecture.review.testOptionDelta", { delta: signed(strategicComparison.optionCountDelta) })}</span>
+            <span>{t("architecture.review.testSafeDelta", { delta: signed(strategicComparison.safeRouteViabilityDelta) })} · {t("architecture.review.testSeparationDelta", { delta: signed(strategicComparison.strategicSeparationDelta) })}</span>
+            {strategicComparison.excludedCohorts.length > 0 && <span>{t("architecture.review.testExcluded", { cohorts: strategicComparison.excludedCohorts.join(", ") })}</span>}
+          </div>
+          <p style={{ margin: "6px 0 0", fontSize: 12 }}>{strategicComparison.explanation}</p>
         </>}
     </section>
 

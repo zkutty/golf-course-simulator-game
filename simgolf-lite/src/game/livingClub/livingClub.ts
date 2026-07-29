@@ -8,6 +8,7 @@ import type {
 import type { PlayerCareerRound, PlayerPlayableRound } from "../models/playerProTypes";
 import type { CompletedRound } from "../retention/types";
 import { analyzeArchitecture } from "../architecture/architecture";
+import { normalizeM48DesignTestSession } from "../architecture/comparison";
 import { normalizeTournamentCalendar } from "../tournaments/tournaments";
 import { courseForLayout } from "../models/courseLayouts";
 import { STORY_DEFINITION_BY_ID, SYSTEMIC_EVENT_DEFINITIONS } from "./content";
@@ -150,7 +151,7 @@ export function emptyLivingClubState(): LivingClubState {
     candidates: [],
     regulars: [],
     story: emptyStoryState(),
-    architecture: { evidence: [], revisions: [], returnContext: null },
+    architecture: { evidence: [], revisions: [], returnContext: null, testSession: null, comparison: null },
   };
 }
 
@@ -350,6 +351,10 @@ export function normalizeLivingClub(raw: unknown): LivingClubState {
           Number.isFinite(rawArchitecture.returnContext.point.x) &&
           Number.isFinite(rawArchitecture.returnContext.point.y)
         ? rawArchitecture.returnContext
+        : null,
+      testSession: normalizeM48DesignTestSession(rawArchitecture.testSession),
+      comparison: rawArchitecture.comparison && typeof rawArchitecture.comparison === "object"
+        ? rawArchitecture.comparison as LivingClubState["architecture"]["comparison"]
         : null,
     },
   };
