@@ -1,0 +1,486 @@
+{
+  "$comment": "Machine-readable index of SimGolf 2002 reference screenshots. Companion to REFERENCE.md. Paths are relative to this file.",
+  "schema_version": 1,
+  "generated": "2026-07-25",
+  "source_game": "Sid Meier's SimGolf (2002)",
+  "usage": "Reference-only. Study mechanics/layout/IA. Do not copy art assets into a shipped product.",
+  "categories": {
+    "char": "Player character and skill progression",
+    "shot": "Shot mechanics, physics, trajectory, analysis",
+    "hole": "Hole routing and authoring",
+    "build": "Construction mode and terrain palette",
+    "terrain": "Terrain rendering, biomes, tile detail",
+    "hud": "HUD, chrome, and annotated readouts",
+    "tournament": "Competition, leaderboards, scorecards",
+    "event": "Popups, awards, economy events",
+    "tutorial": "In-game tutorial and explanatory text",
+    "amenities": "Buildings, vendors, decor, landmarks",
+    "lowres": "Thumbnails, composition reference only"
+  },
+  "screenshots": [
+    {
+      "file": "char-skill-point-allocation-panel-1024x764.webp",
+      "category": "char",
+      "priority": 1,
+      "width": 1024, "height": 764, "format": "webp",
+      "course": "Ocean Grove MC", "date_in_game": "April 2001",
+      "tags": ["ui-modal", "player-skills", "progression", "high-res", "mechanics-critical"],
+      "shows": "Modal 'Gary Golf - Add 0 skill points' listing all 10 golfer skills with percentage bars and increment arrows.",
+      "extracted_data": {
+        "skills": [
+          {"name": "Power Hitter", "value": "+50%"},
+          {"name": "Long Driver", "value": "+40%"},
+          {"name": "Accurate Driver", "value": "+10%"},
+          {"name": "Accurate Irons", "value": null},
+          {"name": "Accurate Putter", "value": null},
+          {"name": "Draw Shot (R to L)", "value": null},
+          {"name": "Fade Shot (L to R)", "value": null},
+          {"name": "High Backspin Shot", "value": null},
+          {"name": "Recovery Skills", "value": null},
+          {"name": "Luck", "value": null}
+        ],
+        "tutorial_text": "Before you play your course you may customize your character by improving his or her golf skills. You can also win additional skill points for each accomplishment added to your trophy."
+      },
+      "implementation_notes": "Percentage-modifier model, not raw stats. Points earned via achievements. Draw/Fade are separately purchasable capabilities. Explicit 'Luck' stat implies a player-biasable random component."
+    },
+    {
+      "file": "shot-type-selector-and-lie-readout-800x600.jpg",
+      "category": "shot",
+      "priority": 2,
+      "width": 800, "height": 600, "format": "jpeg",
+      "course": "unnamed (SimGolf Preview build)", "date_in_game": "2001 Northeast Open",
+      "tags": ["ui-shot-input", "trajectory", "club-selection", "lie", "mechanics-critical"],
+      "shows": "Five trajectory-shape buttons rendered as side-profile arc diagrams, plus the shot readout panel and a white trajectory preview line on the course.",
+      "extracted_data": {
+        "readout": {"attitude": "calm", "club": "Lob Wedge", "distance_yds": 79, "lie": "tees"},
+        "shot_shape_count": 5,
+        "leaderboard_visible": true
+      },
+      "implementation_notes": "Four inputs define a shot: attitude, club, distance, lie. Shot shape is a discrete choice of 5, not a continuous slider."
+    },
+    {
+      "file": "shot-analysis-positive-delta-links-castle-640x443.webp",
+      "category": "shot",
+      "priority": 3,
+      "width": 640, "height": 443, "format": "webp",
+      "course": "Harold's Keep MC", "date_in_game": "March 2001",
+      "tags": ["ui-overlay", "shot-analysis", "skill-deltas", "hole-tuning", "mechanics-critical", "positive-delta"],
+      "shows": "Shot Analysis overlay for hole 1 with fanned trajectory lines and ring markers. Includes a positive imagination delta.",
+      "extracted_data": {
+        "hole": 1,
+        "deltas_yds": {"no_imagination": 12, "no_accuracy": -23, "no_length": -43},
+        "tooltip": "...affect the bounce and roll of the ball.",
+        "terrain": "treeless links/moorland with stone castle keep"
+      },
+      "implementation_notes": "Analysis measures progress toward the hole, not raw distance - hence the positive imagination delta. Ball bounce and roll are terrain-dependent."
+    },
+    {
+      "file": "hole-routing-label-par4-276yds-highres-1024x765.webp",
+      "category": "hole",
+      "priority": 4,
+      "width": 1024, "height": 765, "format": "webp",
+      "course": "Ocean Grove MC", "date_in_game": "March 2001",
+      "tags": ["ui-hole-authoring", "par-calculation", "high-res", "mechanics-critical"],
+      "shows": "Floating hole label with derived yardage and par, tee-to-green centerline, terrain palette with 'Firm fairway' tooltip.",
+      "extracted_data": {
+        "hole_label": {"hole": 1, "yards": 276, "par": 4},
+        "prompt": "Press 'h' to open hole",
+        "hovered_tile": "Firm fairway"
+      },
+      "implementation_notes": "Yardage and par derived live from tee/green placement. Holes have an explicit open/closed state."
+    },
+    {
+      "file": "terrain-highres-fairway-stripes-stream-801x601.png",
+      "category": "terrain",
+      "priority": 5,
+      "width": 801, "height": 601, "format": "png",
+      "course": "aa-classic GC", "date_in_game": "May 2013",
+      "tags": ["render-reference", "mowing-stripes", "water", "high-res", "best-quality", "lossless"],
+      "shows": "Highest-fidelity terrain render in the set. Mowing stripes, stream with shallow edges, organic bunkers, cart paths, bridge, water mill, barn, ploughed farmland, three tree families, mood-face bar.",
+      "implementation_notes": "Use for color palette sampling, mowing stripe frequency/angle, water edge treatment, tree sprite variety targets."
+    },
+    {
+      "file": "hud-terrain-palette-labeled-highres-1024x640.webp",
+      "category": "hud",
+      "priority": 6,
+      "width": 1024, "height": 640, "format": "webp",
+      "course": "Ocean's Edge MC", "date_in_game": "July 2002",
+      "tags": ["terrain-palette", "labels-legible", "high-res", "mechanics-critical", "portrait-bubbles"],
+      "shows": "Terrain palette with every tile label legible. Also shows portrait speech bubbles for important dialogue vs plain text bubbles for ambient chatter.",
+      "extracted_data": {
+        "terrain_tiles_row1": ["Tees", "Green", "Sand trap", "Rough", "Pot bunker", "Stream", "Water", "Tree", "Palm tree"],
+        "terrain_tiles_row2": ["Fairway", "Firm fairway", "Deep rough", "Waste bunker", "Brush", "Rocks", "Pine tree"]
+      },
+      "implementation_notes": "Copy directly into terrain enum. Graded families (fairway/firm, rough/deep, sand/pot/waste) imply severity tiers affecting lie and roll."
+    },
+    {
+      "file": "shot-analysis-overlay-island-par3-tee-selector-640x480.webp",
+      "category": "shot",
+      "priority": 7,
+      "width": 640, "height": 480, "format": "webp",
+      "course": "Island Palms CC", "date_in_game": "March 2033",
+      "tags": ["ui-overlay", "shot-analysis", "tee-selector", "water-hazard", "island-green", "paused"],
+      "shows": "Shot Analysis on an island hole with lighthouse. Game paused. Bottom bar shows three tee-position options with 1/2/3 flame difficulty icons plus a green-flag button.",
+      "extracted_data": {
+        "hole": 2,
+        "deltas_yds": {"no_imagination": -27, "no_accuracy": -21, "no_length": -79},
+        "tee_options": 3,
+        "difficulty_icons": "flames (1-3)",
+        "paused": true
+      },
+      "implementation_notes": "Opening Shot Analysis pauses the sim. Tees are discrete authored positions with explicit difficulty scores."
+    },
+    {
+      "file": "shot-analysis-overlay-forest-tee-selector-516x387.jpg",
+      "category": "shot",
+      "priority": 8,
+      "width": 516, "height": 387, "format": "jpeg",
+      "tags": ["ui-overlay", "shot-analysis", "tee-selector", "forest-terrain", "calibration-data"],
+      "shows": "Third Shot Analysis instance on a forest/rock hole. Largest imagination penalty in the set.",
+      "extracted_data": {
+        "hole": 5,
+        "deltas_yds": {"no_imagination": -177, "no_accuracy": -2, "no_length": -114}
+      },
+      "implementation_notes": "Together with the other two analysis screenshots this forms a small calibration dataset for the analysis function."
+    },
+    {
+      "file": "tutorial-hole-type-creative-imagination-515x388.jpg",
+      "category": "tutorial",
+      "priority": 9,
+      "width": 515, "height": 388, "format": "jpeg",
+      "course": "Windy Point MC", "date_in_game": "July 2001",
+      "tags": ["ui-modal", "tutorial", "hole-classification", "mechanics-critical"],
+      "shows": "Popup explaining that holes are auto-classified into skill-based categories.",
+      "extracted_data": {
+        "text": "Golf holes fall into various categories depending on the skills they require. Hole 1 has been recognized as your first CREATIVE type hole. Creative holes require the player to use imagination to create unexpected shots, length and accuracy are less important here.",
+        "hole_types_known": ["CREATIVE"],
+        "hole_types_inferred": ["LENGTH", "ACCURACY"]
+      },
+      "implementation_notes": "Hole classification is the consumer-facing output of the Shot Analysis math. This single popup explains the entire design-quality system."
+    },
+    {
+      "file": "shot-readout-maxed-skills-driver-528yds-376x211.jpg",
+      "category": "shot",
+      "priority": 10,
+      "width": 376, "height": 211, "format": "jpeg",
+      "course": "Kamaho KC", "date_in_game": "March 2062",
+      "tags": ["ui-shot-input", "trajectory", "skills-panel", "extreme-values", "low-res", "tuning-bound"],
+      "shows": "Shot bar with skills panel expanded showing every skill at +100%. Very long trajectory line.",
+      "extracted_data": {
+        "readout": {"attitude": "invincible", "club": "Driver", "distance_yds": 528, "lie": "tees"},
+        "all_skills_at": "+100%",
+        "attitude_enum_known": ["calm", "invincible"]
+      },
+      "implementation_notes": "Attitude is a confidence/momentum enum. 528 yds at max skill is the upper bound for tuning the distance curve (~1.8x realistic tour drive)."
+    },
+    {
+      "file": "hole-routing-label-par3-200yds-516x387.jpg",
+      "category": "hole",
+      "priority": 11,
+      "width": 516, "height": 387, "format": "jpeg",
+      "course": "Flamingo Shores MC", "date_in_game": "March 2001",
+      "tags": ["ui-hole-authoring", "par-calculation", "par-3", "guidance-text"],
+      "shows": "Hole 1 label on a mostly-blank field beside a lagoon, with an NPC hint to add hazards.",
+      "extracted_data": {
+        "hole_label": {"hole": 1, "yards": 200, "par": 3},
+        "npc_hint": "We might add some fairway or sand traps.",
+        "prompt": "Press 'h' to open hole"
+      },
+      "implementation_notes": "Par thresholds: 200 yds = Par 3, 276 yds = Par 4. NPC lines act as a hint system for under-designed holes."
+    },
+    {
+      "file": "hud-terrain-palette-labeled-full-800x600.jpg",
+      "category": "hud",
+      "priority": 12,
+      "width": 800, "height": 600, "format": "jpeg",
+      "course": "Paterson Playfield MC", "date_in_game": "August 2002",
+      "tags": ["terrain-palette", "award-popup", "economy", "golfer-behavior", "biome-variant-palette"],
+      "shows": "Terrain palette with Scottish-themed variants, award popup, named golfers with bubbles, groundskeeper, deer, stone bridge, benches.",
+      "extracted_data": {
+        "terrain_tiles": ["Tees", "Green", "Sand trap", "Rough", "Pot bunker", "Burn", "Water", "Fairway", "Firm fairway", "Deep rough", "Waste bunker", "Gorse", "Rocks", "Maple tree", "Pine", "Scots pine"],
+        "award_text": "Hole #2 (henceforth known as 'Dogwood'), has been rated as one of the best 100 holes in the country by Golf Enquirer magazine! Increase greens fees by $100.",
+        "money": 1979200,
+        "golfers": 281,
+        "rating": 0.97
+      },
+      "implementation_notes": "Palette labels are biome/theme-dependent (Burn/Gorse/Scots pine here vs Stream/Brush/Pine elsewhere). Award-winning holes get named and unlock pricing power."
+    },
+    {
+      "file": "hud-annotated-fun-rating-skill-rating-300x225.jpg",
+      "category": "hud",
+      "priority": 13,
+      "width": 300, "height": 225, "format": "jpeg",
+      "course": "Wales GC", "date_in_game": "May 2001",
+      "tags": ["hud-semantics", "community-annotated", "low-res", "decoder-ring"],
+      "shows": "Community-added text labels identifying the HUD readouts.",
+      "extracted_data": {"fun_rating": 287, "skill_rating": 1.24, "funds": 99860},
+      "implementation_notes": "Decoder ring for the top-right pills. Fun (integer, hundreds) and Skill (small decimal) are independent quality axes."
+    },
+    {
+      "file": "hud-annotated-ratings-desert-course-640x480.webp",
+      "category": "hud",
+      "priority": 14,
+      "width": 640, "height": 480, "format": "webp",
+      "course": "Phoenix GC", "date_in_game": "April 2002",
+      "tags": ["hud-semantics", "community-annotated", "biome-mixed", "vendors", "landmark"],
+      "shows": "Same annotation scheme at higher resolution. Mixed desert/oasis biome with taco vendor, hot spring, rock spires, historic lighthouse.",
+      "extracted_data": {"fun_rating": 307, "skill_rating": 7.99, "funds": 266100},
+      "implementation_notes": "Skill 7.99 here vs 1.24 elsewhere at similar Fun Rating confirms the two metrics move independently."
+    },
+    {
+      "file": "build-terrain-palette-sand-trap-selected-750x430.webp",
+      "category": "build",
+      "priority": 15,
+      "width": 750, "height": 430, "format": "webp",
+      "tags": ["ui-build-mode", "terrain-palette", "hover-state", "bunker", "elevation-tool"],
+      "shows": "Sand Trap tile highlighted with yellow outline and floating tooltip. Leftmost palette slot is an up-arrow elevation tool.",
+      "implementation_notes": "Palette has a distinct selected state with hover tooltip. Terrain elevation is a separate tool from surface painting."
+    },
+    {
+      "file": "terrain-wetland-tile-closeup-zoom-640x853.webp",
+      "category": "terrain",
+      "priority": 16,
+      "width": 640, "height": 853, "format": "webp",
+      "tags": ["render-reference", "wetland", "max-zoom", "tile-texture", "portrait", "photo-of-screen"],
+      "shows": "Maximum zoom on a wetland/marsh tile - mottled cyan-and-green organic texture distinct from open water. Adjacent striped fairway, bunker, cart path, palms, pink pin flag, blimp.",
+      "implementation_notes": "Wetland is a distinct hazard surface between rough and water. Source thread asks whether wetlands are player-placeable, suggesting some terrain types are map-generation-only."
+    },
+    {
+      "file": "build-blank-course-driving-range-early-686x386.jpg",
+      "category": "build",
+      "priority": 17,
+      "width": 686, "height": 386, "format": "jpeg",
+      "course": "Christmas Pines MC", "date_in_game": "June 2001",
+      "tags": ["ui-build-mode", "empty-course", "driving-range", "starting-state", "game-start", "onboarding"],
+      "shows": "New-game state: almost entirely blank green terrain, one small clubhouse, a pond, a driving range, one fairway strip with green.",
+      "extracted_data": {"money": 22900, "golfers": 0, "rating": 0.00},
+      "implementation_notes": "Starting cash ~$23k, rating 0. Reference for onboarding / first-session design."
+    },
+    {
+      "file": "tournament-leaderboard-and-scorecard-686x386.jpg",
+      "category": "tournament",
+      "priority": 18,
+      "width": 686, "height": 386, "format": "jpeg",
+      "course": "Flamingo Shores", "date_in_game": null,
+      "tags": ["ui-leaderboard", "ui-scorecard", "tournament", "pro-golfers"],
+      "shows": "SGA Qualifying School leaderboard with ~35 entries scored relative to par, plus a Professional Tournament scorecard grid for two players with a par header row.",
+      "extracted_data": {
+        "title": "LEADER BOARD of the SGA Qualifying School at Flamingo Shores",
+        "field_size": "35+",
+        "score_range": "-7 to +48",
+        "scorecard_players": ["Gary Golf", "Paula Putter"]
+      },
+      "implementation_notes": "Scores shown relative to par. Scorecard is a persistent bottom-docked panel during play."
+    },
+    {
+      "file": "tournament-exhibition-scorecard-desert-640x480.jpg",
+      "category": "tournament",
+      "priority": 19,
+      "width": 640, "height": 480, "format": "jpeg",
+      "course": "Sangria Bay CC", "date_in_game": "July 2025",
+      "tags": ["ui-scorecard", "exhibition", "desert-biome", "prize-money", "color-coded-scores"],
+      "shows": "Exhibition match scorecard, Jason vs AA Slicer, with color-coded per-hole score cells.",
+      "extracted_data": {"format": "Exhibition", "stake": "$4,000/hole", "money": 1452700, "golfers": 1855, "rating": 20.07},
+      "implementation_notes": "Exhibitions priced per hole, not per event. Color-coded score cells (red/blue/black for over/under/at par) are a cheap legibility win."
+    },
+    {
+      "file": "event-tournament-offer-popup-515x388.jpg",
+      "category": "event",
+      "priority": 20,
+      "width": 515, "height": 388, "format": "jpeg",
+      "course": "Paterson Playfield MC", "date_in_game": "July 2004",
+      "tags": ["ui-modal", "event-system", "economy", "prize-money"],
+      "shows": "SGA tournament offer popup.",
+      "extracted_data": {
+        "text": "The SGA is interested in holding a tournament at your course. We'd like to schedule the Paterson Playfield MC Open Golf Tournament here as soon as possible. We can offer a top prize of $110,000! Click the tournament button in the James Paterson panel to begin the tournaments.",
+        "top_prize": 110000
+      },
+      "implementation_notes": "Tournaments arrive as quality-triggered offers, not a freely-opened menu. Prize scales with reputation."
+    },
+    {
+      "file": "event-hole-award-greens-fee-popup-516x387.jpg",
+      "category": "event",
+      "priority": 21,
+      "width": 516, "height": 387, "format": "jpeg",
+      "course": "Paterson Playfield MC", "date_in_game": "April 2003",
+      "tags": ["ui-modal", "award", "economy", "pricing", "stacking-awards"],
+      "shows": "Magazine award popup granting a greens fee increase. Sheep grazing on the rough.",
+      "extracted_data": {
+        "text": "Dogwood has been rated as one of the Top 18 holes in the country by Great Golf Holes magazine! Increase greens fees by $100.",
+        "hole_name": "Dogwood",
+        "fee_increase": 100
+      },
+      "implementation_notes": "The same hole 'Dogwood' receives a different award from a different magazine in hud-terrain-palette-labeled-full-800x600.jpg - awards stack over time."
+    },
+    {
+      "file": "amenities-casino-landmark-and-mood-bar-800x600.jpg",
+      "category": "amenities",
+      "priority": 22,
+      "width": 800, "height": 600, "format": "jpeg",
+      "course": "Sangria Bay CC", "date_in_game": "May 2055",
+      "tags": ["landmark", "end-game", "mood-bar", "theming", "player-homes", "achievement-counters"],
+      "shows": "Enormous roulette-wheel casino landmark, formal gardens, lighthouse, labeled star-golfer homes, achievement counter strip, numbered mood-face bar.",
+      "extracted_data": {
+        "money": 2110300, "golfers": 2395, "rating": 43.78,
+        "achievement_counters": {"star": 21, "trophy": 15, "unknown_icon": 26, "heart": 14, "building": 52},
+        "player_homes": ["Mel Clifford's Home", "Claudia Chiffre's Home"]
+      },
+      "implementation_notes": "End-game aspirational build target. Star golfers build homes on your course (retention/prestige mechanic). Mood bar shows hole number under each face."
+    },
+    {
+      "file": "amenities-vendors-bridges-dense-course-640x480.webp",
+      "category": "amenities",
+      "priority": 23,
+      "width": 640, "height": 480, "format": "webp",
+      "course": "Ocean's Edge MC", "date_in_game": "June 2009",
+      "tags": ["vendors", "bridges", "dense-buildup", "staff", "extension-mismatch-fixed"],
+      "shows": "Multiple named Soda Vendor stalls, Randy Ranger and Joe Groundskeeper staff, several bridge styles, windmill, sheds, lighthouse.",
+      "implementation_notes": "Original filename was images17.jpeg but the file is actually WebP; extension corrected during rename."
+    },
+    {
+      "file": "amenities-pool-tiki-driving-range-640x480.jpg",
+      "category": "amenities",
+      "priority": 24,
+      "width": 640, "height": 480, "format": "jpeg",
+      "course": "Flamingo Shores MC", "date_in_game": "April 2001",
+      "tags": ["resort-amenities", "pool", "driving-range", "amenity-category-bar"],
+      "shows": "Swimming pool with deck, tiki structures, driving range with three golfers, large lodge, and a 5-icon amenity category row in the bottom bar.",
+      "implementation_notes": "The round-icon row is sub-category navigation within build mode."
+    },
+    {
+      "file": "amenities-clubhouse-tennis-carnival-ride-516x387.jpg",
+      "category": "amenities",
+      "priority": 25,
+      "width": 516, "height": 387, "format": "jpeg",
+      "course": "Hunt Valley", "date_in_game": "August 2014",
+      "tags": ["resort-amenities", "tennis", "carnival", "mature-course"],
+      "shows": "Colonial clubhouse, indoor red-surface tennis courts, purple carnival ride, formal gardens, bunkers."
+    },
+    {
+      "file": "amenities-clubhouse-hotel-decor-516x387.jpg",
+      "category": "amenities",
+      "priority": 26,
+      "width": 516, "height": 387, "format": "jpeg",
+      "course": "Jurassic Springs GC", "date_in_game": "July 2001",
+      "tags": ["buildings", "hotel", "decor", "terrain-palette"],
+      "shows": "Two large multi-story buildings, radio/observation tower, benches lining paths, ornamental plantings.",
+      "extracted_data": {"golfers": 288, "rating": -0.02, "npc_line": "Eeek, I gotta stay away from the pine trees."}
+    },
+    {
+      "file": "terrain-dense-palm-tropical-lighthouse-516x387.jpg",
+      "category": "terrain",
+      "priority": 27,
+      "width": 516, "height": 387, "format": "jpeg",
+      "course": "Scorpion Cove MC", "date_in_game": "June 2054",
+      "tags": ["biome-tropical", "dense-vegetation", "landmark", "visual-density", "end-game"],
+      "shows": "Extremely dense palm coverage with fairway corridors carved as narrow channels. Striped lighthouse landmark.",
+      "implementation_notes": "Reference for what a fully grown-in end-game course looks like."
+    },
+    {
+      "file": "build-early-tee-green-placement-forest-514x389.jpg",
+      "category": "build",
+      "priority": 28,
+      "width": 514, "height": 389, "format": "jpeg",
+      "course": "Ocean's Edge MC", "date_in_game": "May 2001",
+      "tags": ["ui-build-mode", "tee-placement", "driving-range", "sparse"],
+      "shows": "Striped driving range with white alignment lines, one green with flag, a routing line, and a reduced icon-only bottom palette (course-objects sub-mode).",
+      "extracted_data": {"money": 18000, "golfers": 18, "rating": 0.10}
+    },
+    {
+      "file": "build-desert-hole-in-progress-open-hole-prompt-480x300.jpg",
+      "category": "build",
+      "priority": 29,
+      "width": 480, "height": 300, "format": "jpeg",
+      "course": "Sangria Bay MC", "date_in_game": "April 2005",
+      "tags": ["ui-build-mode", "desert-biome", "hole-incomplete", "low-res"],
+      "shows": "Small isolated green in raw desert with a 'Press h to open hole' prompt. Blimp overhead.",
+      "extracted_data": {"money": 1165700, "golfers": 352, "rating": 4.21},
+      "implementation_notes": "Best example of a routed-but-unopened hole. Desert biome uses sand as default ground, so bunkers lose contrast - a real design constraint."
+    },
+    {
+      "file": "build-clubhouse-building-palette-480x300.jpg",
+      "category": "build",
+      "priority": 30,
+      "width": 480, "height": 300, "format": "jpeg",
+      "course": "Thistle Runes MC", "date_in_game": "June 2003",
+      "tags": ["ui-build-mode", "building-palette", "low-res"],
+      "shows": "Bottom palette switched to buildings mode - clubhouse/lodge structure thumbnails."
+    },
+    {
+      "file": "amenities-tennis-court-building-palette-480x300.jpg",
+      "category": "amenities",
+      "priority": 31,
+      "width": 480, "height": 300, "format": "jpeg",
+      "course": "Dolphin Coast MC", "date_in_game": "September 2018",
+      "tags": ["building-palette", "tennis", "low-res"],
+      "shows": "Building palette open. Tennis court, large manor clubhouse, fountain in a pond, pink flowering trees.",
+      "extracted_data": {"money": 2348800, "golfers": 324, "rating": 0.17}
+    },
+    {
+      "file": "lowres-tournament-scorecard-lighthouse-480x300.jpg",
+      "category": "lowres",
+      "priority": 32,
+      "width": 480, "height": 300, "format": "jpeg",
+      "tags": ["ui-scorecard", "low-res", "video-still", "blurry"],
+      "shows": "Blurry video still. Only confirms scorecard docked position and a lighthouse landmark on a water hole."
+    },
+    {
+      "file": "lowres-themed-resort-buildings-vegas-300x225.jpg",
+      "category": "lowres",
+      "priority": 33,
+      "width": 300, "height": 225, "format": "jpeg",
+      "course": "Las Vegas GC", "date_in_game": "May 2001",
+      "tags": ["theming", "low-res", "resort-architecture"],
+      "shows": "Heavily themed white-and-gold resort architecture with pool and purple carnival ride. Demonstrates strong per-course visual themes."
+    },
+    {
+      "file": "lowres-island-course-blimp-sailboat-300x225.jpg",
+      "category": "lowres",
+      "priority": 34,
+      "width": 300, "height": 225, "format": "jpeg",
+      "course": "Island Palms MC", "date_in_game": "June 2002",
+      "tags": ["ambient-detail", "low-res", "blimp", "sailboat"],
+      "shows": "Blimp overhead and a sailboat on the water - ambient world detail beyond the course boundary."
+    },
+    {
+      "file": "lowres-tropical-beach-course-overview-259x194.jpg",
+      "category": "lowres",
+      "priority": 35,
+      "width": 259, "height": 194, "format": "jpeg",
+      "course": "Sangria Bay CC", "date_in_game": null,
+      "tags": ["biome-tropical", "low-res", "composition-only"],
+      "shows": "Beach/lagoon course; sand-to-water gradient and small island greens."
+    },
+    {
+      "file": "lowres-wooded-riverside-course-258x195.jpg",
+      "category": "lowres",
+      "priority": 36,
+      "width": 258, "height": 195, "format": "jpeg",
+      "course": "Clearwater Ridge MC", "date_in_game": null,
+      "tags": ["biome-temperate", "low-res", "composition-only", "sparse"],
+      "shows": "Temperate forest and river, small clubhouse. Sparse early-game density."
+    }
+  ],
+  "derived_model": {
+    "terrain_types": ["Tees", "Green", "Fairway", "Firm fairway", "Rough", "Deep rough", "Sand trap", "Pot bunker", "Waste bunker", "Stream", "Water", "Wetland", "Brush", "Gorse", "Rocks", "Tree", "Pine tree", "Palm tree", "Maple tree", "Scots pine"],
+    "golfer_skills": ["Power Hitter", "Long Driver", "Accurate Driver", "Accurate Irons", "Accurate Putter", "Draw Shot (R to L)", "Fade Shot (L to R)", "High Backspin Shot", "Recovery Skills", "Luck"],
+    "shot_inputs": ["attitude", "club", "distance", "lie", "shot_shape (1 of 5)"],
+    "attitude_values_observed": ["calm", "invincible"],
+    "shot_analysis_archetypes": ["all skills", "no Imagination", "no Accuracy", "no Length"],
+    "hole_types": {"known": ["CREATIVE"], "inferred": ["LENGTH", "ACCURACY"]},
+    "ratings": {"fun_rating": "integer, observed 287-307", "skill_rating": "decimal, observed 1.24-43.78", "course_rating_pill": "decimal, observed -0.38 to 43.78"},
+    "par_calibration": [{"yards": 200, "par": 3}, {"yards": 276, "par": 4}],
+    "distance_bounds": {"max_observed_drive_yds": 528, "condition": "all skills +100%, attitude invincible, club Driver"},
+    "starting_state": {"cash": 22900, "golfers": 0, "rating": 0.0}
+  },
+  "gaps": [
+    "Finance/pricing panel (greens fees, salaries, expense breakdown)",
+    "Elevation/topography editing UI beyond the single palette up-arrow",
+    "Putting mechanics / on-green view",
+    "Weather, wind, seasonal effects",
+    "Main menu, scenario select, save/load",
+    "Multiplayer / course sharing",
+    "Staff hiring and management UI",
+    "The 'James Paterson panel' referenced in the tournament offer popup"
+  ]
+}

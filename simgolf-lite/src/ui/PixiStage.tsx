@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 // Pixi's strict-CSP adapter replaces runtime-generated shader/uniform
 // functions with static implementations. Keep this before renderer startup so
 // Workers deployments can retain a script-src policy without 'unsafe-eval'.
 import "pixi.js/unsafe-eval";
 import * as PIXI from "pixi.js";
-import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, TeeSet, Terrain } from "../game/models/types";
+import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
 import type { PlayerPlayableRound, PlayerProPoint } from "../game/models/playerProTypes";
@@ -22,9 +22,9 @@ import {
   worldToIso,
   type IsoRotation,
 } from "../game/render/iso";
-import { getObstacleSprite } from "../render/iconSprites";
 import {
   getGolferFrame,
+  getLandscapeMaterialField,
   getPropFrame,
   getTerrainDetailFrame,
   getTerrainFrame,
@@ -33,10 +33,16 @@ import {
 } from "../render/atlas";
 import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import type { TerrainStrokePreview } from "../game/models/terrainStroke";
+import {
+  defaultSurfaceTangents,
+  sampleCorridor,
+  sampleRegion,
+  withDefaultSurfaceTangents,
+} from "../game/models/surfaceIntent";
 import { formatCurrency } from "../i18n/format";
 import { useI18n } from "../i18n/useI18n";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
-import { entityDepth, placeObject } from "../game/render/objectPlacement";
+import { entityDepth, frontCorner, placeObject } from "../game/render/objectPlacement";
 import {
   GOLFER_DISPLAY_W,
   GOLFER_FEET_Y,
@@ -81,32 +87,53 @@ import {
 } from "../game/render/ambient";
 import { FLYOVER_DURATION_MS, buildFlyoverKeys, sampleFlyover, type FlyoverKey } from "../game/render/flyover";
 import { PerfWindow } from "../game/render/perfStats";
+import { recordM35Metric } from "../game/render/m35Telemetry";
+import {
+  MAX_ACTIVE_IMPACTS,
+  MAX_ACTIVE_RIPPLES,
+  appendBoundedEffect,
+} from "../game/render/worldEffects";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { buildingSpec, buildingVisualFrame } from "../game/models/buildings";
 import { decorationTiles, decorationVisual } from "../game/models/decorations";
 import { getLandTheme } from "../game/models/themes";
 import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
 import type { AtlasFrame } from "../render/atlas";
-import { AUTOTILE_DIRECTIONS } from "../game/render/autotile";
+import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
 import {
   getTerrainMaterial,
   mowingShadeAt,
   pickTerrainBaseFrame,
+  terrainBoundaryFor,
+  terrainTransitionFrame,
   waterShimmerPhase,
 } from "../game/render/terrainMaterials";
-import {
-  contourProfileFor,
-  detailsAlongContour,
-  sampleMaterialField,
-  silhouetteOffsetAt,
-  waterFieldPhase,
-  wildnessProfile,
-} from "../game/render/materialFields";
-import { createSilhouetteCache, type TerrainComponent } from "../game/render/terrainSilhouettes";
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
 import { deriveTerrainDetail } from "../game/render/terrainDetails";
 import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
+import {
+  buildLandscapeComponents,
+  buildVisualHeightfield,
+  pointInLandscapeRing,
+  ringSignedArea,
+  sampleLandscapeSurfaceHeight,
+  sampleVisualHeight,
+  type LandscapeComponent,
+} from "../game/render/landscapeGeometry";
+import {
+  buildLandscapeBoundaryRuns,
+  buildShoreRockPlacements,
+  landscapeEdgeStyle,
+} from "../game/render/landscapeEdges";
+import {
+  buildBunkerVisualRings,
+  classifyBunkerVisualType,
+} from "../game/render/bunkerShapes";
 import { pickNaturalProp, shouldFadeTallProp, type NaturalPropVariant } from "../game/render/naturalProps";
+import {
+  deriveTreeHabitat,
+  type TreeHabitatPatch,
+} from "../game/render/treeHabitat";
 import { isWaterHazard } from "../game/models/terrainRules";
 import { T } from "../i18n/T";
 import { decodeParcelMap } from "../game/estate/estate";
@@ -242,6 +269,136 @@ function shade(color: number, factor: number): number {
   const b = color & 0xff;
   const lerp = (c: number) => Math.round(c + (255 - c) * t);
   return (lerp(r) << 16) | (lerp(g) << 8) | lerp(b);
+}
+
+const colorCss = (color: number, alpha = 1) => {
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  return `rgba(${r},${g},${b},${alpha})`;
+};
+
+function terrainMaterialSeed(terrain: Terrain, color: number): number {
+  let seed = color ^ 0x9e3779b9;
+  for (let index = 0; index < terrain.length; index++) {
+    seed = Math.imul(seed ^ terrain.charCodeAt(index), 0x45d9f3b);
+  }
+  return seed >>> 0;
+}
+
+/**
+ * Deterministic, seamless world material used by the connected mesh. The
+ * canvas is authored at the selected fidelity and repeated every eight world
+ * tiles; UVs come from unrotated world coordinates, so camera rotation and
+ * chunk rebuilds never move the grain.
+ */
+function createLandscapeMaterialTexture(
+  terrain: Terrain,
+  baseColor: number,
+  quality: "high" | "medium",
+  showPattern: boolean,
+): PIXI.Texture {
+  const size = quality === "high" ? 512 : 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) return PIXI.Texture.WHITE;
+  context.fillStyle = colorCss(baseColor);
+  context.fillRect(0, 0, size, size);
+
+  let state = terrainMaterialSeed(terrain, baseColor);
+  const random = () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 0x1_0000_0000;
+  };
+  const repeatShape = (x: number, y: number, draw: (dx: number, dy: number) => void) => {
+    for (const ox of [-size, 0, size]) for (const oy of [-size, 0, size]) {
+      draw(x + ox, y + oy);
+    }
+  };
+
+  const organicCount = quality === "high" ? 92 : 52;
+  for (let index = 0; index < organicCount; index++) {
+    const x = random() * size;
+    const y = random() * size;
+    const radiusX = size * (0.035 + random() * 0.12);
+    const radiusY = radiusX * (0.45 + random() * 0.9);
+    const factor = 0.86 + random() * 0.28;
+    context.fillStyle = colorCss(shade(baseColor, factor), 0.08 + random() * 0.12);
+    repeatShape(x, y, (dx, dy) => {
+      context.beginPath();
+      context.ellipse(dx, dy, radiusX, radiusY, random() * Math.PI, 0, Math.PI * 2);
+      context.fill();
+    });
+  }
+
+  if (terrain === "fairway" || terrain === "green" || terrain === "tee") {
+    const band = size / 8;
+    for (let index = 0; index < 8; index++) {
+      context.fillStyle = colorCss(index % 2 === 0 ? 0xffffff : 0x102010, index % 2 === 0 ? 0.035 : 0.025);
+      context.fillRect(index * band, 0, band, size);
+    }
+  } else if (terrain === "water" || terrain === "wetland") {
+    context.strokeStyle = colorCss(0xe3f2e8, terrain === "water" ? 0.22 : 0.12);
+    context.lineWidth = quality === "high" ? 2 : 1.4;
+    for (let index = 0; index < 18; index++) {
+      const y = (index + 0.5) / 18 * size;
+      context.beginPath();
+      context.moveTo(-size * 0.1, y);
+      context.bezierCurveTo(size * 0.2, y - 9, size * 0.32, y + 10, size * 0.58, y);
+      context.bezierCurveTo(size * 0.76, y - 8, size * 0.9, y + 7, size * 1.1, y - 2);
+      context.stroke();
+    }
+  } else {
+    const flecks = quality === "high" ? 260 : 120;
+    for (let index = 0; index < flecks; index++) {
+      const x = random() * size;
+      const y = random() * size;
+      const light = random() > 0.52;
+      context.fillStyle = colorCss(light ? 0xffffff : 0x17140f, light ? 0.09 : 0.08);
+      context.beginPath();
+      context.ellipse(x, y, 0.6 + random() * 1.8, 0.5 + random(), random() * Math.PI, 0, Math.PI * 2);
+      context.fill();
+    }
+  }
+
+  if (showPattern && terrainPattern(terrain) !== "none") {
+    context.strokeStyle = colorCss(0xffffff, 0.2);
+    context.fillStyle = colorCss(0xffffff, 0.22);
+    context.lineWidth = quality === "high" ? 3 : 2;
+    const step = size / 8;
+    if (terrainPattern(terrain) === "stripe") {
+      for (let offset = -size; offset < size * 2; offset += step) {
+        context.beginPath();
+        context.moveTo(offset, 0);
+        context.lineTo(offset + size, size);
+        context.stroke();
+      }
+    } else if (terrainPattern(terrain) === "crosshatch") {
+      for (let offset = -size; offset < size * 2; offset += step) {
+        context.beginPath();
+        context.moveTo(offset, 0);
+        context.lineTo(offset + size, size);
+        context.moveTo(offset + size, 0);
+        context.lineTo(offset, size);
+        context.stroke();
+      }
+    } else {
+      for (let y = step / 2; y < size; y += step) for (let x = step / 2; x < size; x += step) {
+        context.beginPath();
+        context.arc(x, y, quality === "high" ? 3 : 2.2, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+  }
+
+  const texture = PIXI.Texture.from(canvas);
+  texture.source.style.addressMode = "repeat";
+  texture.source.style.scaleMode = "linear";
+  return texture;
 }
 
 // Cliff face colors (exposed earth), lit by the fixed NW sun: the SW-facing
@@ -386,6 +543,8 @@ export interface PixiStageProps {
   paceBottlenecks?: PaceAdvisorFinding[];
   animationsEnabled: boolean;
   graphicsQuality: "high" | "medium" | "low";
+  /** Feeds sustained frame telemetry to the Auto quality controller. */
+  onFrameTime?: (frameMs: number) => void;
   ambienceFx: boolean;
   waterAnimation: boolean;
   treeSway: boolean;
@@ -410,6 +569,9 @@ export interface PixiStageProps {
   onClickTile: (x: number, y: number) => void;
   onPreviewTerrainStroke?: (points: Point[]) => TerrainStrokePreview;
   onCommitTerrainStroke?: (points: Point[]) => void;
+  terrainTool?: TerrainAuthoringTool;
+  onPreviewSurfaceFeatureEdit?: (feature: SurfaceFeature) => TerrainStrokePreview | null;
+  onCommitSurfaceFeatureEdit?: (feature: SurfaceFeature) => void;
   selectedTerrain?: Terrain;
   worldCash?: number;
   flagColor?: string;
@@ -453,15 +615,154 @@ function resampleWorldLine(from: Point, to: Point, step = 0.25): Point[] {
   });
 }
 
+function surfaceFeaturePoints(feature: SurfaceFeature): Point[] {
+  return feature.geometry.kind === "corridor"
+    ? feature.geometry.knots
+    : feature.geometry.ring;
+}
+
+function sampledSurfacePath(feature: SurfaceFeature): Point[] {
+  return feature.geometry.kind === "corridor"
+    ? sampleCorridor(feature.geometry.knots, 0.2, feature.geometry.tangents)
+    : sampleRegion(feature.geometry.ring, feature.geometry.tangents);
+}
+
+function moveSurfaceNode(feature: SurfaceFeature, nodeIndex: number, point: Point): SurfaceFeature {
+  const previous = surfaceFeaturePoints(feature)[nodeIndex];
+  if (!previous) return feature;
+  const dx = point.x - previous.x;
+  const dy = point.y - previous.y;
+  if (feature.geometry.kind === "corridor") {
+    const knots = feature.geometry.knots.map((node, index) => index === nodeIndex ? point : node);
+    const tangents = feature.geometry.tangents?.map((handles, index) => index === nodeIndex
+      ? {
+        in: { x: handles.in.x + dx, y: handles.in.y + dy },
+        out: { x: handles.out.x + dx, y: handles.out.y + dy },
+      }
+      : handles);
+    return { ...feature, geometry: { ...feature.geometry, knots, tangents } };
+  }
+  const ring = feature.geometry.ring.map((node, index) => index === nodeIndex ? point : node);
+  const tangents = feature.geometry.tangents?.map((handles, index) => index === nodeIndex
+    ? {
+      in: { x: handles.in.x + dx, y: handles.in.y + dy },
+      out: { x: handles.out.x + dx, y: handles.out.y + dy },
+    }
+    : handles);
+  return { ...feature, geometry: { ...feature.geometry, ring, tangents } };
+}
+
+function moveSurfaceHandle(
+  feature: SurfaceFeature,
+  nodeIndex: number,
+  target: "in" | "out",
+  point: Point,
+  mirror: boolean,
+): SurfaceFeature {
+  const editable = withDefaultSurfaceTangents(feature);
+  const node = surfaceFeaturePoints(editable)[nodeIndex];
+  if (!node || !editable.geometry.tangents) return feature;
+  const tangents = editable.geometry.tangents.map((handles, index) => {
+    if (index !== nodeIndex) return handles;
+    const opposite = {
+      x: node.x * 2 - point.x,
+      y: node.y * 2 - point.y,
+    };
+    return target === "in"
+      ? { in: point, out: mirror ? opposite : handles.out }
+      : { in: mirror ? opposite : handles.in, out: point };
+  });
+  return editable.geometry.kind === "corridor"
+    ? { ...editable, geometry: { ...editable.geometry, tangents } }
+    : { ...editable, geometry: { ...editable.geometry, tangents } };
+}
+
+function insertSurfaceNode(feature: SurfaceFeature, afterIndex: number, point: Point): SurfaceFeature {
+  const insertIndex = afterIndex + 1;
+  if (feature.geometry.kind === "corridor") {
+    const knots = [
+      ...feature.geometry.knots.slice(0, insertIndex),
+      point,
+      ...feature.geometry.knots.slice(insertIndex),
+    ];
+    const tangents = feature.geometry.tangents
+      ? [
+        ...feature.geometry.tangents.slice(0, insertIndex),
+        defaultSurfaceTangents(knots)[insertIndex],
+        ...feature.geometry.tangents.slice(insertIndex),
+      ]
+      : undefined;
+    return { ...feature, geometry: { ...feature.geometry, knots, tangents } };
+  }
+  const ring = [
+    ...feature.geometry.ring.slice(0, insertIndex),
+    point,
+    ...feature.geometry.ring.slice(insertIndex),
+  ];
+  const tangents = feature.geometry.tangents
+    ? [
+      ...feature.geometry.tangents.slice(0, insertIndex),
+      defaultSurfaceTangents(ring, true)[insertIndex],
+      ...feature.geometry.tangents.slice(insertIndex),
+    ]
+    : undefined;
+  return { ...feature, geometry: { ...feature.geometry, ring, tangents } };
+}
+
+function deleteSurfaceNode(feature: SurfaceFeature, nodeIndex: number): SurfaceFeature | null {
+  const points = surfaceFeaturePoints(feature);
+  const minimum = feature.geometry.kind === "corridor" ? 2 : 3;
+  if (points.length <= minimum || !points[nodeIndex]) return null;
+  if (feature.geometry.kind === "corridor") {
+    return {
+      ...feature,
+      geometry: {
+        ...feature.geometry,
+        knots: feature.geometry.knots.filter((_, index) => index !== nodeIndex),
+        tangents: feature.geometry.tangents?.filter((_, index) => index !== nodeIndex),
+      },
+    };
+  }
+  return {
+    ...feature,
+    geometry: {
+      ...feature.geometry,
+      ring: feature.geometry.ring.filter((_, index) => index !== nodeIndex),
+      tangents: feature.geometry.tangents?.filter((_, index) => index !== nodeIndex),
+    },
+  };
+}
+
+function nearestSurfaceSegment(feature: SurfaceFeature, point: Point): { index: number; distance: number } {
+  const points = surfaceFeaturePoints(feature);
+  const segmentCount = feature.geometry.kind === "region" ? points.length : Math.max(0, points.length - 1);
+  let best = { index: 0, distance: Number.POSITIVE_INFINITY };
+  for (let index = 0; index < segmentCount; index++) {
+    const start = points[index];
+    const end = points[(index + 1) % points.length];
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const length2 = dx * dx + dy * dy;
+    const t = length2 <= 1e-9
+      ? 0
+      : Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / length2));
+    const distance = Math.hypot(
+      point.x - (start.x + dx * t),
+      point.y - (start.y + dy * t),
+    );
+    if (distance < best.distance) best = { index, distance };
+  }
+  return best;
+}
+
 interface Layers {
   world: PIXI.Container;
   surround: PIXI.Container;
   terrain: PIXI.Container;
-  /** ZK-468/469 component silhouettes and their pair-aware contour bands. */
-  terrainContours: PIXI.Container;
   smoothSurfaces: PIXI.Container;
   estateSeam: PIXI.Container;
   terrainDecals: PIXI.Container;
+  surfaceEditor: PIXI.Container;
   objects: PIXI.Container;
   fx: PIXI.Container;
   screenOverlay: PIXI.Container;
@@ -573,36 +874,125 @@ function fitZoomForTileBounds(
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
 }
 
+/**
+ * Synchronous last-resort natural-prop art. The regular path is always the
+ * selected biome atlas, but a missing frame must not start a hidden React DOM
+ * render and reject two seconds later. A small canvas texture is deterministic,
+ * CSP-safe, immediately available, and visually coherent enough to preserve
+ * the course while the atlas warning identifies the missing source frame.
+ */
+function createFallbackObstacleTexture(
+  type: Obstacle["type"],
+  frame: string,
+): PIXI.Texture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const context = canvas.getContext("2d");
+  if (!context) return PIXI.Texture.WHITE;
+  const isDry = frame.startsWith("desert_");
+  const isLinks = frame.startsWith("links_");
+  const dark = isDry ? "#5d6138" : isLinks ? "#3f5b35" : "#315e37";
+  const mid = isDry ? "#81804b" : isLinks ? "#5f7a45" : "#4f8248";
+  const light = isDry ? "#a39b61" : isLinks ? "#83975b" : "#72a85f";
+  const trunk = isDry ? "#71543b" : "#65462f";
+
+  if (type === "tree") {
+    context.fillStyle = trunk;
+    context.fillRect(29, 35, 6, 22);
+    const conifer = /pine|fir/.test(frame);
+    if (conifer) {
+      context.fillStyle = dark;
+      context.beginPath();
+      context.moveTo(32, 5);
+      context.lineTo(16, 42);
+      context.lineTo(48, 42);
+      context.closePath();
+      context.fill();
+      context.fillStyle = mid;
+      context.beginPath();
+      context.moveTo(32, 11);
+      context.lineTo(21, 35);
+      context.lineTo(43, 35);
+      context.closePath();
+      context.fill();
+      context.fillStyle = light;
+      context.beginPath();
+      context.moveTo(29, 13);
+      context.lineTo(25, 29);
+      context.lineTo(33, 27);
+      context.closePath();
+      context.fill();
+    } else {
+      for (const [x, y, radius, color] of [
+        [23, 29, 12, dark],
+        [40, 29, 12, dark],
+        [31, 19, 15, mid],
+        [26, 17, 8, light],
+      ] as const) {
+        context.fillStyle = color;
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+  } else if (type === "bush") {
+    for (const [x, y, radius, color] of [
+      [19, 43, 10, dark],
+      [32, 39, 13, mid],
+      [45, 43, 10, dark],
+      [27, 34, 9, light],
+      [39, 35, 8, light],
+    ] as const) {
+      context.fillStyle = color;
+      context.beginPath();
+      context.arc(x, y, radius, 0, Math.PI * 2);
+      context.fill();
+    }
+  } else {
+    context.fillStyle = isDry ? "#8a806d" : "#777a72";
+    context.beginPath();
+    context.moveTo(13, 53);
+    context.lineTo(18, 31);
+    context.lineTo(31, 20);
+    context.lineTo(47, 27);
+    context.lineTo(53, 50);
+    context.closePath();
+    context.fill();
+    context.fillStyle = isDry ? "#b2a58c" : "#a3a69c";
+    context.beginPath();
+    context.moveTo(21, 42);
+    context.lineTo(29, 27);
+    context.lineTo(42, 31);
+    context.lineTo(47, 43);
+    context.closePath();
+    context.fill();
+  }
+
+  return PIXI.Texture.from(canvas);
+}
+
 export function PixiStage(props: PixiStageProps) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const layersRef = useRef<Layers | null>(null);
   const [appReady, setAppReady] = useState(false);
+  const [atlasRevision, setAtlasRevision] = useState(0);
 
   const diamondTextureRef = useRef<PIXI.Texture | null>(null);
   const chunksRef = useRef<TerrainChunk[]>([]);
-  /** ZK-468 derived silhouettes, cached by component topology. */
-  const silhouetteCacheRef = useRef(createSilhouetteCache());
-  const contourGraphicsRef = useRef<Map<string, {
-    holder: PIXI.Container;
-    rotation: IsoRotation;
-    profile: "high" | "medium" | "low";
-  }>>(new Map());
-  /** Shallow-water bands, alpha-oscillated as the shoreline animation. */
-  const contourFoamRef = useRef<Array<{
-    graphics: PIXI.Graphics;
-    phase: number;
-    baseAlpha: number;
-  }>>([]);
   const prevTilesRef = useRef<Terrain[] | null>(null);
   const prevElevationsRef = useRef<number[] | null>(null);
   const builtRotationRef = useRef<IsoRotation | null>(null);
   const chunkRebuildsRef = useRef(0);
+  const landscapeMaterialTexturesRef = useRef<Map<string, PIXI.Texture>>(new Map());
+  const fallbackObstacleTexturesRef = useRef<Map<string, PIXI.Texture>>(new Map());
   const obstacleSpritesRef = useRef<
     Map<string, {
       sprite: PIXI.Sprite;
       shadow: PIXI.Graphics;
+      habitat: PIXI.Graphics | null;
       swayPhase: number | null;
       sway: NaturalPropVariant["sway"];
       tall: boolean;
@@ -618,7 +1008,7 @@ export function PixiStage(props: PixiStageProps) {
   const decorationSpritesRef = useRef<Array<{ sprite: PIXI.Sprite; shadow: PIXI.Graphics }>>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const surfaceWaterSpritesRef = useRef<Array<{
-    sprite: PIXI.Sprite;
+    sprite: PIXI.Sprite | PIXI.Mesh;
     baseTint: number;
     phase: number;
     gx: number;
@@ -704,6 +1094,23 @@ export function PixiStage(props: PixiStageProps) {
     points: Point[];
     last: Point;
   } | null>(null);
+  const [clickSplineDraft, setClickSplineDraft] = useState<Point[]>([]);
+  const clickSplineDraftRef = useRef<Point[]>([]);
+  const [clickSplineHover, setClickSplineHover] = useState<Point | null>(null);
+  const clickSplineHoverRef = useRef<Point | null>(null);
+  const [selectedSurfaceFeatureId, setSelectedSurfaceFeatureId] = useState<string | null>(null);
+  const selectedSurfaceFeatureIdRef = useRef<string | null>(null);
+  const [selectedSurfaceNode, setSelectedSurfaceNode] = useState<number | null>(null);
+  const selectedSurfaceNodeRef = useRef<number | null>(null);
+  const [surfaceEditDraft, setSurfaceEditDraft] = useState<SurfaceFeature | null>(null);
+  const surfaceEditDraftRef = useRef<SurfaceFeature | null>(null);
+  const surfaceEditDragRef = useRef<{
+    pointerId: number;
+    feature: SurfaceFeature;
+    nodeIndex: number;
+    target: "node" | "in" | "out";
+  } | null>(null);
+  const surfaceEditorGraphicsRef = useRef<PIXI.Graphics | null>(null);
   const camRef = useRef({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false });
   const rotTweenRef = useRef<{ start: number; toDeg: number; next: IsoRotation } | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
@@ -711,6 +1118,7 @@ export function PixiStage(props: PixiStageProps) {
   const lastReportedCameraStateRef = useRef<CameraState | null>(null);
   const lastAmbientReportAtRef = useRef(0);
   const lastCameraStateRef = useRef<CameraState | null | undefined>(undefined);
+  const lastAutoFitSignatureRef = useRef<string | null>(null);
 
   const {
     course,
@@ -722,6 +1130,8 @@ export function PixiStage(props: PixiStageProps) {
     onClickTile,
     onPreviewTerrainStroke,
     onCommitTerrainStroke,
+    onPreviewSurfaceFeatureEdit,
+    onCommitSurfaceFeatureEdit,
     selectedTerrain,
     worldCash,
     editorMode,
@@ -737,6 +1147,104 @@ export function PixiStage(props: PixiStageProps) {
     onPickGolfer,
     onViewChange,
   } = props;
+  const initialRendererConfigRef = useRef({
+    resolutionScale: props.resolutionScale,
+    theme: course.theme ?? "parkland",
+    graphicsQuality: props.graphicsQuality,
+  });
+  const terrainTool = props.terrainTool ?? "curve";
+  const updateClickSplineDraft = useCallback((points: Point[]) => {
+    clickSplineDraftRef.current = points;
+    setClickSplineDraft(points);
+  }, []);
+  const updateClickSplineHover = useCallback((point: Point | null) => {
+    clickSplineHoverRef.current = point;
+    setClickSplineHover(point);
+  }, []);
+  const updateSelectedSurface = useCallback((featureId: string | null, nodeIndex: number | null = null) => {
+    selectedSurfaceFeatureIdRef.current = featureId;
+    selectedSurfaceNodeRef.current = nodeIndex;
+    setSelectedSurfaceFeatureId(featureId);
+    setSelectedSurfaceNode(nodeIndex);
+  }, []);
+  const updateSurfaceEditDraft = useCallback((feature: SurfaceFeature | null) => {
+    surfaceEditDraftRef.current = feature;
+    setSurfaceEditDraft(feature);
+  }, []);
+  const selectedSurfaceFeature = useMemo(() => (
+    surfaceEditDraft
+    ?? course.surfaceIntent?.features.find((feature) => feature.id === selectedSurfaceFeatureId)
+    ?? null
+  ), [course.surfaceIntent, selectedSurfaceFeatureId, surfaceEditDraft]);
+
+  useEffect(() => {
+    if (terrainTool === "spline") return;
+    updateClickSplineDraft([]);
+    updateClickSplineHover(null);
+    terrainStrokePreviewRef.current = null;
+    setTerrainStrokePreview(null);
+  }, [terrainTool, updateClickSplineDraft, updateClickSplineHover]);
+
+  useEffect(() => {
+    if (terrainTool === "edit") return;
+    updateSelectedSurface(null);
+    updateSurfaceEditDraft(null);
+    surfaceEditDragRef.current = null;
+  }, [terrainTool, updateSelectedSurface, updateSurfaceEditDraft]);
+
+  useEffect(() => {
+    if (
+      selectedSurfaceFeatureId &&
+      !course.surfaceIntent?.features.some((feature) => feature.id === selectedSurfaceFeatureId)
+    ) updateSelectedSurface(null);
+  }, [course.surfaceIntent, selectedSurfaceFeatureId, updateSelectedSurface]);
+
+  const visualHeightfield = useMemo(
+    () => buildVisualHeightfield(course),
+    [course],
+  );
+  const landscapeComponents = useMemo(() => (
+    props.graphicsQuality === "low"
+      ? []
+      : buildLandscapeComponents(course.tiles, course.width, course.height, {
+        cornerRadius: props.graphicsQuality === "high" ? 0.4 : 0.32,
+        cornerSegments: props.graphicsQuality === "high" ? 4 : 2,
+      })
+  ), [
+    course.height,
+    course.tiles,
+    course.width,
+    props.graphicsQuality,
+  ]);
+  const landscapeComponentByCell = useMemo(() => {
+    const lookup: Array<LandscapeComponent | null> = new Array(course.tiles.length).fill(null);
+    for (const component of landscapeComponents) {
+      for (const index of component.cells) lookup[index] = component;
+    }
+    return lookup;
+  }, [course.tiles.length, landscapeComponents]);
+  const surfaceHeightAt = useCallback((x: number, y: number) => (
+    props.graphicsQuality === "low"
+      ? getElevation(
+        course,
+        Math.max(0, Math.min(course.width - 1, Math.floor(x))),
+        Math.max(0, Math.min(course.height - 1, Math.floor(y))),
+      )
+      : sampleLandscapeSurfaceHeight(
+        visualHeightfield,
+        landscapeComponentByCell[
+          Math.max(0, Math.min(course.height - 1, Math.floor(y))) * course.width +
+          Math.max(0, Math.min(course.width - 1, Math.floor(x)))
+        ],
+        x,
+        y,
+      )
+  ), [
+    course,
+    landscapeComponentByCell,
+    props.graphicsQuality,
+    visualHeightfield,
+  ]);
 
   // ---------------------------------------------------------------------
   // Camera: world container transform + screen↔world mapping
@@ -852,8 +1360,85 @@ export function PixiStage(props: PixiStageProps) {
         cam.zoom = cam.tzoom;
       }
       applyCamera();
+      props.onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
     },
-    [course.width, course.height, rotation, applyCamera]
+    [course.width, course.height, rotation, applyCamera, props.onCameraCenter]
+  );
+
+  /**
+   * COZY opens at a playable SimGolf-like framing; Architect remains the
+   * explicit estate overview. F always restores the overview on demand.
+   */
+  const fitDefaultView = useCallback(
+    (snap: boolean) => {
+      if (props.showGridOverlays) {
+        fitWholeCourse(snap);
+        return;
+      }
+      const app = appRef.current;
+      if (!app) return;
+      const completeHole = holes[activeHoleIndex]?.tee && holes[activeHoleIndex]?.green
+        ? holes[activeHoleIndex]
+        : holes.find((hole) => hole.tee && hole.green);
+      const cam = camRef.current;
+      if (completeHole?.tee && completeHole.green) {
+        const padding = 4;
+        const minX = Math.max(0, Math.min(completeHole.tee.x, completeHole.green.x) - padding);
+        const minY = Math.max(0, Math.min(completeHole.tee.y, completeHole.green.y) - padding);
+        const maxX = Math.min(course.width - 1, Math.max(completeHole.tee.x, completeHole.green.x) + padding);
+        const maxY = Math.min(course.height - 1, Math.max(completeHole.tee.y, completeHole.green.y) + padding);
+        cam.tcx = (minX + maxX + 1) / 2;
+        cam.tcy = (minY + maxY + 1) / 2;
+        cam.tzoom = Math.min(MAX_ZOOM, Math.max(
+          minimumZoom(),
+          fitZoomForTileBounds(
+            minX,
+            minY,
+            maxX,
+            maxY,
+            app.screen.width,
+            app.screen.height,
+            rotation,
+          ) * 1.08,
+        ));
+      } else {
+        cam.tcx = course.width / 2;
+        cam.tcy = course.height / 2;
+        const overview = fitZoomForTileBounds(
+          0,
+          0,
+          course.width - 1,
+          course.height - 1,
+          app.screen.width,
+          app.screen.height,
+          rotation,
+        );
+        cam.tzoom = Math.min(MAX_ZOOM, Math.max(minimumZoom(), overview * 1.42));
+      }
+      const centered = clampCenter(cam.tcx, cam.tcy, cam.tzoom);
+      cam.tcx = centered.x;
+      cam.tcy = centered.y;
+      if (snap) {
+        cam.cx = cam.tcx;
+        cam.cy = cam.tcy;
+        cam.zoom = cam.tzoom;
+      }
+      applyCamera();
+      props.onCameraCenter?.({ x: cam.tcx, y: cam.tcy });
+    },
+    [
+      activeHoleIndex,
+      applyCamera,
+      clampCenter,
+      course.height,
+      course.width,
+      fitWholeCourse,
+      holes,
+      minimumZoom,
+      props.onCameraCenter,
+      props.showGridOverlays,
+      rotation,
+    ],
   );
 
   /** End (or skip) the flyover: restore the exact pre-flyover camera. */
@@ -1007,6 +1592,30 @@ export function PixiStage(props: PixiStageProps) {
     [rotation]
   );
 
+  useEffect(() => {
+    if (import.meta.env.MODE !== "e2e" || !appReady) return;
+    const api = {
+      fitWholeCourse: () => fitWholeCourse(true),
+      viewport: (): { width: number; height: number } | null => {
+        const app = appRef.current;
+        return app ? { width: app.screen.width, height: app.screen.height } : null;
+      },
+      tileToScreen: (x: number, y: number): { x: number; y: number } | null => {
+        if (x < 0 || y < 0 || x >= course.width || y >= course.height) return null;
+        return worldPointToScreen(
+          x + 0.5,
+          y + 0.5,
+          getElevation(course, Math.floor(x), Math.floor(y)),
+        );
+      },
+      screenToTile,
+    };
+    window.__coursecraftPixiTest = api;
+    return () => {
+      if (window.__coursecraftPixiTest === api) delete window.__coursecraftPixiTest;
+    };
+  }, [appReady, course, fitWholeCourse, screenToTile, worldPointToScreen]);
+
   // ---------------------------------------------------------------------
   // App lifecycle
   // ---------------------------------------------------------------------
@@ -1019,8 +1628,7 @@ export function PixiStage(props: PixiStageProps) {
     const emoteSprites = emoteSpritesRef.current;
     const ambient = ambientRef.current;
     const perfState = perfRef.current;
-    const contourGraphics = contourGraphicsRef.current;
-    const silhouetteCache = silhouetteCacheRef.current;
+    const fallbackObstacleTextures = fallbackObstacleTexturesRef.current;
 
     const app = new PIXI.Application();
     setRendererError(false);
@@ -1034,7 +1642,7 @@ export function PixiStage(props: PixiStageProps) {
         height,
         backgroundColor: 0xdfe8d8, // soft parchment-green backdrop
         antialias: true,
-        resolution: (window.devicePixelRatio || 1) * props.resolutionScale,
+        resolution: (window.devicePixelRatio || 1) * initialRendererConfigRef.current.resolutionScale,
         autoDensity: true,
       });
 
@@ -1043,7 +1651,10 @@ export function PixiStage(props: PixiStageProps) {
         return;
       }
 
-      await loadAtlases(); // tolerant: missing atlas → procedural fallbacks
+      await loadAtlases(
+        initialRendererConfigRef.current.theme,
+        initialRendererConfigRef.current.graphicsQuality,
+      );
 
       app.canvas.style.display = "block";
       app.canvas.style.position = "absolute";
@@ -1063,16 +1674,16 @@ export function PixiStage(props: PixiStageProps) {
       const world = new PIXI.Container();
       const surround = new PIXI.Container();
       const terrain = new PIXI.Container();
-      const terrainContours = new PIXI.Container();
       const smoothSurfaces = new PIXI.Container();
       const estateSeam = new PIXI.Container();
       const terrainDecals = new PIXI.Container();
+      const surfaceEditor = new PIXI.Container();
       const objects = new PIXI.Container();
       objects.sortableChildren = true;
       const fx = new PIXI.Container();
       const screenOverlay = new PIXI.Container();
 
-      world.addChild(surround, terrain, terrainContours, smoothSurfaces, estateSeam, terrainDecals, objects, fx);
+      world.addChild(surround, terrain, smoothSurfaces, estateSeam, terrainDecals, surfaceEditor, objects, fx);
 
       // Ambient stack (ZKU-156): a full-screen multiply quad for the
       // time-of-day grade and a screen-space bird layer, both between the
@@ -1128,7 +1739,7 @@ export function PixiStage(props: PixiStageProps) {
       app.stage.hitArea = app.screen;
 
       appRef.current = app;
-      layersRef.current = { world, surround, terrain, terrainContours, smoothSurfaces, estateSeam, terrainDecals, objects, fx, screenOverlay };
+      layersRef.current = { world, surround, terrain, smoothSurfaces, estateSeam, terrainDecals, surfaceEditor, objects, fx, screenOverlay };
       setAppReady(true);
       devLog(`initialized ${width}x${height}`);
     };
@@ -1145,14 +1756,12 @@ export function PixiStage(props: PixiStageProps) {
       setAppReady(false);
       layersRef.current = null;
       chunksRef.current = [];
-      contourGraphics.clear();
-      contourFoamRef.current = [];
-      silhouetteCache.clear();
       prevTilesRef.current = null;
       prevElevationsRef.current = null;
       obstacleSpritesRef.current.clear();
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
+      surfaceEditorGraphicsRef.current = null;
       golferPoolRef.current.clear();
       flagPoolRef.current.clear();
       buildingSpritesRef.current = [];
@@ -1172,12 +1781,46 @@ export function PixiStage(props: PixiStageProps) {
       perfState.win.reset();
       waterAnimRef.current = { last: 0, wasAnimating: false };
       diamondTextureRef.current = null;
+      landscapeMaterialTexturesRef.current.clear();
+      fallbackObstacleTextures.clear();
       if (appRef.current) {
         appRef.current.destroy(true, { children: true, texture: true });
         appRef.current = null;
       }
     };
-  }, [props.resolutionScale]);
+  }, []);
+
+  // Resolution is an adaptive quality setting, not an app-lifecycle setting.
+  // Resize the current renderer in place so a quality tier change cannot tear
+  // down the canvas, blank the course, or interrupt an editor gesture.
+  useEffect(() => {
+    if (!appReady) return;
+    const app = appRef.current;
+    const container = containerRef.current;
+    if (!app || !container) return;
+    const width = Math.max(container.clientWidth || 100, 100);
+    const height = Math.max(container.clientHeight || 100, 100);
+    const resolution = (window.devicePixelRatio || 1) * props.resolutionScale;
+    if (
+      Math.abs(app.renderer.resolution - resolution) < 0.001
+      && app.screen.width === width
+      && app.screen.height === height
+    ) return;
+    app.renderer.resize(width, height, resolution);
+    app.stage.hitArea = app.screen;
+    applyCamera();
+  }, [appReady, applyCamera, props.resolutionScale]);
+
+  useEffect(() => {
+    if (!appReady) return;
+    let cancelled = false;
+    void loadAtlases(course.theme ?? "parkland", props.graphicsQuality).then(() => {
+      if (!cancelled) setAtlasRevision((revision) => revision + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [appReady, course.theme, props.graphicsQuality]);
 
   // Resize with ResizeObserver
   useEffect(() => {
@@ -1207,15 +1850,48 @@ export function PixiStage(props: PixiStageProps) {
     return () => ro.disconnect();
   }, [appReady, applyCamera, clampCenter, minimumZoom]);
 
-  // One-time camera init: snap to a whole-course fit.
+  // One-time camera init: snap to the selected normal/overview framing.
   useEffect(() => {
     if (!appReady) return;
     const cam = camRef.current;
     if (!cam.initialized) {
       cam.initialized = true;
-      fitWholeCourse(true);
+      fitDefaultView(true);
     }
-  }, [appReady, fitWholeCourse]);
+  }, [appReady, fitDefaultView]);
+
+  // Loading another fixture/save can replace a 220×140 course with a much
+  // smaller one after Pixi has initialized. Refit once per course/view
+  // signature so the new estate cannot appear as a tiny object off-center.
+  useEffect(() => {
+    if (!appReady || cameraState) return;
+    const completeHole = holes[activeHoleIndex]?.tee && holes[activeHoleIndex]?.green
+      ? holes[activeHoleIndex]
+      : holes.find((hole) => hole.tee && hole.green);
+    const signature = [
+      course.name,
+      course.width,
+      course.height,
+      props.showGridOverlays ? "overview" : "normal",
+      completeHole?.tee?.x ?? "-",
+      completeHole?.tee?.y ?? "-",
+      completeHole?.green?.x ?? "-",
+      completeHole?.green?.y ?? "-",
+    ].join(":");
+    if (lastAutoFitSignatureRef.current === signature) return;
+    lastAutoFitSignatureRef.current = signature;
+    fitDefaultView(true);
+  }, [
+    activeHoleIndex,
+    appReady,
+    cameraState,
+    course.height,
+    course.name,
+    course.width,
+    fitDefaultView,
+    holes,
+    props.showGridOverlays,
+  ]);
 
   useEffect(() => {
     if (!appReady) return;
@@ -1235,7 +1911,7 @@ export function PixiStage(props: PixiStageProps) {
     lastCameraStateRef.current = cameraState;
 
     if (!cameraState) {
-      fitWholeCourse(false);
+      fitDefaultView(false);
       return;
     }
     // App stores the exact object we report after manual input. Ignore that
@@ -1254,7 +1930,7 @@ export function PixiStage(props: PixiStageProps) {
     } else if (Number.isFinite(cameraState.zoom)) {
       cam.tzoom = Math.max(minimumZoom(), Math.min(MAX_ZOOM, cameraState.zoom));
     }
-  }, [appReady, cameraState, rotation, fitWholeCourse, minimumZoom]);
+  }, [appReady, cameraState, rotation, fitDefaultView, minimumZoom]);
 
   // Camera controls: wheel zoom-to-cursor, drag pan, WASD/QE, smoothing.
   useEffect(() => {
@@ -1403,16 +2079,23 @@ export function PixiStage(props: PixiStageProps) {
         }
         return;
       }
-      if (panAction) {
+      if (!cameraState && !e.repeat && e.code === "KeyF") {
+        fitWholeCourse(false);
+        e.preventDefault();
+      } else if (panAction) {
         keysRef.current.add(panAction);
         e.preventDefault();
       } else if (!e.repeat && !rotTweenRef.current && (binding === props.keybindings.rotateLeft || binding === props.keybindings.rotateRight)) {
         const right = binding === props.keybindings.rotateRight;
-        rotTweenRef.current = {
-          start: performance.now(),
-          toDeg: right ? -90 : 90,
-          next: nextRotation(rotation, right ? 1 : -1),
-        };
+        const next = nextRotation(rotation, right ? 1 : -1);
+        if (!props.animationsEnabled) setRotation(next);
+        else {
+          rotTweenRef.current = {
+            start: performance.now(),
+            toDeg: right ? -90 : 90,
+            next,
+          };
+        }
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -1554,7 +2237,7 @@ export function PixiStage(props: PixiStageProps) {
       app.ticker?.remove(tickCamera);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appReady, rotation, cameraState, applyCamera, clampCenter, minimumZoom, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing, props.keybindings, reportView]);
+  }, [appReady, rotation, cameraState, applyCamera, clampCenter, minimumZoom, props.animationsEnabled, props.edgeScroll, props.edgeScrollSpeed, props.cameraSmoothing, props.keybindings, reportView, fitWholeCourse]);
 
   // ---------------------------------------------------------------------
   // Regional surround — deterministic scenery beyond the playable estate
@@ -1821,10 +2504,6 @@ export function PixiStage(props: PixiStageProps) {
       return [{ x, y }, { x: x + 1, y }];
     };
 
-    // Quality tier drives how much of the material field and contour detail is
-    // sampled; it never changes the derived geometry.
-    const detailProfile = props.graphicsQuality;
-
     // Accessibility and legacy-biome tint fallback. Theme/material selection
     // itself is data-driven through the exhaustive terrain material registry.
     const THEMED_COLORS: Record<Terrain, number> = props.colorVision === "standard"
@@ -1834,6 +2513,7 @@ export function PixiStage(props: PixiStageProps) {
 
     /** Rebuild one chunk's contents in place (cliffs first, tops in depth order). */
     const buildChunk = (chunk: TerrainChunk, cx: number, cy: number) => {
+      const rebuildStartedAt = performance.now();
       const x0 = cx * CHUNK_TILES;
       const y0 = cy * CHUNK_TILES;
       const x1 = Math.min(w, x0 + CHUNK_TILES);
@@ -1929,15 +2609,9 @@ export function PixiStage(props: PixiStageProps) {
         const dzdx = (elev(x + 1, y) - elev(x - 1, y)) / 2;
         const dzdy = (elev(x, y + 1) - elev(x, y - 1)) / 2;
         let slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
-        // ZK-469: macro colour, grain, wear and mowing come from a continuous
-        // world-space field sampled at the tile's centre, not from a per-tile
-        // random variant. Neighbouring cells therefore land on neighbouring
-        // values and the surface stops reading as a quilt of diamonds.
-        const field = sampleMaterialField(terrain, x + 0.5, y + 0.5, {
-          axes: holeAxes,
-          profile: detailProfile,
-        });
-        slopeShade *= field.shade;
+        if (terrain === "fairway" || terrain === "green" || terrain === "tee") {
+          slopeShade *= mowingShadeAt(x, y, holeAxes);
+        }
         const legacyTint = shade(darken(THEMED_COLORS[terrain], EDGE_DARKEN), slopeShade);
 
         // Authored parkland sources are @2× but remain 64×32 in world space.
@@ -2030,14 +2704,41 @@ export function PixiStage(props: PixiStageProps) {
           });
         }
 
-        // Same-elevation material seams are no longer drawn here. ZK-468/469
-        // replaced the per-tile autotile strip — which could only ever be one
-        // diamond-edged band and re-cornered every cell — with the component
-        // contour layer below, where one owner draws the whole ordered stack
-        // along a single rounded boundary. The autotile frames stay in the
-        // atlas as the low-quality fallback path.
-        //
-        // Elevation joins remain exclusively the cliff layer.
+        // True 8-neighbor material boundary. The higher-priority surface owns
+        // the seam, so banks/lips never double-render. Elevation joins remain
+        // exclusively the cliff layer. Rotation maps all 256 masks into the
+        // fixed screen-oriented atlas frame set.
+        let boundaryMask = 0;
+        for (let index = 0; index < AUTOTILE_DIRECTIONS.length; index++) {
+          const { dx, dy } = AUTOTILE_DIRECTIONS[index];
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const nTerrain = visualTerrainAt(nx, ny);
+          const boundary = terrainBoundaryFor(terrain, nTerrain);
+          if (!boundary || boundary.owner !== terrain) continue;
+          if (elev(nx, ny) !== e) continue;
+          boundaryMask |= 1 << index;
+        }
+        const features = autotileFeatures(rotateAutotileMask(boundaryMask, rotation));
+        for (const feature of features) {
+          const transitionTexture = material.source === "atlas-2x"
+            ? getTerrainFrame(terrainTransitionFrame(material, feature))
+            : null;
+          if (!transitionTexture) continue;
+          const lip = new PIXI.Sprite(transitionTexture);
+          lip.anchor.set(0.5, 0);
+          // Recessed hazards keep their lip on the surrounding ground plane;
+          // the base material sits below it and the bank face bridges the gap.
+          lip.position.set(groundPosition.x, groundPosition.y);
+          lip.width = TILE_W;
+          lip.height = TILE_H;
+          lip.tint = props.colorVision === "standard" ? shade(0xffffff, slopeShade) : legacyTint;
+          chunk.container.addChild(lip);
+          if ((terrain === "water" || terrain === "wetland") && feature.kind === "edge") {
+            chunk.foamSprites.push({ sprite: lip, phase: ((x * 5 + y * 11) % 16) / 16 * Math.PI * 2 });
+          }
+        }
 
         // A restrained bevel on the higher tile softens elevation steps into
         // rounded hill caps. Links intentionally carries the strongest cue.
@@ -2083,6 +2784,7 @@ export function PixiStage(props: PixiStageProps) {
         chunk.container.addChild(border);
       }
       chunkRebuildsRef.current++;
+      recordM35Metric("chunkRebuild", performance.now() - rebuildStartedAt);
     };
 
     const chunkIndex = (cx: number, cy: number) => cy * cols + cx;
@@ -2148,259 +2850,46 @@ export function PixiStage(props: PixiStageProps) {
     prevTilesRef.current = course.tiles;
     prevElevationsRef.current = course.elevations;
     cullChunks();
-  }, [appReady, course, rotation, cullChunks, props.colorVision, props.graphicsQuality, props.terrainPatterns, props.worldSeed]);
+  }, [appReady, atlasRevision, course, rotation, cullChunks, props.colorVision, props.terrainPatterns, props.worldSeed]);
 
-  // ---------------------------------------------------------------------
-  // Component silhouettes and contour bands (ZK-468 / ZK-469)
-  //
-  // One rounded silhouette per connected whole-tile component, and one ordered
-  // band stack per seam drawn by that seam's single owner. Geometry is derived
-  // from `course.tiles` alone, so it survives reload, undo/redo and rotation
-  // unchanged; rotation only re-projects it.
-  //
-  // Graphics are keyed by component topology: a repaint that leaves a
-  // component's cells and halo alone reuses its display object untouched, so a
-  // brush stroke rebuilds the components it actually touched, not the course.
-  // ---------------------------------------------------------------------
-
+  // Connected landscape presentation. Gameplay remains whole-tile and the
+  // original chunk renderer stays underneath as the Low/failure fallback.
+  // Medium/High replace the visible top plane with rounded component masks,
+  // a shared visual heightfield, and world-anchored repeating materials.
   useEffect(() => {
     if (!appReady) return;
-    const layer = layersRef.current?.terrainContours;
-    if (!layer) return;
-
-    const snapshot = silhouetteCacheRef.current.update(
-      course.tiles,
-      course.width,
-      course.height,
-    );
-    const profile = props.graphicsQuality;
-    const live = new Set<string>();
-    const drawn = contourGraphicsRef.current;
-    contourFoamRef.current = [];
-
-    const elevationAt = (x: number, y: number) => getElevation(
-      course,
-      Math.max(0, Math.min(course.width - 1, Math.floor(x))),
-      Math.max(0, Math.min(course.height - 1, Math.floor(y))),
-    );
-    const project = (x: number, y: number, inset: number) => {
-      const point = worldToIso(x, y, elevationAt(x, y), rotation);
-      return { x: point.x, y: point.y + inset };
-    };
-
-    /**
-     * Offsets a contour run along its own normals and draws it as a filled
-     * ribbon. Because every band of a seam is generated from the same shared
-     * contour, adjacent bands cannot separate and the two terrains cannot each
-     * draw their own edge.
-     */
-    const ribbon = (
-      graphics: PIXI.Graphics,
-      points: readonly { x: number; y: number }[],
-      terrain: Terrain,
-      inner: number,
-      outer: number,
-      inset: number,
-      wobble: number,
-    ) => {
-      if (points.length < 2) return;
-      const near: Array<{ x: number; y: number }> = [];
-      const far: Array<{ x: number; y: number }> = [];
-      let travelled = 0;
-      for (let index = 0; index < points.length; index++) {
-        const current = points[index];
-        const previous = points[Math.max(0, index - 1)];
-        const next = points[Math.min(points.length - 1, index + 1)];
-        const dx = next.x - previous.x;
-        const dy = next.y - previous.y;
-        const length = Math.hypot(dx, dy) || 1;
-        // Inward normal of a clockwise ring in y-down world space. Band offsets
-        // are signed with negative meaning *outside* the owner, so the offset
-        // axis has to point into the owner — using the outward normal here
-        // mirrors every band stack and paints the neighbour's apron inside the
-        // surface it belongs to.
-        const nx = -dy / length;
-        const ny = dx / length;
-        if (index > 0) travelled += Math.hypot(current.x - previous.x, current.y - previous.y);
-        // Deterministic silhouette noise: a function of arc length and world
-        // position, so a stretch of edge keeps its shape across rebuilds.
-        const jitter = wobble === 0
-          ? 0
-          : silhouetteOffsetAt(terrain, travelled, current.x, current.y) * wobble;
-        near.push(project(current.x + nx * (inner + jitter), current.y + ny * (inner + jitter), inset));
-        far.push(project(current.x + nx * (outer + jitter), current.y + ny * (outer + jitter), inset));
-      }
-      const polygon: number[] = [];
-      for (const point of near) polygon.push(point.x, point.y);
-      for (let index = far.length - 1; index >= 0; index--) polygon.push(far[index].x, far[index].y);
-      graphics.poly(polygon);
-    };
-
-    const drawComponent = (component: TerrainComponent): PIXI.Container => {
-      const holder = new PIXI.Container();
-      holder.eventMode = "none";
-      const wild = wildnessProfile(component.terrain);
-
-      for (const segment of component.boundarySegments) {
-        if (!segment.other) continue;
-        const seam = contourProfileFor(segment.terrain, segment.other, {
-          theme: course.theme,
-          colorVision: props.colorVision,
-          profile,
-        });
-        // Exactly one side of a seam owns it. The other side draws nothing,
-        // which is what makes a doubled edge structurally impossible.
-        if (!seam || seam.owner !== segment.terrain) continue;
-
-        for (const band of seam.bands) {
-          const graphics = new PIXI.Graphics();
-          graphics.eventMode = "none";
-          // Bands sit progressively lower for recessed hazards, which is what
-          // reads as a layered depression rather than a flat colour change.
-          const inset = band.depth * terrainSurfaceInsetPx(seam.owner) / 3;
-          ribbon(
-            graphics,
-            segment.points,
-            segment.terrain,
-            band.offset,
-            band.offset + band.width,
-            inset,
-            band.offset < 0 ? 1 : 0.5,
-          );
-          graphics.fill({ color: band.color, alpha: band.alpha });
-          holder.addChild(graphics);
-          if (band.role === "water-shallow") {
-            contourFoamRef.current.push({
-              graphics,
-              phase: waterFieldPhase(segment.points[0].x, segment.points[0].y, 0),
-              baseAlpha: band.alpha,
-            });
-          }
-
-          // Arc-length motifs: density follows the length of the boundary, not
-          // the number of cells it happens to cross.
-          if (band.detail === "none") continue;
-          const motifs = detailsAlongContour(segment.points, {
-            motif: band.detail,
-            profile,
-            spacingScale: 1 / Math.max(0.25, wild.density || 0.5),
-          });
-          if (motifs.length === 0) continue;
-          const decor = new PIXI.Graphics();
-          decor.eventMode = "none";
-          for (const motif of motifs) {
-            const at = band.offset + band.width / 2;
-            const position = project(motif.x + motif.nx * at, motif.y + motif.ny * at, inset);
-            const height = (band.detail === "reeds" ? 9 : band.detail === "tufts" ? 6 : 3) * motif.scale;
-            if (band.detail === "reeds" || band.detail === "tufts" || band.detail === "blades") {
-              decor.moveTo(position.x, position.y);
-              decor.lineTo(position.x + motif.lean * height, position.y - height);
-            } else {
-              decor.circle(position.x, position.y, 1.1 * motif.scale);
-            }
-          }
-          if (band.detail === "pebbles" || band.detail === "stones") {
-            decor.fill({ color: band.color, alpha: 0.85 });
-          } else {
-            decor.stroke({ width: 1.1, color: band.color, alpha: 0.8, cap: "round" });
-          }
-          holder.addChild(decor);
-        }
-      }
-      return holder;
-    };
-
-    for (const component of snapshot.components) {
-      live.add(component.topologyKey);
-      const existing = drawn.get(component.topologyKey);
-      if (existing && existing.rotation === rotation && existing.profile === profile) {
-        // Unchanged topology at the same rotation and quality: reuse verbatim.
-        existing.holder.zIndex = component.bounds.minX + component.bounds.minY;
-        continue;
-      }
-      existing?.holder.destroy({ children: true });
-      const holder = drawComponent(component);
-      holder.zIndex = component.bounds.minX + component.bounds.minY;
-      layer.addChild(holder);
-      drawn.set(component.topologyKey, { holder, rotation, profile });
-    }
-    for (const [key, entry] of drawn) {
-      if (live.has(key)) continue;
-      entry.holder.destroy({ children: true });
-      drawn.delete(key);
-    }
-    layer.sortableChildren = true;
-    layer.sortChildren();
-    devLog(
-      `contours: ${snapshot.stats.components} components, ` +
-      `${snapshot.stats.hits} cached, ${snapshot.stats.misses} rebuilt`,
-    );
-  }, [
-    appReady,
-    course,
-    rotation,
-    props.colorVision,
-    props.graphicsQuality,
-  ]);
-
-  // Material-clipped surface intent. New Curve/Area contours use their 4×
-  // accepted mask for the silhouette, but their interior remains the same
-  // deterministic atlas-tile field used by legacy terrain.
-  useEffect(() => {
-    if (!appReady) return;
+    const rebuildStartedAt = performance.now();
     const layer = layersRef.current?.smoothSurfaces;
     if (!layer) return;
-    layer.removeChildren().forEach((child) => child.destroy());
+    layer.removeChildren().forEach((child) => child.destroy({ children: true }));
     surfaceWaterSpritesRef.current = [];
-    const styles: Partial<Record<Terrain, { color: number; width: number; alpha: number }>> = {};
-    const features = (course.surfaceIntent?.features ?? []).filter(() => false);
-    const elevationAt = (point: Point) => getElevation(
-      course,
-      Math.max(0, Math.min(course.width - 1, Math.floor(point.x))),
-      Math.max(0, Math.min(course.height - 1, Math.floor(point.y))),
+    if (props.graphicsQuality === "low") return;
+
+    const quality = props.graphicsQuality;
+    const subdivisions = quality === "high" ? 4 : 2;
+    const components = landscapeComponents;
+    const heightfield = visualHeightfield;
+    const project = (point: Point) => worldToIso(
+      point.x,
+      point.y,
+      sampleVisualHeight(heightfield, point.x, point.y),
+      rotation,
     );
-    const project = (point: Point) => worldToIso(point.x, point.y, elevationAt(point), rotation);
-    const holeAxes = course.holes
-      .filter((hole) => hole.tee && hole.green)
-      .map((hole) => {
-        const ax = hole.tee!.x;
-        const ay = hole.tee!.y;
-        const dx = hole.green!.x - ax;
-        const dy = hole.green!.y - ay;
-        return { ax, ay, dx, dy, len2: Math.max(1e-6, dx * dx + dy * dy) };
-      });
-    const ringArea = (ring: readonly Point[]) => {
-      let area = 0;
-      for (let index = 0; index < ring.length; index++) {
-        const point = ring[index];
-        const next = ring[(index + 1) % ring.length];
-        area += point.x * next.y - next.x * point.y;
-      }
-      return area / 2;
-    };
-    const ringContains = (ring: readonly Point[], point: Point) => {
-      let inside = false;
-      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-        const a = ring[i];
-        const b = ring[j];
-        if (
-          (a.y > point.y) !== (b.y > point.y) &&
-          point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y || Number.EPSILON) + a.x
-        ) inside = !inside;
-      }
-      return inside;
-    };
+    const themedColors: Record<Terrain, number> = props.colorVision === "standard"
+      ? { ...COLORS, ...getLandTheme(course.theme).tileTints }
+      : TERRAIN_PALETTES[props.colorVision];
+
     const buildMask = (rings: readonly (readonly Point[])[]) => {
       const mask = new PIXI.Graphics();
       mask.eventMode = "none";
       const nodes = rings
         .filter((ring) => ring.length >= 3)
-        .map((ring) => ({ ring, area: Math.abs(ringArea(ring)), parent: -1, depth: 0 }))
+        .map((ring) => ({ ring, area: Math.abs(ringSignedArea(ring)), parent: -1, depth: 0 }))
         .sort((a, b) => b.area - a.area);
       for (let index = 0; index < nodes.length; index++) {
         const point = nodes[index].ring[0];
         for (let parent = index - 1; parent >= 0; parent--) {
-          if (!ringContains(nodes[parent].ring, point)) continue;
+          if (!pointInLandscapeRing(nodes[parent].ring, point)) continue;
           nodes[index].parent = parent;
           nodes[index].depth = nodes[parent].depth + 1;
           break;
@@ -2423,101 +2912,235 @@ export function PixiStage(props: PixiStageProps) {
       return mask;
     };
 
-    const diamond = diamondTextureRef.current;
-    for (const feature of [...features].sort((a, b) => a.order - b.order)) {
-      const validCoverage = feature.coverage.filter((index) => course.tiles[index] === feature.terrain);
-      if (validCoverage.length === 0 || !feature.renderRings?.length) continue;
-      const material = getTerrainMaterial(course.theme, feature.terrain);
-      const materialLayer = new PIXI.Container();
-      materialLayer.eventMode = "none";
-      for (const index of validCoverage) {
+    const textureFor = (terrain: Terrain) => {
+      const baseColor = themedColors[terrain];
+      const authored = props.colorVision === "standard" && !props.terrainPatterns
+        ? getLandscapeMaterialField(course.theme, terrain, quality)
+        : null;
+      if (authored && !authored.destroyed) return authored;
+      const key = [
+        course.theme ?? "parkland",
+        terrain,
+        quality,
+        props.colorVision,
+        props.terrainPatterns ? "pattern" : "plain",
+        baseColor.toString(16),
+      ].join(":");
+      let texture = landscapeMaterialTexturesRef.current.get(key);
+      if (!texture || texture.destroyed) {
+        texture = createLandscapeMaterialTexture(
+          terrain,
+          baseColor,
+          quality,
+          props.terrainPatterns,
+        );
+        landscapeMaterialTexturesRef.current.set(key, texture);
+      }
+      return texture;
+    };
+
+    const componentDepth = (component: LandscapeComponent) => {
+      let total = 0;
+      const step = Math.max(1, Math.floor(component.cells.length / 64));
+      let samples = 0;
+      for (let cursor = 0; cursor < component.cells.length; cursor += step) {
+        const index = component.cells[cursor];
         const x = index % course.width;
         const y = Math.floor(index / course.width);
-        const elevation = getElevation(course, x, y);
-        const position = worldToIso(x + 0.5, y, elevation, rotation);
-        const authored = material.source === "atlas-2x"
-          ? getTerrainFrame(pickTerrainBaseFrame(material, x, y))
-          : null;
-        if (!authored && !diamond) continue;
-        const sprite = new PIXI.Sprite(authored ?? diamond!);
-        sprite.anchor.set(0.5, 0);
-        sprite.position.set(position.x, position.y);
-        sprite.width = authored ? TILE_W + 0.75 : TILE_W;
-        sprite.height = authored ? TILE_H + 0.5 : TILE_H;
-        const dzdx = (getElevation(course, x + 1, y) - getElevation(course, x - 1, y)) / 2;
-        const dzdy = (getElevation(course, x, y + 1) - getElevation(course, x, y - 1)) / 2;
-        let slopeShade = Math.max(0.8, Math.min(1.12, 1 - 0.07 * (dzdx + dzdy)));
-        if (feature.terrain === "fairway" || feature.terrain === "green" || feature.terrain === "tee") {
-          slopeShade *= mowingShadeAt(x, y, holeAxes);
-        }
-        sprite.tint = shade(0xffffff, slopeShade);
-        materialLayer.addChild(sprite);
-        if (feature.terrain === "water" || feature.terrain === "wetland") {
-          surfaceWaterSpritesRef.current.push({
-            sprite,
-            baseTint: sprite.tint,
-            phase: waterShimmerPhase(x, y),
-            gx: x,
-            gy: y,
-          });
+        total += isoDepth(
+          x + 0.5,
+          y + 0.5,
+          sampleLandscapeSurfaceHeight(heightfield, component, x + 0.5, y + 0.5),
+          rotation,
+        );
+        samples++;
+      }
+      return total / Math.max(1, samples);
+    };
+
+    const bandLayer = new PIXI.Container();
+    bandLayer.eventMode = "none";
+    bandLayer.sortableChildren = true;
+    let remainingShoreRocks = quality === "high" ? 280 : 180;
+    let remainingWaterComponents = components.filter(
+      (component) => component.terrain === "water",
+    ).length;
+    const sortedComponents = [...components].sort((a, b) => componentDepth(a) - componentDepth(b));
+    for (const component of sortedComponents) {
+      const positions: number[] = [];
+      const uvs: number[] = [];
+      const indices: number[] = [];
+      const vertexIndexes = new Map<number, number>();
+      const subWidth = course.width * subdivisions + 1;
+      const vertexAt = (sx: number, sy: number) => {
+        const key = sy * subWidth + sx;
+        const cached = vertexIndexes.get(key);
+        if (cached != null) return cached;
+        const x = sx / subdivisions;
+        const y = sy / subdivisions;
+        const point = worldToIso(
+          x,
+          y,
+          sampleLandscapeSurfaceHeight(heightfield, component, x, y),
+          rotation,
+        );
+        const index = positions.length / 2;
+        positions.push(point.x, point.y);
+        // Eight-tile period, anchored to unrotated world coordinates.
+        uvs.push(x / 8, y / 8);
+        vertexIndexes.set(key, index);
+        return index;
+      };
+      for (const cell of component.cells) {
+        const x = cell % course.width;
+        const y = Math.floor(cell / course.width);
+        for (let dy = 0; dy < subdivisions; dy++) for (let dx = 0; dx < subdivisions; dx++) {
+          const sx = x * subdivisions + dx;
+          const sy = y * subdivisions + dy;
+          const topLeft = vertexAt(sx, sy);
+          const topRight = vertexAt(sx + 1, sy);
+          const bottomRight = vertexAt(sx + 1, sy + 1);
+          const bottomLeft = vertexAt(sx, sy + 1);
+          indices.push(topLeft, topRight, bottomRight, topLeft, bottomRight, bottomLeft);
         }
       }
-      const mask = buildMask(feature.renderRings);
-      materialLayer.mask = mask;
-      layer.addChild(materialLayer, mask);
-      const style = styles[feature.terrain];
-      if (style) {
-        const outline = new PIXI.Graphics();
-        outline.eventMode = "none";
-        const sampleTerrain = (point: Point): Terrain | null => {
-          const x = Math.floor(point.x);
-          const y = Math.floor(point.y);
-          if (x < 0 || y < 0 || x >= course.width || y >= course.height) return null;
-          return course.tiles[y * course.width + x];
-        };
-        for (const ring of feature.renderRings) {
-          let drawing = false;
-          for (let index = 0; index < ring.length; index++) {
-            const start = ring[index];
-            const end = ring[(index + 1) % ring.length];
-            const dx = end.x - start.x;
-            const dy = end.y - start.y;
-            const length = Math.hypot(dx, dy);
-            if (length <= 1e-6) continue;
-            const midpoint = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
-            const normal = { x: -dy / length * 0.9, y: dx / length * 0.9 };
-            const sideA = sampleTerrain({ x: midpoint.x + normal.x, y: midpoint.y + normal.y });
-            const sideB = sampleTerrain({ x: midpoint.x - normal.x, y: midpoint.y - normal.y });
-            const ownsBoundary =
-              (sideA === feature.terrain && sideB !== feature.terrain) ||
-              (sideB === feature.terrain && sideA !== feature.terrain);
-            if (!ownsBoundary) {
-              drawing = false;
-              continue;
-            }
-            const projectedStart = project(start);
-            const projectedEnd = project(end);
-            if (!drawing) outline.moveTo(projectedStart.x, projectedStart.y);
-            outline.lineTo(projectedEnd.x, projectedEnd.y);
-            drawing = true;
-          }
-        }
-        outline.stroke({
-          width: style.width,
-          color: style.color,
-          alpha: style.alpha,
-          join: "round",
-          cap: "round",
+      if (indices.length === 0) continue;
+      const geometry = new PIXI.MeshGeometry({
+        positions: new Float32Array(positions),
+        uvs: new Float32Array(uvs),
+        indices: new Uint32Array(indices),
+      });
+      const bunkerVisualType = component.terrain === "sand"
+        ? classifyBunkerVisualType(
+          component.cells,
+          course.tiles,
+          course.width,
+          course.height,
+        )
+        : null;
+      const visualRings = bunkerVisualType
+        ? buildBunkerVisualRings(
+          component.rings,
+          component.topologyKey,
+          component.cells.length,
+          bunkerVisualType,
+        )
+        : component.rings;
+      if (component.terrain === "sand") {
+        // The authoritative sand cells stay whole for gameplay. Visually,
+        // replace their square base with world-anchored rough, then reveal
+        // sand through the organic bunker mask below.
+        const roughUnderlay = new PIXI.Mesh({
+          geometry,
+          texture: textureFor("rough"),
         });
-        layer.addChild(outline);
+        roughUnderlay.eventMode = "none";
+        layer.addChild(roughUnderlay);
+      }
+      const mesh = new PIXI.Mesh({ geometry, texture: textureFor(component.terrain) });
+      mesh.eventMode = "none";
+      const mask = buildMask(visualRings);
+      mesh.mask = mask;
+      layer.addChild(mesh, mask);
+      if (component.terrain === "water" || component.terrain === "wetland") {
+        const firstCell = component.cells[0];
+        const gx = firstCell % course.width;
+        const gy = Math.floor(firstCell / course.width);
+        surfaceWaterSpritesRef.current.push({
+          sprite: mesh,
+          baseTint: 0xffffff,
+          phase: waterShimmerPhase(gx, gy),
+          gx,
+          gy,
+        });
+      }
+
+      const boundaryRuns = buildLandscapeBoundaryRuns(
+        visualRings,
+        component.terrain,
+        course.tiles,
+        course.width,
+        course.height,
+      );
+      let hasOwnedRockyShore = false;
+      for (const run of boundaryRuns) {
+        const edgeStyle = landscapeEdgeStyle(
+          component.terrain,
+          run.outsideTerrain,
+          bunkerVisualType ?? "greenside",
+        );
+        if (!edgeStyle) continue;
+        hasOwnedRockyShore ||= Boolean(edgeStyle.shoreRocks);
+        // Draw broad-to-narrow semantic bands only on the pair-owned run so
+        // adjacent components cannot double-stroke the same boundary.
+        for (let strokeIndex = 0; strokeIndex < edgeStyle.bands.length; strokeIndex++) {
+          const stroke = edgeStyle.bands[strokeIndex];
+          const color = "color" in stroke.color
+            ? stroke.color.color
+            : shade(themedColors[stroke.color.terrain], stroke.color.shade);
+          const graphics = new PIXI.Graphics();
+          graphics.eventMode = "none";
+          graphics.zIndex = edgeStyle.priority + strokeIndex / 100;
+          const points = run.points.map(project);
+          if (points.length < 2) continue;
+          graphics.moveTo(points[0].x, points[0].y);
+          for (let index = 1; index < points.length; index++) {
+            graphics.lineTo(points[index].x, points[index].y);
+          }
+          graphics.stroke({
+            width: stroke.width,
+            color,
+            alpha: stroke.alpha,
+            join: "round",
+            cap: "round",
+          });
+          bandLayer.addChild(graphics);
+        }
+      }
+      if (hasOwnedRockyShore && remainingShoreRocks > 0) {
+        const componentBudget = Math.ceil(
+          remainingShoreRocks / Math.max(1, remainingWaterComponents),
+        );
+        remainingWaterComponents--;
+        const placements = buildShoreRockPlacements(
+          component.rings,
+          component.topologyKey,
+          componentBudget,
+        );
+        remainingShoreRocks -= placements.length;
+        if (placements.length > 0) {
+          const rocks = new PIXI.Graphics();
+          rocks.eventMode = "none";
+          rocks.zIndex = 71;
+          const rockTones = [0x70736a, 0x89877a, 0x9f9986] as const;
+          for (const placement of placements) {
+            const point = project(placement);
+            rocks.ellipse(
+              point.x,
+              point.y + placement.ry * 0.12,
+              placement.rx + 0.9,
+              placement.ry + 0.55,
+            );
+            rocks.fill({ color: 0x3d443e, alpha: 0.78 });
+            rocks.ellipse(point.x, point.y, placement.rx, placement.ry);
+            rocks.fill({ color: rockTones[placement.tone], alpha: 0.94 });
+            rocks.ellipse(
+              point.x - placement.rx * 0.2,
+              point.y - placement.ry * 0.28,
+              placement.rx * 0.38,
+              placement.ry * 0.3,
+            );
+            rocks.fill({ color: 0xc8c1a7, alpha: 0.44 });
+          }
+          bandLayer.addChild(rocks);
+        }
       }
     }
-
-    // Operations metadata shares the Course root but cannot alter this layer;
-    // depend only on the visual fields below to avoid costly rebuilds.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    layer.addChild(bandLayer);
+    recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
   }, [
     appReady,
+    atlasRevision,
     course.tiles,
     course.elevations,
     course.width,
@@ -2525,9 +3148,12 @@ export function PixiStage(props: PixiStageProps) {
     course.holes,
     course.surfaceIntent,
     course.theme,
+    landscapeComponents,
     props.colorVision,
+    props.graphicsQuality,
     props.terrainPatterns,
     rotation,
+    visualHeightfield,
   ]);
 
   // ---------------------------------------------------------------------
@@ -2544,6 +3170,8 @@ export function PixiStage(props: PixiStageProps) {
       entry.sprite.destroy();
       entry.shadow.parent?.removeChild(entry.shadow);
       entry.shadow.destroy();
+      entry.habitat?.parent?.removeChild(entry.habitat);
+      entry.habitat?.destroy();
     });
     obstacleSpritesRef.current.clear();
 
@@ -2562,15 +3190,23 @@ export function PixiStage(props: PixiStageProps) {
       Math.hypot(building.x - x, building.y - y) <= 8
     );
 
-    const addSprite = (obs: Obstacle, texture: PIXI.Texture, variant: NaturalPropVariant, scale: number) => {
+    const addSprite = (
+      obs: Obstacle,
+      texture: PIXI.Texture,
+      variant: NaturalPropVariant,
+      scale: number,
+      habitatPatch: TreeHabitatPatch | null,
+    ) => {
       const layersNow = layersRef.current;
       if (!layersNow) return;
       const key = `${obs.x},${obs.y}`;
       if (obstacleSpritesRef.current.has(key)) return;
       const sprite = new PIXI.Sprite(texture);
       // Ground-anchored via the shared placement helper (ZKU-140).
-      const e = getElevation(course, obs.x, obs.y);
-      const placement = placeObject({ x: obs.x, y: obs.y, w: 1, d: 1 }, e, rotation);
+      const footprint = { x: obs.x, y: obs.y, w: 1, d: 1 };
+      const anchor = frontCorner(footprint, rotation);
+      const e = surfaceHeightAt(anchor.x, anchor.y);
+      const placement = placeObject(footprint, e, rotation);
       sprite.anchor.set(variant.anchor[0], variant.anchor[1]);
       sprite.position.set(placement.position.x, placement.position.y);
       const size = TILE_W * 0.72 * scale;
@@ -2579,22 +3215,104 @@ export function PixiStage(props: PixiStageProps) {
       sprite.zIndex = placement.zIndex;
       layersNow.objects.addChild(sprite);
 
+      const habitat = habitatPatch ? new PIXI.Graphics() : null;
+      if (habitat && habitatPatch) {
+        const palettes = {
+          pine_straw: [0x68472b, 0x875b31, 0xaa783f],
+          leaf_litter: [0x6c4e32, 0x896039, 0xac804c],
+          dry_soil: [0x876343, 0xa77a4f, 0xc29661],
+        } as const;
+        const tones = palettes[habitatPatch.kind];
+        for (const lobe of habitatPatch.lobes) {
+          habitat.ellipse(
+            lobe.offsetX,
+            lobe.offsetY,
+            lobe.radiusX + 1.8,
+            lobe.radiusY + 0.8,
+          );
+          habitat.fill({
+            color: habitatPatch.kind === "dry_soil" ? 0x665039 : 0x3d542f,
+            alpha: 0.16,
+          });
+          habitat.ellipse(
+            lobe.offsetX,
+            lobe.offsetY,
+            lobe.radiusX,
+            lobe.radiusY,
+          );
+          habitat.fill({ color: tones[lobe.tone], alpha: 0.54 });
+        }
+        for (const root of habitatPatch.roots) {
+          habitat.moveTo(0, 0);
+          habitat.lineTo(
+            Math.cos(root.angle) * root.length,
+            Math.sin(root.angle) * root.length * 0.4,
+          );
+          habitat.stroke({
+            width: root.width,
+            color: habitatPatch.kind === "dry_soil" ? 0x60462f : 0x4d3929,
+            alpha: 0.4,
+            cap: "round",
+          });
+        }
+        for (const detail of habitatPatch.details) {
+          if (habitatPatch.kind === "pine_straw") {
+            const length = detail.size * 2.7;
+            habitat.moveTo(
+              detail.x - Math.cos(detail.angle) * length / 2,
+              detail.y - Math.sin(detail.angle) * length * 0.22,
+            );
+            habitat.lineTo(
+              detail.x + Math.cos(detail.angle) * length / 2,
+              detail.y + Math.sin(detail.angle) * length * 0.22,
+            );
+            habitat.stroke({
+              width: Math.max(0.65, detail.size * 0.55),
+              color: tones[detail.tone],
+              alpha: 0.72,
+              cap: "round",
+            });
+          } else if (habitatPatch.kind === "leaf_litter") {
+            habitat.ellipse(
+              detail.x,
+              detail.y,
+              detail.size * 1.35,
+              detail.size * 0.62,
+            );
+            habitat.fill({ color: tones[detail.tone], alpha: 0.74 });
+          } else {
+            habitat.circle(detail.x, detail.y, detail.size * 0.72);
+            habitat.fill({ color: tones[detail.tone], alpha: 0.7 });
+          }
+        }
+        habitat.position.set(
+          placement.position.x,
+          placement.position.y - TILE_H / 2 + 1,
+        );
+        layersNow.terrainDecals.addChild(habitat);
+      }
+
       // Drop shadow (ZKU-151): soft ellipse at the base, offset SE to match
       // the fixed NW sun; lives in the decal layer under all objects.
       const shadow = new PIXI.Graphics();
+      const habitatShadowScale = habitatPatch ? 0.68 : 1;
       shadow.ellipse(
         variant.shadow.offsetX,
         variant.shadow.offsetY,
-        variant.shadow.radiusX * scale,
-        variant.shadow.radiusY * scale
+        variant.shadow.radiusX * scale * habitatShadowScale,
+        variant.shadow.radiusY * scale * habitatShadowScale
       );
-      shadow.fill({ color: 0x000000, alpha: variant.shadow.alpha });
+      shadow.fill({
+        color: 0x000000,
+        alpha: variant.shadow.alpha * (habitatPatch ? 0.46 : 1),
+      });
       shadow.position.set(placement.position.x, placement.position.y - TILE_H / 2 + 1);
       layersNow.terrainDecals.addChild(shadow);
 
       obstacleSpritesRef.current.set(key, {
         sprite,
         shadow,
+        habitat,
         swayPhase: variant.sway ? ((obs.x * 17 + obs.y * 29) % 32) / 32 * Math.PI * 2 : null,
         sway: variant.sway,
         tall: variant.occlusion.tall,
@@ -2602,7 +3320,7 @@ export function PixiStage(props: PixiStageProps) {
       });
     };
 
-    obstacles.forEach((obs) => {
+    const preparedObstacles = obstacles.map((obs) => {
       const index = obs.y * course.width + obs.x;
       const context = {
         theme: course.theme,
@@ -2615,22 +3333,66 @@ export function PixiStage(props: PixiStageProps) {
       };
       const selected = pickNaturalProp(context);
       const fallback = pickNaturalProp({ ...context, theme: "parkland" });
+      const habitat = deriveTreeHabitat(
+        selected.variant.frame,
+        obs,
+        props.worldSeed,
+        selected.scale,
+      );
+      return { obs, selected, fallback, habitat };
+    });
+    const habitatBudget = props.graphicsQuality === "high"
+      ? 110
+      : props.graphicsQuality === "medium"
+        ? 70
+        : 30;
+    const habitatKeys = new Set(
+      preparedObstacles
+        .filter((entry) => entry.habitat)
+        .sort((a, b) => a.habitat!.rank - b.habitat!.rank)
+        .slice(0, habitatBudget)
+        .map((entry) => `${entry.obs.x},${entry.obs.y}`),
+    );
+
+    preparedObstacles.forEach(({ obs, selected, fallback, habitat }) => {
+      const selectedHabitat = habitatKeys.has(`${obs.x},${obs.y}`)
+        ? habitat
+        : null;
       const atlasTex = getPropFrame(selected.variant.frame) ?? getPropFrame(fallback.variant.frame);
       if (atlasTex) {
-        addSprite(obs, atlasTex, selected.variant, selected.scale);
+        addSprite(obs, atlasTex, selected.variant, selected.scale, selectedHabitat);
         return;
       }
-      // Legacy fallback: runtime-rasterized SVG icons.
-      const spriteOrPromise = getObstacleSprite(obs.type, tileSize);
-      if (spriteOrPromise instanceof HTMLImageElement) {
-        addSprite(obs, PIXI.Texture.from(spriteOrPromise), fallback.variant, fallback.scale);
-      } else if (spriteOrPromise instanceof Promise) {
-        void spriteOrPromise.then((img: HTMLImageElement) => {
-          if (appRef.current) addSprite(obs, PIXI.Texture.from(img), fallback.variant, fallback.scale);
-        });
+      // Immediate renderer-native fallback. This cannot reject later or leave
+      // a missing obstacle because requestAnimationFrame was throttled.
+      const fallbackKey = `${obs.type}:${selected.variant.frame}`;
+      let fallbackTexture = fallbackObstacleTexturesRef.current.get(fallbackKey);
+      if (!fallbackTexture) {
+        fallbackTexture = createFallbackObstacleTexture(
+          obs.type,
+          selected.variant.frame,
+        );
+        fallbackObstacleTexturesRef.current.set(fallbackKey, fallbackTexture);
       }
+      addSprite(
+        obs,
+        fallbackTexture,
+        selected.variant,
+        selected.scale,
+        selectedHabitat,
+      );
     });
-  }, [appReady, obstacles, tileSize, props.showObstacles, props.worldSeed, course, rotation]);
+  }, [
+    appReady,
+    obstacles,
+    tileSize,
+    props.graphicsQuality,
+    props.showObstacles,
+    props.worldSeed,
+    course,
+    rotation,
+    surfaceHeightAt,
+  ]);
 
   // ---------------------------------------------------------------------
   // Objects layer — buildings (multi-tile footprints, ZKU-152)
@@ -2654,8 +3416,10 @@ export function PixiStage(props: PixiStageProps) {
         ?? getPropFrame(spec.frame as AtlasFrame)
         ?? getPropFrame("clubhouse");
       if (!tex) continue;
-      const e = getElevation(course, b.x, b.y);
-      const placement = placeObject({ x: b.x, y: b.y, w: spec.w, d: spec.d }, e, rotation);
+      const footprint = { x: b.x, y: b.y, w: spec.w, d: spec.d };
+      const anchor = frontCorner(footprint, rotation);
+      const e = surfaceHeightAt(anchor.x, anchor.y);
+      const placement = placeObject(footprint, e, rotation);
       const sprite = new PIXI.Sprite(tex);
       sprite.anchor.set(0.5, 1);
       sprite.position.set(placement.position.x, placement.position.y);
@@ -2665,7 +3429,7 @@ export function PixiStage(props: PixiStageProps) {
       layers.objects.addChild(sprite);
       buildingSpritesRef.current.push(sprite);
     }
-  }, [appReady, course, rotation]);
+  }, [appReady, course, rotation, surfaceHeightAt]);
 
   // M31-M33 property assets use lightweight deterministic vector footprints.
   // They rotate/zoom/depth-sort with the world and never create one entity per
@@ -2693,7 +3457,10 @@ export function PixiStage(props: PixiStageProps) {
     }[course.theme ?? "parkland"];
     const lodgingAssets = (course.property?.assets ?? []).filter((asset) => asset.enabled && ["lodge", "hotel", "cottages"].includes(asset.kind));
     for (const asset of course.property?.assets ?? []) {
-      const elevation = getElevation(course, asset.x, asset.y);
+      const elevation = surfaceHeightAt(
+        asset.x + asset.width / 2,
+        asset.y + asset.height / 2,
+      );
       const corners = [
         worldToIso(asset.x, asset.y, elevation, rotation),
         worldToIso(asset.x + asset.width, asset.y, elevation, rotation),
@@ -2803,7 +3570,15 @@ export function PixiStage(props: PixiStageProps) {
         const center = worldToIso(asset.x + asset.width / 2, asset.y + asset.height / 2, elevation, rotation);
         const destination = lodgingAssets[0];
         if (destination) {
-          const target = worldToIso(destination.x + destination.width / 2, destination.y + destination.height / 2, getElevation(course, destination.x, destination.y), rotation);
+          const target = worldToIso(
+            destination.x + destination.width / 2,
+            destination.y + destination.height / 2,
+            surfaceHeightAt(
+              destination.x + destination.width / 2,
+              destination.y + destination.height / 2,
+            ),
+            rotation,
+          );
           graphic.moveTo(center.x, center.y - 5);
           graphic.lineTo(target.x, target.y - 5);
           graphic.stroke({ width: 2, color: resortPalette.accent, alpha: 0.78 });
@@ -2891,7 +3666,7 @@ export function PixiStage(props: PixiStageProps) {
       layers.objects.addChild(graphic);
       propertyGraphicsRef.current.push(graphic);
     }
-  }, [appReady, course, props.resortOperations, rotation]);
+  }, [appReady, course, props.resortOperations, rotation, surfaceHeightAt]);
 
   // Player Pro shot decision overlay. It is one retained container rebuilt
   // only when the decision changes, never per frame. Preview and animation
@@ -2910,7 +3685,7 @@ export function PixiStage(props: PixiStageProps) {
     const overlay = new PIXI.Container();
     overlay.label = "player-pro-shot-overlay";
     const graphics = new PIXI.Graphics();
-    const ballElevation = getElevation(course, Math.round(round.ball.x), Math.round(round.ball.y));
+    const ballElevation = surfaceHeightAt(round.ball.x + 0.5, round.ball.y + 0.5);
     const ball = worldToIso(round.ball.x + 0.5, round.ball.y + 0.5, ballElevation, rotation);
     graphics.circle(ball.x, ball.y - 7, 7);
     graphics.fill({ color: 0xffd25b, alpha: 0.95 });
@@ -2919,7 +3694,7 @@ export function PixiStage(props: PixiStageProps) {
     graphics.stroke({ width: 2, color: 0xfff0a0, alpha: 0.75 });
 
     if (props.playerShotAim && round.phase === "awaiting_shot") {
-      const aimElevation = getElevation(course, Math.round(props.playerShotAim.x), Math.round(props.playerShotAim.y));
+      const aimElevation = surfaceHeightAt(props.playerShotAim.x + 0.5, props.playerShotAim.y + 0.5);
       const aim = worldToIso(props.playerShotAim.x + 0.5, props.playerShotAim.y + 0.5, aimElevation, rotation);
       graphics.moveTo(ball.x, ball.y - 7);
       graphics.lineTo(aim.x, aim.y - 5);
@@ -2933,8 +3708,18 @@ export function PixiStage(props: PixiStageProps) {
 
     const trace = round.pendingShot ?? round.shots[round.shots.length - 1];
     if (trace) {
-      const from = worldToIso(trace.from.x + 0.5, trace.from.y + 0.5, getElevation(course, Math.round(trace.from.x), Math.round(trace.from.y)), rotation);
-      const rest = worldToIso(trace.rest.x + 0.5, trace.rest.y + 0.5, getElevation(course, Math.round(trace.rest.x), Math.round(trace.rest.y)), rotation);
+      const from = worldToIso(
+        trace.from.x + 0.5,
+        trace.from.y + 0.5,
+        surfaceHeightAt(trace.from.x + 0.5, trace.from.y + 0.5),
+        rotation,
+      );
+      const rest = worldToIso(
+        trace.rest.x + 0.5,
+        trace.rest.y + 0.5,
+        surfaceHeightAt(trace.rest.x + 0.5, trace.rest.y + 0.5),
+        rotation,
+      );
       graphics.moveTo(from.x, from.y - 5);
       graphics.lineTo(rest.x, rest.y - 5);
       graphics.stroke({ width: 2.5, color: trace.penaltyStrokes > 0 ? 0xc84a37 : 0xf7f0c2, alpha: 0.78 });
@@ -2949,7 +3734,7 @@ export function PixiStage(props: PixiStageProps) {
       overlay.parent?.removeChild(overlay);
       overlay.destroy({ children: true });
     };
-  }, [appReady, course, props.playerRound, props.playerShotAim, rotation]);
+  }, [appReady, course, props.playerRound, props.playerShotAim, rotation, surfaceHeightAt]);
 
   // Estate ownership veil and survey boundaries (M25). A single batched
   // Graphics object keeps the expanded 220x140 map inexpensive to inspect.
@@ -3017,8 +3802,10 @@ export function PixiStage(props: PixiStageProps) {
       const ys = tiles.map((tile) => tile.y);
       const minX = Math.min(...xs); const maxX = Math.max(...xs);
       const minY = Math.min(...ys); const maxY = Math.max(...ys);
-      const elevation = getElevation(course, decoration.x, decoration.y);
-      const placement = placeObject({ x: minX, y: minY, w: maxX - minX + 1, d: maxY - minY + 1 }, elevation, rotation);
+      const footprint = { x: minX, y: minY, w: maxX - minX + 1, d: maxY - minY + 1 };
+      const anchor = frontCorner(footprint, rotation);
+      const elevation = surfaceHeightAt(anchor.x, anchor.y);
+      const placement = placeObject(footprint, elevation, rotation);
       const sprite = new PIXI.Sprite(texture);
       sprite.anchor.set(visual.anchor[0], visual.anchor[1]);
       sprite.position.set(placement.position.x, placement.position.y);
@@ -3039,7 +3826,7 @@ export function PixiStage(props: PixiStageProps) {
       layers.terrainDecals.addChild(shadow);
       decorationSpritesRef.current.push({ sprite, shadow });
     }
-  }, [appReady, course, rotation]);
+  }, [appReady, course, rotation, surfaceHeightAt]);
 
   // ---------------------------------------------------------------------
   // Decals layer — tee/green markers (incl. wizard drafts) + route overlays
@@ -3059,7 +3846,7 @@ export function PixiStage(props: PixiStageProps) {
 
     const drawMarker = (p: Point, fill: number, alpha = 1) => {
       const g = new PIXI.Graphics();
-      const c = tileCenterIso(p.x, p.y, getElevation(course, p.x, p.y), rotation);
+      const c = tileCenterIso(p.x, p.y, surfaceHeightAt(p.x + 0.5, p.y + 0.5), rotation);
       g.ellipse(c.x, c.y, TILE_W * 0.18, TILE_H * 0.36);
       g.fill({ color: fill, alpha });
       g.stroke({ width: 2, color: 0xffffff, alpha });
@@ -3071,7 +3858,7 @@ export function PixiStage(props: PixiStageProps) {
     // the shot direction (toward the green).
     const drawTee = (tee: Point, green: Point | null, alpha = 1) => {
       const g = new PIXI.Graphics();
-      const e = getElevation(course, tee.x, tee.y);
+      const e = surfaceHeightAt(tee.x + 0.5, tee.y + 0.5);
       const c = tileCenterIso(tee.x, tee.y, e, rotation);
       g.ellipse(c.x, c.y, TILE_W * 0.3, TILE_H * 0.3);
       g.fill({ color: 0x9a7a58, alpha: 0.9 * alpha });
@@ -3098,7 +3885,12 @@ export function PixiStage(props: PixiStageProps) {
     // Cup (ZKU-149): small dark hole with a light rim on the green tile.
     const drawCup = (green: Point, alpha = 1) => {
       const g = new PIXI.Graphics();
-      const c = tileCenterIso(green.x, green.y, getElevation(course, green.x, green.y), rotation);
+      const c = tileCenterIso(
+        green.x,
+        green.y,
+        surfaceHeightAt(green.x + 0.5, green.y + 0.5),
+        rotation,
+      );
       g.ellipse(c.x, c.y, 4.5, 2.2);
       g.fill({ color: 0x1c2b1c, alpha });
       g.stroke({ width: 1, color: 0xe9efe4, alpha: 0.85 * alpha });
@@ -3120,7 +3912,7 @@ export function PixiStage(props: PixiStageProps) {
     });
     if (draftTee) drawTee(draftTee, draftGreen, 0.55);
     if (draftGreen) drawMarker(draftGreen, 0x1b5e20, 0.55);
-  }, [appReady, holes, draftTee, draftGreen, course, rotation, props.showMarkers, props.selectedTeeSet]);
+  }, [appReady, holes, draftTee, draftGreen, course, rotation, props.showMarkers, props.selectedTeeSet, surfaceHeightAt]);
 
   useEffect(() => {
     if (!appReady) return;
@@ -3139,9 +3931,12 @@ export function PixiStage(props: PixiStageProps) {
     if (props.architectureWarnings?.length) {
       const g = new PIXI.Graphics();
       const warningPoint = (point: Point) => {
-        const x = Math.max(0, Math.min(course.width - 1, Math.round(point.x)));
-        const y = Math.max(0, Math.min(course.height - 1, Math.round(point.y)));
-        return tileCenterIso(point.x, point.y, getElevation(course, x, y), rotation);
+        return tileCenterIso(
+          point.x,
+          point.y,
+          surfaceHeightAt(point.x + 0.5, point.y + 0.5),
+          rotation,
+        );
       };
       for (const warning of props.architectureWarnings) {
         const points = warning.geometry?.length ? warning.geometry : warning.location ? [warning.location] : [];
@@ -3170,12 +3965,20 @@ export function PixiStage(props: PixiStageProps) {
     if (props.architectureOverlay) {
       const g = new PIXI.Graphics();
       const project = (point: Point) => {
-        const x = Math.max(0, Math.min(course.width - 1, Math.round(point.x)));
-        const y = Math.max(0, Math.min(course.height - 1, Math.round(point.y)));
-        return tileCenterIso(point.x, point.y, getElevation(course, x, y), rotation);
+        return tileCenterIso(
+          point.x,
+          point.y,
+          surfaceHeightAt(point.x + 0.5, point.y + 0.5),
+          rotation,
+        );
       };
       for (const cell of props.architectureOverlay.cells) {
-        const top = worldToIso(cell.x + 0.5, cell.y, getElevation(course, Math.round(cell.x), Math.round(cell.y)), rotation);
+        const top = worldToIso(
+          cell.x + 0.5,
+          cell.y,
+          surfaceHeightAt(cell.x + 0.5, cell.y),
+          rotation,
+        );
         const intensity = Math.min(1, 0.22 + Math.log2(cell.value + 1) * 0.16);
         g.poly([
           top.x, top.y,
@@ -3219,7 +4022,12 @@ export function PixiStage(props: PixiStageProps) {
         const hole = holes.find((candidate) => candidate.id === finding.holeId);
         const point = hole ? getPinPosition(hole, course.activePinRotation ?? "A") ?? hole.green ?? hole.tee : null;
         if (!point) continue;
-        const center = tileCenterIso(point.x, point.y, getElevation(course, point.x, point.y), rotation);
+        const center = tileCenterIso(
+          point.x,
+          point.y,
+          surfaceHeightAt(point.x + 0.5, point.y + 0.5),
+          rotation,
+        );
         const radius = Math.min(18, 8 + finding.intensity * 0.6);
         const color = finding.severity === "severe" ? 0xd8563a : finding.severity === "high" ? 0xe7a83e : 0xf2d36f;
         g.circle(center.x, center.y, radius);
@@ -3243,7 +4051,12 @@ export function PixiStage(props: PixiStageProps) {
     if (showFixOverlay && failingCorridorSegments && failingCorridorSegments.length > 0) {
       const g = new PIXI.Graphics();
       for (const seg of failingCorridorSegments) {
-        const top = worldToIso(seg.x + 0.5, seg.y, getElevation(course, seg.x, seg.y), rotation);
+        const top = worldToIso(
+          seg.x + 0.5,
+          seg.y,
+          surfaceHeightAt(seg.x + 0.5, seg.y),
+          rotation,
+        );
         g.poly([
           top.x, top.y,
           top.x + TILE_W / 2, top.y + TILE_H / 2,
@@ -3260,7 +4073,7 @@ export function PixiStage(props: PixiStageProps) {
     if (showShotPlan && activePath && activePath.length > 1) {
       const g = new PIXI.Graphics();
       const pathPoint = (pt: Point) =>
-        tileCenterIso(pt.x, pt.y, getElevation(course, pt.x, pt.y), rotation);
+        tileCenterIso(pt.x, pt.y, surfaceHeightAt(pt.x + 0.5, pt.y + 0.5), rotation);
       const first = pathPoint(activePath[0]);
       g.moveTo(first.x, first.y);
       for (let i = 1; i < activePath.length; i++) {
@@ -3271,7 +4084,106 @@ export function PixiStage(props: PixiStageProps) {
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
     }
-  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, holes, rotation, props.showMarkers, props.architectureWarnings, props.architectureOverlay, props.paceBottlenecks]);
+  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, holes, rotation, props.showMarkers, props.architectureWarnings, props.architectureOverlay, props.paceBottlenecks, surfaceHeightAt]);
+
+  useEffect(() => {
+    if (!appReady || surfaceEditorGraphicsRef.current) return;
+    const layer = layersRef.current?.surfaceEditor;
+    if (!layer) return;
+    const graphics = new PIXI.Graphics();
+    layer.addChild(graphics);
+    surfaceEditorGraphicsRef.current = graphics;
+    return () => {
+      if (surfaceEditorGraphicsRef.current === graphics) surfaceEditorGraphicsRef.current = null;
+      if (graphics.parent) graphics.parent.removeChild(graphics);
+      graphics.destroy();
+    };
+  }, [appReady]);
+
+  useEffect(() => {
+    const graphics = surfaceEditorGraphicsRef.current;
+    if (!graphics) return;
+    graphics.clear();
+    if (editorMode !== "PAINT") return;
+
+    const project = (point: Point) => worldToIso(
+      point.x,
+      point.y,
+      surfaceHeightAt(point.x, point.y),
+      rotation,
+    );
+    const drawPath = (points: readonly Point[], closed: boolean, color: number, alpha: number) => {
+      if (points.length < 2) return;
+      const first = project(points[0]);
+      graphics.moveTo(first.x, first.y);
+      for (let index = 1; index < points.length; index++) {
+        const current = project(points[index]);
+        graphics.lineTo(current.x, current.y);
+      }
+      if (closed) graphics.lineTo(first.x, first.y);
+      graphics.stroke({ width: 2.2, color, alpha, cap: "round", join: "round" });
+    };
+
+    if (terrainTool === "spline" && clickSplineDraft.length > 0) {
+      const previewPoints = clickSplineHover
+        ? [...clickSplineDraft, clickSplineHover]
+        : clickSplineDraft;
+      drawPath(sampleCorridor(previewPoints), false, 0xffe28a, 0.95);
+      for (const point of clickSplineDraft) {
+        const projected = project(point);
+        graphics.circle(projected.x, projected.y, 4.5);
+        graphics.fill({ color: 0xfff4bf, alpha: 0.98 });
+        graphics.stroke({ width: 1.5, color: 0x493712, alpha: 0.95 });
+      }
+    }
+
+    if (terrainTool === "edit" && selectedSurfaceFeature) {
+      drawPath(
+        sampledSurfacePath(selectedSurfaceFeature),
+        selectedSurfaceFeature.geometry.kind === "region",
+        0xffe28a,
+        0.95,
+      );
+      const points = surfaceFeaturePoints(selectedSurfaceFeature);
+      points.forEach((point, index) => {
+        const projected = project(point);
+        graphics.circle(projected.x, projected.y, index === selectedSurfaceNode ? 6 : 4.5);
+        graphics.fill({
+          color: index === selectedSurfaceNode ? 0xffc64c : 0xfff4bf,
+          alpha: 0.98,
+        });
+        graphics.stroke({ width: 1.5, color: 0x493712, alpha: 0.95 });
+      });
+      if (selectedSurfaceNode != null && points[selectedSurfaceNode]) {
+        const tangents = selectedSurfaceFeature.geometry.tangents
+          ?? defaultSurfaceTangents(
+            points,
+            selectedSurfaceFeature.geometry.kind === "region",
+          );
+        const handles = tangents[selectedSurfaceNode];
+        const node = project(points[selectedSurfaceNode]);
+        for (const handle of [handles.in, handles.out]) {
+          const projected = project(handle);
+          graphics.moveTo(node.x, node.y);
+          graphics.lineTo(projected.x, projected.y);
+          graphics.stroke({ width: 1.2, color: 0xfff0b0, alpha: 0.85 });
+          graphics.circle(projected.x, projected.y, 3.8);
+          graphics.fill({ color: 0x5ea8ff, alpha: 0.98 });
+          graphics.stroke({ width: 1.2, color: 0x17385d, alpha: 0.95 });
+        }
+      }
+    }
+  }, [
+    appReady,
+    clickSplineDraft,
+    clickSplineHover,
+    editorMode,
+    rotation,
+    selectedSurfaceFeature,
+    selectedSurfaceNode,
+    surfaceHeightAt,
+    terrainTool,
+  ]);
 
   // ---------------------------------------------------------------------
   // Ticker pass — hover highlight/line + live golfer dots
@@ -3298,6 +4210,7 @@ export function PixiStage(props: PixiStageProps) {
     const tick = (ticker: PIXI.Ticker) => {
       const dtMs = ticker.deltaMS;
       const nowMs = performance.now();
+      props.onFrameTime?.(dtMs);
 
       // Perf HUD (ZKU-160): poll the flag ~1/s; section marks are zero-cost
       // when disabled.
@@ -3344,7 +4257,12 @@ export function PixiStage(props: PixiStageProps) {
           highlight.clear();
           if (hover) {
             const outlineTile = (tx: number, ty: number, alpha: number) => {
-              const top = worldToIso(tx + 0.5, ty, getElevation(course, tx, ty), rotation);
+              const top = worldToIso(
+                tx + 0.5,
+                ty,
+                surfaceHeightAt(tx + 0.5, ty),
+                rotation,
+              );
               highlight.poly([
                 top.x, top.y,
                 top.x + TILE_W / 2, top.y + TILE_H / 2,
@@ -3355,7 +4273,105 @@ export function PixiStage(props: PixiStageProps) {
             };
             const strokePreview = terrainStrokePreviewRef.current;
             if (editorMode === "PAINT" && strokePreview) {
-              for (const tile of strokePreview.acceptedTiles) outlineTile(tile.x, tile.y, 0.82);
+              for (const tile of strokePreview.acceptedTiles) {
+                outlineTile(
+                  tile.x,
+                  tile.y,
+                  props.graphicsQuality === "low" ? 0.82 : 0.2,
+                );
+              }
+              if (
+                props.graphicsQuality !== "low" &&
+                selectedTerrain &&
+                strokePreview.acceptedTiles.length > 0
+              ) {
+                const accepted = new Set(
+                  strokePreview.acceptedTiles.map((tile) => `${tile.x},${tile.y}`),
+                );
+                const minX = Math.max(
+                  0,
+                  Math.min(...strokePreview.acceptedTiles.map((tile) => tile.x)) - 2,
+                );
+                const minY = Math.max(
+                  0,
+                  Math.min(...strokePreview.acceptedTiles.map((tile) => tile.y)) - 2,
+                );
+                const maxX = Math.min(
+                  course.width,
+                  Math.max(...strokePreview.acceptedTiles.map((tile) => tile.x)) + 3,
+                );
+                const maxY = Math.min(
+                  course.height,
+                  Math.max(...strokePreview.acceptedTiles.map((tile) => tile.y)) + 3,
+                );
+                const localWidth = maxX - minX;
+                const localHeight = maxY - minY;
+                const localTiles: Terrain[] = [];
+                for (let ty = minY; ty < maxY; ty++) {
+                  for (let tx = minX; tx < maxX; tx++) {
+                    localTiles.push(course.tiles[ty * course.width + tx]);
+                  }
+                }
+                for (const tile of strokePreview.acceptedTiles) {
+                  localTiles[(tile.y - minY) * localWidth + tile.x - minX] = tile.terrain;
+                }
+                const previewComponents = buildLandscapeComponents(
+                  localTiles,
+                  localWidth,
+                  localHeight,
+                  {
+                    cornerRadius: props.graphicsQuality === "high" ? 0.4 : 0.32,
+                    cornerSegments: props.graphicsQuality === "high" ? 4 : 2,
+                  },
+                ).filter((component) => (
+                  component.terrain === selectedTerrain &&
+                  component.cells.some((index) => {
+                    const x = index % localWidth + minX;
+                    const y = Math.floor(index / localWidth) + minY;
+                    return accepted.has(`${x},${y}`);
+                  })
+                ));
+                for (const component of previewComponents) {
+                  const bunkerType = selectedTerrain === "sand"
+                    ? classifyBunkerVisualType(
+                      component.cells,
+                      localTiles,
+                      localWidth,
+                      localHeight,
+                    )
+                    : null;
+                  const rings = bunkerType
+                    ? buildBunkerVisualRings(
+                      component.rings,
+                      component.topologyKey,
+                      component.cells.length,
+                      bunkerType,
+                    )
+                    : component.rings;
+                  for (const ring of rings) {
+                    const points = ring.map((point) => {
+                      const worldX = point.x + minX;
+                      const worldY = point.y + minY;
+                      return worldToIso(
+                        worldX,
+                        worldY,
+                        surfaceHeightAt(worldX, worldY),
+                        rotation,
+                      );
+                    });
+                    if (points.length < 3) continue;
+                    highlight.poly(points.flatMap((point) => [point.x, point.y]));
+                    highlight.fill({ color: 0xffffff, alpha: 0.09 });
+                    highlight.stroke({
+                      width: 2.4,
+                      color: 0xffffff,
+                      alpha: 0.88,
+                      join: "round",
+                      cap: "round",
+                    });
+                  }
+                }
+              }
             } else if (editorMode === "SCULPT" && props.sculptRadius && props.sculptRadius > 1) {
               // Brush footprint preview (matches brushFootprint in sculpt.ts).
               const r = props.sculptRadius - 0.5;
@@ -3392,12 +4408,12 @@ export function PixiStage(props: PixiStageProps) {
               const from = worldPointToScreen(
                 fromPoint.x + 0.5,
                 fromPoint.y + 0.5,
-                getElevation(course, fromPoint.x, fromPoint.y)
+                surfaceHeightAt(fromPoint.x + 0.5, fromPoint.y + 0.5)
               );
               const to = worldPointToScreen(
                 hover.x + 0.5,
                 hover.y + 0.5,
-                getElevation(course, hover.x, hover.y)
+                surfaceHeightAt(hover.x + 0.5, hover.y + 0.5)
               );
               line.moveTo(from.x, from.y);
               line.lineTo(to.x, to.y);
@@ -3422,7 +4438,7 @@ export function PixiStage(props: PixiStageProps) {
           layers.objects.addChild(g);
           flags.set(hi, g);
         }
-        const e = getElevation(course, hole.green.x, hole.green.y);
+        const e = surfaceHeightAt(hole.green.x + 0.5, hole.green.y + 0.5);
         const c = tileCenterIso(hole.green.x, hole.green.y, e, rotation);
         g.position.set(c.x, c.y);
         const z = entityDepth(hole.green.x + 0.5, hole.green.y + 0.5, e, rotation) + 0.05;
@@ -3477,12 +4493,6 @@ export function PixiStage(props: PixiStageProps) {
             if ((ws.gx * 31 + ws.gy * 57 + bucket) % 89 === 0) f = 1.22;
             ws.sprite.tint = shade(ws.baseTint, f);
           }
-          // Shoreline breathing now lives on the shallow-water contour band,
-          // which follows the rounded silhouette rather than a per-tile lip.
-          for (const foam of contourFoamRef.current) {
-            foam.graphics.alpha =
-              foam.baseAlpha * (0.82 + 0.18 * (0.5 + 0.5 * Math.sin(t * 2.1 + foam.phase)));
-          }
         }
       } else if (waterAnim.wasAnimating) {
         waterAnim.wasAnimating = false;
@@ -3491,7 +4501,6 @@ export function PixiStage(props: PixiStageProps) {
           for (const fs of chunk.foamSprites) fs.sprite.alpha = 0.26;
         }
         for (const ws of surfaceWaterSpritesRef.current) ws.sprite.tint = ws.baseTint;
-        for (const foam of contourFoamRef.current) foam.graphics.alpha = foam.baseAlpha;
       }
 
       // Wind sway (ZKU-151): subtle skew oscillation on tree canopies.
@@ -3517,7 +4526,7 @@ export function PixiStage(props: PixiStageProps) {
         ? tileCenterIso(
             selectedGolfer.x,
             selectedGolfer.y,
-            getElevation(course, Math.floor(selectedGolfer.x + 0.5), Math.floor(selectedGolfer.y + 0.5)),
+            surfaceHeightAt(selectedGolfer.x + 0.5, selectedGolfer.y + 0.5),
             rotation
           )
         : null;
@@ -3637,7 +4646,7 @@ export function PixiStage(props: PixiStageProps) {
         if (!ambientOn || !heron.spot) {
           hg.visible = false;
         } else if (heron.state === "standing") {
-          const e = getElevation(course, heron.spot.x, heron.spot.y);
+          const e = surfaceHeightAt(heron.spot.x + 0.5, heron.spot.y + 0.5);
           const c = tileCenterIso(heron.spot.x, heron.spot.y, e, rotation);
           hg.position.set(c.x, c.y + Math.sin(nowMs / 1100) * 0.4);
           hg.zIndex = entityDepth(heron.spot.x, heron.spot.y, e, rotation);
@@ -3650,7 +4659,7 @@ export function PixiStage(props: PixiStageProps) {
             heron.respawnAt = nowMs + 45_000;
             hg.visible = false;
           } else {
-            const e = getElevation(course, heron.spot.x, heron.spot.y);
+            const e = surfaceHeightAt(heron.spot.x + 0.5, heron.spot.y + 0.5);
             const c = tileCenterIso(heron.spot.x, heron.spot.y, e, rotation);
             hg.position.set(c.x + t * 90, c.y - t * 70);
             hg.alpha = 1 - t * t;
@@ -3676,7 +4685,7 @@ export function PixiStage(props: PixiStageProps) {
       if (ripplesRef.current.length > 0) {
         ripplesRef.current = ripplesRef.current.filter((r) => nowMs - r.t0 < 750);
         for (const r of ripplesRef.current) {
-          const rt = (nowMs - r.t0) / 750;
+          const rt = props.animationsEnabled ? (nowMs - r.t0) / 750 : 0.45;
           const c = tileCenterIso(r.x, r.y, 0, rotation); // water is base level
           const radius = 4 + rt * 12;
           rg.ellipse(c.x, c.y, radius, radius / 2);
@@ -3861,7 +4870,7 @@ export function PixiStage(props: PixiStageProps) {
 
           // Position + entity culling first: an offscreen golfer keeps its
           // trigger bookkeeping (above) but skips all visual work.
-          const ge = getElevation(course, Math.floor(golfer.x + 0.5), Math.floor(golfer.y + 0.5));
+          const ge = surfaceHeightAt(golfer.x + 0.5, golfer.y + 0.5);
           const c = tileCenterIso(golfer.x, golfer.y, ge, rotation);
           entry.holder.position.set(c.x, c.y);
           const offscreen = c.x < cullL || c.x > cullR || c.y < cullT || c.y > cullB;
@@ -3926,7 +4935,9 @@ export function PixiStage(props: PixiStageProps) {
             // Selection ring (ZKU-134): pulsing ellipse under the feet.
             const isSelected = props.selectedGolferId === golfer.id;
             if (isSelected) {
-              const pulse = 1 + Math.sin(nowMs * 0.006) * 0.12;
+              const pulse = props.animationsEnabled
+                ? 1 + Math.sin(nowMs * 0.006) * 0.12
+                : 1;
               sp.ring.clear();
               sp.ring.ellipse(0, 0, 11 * pulse, 5.5 * pulse);
               sp.ring.stroke({ width: 1.8, color: 0xffffff, alpha: 0.95 });
@@ -3986,10 +4997,18 @@ export function PixiStage(props: PixiStageProps) {
               if (pose.landed && !entry.ballLanded) {
                 entry.ballLanded = true;
                 if (behavior.fx === "splash") {
-                  ripplesRef.current.push({ x: to.x, y: to.y, t0: nowMs });
+                  appendBoundedEffect(
+                    ripplesRef.current,
+                    { x: to.x, y: to.y, t0: nowMs },
+                    MAX_ACTIVE_RIPPLES,
+                  );
                 } else if (behavior.fx) {
-                  const e = getElevation(course, restTx, restTy);
-                  impactsRef.current.push({ kind: behavior.fx, x: gx, y: gy, e, t0: nowMs });
+                  const e = surfaceHeightAt(gx + 0.5, gy + 0.5);
+                  appendBoundedEffect(
+                    impactsRef.current,
+                    { kind: behavior.fx, x: gx, y: gy, e, t0: nowMs },
+                    MAX_ACTIVE_IMPACTS,
+                  );
                 }
                 // Hazard drama bubble (ZKU-155).
                 showEmote(hazardEmote(behavior.fx));
@@ -4007,7 +5026,7 @@ export function PixiStage(props: PixiStageProps) {
                 }
               }
             }
-            const be = getElevation(course, Math.floor(gx + 0.5), Math.floor(gy + 0.5));
+            const be = surfaceHeightAt(gx + 0.5, gy + 0.5);
             const ground = tileCenterIso(gx, gy, be, rotation);
             entry.ball.position.set(ground.x, ground.y - heightPx);
             const bz = Math.round(entityDepth(gx, gy, be, rotation) * 10) / 10;
@@ -4039,7 +5058,11 @@ export function PixiStage(props: PixiStageProps) {
                   tx >= 0 && ty >= 0 && tx < course.width && ty < course.height &&
                   (course.tiles[ty * course.width + tx] === "water" || course.tiles[ty * course.width + tx] === "wetland")
                 ) {
-                  ripplesRef.current.push({ x: entry.lastBall.x, y: entry.lastBall.y, t0: performance.now() });
+                  appendBoundedEffect(
+                    ripplesRef.current,
+                    { x: entry.lastBall.x, y: entry.lastBall.y, t0: performance.now() },
+                    MAX_ACTIVE_RIPPLES,
+                  );
                 }
               }
               entry.lastBall = null;
@@ -4092,7 +5115,7 @@ export function PixiStage(props: PixiStageProps) {
         const anchors = sched.active.map((e) => {
           const g = golferById.get(e.golferId);
           if (!g) return { x: -9999, y: -9999 };
-          const ge2 = getElevation(course, Math.floor(g.x + 0.5), Math.floor(g.y + 0.5));
+          const ge2 = surfaceHeightAt(g.x + 0.5, g.y + 0.5);
           const p = worldPointToScreen(g.x + 0.5, g.y + 0.5, ge2);
           return { x: p.x, y: p.y - headPx };
         });
@@ -4105,7 +5128,9 @@ export function PixiStage(props: PixiStageProps) {
             layers.screenOverlay.addChild(cont);
             bubbles.set(e.golferId, cont);
           }
-          const pres = emotePresentation(nowMs - e.t0);
+          const pres = props.animationsEnabled
+            ? emotePresentation(nowMs - e.t0)
+            : { scale: 1, alpha: 1, rise: 0 };
           cont.position.set(anchors[i].x + offsets[i], anchors[i].y - pres.rise);
           cont.scale.set(pres.scale);
           cont.alpha = pres.alpha;
@@ -4133,6 +5158,13 @@ export function PixiStage(props: PixiStageProps) {
             sections: s.sections,
             golfers: golferPoolRef.current.size,
             bubbles: emoteSpritesRef.current.size,
+            ripples: ripplesRef.current.length,
+            impacts: impactsRef.current.length,
+            ambientObjects:
+              ambientRef.current.clouds.length +
+              (ambientRef.current.shimmer ? 1 : 0) +
+              (ambientRef.current.birdG ? 1 : 0) +
+              (ambientRef.current.heron.g ? 1 : 0),
             chunksVisible: visibleChunks,
             chunksTotal: chunksRef.current.length,
             objects: layers.objects.children.length,
@@ -4156,7 +5188,7 @@ export function PixiStage(props: PixiStageProps) {
     return () => {
       app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, clampCenter]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, rotation, editorMode, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, props.onFrameTime, clampCenter, surfaceHeightAt]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
@@ -4188,6 +5220,12 @@ export function PixiStage(props: PixiStageProps) {
       overlayDirtyRef.current = true;
     };
 
+    const showTerrainPreview = (preview: TerrainStrokePreview | null) => {
+      terrainStrokePreviewRef.current = preview;
+      setTerrainStrokePreview(preview);
+      overlayDirtyRef.current = true;
+    };
+
     const beginTerrainStroke = (point: Point, pointerId: number) => {
       if (!onPreviewTerrainStroke) return;
       const points = [point];
@@ -4197,9 +5235,7 @@ export function PixiStage(props: PixiStageProps) {
         last: point,
       };
       const preview = onPreviewTerrainStroke(points);
-      terrainStrokePreviewRef.current = preview;
-      setTerrainStrokePreview(preview);
-      overlayDirtyRef.current = true;
+      showTerrainPreview(preview);
     };
 
     const extendTerrainStroke = (point: Point, pointerId: number) => {
@@ -4213,9 +5249,7 @@ export function PixiStage(props: PixiStageProps) {
       }
       stroke.last = point;
       const preview = onPreviewTerrainStroke(stroke.points);
-      terrainStrokePreviewRef.current = preview;
-      setTerrainStrokePreview(preview);
-      overlayDirtyRef.current = true;
+      showTerrainPreview(preview);
     };
 
     const finishTerrainStroke = (pointerId: number) => {
@@ -4226,6 +5260,63 @@ export function PixiStage(props: PixiStageProps) {
       setTerrainStrokePreview(null);
       overlayDirtyRef.current = true;
       onCommitTerrainStroke?.(stroke.points);
+    };
+
+    const featureForId = (id: string | null): SurfaceFeature | null => {
+      if (!id) return null;
+      return surfaceEditDraftRef.current
+        ?? course.surfaceIntent?.features.find((feature) => feature.id === id)
+        ?? null;
+    };
+
+    const topFeatureAt = (point: Point): SurfaceFeature | null => {
+      const x = Math.floor(point.x);
+      const y = Math.floor(point.y);
+      const index = y * course.width + x;
+      return course.surfaceIntent?.features
+        .slice()
+        .sort((a, b) => b.order - a.order)
+        .find((feature) => feature.coverage.includes(index))
+        ?? null;
+    };
+
+    const nodeHitRadius = () => Math.max(0.18, 10 / Math.max(8, TILE_W * camRef.current.zoom));
+
+    const startSurfaceEditDrag = (
+      feature: SurfaceFeature,
+      nodeIndex: number,
+      target: "node" | "in" | "out",
+      pointerId: number,
+    ) => {
+      updateSelectedSurface(feature.id, nodeIndex);
+      surfaceEditDragRef.current = { pointerId, feature, nodeIndex, target };
+      updateSurfaceEditDraft(feature);
+    };
+
+    const extendSurfaceEdit = (point: Point, event: PointerEvent) => {
+      const drag = surfaceEditDragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const edited = drag.target === "node"
+        ? moveSurfaceNode(drag.feature, drag.nodeIndex, point)
+        : moveSurfaceHandle(drag.feature, drag.nodeIndex, drag.target, point, !event.altKey);
+      updateSurfaceEditDraft(edited);
+      showTerrainPreview(onPreviewSurfaceFeatureEdit?.(edited) ?? null);
+    };
+
+    const finishSurfaceEdit = (pointerId: number) => {
+      const drag = surfaceEditDragRef.current;
+      if (!drag || drag.pointerId !== pointerId) return;
+      const edited = surfaceEditDraftRef.current;
+      surfaceEditDragRef.current = null;
+      showTerrainPreview(null);
+      if (edited) onCommitSurfaceFeatureEdit?.(edited);
+      updateSurfaceEditDraft(null);
+    };
+
+    const cancelSurfaceEdit = () => {
+      surfaceEditDragRef.current = null;
+      updateSurfaceEditDraft(null);
+      showTerrainPreview(null);
     };
 
     const canvasPoint = (event: PointerEvent): Point | null => {
@@ -4240,10 +5331,95 @@ export function PixiStage(props: PixiStageProps) {
     // federated event layer also guarantees release/cancel delivery when the
     // pointer leaves the canvas or crosses an overlay.
     const handleCanvasPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || props.playableShotMode || editorMode !== "PAINT" || !selectedTerrain || !onPreviewTerrainStroke || !onCommitTerrainStroke) return;
+      if (event.button !== 0 || props.playableShotMode || editorMode !== "PAINT" || !selectedTerrain) return;
       if (flyoverRef.current) return;
       const point = canvasPoint(event);
       if (!point) return;
+
+      if (terrainTool === "spline" && onPreviewTerrainStroke && onCommitTerrainStroke) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const existing = clickSplineDraftRef.current;
+        if (event.detail >= 2 && existing.length > 0) {
+          const last = existing[existing.length - 1];
+          const points = Math.hypot(last.x - point.x, last.y - point.y) < 0.2
+            ? existing
+            : [...existing, point];
+          if (points.length >= 2) onCommitTerrainStroke(points);
+          updateClickSplineDraft([]);
+          updateClickSplineHover(null);
+          showTerrainPreview(null);
+          return;
+        }
+        const points = [...existing, point];
+        updateClickSplineDraft(points);
+        updateClickSplineHover(null);
+        showTerrainPreview(onPreviewTerrainStroke(points));
+        return;
+      }
+
+      if (terrainTool === "edit" && onPreviewSurfaceFeatureEdit && onCommitSurfaceFeatureEdit) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const selected = featureForId(selectedSurfaceFeatureIdRef.current);
+        const candidate = selected ?? topFeatureAt(point);
+        if (!candidate) {
+          updateSelectedSurface(null);
+          return;
+        }
+        const points = surfaceFeaturePoints(candidate);
+        const radius = nodeHitRadius();
+
+        if (selected?.id === candidate.id && selectedSurfaceNodeRef.current != null) {
+          const nodeIndex = selectedSurfaceNodeRef.current;
+          const tangents = candidate.geometry.tangents
+            ?? defaultSurfaceTangents(points, candidate.geometry.kind === "region");
+          const handles = tangents[nodeIndex];
+          if (handles) {
+            if (Math.hypot(handles.in.x - point.x, handles.in.y - point.y) <= radius) {
+              startSurfaceEditDrag(candidate, nodeIndex, "in", event.pointerId);
+              try { pointerSurface.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ }
+              return;
+            }
+            if (Math.hypot(handles.out.x - point.x, handles.out.y - point.y) <= radius) {
+              startSurfaceEditDrag(candidate, nodeIndex, "out", event.pointerId);
+              try { pointerSurface.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ }
+              return;
+            }
+          }
+        }
+
+        let nearestNode = 0;
+        let nearestNodeDistance = Number.POSITIVE_INFINITY;
+        points.forEach((node, index) => {
+          const distance = Math.hypot(node.x - point.x, node.y - point.y);
+          if (distance < nearestNodeDistance) {
+            nearestNode = index;
+            nearestNodeDistance = distance;
+          }
+        });
+
+        if (event.detail >= 2) {
+          const segment = nearestSurfaceSegment(candidate, point);
+          if (segment.distance <= Math.max(1.25, radius * 4)) {
+            const edited = insertSurfaceNode(candidate, segment.index, point);
+            updateSelectedSurface(candidate.id, segment.index + 1);
+            showTerrainPreview(onPreviewSurfaceFeatureEdit(edited));
+            onCommitSurfaceFeatureEdit(edited);
+            showTerrainPreview(null);
+            return;
+          }
+        }
+
+        updateSelectedSurface(candidate.id, nearestNode);
+        if (nearestNodeDistance <= radius) {
+          startSurfaceEditDrag(candidate, nearestNode, "node", event.pointerId);
+          try { pointerSurface.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ }
+        }
+        return;
+      }
+
+      if (!onPreviewTerrainStroke || !onCommitTerrainStroke) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       beginTerrainStroke(point, event.pointerId);
@@ -4251,6 +5427,25 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     const handleCanvasPointerMove = (event: PointerEvent) => {
+      if (surfaceEditDragRef.current?.pointerId === event.pointerId) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const point = canvasPoint(event);
+        if (point) extendSurfaceEdit(point, event);
+        return;
+      }
+      if (
+        terrainTool === "spline" &&
+        clickSplineDraftRef.current.length > 0 &&
+        onPreviewTerrainStroke
+      ) {
+        const point = canvasPoint(event);
+        if (point) {
+          updateClickSplineHover(point);
+          showTerrainPreview(onPreviewTerrainStroke([...clickSplineDraftRef.current, point]));
+        }
+        return;
+      }
       if (!terrainStrokeRef.current || terrainStrokeRef.current.pointerId !== event.pointerId) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -4259,6 +5454,17 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     const handleCanvasPointerUp = (event: PointerEvent) => {
+      if (surfaceEditDragRef.current?.pointerId === event.pointerId) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const point = canvasPoint(event);
+        if (point) extendSurfaceEdit(point, event);
+        finishSurfaceEdit(event.pointerId);
+        try {
+          if (pointerSurface.hasPointerCapture(event.pointerId)) pointerSurface.releasePointerCapture(event.pointerId);
+        } catch { /* capture may already be released */ }
+        return;
+      }
       if (!terrainStrokeRef.current || terrainStrokeRef.current.pointerId !== event.pointerId) return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -4271,6 +5477,11 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     const handleCanvasPointerCancel = (event: PointerEvent) => {
+      if (surfaceEditDragRef.current?.pointerId === event.pointerId) {
+        event.stopImmediatePropagation();
+        cancelSurfaceEdit();
+        return;
+      }
       if (terrainStrokeRef.current?.pointerId !== event.pointerId) return;
       event.stopImmediatePropagation();
       cancelTerrainStroke();
@@ -4292,7 +5503,7 @@ export function PixiStage(props: PixiStageProps) {
           let bestId: number | null = null;
           let bestD = TILE_W * 0.45; // ~0.9 tiles, matches the canvas picker
           for (const g of golfersRef.current) {
-            const ge = getElevation(course, Math.floor(g.x + 0.5), Math.floor(g.y + 0.5));
+            const ge = surfaceHeightAt(g.x + 0.5, g.y + 0.5);
             const c = tileCenterIso(g.x, g.y, ge, rotation);
             // Compensate the 2:1 vertical squash so the radius is circular
             // in tile space.
@@ -4335,7 +5546,71 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && terrainStrokeRef.current) cancelTerrainStroke();
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
+      if (event.key === "Escape") {
+        if (terrainStrokeRef.current) cancelTerrainStroke();
+        if (surfaceEditDragRef.current) cancelSurfaceEdit();
+        if (clickSplineDraftRef.current.length > 0) {
+          updateClickSplineDraft([]);
+          updateClickSplineHover(null);
+          showTerrainPreview(null);
+        } else if (terrainTool === "edit" && selectedSurfaceFeatureIdRef.current) {
+          updateSelectedSurface(null);
+        }
+        return;
+      }
+      if (
+        terrainTool === "spline" &&
+        event.key === "Enter" &&
+        clickSplineDraftRef.current.length >= 2
+      ) {
+        event.preventDefault();
+        onCommitTerrainStroke?.(clickSplineDraftRef.current);
+        updateClickSplineDraft([]);
+        updateClickSplineHover(null);
+        showTerrainPreview(null);
+        return;
+      }
+      if (
+        terrainTool === "spline" &&
+        event.key === "Backspace" &&
+        clickSplineDraftRef.current.length > 0
+      ) {
+        event.preventDefault();
+        const points = clickSplineDraftRef.current.slice(0, -1);
+        updateClickSplineDraft(points);
+        const hover = clickSplineHoverRef.current;
+        showTerrainPreview(points.length > 0 && onPreviewTerrainStroke
+          ? onPreviewTerrainStroke(hover ? [...points, hover] : points)
+          : null);
+        return;
+      }
+      if (
+        terrainTool === "edit" &&
+        (event.key === "Delete" || event.key === "Backspace") &&
+        selectedSurfaceFeatureIdRef.current &&
+        selectedSurfaceNodeRef.current != null
+      ) {
+        const feature = featureForId(selectedSurfaceFeatureIdRef.current);
+        if (!feature) return;
+        const edited = deleteSurfaceNode(feature, selectedSurfaceNodeRef.current);
+        if (!edited) return;
+        event.preventDefault();
+        const preview = onPreviewSurfaceFeatureEdit?.(edited) ?? null;
+        showTerrainPreview(preview);
+        if (preview?.affordable) {
+          onCommitSurfaceFeatureEdit?.(edited);
+          updateSelectedSurface(
+            edited.id,
+            Math.min(
+              selectedSurfaceNodeRef.current,
+              surfaceFeaturePoints(edited).length - 1,
+            ),
+          );
+        }
+        showTerrainPreview(null);
+      }
     };
 
     const stage = app.stage;
@@ -4361,7 +5636,7 @@ export function PixiStage(props: PixiStageProps) {
       pointerSurface.removeEventListener("pointercancel", handleCanvasPointerCancel, true);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [appReady, screenToTile, screenToWorldPoint, screenToIsoPlane, onClickTile, onPreviewTerrainStroke, onCommitTerrainStroke, editorMode, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.showGolfers, props.playableShotMode]);
+  }, [appReady, screenToTile, screenToWorldPoint, screenToIsoPlane, onClickTile, onPreviewTerrainStroke, onCommitTerrainStroke, onPreviewSurfaceFeatureEdit, onCommitSurfaceFeatureEdit, editorMode, terrainTool, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.graphicsQuality, props.showGolfers, props.playableShotMode, surfaceHeightAt, updateClickSplineDraft, updateClickSplineHover, updateSelectedSurface, updateSurfaceEditDraft]);
 
   return (
     <div
@@ -4431,6 +5706,28 @@ export function PixiStage(props: PixiStageProps) {
             {t("terrainStroke.title", { terrain: selectedTerrain.replaceAll("_", " "), count: terrainStrokePreview.changedCount })}
           </div>
           <div>{t("terrainStroke.costs", { gross: formatCurrency(terrainStrokePreview.gross), salvage: formatCurrency(terrainStrokePreview.salvage) })}</div>
+          {terrainStrokePreview.earthworkSteps > 0 && (
+            <div>
+              {t("terrainStroke.earthwork", {
+                steps: terrainStrokePreview.earthworkSteps,
+                cost: formatCurrency(terrainStrokePreview.earthworkCost),
+              })}
+            </div>
+          )}
+          {terrainStrokePreview.removedObstacles.length > 0 && (
+            <div>
+              {t("terrainStroke.clears", {
+                count: terrainStrokePreview.removedObstacles.length,
+              })}
+            </div>
+          )}
+          {terrainStrokePreview.excluded.protected > 0 && (
+            <div>
+              {t("terrainStroke.protected", {
+                count: terrainStrokePreview.excluded.protected,
+              })}
+            </div>
+          )}
           <div style={{ fontWeight: 700 }}>
             {t("terrainStroke.net", { net: terrainStrokePreview.net >= 0 ? formatCurrency(terrainStrokePreview.net) : t("terrainStroke.refund", { amount: formatCurrency(-terrainStrokePreview.net) }) })}
           </div>
@@ -4446,6 +5743,33 @@ export function PixiStage(props: PixiStageProps) {
             </div>
           )}
           <div style={{ opacity: 0.65, marginTop: 3 }}>{t("terrainStroke.instructions")}</div>
+        </div>
+      )}
+      {editorMode === "PAINT" && (terrainTool === "spline" || terrainTool === "edit") && (
+        <div
+          data-testid="surface-authoring-instructions"
+          role="status"
+          style={{
+            position: "absolute",
+            left: 14,
+            bottom: 86,
+            maxWidth: 430,
+            padding: "8px 11px",
+            borderRadius: 8,
+            pointerEvents: "none",
+            color: "#f7f1de",
+            background: "rgba(22,30,22,0.88)",
+            border: "1px solid rgba(242,232,201,0.28)",
+            fontSize: 11,
+            lineHeight: 1.4,
+            zIndex: 18,
+          }}
+        >
+          {terrainTool === "spline"
+            ? "Click to place spline nodes. Double-click or press Enter to build; Backspace removes the last node; Escape cancels."
+            : selectedSurfaceFeature
+              ? "Drag gold nodes to reshape. Drag blue handles to tune tangents (hold Alt to break symmetry). Double-click an edge to add a node; Delete removes the selected node."
+              : "Click a persisted curved surface to select and edit its nodes."}
         </div>
       )}
       {flyoverCard && (

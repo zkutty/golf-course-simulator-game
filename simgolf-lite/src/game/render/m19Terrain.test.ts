@@ -70,6 +70,32 @@ describe("M19 terrain material registry", () => {
     expect(terrainBoundaryFor("green", "green")).toBeNull();
   });
 
+  it("exhaustively assigns every supported adjacency once and symmetrically", () => {
+    const roleByOwner = {
+      water: "shore",
+      wetland: "shore",
+      sand: "bunker-lip",
+      path: "path-shoulder",
+      green: "fringe",
+      tee: "fringe",
+      fairway: "fringe",
+      waste_area: "natural-feather",
+      deep_rough: "natural-feather",
+      rough: "natural-feather",
+    } as const;
+    for (const a of TERRAIN_KINDS) for (const b of TERRAIN_KINDS) {
+      const boundary = terrainBoundaryFor(a, b);
+      if (a === b) {
+        expect(boundary, `${a}/${b}`).toBeNull();
+        continue;
+      }
+      expect(boundary, `${a}/${b}`).not.toBeNull();
+      expect(boundary, `${a}/${b}`).toEqual(terrainBoundaryFor(b, a));
+      expect([a, b], `${a}/${b} owner`).toContain(boundary!.owner);
+      expect(boundary!.role, `${a}/${b} role`).toBe(roleByOwner[boundary!.owner]);
+    }
+  });
+
   it("keeps animated water phase coherent between neighboring tiles", () => {
     const phase = waterShimmerPhase(12, 9);
     expect(waterShimmerPhase(12, 9)).toBe(phase);

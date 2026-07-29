@@ -8,14 +8,25 @@ import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
-import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, ParSetting, PinRotation, Point, TeeSet, Terrain, WeekResult, World } from "./game/models/types";
+import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, ParSetting, PinRotation, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool, WeekResult, World } from "./game/models/types";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
 import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStore";
 import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
 import { previewTerrainStroke, type TerrainStrokePreview } from "./game/models/terrainStroke";
 import { corridorFeature, rasterizeSurfaceFeatureDetailed, regionFeature, simplifySurfacePoints } from "./game/models/surfaceIntent";
-import { qualityResolutionMultiplier, resolveGraphicsQuality } from "./game/render/graphicsQuality";
+import { prepareSurfaceFeatureEdit } from "./game/models/surfaceFeatureEdit";
+import {
+  AdaptiveGraphicsQualityController,
+  qualityResolutionMultiplier,
+  resolveGraphicsQuality,
+  type ResolvedGraphicsQuality,
+} from "./game/render/graphicsQuality";
+import {
+  m35TelemetrySnapshot,
+  recordM35Metric,
+  resetM35Telemetry,
+} from "./game/render/m35Telemetry";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
@@ -100,6 +111,7 @@ import { usePwa } from "./hooks/usePwa";
 import { TournamentPanel } from "./ui/TournamentPanel";
 import { LandOfficePanel } from "./ui/LandOfficePanel";
 import { isOwnedTile } from "./game/estate/estate";
+import { isWaterHazard } from "./game/models/terrainRules";
 import {
   concessionMinReputation,
   isConcessionUnlocked,
@@ -274,14 +286,14 @@ export default function App() {
       const controlledRound = prevState.world.playerPro?.activeRound;
       const editingLocked = controlledRound && controlledRound.phase !== "round_complete" && controlledRound.phase !== "conceded";
       const physicalEdit = new Set([
-        "PAINT_TILES", "SCULPT_TILES", "PLACE_TEE", "MOVE_TEE", "PLACE_GREEN", "MOVE_GREEN",
+        "PAINT_TILES", "EDIT_SURFACE_FEATURE", "SCULPT_TILES", "PLACE_TEE", "MOVE_TEE", "PLACE_GREEN", "MOVE_GREEN",
         "SET_TEE_BOX", "REMOVE_TEE_BOX", "SET_PIN_POSITION", "REMOVE_PIN_POSITION", "ADD_WAYPOINT",
         "UPDATE_WAYPOINT", "REMOVE_WAYPOINT", "PLACE_OBSTACLE", "REMOVE_OBSTACLE", "PLACE_BUILDING",
         "REMOVE_BUILDING", "PLACE_DECORATION", "REMOVE_DECORATION", "ROTATE_DECORATION", "SET_COURSE_LAYOUTS",
       ]).has(action.type);
       if (editingLocked && physicalEdit) return prevState;
       const nextState = applyAction(prevState, action);
-      if (action.type === "PAINT_TILES" && nextState !== prevState) {
+      if ((action.type === "PAINT_TILES" || action.type === "EDIT_SURFACE_FEATURE") && nextState !== prevState) {
         terrainUndoRef.current = [...terrainUndoRef.current.slice(-19), {
           course: prevState.course,
           world: prevState.world,
@@ -337,13 +349,31 @@ export default function App() {
   }, [gameState, history, records]);
 
   const [editorMode, setEditorMode] = useState<EditorMode>("PAINT");
-  const [terrainTool, setTerrainTool] = useState<"curve" | "area">("curve");
+  const [terrainTool, setTerrainTool] = useState<TerrainAuthoringTool>("curve");
   const [terrainBrushWidth, setTerrainBrushWidth] = useState(1);
   const [activeHoleIndex, setActiveHoleIndex] = useState(0); // 0..8
   const [selectedTeeSet, setSelectedTeeSet] = useState<TeeSet>("member");
-  const [wizardStep, setWizardStep] = useState<WizardStep>("TEE");
-  const [draftTee, setDraftTee] = useState<Point | null>(null);
-  const [draftGreen, setDraftGreen] = useState<Point | null>(null);
+  const [wizardStep, setWizardStepState] = useState<WizardStep>("TEE");
+  const [draftTee, setDraftTeeState] = useState<Point | null>(null);
+  const [draftGreen, setDraftGreenState] = useState<Point | null>(null);
+  // Native canvas pointer events can deliver tee and green clicks within one
+  // React render. Keep the interaction state synchronously current so the
+  // second click cannot observe the stale TEE step and overwrite the first.
+  const wizardStepRef = useRef<WizardStep>("TEE");
+  const draftTeeRef = useRef<Point | null>(null);
+  const draftGreenRef = useRef<Point | null>(null);
+  const setWizardStep = (next: WizardStep) => {
+    wizardStepRef.current = next;
+    setWizardStepState(next);
+  };
+  const setDraftTee = (next: Point | null) => {
+    draftTeeRef.current = next;
+    setDraftTeeState(next);
+  };
+  const setDraftGreen = (next: Point | null) => {
+    draftGreenRef.current = next;
+    setDraftGreenState(next);
+  };
   const [setupPlacement, setSetupPlacement] = useState<{ kind: "tee"; key: TeeSet } | { kind: "pin"; key: PinRotation } | null>(null);
   const [teeSetupPrompt, setTeeSetupPrompt] = useState<{ holeIndex: number } | null>(null);
   const [pendingTeePlacement, setPendingTeePlacement] = useState<{ holeIndex: number; teeSet: TeeSet; point: Point; netCost: number } | null>(null);
@@ -379,6 +409,7 @@ export default function App() {
       course: snapshot.course,
       world: snapshot.world,
       terrainVersion: state.terrainVersion + 1,
+      obstaclesVersion: state.obstaclesVersion + 1,
       economyVersion: state.economyVersion + 1,
     }));
     setCapital(snapshot.capital);
@@ -400,6 +431,7 @@ export default function App() {
       course: snapshot.course,
       world: snapshot.world,
       terrainVersion: state.terrainVersion + 1,
+      obstaclesVersion: state.obstaclesVersion + 1,
       economyVersion: state.economyVersion + 1,
     }));
     setCapital(snapshot.capital);
@@ -437,11 +469,31 @@ export default function App() {
   const [flyoverNonce, setFlyoverNonce] = useState(0);
   const soundEnabled = !appProfile.audio.masterMuted && appProfile.audio.masterVolume > 0 && appProfile.audio.sfxVolume > 0;
   const effectiveAnimations = animationsEnabled && !appProfile.accessibility.reducedMotion;
-  const resolvedGraphicsQuality = useMemo(() => resolveGraphicsQuality(appProfile.graphics.quality, {
+  const startupGraphicsQuality = useMemo(() => resolveGraphicsQuality("auto", {
     hardwareConcurrency: navigator.hardwareConcurrency || 4,
     deviceMemory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
     devicePixelRatio: window.devicePixelRatio || 1,
-  }), [appProfile.graphics.quality]);
+  }), []);
+  const [autoGraphicsQuality, setAutoGraphicsQuality] = useState<ResolvedGraphicsQuality>(
+    startupGraphicsQuality,
+  );
+  const adaptiveGraphicsRef = useRef(
+    new AdaptiveGraphicsQualityController(startupGraphicsQuality),
+  );
+  useEffect(() => {
+    if (appProfile.graphics.quality !== "auto") return;
+    adaptiveGraphicsRef.current.reset(startupGraphicsQuality);
+    setAutoGraphicsQuality(startupGraphicsQuality);
+  }, [appProfile.graphics.quality, startupGraphicsQuality]);
+  const resolvedGraphicsQuality: ResolvedGraphicsQuality =
+    appProfile.graphics.quality === "auto"
+      ? autoGraphicsQuality
+      : appProfile.graphics.quality;
+  const handleGraphicsFrame = useCallback((frameMs: number) => {
+    if (appProfile.graphics.quality !== "auto") return;
+    const decision = adaptiveGraphicsRef.current.pushFrame(frameMs);
+    if (decision.changed) setAutoGraphicsQuality(decision.quality);
+  }, [appProfile.graphics.quality]);
   const effectiveResolutionScale = appProfile.graphics.resolutionScale *
     qualityResolutionMultiplier(resolvedGraphicsQuality);
   const [showShotPlan, setShowShotPlan] = useState(true);
@@ -1308,8 +1360,8 @@ export default function App() {
     const isM26Fixture = fixtureParams.get("m26Fixture") === "1";
     const isM27Fixture = fixtureParams.get("m27Fixture") === "1";
     const isM30Fixture = fixtureParams.get("m30Fixture") === "1";
-    const isM47Fixture = fixtureParams.get("m47Fixture") === "1";
     const isM38Fixture = fixtureParams.get("m38Fixture") === "1";
+    const isM47Fixture = fixtureParams.get("m47Fixture") === "1";
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
     if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isPropertyFixture) return;
@@ -1325,10 +1377,10 @@ export default function App() {
       ? { ...createReferenceCourse(), property: starterPropertyCourse() }
       : isM38Fixture
       ? createPlayerProReferenceCourse()
-      : isM47Fixture
-      ? createM47CertificationCourse(18)
       : isM27Fixture
       ? createM27ReleaseReferenceCourse(fixtureTheme)
+      : isM47Fixture
+      ? createM47CertificationCourse(18)
       : isM30Fixture
       ? createM26MultiCourseReferenceCourse()
       : isM26Fixture
@@ -1965,6 +2017,7 @@ export default function App() {
 
   function finishTutorial(completed: boolean) {
     setTutorialProgress(null);
+    setTeeSetupPrompt(null);
     saveTutorialProgress(null);
     updateAppProfile({ tutorialOffered: true, tutorialCompleted: completed || loadAppProfile().tutorialCompleted });
     setShowTutorialOffer(false);
@@ -2013,13 +2066,22 @@ export default function App() {
   useEffect(() => {
     if (screen !== "game" || !tutorialProgress) return;
     const sequence = ++tutorialSaveSequenceRef.current;
-    queueMicrotask(() => {
-      if (tutorialSaveSequenceRef.current === sequence) setTutorialSaveStatus("saving");
-    });
-    void autosave({ course, world, history, records, live: getLiveSnapshot(), tutorial: tutorialProgress }).then(() => {
-      if (tutorialSaveSequenceRef.current === sequence) setTutorialSaveStatus("saved");
-    });
-  }, [screen, course, world, history, records, tutorialProgress, getLiveSnapshot]);
+    setTutorialSaveStatus("saving");
+    const timer = window.setTimeout(() => {
+      const current = gameStateRef.current;
+      void autosave({
+        course: current.course,
+        world: current.world,
+        history: historyRef.current,
+        records: recordsRef.current,
+        live: getLiveSnapshot(),
+        tutorial: tutorialProgress,
+      }).then(() => {
+        if (tutorialSaveSequenceRef.current === sequence) setTutorialSaveStatus("saved");
+      });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [screen, course, tutorialProgress, getLiveSnapshot]);
 
   // Milestones and resumed saves reconcile from authoritative course state,
   // rather than relying on a one-shot ninth-hole event that may already have
@@ -2449,18 +2511,43 @@ export default function App() {
       },
       terrainSurfaceState: () => {
         const current = gameStateRef.current.course;
+        const scoredHoles = scoreCourseHoles(current).holes;
         return {
           width: current.width,
           height: current.height,
+          tiles: [...current.tiles],
+          elevations: [...current.elevations],
+          owned: current.tiles.map((_, index) => isOwnedTile(
+            current,
+            index % current.width,
+            Math.floor(index / current.width),
+          )),
+          holes: current.holes.map((hole, index) => ({
+            tee: hole.tee ? { ...hole.tee } : null,
+            green: hole.green ? { ...hole.green } : null,
+            valid: Boolean(scoredHoles[index]?.isValid),
+            issues: [...(scoredHoles[index]?.issues ?? [])],
+          })),
+          obstacles: current.obstacles.map((obstacle) => ({ ...obstacle })),
           features: (current.surfaceIntent?.features ?? []).map((feature) => ({
             id: feature.id,
             terrain: feature.terrain,
             kind: feature.geometry.kind,
+            points: (feature.geometry.kind === "corridor"
+              ? feature.geometry.knots
+              : feature.geometry.ring).map((point) => ({ ...point })),
+            tangents: feature.geometry.tangents?.map((handles) => ({
+              in: { ...handles.in },
+              out: { ...handles.out },
+            })) ?? null,
+            width: feature.geometry.kind === "corridor" ? feature.geometry.width : null,
             coverage: [...feature.coverage],
             renderRings: feature.renderRings?.map((ring) => ring.map((point) => ({ ...point }))) ?? [],
           })),
         };
       },
+      m35Metrics: m35TelemetrySnapshot,
+      resetM35Metrics: resetM35Telemetry,
       setPaintCash: (cash: number) => {
         setGameState((current) => ({ ...current, world: { ...current.world, cash } }));
       },
@@ -2843,31 +2930,49 @@ export default function App() {
       if (!opts?.silent) setPaintError(t("land.buildBlocked"));
       return false;
     }
-    const prev = course.tiles[idx];
-    const { net, charged, refunded } = computeTerrainChangeCost(prev, next, costMult, course.theme);
-    if (net > 0 && world.cash < net) {
-      setPaintError(t("error.insufficientFunds", { amount: formatCurrency(Math.ceil(net)) }));
+    const preview = previewTerrainStroke(
+      course,
+      [{ x, y }],
+      next,
+      world.cash,
+      costMult,
+      world.reputation,
+      world.constraints?.protectedTrees,
+    );
+    if (!preview.affordable) {
+      setPaintError(t("error.insufficientFunds", {
+        amount: formatCurrency(Math.ceil(preview.net)),
+      }));
       return false;
     }
-    if (prev === next) return true;
+    if (
+      preview.changedCount === 0
+      && preview.elevationDeltas.length === 0
+      && preview.removedObstacles.length === 0
+    ) {
+      if (preview.excluded.protected > 0 && !opts?.silent) {
+        setPaintError(t("terrainStroke.protectedIsland"));
+      }
+      return preview.excludedCount === 0;
+    }
 
     // Dispatch PAINT_TILES action
     dispatch({
       type: "PAINT_TILES",
-      tiles: [{ x, y, terrain: next }],
+      tiles: preview.acceptedTiles,
     });
 
     // Track capital spending since last simulate (separate from game state)
     setCapital((c) => ({
-      spent: c.spent + charged,
-      refunded: c.refunded + refunded,
+      spent: c.spent + preview.charged,
+      refunded: c.refunded + preview.refunded,
       byTerrainSpent: {
         ...c.byTerrainSpent,
-        [next]: (c.byTerrainSpent[next] ?? 0) + charged,
+        [next]: (c.byTerrainSpent[next] ?? 0) + preview.charged,
       },
       byTerrainTiles: {
         ...c.byTerrainTiles,
-        [next]: (c.byTerrainTiles[next] ?? 0) + (prev !== next ? 1 : 0),
+        [next]: (c.byTerrainTiles[next] ?? 0) + preview.changedCount,
       },
     }));
     setPaintError(null);
@@ -2892,7 +2997,9 @@ export default function App() {
         y: Math.floor(sampled[0].y) + 0.5,
       };
     }
-    let knots = simplifySurfacePoints(sampled, terrainTool === "area" ? 0.28 : 0.42);
+    let knots = terrainTool === "spline"
+      ? sampled
+      : simplifySurfacePoints(sampled, terrainTool === "area" ? 0.28 : 0.42);
     if (terrainTool === "area" && knots.length >= 3) {
       const first = knots[0];
       const last = knots[knots.length - 1];
@@ -2912,8 +3019,24 @@ export default function App() {
 
   const getTerrainStrokePreview = useCallback((points: Point[]): TerrainStrokePreview => {
     const { coveragePoints } = buildTerrainSurfaceFeature(points);
-    return previewTerrainStroke(course, coveragePoints, selected, world.cash, costMult, world.reputation);
-  }, [buildTerrainSurfaceFeature, course, selected, world.cash, costMult, world.reputation]);
+    return previewTerrainStroke(
+      course,
+      coveragePoints,
+      selected,
+      world.cash,
+      costMult,
+      world.reputation,
+      world.constraints?.protectedTrees,
+    );
+  }, [
+    buildTerrainSurfaceFeature,
+    course,
+    selected,
+    world.cash,
+    costMult,
+    world.reputation,
+    world.constraints?.protectedTrees,
+  ]);
 
   const commitTerrainStroke = useCallback((points: Point[]) => {
     if (world.isBankrupt) return;
@@ -2925,9 +3048,15 @@ export default function App() {
       );
       return;
     }
-    if (preview.changedCount === 0) {
+    if (
+      preview.changedCount === 0
+      && preview.elevationDeltas.length === 0
+      && preview.removedObstacles.length === 0
+    ) {
       if (preview.excluded.locked > 0) {
         setPaintError(t("progression.locked", { reputation: terrainMinReputation(selected) }));
+      } else if (preview.excluded.protected > 0) {
+        setPaintError(t("terrainStroke.protectedIsland"));
       } else if (preview.excluded.unowned > 0) {
         setPaintError(t("land.buildBlocked"));
       } else {
@@ -2948,7 +3077,7 @@ export default function App() {
     );
     feature.coverage = acceptedRaster.tiles.map((point) => point.y * course.width + point.x);
     feature.renderRings = acceptedRaster.rings;
-    dispatch({ type: "PAINT_TILES", tiles: preview.tiles, surfaceFeature: feature });
+    dispatch({ type: "PAINT_TILES", tiles: preview.acceptedTiles, surfaceFeature: feature });
     setCapital((capital) => ({
       spent: capital.spent + preview.charged,
       refunded: capital.refunded + preview.refunded,
@@ -2964,13 +3093,81 @@ export default function App() {
     if (preview.excludedCount > 0) {
       setPaintError(
         `Painted ${preview.changedCount} tiles; skipped ${preview.excludedCount} invalid ` +
-        `(${preview.excluded.unowned} unowned, ${preview.excluded.outOfBounds} outside, ${preview.excluded.locked} locked).`
+        `(${preview.excluded.unowned} unowned, ${preview.excluded.outOfBounds} outside, ` +
+        `${preview.excluded.locked} locked, ${preview.excluded.protected} protected-tree islands).`
       );
     } else {
       setPaintError(null);
     }
     void audio.playSfx("brush");
   }, [world.isBankrupt, getTerrainStrokePreview, buildTerrainSurfaceFeature, selected, course.width, course.height, dispatch, audio, t]);
+
+  const getSurfaceFeatureEditPreview = useCallback((feature: SurfaceFeature): TerrainStrokePreview | null => {
+    const startedAt = performance.now();
+    const preview = prepareSurfaceFeatureEdit(
+      course,
+      feature,
+      world.cash,
+      costMult,
+      world.reputation,
+      world.constraints?.protectedTrees,
+    )?.preview ?? null;
+    recordM35Metric("surfacePreview", performance.now() - startedAt);
+    return preview;
+  }, [course, world.cash, world.reputation, world.constraints?.protectedTrees, costMult]);
+
+  const commitSurfaceFeatureEdit = useCallback((feature: SurfaceFeature) => {
+    const startedAt = performance.now();
+    if (world.isBankrupt) return;
+    const prepared = prepareSurfaceFeatureEdit(
+      course,
+      feature,
+      world.cash,
+      costMult,
+      world.reputation,
+      world.constraints?.protectedTrees,
+    );
+    if (!prepared?.commitAllowed) {
+      setPaintError(t("progression.locked", { reputation: terrainMinReputation(feature.terrain) }));
+      return;
+    }
+    if (!prepared.preview.affordable) {
+      setPaintError(
+        `Terrain edit needs ${formatCurrency(Math.ceil(prepared.preview.net))}; ` +
+        `${formatCurrency(Math.floor(prepared.preview.cash))} available ` +
+        `(${formatCurrency(Math.ceil(prepared.preview.shortfall))} short).`,
+      );
+      return;
+    }
+    dispatch({ type: "EDIT_SURFACE_FEATURE", feature });
+    setCapital((capital) => ({
+      spent: capital.spent + prepared.preview.charged,
+      refunded: capital.refunded + prepared.preview.refunded,
+      byTerrainSpent: {
+        ...capital.byTerrainSpent,
+        [feature.terrain]: (capital.byTerrainSpent[feature.terrain] ?? 0) + prepared.preview.charged,
+      },
+      byTerrainTiles: {
+        ...capital.byTerrainTiles,
+        [feature.terrain]: (capital.byTerrainTiles[feature.terrain] ?? 0) + prepared.preview.changedCount,
+      },
+    }));
+    setPaintError(prepared.preview.excludedCount > 0
+      ? `Updated surface; skipped ${prepared.preview.excludedCount} unowned tiles.`
+      : null);
+    recordM35Metric("surfaceCommit", performance.now() - startedAt);
+    void audio.playSfx("brush");
+  }, [
+    audio,
+    costMult,
+    course,
+    dispatch,
+    t,
+    world.cash,
+    world.constraints?.protectedTrees,
+    world.isBankrupt,
+    world.reputation,
+  ]);
 
   // Smart fairway painting: paint fairway along centerline with specified width in yards
   function smartPaintFairway(widthYards: number) {
@@ -3174,7 +3371,7 @@ export default function App() {
     void audio.playSfx("confirm");
     setFlyoverNonce((n) => n + 1); // cinematic hole flyover (ZKU-157)
 
-    setTeeSetupPrompt({ holeIndex: activeHoleIndex });
+    if (!tutorialProgress) setTeeSetupPrompt({ holeIndex: activeHoleIndex });
     setSelectedTeeSet("member");
     setActiveHoleIndex((i) => Math.min(8, i + 1));
     setWizardStep("TEE");
@@ -3183,8 +3380,10 @@ export default function App() {
   }
 
   function confirmWizard() {
-    if (!draftTee || !draftGreen) return;
-    confirmWizardWithValues(draftTee, draftGreen);
+    const tee = draftTeeRef.current;
+    const green = draftGreenRef.current;
+    if (!tee || !green) return;
+    confirmWizardWithValues(tee, green);
   }
 
   function teePlacementCost(holeIndex: number, teeSet: TeeSet, point: Point): number {
@@ -3348,6 +3547,11 @@ export default function App() {
           setPaintError(t("progression.locked", { reputation: obstacleMinReputation(obstacleType) }));
           return;
         }
+        if (isWaterHazard(course.tiles[y * course.width + x])) {
+          setPaintError(t("error.obstacleWater"));
+          return;
+        }
+        setPaintError(null);
         dispatch({ type: "PLACE_OBSTACLE", x, y, obstacleType });
       }
       return;
@@ -3418,7 +3622,8 @@ export default function App() {
       return;
     }
     // HOLE_WIZARD
-    if (wizardStep === "TEE" || wizardStep === "MOVE_TEE") {
+    const currentWizardStep = wizardStepRef.current;
+    if (currentWizardStep === "TEE" || currentWizardStep === "MOVE_TEE") {
       // Validate: cannot place on water and must be in bounds
       if (x < 0 || y < 0 || x >= course.width || y >= course.height) {
         setPaintError(t("error.teeBounds"));
@@ -3434,7 +3639,7 @@ export default function App() {
       setDraftTee(newTee);
       
       // If moving tee, keep existing green and update immediately
-      if (wizardStep === "MOVE_TEE") {
+      if (currentWizardStep === "MOVE_TEE") {
         const hole = course.holes[activeHoleIndex];
         const existingGreen = hole.green;
         if (existingGreen) {
@@ -3455,7 +3660,7 @@ export default function App() {
       }
       return;
     }
-    if (wizardStep === "GREEN" || wizardStep === "MOVE_GREEN") {
+    if (currentWizardStep === "GREEN" || currentWizardStep === "MOVE_GREEN") {
       // Validate: cannot place on water and must be in bounds
       if (x < 0 || y < 0 || x >= course.width || y >= course.height) {
         setPaintError(t("error.greenBounds"));
@@ -3471,7 +3676,7 @@ export default function App() {
       setDraftGreen(newDraftGreen);
       
       // If moving green, update immediately and stay on same hole
-      if (wizardStep === "MOVE_GREEN") {
+      if (currentWizardStep === "MOVE_GREEN") {
         moveMarker("green", newDraftGreen);
         // Reset wizard state, stay on same hole
         setWizardStep("TEE");
@@ -3479,8 +3684,9 @@ export default function App() {
         setDraftGreen(null);
       } else {
         // Placing new green, auto-confirm and move to next hole
-        if (draftTee) {
-          confirmWizardWithValues(draftTee, newDraftGreen);
+        const tee = draftTeeRef.current;
+        if (tee) {
+          confirmWizardWithValues(tee, newDraftGreen);
         }
       }
       return;
@@ -3905,6 +4111,7 @@ export default function App() {
                 paceBottlenecks={live.status.pace.bottlenecks}
                 animationsEnabled={effectiveAnimations && resolvedGraphicsQuality !== "low"}
                 graphicsQuality={resolvedGraphicsQuality}
+                onFrameTime={handleGraphicsFrame}
                 ambienceFx={appProfile.graphics.ambienceFx && resolvedGraphicsQuality !== "low"}
                 waterAnimation={appProfile.graphics.waterAnimation && resolvedGraphicsQuality !== "low"}
                 treeSway={appProfile.graphics.treeSway && resolvedGraphicsQuality === "high"}
@@ -3934,6 +4141,9 @@ export default function App() {
                 }}
                 onPreviewTerrainStroke={getTerrainStrokePreview}
                 onCommitTerrainStroke={commitTerrainStroke}
+                terrainTool={terrainTool}
+                onPreviewSurfaceFeatureEdit={getSurfaceFeatureEditPreview}
+                onCommitSurfaceFeatureEdit={commitSurfaceFeatureEdit}
                 selectedTerrain={selected}
                 worldCash={world.cash}
                 flagColor={legacy.selected.flagColor}

@@ -27,7 +27,13 @@ import {
 import { revalidateScheduledTournaments } from "../game/tournaments/tournaments";
 import { canPurchaseParcel, isOwnedTile } from "../game/estate/estate";
 import { applyPropertyCommand } from "../game/property/property";
-import { appendSurfaceFeature } from "../game/models/surfaceIntent";
+import {
+  appendSurfaceFeature,
+  rasterizeSurfaceFeatureDetailed,
+} from "../game/models/surfaceIntent";
+import { prepareSurfaceFeatureEdit } from "../game/models/surfaceFeatureEdit";
+import { applyWaterGrading } from "../game/models/waterGrading";
+import { isWaterHazard } from "../game/models/terrainRules";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -62,20 +68,66 @@ export function applyAction(state: GameState, action: Action): GameState {
         cash: state.world.cash,
         costMult,
         reputation: state.world.reputation,
+        protectedTrees: state.world.constraints?.protectedTrees,
       });
       // Affordability is atomic: no terrain, cash, or version mutation when
       // even one otherwise-valid stroke would exceed available cash.
-      if (!preview.affordable || preview.changedCount === 0 || state.world.isBankrupt) break;
+      if (
+        !preview.affordable
+        || (
+          preview.changedCount === 0
+          && preview.elevationDeltas.length === 0
+          && preview.removedObstacles.length === 0
+        )
+        || state.world.isBankrupt
+      ) break;
 
       const newTiles = state.course.tiles.slice();
       for (const { x, y, terrain } of preview.tiles) newTiles[y * state.course.width + x] = terrain;
+      const newElevations = preview.elevationDeltas.length > 0
+        ? applyWaterGrading(state.course, {
+          deltas: preview.elevationDeltas,
+          earthworkSteps: preview.earthworkSteps,
+        })
+        : state.course.elevations;
+      const removedObstacleKeys = new Set(
+        preview.removedObstacles.map((obstacle) => `${obstacle.x},${obstacle.y}`),
+      );
+      const newObstacles = preview.removedObstacles.length > 0
+        ? state.course.obstacles.filter(
+          (obstacle) => !removedObstacleKeys.has(`${obstacle.x},${obstacle.y}`),
+        )
+        : state.course.obstacles;
 
-      const paintedCourse = { ...state.course, tiles: newTiles };
+      const paintedCourse = {
+        ...state.course,
+        tiles: newTiles,
+        elevations: newElevations,
+        obstacles: newObstacles,
+      };
+      let committedCourse = paintedCourse;
+      if (action.surfaceFeature) {
+        const acceptedIndices = new Set(
+          preview.acceptedTiles.map((tile) => tile.y * state.course.width + tile.x),
+        );
+        const clipped = rasterizeSurfaceFeatureDetailed(
+          action.surfaceFeature,
+          state.course.width,
+          state.course.height,
+          acceptedIndices,
+        );
+        committedCourse = {
+          ...paintedCourse,
+          surfaceIntent: appendSurfaceFeature(paintedCourse, {
+            ...action.surfaceFeature,
+            coverage: clipped.tiles.map((point) => point.y * state.course.width + point.x),
+            renderRings: clipped.rings,
+          }),
+        };
+      }
       newState = {
         ...newState,
-        course: action.surfaceFeature
-          ? { ...paintedCourse, surfaceIntent: appendSurfaceFeature(paintedCourse, action.surfaceFeature) }
-          : paintedCourse,
+        course: committedCourse,
         world: {
           ...state.world,
           cash: preview.projectedCash,
@@ -83,6 +135,39 @@ export function applyAction(state: GameState, action: Action): GameState {
         },
       };
       terrainVersion++;
+      if (preview.removedObstacles.length > 0) obstaclesVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "EDIT_SURFACE_FEATURE": {
+      if (state.world.isBankrupt) break;
+      const prepared = prepareSurfaceFeatureEdit(
+        state.course,
+        action.feature,
+        state.world.cash,
+        costMult,
+        state.world.reputation,
+        state.world.constraints?.protectedTrees,
+      );
+      if (!prepared?.commitAllowed || !prepared.preview.affordable) break;
+      newState = {
+        ...newState,
+        course: {
+          ...state.course,
+          tiles: prepared.tiles,
+          elevations: prepared.elevations,
+          obstacles: prepared.obstacles,
+          surfaceIntent: prepared.intent,
+        },
+        world: {
+          ...state.world,
+          cash: prepared.preview.projectedCash,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(prepared.preview.projectedCash),
+        },
+      };
+      terrainVersion++;
+      if (prepared.preview.removedObstacles.length > 0) obstaclesVersion++;
       economyVersion++;
       break;
     }
@@ -404,6 +489,8 @@ export function applyAction(state: GameState, action: Action): GameState {
 
     case "PLACE_OBSTACLE": {
       if (!isOwnedTile(state.course, action.x, action.y)) break;
+      const terrain = state.course.tiles[action.y * state.course.width + action.x];
+      if (isWaterHazard(terrain)) break;
       const existingIdx = state.course.obstacles.findIndex(
         (o) => o.x === action.x && o.y === action.y
       );

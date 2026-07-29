@@ -1,0 +1,254 @@
+{
+  "frames": {
+    "links_bush_dune_grass": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 128,
+        "h": 94
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 94
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 94
+      }
+    },
+    "links_bush_golden_fescue": {
+      "frame": {
+        "x": 132,
+        "y": 2,
+        "w": 128,
+        "h": 149
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 149
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 149
+      }
+    },
+    "links_bush_gorse": {
+      "frame": {
+        "x": 262,
+        "y": 2,
+        "w": 128,
+        "h": 166
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 166
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 166
+      }
+    },
+    "links_bush_heather": {
+      "frame": {
+        "x": 392,
+        "y": 2,
+        "w": 128,
+        "h": 145
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 145
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 145
+      }
+    },
+    "links_bush_marram": {
+      "frame": {
+        "x": 522,
+        "y": 2,
+        "w": 128,
+        "h": 183
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 183
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 183
+      }
+    },
+    "links_bush_salt_shrub": {
+      "frame": {
+        "x": 652,
+        "y": 2,
+        "w": 128,
+        "h": 73
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 73
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 73
+      }
+    },
+    "links_rock_coastal_stone": {
+      "frame": {
+        "x": 782,
+        "y": 2,
+        "w": 128,
+        "h": 92
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 92
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 92
+      }
+    },
+    "links_rock_driftwood": {
+      "frame": {
+        "x": 2,
+        "y": 187,
+        "w": 128,
+        "h": 163
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 163
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 163
+      }
+    },
+    "links_rock_dune_boulder": {
+      "frame": {
+        "x": 132,
+        "y": 187,
+        "w": 128,
+        "h": 106
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 106
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 106
+      }
+    },
+    "links_rock_slate": {
+      "frame": {
+        "x": 262,
+        "y": 187,
+        "w": 128,
+        "h": 114
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 114
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 114
+      }
+    },
+    "links_tree_hawthorn": {
+      "frame": {
+        "x": 392,
+        "y": 187,
+        "w": 128,
+        "h": 83
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 83
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 83
+      }
+    },
+    "links_tree_wind_pine": {
+      "frame": {
+        "x": 522,
+        "y": 187,
+        "w": 128,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      }
+    }
+  },
+  "meta": {
+    "app": "simgolf-lite build-atlas",
+    "image": "natural-props-links-high.cf989f55b359.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 912,
+      "h": 352
+    },
+    "scale": "1"
+  }
+}

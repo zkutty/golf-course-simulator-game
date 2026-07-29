@@ -1,0 +1,474 @@
+{
+  "frames": {
+    "clubhouse": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 192,
+        "h": 150
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 150
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 150
+      }
+    },
+    "parkland_bench": {
+      "frame": {
+        "x": 196,
+        "y": 2,
+        "w": 128,
+        "h": 164
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 164
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 164
+      }
+    },
+    "parkland_bin": {
+      "frame": {
+        "x": 326,
+        "y": 2,
+        "w": 128,
+        "h": 190
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 190
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 190
+      }
+    },
+    "parkland_boardwalk": {
+      "frame": {
+        "x": 456,
+        "y": 2,
+        "w": 128,
+        "h": 105
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 105
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 105
+      }
+    },
+    "parkland_bridge": {
+      "frame": {
+        "x": 586,
+        "y": 2,
+        "w": 128,
+        "h": 102
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 102
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 102
+      }
+    },
+    "parkland_bridge_approach": {
+      "frame": {
+        "x": 716,
+        "y": 2,
+        "w": 128,
+        "h": 106
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 106
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 106
+      }
+    },
+    "parkland_cart_rental_t1": {
+      "frame": {
+        "x": 2,
+        "y": 194,
+        "w": 192,
+        "h": 160
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 160
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 160
+      }
+    },
+    "parkland_cart_rental_t2": {
+      "frame": {
+        "x": 196,
+        "y": 194,
+        "w": 192,
+        "h": 160
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 160
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 160
+      }
+    },
+    "parkland_cart_rental_t3": {
+      "frame": {
+        "x": 390,
+        "y": 194,
+        "w": 192,
+        "h": 160
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 160
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 160
+      }
+    },
+    "parkland_clubhouse_t1": {
+      "frame": {
+        "x": 584,
+        "y": 194,
+        "w": 256,
+        "h": 256
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 256,
+        "h": 256
+      },
+      "sourceSize": {
+        "w": 256,
+        "h": 256
+      }
+    },
+    "parkland_fence": {
+      "frame": {
+        "x": 842,
+        "y": 194,
+        "w": 128,
+        "h": 140
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 140
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 140
+      }
+    },
+    "parkland_flower_bed": {
+      "frame": {
+        "x": 2,
+        "y": 452,
+        "w": 128,
+        "h": 128
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 128
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 128
+      }
+    },
+    "parkland_lamp": {
+      "frame": {
+        "x": 132,
+        "y": 452,
+        "w": 98,
+        "h": 192
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 98,
+        "h": 192
+      },
+      "sourceSize": {
+        "w": 98,
+        "h": 192
+      }
+    },
+    "parkland_ornamental_feature": {
+      "frame": {
+        "x": 232,
+        "y": 452,
+        "w": 128,
+        "h": 141
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 141
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 141
+      }
+    },
+    "parkland_parked_cart": {
+      "frame": {
+        "x": 362,
+        "y": 452,
+        "w": 128,
+        "h": 143
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 143
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 143
+      }
+    },
+    "parkland_planter": {
+      "frame": {
+        "x": 492,
+        "y": 452,
+        "w": 128,
+        "h": 158
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 158
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 158
+      }
+    },
+    "parkland_pro_shop_t1": {
+      "frame": {
+        "x": 622,
+        "y": 452,
+        "w": 192,
+        "h": 150
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 150
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 150
+      }
+    },
+    "parkland_pro_shop_t2": {
+      "frame": {
+        "x": 816,
+        "y": 452,
+        "w": 192,
+        "h": 150
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 150
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 150
+      }
+    },
+    "parkland_pro_shop_t3": {
+      "frame": {
+        "x": 2,
+        "y": 646,
+        "w": 192,
+        "h": 150
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 150
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 150
+      }
+    },
+    "parkland_snack_bar_t1": {
+      "frame": {
+        "x": 196,
+        "y": 646,
+        "w": 192,
+        "h": 146
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 146
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 146
+      }
+    },
+    "parkland_snack_bar_t2": {
+      "frame": {
+        "x": 390,
+        "y": 646,
+        "w": 192,
+        "h": 146
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 146
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 146
+      }
+    },
+    "parkland_snack_bar_t3": {
+      "frame": {
+        "x": 584,
+        "y": 646,
+        "w": 192,
+        "h": 146
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 192,
+        "h": 146
+      },
+      "sourceSize": {
+        "w": 192,
+        "h": 146
+      }
+    },
+    "parkland_tee_sign": {
+      "frame": {
+        "x": 778,
+        "y": 646,
+        "w": 120,
+        "h": 192
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 120,
+        "h": 192
+      },
+      "sourceSize": {
+        "w": 120,
+        "h": 192
+      }
+    }
+  },
+  "meta": {
+    "app": "simgolf-lite build-atlas",
+    "image": "buildings-decor-parkland-high.bc2b7a340d96.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 1010,
+      "h": 840
+    },
+    "scale": "1"
+  }
+}

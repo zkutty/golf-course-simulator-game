@@ -4,6 +4,7 @@ import type { GameState } from "../gameState";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "./defaults";
 import type { Course, Terrain } from "./types";
 import { previewTerrainStroke } from "./terrainStroke";
+import { computeElevationChangeCost } from "./terrainEconomics";
 
 function course(tiles: Terrain[] = new Array(12).fill("rough")): Course {
   return {
@@ -92,5 +93,155 @@ describe("terrain paint strokes", () => {
       tiles: [{ x: 0, y: 0, terrain: "green" }, { x: 1, y: 0, terrain: "green" }],
     });
     expect(after).toEqual(before);
+  });
+
+  it("previews and commits automatic water excavation in the same transaction", () => {
+    const c = course();
+    c.elevations.fill(5);
+    const before = state(c);
+    const point = { x: 1, y: 1 };
+    const preview = previewTerrainStroke(
+      before.course,
+      [point],
+      "water",
+      before.world.cash,
+      1,
+      before.world.reputation,
+    );
+    expect(preview.elevationDeltas).toEqual([{ ...point, delta: -1 }]);
+    expect(preview.earthworkSteps).toBe(1);
+    expect(preview.earthworkCost).toBe(computeElevationChangeCost(1).net);
+    expect(preview.gross - preview.salvage).toBe(preview.net);
+
+    const after = applyAction(before, {
+      type: "PAINT_TILES",
+      tiles: [{ ...point, terrain: "water" }],
+    });
+    const index = point.y * c.width + point.x;
+    expect(after.course.tiles[index]).toBe("water");
+    expect(after.course.elevations[index]).toBe(4);
+    expect(after.world.cash).toBe(preview.projectedCash);
+  });
+
+  it("can grade a touched legacy lake even when its terrain already matches", () => {
+    const c = course();
+    c.elevations.fill(6);
+    const left = 1 * c.width + 1;
+    const right = 1 * c.width + 2;
+    c.tiles[left] = "water";
+    c.tiles[right] = "water";
+    c.elevations[left] = 5;
+    c.elevations[right] = 7;
+    const before = state(c);
+    const preview = previewTerrainStroke(
+      c,
+      [{ x: 1, y: 1 }],
+      "water",
+      before.world.cash,
+      1,
+      before.world.reputation,
+    );
+    expect(preview.changedCount).toBe(0);
+    expect(preview.elevationDeltas).toEqual([{ x: 2, y: 1, delta: -2 }]);
+
+    const after = applyAction(before, {
+      type: "PAINT_TILES",
+      tiles: [{ x: 1, y: 1, terrain: "water" }],
+    });
+    expect(after.course.elevations[left]).toBe(5);
+    expect(after.course.elevations[right]).toBe(5);
+    expect(after.terrainVersion).toBe(before.terrainVersion + 1);
+  });
+
+  it("rejects unaffordable water without applying terrain or excavation", () => {
+    const c = course();
+    c.elevations.fill(5);
+    const before = state(c, 1);
+    const after = applyAction(before, {
+      type: "PAINT_TILES",
+      tiles: [{ x: 1, y: 1, terrain: "water" }],
+    });
+    expect(after).toEqual(before);
+  });
+
+  it("clears dry-land props inside only the touched water component", () => {
+    const c = course();
+    c.elevations.fill(4);
+    c.obstacles = [
+      { x: 1, y: 1, type: "tree" },
+      { x: 2, y: 1, type: "rock" },
+      { x: 0, y: 0, type: "bush" },
+    ];
+    const before = state(c);
+    const points = [{ x: 1, y: 1 }, { x: 2, y: 1 }];
+    const preview = previewTerrainStroke(
+      c,
+      points,
+      "water",
+      before.world.cash,
+      1,
+      before.world.reputation,
+    );
+    expect(preview.removedObstacles).toEqual(c.obstacles.slice(0, 2));
+
+    const after = applyAction(before, {
+      type: "PAINT_TILES",
+      tiles: points.map((point) => ({ ...point, terrain: "water" as const })),
+    });
+    expect(after.course.obstacles).toEqual([{ x: 0, y: 0, type: "bush" }]);
+    expect(after.obstaclesVersion).toBe(before.obstaclesVersion + 1);
+  });
+
+  it("clips protected trees into dry-land islands while clearing ordinary props", () => {
+    const c = course();
+    c.elevations.fill(4);
+    c.obstacles = [
+      { x: 1, y: 1, type: "tree" },
+      { x: 2, y: 1, type: "bush" },
+    ];
+    const before = {
+      ...state(c),
+      world: {
+        ...DEFAULT_WORLD,
+        cash: 25_000,
+        reputation: 100,
+        constraints: { protectedTrees: true },
+      },
+    };
+    const points = [{ x: 1, y: 1 }, { x: 2, y: 1 }];
+    const preview = previewTerrainStroke(
+      c,
+      points,
+      "water",
+      before.world.cash,
+      1,
+      before.world.reputation,
+      true,
+    );
+    expect(preview.excluded.protected).toBe(1);
+    expect(preview.removedObstacles).toEqual([{ x: 2, y: 1, type: "bush" }]);
+
+    const after = applyAction(before, {
+      type: "PAINT_TILES",
+      tiles: points.map((point) => ({ ...point, terrain: "water" as const })),
+    });
+    expect(after.course.tiles[1 * c.width + 1]).toBe("rough");
+    expect(after.course.tiles[1 * c.width + 2]).toBe("water");
+    expect(after.course.obstacles).toEqual([{ x: 1, y: 1, type: "tree" }]);
+  });
+
+  it("rejects new obstacles on water and wetland", () => {
+    const c = course();
+    c.tiles[0] = "water";
+    c.tiles[1] = "wetland";
+    const before = state(c);
+    for (const x of [0, 1]) {
+      expect(applyAction(before, {
+        type: "PLACE_OBSTACLE",
+        x,
+        y: 0,
+        obstacleType: "tree",
+      })).toEqual(before);
+    }
   });
 });

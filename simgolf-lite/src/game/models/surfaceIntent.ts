@@ -4,6 +4,7 @@ import type {
   SurfaceFeature,
   SurfaceIntentV1,
   SurfacePoint,
+  SurfaceTangentHandles,
   Terrain,
 } from "./types";
 
@@ -101,6 +102,27 @@ function normalizeRenderRings(
   return rings.length > 0 ? rings : undefined;
 }
 
+function normalizeTangents(
+  value: unknown,
+  points: readonly SurfacePoint[],
+  width: number,
+  height: number,
+): SurfaceTangentHandles[] | undefined {
+  if (!Array.isArray(value) || value.length !== points.length) return undefined;
+  const tangents = value.map((candidate) => {
+    if (!candidate || typeof candidate !== "object") return null;
+    const handles = candidate as Partial<SurfaceTangentHandles>;
+    if (!finitePoint(handles.in) || !finitePoint(handles.out)) return null;
+    return {
+      in: clampPoint(handles.in, width, height),
+      out: clampPoint(handles.out, width, height),
+    };
+  });
+  return tangents.every((handles): handles is SurfaceTangentHandles => handles !== null)
+    ? tangents
+    : undefined;
+}
+
 export function normalizeSurfaceIntent(
   value: unknown,
   width: number,
@@ -135,6 +157,7 @@ export function normalizeSurfaceIntent(
           kind: "corridor",
           knots,
           width: Math.max(0.25, Math.min(24, feature.geometry.width)),
+          tangents: normalizeTangents(feature.geometry.tangents, knots, width, height),
         },
       });
     } else if (feature.geometry?.kind === "region") {
@@ -148,7 +171,11 @@ export function normalizeSurfaceIntent(
         order: feature.order,
         coverage,
         renderRings: normalizeRenderRings(feature.renderRings, width, height),
-        geometry: { kind: "region", ring },
+        geometry: {
+          kind: "region",
+          ring,
+          tangents: normalizeTangents(feature.geometry.tangents, ring, width, height),
+        },
       });
     }
   }
@@ -160,6 +187,60 @@ export function normalizeSurfaceIntent(
 
 function lerpPoint(a: SurfacePoint, b: SurfacePoint, t: number): SurfacePoint {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function cubicBezier(
+  p0: SurfacePoint,
+  p1: SurfacePoint,
+  p2: SurfacePoint,
+  p3: SurfacePoint,
+  t: number,
+): SurfacePoint {
+  const inverse = 1 - t;
+  const a = inverse * inverse * inverse;
+  const b = 3 * inverse * inverse * t;
+  const c = 3 * inverse * t * t;
+  const d = t * t * t;
+  return {
+    x: a * p0.x + b * p1.x + c * p2.x + d * p3.x,
+    y: a * p0.y + b * p1.y + c * p2.y + d * p3.y,
+  };
+}
+
+export function defaultSurfaceTangents(
+  points: readonly SurfacePoint[],
+  closed = false,
+): SurfaceTangentHandles[] {
+  return points.map((point, index) => {
+    const previous = index > 0
+      ? points[index - 1]
+      : closed
+        ? points[points.length - 1]
+        : point;
+    const next = index + 1 < points.length
+      ? points[index + 1]
+      : closed
+        ? points[0]
+        : point;
+    const scale = closed || (index > 0 && index + 1 < points.length) ? 1 / 6 : 1 / 3;
+    const dx = (next.x - previous.x) * scale;
+    const dy = (next.y - previous.y) * scale;
+    return {
+      in: { x: point.x - dx, y: point.y - dy },
+      out: { x: point.x + dx, y: point.y + dy },
+    };
+  });
+}
+
+export function withDefaultSurfaceTangents(feature: SurfaceFeature): SurfaceFeature {
+  const points = feature.geometry.kind === "corridor"
+    ? feature.geometry.knots
+    : feature.geometry.ring;
+  if (feature.geometry.tangents?.length === points.length) return feature;
+  const tangents = defaultSurfaceTangents(points, feature.geometry.kind === "region");
+  return feature.geometry.kind === "corridor"
+    ? { ...feature, geometry: { ...feature.geometry, tangents } }
+    : { ...feature, geometry: { ...feature.geometry, tangents } };
 }
 
 /**
@@ -191,9 +272,14 @@ function centripetalCatmullRom(
 }
 
 /** Fixed-step sampling makes preview, commit, save/reload, and tests agree. */
-export function sampleCorridor(knots: readonly SurfacePoint[], step = 0.2): SurfacePoint[] {
+export function sampleCorridor(
+  knots: readonly SurfacePoint[],
+  step = 0.2,
+  tangents?: readonly SurfaceTangentHandles[],
+): SurfacePoint[] {
   if (knots.length < 2) return [...knots];
   const result: SurfacePoint[] = [];
+  const explicitTangents = tangents?.length === knots.length ? tangents : undefined;
   for (let index = 0; index < knots.length - 1; index++) {
     const p1 = knots[index];
     const p2 = knots[index + 1];
@@ -207,11 +293,39 @@ export function sampleCorridor(knots: readonly SurfacePoint[], step = 0.2): Surf
     const divisions = Math.max(1, Math.ceil(distance / step));
     for (let part = 0; part < divisions; part++) {
       const t = part / divisions;
-      result.push(centripetalCatmullRom(p0, p1, p2, p3, t));
+      result.push(explicitTangents
+        ? cubicBezier(p1, explicitTangents[index].out, explicitTangents[index + 1].in, p2, t)
+        : centripetalCatmullRom(p0, p1, p2, p3, t));
     }
   }
   result.push({ ...knots[knots.length - 1] });
   return result;
+}
+
+export function sampleRegion(
+  ring: readonly SurfacePoint[],
+  tangents?: readonly SurfaceTangentHandles[],
+  step = 0.2,
+): SurfacePoint[] {
+  if (ring.length < 3 || tangents?.length !== ring.length) return ring.map((point) => ({ ...point }));
+  const sampled: SurfacePoint[] = [];
+  for (let index = 0; index < ring.length; index++) {
+    const nextIndex = (index + 1) % ring.length;
+    const start = ring[index];
+    const end = ring[nextIndex];
+    const distance = Math.hypot(end.x - start.x, end.y - start.y);
+    const divisions = Math.max(1, Math.ceil(distance / step));
+    for (let part = 0; part < divisions; part++) {
+      sampled.push(cubicBezier(
+        start,
+        tangents[index].out,
+        tangents[nextIndex].in,
+        end,
+        part / divisions,
+      ));
+    }
+  }
+  return sampled;
 }
 
 function pointSegmentDistance(point: SurfacePoint, a: SurfacePoint, b: SurfacePoint): number {
@@ -224,7 +338,10 @@ function pointSegmentDistance(point: SurfacePoint, a: SurfacePoint, b: SurfacePo
 }
 
 function coverageBounds(feature: SurfaceFeature): { minX: number; minY: number; maxX: number; maxY: number } {
-  const points = feature.geometry.kind === "corridor" ? feature.geometry.knots : feature.geometry.ring;
+  const geometryPoints = feature.geometry.kind === "corridor" ? feature.geometry.knots : feature.geometry.ring;
+  const points = feature.geometry.tangents
+    ? [...geometryPoints, ...feature.geometry.tangents.flatMap((handles) => [handles.in, handles.out])]
+    : geometryPoints;
   const pad = feature.geometry.kind === "corridor" ? feature.geometry.width / 2 + 1 : 1;
   return {
     minX: Math.floor(Math.min(...points.map((point) => point.x)) - pad),
@@ -539,8 +656,8 @@ export function rasterizeSurfaceFeatureDetailed(
   allowedIndices?: ReadonlySet<number>,
 ): SurfaceRasterization {
   const sampled = feature.geometry.kind === "corridor"
-    ? sampleCorridor(feature.geometry.knots)
-    : feature.geometry.ring;
+    ? sampleCorridor(feature.geometry.knots, 0.2, feature.geometry.tangents)
+    : sampleRegion(feature.geometry.ring, feature.geometry.tangents);
   if (feature.geometry.kind === "region" && sampled.length < 3) return { tiles: [], rings: [] };
   if (sampled.length === 0) return { tiles: [], rings: [] };
   const mask = localMask(feature, courseWidth, courseHeight);
@@ -630,4 +747,39 @@ export function appendSurfaceFeature(course: Course, feature: SurfaceFeature): S
     nextId: Math.max(intent.nextId + 1, Number(feature.id.replace(/^surface-/, "")) + 1 || intent.nextId + 1),
     features: [...intent.features, { ...feature, coverage: validCoverage }].slice(-MAX_FEATURES),
   };
+}
+
+/** Reconstructs the terrain below persisted intent without increasing save size. */
+export function buildIntentUnderlayTiles(
+  tiles: readonly Terrain[],
+  width: number,
+  height: number,
+  features: readonly SurfaceFeature[],
+): Terrain[] {
+  const result = tiles.slice();
+  for (const feature of features) {
+    const coverage = new Set(feature.coverage.filter((index) => tiles[index] === feature.terrain));
+    for (const index of coverage) {
+      const x = index % width;
+      const y = Math.floor(index / width);
+      const candidates = new Map<Terrain, number>();
+      for (let radius = 1; radius <= 3 && candidates.size === 0; radius++) {
+        for (let dy = -radius; dy <= radius; dy++) {
+          for (let dx = -radius; dx <= radius; dx++) {
+            if (Math.abs(dx) + Math.abs(dy) !== radius) continue;
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            const neighborIndex = ny * width + nx;
+            if (coverage.has(neighborIndex)) continue;
+            const terrain = result[neighborIndex];
+            if (terrain === feature.terrain) continue;
+            candidates.set(terrain, (candidates.get(terrain) ?? 0) + 1);
+          }
+        }
+      }
+      result[index] = [...candidates].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "rough";
+    }
+  }
+  return result;
 }

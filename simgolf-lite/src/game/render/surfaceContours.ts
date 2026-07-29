@@ -1,5 +1,6 @@
-import type { SurfaceFeature, SurfacePoint, Terrain } from "../models/types";
+import type { SurfacePoint, Terrain } from "../models/types";
 import { simplifySurfacePoints } from "../models/surfaceIntent";
+export { buildIntentUnderlayTiles } from "../models/surfaceIntent";
 
 export interface TerrainContour {
   terrain: Terrain;
@@ -12,41 +13,6 @@ interface Edge {
 }
 
 const key = (point: SurfacePoint) => `${point.x},${point.y}`;
-
-/** Reconstructs what lies below persisted intent without increasing save size. */
-export function buildIntentUnderlayTiles(
-  tiles: readonly Terrain[],
-  width: number,
-  height: number,
-  features: readonly SurfaceFeature[],
-): Terrain[] {
-  const result = tiles.slice();
-  for (const feature of features) {
-    const coverage = new Set(feature.coverage.filter((index) => tiles[index] === feature.terrain));
-    for (const index of coverage) {
-      const x = index % width;
-      const y = Math.floor(index / width);
-      const candidates = new Map<Terrain, number>();
-      for (let radius = 1; radius <= 3 && candidates.size === 0; radius++) {
-        for (let dy = -radius; dy <= radius; dy++) {
-          for (let dx = -radius; dx <= radius; dx++) {
-            if (Math.abs(dx) + Math.abs(dy) !== radius) continue;
-            const nx = x + dx;
-            const ny = y + dy;
-            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-            const neighborIndex = ny * width + nx;
-            if (coverage.has(neighborIndex)) continue;
-            const terrain = result[neighborIndex];
-            if (terrain === feature.terrain) continue;
-            candidates.set(terrain, (candidates.get(terrain) ?? 0) + 1);
-          }
-        }
-      }
-      result[index] = [...candidates].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "rough";
-    }
-  }
-  return result;
-}
 
 export function smoothClosedContour(
   points: readonly SurfacePoint[],

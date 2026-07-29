@@ -1,5 +1,63 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## M35 full-milestone completion pass — 2026-07-25
+
+Current request: “complete m35 from linear”
+
+- Resolved M35 as the 25-issue Linear milestone `M35: Continuous Landscape & Visual Polish`, not only ZK-332.
+- Read the milestone, all top-level issue specifications, all renderer-correction subissues, issue comments, attachments, and the explicit rejected human visual gate.
+- Current authoritative blocker chain is ZK-468 → ZK-469/ZK-470/ZK-471 → ZK-472 → fresh-agent ZK-473 review → human ZK-466 approval.
+- Open top-level scope also remains in ZK-326 (post-commit node/tangent editing), ZK-328 (height/shore/path/structure integration), ZK-329 (biome/tier atlas splitting and demand caching), ZK-330 (bounded world polish), ZK-327 (accepted connected presentation), and ZK-332 (adaptive quality plus certification).
+- Current `develop` baseline is `6944abe`. The existing terrain renderer still emits one complete diamond sprite per tile with local edge frames and step-cap relief. Auto quality is a startup capability guess with no sustained sampling/hysteresis. All terrain themes are packed and eagerly loaded in one atlas, and the service worker precaches the complete non-audio graph.
+- Existing unrelated worktree edits and artifact directories predate this pass and must be preserved.
+
+### M35 implementation checkpoint
+
+- Added tested connected-component geometry with hole-aware rings, bounded
+  topology-preserving corner arcs, stable topology keys, and one shared visual
+  heightfield. Water/wetlands and tee/green components level coherently;
+  buildings and property assets receive flat presentation pads without
+  changing authoritative integer elevations.
+- Medium/High now render connected terrain meshes over the authoritative Low
+  fallback. Mesh UVs come from unrotated world coordinates, use deterministic
+  seamless material fields, retain one- and two-subdivision quality tiers, and
+  add multi-band shores, bunker lips, fringes, and path shoulders. The visible
+  per-diamond quilt is gone in the inspected Parkland/Links/Desert captures.
+- Props, buildings, property assets, decorations, markers, golfers, balls,
+  impact effects, and ambient wildlife now sample the same visual heightfield.
+- Auto quality now evaluates sustained frame-time p95 windows, requires
+  consecutive downgrade/upgrade evidence, and holds a post-change cooldown.
+  Explicit High/Medium/Low settings remain fixed.
+- COZY now opens on a playable hole-scale composition, Architect remains the
+  overview, and `F` restores an explicit global overview. Course/save
+  replacement triggers one camera refit so a smaller loaded course is not left
+  tiny and off-center.
+- Focused geometry/quality/contour/relief tests pass (22 tests), TypeScript
+  passes, the required bundled client emitted state with no console-error
+  artifact, and the M35 plus three-theme ZK-467 Playwright pass is 4/4.
+  `artifacts/m35-curved-terrain.png` and all three `zk467-*-relief.png`
+  captures were visually inspected against the four Linear SimGolf references.
+
+### M35 TODO
+
+- Post-commit spline/node/tangent editing is implemented with width presets,
+  click-spline creation, exact shared preview/commit geometry, atomic economy,
+  locked-tile clipping, and undo/redo. Focused model and Playwright coverage
+  passes, including save-safe explicit tangent data.
+- The deterministic 4×/2× sampled landscape-field pipeline now emits all ten
+  materials for Parkland, Links, and Desert. Content-hashed manifests split
+  terrain, buildings/decor, props, details, and fields by biome/quality;
+  runtime and service-worker caches fetch only the selected bundle. Low omits
+  optional field/detail/prop payloads. The contract and automated size/hash
+  audit live in `docs/M35_ART_CONTRACT.md` and
+  `scripts/m35-asset-audit.mjs`.
+- Complete bounded world-polish/detail-density work and the full performance,
+  PWA, browser, save, accessibility, legacy, 36-hole, and 100-golfer matrix.
+- Produce reproducible contact sheets and the scored fresh-context ZK-473
+  comparison report from an exact commit.
+- Run the required bundled web-game client after each meaningful renderer change and visually inspect gameplay captures.
+- Do not mark M35 complete until ZK-473 returns READY and the explicit human ZK-466 gate is approved.
+
 ## M29 Cloudflare playtest completion pass — 2026-07-24
 
 - Verified the production and staging Workers URLs return 200 with strict CSP, revalidating HTML, and noindex headers.
@@ -310,6 +368,88 @@ bug”
 - The aggregate `npm run build` remains blocked by an unrelated concurrent
   `App.tsx` edit that calls `getPinPosition` without importing it. That file is
   outside the ZK-445 change set and was left untouched.
+
+## 2026-07-25 — connected landscape hazards, bunker silhouettes, and tree habitat
+
+Current request: remove hill-shaped water, add semantic collars/fringe/rocky
+banks, keep dry-land props out of water, make single and connected bunkers
+iconic rather than square, and give trees/rough the grounded detail of the
+classic course-builder references.
+
+- Water and wetland strokes now compute authoritative, deterministic grading
+  in the same preview/commit transaction as paint. A touched lake is flattened
+  as one component; water excavates below its lowest land edge, wetland stays
+  shallower, grading never raises terrain, and exact earthwork cost is shown.
+- Water edits clear trees, bushes, and boulders only in the touched wet
+  component. The removal is atomic with paint/economics, increments obstacle
+  invalidation, and round-trips through undo, redo, quick save, and load.
+  New obstacle placement on water/wetland is rejected. Protected-tree cells
+  are clipped from wet masks and remain explicit dry-land islands.
+- Re-authored the water material as a flat low-variance field with restrained
+  horizontal ripples instead of crossing contour-like waves. Connected water
+  now has a rough bank, stone shelf, waterline, highlight, and deterministic
+  capped shoreline rocks.
+- Added semantic connected edges: fairway and sand receive rough collars,
+  greens receive rough plus a broad fringe, and deep rough feathers into base
+  rough. Priorities keep shared borders single-owned and stable at all camera
+  rotations.
+- Added original deterministic bunker silhouettes. A one-cell bunker becomes
+  a compact asymmetric kidney/pot shape fully inset within its cell; connected
+  sand merges into one scalloped contour with rounded bays and necks. Rough is
+  rendered beneath the complete authoritative footprint, so square sand
+  corners cannot leak outside the organic mask.
+- Added deterministic tree habitat beds in the decal layer: pine/fir variants
+  receive pine straw, broadleaf trees receive leaf litter/exposed soil, and
+  desert trees receive dry soil/pebbles. Overlapping lobes, roots, and sparse
+  details produce organic boundaries; quality-tier budgets cap the additional
+  graphics and tree shadows are reduced so the habitat remains readable.
+- Fixed the runtime service-worker cache race discovered by the final PWA
+  smoke: cache-on-demand biome responses now await `cache.put` before the
+  response resolves, guaranteeing already-loaded biome assets survive an
+  immediate offline transition.
+- Verification passes: 88 Vitest files / 545 passed with one intentional skip;
+  TypeScript; lint/i18n with 12 existing Hook warnings and no errors;
+  production build/audio/biome budget audit; strict-CSP PWA/offline/save smoke;
+  M20 three-theme/four-rotation/detail browser coverage; the water grading,
+  prop clearing, undo/redo, and save/load browser regression; performance smoke
+  at 0.36 ms renderer work against the 8 ms budget; bundled-client structured
+  state with no error artifact; and `git diff --check`.
+- Visually inspected the Parkland/Links/Desert material captures and the final
+  water close-up. Bunkers read as inset organic hazards with rough lips; both
+  lakes are flat and banked with no props in their coverage; tree habitat is
+  differentiated by species instead of using one generic dark stamp.
+
+## 2026-07-25 — M35 certification handoff
+
+- Implementation candidate is complete in the dirty working tree, but release
+  certification remains HOLD pending an exact commit, physical-GPU frame p95,
+  fresh ZK-473 visual parity review, and explicit ZK-466 human approval.
+- Verified now: 88 Vitest files / 552 passed / 1 skipped, TypeScript, lint with
+  no errors, production build and asset audit, strict-CSP PWA/offline/save,
+  1.08 ms renderer work, and `git diff --check`.
+- Focused onboarding M14 B passes the full reload/resume/rerun flow in 11.5m;
+  the keyboard save/load case passes in isolation. M17/M27/M6/M7 reruns were
+  interrupted and remain pending. Full details and handoff commands are in
+  `docs/M35_CERTIFICATION.md`.
+
+## 2026-07-28 — ZK-485 M47 certification preflight HOLD
+
+- Loaded ZK-485 and verified its mandatory rule: stop if ZK-480 through ZK-484
+  are marked Done in Linear but their implementations are absent from the task
+  base.
+- On `develop` at `1dbf9b5`, the five M47 dependency contracts are not present:
+  live capabilities, strategic options, shared-physics live outcomes, personal
+  reaction evidence, and the expanded Golfer Inspector explanation surface.
+- Preserved the pre-existing dirty worktree and added the exact preflight,
+  environment, baseline results, missing-contract evidence, matrix status, and
+  next-pass requirements to `docs/M47_CERTIFICATION.md`.
+- Baseline checks pass: 89 Vitest files / 554 tests with one intentional skip,
+  lint with 11 existing Hook warnings and no errors, production build and M35
+  asset audit, and `git diff --check`. M47-specific fixtures and full release
+  certification were not run because the required preflight stopped first.
+- Decision remains HOLD; do not mark ZK-485 Done or unblock ZK-486 until the
+  five dependency implementations are integrated and the matrix is rerun.
+
 ## 2026-07-28 — ZK-485 dependency implementation pass
 
 - Audited all local branches plus the two additional live remote refs; neither
@@ -353,3 +493,45 @@ bug”
 - Updated `docs/M47_CERTIFICATION.md` with exact hashes, counts, screenshots,
   gate results, and the M48 handoff contract. ZK-485 is ready for Done and the
   ZK-486 blocking relation is ready to remove.
+
+## 2026-07-28 — ZK-374 moderated-study handoff
+
+- Re-read ZK-374 and its existing certification record: automated/internal
+  certification is complete, while the moderated first-time-player study is
+  still the only open gate.
+- Launched the current build and inspected the participant path from a fresh
+  profile through Career → The Back Nine. Rowan’s opening scene renders with
+  the authored phase, live cash/condition facts, and the two opening choices.
+- No implementation changes were made. The issue remains In Progress until a
+  human participant completes the 12–18 hour study and its report is attached.
+
+## 2026-07-29 — M29 current production telemetry/offline smoke HOLD
+
+- Ran a clean Chromium smoke against the live Workers production URL at the
+  current release `coursecraft@1.0.0-rc.3+9717dc42d717` / commit
+  `9717dc42d717403e7a5abad34a8a6dd4a0e3df6b`.
+- Hosting, current main CI/deploy, online game render, service-worker control,
+  offline reload, and local persistence passed.
+- The controlled Sentry event carried the expected production release/commit
+  tags and sanitized payload shape but was rejected with HTTP 403. The public
+  bundle also contains an empty Cloudflare Web Analytics token; no beacon or
+  Cloudflare Insights request was observed.
+- Attached `artifacts/m29-production-smoke-2026-07-29.md` to ZK-271 and ZK-274
+  and added current blocker comments. Both issues remain In Progress; external
+  Sentry/Cloudflare configuration must be corrected before rerunning closure.
+
+## 2026-07-29 — M29 final production certification PASS
+
+- Re-ran the clean Chromium telemetry/offline smoke against the canonical
+  production origin `https://coursecraftgame.com/`, which is explicitly mapped
+  to the production Sentry environment. The Cloudflare beacon request returned
+  HTTP 200, and the controlled Sentry event returned HTTP 200 and was
+  independently indexed with the expected production release and commit.
+- The accepted payload exposed only request `url`; user, breadcrumbs, and extra
+  fields were absent. Online render, service-worker control, offline reload,
+  and local persistence passed.
+- Current and immediately preceding main production deployments passed in
+  runs 30417545211 and 30415720800. Workers playtest hosting/offline checks
+  also passed on `coursecraft-playtest.zbkutlow.workers.dev`.
+- Attached `artifacts/m29-production-smoke-final-2026-07-29.md` to ZK-271 and
+  ZK-274, added closure comments, and moved both Linear issues to Done.
