@@ -53,10 +53,16 @@ staging/
   approved/   human-approved candidate for isolated atlas certification
 ```
 
-The tracked `manifest.json` is the audit trail. Allowed states are `planned`,
+The tracked `manifest.json` is the audit trail. Each record carries the
+provider/tool, model or endpoint, generation time, prompt/reference IDs and
+hashes, cleanup history, reviewer decision, license notes, promotion path, and
+optional measured payload/texture-memory deltas. Allowed states are `planned`,
 `raw`, `candidate`, `cleaned`, `approved`, `rejected`, `reference`, and
-`production`. A file may not be promoted to `approved` without a reviewer and
-decision. Production builds never call PixelLab.
+`production`. The only forward promotion path is
+`planned → raw → candidate → cleaned → approved → production`; rejection can
+only return to `candidate`. A file may not be promoted to `approved` without
+an existing PNG, a passing mechanical contract, a reviewer, and an approved
+decision. Production builds never call PixelLab or read the staging tree.
 
 ## Commands
 
@@ -70,9 +76,10 @@ node scripts/pixellab-pilot.mjs preview-atlas --candidate <png> --frame parkland
 
 - `doctor` checks Node/npm, the pinned MCP bridge, the staging boundary, and
   whether a credential exists without displaying it.
-- `validate` verifies the tracked manifest, hashes, dimensions, transparency,
-  grid contracts, anchors, prompt references, state transitions, and secret
-  hygiene.
+- `validate` verifies the tracked manifest, hashes, filename conventions,
+  dimensions, transparency/alpha bounds, transparent padding, grid contracts,
+  anchors, duplicate content, prompt references, promotion paths, staged
+  measurements, atlas/runtime boundaries, and secret hygiene.
 - `certify` additionally rebuilds every atlas into a temporary directory,
   proves byte-for-byte determinism, requires approved PixelLab static and
   animated candidates, and requires a completed benchmark.

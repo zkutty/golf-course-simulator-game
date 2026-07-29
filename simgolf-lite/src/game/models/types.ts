@@ -36,6 +36,8 @@ export type Terrain =
   | "tee"
   | "path";
 
+export type TerrainAuthoringTool = "curve" | "spline" | "area" | "edit";
+
 export interface Point {
   x: number;
   y: number;
@@ -48,15 +50,27 @@ export interface SurfacePoint {
   y: number;
 }
 
+/**
+ * Absolute cubic Bézier control points for a persisted surface node.
+ * Storing world-space handles keeps authored curves stable through save/load
+ * and every camera rotation.
+ */
+export interface SurfaceTangentHandles {
+  in: SurfacePoint;
+  out: SurfacePoint;
+}
+
 export interface SurfaceCorridorGeometry {
   kind: "corridor";
   knots: SurfacePoint[];
   width: number;
+  tangents?: SurfaceTangentHandles[];
 }
 
 export interface SurfaceRegionGeometry {
   kind: "region";
   ring: SurfacePoint[];
+  tangents?: SurfaceTangentHandles[];
 }
 
 export interface SurfaceFeature {

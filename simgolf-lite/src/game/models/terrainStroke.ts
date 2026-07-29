@@ -1,7 +1,16 @@
 import { isOwnedTile } from "../estate/estate";
 import { isTerrainUnlocked } from "../progression/progression";
-import type { Course, Point, Terrain } from "./types";
-import { computeTerrainChangeBreakdown } from "./terrainEconomics";
+import { isWaterHazard } from "./terrainRules";
+import type { Course, Obstacle, Point, Terrain } from "./types";
+import {
+  computeElevationChangeCost,
+  computeTerrainChangeBreakdown,
+} from "./terrainEconomics";
+import {
+  collectTouchedWaterCells,
+  computeWaterGrading,
+  type WaterGradingDelta,
+} from "./waterGrading";
 
 export interface TerrainPaintTile extends Point {
   terrain: Terrain;
@@ -19,7 +28,14 @@ export interface TerrainStrokePreview {
     outOfBounds: number;
     unowned: number;
     locked: number;
+    protected: number;
   };
+  /** Dry-land gameplay props cleared by this water edit. */
+  removedObstacles: Obstacle[];
+  /** Automatic basin excavation committed atomically with the terrain. */
+  elevationDeltas: WaterGradingDelta[];
+  earthworkSteps: number;
+  earthworkCost: number;
   gross: number;
   salvage: number;
   net: number;
@@ -37,6 +53,7 @@ export interface TerrainBatchInput {
   cash: number;
   costMult?: number;
   reputation: number;
+  protectedTrees?: boolean;
 }
 
 /**
@@ -49,7 +66,14 @@ export function computeTerrainBatch(input: TerrainBatchInput): TerrainStrokePrev
   const seen = new Set<string>();
   const tiles: TerrainPaintTile[] = [];
   const acceptedTiles: TerrainPaintTile[] = [];
-  const excluded = { outOfBounds: 0, unowned: 0, locked: 0 };
+  const excluded = { outOfBounds: 0, unowned: 0, locked: 0, protected: 0 };
+  const protectedTreeIndices = input.protectedTrees
+    ? new Set(
+      course.obstacles
+        .filter((obstacle) => obstacle.type === "tree")
+        .map((obstacle) => obstacle.y * course.width + obstacle.x),
+    )
+    : null;
   let duplicateCount = 0;
   let unchangedCount = 0;
   let gross = 0;
@@ -77,6 +101,13 @@ export function computeTerrainBatch(input: TerrainBatchInput): TerrainStrokePrev
       excluded.locked++;
       continue;
     }
+    if (
+      protectedTreeIndices?.has(tile.y * course.width + tile.x)
+      && isWaterHazard(tile.terrain)
+    ) {
+      excluded.protected++;
+      continue;
+    }
     acceptedTiles.push(tile);
     const prev = course.tiles[tile.y * course.width + tile.x];
     if (prev === tile.terrain) {
@@ -92,7 +123,32 @@ export function computeTerrainBatch(input: TerrainBatchInput): TerrainStrokePrev
     tiles.push(tile);
   }
 
-  const excludedCount = excluded.outOfBounds + excluded.unowned + excluded.locked;
+  const finalTiles = course.tiles.slice();
+  const gradingSeeds: number[] = [];
+  for (const tile of acceptedTiles) {
+    const index = tile.y * course.width + tile.x;
+    finalTiles[index] = tile.terrain;
+    if (tile.terrain === "water" || tile.terrain === "wetland") {
+      gradingSeeds.push(index);
+    }
+  }
+  const grading = computeWaterGrading(course, finalTiles, gradingSeeds);
+  const touchedWaterCells = new Set(
+    collectTouchedWaterCells(course, finalTiles, gradingSeeds),
+  );
+  const removedObstacles = course.obstacles.filter((obstacle) => (
+    touchedWaterCells.has(obstacle.y * course.width + obstacle.x)
+  ));
+  const earthworkCost = computeElevationChangeCost(
+    grading.earthworkSteps,
+    costMult,
+  ).net;
+  gross += earthworkCost;
+  net += earthworkCost;
+  charged += earthworkCost;
+
+  const excludedCount =
+    excluded.outOfBounds + excluded.unowned + excluded.locked + excluded.protected;
   const shortfall = Math.max(0, net - cash);
   return {
     tiles,
@@ -102,6 +158,10 @@ export function computeTerrainBatch(input: TerrainBatchInput): TerrainStrokePrev
     unchangedCount,
     excludedCount,
     excluded,
+    removedObstacles,
+    elevationDeltas: grading.deltas,
+    earthworkSteps: grading.earthworkSteps,
+    earthworkCost,
     gross,
     salvage,
     net,
@@ -120,7 +180,8 @@ export function previewTerrainStroke(
   terrain: Terrain,
   cash: number,
   costMult: number,
-  reputation: number
+  reputation: number,
+  protectedTrees = false,
 ): TerrainStrokePreview {
   return computeTerrainBatch({
     course,
@@ -128,5 +189,6 @@ export function previewTerrainStroke(
     cash,
     costMult,
     reputation,
+    protectedTrees,
   });
 }

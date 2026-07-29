@@ -47,6 +47,19 @@ export function advisorMessages(
       holeIndex: architecture.warnings[0].holeIds[0] ? course.holes.findIndex((hole) => hole.id === architecture.warnings[0].holeIds[0]) : undefined,
     });
   }
+  const strategicRecommendation = architecture?.strategic
+    ? architecture.strategic.holes.flatMap((hole) => hole.strategyWarnings.map((warning) => ({ hole, warning }))).sort((a, b) => a.hole.strategicScore - b.hole.strategicScore)[0]
+    : undefined;
+  if (architecture && strategicRecommendation) {
+    messages.push({
+      id: `strategic-${strategicRecommendation.hole.holeId}-${world.week}`,
+      title: t("advisor.strategy.title"),
+      body: t("advisor.strategy.body", { course: course.name, detail: strategicRecommendation.warning, cohorts: strategicRecommendation.hole.favoredCohorts.length ? strategicRecommendation.hole.favoredCohorts.join(", ") : "ordinary golfers" }),
+      expression: "neutral",
+      priority: "info",
+      holeIndex: course.holes.findIndex((hole) => hole.id === strategicRecommendation.hole.holeId),
+    });
+  }
   if (course.estate && course.estate.ownedParcelIds.length < course.estate.parcels.length && valid.length >= 9 && courseLayouts(course).length === 1 && world.reputation >= 50 && world.cash >= 45_000) {
     messages.push({ id: "expansion-ready", title: t("advisor.expansion.title"), body: t("advisor.expansion.body"), expression: "pleased", priority: "info" });
   }

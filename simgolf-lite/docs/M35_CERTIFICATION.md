@@ -1,223 +1,177 @@
-# M35 certification status
+# M35 Continuous Landscape certification
 
-**Milestone:** M35 — Continuous Landscape & Visual Polish
-**Tracking issues:** ZK-332 (certification), ZK-327 (parent), ZK-466 (human visual gate), ZK-473 (agent parity gate)
-**Baseline commit for this report:** `3e65380` (`claude/linear-handoff-completion-phzqf2`,
-`main` + `develop` reconciled). Gate results in §3 were measured on `9981588` (`main` alone)
-and re-measured on the merged tree where noted.
-**Report date:** 2026-07-25
+Certification date: 2026-07-25
 
----
+## Decision
 
-## 1. Headline: the previous certification candidate is not in the repository
+`HOLD`
 
-The 2026-07-25 handoff comments on ZK-332, ZK-473, and ZK-466 describe a certification
-candidate that was explicitly recorded as **an uncommitted dirty working tree on base
-`6944abe`**. That working tree lived in an ephemeral session container which has since
-been reclaimed. The tree was never committed, stashed, or pushed.
+The implementation candidate now covers the M35 terrain-authoring, connected
+rendering, elevation, biome-art, world-dressing, adaptive-quality, persistence,
+PWA, and performance scope. It is not release-certified yet:
 
-Verified against every ref in this repository:
+1. the evidence was produced from an uncommitted working tree, so it does not
+   identify the exact immutable build required by ZK-473;
+2. the independent fresh-context visual parity review in ZK-473 has not run;
+3. the physical-GPU frame-time targets have not been measured on the specified
+   mid-range and low-end hardware; and
+4. the explicit human visual approval required by ZK-466 has not been recorded.
 
-| Expected artifact | Present in git? |
-| --- | --- |
-| `docs/M35_CERTIFICATION.md` (the prior handoff file) | No — never committed on any ref |
-| `e2e/m35-landscape-details.e2e.ts` | No |
-| `e2e/m35-surface-authoring.e2e.ts` | No |
-| `e2e/m35-water-grading.e2e.ts` | No |
-| Shared-vertex visual heightfield (ZK-470) | No — no `heightfield` symbol on any ref |
-| World-anchored material field (ZK-469) | No — no `materialField` symbol on any ref |
-| Rounded component silhouettes (ZK-468) | No — no component-silhouette derivation on any ref |
-| 4× Parkland art vertical slice (ZK-472) | No |
-| Renderer resize-instead-of-teardown fix | No — `PixiStage.tsx:1129` still destroys the app on `resolutionScale` change |
+Passing implementation tests must not be treated as either the independent
+visual verdict or the human approval.
 
-Corroborating signal — suite sizes shrink by exactly the missing work:
+## Handoff checkpoint — 2026-07-25
 
-| Gate | Handoff claim (lost tree) | `main` @ `9981588` | Merged @ `3e65380` |
-| --- | --- | --- | --- |
-| Vitest files | 88 | 69 | 80 |
-| Vitest passed | 552 | 432 | 502 |
-| ESLint warnings | 11 | 7 | 7 |
+The implementation is intentionally still an uncommitted working-tree
+candidate. The repository base is `6944abe` (`Add biome terrain relief and
+detail atlas`); do not treat the current dirty tree as the immutable ZK-473
+candidate until the next agent reviews and commits the intended M35 files.
 
-Reconciling `main` and `develop` recovers 11 files and 70 tests, which confirms part of the
-earlier gap was simply the branch divergence. The remaining shortfall against the handoff's
-claim — 8 files and 50 tests — is the lost M35 work itself.
+The latest verification state is:
 
-`git stash list`, `git reflog`, and `git status --porcelain --ignored` are all empty in a
-fresh clone. Nothing is recoverable from this checkout.
+- `npx vitest run --reporter=dot`: **88 files, 552 passed, 1 skipped**.
+- `npx tsc -b --pretty false`: passed.
+- `npm run lint`: passed with no errors; 11 existing React Hook warnings.
+- `npm run build`: passed TypeScript, Vite, exact 40-file audio audit, service-worker injection, and M35 asset budgets.
+- `npm run test:pwa`: passed strict-CSP render, scoped install, offline reload, and local-save persistence.
+- `npm run test:perf`: passed with **1.08 ms** renderer work against the 8 ms budget; headless frame p95 was 100 ms and is report-only under the fixed 10 FPS harness.
+- `git diff --check`: passed.
+- `e2e/m14-onboarding.e2e.ts:411` (reload/resume/rerun): passed in 11.5 minutes. This covers semantic tile projection, continuous paint strokes, nine valid holes, reload checkpoints, settled tutorial autosave, adaptive renderer changes, and late rerun/skip behavior.
+- `e2e/golden-path.e2e.ts:145`: passed in isolation (16.1 seconds).
+- The earlier repository-wide Playwright snapshot was 61 passed / 8 failed. A follow-up isolated batch was started; the keyboard case passed, but the remaining M17/M27/M6/M7 cases were interrupted when the session was stopped. Their result is **pending**, not green.
 
-### Consequence for the Linear board
+Two regressions found during the onboarding rerun are now fixed: Pixi
+resolution-quality changes resize the existing renderer instead of tearing down
+the canvas, and tutorial autosave coalesces around course/tutorial changes so
+live simulation ticks cannot keep the status at “Saving progress…”.
 
-ZK-468, ZK-469, ZK-470, ZK-471, and ZK-472 are marked **Done** (completed between 15:19
-and 19:00 UTC on 2026-07-25), but their implementations are **not merged and not present
-in git**. `develop` tips at `6944abe` (2026-07-25 01:12), which predates all five
-completions. Their acceptance evidence has to be treated as unverifiable until the work is
-re-landed.
+## Implemented landscape contract
 
-ZK-473 therefore cannot produce a meaningful `READY`/`NOT READY` verdict: there is no
-committed higher-definition Parkland build to review. ZK-466 correctly remains blocked.
+- Whole cells remain authoritative for terrain ownership, pricing, gameplay,
+  picking, saves, hashes, undo, and redo. Connected components derive
+  deterministic render-only silhouettes and shared pair boundaries.
+- Curve, Spline, Area, and node editing share accepted coverage between
+  preview and commit. Invalid, unowned, locked, and unaffordable cells remain
+  explicit and cannot mutate the course.
+- World-anchored material fields, mowing, macro variation, and edge detail do
+  not reset per tile. Pair-aware single ownership prevents cracks and doubled
+  fringes, lips, banks, or shoulders.
+- Shared visual height sampling produces continuous biome-scaled undulation.
+  Water components are graded flat and recessed; wetland is shallower; bunker
+  floors are depressed beneath profile-specific rims. Gameplay elevation and
+  saved integer heights remain authoritative.
+- Sand classifies automatically as a compact one-cell pot bunker, a steeper
+  greenside bunker, or a shallower fairway bunker. Single and connected sand
+  use stable asymmetric, scalloped silhouettes over rough underlays rather
+  than exposed square sand cells.
+- Water painting clears ordinary dry-land props atomically. New obstacles are
+  rejected on wet cells. Protected trees clip explicit dry islands from the
+  wet mask.
+- Fairways and bunkers receive rough collars, greens receive fringe plus rough,
+  water receives layered rocky banks, and tree species receive restrained
+  pine-straw, leaf-litter, or dry-soil habitat beds.
+- Parkland, Links, and Desert ship as hashed, biome- and quality-tiered
+  bundles. Auto/High/Medium/Low alter presentation only; simulation remains
+  deterministic.
 
----
+The reproducible art and asset rules are in `docs/M35_ART_CONTRACT.md`.
 
-## 2. Branch topology — reconciled
+## Acceptance map
 
-Before this session:
-
-- `main` @ `9981588` — the release lane (M36–M40, premium systems, Sentry, CI, deploy).
-- `develop` @ `6944abe` — the M35 terrain lane (M28/M30, M45, coastlines, terrain relief).
-- Merge base `a155ea0`; `develop` 12 ahead, `main` 5 ahead. Neither branch alone could be
-  certified, because each was missing half the product.
-
-`3e65380` merges `develop` into the release lane. Conflict resolutions:
-
-| File | Resolution |
-| --- | --- |
-| `src/monitoring.ts` | Both sides added a function at the same position and both are still called below — keep `resolveSentryEnvironment` (main) and `cloudflareBeaconConfiguration` (develop). |
-| `AudioManager.ts`, `m15-audio.e2e.ts`, `CREDITS.md` | main's `cf4136b` is a cherry-pick of develop's `0dcd96c`, but develop then refined it with `2aaa4ff` (`authoredAmbienceAllowed`, `stopMusicSlots`, single-stream enforcement, 350 ms fades) which main never received. Took develop's strictly-newer side. |
-| `progress.md` | Both conflict hunks are pure additions from develop; taking them is a union and drops nothing from main. |
-
-The reconciled tree is the correct base for re-landing ZK-468–472.
-
----
-
-## 3. Gate results on the committed baseline (`9981588`)
-
-Run in the session container: Linux, Node v22.22.2, headless Chromium 141 (build 1194),
-no discrete GPU.
-
-| Gate | Command | Result |
+| Linear issue | Implementation evidence | Certification state |
 | --- | --- | --- |
-| Unit | `npx vitest run --reporter=dot` | **Pass** — 69 files, 432 passed, 1 skipped on `9981588`; **80 files, 502 passed, 1 skipped** on merged `3e65380` |
-| Fuzz | `npm run test:fuzz` | **Pass** — 3 properties |
-| Types | `npx tsc -b --pretty false` | **Pass** |
-| Lint + i18n | `npm run lint` | **Pass** — 0 errors, 7 React Hook warnings |
-| Production build | `npm run build` | **Pass** — 40-file audio audit, 23 offline assets injected |
-| PWA | `npm run test:pwa` | **Pass** — strict-CSP render, scoped install, offline reload, save persistence |
-| Performance | `npm run test:perf` | **Fail on cold start** — see below |
-| Browser (M17/M27/M6/M7) | see §4 | see §4 |
+| ZK-326 authoring | Curve/Area/Spline/node tools; exact accepted coverage; atomic economics; bounded undo/redo; save/load and rotation browser coverage | Implementation candidate complete |
+| ZK-327 connected terrain | Authoritative cell components; derived rounded silhouettes; world-space materials; shared pair boundaries; preview/commit parity | Implementation candidate complete; visual approval remains gated |
+| ZK-328 elevation/integration | Shared surface sampler, compatible-land smoothing, flat recessed water, depressed bunker floors, anchored objects, four-rotation fixtures | Implementation candidate complete |
+| ZK-329 biome pipeline | Deterministic 4× sources, hashed tier bundles, lazy cache-on-demand loading, offline retention, asset budgets | Implementation candidate complete |
+| ZK-330 world polish | Bounded terrain dressing/effects, grounded habitat, water motion, quality/reduced-motion density controls | Implementation candidate complete |
+| ZK-331 editing feedback | Context-only hover/coverage/nodes; no ordinary full-map grid | Done in Linear |
+| ZK-332 technical certification | Unit/fuzz/build/lint, scoped browser/PWA, renderer-work, asset, save, and bundled-client gates below | Partial: physical GPU and final visual gates remain |
+| ZK-468 silhouettes | Deterministic component tracing, topology-preserving rounded rendering, shared boundaries | Done in Linear |
+| ZK-469 material/contours | World-anchored fields and mowing; table-driven, multi-band, single-owner terrain-pair contours | Done in Linear; final visual gates remain |
+| ZK-470 heightfield | Shared component-aware height sampling, biome undulation, flat water, bunker profiles, mesh/object agreement | Done in Linear; final visual gates remain |
+| ZK-471 camera/dressing | Closer COZY play scale, overview retained, zoom-aware bounded clusters and controls | Done in Linear; final visual gates remain |
+| ZK-472 Parkland art slice | Reproducible 4× generator, art contract, provenance/fallback boundary, atlas and transfer validation | Done in Linear; final visual gates remain |
+| ZK-473 independent parity review | Requires a fresh reviewer, all four references, exact committed build, aligned contact sheets, scored rubric, and `READY`/`NOT READY` verdict | Not run |
+| ZK-466 human approval | Requires ZK-473 `READY` evidence followed by explicit human approval | Not started |
 
-### Performance detail
+## Automated evidence
 
-```
-renderer work        0.90 ms   (budget 8 ms)      PASS
-p95 frame            100 ms    report-only        fixed 10 FPS harness, not a real p95
-cold startup       13942 ms    (budget 5000 ms)   FAIL
-36-hole fixture    26526 ms    load time
-```
+### Model, rendering, and persistence
 
-Renderer work is comfortably inside budget. The cold-start failure is measured on a
-shared, GPU-less CI-class container and should be re-measured on target hardware before
-being treated as a product regression — but it is a **failing gate as recorded here** and
-must not be reported as green.
+- Complete Vitest run: 88 files, 552 passed, one intentional skip.
+- Focused landscape geometry repeat: 22 passed.
+- Reducer fuzz: passed.
+- TypeScript: passed.
+- ESLint/i18n: no errors; 11 existing React Hook warnings.
+- Production build, audio allowlist, service-worker injection, and M35 asset
+  audit: passed.
+- `git diff --check`: passed.
 
-### Bundle sizes (gzip)
+### Browser, PWA, and compatibility
 
-```
-index   335.32 KB      pixi   150.39 KB      react   60.34 KB      vendor   5.30 KB
-```
+- M35 authoring, landscape-detail, water-grading, three-theme relief, material
+  composition, connected-fill, and camera suites pass.
+- Parkland, Links, and Desert captures pass at all four rotations and the
+  required detail views.
+- Golden save/load path passes in a serial run.
+- Chrome, Firefox, and WebKit release checks pass 3/3.
+- Strict-CSP PWA install, service-worker control, offline reload, loaded-biome
+  retention, and local-save persistence pass.
+- The required bundled web-game client reached structured gameplay state,
+  selected High from Auto, and reported no captured error.
 
-The handoff's "251 KB gzip game entry" describes the lost tree, not this baseline.
+The repository-wide Playwright snapshot remains historical evidence only: 61
+passes and eight failures outside the M35 browser scenarios. Repaired issues
+include rapid tee/green clicks (synchronous wizard refs), the advisor action
+being beneath the bug-report launcher, Pixi adaptive-resolution teardown, and
+tutorial autosave churn. Focused post-fix verification is complete for the
+full M14 B path and the keyboard/save-load case; the four remaining isolated
+domain tests still need a clean result.
 
----
+### Performance and payload
 
-## 4. Browser gate reruns
+- Latest performance smoke: cold startup 2,687 ms and 36-hole/100-golfer
+  fixture load 8,915 ms; both remain within the 5 s startup / bounded fixture
+  budget used by the smoke harness.
+- Renderer JavaScript work: 1.08 ms against the 8 ms gate.
+- Exact landscape rebuild: below 100 ms in the browser fixture.
+- High/Medium landscape mesh subdivision: 4×/2×; Low uses the bounded fallback.
+- Compressed non-audio initial critical payload: 3.522 MiB against the 8 MiB
+  gate.
+- Largest selected biome bundle: 3.344 MiB against the 6 MiB gate.
+- Every atlas remains below 8 MiB.
 
-The handoff's pending item #1 was an isolated rerun of four specs:
+Headless Chromium runs with a fixed approximately 10 FPS throttle in this
+environment, so its observed 100 ms frame p95 is report-only and is not evidence
+for the physical-GPU 20 ms/33 ms gates.
 
-```
-npx playwright test --config playwright.sandbox.config.ts \
-  e2e/m17-retention.e2e.ts:3 e2e/m27-architecture-release.e2e.ts:3 \
-  e2e/m6-tournaments.e2e.ts:3 e2e/m7-progression-live.e2e.ts:3 --workers=1
-```
+## Visual evidence
 
-**Results on the merged tree.** Three distinct root causes, only one of them a product
-defect:
+- `artifacts/m35-landscape-details.png` — full Parkland landscape fixture.
+- `artifacts/m35-bunker-variants.png` — compact pot and connected fairway
+  bunker comparison.
+- `artifacts/m35-pot-bunker-detail.png` — one-cell asymmetric pot silhouette.
+- `artifacts/m35-water-basin.png` — graded flat water component.
+- `artifacts/m35-water-bank-close.png` — layered rocky bank detail.
+- `artifacts/m35-surface-node-editor.png` — editable surface nodes and accepted
+  coverage.
+- `artifacts/zk467-{parkland,links,desert}-relief.png` — biome relief fixtures.
+- `artifacts/m20-{parkland,links,desert}-{0,90,180,270}.png` — rotation matrix.
 
-| Spec | Failure | Cause |
-| --- | --- | --- |
-| M17 | Was: 600 s timeout on `/Records/`. Now: reaches line 42, the final assertion | **Stale pre-M40 navigation — fixed.** `records` is 5th of seven `legacy` actions, so it sits behind the "More" overflow |
-| M7 | Was: 600 s timeout on `open-progression`. Now: reaches line 41, the final assertion | **Same stale navigation — fixed.** `progression` is 4th of seven, also in the overflow |
-| M6 | `tournament.active` not null after a 45 s `advanceTime` poll, with all five entrants at `finished: true, holesCompleted: 18` | Unresolved. `completeTournament` has one non-test caller (`useLiveSimulation.ts:383`, `finishDay`), so a tournament clears only at day end — the assertion is really "45 s of polling advances enough sim time". Needs real hardware to separate a genuine hang from container slowness |
-| M27 | Renderer `workMs` 27.27 vs the 8 ms budget | Unresolved. Timing-bound; `npm run test:perf` measured 0.90 ms on the same container, so this is not credible here |
+These captures were inspected for implementation regressions. They do not
+replace the independent ZK-473 contact sheet and scored comparison.
 
-`506b1bd` updated `m40` and `m43` for the new navigation but missed `m17` and `m7`. All
-four call sites of overflow-bound legacy actions were checked, so the fix set is complete.
-The shared helper is `e2e/workspace.ts`.
+## Remaining release actions
 
-### Final state after the ZK-501 font fix
-
-| Spec | Result |
-| --- | --- |
-| M17 | **PASS** |
-| M7 | **PASS** |
-| M6 | Fail — `tournament.active` still non-null after the 45 s poll, twice on a clean tree |
-| M27 | Fail — now times out at 60 s loading the 36-hole fixture (`:9`), before reaching the renderer-budget assertion it previously failed at `:20` |
-
-M17 and M7 are genuinely green. M6's failure is now reproducible rather than
-incidental — same assertion, two clean runs — so it is worth its own issue: either
-a tournament whose entrants have all finished does not conclude, or the 45 s poll
-cannot deliver enough sim time. M27 got *worse* rather than better, failing earlier
-at fixture load, which is characteristic of container slowness rather than a code
-change. Neither is safe to judge here.
-
-### The external font fetch that used to mask all of this (fixed, ZK-501)
-
-After the navigation fixes, M17 and M7 both run to their final line and then fail on
-`expect(errors).toEqual([])` catching `net::ERR_CONNECTION_RESET`. A direct probe
-identifies the request precisely:
-
-```
-FAILED: net::ERR_CONNECTION_RESET
-  https://fonts.googleapis.com/css2?family=Merriweather:wght@400;700&family=Nunito:...
-```
-
-`index.html:19` loads Merriweather and Nunito from `fonts.googleapis.com`. This container
-cannot reach it, and routing Chromium through the environment's HTTPS proxy does not help
-— the browser's CONNECT is reset too. Any spec asserting zero console errors will fail in
-any network-restricted environment.
-
-This was tracked as ZK-501 and is now fixed in `8bd20f7`: both families are vendored into
-`src/assets/fonts/` and declared with local `@font-face`, and the two CSP allowances that
-existed only for the CDN are gone. A request probe records zero external requests and zero
-console errors. That is what let M17 and M7 turn green above — until then, the font error
-masked whether any browser gate actually passed.
-
-The handoff's pending item #2 named `m35-landscape-details`, `m35-surface-authoring`, and
-`m35-water-grading`. Those specs do not exist in this repository (§1). The surviving M35
-browser gate is `e2e/m35-continuous-landscape.e2e.ts`.
-
-### Sandbox browser note
-
-This container ships Playwright browser build 1194 at `/opt/pw-browsers`, while
-`@playwright/test` 1.61 resolves build 1228, so the default headless-shell launch fails.
-`scripts/perf-smoke.mjs` already resolved `CHROMIUM_PATH` / `/opt/pw-browsers/chromium`;
-`scripts/pwa-smoke.mjs` did not and has been given the same resolution. For the Playwright
-specs, `playwright.sandbox.config.ts` extends the committed config with an
-`executablePath` override. Neither change alters test behaviour on a normally provisioned
-machine.
-
----
-
-## 5. Gates that cannot be closed from this environment
-
-| Gate | Why | Owner |
-| --- | --- | --- |
-| Mid-range and low-end **physical-GPU** frame p95 | Container is headless with no discrete GPU; software rasterization cannot produce a valid p95 | Human, on target hardware |
-| ZK-473 `READY`/`NOT READY` parity verdict | No committed higher-definition Parkland build exists to capture (§1) | Blocked until ZK-468–472 are re-landed |
-| ZK-466 human visual approval | Explicitly a human decision; last recorded verdict (2026-07-25) was **not approved** — corners too sharp, detail resolution far from source | Human |
-
----
-
-## 6. Required next steps, in order
-
-1. **Decide the recovery path for ZK-468–472.** Their specs are fully written in Linear;
-   the code is gone. Either re-implement against those specs or reopen them.
-2. **Reconcile `main` and `develop`** so the M35 terrain baseline and the release lane sit
-   on one branch before any certification capture.
-3. Re-land the work with **committed** evidence — one deliberate commit per issue, no
-   dirty-tree handoffs.
-4. Re-measure cold start and physical-GPU frame p95 on target hardware.
-5. Only then run ZK-473 in a fresh context against an exact commit, using the four
-   SimGolf references attached to ZK-327.
-6. Only on a `READY` verdict, request human visual approval on ZK-466.
-
-**Do not mark ZK-332 or the M35 milestone Done before steps 1–6 complete.**
+1. Run the pending isolated M17/M27/M6/M7 command from the handoff comment and
+   record clean results or reproducible blockers.
+2. Rerun the three M35 browser suites after the latest renderer/autosave fixes:
+   `npx playwright test e2e/m35-landscape-details.e2e.ts e2e/m35-surface-authoring.e2e.ts e2e/m35-water-grading.e2e.ts --workers=1`.
+3. Commit the intended M35 source and evidence as one exact candidate.
+4. Measure frame p95 on the specified physical mid-range and low-end GPUs.
+5. Run ZK-473 in a fresh context against all four attached references and the
+   exact candidate commit.
+6. If and only if ZK-473 returns `READY`, present the complete evidence bundle
+   for explicit human approval in ZK-466.
+7. Mark ZK-332 and the M35 milestone Done only after those gates pass.

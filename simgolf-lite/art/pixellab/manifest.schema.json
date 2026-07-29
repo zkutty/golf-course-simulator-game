@@ -26,6 +26,7 @@
           "id",
           "category",
           "provider",
+          "tool",
           "state",
           "promptRef",
           "requirements",
@@ -34,10 +35,12 @@
         "properties": {
           "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]+$" },
           "category": {
-            "enum": ["natural-prop", "facility", "golfer-animation"]
+            "enum": ["natural-prop", "facility", "golfer-animation", "terrain-detail", "terrain-base-pilot"]
           },
           "provider": { "type": "string", "minLength": 1 },
+          "tool": { "type": "string", "minLength": 1 },
           "model": { "type": ["string", "null"] },
+          "endpoint": { "type": ["string", "null"], "format": "uri" },
           "state": {
             "enum": ["planned", "raw", "candidate", "cleaned", "approved", "rejected", "reference", "production"]
           },
@@ -45,6 +48,10 @@
           "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
           "generatedAt": { "type": ["string", "null"], "format": "date-time" },
           "promptRef": { "type": "string", "minLength": 1 },
+          "sourceHashes": {
+            "type": "object",
+            "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          },
           "sourceReferences": {
             "type": "array",
             "items": { "type": "string" }
@@ -65,6 +72,16 @@
                 "prefixItems": [{ "const": 0.5 }, { "const": 1 }],
                 "minItems": 2,
                 "maxItems": 2
+              },
+              "anchorTolerancePixels": { "type": "integer", "minimum": 0 },
+              "alpha": {
+                "type": "object",
+                "properties": {
+                  "min": { "type": "integer", "minimum": 0, "maximum": 255 },
+                  "max": { "type": "integer", "minimum": 0, "maximum": 255 },
+                  "maxPartialPixels": { "type": "integer", "minimum": 0 }
+                },
+                "additionalProperties": false
               },
               "grid": {
                 "type": "object",
@@ -93,7 +110,27 @@
             },
             "additionalProperties": false
           },
-          "licenseNotes": { "type": "string" }
+          "licenseNotes": { "type": "string", "minLength": 1 },
+          "promotionPath": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "enum": ["planned", "raw", "candidate", "cleaned", "approved", "rejected", "reference", "production"]
+            }
+          },
+          "measurements": {
+            "type": "object",
+            "properties": {
+              "payloadBytes": { "type": ["integer", "null"], "minimum": 0 },
+              "textureMemoryBytes": { "type": ["integer", "null"], "minimum": 0 },
+              "sourcePayloadBytes": { "type": ["integer", "null"], "minimum": 0 },
+              "sourceTextureMemoryBytes": { "type": ["integer", "null"], "minimum": 0 },
+              "payloadDeltaBytes": { "type": ["integer", "null"] },
+              "textureMemoryDeltaBytes": { "type": ["integer", "null"] },
+              "sourceSha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" }
+            },
+            "additionalProperties": false
+          }
         },
         "additionalProperties": false
       }

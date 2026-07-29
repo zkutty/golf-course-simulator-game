@@ -96,6 +96,15 @@ try {
   }
   if (colors.size < 16) throw new Error(`Course canvas did not contain a rendered scene (${colors.size} sampled colors)`);
   if (pageErrors.length) throw new Error(`Gameplay emitted page errors: ${pageErrors.join(" | ")}`);
+  const loadedBiomeAssets = await page.evaluate(() => performance.getEntriesByType("resource")
+    .map((entry) => entry.name)
+    .filter((url) => url.includes("/atlases/biomes/")));
+  if (!loadedBiomeAssets.some((url) => url.includes("parkland"))) {
+    throw new Error("Selected Parkland biome bundle was not loaded");
+  }
+  if (loadedBiomeAssets.some((url) => url.includes("terrain-links") || url.includes("field-links") || url.includes("terrain-desert") || url.includes("field-desert"))) {
+    throw new Error("Unselected biome assets were downloaded during Parkland startup");
+  }
 
   await page.evaluate(() => localStorage.setItem("coursecraft_pwa_probe", "offline-save"));
   await context.setOffline(true);
@@ -103,6 +112,19 @@ try {
   if (!(await page.title()).startsWith("CourseCraft")) throw new Error("Offline shell did not load");
   const saved = await page.evaluate(() => localStorage.getItem("coursecraft_pwa_probe"));
   if (saved !== "offline-save") throw new Error("Offline local save probe was lost");
+  const offlineBundleResponses = await page.evaluate(async (urls) => Promise.all(
+    urls.map(async (url) => {
+      try {
+        const response = await fetch(url);
+        return response.ok;
+      } catch {
+        return false;
+      }
+    }),
+  ), loadedBiomeAssets);
+  if (offlineBundleResponses.some((ok) => !ok)) {
+    throw new Error("Previously loaded biome assets were not available offline");
+  }
   console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, scoped install, offline reload, and local save persistence`);
 } finally {
   await browser.close();

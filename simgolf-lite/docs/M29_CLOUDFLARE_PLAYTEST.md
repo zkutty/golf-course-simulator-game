@@ -26,7 +26,7 @@ Each deployment job consumes the `dist` artifact produced by its required CI job
 
 The playtest hostname is unlisted, not private. `robots.txt`, page metadata, and `X-Robots-Tag` discourage indexing, but anyone with the URL can open it. Enable Cloudflare Access with an explicit tester-email policy if confidentiality becomes necessary.
 
-Sentry receives errors, release/commit tags, browser context, and React component stacks. The client strips users, cookies, headers, request bodies, query strings, breadcrumbs, arbitrary extras, save payloads, and gameplay state. Cloudflare Web Analytics collects traffic and Web Vitals only; there is no gameplay-event analytics.
+Sentry receives errors, release/commit tags, allowlisted app/browser/OS context, and React component stacks. The client strips users, cookies, headers, request bodies, separate query-string fields, URL query/hash, breadcrumbs, arbitrary extras, device identifiers, response context, save payloads, gameplay state, spans, measurements, and transaction names. Cloudflare Web Analytics collects traffic and Web Vitals only; SPA route measurement is explicitly enabled and there is no gameplay-event analytics.
 
 ## Validation and rollback
 
@@ -37,6 +37,4 @@ Sentry receives errors, release/commit tags, browser context, and React componen
 - Confirm Cloudflare Web Analytics receives a page view and Web Vitals.
 - Roll back from Workers & Pages > Deployments by selecting the last known-good version and promoting it. Re-run online, offline, and save/load smoke checks afterward.
 
-The temporary GitHub Pages fallback (`.github/workflows/deploy.yml`) has been removed. Its gate — two consecutive successful Cloudflare `main` deployments — was met on 2026-07-25 (`cf4136b` at 00:39 UTC and `9981588` at 16:31 UTC), and Cloudflare is now the only deployment lane. Browser storage is origin-scoped and was never migrated from the Pages hostname, which never served a successful deployment.
-
-Sentry tags each deploy from its serving hostname (`resolveSentryEnvironment` in `src/monitoring.ts`) because staging and production ship the identical artifact. Any new hostname — a custom domain, a renamed Worker, a changed account subdomain — must be added there, or its traffic reports as `unknown`.
+The stability gate passed on 2026-07-24: two consecutive `main` deployments, clean-profile Chrome/Firefox/WebKit coverage, live PWA/offline/save validation, and a staging rollback/restore drill all succeeded. The temporary GitHub Pages workflow was removed after that evidence was recorded. Browser storage remains origin-scoped and is not migrated from the former Pages hostname.

@@ -8,16 +8,47 @@ test.setTimeout(900_000);
 
 const tee = { x: 580, y: 370 };
 const green = { x: 640, y: 400 };
-const remainingHoleRoutes = [
-  [{ x: 360, y: 260 }, { x: 420, y: 290 }],
-  [{ x: 440, y: 260 }, { x: 500, y: 290 }],
-  [{ x: 500, y: 380 }, { x: 560, y: 410 }],
-  [{ x: 400, y: 360 }, { x: 460, y: 390 }],
-  [{ x: 500, y: 330 }, { x: 560, y: 360 }],
-  [{ x: 620, y: 370 }, { x: 680, y: 400 }],
-  [{ x: 580, y: 260 }, { x: 640, y: 290 }],
-  [{ x: 600, y: 320 }, { x: 660, y: 350 }],
-] as const;
+type SurfaceLayout = ReturnType<NonNullable<Window["__coursecraftTest"]>["terrainSurfaceState"]>;
+
+function remainingHoleRoutes(surface: SurfaceLayout) {
+  const { width, height, owned } = surface;
+  // Ten tiles clears the 90-yard valid-hole minimum at the default 10 yards
+  // per tile. Screen-safe candidates are filtered after projection below.
+  const segmentLength = Math.max(9, Math.min(10, width - 4));
+  const candidates: Array<readonly [{ x: number; y: number }, { x: number; y: number }]> = [];
+  for (let y = 3; y < height - 3; y += 2) {
+    let x = 3;
+    while (x < width - 3) {
+      while (x < width - 3 && !owned[y * width + x]) x++;
+      const start = x;
+      while (x < width - 3 && owned[y * width + x]) x++;
+      const end = x - 1;
+      const safeEnd = Math.min(end - 1, width - 4);
+      for (
+        let segmentStart = Math.max(start + 1, 3);
+        segmentStart + segmentLength <= safeEnd;
+        segmentStart += segmentLength + 3
+      ) {
+        candidates.push([
+          { x: segmentStart, y },
+          { x: segmentStart + segmentLength, y },
+        ]);
+      }
+    }
+  }
+  const anchor = surface.holes[0]?.tee ?? {
+    x: width / 2,
+    y: height / 2,
+  };
+  candidates.sort((a, b) => {
+    const distance = (route: typeof a) => {
+      const midpointX = (route[0].x + route[1].x) / 2;
+      return (midpointX - anchor.x) ** 2 + (route[0].y - anchor.y) ** 2;
+    };
+    return distance(a) - distance(b) || a[0].y - b[0].y || a[0].x - b[0].x;
+  });
+  return candidates;
+}
 
 function tutorial(page: Page) {
   return page.getByTestId("tutorial-overlay");
@@ -52,10 +83,139 @@ async function gameCanvas(page: Page) {
   return canvas;
 }
 
-async function placeHole(page: Page, start = tee, end = green) {
+async function waitForPixiTest(page: Page) {
+  await page.waitForFunction(() => Boolean(window.__coursecraftPixiTest));
+}
+
+async function projectedTilePosition(
+  page: Page,
+  canvas: Awaited<ReturnType<typeof gameCanvas>>,
+  point: { x: number; y: number },
+) {
+  await waitForPixiTest(page);
+  const projection = await page.evaluate(
+    ({ x, y }) => {
+      const renderer = window.__coursecraftPixiTest;
+      const position = renderer?.tileToScreen(x, y) ?? null;
+      const viewport = renderer?.viewport() ?? null;
+      return position && viewport ? { position, viewport } : null;
+    },
+    point,
+  );
+  if (!projection) throw new Error(`Renderer could not project tile ${point.x},${point.y}`);
+  const box = await canvas.boundingBox();
+  const position = box ? {
+    x: projection.position.x * box.width / projection.viewport.width,
+    y: projection.position.y * box.height / projection.viewport.height,
+  } : projection.position;
+  if (
+    !box
+    || position.x < 0
+    || position.y < 0
+    || position.x >= box.width
+    || position.y >= box.height
+  ) {
+    throw new Error(
+      `Projected tile ${point.x},${point.y} outside canvas at ${position.x.toFixed(1)},${position.y.toFixed(1)}`,
+    );
+  }
+  return {
+    canvas: position,
+    page: { x: box.x + position.x, y: box.y + position.y },
+  };
+}
+
+async function clickTile(
+  page: Page,
+  canvas: Awaited<ReturnType<typeof gameCanvas>>,
+  point: { x: number; y: number },
+) {
+  const position = await projectedTilePosition(page, canvas, point);
+  await canvas.click({ position: position.canvas, force: true });
+}
+
+async function dragTiles(
+  page: Page,
+  canvas: Awaited<ReturnType<typeof gameCanvas>>,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+) {
+  const from = await projectedTilePosition(page, canvas, start);
+  const to = await projectedTilePosition(page, canvas, end);
+  await page.mouse.move(from.page.x, from.page.y);
+  await page.mouse.down();
+  await page.mouse.move(to.page.x, to.page.y, { steps: 12 });
+  await page.mouse.up();
+}
+
+async function dragCanvas(
+  page: Page,
+  canvas: Awaited<ReturnType<typeof gameCanvas>>,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+) {
+  const box = await canvas.boundingBox();
+  if (!box) throw new Error("Canvas has no visible bounds");
+  await page.mouse.move(box.x + start.x, box.y + start.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + end.x, box.y + end.y, { steps: 12 });
+  await page.mouse.up();
+}
+
+async function visibleHoleRoutes(
+  page: Page,
+  canvas: Awaited<ReturnType<typeof gameCanvas>>,
+  surface: SurfaceLayout,
+) {
+  const candidates = remainingHoleRoutes(surface);
+  await waitForPixiTest(page);
+  await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
+  const projected = await page.evaluate((routes) => {
+    const renderer = window.__coursecraftPixiTest!;
+    const viewport = renderer.viewport();
+    return {
+      viewport,
+      routes: routes.map((route) => route.map((point) => renderer.tileToScreen(point.x, point.y))),
+    };
+  }, candidates);
+  const box = await canvas.boundingBox();
+  if (!box || !projected.viewport) throw new Error("Renderer viewport is unavailable");
+  const margin = 14;
+  const visible = candidates.filter((_, index) => (
+    projected.routes[index].every((point) => {
+      if (!point) return false;
+      const x = point.x * box.width / projected.viewport!.width;
+      const y = point.y * box.height / projected.viewport!.height;
+      return x >= margin && y >= margin && x < box.width - margin && y < box.height - margin;
+    })
+  ));
+  if (visible.length < 8) {
+    throw new Error(
+      `Expected eight owned, visible tutorial corridors; found ${visible.length} of ${candidates.length}`,
+    );
+  }
+  return visible.slice(0, 8).map((route, index) => (
+    index % 2 === 0 ? route : [route[1], route[0]] as const
+  ));
+}
+
+async function placeHole(
+  page: Page,
+  start: { x: number; y: number } | null = null,
+  end: { x: number; y: number } | null = null,
+) {
   const canvas = await gameCanvas(page);
-  await canvas.click({ position: start, force: true });
-  await canvas.click({ position: end, force: true });
+  if (start && end) {
+    await clickTile(page, canvas, start);
+    // Placing the tee changes the wizard step and can resize/remount the
+    // canvas when the tutorial panel advances. Wait for that UI transition
+    // before projecting the green against the current renderer viewport.
+    await expect(page.getByText("Click to place green", { exact: true })).toBeVisible();
+    await clickTile(page, canvas, end);
+  } else {
+    await canvas.click({ position: tee, force: true });
+    await canvas.click({ position: green, force: true });
+  }
   await expect(page.getByText("click or Esc to skip")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByText("click or Esc to skip")).toHaveCount(0);
@@ -63,15 +223,15 @@ async function placeHole(page: Page, start = tee, end = green) {
 }
 
 async function paintAndPlaceHole(page: Page, start: { x: number; y: number }, end: { x: number; y: number }) {
+  // Confirming a hole launches a close cinematic view. Escape skips that
+  // flyover, but deliberately restores its previous camera, so fixed canvas
+  // coordinates would otherwise drift toward the prior hole as the tutorial
+  // advances. Snap to the same whole-course overview contract used by F.
+  await waitForPixiTest(page);
+  await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
   await page.getByRole("button", { name: "Paint", exact: true }).click();
   const canvas = await gameCanvas(page);
-  for (let index = 0; index < 13; index++) {
-    const ratio = index / 12;
-    await canvas.click({ force: true, position: {
-      x: start.x + (end.x - start.x) * ratio,
-      y: start.y + (end.y - start.y) * ratio,
-    } });
-  }
+  await dragTiles(page, canvas, start, end);
   await page.getByRole("button", { name: "Hole Wizard" }).click();
   await placeHole(page, start, end);
 }
@@ -91,13 +251,7 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
 
   await capture(page, run, "step-02-before-paint-corridor");
   const canvas = await gameCanvas(page);
-  for (let index = 0; index < 13; index++) {
-    const ratio = index / 12;
-    await canvas.click({ position: {
-      x: tee.x + (green.x - tee.x) * ratio,
-      y: tee.y + (green.y - tee.y) * ratio,
-    } });
-  }
+  await dragCanvas(page, canvas, tee, green);
   await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
   await capture(page, run, "step-02-after-paint-corridor");
   await page.getByRole("button", { name: "Continue" }).click();
@@ -135,14 +289,23 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
   await capture(page, run, "step-05-after-transition");
 
   await capture(page, run, "step-06-before-open-course");
-  for (const [index, [start, end]] of remainingHoleRoutes.entries()) {
-    if (reloadStages && index === remainingHoleRoutes.length - 1) {
+  const surface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
+  const routes = await visibleHoleRoutes(page, canvas, surface);
+  for (const [index, [start, end]] of routes.entries()) {
+    if (reloadStages && index === routes.length - 1) {
       await expectStep(page, "open-course");
       await page.reload();
       await page.getByRole("button", { name: /Continue/ }).click();
       await expectStep(page, "open-course");
     }
     await paintAndPlaceHole(page, start, end);
+    const builtHole = await page.evaluate(
+      (holeIndex) => window.__coursecraftTest!.terrainSurfaceState().holes[holeIndex],
+      index + 1,
+    );
+    if (!builtHole.valid) {
+      throw new Error(`Generated tutorial hole ${index + 2} is invalid: ${builtHole.issues.join("; ")}`);
+    }
   }
   // Completing the ninth valid hole hands off automatically; no milestone
   // edge or extra click is required, and a resumed save stays on this step.
@@ -233,14 +396,12 @@ test("complete fresh-state tutorial playthrough A", async ({ page }) => {
   await page.getByRole("button", { name: /Resume/ }).click();
   await expect(advisor).toHaveAttribute("data-priority", "celebration");
   await advisor.getByRole("button", { name: "Got it" }).click();
-
-  await expect(advisor).toBeVisible({ timeout: 10_000 });
-  await expect(advisor.getByRole("button", { name: "Show me" })).toBeVisible();
-  await advisor.getByRole("button", { name: "Show me" }).click();
-  await expect(page.getByLabel("Show fix overlay")).toBeVisible();
+  await expect(advisor).toHaveCount(0);
+  await expect(page.getByTestId("tee-setup-offer")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Open pause menu" }).click();
   await page.getByRole("button", { name: /Options/ }).click();
+  await expect(page.getByLabel("Advisor frequency")).toHaveValue("chatty");
   await page.getByLabel("Advisor frequency").selectOption("off");
   await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("button", { name: /Resume/ }).click();
@@ -254,9 +415,7 @@ test("complete fresh-state tutorial playthrough B with reload resume and rerun",
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Show me the tools" }).click();
   const rerunCanvas = await gameCanvas(page);
-  for (const point of [{ x: 380, y: 220 }, { x: 400, y: 230 }, { x: 420, y: 240 }, { x: 440, y: 250 }]) {
-    await rerunCanvas.click({ position: point });
-  }
+  await dragCanvas(page, rerunCanvas, { x: 380, y: 220 }, { x: 440, y: 250 });
   await page.getByRole("button", { name: "Continue" }).click();
   await expectStep(page, "place-hole");
   await page.getByRole("button", { name: "Continue" }).click();

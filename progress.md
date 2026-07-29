@@ -712,6 +712,66 @@ Current request: Implement the `PixelLab Art Pipeline Pilot` milestone.
 - Generate and review the three facility treatments, natural props, and idle/walk/swing golfer sheets; promote only reviewed candidates through the manifest.
 - Run the same-target PixelLab/Layer-or-Scenario comparison, finish the weighted benchmark and adoption matrix, then pass the strict `art:pixellab:certify` gate and close the remaining Linear issues.
 
+## 2026-07-25 — ZK-446 terrain paint connected-fill bug
+
+Current request: open and deeply document the terrain-painting bug before implementing it.
+
+- Inspected the supplied playtest screenshot and traced the current Curve/Area pipeline through pointer capture, surface-intent construction/rasterization, terrain economics, persistence, contour extraction, and Pixi rendering.
+- Confirmed Curve always becomes a fixed-width Catmull–Rom corridor, Area receives a deduplicated integer-tile ring, and same-terrain features are rendered independently. The pipeline has no near-loop closure, bounded connected fill, topology repair, or shared accepted mask for preview/commit/rendering.
+- Opened High-priority M35 bug ZK-446, “Terrain paint strokes snake instead of filling connected areas,” as a child of ZK-326. It blocks M35 certification (ZK-332), relates to continuous terrain rendering (ZK-327), and includes a deterministic mask-first implementation design plus complete acceptance coverage.
+- Attached the user's screenshot to ZK-446.
+- No application code was changed. Next step: implement and verify ZK-446 without disturbing the unrelated dirty worktree.
+
+### ZK-446 implementation underway
+
+- Terrain gestures now retain ordered elevation-aware sub-tile samples instead of deduplicated integer cells.
+- Replaced uniform spline sampling with centripetal Catmull–Rom to avoid tight-turn loops/cusps.
+- Added deterministic 4× mask rasterization: Curve uses a swept corridor with pinhole/small-gap repair; Area rasterizes its closed boundary and exterior-fills every enclosed pocket.
+- The shared raster result now yields both authoritative tile coverage and validity-clipped render rings. Terrain previews expose accepted cells, and commits persist rings clipped to valid/owned/unlocked coverage.
+- The smooth renderer now unions accepted coverage per terrain before drawing mask detail, uses full-opacity overlap-safe fills, and cuts nested holes instead of outlining every stroke independently.
+
+### ZK-446 verification complete
+
+- Optimized rasterization to visit only each path segment's local subcell bounds, avoiding whole-mask × whole-path work during drag previews.
+- Added unit coverage for imperfect and self-crossing Area loops, open Curve loops, 4-neighbor repair, validity clipping, persisted render-ring normalization, accepted unchanged cells, and shared same-terrain contours.
+- Added a browser regression that paints a real Area gesture, proves the committed mask is one filled 4-neighbor component rather than a perimeter snake, and verifies exact undo/redo plus quick-save/load round trips.
+- Visually inspected the rounded Area result and curved corridor result. The required bundled client reached the game with valid structured state and no captured errors; its software WebGL screenshot remained black, so visual acceptance used Playwright's browser screenshots.
+- Verification passes: 70 Vitest files / 449 tests with one intentional skip; focused Curve/Area Playwright plus the ZK-446 save/load scenario; TypeScript; production build/audio/offline-asset audit; lint/i18n with seven existing Hook warnings and no errors; and `git diff --check`.
+
+## ZK-446 remaining
+
+- None for the requested connected-fill terrain painting fix.
+
+## 2026-07-25 — SimGolf-style terrain material correction
+
+Current request: use the supplied SimGolf references to replace the still-flat terrain presentation with coherent tile-based materials, scope the work as Linear subissues, and implement it.
+
+- Inspected all four supplied references. The reusable composition principles are continuous mowing fields, restrained deterministic material variation, crisp single-owner fringes/lips/shorelines/shoulders, and enough natural detail to absorb the grid. No reference pixels or game assets will be copied.
+- Traced the mismatch to M35's `smoothSurfaces` compositor: it hid the existing M19/M21 material registry by replacing authored cells with surrounding underlay tiles and painting opaque solid polygons.
+- Added dependency-ordered ZK-327 subissues: ZK-460 restores authored material composition; ZK-461 makes textures/mowing coherent across components; ZK-459 adds pair-aware blended edges; ZK-458 certifies themes, rotations, interactions, and performance. Attached the four user references and documented the code diagnosis on ZK-327.
+- Replaced the opaque surface compositor with material-clipped intent rendering: each persisted 4× feature mask now reveals the same themed terrain atlas, deterministic texture variation, mowing tint, slope tint, and animated water used by ordinary tiles. Exact accessibility patterns keep their direct tile path.
+- Anchored fairway/green/tee mowing to a broad world-space field aligned with the active hole, and replaced per-cell random water animation with a low-frequency shared shimmer phase so connected regions read as one material instead of a quilt.
+- Replaced numeric transition priority with semantic pair ownership for shorelines, bunker lips, path shoulders, maintained-turf fringes, and natural feathering. Feature-ring outlines sample authoritative terrain on both sides and suppress internal seams between touching regions of the same material.
+- Added focused unit coverage for mowing continuity, semantic edge symmetry, and neighboring-water phase; added ZK-460 browser coverage for real painted-region persistence and material captures; made the legacy M19 visual spec enter Photo mode through its documented keyboard shortcut.
+- Visually inspected Parkland, Links, and Desert at four rotations plus detail zoom, the curved-water fixture, and real fairway/sand Area gestures. The result keeps the deliberate tiled SimGolf character while connected regions share coherent texture fields and sub-tile silhouettes instead of opaque flat washes.
+- Verification passes: TypeScript; 72 Vitest files / 461 passed with one intentional skip; production build; strict-CSP PWA/offline/save smoke; performance smoke at 0.278 ms renderer work against the 8 ms budget; M19/M20/M35/ZK-446/ZK-460 browser coverage; scoped ESLint with only three pre-existing Pixi cleanup warnings; and `git diff --check`. The repository-wide lint command is presently blocked by untranslated strings in the separate in-progress bug-report dialog. The required bundled client reported valid structured state and no captured errors; both headless and headed direct-canvas captures remained black under software WebGL, so visual acceptance uses the successful Playwright renderer screenshots.
+
+## 2026-07-25 — ZK-447 direct tee/pin map placement in progress
+
+Current request: “ok lets implement the fix”
+
+- Removed player-facing X/Y inputs and Save/Map controls from Tee & Pin Setup.
+- Replaced them with explicit Place/Move-on-map actions, placed/not-placed status, and map-placement guidance with visible Cancel/Escape support.
+- Invalid map selections now keep placement mode active and surface the validation reason instead of silently ending the interaction.
+- Removed tile coordinates from tee construction confirmation while preserving exact cost/salvage, validation, and persisted point data internally.
+- Updated M23 browser coverage to exercise direct tee and pin map placement and assert coordinate inputs are absent.
+- Verification passes: 70 Vitest files / 449 tests with one intentional skip, production build and audio audit, lint/i18n with seven existing Hook warnings and no errors, two focused M23 Playwright scenarios, the required bundled web-game client, and `git diff --check`.
+- Visually inspected the complete setup inspector plus the live invalid-pin placement prompt. The UI exposes only Place/Move/Remove controls, map guidance, placement state, and validation feedback; no X/Y or tile coordinate entry remains.
+
+## ZK-447 remaining
+
+- None for the requested tee/pin coordinate-entry fix.
+
 ## 2026-07-25 — M45 closed-loop bug capture and repair implementation complete; external certification on HOLD
 
 Current request: implement the complete `M45: Closed-Loop Bug Capture & Repair` milestone.
@@ -737,3 +797,52 @@ Current request: implement the complete `M45: Closed-Loop Bug Capture & Repair` 
 - Route a real allowlisted staging Sentry group through the intake and record the resulting Linear issue/comment behavior.
 - Add `autofix-ready` to a purpose-built safe staging issue, obtain a separate allowlisted human `/autofix approve`, and record the dispatcher-created draft PR. Human review, merge, deploy, verification, and issue closure remain deliberately outside automation.
 - Keep the milestone certification decision at `HOLD` until those three provider-backed records exist and the release candidate is committed from a clean workspace.
+
+## 2026-07-25 — whole-tile terrain depth and biome-detail pass
+
+Current request: move closer to the supplied classic course-builder references while keeping whole-tile geometry, then add recessed water, raised bunker lips, rounded hill cues, differentiated rough/deep rough, Links fescue, and waste-area detail.
+
+- Expanded the ZK-327/ZK-329 Linear plan with ZK-462 through ZK-467, including a dedicated relief issue for visual-only surface insets and biome-scaled hill caps. No simulation elevation, save payload, course hash, collision, or terrain economics changed.
+- Made whole-tile terrain the only visible render geometry; persisted Curve/Area intent remains editor/save metadata and paint preview outlines the exact accepted tile set.
+- Added directional presentation depth: water sits 5 px below ground, wetland 3 px, and bunker sand 2.5 px. Single-owner bank faces bridge recessed surfaces, and bunker/shore atlas lips remain on the surrounding ground plane.
+- Added deterministic rounded elevation-cap cues, strongest for Links dunes and restrained for Parkland/Desert, while preserving the existing cliff ownership and all four rotations.
+- Added an @2× terrain-details atlas and typed deterministic registry across all themes. Ordinary rough uses short broken grass, deep rough uses taller growth, Links deep rough uses dedicated fescue, waste uses pebbles/scrub, and edge-aware reeds, shoreline stones, and bunker tufts clarify hazards.
+- Reduced mowing contrast and broadened world-space bands so maintained terrain reads as a continuous field instead of alternating light/dark diamonds. Re-authored material microtexture and transition bands with stronger shore/bunker/path semantics.
+- Ran an isolated PixelLab pilot for short rough, Links fescue, waste dressing, plus fairway/rough/sand base tiles. All six outputs were preserved with hashes and rejected in the existing manifest: detail candidates were too saturated or stamp-like, while base tiles were thick 64×64 blocks rather than seamless 128×64 top surfaces. The deterministic CourseCraft atlas remains production truth.
+- Added focused unit coverage and a three-theme Playwright relief suite. Verification passes: 80 Vitest files / 502 tests with one intentional skip; production build; lint/i18n with seven existing Hook warnings and no errors; strict-CSP PWA/offline/save smoke; PixelLab manifest validation; three-theme relief, M19, and material-composition browser coverage; bundled-client structured state with no captured errors; performance smoke at 0.24 ms renderer work against the 8 ms budget; and `git diff --check`.
+
+## 2026-07-25 — organic hazards and grounded natural detail
+
+- Water/wetland painting now grades a flat authoritative basin, charges the
+  exact earthwork in the paint transaction, and clears covered dry-land props.
+  New trees/bushes/rocks are rejected on wet terrain; protected trees clip a
+  land island from the wet mask.
+- Connected edge rendering now supplies fairway/bunker rough collars, green
+  fringe, deep-rough feathering, and capped rocky water banks.
+- One-cell bunkers use stable kidney/pot silhouettes; connected bunkers merge
+  into scalloped organic outlines over a rough underlay, eliminating exposed
+  square sand corners.
+- Species-aware tree habitat adds pine straw, broadleaf leaf litter/soil, and
+  desert dry-soil beds with bounded deterministic detail.
+- Verification passes 88 Vitest files / 545 tests with one skip, TypeScript,
+  lint/i18n, production and asset audits, strict-CSP PWA/offline smoke, M20
+  theme/rotation/detail coverage, the water atomicity/save regression,
+  performance smoke, the required bundled client, and `git diff --check`.
+
+## 2026-07-25 — M35 testing handoff checkpoint
+
+- Current source and evidence remain uncommitted on `develop`; base candidate
+  is `6944abe`. Preserve unrelated dirty files, especially the pre-existing
+  deleted `.github/workflows/deploy.yml`, until the handoff agent scopes a
+  deliberate M35 commit.
+- Current gates: 88 Vitest files / 552 passed / 1 skipped; TypeScript; lint
+  with no errors and 11 existing Hook warnings; production build, exact audio
+  audit, service-worker injection, and M35 asset budgets; strict-CSP PWA,
+  offline reload, and local-save smoke; 1.08 ms renderer work in performance
+  smoke; and `git diff --check` all pass.
+- The complete M14 reload/resume/rerun onboarding path passes in 11.5 minutes.
+  The keyboard/save-load case passes in isolation. The remaining M17, M27, M6,
+  and M7 isolated reruns were interrupted and must not be reported as passed.
+- Latest fixes include in-place Pixi adaptive-resolution resizing and debounced
+  tutorial autosave status. See `simgolf-lite/docs/M35_CERTIFICATION.md` for
+  the exact next commands and the ZK-473/ZK-466 release gates.

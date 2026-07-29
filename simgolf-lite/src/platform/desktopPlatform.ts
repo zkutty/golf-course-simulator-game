@@ -9,6 +9,7 @@ export function createDesktopPlatform(bridge: CourseCraftDesktopBridge): Platfor
     capabilities: bridge.capabilities,
     files: {
       readText: (key) => invoke(bridge, "files:read", { key }),
+      recovery: (key) => invoke(bridge, "files:recovery", { key }),
       writeTextAtomic: (key, value) => invoke(bridge, "files:write", { key, value }),
       delete: (key) => invoke(bridge, "files:delete", { key }),
       list: (prefix) => invoke(bridge, "files:list", { prefix }),
@@ -21,6 +22,7 @@ export function createDesktopPlatform(bridge: CourseCraftDesktopBridge): Platfor
       safeMode: () => invoke(bridge, "app:safeMode"),
       markCleanExit: () => invoke(bridge, "app:markCleanExit"),
       requestQuit: (input) => invoke(bridge, "app:requestQuit", input),
+      onQuitRequested: (handler) => bridge.onQuitRequested(handler),
       setWindowMode: (mode) => invoke(bridge, "window:setMode", { mode }),
     },
     achievements: { unlock: (ids) => invoke(bridge, "steam:achievements", { ids }) },

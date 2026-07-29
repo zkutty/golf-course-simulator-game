@@ -43,6 +43,26 @@ const FILE_STATES = new Set([
   "production",
 ]);
 const APPROVED_STATES = new Set(["approved", "reference", "production"]);
+const STAGED_STATES = new Set(["raw", "candidate", "cleaned", "approved"]);
+const PROMOTION_TRANSITIONS = new Map([
+  ["planned", new Set(["planned", "raw", "candidate", "rejected"])],
+  ["raw", new Set(["candidate", "rejected"])],
+  ["candidate", new Set(["cleaned", "rejected"])],
+  ["cleaned", new Set(["approved", "rejected"])],
+  ["approved", new Set(["production", "rejected"])],
+  ["rejected", new Set(["candidate", "rejected"])],
+  ["production", new Set(["production"])],
+  ["reference", new Set(["reference"])],
+]);
+const PNG_FILENAME = /^[a-z0-9][a-z0-9._-]*\.png$/;
+const GRID_FILENAME = /\.grid(\d+)x(\d+)\.png$/;
+const SECRET_PATTERNS = [
+  /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/i,
+  /\b(?:sk|ghp|github_pat|xox[baprs])-[-_A-Za-z0-9]{16,}\b/i,
+  /\bAKIA[0-9A-Z]{16}\b/,
+  /\bBearer\s+(?!<|\$\{|replace-)[A-Za-z0-9._~+/-]{20,}/i,
+  /\b(?:authorization|auth(?:entication)?[-_ ]?header|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|password|secret)\s*[:=]\s*["']?(?:Bearer\s+)?[A-Za-z0-9._~+/-]{16,}/i,
+];
 
 function sha256(file) {
   return createHash("sha256").update(readFileSync(file)).digest("hex");
@@ -93,6 +113,142 @@ function alphaBounds(png) {
     }
   }
   return maxX < minX ? null : { minX, minY, maxX, maxY };
+}
+
+function alphaMetrics(png) {
+  const bounds = alphaBounds(png);
+  let transparent = 0;
+  let visible = 0;
+  let partial = 0;
+  let min = 255;
+  let max = 0;
+  for (let index = 3; index < png.data.length; index += 4) {
+    const alpha = png.data[index];
+    min = Math.min(min, alpha);
+    max = Math.max(max, alpha);
+    if (alpha === 0) transparent += 1;
+    if (alpha > 8) visible += 1;
+    if (alpha > 0 && alpha < 255) partial += 1;
+  }
+  const padding = bounds
+    ? {
+      top: bounds.minY,
+      right: png.width - 1 - bounds.maxX,
+      bottom: png.height - 1 - bounds.maxY,
+      left: bounds.minX,
+    }
+    : { top: png.height, right: png.width, bottom: png.height, left: png.width };
+  return { bounds, transparent, visible, partial, min, max, padding };
+}
+
+function resolveProjectFile(reference) {
+  if (typeof reference !== "string" || !reference || reference.includes("#")) return null;
+  const normalized = reference.replaceAll("\\", "/");
+  if (path.isAbsolute(normalized) || normalized.includes("..")) return null;
+  const file = path.resolve(ROOT, normalized);
+  return inside(ROOT, file) && existsSync(file) && statSync(file).isFile() ? file : null;
+}
+
+function sourceFileFor(asset) {
+  return (asset.sourceReferences ?? [])
+    .map(resolveProjectFile)
+    .find((file) => file && /\.png$/i.test(file)) ?? null;
+}
+
+export function measureAsset(asset) {
+  if (!asset?.file) return null;
+  const file = resolveProjectFile(asset.file);
+  if (!file) return null;
+  const png = PNG.sync.read(readFileSync(file));
+  const source = sourceFileFor(asset);
+  let sourcePayloadBytes = null;
+  let sourceTextureMemoryBytes = null;
+  let sourceSha256 = null;
+  if (source) {
+    const sourcePng = PNG.sync.read(readFileSync(source));
+    sourcePayloadBytes = statSync(source).size;
+    sourceTextureMemoryBytes = sourcePng.width * sourcePng.height * 4;
+    sourceSha256 = sha256(source);
+  }
+  const payloadBytes = statSync(file).size;
+  const textureMemoryBytes = png.width * png.height * 4;
+  return {
+    payloadBytes,
+    textureMemoryBytes,
+    sourcePayloadBytes,
+    sourceTextureMemoryBytes,
+    payloadDeltaBytes: sourcePayloadBytes === null ? null : payloadBytes - sourcePayloadBytes,
+    textureMemoryDeltaBytes: sourceTextureMemoryBytes === null
+      ? null
+      : textureMemoryBytes - sourceTextureMemoryBytes,
+    sourceSha256,
+  };
+}
+
+export function validatePromotionPath(asset) {
+  const errors = [];
+  const pathStates = asset?.promotionPath;
+  if (!Array.isArray(pathStates) || pathStates.length === 0) {
+    return [`${asset?.id ?? "<missing>"}: promotionPath is required`];
+  }
+  if (pathStates.at(-1) !== asset.state) {
+    errors.push(`${asset.id}: promotionPath must end at state ${asset.state}`);
+  }
+  for (let index = 1; index < pathStates.length; index += 1) {
+    const previous = pathStates[index - 1];
+    const next = pathStates[index];
+    if (!PROMOTION_TRANSITIONS.get(previous)?.has(next)) {
+      errors.push(`${asset.id}: invalid promotion ${previous} -> ${next}`);
+    }
+  }
+  return errors;
+}
+
+function validateAtlasMetadata(sheet, label) {
+  const errors = [];
+  const width = sheet?.meta?.size?.w;
+  const height = sheet?.meta?.size?.h;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) {
+    return [`${label}: atlas dimensions are invalid`];
+  }
+  if (typeof sheet.meta.image !== "string" || !PNG_FILENAME.test(sheet.meta.image)) {
+    errors.push(`${label}: atlas image filename is invalid`);
+  }
+  const frames = sheet.frames ?? {};
+  for (const [name, entry] of Object.entries(frames)) {
+    const frame = entry?.frame;
+    if (!/^[a-z0-9_]+$/.test(name)) errors.push(`${label}: invalid frame name ${name}`);
+    if (!frame || ![frame.x, frame.y, frame.w, frame.h].every(Number.isInteger)
+      || frame.w <= 0 || frame.h <= 0 || frame.x < 0 || frame.y < 0
+      || frame.x + frame.w > width || frame.y + frame.h > height) {
+      errors.push(`${label}: frame ${name} is outside atlas bounds`);
+      continue;
+    }
+    if (entry.rotated !== false || entry.trimmed !== false) {
+      errors.push(`${label}: frame ${name} must not be rotated or trimmed`);
+    }
+    if (entry.sourceSize?.w !== frame.w || entry.sourceSize?.h !== frame.h) {
+      errors.push(`${label}: frame ${name} sourceSize does not match frame`);
+    }
+  }
+  const rectangles = Object.entries(frames)
+    .map(([name, entry]) => ({ name, frame: entry?.frame }))
+    .filter(({ frame }) => frame && [frame.x, frame.y, frame.w, frame.h].every(Number.isInteger))
+    .map(({ name, frame }) => ({ name, ...frame }))
+    .sort((a, b) => a.y - b.y || a.x - b.x);
+  const active = [];
+  for (const frame of rectangles) {
+    for (let index = active.length - 1; index >= 0; index -= 1) {
+      if (active[index].y + active[index].h <= frame.y) active.splice(index, 1);
+    }
+    for (const other of active) {
+      if (other.x < frame.x + frame.w && frame.x < other.x + other.w) {
+        errors.push(`${label}: frames ${other.name} and ${frame.name} overlap`);
+      }
+    }
+    active.push(frame);
+  }
+  return errors;
 }
 
 export function normalizeCandidate({ input, output, width, height, padding = 4 }) {
@@ -206,7 +362,7 @@ function listTextFiles(root) {
     if (entry.isDirectory()) {
       if (entry.name === "staging") continue;
       files.push(...listTextFiles(full));
-    } else if (/\.(?:json|md|mjs|toml|txt)$/i.test(entry.name)) {
+    } else if (/\.(?:json|md|mjs|js|ts|tsx|jsx|toml|txt)$/i.test(entry.name)) {
       files.push(full);
     }
   }
@@ -259,6 +415,9 @@ export function validateManifest({ requirePilotApproval = false } = {}) {
   if (manifest.policy?.secretsAllowed !== false) errors.push("manifest secretsAllowed must be false");
 
   const ids = new Set();
+  const files = new Map();
+  const hashes = new Map();
+  const measurements = {};
   let lastId = "";
   for (const asset of manifest.assets ?? []) {
     if (!asset.id || ids.has(asset.id)) errors.push(`duplicate or missing asset id: ${asset.id ?? "<missing>"}`);
@@ -266,18 +425,33 @@ export function validateManifest({ requirePilotApproval = false } = {}) {
     if (lastId && asset.id.localeCompare(lastId) < 0) errors.push(`assets must be sorted by id: ${asset.id}`);
     lastId = asset.id;
     if (!STATES.has(asset.state)) errors.push(`${asset.id}: invalid state ${asset.state}`);
+    if (asset.promotionPath) errors.push(...validatePromotionPath(asset));
+    if ((asset.state === "approved" || asset.state === "production") && !asset.promotionPath) {
+      errors.push(`${asset.id}: ${asset.state} state requires promotionPath`);
+    }
     if (asset.review?.decision === "approved" && !asset.review?.reviewer) {
       errors.push(`${asset.id}: approved review requires a reviewer`);
     }
     if (APPROVED_STATES.has(asset.state) && asset.review?.decision !== "approved") {
       errors.push(`${asset.id}: ${asset.state} state requires an approved review`);
     }
+    if (asset.state === "rejected" && asset.review?.decision === "approved") {
+      errors.push(`${asset.id}: rejected state cannot have an approved review`);
+    }
     if (!asset.promptRef) errors.push(`${asset.id}: promptRef is required`);
+    if (!asset.licenseNotes) errors.push(`${asset.id}: licenseNotes is required`);
+    if (!asset.provider) errors.push(`${asset.id}: provider is required`);
+    if (!asset.tool && !asset.model && !asset.endpoint) {
+      warnings.push(`${asset.id}: provenance tool/model/endpoint is incomplete`);
+    }
     if (!asset.requirements || asset.requirements.transparent !== true) {
       errors.push(`${asset.id}: transparent PNG requirement is mandatory`);
     }
     if (asset.requirements?.anchor?.[0] !== 0.5 || asset.requirements?.anchor?.[1] !== 1) {
       errors.push(`${asset.id}: bottom-center [0.5,1] anchor is mandatory`);
+    }
+    if (asset.sourceHashes && (typeof asset.sourceHashes !== "object" || Array.isArray(asset.sourceHashes))) {
+      errors.push(`${asset.id}: sourceHashes must be an object keyed by source reference`);
     }
 
     if (!FILE_STATES.has(asset.state)) continue;
@@ -285,10 +459,25 @@ export function validateManifest({ requirePilotApproval = false } = {}) {
       errors.push(`${asset.id}: ${asset.state} assets require file and sha256`);
       continue;
     }
+    const normalizedFile = asset.file.replaceAll("\\", "/");
+    if (path.isAbsolute(asset.file) || normalizedFile !== asset.file || asset.file.includes("..")) {
+      errors.push(`${asset.id}: file must be a relative project path`);
+    }
     const file = path.resolve(ROOT, asset.file);
     const isStaged = inside(STAGING_ROOT, file);
-    if (["raw", "candidate", "cleaned", "approved"].includes(asset.state) && !isStaged) {
+    if (STAGED_STATES.has(asset.state) && !isStaged) {
       errors.push(`${asset.id}: staged state points outside staging`);
+    }
+    if (asset.state === "production" && (isStaged || !inside(path.join(ROOT, "src/assets"), file))) {
+      errors.push(`${asset.id}: production state must point to src/assets outside staging`);
+    }
+    if (!PNG_FILENAME.test(path.basename(asset.file))) {
+      errors.push(`${asset.id}: filename must be lowercase kebab/snake/dot PNG syntax`);
+    }
+    if (files.has(normalizedFile)) {
+      errors.push(`${asset.id}: filename collides with ${files.get(normalizedFile)}`);
+    } else {
+      files.set(normalizedFile, asset.id);
     }
     if (!existsSync(file)) {
       errors.push(`${asset.id}: missing file ${asset.file}`);
@@ -309,28 +498,91 @@ export function validateManifest({ requirePilotApproval = false } = {}) {
     if (png.width !== asset.requirements.width || png.height !== asset.requirements.height) {
       errors.push(`${asset.id}: expected ${asset.requirements.width}x${asset.requirements.height}, found ${png.width}x${png.height}`);
     }
-    const alpha = transparencyStats(png);
-    if (alpha.transparent === 0 || alpha.opaque === 0) {
+    const alpha = alphaMetrics(png);
+    if (alpha.transparent === 0 || alpha.visible === 0) {
       errors.push(`${asset.id}: PNG must contain both transparent and visible pixels`);
     }
-    const padding = bottomPadding(png);
-    if (padding > (asset.requirements.bottomPaddingMax ?? 8)) {
-      errors.push(`${asset.id}: bottom padding ${padding}px exceeds anchor tolerance`);
+    if (alpha.min < 0 || alpha.max > 255) {
+      errors.push(`${asset.id}: alpha values exceed 0-255 bounds`);
+    }
+    const alphaRequirement = asset.requirements.alpha;
+    if (alphaRequirement?.min !== undefined && alpha.min < alphaRequirement.min) {
+      errors.push(`${asset.id}: alpha minimum ${alpha.min} is below ${alphaRequirement.min}`);
+    }
+    if (alphaRequirement?.max !== undefined && alpha.max > alphaRequirement.max) {
+      errors.push(`${asset.id}: alpha maximum ${alpha.max} exceeds ${alphaRequirement.max}`);
+    }
+    if (alphaRequirement?.maxPartialPixels !== undefined && alpha.partial > alphaRequirement.maxPartialPixels) {
+      errors.push(`${asset.id}: partial alpha count ${alpha.partial} exceeds ${alphaRequirement.maxPartialPixels}`);
+    }
+    if (alpha.padding.bottom > (asset.requirements.bottomPaddingMax ?? 8)) {
+      errors.push(`${asset.id}: bottom padding ${alpha.padding.bottom}px exceeds anchor tolerance`);
+    }
+    const anchorTolerance = asset.requirements.anchorTolerancePixels ?? 1;
+    if (Math.abs(alpha.padding.left - alpha.padding.right) > anchorTolerance) {
+      errors.push(`${asset.id}: visible bounds are not centered on the declared anchor`);
+    }
+    if (asset.requirements.paddingMax) {
+      for (const side of ["top", "right", "bottom", "left"]) {
+        const limit = asset.requirements.paddingMax[side];
+        if (limit !== undefined && alpha.padding[side] > limit) {
+          errors.push(`${asset.id}: ${side} transparent padding ${alpha.padding[side]}px exceeds ${limit}px`);
+        }
+      }
     }
     const grid = asset.requirements.grid;
     if (grid) {
       if (png.width !== grid.columns * grid.frameWidth || png.height !== grid.rows * grid.frameHeight) {
         errors.push(`${asset.id}: grid dimensions do not match canvas`);
       }
+      const match = GRID_FILENAME.exec(path.basename(asset.file));
+      if (match && (Number(match[1]) !== grid.columns || Number(match[2]) !== grid.rows)) {
+        errors.push(`${asset.id}: filename grid suffix does not match manifest grid`);
+      }
+    }
+    const hash = sha256(file);
+    if (hashes.has(hash)) errors.push(`${asset.id}: duplicate PNG content with ${hashes.get(hash)}`);
+    else hashes.set(hash, asset.id);
+    const measurement = measureAsset(asset);
+    if (measurement) {
+      measurements[asset.id] = measurement;
+      if (asset.measurements) {
+        for (const key of ["payloadBytes", "textureMemoryBytes", "payloadDeltaBytes", "textureMemoryDeltaBytes"]) {
+          if (asset.measurements[key] !== measurement[key]) {
+            errors.push(`${asset.id}: recorded ${key} does not match file measurement`);
+          }
+        }
+      } else if (STAGED_STATES.has(asset.state)) {
+        warnings.push(`${asset.id}: staged asset has no recorded payload/memory measurements`);
+      }
+    }
+    for (const sourceReference of asset.sourceReferences ?? []) {
+      const source = resolveProjectFile(sourceReference);
+      if (!source) continue;
+      const sourceHash = sha256(source);
+      if (asset.sourceHashes?.[sourceReference] && asset.sourceHashes[sourceReference] !== sourceHash) {
+        errors.push(`${asset.id}: source hash mismatch for ${sourceReference}`);
+      }
     }
   }
 
   for (const file of listTextFiles(PIPELINE_ROOT)) {
     const text = readFileSync(file, "utf8");
-    if (/Bearer\s+(?!<|\$\{|replace-)[A-Za-z0-9._~+/-]{20,}/.test(text)) {
+    if (SECRET_PATTERNS.some((pattern) => pattern.test(text))) {
       errors.push(`${path.relative(ROOT, file)}: possible bearer credential`);
     }
     if (/mcp-remote@latest/.test(text)) errors.push(`${path.relative(ROOT, file)}: unpinned mcp-remote`);
+  }
+
+  for (const directory of ["src", "worker", "public"]) {
+    const runtimeRoot = path.join(ROOT, directory);
+    if (!existsSync(runtimeRoot)) continue;
+    for (const file of listTextFiles(runtimeRoot)) {
+      const text = readFileSync(file, "utf8");
+      if (/pixellab|PIXELLAB_AUTH_HEADER|api\.pixellab\.ai/i.test(text)) {
+        errors.push(`${path.relative(ROOT, file)}: runtime must not reference PixelLab`);
+      }
+    }
   }
 
   const approvedPixelLab = (manifest.assets ?? []).filter(
@@ -348,6 +600,7 @@ export function validateManifest({ requirePilotApproval = false } = {}) {
     ok: errors.length === 0,
     assets: manifest.assets?.length ?? 0,
     approvedPixelLab: approvedPixelLab.length,
+    measurements,
     errors,
     warnings,
   };
@@ -378,6 +631,7 @@ export function verifyAtlasDeterminism() {
       "golfers.json",
     ];
     const errors = [];
+    const atlasReports = {};
     for (const name of names) {
       const a = path.join(first, name);
       const b = path.join(second, name);
@@ -387,19 +641,33 @@ export function verifyAtlasDeterminism() {
         errors.push(`${name}: repeated isolated rebuild is not byte-stable`);
       }
       if (name.endsWith(".json")) {
+        let sheet;
+        try {
+          sheet = readJson(a);
+          errors.push(...validateAtlasMetadata(sheet, name));
+        } catch (error) {
+          errors.push(`${name}: invalid atlas metadata (${error.message})`);
+          continue;
+        }
         const production = path.join(ROOT, "public/atlases", name);
         if (!existsSync(production)) {
           errors.push(`${name}: checked-in atlas metadata is missing`);
           continue;
         }
         const expectedFrames = Object.keys(readJson(production).frames ?? {}).sort();
-        const rebuiltFrames = Object.keys(readJson(a).frames ?? {}).sort();
+        const rebuiltFrames = Object.keys(sheet.frames ?? {}).sort();
         if (JSON.stringify(expectedFrames) !== JSON.stringify(rebuiltFrames)) {
           errors.push(`${name}: checked-in and rebuilt frame registries differ`);
         }
+        const imagePath = path.join(first, sheet.meta.image);
+        atlasReports[name] = {
+          frames: rebuiltFrames.length,
+          payloadBytes: statSync(a).size + (existsSync(imagePath) ? statSync(imagePath).size : 0),
+          textureMemoryBytes: sheet.meta.size.w * sheet.meta.size.h * 4,
+        };
       }
     }
-    return { ok: errors.length === 0, files: names.length, errors };
+    return { ok: errors.length === 0, files: names.length, atlasReports, errors };
   } finally {
     rmSync(first, { recursive: true, force: true });
     rmSync(second, { recursive: true, force: true });

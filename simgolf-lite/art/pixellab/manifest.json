@@ -183,6 +183,46 @@
       "licenseNotes": "Pending generation and review."
     },
     {
+      "id": "target-facility-clubhouse-parkland",
+      "category": "facility",
+      "provider": "pixellab",
+      "model": "mcp:create_map_object",
+      "state": "cleaned",
+      "file": "art/pixellab/staging/cleaned/parkland-clubhouse-t1.592279ea.normalized.png",
+      "sha256": "5c578ee583986b6b1c0aa26c2678b82668410201770ee2b62d3ca2e1ad91cf27",
+      "measurements": {
+        "payloadBytes": 72947,
+        "textureMemoryBytes": 262144,
+        "sourcePayloadBytes": 130828,
+        "sourceTextureMemoryBytes": 262144,
+        "payloadDeltaBytes": -57881,
+        "textureMemoryDeltaBytes": 0,
+        "sourceSha256": "4d370cdbd6c661738b981b8db82fc0c1e86195606edd1bec54addb6eb6b7650c"
+      },
+      "generatedAt": "2026-07-25T01:56:00Z",
+      "promptRef": "prompts.md#facility-pilot",
+      "sourceReferences": [
+        "src/assets/sprites/parkland_clubhouse_t1.png"
+      ],
+      "cleanup": [
+        "Preserved PixelLab job 592279ea-9875-4b64-a6f0-519dbc02c2ef raw output with SHA-256 21860d249f00a5b94119da642d08afa30d02947222ef807b4524e9f377692638.",
+        "Normalized the 192x192 output onto the existing 256x256 clubhouse frame with bottom-center alignment and 4 px bottom padding."
+      ],
+      "requirements": {
+        "width": 256,
+        "height": 256,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "Strong readable tier-1 clubhouse and compatible pixel treatment. The generated grass apron violates the no-terrain prompt and must be removed or explicitly adopted before promotion; pending isolated-atlas and in-game scale review."
+      },
+      "licenseNotes": "Generated through the PixelLab trial MCP API; usage remains subject to PixelLab terms and pending CourseCraft human approval."
+    },
+    {
       "id": "target-golfer-idle",
       "category": "golfer-animation",
       "provider": "pixellab",
@@ -280,6 +320,47 @@
       "licenseNotes": "Pending generation and review."
     },
     {
+      "id": "target-prop-birch",
+      "category": "natural-prop",
+      "provider": "pixellab",
+      "model": "mcp:create_map_object",
+      "state": "cleaned",
+      "file": "art/pixellab/staging/cleaned/parkland-tree-birch.43cec2b6.normalized.png",
+      "sha256": "d32fcc02d2f8dbd71e22bf3291eed5f4143b594ba0c2c106b5f3764bc99419b0",
+      "measurements": {
+        "payloadBytes": 28825,
+        "textureMemoryBytes": 98304,
+        "sourcePayloadBytes": 27617,
+        "sourceTextureMemoryBytes": 98304,
+        "payloadDeltaBytes": 1208,
+        "textureMemoryDeltaBytes": 0,
+        "sourceSha256": "57d70fa87db5f4a47cadfc909ddd690a0cdf535df6bc288f152b4ed51b31c6ce"
+      },
+      "generatedAt": "2026-07-25T01:56:00Z",
+      "promptRef": "prompts.md#natural-prop-pilot",
+      "sourceReferences": [
+        "art/pixellab/staging/cleaned/target-prop-tree.bd9937e7.normalized.png",
+        "src/assets/props/natural/parkland_tree_birch.png"
+      ],
+      "cleanup": [
+        "Preserved PixelLab job 43cec2b6-0c3c-4441-a170-271afdd155a4 raw output with SHA-256 76b64cd5a571f453b37a9e96e9109beb0cb465b661ae816858e4b99ed2e45fe6.",
+        "Normalized visible bounds onto the required 128x192 transparent canvas with bottom-center alignment and 4 px bottom padding."
+      ],
+      "requirements": {
+        "width": 128,
+        "height": 192,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": null,
+        "decision": "pending",
+        "notes": "Very coherent with the PixelLab oak and immediately readable as birch. Canopy remains oak-like and the exposed roots are prominent, so scale and silhouette still need in-game review."
+      },
+      "licenseNotes": "Generated through the PixelLab trial MCP API; usage remains subject to PixelLab terms and pending CourseCraft human approval."
+    },
+    {
       "id": "target-prop-bush",
       "category": "natural-prop",
       "provider": "pixellab",
@@ -309,14 +390,29 @@
       "id": "target-prop-rock",
       "category": "natural-prop",
       "provider": "pixellab",
-      "model": null,
-      "state": "planned",
-      "generatedAt": null,
+      "model": "mcp:create_map_object",
+      "state": "cleaned",
+      "file": "art/pixellab/staging/cleaned/parkland-rock-granite.28e460f1.normalized.png",
+      "sha256": "5657cde4e9b8a9d25158049e52443aabb7e071c5d4f7c6b955c6f77927f8fb11",
+      "measurements": {
+        "payloadBytes": 24870,
+        "textureMemoryBytes": 98304,
+        "sourcePayloadBytes": 27617,
+        "sourceTextureMemoryBytes": 98304,
+        "payloadDeltaBytes": -2747,
+        "textureMemoryDeltaBytes": 0,
+        "sourceSha256": "57d70fa87db5f4a47cadfc909ddd690a0cdf535df6bc288f152b4ed51b31c6ce"
+      },
+      "generatedAt": "2026-07-25T01:56:00Z",
       "promptRef": "prompts.md#natural-prop-pilot",
       "sourceReferences": [
+        "art/pixellab/staging/cleaned/target-prop-tree.bd9937e7.normalized.png",
         "src/assets/props/natural/parkland_rock_granite.png"
       ],
-      "cleanup": [],
+      "cleanup": [
+        "Preserved PixelLab job 28e460f1-f5c8-478f-abd5-d297b645edd3 raw output with SHA-256 0ad37425ec5ba2ae1f532a31d30984cd574a50b7d3ebfc4ca2e507b5eda2efa3.",
+        "Normalized visible bounds onto the required 128x192 transparent canvas with bottom-center alignment and 4 px bottom padding."
+      ],
       "requirements": {
         "width": 128,
         "height": 192,
@@ -327,22 +423,36 @@
       "review": {
         "reviewer": null,
         "decision": "pending",
-        "notes": "Hard silhouette and fixed NW light baseline."
+        "notes": "Strong triangular silhouette, readable stepped stone planes, and a palette compatible with the PixelLab trees. The generated grass-and-flower pedestal violates the no-floor and no-grass prompt and must be removed or explicitly adopted before promotion."
       },
-      "licenseNotes": "Pending generation and review."
+      "licenseNotes": "Generated through the PixelLab trial MCP API; usage remains subject to PixelLab terms and pending CourseCraft human approval."
     },
     {
       "id": "target-prop-tree",
       "category": "natural-prop",
       "provider": "pixellab",
-      "model": null,
-      "state": "planned",
-      "generatedAt": null,
+      "model": "mcp:create_map_object",
+      "state": "cleaned",
+      "file": "art/pixellab/staging/cleaned/target-prop-tree.bd9937e7.normalized.png",
+      "sha256": "57d70fa87db5f4a47cadfc909ddd690a0cdf535df6bc288f152b4ed51b31c6ce",
+      "measurements": {
+        "payloadBytes": 27617,
+        "textureMemoryBytes": 98304,
+        "sourcePayloadBytes": 32951,
+        "sourceTextureMemoryBytes": 64000,
+        "payloadDeltaBytes": -5334,
+        "textureMemoryDeltaBytes": 34304,
+        "sourceSha256": "6c04095828db75086c93e2817b0f5caa0de1a0f39395fd979308613a9ae82ea5"
+      },
+      "generatedAt": "2026-07-25T01:45:00Z",
       "promptRef": "prompts.md#natural-prop-pilot",
       "sourceReferences": [
         "src/assets/props/natural/parkland_tree_oak.png"
       ],
-      "cleanup": [],
+      "cleanup": [
+        "Preserved PixelLab job bd9937e7-bdce-4eaa-8472-a8d9667544ba raw output with SHA-256 213db9d4687ce9cbc60526670d8e424196acce81e6521b0dee3706e4e9fd352b.",
+        "Normalized visible bounds onto the required 128x192 transparent canvas with bottom-center alignment and 4 px bottom padding."
+      ],
       "requirements": {
         "width": 128,
         "height": 192,
@@ -353,9 +463,219 @@
       "review": {
         "reviewer": null,
         "decision": "pending",
-        "notes": "Tall silhouette, trunk-to-ground contact, and separate-shadow compatibility."
+        "notes": "Raw output had 32 px bottom padding and failed the anchor tolerance. The normalized candidate meets the mechanical contract and has a strong readable silhouette, but is brighter, chunkier, and more overtly pixel-art than the existing CourseCraft oak. Pending isolated-atlas and in-game review."
       },
-      "licenseNotes": "Pending generation and review."
+      "licenseNotes": "Generated through the PixelLab trial MCP API; usage remains subject to PixelLab terms and pending CourseCraft human approval."
+    },
+    {
+      "id": "target-prop-tree-v2-style-match",
+      "category": "natural-prop",
+      "provider": "pixellab",
+      "model": "mcp:create_map_object",
+      "state": "rejected",
+      "file": "art/pixellab/staging/cleaned/parkland-tree-oak-v2.47b4625e.normalized.png",
+      "sha256": "5370b676534a9c6d88f26130e86ed4ad7495cdff6f6708c5f0d06e68c0bd23a1",
+      "generatedAt": "2026-07-25T02:05:00Z",
+      "promptRef": "prompts.md#natural-prop-style-match-v2-calibration",
+      "sourceReferences": [
+        "src/assets/props/natural/parkland_tree_oak.png"
+      ],
+      "cleanup": [
+        "Preserved PixelLab job 47b4625e-222c-41bd-9dab-5660a068b2e4 raw output with SHA-256 3811af5c782d8a29897f36a925db6efd99ad5e5ffc562caf94ddd1746a6c7504.",
+        "Kept the 128x125 CourseCraft reference at native pixel density on the 192x192 style-match canvas.",
+        "Normalized the completed output onto the 128x192 pilot canvas with premultiplied downsampling, bottom-center alignment and 4 px bottom padding."
+      ],
+      "requirements": {
+        "width": 128,
+        "height": 192,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": "CourseCraft",
+        "decision": "rejected",
+        "notes": "The v2 controls corrected scale, terrain, heavy outline and exaggerated roots, but the output still used bright rounded leaf clusters and lost the reference's dense painterly microtexture. This is evidence that PixelLab map-object generation should remain an ideation source rather than the final renderer for existing CourseCraft natural props."
+      },
+      "licenseNotes": "Rejected calibration generated through the PixelLab trial MCP API; retained only as local pipeline evidence subject to PixelLab terms."
+    },
+    {
+      "id": "target-zz-m35-01-detail-short-rough",
+      "category": "terrain-detail",
+      "provider": "pixellab",
+      "model": "mcp:create_map_object",
+      "state": "rejected",
+      "file": "art/pixellab/staging/raw/terrain-m35/rough-short-b4cf50e4.png",
+      "sha256": "9099e103460081f30ffcff8d0899e20f9ecf111743b6b5b18f5073b9f34ae739",
+      "generatedAt": "2026-07-25T04:54:00Z",
+      "promptRef": "prompts.md#m35-terrain-detail-candidate-pilot",
+      "sourceReferences": [
+        "src/assets/terrain/details/parkland_short_grass_0.png"
+      ],
+      "cleanup": [
+        "Preserved PixelLab job b4cf50e4-9fcb-4b76-be1f-9b9d4183c6cb without modification."
+      ],
+      "requirements": {
+        "width": 64,
+        "height": 64,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": "CourseCraft",
+        "decision": "rejected",
+        "notes": "Readable silhouette, but the neon radial grass mound is too saturated and too circular for repeatable rough dressing. The deterministic sparse-blade fallback remains in production."
+      },
+      "licenseNotes": "Rejected candidate generated through the PixelLab MCP API; retained only as local pipeline evidence subject to PixelLab terms."
+    },
+    {
+      "id": "target-zz-m35-02-detail-links-fescue",
+      "category": "terrain-detail",
+      "provider": "pixellab",
+      "model": "mcp:create_map_object",
+      "state": "rejected",
+      "file": "art/pixellab/staging/raw/terrain-m35/links-fescue-cd6d99b0.png",
+      "sha256": "cb1d5a9b084d6a05e92020f3b979beb0b045fb8fb1e8f5dc92f9965a528effd2",
+      "generatedAt": "2026-07-25T04:54:00Z",
+      "promptRef": "prompts.md#m35-terrain-detail-candidate-pilot",
+      "sourceReferences": [
+        "src/assets/terrain/details/links_fescue_0.png"
+      ],
+      "cleanup": [
+        "Preserved PixelLab job cd6d99b0-fff4-42ec-9834-015e89101684 without modification."
+      ],
+      "requirements": {
+        "width": 64,
+        "height": 64,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": "CourseCraft",
+        "decision": "rejected",
+        "notes": "The tall silhouette is useful, but the lime palette and single hero-object composition repeat too conspicuously. The authored multi-blade fescue fallback is quieter and more coherent in a field."
+      },
+      "licenseNotes": "Rejected candidate generated through the PixelLab MCP API; retained only as local pipeline evidence subject to PixelLab terms."
+    },
+    {
+      "id": "target-zz-m35-03-detail-waste",
+      "category": "terrain-detail",
+      "provider": "pixellab",
+      "model": "mcp:create_map_object",
+      "state": "rejected",
+      "file": "art/pixellab/staging/raw/terrain-m35/waste-cluster-4c587d6e.png",
+      "sha256": "efefb9e1da099ca35fdbfbb5b8b300139819e4f2e9d012d8f75b00f62b25aba6",
+      "generatedAt": "2026-07-25T04:54:00Z",
+      "promptRef": "prompts.md#m35-terrain-detail-candidate-pilot",
+      "sourceReferences": [
+        "src/assets/terrain/details/desert_scrub_0.png",
+        "src/assets/terrain/details/desert_pebbles_0.png"
+      ],
+      "cleanup": [
+        "Preserved PixelLab job 4c587d6e-5e66-4a1a-9217-49293746e9e3 without modification."
+      ],
+      "requirements": {
+        "width": 64,
+        "height": 64,
+        "transparent": true,
+        "anchor": [0.5, 1],
+        "bottomPaddingMax": 8
+      },
+      "review": {
+        "reviewer": "CourseCraft",
+        "decision": "rejected",
+        "notes": "The generated sand pedestal behaves like a baked terrain patch and would visibly stamp the field. Production keeps separate sparse pebble and scrub sprites."
+      },
+      "licenseNotes": "Rejected candidate generated through the PixelLab MCP API; retained only as local pipeline evidence subject to PixelLab terms."
+    },
+    {
+      "id": "target-zz-m35-04-base-fairway-pilot",
+      "category": "terrain-base-pilot",
+      "provider": "pixellab",
+      "model": "mcp:create_isometric_tile",
+      "state": "rejected",
+      "file": "art/pixellab/staging/raw/terrain-m35/parkland-fairway-tile-789f3db0.png",
+      "sha256": "e16e9d8c0a2e8708a4cf38cc05c11ff8fa2cd09adf866508704625d86d5ab88e",
+      "generatedAt": "2026-07-25T04:55:00Z",
+      "promptRef": "prompts.md#m35-isolated-base-tile-pilot",
+      "sourceReferences": [
+        "src/assets/terrain/materials/parkland_fairway_base_0.png"
+      ],
+      "cleanup": [
+        "Preserved PixelLab tile job 789f3db0-686c-4c35-8333-0d661067d137 without modification; fixed seed 3501."
+      ],
+      "requirements": {
+        "width": 128,
+        "height": 64,
+        "transparent": true,
+        "anchor": [0.5, 1]
+      },
+      "review": {
+        "reviewer": "CourseCraft",
+        "decision": "rejected",
+        "notes": "Returned 64×64 with visible dirt sides and a square isometric footprint, not the renderer's seamless 128×64 @2× top diamond."
+      },
+      "licenseNotes": "Rejected tile pilot generated through the PixelLab MCP API; retained only as local pipeline evidence subject to PixelLab terms."
+    },
+    {
+      "id": "target-zz-m35-05-base-rough-pilot",
+      "category": "terrain-base-pilot",
+      "provider": "pixellab",
+      "model": "mcp:create_isometric_tile",
+      "state": "rejected",
+      "file": "art/pixellab/staging/raw/terrain-m35/parkland-rough-tile-b4a5c001.png",
+      "sha256": "8cfc89057097e8251eef3e9ef53e11f8bef2b08ffef357547f8c840efe1f61a7",
+      "generatedAt": "2026-07-25T04:56:00Z",
+      "promptRef": "prompts.md#m35-isolated-base-tile-pilot",
+      "sourceReferences": [
+        "src/assets/terrain/materials/parkland_rough_base_0.png"
+      ],
+      "cleanup": [
+        "Preserved PixelLab tile job b4a5c001-37f4-41e3-b101-e0e77d5768e3 without modification; fixed seed 3502."
+      ],
+      "requirements": {
+        "width": 128,
+        "height": 64,
+        "transparent": true,
+        "anchor": [0.5, 1]
+      },
+      "review": {
+        "reviewer": "CourseCraft",
+        "decision": "rejected",
+        "notes": "Returned a thick 64×64 grass-and-dirt block whose sides would double the renderer's existing elevation faces."
+      },
+      "licenseNotes": "Rejected tile pilot generated through the PixelLab MCP API; retained only as local pipeline evidence subject to PixelLab terms."
+    },
+    {
+      "id": "target-zz-m35-06-base-sand-pilot",
+      "category": "terrain-base-pilot",
+      "provider": "pixellab",
+      "model": "mcp:create_isometric_tile",
+      "state": "rejected",
+      "file": "art/pixellab/staging/raw/terrain-m35/parkland-sand-tile-e67e8555.png",
+      "sha256": "966caf3d20fd9adf3b4c1ad0113bf55073ae12eee54c40f6a10fa0a337d2de06",
+      "generatedAt": "2026-07-25T04:56:00Z",
+      "promptRef": "prompts.md#m35-isolated-base-tile-pilot",
+      "sourceReferences": [
+        "src/assets/terrain/materials/parkland_sand_base_0.png"
+      ],
+      "cleanup": [
+        "Preserved PixelLab tile job e67e8555-a200-40e3-b86e-82ac891deb5f without modification; fixed seed 3503."
+      ],
+      "requirements": {
+        "width": 128,
+        "height": 64,
+        "transparent": true,
+        "anchor": [0.5, 1]
+      },
+      "review": {
+        "reviewer": "CourseCraft",
+        "decision": "rejected",
+        "notes": "Returned a thick pink 64×64 tile without the requested warm bunker palette or restrained rake detail, so it cannot join the terrain atlas."
+      },
+      "licenseNotes": "Rejected tile pilot generated through the PixelLab MCP API; retained only as local pipeline evidence subject to PixelLab terms."
     }
   ]
 }

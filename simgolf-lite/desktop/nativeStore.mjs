@@ -10,6 +10,22 @@ function assertSafeKey(key) {
   return key;
 }
 
+function assertSafePrefix(prefix) {
+  if (typeof prefix !== "string" || prefix.length > 180 || prefix.includes("..") || !/^[A-Za-z0-9_.@-]*$/.test(prefix)) {
+    throw new Error("Invalid storage prefix.");
+  }
+  return prefix;
+}
+
+function validJson(value) {
+  try {
+    JSON.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function bucketFor(key) {
   if (key.startsWith("coursecraft_save_") || key.startsWith("coursecraft_saves_")) return "saves";
   if (key.startsWith("coursecraft_profile")) return "profile";
@@ -23,6 +39,7 @@ export class NativeStore {
     this.rootDirectory = path.resolve(rootDirectory);
     this.backups = Math.max(1, Math.min(5, Number(options.backups) || 3));
     this.fault = options.fault ?? null;
+    this.lastRecovery = null;
   }
 
   filePath(key) {
@@ -36,18 +53,39 @@ export class NativeStore {
 
   async readText(key) {
     const target = this.filePath(key);
-    for (const candidate of [target, ...Array.from({ length: this.backups }, (_, index) => `${target}.bak${index + 1}`)]) {
+    const candidates = [target, ...Array.from({ length: this.backups }, (_, index) => `${target}.bak${index + 1}`)];
+    const invalid = [];
+    for (const candidate of candidates) {
       try {
-        return await readFile(candidate, "utf8");
+        const value = await readFile(candidate, "utf8");
+        if (!validJson(value)) {
+          invalid.push(path.basename(candidate));
+          continue;
+        }
+        this.lastRecovery = {
+          key,
+          selected: path.basename(candidate),
+          recovered: candidate !== target,
+          invalid,
+        };
+        return value;
       } catch (error) {
-        if (error?.code !== "ENOENT") continue;
+        if (error?.code === "ENOENT") continue;
+        throw error;
       }
     }
+    this.lastRecovery = { key, selected: null, recovered: false, invalid };
     return null;
+  }
+
+  async recoveryStatus(key) {
+    await this.readText(key);
+    return this.lastRecovery;
   }
 
   async writeTextAtomic(key, value) {
     if (typeof value !== "string" || value.length > 64 * 1024 * 1024) throw new Error("Storage value is invalid or too large.");
+    if (!validJson(value)) throw new Error("Storage value must be valid JSON.");
     const target = this.filePath(key);
     await mkdir(path.dirname(target), { recursive: true });
     const temp = `${target}.tmp-${process.pid}-${Date.now().toString(36)}`;
@@ -55,26 +93,38 @@ export class NativeStore {
     try {
       await handle.writeFile(value, "utf8");
       await handle.sync();
+      if (this.fault === "after-temp") throw new Error("Injected interrupted write.");
+    } catch (error) {
+      await handle.close().catch(() => undefined);
+      await unlink(temp).catch(() => undefined);
+      throw error;
     } finally {
       await handle.close();
     }
-    if (this.fault === "after-temp") throw new Error("Injected interrupted write.");
-    for (let index = this.backups; index >= 2; index -= 1) {
-      await copyFile(`${target}.bak${index - 1}`, `${target}.bak${index}`).catch(() => undefined);
+    try {
+      for (let index = this.backups; index >= 2; index -= 1) {
+        await copyFile(`${target}.bak${index - 1}`, `${target}.bak${index}`).catch(() => undefined);
+      }
+      await copyFile(target, `${target}.bak1`).catch(() => undefined);
+      await rename(temp, target);
+      await this.syncDirectory(path.dirname(target));
+    } finally {
+      await unlink(temp).catch(() => undefined);
     }
-    await copyFile(target, `${target}.bak1`).catch(() => undefined);
-    await rename(temp, target);
   }
 
   async delete(key) {
     const target = this.filePath(key);
-    await unlink(target).catch((error) => {
-      if (error?.code !== "ENOENT") throw error;
-    });
+    const candidates = [target, ...Array.from({ length: this.backups }, (_, index) => `${target}.bak${index + 1}`)];
+    for (const candidate of candidates) {
+      await unlink(candidate).catch((error) => {
+        if (error?.code !== "ENOENT") throw error;
+      });
+    }
   }
 
   async list(prefix) {
-    assertSafeKey(prefix);
+    assertSafePrefix(prefix);
     const buckets = ["saves", "profile", "settings", "content", "state"];
     const results = [];
     for (const bucket of buckets) {
@@ -114,5 +164,16 @@ export class NativeStore {
       exclusions: ["save contents", "profile contents", "tokens", "credentials", "environment variables", "authorization headers"],
     };
     return JSON.stringify(payload, null, 2);
+  }
+
+  async syncDirectory(directory) {
+    try {
+      const handle = await open(directory, "r");
+      await handle.sync();
+      await handle.close();
+    } catch {
+      // Some platforms do not allow opening a directory. The file was still
+      // flushed and atomically renamed, so durability falls back to the OS.
+    }
   }
 }

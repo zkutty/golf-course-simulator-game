@@ -107,9 +107,21 @@ describe("scenario constraints in the reducer", () => {
     expect(tree).toBeDefined();
     expect(bush).toBeDefined();
 
-    const state = { ...DEFAULT_STATE, course, world };
+    const state = {
+      ...DEFAULT_STATE,
+      course,
+      world: { ...world, cash: 100_000, reputation: 100 },
+    };
     const afterTree = applyAction(state, { type: "REMOVE_OBSTACLE", x: tree!.x, y: tree!.y });
     expect(afterTree.course.obstacles).toContainEqual(tree);
+
+    const afterWater = applyAction(state, {
+      type: "PAINT_TILES",
+      tiles: [{ x: tree!.x, y: tree!.y, terrain: "water" }],
+    });
+    expect(afterWater.course.obstacles).toContainEqual(tree);
+    expect(afterWater.course.tiles[tree!.y * course.width + tree!.x])
+      .toBe(course.tiles[tree!.y * course.width + tree!.x]);
 
     const afterBush = applyAction(state, { type: "REMOVE_OBSTACLE", x: bush!.x, y: bush!.y });
     expect(afterBush.course.obstacles).not.toContainEqual(bush);

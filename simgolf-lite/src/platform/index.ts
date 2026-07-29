@@ -6,6 +6,7 @@ function validBridge(value: unknown): value is CourseCraftDesktopBridge {
   if (!value || typeof value !== "object") return false;
   const bridge = value as CourseCraftDesktopBridge;
   return bridge.version === 1 && typeof bridge.invoke === "function" &&
+    typeof bridge.onQuitRequested === "function" &&
     !!bridge.capabilities && bridge.capabilities.nativeFiles === true;
 }
 

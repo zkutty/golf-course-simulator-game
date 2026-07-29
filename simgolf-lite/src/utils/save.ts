@@ -44,7 +44,7 @@ import {
 import { MAX_ESTATE_HOLES, normalizeCourseLayouts } from "../game/models/courseLayouts";
 import { normalizedStaff } from "../game/live/pace";
 import { normalizePropertyCourse, normalizePropertyEnterprise, starterPropertyCourse } from "../game/property/property";
-import { normalizeSurfaceIntent } from "../game/models/surfaceIntent";
+import { normalizeSurfaceIntent, translateSurfaceIntent } from "../game/models/surfaceIntent";
 import { normalizePlayerPro } from "../game/playerPro/playerPro";
 import { normalizeLivingClub } from "../game/livingClub/livingClub";
 import { normalizeSeasonalState } from "../game/seasons/seasons";
@@ -263,6 +263,14 @@ function migrateCourseGrid(oldCourse: Course, runSeed: number): { course: Course
     obstacles: migratedObstacles,
     buildings: (oldCourse.buildings ?? []).map((b) => ({ ...b, x: b.x + offsetX, y: b.y + offsetY })),
     decorations: (oldCourse.decorations ?? []).map((decoration) => ({ ...decoration, x: decoration.x + offsetX, y: decoration.y + offsetY })),
+    surfaceIntent: translateSurfaceIntent(
+      oldCourse.surfaceIntent,
+      oldWidth,
+      oldHeight,
+      newWidth,
+      newHeight,
+      { x: offsetX, y: offsetY },
+    ),
     property: oldCourse.property ? {
       ...oldCourse.property,
       assets: oldCourse.property.assets.map((asset) => ({ ...asset, x: asset.x + offsetX, y: asset.y + offsetY })),

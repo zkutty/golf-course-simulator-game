@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   corridorFeature,
+  defaultSurfaceTangents,
   normalizeSurfaceIntent,
   rasterizeSurfaceFeature,
   rasterizeSurfaceFeatureDetailed,
@@ -68,6 +69,32 @@ describe("surface intent", () => {
     const points = sampleCorridor([{ x: 2, y: 3 }, { x: 7, y: 8 }]);
     expect(points[0]).toEqual({ x: 2, y: 3 });
     expect(points.at(-1)).toEqual({ x: 7, y: 8 });
+  });
+
+  it("persists explicit tangent handles and uses them for deterministic cubic sampling", () => {
+    const knots = [{ x: 2, y: 4 }, { x: 6, y: 4 }, { x: 10, y: 4 }];
+    const tangents = defaultSurfaceTangents(knots);
+    tangents[1] = {
+      in: { x: 4.5, y: 1 },
+      out: { x: 7.5, y: 7 },
+    };
+    const first = sampleCorridor(knots, 0.2, tangents);
+    const second = sampleCorridor(knots, 0.2, tangents);
+    expect(second).toEqual(first);
+    expect(first.some((point) => Math.abs(point.y - 4) > 0.5)).toBe(true);
+
+    const normalized = normalizeSurfaceIntent({
+      version: 1,
+      nextId: 2,
+      features: [{
+        id: "surface-1",
+        terrain: "fairway",
+        order: 1,
+        coverage: [0],
+        geometry: { kind: "corridor", knots, width: 2, tangents },
+      }],
+    }, 12, 12, ["fairway"]);
+    expect(normalized?.features[0].geometry.tangents).toEqual(tangents);
   });
 
   it("rasterizes a closed region using center or quarter coverage", () => {

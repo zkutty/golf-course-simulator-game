@@ -45,12 +45,15 @@ describe("M42 PlatformServices", () => {
         if (channel === "app:requestQuit") return "cancel" as T;
         return undefined as T;
       },
+      onQuitRequested: () => () => undefined,
     };
     const platform = createDesktopPlatform(bridge);
     expect(await platform.files.readText("slot")).toBe("value");
+    expect(await platform.files.recovery?.("slot")).toBeUndefined();
     expect(await platform.app.requestQuit({ dirty: true, resumableBoundary: false })).toBe("cancel");
     expect(calls).toEqual([
       { channel: "files:read", payload: { key: "slot" } },
+      { channel: "files:recovery", payload: { key: "slot" } },
       { channel: "app:requestQuit", payload: { dirty: true, resumableBoundary: false } },
     ]);
   });

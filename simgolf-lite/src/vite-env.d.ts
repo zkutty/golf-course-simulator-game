@@ -15,6 +15,12 @@ interface Window {
   coursecraftDesktop?: import("./platform/types").CourseCraftDesktopBridge;
   render_game_to_text?: () => string;
   advanceTime?: (ms: number) => void;
+  __coursecraftPixiTest?: {
+    fitWholeCourse(): void;
+    viewport(): { width: number; height: number } | null;
+    tileToScreen(x: number, y: number): { x: number; y: number } | null;
+    screenToTile(x: number, y: number): { x: number; y: number } | null;
+  };
   __coursecraftTest?: {
     state(): {
       screen: string;
@@ -36,14 +42,32 @@ interface Window {
     terrainSurfaceState(): {
       width: number;
       height: number;
+      tiles: import("./game/models/types").Terrain[];
+      elevations: number[];
+      owned: boolean[];
+      holes: Array<{
+        tee: { x: number; y: number } | null;
+        green: { x: number; y: number } | null;
+        valid: boolean;
+        issues: string[];
+      }>;
+      obstacles: import("./game/models/types").Obstacle[];
       features: Array<{
         id: string;
         terrain: import("./game/models/types").Terrain;
         kind: "corridor" | "region";
+        points: Array<{ x: number; y: number }>;
+        tangents: Array<{
+          in: { x: number; y: number };
+          out: { x: number; y: number };
+        }> | null;
+        width: number | null;
         coverage: number[];
         renderRings: Array<Array<{ x: number; y: number }>>;
       }>;
     };
+    m35Metrics(): import("./game/render/m35Telemetry").M35TelemetrySnapshot;
+    resetM35Metrics(): void;
     setPaintCash(cash: number): void;
     setPropertyFixture(): void;
     setPlayerProFixture(): void;

@@ -13,7 +13,9 @@ function walk(directory) {
     if (statSync(path).isDirectory()) walk(path);
     else {
       const url = relative(dist, path).split(sep).join("/");
-      if (url !== "sw.js" && !url.startsWith("audio/")) files.push(url);
+      // Audio and biome/quality atlases are cache-on-demand. Precaching them
+      // would make installing one theme download every theme.
+      if (url !== "sw.js" && !url.startsWith("audio/") && !url.startsWith("atlases/")) files.push(url);
     }
   }
 }

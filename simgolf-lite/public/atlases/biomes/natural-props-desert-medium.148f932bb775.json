@@ -1,0 +1,254 @@
+{
+  "frames": {
+    "desert_bush_agave": {
+      "frame": {
+        "x": 2,
+        "y": 2,
+        "w": 128,
+        "h": 155
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 155
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 155
+      }
+    },
+    "desert_bush_barrel_cactus": {
+      "frame": {
+        "x": 132,
+        "y": 2,
+        "w": 128,
+        "h": 97
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 97
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 97
+      }
+    },
+    "desert_bush_creosote": {
+      "frame": {
+        "x": 262,
+        "y": 2,
+        "w": 128,
+        "h": 156
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 156
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 156
+      }
+    },
+    "desert_bush_dry_grass": {
+      "frame": {
+        "x": 392,
+        "y": 2,
+        "w": 128,
+        "h": 127
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 127
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 127
+      }
+    },
+    "desert_bush_prickly_pear": {
+      "frame": {
+        "x": 522,
+        "y": 2,
+        "w": 128,
+        "h": 147
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 147
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 147
+      }
+    },
+    "desert_rock_red_outcrop": {
+      "frame": {
+        "x": 652,
+        "y": 2,
+        "w": 128,
+        "h": 118
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 118
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 118
+      }
+    },
+    "desert_rock_sandstone": {
+      "frame": {
+        "x": 782,
+        "y": 2,
+        "w": 128,
+        "h": 114
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 114
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 114
+      }
+    },
+    "desert_rock_volcanic": {
+      "frame": {
+        "x": 2,
+        "y": 160,
+        "w": 128,
+        "h": 112
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 112
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 112
+      }
+    },
+    "desert_tree_mesquite": {
+      "frame": {
+        "x": 132,
+        "y": 160,
+        "w": 128,
+        "h": 138
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 138
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 138
+      }
+    },
+    "desert_tree_palm": {
+      "frame": {
+        "x": 262,
+        "y": 160,
+        "w": 128,
+        "h": 145
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 145
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 145
+      }
+    },
+    "desert_tree_palo_verde": {
+      "frame": {
+        "x": 392,
+        "y": 160,
+        "w": 128,
+        "h": 124
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 128,
+        "h": 124
+      },
+      "sourceSize": {
+        "w": 128,
+        "h": 124
+      }
+    },
+    "desert_tree_saguaro": {
+      "frame": {
+        "x": 522,
+        "y": 160,
+        "w": 96,
+        "h": 192
+      },
+      "rotated": false,
+      "trimmed": false,
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 96,
+        "h": 192
+      },
+      "sourceSize": {
+        "w": 96,
+        "h": 192
+      }
+    }
+  },
+  "meta": {
+    "app": "simgolf-lite build-atlas",
+    "image": "natural-props-desert-medium.467a4916294e.png",
+    "format": "RGBA8888",
+    "size": {
+      "w": 912,
+      "h": 354
+    },
+    "scale": "1"
+  }
+}

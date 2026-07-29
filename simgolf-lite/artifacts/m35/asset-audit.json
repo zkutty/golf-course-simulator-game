@@ -1,0 +1,175 @@
+{
+  "ok": true,
+  "limitsMiB": {
+    "atlas": 8,
+    "selectedBiome": 6,
+    "initialCritical": 8
+  },
+  "public": {
+    "coreMiB": 0.69,
+    "bundles": {
+      "parkland": {
+        "high": {
+          "bytes": 3506327,
+          "mib": 3.344,
+          "frames": 235,
+          "fields": 10
+        },
+        "medium": {
+          "bytes": 2958066,
+          "mib": 2.821,
+          "frames": 225,
+          "fields": 10
+        },
+        "low": {
+          "bytes": 2172874,
+          "mib": 2.072,
+          "frames": 203,
+          "fields": 0
+        }
+      },
+      "links": {
+        "high": {
+          "bytes": 3462165,
+          "mib": 3.302,
+          "frames": 235,
+          "fields": 10
+        },
+        "medium": {
+          "bytes": 2911682,
+          "mib": 2.777,
+          "frames": 225,
+          "fields": 10
+        },
+        "low": {
+          "bytes": 2194175,
+          "mib": 2.093,
+          "frames": 203,
+          "fields": 0
+        }
+      },
+      "desert": {
+        "high": {
+          "bytes": 3471416,
+          "mib": 3.311,
+          "frames": 235,
+          "fields": 10
+        },
+        "medium": {
+          "bytes": 2914204,
+          "mib": 2.779,
+          "frames": 225,
+          "fields": 10
+        },
+        "low": {
+          "bytes": 2187709,
+          "mib": 2.086,
+          "frames": 203,
+          "fields": 0
+        }
+      }
+    }
+  },
+  "dist": {
+    "coreMiB": 0.69,
+    "bundles": {
+      "parkland": {
+        "high": {
+          "bytes": 3506327,
+          "mib": 3.344,
+          "frames": 235,
+          "fields": 10
+        },
+        "medium": {
+          "bytes": 2958066,
+          "mib": 2.821,
+          "frames": 225,
+          "fields": 10
+        },
+        "low": {
+          "bytes": 2172874,
+          "mib": 2.072,
+          "frames": 203,
+          "fields": 0
+        }
+      },
+      "links": {
+        "high": {
+          "bytes": 3462165,
+          "mib": 3.302,
+          "frames": 235,
+          "fields": 10
+        },
+        "medium": {
+          "bytes": 2911682,
+          "mib": 2.777,
+          "frames": 225,
+          "fields": 10
+        },
+        "low": {
+          "bytes": 2194175,
+          "mib": 2.093,
+          "frames": 203,
+          "fields": 0
+        }
+      },
+      "desert": {
+        "high": {
+          "bytes": 3471416,
+          "mib": 3.311,
+          "frames": 235,
+          "fields": 10
+        },
+        "medium": {
+          "bytes": 2914204,
+          "mib": 2.779,
+          "frames": 225,
+          "fields": 10
+        },
+        "low": {
+          "bytes": 2187709,
+          "mib": 2.086,
+          "frames": 203,
+          "fields": 0
+        }
+      }
+    }
+  },
+  "initialCritical": {
+    "bytes": 3717622,
+    "mib": 3.545,
+    "files": [
+      "assets/index-5zxKKFvX.css",
+      "assets/index-COIf6Y2s.js",
+      "assets/pixi-D8n702SF.js",
+      "assets/react-CJopdd0D.js",
+      "assets/vendor-ugxaKWoA.js",
+      "atlases/biomes/buildings-decor-parkland-high.291bca113f4e.json",
+      "atlases/biomes/buildings-decor-parkland-high.bc2b7a340d96.png",
+      "atlases/biomes/core-golfers.b2d25a57f740.png",
+      "atlases/biomes/core-golfers.d9ce70a9ebcf.json",
+      "atlases/biomes/field-parkland-high-deep_rough.7a05b0675838.png",
+      "atlases/biomes/field-parkland-high-fairway.1de99fb7f4f7.png",
+      "atlases/biomes/field-parkland-high-green.6478b59a6311.png",
+      "atlases/biomes/field-parkland-high-path.7134a2f54486.png",
+      "atlases/biomes/field-parkland-high-rough.8ff04610b3a5.png",
+      "atlases/biomes/field-parkland-high-sand.f73cf0d9eb6e.png",
+      "atlases/biomes/field-parkland-high-tee.2335f6278add.png",
+      "atlases/biomes/field-parkland-high-waste_area.6c87291a69e4.png",
+      "atlases/biomes/field-parkland-high-water.7b154d0884fb.png",
+      "atlases/biomes/field-parkland-high-wetland.d2fb0a5bd514.png",
+      "atlases/biomes/manifest.json",
+      "atlases/biomes/natural-props-parkland-high.5f53ac5c0850.png",
+      "atlases/biomes/natural-props-parkland-high.63c1c05b9bab.json",
+      "atlases/biomes/terrain-details-parkland-high.169092f97646.png",
+      "atlases/biomes/terrain-details-parkland-high.d0164ca35c8e.json",
+      "atlases/biomes/terrain-parkland-high.305de800f72a.json",
+      "atlases/biomes/terrain-parkland-high.7d55990cac08.png",
+      "icons/coursecraft-192.svg",
+      "index.html",
+      "manifest.webmanifest",
+      "sw.js"
+    ]
+  },
+  "errors": []
+}

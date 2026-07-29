@@ -13,7 +13,8 @@
 //
 // Usage: npm run build:atlas
 import { PNG } from "pngjs";
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -25,15 +26,24 @@ const BUILDING_SRC = process.env.COURSECRAFT_BUILDING_SOURCE_DIR
 const NATURAL_SRC = path.join(ROOT, "src/assets/props/natural");
 const TERRAIN_SRC = path.join(ROOT, "src/assets/terrain/materials");
 const TERRAIN_DETAILS_SRC = path.join(ROOT, "src/assets/terrain/details");
+const LANDSCAPE_FIELDS_SRC = path.join(ROOT, "src/assets/terrain/fields");
 const OUT_DIR = process.env.COURSECRAFT_ATLAS_OUT_DIR
   ? path.resolve(process.env.COURSECRAFT_ATLAS_OUT_DIR)
   : path.join(ROOT, "public/atlases");
+if (OUT_DIR === path.join(ROOT, "public/atlases") && process.env.COURSECRAFT_BUILDING_SOURCE_DIR) {
+  throw new Error("production atlas builds cannot override the approved src/assets source");
+}
 mkdirSync(OUT_DIR, { recursive: true });
+const BIOME_OUT_DIR = path.join(OUT_DIR, "biomes");
 
 const PAD = 2; // gutter to avoid bleeding when scaled
 const MAX_W = 1024;
 
-function buildAtlas(srcDir, outName, include = () => true, scale = "1") {
+function shortHash(buffer) {
+  return createHash("sha256").update(buffer).digest("hex").slice(0, 12);
+}
+
+function buildAtlas(srcDir, outName, include = () => true, scale = "1", options = {}) {
   if (!existsSync(srcDir)) {
     console.error(`no sprite directory ${srcDir} — run npm run gen:sprites first`);
     process.exit(1);
@@ -101,22 +111,41 @@ function buildAtlas(srcDir, outName, include = () => true, scale = "1") {
     }
   }
 
+  const pngBuffer = PNG.sync.write(atlas);
+  const imageName = options.hashed
+    ? `${outName}.${shortHash(pngBuffer)}.png`
+    : `${outName}.png`;
   const sheet = {
     frames,
     meta: {
       app: "simgolf-lite build-atlas",
-      image: `${outName}.png`,
+      image: imageName,
       format: "RGBA8888",
       size: { w: atlasW, h: atlasH },
       scale,
     },
   };
 
-  writeFileSync(path.join(OUT_DIR, `${outName}.png`), PNG.sync.write(atlas));
-  writeFileSync(path.join(OUT_DIR, `${outName}.json`), JSON.stringify(sheet, null, 2));
+  const outputDirectory = options.outDir ?? OUT_DIR;
+  mkdirSync(outputDirectory, { recursive: true });
+  const jsonBuffer = Buffer.from(`${JSON.stringify(sheet, null, 2)}\n`);
+  const jsonName = options.hashed
+    ? `${outName}.${shortHash(jsonBuffer)}.json`
+    : `${outName}.json`;
+  writeFileSync(path.join(outputDirectory, imageName), pngBuffer);
+  writeFileSync(path.join(outputDirectory, jsonName), jsonBuffer);
   console.log(
     `packed ${sprites.length} sheet(s) / ${Object.keys(frames).length} frame(s) into ${atlasW}x${atlasH} ${outName} atlas`
   );
+  return {
+    json: jsonName,
+    image: imageName,
+    jsonBytes: jsonBuffer.length,
+    imageBytes: pngBuffer.length,
+    frames: Object.keys(frames).length,
+    width: atlasW,
+    height: atlasH,
+  };
 }
 
 buildAtlas(TERRAIN_SRC, "terrain", () => true, "2");
@@ -124,3 +153,86 @@ buildAtlas(TERRAIN_DETAILS_SRC, "terrain-details", () => true, "2");
 buildAtlas(NATURAL_SRC, "natural-props");
 buildAtlas(BUILDING_SRC, "buildings-decor", (name) => /^(clubhouse|pro_shop|snack_bar|cart_rental|(?:parkland|links|desert)_(?:clubhouse|pro_shop|snack_bar|cart_rental)_t[123]|(?:parkland|links|desert)_(?:fence|bench|tee_sign|lamp|bin|parked_cart|flower_bed|planter|ornamental_feature|bridge|boardwalk|bridge_approach))\.png$/.test(name));
 buildAtlas(path.join(SRC, "golfers"), "golfers");
+
+// M35 delivery contract: one immutable, content-hashed bundle per biome and
+// quality tier. The stable manifest is the only discovery URL; the service
+// worker runtime-caches selected bundles instead of precaching every biome.
+if (OUT_DIR === path.join(ROOT, "public/atlases")) rmSync(BIOME_OUT_DIR, { recursive: true, force: true });
+mkdirSync(BIOME_OUT_DIR, { recursive: true });
+const themes = ["parkland", "links", "desert"];
+const qualities = ["high", "medium", "low"];
+const manifest = {
+  version: 1,
+  generatedBy: "scripts/build-atlas.mjs",
+  core: {},
+  biomes: {},
+};
+manifest.core.golfers = buildAtlas(
+  path.join(SRC, "golfers"),
+  "core-golfers",
+  () => true,
+  "1",
+  { hashed: true, outDir: BIOME_OUT_DIR },
+);
+
+function copyFieldAsset(theme, quality, terrain) {
+  const source = path.join(LANDSCAPE_FIELDS_SRC, theme, quality, `${terrain}.png`);
+  if (!existsSync(source)) return null;
+  const buffer = readFileSync(source);
+  const name = `field-${theme}-${quality}-${terrain}.${shortHash(buffer)}.png`;
+  writeFileSync(path.join(BIOME_OUT_DIR, name), buffer);
+  const png = PNG.sync.read(buffer);
+  return { image: name, bytes: buffer.length, width: png.width, height: png.height };
+}
+
+for (const theme of themes) {
+  manifest.biomes[theme] = {};
+  for (const quality of qualities) {
+    const buildings = buildAtlas(
+      BUILDING_SRC,
+      `buildings-decor-${theme}-${quality}`,
+      (name) => new RegExp(
+        `^(clubhouse|pro_shop|snack_bar|cart_rental|${theme}_(?:clubhouse|pro_shop|snack_bar|cart_rental)_t[123]|${theme}_(?:fence|bench|tee_sign|lamp|bin|parked_cart|flower_bed|planter|ornamental_feature|bridge|boardwalk|bridge_approach))\\.png$`,
+      ).test(name),
+      "1",
+      { hashed: true, outDir: BIOME_OUT_DIR },
+    );
+    const terrain = buildAtlas(
+      TERRAIN_SRC,
+      `terrain-${theme}-${quality}`,
+      (name) => name.startsWith(`${theme}_`),
+      "2",
+      { hashed: true, outDir: BIOME_OUT_DIR },
+    );
+    const details = quality === "low"
+      ? null
+      : buildAtlas(
+        TERRAIN_DETAILS_SRC,
+        `terrain-details-${theme}-${quality}`,
+        (name) => name.startsWith(`${theme}_`) && (quality === "high" || name.endsWith("_0.png")),
+        "2",
+        { hashed: true, outDir: BIOME_OUT_DIR },
+      );
+    const props = quality === "low"
+      ? null
+      : buildAtlas(
+        NATURAL_SRC,
+        `natural-props-${theme}-${quality}`,
+        (name) => name.startsWith(`${theme}_`),
+        "1",
+        { hashed: true, outDir: BIOME_OUT_DIR },
+      );
+    const fields = quality === "low"
+      ? {}
+      : Object.fromEntries(
+        ["fairway", "rough", "deep_rough", "sand", "waste_area", "water", "wetland", "green", "tee", "path"]
+          .map((terrainName) => [terrainName, copyFieldAsset(theme, quality, terrainName)])
+          .filter(([, asset]) => asset),
+      );
+    manifest.biomes[theme][quality] = { buildings, terrain, details, props, fields };
+  }
+}
+writeFileSync(
+  path.join(BIOME_OUT_DIR, "manifest.json"),
+  `${JSON.stringify(manifest, null, 2)}\n`,
+);

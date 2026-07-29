@@ -4,6 +4,7 @@ import { createDefaultPlayerPro } from "../game/playerPro/playerPro";
 import { createEstate, starterParcelOffset } from "../game/estate/estate";
 import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
 import { createNewGame } from "../game/gen/newGame";
+import { corridorFeature, rasterizeSurfaceFeatureDetailed } from "../game/models/surfaceIntent";
 import {
   COURSE_HEIGHT,
   COURSE_WIDTH,
@@ -121,6 +122,63 @@ describe("save validation and migrations", () => {
     expect(result.payload.course.estate?.generationVersion).toBe(1);
     expect(result.payload.course.width).toBe(COURSE_WIDTH);
     expect(result.payload.course.height).toBe(COURSE_HEIGHT);
+  });
+
+  it("translates M35 surface intent with a legacy grid migration", () => {
+    const width = STARTER_PARCEL_WIDTH;
+    const height = STARTER_PARCEL_HEIGHT;
+    const tiles = new Array(width * height).fill("rough" as const);
+    const elevations = new Array(width * height).fill(0);
+    const draft = corridorFeature(
+      { width, surfaceIntent: { version: 1, nextId: 2, features: [] } },
+      "fairway",
+      [{ x: 10.5, y: 20.5 }, { x: 30.5, y: 20.5 }],
+      2.5,
+    );
+    const raster = rasterizeSurfaceFeatureDetailed(draft, width, height);
+    for (const point of raster.tiles) tiles[point.y * width + point.x] = "fairway";
+    const feature = {
+      ...draft,
+      coverage: raster.tiles.map((point) => point.y * width + point.x),
+      renderRings: raster.rings,
+    };
+    const offset = starterParcelOffset();
+
+    const result = normalizeLoadedSaveResult({
+      schemaVersion: 12,
+      savedAt: 123,
+      course: {
+        ...DEFAULT_COURSE,
+        width,
+        height,
+        tiles,
+        elevations,
+        layouts: undefined,
+        activeCourseId: undefined,
+        property: undefined,
+        surfaceIntent: { version: 1, nextId: 2, features: [feature] },
+      },
+      world: DEFAULT_WORLD,
+      history: [],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const migrated = result.payload.course.surfaceIntent?.features[0];
+    expect(migrated?.geometry.kind).toBe("corridor");
+    if (!migrated || migrated.geometry.kind !== "corridor") return;
+    expect(migrated.geometry.knots[0]).toEqual({ x: 10.5 + offset.x, y: 20.5 + offset.y });
+    expect(migrated.coverage).toEqual(
+      feature.coverage.map((index) => {
+        const x = index % width;
+        const y = Math.floor(index / width);
+        return (y + offset.y) * COURSE_WIDTH + x + offset.x;
+      }).sort((a, b) => a - b),
+    );
+    expect(migrated.renderRings?.[0]?.[0]).toEqual({
+      x: (feature.renderRings?.[0]?.[0].x ?? 0) + offset.x,
+      y: (feature.renderRings?.[0]?.[0].y ?? 0) + offset.y,
+    });
   });
 
   it("rejects malformed JSON and future schema versions with useful errors", () => {
