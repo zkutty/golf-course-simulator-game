@@ -1,7 +1,19 @@
 import type { Course, Point, Terrain } from "../game/models/types";
 import type { SeasonName, WeatherKind } from "../game/seasons/types";
-import type { AmbientMix, MusicContext } from "./AudioManager";
+import type { AmbientMix, AudioSurface, MusicContext } from "./AudioManager";
 import type { SunoAmbienceContext } from "./sunoLibrary";
+
+export function audioSurfaceFor(input: {
+  screen: "menu" | "setup" | "game" | "loading";
+  showVision: boolean;
+}): AudioSurface {
+  if (input.screen === "menu" && input.showVision) return "vision";
+  return input.screen;
+}
+
+export function worldAmbienceEnabledFor(surface: AudioSurface): boolean {
+  return surface === "game";
+}
 
 export function musicContextFor(input: {
   screen: "menu" | "setup" | "game" | "loading";

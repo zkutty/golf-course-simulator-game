@@ -570,3 +570,16 @@ classic course-builder references.
   TypeScript/build passed; M35 asset audit passed.
 - Human/provider gates are intentionally deferred in Linear per project-owner
   direction. No issue was marked Done from agent reports alone.
+
+## 2026-07-29 — ZK-470/ZK-471 focused verification hardening
+
+- Reconfirmed the existing render-only shared-vertex heightfield and COZY /
+  Architect framing candidate from the clean `b405ed7` baseline in an isolated
+  worktree. Added a deterministic regression proving heightfield generation
+  leaves the complete serialized course contract unchanged, and a browser
+  regression covering COZY, Architect, and the explicit `F` overview control.
+- Focused geometry tests (10), the new focused browser test, the existing M35
+  landscape-details browser fixture, typecheck, lint (11 existing warnings,
+  no errors), build, M35 asset audit, and the bundled client capture passed.
+- Visual evidence was inspected locally; the remaining M35 fresh-context and
+  human visual gates are still required and are not claimed by this work.

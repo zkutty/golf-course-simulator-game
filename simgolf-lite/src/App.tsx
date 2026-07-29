@@ -97,7 +97,7 @@ import { LIVE, type SpeedName } from "./game/live/liveConfig";
 import { courseForCourseSetup, getParSetting, getPinPosition, getTeeBox, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSetup } from "./game/models/courseSetup";
 import { eventMatchesBinding } from "./accessibility/keybindings";
 import { T } from "./i18n/T";
-import { ambientMixFor, distanceVolume, musicContextFor } from "./audio/environment";
+import { ambientMixFor, audioSurfaceFor, distanceVolume, musicContextFor, worldAmbienceEnabledFor } from "./audio/environment";
 import { emptyCourseRecords, recordCompletedRound, recordWeek } from "./game/retention/records";
 import type { CompletedRound, CourseRecords, RetentionEvent } from "./game/retention/types";
 import { publishRetentionEvent, subscribeRetentionEvents } from "./game/retention/eventBus";
@@ -208,6 +208,7 @@ export default function App() {
   const [showVision, setShowVision] = useState(() => new URLSearchParams(window.location.search).get("view") === "vision");
   const [appProfile, setAppProfile] = useState<AppProfile>(() => loadAppProfile());
   const screen = flow.base === "title" ? "menu" : flow.base === "setup-wizard" ? "setup" : flow.base === "in-game" ? "game" : "loading";
+  const audioSurface = audioSurfaceFor({ screen, showVision });
   const changeSequenceRef = useRef(0);
   const [dirty, setDirty] = useState(false);
   const markDirty = useCallback(() => {
@@ -2028,7 +2029,8 @@ export default function App() {
   ]);
 
   useEffect(() => {
-    const worldAudioEnabled = screen === "game";
+    audio.setSurface(audioSurface);
+    const worldAudioEnabled = worldAmbienceEnabledFor(audioSurface);
     const worldAudioPaused = worldAudioEnabled && (flow.paused || live.speed === "paused");
     audio.setPaused(worldAudioPaused);
     audio.setAmbientMix(ambientMixFor({
@@ -2050,7 +2052,7 @@ export default function App() {
     live.status.dayIndex,
     live.status.dayMinute,
     live.status.onCourse,
-    screen,
+    audioSurface,
     world,
   ]);
 

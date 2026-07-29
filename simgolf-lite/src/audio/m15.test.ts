@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Course } from "../game/models/types";
 import type { GolferRenderData } from "../game/live/types";
 import { AMBIENCE_PLAYLISTS, MUSIC_PLAYLISTS } from "./AudioManager";
-import { ambientMixFor, distanceVolume, musicContextFor } from "./environment";
+import { ambientMixFor, audioSurfaceFor, distanceVolume, musicContextFor, worldAmbienceEnabledFor } from "./environment";
 import { deriveLiveAudioEvents } from "./liveEvents";
 
 function course(): Course {
@@ -29,6 +29,15 @@ function golfer(patch: Partial<GolferRenderData> = {}): GolferRenderData {
 }
 
 describe("M15 contextual music", () => {
+  it("owns audio explicitly by surface", () => {
+    expect(audioSurfaceFor({ screen: "menu", showVision: true })).toBe("vision");
+    expect(worldAmbienceEnabledFor("vision")).toBe(false);
+    expect(worldAmbienceEnabledFor("menu")).toBe(false);
+    expect(worldAmbienceEnabledFor("setup")).toBe(false);
+    expect(worldAmbienceEnabledFor("loading")).toBe(false);
+    expect(worldAmbienceEnabledFor("game")).toBe(true);
+  });
+
   it("maps app state through one deterministic context selector", () => {
     expect(musicContextFor({ screen: "menu", viewMode: "COZY", cash: 10, liveRunning: false, won: false })).toBe("title");
     expect(musicContextFor({ screen: "game", viewMode: "ARCHITECT", cash: 10, liveRunning: true, won: false })).toBe("build-parkland");

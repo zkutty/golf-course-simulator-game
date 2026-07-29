@@ -24,6 +24,7 @@ export function AudioProvider({ children }: { children: ReactNode }) {
   const value: AudioContextValue = {
     unlock: () => audioManager.unlock(),
     setMusicContext: (context) => audioManager.setMusicContext(context),
+    setSurface: (surface) => audioManager.setSurface(surface),
     setMusicOverride: (context) => audioManager.setMusicOverride(context),
     playSfx: (name, options) => audioManager.playSfx(name, options),
     playSting: (name) => audioManager.playSting(name),

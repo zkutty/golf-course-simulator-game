@@ -17,6 +17,7 @@ export interface AudioVolumes {
 }
 
 export type MusicContext = "silent" | SunoMusicContext;
+export type AudioSurface = "menu" | "vision" | "setup" | "game" | "loading";
 export type StingName = "celebration" | "record" | "achievement";
 export type SfxName =
   | "brush" | "confirm" | "cash" | "button" | "tab" | "error" | "sculpt"
@@ -55,6 +56,8 @@ class AudioManager {
   private unlocked = false;
   private volumes: AudioVolumes = loadVolumes();
   private hidden = typeof document !== "undefined" && document.hidden;
+  private surface: AudioSurface = "loading";
+  private unlockPromise: Promise<void> | null = null;
   private paused = false;
   private pauseDuck = 1;
   private stingDuck = 1;
@@ -79,6 +82,7 @@ class AudioManager {
   private ambienceBus: GainNode | null = null;
   private ambienceLayers = new Map<"birds" | "water" | "wind" | "murmur" | "crickets", GainNode>();
   private ambienceSources: AudioBufferSourceNode[] = [];
+  private proceduralMixKey = "";
   private ambientMix: AmbientMix = {
     enabled: false,
     birds: 0,
@@ -135,8 +139,12 @@ class AudioManager {
     return clamp01(this.volumes.masterVolume * this.volumes[channel] * duck);
   }
 
+  private worldAmbienceAllowed(): boolean {
+    return this.surface === "game" && this.ambientMix.enabled;
+  }
+
   private authoredAmbienceAllowed(): boolean {
-    return this.ambientMix.enabled && this.resolvedContext() === "silent";
+    return this.worldAmbienceAllowed() && this.resolvedContext() === "silent";
   }
 
   private ambientSampleLevel(): number {
@@ -176,7 +184,7 @@ class AudioManager {
     if (this.ambienceBus) {
       this.rampParam(
         this.ambienceBus.gain,
-        this.ambientMix.enabled ? this.effective("ambienceVolume") : 0,
+        this.worldAmbienceAllowed() ? this.effective("ambienceVolume") : 0,
         seconds,
       );
     }
@@ -184,13 +192,23 @@ class AudioManager {
 
   async unlock(): Promise<void> {
     if (this.unlocked) return;
+    if (this.unlockPromise) return this.unlockPromise;
+    this.unlockPromise = this.initializeUnlock();
+    try {
+      await this.unlockPromise;
+    } finally {
+      this.unlockPromise = null;
+    }
+  }
+
+  private async initializeUnlock(): Promise<void> {
     const Context = typeof window === "undefined" ? undefined : window.AudioContext;
     if (Context) {
       this.ctx = new Context();
       this.sfxBus = this.ctx.createGain();
       this.ambienceBus = this.ctx.createGain();
       this.sfxBus.gain.value = this.effective("sfxVolume");
-      this.ambienceBus.gain.value = this.ambientMix.enabled ? this.effective("ambienceVolume") : 0;
+      this.ambienceBus.gain.value = this.worldAmbienceAllowed() ? this.effective("ambienceVolume") : 0;
       this.sfxBus.connect(this.ctx.destination);
       this.ambienceBus.connect(this.ctx.destination);
       await this.ctx.resume().catch(() => undefined);
@@ -200,6 +218,13 @@ class AudioManager {
     this.unlocked = true;
     if (this.resolvedContext() !== "silent") await this.switchPlaylist(this.resolvedContext());
     if (this.authoredAmbienceAllowed()) await this.switchAmbience(this.ambientMix.bed);
+  }
+
+  setSurface(surface: AudioSurface): void {
+    if (surface === this.surface) return;
+    this.surface = surface;
+    if (!this.worldAmbienceAllowed()) this.stopAmbience();
+    if (this.ctx) this.rampProceduralAmbience();
   }
 
   setVolumes(volumes: Partial<AudioVolumes>): void {
@@ -527,7 +552,7 @@ class AudioManager {
   private playAmbientAccent(): void {
     const ctx = this.ctx;
     const bus = this.ambienceBus;
-    if (!ctx || !bus || !this.ambientMix.enabled || this.ambientMix.paused || this.effective("ambienceVolume") <= 0) return;
+    if (!ctx || !bus || !this.worldAmbienceAllowed() || this.ambientMix.paused || this.effective("ambienceVolume") <= 0) return;
     const t = ctx.currentTime;
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -554,12 +579,28 @@ class AudioManager {
       else this.rampActiveAmbience();
     }
     if (!this.ctx) return;
-    // Procedural layers provide quiet, camera-reactive environmental detail
-    // beneath the sole file-backed score without introducing another song.
-    const scale = !mix.enabled ? 0 : mix.paused ? 0.025 : 0.22;
+    this.rampProceduralAmbience();
+  }
+
+  private rampProceduralAmbience(): void {
+    // Gameplay owns world ambience. Menu, Vision, setup, and loading surfaces
+    // are Suno music/SFX-only and must never leak course audio across a route.
+    const key = [
+      this.surface,
+      this.ambientMix.enabled,
+      this.ambientMix.paused,
+      this.ambientMix.birds,
+      this.ambientMix.water,
+      this.ambientMix.wind,
+      this.ambientMix.murmur,
+      this.ambientMix.crickets,
+    ].join("|");
+    if (key === this.proceduralMixKey) return;
+    this.proceduralMixKey = key;
+    const scale = !this.worldAmbienceAllowed() ? 0 : this.ambientMix.paused ? 0.025 : 0.22;
     for (const name of ["birds", "water", "wind", "murmur", "crickets"] as const) {
       const gain = this.ambienceLayers.get(name);
-      if (gain) this.rampParam(gain.gain, clamp01(mix[name]) * scale, 1);
+      if (gain) this.rampParam(gain.gain, clamp01(this.ambientMix[name]) * scale, 1);
     }
   }
 

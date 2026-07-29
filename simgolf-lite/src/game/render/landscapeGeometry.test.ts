@@ -161,4 +161,24 @@ describe("shared visual heightfield", () => {
     expect(center).toBeLessThan(centerBase - 0.2);
     expect(center).toBeLessThan(edge - 0.1);
   });
+
+  it("is deterministic presentation data and leaves the complete course contract intact", () => {
+    const course = courseWith(4, 3, [
+      "rough", "water", "water", "rough",
+      "rough", "sand", "fairway", "rough",
+      "tee", "green", "path", "rough",
+    ], [
+      1, 1, 2, 2,
+      1, 3, 2, 2,
+      1, 1, 1, 1,
+    ]);
+    course.buildings = [{ id: "clubhouse", type: "clubhouse", x: 0, y: 0, tier: 1 }];
+    const before = JSON.stringify(course);
+
+    const first = buildVisualHeightfield(course, "parkland");
+    const second = buildVisualHeightfield(course, "parkland");
+
+    expect(Array.from(second.vertices)).toEqual(Array.from(first.vertices));
+    expect(JSON.stringify(course)).toBe(before);
+  });
 });
