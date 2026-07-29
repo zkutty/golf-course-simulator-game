@@ -4,6 +4,7 @@ import type { GolferRenderData } from "../game/live/types";
 import { AMBIENCE_PLAYLISTS, MUSIC_PLAYLISTS } from "./AudioManager";
 import { ambientMixFor, audioSurfaceFor, distanceVolume, musicContextFor, worldAmbienceEnabledFor } from "./environment";
 import { deriveLiveAudioEvents } from "./liveEvents";
+import { ALL_SUNO_AUDIO } from "./sunoLibrary";
 
 function course(): Course {
   const width = 8;
@@ -31,6 +32,9 @@ function golfer(patch: Partial<GolferRenderData> = {}): GolferRenderData {
 describe("M15 contextual music", () => {
   it("owns audio explicitly by surface", () => {
     expect(audioSurfaceFor({ screen: "menu", showVision: true })).toBe("vision");
+    expect(audioSurfaceFor({ screen: "menu", showVision: false })).toBe("menu");
+    expect(audioSurfaceFor({ screen: "setup", showVision: false })).toBe("setup");
+    expect(audioSurfaceFor({ screen: "loading", showVision: false })).toBe("loading");
     expect(worldAmbienceEnabledFor("vision")).toBe(false);
     expect(worldAmbienceEnabledFor("menu")).toBe(false);
     expect(worldAmbienceEnabledFor("setup")).toBe(false);
@@ -54,6 +58,9 @@ describe("M15 contextual music", () => {
     const ambience = new Map(Object.values(AMBIENCE_PLAYLISTS).flat().map((item) => [item.id, item]));
     expect(tracks.size).toBe(22);
     expect(ambience.size).toBe(18);
+    expect(ALL_SUNO_AUDIO).toHaveLength(40);
+    expect(new Set(ALL_SUNO_AUDIO.map((item) => item.id)).size).toBe(40);
+    expect(new Set(ALL_SUNO_AUDIO.map((item) => item.src)).size).toBe(40);
     for (const item of tracks.values()) {
       expect(item.src).toMatch(/^\/audio\/music\/suno\/.+\.mp3$/);
       expect(item.sourceUrl).toMatch(/^https:\/\/suno\.com\/song\//);
@@ -62,6 +69,7 @@ describe("M15 contextual music", () => {
       expect(item.src).toMatch(/^\/audio\/ambience\/suno\/.+\.mp3$/);
       expect(item.sourceUrl).toMatch(/^https:\/\/suno\.com\/song\//);
     }
+    expect(ALL_SUNO_AUDIO.every((item) => /^\/audio\/(?:music|ambience)\/suno\/[^/]+\.mp3$/.test(item.src))).toBe(true);
   });
 });
 

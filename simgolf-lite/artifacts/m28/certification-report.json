@@ -1,10 +1,10 @@
 {
   "ok": true,
   "schemaVersion": 1,
-  "release": "1.0.0-rc.3",
+  "release": "1.0.0-rc.4",
   "decision": "HOLD",
   "decisionReason": "The exact main-branch deployment, stable Firefox/Safari profiles, unfamiliar-player sessions, physical hardware runs, and resulting triage evidence remain external gates.",
-  "generatedAt": "2026-07-24T19:21:36.681Z",
+  "generatedAt": "2026-07-29T15:26:04.724Z",
   "blockers": [
     "ZK-253",
     "ZK-255",

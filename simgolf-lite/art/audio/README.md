@@ -5,12 +5,9 @@ artwork for the CourseCraft original game soundtrack. It was generated with
 OpenAI image generation on July 24, 2026 and visually reviewed at its native
 1254 × 1254 resolution.
 
-`legacy-generated/` contains the deterministic M15 Ogg/M4A compositions that
-were superseded by the authored Suno library. They remain versioned for
-provenance and experimentation but are outside `public/` and never ship.
-
-`legacy-untracked/` is an ignored local quarantine for older MP3 files with
-unconfirmed provenance. Its contents must not be used by the application.
+`legacy-untracked/` is an ignored local quarantine for the deterministic M15
+Ogg/M4A compositions and older MP3 files that were superseded by the authored
+Suno library. Its contents must not be used by the application.
 
 ## Generation prompt
 

@@ -39,7 +39,10 @@ art/pixellab/staging/**
 
 # Audio files
 public/audio/*.mp3
+public/audio/*.m4a
 public/audio/*.wav
 public/audio/*.ogg
+public/audio/*.aac
+public/audio/*.flac
 art/audio/legacy-untracked/*
 !art/audio/legacy-untracked/README.md

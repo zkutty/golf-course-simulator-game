@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { auditAudioAssets } from "./audit-audio-assets.mjs";
 
 const root = new URL("../", import.meta.url);
 const repo = new URL("../../", import.meta.url);
@@ -31,6 +32,12 @@ const consoleHits = sourceFiles
   .map((path) => relative(root.pathname, path))
   .filter((path) => !path.includes(".test."))
   .filter((path) => !consoleAllowlist.has(path) && !path.startsWith("src/game/testing/") && !path.startsWith("src/game/tuning/"));
+let audioAudit;
+try {
+  audioAudit = auditAudioAssets();
+} catch (error) {
+  audioAudit = { ok: false, error: error instanceof Error ? error.message : String(error) };
+}
 
 const checks = {
   versionMatches: pkg.version === config.version,
@@ -43,6 +50,7 @@ const checks = {
   noSourceMaps: !readdirSync(new URL("dist/assets", root)).some((name) => name.endsWith(".map")),
   noSecretPatterns: secretHits.length === 0,
   noRoutineConsoleOutsideReviewedGuards: consoleHits.length === 0,
+  shippedAudioMatchesSunoManifest: audioAudit.ok,
   playtestNoIndex: index.includes('name="robots" content="noindex, nofollow, noarchive"'),
   releaseSourceClean: releaseSourceChanges.length === 0,
 };
@@ -55,11 +63,11 @@ const report = {
   node: process.version,
   platform: `${process.platform}-${process.arch}`,
   checks,
-  findings: { secretHits, consoleHits, releaseSourceChanges },
+  findings: { secretHits, consoleHits, releaseSourceChanges, audioAudit },
   acceptedWarnings: [
     "Vite reports the existing saveStore static/dynamic import overlap.",
     "The main minified application chunk is approximately 1.10 MB (approximately 343 KB gzip).",
-    "ESLint reports seven pre-existing react-hooks warnings and zero errors."
+    "ESLint reports eleven pre-existing react-hooks warnings and zero errors."
   ]
 };
 mkdirSync(new URL("artifacts/m28", root), { recursive: true });

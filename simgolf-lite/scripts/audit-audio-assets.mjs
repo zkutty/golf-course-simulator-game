@@ -1,21 +1,10 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const sourcePath = join(root, "src/audio/sunoLibrary.ts");
-const mediaPattern = /\.(?:m4a|mp3|ogg|wav)$/i;
+const mediaPattern = /\.(?:aac|flac|m4a|mp3|ogg|wav)$/i;
 const assetPattern = /asset\(\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*"[^"]+"\s*,\s*"(music|ambience)"\s*,\s*"([^"]+)"\s*\)/g;
-const source = readFileSync(sourcePath, "utf8");
-const expected = new Set();
-
-for (const match of source.matchAll(assetPattern)) {
-  expected.add(`audio/${match[1]}/suno/${match[2]}.mp3`);
-}
-
-if (expected.size !== 40) {
-  throw new Error(`Expected 40 unique Suno manifest assets, found ${expected.size}`);
-}
 
 function mediaFiles(directory) {
   const files = [];
@@ -34,19 +23,53 @@ function difference(left, right) {
   return [...left].filter((item) => !right.has(item)).sort();
 }
 
-for (const name of ["public", "dist"]) {
-  const directory = join(root, name);
-  if (!existsSync(directory)) throw new Error(`${name}/ is missing; build before running the audio audit`);
-  const actual = mediaFiles(directory);
-  const missing = difference(expected, actual);
-  const extra = difference(actual, expected);
-  if (missing.length || extra.length) {
+export function auditAudioAssets(projectRoot = root) {
+  const source = readFileSync(join(projectRoot, "src/audio/sunoLibrary.ts"), "utf8");
+  const expected = new Set();
+  for (const match of source.matchAll(assetPattern)) {
+    expected.add(`audio/${match[1]}/suno/${match[2]}.mp3`);
+  }
+  if (expected.size !== 40) {
+    throw new Error(`Expected 40 unique Suno manifest assets, found ${expected.size}`);
+  }
+
+  const publicDirectory = join(projectRoot, "public");
+  const distDirectory = join(projectRoot, "dist");
+  if (!existsSync(publicDirectory)) throw new Error("public/ is missing; run from the app root");
+  if (!existsSync(distDirectory)) throw new Error("dist/ is missing; build before running the audio audit");
+
+  // Root-level public/audio files may exist as ignored local quarantine input.
+  // Only the two manifest directories are source inputs; the shipped dist set
+  // is strict and includes every file-backed media URL.
+  const publicActual = new Set(
+    [...mediaFiles(publicDirectory)].filter((file) => /^audio\/(?:music|ambience)\//.test(file)),
+  );
+  const distActual = new Set([...mediaFiles(distDirectory)].filter((file) => file.startsWith("audio/")));
+  const publicMissing = difference(expected, publicActual);
+  const publicExtra = difference(publicActual, expected);
+  const distMissing = difference(expected, distActual);
+  const distExtra = difference(distActual, expected);
+  const result = {
+    ok: publicMissing.length === 0 && publicExtra.length === 0 && distMissing.length === 0 && distExtra.length === 0,
+    expectedCount: expected.size,
+    public: { missing: publicMissing, extra: publicExtra },
+    dist: { missing: distMissing, extra: distExtra },
+  };
+  if (!result.ok) {
     throw new Error([
-      `${name}/ audio does not match the Suno manifest.`,
-      missing.length ? `Missing: ${missing.join(", ")}` : "",
-      extra.length ? `Unexpected: ${extra.join(", ")}` : "",
+      "File-backed audio does not match the 40-asset Suno manifest.",
+      publicMissing.length || publicExtra.length
+        ? `public/ managed audio: ${JSON.stringify(result.public)}`
+        : "",
+      distMissing.length || distExtra.length
+        ? `dist/ shipped audio: ${JSON.stringify(result.dist)}`
+        : "",
     ].filter(Boolean).join("\n"));
   }
+  return result;
 }
 
-console.log("Verified exact 40-file Suno audio manifest in public/ and dist/.");
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  const result = auditAudioAssets();
+  console.log(`Verified exact ${result.expectedCount}-file Suno audio manifest in public/ and dist/.`);
+}
