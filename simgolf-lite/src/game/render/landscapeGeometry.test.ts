@@ -3,6 +3,7 @@ import type { Course, Terrain } from "../models/types";
 import {
   buildLandscapeComponents,
   buildVisualHeightfield,
+  createLandscapeComponentCache,
   ringSignedArea,
   roundLandscapeRing,
   sampleLandscapeSurfaceHeight,
@@ -77,6 +78,40 @@ describe("connected landscape geometry", () => {
     const second = buildLandscapeComponents([...tiles], 2, 2);
     expect(second.map((component) => component.topologyKey))
       .toEqual(first.map((component) => component.topologyKey));
+  });
+
+  it("reuses unchanged component geometry and reports only dirty topology", () => {
+    const cache = createLandscapeComponentCache();
+    const first = cache.update([
+      "fairway", "fairway", "rough", "rough",
+      "fairway", "fairway", "rough", "rough",
+    ], 4, 2);
+    expect(first.stats).toEqual({ hits: 0, misses: 2, components: 2 });
+
+    const unchanged = cache.update([
+      "fairway", "fairway", "rough", "rough",
+      "fairway", "fairway", "rough", "rough",
+    ], 4, 2);
+    expect(unchanged.stats).toEqual({ hits: 2, misses: 0, components: 2 });
+    expect(unchanged.components[0]).toBe(first.components[0]);
+    expect(unchanged.components[1]).toBe(first.components[1]);
+
+    const split = cache.update([
+      "fairway", "rough", "rough", "rough",
+      "fairway", "fairway", "rough", "rough",
+    ], 4, 2);
+    expect(split.stats.misses).toBeGreaterThan(0);
+    expect(split.changed.length).toBe(split.stats.misses);
+    expect(split.components.find((component) => component.terrain === "rough")?.topologyKey)
+      .not.toBe(first.components.find((component) => component.terrain === "rough")?.topologyKey);
+  });
+
+  it("does not reuse geometry across quality presentation options", () => {
+    const cache = createLandscapeComponentCache();
+    const high = cache.update(["fairway"], 1, 1, { cornerRadius: 0.4, cornerSegments: 4 });
+    const medium = cache.update(["fairway"], 1, 1, { cornerRadius: 0.32, cornerSegments: 2 });
+    expect(medium.stats).toEqual({ hits: 0, misses: 1, components: 1 });
+    expect(medium.components[0]).not.toBe(high.components[0]);
   });
 });
 

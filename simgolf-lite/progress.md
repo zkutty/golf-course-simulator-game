@@ -603,3 +603,29 @@ classic course-builder references.
   no errors), build, M35 asset audit, and the bundled client capture passed.
 - Visual evidence was inspected locally; the remaining M35 fresh-context and
   human visual gates are still required and are not claimed by this work.
+
+## 2026-07-29 — Ranked implementation wave 2
+
+- Added a topology-skeleton cache for connected landscape components. Dirty
+  terrain updates still flood-fill authoritative cells, but unchanged
+  components now reuse their rounded rings and bounds; quality-tier corner
+  options remain isolated cache namespaces.
+- Added cache hit/miss and quality-switch regressions in
+  `src/game/render/landscapeGeometry.test.ts` and wired the cache into
+  `PixiStage` without changing gameplay ownership, elevation, picking, saves,
+  or hashes.
+- Focused landscape geometry tests (12), TypeScript, M35 surface-authoring
+  browser coverage, and the ZK-470/ZK-471 visual-foundation browser coverage
+  passed. The bundled web-game client also loaded without a console-error
+  artifact; its latest screenshot was visually inspected.
+- Parkland 4× contract hardening was integrated in commit `350fef4`; its
+  audit, typecheck, lint/i18n, focused terrain/accessibility tests, and
+  production build passed. Generated candidates remain review-only.
+- UI iconography/design-system hardening was integrated in commit `40a223d`;
+  shared workspace/inspector SVG chrome, state tokens, accessible tabpanels,
+  and pseudo-locale overflow coverage passed its focused browser contracts.
+- Combined verification now passes: 98 Vitest files / 821 passed / 1 skipped,
+  lint with 0 errors and 11 existing React Hook warnings, production build,
+  audio/M35/Parkland audits, and independent ZK-376/ZK-377 browser runs.
+- Human visual parity, physical-GPU, provider, and release-owner gates remain
+  intentionally open.
