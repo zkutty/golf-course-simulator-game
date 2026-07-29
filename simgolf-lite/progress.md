@@ -2,6 +2,13 @@ Original prompt: Update my vision HTML for the new features from the new milesto
 
 ## ZK-326 terrain-authoring completion slice — 2026-07-29
 
+## ZK-377 visual system machine-verification slice — 2026-07-29
+
+- Inventoried the shared workspace navigation and contextual inspector. The workspace/action icons were already owned SVG paths; the remaining native glyphs were the inspect trigger and inspector close control.
+- Replaced those glyphs with the shared owned SVG icon component, added tabpanel relationships, and centralized workspace/inspector default, selected, focus, disabled, warning, positive, and reserved destructive visual-state tokens. No terrain, renderer, audio, or gameplay code is in scope.
+- Focused pseudo-locale browser coverage initially surfaced a brittle hard-coded transformed-string assertion; the contract now checks the pseudo-localized accessible label format instead.
+- The pseudo-locale mobile run found a genuine containment defect: a viewport-derived inspector width overflowed its narrower course-pane containing block. The panel now uses border-box sizing and a containing-block-relative width; the focused desktop and pseudo-locale browser scenarios both pass after the fix.
+
 - Closed a post-commit edit integrity gap: a curved surface dragged wholly into unowned/protected land now remains unchanged instead of committing an empty clipped feature and restoring its former underlay. Partial legal coverage remains clipped and commit-capable.
 - Added reducer-level regression coverage for the fully unowned case. Focused surface intent/feature edit/terrain stroke tests pass (26 tests), and the production build/typecheck passes. The existing M35 node/tangent browser test was attempted twice; its first run aborted during the pre-existing first drag with Playwright's `Execution context was destroyed` navigation error, before the new model guard was reached. The failure capture showed a blank Pixi canvas; this needs renderer/test-harness investigation outside this bounded model slice.
 

@@ -76,6 +76,32 @@
   --ui-shadow-soft: 0 12px 28px rgba(0, 0, 0, 0.10);
   --ui-muted: #6b7280;
   --ui-accent: var(--cc-forest);
+  /* Shared workspace and inspector state colors: each foreground/background
+   * pair meets at least WCAG AA for normal text. */
+  --ui-text: #263a2d;
+  --ui-text-muted: #526150;
+  --ui-surface-raised: rgba(255, 253, 246, .98);
+  --ui-state-border: #aebaa9;
+  --ui-action-surface: #fffdf6;
+  --ui-action-text: #263a2d;
+  --ui-action-hover: #e8f0e3;
+  --ui-action-selected: #315f3c;
+  --ui-action-selected-text: #ffffff;
+  --ui-focus: #0b67a3;
+  --ui-disabled-surface: #e5e8e1;
+  --ui-disabled-text: #5d665c;
+  --ui-warning-surface: #fff4d8;
+  --ui-warning-border: #a66300;
+  --ui-warning-text: #553600;
+  --ui-advisory-surface: #fff8e7;
+  --ui-advisory-border: #8d6b20;
+  --ui-advisory-text: #51411c;
+  --ui-danger-surface: #fde7e3;
+  --ui-danger-border: #a72f1c;
+  --ui-danger-text: #6f2115;
+  --ui-positive-surface: #e8f3e7;
+  --ui-positive-border: #47784d;
+  --ui-shadow-elevated: 0 18px 48px rgba(30, 48, 31, .28);
 
   font-family: var(--font-body);
   line-height: 1.4;
@@ -243,7 +269,7 @@ html[data-reduced-motion="true"] *::after {
   transition-duration: 0.001ms !important;
 }
 :where(button, input, select, textarea, [href], [tabindex]):focus-visible {
-  outline: 3px solid #0b67a3 !important;
+  outline: 3px solid var(--ui-focus) !important;
   outline-offset: 3px;
   box-shadow: 0 0 0 2px #fff !important;
 }
