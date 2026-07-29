@@ -1,9 +1,10 @@
 {
-  "version": 1,
+  "version": 2,
   "id": "parkland-terrain-4x",
   "theme": "parkland",
   "source": {
-    "root": "src/assets/terrain/parkland-4x-fallback",
+    "root": "art/parkland-4x-fallback",
+    "manifest": "manifest.json",
     "kind": "deterministic-coursecraft-fallback",
     "authoredBy": "CourseCraft",
     "generator": "scripts/gen-parkland-4x-fallback.mjs",
@@ -11,6 +12,12 @@
     "externalProvider": "none",
     "referencePixelsCopied": false,
     "reviewStatus": "machine-contract-only"
+  },
+  "determinism": {
+    "hashAlgorithm": "sha256",
+    "manifestVersion": 1,
+    "requiresRepeatableGeneration": true,
+    "runtimeAdoption": "prohibited"
   },
   "frame": {
     "width": 256,
@@ -26,6 +33,52 @@
     "visiblePixels": true,
     "allowPartialAlpha": true
   },
+  "coverage": {
+    "materials": [
+      "fairway", "tee", "green", "rough", "deep_rough",
+      "waste_area", "path", "wetland", "water", "sand"
+    ],
+    "edgeDirections": ["n", "e", "s", "w"],
+    "contourDirections": ["ne", "se", "sw", "nw"],
+    "rendererOwned": {
+      "contours": {
+        "file": "src/game/render/materialFields.ts",
+        "exports": ["contourProfileFor", "allTerrainAdjacencies"],
+        "minimumDepthBands": 3
+      },
+      "slopes": {
+        "file": "src/game/render/landscapeGeometry.ts",
+        "exports": ["buildVisualHeightfield", "sampleLandscapeSurfaceHeight"]
+      },
+      "habitats": {
+        "file": "src/game/render/treeHabitat.ts",
+        "exports": ["treeHabitatKind", "deriveTreeHabitat"],
+        "kinds": ["pine_straw", "leaf_litter", "dry_soil"]
+      }
+    }
+  },
+  "variants": {
+    "quality": {
+      "high": { "terrainFrames": 180, "detailFrames": 20, "fields": 10 },
+      "medium": { "terrainFrames": 180, "detailFrames": 10, "fields": 10 },
+      "low": { "terrainFrames": 180, "detailFrames": 0, "fields": 0 }
+    },
+    "accessibility": {
+      "file": "src/accessibility/terrainPalettes.ts",
+      "modes": ["standard", "deuteranopia", "protanopia", "tritanopia"],
+      "nonColorPatterns": true
+    }
+  },
+  "offline": {
+    "atlasLoader": {
+      "file": "src/render/atlas.ts",
+      "requiredTokens": ["bundlePromises.delete(key)", "getTerrainFrame", "safe material fallback"]
+    },
+    "serviceWorker": {
+      "file": "public/sw.js",
+      "requiredTokens": ["relativePath.startsWith(\"atlases/\")", "await cache.put(event.request, response.clone())"]
+    }
+  },
   "atlas": {
     "gutterPx": 2,
     "maxWidth": 1024,
@@ -37,7 +90,8 @@
     "width": 128,
     "height": 64,
     "presentationScale": 2,
-    "generator": "scripts/gen-terrain-materials.mjs"
+    "generator": "scripts/gen-terrain-materials.mjs",
+    "runtimeAsset": true
   },
   "budgets": {
     "sourceBytesMax": 4194304,
