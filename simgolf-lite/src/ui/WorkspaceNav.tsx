@@ -77,6 +77,8 @@ function Icon(props: { id: WorkspaceId | WorkspaceActionId }) {
 export function WorkspaceNav(props: {
   workspace: WorkspaceId;
   onWorkspace: (workspace: WorkspaceId) => void;
+  onInspect?: () => void;
+  inspectorOpen?: boolean;
   active: Partial<Record<WorkspaceActionId, boolean>>;
   alerts?: Partial<Record<WorkspaceActionId, boolean>>;
   disabled?: Partial<Record<WorkspaceActionId, boolean>>;
@@ -100,6 +102,17 @@ export function WorkspaceNav(props: {
           </button>
         ))}
       </div>
+      {props.onInspect && (
+        <button
+          className="cc-workspace-inspect"
+          data-testid="open-contextual-inspector"
+          aria-pressed={props.inspectorOpen === true}
+          onClick={props.onInspect}
+        >
+          <span aria-hidden="true">⌖</span>
+          <span>{t("workspace.action.inspect")}</span>
+        </button>
+      )}
       <div className="cc-workspace-actions" aria-label={t(`workspace.${props.workspace}.actions`)}>
         {actions.slice(0, 3).map((id) => (
           <button

@@ -1,5 +1,18 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-326 terrain-authoring completion slice — 2026-07-29
+
+- Closed a post-commit edit integrity gap: a curved surface dragged wholly into unowned/protected land now remains unchanged instead of committing an empty clipped feature and restoring its former underlay. Partial legal coverage remains clipped and commit-capable.
+- Added reducer-level regression coverage for the fully unowned case. Focused surface intent/feature edit/terrain stroke tests pass (26 tests), and the production build/typecheck passes. The existing M35 node/tangent browser test was attempted twice; its first run aborted during the pre-existing first drag with Playwright's `Execution context was destroyed` navigation error, before the new model guard was reached. The failure capture showed a blank Pixi canvas; this needs renderer/test-harness investigation outside this bounded model slice.
+
+## Ranked feature implementation wave — 2026-07-29
+
+- ZK-376: added a contextual inspector surface to the workspace shell. It provides concise course, operations, property, people, and legacy summaries; Cozy/Architect view presets; relaxed/balanced/brisk operations presets; and detail routing without losing workspace context. Added semantic dialog labelling and a focused browser contract.
+- ZK-381: expanded the deterministic audio scene selector across menu, design, operate, play, tournament, crisis, evening, and finale routes. Evening yields the file-backed music channel to the authored night ambience bed; inactive or under-construction property assets no longer select campus/resort beds. App wiring now supplies the live day minute. The initial tutorial-minute boundary was corrected after browser regression evidence.
+- ZK-382 machine-verifiable slice: contextual inspector semantics are labelled for assistive technology and covered by browser assertions; the broader manual accessibility, scaling, motion, and browser matrix remains deferred.
+- Verification: full Vitest passes 98 files / 819 passed / 1 skipped; build, audio manifest audit, lint/i18n, focused inspector E2E, M15 audio browser scenarios, and M35 surface-authoring browser coverage pass. Existing lint output remains 11 React Hook warnings and no errors.
+- Human-gated visual, provider, cross-browser, device, and release checks remain intentionally open.
+
 ## M35 full-milestone completion pass — 2026-07-25
 
 Current request: “complete m35 from linear”

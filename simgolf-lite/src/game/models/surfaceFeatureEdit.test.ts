@@ -91,6 +91,52 @@ describe("surface feature editing", () => {
     expect(state.course).toBe(course);
   });
 
+  it("keeps the existing feature when an edit is fully clipped by unowned land", () => {
+    const { course, feature } = authoredCourse();
+    if (feature.geometry.kind !== "corridor") throw new Error("expected corridor fixture");
+    // A sold property asset is intentionally non-authorable terrain.
+    course.property = {
+      assets: [{
+        id: "sold-corridor",
+        kind: "houses",
+        name: "Sold corridor",
+        category: "community",
+        tier: 1,
+        x: 0,
+        y: 6,
+        width: course.width,
+        height: 8,
+        capacity: 0,
+        condition: 1,
+        price: 0,
+        enabled: true,
+        tenure: "sold",
+      }],
+    } as Course["property"];
+    const moved: SurfaceFeature = {
+      ...feature,
+      geometry: {
+        ...feature.geometry,
+        knots: feature.geometry.knots.map((point) => ({ x: point.x, y: point.y + 6 })),
+      },
+    };
+
+    const prepared = prepareSurfaceFeatureEdit(course, moved, 100_000, 1, 100);
+    expect(prepared?.commitAllowed).toBe(false);
+    expect(prepared?.preview.changedCount).toBe(0);
+    expect(prepared?.preview.excluded.unowned).toBeGreaterThan(0);
+    expect(prepared?.intent).toBe(course.surfaceIntent);
+    expect(prepared?.tiles).toEqual(course.tiles);
+
+    const state = applyAction({
+      ...DEFAULT_STATE,
+      course,
+      world: { ...DEFAULT_STATE.world, cash: 100_000, reputation: 100 },
+    }, { type: "EDIT_SURFACE_FEATURE", feature: moved });
+    expect(state.course).toBe(course);
+    expect(state.world.cash).toBe(100_000);
+  });
+
   it("moves water intent and excavates its new basin atomically", () => {
     const { course, feature } = authoredCourse("water");
     course.elevations.fill(6);

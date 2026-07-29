@@ -75,6 +75,12 @@
   box-shadow: 0 5px 18px rgba(0,0,0,.28);
 }
 
+.cc-workspace-inspect {
+  border: 1px solid rgba(255,255,255,.2) !important;
+  background: rgba(38, 53, 43, .94) !important;
+  box-shadow: 0 5px 18px rgba(0,0,0,.28);
+}
+
 .cc-workspace-nav button {
   min-height: 36px;
   display: inline-flex;

@@ -128,6 +128,27 @@ export function prepareSurfaceFeatureEdit(
     }
     acceptedIndices.add(index);
   }
+  // A fully clipped edit must not turn into an empty feature. In particular,
+  // dragging an already-authored curve entirely over a sold/protected parcel
+  // used to restore its old underlay and persist zero coverage. Partial edits
+  // still clip normally below; this guard only preserves the current feature
+  // when none of the proposed footprint can legally remain.
+  if (acceptedIndices.size === 0) {
+    return {
+      feature: existing,
+      intent,
+      tiles: course.tiles.slice(),
+      elevations: applyWaterGrading(course, { deltas: [], earthworkSteps: 0 }),
+      obstacles: course.obstacles,
+      preview: noChangePreview(cash, {
+        outOfBounds: 0,
+        unowned,
+        locked: 0,
+        protected: protectedCount,
+      }),
+      commitAllowed: false,
+    };
+  }
   const clipped = rasterizeSurfaceFeatureDetailed(
     sanitized,
     course.width,
