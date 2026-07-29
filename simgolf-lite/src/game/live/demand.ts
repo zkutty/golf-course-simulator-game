@@ -10,6 +10,8 @@ import { courseOperations } from "./pace";
 import { propertyAccessMultiplier } from "../property/property";
 import { activeCourseLayout } from "../models/courseLayouts";
 import { paceIdentity } from "./paceHistory";
+import { buildM49DemandPlan } from "../m49/demand";
+import type { M49DemandPlan } from "../m49/types";
 
 function clamp(x: number, a: number, b: number): number {
   return Math.max(a, Math.min(b, x));
@@ -29,6 +31,7 @@ export interface CourseProfile {
   premium: number; // -1..1 green fee relative to market price
   prestige: number; // 0..1 reputation
   pace: number; // 0 relaxed .. 1 brisk operating identity
+  m49?: M49DemandPlan;
 }
 
 export function courseProfile(course: Course, world: World): CourseProfile {
@@ -55,6 +58,7 @@ export function courseProfile(course: Course, world: World): CourseProfile {
     premium,
     prestige: clamp01(world.reputation / 100),
     pace: paceIdentity(world, layout.id, presetFallback).score,
+    m49: buildM49DemandPlan(course, world),
   };
 }
 
@@ -82,7 +86,9 @@ export function archetypeAppeal(profile: CourseProfile): ArchetypeAppeal {
     const pacePreference = clamp01(p.skill * .6 + (1 - p.patience) * .3 + .1);
     const paceMatch = 1 - Math.abs(pacePreference - profile.pace);
 
-    const w = a.weight * difficultyMatch * sceneryAppeal * priceAppeal * prestigeGate * (.65 + paceMatch * .35);
+    const evidenceAppeal = profile.m49?.segments[a.name]?.bookingAppeal;
+    const fitMultiplier = evidenceAppeal == null ? 1 : .72 + evidenceAppeal * .56;
+    const w = a.weight * difficultyMatch * sceneryAppeal * priceAppeal * prestigeGate * (.65 + paceMatch * .35) * fitMultiplier;
     raw[a.name] = w;
     total += w;
   }

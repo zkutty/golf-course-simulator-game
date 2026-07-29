@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "fixture": {
+    "courseId": "m49-cert-course",
+    "courseName": "M49 Ethos Loop Certification Course",
+    "holes": 9,
+    "seed": 490497
+  },
+  "checks": [
+    {
+      "id": "demand-determinism",
+      "passed": true,
+      "detail": "The same course, world, and seed produce the same six-segment demand plan."
+    },
+    {
+      "id": "segment-price-response",
+      "passed": true,
+      "detail": "All six segments expose differentiated willingness to pay and price elasticity."
+    },
+    {
+      "id": "safe-route-vs-hazard",
+      "passed": true,
+      "detail": "Shared hazard pressure lowers casual appeal while a coherent course still retains supported demand."
+    },
+    {
+      "id": "truthful-marketing",
+      "passed": true,
+      "detail": "Unsupported promises cost more and begin with lower credibility and higher disappointment risk."
+    },
+    {
+      "id": "observed-evidence",
+      "passed": true,
+      "detail": "168 live rounds became bounded per-course observed evidence over 7 days."
+    },
+    {
+      "id": "no-play-reputation",
+      "passed": true,
+      "detail": "No-play and incomplete evidence cannot create a reputation move."
+    },
+    {
+      "id": "multi-course-isolation",
+      "passed": true,
+      "detail": "Observed history keys by course and does not bleed between layouts."
+    },
+    {
+      "id": "save-migration",
+      "passed": true,
+      "detail": "Active live evidence survives save/reload deterministically (2688506 bytes)."
+    },
+    {
+      "id": "report-reconciliation",
+      "passed": true,
+      "detail": "Management reporting reconciles the supplied revenue ledger and reads current course condition as authoritative."
+    },
+    {
+      "id": "actionable-alerts",
+      "passed": true,
+      "detail": "Low condition produces a prioritized actionable alert with deduplicated IDs."
+    }
+  ],
+  "metrics": {
+    "liveDays": 7,
+    "liveRounds": 168,
+    "observedRounds": 168,
+    "completedObservedRounds": 129,
+    "segments": 6,
+    "supportedSegments": 6,
+    "demandHash": "19202bb7",
+    "saveBytes": 2688506
+  },
+  "passed": true
+}

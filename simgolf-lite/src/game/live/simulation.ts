@@ -30,6 +30,7 @@ import {
 import { activeWeather, seasonalState, weatherModifiers } from "../seasons/seasons";
 import { BALANCE } from "../balance/balanceConfig";
 import { paceIdentity, paceRepeatIntentModifier } from "./paceHistory";
+import { observeM49Round } from "../m49/experience";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -137,6 +138,7 @@ export function createLiveState(
         : operations];
     })),
     weather: { daily: dailyWeather, modifiers: dailyWeatherModifiers },
+    observedRounds: [],
   };
 }
 
@@ -559,6 +561,8 @@ export function stepLive(
         g.completionStatus !== "congestion_abandonment" &&
         g.scoredHoles >= g.holePar.length;
       const courseId = g.courseId ?? activeCourseLayout(course).id;
+      const roundCourse = courseForLayout(course, courseId);
+      const greenFee = layoutById(course, courseId)?.greenFee ?? course.baseGreenFee;
       if (state.pace) {
         const coursePace = ensureCoursePaceMetrics(state.pace, courseId);
         const duration = Math.max(0, state.dayMinute - (g.groupStartedAt ?? group?.startedAt ?? state.dayMinute));
@@ -581,7 +585,6 @@ export function stepLive(
         cohortMetrics.abandonments += completed ? 0 : 1;
         cohortMetrics.satisfaction += g.mood * 100;
 
-        const fee = layoutById(course, courseId)?.greenFee ?? course.baseGreenFee;
         const progress = g.holePar.length ? g.scoredHoles / g.holePar.length : 0;
         let compensationRate = 0;
         if (g.completionStatus === "daylight") {
@@ -594,7 +597,7 @@ export function stepLive(
           compensationRate = Math.min(0.5, (g.forcedPickups ?? 0) * BALANCE.paceOperations.marshalPickupCreditRate);
         }
         if (compensationRate > 0) {
-          const amount = Math.round(fee * compensationRate * 100) / 100;
+          const amount = Math.round(greenFee * compensationRate * 100) / 100;
           coursePace.compensationCost += amount;
           if (operations.compensationPolicy === "refund" || g.completionStatus === "daylight") coursePace.refunds += amount;
           else if (operations.compensationPolicy === "credit") coursePace.credits += amount;
@@ -607,6 +610,19 @@ export function stepLive(
       if (reaction.promoter) state.promoters++;
       if (reaction.detractor) state.detractors++;
       if (reaction.willReturn) state.willReturnCount++;
+      const observation = observeM49Round({
+        course: roundCourse,
+        golfer: g,
+        courseId,
+        greenFee,
+        completed,
+        returnIntent: reaction.willReturn,
+        recommend: reaction.promoter,
+        condition: roundCourse.condition,
+      });
+      state.observedRounds ??= [];
+      state.observedRounds.push(observation);
+      if (state.observedRounds.length > 240) state.observedRounds.splice(0, state.observedRounds.length - 240);
       const courseStats = g.courseId ? state.perCourse?.[g.courseId] : undefined;
       if (courseStats) {
         if (completed) courseStats.roundsFinished++;
@@ -803,6 +819,7 @@ export function roundReactions(state: LiveState): RoundReactions {
     promoters: state.promoters,
     detractors: state.detractors,
     willReturnRate: rounds > 0 ? state.willReturnCount / rounds : 0,
+    observations: state.observedRounds?.slice() ?? [],
   };
 }
 

@@ -4,6 +4,7 @@ import { computeCourseRatingAndSlope } from "./courseRating";
 import { getEffectiveBalance } from "../balance/difficulty";
 import { BALANCE as BASE_BALANCE } from "../balance/balanceConfig";
 import { analyzeArchitecture, architectureDemandMultiplier } from "../architecture/architecture";
+import { buildM49DemandPlan } from "../m49/demand";
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
@@ -80,6 +81,17 @@ export function demandBreakdown(course: Course, world: World) {
   const rating = computeCourseRatingAndSlope(course);
   const courseRating01 = clamp01((rating.courseRating - 66) / 8); // higher-rated courses "unlock" core interest
 
+  const m49 = buildM49DemandPlan(course, world, {
+    quality: q,
+    difficulty: clamp01(avgDiff / 100),
+    scenery: clamp01(avgAest / 100),
+    condition: cond,
+    price,
+    marketing,
+    staff,
+    reputation: rep,
+  });
+
   // Reputation threshold effects on demand (early penalty / late bonus)
   const repMod =
     world.reputation < BALANCE.reputation.demandPenaltyThreshold
@@ -138,7 +150,11 @@ export function demandBreakdown(course: Course, world: World) {
     contributions.staff;
 
   const blended = casualShare * casualIndex + coreShare * coreIndex;
-  const demand = Math.max(0, Math.min(1.2, (blended * 1.05 + base * 0.05) * architectureDemandMultiplier(course))); // bounded architecture nudge
+  // M49 is the evidence-bearing path. Keep a small legacy blend so old saves
+  // with no observed rounds retain their familiar baseline while a changed
+  // cohort-specific hole still moves that cohort's demand and price fit.
+  const evidenceBlended = blended * .18 + m49.totalIndex * .82;
+  const demand = Math.max(0, Math.min(1.2, (evidenceBlended * 1.05 + base * 0.05) * architectureDemandMultiplier(course))); // bounded architecture nudge
 
   // Mirrors BALANCE.visitors so difficulty's demand multiplier applies here.
   const floor = BALANCE.visitors.baseFloor;
@@ -163,7 +179,9 @@ export function demandBreakdown(course: Course, world: World) {
       casual: { share: casualShare, demandIndex: casualIndex, baseVisitors: baseVisitorsCasual },
       core: { share: coreShare, demandIndex: coreIndex, baseVisitors: baseVisitorsCore, cap: coreCap },
       totalBaseVisitors,
+      m49,
     },
+    m49,
   };
 }
 

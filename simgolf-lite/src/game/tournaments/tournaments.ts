@@ -274,13 +274,20 @@ export function completeTournament(world: World, live: LiveState): { world: Worl
   if (!event || event.status === "completed") return { world, revenue: 0, reputation: 0, event };
   const results = sortedStandings(active.standings);
   const completed: TournamentEvent = { ...event, status: "completed", results, winnerName: results[0]?.name };
+  const evidence = (live.observedRounds ?? []).filter((observation) => observation.tournamentId === event.id && observation.completed && observation.holesPlayed > 0);
+  const evidenceSatisfaction = evidence.length
+    ? evidence.reduce((sum, observation) => sum + observation.satisfaction, 0) / evidence.length / 100
+    : 0;
+  const observedQuality = evidence.length ? Number(evidenceSatisfaction.toFixed(3)) : 0;
+  const observedReputation = event.reputationAward;
+  completed.observedQuality = observedQuality;
   return {
     world: {
       ...world,
       tournaments: { version: 2, events: calendar.events.map((candidate) => candidate.id === event.id ? completed : candidate) },
     },
     revenue: event.revenueAward,
-    reputation: event.reputationAward,
+    reputation: observedReputation,
     event: completed,
   };
 }

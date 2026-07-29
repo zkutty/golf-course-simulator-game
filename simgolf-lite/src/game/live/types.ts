@@ -3,6 +3,7 @@ import type { Personality } from "./personality";
 import type { LiveTournamentState } from "../tournaments/types";
 import type { DailyWeather, WeatherKind, WeatherModifiers } from "../seasons/types";
 import type { GolferCapabilities, HoleReaction, LiveShotOutcome, ShotIntent, StrategicHolePlan } from "./m47Types";
+import type { M49ObservedRound } from "../m49/types";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -223,6 +224,8 @@ export interface LiveState {
   overtimeRateByCourse?: Record<string, number>;
   operationsByCourse?: Record<string, CourseOperations>;
   weather?: { daily: DailyWeather; modifiers: WeatherModifiers };
+  /** Bounded finished-round evidence retained until day commit. */
+  observedRounds?: M49ObservedRound[];
 }
 
 // Aggregated reactions from the golfers who actually finished a round today.
@@ -233,6 +236,8 @@ export interface RoundReactions {
   promoters: number;
   detractors: number;
   willReturnRate: number; // 0..1 share intending to return
+  /** Present for M49 live rounds; absent in legacy callers/fixtures. */
+  observations?: M49ObservedRound[];
 }
 
 // Minimal per-golfer data the renderer needs each frame. Read from a ref so
