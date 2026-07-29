@@ -1,9 +1,10 @@
 import { createContext, useContext } from "react";
-import type { AmbientMix, AudioVolumes, MusicContext, SfxName, StingName } from "./AudioManager";
+import type { AmbientMix, AudioSurface, AudioVolumes, MusicContext, SfxName, StingName } from "./AudioManager";
 
 export interface AudioContextValue {
   unlock: () => Promise<void>;
   setMusicContext: (context: MusicContext) => Promise<void>;
+  setSurface: (surface: AudioSurface) => void;
   setMusicOverride: (context: MusicContext | null) => Promise<void>;
   playSfx: (name: SfxName, options?: { volume?: number; force?: boolean }) => Promise<void>;
   playSting: (name: StingName) => Promise<void>;
