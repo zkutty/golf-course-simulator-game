@@ -1,5 +1,6 @@
 import type { GolferArchetypeName } from "../live/types";
 import type { PinRotation, TeeSet } from "../models/types";
+import type { M49StrategicIdentity } from "../m49/types";
 
 export type TournamentTier = "local" | "regional" | "championship";
 export type TournamentStatus = "scheduled" | "completed" | "cancelled";
@@ -27,6 +28,7 @@ export interface TournamentQualificationSnapshot {
   completeRotations: PinRotation[];
   requirements: TournamentRequirement[];
   blockingReasons: string[];
+  strategicIdentity?: Pick<M49StrategicIdentity, "strategicScore" | "broadAppeal" | "nicheIdentity" | "supportedSegments" | "tournamentFieldFit">;
 }
 
 export interface TournamentEntrant {
@@ -72,6 +74,8 @@ export interface TournamentEvent {
   depositForfeited?: boolean;
   results?: TournamentStanding[];
   winnerName?: string;
+  /** Observed event quality, retained separately from the contracted award. */
+  observedQuality?: number;
 }
 
 export interface TournamentCalendar {

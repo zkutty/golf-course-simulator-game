@@ -5,6 +5,7 @@ import type { PlayerProCareer } from "./playerProTypes";
 import type { LivingClubState } from "../livingClub/types";
 import type { SeasonalState } from "../seasons/types";
 import type { CampaignRunState } from "../campaign/types";
+import type { M49DemandPlan, M49EconomyState } from "../m49/types";
 
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
@@ -387,6 +388,8 @@ export interface World {
   campaign?: CampaignRunState;
   /** M30 bounded rolling pace, cohort, and tee-hour operating history. */
   paceOperations?: PaceOperationsState;
+  /** M49 bounded segment demand, observed value, price, and reputation evidence. */
+  m49?: M49EconomyState;
 }
 
 export type StaffRole = "groundskeeper" | "cart_attendant" | "pro_shop" | "marshal" | "tournament_director" | "club_pro" | "food_service" | "locker_attendant" | "front_desk" | "housekeeping" | "shuttle_driver";
@@ -461,10 +464,12 @@ export interface DemandBreakdown {
   };
   demandIndex: number; // 0..1.2-ish
   architecture?: { score: number; multiplier: number };
+  m49?: M49DemandPlan;
   segments?: {
     casual: { share: number; demandIndex: number; baseVisitors: number };
     core: { share: number; demandIndex: number; baseVisitors: number; cap: number };
     totalBaseVisitors: number;
+    m49?: M49DemandPlan;
   };
 }
 

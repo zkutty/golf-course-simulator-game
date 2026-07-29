@@ -4409,7 +4409,7 @@ export default function App() {
         </div>
         </div>
         <NewsTicker visible={!tutorialProgress && !photoMode && appProfile.gameplay.tickerVisible} onJump={jumpToEvent} onHide={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: false } })} />
-        {pendingWeekReport && <WeekCloseReport week={pendingWeekReport.week} result={pendingWeekReport.result} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={() => {
+        {pendingWeekReport && <WeekCloseReport week={pendingWeekReport.week} result={pendingWeekReport.result} course={course} world={world} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={() => {
           const resumeSpeed = pendingWeekReport.resumeSpeed;
           setPendingWeekReport(null);
           live.setSpeed(resumeSpeed);

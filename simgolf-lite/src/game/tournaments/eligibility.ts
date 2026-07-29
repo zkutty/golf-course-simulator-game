@@ -6,6 +6,7 @@ import type {
   TournamentRequirement,
   TournamentTier,
 } from "./types";
+import { strategicIdentity } from "../m49/identity";
 
 export interface TournamentCourseStandard {
   teeSet: TeeSet;
@@ -143,10 +144,18 @@ export function evaluateTournamentEligibility(args: {
     requirement({ id: "calendar", label: "Calendar", passed: !events.some((event) => event.status === "scheduled" && event.scheduledWeek === targetWeek && event.scheduledDay === targetDay), current: `Week ${targetWeek}, day ${targetDay + 1}`, required: "An open date", guidance: "Choose a date without another scheduled tournament." }),
   ];
   const requirements = [...commercial, ...courseResult.requirements];
+  const identity = strategicIdentity(args.course, args.world);
   return {
     ...courseResult,
     eligible: requirements.every((item) => item.passed),
     requirements,
     blockingReasons: requirements.filter((item) => !item.passed).map((item) => `${item.label}: ${item.current}; requires ${item.required}. ${item.guidance}`),
+    strategicIdentity: {
+      strategicScore: identity.strategicScore,
+      broadAppeal: identity.broadAppeal,
+      nicheIdentity: identity.nicheIdentity,
+      supportedSegments: identity.supportedSegments,
+      tournamentFieldFit: identity.tournamentFieldFit,
+    },
   };
 }

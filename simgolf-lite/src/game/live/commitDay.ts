@@ -13,6 +13,7 @@ import { advanceLivingClubDay } from "../livingClub/livingClub";
 import { advanceSeasonalDay, charterDefinition, seasonalState } from "../seasons/seasons";
 import { advanceCampaign } from "../campaign/campaign";
 import { recordPaceDay } from "./paceHistory";
+import { m49ReputationDelta, recordM49Observations } from "../m49/history";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -44,6 +45,7 @@ export function commitDay(args: {
   dayIndex?: number; // 0..6; day 6 closes the week for objective streaks/deadlines
   pace?: PaceDayMetrics;
   shotTraces?: PropertyShotTrace[];
+  observations?: RoundReactions["observations"];
 }): { world: World; course: Course; result: DayResult } {
   const { course, world, reactions, dayIndex } = args;
   const seasonalCommit = advanceSeasonalDay(course, world, dayIndex ?? 0);
@@ -129,8 +131,10 @@ export function commitDay(args: {
   const dailyRepCap = Math.max(1, BALANCE.reputation.capPerWeek / DAYS_PER_WEEK);
   const profile = getDifficultyProfile(operatingWorld.difficulty);
   const repAsym = sentiment >= 0 ? profile.repGainMult : profile.repLossMult;
-  const audienceRepDelta =
-    rounds > 0 ? clamp(sentiment * BALANCE.reputation.npsGain * repAsym, -dailyRepCap, dailyRepCap) : 0;
+  const m49Evidence = reactions.observations;
+  const audienceRepDelta = m49Evidence
+    ? clamp(m49ReputationDelta(m49Evidence).delta * repAsym, -dailyRepCap, dailyRepCap)
+    : rounds > 0 ? clamp(sentiment * BALANCE.reputation.npsGain * repAsym, -dailyRepCap, dailyRepCap) : 0;
   const liabilityRep = propertySettlement.report.incidents.reduce((sum, incident) => sum + incident.severity * 0.08, 0);
   const repDelta = (audienceRepDelta + (args.tournamentReputation ?? 0)) * charter.reputationMultiplier - liabilityRep;
   const nextRep = clamp(operatingWorld.reputation + repDelta, 0, 100);
@@ -161,7 +165,8 @@ export function commitDay(args: {
   });
   const livingClubCommit = advanceLivingClubDay(conditionCourse, objectiveWorld, dayIndex ?? 0);
   const nextCourse = livingClubCommit.course;
-  const nextWorld = advanceCampaign(livingClubCommit.course, livingClubCommit.world);
+  const campaignWorld = advanceCampaign(livingClubCommit.course, livingClubCommit.world);
+  const nextWorld = recordM49Observations(campaignWorld, m49Evidence ?? args.observations ?? [], operatingWorld.week);
   const courseEntries = Object.entries(args.perCourse ?? {});
   let allocatedRevenue = 0;
   let allocatedSharedCosts = 0;
