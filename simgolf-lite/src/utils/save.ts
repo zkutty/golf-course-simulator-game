@@ -50,9 +50,10 @@ import { normalizeLivingClub } from "../game/livingClub/livingClub";
 import { normalizeSeasonalState } from "../game/seasons/seasons";
 import { normalizeCampaignRun } from "../game/campaign/campaign";
 import { normalizePaceOperationsState } from "../game/live/paceHistory";
+import { migratePlayerProActiveRoundSnapshotV20 } from "../game/rules/roundSnapshotMigration";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 19 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 20 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -145,6 +146,10 @@ export interface SaveV18 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV19 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 19;
+  records?: CourseRecords;
+}
+export interface SaveV20 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -168,11 +173,17 @@ export type SaveLoadResult =
   | { ok: false; error: SaveLoadError };
 
 export function saveGame(payload: SavePayload) {
-  const save: SaveV19 = {
+  const migratedPlayerPro = migratePlayerProActiveRoundSnapshotV20(
+    payload.world.playerPro,
+    payload.course,
+  ).playerPro as World["playerPro"];
+  const save: SaveV20 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
-    world: payload.world,
+    world: migratedPlayerPro === payload.world.playerPro
+      ? payload.world
+      : { ...payload.world, playerPro: migratedPlayerPro },
     history: payload.history,
     records: payload.records,
     live: payload.live,
@@ -602,6 +613,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V19 removes the independently generated starter-property overlay. The
   // normalizer can safely regenerate an untouched Links estate from its seed.
   18: (save) => ({ ...save, schemaVersion: 19 }),
+  // V20 adds the immutable M50 controlled-round boundary and penalty snapshot.
+  // Course-aware derivation occurs after course validation and normalization.
+  19: (save) => ({ ...save, schemaVersion: 20 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -819,6 +833,9 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     }
 
     const rawWorld = parsed.world as unknown as World;
+    const rawPlayerPro = migrated.migratedFrom === 19 || migrated.migratedFrom == null
+      ? migratePlayerProActiveRoundSnapshotV20(rawWorld.playerPro, course).playerPro
+      : rawWorld.playerPro;
     const rawConstraints = rawWorld.constraints;
     const rawLiveDay = typeof (parsed.live as { state?: { dayIndex?: unknown } } | undefined)?.state?.dayIndex === "number"
       ? (parsed.live as { state: { dayIndex: number } }).state.dayIndex
@@ -841,7 +858,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
           : {}),
       tournaments: normalizeTournamentCalendar(rawWorld.tournaments, course),
       enterprise: normalizePropertyEnterprise(rawWorld.enterprise),
-      playerPro: normalizePlayerPro(rawWorld.playerPro, {
+      playerPro: normalizePlayerPro(rawPlayerPro, {
         seed: rawWorld.runSeed,
         founderName: typeof rawWorld.founderName === "string" ? rawWorld.founderName : undefined,
       }),

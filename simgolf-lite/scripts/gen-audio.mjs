@@ -5,11 +5,13 @@ import { join } from "node:path";
 
 const sampleRate = 22_050;
 const seconds = 40;
-// These deterministic M15 compositions are retained for provenance and
-// experimentation only. Runtime audio is exclusively sourced from the Suno
-// manifest, so regeneration must never place them back under public/.
+// ARCHIVED EXPERIMENTATION ONLY: these deterministic M15 compositions are not
+// release assets. Runtime audio is exclusively sourced from the Suno manifest,
+// and this script writes ignored local files only; it must never write public/
+// or dist/.
 const output = new URL("../art/audio/legacy-untracked/", import.meta.url);
 mkdirSync(output, { recursive: true });
+console.info("Generating archived, non-runtime M15 experiment files under art/audio/legacy-untracked/.");
 
 const songs = [
   ["clubhouse-morning", 92, 0, [0, 4, 7, 11]],

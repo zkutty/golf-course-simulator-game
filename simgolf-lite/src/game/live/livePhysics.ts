@@ -1,6 +1,10 @@
 import type { Course, Point, TeeSet, PinRotation, Terrain } from "../models/types";
 import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
+import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
+import { createControlledRoundSnapshotV2, decodeControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
+import { classifyPenaltyAreaComponents } from "../rules/penaltyAreas";
 import { resolveCourseSetup, getParSetting } from "../models/courseSetup";
+import { isOwnedTile } from "../estate/estate";
 import { resolvePlayableShot, type PlayerShotSelection } from "../playerPro/playerPro";
 import { capabilitiesToPlayerSkills } from "./capabilities";
 import type { GolferCapabilities, LiveShotOutcome, ShotIntent } from "./m47Types";
@@ -10,11 +14,49 @@ function parFor(hole: Course["holes"][number]): number {
   return setting.mode === "MANUAL" ? setting.par : 4;
 }
 
+function deriveRulesSnapshot(course: Course, holes: PlayerRoundCourseSnapshot["holes"]): ControlledRoundSnapshotV2 | undefined {
+  const cells = course.width * course.height;
+  const inBounds = Array.from({ length: cells }, (_, index) => isOwnedTile(course, index % course.width, Math.floor(index / course.width)));
+  const penaltyMask = inBounds.map((owned, index) => owned && (course.tiles[index] === "water" || course.tiles[index] === "wetland"));
+  const base = createControlledRoundSnapshotV2({
+    width: course.width,
+    height: course.height,
+    inBounds,
+    penaltyMask,
+    holeClassifications: holes.map((hole) => ({ holeId: hole.id, red: [], yellow: [] })),
+  });
+  if (!base.ok) return undefined;
+  const decoded = decodeControlledRoundSnapshotV2(base.value);
+  if (!decoded.ok) return undefined;
+  const snapshot = {
+    width: decoded.value.snapshot.width,
+    height: decoded.value.snapshot.height,
+    inBounds: decoded.value.inBounds,
+    penaltyComponents: decoded.value.penaltyComponents,
+    components: decoded.value.components,
+  };
+  const classifications = holes.map((hole) => classifyPenaltyAreaComponents({
+    snapshot,
+    holeId: hole.id,
+    route: [hole.tee, ...hole.waypoints, hole.pin],
+  }));
+  if (classifications.some((result) => !result.ok)) return undefined;
+  const frozen = createControlledRoundSnapshotV2({
+    width: course.width,
+    height: course.height,
+    inBounds,
+    penaltyMask,
+    holeClassifications: classifications.map((result) => result.ok ? result.value : { holeId: "invalid", red: [], yellow: [] }),
+  });
+  return frozen.ok ? frozen.value : undefined;
+}
+
 export function liveCourseSnapshot(args: {
   course: Course;
   teeSet: TeeSet;
   pinRotation: PinRotation;
   weather?: PlayerRoundCourseSnapshot["weather"];
+  rulesSnapshot?: ControlledRoundSnapshotV2;
 }): PlayerRoundCourseSnapshot {
   const holes = args.course.holes.map((hole, index) => {
     const setup = resolveCourseSetup(hole, args.teeSet, args.pinRotation);
@@ -39,6 +81,7 @@ export function liveCourseSnapshot(args: {
     elevations: args.course.elevations.slice(),
     obstacles: args.course.obstacles.map((obstacle) => ({ x: obstacle.x, y: obstacle.y, type: obstacle.type })),
     holes,
+    rulesSnapshot: args.rulesSnapshot ?? deriveRulesSnapshot(args.course, holes),
     weather: args.weather,
   };
 }
@@ -58,6 +101,7 @@ export function resolveLiveShot(args: {
     aim: args.intent.target,
     power: args.intent.power,
     technique: args.intent.technique,
+    flightProfile: args.intent.flightProfile,
   };
   const trace = resolvePlayableShot({
     snapshot: args.snapshot,
@@ -81,6 +125,7 @@ export function resolveLiveShot(args: {
     intent: args.intent.kind,
     club: trace.club,
     technique: trace.technique,
+    flightProfile: trace.flightProfile,
     from: { ...trace.from },
     aim: { ...trace.aim },
     landing: { ...trace.landing },
@@ -93,6 +138,10 @@ export function resolveLiveShot(args: {
     holed: trace.holed,
     seed: trace.seed,
     facts,
+    ruling: trace.ruling,
+    relief: trace.relief,
+    finalPosition: trace.finalPosition,
+    sharedOutcome: trace.sharedOutcome,
   };
 }
 

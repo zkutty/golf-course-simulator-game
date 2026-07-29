@@ -137,4 +137,16 @@ describe("live simulation persistence", () => {
     snapshot.state.golfers[0].holePlans = [{ version: 1, holeId: "broken" }];
     expect(restoreLiveSimulation(snapshot)).toBeNull();
   });
+
+  it("drops only a malformed optional shared outcome while retaining legacy live evidence", () => {
+    const { state } = midRound();
+    const snapshot = JSON.parse(JSON.stringify(snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null })));
+    const outcome = snapshot.state.golfers[0].shotOutcomes?.[0];
+    expect(outcome).toBeDefined();
+    outcome.sharedOutcome = { malformed: true };
+    const restored = restoreLiveSimulation(snapshot);
+    expect(restored).not.toBeNull();
+    expect(restored!.state.golfers[0].shotOutcomes?.[0]).not.toHaveProperty("sharedOutcome");
+    expect(restored!.state.golfers[0].shotOutcomes?.[0].id).toBe(outcome.id);
+  });
 });

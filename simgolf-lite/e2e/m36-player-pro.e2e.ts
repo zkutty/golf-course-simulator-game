@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+  page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 1600, height: 1000 });
   await page.goto("/");
   await page.getByRole("button", { name: "Quick Start" }).click();
@@ -39,18 +40,81 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
 
   const afterShot = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound);
   expect(afterShot.strokes).toBe(1);
+  expect(afterShot.rulesSnapshot).toMatchObject({
+    version: 2,
+    dimensions: { width: expect.any(Number), height: expect.any(Number) },
+    classificationSummary: expect.any(Array),
+    snapshot: { version: 2, inBoundsRle: expect.any(String), penaltyComponentsRle: expect.any(String) },
+  });
   expect(afterShot.recentTrace).toMatchObject({
     club: expect.any(String),
     aim: expect.any(Object),
     rest: expect.any(Object),
     evidence: expect.any(Array),
+    flightProfile: expect.stringMatching(/^(low|standard|high)$/),
+    lieEffect: {
+      sourceLie: expect.any(String),
+      effectiveLie: expect.any(String),
+      carryMultiplier: expect.any(Number),
+      dispersionMultiplier: expect.any(Number),
+      rollMultiplier: expect.any(Number),
+    },
+    collision: { kind: expect.stringMatching(/^(none|terrain|obstacle)$/) },
+    ruling: {
+      status: expect.stringMatching(/^(in_play|holed|penalty)$/),
+      penaltyKind: expect.stringMatching(/^(none|out_of_bounds|penalty_area)$/),
+      penaltyStrokes: expect.any(Number),
+    },
+    relief: {
+      status: expect.stringMatching(/^(not_required|resolved|unavailable)$/),
+      type: expect.any(String),
+      candidates: expect.any(Array),
+    },
+    physicalRest: expect.any(Object),
+    finalPosition: expect.any(Object),
+    sharedOutcome: {
+      flightProfile: expect.stringMatching(/^(low|standard|high)$/),
+      ruling: expect.any(Object),
+      relief: expect.any(Object),
+    },
   });
+  expect(afterShot.recentTrace.ruling).toHaveProperty("referencePoint");
+  expect(afterShot.recentTrace.ruling).toHaveProperty("crossingPoint");
+  expect(afterShot.recentTrace.relief).toHaveProperty("selectedCandidateId");
+  const repeatedText = await page.evaluate(() => {
+    const readLatestTrace = () => {
+      const playerPro = JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro;
+      return playerPro.activeRound?.recentTrace ?? playerPro.latestCompletedRound?.latestShot ?? null;
+    };
+    const first = readLatestTrace();
+    const second = readLatestTrace();
+    return { first, second };
+  });
+  expect(repeatedText.first).not.toBeNull();
+  expect(JSON.stringify(repeatedText.first)).toBe(JSON.stringify(repeatedText.second));
   const decisionShot = await page.screenshot({ path: "artifacts/m36-player-pro-shot.png", fullPage: true });
   await testInfo.attach("player-pro-shot", { body: decisionShot, contentType: "image/png" });
 
   await hud.getByRole("button", { name: "Auto-finish" }).click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound?.phase), { timeout: 15_000 }).toBe("round_complete");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.rounds)).toBe(1);
+  const completed = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.latestCompletedRound);
+  expect(completed).toMatchObject({
+    id: expect.any(String),
+    rulesSnapshot: {
+      version: 2,
+      snapshot: { version: 2 },
+      classificationSummary: expect.any(Array),
+    },
+    latestSharedOutcome: {
+      rulesVersion: 1,
+      flightProfile: expect.stringMatching(/^(low|standard|high)$/),
+      ruling: expect.any(Object),
+      relief: expect.any(Object),
+      physicalRest: expect.any(Object),
+      finalPosition: expect.any(Object),
+    },
+  });
   await expect(hud).toContainText("Career gains, records, and competition rewards were settled once.");
   const completeShot = await page.screenshot({ path: "artifacts/m36-player-pro-complete.png", fullPage: true });
   await testInfo.attach("player-pro-complete", { body: completeShot, contentType: "image/png" });

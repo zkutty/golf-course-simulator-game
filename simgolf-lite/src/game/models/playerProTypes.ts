@@ -1,3 +1,6 @@
+import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
+import type { ReliefResolution, ShotRuling, SharedShotOutcome } from "../rules/contracts";
+
 export const PLAYER_PRO_SKILLS = [
   "power",
   "driving",
@@ -61,6 +64,8 @@ export interface PlayerRoundCourseSnapshot {
   elevations: number[];
   obstacles: Array<PlayerProPoint & { type: string }>;
   holes: PlayerRoundHoleSnapshot[];
+  /** Frozen M50 rules map used by Player Pro and live callers. */
+  rulesSnapshot?: ControlledRoundSnapshotV2;
   weather?: {
     kind: string;
     temperatureF: number;
@@ -78,6 +83,7 @@ export interface PlayerShotTrace {
   shotNumber: number;
   club: string;
   technique: PlayerShotTechnique;
+  flightProfile?: "low" | "standard" | "high";
   power: number;
   from: PlayerProPoint;
   aim: PlayerProPoint;
@@ -91,6 +97,12 @@ export interface PlayerShotTrace {
   holed: boolean;
   seed: number;
   evidence: PlayerSkillEvidence[];
+  /** Optional M50 payload; absent on older persisted traces. */
+  sharedOutcome?: SharedShotOutcome;
+  /** Optional direct M50 fields retained for legacy trace compatibility. */
+  ruling?: ShotRuling;
+  relief?: ReliefResolution;
+  finalPosition?: PlayerProPoint;
 }
 
 export interface PlayerRoundScorecardHole {
@@ -117,6 +129,8 @@ export interface PlayerPlayableRound {
   kind: PlayerRoundKind;
   phase: PlayerRoundPhase;
   course: PlayerRoundCourseSnapshot;
+  /** Immutable M50 boundary/penalty foundation captured for save v20. */
+  rulesSnapshot?: ControlledRoundSnapshotV2;
   teeSet: "forward" | "member" | "championship";
   pinRotation: "A" | "B" | "C";
   currentHoleIndex: number;
@@ -165,6 +179,8 @@ export interface PlayerCareerRound {
   teeSet?: "forward" | "member" | "championship";
   pinRotation?: "A" | "B" | "C";
   holeSnapshots?: PlayerRoundHoleSnapshot[];
+  /** Reserved for immutable rulings retained by later M50 settlement wiring. */
+  rulesSnapshot?: ControlledRoundSnapshotV2;
 }
 
 export interface PlayerTrainingRecord {

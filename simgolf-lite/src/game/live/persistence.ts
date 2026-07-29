@@ -3,7 +3,8 @@ import type { Arrival, Golfer, LiveState, Segment } from "./types";
 import { createWeekLedger, normalizeWeekLedger, type LiveWeekLedger } from "./weeklyLedger";
 import { emptyPaceDayMetrics } from "./pace";
 import { createGolferCapabilities, normalizeGolferCapabilities, stableGolferSeed } from "./capabilities";
-import { M47_MAX_OUTCOMES, M47_MAX_PLANS, M47_MAX_REACTIONS, type StrategicIntentKind } from "./m47Types";
+import { M47_MAX_OUTCOMES, M47_MAX_PLANS, M47_MAX_REACTIONS, type LiveShotOutcome, type StrategicIntentKind } from "./m47Types";
+import type { SharedShotOutcome } from "../rules/contracts";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
@@ -61,6 +62,7 @@ function segment(value: unknown): value is Segment {
 
 const intentKinds = new Set<StrategicIntentKind>(["safe", "hero", "positional", "recovery", "approach"]);
 const techniques = new Set(["normal", "draw", "fade", "punch", "flop", "backspin"]);
+const flightProfiles = new Set(["low", "standard", "high"]);
 
 function fact(value: unknown): boolean {
   return isRecord(value) && ["capability-fit", "risk", "terrain", "next-shot", "context", "outcome"].includes(String(value.code)) && typeof value.detail === "string";
@@ -69,6 +71,7 @@ function fact(value: unknown): boolean {
 function shotIntent(value: unknown): boolean {
   return isRecord(value) && typeof value.id === "string" && intentKinds.has(value.kind as StrategicIntentKind) &&
     point(value.from) && point(value.target) && typeof value.club === "string" && techniques.has(String(value.technique)) &&
+    (value.flightProfile == null || flightProfiles.has(String(value.flightProfile))) &&
     ["power", "expectedStrokes", "variance", "hazardRisk", "nextShotQuality"].every((key) => finite(value[key])) &&
     Array.isArray(value.facts) && value.facts.length <= 8 && value.facts.every(fact);
 }
@@ -88,6 +91,33 @@ function shotOutcome(value: unknown): boolean {
     point(value.from) && point(value.aim) && point(value.landing) && point(value.rest) && typeof value.lieBefore === "string" &&
     typeof value.lieAfter === "string" && ["carryYards", "rollYards", "penaltyStrokes", "seed"].every((key) => finite(value[key])) &&
     typeof value.holed === "boolean" && Array.isArray(value.facts) && value.facts.length <= 12 && value.facts.every(fact);
+}
+
+function sharedOutcome(value: unknown): value is SharedShotOutcome {
+  if (!isRecord(value) || value.rulesVersion !== 1) return false;
+  const lieEffect = value.lieEffect;
+  if (!isRecord(lieEffect) || typeof lieEffect.sourceLie !== "string" || typeof lieEffect.effectiveLie !== "string") return false;
+  if (!["carryMultiplier", "dispersionMultiplier", "rollMultiplier"].every((key) => finite(lieEffect[key]))) return false;
+  if (!["requestedCarryYards", "effectiveCarryYards", "requestedDispersionTiles", "effectiveDispersionTiles"].every((key) => finite(value[key]))) return false;
+  if (!isRecord(value.flight) || !flightProfiles.has(String(value.flight.profile)) ||
+    !finite(value.flight.launchAngleDegrees) || !finite(value.flight.apexHeightYards) ||
+    !point(value.flight.apexPosition) || !point(value.flight.carryEnd) ||
+    !Array.isArray(value.flight.clearance)) return false;
+  if (!isRecord(value.collision) || !["none", "terrain", "obstacle"].includes(String(value.collision.kind))) return false;
+  if (!point(value.physicalRest) || !point(value.finalPosition)) return false;
+  if (!isRecord(value.ruling) || !["in_play", "holed", "penalty"].includes(String(value.ruling.status)) ||
+    !["none", "out_of_bounds", "penalty_area"].includes(String(value.ruling.penaltyKind)) ||
+    !finite(value.ruling.penaltyStrokes)) return false;
+  if (!isRecord(value.relief) || !["not_required", "resolved", "unavailable"].includes(String(value.relief.status)) ||
+    !["none", "play_as_it_lies", "stroke_and_distance", "back_on_line", "lateral"].includes(String(value.relief.type)) ||
+    !Array.isArray(value.relief.candidates)) return false;
+  return true;
+}
+
+function normalizeShotOutcome(value: LiveShotOutcome): LiveShotOutcome {
+  if (value.sharedOutcome == null || sharedOutcome(value.sharedOutcome)) return value;
+  const { sharedOutcome: _discarded, ...legacy } = value;
+  return legacy;
 }
 
 function holeReaction(value: unknown): boolean {
@@ -218,7 +248,7 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
     ...g,
     capabilities: normalizeGolferCapabilities(g.capabilities, fallbackCapabilities),
     holePlans: Array.isArray(g.holePlans) ? g.holePlans.slice(-M47_MAX_PLANS) : [],
-    shotOutcomes: Array.isArray(g.shotOutcomes) ? g.shotOutcomes.slice(-M47_MAX_OUTCOMES) : [],
+    shotOutcomes: Array.isArray(g.shotOutcomes) ? g.shotOutcomes.slice(-M47_MAX_OUTCOMES).map(normalizeShotOutcome) : [],
     holeReactions: Array.isArray(g.holeReactions) ? g.holeReactions.slice(-M47_MAX_REACTIONS) : [],
     wallet: g.wallet ?? 0,
     purchasedSegmentIndexes: g.purchasedSegmentIndexes ?? [],

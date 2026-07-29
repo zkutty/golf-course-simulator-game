@@ -3,8 +3,12 @@ import type { Course, Terrain } from "../models/types";
 import { getGolferProfile } from "../sim/golferProfiles";
 import { mulberry32 } from "../../utils/rng";
 import { createGolferCapabilities } from "./capabilities";
+import { capabilitiesToPlayerSkills } from "./capabilities";
 import { generateStrategicHolePlan } from "./strategicOptions";
 import { buildGolferRound, entryPoint } from "./golfer";
+import { liveCourseSnapshot, resolveLiveShot } from "./livePhysics";
+import { resolvePlayableShot } from "../playerPro/playerPro";
+import { createControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import type { Personality } from "./personality";
 
 function testPersonality(over: Partial<Personality> = {}): Personality {
@@ -96,5 +100,65 @@ describe("M47 live golfer contracts", () => {
     expect(first.shotOutcomes).toEqual(second.shotOutcomes);
     expect(first.holeReactions).toEqual(second.holeReactions);
     expect(first.shotOutcomes?.every((outcome) => outcome.rest && outcome.landing)).toBe(true);
+  });
+
+  it("keeps Player Pro and live shared physical fields byte-equivalent", () => {
+    const c = course();
+    const personality = testPersonality({ skill: .7, consistency: .75, prefs: { difficulty: .4, scenery: .3, price: 0 } });
+    const capabilities = createGolferCapabilities({ personality, seed: 99 });
+    const frozen = createControlledRoundSnapshotV2({
+      width: c.width,
+      height: c.height,
+      inBounds: Array.from({ length: c.width * c.height }, () => true),
+      penaltyMask: Array.from({ length: c.width * c.height }, () => false),
+      holeClassifications: [{ holeId: "m47-hole-1", red: [], yellow: [] }],
+    });
+    expect(frozen.ok).toBe(true);
+    if (!frozen.ok) throw new Error(frozen.error.message);
+    const snapshot = liveCourseSnapshot({
+      course: c,
+      teeSet: "member",
+      pinRotation: "A",
+      rulesSnapshot: frozen.value,
+    });
+    const intent = generateStrategicHolePlan({
+      course: c,
+      hole: c.holes[0],
+      par: 4,
+      capabilities,
+      personality,
+    }).chosen;
+    const sharedArgs = {
+      snapshot,
+      capabilities,
+      holeId: "m47-hole-1",
+      shotNumber: 1,
+      from: intent.from,
+      lie: "tee",
+      intent,
+      seed: 4781,
+    } as const;
+    const live = resolveLiveShot(sharedArgs);
+    const player = resolvePlayableShot({
+      snapshot,
+      holeId: sharedArgs.holeId,
+      shotNumber: sharedArgs.shotNumber,
+      from: sharedArgs.from,
+      lie: sharedArgs.lie,
+      skills: capabilitiesToPlayerSkills(capabilities),
+      selection: {
+        club: intent.club,
+        aim: intent.target,
+        power: intent.power,
+        technique: intent.technique,
+        flightProfile: intent.flightProfile,
+      },
+      seed: sharedArgs.seed,
+    });
+    expect(live.sharedOutcome).toEqual(player.sharedOutcome);
+    expect(live.ruling).toEqual(player.ruling);
+    expect(live.relief).toEqual(player.relief);
+    expect(live.finalPosition).toEqual(player.finalPosition);
+    expect(live.flightProfile).toBe(player.flightProfile);
   });
 });

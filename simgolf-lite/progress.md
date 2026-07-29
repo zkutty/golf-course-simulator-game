@@ -650,3 +650,28 @@ classic course-builder references.
 - Human visual/provider/release-owner checks remain intentionally open; M50
   save migration, Player Pro/live integration, and downstream ruling work stay
   sequenced behind this foundation.
+
+## 2026-07-29 — Ranked implementation wave 4
+
+- Implemented the M50 save v20 foundation: deterministic v19→v20 migration,
+  active-round snapshot derivation, hostile course/grid invalidation, and
+  completed-shot history preservation.
+- Added the shared eight-club lie/flight-effects layer with bounded recovery
+  scaling, deterministic punch/flop flight profiles, and zero penalties for
+  ordinary playable lies. Player Pro and live outcomes now share the same
+  physical resolver and optional outcome payload.
+- Added frozen penalty-area classification, map/ownership out-of-bounds
+  handling, raw ground-path rulings, and deterministic red/yellow/OB relief
+  candidate selection. `render_game_to_text` now exposes snapshots, lie
+  effects, flight, collision, ruling, relief, physical rest, and final position
+  for active and completed rounds.
+- Completed the machine-verifiable ZK-443 artifact closure: superseded local
+  legacy audio was quarantined, release audits reject non-Suno runtime media,
+  and the exact 40-file manifest remains enforced.
+- Validation is green: full Vitest 105 files / 859 passed / 1 skipped, typecheck,
+  lint with 0 errors and 11 existing React Hook warnings, production build and
+  asset audits, M36 Player Pro E2E, four ZK-443 audio E2E tests, and the bundled
+  web-game smoke capture.
+- Human licensing/listening confirmation for audio and broader manual visual
+  acceptance remain intentionally open; no Linear issue is marked Done from
+  automated evidence alone.
