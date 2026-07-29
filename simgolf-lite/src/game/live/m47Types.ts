@@ -1,4 +1,5 @@
 import type { Point } from "../models/types";
+import type { ReliefResolution, SharedShotOutcome, ShotFlightProfile, ShotRuling } from "../rules/contracts";
 
 export const M47_CAPABILITY_VERSION = 1 as const;
 export const M47_MAX_PLANS = 36 as const;
@@ -39,6 +40,7 @@ export interface ShotIntent {
   club: string;
   power: number;
   technique: "normal" | "draw" | "fade" | "punch" | "flop" | "backspin";
+  flightProfile?: ShotFlightProfile;
   expectedStrokes: number;
   variance: number;
   hazardRisk: number;
@@ -71,6 +73,7 @@ export interface LiveShotOutcome {
   intent: StrategicIntentKind;
   club: string;
   technique: ShotIntent["technique"];
+  flightProfile?: ShotFlightProfile;
   from: Point;
   aim: Point;
   landing: Point;
@@ -83,6 +86,12 @@ export interface LiveShotOutcome {
   holed: boolean;
   seed: number;
   facts: StrategyFact[];
+  /** Optional M50 payload; absent on older live saves. */
+  sharedOutcome?: SharedShotOutcome;
+  /** Optional direct M50 fields retained for legacy live outcomes. */
+  ruling?: ShotRuling;
+  relief?: ReliefResolution;
+  finalPosition?: Point;
 }
 
 export interface HoleReaction {

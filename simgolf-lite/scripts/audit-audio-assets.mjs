@@ -23,6 +23,32 @@ function difference(left, right) {
   return [...left].filter((item) => !right.has(item)).sort();
 }
 
+/**
+ * Compare the source and release audio sets without touching the filesystem.
+ * Exported so the release invariant has a focused regression test: every
+ * file-backed runtime recording must be one of the manifest-owned Suno MP3s.
+ */
+export function compareAudioAssetSets({ expected, publicActual, distActual }) {
+  const publicMissing = difference(expected, publicActual);
+  const publicExtra = difference(publicActual, expected);
+  const distMissing = difference(expected, distActual);
+  const distExtra = difference(distActual, expected);
+  const rootLevelLegacy = [...publicActual]
+    .filter((file) => /^audio\/[^/]+\.(?:aac|flac|m4a|mp3|ogg|wav)$/i.test(file))
+    .sort();
+
+  return {
+    ok: publicMissing.length === 0
+      && publicExtra.length === 0
+      && distMissing.length === 0
+      && distExtra.length === 0
+      && rootLevelLegacy.length === 0,
+    expectedCount: expected.size,
+    public: { missing: publicMissing, extra: publicExtra, rootLevelLegacy },
+    dist: { missing: distMissing, extra: distExtra },
+  };
+}
+
 export function auditAudioAssets(projectRoot = root) {
   const source = readFileSync(join(projectRoot, "src/audio/sunoLibrary.ts"), "utf8");
   const expected = new Set();
@@ -38,30 +64,19 @@ export function auditAudioAssets(projectRoot = root) {
   if (!existsSync(publicDirectory)) throw new Error("public/ is missing; run from the app root");
   if (!existsSync(distDirectory)) throw new Error("dist/ is missing; build before running the audio audit");
 
-  // Root-level public/audio files may exist as ignored local quarantine input.
-  // Only the two manifest directories are source inputs; the shipped dist set
-  // is strict and includes every file-backed media URL.
-  const publicActual = new Set(
-    [...mediaFiles(publicDirectory)].filter((file) => /^audio\/(?:music|ambience)\//.test(file)),
-  );
+  // public/audio is a production source tree, not a local scratch space. Scan
+  // every media file there so root-level legacy files and non-Suno subtrees
+  // fail before Vite copies them into the release artifact.
+  const publicActual = new Set([...mediaFiles(publicDirectory)].filter((file) => file.startsWith("audio/")));
   const distActual = new Set([...mediaFiles(distDirectory)].filter((file) => file.startsWith("audio/")));
-  const publicMissing = difference(expected, publicActual);
-  const publicExtra = difference(publicActual, expected);
-  const distMissing = difference(expected, distActual);
-  const distExtra = difference(distActual, expected);
-  const result = {
-    ok: publicMissing.length === 0 && publicExtra.length === 0 && distMissing.length === 0 && distExtra.length === 0,
-    expectedCount: expected.size,
-    public: { missing: publicMissing, extra: publicExtra },
-    dist: { missing: distMissing, extra: distExtra },
-  };
+  const result = compareAudioAssetSets({ expected, publicActual, distActual });
   if (!result.ok) {
     throw new Error([
-      "File-backed audio does not match the 40-asset Suno manifest.",
-      publicMissing.length || publicExtra.length
+      "File-backed runtime audio must match the 40-asset Suno manifest exactly.",
+      result.public.missing.length || result.public.extra.length
         ? `public/ managed audio: ${JSON.stringify(result.public)}`
         : "",
-      distMissing.length || distExtra.length
+      result.dist.missing.length || result.dist.extra.length
         ? `dist/ shipped audio: ${JSON.stringify(result.dist)}`
         : "",
     ].filter(Boolean).join("\n"));

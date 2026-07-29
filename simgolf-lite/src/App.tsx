@@ -140,7 +140,7 @@ import { PlayerProPanel, PlayerShotHud } from "./ui/PlayerProPanel";
 import { ArchitectureReviewPanel } from "./ui/ArchitectureReviewPanel";
 import { LivingClubPanel } from "./ui/LivingClubPanel";
 import { SeasonsLegacyPanel } from "./ui/SeasonsLegacyPanel";
-import type { PlayerProCareer, PlayerProPoint } from "./game/models/playerProTypes";
+import type { PlayerCareerRound, PlayerProCareer, PlayerProPoint, PlayerShotTrace } from "./game/models/playerProTypes";
 import {
   activatePlayerChallenge,
   activatePlayerTournament,
@@ -163,9 +163,82 @@ import {
   type PlayerTrainingOption,
 } from "./game/playerPro/playerPro";
 import type { TournamentEvent } from "./game/tournaments/types";
+import { decodeControlledRoundSnapshotV2, type ControlledRoundSnapshotV2 } from "./game/rules/roundSnapshot";
+import type { SharedShotOutcome } from "./game/rules/contracts";
 import { buildArchitectureReview, defaultArchitectureFilters } from "./game/architecture/review";
 import { compareM48DesignTest, createM48DesignTestSession, refreshM48DesignTestSession } from "./game/architecture/comparison";
 import { strategicGeometryVersion } from "./game/architecture/strategic";
+
+function textSharedOutcome(outcome: SharedShotOutcome | null | undefined) {
+  if (!outcome) return null;
+  return {
+    rulesVersion: outcome.rulesVersion,
+    lieEffect: outcome.lieEffect,
+    flightProfile: outcome.flight.profile,
+    flight: outcome.flight,
+    collision: outcome.collision,
+    ruling: outcome.ruling,
+    relief: outcome.relief,
+    physicalRest: outcome.physicalRest,
+    finalPosition: outcome.finalPosition,
+  };
+}
+
+function textShotTrace(trace: PlayerShotTrace | null | undefined) {
+  if (!trace) return null;
+  const sharedOutcome = textSharedOutcome(trace.sharedOutcome);
+  return {
+    ...trace,
+    sharedOutcome,
+    lieEffect: sharedOutcome?.lieEffect ?? null,
+    flightProfile: sharedOutcome?.flightProfile ?? trace.flightProfile ?? null,
+    collision: sharedOutcome?.collision ?? null,
+    ruling: sharedOutcome?.ruling ?? null,
+    relief: sharedOutcome?.relief ?? null,
+    physicalRest: sharedOutcome?.physicalRest ?? trace.rest,
+    finalPosition: sharedOutcome?.finalPosition ?? trace.rest,
+  };
+}
+
+function textRulesSnapshot(snapshot: ControlledRoundSnapshotV2 | null | undefined) {
+  if (!snapshot) return null;
+  const decoded = decodeControlledRoundSnapshotV2(snapshot);
+  return {
+    version: snapshot.version,
+    dimensions: { width: snapshot.width, height: snapshot.height },
+    snapshot,
+    classificationSummary: snapshot.holeClassifications.map((hole) => ({
+      holeId: hole.holeId,
+      red: hole.red.slice(),
+      yellow: hole.yellow.slice(),
+      redCount: hole.red.length,
+      yellowCount: hole.yellow.length,
+    })),
+    penaltyComponentCount: snapshot.penaltyComponentCount,
+    inBoundsCells: decoded.ok ? decoded.value.inBounds.filter(Boolean).length : null,
+    penaltyCells: decoded.ok ? decoded.value.penaltyComponents.filter((component) => component !== 0).length : null,
+    decodeError: decoded.ok ? null : { code: decoded.error.code, path: decoded.error.path },
+  };
+}
+
+function textCompletedRound(round: PlayerCareerRound | null | undefined) {
+  if (!round) return null;
+  const latestShot = lastItem(round.shots) ?? null;
+  return {
+    id: round.id,
+    kind: round.kind,
+    result: round.result,
+    courseId: round.courseId,
+    courseName: round.courseName,
+    strokes: round.strokes,
+    penalties: round.penalties,
+    scoreToPar: round.scoreToPar,
+    scorecard: round.scorecard,
+    rulesSnapshot: textRulesSnapshot(round.rulesSnapshot),
+    latestShot: textShotTrace(latestShot),
+    latestSharedOutcome: textSharedOutcome(latestShot?.sharedOutcome),
+  };
+}
 import {
   acknowledgeStoryEvent,
   advanceLivingClubDay,
@@ -2278,6 +2351,7 @@ export default function App() {
           member: { courseRating: textMemberRating.courseRating, slope: textMemberRating.slope, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
           championship: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
         };
+    const liveStateById = new Map((live.getSnapshot()?.state.golfers ?? []).map((golfer) => [golfer.id, golfer]));
     const renderText = () => JSON.stringify({
       coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
       screen,
@@ -2489,6 +2563,7 @@ export default function App() {
         careerPoints: playerPro.careerPoints,
         earnings: playerPro.earnings,
         rounds: playerPro.rounds.length,
+        latestCompletedRound: textCompletedRound(lastItem(playerPro.rounds)),
         activeRound: activePlayerRound ? {
           id: activePlayerRound.id,
           kind: activePlayerRound.kind,
@@ -2502,8 +2577,9 @@ export default function App() {
           strokes: activePlayerRound.strokes,
           penalties: activePlayerRound.penalties,
           scorecard: activePlayerRound.scorecard,
-          pendingShot: activePlayerRound.pendingShot,
-          recentTrace: lastItem(activePlayerRound.shots) ?? null,
+          rulesSnapshot: textRulesSnapshot(activePlayerRound.rulesSnapshot),
+          pendingShot: textShotTrace(activePlayerRound.pendingShot),
+          recentTrace: textShotTrace(lastItem(activePlayerRound.shots)),
           editingLocked: playerRoundLocksEditing,
         } : null,
       },
@@ -2530,7 +2606,21 @@ export default function App() {
         readiness: tournamentReadiness,
         active: live.status.tournament ? { name: live.status.tournament.name, teeSet: live.status.tournament.teeSet, pinRotation: live.status.tournament.pinRotation, standings: live.status.tournament.standings.slice(0, 5) } : null,
       },
-      golfers: live.golfersRef.current.slice(0, 24).map((golfer) => ({ id: golfer.id, x: Number(golfer.x.toFixed(2)), y: Number(golfer.y.toFixed(2)), segment: golfer.segKind, shot: golfer.shot, mood: Number(golfer.mood.toFixed(2)), teeSet: golfer.teeSet, pinRotation: golfer.pinRotation })),
+      golfers: live.golfersRef.current.slice(0, 24).map((golfer) => {
+        const latestOutcome = lastItem(liveStateById.get(golfer.id)?.shotOutcomes);
+        return {
+          id: golfer.id,
+          x: Number(golfer.x.toFixed(2)),
+          y: Number(golfer.y.toFixed(2)),
+          segment: golfer.segKind,
+          shot: golfer.shot,
+          mood: Number(golfer.mood.toFixed(2)),
+          teeSet: golfer.teeSet,
+          pinRotation: golfer.pinRotation,
+          latestSharedOutcome: textSharedOutcome(latestOutcome?.sharedOutcome),
+          latestRuling: latestOutcome?.sharedOutcome?.ruling ?? null,
+        };
+      }),
     });
     window.render_game_to_text = renderText;
     window.advanceTime = live.advanceTime;

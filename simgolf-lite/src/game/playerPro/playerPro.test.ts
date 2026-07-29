@@ -182,6 +182,26 @@ describe("M36 deterministic Player Pro play", () => {
     expect(commitPlayerShot(obstructedRound, career.skills, { club: "Driver", aim: { x: 35, y: 7 }, power: 1, technique: "normal" }).phase).toBe("flight");
   });
 
+  it("keeps preview and execution on one deterministic flight-profile/effects contract", () => {
+    const { career, round } = started();
+    const selection = { club: "Driver", aim: { x: 34, y: 10 }, power: 0.86, technique: "normal" as const };
+    const preview = previewPlayableShot(round, career.skills, selection);
+    const committed = commitPlayerShot(round, career.skills, selection);
+    expect(preview.flightProfile).toBe("standard");
+    expect(committed.pendingShot?.flightProfile).toBe("standard");
+    expect(committed.pendingShot?.sharedOutcome?.requestedCarryYards).toBeCloseTo(preview.carryYards, 5);
+    expect(committed.pendingShot?.sharedOutcome?.ruling).toMatchObject({ status: "penalty", penaltyStrokes: 1 });
+
+    const punch = previewPlayableShot(round, { ...career.skills, recovery: 70 }, {
+      club: "Driver", aim: { x: 34, y: 10 }, power: 0.86, technique: "punch",
+    });
+    expect(punch.flightProfile).toBe("low");
+    const flop = previewPlayableShot(round, { ...career.skills, shortGame: 70 }, {
+      club: "Pitching Wedge", aim: { x: 34, y: 10 }, power: 0.7, technique: "flop",
+    });
+    expect(flop.flightProfile).toBe("high");
+  });
+
   it("snapshots routing, resumes through schema v14, and drops only malformed optional rounds", () => {
     const { course, world: currentWorld, career, round } = started();
     const original = JSON.stringify(round.course);

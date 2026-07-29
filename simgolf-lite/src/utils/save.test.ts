@@ -83,6 +83,99 @@ describe("save validation and migrations", () => {
     expect(result.payload.world.cash).toBe(DEFAULT_WORLD.cash);
   });
 
+  it("advances a v19 save to v20 deterministically without changing completed Player Pro shots", () => {
+    const base = file({ schemaVersion: 19 });
+    const activeRound = {
+      version: 1 as const,
+      id: "active-v19",
+      kind: "casual" as const,
+      phase: "awaiting_shot" as const,
+      course: {
+        courseId: DEFAULT_COURSE.activeCourseId!,
+        courseName: DEFAULT_COURSE.name,
+        theme: DEFAULT_COURSE.theme!,
+        width: DEFAULT_COURSE.width,
+        height: DEFAULT_COURSE.height,
+        yardsPerTile: DEFAULT_COURSE.yardsPerTile,
+        tiles: [...DEFAULT_COURSE.tiles],
+        elevations: [...DEFAULT_COURSE.elevations],
+        obstacles: [],
+        holes: DEFAULT_COURSE.holes.map((hole, index) => ({
+          id: hole.id!,
+          name: hole.name!,
+          par: 4,
+          tee: { x: 1, y: index + 1 },
+          pin: { x: 10, y: index + 1 },
+          waypoints: [],
+        })),
+      },
+      teeSet: "member" as const,
+      pinRotation: "A" as const,
+      currentHoleIndex: 0,
+      ball: { x: 1, y: 1 },
+      lie: "tee",
+      strokes: 0,
+      penalties: 0,
+      scorecard: [],
+      shots: [],
+      pendingShot: null,
+      rngSeed: 1,
+      rngCursor: 0,
+      autoPlay: false,
+      rewardsApplied: false,
+      startedWeek: 1,
+      startedDay: 0,
+    };
+    const rounds = [{
+      id: "historical-round",
+      kind: "casual" as const,
+      courseId: DEFAULT_COURSE.activeCourseId ?? "course-primary",
+      courseName: DEFAULT_COURSE.name,
+      week: 1,
+      strokes: 4,
+      penalties: 0,
+      par: 4,
+      scoreToPar: 0,
+      result: "complete" as const,
+      earnings: 0,
+      scorecard: [],
+      shots: [{ id: "historical-shot", seed: 41 }],
+      evidence: [],
+      skillGains: {},
+    }];
+    const first = normalizeLoadedSaveResult({
+      ...base,
+      world: {
+        ...(base.world as typeof DEFAULT_WORLD),
+        playerPro: {
+          ...createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed }),
+          activeRound,
+          rounds,
+        },
+      },
+    });
+    const second = normalizeLoadedSaveResult(JSON.parse(JSON.stringify({
+      ...base,
+      world: {
+        ...(base.world as typeof DEFAULT_WORLD),
+        playerPro: {
+          ...createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed }),
+          activeRound,
+          rounds,
+        },
+      },
+    })));
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(first.migratedFrom).toBe(19);
+    expect(first.payload.world.playerPro?.rounds).toEqual(second.payload.world.playerPro?.rounds);
+    expect(first.payload.world.playerPro?.rounds[0]?.shots).toEqual(rounds[0].shots);
+    expect(first.payload.world.playerPro?.activeRound?.rulesSnapshot?.version).toBe(2);
+    expect(first.payload.world.playerPro?.activeRound?.rulesSnapshot)
+      .toEqual(second.payload.world.playerPro?.activeRound?.rulesSnapshot);
+  });
+
   it("repairs an untouched v18 Links starter overlay from the estate seed", () => {
     const { current, legacy } = legacyLinksOverlay();
     expect(legacy.course.tiles).not.toEqual(current.course.tiles);

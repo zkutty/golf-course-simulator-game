@@ -38,10 +38,11 @@ the game:
 - Golden Green
 - Last Light
 
-Archived Ogg Vorbis and AAC/M4A renders are retained only in the ignored local
-quarantine at `art/audio/legacy-untracked/` for provenance and experimentation.
-They are not copied into the application, build artifact, or deployment.
-Runtime playlists use only the Suno library above.
+`scripts/gen-audio.mjs` is retained only for archived experimentation and
+documentation. It writes ignored Ogg Vorbis and AAC/M4A experiments to
+`art/audio/legacy-untracked/`; those files are not release assets and are never
+copied into the application, build artifact, or deployment. Runtime playlists
+use only the Suno library above.
 
 ## Sound effects and ambience
 
@@ -52,10 +53,11 @@ sound designs are released under CC0-1.0 with the game.
 ## Legacy files
 
 The older untracked MP3 files that previously lived directly under
-`public/audio/` predate M15 and are not referenced by the application. Local
-copies are quarantined under the ignored `art/audio/legacy-untracked/`
-directory pending provenance review. The build removes any root-level media
-that may still be present in `public/audio/` before the shipped-artifact audit.
+`public/audio/` predate M15 and are not referenced by the application. The
+confirmed superseded copies were removed from the local quarantine on
+2026-07-29. The build does not clean runtime audio: it fails when any
+root-level or non-Suno media is present, preventing it from entering a shipped
+artifact.
 
 ## Mixer path audit
 
@@ -82,4 +84,6 @@ that may still be present in `public/audio/` before the shipped-artifact audit.
   Other gain changes use short ramps to avoid clicks and pops.
 - `scripts/audit-audio-assets.mjs` requires both `public/` and the production
   `dist/` artifact to contain exactly the 40 paths declared by
-  `src/audio/sunoLibrary.ts`.
+  `src/audio/sunoLibrary.ts`. It scans every media file under `public/audio/`,
+  so a root-level legacy recording or a non-Suno runtime subtree fails the
+  build before it can be shipped.

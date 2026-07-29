@@ -9,6 +9,7 @@ import { generateStrategicHolePlan, followUpIntent } from "./strategicOptions";
 import { liveCourseSnapshot, resolveLiveShot, terrainAt } from "./livePhysics";
 import { evaluateHoleReaction } from "./reactions";
 import type { Personality } from "./personality";
+import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 
 function distance(a: Point, b: Point): number { return Math.hypot(a.x - b.x, a.y - b.y); }
 
@@ -47,13 +48,14 @@ export function buildStrategicGolferRound(args: {
   route?: WalkRouter;
   teeSet?: TeeSet;
   pinRotation?: PinRotation;
+  rulesSnapshot?: ControlledRoundSnapshotV2;
   startHole?: number;
   skipPreRoundPurchases?: boolean;
 }): BuiltRound {
   const teeSet = args.teeSet ?? "member";
   const pinRotation = args.pinRotation ?? args.course.activePinRotation ?? "A";
   const course = roundCourseSetup(args.course, teeSet, pinRotation);
-  const snapshot = liveCourseSnapshot({ course, teeSet, pinRotation });
+  const snapshot = liveCourseSnapshot({ course, teeSet, pinRotation, rulesSnapshot: args.rulesSnapshot });
   const summary = scoreCourseHoles(course);
   const segments: BuiltRound["segments"] = [];
   const holePar: number[] = [];
