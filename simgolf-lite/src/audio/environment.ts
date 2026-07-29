@@ -15,7 +15,18 @@ export function worldAmbienceEnabledFor(surface: AudioSurface): boolean {
   return surface === "game";
 }
 
-export function musicContextFor(input: {
+export type AudioScene =
+  | "silent"
+  | "menu"
+  | "design"
+  | "operate"
+  | "play"
+  | "tournament"
+  | "crisis"
+  | "evening"
+  | "finale";
+
+export interface MusicSelectionInput {
   screen: "menu" | "setup" | "game" | "loading";
   viewMode: "COZY" | "ARCHITECT";
   cash: number;
@@ -24,15 +35,50 @@ export function musicContextFor(input: {
   theme?: Course["theme"];
   playerRoundActive?: boolean;
   tournamentTier?: "local" | "regional" | "championship";
-}): MusicContext {
+  /** Game-clock minutes. Evening intentionally yields to the night ambience bed. */
+  dayMinute?: number;
+}
+
+/**
+ * The ordered score route, kept separate from playback so it is cheap to test
+ * and cannot bypass AudioManager's gesture gate or single-stream ownership.
+ */
+export function audioSceneFor(input: MusicSelectionInput): AudioScene {
   if (input.screen === "loading") return "silent";
-  if (input.screen === "menu" || input.screen === "setup") return "title";
-  if (input.won) return "victory";
-  if (input.cash < 0) return "tension";
-  if (input.tournamentTier) return `tournament-${input.tournamentTier}`;
+  if (input.screen === "menu" || input.screen === "setup") return "menu";
+  if (input.won) return "finale";
+  if (input.cash < 0) return "crisis";
+  if (input.tournamentTier) return "tournament";
   if (input.playerRoundActive) return "play";
-  if (input.viewMode === "ARCHITECT" || !input.liveRunning) return `build-${input.theme ?? "parkland"}`;
-  return "live";
+  // Let the existing authored night bed own the file-backed background stream.
+  // Higher-priority game states above retain their score at night.
+  // Day zero is also represented as minute 0 during tutorial entry, so keep
+  // the authored score until the clock has actually reached the evening bed.
+  if (input.dayMinute != null && input.dayMinute >= 700) return "evening";
+  if (input.viewMode === "ARCHITECT" || !input.liveRunning) return "design";
+  return "operate";
+}
+
+export function musicContextFor(input: MusicSelectionInput): MusicContext {
+  switch (audioSceneFor(input)) {
+    case "silent":
+    case "evening":
+      return "silent";
+    case "menu":
+      return "title";
+    case "design":
+      return `build-${input.theme ?? "parkland"}`;
+    case "operate":
+      return "live";
+    case "play":
+      return "play";
+    case "tournament":
+      return `tournament-${input.tournamentTier!}`;
+    case "crisis":
+      return "tension";
+    case "finale":
+      return "victory";
+  }
 }
 
 export function ambientMixFor(input: {
@@ -66,8 +112,12 @@ export function ambientMixFor(input: {
   const share = (terrain: Terrain) => (counts[terrain] ?? 0) / Math.max(1, total);
   const dawn = 1 - Math.min(1, Math.abs(input.dayMinute - 100) / 230);
   const dusk = Math.max(0, (input.dayMinute - 620) / 220);
+  // A planned, closed, or under-construction facility must not make the
+  // current course sound like a campus or resort.
   const nearbyProperty = input.course.property?.assets.filter((asset) =>
-    Math.hypot(asset.x - input.center.x, asset.y - input.center.y) <= radius
+    asset.enabled
+    && (asset.constructionDaysRemaining ?? 0) <= 0
+    && Math.hypot(asset.x - input.center.x, asset.y - input.center.y) <= radius
   ) ?? [];
   const nearResort = nearbyProperty.some((asset) => asset.category === "resort" || asset.category === "community");
   const nearCampus = nearbyProperty.some((asset) =>

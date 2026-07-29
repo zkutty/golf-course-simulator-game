@@ -191,6 +191,7 @@ import { CAMPAIGN_CHAPTER_BY_ID } from "./game/campaign/content";
 import { CampaignSceneModal } from "./ui/CampaignSceneModal";
 import { CampaignPanel } from "./ui/CampaignPanel";
 import { WorkspaceNav, type WorkspaceActionId, type WorkspaceId } from "./ui/WorkspaceNav";
+import { ContextualInspectorPanel } from "./ui/ContextualInspectorPanel";
 import { ContentLibraryPanel } from "./ui/ContentLibraryPanel";
 import { IS_DEMO, saveAvailableInEdition } from "./config/edition";
 import {
@@ -532,6 +533,8 @@ export default function App() {
   const [showLandOffice, setShowLandOffice] = useState(false);
   const [showCourseManager, setShowCourseManager] = useState(false);
   const [showPropertyManagement, setShowPropertyManagement] = useState(false);
+  const [showContextualInspector, setShowContextualInspector] = useState(false);
+  const inspectorPropertySummary = useMemo(() => propertySummary(course, world), [course, world]);
   const architectureReport = useMemo(() => showCourseManager ? analyzeArchitecture(activeOperatingCourse) : null, [activeOperatingCourse, showCourseManager]);
   const [showArchitectureReview, setShowArchitectureReview] = useState(false);
   const [architectureFilters, setArchitectureFilters] = useState(() => defaultArchitectureFilters(course));
@@ -2016,6 +2019,7 @@ export default function App() {
         ?? (activePlayerRound?.tournamentId
           ? currentPlayerTournament(world, activePlayerRound.tournamentId)?.tier
           : undefined),
+      dayMinute: live.status.dayMinute,
     }));
   }, [
     activePlayerRound,
@@ -2023,6 +2027,7 @@ export default function App() {
     course.theme,
     live.speed,
     live.status.tournament?.tier,
+    live.status.dayMinute,
     screen,
     viewMode,
     world,
@@ -4242,6 +4247,8 @@ export default function App() {
               <WorkspaceNav
                 workspace={workspace}
                 onWorkspace={selectWorkspace}
+                onInspect={() => setShowContextualInspector((open) => !open)}
+                inspectorOpen={showContextualInspector}
                 onAction={runWorkspaceAction}
                 active={{
                   architecture: showArchitectureReview,
@@ -4268,6 +4275,28 @@ export default function App() {
                   campaign: (world.campaign?.pendingSceneIds.length ?? 0) > 0,
                 }}
                 disabled={{ courses: playerRoundLocksEditing, land: playerRoundLocksEditing }}
+              />
+            )}
+            {showContextualInspector && !tutorialProgress && (
+              <ContextualInspectorPanel
+                courseName={course.name}
+                selectedTerrain={selected}
+                validHoles={course.holes.filter((hole) => hole.tee && hole.green).length}
+                condition={course.condition}
+                cash={formatCurrency(world.cash)}
+                reputation={world.reputation}
+                week={world.week}
+                golfers={live.status.onCourse}
+                openComplaints={inspectorPropertySummary.openComplaints}
+                playerRound={activePlayerRound?.phase ?? t("inspector.none")}
+                onOpenCourses={() => { setShowContextualInspector(false); selectWorkspace("design"); setShowCourseManager(true); }}
+                onOpenLive={() => { setShowContextualInspector(false); selectWorkspace("operate"); setShowLiveOverview(true); }}
+                onOpenProperty={() => { setShowContextualInspector(false); selectWorkspace("operate"); setShowPropertyManagement(true); }}
+                onOpenPeople={() => { setShowContextualInspector(false); selectWorkspace("legacy"); setShowLivingClub(true); }}
+                onOpenLegacy={() => { setShowContextualInspector(false); selectWorkspace("legacy"); setShowSeasonsLegacy(true); }}
+                onSetViewMode={setViewMode}
+                onSetPacePreset={live.setPacePreset}
+                onClose={() => setShowContextualInspector(false)}
               />
             )}
             {contentTestSnapshotRef.current && !tutorialProgress && (

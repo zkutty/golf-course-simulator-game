@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Course } from "../game/models/types";
 import type { GolferRenderData } from "../game/live/types";
 import { AMBIENCE_PLAYLISTS, MUSIC_PLAYLISTS } from "./AudioManager";
-import { ambientMixFor, audioSurfaceFor, distanceVolume, musicContextFor, worldAmbienceEnabledFor } from "./environment";
+import { ambientMixFor, audioSceneFor, audioSurfaceFor, distanceVolume, musicContextFor, worldAmbienceEnabledFor } from "./environment";
 import { deriveLiveAudioEvents } from "./liveEvents";
 import { ALL_SUNO_AUDIO } from "./sunoLibrary";
 
@@ -42,15 +42,17 @@ describe("M15 contextual music", () => {
     expect(worldAmbienceEnabledFor("game")).toBe(true);
   });
 
-  it("maps app state through one deterministic context selector", () => {
-    expect(musicContextFor({ screen: "menu", viewMode: "COZY", cash: 10, liveRunning: false, won: false })).toBe("title");
-    expect(musicContextFor({ screen: "game", viewMode: "ARCHITECT", cash: 10, liveRunning: true, won: false })).toBe("build-parkland");
-    expect(musicContextFor({ screen: "game", viewMode: "ARCHITECT", cash: 10, liveRunning: true, won: false, theme: "links" })).toBe("build-links");
-    expect(musicContextFor({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: false })).toBe("live");
-    expect(musicContextFor({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: false, playerRoundActive: true })).toBe("play");
-    expect(musicContextFor({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: false, playerRoundActive: true, tournamentTier: "championship" })).toBe("tournament-championship");
-    expect(musicContextFor({ screen: "game", viewMode: "COZY", cash: -1, liveRunning: true, won: false })).toBe("tension");
-    expect(musicContextFor({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: true })).toBe("victory");
+  it("maps menu, design, operate, play, tournament, crisis, evening, and finale through one ordered selector", () => {
+    const route = (patch: Parameters<typeof musicContextFor>[0]) => [audioSceneFor(patch), musicContextFor(patch)];
+    expect(route({ screen: "menu", viewMode: "COZY", cash: 10, liveRunning: false, won: false })).toEqual(["menu", "title"]);
+    expect(route({ screen: "game", viewMode: "ARCHITECT", cash: 10, liveRunning: true, won: false, theme: "links" })).toEqual(["design", "build-links"]);
+    expect(route({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: false })).toEqual(["operate", "live"]);
+    expect(route({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: false, playerRoundActive: true })).toEqual(["play", "play"]);
+    expect(route({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: false, playerRoundActive: true, tournamentTier: "championship" })).toEqual(["tournament", "tournament-championship"]);
+    expect(route({ screen: "game", viewMode: "COZY", cash: -1, liveRunning: true, won: false })).toEqual(["crisis", "tension"]);
+    expect(route({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: false, dayMinute: 760 })).toEqual(["evening", "silent"]);
+    expect(route({ screen: "game", viewMode: "COZY", cash: -1, liveRunning: true, won: false, dayMinute: 760 })).toEqual(["crisis", "tension"]);
+    expect(route({ screen: "game", viewMode: "COZY", cash: 10, liveRunning: true, won: true, dayMinute: 760 })).toEqual(["finale", "victory"]);
   });
 
   it("ships the complete lazy Suno music and ambience library", () => {
@@ -118,6 +120,22 @@ describe("M15 ambient mix", () => {
       weatherKind: "clear",
       season: "winter",
     }).bed).toBe("winter");
+  });
+
+  it("uses only operational nearby property layers for campus and resort beds", () => {
+    const c = course();
+    c.property = {
+      assets: [
+        { id: "closed-resort", kind: "hotel", name: "Closed lodge", category: "resort", x: 1, y: 0, width: 1, height: 1, tier: 1, capacity: 8, condition: 1, price: 1, enabled: false },
+        { id: "building-campus", kind: "clubhouse", name: "Building club", category: "clubhouse", x: 1, y: 0, width: 1, height: 1, tier: 1, capacity: 8, condition: 1, price: 1, enabled: true, constructionDaysRemaining: 2 },
+      ],
+    } as Course["property"];
+    const base = { course: c, center: { x: 1, y: 0 }, dayMinute: 300, visibleGolfers: 0, paused: false, radius: .4 };
+    expect(ambientMixFor(base).bed).toBe("parkland");
+    c.property!.assets[1].constructionDaysRemaining = 0;
+    expect(ambientMixFor(base).bed).toBe("campus");
+    c.property!.assets[0].enabled = true;
+    expect(ambientMixFor(base).bed).toBe("resort");
   });
 
   it("attenuates world sounds linearly from the camera", () => {
