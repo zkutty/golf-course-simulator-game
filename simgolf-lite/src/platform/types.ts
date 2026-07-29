@@ -40,7 +40,15 @@ export interface PlatformWorkshop {
     packageText: string;
     previewDataUrl?: string;
     existingPublishedId?: string;
-  }): Promise<{ publishedId: string; needsLegalAgreement: boolean }>;
+  }): Promise<{
+    publishedId: string;
+    needsLegalAgreement: boolean;
+    operationId?: string;
+    progress?: number;
+    ownershipVerified?: boolean;
+    ownership?: "owner" | "not-owner" | "unknown";
+    legalAgreementUrl?: string | null;
+  }>;
   cancel(operationId: string): Promise<void>;
   copyLocal(itemId: string): Promise<string | null>;
 }

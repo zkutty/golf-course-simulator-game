@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import type { Course, World } from "../game/models/types";
 import type { ContentLibraryEntry } from "../game/contentPackages/types";
-import { createCoursePackage, remapImportedCourseIdentity } from "../game/contentPackages/packageFormat";
+import { createCoursePackage } from "../game/contentPackages/packageFormat";
+import { buildPackageTestRun } from "../game/scenarioAuthoring/authoring";
 import {
   deleteContentPackage,
   exportContentPackage,
   importContentPackage,
   listContentLibrary,
   publishContentPackage,
+  readAuthoredPackage,
   readContentPackage,
   refreshWorkshopLibrary,
   saveAuthoredPackage,
@@ -18,7 +20,7 @@ import { useI18n } from "../i18n/useI18n";
 export function ContentLibraryPanel(props: {
   course: Course;
   world: World;
-  onTestPlay: (course: Course) => void;
+  onTestPlay: (testRun: { course: Course; world: World }) => void;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -50,8 +52,10 @@ export function ContentLibraryPanel(props: {
 
   const authorCurrent = () => run(async () => {
     const id = `author-${author.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 72) || "local"}`;
+    const previous = await readAuthoredPackage(id, title.trim(), platformServices);
     const value = await createCoursePackage({
       course: props.course,
+      ...(previous ? { contentId: previous.manifest.contentId, revision: previous.manifest.revision + 1, createdAt: new Date(previous.manifest.createdAt) } : {}),
       title,
       description,
       author: { id, displayName: author },
@@ -83,14 +87,16 @@ export function ContentLibraryPanel(props: {
   const testPlay = (entry: ContentLibraryEntry) => run(async () => {
     const value = await readContentPackage(entry.contentId);
     if (!value) throw new Error(t("content.failed"));
-    props.onTestPlay(remapImportedCourseIdentity(value, `test-${Date.now().toString(36)}`));
+    props.onTestPlay(buildPackageTestRun(value, props.world, `test-${entry.contentId}-${Date.now().toString(36)}`));
     return t("content.testStarted", { title: entry.title });
   });
 
   const publish = (entry: ContentLibraryEntry) => run(async () => {
     const result = await publishContentPackage(entry.contentId);
     if (!result) return t("content.workshopUnavailable");
-    return result.needsLegalAgreement ? t("content.legalRequired") : t("content.published");
+    return result.needsLegalAgreement
+      ? `${t("content.legalRequired")} ${result.legalAgreementUrl ?? ""}`.trim()
+      : t("content.published");
   });
 
   return (

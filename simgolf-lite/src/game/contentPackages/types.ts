@@ -32,6 +32,8 @@ export interface ChallengePayloadV1 {
   difficulty: Difficulty;
   startingCash?: number;
   goals: GoalDefinition[];
+  /** Optional IDs selected from the built-in, safe longevity/template catalog. */
+  goalTemplateIds?: string[];
   constraints?: ScenarioConstraints;
   allowedEventIds: string[];
   medalTargets?: {
@@ -64,9 +66,25 @@ export interface ContentLibraryEntry {
   author: string;
   theme: LandTheme;
   updatedAt: string;
+  createdAt?: string;
+  authorId?: string;
   source: "local" | "manual" | "workshop" | "cached";
-  state: "ready" | "update-available" | "incompatible" | "corrupt" | "quarantined";
+  state: "ready" | "subscribed" | "downloading" | "installed" | "cached" | "update-available" | "incompatible" | "corrupt" | "quarantined";
+  quarantined?: boolean;
+  quarantineReason?: "corrupt" | "incompatible";
   packageKey: string;
   preview?: CoursePackageManifestV1["preview"];
   publishedId?: string;
+}
+
+export interface WorkshopPublishResult {
+  publishedId: string;
+  needsLegalAgreement: boolean;
+  /** Provider-owned operation metadata; never persisted in package contents. */
+  operationId?: string;
+  progress?: number;
+  /** A provider may explicitly report that the current account is not owner. */
+  ownershipVerified?: boolean;
+  ownership?: "owner" | "not-owner" | "unknown";
+  legalAgreementUrl?: string | null;
 }

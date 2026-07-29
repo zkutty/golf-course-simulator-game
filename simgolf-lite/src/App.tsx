@@ -591,12 +591,13 @@ export default function App() {
     if (action === "photo") enterPhotoMode(false);
   };
 
-  const startContentTestPlay = useCallback((testCourse: Course) => {
+  const startContentTestPlay = useCallback((testRun: { course: Course; world: World }) => {
     setGameState((current) => {
       if (!contentTestSnapshotRef.current) contentTestSnapshotRef.current = structuredClone(current);
       return {
         ...current,
-        course: testCourse,
+        course: testRun.course,
+        world: testRun.world,
         terrainVersion: current.terrainVersion + 1,
         markersVersion: current.markersVersion + 1,
         economyVersion: current.economyVersion + 1,
