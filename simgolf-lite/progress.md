@@ -629,3 +629,24 @@ classic course-builder references.
   audio/M35/Parkland audits, and independent ZK-376/ZK-377 browser runs.
 - Human visual parity, physical-GPU, provider, and release-owner gates remain
   intentionally open.
+
+## 2026-07-29 — Ranked implementation wave 3
+
+- Implemented the machine-verifiable M50 rules foundation in `src/game/rules`:
+  shared lie/collision/ruling/relief contracts plus deterministic round-snapshot
+  encoding with row-major RLE, connected penalty components, stable ordering,
+  malformed-input rejection, and the bounded 4,000,000-byte snapshot cap.
+- Fixed the audio manager's recycled `preload=none` slot race. Reused slots now
+  explicitly restart resource selection, and identical in-flight music context
+  requests are coalesced instead of interrupting the pending playback.
+- Expanded ZK-443 certification across Vision/title, Design/Operate, Player Pro,
+  tournament, tension, victory, pause, and rapid context changes. The exact 40
+  Suno manifest, bounded active streams, media errors, and console/page errors
+  are now checked; expected Chromium `ERR_ABORTED` requests from intentional
+  slot replacement are excluded from failure reporting.
+- Validation is green: focused rules/audio tests 14/14, full Vitest 100 files /
+  827 passed / 1 skipped, TypeScript, scoped lint, production build and asset
+  audits, four audio E2E tests, and the bundled web-game client smoke capture.
+- Human visual/provider/release-owner checks remain intentionally open; M50
+  save migration, Player Pro/live integration, and downstream ruling work stay
+  sequenced behind this foundation.

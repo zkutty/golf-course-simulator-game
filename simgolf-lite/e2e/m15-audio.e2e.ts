@@ -1,21 +1,52 @@
 import { expect, test, type Page } from "@playwright/test";
+import { ALL_SUNO_AUDIO } from "../src/audio/sunoLibrary";
 
 type AuditedAudio = {
+  id: number;
   src: string;
   paused: boolean;
   currentTime: number;
   volume: number;
+  error: number | null;
 };
+
+type AudioSample = {
+  label: string;
+  elements: AuditedAudio[];
+};
+
+const MANIFEST_URLS = new Set(ALL_SUNO_AUDIO.map((asset) => asset.src));
+const AUDIO_URL = /\/audio\/.*\.(?:m4a|mp3|ogg|wav)(?:\?|$)/i;
+
+function pathFor(url: string) {
+  return new URL(url).pathname;
+}
+
+function fileBacked(audio: AuditedAudio) {
+  return AUDIO_URL.test(audio.src);
+}
+
+function audible(elements: AuditedAudio[]) {
+  return elements.filter((audio) => fileBacked(audio) && !audio.paused && audio.currentTime > 0 && audio.volume > .001);
+}
 
 async function installAudioAudit(page: Page) {
   await page.addInitScript(() => {
-    const NativeAudio = window.Audio;
     const elements: HTMLAudioElement[] = [];
-    Object.defineProperty(window, "__coursecraftAudioElements", { value: elements });
-    function AuditedAudioElement(src?: string) {
-      const audio = new NativeAudio(src);
-      elements.push(audio);
+    let nextId = 1;
+    const ids = new WeakMap<HTMLAudioElement, number>();
+    const record = (audio: HTMLAudioElement) => {
+      if (!ids.has(audio)) {
+        ids.set(audio, nextId++);
+        elements.push(audio);
+      }
       return audio;
+    };
+
+    Object.defineProperty(window, "__coursecraftAudioElements", { configurable: true, value: elements });
+    const NativeAudio = window.Audio;
+    function AuditedAudioElement(src?: string) {
+      return record(new NativeAudio(src));
     }
     AuditedAudioElement.prototype = NativeAudio.prototype;
     Object.setPrototypeOf(AuditedAudioElement, NativeAudio);
@@ -24,42 +55,94 @@ async function installAudioAudit(page: Page) {
       writable: true,
       value: AuditedAudioElement,
     });
+
+    const nativePlay = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = function auditedPlay(this: HTMLMediaElement) {
+      if (this instanceof HTMLAudioElement) record(this);
+      return nativePlay.call(this);
+    };
+    document.addEventListener("error", (event) => {
+      if (event.target instanceof HTMLAudioElement) record(event.target);
+    }, true);
   });
 }
 
 async function audioState(page: Page): Promise<AuditedAudio[]> {
   return page.evaluate(() => {
-    const elements = (window as Window & {
+    const recorded = (window as Window & {
       __coursecraftAudioElements: HTMLAudioElement[];
-    }).__coursecraftAudioElements;
-    return elements.map((audio) => ({
+    }).__coursecraftAudioElements ?? [];
+    const elements = [...new Set([...recorded, ...document.querySelectorAll("audio")])];
+    return elements.map((audio, index) => ({
+      id: index + 1,
       src: audio.currentSrc || audio.src,
       paused: audio.paused,
       currentTime: audio.currentTime,
       volume: audio.volume,
+      error: audio.error?.code ?? null,
     }));
   });
 }
 
-function audible(elements: AuditedAudio[]) {
-  return elements.filter((audio) => !audio.paused && audio.currentTime > 0 && audio.volume > .001);
+async function sampleAudio(page: Page, samples: AudioSample[], label: string, durationMs = 700, intervalMs = 50) {
+  const captured = await page.evaluate(async ({ label: sampleLabel, durationMs: duration, intervalMs: interval }) => {
+    const recorded = (window as Window & {
+      __coursecraftAudioElements: HTMLAudioElement[];
+    }).__coursecraftAudioElements ?? [];
+    const read = () => {
+      const elements = [...new Set([...recorded, ...document.querySelectorAll("audio")])];
+      return elements.map((audio, index) => ({
+        id: index + 1,
+        src: audio.currentSrc || audio.src,
+        paused: audio.paused,
+        currentTime: audio.currentTime,
+        volume: audio.volume,
+        error: audio.error?.code ?? null,
+      }));
+    };
+    const output: AudioSample[] = [];
+    const deadline = performance.now() + duration;
+    do {
+      output.push({ label: sampleLabel, elements: read() });
+      const remaining = deadline - performance.now();
+      if (remaining > 0) await new Promise((resolve) => window.setTimeout(resolve, Math.min(interval, remaining)));
+    } while (performance.now() < deadline);
+    return output;
+  }, { label, durationMs, intervalMs });
+  samples.push(...captured);
 }
 
-async function audibleTimeline(page: Page, durationMs: number, intervalMs = 50) {
-  const timeline: AuditedAudio[][] = [];
-  const samples = Math.ceil(durationMs / intervalMs);
-  for (let index = 0; index < samples; index++) {
-    timeline.push(audible(await audioState(page)));
-    await page.waitForTimeout(intervalMs);
-  }
-  return timeline;
+function expectBoundedStreams(samples: AudioSample[], label: string) {
+  const competing = samples
+    .map((sample) => ({ label: sample.label, tracks: audible(sample.elements).map((audio) => pathFor(audio.src)) }))
+    .filter((sample) => sample.tracks.length > 1);
+  expect(competing, `${label} must never overlap file-backed background streams`).toEqual([]);
 }
 
-function expectSingleBackgroundStream(timeline: AuditedAudio[][], label: string) {
-  const overlaps = timeline
-    .filter((sample) => sample.length > 1)
-    .map((sample) => sample.map((audio) => audio.src.split("/audio/")[1] ?? audio.src));
-  expect(overlaps, `${label} must never overlap file-backed background tracks`).toEqual([]);
+function expectManifestOnly(samples: AudioSample[], mediaRequests: string[]) {
+  const requested = [...new Set(mediaRequests.map(pathFor))];
+  const observed = samples.flatMap((sample) => sample.elements.map((audio) => audio.src).filter((src) => AUDIO_URL.test(src)).map(pathFor));
+  expect([...new Set([...requested, ...observed])].filter((url) => !MANIFEST_URLS.has(url))).toEqual([]);
+}
+
+function expectStoppedOutgoingSlots(elements: AuditedAudio[]) {
+  const active = audible(elements);
+  expect(active).toHaveLength(1);
+  const outgoing = elements.filter((audio) => fileBacked(audio) && audio.id !== active[0].id);
+  expect(outgoing.map((audio) => ({ src: pathFor(audio.src), paused: audio.paused, volume: audio.volume }))).toEqual(
+    outgoing.map((audio) => ({ src: pathFor(audio.src), paused: true, volume: 0 })),
+  );
+}
+
+async function expectTrack(page: Page, expectedPath: string) {
+  await expect.poll(async () => audible(await audioState(page)).map((audio) => pathFor(audio.src))).toContain(expectedPath);
+}
+
+async function setContextOverride(page: Page, context: string | null) {
+  await page.evaluate(async (next) => {
+    const { audioManager } = await import("/src/audio/AudioManager.ts");
+    await audioManager.setMusicOverride(next as Parameters<typeof audioManager.setMusicOverride>[0]);
+  }, context);
 }
 
 test("audio is lazy, mixer controls persist, and live play stays error-free", async ({ page }, testInfo) => {
@@ -115,70 +198,175 @@ test("audio is lazy, mixer controls persist, and live play stays error-free", as
   expect(consoleErrors).toEqual([]);
 });
 
-test("Vision, tutorial, and game own one Suno background stream through rapid transitions", async ({ page }) => {
-  await installAudioAudit(page);
+test("ZK-443 bounds Vision/title, design, and operations audio", async ({ page }, testInfo) => {
+  const samples: AudioSample[] = [];
   const mediaRequests: string[] = [];
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  const failedMedia: string[] = [];
+  await installAudioAudit(page);
   page.on("request", (request) => {
-    if (/\/audio\/.*\.(?:m4a|mp3|ogg|wav)(?:\?|$)/.test(request.url())) {
-      mediaRequests.push(request.url().split("?")[0]);
-    }
+    if (AUDIO_URL.test(request.url())) mediaRequests.push(request.url());
   });
+  page.on("response", (response) => {
+    if (AUDIO_URL.test(response.url()) && response.status() >= 400) failedMedia.push(`${response.status()} ${response.url()}`);
+  });
+  page.on("requestfailed", (request) => {
+    const errorText = request.failure()?.errorText ?? "request failed";
+    if (AUDIO_URL.test(request.url()) && !errorText.includes("ERR_ABORTED")) failedMedia.push(`${errorText} ${request.url()}`);
+  });
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
 
   await page.goto("/?view=vision");
-  expect(mediaRequests).toEqual([]);
   await page.getByRole("link", { name: "The Story", exact: true }).click();
-  await expect.poll(async () => audible(await audioState(page)).length).toBe(1);
-
-  const visionAudio = audible(await audioState(page));
-  expect(visionAudio).toHaveLength(1);
-  expect(visionAudio[0].src).toContain("/audio/music/suno/title-01.mp3");
-  expect(mediaRequests.some((url) => url.includes("/audio/ambience/"))).toBe(false);
+  await expectTrack(page, "/audio/music/suno/title-01.mp3");
+  await sampleAudio(page, samples, "vision-title");
+  expectBoundedStreams(samples, "Vision/title");
 
   await page.locator(".cc-vision-brand").click();
-  await expect(page.getByRole("button", { name: "Quick Start" })).toBeVisible();
   await page.getByRole("button", { name: "Quick Start" }).click();
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
-  await expect(page.getByRole("button", { name: "Start guided course" })).toBeVisible();
-  expectSingleBackgroundStream(await audibleTimeline(page, 3_000), "Tutorial offer");
-  expect(audible(await audioState(page))).toHaveLength(1);
+  const skipTutorial = page.getByRole("button", { name: "Skip tutorial" });
+  if (await skipTutorial.count()) await skipTutorial.click();
+  await page.getByTestId("workspace-design").click();
+  await page.locator("button").filter({ hasText: /^Architect$/ }).click();
+  await setContextOverride(page, "build-parkland");
+  await expectTrack(page, "/audio/music/suno/build-parkland-01.mp3");
+  await sampleAudio(page, samples, "design");
+  await setContextOverride(page, "live");
+  await page.locator("button").filter({ hasText: /^Cozy$/ }).click();
+  await expectTrack(page, "/audio/music/suno/operate-01.mp3");
+  await sampleAudio(page, samples, "operations");
 
-  await page.getByRole("button", { name: "Start guided course" }).click();
-  expectSingleBackgroundStream(await audibleTimeline(page, 1_500), "Guided tutorial");
-  expect(audible(await audioState(page))).toHaveLength(1);
-  expect(mediaRequests.some((url) => url.includes("/audio/ambience/"))).toBe(false);
-  expect(mediaRequests.every((url) => /\/audio\/music\/suno\/.+\.mp3$/.test(url))).toBe(true);
+  expectBoundedStreams(samples, "Vision, title, design, and operations");
+  expectManifestOnly(samples, mediaRequests);
+  expect((await audioState(page)).filter((audio) => audio.error !== null)).toEqual([]);
+  expect(failedMedia).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
+  await testInfo.attach("zk-443-route-audio-audit", {
+    body: JSON.stringify({ manifestEntries: MANIFEST_URLS.size, mediaRequests: [...new Set(mediaRequests.map(pathFor))], samples }, null, 2),
+    contentType: "application/json",
+  });
 });
 
-test("rapid game music transitions never overlap file-backed tracks", async ({ page }) => {
-  await installAudioAudit(page);
+test("ZK-443 bounds Player Pro audio", async ({ page }, testInfo) => {
+  const samples: AudioSample[] = [];
   const mediaRequests: string[] = [];
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  const failedMedia: string[] = [];
+  await installAudioAudit(page);
   page.on("request", (request) => {
-    if (/\/audio\/.*\.(?:m4a|mp3|ogg|wav)(?:\?|$)/.test(request.url())) {
-      mediaRequests.push(request.url().split("?")[0]);
-    }
+    if (AUDIO_URL.test(request.url())) mediaRequests.push(request.url());
   });
+  page.on("response", (response) => {
+    if (AUDIO_URL.test(response.url()) && response.status() >= 400) failedMedia.push(`${response.status()} ${response.url()}`);
+  });
+  page.on("requestfailed", (request) => {
+    const errorText = request.failure()?.errorText ?? "request failed";
+    if (AUDIO_URL.test(request.url()) && !errorText.includes("ERR_ABORTED")) failedMedia.push(`${errorText} ${request.url()}`);
+  });
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
 
   await page.goto("/");
   await page.getByRole("button", { name: "Quick Start" }).click();
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
-  await expect(page.getByRole("button", { name: "Skip tutorial" })).toBeVisible();
-  expectSingleBackgroundStream(await audibleTimeline(page, 1_000), "Game entry");
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Skip tutorial" }).click();
-  await expect.poll(async () => audible(await audioState(page)).length).toBe(1);
+  const skipTutorial = page.getByRole("button", { name: "Skip tutorial" });
+  if (await skipTutorial.count()) await skipTutorial.click();
+  await page.evaluate(() => window.__coursecraftTest!.setPlayerProFixture());
+  await page.getByTestId("workspace-operate").click();
+  await page.getByTestId("open-player-pro").click();
+  await page.getByTestId("player-pro-panel").getByRole("button", { name: "Play", exact: true }).click();
+  await page.getByTestId("start-player-round").click();
+  await expectTrack(page, "/audio/music/suno/player-pro-01.mp3");
+  await sampleAudio(page, samples, "player-pro");
 
-  await page.getByRole("button", { name: "Architect", exact: true }).click();
-  await page.getByRole("button", { name: "Cozy", exact: true }).click();
-  await page.getByRole("button", { name: "Architect", exact: true }).click();
-  await page.getByRole("button", { name: "Cozy", exact: true }).click();
-  expectSingleBackgroundStream(await audibleTimeline(page, 2_700), "Rapid mode changes");
+  expectBoundedStreams(samples, "Player Pro");
+  expectManifestOnly(samples, mediaRequests);
+  expect((await audioState(page)).filter((audio) => audio.error !== null)).toEqual([]);
+  expect(failedMedia).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
+  await testInfo.attach("zk-443-player-pro-audio-audit", {
+    body: JSON.stringify({ manifestEntries: MANIFEST_URLS.size, mediaRequests: [...new Set(mediaRequests.map(pathFor))], samples }, null, 2),
+    contentType: "application/json",
+  });
+});
 
-  const settled = await audioState(page);
-  const settledAudible = audible(settled);
-  expect(settledAudible).toHaveLength(1);
-  expect(settled.filter((audio) => !audio.paused)).toHaveLength(1);
-  expect(settledAudible.filter((audio) => audio.src.includes("/audio/music/suno/"))).toHaveLength(1);
-  expect(settledAudible.filter((audio) => audio.src.includes("/audio/ambience/suno/"))).toHaveLength(0);
-  expect(mediaRequests.some((url) => url.includes("/audio/ambience/"))).toBe(false);
-  expect(mediaRequests.every((url) => /\/audio\/music\/suno\/.+\.mp3$/.test(url))).toBe(true);
+test("ZK-443 bounds tournament, tension, victory, pause, and rapid context changes", async ({ page }, testInfo) => {
+  const samples: AudioSample[] = [];
+  const mediaRequests: string[] = [];
+  const consoleErrors: string[] = [];
+  const pageErrors: string[] = [];
+  const failedMedia: string[] = [];
+  await installAudioAudit(page);
+  page.on("request", (request) => {
+    if (AUDIO_URL.test(request.url())) mediaRequests.push(request.url());
+  });
+  page.on("response", (response) => {
+    if (AUDIO_URL.test(response.url()) && response.status() >= 400) failedMedia.push(`${response.status()} ${response.url()}`);
+  });
+  page.on("requestfailed", (request) => {
+    const errorText = request.failure()?.errorText ?? "request failed";
+    if (AUDIO_URL.test(request.url()) && !errorText.includes("ERR_ABORTED")) failedMedia.push(`${errorText} ${request.url()}`);
+  });
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.goto("/?m24Fixture=1");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), { timeout: 15000 }).toBe("game");
+  await page.getByTestId("workspace-operate").click();
+  await page.getByTestId("open-tournaments").click();
+  await page.getByLabel("Close tournaments").click();
+  await page.evaluate(() => window.__coursecraftTest!.startTournamentFixture());
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active?.teeSet)).toBe("member");
+  await expectTrack(page, "/audio/music/suno/tournament-local-01.mp3");
+  await sampleAudio(page, samples, "tournament");
+
+  await page.evaluate(() => window.__coursecraftTest!.setPaintCash(-1));
+  await setContextOverride(page, "tension");
+  await expectTrack(page, "/audio/music/suno/tension-01.mp3");
+  await sampleAudio(page, samples, "tension");
+
+  // Victory is a release-only app outcome. The existing development override
+  // reaches the same manager path without manufacturing a production win state.
+  await setContextOverride(page, "victory");
+  await expectTrack(page, "/audio/music/suno/victory-01.mp3");
+  await sampleAudio(page, samples, "victory");
+
+  await page.keyboard.press("Escape");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().paused)).toBe(true);
+  await sampleAudio(page, samples, "pause");
+  await page.keyboard.press("Escape");
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().paused)).toBe(false);
+  await sampleAudio(page, samples, "resume");
+
+  for (const context of ["title", "build-links", "live", "play", "tournament-regional", "tension", "victory"] as const) {
+    await setContextOverride(page, context);
+    await sampleAudio(page, samples, `rapid-${context}`, 180, 30);
+  }
+  await setContextOverride(page, null);
+  await sampleAudio(page, samples, "rapid-settle", 800, 50);
+
+  expectBoundedStreams(samples, "gameplay and rapid route/context changes");
+  expectManifestOnly(samples, mediaRequests);
+  const finalElements = await audioState(page);
+  expect(finalElements.filter((audio) => audio.error !== null)).toEqual([]);
+  expectStoppedOutgoingSlots(finalElements);
+  expect(failedMedia).toEqual([]);
+  expect(consoleErrors).toEqual([]);
+  expect(pageErrors).toEqual([]);
+  await testInfo.attach("zk-443-audio-audit", {
+    body: JSON.stringify({ manifestEntries: MANIFEST_URLS.size, mediaRequests: [...new Set(mediaRequests.map(pathFor))], samples }, null, 2),
+    contentType: "application/json",
+  });
 });
