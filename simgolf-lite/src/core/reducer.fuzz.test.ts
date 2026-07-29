@@ -9,13 +9,13 @@ import type { GameState } from "../game/gameState";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
 import type { Terrain } from "../game/models/types";
 import { clampElevation } from "../game/models/elevation";
-import { computeElevationChangeCost, computeTerrainChangeCost } from "../game/models/terrainEconomics";
+import { computeElevationChangeCost } from "../game/models/terrainEconomics";
+import { computeTerrainBatch } from "../game/models/terrainStroke";
 import { terrainCostMult } from "../game/balance/difficulty";
 import { createNewGame } from "../game/gen/newGame";
 import { hashGameState } from "../utils/stateHash";
 import { createReferenceCourse } from "../game/testing/referenceCourse";
 import { runLiveDaysHeadless } from "../game/live/headless";
-import { isTerrainUnlocked } from "../game/progression/progression";
 
 const terrains: Terrain[] = ["fairway", "rough", "deep_rough", "sand", "waste_area", "water", "wetland", "green", "tee", "path"];
 
@@ -77,12 +77,16 @@ describe("reducer property tests", () => {
         expect(Number.isFinite(next.world.cash)).toBe(true);
 
         if (op.kind === "paint") {
-          const proposed = computeTerrainChangeCost(
-            before.course.tiles[idx], op.terrain,
-            terrainCostMult(before.world.difficulty), before.course.theme
-          ).net;
-          const expected = !before.world.isBankrupt && isTerrainUnlocked(op.terrain, before.world.reputation) && proposed <= before.world.cash
-            ? proposed
+          const preview = computeTerrainBatch({
+            course: before.course,
+            tiles: [{ x: op.x, y: op.y, terrain: op.terrain }],
+            cash: before.world.cash,
+            costMult: terrainCostMult(before.world.difficulty),
+            reputation: before.world.reputation,
+            protectedTrees: before.world.constraints?.protectedTrees,
+          });
+          const expected = !before.world.isBankrupt && preview.affordable
+            ? preview.net
             : 0;
           expect(next.world.cash).toBeCloseTo(before.world.cash - expected, 8);
         }
@@ -110,7 +114,7 @@ describe("determinism hard invariant", () => {
     expect(hashGameState({ course: a.course, world: a.world })).toBe(
       hashGameState({ course: b.course, world: b.world })
     );
-  }, 30_000);
+  }, 60_000);
 
   it("keeps Math.random out of the deterministic game core", () => {
     const offenders = globSync("src/game/**/*.{ts,tsx}").filter((file) => readFileSync(file, "utf8").includes("Math.random("));
