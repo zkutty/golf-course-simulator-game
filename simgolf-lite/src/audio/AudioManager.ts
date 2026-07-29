@@ -70,6 +70,8 @@ class AudioManager {
   private activeSlot = 0;
   private musicSwitchVersion = 0;
   private musicPlayClaims = new WeakMap<HTMLAudioElement, number>();
+  private musicSwitchTarget: MusicContext | null = null;
+  private musicSwitchPromise: Promise<void> | null = null;
   private ambienceSlots: [HTMLAudioElement, HTMLAudioElement] | null = null;
   private activeAmbienceSlot = 0;
   private ambienceSwitchVersion = 0;
@@ -216,7 +218,7 @@ class AudioManager {
       this.scheduleAmbientAccent();
     }
     this.unlocked = true;
-    if (this.resolvedContext() !== "silent") await this.switchPlaylist(this.resolvedContext());
+    if (this.resolvedContext() !== "silent") await this.requestPlaylist(this.resolvedContext());
     if (this.authoredAmbienceAllowed()) await this.switchAmbience(this.ambientMix.bed);
   }
 
@@ -256,7 +258,7 @@ class AudioManager {
     this.context = context;
     const next = this.resolvedContext();
     if (next === previous && this.playingContext === next) return Promise.resolve();
-    return this.switchPlaylist(next);
+    return this.requestPlaylist(next);
   }
 
   setMusicOverride(context: MusicContext | null): Promise<void> {
@@ -264,7 +266,29 @@ class AudioManager {
     this.override = context;
     const next = this.resolvedContext();
     if (next === previous && this.playingContext === next) return Promise.resolve();
-    return this.switchPlaylist(next);
+    return this.requestPlaylist(next);
+  }
+
+  private requestPlaylist(context: MusicContext): Promise<void> {
+    if (this.musicSwitchTarget === context && this.musicSwitchPromise) return this.musicSwitchPromise;
+    this.musicSwitchTarget = context;
+    const promise = this.switchPlaylist(context);
+    this.musicSwitchPromise = promise;
+    void promise.then(
+      () => {
+        if (this.musicSwitchPromise === promise) {
+          this.musicSwitchPromise = null;
+          this.musicSwitchTarget = null;
+        }
+      },
+      () => {
+        if (this.musicSwitchPromise === promise) {
+          this.musicSwitchPromise = null;
+          this.musicSwitchTarget = null;
+        }
+      },
+    );
+    return promise;
   }
 
   private resolvedContext(): MusicContext {
@@ -315,6 +339,11 @@ class AudioManager {
     next.dataset.trackId = selected.id;
     next.currentTime = this.contextPositions.get(context) ?? 0;
     next.volume = 0;
+    // Reused slots are created with preload=none. Explicitly restart resource
+    // selection when a slot receives a new source; otherwise Chromium can keep
+    // the recycled element in NETWORK_NO_SOURCE and resolve play() without
+    // ever advancing the track.
+    next.load();
     this.musicPlayClaims.set(next, switchVersion);
     try {
       await next.play();
@@ -361,7 +390,7 @@ class AudioManager {
     const offset = list.length > 1 ? 1 + Math.floor(Math.random() * (list.length - 1)) : 0;
     this.trackIndex.set(context, (current + offset) % list.length);
     this.contextPositions.delete(context);
-    await this.switchPlaylist(context);
+    await this.requestPlaylist(context);
   }
 
   private async switchAmbience(bed: SunoAmbienceContext): Promise<void> {
@@ -390,6 +419,7 @@ class AudioManager {
     next.dataset.trackId = selected.id;
     next.currentTime = 0;
     next.volume = 0;
+    next.load();
     this.ambiencePlayClaims.set(next, switchVersion);
     try {
       await next.play();
