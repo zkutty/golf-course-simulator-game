@@ -8,7 +8,7 @@ Current request: “complete m35 from linear”
 - Read the milestone, all top-level issue specifications, all renderer-correction subissues, issue comments, attachments, and the explicit rejected human visual gate.
 - Current authoritative blocker chain is ZK-468 → ZK-469/ZK-470/ZK-471 → ZK-472 → fresh-agent ZK-473 review → human ZK-466 approval.
 - Open top-level scope also remains in ZK-326 (post-commit node/tangent editing), ZK-328 (height/shore/path/structure integration), ZK-329 (biome/tier atlas splitting and demand caching), ZK-330 (bounded world polish), ZK-327 (accepted connected presentation), and ZK-332 (adaptive quality plus certification).
-- Current `develop` baseline is `6944abe`. The existing terrain renderer still emits one complete diamond sprite per tile with local edge frames and step-cap relief. Auto quality is a startup capability guess with no sustained sampling/hysteresis. All terrain themes are packed and eagerly loaded in one atlas, and the service worker precaches the complete non-audio graph.
+- The implementation baseline for this pass is `49947b4` (checkpoint `8485a52`, M35 hardening `d50533e`, M43 package/Workshop hardening `2a00199`, and M42 desktop/Steam hardening `49947b4`).
 - Existing unrelated worktree edits and artifact directories predate this pass and must be preserved.
 
 ### M35 implementation checkpoint
@@ -558,3 +558,15 @@ classic course-builder references.
 - No build or lint was started after the final patch, and no production,
   provider, Linear, or human visual approval was claimed. ZK-466 remains
   explicitly deferred; ZK-473 and physical-GPU certification remain open.
+
+## 2026-07-29 — M35/M42/M43 implementation integration checkpoint
+
+- Integrated the agent-verifiable feature work into clean `develop` commit
+  `49947b4`. M35 remains open for fresh-agent visual parity and human approval;
+  M42 remains open for real Steam/provider and signed-release confirmation; M43
+  remains open for cross-platform/manual Workshop certification.
+- Combined validation is green: desktop tests 10/10; full Vitest 97 files,
+  811 passed, 1 skipped; lint 0 errors with 11 existing React Hook warnings;
+  TypeScript/build passed; M35 asset audit passed.
+- Human/provider gates are intentionally deferred in Linear per project-owner
+  direction. No issue was marked Done from agent reports alone.
