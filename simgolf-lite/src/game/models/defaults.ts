@@ -6,6 +6,7 @@ import { emptyPropertyEnterprise, starterPropertyCourse } from "../property/prop
 import { emptyLivingClubState } from "../livingClub/livingClub";
 import { createSeasonalState } from "../seasons/seasons";
 import { emptyM51CourseMobilityState, emptyM51MobilityState } from "../m51/mobility";
+import { biomeCompatibilityMetadataFor } from "./biomes";
 
 export const DEFAULT_COURSE: Course = {
   name: "West Village Municipal",
@@ -44,6 +45,7 @@ export const DEFAULT_COURSE: Course = {
   baseGreenFee: 65,
   condition: 0.75,
   theme: "parkland",
+  biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
   property: starterPropertyCourse(),
   m51: emptyM51CourseMobilityState(),
 };

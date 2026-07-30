@@ -171,7 +171,8 @@ function validateRuntimeBundles(root, contract, errors) {
   const expected = expectedNames().map((name) => name.slice(0, -4));
   const report = {};
   for (const quality of QUALITIES) {
-    const bundle = parkland?.[quality];
+    const tier = parkland?.[quality];
+    const bundle = manifest?.version === 1 ? tier : tier?.base;
     const target = contract.variants.quality[quality];
     const terrain = readBundleSheet(root, bundle?.terrain, `parkland/${quality} terrain`, errors);
     const details = bundle?.details ? readBundleSheet(root, bundle.details, `parkland/${quality} details`, errors) : null;
@@ -194,6 +195,9 @@ function validateRuntimeBundles(root, contract, errors) {
     assert(fieldNames.length === target.fields, `parkland/${quality} material-field coverage is incomplete`, errors);
     assert(JSON.stringify(fieldNames) === JSON.stringify(quality === "low" ? [] : [...TERRAIN_NAMES].sort()), `parkland/${quality} material fields must cover exactly the ten required materials`, errors);
     assert(quality === "low" ? bundle?.details === null && bundle?.props === null : Boolean(bundle?.details && bundle?.props), `parkland/${quality} optional-art policy is incorrect`, errors);
+    if (quality === "low") {
+      assert(Object.keys(tier?.seasonal ?? {}).length === 0, "parkland/low must not ship seasonal overlay detail", errors);
+    }
     if (terrain) validateFrameGutters(terrain.json, `parkland/${quality} terrain`, contract.atlas.gutterPx, errors);
     if (details) validateFrameGutters(details.json, `parkland/${quality} details`, contract.atlas.gutterPx, errors);
     const selectedBytes = [bundle?.buildings, bundle?.terrain, bundle?.details, bundle?.props]

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import type { Course, LandTheme, World } from "../models/types";
 import { startPlayableRound } from "../playerPro/playerPro";
@@ -10,6 +11,7 @@ import {
   absoluteDayFor,
   activeWeather,
   advanceSeasonalDay,
+  biomeClimatePhenologyForDay,
   applySeasonCommand,
   calendarDate,
   createSeasonalState,
@@ -22,11 +24,13 @@ import {
   weekDayFromAbsoluteDay,
 } from "./seasons";
 import { CLUB_CHARTERS, type ClubCharter } from "./types";
+import { biomeCompatibilityMetadataFor } from "../models/biomes";
 
 function fixture(theme: LandTheme = "parkland", charter: ClubCharter = "public-gem") {
   const course: Course = {
     ...DEFAULT_COURSE,
     theme,
+    biomeCompatibility: biomeCompatibilityMetadataFor(theme),
     tiles: DEFAULT_COURSE.tiles.slice(),
     elevations: DEFAULT_COURSE.elevations.slice(),
     holes: DEFAULT_COURSE.holes.map((hole, index) => ({
@@ -137,6 +141,71 @@ describe("M39 deterministic weather and shared golf inputs", () => {
       carryMultiplier: modifiers.carryMultiplier,
       dispersionMultiplier: modifiers.dispersionMultiplier,
     });
+  });
+});
+
+describe("M52 biome climate and phenology projection", () => {
+  it("is deterministic for the same seed, biome, and day without changing weather", () => {
+    const sample = (seed: number, theme: LandTheme, day: number) => ({
+      weather: weatherForDay(seed, theme, day),
+      phenology: biomeClimatePhenologyForDay(theme, day),
+    });
+    expect(sample(9191, "links", 55)).toEqual(sample(9191, "links", 55));
+
+    const weather = ["parkland", "links", "desert"].flatMap((theme) =>
+      Array.from({ length: DAYS_PER_YEAR * 4 }, (_, absoluteDay) =>
+        weatherForDay(222, theme as LandTheme, absoluteDay)
+      )
+    );
+    expect(createHash("sha256").update(JSON.stringify(weather)).digest("hex"))
+      .toBe("57fde66c427db1bf4bb494a03d96e59103deed8630d16f648c0af0de5ba88cd7");
+  });
+
+  it("blends bounded climate and vegetation transitions across every calendar boundary", () => {
+    for (const theme of ["parkland", "links", "desert"] as const) {
+      for (const boundary of [56, 112, 168, 224]) {
+        const before = biomeClimatePhenologyForDay(theme, boundary - 1);
+        const after = biomeClimatePhenologyForDay(theme, boundary);
+        expect(before.transition.blend).toBeCloseTo(0.5);
+        expect(after.transition.blend).toBeCloseTo(8 / 14);
+        expect(after.transition.fromSeason).toBe(before.transition.fromSeason);
+        expect(after.transition.toSeason).toBe(before.transition.toSeason);
+        expect(Math.abs(after.climate.targetTemperatureF - before.climate.targetTemperatureF)).toBeLessThanOrEqual(2);
+        expect(Math.abs(after.vegetation.dormancy - before.vegetation.dormancy)).toBeLessThanOrEqual(1 / 7);
+        expect(after.calendar.seasonProgress).toBe(0);
+      }
+    }
+  });
+
+  it("leaves calendar/save history immutable across reloads and long years", () => {
+    const { course, world } = fixture("desert");
+    const date = calendarDate(absoluteDayFor(12, 4));
+    const state = biomeClimatePhenologyForDay(course.theme ?? "parkland", date.absoluteDay);
+    expect(state.calendar).toEqual({ ...date, seasonProgress: 25 / 56 });
+    expect(Object.isFrozen(state)).toBe(true);
+    expect(Object.isFrozen(state.calendar)).toBe(true);
+    expect(world.seasonal?.calendar).toEqual(createSeasonalState({ runSeed: world.runSeed, theme: "desert" }).calendar);
+
+    const normalized = advanceSeasonalDay(createReferenceCourse(), world, 0);
+    const savedCourse = {
+      ...normalized.course,
+      theme: "desert" as const,
+      biomeCompatibility: biomeCompatibilityMetadataFor("desert"),
+    };
+    const loaded = parseSaveText(JSON.stringify({
+      schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
+      savedAt: 0,
+      course: savedCourse,
+      world: normalized.world,
+    }));
+    expect(loaded.ok, loaded.ok ? undefined : `${loaded.error.code}: ${loaded.error.message}`).toBe(true);
+    if (!loaded.ok) return;
+
+    const longDay = DAYS_PER_YEAR * 12 + 55;
+    expect(biomeClimatePhenologyForDay(savedCourse.theme, longDay)).toEqual(
+      biomeClimatePhenologyForDay(loaded.payload.course.theme ?? "parkland", longDay),
+    );
+    expect(calendarDate(longDay)).toMatchObject({ year: 13, weekOfYear: 8, season: "spring" });
   });
 });
 

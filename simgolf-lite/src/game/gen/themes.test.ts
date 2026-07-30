@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
 import { generateWildLandWithObstacles } from "./generateWildLand";
 import { LAND_THEMES } from "../models/themes";
 import { computeTerrainChangeCost, themeBuildMult } from "../models/terrainEconomics";
@@ -6,6 +7,7 @@ import { computeExpectedLandingPenalty } from "../sim/shots/landingPenalty";
 import { normalizeLoadedSave } from "../../utils/save";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import type { LandTheme, Terrain } from "../models/types";
+import { DAYS_PER_YEAR, weatherForDay } from "../seasons/seasons";
 
 const W = 110;
 const H = 70;
@@ -19,7 +21,24 @@ function frac(tiles: Terrain[], t: Terrain): number {
   return tiles.filter((x) => x === t).length / tiles.length;
 }
 
+function outputHash(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
 describe("land themes (ZKU-166)", () => {
+  it("matches the runtime-independent generation and weather output baseline", () => {
+    const themes = ["parkland", "links", "desert"] as const satisfies readonly LandTheme[];
+    const generation = themes.flatMap((theme) => SEEDS.map((seed) => gen(seed, theme)));
+    const weather = themes.flatMap((theme) =>
+      Array.from({ length: DAYS_PER_YEAR * 4 }, (_, absoluteDay) =>
+        weatherForDay(222, theme, absoluteDay)
+      )
+    );
+
+    expect(outputHash(generation)).toBe("df29422e3bf81b077c22191d563ce1d84d1fd6396c5da80adc62c8b7cc9e65f5");
+    expect(outputHash(weather)).toBe("57fde66c427db1bf4bb494a03d96e59103deed8630d16f648c0af0de5ba88cd7");
+  });
+
   it("parkland is the identity theme — bit-identical to themeless generation", () => {
     for (const seed of SEEDS) {
       expect(gen(seed, "parkland")).toEqual(gen(seed));
@@ -209,15 +228,15 @@ describe("land themes (ZKU-166)", () => {
     expect(pen("desert")).toBeCloseTo(pen("parkland"), 5);
   });
 
-  it("theme survives save/load; bogus themes degrade to parkland", () => {
+  it("legacy themes survive save/load while unsupported themes fail closed", () => {
     const save = (theme: unknown) => ({
       schemaVersion: 1,
       savedAt: 0,
-      course: { ...DEFAULT_COURSE, theme },
+      course: { ...DEFAULT_COURSE, theme, biomeCompatibility: undefined },
       world: DEFAULT_WORLD,
     });
     expect(normalizeLoadedSave(save("links"))!.course.theme).toBe("links");
-    expect(normalizeLoadedSave(save("moonbase"))!.course.theme).toBe("parkland");
+    expect(normalizeLoadedSave(save("moonbase"))).toBeNull();
     expect(normalizeLoadedSave(save(undefined))!.course.theme).toBe("parkland");
   });
 });

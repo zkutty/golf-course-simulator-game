@@ -11,6 +11,7 @@ import {
 import { extname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PNG } from "pngjs";
+import { loadBiomeKeys } from "./biome-registry.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const publicRoot = join(root, "public");
@@ -20,8 +21,9 @@ const MiB = 1024 * 1024;
 const MAX_ATLAS_BYTES = 8 * MiB;
 const MAX_SELECTED_BIOME_BYTES = 6 * MiB;
 const MAX_INITIAL_CRITICAL_BYTES = 8 * MiB;
-const REQUIRED_THEMES = ["parkland", "links", "desert"];
+const REQUIRED_THEMES = loadBiomeKeys();
 const REQUIRED_QUALITIES = ["high", "medium", "low"];
+const REQUIRED_SEASONS = ["spring", "summer", "autumn", "winter"];
 const REQUIRED_FIELDS = [
   "fairway",
   "rough",
@@ -101,10 +103,13 @@ function validateTree(rootDirectory) {
   if (!existsSync(manifestPath)) return null;
   const manifestBuffer = readFileSync(manifestPath);
   const manifest = JSON.parse(manifestBuffer);
-  assert(manifest.version === 1, `Unsupported M35 manifest version ${String(manifest.version)}`);
+  assert(
+    manifest.version === 1 || manifest.version === 2,
+    `Unsupported biome manifest version ${String(manifest.version)}`,
+  );
   assert(
     JSON.stringify(Object.keys(manifest.biomes).sort()) === JSON.stringify([...REQUIRED_THEMES].sort()),
-    `${relative(root, manifestPath)} must contain exactly the three release biomes`,
+    `${relative(root, manifestPath)} must contain exactly the registered biomes`,
   );
 
   const core = validateAtlas(rootDirectory, manifest.core.golfers, "core golfers");
@@ -117,7 +122,13 @@ function validateTree(rootDirectory) {
       `${theme} must contain high, medium, and low tiers`,
     );
     for (const quality of REQUIRED_QUALITIES) {
-      const bundle = tiers[quality];
+      const tier = tiers[quality];
+      if (!tier) continue;
+      // v1 is the explicit deployed compatibility shape. v2 separates the
+      // immutable base from small independently cached seasonal overlays.
+      const bundle = manifest.version === 1 ? tier : tier.base;
+      const seasonal = manifest.version === 1 ? {} : (tier.seasonal ?? {});
+      assert(Boolean(bundle), `${theme}/${quality} must provide a base bundle`);
       if (!bundle) continue;
       const frameOwners = new Map();
       let bytes = core.bytes;
@@ -150,11 +161,58 @@ function validateTree(rootDirectory) {
         bytes < MAX_SELECTED_BIOME_BYTES,
         `${theme}/${quality} selected payload is ${toMiB(bytes)} MiB; limit is 6 MiB`,
       );
+      const overlays = {};
+      assert(
+        Object.keys(seasonal).every((season) => REQUIRED_SEASONS.includes(season)),
+        `${theme}/${quality} has an unknown seasonal overlay`,
+      );
+      if (quality === "low") {
+        assert(
+          Object.keys(seasonal).length === 0,
+          `${theme}/low must omit expensive seasonal detail layers`,
+        );
+      }
+      for (const [season, overlay] of Object.entries(seasonal)) {
+        let overlayBytes = 0;
+        let overlayFrames = 0;
+        if (overlay.props) {
+          const result = validateAtlas(rootDirectory, overlay.props, `${theme}/${quality}/${season} props`);
+          overlayBytes += result.bytes;
+          overlayFrames += result.frames.length;
+        }
+        if (overlay.decals) {
+          const result = validateAtlas(rootDirectory, overlay.decals, `${theme}/${quality}/${season} decals`);
+          overlayBytes += result.bytes;
+          overlayFrames += result.frames.length;
+        }
+        for (const [terrain, field] of Object.entries(overlay.materials ?? {})) {
+          assert(REQUIRED_FIELDS.includes(terrain), `${theme}/${quality}/${season} has unknown material ${terrain}`);
+          overlayBytes += validateField(
+            rootDirectory,
+            field,
+            `${theme}/${quality}/${season} ${terrain} material`,
+          );
+        }
+        const selectedBytes = bytes + overlayBytes;
+        assert(
+          selectedBytes < MAX_SELECTED_BIOME_BYTES,
+          `${theme}/${quality}/${season} selected payload is ${toMiB(selectedBytes)} MiB; limit is 6 MiB`,
+        );
+        overlays[season] = {
+          bytes: overlayBytes,
+          mib: toMiB(overlayBytes),
+          selectedBytes,
+          selectedMiB: toMiB(selectedBytes),
+          frames: overlayFrames,
+          materials: Object.keys(overlay.materials ?? {}).length,
+        };
+      }
       bundles[theme][quality] = {
         bytes,
         mib: toMiB(bytes),
         frames: frameOwners.size,
         fields: fieldNames.length,
+        overlays,
       };
     }
   }
@@ -194,7 +252,8 @@ if (distReport) {
     distReport.manifest.core.golfers.json,
     distReport.manifest.core.golfers.image,
   ].map((name) => name === manifestRelative ? name : `atlases/biomes/${name}`));
-  const defaultBundle = distReport.manifest.biomes.parkland.high;
+  const defaultTier = distReport.manifest.biomes[REQUIRED_THEMES[0]].high;
+  const defaultBundle = distReport.manifest.version === 1 ? defaultTier : defaultTier.base;
   for (const atlas of [
     defaultBundle.buildings,
     defaultBundle.terrain,

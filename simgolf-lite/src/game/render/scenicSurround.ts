@@ -1,4 +1,5 @@
 import type { Course, LandTheme, ObstacleType, Point } from "../models/types";
+import { getBiomeDefinition } from "../models/biomes";
 
 export type CoastEdge = "north" | "east" | "south" | "west";
 export type ScenicPatchKind = "meadow" | "field" | "wood" | "scrub" | "dune" | "wash";
@@ -37,6 +38,37 @@ export interface ScenicSurroundModel {
 export const SCENIC_GENERATION_BLEED_TILES = 256;
 export const SCENIC_CAMERA_MARGIN_TILES = 48;
 export const SCENIC_PLANE_TILES = 4096;
+
+const SCENIC_PROFILES: Record<LandTheme, {
+  patches: readonly ScenicPatchKind[];
+  props: readonly ObstacleType[];
+  propDensity: number;
+  naturalTerrain: "rough" | "deep_rough" | "waste_area";
+}> = {
+  parkland: {
+    patches: ["meadow", "field", "wood", "scrub"],
+    props: ["tree", "tree", "bush", "tree", "rock"],
+    propDensity: 0.23,
+    naturalTerrain: "rough",
+  },
+  links: {
+    patches: ["meadow", "field", "scrub", "dune"],
+    props: ["bush", "bush", "rock", "bush", "tree"],
+    propDensity: 0.16,
+    naturalTerrain: "deep_rough",
+  },
+  desert: {
+    patches: ["scrub", "wash", "dune"],
+    props: ["rock", "bush", "rock", "tree"],
+    propDensity: 0.16,
+    naturalTerrain: "waste_area",
+  },
+};
+
+export function scenicNaturalTerrain(theme: LandTheme): "rough" | "deep_rough" | "waste_area" {
+  const owner = getBiomeDefinition(theme).content.materials.terrain;
+  return SCENIC_PROFILES[owner].naturalTerrain;
+}
 
 function hash(seed: number, x: number, y: number, salt = 0): number {
   let value = Math.imul((seed | 0) ^ Math.imul(x + 101, 73856093), 19349663);
@@ -78,7 +110,7 @@ function edgeWaterStats(course: Course, edge: CoastEdge): { count: number; longe
  * most of exactly one edge, so a 25% threshold remains tolerant of edits.
  */
 export function detectLinksCoast(course: Course): CoastEdge | null {
-  if ((course.theme ?? "parkland") !== "links") return null;
+  if (!getBiomeDefinition(course.theme).generation.water.coastalEdge) return null;
   const edges: CoastEdge[] = ["north", "east", "south", "west"];
   const ranked = edges
     .map((edge) => {
@@ -179,27 +211,16 @@ function outsideEstate(x: number, y: number, width: number, height: number, padd
   return x < -padding || y < -padding || x > width + padding || y > height + padding;
 }
 
-function patchKinds(theme: LandTheme): readonly ScenicPatchKind[] {
-  if (theme === "links") return ["meadow", "field", "scrub", "dune"];
-  if (theme === "desert") return ["scrub", "wash", "dune"];
-  return ["meadow", "field", "wood", "scrub"];
-}
-
-function propKinds(theme: LandTheme): readonly ObstacleType[] {
-  if (theme === "links") return ["bush", "bush", "rock", "bush", "tree"];
-  if (theme === "desert") return ["rock", "bush", "rock", "tree"];
-  return ["tree", "tree", "bush", "tree", "rock"];
-}
-
 /** Deterministic, render-only regional scenery. It is never saved or simulated. */
 export function generateScenicSurround(course: Course, seed: number): ScenicSurroundModel {
-  const theme = course.theme ?? "parkland";
+  const theme = getBiomeDefinition(course.theme).key;
+  const profile = SCENIC_PROFILES[getBiomeDefinition(theme).content.materials.terrain];
   const coast = detectLinksCoast(course);
   const coastline = buildCoastline(course, coast, seed);
   const bleed = SCENIC_GENERATION_BLEED_TILES;
   const cell = 32;
   const patches: ScenicPatch[] = [];
-  const kinds = patchKinds(theme);
+  const kinds = profile.patches;
 
   for (let gy = -Math.ceil(bleed / cell); gy <= Math.ceil((course.height + bleed) / cell); gy++) {
     for (let gx = -Math.ceil(bleed / cell); gx <= Math.ceil((course.width + bleed) / cell); gx++) {
@@ -247,11 +268,11 @@ export function generateScenicSurround(course: Course, seed: number): ScenicSurr
   });
 
   const props: ScenicProp[] = [];
-  const propOptions = propKinds(theme);
+  const propOptions = profile.props;
   const propCell = 13;
   for (let gy = -Math.ceil(bleed / propCell); gy <= Math.ceil((course.height + bleed) / propCell); gy++) {
     for (let gx = -Math.ceil(bleed / propCell); gx <= Math.ceil((course.width + bleed) / propCell); gx++) {
-      if (random01(seed, gx, gy, 0x90b5) > (theme === "parkland" ? 0.23 : 0.16)) continue;
+      if (random01(seed, gx, gy, 0x90b5) > profile.propDensity) continue;
       const x = gx * propCell + random01(seed, gx, gy, 7) * propCell;
       const y = gy * propCell + random01(seed, gx, gy, 8) * propCell;
       if (!outsideEstate(x, y, course.width, course.height, 3)) continue;

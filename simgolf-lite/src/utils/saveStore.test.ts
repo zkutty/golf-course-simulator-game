@@ -14,7 +14,8 @@ import {
   saveToSlot,
 } from "./saveStore";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
-import type { SavePayload } from "./save";
+import { CURRENT_SAVE_SCHEMA_VERSION, type SavePayload } from "./save";
+import { BIOME_KEYS, biomeCompatibilityMetadataFor } from "../game/models/biomes";
 
 function payload(week = 1, cash = 25_000, name = "Test Links"): SavePayload {
   return {
@@ -84,6 +85,34 @@ describe("saveStore", () => {
     expect(weeks).toEqual([3, 4, 5]); // weeks 1-2 rotated out
   });
 
+  it("round-trips every registered biome through autosave, export, and fresh-profile import", async () => {
+    for (const theme of BIOME_KEYS) {
+      __resetSaveStoreForTests();
+      const source = payload(8, 52_000, `${theme} portable`);
+      source.course = {
+        ...source.course,
+        theme,
+        biomeCompatibility: undefined,
+      };
+      const saved = await autosave(source);
+      const text = await exportSlot(saved.id);
+      expect(text).not.toBeNull();
+      expect(JSON.parse(text!).course.biomeCompatibility).toEqual(
+        biomeCompatibilityMetadataFor(theme),
+      );
+
+      __resetSaveStoreForTests();
+      const imported = await importSave(text!, `${theme} imported`);
+      expect(imported).not.toBeNull();
+      const restored = await loadSlot(imported!.id);
+      expect(restored?.course.theme).toBe(theme);
+      expect(restored?.course.biomeCompatibility).toEqual(
+        biomeCompatibilityMetadataFor(theme),
+      );
+      expect(restored?.world).toMatchObject({ week: 8, cash: 52_000 });
+    }
+  });
+
   it("quicksave reuses one slot; rename and delete work", async () => {
     await quicksave(payload(2));
     await quicksave(payload(3));
@@ -112,7 +141,14 @@ describe("saveStore", () => {
     const meta = await saveToSlot(null, "manual", "Exported", payload(12, 40_000));
     const text = await exportSlot(meta.id);
     expect(text).not.toBeNull();
-    expect(JSON.parse(text!).appProfile).toMatchObject({ version: 5, gameplay: { autosaveCadence: "weekly" }, achievements: { earned: [] } });
+    const exported = JSON.parse(text!);
+    expect(exported.appProfile).toMatchObject({ version: 5, gameplay: { autosaveCadence: "weekly" }, achievements: { earned: [] } });
+    expect(exported.schemaVersion).toBe(CURRENT_SAVE_SCHEMA_VERSION);
+    expect(exported.course.biomeCompatibility).toMatchObject({
+      version: 1,
+      biome: "parkland",
+      contentVersion: 1,
+    });
 
     __resetSaveStoreForTests(); // fresh browser
     const imported = await importSave(text!, "Imported course");

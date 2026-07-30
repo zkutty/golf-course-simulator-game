@@ -3,6 +3,14 @@ import type { TerrainAtlasFrame } from "../game/render/terrainMaterials";
 import type { TerrainDetailFrame } from "../game/render/terrainDetails";
 import { missingNaturalPropFrames, type NaturalPropFrame } from "../game/render/naturalProps";
 import type { LandTheme, Terrain } from "../game/models/types";
+import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
+import type { SeasonName } from "../game/seasons/types";
+import {
+  normalizeAtlasManifest,
+  type AtlasManifest,
+  type AtlasQuality,
+  type AtlasSeasonalOverlay,
+} from "./atlasManifest";
 
 /**
  * Typed texture-atlas loader (ZKU-147).
@@ -18,8 +26,8 @@ import type { LandTheme, Terrain } from "../game/models/types";
 
 export type PropFrame = NaturalPropFrame;
 export type LegacyBuildingFrame = "clubhouse" | "pro_shop" | "snack_bar" | "cart_rental";
-export type BuildingFrame = LegacyBuildingFrame | `${"parkland" | "links" | "desert"}_${LegacyBuildingFrame}_t${1 | 2 | 3}`;
-export type DecorationFrame = `${"parkland" | "links" | "desert"}_${"fence" | "bench" | "tee_sign" | "lamp" | "bin" | "parked_cart" | "flower_bed" | "planter" | "ornamental_feature" | "bridge" | "boardwalk" | "bridge_approach"}`;
+export type BuildingFrame = LegacyBuildingFrame | `${LandTheme}_${LegacyBuildingFrame}_t${1 | 2 | 3}`;
+export type DecorationFrame = `${LandTheme}_${"fence" | "bench" | "tee_sign" | "lamp" | "bin" | "parked_cart" | "flower_bed" | "planter" | "ornamental_feature" | "bridge" | "boardwalk" | "bridge_approach"}`;
 export type AtlasFrame = PropFrame | BuildingFrame | DecorationFrame;
 
 /**
@@ -31,40 +39,47 @@ export type AtlasFrame = PropFrame | BuildingFrame | DecorationFrame;
 export type GolferAnimName = "walk" | "idle" | "swing" | "putt" | "cheer" | "mad";
 export type GolferFrame = `golfer${number}_${GolferAnimName}${"" | "_t"}_${number}_${number}`;
 
-type AtlasQuality = "high" | "medium" | "low";
-interface BundleFile {
-  json: string;
-  image: string;
-}
-interface FieldFile {
-  image: string;
-}
-interface BiomeBundle {
-  buildings: BundleFile;
-  terrain: BundleFile;
-  details: BundleFile | null;
-  props: BundleFile | null;
-  fields: Partial<Record<Terrain, FieldFile>>;
-}
-interface AtlasManifest {
-  version: 1;
-  core: {
-    golfers: BundleFile;
-  };
-  biomes: Record<LandTheme, Record<AtlasQuality, BiomeBundle>>;
-}
-
 const terrainSheets = new Map<string, Spritesheet>();
 const terrainDetailsSheets = new Map<string, Spritesheet>();
 const naturalPropsSheets = new Map<string, Spritesheet>();
 const buildingsSheets = new Map<string, Spritesheet>();
 const landscapeFields = new Map<string, Texture>();
+const seasonalPropsSheets = new Map<string, Spritesheet>();
+const seasonalDecalSheets = new Map<string, Spritesheet>();
+const seasonalLandscapeFields = new Map<string, Texture>();
 let golfersSheet: Spritesheet | null = null;
 let manifestPromise: Promise<AtlasManifest> | null = null;
 let corePromise: Promise<void> | null = null;
 const bundlePromises = new Map<string, Promise<void>>();
+const overlayPromises = new Map<string, Promise<void>>();
+const loadedBiomeBundles = new Set<string>();
+const loadedSeasonalOverlays = new Set<string>();
+let activeBundleKey: string | null = null;
+let activeOverlayKey: string | null = null;
+let activeLoadRequest = 0;
 let legacyLoadAttempted = false;
 const warned = new Set<string>();
+export interface AtlasFallbackDiagnostic {
+  requestedBiome: LandTheme;
+  quality: AtlasQuality;
+  season?: SeasonName;
+  reason: string;
+}
+const fallbackDiagnostics: AtlasFallbackDiagnostic[] = [];
+
+function recordFallback(diagnostic: AtlasFallbackDiagnostic): void {
+  if (!fallbackDiagnostics.some((entry) =>
+    entry.requestedBiome === diagnostic.requestedBiome
+    && entry.quality === diagnostic.quality
+    && entry.season === diagnostic.season
+    && entry.reason === diagnostic.reason
+  )) fallbackDiagnostics.push(diagnostic);
+}
+
+/** Bounded, read-only evidence that a biome used renderer-native fallback. */
+export function atlasFallbackDiagnostics(): readonly AtlasFallbackDiagnostic[] {
+  return fallbackDiagnostics.slice(-32);
+}
 
 const bundleRoot = () => `${import.meta.env.BASE_URL}atlases/biomes/`;
 
@@ -77,6 +92,10 @@ async function loadSheetUrl(url: string, label: string): Promise<Spritesheet | n
     }
     return null;
   }
+}
+
+async function loadRequiredSheetUrl(url: string): Promise<Spritesheet> {
+  return (await Assets.load(url)) as Spritesheet;
 }
 
 async function loadLegacyAtlases(): Promise<void> {
@@ -109,11 +128,13 @@ async function loadLegacyAtlases(): Promise<void> {
 
 async function loadManifest(): Promise<AtlasManifest> {
   if (!manifestPromise) {
-    manifestPromise = fetch(`${bundleRoot()}manifest.json`, { cache: "no-cache" }).then(async (response) => {
+    const request = fetch(`${bundleRoot()}manifest.json`, { cache: "no-cache" }).then(async (response) => {
       if (!response.ok) throw new Error(`manifest request failed (${response.status})`);
-      const manifest = await response.json() as AtlasManifest;
-      if (manifest.version !== 1) throw new Error(`unsupported atlas manifest ${String(manifest.version)}`);
-      return manifest;
+      return normalizeAtlasManifest(await response.json(), BIOME_KEYS);
+    });
+    manifestPromise = request;
+    void request.catch(() => {
+      if (manifestPromise === request) manifestPromise = null;
     });
   }
   return manifestPromise;
@@ -131,36 +152,77 @@ async function loadCore(manifest: AtlasManifest): Promise<void> {
   return corePromise;
 }
 
-/** Loads only the selected biome/tier; subsequent selections stay memory/browser cached. */
-export async function loadAtlases(
-  theme: LandTheme = "parkland",
-  quality: AtlasQuality = "high",
+async function loadFields(
+  files: Partial<Record<Terrain, { image: string }>>,
+): Promise<Array<readonly [Terrain, Texture]>> {
+  return Promise.all(Object.entries(files).map(async ([terrainName, asset]) => {
+    const texture = await Assets.load(`${bundleRoot()}${asset.image}`) as Texture;
+    texture.source.style.addressMode = "repeat";
+    texture.source.style.scaleMode = "linear";
+    return [terrainName as Terrain, texture] as const;
+  }));
+}
+
+async function loadOptionalOverlay(
+  overlay: AtlasSeasonalOverlay,
+  overlayKey: string,
 ): Promise<void> {
+  const [props, decals, materials] = await Promise.all([
+    overlay.props
+      ? loadRequiredSheetUrl(`${bundleRoot()}${overlay.props.json}`)
+      : Promise.resolve(null),
+    overlay.decals
+      ? loadRequiredSheetUrl(`${bundleRoot()}${overlay.decals.json}`)
+      : Promise.resolve(null),
+    loadFields(overlay.materials),
+  ]);
+  if (props) seasonalPropsSheets.set(overlayKey, props);
+  if (decals) seasonalDecalSheets.set(overlayKey, decals);
+  for (const [terrainName, texture] of materials) {
+    seasonalLandscapeFields.set(`${overlayKey}:${terrainName}`, texture);
+  }
+  loadedSeasonalOverlays.add(overlayKey);
+}
+
+/**
+ * Loads only the selected biome/tier and, when available, the requested
+ * season's incremental overlay. Base and overlay promises have separate cache
+ * identities so a missing optional overlay cannot poison the playable base.
+ */
+export async function loadAtlases(
+  theme: LandTheme = BIOME_KEYS[0],
+  quality: AtlasQuality = "high",
+  season?: SeasonName | null,
+): Promise<void> {
+  const requestId = ++activeLoadRequest;
   try {
     const manifest = await loadManifest();
     await loadCore(manifest);
     const key = `${theme}:${quality}`;
+    const content = getBiomeDefinition(theme).content;
     let promise = bundlePromises.get(key);
     if (!promise) {
       promise = (async () => {
-        const bundle = manifest.biomes[theme][quality];
+        const buildingsBundle = manifest.biomes[content.structures.buildings]?.[quality]?.base;
+        const terrainBundle = manifest.biomes[content.materials.terrain]?.[quality]?.base;
+        const detailsBundle = manifest.biomes[content.materials.details]?.[quality]?.base;
+        const propsBundle = manifest.biomes[content.props.natural]?.[quality]?.base;
+        const fieldsBundle = manifest.biomes[content.materials.fields]?.[quality]?.base;
+        if (!buildingsBundle || !terrainBundle || !detailsBundle || !propsBundle || !fieldsBundle) {
+          throw new Error(`manifest has no complete "${theme}" ${quality} content-owner route`);
+        }
         const [buildings, terrain, details, props, fields] = await Promise.all([
-          loadSheetUrl(`${bundleRoot()}${bundle.buildings.json}`, `${key} buildings and decor`),
-          loadSheetUrl(`${bundleRoot()}${bundle.terrain.json}`, `${key} terrain`),
-          bundle.details
-            ? loadSheetUrl(`${bundleRoot()}${bundle.details.json}`, `${key} terrain details`)
+          loadRequiredSheetUrl(`${bundleRoot()}${buildingsBundle.buildings.json}`),
+          loadRequiredSheetUrl(`${bundleRoot()}${terrainBundle.terrain.json}`),
+          detailsBundle.details
+            ? loadRequiredSheetUrl(`${bundleRoot()}${detailsBundle.details.json}`)
             : Promise.resolve(null),
-          bundle.props
-            ? loadSheetUrl(`${bundleRoot()}${bundle.props.json}`, `${key} natural props`)
+          propsBundle.props
+            ? loadRequiredSheetUrl(`${bundleRoot()}${propsBundle.props.json}`)
             : Promise.resolve(null),
           quality === "low"
             ? Promise.resolve([])
-            : Promise.all(Object.entries(bundle.fields).map(async ([terrainName, asset]) => {
-              const texture = await Assets.load(`${bundleRoot()}${asset.image}`) as Texture;
-              texture.source.style.addressMode = "repeat";
-              texture.source.style.scaleMode = "linear";
-              return [terrainName as Terrain, texture] as const;
-            })),
+            : loadFields(fieldsBundle.fields),
         ]);
         if (buildings) buildingsSheets.set(key, buildings);
         if (terrain) terrainSheets.set(key, terrain);
@@ -169,6 +231,7 @@ export async function loadAtlases(
         for (const [terrainName, texture] of fields) {
           landscapeFields.set(`${key}:${terrainName}`, texture);
         }
+        loadedBiomeBundles.add(key);
       })();
       bundlePromises.set(key, promise);
     }
@@ -180,6 +243,47 @@ export async function loadAtlases(
       if (bundlePromises.get(key) === promise) bundlePromises.delete(key);
       throw error;
     }
+    // A theme/quality/season transition may have started while this base was
+    // loading. Keep the completed bundle cached, but never let an older
+    // request activate its base or begin downloading a now-stale overlay.
+    if (requestId !== activeLoadRequest) return;
+    activeBundleKey = key;
+    activeOverlayKey = null;
+
+    if (season) {
+      const materialsOverlay = manifest.biomes[content.materials.fields]?.[quality]?.seasonal[season];
+      const propsOverlay = manifest.biomes[content.props.natural]?.[quality]?.seasonal[season];
+      const decalsOverlay = manifest.biomes[content.materials.details]?.[quality]?.seasonal[season];
+      const overlay: AtlasSeasonalOverlay = {
+        materials: materialsOverlay?.materials ?? {},
+        props: propsOverlay?.props ?? null,
+        decals: decalsOverlay?.decals ?? null,
+      };
+      if (Object.keys(overlay.materials).length > 0 || overlay.props || overlay.decals) {
+        const overlayKey = `${key}:${season}`;
+        let overlayPromise = overlayPromises.get(overlayKey);
+        if (!overlayPromise) {
+          overlayPromise = loadOptionalOverlay(overlay, overlayKey);
+          overlayPromises.set(overlayKey, overlayPromise);
+        }
+        try {
+          await overlayPromise;
+          if (requestId === activeLoadRequest) activeOverlayKey = overlayKey;
+        } catch (error) {
+          // Optional overlays fail independently. Keep the base active and let
+          // a later request retry the same seasonal identity.
+          if (overlayPromises.get(overlayKey) === overlayPromise) overlayPromises.delete(overlayKey);
+          if (requestId === activeLoadRequest) {
+            recordFallback({
+              requestedBiome: theme,
+              quality,
+              season,
+              reason: `optional seasonal overlay unavailable: ${error instanceof Error ? error.message : String(error)}`,
+            });
+          }
+        }
+      }
+    }
     const props = naturalPropsSheets.get(key);
     if (props && import.meta.env.DEV) {
       const missing = missingNaturalPropFrames((frame) => (
@@ -188,6 +292,12 @@ export async function loadAtlases(
       if (missing.length > 0) console.warn(`[atlas] ${key} natural-props atlas is missing ${missing.length} registry frames`, missing);
     }
   } catch (error) {
+    if (requestId !== activeLoadRequest) return;
+    recordFallback({
+      requestedBiome: theme,
+      quality,
+      reason: error instanceof Error ? error.message : String(error),
+    });
     if (import.meta.env.DEV) {
       console.warn("[atlas] M35 bundle manifest unavailable; loading legacy atlases", error);
     }
@@ -200,18 +310,12 @@ export function getLandscapeMaterialField(
   terrain: Terrain,
   quality: Exclude<AtlasQuality, "low">,
 ): Texture | null {
-  return landscapeFields.get(`${theme ?? "parkland"}:${quality}:${terrain}`) ?? null;
-}
-
-function textureFromSheets<T extends string>(
-  sheets: Iterable<Spritesheet>,
-  name: T,
-): Texture | null {
-  for (const sheet of sheets) {
-    const texture = sheet.textures[name];
-    if (texture) return texture;
-  }
-  return null;
+  const requested = getBiomeDefinition(theme).key;
+  const key = `${requested}:${quality}`;
+  const overlay = activeBundleKey === key && activeOverlayKey
+    ? seasonalLandscapeFields.get(`${activeOverlayKey}:${terrain}`)
+    : null;
+  return overlay ?? landscapeFields.get(`${key}:${terrain}`) ?? null;
 }
 
 function warnMissing(name: string, message: string): void {
@@ -223,7 +327,16 @@ function warnMissing(name: string, message: string): void {
 
 /** Preload validation for the selected biome bundle. */
 export function loadedBiomeBundle(theme: LandTheme, quality: AtlasQuality): boolean {
-  return terrainSheets.has(`${theme}:${quality}`);
+  return loadedBiomeBundles.has(`${theme}:${quality}`);
+}
+
+/** True only when that optional overlay exists and finished loading. */
+export function loadedSeasonalOverlay(
+  theme: LandTheme,
+  quality: AtlasQuality,
+  season: SeasonName,
+): boolean {
+  return loadedSeasonalOverlays.has(`${theme}:${quality}:${season}`);
 }
 
 /**
@@ -231,22 +344,35 @@ export function loadedBiomeBundle(theme: LandTheme, quality: AtlasQuality): bool
  * Warns once per missing frame in dev.
  */
 export function getPropFrame(name: AtlasFrame): Texture | null {
-  const tex = textureFromSheets(naturalPropsSheets.values(), name)
-    ?? textureFromSheets(buildingsSheets.values(), name);
+  const tex = (activeOverlayKey
+    ? seasonalPropsSheets.get(activeOverlayKey)?.textures[name] ?? null
+    : null)
+    ?? (activeBundleKey ? naturalPropsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
+    ?? (activeBundleKey ? buildingsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
+    ?? naturalPropsSheets.get("legacy")?.textures[name]
+    ?? buildingsSheets.get("legacy")?.textures[name]
+    ?? null;
   if (!tex) warnMissing(name, `[atlas] missing frame "${name}" — falling back to procedural sprite`);
   return tex;
 }
 
 /** Authored @2× terrain texture, kept at 64×32 logical world size. */
 export function getTerrainFrame(name: TerrainAtlasFrame): Texture | null {
-  const tex = textureFromSheets(terrainSheets.values(), name);
+  const tex = (activeBundleKey ? terrainSheets.get(activeBundleKey)?.textures[name] ?? null : null)
+    ?? terrainSheets.get("legacy")?.textures[name]
+    ?? null;
   if (!tex) warnMissing(name, `[atlas] missing terrain frame "${name}" — using safe material fallback`);
   return tex;
 }
 
 /** Optional @2× terrain-dressing sprite. Missing detail never affects play. */
 export function getTerrainDetailFrame(name: TerrainDetailFrame): Texture | null {
-  const tex = textureFromSheets(terrainDetailsSheets.values(), name);
+  const tex = (activeOverlayKey
+    ? seasonalDecalSheets.get(activeOverlayKey)?.textures[name] ?? null
+    : null)
+    ?? (activeBundleKey ? terrainDetailsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
+    ?? terrainDetailsSheets.get("legacy")?.textures[name]
+    ?? null;
   if (!tex && terrainDetailsSheets.size > 0) {
     warnMissing(name, `[atlas] missing terrain detail frame "${name}" — omitting optional dressing`);
   }
@@ -275,10 +401,20 @@ export function __resetAtlasForTests(): void {
   naturalPropsSheets.clear();
   buildingsSheets.clear();
   landscapeFields.clear();
+  seasonalPropsSheets.clear();
+  seasonalDecalSheets.clear();
+  seasonalLandscapeFields.clear();
   golfersSheet = null;
   manifestPromise = null;
   corePromise = null;
   bundlePromises.clear();
+  overlayPromises.clear();
+  loadedBiomeBundles.clear();
+  loadedSeasonalOverlays.clear();
+  activeBundleKey = null;
+  activeOverlayKey = null;
+  activeLoadRequest = 0;
   legacyLoadAttempted = false;
   warned.clear();
+  fallbackDiagnostics.length = 0;
 }

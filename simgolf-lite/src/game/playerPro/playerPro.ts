@@ -26,6 +26,12 @@ import {
   type PlayerTournamentRecord,
   type PlayerTrainingRecord,
 } from "../models/playerProTypes";
+import {
+  biomeCompatibilityMetadataFor,
+  getBiomeDefinition,
+  normalizeBiomeKey,
+  validateBiomeCompatibilityMetadata,
+} from "../models/biomes";
 import { courseGeometryVersion } from "../livingClub/livingClub";
 import type { ClubSpec, GolferProfile } from "../sim/golferProfiles";
 import { evalShotExpectedCost } from "../sim/shots/evalShotExpectedCost";
@@ -295,8 +301,20 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
   if (round.rulesSnapshot != null && !decodeControlledRoundSnapshotV2(round.rulesSnapshot).ok) return null;
   if (round.shots.some((trace) => !validActiveShotTrace(trace))) return null;
   if (round.phase === "flight" && (!round.pendingShot || !validActiveShotTrace(round.pendingShot))) return null;
+  const theme = normalizeBiomeKey(round.course.theme);
+  if (!theme) return null;
+  const biomeCompatibility = validateBiomeCompatibilityMetadata(
+    round.course.biomeCompatibility,
+    theme,
+  );
+  if (!biomeCompatibility.ok) return null;
   return {
     ...round,
+    course: {
+      ...round.course,
+      theme,
+      biomeCompatibility: biomeCompatibility.metadata,
+    },
     strokes: Math.max(0, Math.floor(finite(round.strokes))),
     penalties: Math.max(0, Math.floor(finite(round.penalties))),
     rngCursor: Math.max(0, Math.floor(finite(round.rngCursor))),
@@ -394,7 +412,10 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
     courseId: layout.id,
     courseName: layout.name,
     geometryVersion: courseGeometryVersion(view),
-    theme: course.theme ?? "parkland",
+    theme: getBiomeDefinition(course.theme).compatibility.saveKey,
+    biomeCompatibility: biomeCompatibilityMetadataFor(
+      getBiomeDefinition(course.theme).compatibility.saveKey,
+    ),
     width: course.width,
     height: course.height,
     yardsPerTile: course.yardsPerTile,
@@ -552,6 +573,7 @@ function courseFromSnapshot(snapshot: PlayerRoundCourseSnapshot): Course {
     baseGreenFee: 0,
     condition: 1,
     theme: snapshot.theme,
+    biomeCompatibility: snapshot.biomeCompatibility,
   };
 }
 

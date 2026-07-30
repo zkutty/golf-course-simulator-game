@@ -52,6 +52,10 @@ describe("M43 scenario authoring vocabulary", () => {
       challenge: { difficulty: "hard", startingCash: 1234, goals: [{ id: "cash-goal", label: "Cash", conditions: [{ metric: "cash", comparator: ">=", target: 1000 }] }], allowedEventIds: [] },
     });
     const run = buildPackageTestRun(packageValue, base.world, "test-instance");
+    expect(packageValue.manifest.kind).toBe("challenge");
+    expect(packageValue.manifest.biomeCompatibility).toEqual(
+      packageValue.payload.course.biomeCompatibility,
+    );
     expect(run.course.holes).not.toBe(packageValue.payload.course.holes);
     expect(run.world).not.toBe(base.world);
     expect(run.world.cash).toBe(1234);

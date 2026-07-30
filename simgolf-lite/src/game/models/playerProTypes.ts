@@ -1,5 +1,6 @@
 import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import type { ReliefResolution, ShotRuling, SharedShotOutcome } from "../rules/contracts";
+import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -56,7 +57,8 @@ export interface PlayerRoundCourseSnapshot {
   courseName: string;
   /** Canonical identity of the routed course at round start. */
   geometryVersion?: string;
-  theme: "parkland" | "links" | "desert";
+  theme: LandTheme;
+  biomeCompatibility?: BiomeCompatibilityMetadata;
   width: number;
   height: number;
   yardsPerTile: number;

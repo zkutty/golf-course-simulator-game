@@ -9,6 +9,7 @@ import type {
 } from "./types";
 import { maxSlopeInRect } from "./elevation";
 import { isOwnedTile } from "../estate/estate";
+import { getBiomeDefinition } from "./biomes";
 
 /**
  * Building registry + placement rules (ZKU-152).
@@ -35,10 +36,11 @@ export interface BuildingSpec {
 
 export type BuildingVisualFrame = `${LandTheme}_${BuildingType}_t${BuildingTier}`;
 
-/** Theme/tier visual selection is data-driven and always has a parkland T1 fallback. */
+/** Theme/tier visual selection follows the registry's structure owner. */
 export function buildingVisualFrame(building: Building, theme: LandTheme = "parkland"): BuildingVisualFrame {
   const tier: BuildingTier = building.type === "clubhouse" ? 1 : (building.tier ?? 1);
-  return `${theme}_${building.type}_t${tier}`;
+  const owner = getBiomeDefinition(theme).content.structures.buildings;
+  return `${owner}_${building.type}_t${tier}`;
 }
 
 export const BUILDING_SPECS: Record<BuildingType, BuildingSpec> = {

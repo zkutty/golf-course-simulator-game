@@ -2,7 +2,6 @@ import type {
   Building,
   Course,
   Difficulty,
-  LandTheme,
   PlayMode,
   WeekResult,
   World,
@@ -52,9 +51,14 @@ import { normalizeCampaignRun } from "../game/campaign/campaign";
 import { normalizePaceOperationsState } from "../game/live/paceHistory";
 import { migratePlayerProActiveRoundSnapshotV20 } from "../game/rules/roundSnapshotMigration";
 import { normalizeM51CourseMobilityState, normalizeM51MobilityState } from "../game/m51/mobility";
+import {
+  biomeCompatibilityMetadataFor,
+  normalizeBiomeKey,
+  validateBiomeCompatibilityMetadata,
+} from "../game/models/biomes";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 22 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 23 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -159,6 +163,10 @@ export interface SaveV21 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV22 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 22;
+  records?: CourseRecords;
+}
+export interface SaveV23 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -181,22 +189,76 @@ export type SaveLoadResult =
   | { ok: true; payload: SavePayload; migratedFrom?: number }
   | { ok: false; error: SaveLoadError };
 
+function courseForPersistence(course: Course): Course {
+  const theme = normalizeBiomeKey(course.theme ?? "parkland");
+  if (!theme) {
+    throw new Error(`Cannot save unsupported biome "${String(course.theme)}".`);
+  }
+  const compatibility = validateBiomeCompatibilityMetadata(
+    course.biomeCompatibility,
+    theme,
+  );
+  if (!compatibility.ok) throw new Error(`Cannot save: ${compatibility.error}`);
+  return {
+    ...course,
+    theme,
+    biomeCompatibility: biomeCompatibilityMetadataFor(theme),
+  };
+}
+
+/**
+ * Attach canonical biome evidence at every save/export boundary. Runtime
+ * state remains unchanged; only the serialized copy is enriched.
+ */
+export function payloadForPersistence(payload: SavePayload): SavePayload {
+  const course = courseForPersistence(payload.course);
+  const activeRound = payload.world.playerPro?.activeRound;
+  const roundTheme = normalizeBiomeKey(activeRound?.course.theme);
+  if (activeRound && !roundTheme) {
+    throw new Error(`Cannot save active round with unsupported biome "${String(activeRound.course.theme)}".`);
+  }
+  const roundCompatibility = activeRound && roundTheme
+    ? validateBiomeCompatibilityMetadata(activeRound.course.biomeCompatibility, roundTheme)
+    : null;
+  if (roundCompatibility && !roundCompatibility.ok) {
+    throw new Error(`Cannot save active round: ${roundCompatibility.error}`);
+  }
+  const world = activeRound && roundTheme
+    ? {
+        ...payload.world,
+        playerPro: {
+          ...payload.world.playerPro!,
+          activeRound: {
+            ...activeRound,
+            course: {
+              ...activeRound.course,
+              theme: roundTheme,
+              biomeCompatibility: biomeCompatibilityMetadataFor(roundTheme),
+            },
+          },
+        },
+      }
+    : payload.world;
+  return { ...payload, course, world };
+}
+
 export function saveGame(payload: SavePayload) {
+  const persisted = payloadForPersistence(payload);
   const migratedPlayerPro = migratePlayerProActiveRoundSnapshotV20(
-    payload.world.playerPro,
-    payload.course,
+    persisted.world.playerPro,
+    persisted.course,
   ).playerPro as World["playerPro"];
-  const save: SaveV22 = {
+  const save: SaveV23 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
-    course: payload.course,
-    world: migratedPlayerPro === payload.world.playerPro
-      ? payload.world
-      : { ...payload.world, playerPro: migratedPlayerPro },
-    history: payload.history,
-    records: payload.records,
-    live: payload.live,
-    tutorial: payload.tutorial,
+    course: persisted.course,
+    world: migratedPlayerPro === persisted.world.playerPro
+      ? persisted.world
+      : { ...persisted.world, playerPro: migratedPlayerPro },
+    history: persisted.history,
+    records: persisted.records,
+    live: persisted.live,
+    tutorial: persisted.tutorial,
   };
   localStorage.setItem(KEY, JSON.stringify(save));
 }
@@ -633,6 +695,10 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // with bounded evidence/aggregates. Course-aware deterministic migration
   // happens in the normalizer after stable building IDs are available.
   21: (save) => ({ ...save, schemaVersion: 22 }),
+  // V23 persists canonical biome/content/climate compatibility evidence on
+  // courses and active round snapshots. The normalizer derives it for older
+  // Parkland/Links/Desert files without altering deterministic state.
+  22: (save) => ({ ...save, schemaVersion: 23 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -770,6 +836,21 @@ function sanitizeObjectives(raw: unknown): ObjectiveState | null {
   };
 }
 
+function activeRoundBiomeError(rawPlayerPro: unknown): string | null {
+  if (!isRecord(rawPlayerPro) || !isRecord(rawPlayerPro.activeRound)) return null;
+  const activeRound = rawPlayerPro.activeRound;
+  if (!isRecord(activeRound.course)) return null;
+  const theme = normalizeBiomeKey(activeRound.course.theme);
+  if (!theme) {
+    return `The active round uses unsupported biome "${String(activeRound.course.theme)}".`;
+  }
+  const compatibility = validateBiomeCompatibilityMetadata(
+    activeRound.course.biomeCompatibility,
+    theme,
+  );
+  return compatibility.ok ? null : compatibility.error;
+}
+
 /**
  * Validate + normalize a parsed save of any vintage into a playable
  * payload, or null if it's unusable. Shared by the legacy single-slot
@@ -787,6 +868,17 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     const worldError = validateWorldShape(parsed.world);
     if (worldError) return { ok: false, error: worldError };
     const rawCourse = parsed.course as unknown as Course;
+    const normalizedTheme = normalizeBiomeKey(rawCourse.theme ?? "parkland");
+    if (!normalizedTheme) {
+      return fail("INVALID_COURSE", `The save uses unsupported biome "${String(rawCourse.theme)}".`);
+    }
+    const biomeCompatibility = validateBiomeCompatibilityMetadata(
+      rawCourse.biomeCompatibility,
+      normalizedTheme,
+    );
+    if (!biomeCompatibility.ok) {
+      return fail("INVALID_COURSE", biomeCompatibility.error);
+    }
     const rawWidth = rawCourse.width;
     const rawHeight = rawCourse.height;
 
@@ -817,7 +909,8 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       ),
       decorations: sanitizeDecorations(rawCourse.decorations, rawWidth, rawHeight),
       yardsPerTile: rawCourse.yardsPerTile ?? DEFAULT_COURSE.yardsPerTile,
-      theme: oneOf<LandTheme>(rawCourse.theme, ["parkland", "links", "desert"], "parkland"),
+      theme: normalizedTheme,
+      biomeCompatibility: biomeCompatibility.metadata,
       surfaceIntent: normalizeSurfaceIntent(rawCourse.surfaceIntent, rawWidth, rawHeight, TERRAIN_VALUES),
       activePinRotation: oneOf<PinRotation>(rawCourse.activePinRotation, PIN_ROTATIONS, "A"),
       // Do not inherit DEFAULT_COURSE's starter routing when a valid legacy
@@ -854,6 +947,8 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     }
 
     const rawWorld = parsed.world as unknown as World;
+    const roundBiomeError = activeRoundBiomeError(rawWorld.playerPro);
+    if (roundBiomeError) return fail("INVALID_WORLD", roundBiomeError);
     const rawPlayerPro = migrated.migratedFrom === 19 || migrated.migratedFrom == null
       ? migratePlayerProActiveRoundSnapshotV20(rawWorld.playerPro, course).playerPro
       : rawWorld.playerPro;

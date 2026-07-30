@@ -57,6 +57,8 @@ describe("scenario definitions (ZKU-164)", () => {
       expect(a.world.scenarioId).toBe(s.id);
       expect(a.world.difficulty).toBe(s.difficulty);
       expect(a.course.theme).toBe(s.theme);
+      expect(s.biomeCompatibility.biome).toBe(s.theme);
+      expect(a.course.biomeCompatibility).toEqual(s.biomeCompatibility);
       expect(a.world.objectives?.goals).toEqual(CAMPAIGN_CHAPTER_BY_ID.get(s.id)?.phases[0].goals ?? s.goals);
       expect(a.world.objectives?.outcome).toBe("OPEN");
       if (s.startingCash != null) expect(a.world.cash).toBe(s.startingCash);
@@ -89,6 +91,9 @@ describe("scenario definitions (ZKU-164)", () => {
     const loaded = normalizeLoadedSave({ schemaVersion: 1, savedAt: 0, course, world });
     expect(loaded).not.toBeNull();
     expect(loaded!.world.scenarioId).toBe("members-club");
+    expect(loaded!.course.biomeCompatibility).toEqual(
+      getScenario("members-club")!.biomeCompatibility,
+    );
     expect(loaded!.world.constraints).toEqual({
       noLoans: false,
       fixedGreenFee: 110,

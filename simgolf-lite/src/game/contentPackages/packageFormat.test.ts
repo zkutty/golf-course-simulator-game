@@ -72,6 +72,17 @@ async function fixture() {
   });
 }
 
+async function resign<T extends { manifest: { checksum: string }; payload: unknown }>(value: T): Promise<T> {
+  const next = structuredClone(value);
+  const { checksum: _checksum, ...manifest } = next.manifest;
+  const bytes = new TextEncoder().encode(canonicalPackageJson({ manifest, payload: next.payload }));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  next.manifest.checksum = [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+  return next;
+}
+
 describe("M43 course and challenge packages", () => {
   it("creates deterministic non-save packages with a verified checksum", async () => {
     const value = await fixture();
@@ -82,6 +93,60 @@ describe("M43 course and challenge packages", () => {
     expect(text).not.toContain("livingClub");
     expect(text).not.toContain("playerPro");
     expect(text).not.toContain("enterprise");
+    expect(value.manifest.biomeCompatibility).toMatchObject({
+      version: 1,
+      biome: value.manifest.theme,
+      contentVersion: 1,
+    });
+    expect(value.payload.course.biomeCompatibility).toEqual(value.manifest.biomeCompatibility);
+  });
+
+  it("migrates historical biome labels and rejects unsupported or contradictory biome/climate metadata", async () => {
+    const value = await fixture();
+    const legacy = structuredClone(value) as typeof value & {
+      manifest: { theme: string; biomeCompatibility?: unknown; requiredSaveSchema: number };
+      payload: { course: typeof value.payload.course & { theme: string; biomeCompatibility?: unknown } };
+    };
+    (legacy.manifest as unknown as { theme: string }).theme = "Links";
+    (legacy.payload.course as unknown as { theme: string }).theme = "Links";
+    legacy.manifest.requiredSaveSchema = 22;
+    delete legacy.manifest.biomeCompatibility;
+    delete legacy.payload.course.biomeCompatibility;
+    const migrated = await validatePackageText(packageText(await resign(legacy)));
+    expect(migrated.status).toBe("migratable");
+    if (migrated.status === "migratable") {
+      expect(migrated.value.manifest.theme).toBe("links");
+      expect(migrated.value.manifest.biomeCompatibility).toMatchObject({
+        biome: "links",
+        climate: { phenologyRegime: "coastal-four-season", exposure: "exposed" },
+      });
+      expect(migrated.value.payload.course.theme).toBe("links");
+      expect((await validatePackageText(packageText(migrated.value))).status).toBe("compatible");
+    }
+
+    const future = structuredClone(value);
+    future.manifest.biomeCompatibility = {
+      ...future.manifest.biomeCompatibility!,
+      contentVersion: future.manifest.biomeCompatibility!.contentVersion + 1,
+    };
+    expect(await validatePackageText(packageText(await resign(future)))).toMatchObject({
+      status: "unsupported",
+      errors: [expect.stringContaining("newer than supported")],
+    });
+
+    const mismatch = structuredClone(value);
+    mismatch.payload.course.theme = "desert";
+    expect(await validatePackageText(packageText(await resign(mismatch)))).toMatchObject({
+      status: "corrupt",
+      errors: expect.arrayContaining([expect.stringContaining("does not match")]),
+    });
+    await expect(createCoursePackage({
+      course: { ...value.payload.course, theme: "moonbase" as never },
+      title: "Unsupported",
+      description: "Must fail before packaging",
+      author: value.manifest.author,
+      requiredGameVersion: "1.0.0",
+    })).rejects.toThrow("Cannot package unsupported biome");
   });
 
   it("rejects tampering, URLs, traversal strings, unsupported versions, and oversized previews", async () => {
@@ -178,6 +243,36 @@ describe("M43 course and challenge packages", () => {
     expect(result.validation.status).toBe("corrupt");
     expect(await listContentLibrary(platform)).toEqual([]);
     expect([...platform.values.keys()].some((key) => key.startsWith("coursecraft_content_quarantine_"))).toBe(true);
+  });
+
+  it("keeps the previous package revision readable when manifest commit is interrupted", async () => {
+    const platform = testPlatform();
+    const original = await fixture();
+    await importContentPackage(packageText(original), "manual", platform);
+    const replacement = await createCoursePackage({
+      course: original.payload.course,
+      contentId: original.manifest.contentId,
+      revision: 2,
+      title: "Reference Estate v2",
+      description: "Interrupted replacement",
+      author: original.manifest.author,
+      requiredGameVersion: original.manifest.requiredGameVersion,
+      createdAt: new Date(original.manifest.createdAt),
+      now: new Date("2026-07-25T12:00:00.000Z"),
+    });
+    const write = platform.files.writeTextAtomic;
+    platform.files.writeTextAtomic = async (key, text) => {
+      if (key === "coursecraft_content_library_v1") throw new Error("manifest interrupted");
+      return write(key, text);
+    };
+    await expect(importContentPackage(packageText(replacement), "manual", platform))
+      .rejects.toThrow("manifest interrupted");
+    platform.files.writeTextAtomic = write;
+
+    expect(await listContentLibrary(platform)).toMatchObject([{ revision: 1 }]);
+    expect((await readContentPackage(original.manifest.contentId, platform))?.manifest.checksum)
+      .toBe(original.manifest.checksum);
+    expect([...platform.values.keys()].some((key) => key.includes("@r2-"))).toBe(false);
   });
 
   it("reconciles Workshop subscriptions, installed packages, updates, cached removal, and corrupt items", async () => {

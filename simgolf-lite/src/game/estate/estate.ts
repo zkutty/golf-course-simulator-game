@@ -1,4 +1,5 @@
 import type { Course, Estate, EstateParcel, LandTheme, Point, Terrain } from "../models/types";
+import { getBiomeDefinition } from "../models/biomes";
 import { COURSE_HEIGHT, COURSE_WIDTH, STARTER_PARCEL_HEIGHT, STARTER_PARCEL_WIDTH } from "../models/constants";
 
 /**
@@ -158,7 +159,7 @@ export function createEstate(course: Pick<Course, "width" | "height" | "tiles" |
     const sceneryValue = Math.round(sceneryScore * 145);
     const waterValue = Math.round(waterPercent * 310);
     const elevationValue = Math.round(elevationRange * 1_400);
-    const pressureValue = pressureBase[course.theme ?? "parkland"] + (hash(seed, index, 97) % 8_001);
+    const pressureValue = pressureBase[getBiomeDefinition(course.theme).key] + (hash(seed, index, 97) % 8_001);
     const total = Math.max(25_000, Math.round((landValue + developableValue + roadAccessValue + sceneryValue + waterValue + elevationValue + pressureValue) / 1000) * 1000);
     return {
       id: `parcel-${index + 1}`, name: parcelName(index), tileCount: s.count, acreage,

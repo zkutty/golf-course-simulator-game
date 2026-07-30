@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState, useCallback } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState, useCallback, type CSSProperties } from "react";
 import { formatCurrency } from "./i18n/format";
 import { useI18n } from "./i18n/useI18n";
 import { perfProfiler } from "./utils/performanceProfiler";
@@ -45,10 +45,12 @@ import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
 import { HoleMinimap } from "./ui/HoleMinimap";
 import { createNewGame } from "./game/gen/newGame";
 import type { GameSetup } from "./game/models/setup";
+import { BIOME_KEYS, isLandTheme } from "./game/models/biomes";
 import { createScenarioGame, getScenario, SCENARIOS } from "./game/scenarios/scenarios";
 import type { ScenarioDefinition } from "./game/scenarios/types";
 import { recordCampaignChoice, recordScenarioAttempt, recordScenarioCompleted } from "./utils/careerStore";
 import { NewGameWizard } from "./ui/NewGameWizard";
+import { biomeUiStyle, biomeUiTheme } from "./ui/biomeUiTheme";
 import { generateCourseName } from "./utils/courseNames";
 import { applyAction } from "./core/reducer";
 import type { Action } from "./core/actions";
@@ -62,6 +64,15 @@ import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
 import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createM26MultiCourseReferenceCourse, createM27ReleaseReferenceCourse, createParklandVisualReferenceCourse, createPlayerProReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
+import {
+  BIOME_REFERENCE_ROTATIONS,
+  BIOME_REFERENCE_VIEWS,
+  biomeCameraBookmarks,
+  createBiomeAuthoringReferenceCourse,
+  type BiomeCameraBookmark,
+  type BiomeReferenceRotation,
+  type BiomeReferenceView,
+} from "./game/testing/biomeAuthoring";
 import { createM47CertificationCourse } from "./game/testing/m47Certification";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { runLiveDaysHeadless } from "./game/live/headless";
@@ -537,6 +548,7 @@ export default function App() {
   const [holeEditCamera, setHoleEditCamera] = useState<CameraState | null>(null);
   const [minimapView, setMinimapView] = useState<IsoCameraSnapshot | null>(null);
   const [minimapJump, setMinimapJump] = useState<{ center: Point; nonce: number } | null>(null);
+  const [m52ReferenceCamera, setM52ReferenceCamera] = useState<BiomeCameraBookmark | null>(null);
   const [audioCameraCenter, setAudioCameraCenter] = useState<Point>(() => ({ x: course.width / 2, y: course.height / 2 }));
   const audioCameraCenterRef = useRef(audioCameraCenter);
   const holeEditCameraManualRef = useRef(false); // Track if camera was manually set
@@ -1491,23 +1503,34 @@ export default function App() {
     const isM30Fixture = fixtureParams.get("m30Fixture") === "1";
     const isM38Fixture = fixtureParams.get("m38Fixture") === "1";
     const isM47Fixture = fixtureParams.get("m47Fixture") === "1";
+    const isM52Fixture = fixtureParams.get("m52Fixture") === "1";
+    const requestedM52View = fixtureParams.get("m52View");
+    const m52View: BiomeReferenceView = BIOME_REFERENCE_VIEWS.includes(requestedM52View as BiomeReferenceView)
+      ? requestedM52View as BiomeReferenceView
+      : "overview";
+    const parsedM52Rotation = Number(fixtureParams.get("m52Rotation") ?? 0);
+    const m52Rotation: BiomeReferenceRotation = BIOME_REFERENCE_ROTATIONS.includes(parsedM52Rotation as BiomeReferenceRotation)
+      ? parsedM52Rotation as BiomeReferenceRotation
+      : 0;
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isPropertyFixture) return;
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
     const m25SeedParam = fixtureParams.get("m25Seed");
     const parsedM25Seed = m25SeedParam == null ? Number.NaN : Number(m25SeedParam);
     const m25Seed = Number.isInteger(parsedM25Seed) ? parsedM25Seed | 0 : 250025;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
-    const requestedTheme = fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
-    const fixtureTheme = requestedTheme === "links" || requestedTheme === "desert" ? requestedTheme : "parkland";
+    const requestedTheme = fixtureParams.get("m52Theme") ?? fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
+    const fixtureTheme = isLandTheme(requestedTheme) ? requestedTheme : BIOME_KEYS[0];
     let fixtureCourse = isPropertyFixture
       ? { ...createReferenceCourse(), property: starterPropertyCourse() }
       : isM38Fixture
       ? createPlayerProReferenceCourse()
       : isM27Fixture
       ? createM27ReleaseReferenceCourse(fixtureTheme)
+      : isM52Fixture
+      ? createBiomeAuthoringReferenceCourse(fixtureTheme)
       : isM47Fixture
       ? createM47CertificationCourse(18)
       : isM30Fixture
@@ -1547,6 +1570,11 @@ export default function App() {
     // layout IDs, looks like a physical hole edit, and needlessly replans every
     // live golfer in the renderer stress scenes.
     fixtureCourse = normalizeCourseLayouts(fixtureCourse);
+    const m52Bookmark = isM52Fixture
+      ? biomeCameraBookmarks(fixtureCourse).find((bookmark) =>
+        bookmark.view === m52View && bookmark.rotation === m52Rotation) ?? null
+      : null;
+    setM52ReferenceCamera(m52Bookmark);
     let fixtureWorld: World = {
       ...gameStateRef.current.world,
       week: 1,
@@ -1647,6 +1675,31 @@ export default function App() {
       fixtureWorld = recordLivingClubRound(fixtureWorld, fixtureCourse, makeRound(2), 4);
       fixtureWorld = advanceLivingClubDay(fixtureCourse, fixtureWorld, 5).world;
     }
+    if (isM52Fixture && m52View === "direct-play") {
+      const career = createDefaultPlayerPro({
+        seed: fixtureWorld.runSeed,
+        name: "ZK-564 Reference Player",
+        background: "architect",
+      });
+      const started = startPlayableRound({
+        course: fixtureCourse,
+        world: { ...fixtureWorld, playerPro: career },
+        layoutId: activeCourseLayout(fixtureCourse).id,
+        teeSet: "member",
+        pinRotation: "A",
+        day: 0,
+      });
+      if (!started.ok) throw new Error(`ZK-564 direct-play fixture failed: ${started.reason}`);
+      fixtureWorld = {
+        ...fixtureWorld,
+        playerPro: { ...career, activeRound: started.round },
+      };
+      setPlayerShotAim(caddieRecommendation(started.round, career.skills).aim);
+      setShowPlayerPro(false);
+    } else if (isM52Fixture) {
+      setPlayerShotAim(null);
+      setFollowSelected(false);
+    }
     dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
     if (isM23Fixture) {
       setActiveHoleIndex(0);
@@ -1654,7 +1707,27 @@ export default function App() {
       setViewMode("ARCHITECT");
       if (showTeeOfferFixture) setTeeSetupPrompt({ holeIndex: 0 });
     }
-    if (isPerfFixture || isM27Fixture) {
+    if (isM52Fixture && m52View === "golfer-follow") {
+      const state = createRenderPerfLiveState(fixtureCourse, fixtureWorld);
+      const selectedGolferId = state.golfers[0]?.id ?? null;
+      live.restoreSnapshot(snapshotLiveSimulation({
+        state,
+        pendingCash: 0,
+        speed: "paused",
+        selectedGolferId,
+      }));
+      if (selectedGolferId != null) {
+        live.selectGolfer(selectedGolferId);
+        setFollowSelected(true);
+      }
+    } else if (isM52Fixture) {
+      live.restoreSnapshot(snapshotLiveSimulation({
+        state: createLiveState(fixtureCourse, fixtureWorld, 0),
+        pendingCash: 0,
+        speed: "paused",
+        selectedGolferId: null,
+      }));
+    } else if (isPerfFixture || isM27Fixture) {
       live.restoreSnapshot(snapshotLiveSimulation({
         state: createRenderPerfLiveState(fixtureCourse, fixtureWorld),
         pendingCash: 0,
@@ -1672,6 +1745,11 @@ export default function App() {
     setAppProfile((current) => ({ ...current, tutorialOffered: true, tutorialCompleted: true }));
     setTutorialProgress(null);
     setShowTutorialOffer(false);
+    if (isM52Fixture) {
+      setViewMode(m52View === "overview" || m52View === "build" ? "ARCHITECT" : "COZY");
+      setHoleEditMode("global");
+      setActiveHoleIndex(0);
+    }
     if (isM27Fixture && !isPerfMeasurement) setShowCourseManager(true);
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
     flowDispatch({ type: "ENTER_GAME" });
@@ -2455,13 +2533,21 @@ export default function App() {
         })(),
       },
       camera: {
-        center: audioCameraCenter,
+        center: minimapView?.center ?? audioCameraCenter,
         zoom: minimapView?.zoom ?? null,
         rotation: minimapView?.rotation ?? 0,
         visibleEstateBounds: minimapView?.bounds ?? null,
         viewMode,
         renderer: "pixi",
         regionalSurround: true,
+        reference: m52ReferenceCamera ? {
+          id: m52ReferenceCamera.id,
+          view: m52ReferenceCamera.view,
+          focus: m52ReferenceCamera.focus,
+          expectedCenter: m52ReferenceCamera.center,
+          expectedZoom: m52ReferenceCamera.zoom,
+          expectedRotation: m52ReferenceCamera.rotation * 90,
+        } : null,
       },
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, weekReport: pendingWeekReport ? { week: pendingWeekReport.week, profit: pendingWeekReport.result.profit, weather: pendingWeekReport.result.weatherSummary ?? null } : null, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, pace: live.status.pace, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
       seasons: (() => {
@@ -2629,7 +2715,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -2742,6 +2828,12 @@ export default function App() {
         dispatch({ type: "LOAD_GAME", course: fixture.course, world: fixture.world });
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixture.course, fixture.world, 6), pendingCash: 0, speed: "paused", selectedGolferId: null }));
         setShowSeasonsLegacy(true);
+      },
+      setM52ReferenceBookmark: (view, rotation) => {
+        const bookmark = biomeCameraBookmarks(gameStateRef.current.course).find((candidate) =>
+          candidate.view === view && candidate.rotation === rotation);
+        if (!bookmark) throw new Error(`Unknown ZK-564 reference bookmark ${view}-r${rotation}`);
+        setM52ReferenceCamera(bookmark);
       },
       startWeekCloseFixture: async (weekOverride?: number) => {
         const course = gameStateRef.current.course;
@@ -4101,6 +4193,15 @@ export default function App() {
     throw new Error("M45 controlled React crash");
   }
 
+  // Context is intentionally computed at the edge of the UI only. It never
+  // enters simulation/save state and cannot alter shell commands or focus.
+  const contextualUiTheme = biomeUiTheme(course.theme, {
+    season: seasonalState(world, course, live.status.dayIndex).calendar.season,
+    weather: activeWeather(world, course, live.status.dayIndex).kind,
+    colorVision: appProfile.accessibility.colorVision,
+    reducedMotion: appProfile.accessibility.reducedMotion,
+  });
+
   if (screen === "setup") {
     return (
       <>
@@ -4154,7 +4255,15 @@ export default function App() {
   }
 
   return (
-    <div className={`cc-app${photoMode ? " cc-photo-mode" : ""}`}>
+    <div
+      className={`cc-app${photoMode ? " cc-photo-mode" : ""}`}
+      data-biome={contextualUiTheme.biome}
+      data-biome-motif={contextualUiTheme.motif}
+      data-biome-fallback={contextualUiTheme.fallback || undefined}
+      data-season={contextualUiTheme.season}
+      data-weather={contextualUiTheme.weather}
+      style={biomeUiStyle(contextualUiTheme) as CSSProperties}
+    >
       <TooltipSurface>
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{a11yMessage}</div>
         <GameBackground />
@@ -4273,6 +4382,7 @@ export default function App() {
                 paceBottlenecks={live.status.pace.bottlenecks}
                 animationsEnabled={effectiveAnimations && resolvedGraphicsQuality !== "low"}
                 graphicsQuality={resolvedGraphicsQuality}
+                season={contextualUiTheme.season}
                 onFrameTime={handleGraphicsFrame}
                 ambienceFx={appProfile.graphics.ambienceFx && resolvedGraphicsQuality !== "low"}
                 waterAnimation={appProfile.graphics.waterAnimation && resolvedGraphicsQuality !== "low"}
@@ -4333,6 +4443,7 @@ export default function App() {
                 onCameraCenter={setAudioCameraCenter}
                 onViewChange={setMinimapView}
                 cameraJump={minimapJump}
+                referenceCamera={m52ReferenceCamera}
             />
             {!tutorialProgress && (
               <WorkspaceNav

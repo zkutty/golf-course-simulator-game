@@ -12,6 +12,7 @@ dist
 dist-ssr
 desktop-dist/
 soak-dist/
+biome-audit-dist/
 test-results/
 *.local
 .env*

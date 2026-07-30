@@ -1,0 +1,321 @@
+{
+  "reportVersion": 1,
+  "issue": "ZK-565",
+  "milestone": "M52",
+  "generatedAt": "2026-07-30T15:53:10Z",
+  "candidate": {
+    "commit": "a26e1346a6af451d1f42f7d1face459f3971327b",
+    "parent": "6097cf866ad28e2ef6f3e50340cee81e8a3f72ce",
+    "subject": "fix: normalize biome metadata in state hashes"
+  },
+  "disposition": {
+    "machineCertification": "PASS",
+    "releaseAcceptance": "DEFERRED",
+    "summary": "All required automated M52 gates passed on the immutable candidate. Physical-GPU frame pacing and human art, gameplay, accessibility, and aesthetic approval remain deferred to the final validation phase."
+  },
+  "freshCandidateEvidence": [
+    {
+      "gate": "full-unit",
+      "command": "npm test -- --reporter=dot",
+      "status": "PASS",
+      "result": {
+        "testFilesPassed": 125,
+        "testsPassed": 980,
+        "testsSkipped": 1,
+        "testsTotal": 981,
+        "durationSeconds": 36.23
+      },
+      "notes": [
+        "Includes reducer 10,000-sequence property fuzzing and hostile content-package fuzzing.",
+        "Expected missing-frame diagnostics were emitted only by deliberate atlas fallback tests."
+      ]
+    },
+    {
+      "gate": "production-build-and-asset-audits",
+      "command": "npm run build",
+      "status": "PASS",
+      "result": {
+        "modulesTransformed": 1334,
+        "viteBuildSeconds": 2.7,
+        "registeredBiomes": 3,
+        "audioFilesVerified": 40,
+        "offlineShellAssetsInjected": 19,
+        "assetAuditErrors": 0,
+        "parkland4xAuditErrors": 0
+      },
+      "warnings": [
+        "Vite reported the existing saveStore static/dynamic import overlap.",
+        "Vite reported existing chunks above its advisory 500 kB threshold."
+      ]
+    },
+    {
+      "gate": "lint-and-localization",
+      "command": "npm run lint",
+      "status": "PASS",
+      "result": {
+        "errors": 0,
+        "warnings": 12,
+        "uiFilesChecked": 56,
+        "authoredContentFilesChecked": 4
+      },
+      "notes": [
+        "Warnings are existing React Hook dependency/cleanup advisories; neither lint nor i18n emitted an error."
+      ]
+    },
+    {
+      "gate": "biome-consumer-authoring-and-payload-audits",
+      "command": "npm run audit:biome-consumers && npm run audit:biome-authoring && npm run audit:m35-assets",
+      "status": "PASS",
+      "result": {
+        "requiredFindings": 0,
+        "optionalFindings": 45,
+        "explicitFallbacks": 3,
+        "overBudgetPayloads": 0,
+        "logicalAuthoringReportHash": "009f7acf540f7ba1d2f3e7e38cd6964070fe9fe53b896468478480bb13fcdf4e",
+        "logicalFixtureReportHash": "12ae3d207c058174e15c11faf183004538fbb7755c4bebc4f6a29beabfb88ad9"
+      }
+    },
+    {
+      "gate": "historical-save-import-and-atlas-focus",
+      "command": "npx vitest run src/utils/stateHash.test.ts src/utils/save.test.ts src/utils/saveStore.test.ts src/game/contentPackages/packageFormat.test.ts src/game/contentPackages/packageFormat.fuzz.test.ts src/game/models/biomes.test.ts src/game/seasons/seasons.test.ts src/render/atlas.test.ts src/render/atlasManifest.test.ts --reporter=dot",
+      "status": "PASS",
+      "result": {
+        "testFilesPassed": 9,
+        "testsPassed": 71
+      },
+      "coverage": [
+        "schema-v23 historical biome migration",
+        "top-level and active-round compatibility canonicalization",
+        "hostile and contradictory biome rejection",
+        "fresh-profile save import round trips",
+        "atomic hostile package import and package fuzzing",
+        "selected-base and current-season lazy loading",
+        "missing optional overlay fallback",
+        "retry after overlay failure",
+        "late previous-season race protection",
+        "Low-tier optional-payload omission"
+      ]
+    },
+    {
+      "gate": "browser-golden-m52-and-authoring-matrix",
+      "command": "npx playwright test e2e/zk560-biome-registry.e2e.ts e2e/zk562-seasonal-atlas.e2e.ts e2e/zk623-biome-ui-contract.e2e.ts e2e/zk564-biome-authoring.e2e.ts e2e/m35-surface-authoring.e2e.ts e2e/golden-path.e2e.ts --workers=1",
+      "status": "PASS",
+      "result": {
+        "testsPassed": 13,
+        "durationMinutes": 6.4,
+        "biomeReferenceStatesExecuted": 48
+      },
+      "coverage": [
+        "golden save/reload state-hash parity",
+        "checked-in historical save fixture migration",
+        "keyboard remapping and conflict behavior",
+        "accessible palettes, patterns, text scaling, and reduced motion",
+        "curve preview, ordinary commit, and chunk rebuild timing assertions",
+        "registry-driven new game for every biome",
+        "current-season atlas request and base-only fallback",
+        "Parkland, Links, and Desert overview/build/golfer-follow/direct-play at four rotations",
+        "stable CourseCraft UI shell and biome context",
+        "reduced-motion contextual transition removal"
+      ]
+    },
+    {
+      "gate": "pwa-offline-cache",
+      "command": "npm run test:pwa",
+      "status": "PASS",
+      "result": {
+        "strictCspGameplay": true,
+        "selectedBiomeCacheIsolation": true,
+        "scopedInstall": true,
+        "offlineReload": true,
+        "localSavePersistence": true
+      },
+      "notes": [
+        "The Parkland selection cached its hashed manifest and requested payload on demand without Links or Desert leakage, then reloaded those requested assets offline."
+      ]
+    },
+    {
+      "gate": "performance-smoke",
+      "command": "npm run test:perf",
+      "status": "PASS",
+      "result": {
+        "theme": "parkland",
+        "fixture": "perfFixture",
+        "coldStartupMs": 847,
+        "coldStartupBudgetMs": 5000,
+        "fixtureLoadMs": 3913,
+        "rendererWorkMs": 0.36944444179534913,
+        "rendererWorkBudgetMs": 8,
+        "frameP95Ms": 100,
+        "frameP95Asserted": false,
+        "golfers": 100,
+        "chunksVisible": 28,
+        "chunksTotal": 35,
+        "objects": 1048
+      },
+      "notes": [
+        "Headless software GL throttled requestAnimationFrame near 10 fps, so frame spacing is report-only and is not evidence for the 20 ms mid-range target or 33 ms low-end floor."
+      ]
+    },
+    {
+      "gate": "bundled-web-game-client",
+      "commands": [
+        "node /Users/zbkutlow/.codex/skills/develop-web-game/scripts/web_game_playwright_client.js --url 'http://127.0.0.1:5173/?m52Fixture=1&m52Theme=links&m52View=direct-play&m52Rotation=2' --actions-file /Users/zbkutlow/.codex/skills/develop-web-game/references/action_payloads.json --click-selector '[data-testid=\"commit-player-shot\"]' --iterations 2 --pause-ms 500 --screenshot-dir artifacts/zk-565/bundled-client",
+        "node /Users/zbkutlow/.codex/skills/develop-web-game/scripts/web_game_playwright_client.js --url 'http://127.0.0.1:5173/?m52Fixture=1&m52Theme=desert&m52View=golfer-follow&m52Rotation=1' --actions-file /Users/zbkutlow/.codex/skills/develop-web-game/references/action_payloads.json --iterations 2 --pause-ms 3000 --screenshot-dir artifacts/zk-565/bundled-client-stable"
+      ],
+      "status": "PASS",
+      "result": {
+        "consoleOrPageErrorArtifacts": 0,
+        "directPlay": {
+          "theme": "links",
+          "rotationDegrees": 180,
+          "quality": "auto",
+          "resolvedQuality": "high",
+          "shotCommitted": true,
+          "strokes": 1,
+          "ruling": "in_play",
+          "editingLocked": true
+        },
+        "stableVisual": {
+          "theme": "desert",
+          "view": "golfer-follow",
+          "rotationDegrees": 90,
+          "quality": "auto",
+          "resolvedQuality": "high",
+          "golfers": 100,
+          "followingGolferId": 1
+        }
+      },
+      "visualInspection": "PASS: both small minimap/canvas captures were populated and biome-distinct. Direct-play shot and golfer-follow interaction semantics come from the corresponding structured state-1.json files; full-scene visual evidence comes from the approved ZK-564 matrix."
+    }
+  ],
+  "determinism": {
+    "generationSha256": "c3d46b2f50fbdf5b49a5d5532160501e1816dbe0ccb719609697a9144d96748b",
+    "fourYearWeatherSha256": "57fde66c427db1bf4bb494a03d96e59103deed8630d16f648c0af0de5ba88cd7",
+    "climatePhenology": {
+      "status": "PASS",
+      "boundaryBlendDays": 14,
+      "notes": [
+        "Deterministic same-seed/biome/day projection passed.",
+        "All calendar-boundary blends remained bounded.",
+        "Long-year projection and reload left saved history immutable."
+      ]
+    }
+  },
+  "payloadBudgets": {
+    "atlasPair": {
+      "budgetBytes": 8388608,
+      "largestBytes": 1183165,
+      "largest": "Links buildings/decor Medium JSON+PNG",
+      "status": "PASS"
+    },
+    "selectedBiome": {
+      "budgetBytes": 6291456,
+      "status": "PASS",
+      "tiers": [
+        { "biome": "parkland", "quality": "high", "bytes": 3506327 },
+        { "biome": "parkland", "quality": "medium", "bytes": 2958066 },
+        { "biome": "parkland", "quality": "low", "bytes": 2172874 },
+        { "biome": "links", "quality": "high", "bytes": 3462165 },
+        { "biome": "links", "quality": "medium", "bytes": 2911682 },
+        { "biome": "links", "quality": "low", "bytes": 2194175 },
+        { "biome": "desert", "quality": "high", "bytes": 3471416 },
+        { "biome": "desert", "quality": "medium", "bytes": 2914204 },
+        { "biome": "desert", "quality": "low", "bytes": 2187709 }
+      ]
+    },
+    "initialNonAudioCritical": {
+      "budgetBytes": 8388608,
+      "bytes": 3755987,
+      "mib": 3.582,
+      "status": "PASS"
+    }
+  },
+  "graphicsQuality": {
+    "status": "PASS_WITH_HARDWARE_GATE_DEFERRED",
+    "freshEvidence": [
+      "Full unit rerun covers fixed High/Medium/Low preference, Auto low-memory protection, visual density scaling, spike rejection, sustained downgrade, longer upgrade path, cooldown, and invalid samples.",
+      "Browser accessibility matrix covers live graphics/accessibility state and reduced motion.",
+      "M35 surface-authoring browser test passed preview <=50 ms, ordinary commit <=100 ms, and chunk/connected rebuild <=100 ms assertions."
+    ],
+    "controllerContract": {
+      "sampleWindowFrames": 120,
+      "slowWindowsBeforeDowngrade": 2,
+      "fastWindowsBeforeUpgrade": 5,
+      "cooldownFrames": 360,
+      "highToMediumThresholdMs": 20,
+      "mediumToLowThresholdMs": 30,
+      "mediumToHighThresholdMs": 16,
+      "lowToMediumThresholdMs": 22
+    },
+    "residual": "The headless harness cannot certify physical mid-range <=20 ms p95 or low-end <=33 ms p95. Retain these as final physical-hardware gates."
+  },
+  "inheritedEvidence": {
+    "zk329": {
+      "status": "REVALIDATED_ON_CANDIDATE",
+      "notes": [
+        "Content-hashed v2 manifest and per-atlas hash checks were freshly rebuilt/audited.",
+        "Selected-biome and initial-critical payload budgets were freshly audited.",
+        "Cache-on-demand isolation and offline behavior were freshly rerun through PWA smoke."
+      ]
+    },
+    "zk332": {
+      "status": "PARTIALLY_REVALIDATED_ON_CANDIDATE",
+      "notes": [
+        "Unit, build, lint, browser authoring timings, Parkland performance smoke, PWA, saves, and bundled client were freshly rerun.",
+        "Committed Links and Desert raw performance fixtures remain inherited context only: Links 861 ms startup / 0.292 ms work; Desert 967 ms startup / 0.294 ms work.",
+        "The historical M35 certification document remains HOLD guidance and was not treated as acceptance evidence for this candidate."
+      ]
+    }
+  },
+  "failureAndRepairHistory": [
+    {
+      "candidate": "6097cf866ad28e2ef6f3e50340cee81e8a3f72ce",
+      "gate": "golden save/reload",
+      "status": "FAILED",
+      "details": "Schema v23 added canonical biome compatibility metadata at persistence, but certification hashing did not canonicalize it. Before hash 29e9c4e3 differed from after hash a8b1f502."
+    },
+    {
+      "repair": "Canonicalize and validate top-level and active-round biome identity before state hashing.",
+      "review": "Independent review first identified the active-round parity edge case; the expanded repair and rejection tests were independently approved.",
+      "candidate": "a26e1346a6af451d1f42f7d1face459f3971327b",
+      "status": "PASS"
+    }
+  ],
+  "artifactHashes": {
+    "zk564AuthoringAuditFileSha256": "e6bf04cf76a199c505899e2b7272d69e71b52871aa3b30f6453eb662aaf07664",
+    "zk564ReferenceFixturesFileSha256": "3a69d43c67a275bd2eacca1af721e56412290a153d7d2c33f653e267a3e0a003",
+    "zk564PayloadReportFileSha256": "6f3d836bcb527734fa087b2e806e374c5282daf66e8181930a45056774412b08",
+    "atlasManifestFileSha256": "9ad33795b4ebb819b5d4b3d324bb10273bc3c73e861e44d747743c6dae603361",
+    "directPlayStateFileSha256": "5d48ea98d7fe311def6f5fee0d0fc6974fa5459cd466f9a62c323b39a29aab23",
+    "directPlayScreenshotFileSha256": "d3fb8db732618f12dca1e4d46aa219cfb3347a16798ded63163fa411c69d2104",
+    "stableGolferFollowStateFileSha256": "d7b4e83c73f4a6c8bca41fdb590c9711616bbe050f87e63fe79421457395e52e",
+    "stableGolferFollowScreenshotFileSha256": "8b86bcd844b626f5477479e51a66fd954beac23f94b1cf6f151439d720325f8c"
+  },
+  "artifacts": [
+    "artifacts/zk-565/machine-certification-v1.json",
+    "artifacts/zk-565/ZK-565_MACHINE_CERTIFICATION_V1.md",
+    "artifacts/zk-565/bundled-client/state-1.json",
+    "artifacts/zk-565/bundled-client/shot-1.png",
+    "artifacts/zk-565/bundled-client-stable/state-1.json",
+    "artifacts/zk-565/bundled-client-stable/shot-1.png"
+  ],
+  "residualGates": [
+    {
+      "gate": "physical-gpu-frame-pacing",
+      "status": "DEFERRED",
+      "required": "Measure p95 on specified physical mid-range and low-end GPU profiles; target <=20 ms and floor <=33 ms."
+    },
+    {
+      "gate": "human-art-and-aesthetic-approval",
+      "status": "DEFERRED"
+    },
+    {
+      "gate": "human-gameplay-and-golf-authenticity",
+      "status": "DEFERRED"
+    },
+    {
+      "gate": "human-accessibility-and-device-validation",
+      "status": "DEFERRED"
+    }
+  ]
+}

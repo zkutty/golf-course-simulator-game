@@ -3,7 +3,7 @@ import { formatCurrency } from "../i18n/format";
 import { SCENARIOS } from "../game/scenarios/scenarios";
 import type { ScenarioDefinition } from "../game/scenarios/types";
 import { isScenarioUnlocked, loadCareer } from "../utils/careerStore";
-import { getLandTheme } from "../game/models/themes";
+import { getBiomeDefinition } from "../game/models/biomes";
 import { getDifficultyProfile } from "../game/balance/difficulty";
 import { T } from "../i18n/T";
 import { useI18n } from "../i18n/useI18n";
@@ -11,8 +11,6 @@ import { IS_DEMO, scenarioAvailableInEdition } from "../config/edition";
 
 // Career scenario ladder (ZKU-164): card list with medal states —
 // locked / unlocked / completed (+ best-result stats), sequential unlock.
-
-const THEME_ICON: Record<string, string> = { parkland: "🌳", links: "🌾", desert: "🌵" };
 
 export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) => void }) {
   const { t } = useI18n();
@@ -56,7 +54,7 @@ export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) 
             }}
           >
             <div style={{ fontSize: 26, width: 34, textAlign: "center" }}>
-              {completed ? "🏅" : unlocked ? THEME_ICON[s.theme] ?? "⛳" : "🔒"}
+              {completed ? "🏅" : unlocked ? getBiomeDefinition(s.theme).presentation.preview.icon : "🔒"}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
@@ -71,7 +69,7 @@ export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) 
                   {s.order}. {t(s.nameKey)}
                 </span>
                 <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", color: "#6b7280" }}>
-                  {getLandTheme(s.theme).label.toUpperCase()} • {getDifficultyProfile(s.difficulty).label.toUpperCase()}
+                  {getBiomeDefinition(s.theme).label.toUpperCase()} • {getDifficultyProfile(s.difficulty).label.toUpperCase()}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>

@@ -1,5 +1,6 @@
 import type { Course, LandTheme, Terrain } from "../models/types";
 import { BUILDING_SPECS } from "../models/buildings";
+import { getBiomeDefinition } from "../models/biomes";
 
 export type GroundCoverKind = "native_grass" | "flowers" | "reeds" | "leaf_litter" | "pebbles" | "bare_soil";
 
@@ -60,7 +61,7 @@ export function deriveGroundCover(course: Course, seed: number, x: number, y: nu
   if (!choices?.length) return null;
   const h = hash(seed, x, y, terrain.length * 97);
   const kind = choices[h % choices.length];
-  const theme = course.theme ?? "parkland";
+  const theme = getBiomeDefinition(course.theme).content.materials.details;
   const density = (BASE_DENSITY[terrain] ?? 0) * (THEME_MULT[theme][kind] ?? 1);
   if (((h >>> 8) & 0xffff) / 0xffff >= Math.min(.85, density)) return null;
   return {

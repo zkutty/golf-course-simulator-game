@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { loadBiomeKeys } from "./biome-registry.mjs";
 
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/assets/terrain/details");
 const SIZE = 64;
@@ -46,6 +47,9 @@ const PALETTES = {
     straw: [183, 145, 76],
   },
 };
+if (JSON.stringify(Object.keys(PALETTES).sort()) !== JSON.stringify([...loadBiomeKeys()].sort())) {
+  throw new Error("Terrain-detail palettes must cover every registered biome");
+}
 let COLORS = PALETTES.parkland;
 
 function put(png, x, y, color, alpha = 255) {

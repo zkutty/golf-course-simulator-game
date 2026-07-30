@@ -1,0 +1,284 @@
+{
+  "reportVersion": 2,
+  "issue": "ZK-565",
+  "milestone": "M52",
+  "generatedAt": "2026-07-30T17:25:17Z",
+  "supersedes": [
+    "artifacts/zk-565/machine-certification-v1.json",
+    "artifacts/zk-565/ZK-565_MACHINE_CERTIFICATION_V1.md"
+  ],
+  "candidate": {
+    "commit": "c69316ae8133b6fe484aadc2006fd9a3bfaf4552",
+    "parent": "b895812981df39cf0cf01044bd9223b8511026db",
+    "subject": "fix: make seeded generation runtime-independent",
+    "committedAt": "2026-07-30T12:16:24-04:00"
+  },
+  "disposition": {
+    "machineCertification": "PASS",
+    "releaseAcceptance": "DEFERRED",
+    "summary": "All requested automated M52 gates passed on the repaired immutable candidate. Human playtesting, art and aesthetic review, human accessibility and device validation, and physical-GPU frame pacing remain explicitly deferred."
+  },
+  "candidateHistory": [
+    {
+      "candidate": "a26e1346a6af451d1f42f7d1face459f3971327b",
+      "status": "SUPERSEDED",
+      "details": "The V1 candidate passed local machine certification but did not include the certification documents committed in its descendant and was not the final pushed candidate."
+    },
+    {
+      "candidate": "b895812981df39cf0cf01044bd9223b8511026db",
+      "status": "REJECTED_BY_CI",
+      "githubRun": 30559567366,
+      "details": "The generation baseline test expected c3d46b2f50fbdf5b49a5d5532160501e1816dbe0ccb719609697a9144d96748b but the CI runtime produced e09728b79e84686060ff687861a9af73d3ce294140bdb24d100c841c6a051349."
+    },
+    {
+      "candidate": "c69316ae8133b6fe484aadc2006fd9a3bfaf4552",
+      "status": "MACHINE_PASS",
+      "details": "Seeded shuffles now use a fixed-draw Fisher-Yates implementation instead of calling the RNG from Array.sort comparators."
+    }
+  ],
+  "repair": {
+    "rootCause": "Two terrain-generation shuffles used Array.sort(() => rng.next() - 0.5). JavaScript does not specify comparator call count or order, so V8/runtime sort implementation differences consumed different quantities of seeded RNG state and changed all downstream terrain, obstacle, and elevation generation.",
+    "scope": [
+      "src/game/gen/generateWildLand.ts",
+      "src/game/gen/themes.test.ts",
+      "src/utils/array.ts",
+      "src/utils/array.test.ts"
+    ],
+    "algorithm": "In-place Fisher-Yates with exactly items.length - 1 seeded draws.",
+    "regression": "The helper test fixes both the permutation and draw count; the aggregate generation baseline fixes the portable output."
+  },
+  "runtimeDeterminism": {
+    "generationSha256": "df29422e3bf81b077c22191d563ce1d84d1fd6396c5da80adc62c8b7cc9e65f5",
+    "fourYearWeatherSha256": "57fde66c427db1bf4bb494a03d96e59103deed8630d16f648c0af0de5ba88cd7",
+    "node24": {
+      "version": "24.11.1",
+      "status": "PASS",
+      "focusedResult": "15/15 tests passed",
+      "fullResult": "125/125 files; 981 passed; 1 skipped",
+      "provenance": "Repair-tree validation immediately before the four-file repair was committed as c69316a."
+    },
+    "node25": {
+      "version": "25.8.2",
+      "status": "PASS",
+      "focusedResult": "15/15 tests passed",
+      "fullResult": "125/125 files; 981 passed; 1 skipped",
+      "provenance": "Repair-tree validation plus a fresh exact-candidate full-suite rerun."
+    },
+    "exactShaCi": {
+      "run": 30560782249,
+      "url": "https://github.com/zkutty/golf-course-simulator-game/actions/runs/30560782249",
+      "headSha": "c69316ae8133b6fe484aadc2006fd9a3bfaf4552",
+      "conclusion": "success",
+      "job": "Typecheck, lint, test, build",
+      "jobConclusion": "success",
+      "playtestDeployConclusion": "success",
+      "workflowSourceNote": "The checked-in workflow declares node-version 22. This exact-SHA CI success is therefore additional runtime coverage and is not mislabeled here as the separately executed Node 24.11.1 validation."
+    }
+  },
+  "compatibility": {
+    "existingSaves": "Compatible. Course terrain, obstacles, and elevations are persisted in saves and continue to load directly; the 9-file save/import/package/atlas regression suite passed 71/71.",
+    "historicalGridMigration": "Historical size migrations preserve the complete old property while regenerating only newly exposed estate. That newly generated exterior now uses the portable Fisher-Yates sequence.",
+    "sameSeedNewCourse": "Intentional behavior change: newly generated Parkland and Desert courses for the same seed can differ from both former runtime-specific outputs. Links has zero inland water bodies and the sampled Links fixtures were unchanged. The new canonical result is identical across Node 24 and Node 25.",
+    "weather": "Unchanged; the four-year weather hash remains 57fde66c427db1bf4bb494a03d96e59103deed8630d16f648c0af0de5ba88cd7."
+  },
+  "freshExactCandidateEvidence": [
+    {
+      "gate": "full-unit",
+      "command": "npm test -- --reporter=dot",
+      "status": "PASS",
+      "result": {
+        "testFilesPassed": 125,
+        "testsPassed": 981,
+        "testsSkipped": 1,
+        "testsTotal": 982,
+        "durationSeconds": 35.05
+      }
+    },
+    {
+      "gate": "typecheck",
+      "command": "npx tsc -b",
+      "status": "PASS"
+    },
+    {
+      "gate": "lint-and-localization",
+      "command": "npm run lint",
+      "status": "PASS",
+      "result": {
+        "errors": 0,
+        "existingWarnings": 12,
+        "uiFilesChecked": 56,
+        "authoredContentFilesChecked": 4
+      }
+    },
+    {
+      "gate": "production-build-and-integrated-audits",
+      "command": "npm run build",
+      "status": "PASS",
+      "result": {
+        "modulesTransformed": 1334,
+        "viteBuildSeconds": 2.69,
+        "registeredBiomes": 3,
+        "audioFilesVerified": 40,
+        "offlineShellAssetsInjected": 19,
+        "assetAuditErrors": 0,
+        "parkland4xAuditErrors": 0
+      },
+      "warnings": [
+        "Existing saveStore static/dynamic import overlap.",
+        "Existing advisory chunks above 500 kB."
+      ]
+    },
+    {
+      "gate": "biome-consumer-authoring-and-payload-audits",
+      "command": "npm run audit:biome-consumers && npm run audit:biome-authoring && npm run audit:m35-assets",
+      "status": "PASS",
+      "result": {
+        "requiredFindings": 0,
+        "optionalFindings": 45,
+        "explicitFallbacks": 3,
+        "overBudgetPayloads": 0,
+        "logicalAuthoringReportHash": "0b4ad65c162d8c396f84ee675fcfb940eca736d623f58fda8a94aeb5b57ea2c2",
+        "logicalFixtureReportHash": "076abe030daf55b67ce64fed2e8bec9cde17742d3b7bc25b87651a0a2ed0631d"
+      }
+    },
+    {
+      "gate": "historical-save-import-and-atlas-focus",
+      "command": "npx vitest run src/utils/stateHash.test.ts src/utils/save.test.ts src/utils/saveStore.test.ts src/game/contentPackages/packageFormat.test.ts src/game/contentPackages/packageFormat.fuzz.test.ts src/game/models/biomes.test.ts src/game/seasons/seasons.test.ts src/render/atlas.test.ts src/render/atlasManifest.test.ts --reporter=dot",
+      "status": "PASS",
+      "result": {
+        "testFilesPassed": 9,
+        "testsPassed": 71,
+        "durationSeconds": 5.6
+      }
+    },
+    {
+      "gate": "browser-golden-m52-and-authoring-matrix",
+      "command": "npx playwright test e2e/zk560-biome-registry.e2e.ts e2e/zk562-seasonal-atlas.e2e.ts e2e/zk623-biome-ui-contract.e2e.ts e2e/zk564-biome-authoring.e2e.ts e2e/m35-surface-authoring.e2e.ts e2e/golden-path.e2e.ts --workers=1",
+      "status": "PASS",
+      "result": {
+        "testsPassed": 13,
+        "durationMinutes": 6.3,
+        "biomeReferenceStatesExecuted": 48
+      }
+    },
+    {
+      "gate": "pwa-offline-cache",
+      "command": "npm run test:pwa",
+      "status": "PASS",
+      "result": {
+        "strictCspGameplay": true,
+        "selectedBiomeCacheIsolation": true,
+        "scopedInstall": true,
+        "offlineReload": true,
+        "localSavePersistence": true
+      }
+    },
+    {
+      "gate": "performance-smoke",
+      "command": "npm run test:perf",
+      "status": "PASS",
+      "result": {
+        "theme": "parkland",
+        "fixture": "perfFixture",
+        "coldStartupMs": 1033,
+        "coldStartupBudgetMs": 5000,
+        "fixtureLoadMs": 3874,
+        "rendererWorkMs": 0.4339622581529917,
+        "rendererWorkBudgetMs": 8,
+        "frameP95Ms": 100,
+        "frameP95Asserted": false,
+        "golfers": 100,
+        "objects": 1048
+      }
+    },
+    {
+      "gate": "bundled-web-game-client",
+      "commands": [
+        "node /Users/zbkutlow/.codex/skills/develop-web-game/scripts/web_game_playwright_client.js --url 'http://127.0.0.1:5173/?m52Fixture=1&m52Theme=links&m52View=direct-play&m52Rotation=2' --actions-file /Users/zbkutlow/.codex/skills/develop-web-game/references/action_payloads.json --click-selector '[data-testid=\"commit-player-shot\"]' --iterations 2 --pause-ms 500 --screenshot-dir artifacts/zk-565/bundled-client-v2",
+        "node /Users/zbkutlow/.codex/skills/develop-web-game/scripts/web_game_playwright_client.js --url 'http://127.0.0.1:5173/?m52Fixture=1&m52Theme=desert&m52View=golfer-follow&m52Rotation=1' --actions-file /Users/zbkutlow/.codex/skills/develop-web-game/references/action_payloads.json --iterations 2 --pause-ms 3000 --screenshot-dir artifacts/zk-565/bundled-client-stable-v2"
+      ],
+      "status": "PASS",
+      "result": {
+        "consoleOrPageErrorArtifacts": 0,
+        "directPlay": {
+          "theme": "links",
+          "view": "direct-play",
+          "rotationDegrees": 180,
+          "quality": "auto",
+          "resolvedQuality": "high",
+          "shotCommitted": true,
+          "strokes": 1,
+          "ruling": "in_play",
+          "editingLocked": true
+        },
+        "stableVisual": {
+          "theme": "desert",
+          "view": "golfer-follow",
+          "rotationDegrees": 90,
+          "quality": "auto",
+          "resolvedQuality": "high",
+          "golfers": 24,
+          "followingGolferId": 1
+        }
+      },
+      "machineVisualInspection": "PASS: both bounded canvas captures are populated and biome-distinct. This is automated implementation evidence, not human art or aesthetic approval."
+    }
+  ],
+  "payloadBudgets": {
+    "atlasPair": {
+      "budgetBytes": 8388608,
+      "largestBytes": 1183165,
+      "status": "PASS"
+    },
+    "selectedBiome": {
+      "budgetBytes": 6291456,
+      "largestBytes": 3506327,
+      "largest": "parkland/high",
+      "status": "PASS"
+    },
+    "initialNonAudioCritical": {
+      "budgetBytes": 8388608,
+      "bytes": 3755841,
+      "mib": 3.582,
+      "status": "PASS"
+    }
+  },
+  "artifactHashes": {
+    "zk564AuthoringAuditFileSha256": "c23dd203780a5342ba54a10bcd7c6840d6a3f8be76d5de612fe274cfb8feb21e",
+    "zk564ReferenceFixturesFileSha256": "2be06c9f1d1e49f23eaaf7b3128e43cf953b9d7af414597bb566031f95c66e64",
+    "zk564PayloadReportFileSha256": "6f3d836bcb527734fa087b2e806e374c5282daf66e8181930a45056774412b08",
+    "atlasManifestFileSha256": "9ad33795b4ebb819b5d4b3d324bb10273bc3c73e861e44d747743c6dae603361",
+    "performanceReportFileSha256": "2fef7572eadbec0d467da1d8a1ebf506b156213669f60e38ecdefcd7d678f451",
+    "directPlayStateFileSha256": "5d48ea98d7fe311def6f5fee0d0fc6974fa5459cd466f9a62c323b39a29aab23",
+    "directPlayScreenshotFileSha256": "d3fb8db732618f12dca1e4d46aa219cfb3347a16798ded63163fa411c69d2104",
+    "stableGolferFollowStateFileSha256": "2268475b273ad5dad8050be199bde4e01154741c443a0b09ff0456408bf4a0ef",
+    "stableGolferFollowScreenshotFileSha256": "ea4635298116157039c59ff0f5ef7e463391ce8546fbc10654b54b452edcb618"
+  },
+  "artifacts": [
+    "artifacts/zk-565/machine-certification-v2.json",
+    "artifacts/zk-565/ZK-565_MACHINE_CERTIFICATION_V2.md",
+    "artifacts/zk-565/bundled-client-v2/state-1.json",
+    "artifacts/zk-565/bundled-client-v2/shot-1.png",
+    "artifacts/zk-565/bundled-client-stable-v2/state-1.json",
+    "artifacts/zk-565/bundled-client-stable-v2/shot-1.png"
+  ],
+  "residualGates": [
+    {
+      "gate": "physical-gpu-frame-pacing",
+      "status": "DEFERRED",
+      "required": "Measure p95 on the specified physical mid-range and low-end GPU profiles; target <=20 ms and floor <=33 ms."
+    },
+    {
+      "gate": "human-playtesting-and-golf-authenticity",
+      "status": "DEFERRED"
+    },
+    {
+      "gate": "human-art-and-aesthetic-review",
+      "status": "DEFERRED"
+    },
+    {
+      "gate": "human-accessibility-input-device-browser-and-display-validation",
+      "status": "DEFERRED"
+    }
+  ]
+}

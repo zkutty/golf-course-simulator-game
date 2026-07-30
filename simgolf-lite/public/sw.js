@@ -21,6 +21,8 @@ self.addEventListener("fetch", (event) => {
   // Runtime controls and report responses must always reach the Worker and
   // must never enter the offline cache.
   if (relativePath.startsWith("api/")) return;
+  // Content-hashed base and seasonal atlas files are cached only after the
+  // selected biome/tier/season requests them; no other biome is prefetched.
   const cacheFirst = relativePath.startsWith("audio/") || relativePath.startsWith("atlases/") || relativePath.startsWith("icons/") || url.origin !== location.origin;
   if (cacheFirst) {
     event.respondWith(caches.match(event.request).then(async (cached) => {

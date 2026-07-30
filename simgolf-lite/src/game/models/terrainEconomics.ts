@@ -1,5 +1,6 @@
 import type { LandTheme, Terrain } from "./types";
 import { BALANCE } from "../balance/balanceConfig";
+import { getBiomeDefinition } from "./biomes";
 
 /**
  * Theme flavor on build economics (ZKU-166): data-driven per-terrain build
@@ -7,7 +8,7 @@ import { BALANCE } from "../balance/balanceConfig";
  */
 export function themeBuildMult(theme: LandTheme | undefined, terrain: Terrain): number {
   if (terrain !== "water") return 1;
-  return BALANCE.themes[theme ?? "parkland"].waterBuildCostMult;
+  return BALANCE.themes[getBiomeDefinition(theme).key].waterBuildCostMult;
 }
 
 // Capital expense: build costs per tile
@@ -87,4 +88,3 @@ export function computeTerrainChangeCost(
   const { net, charged, refunded } = computeTerrainChangeBreakdown(prev, next, costMult, theme);
   return { net, charged, refunded };
 }
-

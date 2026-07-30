@@ -5,6 +5,7 @@ import { DEFAULT_WORLD } from "../models/defaults";
 import { getDifficultyProfile } from "../balance/difficulty";
 import { tickWeek } from "../sim/tickWeek";
 import { createLoan } from "../sim/loans";
+import { BIOME_KEYS } from "../models/biomes";
 
 type PropertySize = 9 | 18 | 36;
 type Strategy = "conservative" | "aggressive-expansion" | "poor-management";
@@ -58,7 +59,7 @@ function initialWorld(difficulty: Difficulty, strategy: Strategy, seed: number):
 
 const rows: BalanceRow[] = [];
 let runIndex = 0;
-for (const theme of ["parkland", "links", "desert"] as const) for (const size of [9, 18, 36] as const) for (const difficulty of ["easy", "normal", "hard"] as const) for (const strategy of ["conservative", "aggressive-expansion", "poor-management"] as const) {
+for (const theme of BIOME_KEYS) for (const size of [9, 18, 36] as const) for (const difficulty of ["easy", "normal", "hard"] as const) for (const strategy of ["conservative", "aggressive-expansion", "poor-management"] as const) {
   const seed: number = 280000 + runIndex++ * 97;
   let course = property(theme, size);
   if (strategy === "aggressive-expansion") course = { ...course, baseGreenFee: Math.max(110, course.baseGreenFee), condition: .9 };
@@ -80,7 +81,8 @@ for (const theme of ["parkland", "links", "desert"] as const) for (const size of
   rows.push({ theme, size, difficulty, strategy, seed, weeks: world.week - 1, bankrupt: world.isBankrupt, firstProfitWeek, lossWeeks, finalCash: Math.round(world.cash), peakCash: Math.round(peakCash), minimumCash: Math.round(minimumCash), reputation: Number(world.reputation.toFixed(2)), condition: Number(course.condition.toFixed(3)) });
 }
 
-if (rows.length !== 81) throw new Error(`Expected 81 release balance runs, got ${rows.length}`);
+const expectedRuns = BIOME_KEYS.length * 3 * 3 * 3;
+if (rows.length !== expectedRuns) throw new Error(`Expected ${expectedRuns} release balance runs, got ${rows.length}`);
 if (rows.some((row) => !Number.isFinite(row.finalCash) || !Number.isFinite(row.reputation))) throw new Error("Balance matrix produced non-finite state");
 const normalPaths = rows.filter((row) => row.strategy !== "poor-management");
 if (normalPaths.some((row) => row.firstProfitWeek == null)) {
@@ -92,7 +94,7 @@ const report = {
   ok: true,
   weeksPerRun: 104,
   runs: rows.length,
-  matrix: { themes: 3, propertySizes: 3, difficulties: 3, strategies: 3 },
+  matrix: { themes: BIOME_KEYS.length, propertySizes: 3, difficulties: 3, strategies: 3 },
   summary: {
     normalPathBankruptcies: normalPaths.filter((row) => row.bankrupt).length,
     poorManagementBankruptcies: rows.filter((row) => row.strategy === "poor-management" && row.bankrupt).length,

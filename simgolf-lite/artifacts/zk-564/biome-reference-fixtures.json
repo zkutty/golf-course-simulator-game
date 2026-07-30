@@ -1,0 +1,701 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "id": "zk-564-parkland",
+      "biome": "parkland",
+      "seed": 210225,
+      "source": {
+        "issue": "ZK-564",
+        "generator": "createBiomeAuthoringReferenceCourse",
+        "registryContentVersion": 1
+      },
+      "courseHash": "78c63cfbaa43b0d0c426e2a534f965febeea717e24f3fad4c1682c46cffc712b",
+      "terrain": [
+        "deep_rough",
+        "fairway",
+        "green",
+        "path",
+        "rough",
+        "sand",
+        "tee",
+        "waste_area",
+        "water",
+        "wetland"
+      ],
+      "props": [
+        "bush",
+        "rock",
+        "tree"
+      ],
+      "structures": [
+        "cart_rental",
+        "clubhouse",
+        "pro_shop",
+        "snack_bar"
+      ],
+      "decorations": [
+        "bench",
+        "bin",
+        "boardwalk",
+        "bridge",
+        "fence",
+        "flower_bed",
+        "lamp",
+        "ornamental_feature",
+        "parked_cart",
+        "planter",
+        "tee_sign"
+      ],
+      "climateStates": [
+        "spring",
+        "summer",
+        "autumn",
+        "winter"
+      ],
+      "bookmarks": [
+        {
+          "id": "overview-r0",
+          "view": "overview",
+          "rotation": 0,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "overview-r1",
+          "view": "overview",
+          "rotation": 1,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "overview-r2",
+          "view": "overview",
+          "rotation": 2,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "overview-r3",
+          "view": "overview",
+          "rotation": 3,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "build-r0",
+          "view": "build",
+          "rotation": 0,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "build-r1",
+          "view": "build",
+          "rotation": 1,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "build-r2",
+          "view": "build",
+          "rotation": 2,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "build-r3",
+          "view": "build",
+          "rotation": 3,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "golfer-follow-r0",
+          "view": "golfer-follow",
+          "rotation": 0,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "golfer-follow-r1",
+          "view": "golfer-follow",
+          "rotation": 1,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "golfer-follow-r2",
+          "view": "golfer-follow",
+          "rotation": 2,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "golfer-follow-r3",
+          "view": "golfer-follow",
+          "rotation": 3,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "direct-play-r0",
+          "view": "direct-play",
+          "rotation": 0,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        },
+        {
+          "id": "direct-play-r1",
+          "view": "direct-play",
+          "rotation": 1,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        },
+        {
+          "id": "direct-play-r2",
+          "view": "direct-play",
+          "rotation": 2,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        },
+        {
+          "id": "direct-play-r3",
+          "view": "direct-play",
+          "rotation": 3,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        }
+      ],
+      "fixtureHash": "7b4c64129a1c755efd146f35f6fe1e23c01ad8462f65e21397350d87005e5379"
+    },
+    {
+      "id": "zk-564-links",
+      "biome": "links",
+      "seed": 210225,
+      "source": {
+        "issue": "ZK-564",
+        "generator": "createBiomeAuthoringReferenceCourse",
+        "registryContentVersion": 1
+      },
+      "courseHash": "f5e51f2dd00c33e7e87d1cec96d0dbb85df45a1a4a483a54d6932ed4889958e3",
+      "terrain": [
+        "deep_rough",
+        "fairway",
+        "green",
+        "path",
+        "rough",
+        "sand",
+        "tee",
+        "waste_area",
+        "water",
+        "wetland"
+      ],
+      "props": [
+        "bush",
+        "rock",
+        "tree"
+      ],
+      "structures": [
+        "cart_rental",
+        "clubhouse",
+        "pro_shop",
+        "snack_bar"
+      ],
+      "decorations": [
+        "bench",
+        "bin",
+        "boardwalk",
+        "bridge",
+        "fence",
+        "flower_bed",
+        "lamp",
+        "ornamental_feature",
+        "parked_cart",
+        "planter",
+        "tee_sign"
+      ],
+      "climateStates": [
+        "spring",
+        "summer",
+        "autumn",
+        "winter"
+      ],
+      "bookmarks": [
+        {
+          "id": "overview-r0",
+          "view": "overview",
+          "rotation": 0,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "overview-r1",
+          "view": "overview",
+          "rotation": 1,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "overview-r2",
+          "view": "overview",
+          "rotation": 2,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "overview-r3",
+          "view": "overview",
+          "rotation": 3,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "build-r0",
+          "view": "build",
+          "rotation": 0,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "build-r1",
+          "view": "build",
+          "rotation": 1,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "build-r2",
+          "view": "build",
+          "rotation": 2,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "build-r3",
+          "view": "build",
+          "rotation": 3,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "golfer-follow-r0",
+          "view": "golfer-follow",
+          "rotation": 0,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "golfer-follow-r1",
+          "view": "golfer-follow",
+          "rotation": 1,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "golfer-follow-r2",
+          "view": "golfer-follow",
+          "rotation": 2,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "golfer-follow-r3",
+          "view": "golfer-follow",
+          "rotation": 3,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "direct-play-r0",
+          "view": "direct-play",
+          "rotation": 0,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        },
+        {
+          "id": "direct-play-r1",
+          "view": "direct-play",
+          "rotation": 1,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        },
+        {
+          "id": "direct-play-r2",
+          "view": "direct-play",
+          "rotation": 2,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        },
+        {
+          "id": "direct-play-r3",
+          "view": "direct-play",
+          "rotation": 3,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        }
+      ],
+      "fixtureHash": "3ed8df0498e5e60dd54c04fc4acc48f9c9aea30964dc29985e6a0df28e2e1dca"
+    },
+    {
+      "id": "zk-564-desert",
+      "biome": "desert",
+      "seed": 210225,
+      "source": {
+        "issue": "ZK-564",
+        "generator": "createBiomeAuthoringReferenceCourse",
+        "registryContentVersion": 1
+      },
+      "courseHash": "6ebf356c35dd636e515e2e9790bc546b014fdd63782725c0ce0253bab7b2704f",
+      "terrain": [
+        "deep_rough",
+        "fairway",
+        "green",
+        "path",
+        "rough",
+        "sand",
+        "tee",
+        "waste_area",
+        "water",
+        "wetland"
+      ],
+      "props": [
+        "bush",
+        "rock",
+        "tree"
+      ],
+      "structures": [
+        "cart_rental",
+        "clubhouse",
+        "pro_shop",
+        "snack_bar"
+      ],
+      "decorations": [
+        "bench",
+        "bin",
+        "boardwalk",
+        "bridge",
+        "fence",
+        "flower_bed",
+        "lamp",
+        "ornamental_feature",
+        "parked_cart",
+        "planter",
+        "tee_sign"
+      ],
+      "climateStates": [
+        "spring",
+        "summer",
+        "autumn",
+        "winter"
+      ],
+      "bookmarks": [
+        {
+          "id": "overview-r0",
+          "view": "overview",
+          "rotation": 0,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "overview-r1",
+          "view": "overview",
+          "rotation": 1,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "overview-r2",
+          "view": "overview",
+          "rotation": 2,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "overview-r3",
+          "view": "overview",
+          "rotation": 3,
+          "center": {
+            "x": 32,
+            "y": 22
+          },
+          "zoom": 0.5,
+          "focus": "whole-course"
+        },
+        {
+          "id": "build-r0",
+          "view": "build",
+          "rotation": 0,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "build-r1",
+          "view": "build",
+          "rotation": 1,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "build-r2",
+          "view": "build",
+          "rotation": 2,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "build-r3",
+          "view": "build",
+          "rotation": 3,
+          "center": {
+            "x": 11,
+            "y": 31
+          },
+          "zoom": 1.35,
+          "focus": "authoring-yard"
+        },
+        {
+          "id": "golfer-follow-r0",
+          "view": "golfer-follow",
+          "rotation": 0,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "golfer-follow-r1",
+          "view": "golfer-follow",
+          "rotation": 1,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "golfer-follow-r2",
+          "view": "golfer-follow",
+          "rotation": 2,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "golfer-follow-r3",
+          "view": "golfer-follow",
+          "rotation": 3,
+          "center": {
+            "x": 7,
+            "y": 21
+          },
+          "zoom": 1.65,
+          "focus": "golfer"
+        },
+        {
+          "id": "direct-play-r0",
+          "view": "direct-play",
+          "rotation": 0,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        },
+        {
+          "id": "direct-play-r1",
+          "view": "direct-play",
+          "rotation": 1,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        },
+        {
+          "id": "direct-play-r2",
+          "view": "direct-play",
+          "rotation": 2,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        },
+        {
+          "id": "direct-play-r3",
+          "view": "direct-play",
+          "rotation": 3,
+          "center": {
+            "x": 31,
+            "y": 22
+          },
+          "zoom": 1.8,
+          "focus": "ball-and-green"
+        }
+      ],
+      "fixtureHash": "002425fa57728deeded207c2083a8c11da2eb37856b882022e9507107a882923"
+    }
+  ]
+}

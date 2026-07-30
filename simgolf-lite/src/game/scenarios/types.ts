@@ -1,6 +1,7 @@
 import type { Difficulty, LandTheme, ScenarioConstraints } from "../models/types";
 import type { GoalDefinition } from "../models/objectives";
 import type { MessageKey } from "../../i18n/catalog";
+import type { BiomeCompatibilityMetadata } from "../models/biomes";
 
 // Career scenario format (ZKU-164): pure data. Goals come from the ZKU-163
 // vocabulary; constraints are the ScenarioConstraints the sim/UI enforce.
@@ -17,6 +18,7 @@ export interface ScenarioDefinition {
   blurbKey: MessageKey;
   seed: number;
   theme: LandTheme;
+  biomeCompatibility: BiomeCompatibilityMetadata;
   difficulty: Difficulty;
   /** Course name the run starts with (defaults to the scenario name). */
   courseName?: string;

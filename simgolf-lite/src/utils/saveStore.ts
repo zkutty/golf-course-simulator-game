@@ -4,6 +4,7 @@ import {
   CURRENT_SAVE_SCHEMA_VERSION,
   normalizeLoadedSave,
   parseSaveText,
+  payloadForPersistence,
   type SaveLoadError,
   type SaveLoadResult,
   type SavePayload,
@@ -248,15 +249,16 @@ async function migrateLegacyOnce(): Promise<void> {
 }
 
 function payloadToFile(p: SavePayload): SaveFile {
+  const persisted = payloadForPersistence(p);
   return {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
-    course: p.course,
-    world: p.world,
-    history: p.history,
-    records: p.records,
-    live: p.live,
-    tutorial: p.tutorial,
+    course: persisted.course,
+    world: persisted.world,
+    history: persisted.history,
+    records: persisted.records,
+    live: persisted.live,
+    tutorial: persisted.tutorial,
     appProfile: loadAppProfile(),
   };
 }

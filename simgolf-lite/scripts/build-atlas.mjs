@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, rmSync
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { loadBiomeKeys } from "./biome-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = path.join(ROOT, "src/assets/sprites");
@@ -27,6 +28,9 @@ const NATURAL_SRC = path.join(ROOT, "src/assets/props/natural");
 const TERRAIN_SRC = path.join(ROOT, "src/assets/terrain/materials");
 const TERRAIN_DETAILS_SRC = path.join(ROOT, "src/assets/terrain/details");
 const LANDSCAPE_FIELDS_SRC = path.join(ROOT, "src/assets/terrain/fields");
+// Optional authoring convention. A season can supply only the small layers it
+// changes; absent directories deliberately mean "use the immutable base".
+const SEASONAL_OVERLAYS_SRC = path.join(ROOT, "src/assets/terrain/seasonal");
 const OUT_DIR = process.env.COURSECRAFT_ATLAS_OUT_DIR
   ? path.resolve(process.env.COURSECRAFT_ATLAS_OUT_DIR)
   : path.join(ROOT, "public/atlases");
@@ -35,6 +39,8 @@ if (OUT_DIR === path.join(ROOT, "public/atlases") && process.env.COURSECRAFT_BUI
 }
 mkdirSync(OUT_DIR, { recursive: true });
 const BIOME_OUT_DIR = path.join(OUT_DIR, "biomes");
+const themes = loadBiomeKeys();
+const themePattern = themes.map((theme) => theme.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
 
 const PAD = 2; // gutter to avoid bleeding when scaled
 const MAX_W = 1024;
@@ -148,10 +154,21 @@ function buildAtlas(srcDir, outName, include = () => true, scale = "1", options 
   };
 }
 
+function hasPng(srcDir) {
+  return existsSync(srcDir) && readdirSync(srcDir, { withFileTypes: true })
+    .some((entry) => entry.isFile() && entry.name.endsWith(".png"));
+}
+
+function buildOptionalAtlas(srcDir, outName, scale = "1") {
+  return hasPng(srcDir)
+    ? buildAtlas(srcDir, outName, () => true, scale, { hashed: true, outDir: BIOME_OUT_DIR })
+    : null;
+}
+
 buildAtlas(TERRAIN_SRC, "terrain", () => true, "2");
 buildAtlas(TERRAIN_DETAILS_SRC, "terrain-details", () => true, "2");
 buildAtlas(NATURAL_SRC, "natural-props");
-buildAtlas(BUILDING_SRC, "buildings-decor", (name) => /^(clubhouse|pro_shop|snack_bar|cart_rental|(?:parkland|links|desert)_(?:clubhouse|pro_shop|snack_bar|cart_rental)_t[123]|(?:parkland|links|desert)_(?:fence|bench|tee_sign|lamp|bin|parked_cart|flower_bed|planter|ornamental_feature|bridge|boardwalk|bridge_approach))\.png$/.test(name));
+buildAtlas(BUILDING_SRC, "buildings-decor", (name) => new RegExp(`^(clubhouse|pro_shop|snack_bar|cart_rental|(?:${themePattern})_(?:clubhouse|pro_shop|snack_bar|cart_rental)_t[123]|(?:${themePattern})_(?:fence|bench|tee_sign|lamp|bin|parked_cart|flower_bed|planter|ornamental_feature|bridge|boardwalk|bridge_approach))\\.png$`).test(name));
 buildAtlas(path.join(SRC, "golfers"), "golfers");
 
 // M35 delivery contract: one immutable, content-hashed bundle per biome and
@@ -159,10 +176,10 @@ buildAtlas(path.join(SRC, "golfers"), "golfers");
 // worker runtime-caches selected bundles instead of precaching every biome.
 if (OUT_DIR === path.join(ROOT, "public/atlases")) rmSync(BIOME_OUT_DIR, { recursive: true, force: true });
 mkdirSync(BIOME_OUT_DIR, { recursive: true });
-const themes = ["parkland", "links", "desert"];
 const qualities = ["high", "medium", "low"];
+const seasons = ["spring", "summer", "autumn", "winter"];
 const manifest = {
-  version: 1,
+  version: 2,
   generatedBy: "scripts/build-atlas.mjs",
   core: {},
   biomes: {},
@@ -183,6 +200,46 @@ function copyFieldAsset(theme, quality, terrain) {
   writeFileSync(path.join(BIOME_OUT_DIR, name), buffer);
   const png = PNG.sync.read(buffer);
   return { image: name, bytes: buffer.length, width: png.width, height: png.height };
+}
+
+function copySeasonalMaterials(theme, quality, season) {
+  const sourceDirectory = path.join(SEASONAL_OVERLAYS_SRC, theme, quality, season, "materials");
+  if (!hasPng(sourceDirectory)) return {};
+  return Object.fromEntries(readdirSync(sourceDirectory, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".png"))
+    .map((entry) => entry.name)
+    .sort()
+    .map((name) => {
+      const terrain = name.replace(/\.png$/, "");
+      const buffer = readFileSync(path.join(sourceDirectory, name));
+      const outputName = `seasonal-material-${theme}-${quality}-${season}-${terrain}.${shortHash(buffer)}.png`;
+      writeFileSync(path.join(BIOME_OUT_DIR, outputName), buffer);
+      const png = PNG.sync.read(buffer);
+      return [terrain, { image: outputName, bytes: buffer.length, width: png.width, height: png.height }];
+    }));
+}
+
+function buildSeasonalOverlays(theme, quality) {
+  // Low remains a deliberately base-only tier: no fields, prop variants, or
+  // decal dressing can silently grow its transfer/GPU budget.
+  if (quality === "low") return {};
+  return Object.fromEntries(seasons.map((season) => {
+    const root = path.join(SEASONAL_OVERLAYS_SRC, theme, quality, season);
+    const materials = copySeasonalMaterials(theme, quality, season);
+    const props = buildOptionalAtlas(
+      path.join(root, "props"),
+      `seasonal-props-${theme}-${quality}-${season}`,
+    );
+    const decals = buildOptionalAtlas(
+      path.join(root, "decals"),
+      `seasonal-decals-${theme}-${quality}-${season}`,
+      "2",
+    );
+    const overlay = { materials, props, decals };
+    return Object.keys(materials).length > 0 || props || decals
+      ? [season, overlay]
+      : null;
+  }).filter(Boolean));
 }
 
 for (const theme of themes) {
@@ -229,7 +286,10 @@ for (const theme of themes) {
           .map((terrainName) => [terrainName, copyFieldAsset(theme, quality, terrainName)])
           .filter(([, asset]) => asset),
       );
-    manifest.biomes[theme][quality] = { buildings, terrain, details, props, fields };
+    manifest.biomes[theme][quality] = {
+      base: { buildings, terrain, details, props, fields },
+      seasonal: buildSeasonalOverlays(theme, quality),
+    };
   }
 }
 writeFileSync(

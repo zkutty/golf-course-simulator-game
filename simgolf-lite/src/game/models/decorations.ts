@@ -2,6 +2,7 @@ import { getElevation } from "./elevation";
 import { buildingAtTile } from "./buildings";
 import type { Course, Decoration, DecorationKind, DecorationRotation, LandTheme, Point, Terrain } from "./types";
 import { isOwnedTile } from "../estate/estate";
+import { BIOME_KEYS, getBiomeDefinition } from "./biomes";
 
 export interface DecorationVisual {
   frame: string;
@@ -28,11 +29,18 @@ export const DECORATION_KINDS = [
   "planter", "ornamental_feature", "bridge", "boardwalk",
 ] as const satisfies readonly DecorationKind[];
 
-const themed = (frame: string, scale = 1, shadow = { radiusX: 17, radiusY: 7, alpha: 0.18 }) => ({
-  parkland: { frame: `parkland_${frame}`, anchor: [0.5, 1] as const, scale, shadow },
-  links: { frame: `links_${frame}`, anchor: [0.5, 1] as const, scale, shadow },
-  desert: { frame: `desert_${frame}`, anchor: [0.5, 1] as const, scale, shadow },
-});
+const themed = (
+  frame: string,
+  scale = 1,
+  shadow = { radiusX: 17, radiusY: 7, alpha: 0.18 },
+): Record<LandTheme, DecorationVisual> => Object.fromEntries(
+  BIOME_KEYS.map((theme) => [theme, {
+    frame: `${theme}_${frame}`,
+    anchor: [0.5, 1] as const,
+    scale,
+    shadow,
+  }]),
+) as Record<LandTheme, DecorationVisual>;
 
 export const DECORATION_SPECS: Record<DecorationKind, DecorationSpec> = {
   fence: { kind: "fence", name: "Fence", category: "furniture", buildCost: 90, salvageRate: .5, blocksWalking: true, visuals: themed("fence", 1.05) },
@@ -57,7 +65,8 @@ export function decorationSpec(kind: DecorationKind): DecorationSpec {
 
 export function decorationVisual(decoration: Decoration, theme: LandTheme = "parkland"): DecorationVisual {
   const visuals = decorationSpec(decoration.kind).visuals;
-  return visuals[theme] ?? visuals.parkland;
+  const owner = getBiomeDefinition(theme).content.structures.decorations;
+  return visuals[owner];
 }
 
 export function rotationVector(rotation: DecorationRotation): Point {

@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { loadBiomeKeys } from "./biome-registry.mjs";
 
 const DEFAULT_OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src/assets/terrain/materials");
 const OUT = path.resolve(process.env.COURSECRAFT_TERRAIN_OUTPUT_DIR || DEFAULT_OUT);
@@ -19,18 +20,34 @@ const THEMES = {
     colors: { fairway: "#55a959", rough: "#3e823f", deep_rough: "#34743a", sand: "#d9c58e", waste_area: "#a98757", water: "#347faf", wetland: "#4f806b", green: "#63b96a", tee: "#62a85b", path: "#9a907e" },
     special: { fairway: "#3f8746", rough: "#2d6a34", deep_rough: "#285f31", sand: "#aa8956", waste_area: "#735737", water: "#6f9fa9", wetland: "#315949", green: "#4a9952", tee: "#e7dfc5", path: "#6f6658" },
     texture: "parkland",
+    salt: 0,
+    deepRoughFleckThreshold: 6,
+    dryTexture: false,
+    fescueTexture: false,
   },
   links: {
     colors: { fairway: "#719d52", rough: "#668348", deep_rough: "#827c3f", sand: "#e3d6a4", waste_area: "#a58d5e", water: "#2b6f9e", wetland: "#4e7a69", green: "#70a95b", tee: "#769252", path: "#918676" },
     special: { fairway: "#587e43", rough: "#536b3e", deep_rough: "#b09a4d", sand: "#b6a879", waste_area: "#756342", water: "#8fb3bf", wetland: "#36594e", green: "#538a4c", tee: "#ddd5b9", path: "#655d53" },
     texture: "links",
+    salt: 1009,
+    deepRoughFleckThreshold: 10,
+    dryTexture: false,
+    fescueTexture: true,
   },
   desert: {
     colors: { fairway: "#55a24c", rough: "#9b8052", deep_rough: "#79663d", sand: "#dcb97c", waste_area: "#b18a55", water: "#3a9ec2", wetland: "#5b8b68", green: "#62b455", tee: "#5d9a4d", path: "#a89778" },
     special: { fairway: "#3c873d", rough: "#755d3b", deep_rough: "#5f4d31", sand: "#b57d45", waste_area: "#805a35", water: "#8fc8c4", wetland: "#3b6748", green: "#438f43", tee: "#e2d1ad", path: "#735f4a" },
     texture: "desert",
+    salt: 2027,
+    deepRoughFleckThreshold: 6,
+    dryTexture: true,
+    fescueTexture: false,
   },
 };
+const registeredBiomes = loadBiomeKeys();
+if (JSON.stringify(Object.keys(THEMES).sort()) !== JSON.stringify([...registeredBiomes].sort())) {
+  throw new Error("Terrain authoring profiles must cover every registered biome");
+}
 const TERRAIN_SALT = { rough: 0, deep_rough: 1, fairway: 2, sand: 3, water: 4, green: 5, tee: 6, path: 7, waste_area: 8, wetland: 9 };
 const BOUNDARY_COLORS = {
   parkland: { sand: "#987747", water: "#60775d", wetland: "#385747", path: "#675f53" },
@@ -67,11 +84,11 @@ function baseTile(theme, config, terrain, variant, themeSalt) {
     if (terrain === "fairway" && ((x + y * 2 + variant * 11) % 38 < 2)) factor *= 1.025;
     if (terrain === "green" && ((x - y + variant * 7 + 256) % 44 < 2)) factor *= 1.02;
     if (terrain === "rough" && h % 73 < 4) factor *= h % 2 ? 1.07 : 0.94;
-    if (terrain === "deep_rough" && h % 61 < (config.texture === "links" ? 10 : 6)) factor *= h % 2 ? 1.13 : 0.9;
+    if (terrain === "deep_rough" && h % 61 < config.deepRoughFleckThreshold) factor *= h % 2 ? 1.13 : 0.9;
     if ((terrain === "sand" || terrain === "waste_area") && h % 67 < 4) factor *= h % 2 ? 0.79 : 1.09;
     if (terrain === "path" && h % 53 < 5) factor *= h % 2 ? 0.82 : 1.1;
-    if (config.texture === "desert" && (terrain === "rough" || terrain === "waste_area") && h % 53 < 3) factor *= 1.13;
-    if (config.texture === "links" && terrain === "deep_rough" && (x + y * 3 + variant) % 19 < 2) factor *= 1.08;
+    if (config.dryTexture && (terrain === "rough" || terrain === "waste_area") && h % 53 < 3) factor *= 1.13;
+    if (config.fescueTexture && terrain === "deep_rough" && (x + y * 3 + variant) % 19 < 2) factor *= 1.08;
     if (terrain === "water" || terrain === "wetland") {
       factor *= 0.99 + (variant % 3) * 0.005;
       if ((x * 3 + y + variant * 17) % 58 < 3) factor *= 1.09;
@@ -136,7 +153,7 @@ const requestedThemes = process.env.COURSECRAFT_TERRAIN_THEMES
 let count = 0;
 for (const [theme, config] of Object.entries(THEMES)) {
   if (requestedThemes && !requestedThemes.has(theme)) continue;
-  const themeSalt = theme === "parkland" ? 0 : theme === "links" ? 1009 : 2027;
+  const themeSalt = config.salt;
   for (const terrain of Object.keys(config.colors)) {
     for (let variant = 0; variant < 6; variant++) baseTile(theme, config, terrain, variant, themeSalt);
     for (const direction of EDGES) transition(theme, config, terrain, "edge", direction, themeSalt);

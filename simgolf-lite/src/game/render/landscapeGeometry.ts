@@ -1,5 +1,6 @@
 import { buildingTiles } from "../models/buildings";
 import type { Course, LandTheme, SurfacePoint, Terrain } from "../models/types";
+import { getBiomeDefinition } from "../models/biomes";
 import { terrainSurfaceInsetPx } from "./terrainRelief";
 import { ELEVATION_STEP_PX } from "./iso";
 
@@ -413,9 +414,18 @@ function terrainTargetHeight(course: Course, index: number): number {
     terrainSurfaceInsetPx(terrain) / ELEVATION_STEP_PX;
 }
 
+const HEIGHTFIELD_PROFILES: Record<LandTheme, {
+  amplitude: number;
+  phase: number;
+  smoothingStrength: number;
+}> = {
+  parkland: { amplitude: 0.11, phase: 2.1, smoothingStrength: 0.26 },
+  links: { amplitude: 0.24, phase: 0.7, smoothingStrength: 0.34 },
+  desert: { amplitude: 0.075, phase: 4.2, smoothingStrength: 0.18 },
+};
+
 function biomeUndulation(theme: LandTheme, x: number, y: number): number {
-  const amplitude = theme === "links" ? 0.24 : theme === "parkland" ? 0.11 : 0.075;
-  const phase = theme === "links" ? 0.7 : theme === "parkland" ? 2.1 : 4.2;
+  const { amplitude, phase } = HEIGHTFIELD_PROFILES[theme];
   const longWave = Math.sin(x * 0.22 + y * 0.105 + phase);
   const crossingWave = Math.sin(x * -0.095 + y * 0.19 + phase * 1.7);
   return amplitude * (longWave * 0.64 + crossingWave * 0.36);
@@ -502,8 +512,9 @@ function deriveFlatGroups(course: Course): FlatGroup[] {
  */
 export function buildVisualHeightfield(
   course: Course,
-  theme: LandTheme = course.theme ?? "parkland",
+  theme: LandTheme = getBiomeDefinition(course.theme).key,
 ): VisualHeightfield {
+  const materialOwner = getBiomeDefinition(theme).content.materials.terrain;
   const width = course.width;
   const height = course.height;
   const stride = width + 1;
@@ -537,7 +548,7 @@ export function buildVisualHeightfield(
   }
 
   // Theme profiles alter only the compatible-land smoothing strength.
-  const smoothingStrength = theme === "links" ? 0.34 : theme === "parkland" ? 0.26 : 0.18;
+  const smoothingStrength = HEIGHTFIELD_PROFILES[materialOwner].smoothingStrength;
   const smoothed = vertices.slice();
   for (let vy = 1; vy < height; vy++) {
     for (let vx = 1; vx < width; vx++) {
@@ -571,7 +582,7 @@ export function buildVisualHeightfield(
         vy < height ? vertices[index + stride] : vertices[index],
       ];
       if (Math.max(...neighborhood) - Math.min(...neighborhood) > 1.5) continue;
-      vertices[index] += biomeUndulation(theme, vx, vy);
+      vertices[index] += biomeUndulation(materialOwner, vx, vy);
     }
   }
 

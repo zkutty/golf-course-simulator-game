@@ -1,6 +1,7 @@
 import type { LandTheme, Terrain, Obstacle, ObstacleType } from "../models/types";
-import { getLandTheme, type ThemeGenConfig } from "../models/themes";
+import { getBiomeDefinition, type ThemeGenConfig } from "../models/biomes";
 import { isWaterHazard } from "../models/terrainRules";
+import { shuffleInPlace } from "../../utils/array";
 
 // Seeded RNG using mulberry32
 class SeededRNG {
@@ -43,7 +44,7 @@ export function generateWildLand(
   seed: number,
   theme?: LandTheme
 ): Terrain[] {
-  const cfg: ThemeGenConfig = getLandTheme(theme).generation;
+  const cfg: ThemeGenConfig = getBiomeDefinition(theme).generation;
   const rng = new SeededRNG(seed);
   const totalTiles = width * height;
   const tiles: Terrain[] = Array.from({ length: totalTiles }, () => "rough");
@@ -138,7 +139,7 @@ export function generateWildLand(
       // Add neighbors (prefer existing water neighbors for connectivity)
       const neighbors = getNeighbors(current.x, current.y);
       // Shuffle neighbors for more organic growth
-      neighbors.sort(() => rng.next() - 0.5);
+      shuffleInPlace(neighbors, rng);
 
       for (const neighbor of neighbors) {
         const key = `${neighbor.x},${neighbor.y}`;
@@ -360,7 +361,7 @@ export function generateWildLand(
 
     // Remove up to 20% of water tiles, prioritizing those away from water clusters
     const toRemove = Math.floor(waterTiles.length * 0.2);
-    waterTiles.sort(() => rng.next() - 0.5); // Shuffle
+    shuffleInPlace(waterTiles, rng);
     for (let i = 0; i < Math.min(toRemove, waterTiles.length); i++) {
       const p = waterTiles[i];
       // Check if this water tile has few water neighbors (isolated)
@@ -385,7 +386,7 @@ export function generateObstacles(
   reservedZones: Point[] = [], // Reserved zones (e.g., tee/green positions) where obstacles should not be placed
   theme?: LandTheme
 ): Obstacle[] {
-  const obstacleCfg = getLandTheme(theme).generation.obstacles;
+  const obstacleCfg = getBiomeDefinition(theme).generation.obstacles;
   const rng = new SeededRNG(seed + 1000000); // Offset seed to ensure different sequence from terrain
   const obstacles: Obstacle[] = [];
   const obstacleSet = new Set<string>(); // Track placed obstacles to avoid duplicates
@@ -573,10 +574,7 @@ export function generateObstacles(
     if (terrain !== "rough" && terrain !== "deep_rough") continue;
     if (getNeighbors(x, y).some((point) => isWaterHazard(getTile(point.x, point.y)))) shoreline.push({ x, y });
   }
-  for (let i = shoreline.length - 1; i > 0; i--) {
-    const j = rng.nextInt(0, i);
-    [shoreline[i], shoreline[j]] = [shoreline[j], shoreline[i]];
-  }
+  shuffleInPlace(shoreline, rng);
   for (const point of shoreline) {
     if (treesPlaced < targetTrees && rng.next() < obstacleCfg.shoreTreeChance && canPlaceObstacle(point.x, point.y, "tree")) {
       obstacles.push({ ...point, type: "tree" });
@@ -621,7 +619,7 @@ export function generateElevations(
   tiles: Terrain[],
   theme?: LandTheme
 ): number[] {
-  const { amplitude, offset, maxStep } = getLandTheme(theme).generation.elevation;
+  const { amplitude, offset, maxStep } = getBiomeDefinition(theme).generation.elevation;
   const rng = new SeededRNG((seed ^ 0x5eed) >>> 0);
 
   // Coarse random lattices for two octaves.
