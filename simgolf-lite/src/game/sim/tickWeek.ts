@@ -18,12 +18,93 @@ import {
   scaleBiomeOperatingCosts,
 } from "../models/biomeOperatingCosts";
 import { getDifficultyProfile } from "../balance/difficulty";
+import {
+  absoluteDayFor,
+  biomeClimatePhenologyForDay,
+  seasonalState,
+  weatherForDay,
+} from "../seasons/seasons";
+import {
+  advanceSurfaceCareDay,
+  surfaceCareConditionSummary,
+  surfaceCareWaterCostMultiplier,
+  type SurfaceCareDayReport,
+} from "../conditions/surfaceCare";
+
+function advanceSurfaceCareWeek(
+  course: Course,
+  world: World,
+  visitors: number,
+): { course: Course; summary: NonNullable<WeekResult["surfaceCare"]> } {
+  const operations = seasonalState(world, course, 0).operations;
+  const baseRounds = Math.floor(Math.max(0, visitors) / 7);
+  const remainder = Math.max(0, visitors) % 7;
+  const reports: SurfaceCareDayReport[] = [];
+  let nextCourse = course;
+  for (let day = 0; day < 7; day++) {
+    const absoluteDay = absoluteDayFor(world.week, day);
+    const weather = weatherForDay(
+      world.runSeed,
+      nextCourse.theme ?? "parkland",
+      absoluteDay,
+    );
+    const commit = advanceSurfaceCareDay({
+      course: nextCourse,
+      world,
+      absoluteDay,
+      weather,
+      climate: biomeClimatePhenologyForDay(
+        nextCourse.theme ?? "parkland",
+        absoluteDay,
+      ),
+      turfPriority: operations.turfPriority,
+      waterPolicy: operations.waterPolicy,
+      drainageLevel: operations.drainageLevel,
+      rounds: baseRounds + (day < remainder ? 1 : 0),
+    });
+    nextCourse = commit.course;
+    reports.push(commit.report);
+  }
+  const last = reports[reports.length - 1];
+  return {
+    course: nextCourse,
+    summary: {
+      days: reports.length,
+      zones: last.zones,
+      totalDemand: reports.reduce((sum, report) => sum + report.totalDemand, 0),
+      totalAllocated: reports.reduce((sum, report) => sum + report.totalAllocated, 0),
+      totalIrrigationDemand: reports.reduce(
+        (sum, report) => sum + report.totalIrrigationDemand,
+        0,
+      ),
+      totalIrrigationApplied: reports.reduce(
+        (sum, report) => sum + report.totalIrrigationApplied,
+        0,
+      ),
+      elevatedWaterDemand: reports.reduce(
+        (sum, report) => sum + report.elevatedWaterDemand,
+        0,
+      ),
+      elevatedWaterApplied: reports.reduce(
+        (sum, report) => sum + report.elevatedWaterApplied,
+        0,
+      ),
+      averageCondition: reports.reduce(
+        (sum, report) => sum + report.overallCondition,
+        0,
+      ) / reports.length,
+      tournamentReadiness: last.tournamentReadiness,
+      repairRequiredZones: last.repairRequiredZones,
+    },
+  };
+}
 
 function tickWeekSingle(
   course: Course,
   world: World,
   seed = 1234,
-  concessionTransactions: ConcessionTransaction[] = []
+  concessionTransactions: ConcessionTransaction[] = [],
+  advanceCare = true,
 ): { world: World; course: Course; result: WeekResult } {
   const rng = mulberry32(seed + world.week);
   // Difficulty-resolved balance (ZKU-165): identity for normal.
@@ -50,6 +131,9 @@ function tickWeekSingle(
   const capacity = playableHoles * BALANCE.capacity.roundsPerPlayableHolePerWeek;
   const visitors = playable ? Math.min(demandVisitors, capacity) : demandVisitors;
   const turnaways = playable ? Math.max(0, demandVisitors - capacity) : 0;
+  const surfaceCare = advanceCare
+    ? advanceSurfaceCareWeek(course, world, visitors)
+    : undefined;
 
   const avgSatBase = satisfactionScore(course, world); // 0..100
 
@@ -96,7 +180,7 @@ function tickWeekSingle(
   const merchantFees = revenue * BALANCE.variableCosts.merchantFeeRate;
   const variableTotal = laborVariable + consumablesVariable + merchantFees;
 
-  const dailyBiomeEconomy = quoteDailyBiomeOperatingCosts({
+  const quotedDailyBiomeEconomy = quoteDailyBiomeOperatingCosts({
     course,
     season: world.seasonal?.calendar.season,
     currentWeather: world.seasonal?.currentWeather,
@@ -105,6 +189,23 @@ function tickWeekSingle(
     drainageLevel: world.seasonal?.operations.drainageLevel,
     costMult: getDifficultyProfile(world.difficulty).terrainCostMult,
   });
+  const dailyWaterMultiplier = surfaceCare
+    ? surfaceCareWaterCostMultiplier({
+      totalIrrigationApplied:
+        surfaceCare.summary.totalIrrigationApplied / Math.max(1, surfaceCare.summary.days),
+      elevatedWaterApplied:
+        surfaceCare.summary.elevatedWaterApplied / Math.max(1, surfaceCare.summary.days),
+    })
+    : 1;
+  const elevatedDailyWaterCost =
+    quotedDailyBiomeEconomy.waterCost * (dailyWaterMultiplier - 1);
+  const dailyBiomeEconomy = elevatedDailyWaterCost > 0
+    ? {
+      ...quotedDailyBiomeEconomy,
+      waterCost: quotedDailyBiomeEconomy.waterCost + elevatedDailyWaterCost,
+      total: quotedDailyBiomeEconomy.total + elevatedDailyWaterCost,
+    }
+    : quotedDailyBiomeEconomy;
   const biomeEconomy = scaleBiomeOperatingCosts(dailyBiomeEconomy, 7);
   const nonLoanCosts =
     staffCost + marketingCost + maintenanceCost + overheadTotal + biomeEconomy.total;
@@ -151,7 +252,10 @@ function tickWeekSingle(
     BALANCE.condition.maintEffectCap,
     effectiveMaintSpend / BALANCE.condition.maintEffectDivisor
   );
-  const nextCondition = clamp01(course.condition - wear + maintEffect);
+  const legacyCondition = clamp01(course.condition - wear + maintEffect);
+  const nextCondition = surfaceCare?.summary.zones
+    ? surfaceCareConditionSummary(surfaceCare.course).overallCondition
+    : legacyCondition;
 
   // Satisfaction penalty if maintenance is underfunded
   const satPenalty =
@@ -192,7 +296,10 @@ function tickWeekSingle(
   }
   const topIssues = buildTopIssues(holes);
 
-  const nextCourse = { ...course, condition: nextCondition };
+  const nextCourse = {
+    ...(surfaceCare?.course ?? course),
+    condition: clamp01(nextCondition),
+  };
   const nextWorldBase: World = {
     ...world,
     week: world.week + 1,
@@ -248,6 +355,7 @@ function tickWeekSingle(
       tips,
       topIssues,
       maintenancePressure: { totalWeight, avgWeight, wear },
+      ...(surfaceCare ? { surfaceCare: surfaceCare.summary } : {}),
     },
   };
 }
@@ -263,7 +371,13 @@ export function tickWeek(
 
   const rows = views.map(({ layout, course: view }, index) => ({
     layout,
-    output: tickWeekSingle(view, world, seed + index * 104729, index === 0 ? concessionTransactions : []),
+    output: tickWeekSingle(
+      view,
+      world,
+      seed + index * 104729,
+      index === 0 ? concessionTransactions : [],
+      false,
+    ),
   }));
   const primary = rows[0].output;
   const visitors = rows.reduce((sum, row) => sum + row.output.result.visitors, 0);
@@ -271,7 +385,19 @@ export function tickWeek(
   const turnaways = rows.reduce((sum, row) => sum + (row.output.result.turnaways ?? 0), 0);
   const revenue = rows.reduce((sum, row) => sum + row.output.result.revenue, 0);
   const variableCosts = rows.reduce((sum, row) => sum + (row.output.result.variableCosts?.total ?? 0), 0);
-  const sharedCosts = primary.result.costs - (primary.result.variableCosts?.total ?? 0);
+  const surfaceCare = advanceSurfaceCareWeek(course, world, visitors);
+  const waterMultiplier = surfaceCareWaterCostMultiplier({
+    totalIrrigationApplied:
+      surfaceCare.summary.totalIrrigationApplied / Math.max(1, surfaceCare.summary.days),
+    elevatedWaterApplied:
+      surfaceCare.summary.elevatedWaterApplied / Math.max(1, surfaceCare.summary.days),
+  });
+  const elevatedWaterCost =
+    (primary.result.biomeEconomy?.waterCost ?? 0) * (waterMultiplier - 1);
+  const sharedCosts =
+    primary.result.costs
+    - (primary.result.variableCosts?.total ?? 0)
+    + elevatedWaterCost;
   const costs = sharedCosts + variableCosts;
   const taxRate = getEffectiveBalance(world.difficulty).tax;
   const preTax = revenue - costs;
@@ -301,7 +427,12 @@ export function tickWeek(
   // Put aggregate tax on the final course so per-course profit reconciles.
   if (perCourse.length) perCourse[perCourse.length - 1].profit -= tax;
   return {
-    course: { ...course, condition: primary.course.condition },
+    course: {
+      ...surfaceCare.course,
+      condition: surfaceCare.summary.zones
+        ? surfaceCareConditionSummary(surfaceCare.course).overallCondition
+        : primary.course.condition,
+    },
     world: { ...primary.world, cash: world.cash + profit, lastWeekProfit: profit },
     result: {
       ...primary.result,
@@ -318,8 +449,18 @@ export function tickWeek(
       profit,
       tax: tax || undefined,
       variableCosts: { ...(primary.result.variableCosts ?? { labor: 0, consumables: 0, merchantFees: 0, total: 0 }), total: variableCosts },
+      ...(primary.result.biomeEconomy ? {
+        biomeEconomy: elevatedWaterCost > 0
+          ? {
+            ...primary.result.biomeEconomy,
+            waterCost: primary.result.biomeEconomy.waterCost + elevatedWaterCost,
+            total: primary.result.biomeEconomy.total + elevatedWaterCost,
+          }
+          : primary.result.biomeEconomy,
+      } : {}),
       avgSatisfaction: weightedSatisfaction,
       perCourse,
+      surfaceCare: surfaceCare.summary,
     },
   };
 }

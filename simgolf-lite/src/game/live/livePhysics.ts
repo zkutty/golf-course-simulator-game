@@ -9,6 +9,7 @@ import { resolvePlayableShot, type PlayerShotSelection } from "../playerPro/play
 import { capabilitiesToPlayerSkills } from "./capabilities";
 import type { GolferCapabilities, LiveShotOutcome, ShotIntent } from "./m47Types";
 import { biomeCompatibilityMetadataFor, getBiomeDefinition } from "../models/biomes";
+import { effectiveSurfaceTiles, resolveEffectiveSurface } from "../conditions/surfaceCare";
 
 function parFor(hole: Course["holes"][number]): number {
   const setting = getParSetting(hole, "member");
@@ -80,7 +81,7 @@ export function liveCourseSnapshot(args: {
     width: args.course.width,
     height: args.course.height,
     yardsPerTile: args.course.yardsPerTile,
-    tiles: args.course.tiles.slice(),
+    tiles: effectiveSurfaceTiles(args.course).slice(),
     elevations: args.course.elevations.slice(),
     obstacles: args.course.obstacles.map((obstacle) => ({ x: obstacle.x, y: obstacle.y, type: obstacle.type })),
     holes,
@@ -149,7 +150,5 @@ export function resolveLiveShot(args: {
 }
 
 export function terrainAt(course: Course, point: Point): Terrain {
-  const x = Math.max(0, Math.min(course.width - 1, Math.floor(point.x)));
-  const y = Math.max(0, Math.min(course.height - 1, Math.floor(point.y)));
-  return course.tiles[y * course.width + x] ?? "rough";
+  return resolveEffectiveSurface(course, point.x, point.y).effectiveTerrain;
 }

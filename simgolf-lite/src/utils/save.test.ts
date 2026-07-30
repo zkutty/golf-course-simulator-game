@@ -18,6 +18,14 @@ import {
   payloadForPersistence,
 } from "./save";
 import { biomeCompatibilityMetadataFor } from "../game/models/biomes";
+import {
+  advanceSurfaceCareDay,
+  surfaceCareTopology,
+} from "../game/conditions/surfaceCare";
+import {
+  biomeClimatePhenologyForDay,
+  weatherForDay,
+} from "../game/seasons/seasons";
 
 function file(overrides: Record<string, unknown> = {}) {
   return {
@@ -75,6 +83,195 @@ describe("save validation and migrations", () => {
     expect(result.payload.course).toEqual(DEFAULT_COURSE);
     expect(result.payload.world).toEqual(file().world);
     expect(result.migratedFrom).toBeUndefined();
+  });
+
+  it("round-trips sparse local surface care without changing authored terrain", () => {
+    const tiles = DEFAULT_COURSE.tiles.slice();
+    for (let y = 2; y < 7; y++) for (let x = 2; x < 11; x++) {
+      tiles[y * DEFAULT_COURSE.width + x] = "green";
+    }
+    const authored = { ...DEFAULT_COURSE, tiles, condition: .78 };
+    const absoluteDay = 7;
+    const savedWorld = { ...file().world, week: 2 };
+    const weather = weatherForDay(
+      savedWorld.runSeed,
+      authored.theme ?? "parkland",
+      absoluteDay,
+    );
+    const cared = advanceSurfaceCareDay({
+      course: authored,
+      world: savedWorld,
+      absoluteDay,
+      weather,
+      climate: biomeClimatePhenologyForDay(
+        authored.theme ?? "parkland",
+        absoluteDay,
+      ),
+      turfPriority: "playability",
+      waterPolicy: "balanced",
+      drainageLevel: 0,
+      rounds: 18,
+    }).course;
+    const result = parseSaveText(JSON.stringify(file({
+      course: cared,
+      world: savedWorld,
+    })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.payload.course.tiles).toEqual(authored.tiles);
+    expect(result.payload.course.surfaceCare).toEqual(cared.surfaceCare);
+    expect(Object.keys(result.payload.course.surfaceCare?.records ?? {}).length)
+      .toBeLessThan(result.payload.course.tiles.length);
+  });
+
+  it("migrates v24 without inventing local neglect history", () => {
+    const legacyCourse = { ...DEFAULT_COURSE };
+    delete legacyCourse.surfaceCare;
+    const result = normalizeLoadedSaveResult(file({
+      schemaVersion: 24,
+      course: legacyCourse,
+    }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFrom).toBe(24);
+    expect(result.payload.course.surfaceCare).toBeUndefined();
+    expect(result.payload.course.tiles).toEqual(DEFAULT_COURSE.tiles);
+    expect(result.payload.course.condition).toBe(DEFAULT_COURSE.condition);
+  });
+
+  it("normalizes hostile surface-care records to current topology and bounds", () => {
+    const tiles = DEFAULT_COURSE.tiles.slice();
+    for (let y = 1; y < 5; y++) for (let x = 1; x < 5; x++) {
+      tiles[y * DEFAULT_COURSE.width + x] = "green";
+    }
+    const course = { ...DEFAULT_COURSE, tiles };
+    const zone = surfaceCareTopology(course).zones.find(
+      (candidate) => candidate.intendedTerrain === "green",
+    )!;
+    const hostile = {
+      ...course,
+      surfaceCare: {
+        version: 1 as const,
+        cellSize: 8 as const,
+        lastAdvancedAbsoluteDay: 1e308,
+        records: {
+          [zone.key]: {
+            key: "spoofed",
+            surfaceId: "spoofed",
+            cellX: 999,
+            cellY: -999,
+            intendedTerrain: "tee",
+            area: 999_999,
+            mowingQuality: -4,
+            moisture: 9,
+            turfHealth: 4,
+            wear: -2,
+            dormancy: 3,
+            drainageStress: 7,
+            failureDurationDays: 999_999,
+            missedMowingDays: -10,
+            insufficientWaterDays: 999_999,
+            saturatedDays: 999_999,
+            repairRequired: true,
+            repairProgress: 1e308,
+            repair: {
+              kind: "resod",
+              cost: 1e308,
+              requiredDays: 1e308,
+              progressDays: 1e308,
+              startedAbsoluteDay: 1e308,
+              elevatedWaterDaysRemaining: 1e308,
+            },
+            lastDemand: 1e308,
+            lastAllocated: 1e308,
+            lastTraffic: 1e308,
+            lastIrrigationDemand: 1e308,
+            lastIrrigationApplied: 1e308,
+            lastElevatedWaterDemand: 1e308,
+            lastElevatedWaterApplied: 1e308,
+            lastObservedAbsoluteDay: 1e308,
+          },
+          "unknown-surface:999:999": {
+            key: "unknown-surface:999:999",
+            intendedTerrain: "green",
+          },
+        },
+      },
+    };
+    const result = normalizeLoadedSaveResult(file({
+      course: hostile,
+      world: { ...file().world, week: 3 },
+    }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const state = result.payload.course.surfaceCare!;
+    expect(Object.keys(state.records)).toEqual([zone.key]);
+    const telemetryMaximum = zone.cells.length * 10_000;
+    expect(state.lastAdvancedAbsoluteDay).toBe(14);
+    expect(state.records[zone.key]).toMatchObject({
+      key: zone.key,
+      surfaceId: zone.surfaceId,
+      cellX: zone.cellX,
+      cellY: zone.cellY,
+      intendedTerrain: "green",
+      area: zone.cells.length,
+      mowingQuality: 0,
+      moisture: 1,
+      turfHealth: 1,
+      wear: 0,
+      dormancy: 1,
+      drainageStress: 1,
+      failureDurationDays: 3650,
+      missedMowingDays: 0,
+      insufficientWaterDays: 3650,
+      saturatedDays: 3650,
+      repairRequired: true,
+      repairProgress: 1,
+      lastDemand: telemetryMaximum,
+      lastAllocated: telemetryMaximum,
+      lastTraffic: telemetryMaximum,
+      lastIrrigationDemand: telemetryMaximum,
+      lastIrrigationApplied: telemetryMaximum,
+      lastElevatedWaterDemand: telemetryMaximum,
+      lastElevatedWaterApplied: telemetryMaximum,
+      lastObservedAbsoluteDay: 14,
+      repair: {
+        kind: "resod",
+        cost: zone.cells.length * 100_000,
+        requiredDays: 10,
+        progressDays: 10,
+        startedAbsoluteDay: 14,
+        elevatedWaterDaysRemaining: 10,
+      },
+    });
+
+    const nextDay = 15;
+    const advanced = advanceSurfaceCareDay({
+      course: result.payload.course,
+      world: {
+        ...result.payload.world,
+        maintenanceBudget: 1_000_000,
+        staffLevel: 5,
+      },
+      absoluteDay: nextDay,
+      weather: weatherForDay(
+        result.payload.world.runSeed,
+        result.payload.course.theme ?? "parkland",
+        nextDay,
+      ),
+      climate: biomeClimatePhenologyForDay(
+        result.payload.course.theme ?? "parkland",
+        nextDay,
+      ),
+      turfPriority: "recovery",
+      waterPolicy: "irrigate",
+      drainageLevel: 1,
+      rounds: 0,
+    });
+    expect(advanced.course.surfaceCare?.lastAdvancedAbsoluteDay).toBe(nextDay);
+    expect(advanced.course.surfaceCare?.records[zone.key].lastObservedAbsoluteDay)
+      .toBe(nextDay);
+    expect(advanced.course.surfaceCare?.records[zone.key].repair).toBeUndefined();
   });
 
   it("migrates a v1 save through the explicit chain", () => {

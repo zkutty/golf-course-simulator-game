@@ -99,6 +99,66 @@ export interface SurfaceIntentV1 {
   features: SurfaceFeature[];
 }
 
+export const SURFACE_CARE_CELL_SIZE = 8 as const;
+export type CultivatedTerrain = "green" | "tee" | "fairway" | "rough" | "deep_rough";
+export type SurfaceRepairKind = "reseed" | "resod";
+
+export interface SurfaceRepairTaskV1 {
+  kind: SurfaceRepairKind;
+  /** Exact charge settled atomically when the task is started. */
+  cost: number;
+  /** Reseed: 14–28 suitable growing days. Resod: 5–10 serviced days. */
+  requiredDays: number;
+  progressDays: number;
+  startedAbsoluteDay: number;
+  /** Resod carries elevated irrigation demand during establishment. */
+  elevatedWaterDaysRemaining: number;
+}
+
+/**
+ * One sparse cultivated-surface record. The key is the stable authored M35
+ * surface ID (or deterministic legacy component fallback) plus an 8×8 care
+ * cell; state is never copied to every terrain tile.
+ */
+export interface SurfaceCareRecordV1 {
+  key: string;
+  surfaceId: string;
+  cellX: number;
+  cellY: number;
+  intendedTerrain: CultivatedTerrain;
+  area: number;
+  mowingQuality: number;
+  moisture: number;
+  turfHealth: number;
+  wear: number;
+  dormancy: number;
+  drainageStress: number;
+  failureDurationDays: number;
+  missedMowingDays: number;
+  insufficientWaterDays: number;
+  saturatedDays: number;
+  repairRequired: boolean;
+  repairProgress: number;
+  repair?: SurfaceRepairTaskV1;
+  lastDemand: number;
+  lastAllocated: number;
+  lastTraffic: number;
+  /** Last-day root-zone irrigation demand/application telemetry. */
+  lastIrrigationDemand: number;
+  lastIrrigationApplied: number;
+  /** Incremental resod establishment demand/application above routine care. */
+  lastElevatedWaterDemand: number;
+  lastElevatedWaterApplied: number;
+  lastObservedAbsoluteDay: number;
+}
+
+export interface SurfaceCareStateV1 {
+  version: 1;
+  cellSize: typeof SURFACE_CARE_CELL_SIZE;
+  lastAdvancedAbsoluteDay: number;
+  records: Record<string, SurfaceCareRecordV1>;
+}
+
 export const TEE_SETS = ["forward", "member", "championship"] as const;
 export type TeeSet = (typeof TEE_SETS)[number];
 export type ParSetting =
@@ -372,6 +432,8 @@ export interface Course {
   biomeCompatibility?: BiomeCompatibilityMetadata;
   /** Optional M35 smooth-authoring metadata. Tiles remain authoritative. */
   surfaceIntent?: SurfaceIntentV1;
+  /** Sparse M53 cultivated-surface condition and repair state. */
+  surfaceCare?: SurfaceCareStateV1;
   /** M25 land ownership and immutable surveyed-land record. */
   estate?: Estate;
   /** M31-M33 commercial campus, access, resort, and community assets. */
@@ -617,5 +679,19 @@ export interface WeekResult {
     totalWeight: number;
     avgWeight: number;
     wear: number; // 0..1 applied this week
+  };
+  /** Aggregated sparse local maintenance evidence for the completed period. */
+  surfaceCare?: {
+    days: number;
+    zones: number;
+    totalDemand: number;
+    totalAllocated: number;
+    totalIrrigationDemand: number;
+    totalIrrigationApplied: number;
+    elevatedWaterDemand: number;
+    elevatedWaterApplied: number;
+    averageCondition: number;
+    tournamentReadiness: number;
+    repairRequiredZones: number;
   };
 }

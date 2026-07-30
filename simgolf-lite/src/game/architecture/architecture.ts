@@ -7,6 +7,7 @@ import { findWalkPath } from "../live/walkPath";
 import { lastItem } from "../../utils/array";
 import { buildStrategicPortfolio } from "./portfolio";
 import type { M48StrategicPortfolio } from "./m48Types";
+import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 
 export type ArchitectureComponentId = "routing" | "naturalFit" | "variety" | "safety" | "walkability";
 export type ArchitectureWarningKind = "transfer" | "clubhouse" | "repetition" | "crossing" | "parallel" | "earthwork" | "terrain";
@@ -222,8 +223,10 @@ function analyzeSafety(course: Course, warnings: ArchitectureWarning[]): Archite
 }
 
 export function analyzeArchitecture(course: Course): ArchitectureReport {
-  const cached = cache.get(course);
+  const sourceCourse = course;
+  const cached = cache.get(sourceCourse);
   if (cached) return cached;
+  course = courseWithEffectiveSurfaces(course);
   const completeCount = course.holes.filter((hole) => route(hole).length >= 2).length;
   // Architecture is a published-course judgment. Keeping incomplete editor
   // states lightweight avoids surveying 30,800 tiles on every brush stroke.
@@ -240,7 +243,7 @@ export function analyzeArchitecture(course: Course): ArchitectureReport {
       warnings: [],
       generatedFor: { courseId: course.activeCourseId, holeIds: course.holes.map((hole) => hole.id!).filter(Boolean) },
     };
-    cache.set(course, pending);
+    cache.set(sourceCourse, pending);
     return pending;
   }
   const warnings: ArchitectureWarning[] = [];
@@ -256,7 +259,7 @@ export function analyzeArchitecture(course: Course): ArchitectureReport {
   // and explainable, while `strategic` exposes the cohort facts to newer UI.
   const total = round(strategic.evaluation.holes.length ? baseTotal * .58 + strategic.summary.total * .42 : baseTotal);
   const report = { total, components, strategic, warnings: warnings.sort((a, b) => Number(b.severity === "warning") - Number(a.severity === "warning") || a.id.localeCompare(b.id)), generatedFor: { courseId: course.activeCourseId, holeIds: course.holes.map((hole) => hole.id!).filter(Boolean) } } satisfies ArchitectureReport;
-  cache.set(course, report);
+  cache.set(sourceCourse, report);
   return report;
 }
 

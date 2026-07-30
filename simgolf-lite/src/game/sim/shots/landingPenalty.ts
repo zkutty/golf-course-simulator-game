@@ -2,6 +2,7 @@ import type { Course, Terrain } from "../../models/types";
 import type { Point } from "../../models/types";
 import { BALANCE } from "../../balance/balanceConfig";
 import { getBiomeDefinition } from "../../models/biomes";
+import { courseWithEffectiveSurfaces } from "../../conditions/surfaceCare";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -22,7 +23,8 @@ export function computeExpectedLandingPenalty(args: {
   target: Point;
   dispersionTiles: number;
 }): LandingPenaltyResult {
-  const { course, target } = args;
+  const course = courseWithEffectiveSurfaces(args.course);
+  const { target } = args;
   const r0 = Math.max(0.5, args.dispersionTiles);
   const r = Math.min(BALANCE.shots.landing.maxRadiusTiles, Math.ceil(r0));
 
@@ -63,7 +65,6 @@ export function computeExpectedLandingPenalty(args: {
 
   return { expectedPenalty: expected, probs };
 }
-
 
 
 

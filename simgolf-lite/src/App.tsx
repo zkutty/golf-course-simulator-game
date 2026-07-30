@@ -191,6 +191,11 @@ import type { SharedShotOutcome } from "./game/rules/contracts";
 import { buildArchitectureReview, defaultArchitectureFilters } from "./game/architecture/review";
 import { compareM48DesignTest, createM48DesignTestSession, refreshM48DesignTestSession } from "./game/architecture/comparison";
 import { strategicGeometryVersion } from "./game/architecture/strategic";
+import {
+  effectiveSurfaceTiles,
+  observedSurfaceCareEvidence,
+  surfaceCareConditionSummary,
+} from "./game/conditions/surfaceCare";
 
 function textSharedOutcome(outcome: SharedShotOutcome | null | undefined) {
   if (!outcome) return null;
@@ -2481,6 +2486,8 @@ export default function App() {
           championship: { courseRating: 0, slope: 55, effectiveYardage: 0, setupComplete: false, rotationDeltas: {} },
         };
     const liveStateById = new Map((live.getSnapshot()?.state.golfers ?? []).map((golfer) => [golfer.id, golfer]));
+    const textSurfaceCareSummary = surfaceCareConditionSummary(course);
+    const textSurfaceCareEvidence = observedSurfaceCareEvidence(course);
     const renderText = () => JSON.stringify({
       coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
       screen,
@@ -2502,6 +2509,28 @@ export default function App() {
           coverage: feature.coverage.length,
           renderRings: feature.renderRings?.length ?? 0,
         })),
+        surfaceCare: {
+          version: course.surfaceCare?.version ?? null,
+          cellSize: course.surfaceCare?.cellSize ?? 8,
+          lastAdvancedAbsoluteDay:
+            course.surfaceCare?.lastAdvancedAbsoluteDay ?? null,
+          ...textSurfaceCareSummary,
+          evidence: textSurfaceCareEvidence.map((zone) => ({
+            key: zone.key,
+            surfaceId: zone.surfaceId,
+            cell: [zone.cellX, zone.cellY],
+            terrain: zone.terrain,
+            tiles: zone.tiles,
+            effectiveTerrain: zone.effectiveTerrain,
+            turfHealth: zone.turfHealth,
+            mowingQuality: zone.mowingQuality,
+            moisture: zone.moisture,
+            wear: zone.wear,
+            serviceRatio: zone.serviceRatio,
+            repairRequired: zone.repairRequired,
+            action: zone.action,
+          })),
+        },
         holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length,
         terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>),
         obstacleCounts: course.obstacles.reduce((counts, obstacle) => ({ ...counts, [obstacle.type]: (counts[obstacle.type] ?? 0) + 1 }), {} as Partial<Record<ObstacleType, number>>),
@@ -2815,6 +2844,7 @@ export default function App() {
           width: current.width,
           height: current.height,
           tiles: [...current.tiles],
+          effectiveTiles: [...effectiveSurfaceTiles(current)],
           elevations: [...current.elevations],
           owned: current.tiles.map((_, index) => isOwnedTile(
             current,
@@ -4723,6 +4753,12 @@ export default function App() {
               world={world}
               day={live.status.dayIndex}
               onCommand={runSeasonCommand}
+              onSurfaceRepair={(key, kind, absoluteDay) => dispatch({
+                type: "START_SURFACE_REPAIR",
+                key,
+                kind,
+                absoluteDay,
+              })}
               onClose={() => setShowSeasonsLegacy(false)}
             />}
             {showCampaign && world.campaign && !tutorialProgress && <CampaignPanel

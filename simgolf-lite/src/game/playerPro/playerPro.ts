@@ -42,6 +42,7 @@ import { mulberry32 } from "../../utils/rng";
 import { tournamentCalendar, TOURNAMENT_TIERS } from "../tournaments/tournaments";
 import type { TournamentEvent, TournamentStanding, TournamentTier } from "../tournaments/types";
 import { activeWeather, seasonalState, weatherModifiers } from "../seasons/seasons";
+import { effectiveSurfaceTiles } from "../conditions/surfaceCare";
 import { isOwnedTile } from "../estate/estate";
 import {
   isValidReliefResolution,
@@ -419,7 +420,7 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
     width: course.width,
     height: course.height,
     yardsPerTile: course.yardsPerTile,
-    tiles: course.tiles.slice(),
+    tiles: effectiveSurfaceTiles(course).slice(),
     elevations: course.elevations.slice(),
     obstacles: course.obstacles.map((obstacle) => ({ ...obstacle })),
     holes: holes as PlayerRoundCourseSnapshot["holes"],

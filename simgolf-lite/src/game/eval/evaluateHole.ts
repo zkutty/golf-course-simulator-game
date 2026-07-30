@@ -2,6 +2,7 @@ import type { Course, Hole, Obstacle, Point, Terrain } from "../models/types";
 import { findBestPlayablePath } from "../sim/pathfind";
 import { sampleLine, scoreHole } from "../sim/holes";
 import { computeTerrainChangeCost } from "../models/terrainEconomics";
+import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 
 export interface HoleIssue {
   severity: "info" | "warn" | "bad";
@@ -170,6 +171,7 @@ export function evaluateHole(
   holeIndex: number,
   costMult = 1,
 ): HoleEvaluation {
+  course = courseWithEffectiveSurfaces(course);
   const issues: HoleIssue[] = [];
 
   // Use existing scoring function for shot calculations

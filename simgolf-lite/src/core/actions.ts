@@ -1,4 +1,4 @@
-import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation, PlantId, SurfaceFeature } from "../game/models/types";
+import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation, PlantId, SurfaceFeature, SurfaceRepairKind } from "../game/models/types";
 import type { PropertyCommand } from "../game/property/property";
 
 // Actions that mutate terrain (increment terrainVersion)
@@ -71,6 +71,7 @@ export type EconomyMutationAction =
   | { type: "TAKE_LOAN"; kind: "BRIDGE" | "EXPANSION" }
   | { type: "PURCHASE_PARCEL"; parcelId: string }
   | { type: "PROPERTY_COMMAND"; command: PropertyCommand }
+  | { type: "START_SURFACE_REPAIR"; key: string; kind: SurfaceRepairKind; absoluteDay: number }
   | { type: "SIMULATE_WEEK"; course: Course; world: World };
 
 // UI-only actions (do not affect versions)

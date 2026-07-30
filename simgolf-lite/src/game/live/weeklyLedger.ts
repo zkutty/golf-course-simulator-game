@@ -30,6 +30,9 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
   const weatherDays = ledger.days.flatMap((day) => day.weather ? [day.weather] : []);
   const biomeDays = ledger.days.flatMap((day) => day.biomeEconomy ? [day.biomeEconomy] : []);
   const mobilityCourses = new Map<string, MobilityCourseAggregate>();
+  const surfaceCareDays = ledger.days.flatMap((day) =>
+    day.surfaceCare ? [day.surfaceCare] : []
+  );
 
   for (const day of ledger.days) {
     for (const [type, amount] of Object.entries(day.revenueBreakdown.byConcession) as Array<[ConcessionType, number]>) {
@@ -124,6 +127,38 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
         averageDemandMultiplier: weatherDays.reduce((sum, weather) => sum + weather.modifiers.demandMultiplier, 0) / weatherDays.length,
         averageTurfWearMultiplier: weatherDays.reduce((sum, weather) => sum + weather.modifiers.turfWearMultiplier, 0) / weatherDays.length,
         kinds: weatherDays.map((weather) => weather.kind),
+      },
+    } : {}),
+    ...(surfaceCareDays.length ? {
+      surfaceCare: {
+        days: surfaceCareDays.length,
+        zones: surfaceCareDays[surfaceCareDays.length - 1].zones,
+        totalDemand: surfaceCareDays.reduce((sum, report) => sum + report.totalDemand, 0),
+        totalAllocated: surfaceCareDays.reduce((sum, report) => sum + report.totalAllocated, 0),
+        totalIrrigationDemand: surfaceCareDays.reduce(
+          (sum, report) => sum + report.totalIrrigationDemand,
+          0,
+        ),
+        totalIrrigationApplied: surfaceCareDays.reduce(
+          (sum, report) => sum + report.totalIrrigationApplied,
+          0,
+        ),
+        elevatedWaterDemand: surfaceCareDays.reduce(
+          (sum, report) => sum + report.elevatedWaterDemand,
+          0,
+        ),
+        elevatedWaterApplied: surfaceCareDays.reduce(
+          (sum, report) => sum + report.elevatedWaterApplied,
+          0,
+        ),
+        averageCondition: surfaceCareDays.reduce(
+          (sum, report) => sum + report.overallCondition,
+          0,
+        ) / surfaceCareDays.length,
+        tournamentReadiness:
+          surfaceCareDays[surfaceCareDays.length - 1].tournamentReadiness,
+        repairRequiredZones:
+          surfaceCareDays[surfaceCareDays.length - 1].repairRequiredZones,
       },
     } : {}),
   };

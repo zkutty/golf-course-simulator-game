@@ -3,6 +3,7 @@ import { scoreCourseHoles } from "./holes";
 import { getGolferProfile, type GolferProfile } from "./golferProfiles";
 import { BALANCE } from "../balance/balanceConfig";
 import { courseForCourseSetup, getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../models/courseSetup";
+import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 
 export interface RatingSummary {
   holesUsed: number; // 9 or 18
@@ -232,6 +233,7 @@ function ratingGeometry(course: Course): RatingGeometryCache {
 }
 
 export function computeRatingForSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): SetupRatingSummary {
+  course = courseWithEffectiveSurfaces(course);
   const setups = ratingGeometry(course).setups;
   const cacheKey = `${teeSet}:${pinRotation}`;
   const cached = setups.get(cacheKey);

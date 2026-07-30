@@ -34,7 +34,7 @@ describe("M23 course setup model", () => {
     const result = normalizeLoadedSaveResult({ schemaVersion: 6, savedAt: 1, course: legacy, world: DEFAULT_WORLD });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(CURRENT_SAVE_SCHEMA_VERSION).toBe(24);
+    expect(CURRENT_SAVE_SCHEMA_VERSION).toBe(25);
     expect(result.migratedFrom).toBe(6);
     expect(getTeeBox(result.payload.course.holes[0], "member")).toEqual({ x: legacy.holes[0].tee!.x + 55, y: legacy.holes[0].tee!.y + 35 });
     expect(getPinPosition(result.payload.course.holes[0], "A")).toEqual({ x: legacy.holes[0].green!.x + 55, y: legacy.holes[0].green!.y + 35 });

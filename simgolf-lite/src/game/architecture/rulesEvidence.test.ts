@@ -5,6 +5,14 @@ import { courseGeometryVersion, normalizeLivingClub } from "../livingClub/living
 import type { ArchitectureShotEvidence } from "../livingClub/types";
 import { buildArchitectureReview, defaultArchitectureFilters } from "./review";
 import { terrainCostMult } from "../balance/difficulty";
+import {
+  advanceSurfaceCareDay,
+  courseWithEffectiveSurfaces,
+  normalizeSurfaceCareState,
+  surfaceCareTopology,
+} from "../conditions/surfaceCare";
+import { biomeClimatePhenologyForDay } from "../seasons/seasons";
+import { buildArchitectureRulesReview } from "./rulesEvidence";
 
 function course(kind: "safe" | "mandatory" = "safe"): Course {
   const width = 48;
@@ -137,5 +145,68 @@ describe("architecture rules evidence", () => {
         ),
       );
     }
+  });
+
+  it("uses the effective care projection for hazard overlays and the rules review path", () => {
+    const authored = course("safe");
+    let degraded = advanceSurfaceCareDay({
+      course: authored,
+      world: DEFAULT_WORLD,
+      absoluteDay: 0,
+      weather: {
+        absoluteDay: 0,
+        kind: "clear",
+        temperatureF: 72,
+        windMph: 6,
+        rainInches: 0,
+        severity: 0.05,
+        theme: "parkland",
+        season: "summer",
+      },
+      climate: biomeClimatePhenologyForDay("parkland", 0),
+      turfPriority: "playability",
+      waterPolicy: "irrigate",
+      drainageLevel: 1,
+      rounds: 0,
+    }).course;
+    const degradedIndex = 11 * degraded.width + 23;
+    const zone = surfaceCareTopology(degraded).zones.find(
+      (candidate) => candidate.cells.includes(degradedIndex),
+    )!;
+    const care = normalizeSurfaceCareState(degraded.surfaceCare, degraded)!;
+    degraded = {
+      ...degraded,
+      surfaceCare: {
+        ...care,
+        records: {
+          ...care.records,
+          [zone.key]: {
+            ...care.records[zone.key],
+            turfHealth: 0.08,
+            failureDurationDays: 8,
+            repairRequired: true,
+          },
+        },
+      },
+    };
+    const reviewWorld = world([]);
+    const review = buildArchitectureReview(degraded, reviewWorld, {
+      ...defaultArchitectureFilters(degraded),
+      kind: "hazards",
+    });
+    expect(degraded.tiles[degradedIndex]).toBe("fairway");
+    expect(review.overlay.cells).toContainEqual(expect.objectContaining({
+      x: degradedIndex % degraded.width,
+      y: Math.floor(degradedIndex / degraded.width),
+    }));
+
+    const directRules = buildArchitectureRulesReview({
+      course: courseWithEffectiveSurfaces(degraded),
+      world: reviewWorld,
+      evidence: review.evidence,
+      currentGeometryVersion: review.currentGeometryVersion,
+      strategicHoles: review.strategic.evaluation.holes,
+    });
+    expect(review.rules).toEqual(directRules);
   });
 });

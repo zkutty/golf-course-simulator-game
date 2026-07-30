@@ -8,6 +8,7 @@ import { M47_MAX_OUTCOMES, type GolferCapabilities } from "./m47Types";
 import { generateStrategicHolePlan, followUpIntent } from "./strategicOptions";
 import { liveCourseSnapshot, resolveLiveShot, terrainAt } from "./livePhysics";
 import { evaluateHoleReaction } from "./reactions";
+import { surfaceCareQualityForHole } from "../conditions/surfaceCare";
 import type { Personality } from "./personality";
 import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import { TimedItineraryBuilder } from "../m51/timedItinerary";
@@ -187,7 +188,7 @@ export function buildStrategicGolferRound(args: {
       outcomes,
       capabilities: args.capabilities,
       personality: args.personality,
-      condition: course.condition,
+      condition: surfaceCareQualityForHole(course, hole),
     }));
     holePar.push(par);
     holeStrokes.push(outcomes.reduce((sum, outcome) => sum + 1 + outcome.penaltyStrokes, 0));

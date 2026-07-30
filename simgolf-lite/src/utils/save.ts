@@ -46,7 +46,10 @@ import { normalizePropertyCourse, normalizePropertyEnterprise, starterPropertyCo
 import { normalizeSurfaceIntent, translateSurfaceIntent } from "../game/models/surfaceIntent";
 import { normalizePlayerPro } from "../game/playerPro/playerPro";
 import { normalizeLivingClub } from "../game/livingClub/livingClub";
-import { normalizeSeasonalState } from "../game/seasons/seasons";
+import {
+  absoluteDayFor,
+  normalizeSeasonalState,
+} from "../game/seasons/seasons";
 import { normalizeCampaignRun } from "../game/campaign/campaign";
 import { normalizePaceOperationsState } from "../game/live/paceHistory";
 import { migratePlayerProActiveRoundSnapshotV20 } from "../game/rules/roundSnapshotMigration";
@@ -61,9 +64,10 @@ import {
   isPlantId,
   plantDefinition,
 } from "../game/models/plantRegistry";
+import { normalizeSurfaceCareState } from "../game/conditions/surfaceCare";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 24 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 25 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -176,6 +180,10 @@ export interface SaveV23 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV24 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 24;
+  records?: CourseRecords;
+}
+export interface SaveV25 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -257,7 +265,7 @@ export function saveGame(payload: SavePayload) {
     persisted.world.playerPro,
     persisted.course,
   ).playerPro as World["playerPro"];
-  const save: SaveV24 = {
+  const save: SaveV25 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: persisted.course,
@@ -738,6 +746,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
       course: { ...save.course, decorations },
     };
   },
+  // V25 adds sparse cultivated-surface care records. Historical courses begin
+  // healthy; no invented neglect or replayed maintenance history is created.
+  24: (save) => ({ ...save, schemaVersion: 25 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -926,6 +937,13 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     const worldError = validateWorldShape(parsed.world);
     if (worldError) return { ok: false, error: worldError };
     const rawCourse = parsed.course as unknown as Course;
+    const rawWorld = parsed.world as unknown as World;
+    const rawLiveDay =
+      typeof (parsed.live as { state?: { dayIndex?: unknown } } | undefined)
+        ?.state?.dayIndex === "number"
+        ? (parsed.live as { state: { dayIndex: number } }).state.dayIndex
+        : 0;
+    const currentAbsoluteDay = absoluteDayFor(rawWorld.week, rawLiveDay);
     const normalizedTheme = normalizeBiomeKey(rawCourse.theme ?? "parkland");
     if (!normalizedTheme) {
       return fail("INVALID_COURSE", `The save uses unsupported biome "${String(rawCourse.theme)}".`);
@@ -992,6 +1010,12 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       ...course,
       m51: normalizeM51CourseMobilityState(rawCourse.m51, course, (parsed.world as World).m51),
     };
+    course = {
+      ...course,
+      surfaceCare: normalizeSurfaceCareState(rawCourse.surfaceCare, course, {
+        maxAbsoluteDay: currentAbsoluteDay,
+      }),
+    };
     if (rawCourse.estate && !validateEstate(rawCourse.estate, rawWidth, rawHeight)) {
       return fail("INVALID_COURSE", "The saved estate, ownership, or natural-land baseline is malformed.");
     }
@@ -1004,16 +1028,12 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       }
     }
 
-    const rawWorld = parsed.world as unknown as World;
     const roundBiomeError = activeRoundBiomeError(rawWorld.playerPro);
     if (roundBiomeError) return fail("INVALID_WORLD", roundBiomeError);
     const rawPlayerPro = migrated.migratedFrom === 19 || migrated.migratedFrom == null
       ? migratePlayerProActiveRoundSnapshotV20(rawWorld.playerPro, course).playerPro
       : rawWorld.playerPro;
     const rawConstraints = rawWorld.constraints;
-    const rawLiveDay = typeof (parsed.live as { state?: { dayIndex?: unknown } } | undefined)?.state?.dayIndex === "number"
-      ? (parsed.live as { state: { dayIndex: number } }).state.dayIndex
-      : 0;
     const world: World = {
       ...DEFAULT_WORLD,
       ...rawWorld,

@@ -1121,3 +1121,47 @@ classic course-builder references.
   `artifacts/zk-565/{machine-certification-v2.json,ZK-565_MACHINE_CERTIFICATION_V2.md}`.
   Human playtesting, art/aesthetic judgment, human accessibility/device
   validation, and physical-GPU p95 remain explicitly deferred and open.
+
+## 2026-07-30 — ZK-647 M53 local playing-surface care
+
+- Added a deterministic, sparse `SurfaceCareStateV1` authority keyed by stable
+  M35 surface identity plus bounded 8×8 maintenance cells. Legacy surfaces use
+  deterministic connected-component identities; untouched natural rough is
+  not persisted. Exact overlap reconciliation carries condition through
+  repaint, split, merge, marker edits, undo/redo, and save/reload without
+  changing authored terrain or legal tee/green targets.
+- Daily care now combines local area/terrain demand with biome/climate/weather,
+  traffic traces, mobility wear, budget, staff, mowing, irrigation, drainage,
+  and operating policy. It models missed-mowing, drought, saturation, wear,
+  dormancy, failure, natural recovery, explicit reseed/resod economics and
+  suitable-day establishment, including elevated post-resod water demand.
+- Renderer, live/player physics snapshots, shot AI, hole evaluation/rating,
+  architecture, reactions, M49 reports, and tournament qualification consume
+  the same effective-surface projection or local quality evidence. M49 uses
+  observed surface/cell evidence instead of invented quadrants when care
+  history exists. Seasons & Legacy exposes localized local-condition evidence
+  and explicit repair controls.
+- Save schema v25 round-trips sparse care state, preserves authored tiles, does
+  not invent history for v24 saves, and clamps or drops hostile records.
+  Coverage includes all eight authored biome-pressure contracts, max-grid
+  sparsity, exact degradation/recovery/repair windows, deterministic 224-day
+  years, local divergence, consumer agreement, edit/reload stability, and
+  dormancy-not-death behavior.
+- Review hardening caps hostile timestamps, repair costs, and telemetry against
+  the loaded world day and zone size; overlap-weights topology changes without
+  duplicating paid repairs; makes resod establishment consume and charge for
+  elevated water only while actual serviced days progress; and invalidates
+  terrain chunks for treatment/mowing-only visual changes. Architecture Review
+  hazards/rules now share the effective-surface path while evidence geometry
+  identity remains authored. Irrigation accounting separates per-tile root-zone
+  depth from area-weighted volume, so equal acreage has the same resod surcharge
+  regardless of how its M35 surfaces are split or merged.
+- Machine verification: TypeScript passes; full Vitest passes 134 files with
+  1,060 tests and one intentional skip; production build and all asset audits
+  pass; lint/i18n passes with zero errors and 12 existing React-hook warnings.
+  The bundled web-game browser client reached Quick Start, emitted structured
+  game state and a screenshot, and produced no console/page error artifact.
+  The screenshot was intentionally not judged visually.
+- Human gameplay, visual/aesthetic review, accessibility/device checks, and
+  final repair-workflow validation remain intentionally deferred to the final
+  human-testing phase.

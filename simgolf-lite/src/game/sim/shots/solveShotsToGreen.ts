@@ -2,6 +2,7 @@ import type { Course, Point, Terrain } from "../../models/types";
 import type { GolferProfile } from "../golferProfiles";
 import { evalShotExpectedCost } from "./evalShotExpectedCost";
 import { BALANCE } from "../../balance/balanceConfig";
+import { courseWithEffectiveSurfaces } from "../../conditions/surfaceCare";
 
 export interface ShotPlanStep {
   from: Point;
@@ -95,7 +96,8 @@ export function solveShotsToGreen(args: {
   green: Point;
   golfer: GolferProfile;
 }): ShotSolveResult {
-  const { course, tee, green, golfer } = args;
+  const course = courseWithEffectiveSurfaces(args.course);
+  const { tee, green, golfer } = args;
 
   if (!inBounds(course, tee) || !inBounds(course, green)) {
     return { reachable: false, expectedShotsToGreen: Infinity, plan: [] };
@@ -206,7 +208,6 @@ export function solveShotsToGreen(args: {
 
   return { reachable: true, expectedShotsToGreen: best, plan };
 }
-
 
 
 

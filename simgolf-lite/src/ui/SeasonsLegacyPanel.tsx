@@ -20,6 +20,13 @@ import {
 } from "../game/seasons/types";
 import { formatCurrency } from "../i18n/format";
 import { translateCurrent } from "../i18n/core";
+import {
+  normalizeSurfaceCareState,
+  observedSurfaceCareEvidence,
+  quoteSurfaceRepair,
+  surfaceCareConditionSummary,
+} from "../game/conditions/surfaceCare";
+import type { SurfaceRepairKind } from "../game/models/types";
 
 const AUTOMATION_SYSTEMS: AutomationSystem[] = ["hours", "upkeep", "pricing", "staffing", "parking", "lodging", "community", "safety"];
 const TURF_PRIORITIES: TurfPriority[] = ["playability", "recovery", "presentation"];
@@ -52,6 +59,11 @@ export function SeasonsLegacyPanel(props: {
   world: World;
   day: number;
   onCommand: (command: SeasonCommand) => ReturnType<typeof applySeasonCommand>;
+  onSurfaceRepair: (
+    key: string,
+    kind: SurfaceRepairKind,
+    absoluteDay: number,
+  ) => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<"season" | "identity" | "legacy">("season");
@@ -59,6 +71,18 @@ export function SeasonsLegacyPanel(props: {
   const state = useMemo(() => seasonalState(props.world, props.course, props.day), [props.course, props.day, props.world]);
   const weather = activeWeather(props.world, props.course, props.day);
   const modifiers = weatherModifiers(weather, state.operations.drainageLevel);
+  const careEvidence = useMemo(
+    () => observedSurfaceCareEvidence(props.course).slice(0, 8),
+    [props.course],
+  );
+  const careState = useMemo(
+    () => normalizeSurfaceCareState(props.course.surfaceCare, props.course),
+    [props.course],
+  );
+  const careSummary = useMemo(
+    () => surfaceCareConditionSummary(props.course),
+    [props.course],
+  );
   const run = (command: SeasonCommand) => {
     const result = props.onCommand(command);
     setMessage(result.message);
@@ -112,6 +136,78 @@ export function SeasonsLegacyPanel(props: {
             wear: percent(modifiers.turfWearMultiplier),
           })}</div>
         </section>
+        {careEvidence.length > 0 && <section style={card} data-testid="surface-care-operations">
+          <h3 style={{ margin: "0 0 7px" }}>{translateCurrent("season.surfaceCare.title")}</h3>
+          <div style={{ fontSize: 12, marginBottom: 7 }}>
+            {translateCurrent("season.surfaceCare.summary", {
+              condition: Math.round(careSummary.overallCondition * 100),
+              readiness: Math.round(careSummary.tournamentReadiness * 100),
+              repairs: careSummary.repairRequiredZones,
+            })}
+          </div>
+          <div style={{ display: "grid", gap: 7 }}>
+            {careEvidence.map((zone) => {
+              const activeRepair = careState?.records[zone.key]?.repair;
+              return <article key={zone.key} data-testid={`surface-care-${zone.key}`} style={{ borderTop: "1px solid #d6c99f", paddingTop: 6 }}>
+                <strong>{translateCurrent("season.surfaceCare.zone", {
+                  terrain: zone.terrain.replaceAll("_", " "),
+                  x: zone.cellX,
+                  y: zone.cellY,
+                })}</strong>
+                <div style={{ fontSize: 12 }}>
+                  {translateCurrent("season.surfaceCare.metrics", {
+                    turf: Math.round(zone.turfHealth * 100),
+                    mowing: Math.round(zone.mowingQuality * 100),
+                    service: Math.round(zone.serviceRatio * 100),
+                  })}
+                </div>
+                <small>{zone.action}</small>
+                {activeRepair
+                  ? <div data-testid={`surface-repair-active-${zone.key}`} style={{ marginTop: 4 }}>
+                    {translateCurrent("season.surfaceCare.activeRepair", {
+                      kind: translateCurrent(`season.surfaceCare.kind.${activeRepair.kind}`),
+                      progress: activeRepair.progressDays.toFixed(1),
+                      days: activeRepair.requiredDays,
+                    })}
+                  </div>
+                  : zone.repairRequired && <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
+                    {(["reseed", "resod"] as const).map((kind) => {
+                      const quote = quoteSurfaceRepair(
+                        props.course,
+                        props.world,
+                        zone.key,
+                        kind,
+                      );
+                      if (!quote) return null;
+                      const disabled = props.world.cash < quote.cost;
+                      return <button
+                        key={kind}
+                        data-testid={`${kind}-${zone.key}`}
+                        disabled={disabled}
+                        title={disabled ? translateCurrent("season.surfaceCare.insufficientCash") : undefined}
+                        onClick={() => {
+                          props.onSurfaceRepair(zone.key, kind, state.calendar.absoluteDay);
+                          setMessage(translateCurrent("season.surfaceCare.scheduled", {
+                            kind: translateCurrent(`season.surfaceCare.kind.${kind}`),
+                            terrain: zone.terrain.replaceAll("_", " "),
+                            x: zone.cellX,
+                            y: zone.cellY,
+                          }));
+                        }}
+                        style={button}
+                      >
+                        {translateCurrent("season.surfaceCare.repairButton", {
+                          kind,
+                          cost: formatCurrency(quote.cost),
+                          days: quote.requiredDays,
+                        })}
+                      </button>;
+                    })}
+                  </div>}
+              </article>;
+            })}
+          </div>
+        </section>}
         <section style={card}>
           <h3 style={{ margin: "0 0 7px" }}>{translateCurrent("season.forecast.title")}</h3>
           <div data-testid="seven-day-forecast" style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(62px,1fr))", gap: 5, overflowX: "auto" }}>

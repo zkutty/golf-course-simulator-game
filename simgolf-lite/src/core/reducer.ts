@@ -47,6 +47,10 @@ import {
   resolvedDecorationPlantId,
   resolvedObstaclePlantId,
 } from "../game/models/plantRegistry";
+import {
+  reconcileSurfaceCareAfterEdit,
+  startSurfaceRepair,
+} from "../game/conditions/surfaceCare";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -166,6 +170,7 @@ export function applyAction(state: GameState, action: Action): GameState {
           }),
         };
       }
+      committedCourse = reconcileSurfaceCareAfterEdit(state.course, committedCourse);
       newState = {
         ...newState,
         course: committedCourse,
@@ -192,15 +197,16 @@ export function applyAction(state: GameState, action: Action): GameState {
         state.world.constraints?.protectedTrees,
       );
       if (!prepared?.commitAllowed || !prepared.preview.affordable) break;
+      const editedCourse = reconcileSurfaceCareAfterEdit(state.course, {
+        ...state.course,
+        tiles: prepared.tiles,
+        elevations: prepared.elevations,
+        obstacles: prepared.obstacles,
+        surfaceIntent: prepared.intent,
+      });
       newState = {
         ...newState,
-        course: {
-          ...state.course,
-          tiles: prepared.tiles,
-          elevations: prepared.elevations,
-          obstacles: prepared.obstacles,
-          surfaceIntent: prepared.intent,
-        },
+        course: editedCourse,
         world: {
           ...state.world,
           cash: prepared.preview.projectedCash,
@@ -209,6 +215,26 @@ export function applyAction(state: GameState, action: Action): GameState {
       };
       terrainVersion++;
       if (prepared.preview.removedObstacles.length > 0) obstaclesVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "START_SURFACE_REPAIR": {
+      if (state.world.isBankrupt) break;
+      const result = startSurfaceRepair(
+        state.course,
+        state.world,
+        action.key,
+        action.kind,
+        action.absoluteDay,
+      );
+      if (!result.ok) break;
+      newState = {
+        ...newState,
+        course: result.course,
+        world: result.world,
+      };
+      terrainVersion++;
       economyVersion++;
       break;
     }
@@ -890,6 +916,26 @@ export function applyAction(state: GameState, action: Action): GameState {
       void _exhaustive; // Suppress unused warning
       return state;
     }
+  }
+
+  // Marker tools also repaint cultivated terrain. Reproject existing local
+  // condition by exact overlap so an unrelated tee/pin edit cannot erase
+  // neglect elsewhere, while the genuinely replaced cells start fresh.
+  if (
+    newState.course !== state.course
+    && (
+      action.type === "PLACE_TEE"
+      || action.type === "MOVE_TEE"
+      || action.type === "PLACE_GREEN"
+      || action.type === "MOVE_GREEN"
+      || action.type === "SET_TEE_BOX"
+      || action.type === "REMOVE_TEE_BOX"
+    )
+  ) {
+    newState = {
+      ...newState,
+      course: reconcileSurfaceCareAfterEdit(state.course, newState.course),
+    };
   }
 
   // Rating-relevant edits immediately refresh warnings on future tournament

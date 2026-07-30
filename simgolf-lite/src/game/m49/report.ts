@@ -6,6 +6,10 @@ import { m49CourseHistory, normalizeM49State } from "./history";
 import { strategicIdentity } from "./identity";
 import type { M49CourseReport, M49ExperienceCause, M49ReportAlert } from "./types";
 import { localizedConditionZones } from "../conditions/localizedConditionZones";
+import {
+  observedSurfaceCareEvidence,
+  surfaceCareConditionSummary,
+} from "../conditions/surfaceCare";
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
@@ -24,31 +28,56 @@ function ledgerRevenue(result: WeekResult): number | undefined {
 }
 
 function conditionReport(course: Course, world: World, result?: WeekResult): M49CourseReport["condition"] {
+  const careEvidence = observedSurfaceCareEvidence(course);
+  const careSummary = surfaceCareConditionSummary(course);
   const totalWeight = course.tiles.reduce(
     (sum, terrain) => sum + terrainMaintenanceWeight(terrain, course.theme),
     0,
   );
   const avgWeight = totalWeight / Math.max(1, course.tiles.length);
-  const requiredMaintenance = result?.maintenance?.required ?? Math.round(350 + totalWeight * 0.46);
+  const requiredMaintenance = result?.surfaceCare
+    ? Math.round(result.surfaceCare.totalDemand * .13)
+    : result?.maintenance?.required ?? Math.round(350 + totalWeight * 0.46);
   const maintenanceBudget = result?.maintenance?.budget ?? world.maintenanceBudget;
   const shortfall = result?.maintenance?.shortfall ?? requiredMaintenance - maintenanceBudget;
-  const wearPressure = result?.maintenancePressure?.wear ?? clamp(avgWeight / 3.2 * .18);
+  const wearPressure = careEvidence.length
+    ? careEvidence.reduce((sum, zone) => sum + zone.wear * zone.tiles, 0)
+      / Math.max(1, careEvidence.reduce((sum, zone) => sum + zone.tiles, 0))
+    : result?.maintenancePressure?.wear ?? clamp(avgWeight / 3.2 * .18);
   const recoveryHeadroom = (maintenanceBudget - requiredMaintenance) / Math.max(1, requiredMaintenance);
-  const projectedRecovery = clamp(course.condition + recoveryHeadroom * .12 - wearPressure * .08);
+  const overall = careEvidence.length ? careSummary.overallCondition : clamp(course.condition);
+  const projectedRecovery = clamp(overall + recoveryHeadroom * .12 - wearPressure * .08);
 
-  const hotSpots = [...localizedConditionZones(course).values()]
-    .map((zone) => ({
-      zoneId: zone.zoneId,
-      terrain: zone.terrain,
-      tiles: zone.tiles,
-      burden: zone.burden,
-      action: shortfall > 0 ? "Increase maintenance or reduce wear here" : "Keep this zone on the current care plan",
-    }))
-    .sort((a, b) => b.burden - a.burden)
-    .slice(0, 4);
+  const hotSpots = careEvidence.length
+    ? careEvidence
+      .map((zone) => ({
+        zoneId: zone.key,
+        terrain: zone.terrain,
+        tiles: zone.tiles,
+        burden: round(clamp(
+          1
+          - zone.turfHealth * .5
+          - zone.mowingQuality * .2
+          - (1 - zone.wear) * .15
+          - zone.serviceRatio * .15,
+        ), 4),
+        action: zone.action,
+      }))
+      .sort((a, b) => b.burden - a.burden || a.zoneId.localeCompare(b.zoneId))
+      .slice(0, 4)
+    : [...localizedConditionZones(course).values()]
+      .map((zone) => ({
+        zoneId: zone.zoneId,
+        terrain: zone.terrain,
+        tiles: zone.tiles,
+        burden: zone.burden,
+        action: shortfall > 0 ? "Increase maintenance or reduce wear here" : "Keep this zone on the current care plan",
+      }))
+      .sort((a, b) => b.burden - a.burden)
+      .slice(0, 4);
 
   return {
-    overall: clamp(course.condition),
+    overall,
     maintenanceBudget,
     requiredMaintenance,
     shortfall,

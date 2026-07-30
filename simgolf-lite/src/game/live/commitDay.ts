@@ -10,7 +10,12 @@ import { layoutById } from "../models/courseLayouts";
 import { recordCoreCommerce, settlePropertyDay } from "../property/property";
 import type { PropertyShotTrace } from "../property/types";
 import { advanceLivingClubDay } from "../livingClub/livingClub";
-import { advanceSeasonalDay, charterDefinition, seasonalState } from "../seasons/seasons";
+import {
+  advanceSeasonalDay,
+  biomeClimatePhenologyForDay,
+  charterDefinition,
+  seasonalState,
+} from "../seasons/seasons";
 import { advanceCampaign } from "../campaign/campaign";
 import { recordPaceDay } from "./paceHistory";
 import { m49ReputationDelta, recordM49Observations } from "../m49/history";
@@ -18,6 +23,10 @@ import { m51MobilityAggregateSummary, settleM51MobilityDay } from "../m51/mobili
 import type { M51LiveMobilityState } from "../m51/types";
 import { settleMobilityFleet } from "../m51/operations";
 import { quoteDailyBiomeOperatingCosts } from "../models/biomeOperatingCosts";
+import {
+  advanceSurfaceCareDay,
+  surfaceCareWaterCostMultiplier,
+} from "../conditions/surfaceCare";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -92,7 +101,28 @@ export function commitDay(args: {
   const consumablesVariable = rounds * BALANCE.variableCosts.consumablesPerRound;
   const merchantFees = revenue * BALANCE.variableCosts.merchantFeeRate;
 
-  const biomeEconomy = quoteDailyBiomeOperatingCosts({
+  // Local care runs before the operating quote so active resod establishment
+  // raises real water consumption and cost instead of only changing turf.
+  const surfaceCareCommit = advanceSurfaceCareDay({
+    course: operatingCourse,
+    world: operatingWorld,
+    absoluteDay: seasonalCommit.weather.absoluteDay,
+    weather: seasonalCommit.weather,
+    climate: biomeClimatePhenologyForDay(
+      operatingCourse.theme ?? "parkland",
+      seasonalCommit.weather.absoluteDay,
+    ),
+    turfPriority: season.operations.turfPriority,
+    waterPolicy: season.operations.waterPolicy,
+    drainageLevel: season.operations.drainageLevel,
+    rounds,
+    shotTraces: args.shotTraces,
+    mobilityOffPathTiles: args.mobility?.assignments.reduce(
+      (sum, assignment) => sum + assignment.offPathTiles,
+      0,
+    ) ?? 0,
+  });
+  const quotedBiomeEconomy = quoteDailyBiomeOperatingCosts({
     course: operatingCourse,
     season: season.calendar.season,
     currentWeather: seasonalCommit.weather,
@@ -101,6 +131,18 @@ export function commitDay(args: {
     drainageLevel: season.operations.drainageLevel,
     costMult: profile.terrainCostMult,
   });
+  const waterCostMultiplier = surfaceCareWaterCostMultiplier(
+    surfaceCareCommit.report,
+  );
+  const elevatedWaterCost =
+    quotedBiomeEconomy.waterCost * (waterCostMultiplier - 1);
+  const biomeEconomy = elevatedWaterCost > 0
+    ? {
+      ...quotedBiomeEconomy,
+      waterCost: quotedBiomeEconomy.waterCost + elevatedWaterCost,
+      total: quotedBiomeEconomy.total + elevatedWaterCost,
+    }
+    : quotedBiomeEconomy;
   const presentationCost = season.operations.turfPriority === "presentation" ? 65 : season.operations.turfPriority === "recovery" ? 38 : 20;
   const paceOvertime = Object.values(args.pace?.perCourse ?? {}).reduce((sum, metrics) => sum + metrics.overtimeCost, 0);
   const paceCompensation = Object.values(args.pace?.perCourse ?? {}).reduce((sum, metrics) => sum + metrics.compensationCost, 0);
@@ -118,7 +160,7 @@ export function commitDay(args: {
   const costs = sharedCosts + paceCosts + mobilityOperatingCosts;
   const profit = revenue - costs;
 
-  // ---- Condition: wear from traffic vs. maintenance recovery (per day) ----
+  // ---- Condition: one local surface-care authority (per day) ----
   const totalWeight = operatingCourse.tiles.reduce(
     (acc, terrain) => acc + terrainMaintenanceWeight(terrain, operatingCourse.theme),
     0,
@@ -141,7 +183,12 @@ export function commitDay(args: {
       * priorityRecoveryMultiplier
   );
   const mobilityOffPathWear = Math.min(.01, (args.mobility?.assignments.reduce((sum, assignment) => sum + assignment.offPathTiles, 0) ?? 0) * 0.000002);
-  const nextCondition = clamp01(seasonalCommit.course.condition - wear - mobilityOffPathWear + maintEffect);
+  const legacyCondition = clamp01(
+    seasonalCommit.course.condition - wear - mobilityOffPathWear + maintEffect,
+  );
+  const nextCondition = surfaceCareCommit.report.zones > 0
+    ? surfaceCareCommit.report.overallCondition
+    : legacyCondition;
 
   // ---- Reputation: driven by the day's real net-promoter balance ----
   // Net promoter score of the golfers who actually finished, nudged by how many
@@ -164,7 +211,7 @@ export function commitDay(args: {
   const nextCashRaw = operatingWorld.cash + propertySettlement.report.revenue + hospitalityWeatherAdjustment - costs;
   const bankrupt = hitsLiquidityTrap(nextCashRaw);
 
-  const conditionCourse = { ...operatingCourse, condition: nextCondition };
+  const conditionCourse = { ...surfaceCareCommit.course, condition: nextCondition };
   const nextWorldBase: World = {
     ...operatingWorld,
     cash: nextCashRaw,
@@ -230,7 +277,7 @@ export function commitDay(args: {
     course: nextCourse,
     world: nextWorld,
     result: {
-      dayIndex: 0,
+      dayIndex: dayIndex ?? 0,
       rounds,
       revenue,
       revenueBreakdown: {
@@ -259,6 +306,7 @@ export function commitDay(args: {
       avgSatisfaction,
       reputationDelta: repDelta,
       conditionDelta: nextCondition - seasonalCommit.course.condition,
+      surfaceCare: surfaceCareCommit.report,
       ...(mobilitySummary ? { m51: mobilitySummary } : {}),
       promoters: reactions.promoters,
       detractors: reactions.detractors,

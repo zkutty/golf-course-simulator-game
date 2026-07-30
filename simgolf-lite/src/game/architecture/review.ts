@@ -19,6 +19,7 @@ import { buildStrategicRecommendations } from "./recommendations";
 import type { M48DesignComparison, M48StrategicHoleEvaluation, M48StrategicPortfolio } from "./m48Types";
 import { buildArchitectureRulesReview } from "./rulesEvidence";
 import { terrainCostMult } from "../balance/difficulty";
+import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 
 export interface ArchitectureReviewFilters {
   kind: ArchitectureOverlayKind;
@@ -204,6 +205,7 @@ export function buildArchitectureReview(
 ): ArchitectureReviewData {
   const living = normalizeLivingClub(world.livingClub);
   const selectedCourse = courseForLayout(course, filters.courseId);
+  const effectiveSelectedCourse = courseWithEffectiveSurfaces(selectedCourse);
   const currentGeometryVersion = courseGeometryVersion(selectedCourse);
   const strategic = buildStrategicPortfolio(selectedCourse, { courseId: filters.courseId });
   const selectedTee = filters.teeSet === "all" ? "member" : filters.teeSet;
@@ -237,7 +239,7 @@ export function buildArchitectureReview(
   else if (filters.kind === "heatmap") overlay.cells = landingCells(evidence, currentGeometryVersion);
   else if (filters.kind === "recovery") overlay.traces = traces(evidence, currentGeometryVersion, selectedTraceId, true);
   else if (filters.kind === "scoring") overlay.points = scoringPoints(selectedCourse, evidence, currentGeometryVersion);
-  else if (filters.kind === "hazards") overlay.cells = hazardCells(selectedCourse);
+  else if (filters.kind === "hazards") overlay.cells = hazardCells(effectiveSelectedCourse);
   else if (filters.kind === "walking") overlay.traces = walkingTraces(selectedCourse);
   else if (filters.kind === "congestion") overlay.points = congestionPoints(evidence, currentGeometryVersion);
 
@@ -275,7 +277,7 @@ export function buildArchitectureReview(
     averageToPar: item.roundIds.size ? Number((item.total / item.roundIds.size).toFixed(2)) : 0,
   }));
   const rules = buildArchitectureRulesReview({
-    course: selectedCourse,
+    course: effectiveSelectedCourse,
     world,
     evidence,
     currentGeometryVersion,

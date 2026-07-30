@@ -7,6 +7,7 @@ import type {
   TournamentTier,
 } from "./types";
 import { strategicIdentity } from "../m49/identity";
+import { surfaceCareConditionSummary } from "../conditions/surfaceCare";
 
 export interface TournamentCourseStandard {
   teeSet: TeeSet;
@@ -75,6 +76,18 @@ export function evaluateTournamentCourseQualification(
     requirement({ id: "rating", label: "Course rating", passed: ratingPass, current: ratingValue.toFixed(1), required: rangeLabel(standard.rating), guidance: ratingValue < standard.rating[0] ? "Add strategic length or difficulty to the prescribed setup." : "Reduce excessive length or difficulty in the prescribed setup." }),
     requirement({ id: "slope", label: "Slope", passed: slopePass, current: `${slopeValue}`, required: `${standard.slope[0]}–${standard.slope[1]}`, guidance: slopeValue < standard.slope[0] ? "Add challenge that affects bogey golfers without overwhelming scratch golfers." : "Ease hazards and forced carries that disproportionately punish bogey golfers." }),
   ];
+  if (course.surfaceCare && Object.keys(course.surfaceCare.records).length > 0) {
+    const readiness = surfaceCareConditionSummary(course).tournamentReadiness;
+    const requiredReadiness = tier === "championship" ? .8 : tier === "regional" ? .65 : .45;
+    requirements.push(requirement({
+      id: "surface-care",
+      label: "Playing surfaces",
+      passed: readiness >= requiredReadiness,
+      current: `${Math.round(readiness * 100)}% ready`,
+      required: `${Math.round(requiredReadiness * 100)}% ready`,
+      guidance: "Restore mowing, moisture, turf health, and any repair-required local surfaces.",
+    }));
+  }
   const result: TournamentQualificationSnapshot = {
     eligible: requirements.every((item) => item.passed),
     teeSet: standard.teeSet,

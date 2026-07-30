@@ -4,6 +4,7 @@ import { BALANCE } from "../balance/balanceConfig";
 import { getGolferProfile } from "./golferProfiles";
 import type { ShotPlanStep } from "./shots/solveShotsToGreen";
 import { solveShotsToGreen } from "./shots/solveShotsToGreen";
+import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 
 export interface HoleScore {
   holeIndex: number;
@@ -66,6 +67,9 @@ function inBounds(course: Course, p: Point) {
 }
 
 export function tileAt(course: Course, p: Point): Terrain {
+  // Scoring enters through scoreHole(), which freezes the effective terrain
+  // view before dependency tracking. Reading that view directly preserves the
+  // exact per-hole cache footprint used by immutable paint updates.
   return course.tiles[p.y * course.width + p.x];
 }
 
@@ -390,6 +394,7 @@ function dependenciesMatch<T>(dependencies: Map<number, T>, values: T[]): boolea
  * obstacle identities invalidate naturally.
  */
 export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleScore {
+  course = courseWithEffectiveSurfaces(course);
   const cached = holeScoreCache.get(hole);
   const elevations = course.elevations ?? [];
   if (
@@ -452,7 +457,7 @@ const summaryCache = new WeakMap<Course, CourseHoleSummary>();
 export function scoreCourseHoles(course: Course): CourseHoleSummary {
   const cached = summaryCache.get(course);
   if (cached) return cached;
-  const result = scoreCourseHolesUncached(course);
+  const result = scoreCourseHolesUncached(courseWithEffectiveSurfaces(course));
   summaryCache.set(course, result);
   return result;
 }

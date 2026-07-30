@@ -8,6 +8,7 @@ import { hashCanonicalValue } from "../../utils/stateHash";
 import { computeAutoPar, computePathDistanceTiles } from "../sim/holeMetrics";
 import type { M48CohortDefinition, M48CohortEvidence, M48OptionEvidence, M48OptionKind, M48StrategicEvaluation, M48StrategicHoleEvaluation, M48SetupKey } from "./m48Types";
 import { M48_DEFAULT_SAMPLES, M48_MAX_HOLES, M48_MAX_OPTIONS, M48_STRATEGY_VERSION } from "./m48Types";
+import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 
 const cache = new Map<string, M48StrategicEvaluation>();
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
@@ -330,7 +331,9 @@ function availableSetups(hole: Hole): Array<{ teeSet: TeeSet; pinRotation: PinRo
 }
 
 export function evaluateStrategicArchitecture(course: Course, options: { courseId?: string; samplesPerOption?: number; seed?: number } = {}): M48StrategicEvaluation {
-  const selected = courseForLayout(course, options.courseId ?? course.activeCourseId);
+  const selected = courseWithEffectiveSurfaces(
+    courseForLayout(course, options.courseId ?? course.activeCourseId),
+  );
   const samplesPerOption = Math.max(0, Math.min(M48_DEFAULT_SAMPLES, Math.floor(options.samplesPerOption ?? M48_DEFAULT_SAMPLES)));
   const geometryVersion = strategicGeometryVersion(selected);
   const conditionKey = Math.round(clamp(selected.condition, 0, 1) * 100);

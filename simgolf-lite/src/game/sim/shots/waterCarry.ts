@@ -3,6 +3,7 @@ import type { ClubSpec, GolferProfile } from "../golferProfiles";
 import { BALANCE } from "../../balance/balanceConfig";
 import { evalShotBase } from "./shotEval";
 import { isWaterHazard } from "../../models/terrainRules";
+import { courseWithEffectiveSurfaces } from "../../conditions/surfaceCare";
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
@@ -47,7 +48,8 @@ export function evalShotWithWaterCarry(args: {
   golfer: GolferProfile;
   club: ClubSpec;
 }) {
-  const { course, from, to, golfer, club } = args;
+  const course = courseWithEffectiveSurfaces(args.course);
+  const { from, to, golfer, club } = args;
   const base = evalShotBase({ from, to, golfer, club, course });
 
   const line = bresenham(from, to);
@@ -97,7 +99,6 @@ export function evalShotWithWaterCarry(args: {
 
   return base;
 }
-
 
 
 
