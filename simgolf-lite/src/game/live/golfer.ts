@@ -5,7 +5,7 @@ import { scoreCourseHoles } from "../sim/holes";
 import { LIVE } from "./liveConfig";
 import { mishitChance, puttOutcome, type Personality } from "./personality";
 import type { Golfer, Segment } from "./types";
-import { getParSetting, resolveCourseSetup } from "../models/courseSetup";
+import { courseForRoundSetup } from "../models/courseSetup";
 import type { GolferCapabilities, HoleReaction, LiveShotOutcome, StrategicHolePlan } from "./m47Types";
 import { buildStrategicGolferRound } from "./m47Round";
 import { TimedItineraryBuilder, type TimedItineraryRouter } from "../m51/timedItinerary";
@@ -13,32 +13,6 @@ import { TimedItineraryBuilder, type TimedItineraryRouter } from "../m51/timedIt
 // Optional tile-aware router; returns waypoints from just-after `from` to `to`,
 // or null to fall back to a straight-line walk.
 export type WalkRouter = TimedItineraryRouter;
-
-const setupCourseCache = new WeakMap<Course, Map<string, Course>>();
-
-function courseForRoundSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): Course {
-  let setups = setupCourseCache.get(course);
-  if (!setups) { setups = new Map(); setupCourseCache.set(course, setups); }
-  const key = `${teeSet}:${pinRotation}`;
-  const cached = setups.get(key);
-  if (cached) return cached;
-  const resolved: Course = {
-    ...course,
-    holes: course.holes.map((hole) => {
-      const setup = resolveCourseSetup(hole, teeSet, pinRotation);
-      const par = getParSetting(hole, setup.teeSet);
-      return {
-        ...hole,
-        tee: setup.tee,
-        green: setup.pin,
-        parMode: par.mode,
-        parManual: par.mode === "MANUAL" ? par.par : undefined,
-      };
-    }),
-  };
-  setups.set(key, resolved);
-  return resolved;
-}
 
 export interface BuiltRound {
   segments: Segment[];

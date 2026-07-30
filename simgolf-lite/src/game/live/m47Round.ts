@@ -1,6 +1,6 @@
 import type { Course, PinRotation, Point, TeeSet } from "../models/types";
 import { scoreCourseHoles } from "../sim/holes";
-import { getParSetting, resolveCourseSetup } from "../models/courseSetup";
+import { courseForRoundSetup } from "../models/courseSetup";
 import { LIVE } from "./liveConfig";
 import type { BuiltRound, WalkRouter } from "./golfer";
 import { M47_MAX_OUTCOMES, type GolferCapabilities } from "./m47Types";
@@ -12,17 +12,6 @@ import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import { TimedItineraryBuilder } from "../m51/timedItinerary";
 
 function distance(a: Point, b: Point): number { return Math.hypot(a.x - b.x, a.y - b.y); }
-
-function roundCourseSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): Course {
-  return {
-    ...course,
-    holes: course.holes.map((hole) => {
-      const setup = resolveCourseSetup(hole, teeSet, pinRotation);
-      const par = getParSetting(hole, setup.teeSet);
-      return { ...hole, tee: setup.tee, green: setup.pin, parMode: par.mode, parManual: par.mode === "MANUAL" ? par.par : undefined };
-    }),
-  };
-}
 
 export function buildStrategicGolferRound(args: {
   course: Course;
@@ -41,7 +30,7 @@ export function buildStrategicGolferRound(args: {
 }): BuiltRound {
   const teeSet = args.teeSet ?? "member";
   const pinRotation = args.pinRotation ?? args.course.activePinRotation ?? "A";
-  const course = roundCourseSetup(args.course, teeSet, pinRotation);
+  const course = courseForRoundSetup(args.course, teeSet, pinRotation);
   const snapshot = liveCourseSnapshot({ course, teeSet, pinRotation, rulesSnapshot: args.rulesSnapshot });
   const summary = scoreCourseHoles(course);
   const itinerary = new TimedItineraryBuilder({ course, cursor: { ...args.entry }, personality: args.personality, rng: args.rng, route: args.route, wallet: args.wallet });

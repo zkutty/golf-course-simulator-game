@@ -49,6 +49,38 @@ export function courseForCourseSetup(course: Course, teeSet: TeeSet, pinRotation
   return { ...course, holes: course.holes.map((hole) => holeForCourseSetup(hole, teeSet, pinRotation)) };
 }
 
+// Round builders repeatedly need the same resolved tee/pin view. Cache it by
+// immutable course identity so scoring and shot planning can reuse their
+// identity-based caches across golfers and repeated round builds.
+const roundCourseSetupCache = new WeakMap<Course, Map<string, Course>>();
+
+export function courseForRoundSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): Course {
+  let setups = roundCourseSetupCache.get(course);
+  if (!setups) {
+    setups = new Map();
+    roundCourseSetupCache.set(course, setups);
+  }
+  const key = `${teeSet}:${pinRotation}`;
+  const cached = setups.get(key);
+  if (cached) return cached;
+  const resolved: Course = {
+    ...course,
+    holes: course.holes.map((hole) => {
+      const setup = resolveCourseSetup(hole, teeSet, pinRotation);
+      const par = getParSetting(hole, setup.teeSet);
+      return {
+        ...hole,
+        tee: setup.tee,
+        green: setup.pin,
+        parMode: par.mode,
+        parManual: par.mode === "MANUAL" ? par.par : undefined,
+      };
+    }),
+  };
+  setups.set(key, resolved);
+  return resolved;
+}
+
 export function withNormalizedHoleSetup(hole: Hole): Hole {
   const member = getTeeBox(hole, "member");
   const pinA = getPinPosition(hole, "A");
