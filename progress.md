@@ -1,5 +1,26 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-07-30 — ZK-568 seasonal vegetation implementation complete
+
+Current request: Implement ZK-568 without committing or pushing; keep subjective visual/gameplay validation deferred.
+
+- Added one deterministic seasonal-plant presentation resolver driven by the authoritative daily biome phenology/weather state, stable semantic plant or same-biome species identity, ecological fit, cultivation, elevation, and water proximity.
+- Authored selective leaf-out, blossom, mature, autumn-color, leaf-fall, dormant, evergreen, wind-exposed, and dry treatments across canopy, shrub, flower, and ground-cover forms. The resolver preserves the immutable base frame and shared obstacle/decor entity, using bounded continuous tint, silhouette, alpha, shadow, and sway transforms with stable positional distribution.
+- Added explicit deciduous, evergreen, flowering, coastal-heath, drought-deciduous, and succulent profiles to the natural-prop registry. Rocks remain non-plant and untouched.
+- Wired authored course obstacles, semantic planting decorations, and scenic-surround vegetation through the same resolver. Player plant IDs from ZK-646 remain authoritative; generated species use their same-biome base-frame identity. Missing climate/optional seasonal content falls back to the unchanged base presentation.
+- Added a complete scene signature and renderer dependencies so a same-mounted daily/seasonal transition invalidates obstacle, decoration, and scenic prop caches. Seasonal base alpha now survives the existing golfer-occlusion fade loop. Continuous from/to phenology weights drive rendered tint and silhouette, so a categorical phase-label handoff does not create a treatment pop.
+- Final verification passes: focused ZK-568 and adjacent phenology/registry coverage, 6 files / 35 tests; full Vitest suite, 133 files / 1,039 passed with one intentional skip; production TypeScript/Vite build plus biome/audio/asset audits; scoped ESLint with zero errors and eight existing PixiStage hook warnings; `git diff --check`; and two final bundled web-game client iterations reaching a valid 260-prop spring Parkland gameplay state with authoritative phenology and no client failure.
+- Machine screenshots were generated to `/tmp/zk568-web-game-final` but not visually inspected, honoring the deferred human-validation gate.
+- Subjective foliage authenticity, painterly quality, visual popping/readability, device/GPU behavior, and hands-on gameplay validation remain intentionally deferred to the final human gate.
+- Protected concurrent work under `docs/REAL_HOLE_IMPORT_AND_BLUEPRINTS.md` and `src/game/holeTemplates/` was not inspected or modified.
+
+### Independent-review repairs
+
+- Split Links hawthorn from evergreen/coastal-heath vegetation with a `coastal-deciduous` profile. It now consumes authoritative foliage/dormancy transitions while retaining exposed Links tint, silhouette, bloom, and sway behavior; a winter matrix proves selective hawthorn leaf-fall/dormancy while wind pine and gorse remain evergreen/heath.
+- Player provenance is now an independent cultivation authority. A player-authored obstacle far outside every building halo remains cultivated, while generated/natural vegetation still uses the building-proximity rule.
+- The seasonal plant scene signature now includes foliage `from`, `to`, and the exact transition blend consumed by rendering. A same-mounted, same-day, weather-unchanged regression proves that changing only the blend invalidates the signature.
+- Post-review verification: 4 files / 26 tests, TypeScript, scoped ESLint with only the eight existing PixiStage warnings, and `git diff --check` pass.
+
 ## 2026-07-30 — ZK-646 biome economics and planting semantics complete
 
 Current request: Implement and verify ZK-646 without committing, pushing, or changing Linear; leave subjective visual/gameplay validation deferred.

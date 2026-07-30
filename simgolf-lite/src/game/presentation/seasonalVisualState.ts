@@ -156,6 +156,8 @@ export function seasonalVisualState(input: SeasonalVisualStateInput): SeasonalVi
     climate.transition.fromSeason,
     climate.transition.toSeason,
     climate.transition.blend,
+    climate.vegetation.foliage.from,
+    climate.vegetation.foliage.to,
     climate.vegetation.dormancy,
     climate.vegetation.flowering,
     climate.vegetation.moisture.dominant,

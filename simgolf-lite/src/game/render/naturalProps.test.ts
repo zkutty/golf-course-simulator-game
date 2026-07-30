@@ -7,6 +7,7 @@ import {
   NATURAL_PROP_FRAMES,
   NATURAL_PROP_REGISTRY,
   missingNaturalPropFrames,
+  isCultivatedNaturalProp,
   pickNaturalProp,
   shouldFadeTallProp,
 } from "./naturalProps";
@@ -25,6 +26,12 @@ describe("M21 natural-prop registry", () => {
           expect(variant.scaleRange[0]).toBeLessThanOrEqual(variant.scaleRange[1]);
           expect(variant.shadow.radiusX).toBeGreaterThan(0);
           expect(variant.anchor).toEqual([0.5, 1]);
+          expect(variant.seasonalProfile).toBeTruthy();
+          if (type === "rock") {
+            expect(variant.plantForm).toBe("non-plant");
+          } else {
+            expect(variant.plantForm).not.toBe("non-plant");
+          }
         }
       }
     }
@@ -66,5 +73,38 @@ describe("M21 natural-prop registry", () => {
     expect(shouldFadeTallProp({ tall: true, propX: 100, propY: 120, propWidth: 50, propHeight: 100, focusX: 110, focusY: 90 })).toBe(true);
     expect(shouldFadeTallProp({ tall: true, propX: 100, propY: 70, propWidth: 50, propHeight: 100, focusX: 110, focusY: 90 })).toBe(false);
     expect(shouldFadeTallProp({ tall: false, propX: 100, propY: 120, propWidth: 50, propHeight: 100, focusX: 110, focusY: 90 })).toBe(false);
+  });
+
+  it("authors climate profiles for evergreen, flowering, exposed, and arid species", () => {
+    expect(NATURAL_PROP_REGISTRY.parkland.tree.find((entry) =>
+      entry.frame === "parkland_tree_pine")?.seasonalProfile).toBe("evergreen");
+    expect(NATURAL_PROP_REGISTRY.parkland.tree.find((entry) =>
+      entry.frame === "parkland_tree_dogwood")?.seasonalProfile).toBe("flowering");
+    expect(NATURAL_PROP_REGISTRY.links.bush.find((entry) =>
+      entry.frame === "links_bush_gorse")?.seasonalProfile).toBe("coastal-heath");
+    expect(NATURAL_PROP_REGISTRY.links.tree.find((entry) =>
+      entry.frame === "links_tree_hawthorn")?.seasonalProfile)
+      .toBe("coastal-deciduous");
+    expect(NATURAL_PROP_REGISTRY.desert.tree.find((entry) =>
+      entry.frame === "desert_tree_mesquite")?.seasonalProfile)
+      .toBe("drought-deciduous");
+    expect(NATURAL_PROP_REGISTRY.desert.bush.find((entry) =>
+      entry.frame === "desert_bush_agave")?.seasonalProfile).toBe("succulent");
+  });
+
+  it("treats player-authored vegetation as cultivated outside building halos", () => {
+    const buildings = [{ x: 4, y: 4 }];
+    expect(isCultivatedNaturalProp(
+      { x: 90, y: 80, origin: "player" },
+      buildings,
+    )).toBe(true);
+    expect(isCultivatedNaturalProp(
+      { x: 90, y: 80, origin: "natural" },
+      buildings,
+    )).toBe(false);
+    expect(isCultivatedNaturalProp(
+      { x: 9, y: 8, origin: "natural" },
+      buildings,
+    )).toBe(true);
   });
 });

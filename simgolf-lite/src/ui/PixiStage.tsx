@@ -99,6 +99,11 @@ import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetric
 import { buildingSpec, buildingVisualFrame } from "../game/models/buildings";
 import { decorationTiles, decorationVisual } from "../game/models/decorations";
 import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
+import {
+  plantDefinition,
+  resolvedDecorationPlantId,
+  resolvedObstaclePlantId,
+} from "../game/models/plantRegistry";
 import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
 import type { AtlasFrame } from "../render/atlas";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
@@ -138,7 +143,19 @@ import {
   buildBunkerVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
-import { pickNaturalProp, shouldFadeTallProp, type NaturalPropVariant } from "../game/render/naturalProps";
+import {
+  isCultivatedNaturalProp,
+  pickNaturalProp,
+  shouldFadeTallProp,
+  type NaturalPropVariant,
+} from "../game/render/naturalProps";
+import {
+  seasonalDecorationPlantForm,
+  seasonalPlantClimate,
+  seasonalPlantPresentation,
+  seasonalPlantSceneSignature,
+  type SeasonalPlantPresentation,
+} from "../game/render/seasonalPlants";
 import {
   deriveTreeHabitat,
   type TreeHabitatPatch,
@@ -1008,6 +1025,9 @@ export function PixiStage(props: PixiStageProps) {
   const layersRef = useRef<Layers | null>(null);
   const [appReady, setAppReady] = useState(false);
   const [atlasRevision, setAtlasRevision] = useState(0);
+  const seasonalPlantsSignature = seasonalPlantSceneSignature(
+    props.seasonalVisualState,
+  );
 
   const diamondTextureRef = useRef<PIXI.Texture | null>(null);
   const chunksRef = useRef<TerrainChunk[]>([]);
@@ -1027,6 +1047,7 @@ export function PixiStage(props: PixiStageProps) {
       sway: NaturalPropVariant["sway"];
       tall: boolean;
       fadeAlpha: number;
+      baseAlpha: number;
     }>
   >(new Map());
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
@@ -2459,6 +2480,7 @@ export function PixiStage(props: PixiStageProps) {
     scenicProps.sortableChildren = true;
     scenicProps.eventMode = "none";
     const scenicTerrain: Terrain = scenicNaturalTerrain(model.theme);
+    const seasonalClimate = seasonalPlantClimate(props.seasonalVisualState);
     for (const prop of model.props) {
       const obstacle: Obstacle = { x: Math.round(prop.x), y: Math.round(prop.y), type: prop.type };
       const picked = pickNaturalProp({
@@ -2470,6 +2492,19 @@ export function PixiStage(props: PixiStageProps) {
         nearWater: false,
         cultivated: false,
       });
+      const seasonal = picked.variant.plantForm === "non-plant"
+        ? null
+        : seasonalPlantPresentation({
+          identity: picked.variant.frame,
+          profile: picked.variant.seasonalProfile,
+          form: picked.variant.plantForm,
+          x: prop.x,
+          y: prop.y,
+          cultivated: false,
+          elevation: 0,
+          nearWater: false,
+          climate: seasonalClimate,
+        });
       const texture = getPropFrame(picked.variant.frame);
       const position = worldToIso(prop.x, prop.y, 0, rotation);
       if (texture) {
@@ -2477,8 +2512,11 @@ export function PixiStage(props: PixiStageProps) {
         sprite.anchor.set(picked.variant.anchor[0], picked.variant.anchor[1]);
         sprite.position.set(position.x, position.y);
         const size = TILE_W * 0.58 * picked.scale;
-        sprite.width = size;
-        sprite.height = size * texture.height / texture.width;
+        sprite.width = size * (seasonal?.scaleX ?? 1);
+        sprite.height = size * texture.height / texture.width
+          * (seasonal?.scaleY ?? 1);
+        sprite.tint = seasonal?.tint ?? 0xffffff;
+        sprite.alpha = seasonal?.alpha ?? 1;
         sprite.zIndex = isoDepth(prop.x, prop.y, 0, rotation);
         scenicProps.addChild(sprite);
       } else {
@@ -2531,7 +2569,14 @@ export function PixiStage(props: PixiStageProps) {
     hedge.stroke({ width: 3.4, color: palette.hedge, alpha: 0.78 });
     seam.eventMode = "none"; hedge.eventMode = "none";
     layers.estateSeam.addChild(seam, hedge);
-  }, [appReady, course, props.worldSeed, rotation]);
+  }, [
+    appReady,
+    course,
+    props.worldSeed,
+    rotation,
+    props.seasonalVisualState,
+    seasonalPlantsSignature,
+  ]);
 
   // ---------------------------------------------------------------------
   // Terrain layer — tinted diamond sprites, back-to-front
@@ -3420,9 +3465,6 @@ export function PixiStage(props: PixiStageProps) {
       }
       return false;
     };
-    const isCultivated = (x: number, y: number) => (course.buildings ?? []).some((building) =>
-      Math.hypot(building.x - x, building.y - y) <= 8
-    );
 
     const addSprite = (
       obs: Obstacle,
@@ -3430,6 +3472,7 @@ export function PixiStage(props: PixiStageProps) {
       variant: NaturalPropVariant,
       scale: number,
       habitatPatch: TreeHabitatPatch | null,
+      seasonal: SeasonalPlantPresentation | null,
     ) => {
       const layersNow = layersRef.current;
       if (!layersNow) return;
@@ -3444,8 +3487,11 @@ export function PixiStage(props: PixiStageProps) {
       sprite.anchor.set(variant.anchor[0], variant.anchor[1]);
       sprite.position.set(placement.position.x, placement.position.y);
       const size = TILE_W * 0.72 * scale;
-      sprite.width = size;
-      sprite.height = (size * texture.height) / texture.width;
+      sprite.width = size * (seasonal?.scaleX ?? 1);
+      sprite.height = (size * texture.height) / texture.width
+        * (seasonal?.scaleY ?? 1);
+      sprite.tint = seasonal?.tint ?? 0xffffff;
+      sprite.alpha = seasonal?.alpha ?? 1;
       sprite.zIndex = placement.zIndex;
       layersNow.objects.addChild(sprite);
 
@@ -3533,8 +3579,10 @@ export function PixiStage(props: PixiStageProps) {
       shadow.ellipse(
         variant.shadow.offsetX,
         variant.shadow.offsetY,
-        variant.shadow.radiusX * scale * habitatShadowScale,
+        variant.shadow.radiusX * scale * habitatShadowScale
+          * (seasonal?.shadowScale ?? 1),
         variant.shadow.radiusY * scale * habitatShadowScale
+          * (seasonal?.shadowScale ?? 1)
       );
       shadow.fill({
         color: 0x000000,
@@ -3548,12 +3596,19 @@ export function PixiStage(props: PixiStageProps) {
         shadow,
         habitat,
         swayPhase: variant.sway ? ((obs.x * 17 + obs.y * 29) % 32) / 32 * Math.PI * 2 : null,
-        sway: variant.sway,
+        sway: variant.sway
+          ? {
+            amplitude: variant.sway.amplitude * (seasonal?.swayScale ?? 1),
+            speed: variant.sway.speed,
+          }
+          : null,
         tall: variant.occlusion.tall,
         fadeAlpha: variant.occlusion.fadeAlpha,
+        baseAlpha: seasonal?.alpha ?? 1,
       });
     };
 
+    const seasonalClimate = seasonalPlantClimate(props.seasonalVisualState);
     const preparedObstacles = obstacles.map((obs) => {
       const index = obs.y * course.width + obs.x;
       const context = {
@@ -3563,16 +3618,44 @@ export function PixiStage(props: PixiStageProps) {
         terrain: course.tiles[index] ?? "rough" as Terrain,
         elevation: course.elevations[index] ?? 0,
         nearWater: terrainNearWater(obs.x, obs.y),
-        cultivated: isCultivated(obs.x, obs.y),
+        cultivated: isCultivatedNaturalProp(
+          obs,
+          course.buildings ?? [],
+        ),
       };
       const selected = pickNaturalProp(context);
+      const semanticPlantId = obs.origin === "player"
+        ? resolvedObstaclePlantId(course.theme, obs)
+        : undefined;
+      const semanticPlant = semanticPlantId
+        ? plantDefinition(semanticPlantId)
+        : undefined;
+      const seasonal = selected.variant.plantForm === "non-plant"
+        ? null
+        : seasonalPlantPresentation({
+          identity: semanticPlantId ?? selected.variant.frame,
+          profile: semanticPlant?.seasonalProfile
+            ?? selected.variant.seasonalProfile,
+          form: semanticPlant
+            ? (obs.type === "tree" ? "canopy" : "shrub")
+            : selected.variant.plantForm,
+          x: obs.x,
+          y: obs.y,
+          cultivated: context.cultivated,
+          elevation: context.elevation,
+          nearWater: context.nearWater,
+          ecologicalFit: semanticPlant?.ecologicalFit[
+            getBiomeDefinition(course.theme).key
+          ] ?? "native",
+          climate: seasonalClimate,
+        });
       const habitat = deriveTreeHabitat(
         selected.variant.frame,
         obs,
         props.worldSeed,
         selected.scale,
       );
-      return { obs, selected, habitat };
+      return { obs, selected, habitat, seasonal };
     });
     const habitatBudget = props.graphicsQuality === "high"
       ? 110
@@ -3587,13 +3670,20 @@ export function PixiStage(props: PixiStageProps) {
         .map((entry) => `${entry.obs.x},${entry.obs.y}`),
     );
 
-    preparedObstacles.forEach(({ obs, selected, habitat }) => {
+    preparedObstacles.forEach(({ obs, selected, habitat, seasonal }) => {
       const selectedHabitat = habitatKeys.has(`${obs.x},${obs.y}`)
         ? habitat
         : null;
       const atlasTex = getPropFrame(selected.variant.frame);
       if (atlasTex) {
-        addSprite(obs, atlasTex, selected.variant, selected.scale, selectedHabitat);
+        addSprite(
+          obs,
+          atlasTex,
+          selected.variant,
+          selected.scale,
+          selectedHabitat,
+          seasonal,
+        );
         return;
       }
       // Immediate renderer-native fallback. This cannot reject later or leave
@@ -3613,6 +3703,7 @@ export function PixiStage(props: PixiStageProps) {
         selected.variant,
         selected.scale,
         selectedHabitat,
+        seasonal,
       );
     });
   }, [
@@ -3624,6 +3715,8 @@ export function PixiStage(props: PixiStageProps) {
     props.worldSeed,
     course,
     rotation,
+    props.seasonalVisualState,
+    seasonalPlantsSignature,
     surfaceHeightAt,
   ]);
 
@@ -4027,8 +4120,41 @@ export function PixiStage(props: PixiStageProps) {
     }
     decorationSpritesRef.current = [];
 
+    const seasonalClimate = seasonalPlantClimate(props.seasonalVisualState);
+    const terrainNearWater = (x: number, y: number) => {
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+        const tx = x + dx;
+        const ty = y + dy;
+        if (tx < 0 || ty < 0 || tx >= course.width || ty >= course.height) continue;
+        if (isWaterHazard(course.tiles[ty * course.width + tx])) return true;
+      }
+      return false;
+    };
     for (const decoration of course.decorations ?? []) {
       const visual = decorationVisual(decoration, getBiomeDefinition(course.theme).key);
+      const plantId = resolvedDecorationPlantId(course.theme, decoration);
+      const plant = plantId ? plantDefinition(plantId) : undefined;
+      const seasonal = plant
+        ? seasonalPlantPresentation({
+          identity: plant.id,
+          profile: plant.seasonalProfile,
+          form: seasonalDecorationPlantForm(
+            decoration.kind,
+            plant.seasonalProfile,
+          ),
+          x: decoration.x,
+          y: decoration.y,
+          cultivated: decoration.origin === "player",
+          elevation: course.elevations[
+            decoration.y * course.width + decoration.x
+          ] ?? 0,
+          nearWater: terrainNearWater(decoration.x, decoration.y),
+          ecologicalFit: plant.ecologicalFit[
+            getBiomeDefinition(course.theme).key
+          ],
+          climate: seasonalClimate,
+        })
+        : null;
       const texture = getPropFrame(visual.frame as AtlasFrame);
       if (!texture) continue;
       const tiles = decorationTiles(decoration);
@@ -4045,22 +4171,38 @@ export function PixiStage(props: PixiStageProps) {
       sprite.position.set(placement.position.x, placement.position.y);
       const structure = decoration.kind === "bridge" || decoration.kind === "boardwalk";
       const logicalWidth = structure ? Math.max(2, tiles.length * .72) * TILE_W : TILE_W * visual.scale;
-      sprite.width = logicalWidth;
-      sprite.height = logicalWidth * texture.height / texture.width;
+      sprite.width = logicalWidth * (seasonal?.scaleX ?? 1);
+      sprite.height = logicalWidth * texture.height / texture.width
+        * (seasonal?.scaleY ?? 1);
+      sprite.tint = seasonal?.tint ?? 0xffffff;
+      sprite.alpha = seasonal?.alpha ?? 1;
       if ((decoration.rotation + rotation) % 2 === 1) sprite.scale.x *= -1;
       sprite.zIndex = placement.zIndex + .05;
       sprite.eventMode = "none";
       layers.objects.addChild(sprite);
 
       const shadow = new PIXI.Graphics();
-      shadow.ellipse(0, 0, structure ? logicalWidth * .38 : visual.shadow.radiusX, visual.shadow.radiusY);
+      shadow.ellipse(
+        0,
+        0,
+        (structure ? logicalWidth * .38 : visual.shadow.radiusX)
+          * (seasonal?.shadowScale ?? 1),
+        visual.shadow.radiusY * (seasonal?.shadowScale ?? 1),
+      );
       shadow.fill({ color: 0x000000, alpha: visual.shadow.alpha });
       shadow.position.set(placement.position.x + 3, placement.position.y - TILE_H / 2 + 2);
       shadow.eventMode = "none";
       layers.terrainDecals.addChild(shadow);
       decorationSpritesRef.current.push({ sprite, shadow });
     }
-  }, [appReady, course, rotation, surfaceHeightAt]);
+  }, [
+    appReady,
+    course,
+    rotation,
+    props.seasonalVisualState,
+    seasonalPlantsSignature,
+    surfaceHeightAt,
+  ]);
 
   // ---------------------------------------------------------------------
   // Decals layer — tee/green markers (incl. wizard drafts) + route overlays
@@ -4774,7 +4916,9 @@ export function PixiStage(props: PixiStageProps) {
           focusX: selectedIso.x,
           focusY: selectedIso.y,
         }) : false;
-        entry.sprite.alpha = blocksSelection ? entry.fadeAlpha : 1;
+        entry.sprite.alpha = blocksSelection
+          ? Math.min(entry.baseAlpha, entry.fadeAlpha)
+          : entry.baseAlpha;
       }
 
       perfMark("water+sway");

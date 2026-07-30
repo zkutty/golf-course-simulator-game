@@ -3,7 +3,9 @@ import { getBiomeDefinition } from "../models/biomes";
 import {
   plantDefinition,
   resolvedObstaclePlantId,
+  type PlantSeasonalProfile,
 } from "../models/plantRegistry";
+import type { SeasonalPlantForm } from "./seasonalPlants";
 
 export type NaturalPropFrame = `${LandTheme}_${ObstacleType}_${string}`;
 export type PropSway = { amplitude: number; speed: number } | null;
@@ -24,6 +26,9 @@ export interface NaturalPropVariant {
   nearWater?: "prefer" | "require" | "avoid";
   composition: { wild: number; cultivated: number };
   occlusion: { tall: boolean; fadeAlpha: number };
+  /** Climate response for generated species that do not carry a PlantId. */
+  seasonalProfile: PlantSeasonalProfile;
+  plantForm: SeasonalPlantForm | "non-plant";
 }
 
 const LAND: readonly Terrain[] = ["rough", "deep_rough", "waste_area"];
@@ -48,6 +53,8 @@ function tree(
     allowedTerrain: ROUGH,
     composition: { wild: 1, cultivated: 0.75 },
     occlusion: { tall: true, fadeAlpha: 0.3 },
+    seasonalProfile: "deciduous",
+    plantForm: "canopy",
     ...options,
   };
 }
@@ -71,6 +78,8 @@ function bush(
     allowedTerrain: LAND,
     composition: { wild: 1, cultivated: 0.8 },
     occlusion: { tall: false, fadeAlpha: 0.55 },
+    seasonalProfile: "deciduous",
+    plantForm: "shrub",
     ...options,
   };
 }
@@ -94,6 +103,8 @@ function rock(
     allowedTerrain: LAND,
     composition: { wild: 1, cultivated: 0.35 },
     occlusion: { tall: false, fadeAlpha: 0.55 },
+    seasonalProfile: "evergreen",
+    plantForm: "non-plant",
     ...options,
   };
 }
@@ -103,15 +114,15 @@ export const NATURAL_PROP_REGISTRY = {
     tree: [
       tree("parkland", "oak", 5, { scaleRange: [0.95, 1.18] }),
       tree("parkland", "birch", 3, { scaleRange: [0.82, 1.02], clusterAffinity: 0.88 }),
-      tree("parkland", "pine", 3),
-      tree("parkland", "fir", 3, { scaleRange: [0.9, 1.14] }),
-      tree("parkland", "dogwood", 2, { scaleRange: [0.74, 0.9], composition: { wild: 0.35, cultivated: 2.2 } }),
+      tree("parkland", "pine", 3, { seasonalProfile: "evergreen" }),
+      tree("parkland", "fir", 3, { scaleRange: [0.9, 1.14], seasonalProfile: "evergreen" }),
+      tree("parkland", "dogwood", 2, { scaleRange: [0.74, 0.9], composition: { wild: 0.35, cultivated: 2.2 }, seasonalProfile: "flowering" }),
     ],
     bush: [
-      bush("parkland", "hedge", 2, { composition: { wild: 0.15, cultivated: 3 }, clusterAffinity: 0.95 }),
+      bush("parkland", "hedge", 2, { composition: { wild: 0.15, cultivated: 3 }, clusterAffinity: 0.95, seasonalProfile: "evergreen" }),
       bush("parkland", "wild_shrub", 5),
-      bush("parkland", "reeds", 2, { nearWater: "require", scaleRange: [0.68, 0.92] }),
-      bush("parkland", "wildflowers", 2, { composition: { wild: 0.8, cultivated: 1.8 }, scaleRange: [0.5, 0.68] }),
+      bush("parkland", "reeds", 2, { nearWater: "require", scaleRange: [0.68, 0.92], plantForm: "ground-cover" }),
+      bush("parkland", "wildflowers", 2, { composition: { wild: 0.8, cultivated: 1.8 }, scaleRange: [0.5, 0.68], seasonalProfile: "flowering", plantForm: "flower" }),
     ],
     rock: [
       rock("parkland", "stump", 1, { allowedTerrain: ROUGH, composition: { wild: 1.2, cultivated: 0.1 } }),
@@ -121,16 +132,16 @@ export const NATURAL_PROP_REGISTRY = {
   },
   links: {
     tree: [
-      tree("links", "wind_pine", 4, { scaleRange: [0.82, 1.02], sway: { amplitude: 0.05, speed: 1.4 } }),
-      tree("links", "hawthorn", 5, { scaleRange: [0.66, 0.84], sway: { amplitude: 0.04, speed: 1.5 } }),
+      tree("links", "wind_pine", 4, { scaleRange: [0.82, 1.02], sway: { amplitude: 0.05, speed: 1.4 }, seasonalProfile: "evergreen" }),
+      tree("links", "hawthorn", 5, { scaleRange: [0.66, 0.84], sway: { amplitude: 0.04, speed: 1.5 }, seasonalProfile: "coastal-deciduous" }),
     ],
     bush: [
-      bush("links", "golden_fescue", 5, { scaleRange: [0.46, 0.65], sway: { amplitude: 0.045, speed: 1.65 } }),
-      bush("links", "dune_grass", 5, { scaleRange: [0.48, 0.68], sway: { amplitude: 0.05, speed: 1.7 } }),
-      bush("links", "gorse", 4),
-      bush("links", "heather", 3, { scaleRange: [0.48, 0.65] }),
-      bush("links", "marram", 4, { nearWater: "prefer", sway: { amplitude: 0.055, speed: 1.7 } }),
-      bush("links", "salt_shrub", 2, { nearWater: "prefer", scaleRange: [0.45, 0.62] }),
+      bush("links", "golden_fescue", 5, { scaleRange: [0.46, 0.65], sway: { amplitude: 0.045, speed: 1.65 }, seasonalProfile: "coastal-heath", plantForm: "ground-cover" }),
+      bush("links", "dune_grass", 5, { scaleRange: [0.48, 0.68], sway: { amplitude: 0.05, speed: 1.7 }, seasonalProfile: "coastal-heath", plantForm: "ground-cover" }),
+      bush("links", "gorse", 4, { seasonalProfile: "coastal-heath" }),
+      bush("links", "heather", 3, { scaleRange: [0.48, 0.65], seasonalProfile: "coastal-heath", plantForm: "flower" }),
+      bush("links", "marram", 4, { nearWater: "prefer", sway: { amplitude: 0.055, speed: 1.7 }, seasonalProfile: "coastal-heath", plantForm: "ground-cover" }),
+      bush("links", "salt_shrub", 2, { nearWater: "prefer", scaleRange: [0.45, 0.62], seasonalProfile: "coastal-heath" }),
     ],
     rock: [
       rock("links", "driftwood", 1, { nearWater: "prefer", scaleRange: [0.72, 0.96] }),
@@ -141,17 +152,17 @@ export const NATURAL_PROP_REGISTRY = {
   },
   desert: {
     tree: [
-      tree("desert", "saguaro", 5, { scaleRange: [0.78, 1.05], sway: null }),
-      tree("desert", "palo_verde", 3, { scaleRange: [0.82, 1.04], sway: { amplitude: 0.018, speed: 0.9 } }),
-      tree("desert", "mesquite", 4, { scaleRange: [0.72, 0.94], sway: { amplitude: 0.016, speed: 0.95 } }),
-      tree("desert", "palm", 2, { nearWater: "require", scaleRange: [0.88, 1.12], sway: { amplitude: 0.05, speed: 1.2 } }),
+      tree("desert", "saguaro", 5, { scaleRange: [0.78, 1.05], sway: null, seasonalProfile: "succulent" }),
+      tree("desert", "palo_verde", 3, { scaleRange: [0.82, 1.04], sway: { amplitude: 0.018, speed: 0.9 }, seasonalProfile: "drought-deciduous" }),
+      tree("desert", "mesquite", 4, { scaleRange: [0.72, 0.94], sway: { amplitude: 0.016, speed: 0.95 }, seasonalProfile: "drought-deciduous" }),
+      tree("desert", "palm", 2, { nearWater: "require", scaleRange: [0.88, 1.12], sway: { amplitude: 0.05, speed: 1.2 }, seasonalProfile: "evergreen" }),
     ],
     bush: [
-      bush("desert", "prickly_pear", 5, { sway: null }),
-      bush("desert", "barrel_cactus", 4, { scaleRange: [0.48, 0.68], sway: null }),
-      bush("desert", "creosote", 4, { sway: { amplitude: 0.012, speed: 1 } }),
-      bush("desert", "agave", 3, { sway: null }),
-      bush("desert", "dry_grass", 3, { scaleRange: [0.45, 0.64], sway: { amplitude: 0.04, speed: 1.5 } }),
+      bush("desert", "prickly_pear", 5, { sway: null, seasonalProfile: "succulent" }),
+      bush("desert", "barrel_cactus", 4, { scaleRange: [0.48, 0.68], sway: null, seasonalProfile: "succulent" }),
+      bush("desert", "creosote", 4, { sway: { amplitude: 0.012, speed: 1 }, seasonalProfile: "drought-deciduous" }),
+      bush("desert", "agave", 3, { sway: null, seasonalProfile: "succulent" }),
+      bush("desert", "dry_grass", 3, { scaleRange: [0.45, 0.64], sway: { amplitude: 0.04, speed: 1.5 }, seasonalProfile: "drought-deciduous", plantForm: "ground-cover" }),
     ],
     rock: [
       rock("desert", "sandstone", 4),
@@ -219,6 +230,19 @@ export function pickNaturalProp(context: NaturalPropContext): { variant: Natural
 
 export function missingNaturalPropFrames(hasFrame: (frame: NaturalPropFrame) => boolean): NaturalPropFrame[] {
   return NATURAL_PROP_FRAMES.filter((frame) => !hasFrame(frame));
+}
+
+/** Player provenance is cultivation authority even outside a building halo. */
+export function isCultivatedNaturalProp(
+  obstacle: Pick<Obstacle, "x" | "y" | "origin">,
+  buildings: readonly Readonly<{ x: number; y: number }>[],
+  buildingRadius = 8,
+): boolean {
+  return obstacle.origin === "player"
+    || buildings.some((building) =>
+      Math.hypot(building.x - obstacle.x, building.y - obstacle.y)
+      <= buildingRadius
+    );
 }
 
 export function shouldFadeTallProp(input: {

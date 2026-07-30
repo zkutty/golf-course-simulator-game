@@ -21,6 +21,7 @@ export type PlantSeasonalProfile =
   | "evergreen"
   | "flowering"
   | "coastal-heath"
+  | "coastal-deciduous"
   | "drought-deciduous"
   | "succulent";
 
@@ -144,7 +145,7 @@ export const PLANT_REGISTRY = {
   ),
   "links-hawthorn": obstaclePlant(
     "links-hawthorn", "Wind-shaped hawthorn", "tree", "links", ["parkland"],
-    "coastal-heath", "coastal-four-season", "links_tree_hawthorn", 0.14, 1.5,
+    "coastal-deciduous", "coastal-four-season", "links_tree_hawthorn", 0.14, 1.5,
   ),
   "links-gorse": obstaclePlant(
     "links-gorse", "Gorse", "bush", "links", ["parkland"], "coastal-heath",

@@ -21,6 +21,8 @@ describe("semantic plant registry", () => {
       expect(PLANT_REGISTRY[id].safeVisualFallback.kind)
         .toBe(PLANT_REGISTRY[id].semantics.kind);
     }
+    expect(PLANT_REGISTRY["links-hawthorn"].seasonalProfile)
+      .toBe("coastal-deciduous");
   });
 
   it("applies exact fit multipliers and makes imported plants costlier to own", () => {
