@@ -131,6 +131,23 @@ describe("ZK-551 M50 recovery strategy", () => {
     expect(under!.expectedStrokes).toBeGreaterThan(around!.expectedStrokes);
   });
 
+  it("uses the first obstacle on the route while preserving deterministic ordering", () => {
+    const course = recoveryCourse([
+      { type: "tree", x: 15, y: 12 },
+      { type: "rock", x: 23, y: 12 },
+    ]);
+    const candidates = generateRecoveryCandidates({
+      course,
+      hole: course.holes[0],
+      from: { x: 8, y: 12 },
+      lie: "rough",
+      capabilities: capabilities(),
+      personality,
+    });
+    const around = candidates.find((candidate) => route(candidate) === "safe" && shape(candidate) === "around");
+    expect(around?.target.x).toBeLessThan(27);
+  });
+
   it("makes conservative recovery and skilled aggressive advancement recognizable", () => {
     const course = recoveryCourse([{ type: "tree", x: 15, y: 12 }]);
     const from = { x: 8, y: 12 };

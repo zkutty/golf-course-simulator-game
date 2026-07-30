@@ -76,11 +76,27 @@ function segmentDistance(point: Point, from: Point, to: Point): { distance: numb
   };
 }
 
-function routeObstacle(course: Course, from: Point, to: Point) {
-  return course.obstacles
-    .map((obstacle) => ({ obstacle, ...segmentDistance(obstacle, from, to) }))
-    .filter((candidate) => candidate.progress > .015 && candidate.progress < .98 && candidate.distance <= 1.45)
-    .sort((a, b) => a.progress - b.progress || a.distance - b.distance || a.obstacle.x - b.obstacle.x || a.obstacle.y - b.obstacle.y)[0] ?? null;
+type RouteObstacle = {
+  obstacle: Course["obstacles"][number];
+  distance: number;
+  progress: number;
+};
+
+function routeObstacle(course: Course, from: Point, to: Point): RouteObstacle | null {
+  let best: RouteObstacle | null = null;
+  for (const obstacle of course.obstacles) {
+    const projection = segmentDistance(obstacle, from, to);
+    if (projection.progress <= .015 || projection.progress >= .98 || projection.distance > 1.45) continue;
+    const candidate: RouteObstacle = { obstacle, ...projection };
+    if (!best
+      || candidate.progress < best.progress
+      || candidate.progress === best.progress && candidate.distance < best.distance
+      || candidate.progress === best.progress && candidate.distance === best.distance && candidate.obstacle.x < best.obstacle.x
+      || candidate.progress === best.progress && candidate.distance === best.distance && candidate.obstacle.x === best.obstacle.x && candidate.obstacle.y < best.obstacle.y) {
+      best = candidate;
+    }
+  }
+  return best;
 }
 
 function saferAroundTarget(course: Course, from: Point, green: Point, obstacle: Point | null, advance: number, side: -1 | 1): Point {
@@ -441,11 +457,12 @@ export function generateRecoveryCandidates(args: {
   personality: Personality;
   shotNumber?: number;
   sampleCount?: number;
+  snapshot?: PlayerRoundCourseSnapshot;
 }): ShotIntent[] {
   if (!args.hole.green || !hasRecoveryContext(args.course, args.from, args.hole.green, args.lie)) return [];
   const lie = args.lie as ShotLie;
   const profile = profileFor(args.capabilities, args.course);
-  const snapshot = liveCourseSnapshot({
+  const snapshot = args.snapshot ?? liveCourseSnapshot({
     course: args.course,
     teeSet: "member",
     pinRotation: args.course.activePinRotation ?? "A",
@@ -527,6 +544,7 @@ export function generateStrategicHolePlan(args: {
   par: number;
   capabilities: GolferCapabilities;
   personality: Personality;
+  snapshot?: PlayerRoundCourseSnapshot;
 }): StrategicHolePlan {
   const profile = profileFor(args.capabilities, args.course);
   const teeLie = args.hole.tee ? terrainAt(args.course, args.hole.tee) : null;
@@ -540,6 +558,7 @@ export function generateStrategicHolePlan(args: {
         personality: args.personality,
         shotNumber: 1,
         sampleCount: 1,
+        snapshot: args.snapshot,
       })
     : [];
   const candidates = recoveryCandidates.length > 0
@@ -586,6 +605,7 @@ export function followUpIntent(args: {
   capabilities: GolferCapabilities;
   personality: Personality;
   shotNumber: number;
+  snapshot?: PlayerRoundCourseSnapshot;
 }): ShotIntent {
   const target = { ...args.hole.green! };
   const recoveryCandidates = generateRecoveryCandidates({ ...args, sampleCount: 1 });
