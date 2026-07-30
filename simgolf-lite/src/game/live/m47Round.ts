@@ -126,7 +126,7 @@ export function buildStrategicGolferRound(args: {
     const holeId = hole.id ?? `hole-${holeIndex + 1}`;
     const par = info.par ?? 4;
     pushWalk(cursor, hole.tee, holeIndex);
-    const plan = generateStrategicHolePlan({ course, hole, par, capabilities: args.capabilities, personality: args.personality });
+    const plan = generateStrategicHolePlan({ course, hole, par, capabilities: args.capabilities, personality: args.personality, snapshot });
     holePlans.push(plan);
 
     let from = { ...hole.tee };
@@ -145,6 +145,8 @@ export function buildStrategicGolferRound(args: {
             capabilities: args.capabilities,
             personality: args.personality,
             shotNumber,
+            snapshot,
+            obstacleRecoveryContext: outcomes[shotNumber - 1]?.sharedOutcome?.collision.kind === "obstacle",
           });
       const outcome = resolveLiveShot({
         snapshot,

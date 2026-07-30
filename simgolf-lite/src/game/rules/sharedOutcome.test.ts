@@ -3,7 +3,8 @@ import {
   createControlledRoundSnapshotV2,
   decodeControlledRoundSnapshotV2,
 } from "./roundSnapshot";
-import { resolveSharedRules } from "./sharedOutcome";
+import { calculateShotEffects } from "./shotEffects";
+import { createSharedShotOutcome, resolveSharedRules } from "./sharedOutcome";
 
 function snapshotFor(classification: "red" | "yellow") {
   const width = 10;
@@ -41,6 +42,53 @@ function snapshotFor(classification: "red" | "yellow") {
 }
 
 describe("ZK-549 shared runtime ruling adapter", () => {
+  it("includes frozen obstacle collision evidence in the shared authoritative outcome", () => {
+    const effects = calculateShotEffects({
+      clubId: "chip",
+      lie: "fairway",
+      recoverySkill: 50,
+      technique: "normal",
+      flightProfile: "standard",
+    });
+    expect(effects.ok).toBe(true);
+    if (!effects.ok) throw new Error(effects.blocker.message);
+    const outcome = createSharedShotOutcome({
+      trace: {
+        id: "shot-1",
+        holeId: "hole-1",
+        shotNumber: 1,
+        club: "Chip",
+        technique: "normal",
+        power: 1,
+        from: { x: 1, y: 2 },
+        aim: { x: 7, y: 2 },
+        landing: { x: 7, y: 2 },
+        rest: { x: 7, y: 2 },
+        carryYards: 60,
+        rollYards: 0,
+        lieBefore: "fairway",
+        lieAfter: "fairway",
+        penaltyStrokes: 0,
+        holed: false,
+        seed: 1,
+        evidence: [],
+      },
+      effects: effects.value,
+      requestedCarryYards: 60,
+      requestedDispersionTiles: 1,
+      obstacleCollision: {
+        width: 10,
+        height: 5,
+        yardsPerTile: 10,
+        elevations: new Array(50).fill(0),
+        obstacles: [{ type: "tree", x: 4, y: 2 }],
+      },
+    });
+
+    expect(outcome.collision).toMatchObject({ kind: "obstacle", obstacleType: "tree" });
+    expect(outcome.flight.clearance).toMatchObject([{ relationship: "through", obstacleType: "tree" }]);
+  });
+
   it("ignores a flight-over-hazard when landing and rest are in bounds", () => {
     const result = resolveSharedRules({
       rulesSnapshot: snapshotFor("yellow"),

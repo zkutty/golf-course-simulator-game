@@ -1,5 +1,14 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## M50 implementation wave — 2026-07-30
+
+- Implemented the ranked automated slice for ZK-548, ZK-550, ZK-551, ZK-552, and ZK-553: authoritative obstacle trajectory resolution, low/standard/high Player Pro recovery preview and ruling evidence, live/AI around/under/over recovery choices, rules-backed Architecture Review feedback, and an M50 certification report.
+- Added deterministic coverage for obstacle clearance, lie/club effects, recovery scoring, preview/execution parity, penalty and relief invariants, historical evidence labeling, hostile finite shots, legacy behavior, architecture evidence, and bounded 36-hole/100-golfer performance.
+- Verified the final source with TypeScript, build plus audio/asset audits, lint/i18n, focused M50/architecture/live/Player Pro rules tests, M36 Playwright direct-play coverage, and the bundled web-game client. The client emitted valid state with no console-error artifact; a gameplay capture was visually inspected.
+- The full repository Vitest run initially exposed a performance regression: ordinary architecture/tournament qualification was sampling recovery routes on every tee. That trigger is now restricted to genuine recovery lies, while live follow-ups use a bounded one-sample path; the final full suite passes 109 test files / 882 tests / 1 skipped, including M26 tournaments.
+- Follow-up release diagnosis found the remaining tournament cost in `routeObstacle`: it now selects the same deterministic first route obstacle in one pass without allocating or sorting the full obstacle list, and reuses each round's existing rules snapshot for recovery evaluation.
+- Human gates intentionally remain open: three-biome visual screenshots, accessibility, audio listening, real-hardware GPU performance, and human golf-authenticity/balance playtesting.
+
 ## ZK-326 terrain-authoring completion slice — 2026-07-29
 
 ## ZK-377 visual system machine-verification slice — 2026-07-29

@@ -17,6 +17,10 @@ import type {
   SharedShotOutcome,
 } from "./contracts";
 import {
+  resolveObstacleCollision,
+  type ObstacleCollisionInput,
+} from "./obstacleCollision";
+import {
   resolveRelief,
   type ReliefCandidateSeed,
 } from "./relief";
@@ -228,11 +232,24 @@ export function createSharedShotOutcome(args: {
   ruling?: ShotRuling;
   relief?: ReliefResolution;
   finalPosition?: Point;
+  /** Optional frozen physical context for authoritative terrain/obstacle checks. */
+  obstacleCollision?: Omit<ObstacleCollisionInput, "from" | "to" | "flight">;
 }): SharedShotOutcome {
   const { trace, effects } = args;
   const ruling = args.ruling ?? fallbackRuling({ holed: trace.holed, legacyPenaltyStrokes: trace.penaltyStrokes });
   const relief = args.relief ?? fallbackRelief({ ruling, physicalRest: trace.rest });
   const finalPosition = args.finalPosition ?? trace.rest;
+  const obstacleResolution = args.obstacleCollision
+    ? resolveObstacleCollision({
+      ...args.obstacleCollision,
+      from: trace.from,
+      to: trace.landing,
+      flight: {
+        profile: effects.flight.profile,
+        apexHeightYards: effects.flight.apexHeightYards,
+      },
+    })
+    : null;
   return {
     rulesVersion: 1,
     lieEffect: effects.lieEffect,
@@ -246,9 +263,9 @@ export function createSharedShotOutcome(args: {
       apexHeightYards: effects.flight.apexHeightYards,
       apexPosition: midpoint(trace.from, trace.landing),
       carryEnd: { ...trace.landing },
-      clearance: [],
+      clearance: obstacleResolution?.clearance ?? [],
     },
-    collision: { kind: "none" },
+    collision: obstacleResolution?.collision ?? { kind: "none" },
     physicalRest: { ...(args.physicalRest ?? trace.rest) },
     ruling,
     relief,

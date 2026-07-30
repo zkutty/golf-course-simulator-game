@@ -15,6 +15,7 @@ import {
   availablePlayerClubs,
   caddieRecommendation,
   eligiblePlayerOpponents,
+  flightProfileForTechnique,
   playerTechniqueCatalog,
   playerTournamentEligibility,
   playerTrainingOptions,
@@ -23,10 +24,12 @@ import {
   type PlayerShotSelection,
   type PlayerTrainingOption,
 } from "../game/playerPro/playerPro";
+import type { ShotClearanceEvidence, ShotCollision, ShotFlightProfile, ShotRuling } from "../game/rules/contracts";
 import { normalizeCourseLayouts } from "../game/models/courseLayouts";
 import { tournamentCalendar } from "../game/tournaments/tournaments";
 import type { TournamentEvent } from "../game/tournaments/types";
 import { formatCurrency } from "../i18n/format";
+import type { Translator } from "../i18n/context";
 import { useI18n } from "../i18n/useI18n";
 import type { MessageKey } from "../i18n/catalog";
 
@@ -53,6 +56,46 @@ function labelKey(skill: PlayerProSkill): MessageKey {
 
 function techniqueKey(technique: PlayerShotTechnique): MessageKey {
   return `playerPro.technique.${technique}` as MessageKey;
+}
+
+const FLIGHT_PROFILES: readonly ShotFlightProfile[] = ["low", "standard", "high"];
+
+function constrainedFlight(technique: PlayerShotTechnique): ShotFlightProfile | null {
+  return technique === "punch" ? "low" : technique === "flop" ? "high" : null;
+}
+
+function pointLabel(point: PlayerProPoint | null | undefined): string {
+  return point ? `(${point.x.toFixed(1)}, ${point.y.toFixed(1)})` : "—";
+}
+
+function rulingLabel(ruling: ShotRuling | null | undefined, t: Translator): string {
+  if (!ruling) return t("playerPro.shot.ruling.none");
+  if (ruling.status === "holed") return t("playerPro.shot.ruling.holed");
+  if (ruling.status === "in_play") return t("playerPro.shot.ruling.inPlay");
+  return t("playerPro.shot.ruling.penalty", { kind: ruling.penaltyKind.replaceAll("_", " "), strokes: ruling.penaltyStrokes });
+}
+
+function collisionLabel(collision: ShotCollision | null | undefined, t: Translator): string {
+  if (!collision || collision.kind === "none") return t("playerPro.shot.route.clear");
+  if (collision.kind === "terrain") return t("playerPro.shot.route.terrain", { point: pointLabel(collision.point), terrain: collision.terrain });
+  return t("playerPro.shot.route.obstacle", { obstacle: collision.obstacleType, point: pointLabel(collision.point), relationship: collision.clearance.relationship ?? "through" });
+}
+
+function clearanceLabel(clearance: readonly ShotClearanceEvidence[], t: Translator): string | null {
+  if (clearance.length === 0) return null;
+  const nearest = clearance.slice().sort((a, b) => {
+    const aDistance = a.horizontalClearanceYards ?? Math.abs(a.clearanceYards);
+    const bDistance = b.horizontalClearanceYards ?? Math.abs(b.clearanceYards);
+    return aDistance - bDistance;
+  })[0]!;
+  const distance = nearest.horizontalClearanceYards ?? Math.abs(nearest.clearanceYards);
+  return t(clearance.length === 1 ? "playerPro.shot.clearance.single" : "playerPro.shot.clearance.plural", {
+    count: clearance.length,
+    obstacle: nearest.obstacleType ?? "terrain",
+    relationship: nearest.relationship ?? "over",
+    distance: distance.toFixed(1),
+    point: pointLabel(nearest.point),
+  });
 }
 
 function SkillGrid(props: { career: PlayerProCareer }) {
@@ -213,19 +256,51 @@ export function PlayerShotHud(props: {
   const [club, setClub] = useState(recommendation.club);
   const [power, setPower] = useState(recommendation.power);
   const [technique, setTechnique] = useState<PlayerShotTechnique>("normal");
+  const [flightProfile, setFlightProfile] = useState<ShotFlightProfile>("standard");
+  const [flightNotice, setFlightNotice] = useState<string | null>(null);
   const hole = props.round.course.holes[props.round.currentHoleIndex];
   const selectedClub = clubs.some((candidate) => candidate.name === club) ? club : clubs[0]?.name ?? "Pitching Wedge";
-  const selection: PlayerShotSelection = { club: selectedClub, aim: props.aim, power, technique };
+  const requiredFlight = constrainedFlight(technique);
+  const selectedFlight = requiredFlight ?? flightProfile;
+  const selection: PlayerShotSelection = { club: selectedClub, aim: props.aim, power, technique, flightProfile: selectedFlight };
   const preview = previewPlayableShot(props.round, props.career.skills, selection);
+  const previewRouteEvidence = preview.sharedOutcome ? clearanceLabel(preview.sharedOutcome.flight.clearance, t) : null;
   const techniques = playerTechniqueCatalog(props.career.skills);
   const yards = Math.round(Math.hypot(hole.pin.x - props.round.ball.x, hole.pin.y - props.round.ball.y) * props.round.course.yardsPerTile);
+  const latestShot = props.round.pendingShot ?? props.round.shots.at(-1) ?? null;
+  const latestOutcome = latestShot?.sharedOutcome ?? null;
+  const latestRuling = latestOutcome?.ruling ?? latestShot?.ruling ?? null;
+  const latestRelief = latestOutcome?.relief ?? latestShot?.relief ?? null;
+  const latestFinalPosition = latestOutcome?.finalPosition ?? latestShot?.finalPosition ?? latestShot?.rest ?? null;
 
   const useCaddie = () => {
     const next = caddieRecommendation(props.round, props.career.skills);
     setClub(next.club);
     setPower(next.power);
     setTechnique(next.technique);
+    setFlightProfile(flightProfileForTechnique(next.technique, next.flightProfile));
+    setFlightNotice(null);
     props.onAim(next.aim);
+  };
+
+  const chooseTechnique = (next: PlayerShotTechnique) => {
+    setTechnique(next);
+    const forced = constrainedFlight(next);
+    if (forced) {
+      setFlightProfile(forced);
+      setFlightNotice(t("playerPro.shot.flightLocked", { technique: t(techniqueKey(next)), flight: forced }));
+    } else {
+      setFlightNotice(null);
+    }
+  };
+
+  const chooseFlight = (next: ShotFlightProfile) => {
+    if (requiredFlight && next !== requiredFlight) {
+      setFlightNotice(t("playerPro.shot.flightChoose", { technique: t(techniqueKey(technique)), flight: requiredFlight, next }));
+      return;
+    }
+    setFlightProfile(next);
+    setFlightNotice(null);
   };
 
   return (
@@ -238,8 +313,18 @@ export function PlayerShotHud(props: {
       {props.round.phase === "awaiting_shot" && <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
         <label>{t("playerPro.shot.club")}<select data-testid="player-shot-club" value={selectedClub} onChange={(event) => setClub(event.target.value)} style={{ display: "block", width: "100%", padding: 8 }}>{clubs.map((candidate) => <option key={candidate.name} value={candidate.name}>{t("playerPro.shot.clubOption", { club: candidate.name, yards: candidate.carryYards })}</option>)}</select></label>
         <label>{t("playerPro.shot.power", { power: Math.round(power * 100) })}<input data-testid="player-shot-power" type="range" min={25} max={115} value={Math.round(power * 100)} onChange={(event) => setPower(Number(event.target.value) / 100)} style={{ width: "100%" }} /></label>
-        <label>{t("playerPro.shot.technique")}<select value={technique} onChange={(event) => setTechnique(event.target.value as PlayerShotTechnique)} style={{ display: "block", width: "100%", padding: 8 }}>{techniques.map((item) => <option key={item.technique} value={item.technique} disabled={!item.unlocked}>{t(techniqueKey(item.technique))}{item.requirement ? ` · ${item.requirement}` : ""}</option>)}</select></label>
-        <div style={{ padding: 8, borderRadius: 8, background: preview.risk === "high" ? "#f4d5c8" : preview.risk === "medium" ? "#f4e4b8" : "#dcebd5" }}>
+        <label>{t("playerPro.shot.technique")}<select value={technique} onChange={(event) => chooseTechnique(event.target.value as PlayerShotTechnique)} style={{ display: "block", width: "100%", padding: 8 }}>{techniques.map((item) => <option key={item.technique} value={item.technique} disabled={!item.unlocked}>{t(techniqueKey(item.technique))}{item.requirement ? ` · ${item.requirement}` : ""}</option>)}</select></label>
+        <fieldset style={{ margin: 0, padding: 8, border: "1px solid rgba(73,55,23,.28)", borderRadius: 8 }}>
+          <legend style={{ fontSize: 12, fontWeight: 800 }}>{t("playerPro.shot.flight")}</legend>
+          <div role="group" aria-label={t("playerPro.shot.flightProfile")} style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 5 }}>
+            {FLIGHT_PROFILES.map((profile) => {
+              const blocked = requiredFlight !== null && profile !== requiredFlight;
+              return <button key={profile} type="button" data-testid={`player-shot-flight-${profile}`} aria-pressed={selectedFlight === profile} aria-describedby={blocked ? "player-shot-flight-constraint" : undefined} onClick={() => chooseFlight(profile)} style={{ padding: "6px 3px", borderRadius: 6, border: selectedFlight === profile ? "2px solid #426143" : "1px solid rgba(73,55,23,.28)", background: blocked ? "rgba(73,55,23,.08)" : selectedFlight === profile ? "#dcebd5" : "#fff9e7", opacity: blocked ? .64 : 1, textTransform: "capitalize" }}>{profile}</button>;
+            })}
+          </div>
+          <small id="player-shot-flight-constraint" role="status" style={{ display: "block", marginTop: 5 }}>{flightNotice ?? (requiredFlight ? t("playerPro.shot.flightLocked", { technique: t(techniqueKey(technique)), flight: requiredFlight }) : t("playerPro.shot.flightHint"))}</small>
+        </fieldset>
+        <div data-testid="player-shot-preview" style={{ padding: 8, borderRadius: 8, background: preview.risk === "high" ? "#f4d5c8" : preview.risk === "medium" ? "#f4e4b8" : "#dcebd5" }}>
           <strong>{t("playerPro.shot.aim", { x: Math.round(props.aim.x), y: Math.round(props.aim.y) })}</strong>
           <div>{t("playerPro.shot.preview", { carry: Math.round(preview.carryYards), dispersion: preview.dispersionTiles.toFixed(1), risk: preview.risk })}</div>
           {props.round.course.weather && <div data-testid="player-shot-weather">{t("season.shot.weather", {
@@ -249,11 +334,26 @@ export function PlayerShotHud(props: {
             dispersion: Math.round((props.round.course.weather.dispersionMultiplier - 1) * 100),
           })}</div>}
           <small>{t("playerPro.shot.target", { yards: Math.round(preview.targetYards), penalty: preview.expectedPenalty.toFixed(2) })}</small>
+          {preview.shotEffects && <div data-testid="player-shot-lie-effects" style={{ marginTop: 6, fontSize: 12 }}>{t("playerPro.shot.effectiveLie", { source: preview.shotEffects.lieEffect.sourceLie.replaceAll("_", " "), effective: preview.shotEffects.lieEffect.effectiveLie.replaceAll("_", " "), carry: preview.shotEffects.lieEffect.carryMultiplier.toFixed(2), dispersion: preview.shotEffects.lieEffect.dispersionMultiplier.toFixed(2) })}</div>}
+          {preview.sharedOutcome && <div data-testid="player-shot-rules-preview" style={{ display: "grid", gap: 3, marginTop: 7, paddingTop: 7, borderTop: "1px solid rgba(73,55,23,.2)", fontSize: 12 }}>
+            <div>{t("playerPro.shot.flightEvidence", { profile: preview.sharedOutcome.flight.profile, launch: preview.sharedOutcome.flight.launchAngleDegrees.toFixed(0), apex: preview.sharedOutcome.flight.apexHeightYards.toFixed(1) })}</div>
+            <div>{t("playerPro.shot.route", { route: collisionLabel(preview.sharedOutcome.collision, t) })}</div>
+            {previewRouteEvidence && <div>{t("playerPro.shot.routeEvidence", { evidence: previewRouteEvidence })}</div>}
+            <div>{t("playerPro.shot.penaltyRisk", { ruling: rulingLabel(preview.sharedOutcome.ruling, t) })}</div>
+            <div>{t("playerPro.shot.reliefPreview", { type: preview.sharedOutcome.relief.type.replaceAll("_", " "), position: pointLabel(preview.sharedOutcome.finalPosition) })}</div>
+          </div>}
           {preview.blocker && <div role="alert">{t("playerPro.shot.blocked", { reason: preview.blocker })}</div>}
         </div>
         <div style={{ display: "flex", gap: 6 }}><button onClick={useCaddie}>{t("playerPro.shot.caddie")}</button><button data-testid="commit-player-shot" disabled={!preview.available} onClick={() => props.onCommit(selection)} style={{ flex: 1, background: "#426143", color: "white", fontWeight: 900 }}>{t("playerPro.shot.confirm")}</button></div>
       </div>}
       {props.round.phase === "flight" && <div role="status" style={{ marginTop: 10, padding: 12, borderRadius: 8, background: "#dcebd5" }}>{t("playerPro.shot.animation")}</div>}
+      {latestShot && props.round.phase !== "flight" && <section data-testid="player-shot-ruling" aria-label={t("playerPro.shot.latestRuling")} style={{ display: "grid", gap: 3, marginTop: 10, padding: 9, borderRadius: 8, background: "#f5e5b8", border: "1px solid rgba(117,88,36,.35)", fontSize: 12 }}>
+        <strong>{t("playerPro.shot.latestRulingShot", { shot: latestShot.shotNumber })}</strong>
+        <div>{t("playerPro.shot.ruling", { ruling: rulingLabel(latestRuling, t) })}</div>
+        <div>{t("playerPro.shot.collision", { collision: collisionLabel(latestOutcome?.collision, t) })}</div>
+        <div>{t("playerPro.shot.relief", { relief: latestRelief ? `${latestRelief.type.replaceAll("_", " ")} (${latestRelief.status})` : t("playerPro.shot.legacyRelief") })}</div>
+        <div>{t("playerPro.shot.finalPosition", { position: pointLabel(latestFinalPosition) })}</div>
+      </section>}
       {props.round.phase === "hole_complete" && <button data-testid="next-player-hole" onClick={props.onAdvance} style={{ width: "100%", marginTop: 10 }}>{t("playerPro.shot.next")}</button>}
       {(props.round.phase === "round_complete" || props.round.phase === "conceded") && <div style={{ marginTop: 10, display: "grid", gap: 7 }}><strong>{t("playerPro.round.complete")}</strong><small>{t("playerPro.round.settled")}</small><button data-testid="return-to-design" onClick={props.onReturnToDesign}>{t("playerPro.shot.returnDesign")}</button></div>}
       <details style={{ marginTop: 10 }}><summary>{t("playerPro.scorecard")}</summary><ol style={{ paddingLeft: 22 }}>{props.round.scorecard.map((row) => <li key={row.holeId}>{row.name}: {row.strokes}+{row.penalties} / {row.par}{row.complete ? " ✓" : ""}</li>)}</ol><strong>{t("playerPro.scorecard.total", { strokes: props.round.strokes, penalties: props.round.penalties })}</strong></details>

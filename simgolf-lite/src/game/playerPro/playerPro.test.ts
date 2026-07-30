@@ -151,6 +151,31 @@ describe("M36 deterministic Player Pro play", () => {
     expect(first.evidence.some((item) => item.skill === "driving")).toBe(true);
   });
 
+  it("forwards the frozen course obstacle context into the shared outcome", () => {
+    const { career, round } = started();
+    const args = {
+      snapshot: round.course,
+      holeId: round.course.holes[0].id,
+      shotNumber: 1,
+      from: round.ball,
+      lie: round.lie,
+      skills: career.skills,
+      selection: { club: "Driver", aim: { x: 34, y: 10 }, power: 0.86, technique: "normal" as const },
+      seed: 99177,
+    };
+    const clear = resolvePlayableShot(args);
+    const obstructed = resolvePlayableShot({
+      ...args,
+      snapshot: {
+        ...round.course,
+        obstacles: [{ type: "rock", x: Math.round(clear.landing.x), y: Math.round(clear.landing.y) }],
+      },
+    });
+
+    expect(obstructed.sharedOutcome?.collision).toMatchObject({ kind: "obstacle", obstacleType: "rock" });
+    expect(obstructed.sharedOutcome?.flight.clearance[0]).toMatchObject({ obstacleType: "rock" });
+  });
+
   it("uses one preview contract for continuous power, lie blockers, hazards, and committed shots", () => {
     const { career, round } = started();
     const low = previewPlayableShot(round, career.skills, { club: "Driver", aim: { x: 34, y: 10 }, power: 0.45, technique: "normal" });
@@ -191,15 +216,32 @@ describe("M36 deterministic Player Pro play", () => {
     expect(committed.pendingShot?.flightProfile).toBe("standard");
     expect(committed.pendingShot?.sharedOutcome?.requestedCarryYards).toBeCloseTo(preview.carryYards, 5);
     expect(committed.pendingShot?.sharedOutcome?.ruling).toMatchObject({ status: "penalty", penaltyStrokes: 1 });
+    expect(preview.sharedOutcome).toEqual(committed.pendingShot?.sharedOutcome);
+    expect(preview.sharedOutcome).toMatchObject({
+      lieEffect: { sourceLie: "tee", effectiveLie: "tee" },
+      flight: { profile: "standard", apexHeightYards: expect.any(Number), clearance: expect.any(Array) },
+      collision: { kind: expect.stringMatching(/^(none|terrain|obstacle)$/) },
+      ruling: { status: expect.stringMatching(/^(in_play|holed|penalty)$/) },
+      relief: { type: expect.any(String) },
+      finalPosition: expect.any(Object),
+    });
 
     const punch = previewPlayableShot(round, { ...career.skills, recovery: 70 }, {
       club: "Driver", aim: { x: 34, y: 10 }, power: 0.86, technique: "punch",
     });
     expect(punch.flightProfile).toBe("low");
+    const blockedPunch = previewPlayableShot(round, { ...career.skills, recovery: 70 }, {
+      club: "Driver", aim: { x: 34, y: 10 }, power: 0.86, technique: "punch", flightProfile: "high",
+    });
+    expect(blockedPunch).toMatchObject({ available: false, blocker: "technique_requires_low_flight", sharedOutcome: null });
     const flop = previewPlayableShot(round, { ...career.skills, shortGame: 70 }, {
       club: "Pitching Wedge", aim: { x: 34, y: 10 }, power: 0.7, technique: "flop",
     });
     expect(flop.flightProfile).toBe("high");
+    const blockedFlop = previewPlayableShot(round, { ...career.skills, shortGame: 70 }, {
+      club: "Pitching Wedge", aim: { x: 34, y: 10 }, power: 0.7, technique: "flop", flightProfile: "low",
+    });
+    expect(blockedFlop).toMatchObject({ available: false, blocker: "technique_requires_high_flight", sharedOutcome: null });
   });
 
   it("snapshots routing, resumes through schema v14, and drops only malformed optional rounds", () => {

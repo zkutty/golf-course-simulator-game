@@ -25,6 +25,17 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   const hud = page.getByTestId("player-shot-hud");
   await expect(hud).toBeVisible();
   await expect(hud).toContainText("Hole 1 of 3");
+  const lowFlight = page.getByTestId("player-shot-flight-low");
+  await lowFlight.focus();
+  await page.keyboard.press("Enter");
+  await expect(lowFlight).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("player-shot-preview")).toContainText("Effective lie:");
+  await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Flight: low");
+  await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Route evidence:");
+  await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Penalty risk:");
+  await page.getByTestId("player-shot-flight-high").click();
+  await expect(page.getByTestId("player-shot-flight-high")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Flight: high");
   await page.getByTestId("workspace-design").click();
   await expect(page.getByTestId("open-course-manager")).toBeDisabled();
 
@@ -81,6 +92,10 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   expect(afterShot.recentTrace.ruling).toHaveProperty("referencePoint");
   expect(afterShot.recentTrace.ruling).toHaveProperty("crossingPoint");
   expect(afterShot.recentTrace.relief).toHaveProperty("selectedCandidateId");
+  await expect(page.getByTestId("player-shot-ruling")).toContainText("Ruling:");
+  await expect(page.getByTestId("player-shot-ruling")).toContainText("Collision:");
+  await expect(page.getByTestId("player-shot-ruling")).toContainText("Relief:");
+  await expect(page.getByTestId("player-shot-ruling")).toContainText("Final playable position:");
   const repeatedText = await page.evaluate(() => {
     const readLatestTrace = () => {
       const playerPro = JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro;
