@@ -267,7 +267,7 @@ function recoveryScore(intent: ShotIntent, capabilities: GolferCapabilities): nu
   const styleBonus = capabilities.riskStyle === "aggressive" && intent.kind === "hero"
     ? .58
     : capabilities.riskStyle === "conservative" && intent.kind === "recovery"
-      ? .92
+      ? 1.35
       : capabilities.riskStyle === "balanced" && intent.kind === "positional"
         ? .22
         : 0;
@@ -276,10 +276,11 @@ function recoveryScore(intent: ShotIntent, capabilities: GolferCapabilities): nu
 }
 
 function hasRecoveryContext(course: Course, from: Point, green: Point, lie: string): boolean {
+  const route = routeObstacle(course, from, green);
   return recoveryLies.has(lie)
     || lie === "water"
     || lie === "wetland"
-    || routeObstacle(course, from, green) !== null;
+    || (route !== null && distance(route.obstacle, from) <= 4);
 }
 
 function recoveryCandidate(args: {
@@ -293,6 +294,7 @@ function recoveryCandidate(args: {
   profile: GolferProfile;
   snapshot: PlayerRoundCourseSnapshot;
   spec: RecoveryCandidateSpec;
+  sampleCount?: number;
 }): ShotIntent | null {
   const selection = legalRecoverySelection({
     lie: args.lie,
@@ -345,7 +347,7 @@ function recoveryCandidate(args: {
     nextShotQuality: 0,
     facts: [],
   };
-  const samples = Array.from({ length: 3 }, (_, index) => resolveLiveShot({
+  const samples = Array.from({ length: args.sampleCount ?? 3 }, (_, index) => resolveLiveShot({
     snapshot: args.snapshot,
     capabilities: args.capabilities,
     holeId: args.hole.id ?? args.snapshot.holes[0]?.id ?? "hole-1",
@@ -438,6 +440,7 @@ export function generateRecoveryCandidates(args: {
   capabilities: GolferCapabilities;
   personality: Personality;
   shotNumber?: number;
+  sampleCount?: number;
 }): ShotIntent[] {
   if (!args.hole.green || !hasRecoveryContext(args.course, args.from, args.hole.green, args.lie)) return [];
   const lie = args.lie as ShotLie;
@@ -455,6 +458,7 @@ export function generateRecoveryCandidates(args: {
       profile,
       snapshot,
       spec,
+      sampleCount: args.sampleCount,
     }))
     .filter((candidate): candidate is ShotIntent => candidate !== null)
     .sort((a, b) => recoveryScore(a, args.capabilities) - recoveryScore(b, args.capabilities) || a.id.localeCompare(b.id));
@@ -525,15 +529,17 @@ export function generateStrategicHolePlan(args: {
   personality: Personality;
 }): StrategicHolePlan {
   const profile = profileFor(args.capabilities, args.course);
-  const recoveryCandidates = args.hole.tee && args.hole.green
+  const teeLie = args.hole.tee ? terrainAt(args.course, args.hole.tee) : null;
+  const recoveryCandidates = args.hole.tee && args.hole.green && teeLie && recoveryLies.has(teeLie)
     ? generateRecoveryCandidates({
         course: args.course,
         hole: args.hole,
         from: args.hole.tee,
-        lie: terrainAt(args.course, args.hole.tee),
+        lie: teeLie,
         capabilities: args.capabilities,
         personality: args.personality,
         shotNumber: 1,
+        sampleCount: 1,
       })
     : [];
   const candidates = recoveryCandidates.length > 0
@@ -582,11 +588,14 @@ export function followUpIntent(args: {
   shotNumber: number;
 }): ShotIntent {
   const target = { ...args.hole.green! };
-  const recoveryCandidates = generateRecoveryCandidates(args);
+  const recoveryCandidates = generateRecoveryCandidates({ ...args, sampleCount: 1 });
   if (recoveryCandidates.length > 0) {
+    const chosen = args.capabilities.riskStyle === "conservative"
+      ? recoveryCandidates.find((candidate) => candidate.facts.some((fact) => fact.code === "context" && fact.detail.includes("recovery:safe"))) ?? recoveryCandidates[0]
+      : recoveryCandidates[0];
     return {
-      ...recoveryCandidates[0],
-      id: `${args.hole.id ?? "hole"}-follow-${args.shotNumber}-${recoveryCandidates[0].id.split("-").slice(-2).join("-")}`,
+      ...chosen,
+      id: `${args.hole.id ?? "hole"}-follow-${args.shotNumber}-${chosen.id.split("-").slice(-2).join("-")}`,
       from: { ...args.from },
     };
   }

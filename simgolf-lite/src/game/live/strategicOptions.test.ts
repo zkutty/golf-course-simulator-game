@@ -269,4 +269,16 @@ describe("ZK-551 M50 recovery strategy", () => {
     expect(intent.technique).toBe("normal");
     expect(intent.flightProfile).toBeUndefined();
   });
+
+  it("does not sample recovery alternatives for a normal tee route past a distant obstacle", () => {
+    const course = recoveryCourse([{ type: "tree", x: 15, y: 12 }]);
+    expect(generateRecoveryCandidates({
+      course,
+      hole: course.holes[0],
+      from: course.holes[0].tee!,
+      lie: "tee",
+      capabilities: capabilities(),
+      personality,
+    })).toEqual([]);
+  });
 });
