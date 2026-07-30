@@ -11,7 +11,9 @@ import {
 
 const root = process.cwd();
 const atlasRoot = join(root, "public/atlases/biomes");
-const artifactRoot = join(root, "artifacts/zk-564");
+const artifactScope = process.env.COURSECRAFT_BIOME_AUDIT_ARTIFACT_DIR
+  ?? "artifacts/zk-564";
+const artifactRoot = join(root, artifactScope);
 const manifest = normalizeAtlasManifest(
   JSON.parse(readFileSync(join(atlasRoot, "manifest.json"), "utf8")),
   BIOME_KEYS,
@@ -31,7 +33,7 @@ function inventoryFor(current: AtlasManifest): BiomeAssetInventory {
     }
     for (const field of Object.values(tier.base.fields)) if (field) assetPaths.add(field.image);
     for (const overlay of Object.values(tier.seasonal)) {
-      for (const bundle of [overlay?.props, overlay?.decals]) if (bundle) {
+      for (const bundle of Object.values(overlay?.frames ?? {})) if (bundle) {
         paths.add(bundle.json);
         assetPaths.add(bundle.json);
         assetPaths.add(bundle.image);
@@ -84,17 +86,28 @@ const missingAssets = {
   version: report.version,
   pass: report.pass,
   required: report.findings.filter((item) => item.category === "required"),
+  seasonalContract: report.findings.filter((item) => item.category === "seasonal-contract"),
+  seasonalEnrichment: report.findings.filter((item) => item.category === "seasonal-enrichment"),
   optional: report.findings.filter((item) => item.category === "optional"),
   fallback: report.findings.filter((item) => item.category === "fallback"),
   overBudget: report.findings.filter((item) => item.category === "over-budget"),
 };
 const payloadReport = {
   version: report.version,
-  pass: report.payloads.every((item) => item.status === "within-budget"),
+  pass: report.payloads.every((item) =>
+    item.status === "within-budget" && item.residencyStatus === "within-budget"),
   tiers: report.payloads,
 };
 
 mkdirSync(artifactRoot, { recursive: true });
+if (artifactScope !== "artifacts/zk-564") {
+  writeFileSync(join(artifactRoot, "provenance.json"), json({
+    issue: "ZK-379",
+    milestone: "M53",
+    generator: "src/game/testing/biomeAuthoringAuditCli.ts",
+    scope: "seasonal coverage, typed atlas ownership, payload and residency machine audit",
+  }));
+}
 writeFileSync(join(artifactRoot, "biome-authoring-audit.json"), json(report));
 writeFileSync(join(artifactRoot, "biome-reference-fixtures.json"), json(fixtureReport));
 writeFileSync(join(artifactRoot, "biome-missing-assets.json"), json(missingAssets));

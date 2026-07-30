@@ -29,13 +29,26 @@ export interface AtlasBaseBundle {
   readonly fields: Partial<Record<Terrain, AtlasFieldFile>>;
 }
 
+export const ATLAS_SEASONAL_FRAME_FAMILIES = [
+  "terrain-details",
+  "natural-props",
+  "buildings",
+  "decorations",
+  "construction",
+  "condition",
+  "weather",
+] as const;
+export type AtlasSeasonalFrameFamily = (typeof ATLAS_SEASONAL_FRAME_FAMILIES)[number];
+
 export interface AtlasSeasonalOverlay {
+  /** Explicit ownership makes cross-biome substitution a schema error. */
+  readonly owner: LandTheme;
+  /** A bundle cannot be mounted under a different season than it declares. */
+  readonly season: SeasonName;
   /** Replacement landscape material fields for the current season only. */
   readonly materials: Partial<Record<Terrain, AtlasFieldFile>>;
-  /** Optional vegetation/ground-prop sprites layered ahead of base props. */
-  readonly props: AtlasBundleFile | null;
-  /** Optional non-gameplay dressing layered ahead of base details. */
-  readonly decals: AtlasBundleFile | null;
+  /** Typed sprite ownership; unrelated frame families never share lookup maps. */
+  readonly frames: Partial<Record<AtlasSeasonalFrameFamily, AtlasBundleFile>>;
 }
 
 export interface AtlasTierBundle {
@@ -44,8 +57,8 @@ export interface AtlasTierBundle {
 }
 
 export interface AtlasManifest {
-  readonly version: 2;
-  readonly sourceVersion: 1 | 2;
+  readonly version: 3;
+  readonly sourceVersion: 1 | 2 | 3;
   readonly generatedBy?: string;
   readonly core: {
     readonly golfers: AtlasBundleFile;
@@ -104,26 +117,55 @@ function baseBundle(value: unknown, label: string): AtlasBaseBundle {
   };
 }
 
-function seasonalOverlay(value: unknown, label: string): AtlasSeasonalOverlay {
+function seasonalOverlay(
+  value: unknown,
+  label: string,
+  owner: LandTheme,
+  season: SeasonName,
+  sourceVersion: 2 | 3,
+): AtlasSeasonalOverlay {
   const source = object(value, label);
+  const rawFrames = sourceVersion === 2
+    ? {
+      "natural-props": source.props,
+      "terrain-details": source.decals,
+    }
+    : object(source.frames ?? {}, `${label}.frames`);
+  for (const family of Object.keys(rawFrames)) {
+    if (!ATLAS_SEASONAL_FRAME_FAMILIES.includes(family as AtlasSeasonalFrameFamily)) {
+      throw new Error(`${label}.frames has unknown seasonal frame family "${family}"`);
+    }
+  }
+  if (sourceVersion === 3 && source.owner !== owner) {
+    throw new Error(`${label}.owner must be the same-biome owner "${owner}"`);
+  }
+  if (sourceVersion === 3 && source.season !== season) {
+    throw new Error(`${label}.season must match "${season}"`);
+  }
   return {
+    owner,
+    season,
     materials: fields(source.materials, `${label}.materials`),
-    props: optionalBundleFile(source.props, `${label}.props`),
-    decals: optionalBundleFile(source.decals, `${label}.decals`),
+    frames: Object.fromEntries(Object.entries(rawFrames)
+      .filter(([, raw]) => raw != null)
+      .map(([family, raw]) => [
+        family,
+        bundleFile(raw, `${label}.frames.${family}`),
+      ])) as Partial<Record<AtlasSeasonalFrameFamily, AtlasBundleFile>>,
   };
 }
 
 /**
- * Validates the current manifest and explicitly migrates the M35 v1 shape to
- * the v2 base/seasonal shape in memory. The stable discovery URL does not
- * change, so already-installed clients can continue to read old deployments.
+ * Validates the current manifest and explicitly migrates M35 v1 and the first
+ * seasonal v2 shape to typed v3 ownership in memory. The stable discovery URL
+ * does not change, so already-installed clients can read old deployments.
  */
 export function normalizeAtlasManifest(
   value: unknown,
   registeredBiomes: readonly LandTheme[],
 ): AtlasManifest {
   const source = object(value, "atlas manifest");
-  if (source.version !== 1 && source.version !== 2) {
+  if (source.version !== 1 && source.version !== 2 && source.version !== 3) {
     throw new Error(`unsupported atlas manifest ${String(source.version)}`);
   }
   const sourceVersion = source.version;
@@ -156,7 +198,13 @@ export function normalizeAtlasManifest(
         base: baseBundle(rawTier.base, `atlas manifest.biomes.${biome}.${quality}.base`),
         seasonal: Object.fromEntries(Object.entries(rawSeasonal).map(([season, overlay]) => [
           season,
-          seasonalOverlay(overlay, `atlas manifest.biomes.${biome}.${quality}.seasonal.${season}`),
+          seasonalOverlay(
+            overlay,
+            `atlas manifest.biomes.${biome}.${quality}.seasonal.${season}`,
+            biome,
+            season as SeasonName,
+            sourceVersion,
+          ),
         ])) as Partial<Record<SeasonName, AtlasSeasonalOverlay>>,
       };
     }
@@ -164,7 +212,7 @@ export function normalizeAtlasManifest(
   }
 
   return {
-    version: 2,
+    version: 3,
     sourceVersion,
     generatedBy: typeof source.generatedBy === "string" ? source.generatedBy : undefined,
     core: { golfers: bundleFile(core.golfers, "atlas manifest.core.golfers") },

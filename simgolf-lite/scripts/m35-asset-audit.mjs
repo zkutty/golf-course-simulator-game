@@ -20,10 +20,20 @@ const manifestRelative = "atlases/biomes/manifest.json";
 const MiB = 1024 * 1024;
 const MAX_ATLAS_BYTES = 8 * MiB;
 const MAX_SELECTED_BIOME_BYTES = 6 * MiB;
+const MAX_CUMULATIVE_RESIDENCY_BYTES = 12 * MiB;
 const MAX_INITIAL_CRITICAL_BYTES = 8 * MiB;
 const REQUIRED_THEMES = loadBiomeKeys();
 const REQUIRED_QUALITIES = ["high", "medium", "low"];
 const REQUIRED_SEASONS = ["spring", "summer", "autumn", "winter"];
+const SEASONAL_FRAME_FAMILIES = [
+  "terrain-details",
+  "natural-props",
+  "buildings",
+  "decorations",
+  "construction",
+  "condition",
+  "weather",
+];
 const REQUIRED_FIELDS = [
   "fairway",
   "rough",
@@ -104,7 +114,7 @@ function validateTree(rootDirectory) {
   const manifestBuffer = readFileSync(manifestPath);
   const manifest = JSON.parse(manifestBuffer);
   assert(
-    manifest.version === 1 || manifest.version === 2,
+    manifest.version === 1 || manifest.version === 2 || manifest.version === 3,
     `Unsupported biome manifest version ${String(manifest.version)}`,
   );
   assert(
@@ -124,8 +134,8 @@ function validateTree(rootDirectory) {
     for (const quality of REQUIRED_QUALITIES) {
       const tier = tiers[quality];
       if (!tier) continue;
-      // v1 is the explicit deployed compatibility shape. v2 separates the
-      // immutable base from small independently cached seasonal overlays.
+      // v1 is the deployed compatibility shape. v2 separates base/seasonal;
+      // v3 adds explicit owner/season and typed frame-family isolation.
       const bundle = manifest.version === 1 ? tier : tier.base;
       const seasonal = manifest.version === 1 ? {} : (tier.seasonal ?? {});
       assert(Boolean(bundle), `${theme}/${quality} must provide a base bundle`);
@@ -162,6 +172,7 @@ function validateTree(rootDirectory) {
         `${theme}/${quality} selected payload is ${toMiB(bytes)} MiB; limit is 6 MiB`,
       );
       const overlays = {};
+      let cumulativeResidencyBytes = bytes;
       assert(
         Object.keys(seasonal).every((season) => REQUIRED_SEASONS.includes(season)),
         `${theme}/${quality} has an unknown seasonal overlay`,
@@ -175,13 +186,23 @@ function validateTree(rootDirectory) {
       for (const [season, overlay] of Object.entries(seasonal)) {
         let overlayBytes = 0;
         let overlayFrames = 0;
-        if (overlay.props) {
-          const result = validateAtlas(rootDirectory, overlay.props, `${theme}/${quality}/${season} props`);
-          overlayBytes += result.bytes;
-          overlayFrames += result.frames.length;
+        const frameBundles = manifest.version === 2
+          ? {
+            "natural-props": overlay.props,
+            "terrain-details": overlay.decals,
+          }
+          : (overlay.frames ?? {});
+        if (manifest.version === 3) {
+          assert(overlay.owner === theme, `${theme}/${quality}/${season} must retain same-biome ownership`);
+          assert(overlay.season === season, `${theme}/${quality}/${season} declares season ${String(overlay.season)}`);
+          assert(
+            Object.keys(frameBundles).every((family) => SEASONAL_FRAME_FAMILIES.includes(family)),
+            `${theme}/${quality}/${season} has an unknown seasonal frame family`,
+          );
         }
-        if (overlay.decals) {
-          const result = validateAtlas(rootDirectory, overlay.decals, `${theme}/${quality}/${season} decals`);
+        for (const [family, atlas] of Object.entries(frameBundles)) {
+          if (!atlas) continue;
+          const result = validateAtlas(rootDirectory, atlas, `${theme}/${quality}/${season} ${family}`);
           overlayBytes += result.bytes;
           overlayFrames += result.frames.length;
         }
@@ -194,6 +215,7 @@ function validateTree(rootDirectory) {
           );
         }
         const selectedBytes = bytes + overlayBytes;
+        cumulativeResidencyBytes += overlayBytes;
         assert(
           selectedBytes < MAX_SELECTED_BIOME_BYTES,
           `${theme}/${quality}/${season} selected payload is ${toMiB(selectedBytes)} MiB; limit is 6 MiB`,
@@ -205,14 +227,21 @@ function validateTree(rootDirectory) {
           selectedMiB: toMiB(selectedBytes),
           frames: overlayFrames,
           materials: Object.keys(overlay.materials ?? {}).length,
+          frameFamilies: Object.keys(frameBundles).filter((family) => frameBundles[family]),
         };
       }
+      assert(
+        cumulativeResidencyBytes < MAX_CUMULATIVE_RESIDENCY_BYTES,
+        `${theme}/${quality} cumulative seasonal residency is ${toMiB(cumulativeResidencyBytes)} MiB; limit is 12 MiB`,
+      );
       bundles[theme][quality] = {
         bytes,
         mib: toMiB(bytes),
         frames: frameOwners.size,
         fields: fieldNames.length,
         overlays,
+        cumulativeResidencyBytes,
+        cumulativeResidencyMiB: toMiB(cumulativeResidencyBytes),
       };
     }
   }
@@ -277,7 +306,7 @@ if (distReport) {
 
 const report = {
   ok: errors.length === 0,
-  limitsMiB: { atlas: 8, selectedBiome: 6, initialCritical: 8 },
+  limitsMiB: { atlas: 8, selectedBiome: 6, cumulativeResidency: 12, initialCritical: 8 },
   public: publicReport && {
     coreMiB: toMiB(publicReport.coreBytes),
     bundles: publicReport.bundles,

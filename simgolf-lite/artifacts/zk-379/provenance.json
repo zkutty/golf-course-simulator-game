@@ -1,0 +1,6 @@
+{
+  "issue": "ZK-379",
+  "milestone": "M53",
+  "generator": "src/game/testing/biomeAuthoringAuditCli.ts",
+  "scope": "seasonal coverage, typed atlas ownership, payload and residency machine audit"
+}

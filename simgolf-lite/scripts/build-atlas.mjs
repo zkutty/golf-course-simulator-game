@@ -28,9 +28,12 @@ const NATURAL_SRC = path.join(ROOT, "src/assets/props/natural");
 const TERRAIN_SRC = path.join(ROOT, "src/assets/terrain/materials");
 const TERRAIN_DETAILS_SRC = path.join(ROOT, "src/assets/terrain/details");
 const LANDSCAPE_FIELDS_SRC = path.join(ROOT, "src/assets/terrain/fields");
-// Optional authoring convention. A season can supply only the small layers it
-// changes; absent directories deliberately mean "use the immutable base".
-const SEASONAL_OVERLAYS_SRC = path.join(ROOT, "src/assets/terrain/seasonal");
+// Optional authoring convention. A season can supply only the small, typed
+// families it changes; absent directories mean "use the same-biome base".
+// src/assets/seasonal/<biome>/<quality>/<season>/
+//   terrain-material-fields, terrain-details, natural-props, buildings,
+//   decorations, construction, condition, weather
+const SEASONAL_OVERLAYS_SRC = path.join(ROOT, "src/assets/seasonal");
 const OUT_DIR = process.env.COURSECRAFT_ATLAS_OUT_DIR
   ? path.resolve(process.env.COURSECRAFT_ATLAS_OUT_DIR)
   : path.join(ROOT, "public/atlases");
@@ -179,7 +182,7 @@ mkdirSync(BIOME_OUT_DIR, { recursive: true });
 const qualities = ["high", "medium", "low"];
 const seasons = ["spring", "summer", "autumn", "winter"];
 const manifest = {
-  version: 2,
+  version: 3,
   generatedBy: "scripts/build-atlas.mjs",
   core: {},
   biomes: {},
@@ -203,7 +206,13 @@ function copyFieldAsset(theme, quality, terrain) {
 }
 
 function copySeasonalMaterials(theme, quality, season) {
-  const sourceDirectory = path.join(SEASONAL_OVERLAYS_SRC, theme, quality, season, "materials");
+  const sourceDirectory = path.join(
+    SEASONAL_OVERLAYS_SRC,
+    theme,
+    quality,
+    season,
+    "terrain-material-fields",
+  );
   if (!hasPng(sourceDirectory)) return {};
   return Object.fromEntries(readdirSync(sourceDirectory, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith(".png"))
@@ -223,20 +232,28 @@ function buildSeasonalOverlays(theme, quality) {
   // Low remains a deliberately base-only tier: no fields, prop variants, or
   // decal dressing can silently grow its transfer/GPU budget.
   if (quality === "low") return {};
+  const frameFamilies = [
+    ["terrain-details", "2"],
+    ["natural-props", "1"],
+    ["buildings", "1"],
+    ["decorations", "1"],
+    ["construction", "1"],
+    ["condition", "1"],
+    ["weather", "2"],
+  ];
   return Object.fromEntries(seasons.map((season) => {
     const root = path.join(SEASONAL_OVERLAYS_SRC, theme, quality, season);
     const materials = copySeasonalMaterials(theme, quality, season);
-    const props = buildOptionalAtlas(
-      path.join(root, "props"),
-      `seasonal-props-${theme}-${quality}-${season}`,
-    );
-    const decals = buildOptionalAtlas(
-      path.join(root, "decals"),
-      `seasonal-decals-${theme}-${quality}-${season}`,
-      "2",
-    );
-    const overlay = { materials, props, decals };
-    return Object.keys(materials).length > 0 || props || decals
+    const frames = Object.fromEntries(frameFamilies.map(([family, scale]) => [
+      family,
+      buildOptionalAtlas(
+        path.join(root, family),
+        `seasonal-${family}-${theme}-${quality}-${season}`,
+        scale,
+      ),
+    ]).filter(([, bundle]) => bundle));
+    const overlay = { owner: theme, season, materials, frames };
+    return Object.keys(materials).length > 0 || Object.keys(frames).length > 0
       ? [season, overlay]
       : null;
   }).filter(Boolean));

@@ -29,7 +29,7 @@ export type ClimatePhenologyRegime =
 
 export type ClimateExposure = "sheltered" | "moderate" | "exposed";
 
-const CLIMATE_PHENOLOGY_REGIMES: readonly ClimatePhenologyRegime[] = [
+export const CLIMATE_PHENOLOGY_REGIMES: readonly ClimatePhenologyRegime[] = [
   "temperate-four-season",
   "coastal-four-season",
   "arid-heat-drought",
@@ -113,6 +113,15 @@ export interface BiomeDefinition<Key extends string = string> {
   blurb: string;
   generation: ThemeGenConfig;
   climate: ClimateProfile;
+  seasonalArt: {
+    /**
+     * Seasonal art inherits a declarative phenology profile. This keeps
+     * renderers free of biome-specific branches and lets future biomes reuse
+     * a climate rhythm without borrowing another biome's assets.
+     */
+    profile: ClimatePhenologyRegime;
+    contractVersion: 1;
+  };
   presentation: {
     /** Flat-color overrides of the renderer COLORS table (Pixi hex numbers). */
     tileTints: Partial<Record<Terrain, number>>;
@@ -212,6 +221,7 @@ export const BIOME_DEFINITIONS = defineBiomes({
         winter: season({ temperatureOffsetF: -12, precipitationChanceOffset: 0, windMphOffset: 3, stormChance: 0.018, droughtChance: 0, dormancy: 0.85, foliage: "dormant", flowering: 0, moisture: "balanced" }),
       },
     },
+    seasonalArt: { profile: "temperate-four-season", contractVersion: 1 },
     presentation: {
       tileTints: {},
       cliffFaces: { sw: 0x6b4f33, se: 0x8a6844 },
@@ -259,6 +269,7 @@ export const BIOME_DEFINITIONS = defineBiomes({
         winter: season({ temperatureOffsetF: -12, precipitationChanceOffset: 0, windMphOffset: 3, stormChance: 0.018, droughtChance: 0, dormancy: 0.65, foliage: "sparse", flowering: 0, moisture: "wet" }),
       },
     },
+    seasonalArt: { profile: "coastal-four-season", contractVersion: 1 },
     presentation: {
       tileTints: {
         fairway: 0x6aa84f,
@@ -285,7 +296,7 @@ export const BIOME_DEFINITIONS = defineBiomes({
     compatibility: {
       saveKey: "links",
       legacyAliases: [],
-      fallbackBiome: "parkland",
+      fallbackBiome: "links",
       contentVersion: 1,
     },
   },
@@ -315,6 +326,7 @@ export const BIOME_DEFINITIONS = defineBiomes({
         winter: season({ temperatureOffsetF: -12, precipitationChanceOffset: 0, windMphOffset: 3, stormChance: 0.018, droughtChance: 0, dormancy: 0.2, foliage: "sparse", flowering: 0.05, moisture: "dry" }),
       },
     },
+    seasonalArt: { profile: "arid-heat-drought", contractVersion: 1 },
     presentation: {
       tileTints: {
         fairway: 0x55a24c,
@@ -342,7 +354,7 @@ export const BIOME_DEFINITIONS = defineBiomes({
     compatibility: {
       saveKey: "desert",
       legacyAliases: [],
-      fallbackBiome: "parkland",
+      fallbackBiome: "desert",
       contentVersion: 1,
     },
   },
@@ -609,6 +621,9 @@ export function auditBiomeDefinitions(
     if (definition.key !== key) errors.push(`${key}: definition key must match registry key`);
     if (!definition.label.trim() || !definition.blurb.trim()) errors.push(`${key}: display copy is required`);
     if (!keys.has(definition.compatibility.fallbackBiome)) errors.push(`${key}: fallback biome is not registered`);
+    if (definition.compatibility.fallbackBiome !== key) {
+      errors.push(`${key}: fallback biome must retain same-biome ownership`);
+    }
     if (definition.compatibility.saveKey !== key) errors.push(`${key}: save key must match registry key`);
     if (saveKeys.has(definition.compatibility.saveKey)) errors.push(`${key}: duplicate save key`);
     saveKeys.add(definition.compatibility.saveKey);
@@ -682,6 +697,12 @@ export function auditBiomeDefinitions(
     integer(key, "elevation maximum step", generation.elevation.maxStep);
 
     const climate = definition.climate;
+    if (definition.seasonalArt.contractVersion !== 1) {
+      errors.push(`${key}: seasonal art contract version must be 1`);
+    }
+    if (definition.seasonalArt.profile !== climate.phenology.regime) {
+      errors.push(`${key}: seasonal art profile must match the climate phenology regime`);
+    }
     finite(key, "base temperature", climate.temperatureBaseF, -100, 160);
     finite(key, "base precipitation chance", climate.precipitationBaseChance, 0, 1);
     finite(key, "base wind", climate.windBaseMph, 0, 100);

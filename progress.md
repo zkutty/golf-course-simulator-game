@@ -938,3 +938,79 @@ or release-owner checks.
 - Added the missing selector path, localized Architecture Review/Operate/Golfer Inspector mobility text, and added a pseudo-locale/machine-accessibility browser regression.
 - Added fixed-seed strategy compatibility plus 220×140/36-hole/100-golfer route/live/render/save certification coverage. The focused M51 certification passes 2/2 tests in 43.98s; TypeScript and i18n guards pass.
 - Human visual, accessibility, listening, gameplay-balance, physical-device/GPU, provider, browser-matrix, and release-owner checks remain deferred. No Linear mutation, commit, push, or deployment was performed.
+
+## 2026-07-30 — M53 ZK-566 SeasonalVisualState query
+
+- Added one transient, read-only SeasonalVisualState query over the existing
+  M39 daily calendar/weather/modifiers, M52 climate phenology, M49 localized
+  maintenance zones, and authoritative course/world condition inputs.
+- The query exposes climate transition/progress, weather, moisture, firmness,
+  turf health, wear, settled maintenance availability, projected burden
+  priorities, active presentation layers, and renderer/audio inputs. Visible
+  surfaces resolve on demand by four-zone and terrain keys; no per-tile or
+  per-entity condition state is stored.
+- Shared M49's localized quadrant aggregation with the query so reports and
+  presentation use one projection. Query/zone caches account for tile identity,
+  dimensions, biome, seed, full weather/climate outputs, drainage, condition,
+  maintenance, and optional report inputs.
+- App supplies the latest settled WeekResult. Exact maintenance requirement,
+  budget, shortfall, and wear are used when available; otherwise the query
+  reports unavailable nullable evidence and derives wear only from authoritative
+  course condition. Missing evidence cannot create maintenance alerts/layers.
+- Quadrants and surfaces are explicitly labeled projected maintenance priority
+  from static relative burden, never localized observed condition history.
+- App, Pixi, ambience, and structured text state now receive the query. ZK-566
+  only supplies inputs and preserves existing weather/season ambience routing;
+  new visual/audio modulation remains for later presentation tickets.
+- Focused verification passes: 4 files / 35 tests, TypeScript project build,
+  and `git diff --check`. Coverage includes determinism, reload, rotation and
+  quality independence, cache identity/invalidation, dimensions/biome changes,
+  non-persistence, shared report zones, audio handoff, and bounded surface
+  lookup performance.
+- The required bundled web-game client entered a fresh game and emitted the
+  selected serializable SeasonalVisualState projection through
+  `render_game_to_text`, with no console-error artifact. The corrected fresh
+  projection reports maintenance unavailable, nullable requirement/shortfall,
+  four baseline projected-burden priorities, condition-derived 0.25 wear, and
+  only the phenology layer; its top-level weather/modifiers match the projection.
+- A later full production-build attempt reached the biome audit, then stopped
+  on concurrent ZK-379 `AtlasSeasonalOverlay.props/decals` type errors in its
+  atlas/biome-authoring files. Those unrelated files were left untouched;
+  ZK-566's standalone TypeScript pass was subsequently revalidated successfully
+  after the concurrent edits settled.
+- Subjective screenshot inspection and other human validation are explicitly
+  deferred.
+
+## 2026-07-30 — M53 ZK-379 seasonal art contract (machine phase)
+
+- Added a registry-owned, phenology-inherited seasonal coverage contract for
+  every Parkland/Links/Desert × spring/summer/autumn/winter × eight visual
+  families. Every treatment has an explicit same-biome base fallback;
+  Parkland is four-season, Links is exposed/muted, and Desert is
+  drought/heat-led with no blanket-snow route.
+- Extended atlas normalization to typed v3 seasonal ownership while retaining
+  v1/v2 compatibility. Overlays declare biome, season, material fields, and
+  isolated frame families for terrain details, natural props, buildings,
+  decorations, construction, condition, and weather. Low remains base-only.
+- Loader maps are isolated by family, optional failures keep the base active,
+  stale requests cannot activate, and loaded base/overlay maps remain cached
+  with a read-only residency snapshot. Seasonal natural-prop sheets can no
+  longer shadow structure frames.
+- The biome authoring audit now reports 96-cell contract completeness
+  separately from optional art enrichment, validates typed overlay
+  ownership/family/season/content hashes, and reports base + peak overlay
+  payload plus cumulative residency budgets.
+- Final focused ZK-379 result: 5 Vitest files / 27 tests pass. The M52/save
+  compatibility regression passes 7 files / 70 tests, confirming the
+  same-biome fallback metadata is not persisted or consumed by save/runtime
+  compatibility. TypeScript, the scoped ESLint pass, production build and
+  asset audits, and `git diff --check` pass.
+- The scoped ZK-379 biome authoring CLI evidence lives under
+  `artifacts/zk-379/` with explicit M53 provenance and zero required,
+  seasonal-contract, or budget findings. Historical M35 and ZK-564 evidence
+  was left unchanged. Current base-only selected payloads remain 2.17–3.51 MB
+  against 6 MB, and cumulative residency remains below 12 MB.
+- No seasonal renderer/art content from ZK-567/ZK-568/ZK-569 is included.
+  Human visual/aesthetic/accessibility/device/listening validation remains
+  explicitly deferred to the final phase; no Linear mutation, commit, push,
+  promotion, or deployment was performed.

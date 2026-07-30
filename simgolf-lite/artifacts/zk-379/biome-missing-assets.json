@@ -1,0 +1,346 @@
+{
+  "version": 2,
+  "pass": true,
+  "required": [],
+  "seasonalContract": [],
+  "seasonalEnrichment": [
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "high",
+      "asset": "seasonal.spring",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "high",
+      "asset": "seasonal.summer",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "high",
+      "asset": "seasonal.autumn",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "high",
+      "asset": "seasonal.winter",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "medium",
+      "asset": "seasonal.spring",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "medium",
+      "asset": "seasonal.summer",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "medium",
+      "asset": "seasonal.autumn",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "medium",
+      "asset": "seasonal.winter",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "low",
+      "asset": "seasonal.spring",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "low",
+      "asset": "seasonal.summer",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "low",
+      "asset": "seasonal.autumn",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "parkland",
+      "quality": "low",
+      "asset": "seasonal.winter",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "high",
+      "asset": "seasonal.spring",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "high",
+      "asset": "seasonal.summer",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "high",
+      "asset": "seasonal.autumn",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "high",
+      "asset": "seasonal.winter",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "medium",
+      "asset": "seasonal.spring",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "medium",
+      "asset": "seasonal.summer",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "medium",
+      "asset": "seasonal.autumn",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "medium",
+      "asset": "seasonal.winter",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "low",
+      "asset": "seasonal.spring",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "low",
+      "asset": "seasonal.summer",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "low",
+      "asset": "seasonal.autumn",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "links",
+      "quality": "low",
+      "asset": "seasonal.winter",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "high",
+      "asset": "seasonal.spring",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "high",
+      "asset": "seasonal.summer",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "high",
+      "asset": "seasonal.autumn",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "high",
+      "asset": "seasonal.winter",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "medium",
+      "asset": "seasonal.spring",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "medium",
+      "asset": "seasonal.summer",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "medium",
+      "asset": "seasonal.autumn",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "medium",
+      "asset": "seasonal.winter",
+      "detail": "base-only fallback; authored overlay is optional"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "low",
+      "asset": "seasonal.spring",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "low",
+      "asset": "seasonal.summer",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "low",
+      "asset": "seasonal.autumn",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    },
+    {
+      "category": "seasonal-enrichment",
+      "biome": "desert",
+      "quality": "low",
+      "asset": "seasonal.winter",
+      "detail": "seasonal overlay intentionally forbidden at Low quality"
+    }
+  ],
+  "optional": [
+    {
+      "category": "optional",
+      "biome": "parkland",
+      "quality": "low",
+      "asset": "base.details",
+      "detail": "intentionally omitted by the Low quality policy"
+    },
+    {
+      "category": "optional",
+      "biome": "parkland",
+      "quality": "low",
+      "asset": "base.props",
+      "detail": "intentionally omitted by the Low quality policy"
+    },
+    {
+      "category": "optional",
+      "biome": "parkland",
+      "quality": "low",
+      "asset": "base.fields",
+      "detail": "intentionally omitted by the Low quality policy"
+    },
+    {
+      "category": "optional",
+      "biome": "links",
+      "quality": "low",
+      "asset": "base.details",
+      "detail": "intentionally omitted by the Low quality policy"
+    },
+    {
+      "category": "optional",
+      "biome": "links",
+      "quality": "low",
+      "asset": "base.props",
+      "detail": "intentionally omitted by the Low quality policy"
+    },
+    {
+      "category": "optional",
+      "biome": "links",
+      "quality": "low",
+      "asset": "base.fields",
+      "detail": "intentionally omitted by the Low quality policy"
+    },
+    {
+      "category": "optional",
+      "biome": "desert",
+      "quality": "low",
+      "asset": "base.details",
+      "detail": "intentionally omitted by the Low quality policy"
+    },
+    {
+      "category": "optional",
+      "biome": "desert",
+      "quality": "low",
+      "asset": "base.props",
+      "detail": "intentionally omitted by the Low quality policy"
+    },
+    {
+      "category": "optional",
+      "biome": "desert",
+      "quality": "low",
+      "asset": "base.fields",
+      "detail": "intentionally omitted by the Low quality policy"
+    }
+  ],
+  "fallback": [
+    {
+      "category": "fallback",
+      "biome": "parkland",
+      "asset": "compatibility.fallbackBiome",
+      "detail": "parkland explicitly falls back to parkland when optional presentation content is unavailable"
+    },
+    {
+      "category": "fallback",
+      "biome": "links",
+      "asset": "compatibility.fallbackBiome",
+      "detail": "links explicitly falls back to links when optional presentation content is unavailable"
+    },
+    {
+      "category": "fallback",
+      "biome": "desert",
+      "asset": "compatibility.fallbackBiome",
+      "detail": "desert explicitly falls back to desert when optional presentation content is unavailable"
+    }
+  ],
+  "overBudget": []
+}

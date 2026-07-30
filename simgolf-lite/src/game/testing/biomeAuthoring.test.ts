@@ -6,6 +6,7 @@ import { normalizeAtlasManifest, type AtlasManifest } from "../../render/atlasMa
 import { BIOME_KEYS } from "../models/biomes";
 import { DECORATION_KINDS } from "../models/decorations";
 import { TERRAIN_KINDS } from "../render/terrainMaterials";
+import { SEASONAL_COVERAGE_CONTRACT } from "../render/seasonalCoverage";
 import {
   BIOME_REFERENCE_ROTATIONS,
   BIOME_REFERENCE_VIEWS,
@@ -37,7 +38,7 @@ function realInventory(manifest: AtlasManifest): BiomeAssetInventory {
     }
     for (const field of Object.values(tier.base.fields)) if (field) assetPaths.add(field.image);
     for (const overlay of Object.values(tier.seasonal)) {
-      for (const bundle of [overlay?.props, overlay?.decals]) if (bundle) {
+      for (const bundle of Object.values(overlay?.frames ?? {})) if (bundle) {
         jsonPaths.add(bundle.json);
         assetPaths.add(bundle.json);
         assetPaths.add(bundle.image);
@@ -86,9 +87,20 @@ describe("ZK-564 deterministic biome authoring fixtures", () => {
     const report = auditBiomeAuthoring({ manifest, inventory: realInventory(manifest) });
     expect(report.pass, JSON.stringify(report.findings.filter((item) => item.category === "required"), null, 2)).toBe(true);
     expect(report.counts.required).toBe(0);
+    expect(report.counts["seasonal-contract"]).toBe(0);
     expect(report.counts["over-budget"]).toBe(0);
+    expect(report.seasonalContract).toMatchObject({
+      pass: true,
+      totalCells: 3 * 4 * 8,
+      errors: [],
+    });
     expect(report.coverage.map((item) => item.biome)).toEqual(BIOME_KEYS);
     expect(report.payloads).toHaveLength(BIOME_KEYS.length * 3);
+    expect(report.payloads.every((item) =>
+      item.bytes === item.baseBytes + item.largestOverlayBytes
+      && item.cumulativeResidencyBytes >= item.bytes
+      && item.residencyStatus === "within-budget"
+    )).toBe(true);
     expect(report.findings.some((item) => item.category === "optional")).toBe(true);
     expect(report.findings.some((item) => item.category === "fallback")).toBe(true);
   });
@@ -198,5 +210,63 @@ describe("ZK-564 deterministic biome authoring fixtures", () => {
         asset,
       }));
     }
+  });
+
+  it("audits seasonal contract validity separately from optional authored enrichment", () => {
+    const manifest = realManifest();
+    const inventory = realInventory(manifest);
+    const malformedContract = structuredClone(SEASONAL_COVERAGE_CONTRACT) as unknown as {
+      biomes: { parkland: { seasons: { spring: Record<string, unknown> } } };
+    };
+    delete malformedContract.biomes.parkland.seasons.spring["weather-dressing"];
+
+    const report = auditBiomeAuthoring({
+      manifest,
+      inventory,
+      seasonalContract: malformedContract,
+    });
+    expect(report.pass).toBe(false);
+    expect(report.seasonalContract.pass).toBe(false);
+    expect(report.findings).toContainEqual(expect.objectContaining({
+      category: "seasonal-contract",
+      biome: "parkland",
+      detail: "parkland/spring/weather-dressing: treatment is missing",
+    }));
+    expect(report.findings.some((finding) =>
+      finding.category === "seasonal-enrichment"
+      && finding.asset === "seasonal.spring"
+    )).toBe(true);
+  });
+
+  it("rejects cross-biome typed overlay ownership and reports cumulative residency", () => {
+    const manifest = realManifest();
+    const inventory = realInventory(manifest);
+    const changed = structuredClone(manifest);
+    changed.biomes.parkland.high.seasonal.autumn = {
+      owner: "links",
+      season: "autumn",
+      materials: {},
+      frames: {},
+    };
+    const baseline = auditBiomeAuthoring({ manifest, inventory });
+    const base = baseline.payloads.find((item) =>
+      item.biome === "parkland" && item.quality === "high")!;
+    const report = auditBiomeAuthoring({
+      manifest: changed,
+      inventory,
+      residencyBudgetBytes: base.cumulativeResidencyBytes - 1,
+    });
+    expect(report.pass).toBe(false);
+    expect(report.findings).toContainEqual(expect.objectContaining({
+      category: "required",
+      asset: "seasonal.autumn.owner",
+      detail: "seasonal overlay must have same-biome ownership",
+    }));
+    expect(report.findings).toContainEqual(expect.objectContaining({
+      category: "over-budget",
+      biome: "parkland",
+      quality: "high",
+      asset: "cumulative-residency",
+    }));
   });
 });

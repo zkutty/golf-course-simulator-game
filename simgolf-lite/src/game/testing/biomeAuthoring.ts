@@ -1,11 +1,13 @@
 import { SUNO_AMBIENCE_PLAYLISTS, SUNO_MUSIC_PLAYLISTS } from "../../audio/sunoLibrary";
 import {
   ATLAS_QUALITIES,
+  ATLAS_SEASONAL_FRAME_FAMILIES,
   type AtlasBaseBundle,
   type AtlasBundleFile,
   type AtlasFieldFile,
   type AtlasManifest,
   type AtlasQuality,
+  type AtlasSeasonalFrameFamily,
   type AtlasSeasonalOverlay,
 } from "../../render/atlasManifest";
 import { BUILDING_SPECS, buildingVisualFrame } from "../models/buildings";
@@ -20,11 +22,17 @@ import {
 import { DECORATION_KINDS, DECORATION_SPECS } from "../models/decorations";
 import type { Building, Course, ObstacleType, Point } from "../models/types";
 import { NATURAL_PROP_REGISTRY } from "../render/naturalProps";
+import {
+  SEASONAL_COVERAGE_CONTRACT,
+  SEASONAL_VISUAL_FAMILIES,
+  auditSeasonalCoverageContract,
+} from "../render/seasonalCoverage";
 import { TERRAIN_KINDS } from "../render/terrainMaterials";
 import { createM22VisualReferenceCourse } from "./referenceCourse";
 
-export const BIOME_AUTHORING_REPORT_VERSION = 1 as const;
+export const BIOME_AUTHORING_REPORT_VERSION = 2 as const;
 export const BIOME_SELECTED_PAYLOAD_BUDGET_BYTES = 6 * 1024 * 1024;
+export const BIOME_CUMULATIVE_RESIDENCY_BUDGET_BYTES = 12 * 1024 * 1024;
 /** Seed owned by the underlying M21/M22 deterministic biome scene. */
 export const BIOME_REFERENCE_SEED = 210225;
 export const BIOME_REFERENCE_VIEWS = [
@@ -212,7 +220,13 @@ export interface BiomeAssetInventory {
   readonly sha256ByAsset: Readonly<Record<string, string>>;
 }
 
-export type BiomeAuditCategory = "required" | "optional" | "fallback" | "over-budget";
+export type BiomeAuditCategory =
+  | "required"
+  | "seasonal-contract"
+  | "seasonal-enrichment"
+  | "optional"
+  | "fallback"
+  | "over-budget";
 
 export interface BiomeAuditFinding {
   readonly category: BiomeAuditCategory;
@@ -229,6 +243,18 @@ export interface BiomePayloadTierReport {
   readonly budgetBytes: number;
   readonly status: "within-budget" | "over-budget";
   readonly overByBytes: number;
+  readonly baseBytes: number;
+  readonly largestOverlayBytes: number;
+  readonly cumulativeResidencyBytes: number;
+  readonly residencyBudgetBytes: number;
+  readonly residencyStatus: "within-budget" | "over-budget";
+  readonly residencyOverByBytes: number;
+}
+
+export interface SeasonalContractAuditReport {
+  readonly pass: boolean;
+  readonly totalCells: number;
+  readonly errors: readonly string[];
 }
 
 export interface BiomeCoverageReport {
@@ -247,6 +273,7 @@ export interface BiomeAuthoringAuditReport {
   readonly registryBiomes: readonly LandTheme[];
   readonly pass: boolean;
   readonly coverage: readonly BiomeCoverageReport[];
+  readonly seasonalContract: SeasonalContractAuditReport;
   readonly payloads: readonly BiomePayloadTierReport[];
   readonly findings: readonly BiomeAuditFinding[];
   readonly counts: Readonly<Record<BiomeAuditCategory, number>>;
@@ -285,10 +312,21 @@ function allBundlePaths(bundle: AtlasBaseBundle): string[] {
 
 function overlayPaths(overlay: AtlasSeasonalOverlay | null | undefined): string[] {
   if (!overlay) return [];
-  const bundles = [overlay.props, overlay.decals]
+  const bundles = Object.values(overlay.frames)
     .filter((item): item is AtlasBundleFile => item != null)
     .flatMap((item) => [item.json, item.image]);
   return [...bundles, ...Object.values(overlay.materials).flatMap((item) => item ? [item.image] : [])];
+}
+
+function overlayBytes(overlay: AtlasSeasonalOverlay | null | undefined): number {
+  if (!overlay) return 0;
+  return Object.values(overlay.frames).reduce(
+    (sum, bundle) => sum + bundleBytes(bundle),
+    0,
+  ) + Object.values(overlay.materials).reduce(
+    (sum, field) => sum + fieldBytes(field),
+    0,
+  );
 }
 
 function hasMatchingContentDigest(inventory: BiomeAssetInventory, path: string): boolean {
@@ -318,6 +356,21 @@ function expectedPropFrames(theme: LandTheme): string[] {
     NATURAL_PROP_REGISTRY[owner][type].map((variant) => variant.frame));
 }
 
+function seasonalFrameMatchesFamily(
+  biome: LandTheme,
+  family: AtlasSeasonalFrameFamily,
+  frame: string,
+): boolean {
+  if (!frame.startsWith(`${biome}_`)) return false;
+  if (family === "natural-props") {
+    return new RegExp(`^${biome}_(?:tree|bush|rock)_`, "u").test(frame);
+  }
+  if (family === "buildings") return expectedBuildingFrames(biome).includes(frame);
+  if (family === "decorations") return expectedDecorationFrames(biome).includes(frame);
+  if (family === "terrain-details") return true;
+  return frame.startsWith(`${biome}_${family}_`);
+}
+
 function pushRequired(
   findings: BiomeAuditFinding[],
   condition: boolean,
@@ -333,13 +386,37 @@ export function auditBiomeAuthoring(input: {
   manifest: AtlasManifest;
   inventory: BiomeAssetInventory;
   payloadBudgetBytes?: number;
+  residencyBudgetBytes?: number;
   fixtures?: readonly BiomeReferenceFixture[];
+  seasonalContract?: unknown;
 }): BiomeAuthoringAuditReport {
   const budgetBytes = input.payloadBudgetBytes ?? BIOME_SELECTED_PAYLOAD_BUDGET_BYTES;
+  const residencyBudgetBytes = input.residencyBudgetBytes
+    ?? BIOME_CUMULATIVE_RESIDENCY_BUDGET_BYTES;
   const fixtures = input.fixtures ?? BIOME_KEYS.map(createBiomeReferenceFixture);
   const findings: BiomeAuditFinding[] = [];
   const payloads: BiomePayloadTierReport[] = [];
   const coverage: BiomeCoverageReport[] = [];
+  const seasonalErrors = auditSeasonalCoverageContract(
+    input.seasonalContract ?? SEASONAL_COVERAGE_CONTRACT,
+  );
+  for (const error of seasonalErrors) {
+    const biome = BIOME_KEYS.find((candidate) => error.startsWith(`${candidate}`))
+      ?? BIOME_KEYS[0];
+    findings.push({
+      category: "seasonal-contract",
+      biome,
+      asset: "seasonal-coverage",
+      detail: error,
+    });
+  }
+  const seasonalContract: SeasonalContractAuditReport = {
+    pass: seasonalErrors.length === 0,
+    totalCells: BIOME_KEYS.length
+      * CLIMATE_CALENDAR_SEASONS.length
+      * SEASONAL_VISUAL_FAMILIES.length,
+    errors: seasonalErrors,
+  };
 
   for (const biome of BIOME_KEYS) {
     const definition = getBiomeDefinition(biome);
@@ -384,6 +461,7 @@ export function auditBiomeAuthoring(input: {
     const fallback = definition.compatibility.fallbackBiome;
     const validFallback = BIOME_KEYS.includes(fallback as LandTheme);
     pushRequired(findings, validFallback, biome, undefined, "compatibility.fallbackBiome", `fallback "${fallback}" is not a registered biome`);
+    pushRequired(findings, fallback === biome, biome, undefined, "compatibility.fallbackBiome", `fallback "${fallback}" crosses biome ownership`);
     findings.push({
       category: "fallback",
       biome,
@@ -434,6 +512,14 @@ export function auditBiomeAuthoring(input: {
               : "prohibited expensive Low-quality content is present",
           });
         }
+        pushRequired(
+          findings,
+          Object.keys(tier.seasonal).length === 0,
+          biome,
+          quality,
+          "low-policy.seasonal",
+          "seasonal overlays must be omitted by the Low quality policy",
+        );
       } else {
         pushRequired(findings, base.details != null && atlasFrames(input.inventory, base.details).length > 0, biome, quality, "base.details", "detail atlas is required at Medium/High");
         pushRequired(findings, base.props != null && props.length > 0, biome, quality, "base.props", "natural-prop atlas is required at Medium/High");
@@ -442,6 +528,34 @@ export function auditBiomeAuthoring(input: {
         }
         for (const terrainKind of TERRAIN_KINDS) {
           pushRequired(findings, base.fields[terrainKind] != null, biome, quality, `field.${terrainKind}`, "material field is required at Medium/High");
+        }
+      }
+
+      for (const [seasonName, overlay] of Object.entries(tier.seasonal)) {
+        if (!overlay) continue;
+        const supportedSeason = CLIMATE_CALENDAR_SEASONS.includes(
+          seasonName as (typeof CLIMATE_CALENDAR_SEASONS)[number],
+        );
+        pushRequired(findings, supportedSeason, biome, quality, `seasonal.${seasonName}.season`, "overlay uses an unsupported calendar season");
+        pushRequired(findings, overlay.owner === biome, biome, quality, `seasonal.${seasonName}.owner`, "seasonal overlay must have same-biome ownership");
+        pushRequired(findings, overlay.season === seasonName, biome, quality, `seasonal.${seasonName}.identity`, "seasonal overlay identity does not match its manifest key");
+        for (const [familyName, bundle] of Object.entries(overlay.frames)) {
+          const family = familyName as AtlasSeasonalFrameFamily;
+          const knownFamily = ATLAS_SEASONAL_FRAME_FAMILIES.includes(family);
+          pushRequired(findings, knownFamily, biome, quality, `seasonal.${seasonName}.frames.${familyName}`, "overlay uses an unknown typed frame family");
+          if (!knownFamily || !bundle) continue;
+          const frames = atlasFrames(input.inventory, bundle);
+          pushRequired(findings, frames.length > 0, biome, quality, `seasonal.${seasonName}.frames.${family}`, "seasonal frame bundle is missing or unreadable");
+          for (const frame of frames) {
+            pushRequired(
+              findings,
+              seasonalFrameMatchesFamily(biome, family, frame),
+              biome,
+              quality,
+              `seasonal.${seasonName}.frames.${family}.${frame}`,
+              "seasonal frame does not match its typed same-biome family",
+            );
+          }
         }
       }
 
@@ -461,7 +575,7 @@ export function auditBiomeAuthoring(input: {
       for (const season of CLIMATE_CALENDAR_SEASONS) {
         if (!tier.seasonal[season]) {
           findings.push({
-            category: "optional",
+            category: "seasonal-enrichment",
             biome,
             quality,
             asset: `seasonal.${season}`,
@@ -470,16 +584,35 @@ export function auditBiomeAuthoring(input: {
         }
       }
 
-      const overlayPeak = Math.max(0, ...Object.values(tier.seasonal).map((overlay) => {
-        if (!overlay) return 0;
-        return bundleBytes(overlay.props)
-          + bundleBytes(overlay.decals)
-          + Object.values(overlay.materials).reduce((sum, field) => sum + fieldBytes(field), 0);
-      }));
-      const bytes = bundleBytes(input.manifest.core.golfers) + baseBytes(base) + overlayPeak;
+      const basePayloadBytes = bundleBytes(input.manifest.core.golfers) + baseBytes(base);
+      const overlaySizes = Object.values(tier.seasonal).map(overlayBytes);
+      const overlayPeak = Math.max(0, ...overlaySizes);
+      const bytes = basePayloadBytes + overlayPeak;
+      const cumulativeResidencyBytes = basePayloadBytes
+        + overlaySizes.reduce((sum, size) => sum + size, 0);
       const status = bytes > budgetBytes ? "over-budget" : "within-budget";
       const overByBytes = Math.max(0, bytes - budgetBytes);
-      payloads.push({ biome, quality, bytes, budgetBytes, status, overByBytes });
+      const residencyStatus = cumulativeResidencyBytes > residencyBudgetBytes
+        ? "over-budget"
+        : "within-budget";
+      const residencyOverByBytes = Math.max(
+        0,
+        cumulativeResidencyBytes - residencyBudgetBytes,
+      );
+      payloads.push({
+        biome,
+        quality,
+        bytes,
+        budgetBytes,
+        status,
+        overByBytes,
+        baseBytes: basePayloadBytes,
+        largestOverlayBytes: overlayPeak,
+        cumulativeResidencyBytes,
+        residencyBudgetBytes,
+        residencyStatus,
+        residencyOverByBytes,
+      });
       if (status === "over-budget") {
         findings.push({
           category: "over-budget",
@@ -487,6 +620,15 @@ export function auditBiomeAuthoring(input: {
           quality,
           asset: "selected-payload",
           detail: `${bytes} bytes exceeds ${budgetBytes} byte budget by ${overByBytes} byte${overByBytes === 1 ? "" : "s"}`,
+        });
+      }
+      if (residencyStatus === "over-budget") {
+        findings.push({
+          category: "over-budget",
+          biome,
+          quality,
+          asset: "cumulative-residency",
+          detail: `${cumulativeResidencyBytes} bytes exceeds ${residencyBudgetBytes} byte residency budget by ${residencyOverByBytes} byte${residencyOverByBytes === 1 ? "" : "s"}`,
         });
       }
     }
@@ -505,6 +647,8 @@ export function auditBiomeAuthoring(input: {
   }
   const counts = {
     required: findings.filter((finding) => finding.category === "required").length,
+    "seasonal-contract": findings.filter((finding) => finding.category === "seasonal-contract").length,
+    "seasonal-enrichment": findings.filter((finding) => finding.category === "seasonal-enrichment").length,
     optional: findings.filter((finding) => finding.category === "optional").length,
     fallback: findings.filter((finding) => finding.category === "fallback").length,
     "over-budget": findings.filter((finding) => finding.category === "over-budget").length,
@@ -512,8 +656,11 @@ export function auditBiomeAuthoring(input: {
   return {
     version: BIOME_AUTHORING_REPORT_VERSION,
     registryBiomes: BIOME_KEYS,
-    pass: counts.required === 0 && counts["over-budget"] === 0,
+    pass: counts.required === 0
+      && counts["seasonal-contract"] === 0
+      && counts["over-budget"] === 0,
     coverage,
+    seasonalContract,
     payloads,
     findings,
     counts,

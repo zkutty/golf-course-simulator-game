@@ -1,7 +1,11 @@
 import { Assets, Spritesheet, Texture } from "pixi.js";
 import type { TerrainAtlasFrame } from "../game/render/terrainMaterials";
 import type { TerrainDetailFrame } from "../game/render/terrainDetails";
-import { missingNaturalPropFrames, type NaturalPropFrame } from "../game/render/naturalProps";
+import {
+  NATURAL_PROP_FRAMES,
+  missingNaturalPropFrames,
+  type NaturalPropFrame,
+} from "../game/render/naturalProps";
 import type { LandTheme, Terrain } from "../game/models/types";
 import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
 import type { SeasonName } from "../game/seasons/types";
@@ -9,6 +13,7 @@ import {
   normalizeAtlasManifest,
   type AtlasManifest,
   type AtlasQuality,
+  type AtlasSeasonalFrameFamily,
   type AtlasSeasonalOverlay,
 } from "./atlasManifest";
 
@@ -44,8 +49,7 @@ const terrainDetailsSheets = new Map<string, Spritesheet>();
 const naturalPropsSheets = new Map<string, Spritesheet>();
 const buildingsSheets = new Map<string, Spritesheet>();
 const landscapeFields = new Map<string, Texture>();
-const seasonalPropsSheets = new Map<string, Spritesheet>();
-const seasonalDecalSheets = new Map<string, Spritesheet>();
+const seasonalFrameSheets = new Map<string, Spritesheet>();
 const seasonalLandscapeFields = new Map<string, Texture>();
 let golfersSheet: Spritesheet | null = null;
 let manifestPromise: Promise<AtlasManifest> | null = null;
@@ -167,17 +171,16 @@ async function loadOptionalOverlay(
   overlay: AtlasSeasonalOverlay,
   overlayKey: string,
 ): Promise<void> {
-  const [props, decals, materials] = await Promise.all([
-    overlay.props
-      ? loadRequiredSheetUrl(`${bundleRoot()}${overlay.props.json}`)
-      : Promise.resolve(null),
-    overlay.decals
-      ? loadRequiredSheetUrl(`${bundleRoot()}${overlay.decals.json}`)
-      : Promise.resolve(null),
+  const [frameSheets, materials] = await Promise.all([
+    Promise.all(Object.entries(overlay.frames).map(async ([family, file]) => [
+      family as AtlasSeasonalFrameFamily,
+      await loadRequiredSheetUrl(`${bundleRoot()}${file.json}`),
+    ] as const)),
     loadFields(overlay.materials),
   ]);
-  if (props) seasonalPropsSheets.set(overlayKey, props);
-  if (decals) seasonalDecalSheets.set(overlayKey, decals);
+  for (const [family, sheet] of frameSheets) {
+    seasonalFrameSheets.set(`${overlayKey}:${family}`, sheet);
+  }
   for (const [terrainName, texture] of materials) {
     seasonalLandscapeFields.set(`${overlayKey}:${terrainName}`, texture);
   }
@@ -251,15 +254,14 @@ export async function loadAtlases(
     activeOverlayKey = null;
 
     if (season) {
-      const materialsOverlay = manifest.biomes[content.materials.fields]?.[quality]?.seasonal[season];
-      const propsOverlay = manifest.biomes[content.props.natural]?.[quality]?.seasonal[season];
-      const decalsOverlay = manifest.biomes[content.materials.details]?.[quality]?.seasonal[season];
-      const overlay: AtlasSeasonalOverlay = {
-        materials: materialsOverlay?.materials ?? {},
-        props: propsOverlay?.props ?? null,
-        decals: decalsOverlay?.decals ?? null,
-      };
-      if (Object.keys(overlay.materials).length > 0 || overlay.props || overlay.decals) {
+      // Seasonal ownership is stricter than base content routing: an overlay
+      // always belongs to the requested biome and may never borrow another
+      // biome's vegetation, structures, or dressing.
+      const overlay = manifest.biomes[theme]?.[quality]?.seasonal[season];
+      if (overlay && (
+        Object.keys(overlay.materials).length > 0
+        || Object.keys(overlay.frames).length > 0
+      )) {
         const overlayKey = `${key}:${season}`;
         let overlayPromise = overlayPromises.get(overlayKey);
         if (!overlayPromise) {
@@ -339,19 +341,63 @@ export function loadedSeasonalOverlay(
   return loadedSeasonalOverlays.has(`${theme}:${quality}:${season}`);
 }
 
+export interface AtlasResidencySnapshot {
+  readonly baseBundles: readonly string[];
+  readonly seasonalOverlays: readonly string[];
+  readonly seasonalFrameMaps: readonly string[];
+  readonly materialFields: number;
+  readonly seasonalMaterialFields: number;
+}
+
+/** Bounded key/count evidence; loaded textures remain cached across transitions. */
+export function atlasResidencySnapshot(): AtlasResidencySnapshot {
+  return {
+    baseBundles: [...loadedBiomeBundles].sort(),
+    seasonalOverlays: [...loadedSeasonalOverlays].sort(),
+    seasonalFrameMaps: [...seasonalFrameSheets.keys()].sort(),
+    materialFields: landscapeFields.size,
+    seasonalMaterialFields: seasonalLandscapeFields.size,
+  };
+}
+
+const naturalPropFrameNames: ReadonlySet<string> = new Set(NATURAL_PROP_FRAMES);
+
+function frameFamily(name: AtlasFrame): "natural-props" | "buildings" | "decorations" {
+  if (naturalPropFrameNames.has(name)) return "natural-props";
+  if (
+    name === "clubhouse"
+    || name === "pro_shop"
+    || name === "snack_bar"
+    || name === "cart_rental"
+    || /_(?:clubhouse|pro_shop|snack_bar|cart_rental)_t[123]$/u.test(name)
+  ) return "buildings";
+  return "decorations";
+}
+
+/** Typed seasonal lookup reserved for later family-specific renderers. */
+export function getSeasonalFrame(
+  family: AtlasSeasonalFrameFamily,
+  name: string,
+): Texture | null {
+  if (!activeOverlayKey) return null;
+  return seasonalFrameSheets.get(`${activeOverlayKey}:${family}`)?.textures[name] ?? null;
+}
+
 /**
  * A frame texture, or null when unavailable (caller uses its fallback).
  * Warns once per missing frame in dev.
  */
 export function getPropFrame(name: AtlasFrame): Texture | null {
-  const tex = (activeOverlayKey
-    ? seasonalPropsSheets.get(activeOverlayKey)?.textures[name] ?? null
-    : null)
-    ?? (activeBundleKey ? naturalPropsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
-    ?? (activeBundleKey ? buildingsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
-    ?? naturalPropsSheets.get("legacy")?.textures[name]
-    ?? buildingsSheets.get("legacy")?.textures[name]
-    ?? null;
+  const family = frameFamily(name);
+  const seasonal = getSeasonalFrame(family, name);
+  const base = family === "natural-props"
+    ? (activeBundleKey ? naturalPropsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
+      ?? naturalPropsSheets.get("legacy")?.textures[name]
+      ?? null
+    : (activeBundleKey ? buildingsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
+      ?? buildingsSheets.get("legacy")?.textures[name]
+      ?? null;
+  const tex = seasonal ?? base;
   if (!tex) warnMissing(name, `[atlas] missing frame "${name}" — falling back to procedural sprite`);
   return tex;
 }
@@ -367,9 +413,7 @@ export function getTerrainFrame(name: TerrainAtlasFrame): Texture | null {
 
 /** Optional @2× terrain-dressing sprite. Missing detail never affects play. */
 export function getTerrainDetailFrame(name: TerrainDetailFrame): Texture | null {
-  const tex = (activeOverlayKey
-    ? seasonalDecalSheets.get(activeOverlayKey)?.textures[name] ?? null
-    : null)
+  const tex = getSeasonalFrame("terrain-details", name)
     ?? (activeBundleKey ? terrainDetailsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
     ?? terrainDetailsSheets.get("legacy")?.textures[name]
     ?? null;
@@ -401,8 +445,7 @@ export function __resetAtlasForTests(): void {
   naturalPropsSheets.clear();
   buildingsSheets.clear();
   landscapeFields.clear();
-  seasonalPropsSheets.clear();
-  seasonalDecalSheets.clear();
+  seasonalFrameSheets.clear();
   seasonalLandscapeFields.clear();
   golfersSheet = null;
   manifestPromise = null;

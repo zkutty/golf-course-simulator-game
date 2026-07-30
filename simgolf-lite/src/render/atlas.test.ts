@@ -9,8 +9,11 @@ vi.mock("pixi.js", () => ({
 
 import {
   __resetAtlasForTests,
+  atlasResidencySnapshot,
   atlasFallbackDiagnostics,
   getLandscapeMaterialField,
+  getPropFrame,
+  getSeasonalFrame,
   loadAtlases,
   loadedBiomeBundle,
   loadedSeasonalOverlay,
@@ -43,14 +46,20 @@ function manifest() {
         seasonal: theme === "parkland" && quality === "high"
           ? {
             autumn: {
+              owner: "parkland",
+              season: "autumn",
               materials: { fairway: { image: "autumn-fairway.123456789abc.png" } },
-              props: sheet("autumn-props"),
-              decals: sheet("autumn-decals"),
+              frames: {
+                "natural-props": sheet("autumn-props"),
+                "terrain-details": sheet("autumn-decals"),
+                buildings: sheet("autumn-buildings"),
+              },
             },
             spring: {
+              owner: "parkland",
+              season: "spring",
               materials: { fairway: { image: "spring-fairway.123456789abc.png" } },
-              props: null,
-              decals: null,
+              frames: {},
             },
           }
           : {},
@@ -58,7 +67,7 @@ function manifest() {
     ])),
   ]));
   return {
-    version: 2,
+    version: 3,
     core: { golfers: sheet("core-golfers") },
     biomes,
   };
@@ -91,6 +100,40 @@ describe("incremental biome atlas loading", () => {
     expect(urls.some((url) => url.includes("autumn-"))).toBe(true);
     expect(urls.some((url) => url.includes("spring-"))).toBe(false);
     expect(urls.some((url) => url.includes("links-") || url.includes("desert-"))).toBe(false);
+  });
+
+  it("keeps seasonal frame families isolated from arbitrary structure names", async () => {
+    assetsLoad.mockImplementation(async (url: string) => {
+      if (url.includes("autumn-props") && url.endsWith(".json")) {
+        return {
+          textures: {
+            parkland_tree_oak: { marker: "seasonal-natural" },
+            clubhouse: { marker: "wrong-family-natural" },
+          },
+        };
+      }
+      if (url.includes("autumn-buildings") && url.endsWith(".json")) {
+        return { textures: { clubhouse: { marker: "seasonal-building" } } };
+      }
+      if (url.includes("buildings-parkland-high") && url.endsWith(".json")) {
+        return { textures: { clubhouse: { marker: "base-building" } } };
+      }
+      return url.endsWith(".png")
+        ? { source: { style: {} } }
+        : { textures: {} };
+    });
+
+    await loadAtlases("parkland", "high", "autumn");
+
+    expect(getPropFrame("parkland_tree_oak") as unknown).toMatchObject({
+      marker: "seasonal-natural",
+    });
+    expect(getPropFrame("clubhouse") as unknown).toMatchObject({
+      marker: "seasonal-building",
+    });
+    expect(getSeasonalFrame("natural-props", "clubhouse") as unknown).toMatchObject({
+      marker: "wrong-family-natural",
+    });
   });
 
   it("keeps the base playable when an optional overlay is absent", async () => {
@@ -156,5 +199,9 @@ describe("incremental biome atlas loading", () => {
     expect(
       (getLandscapeMaterialField("parkland", "fairway", "high") as unknown as { marker: string }).marker,
     ).toContain("autumn-fairway");
+    expect(atlasResidencySnapshot().seasonalOverlays).toEqual([
+      "parkland:high:autumn",
+      "parkland:high:spring",
+    ]);
   });
 });
