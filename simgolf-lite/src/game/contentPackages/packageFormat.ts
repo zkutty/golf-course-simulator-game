@@ -9,6 +9,11 @@ import type {
   CoursePackageV1,
   PackageValidationResult,
 } from "./types";
+import {
+  biomeCompatibilityMetadataFor,
+  normalizeBiomeKey,
+  validateBiomeCompatibilityMetadata,
+} from "../models/biomes";
 
 const MAX_TEXT_BYTES = 16 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
@@ -231,7 +236,7 @@ export async function validatePackageText(text: string): Promise<PackageValidati
   if (manifest.version !== 1) {
     return { status: "unsupported", errors: ["Package format/version is unsupported."] };
   }
-  unknownKeys(manifestRecord, ["format", "version", "kind", "contentId", "revision", "title", "description", "author", "createdAt", "updatedAt", "requiredGameVersion", "requiredSaveSchema", "theme", "checksum", "preview"], "manifest", errors);
+  unknownKeys(manifestRecord, ["format", "version", "kind", "contentId", "revision", "title", "description", "author", "createdAt", "updatedAt", "requiredGameVersion", "requiredSaveSchema", "theme", "biomeCompatibility", "checksum", "preview"], "manifest", errors);
   if (manifest.kind !== "course" && manifest.kind !== "challenge") errors.push("Manifest kind is invalid.");
   if (typeof manifest.contentId !== "string" || !ID_PATTERN.test(manifest.contentId)) errors.push("Manifest identity is invalid.");
   if (!Number.isInteger(revision) || revision < 1 || revision > 1_000_000) errors.push("Manifest revision is invalid.");
@@ -240,13 +245,41 @@ export async function validatePackageText(text: string): Promise<PackageValidati
   if (typeof manifest.createdAt !== "string" || Number.isNaN(Date.parse(manifest.createdAt)) || typeof manifest.updatedAt !== "string" || Number.isNaN(Date.parse(manifest.updatedAt))) errors.push("Manifest timestamps are invalid.");
   if (typeof manifest.requiredGameVersion !== "string" || !VERSION_PATTERN.test(manifest.requiredGameVersion)) errors.push("Required game version is invalid.");
   if (!Number.isInteger(requiredSaveSchema) || requiredSaveSchema < 1) errors.push("Required save schema is invalid.");
-  if (!["parkland", "links", "desert"].includes(manifest.theme as string)) errors.push("Theme is invalid.");
+  const unsupportedErrors: string[] = [];
+  const manifestTheme = normalizeBiomeKey(manifest.theme);
+  if (!manifestTheme) unsupportedErrors.push(`Package biome "${String(manifest.theme)}" is not supported by this build.`);
   validatePreview(manifest.preview, errors);
   const rawCourse = payloadRecord.course;
   const courseValid = validateCourse(rawCourse, errors);
   const challengeValid = payloadRecord.challenge === undefined || validateChallenge(payloadRecord.challenge, errors);
+  const courseTheme = isRecord(rawCourse) ? normalizeBiomeKey(rawCourse.theme) : null;
+  if (courseValid && !courseTheme) {
+    unsupportedErrors.push(`Course biome "${String(rawCourse.theme)}" is not supported by this build.`);
+  }
+  if (manifestTheme && courseTheme && manifestTheme !== courseTheme) {
+    errors.push(`Manifest biome "${manifestTheme}" does not match course biome "${courseTheme}".`);
+  }
+  const compatibility = manifestTheme
+    ? validateBiomeCompatibilityMetadata(manifest.biomeCompatibility, manifestTheme)
+    : null;
+  if (compatibility && !compatibility.ok) {
+    (compatibility.kind === "unsupported" ? unsupportedErrors : errors).push(compatibility.error);
+  }
+  const courseCompatibility = isRecord(rawCourse) && manifestTheme && rawCourse.biomeCompatibility != null
+    ? validateBiomeCompatibilityMetadata(
+      rawCourse.biomeCompatibility,
+      manifestTheme,
+    )
+    : null;
+  if (courseCompatibility && !courseCompatibility.ok) {
+    (courseCompatibility.kind === "unsupported" ? unsupportedErrors : errors).push(
+      `Course ${courseCompatibility.error}`,
+    );
+  }
   if (courseValid && challengeValid) {
-    const playability = validateCoursePlayability(rawCourse as Course);
+    const playability = validateCoursePlayability(
+      courseTheme ? { ...(rawCourse as Course), theme: courseTheme } : rawCourse as Course,
+    );
     errors.push(...playability.blockers.map((blocker) => `course: ${blocker}`));
   }
   if (typeof manifest.checksum !== "string" || !/^[a-f0-9]{64}$/.test(manifest.checksum)) errors.push("Package checksum is invalid.");
@@ -258,11 +291,53 @@ export async function validatePackageText(text: string): Promise<PackageValidati
   }
   if (expectedChecksum && manifest.checksum !== expectedChecksum) errors.push("Package checksum does not match its contents.");
   if (errors.length) return { status: "corrupt", errors };
+  if (unsupportedErrors.length) return { status: "unsupported", errors: unsupportedErrors };
   if (requiredSaveSchema > CURRENT_SAVE_SCHEMA_VERSION) {
     return { status: "unsupported", errors: [`Package requires save schema ${requiredSaveSchema}.`] };
   }
-  const status = requiredSaveSchema < CURRENT_SAVE_SCHEMA_VERSION ? "migratable" : "compatible";
-  return { status, value: value as unknown as CoursePackageV1, warnings: status === "migratable" ? ["Package uses an older compatible course schema and will be normalized on import."] : [] };
+  const requiresBiomeMigration = compatibility?.ok === true && (
+    compatibility.migrated
+    || (courseCompatibility?.ok === true && courseCompatibility.migrated)
+    || manifest.biomeCompatibility == null
+    || (isRecord(rawCourse) && rawCourse.biomeCompatibility == null)
+    || manifest.theme !== manifestTheme
+    || (isRecord(rawCourse) && rawCourse.theme !== courseTheme)
+  );
+  const requiresMigration = requiredSaveSchema < CURRENT_SAVE_SCHEMA_VERSION || requiresBiomeMigration;
+  let normalizedValue = value as unknown as CoursePackageV1;
+  if (requiresMigration && manifestTheme && courseTheme && compatibility?.ok) {
+    const withoutChecksum = {
+      manifest: {
+        ...normalizedValue.manifest,
+        theme: manifestTheme,
+        biomeCompatibility: compatibility.metadata,
+        requiredSaveSchema: CURRENT_SAVE_SCHEMA_VERSION,
+      },
+      payload: {
+        ...normalizedValue.payload,
+        course: {
+          ...normalizedValue.payload.course,
+          theme: courseTheme,
+          biomeCompatibility: compatibility.metadata,
+        },
+      },
+    };
+    normalizedValue = {
+      ...withoutChecksum,
+      manifest: {
+        ...withoutChecksum.manifest,
+        checksum: await sha256(canonicalPackageJson(packageCore(withoutChecksum))),
+      },
+    };
+  }
+  const status = requiresMigration ? "migratable" : "compatible";
+  return {
+    status,
+    value: normalizedValue,
+    warnings: status === "migratable"
+      ? ["Package uses an older compatible save or biome contract and was normalized on import."]
+      : [],
+  };
 }
 
 export async function createCoursePackage(input: {
@@ -284,7 +359,17 @@ export async function createCoursePackage(input: {
   const now = timestamp.toISOString();
   const createdAt = (input.createdAt ?? timestamp).toISOString();
   const layoutNormalized = normalizeCourseLayouts(structuredClone(input.course));
-  const normalizedCourse = { ...layoutNormalized, m51: normalizeM51CourseMobilityState(layoutNormalized.m51, layoutNormalized) };
+  const theme = normalizeBiomeKey(layoutNormalized.theme);
+  if (!theme) {
+    throw new Error(`Cannot package unsupported biome "${String(layoutNormalized.theme)}".`);
+  }
+  const biomeCompatibility = biomeCompatibilityMetadataFor(theme);
+  const normalizedCourse = {
+    ...layoutNormalized,
+    theme,
+    biomeCompatibility,
+    m51: normalizeM51CourseMobilityState(layoutNormalized.m51, layoutNormalized),
+  };
   const seedId = input.contentId ?? `cc-${await sha256(canonicalPackageJson({
     author: input.author.id,
     title: input.title,
@@ -304,7 +389,8 @@ export async function createCoursePackage(input: {
       updatedAt: now,
       requiredGameVersion: input.requiredGameVersion,
       requiredSaveSchema: CURRENT_SAVE_SCHEMA_VERSION,
-      theme: normalizedCourse.theme ?? "parkland",
+      theme,
+      biomeCompatibility,
       ...(input.preview ? { preview: input.preview } : {}),
     },
     payload: {

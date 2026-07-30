@@ -21,7 +21,7 @@
   border-radius: 22px;
   padding: 12px;
   overflow: hidden;
-  background: radial-gradient(120% 110% at 50% 45%, rgba(255, 255, 255, 0.55) 0%, rgba(235, 227, 213, 0.65) 55%, rgba(61, 74, 62, 0.18) 100%);
+  background: radial-gradient(120% 110% at 50% 45%, rgba(255, 255, 255, 0.55) 0%, rgba(235, 227, 213, 0.65) 55%, var(--biome-surface, rgba(61, 74, 62, 0.18)) 100%);
   box-shadow: 0 22px 55px rgba(0, 0, 0, 0.18);
   border: 1px solid rgba(0, 0, 0, 0.06);
 }
@@ -303,7 +303,35 @@
   overflow: hidden;
   box-shadow: 0 22px 55px rgba(0, 0, 0, 0.14);
   border: 1px solid rgba(0, 0, 0, 0.06);
-  background: rgba(255, 255, 255, 0.35);
+  background: linear-gradient(180deg, var(--biome-surface, rgba(255, 255, 255, 0.35)), rgba(255, 255, 255, 0.35) 22%);
+  box-shadow: inset 0 3px 0 var(--biome-edge, transparent), 0 22px 55px rgba(0, 0, 0, 0.14);
+}
+
+/* ZK-623: biome context may tint only low-emphasis framing. The grid, type,
+ * command order, icons, focus ring, and permanent controls stay CourseCraft. */
+.cc-biome-wizard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  opacity: .32;
+  background: radial-gradient(75% 55% at 50% 4%, var(--biome-surface, transparent), transparent 72%);
+  transition: opacity var(--biome-motion-duration, 180ms) ease;
+}
+
+.cc-biome-wizard[data-biome-motif="wind"]::after {
+  background: repeating-linear-gradient(165deg, transparent 0 30px, var(--biome-surface, transparent) 31px 33px, transparent 34px 68px);
+}
+
+.cc-biome-wizard[data-biome-motif="sun"]::after {
+  background: radial-gradient(circle at 50% 4%, var(--biome-surface, transparent), transparent 42%);
+}
+
+.cc-biome-wizard > :not(.cc-biome-context) { position: relative; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-biome-wizard::after { transition: none; }
 }
 
 /* Small-screen fallback: stack */

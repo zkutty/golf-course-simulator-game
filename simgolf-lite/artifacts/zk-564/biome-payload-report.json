@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "pass": true,
+  "tiers": [
+    {
+      "biome": "parkland",
+      "quality": "high",
+      "bytes": 3506327,
+      "budgetBytes": 6291456,
+      "status": "within-budget",
+      "overByBytes": 0
+    },
+    {
+      "biome": "parkland",
+      "quality": "medium",
+      "bytes": 2958066,
+      "budgetBytes": 6291456,
+      "status": "within-budget",
+      "overByBytes": 0
+    },
+    {
+      "biome": "parkland",
+      "quality": "low",
+      "bytes": 2172874,
+      "budgetBytes": 6291456,
+      "status": "within-budget",
+      "overByBytes": 0
+    },
+    {
+      "biome": "links",
+      "quality": "high",
+      "bytes": 3462165,
+      "budgetBytes": 6291456,
+      "status": "within-budget",
+      "overByBytes": 0
+    },
+    {
+      "biome": "links",
+      "quality": "medium",
+      "bytes": 2911682,
+      "budgetBytes": 6291456,
+      "status": "within-budget",
+      "overByBytes": 0
+    },
+    {
+      "biome": "links",
+      "quality": "low",
+      "bytes": 2194175,
+      "budgetBytes": 6291456,
+      "status": "within-budget",
+      "overByBytes": 0
+    },
+    {
+      "biome": "desert",
+      "quality": "high",
+      "bytes": 3471416,
+      "budgetBytes": 6291456,
+      "status": "within-budget",
+      "overByBytes": 0
+    },
+    {
+      "biome": "desert",
+      "quality": "medium",
+      "bytes": 2914204,
+      "budgetBytes": 6291456,
+      "status": "within-budget",
+      "overByBytes": 0
+    },
+    {
+      "biome": "desert",
+      "quality": "low",
+      "bytes": 2187709,
+      "budgetBytes": 6291456,
+      "status": "within-budget",
+      "overByBytes": 0
+    }
+  ]
+}

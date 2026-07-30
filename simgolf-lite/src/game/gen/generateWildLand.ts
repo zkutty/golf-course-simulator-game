@@ -1,5 +1,5 @@
 import type { LandTheme, Terrain, Obstacle, ObstacleType } from "../models/types";
-import { getLandTheme, type ThemeGenConfig } from "../models/themes";
+import { getBiomeDefinition, type ThemeGenConfig } from "../models/biomes";
 import { isWaterHazard } from "../models/terrainRules";
 
 // Seeded RNG using mulberry32
@@ -43,7 +43,7 @@ export function generateWildLand(
   seed: number,
   theme?: LandTheme
 ): Terrain[] {
-  const cfg: ThemeGenConfig = getLandTheme(theme).generation;
+  const cfg: ThemeGenConfig = getBiomeDefinition(theme).generation;
   const rng = new SeededRNG(seed);
   const totalTiles = width * height;
   const tiles: Terrain[] = Array.from({ length: totalTiles }, () => "rough");
@@ -385,7 +385,7 @@ export function generateObstacles(
   reservedZones: Point[] = [], // Reserved zones (e.g., tee/green positions) where obstacles should not be placed
   theme?: LandTheme
 ): Obstacle[] {
-  const obstacleCfg = getLandTheme(theme).generation.obstacles;
+  const obstacleCfg = getBiomeDefinition(theme).generation.obstacles;
   const rng = new SeededRNG(seed + 1000000); // Offset seed to ensure different sequence from terrain
   const obstacles: Obstacle[] = [];
   const obstacleSet = new Set<string>(); // Track placed obstacles to avoid duplicates
@@ -621,7 +621,7 @@ export function generateElevations(
   tiles: Terrain[],
   theme?: LandTheme
 ): number[] {
-  const { amplitude, offset, maxStep } = getLandTheme(theme).generation.elevation;
+  const { amplitude, offset, maxStep } = getBiomeDefinition(theme).generation.elevation;
   const rng = new SeededRNG((seed ^ 0x5eed) >>> 0);
 
   // Coarse random lattices for two octaves.

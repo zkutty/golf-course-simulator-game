@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { loadBiomeKeys } from "./biome-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const INPUT = path.join(ROOT, "src/assets/props/processed");
@@ -28,6 +29,9 @@ const SHEETS = {
     "bush_dry_grass", "rock_sandstone", "rock_red_outcrop", "rock_volcanic",
   ],
 };
+if (JSON.stringify(Object.keys(SHEETS).sort()) !== JSON.stringify([...loadBiomeKeys()].sort())) {
+  throw new Error("Natural-prop source sheets must cover every registered biome");
+}
 
 function alphaAt(png, x, y) {
   return png.data[(y * png.width + x) * 4 + 3];

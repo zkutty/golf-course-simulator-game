@@ -27,6 +27,7 @@ import { translateCurrent } from "../i18n/core";
 import type { MessageKey } from "../i18n/catalog";
 import { HoleMinimap } from "./HoleMinimap";
 import { concessionMinReputation, isConcessionUnlocked, isObstacleUnlocked, isTerrainUnlocked, obstacleMinReputation, reputationTier, terrainMinReputation } from "../game/progression/progression";
+import { courseVibeLabel } from "./courseVibe";
 
 const TERRAIN_GROUPS: ReadonlyArray<{ label: MessageKey; terrains: Terrain[] }> = [
   { label: "terrain.group.playing", terrains: ["tee", "fairway", "green"] },
@@ -236,12 +237,13 @@ export function HUD(props: {
         : complete.reduce((a, h) => a + h.difficultyScore, 0) / complete.length;
     const slope = rating.slope ?? 113;
 
-    // Vibe label (game-y, not dashboard-y) derived from difficulty/aesthetics/slope.
-    let vibeLabel = "Everyday Parkland";
-    if (slope >= 145 || avgDiff >= 78) vibeLabel = "Punishing Links";
-    else if (slope >= 132 || avgDiff >= 62) vibeLabel = "Championship Test";
-    else if (avgAest >= 75 && slope < 132) vibeLabel = "Resort Lakeside";
-    else if (slope <= 110 && avgDiff <= 42) vibeLabel = "Beginner-friendly Parkland";
+    // Tone comes from difficulty/aesthetics/slope; biome identity comes only
+    // from the authoritative registry and remains on the localization path.
+    const vibeLabel = courseVibeLabel(course.theme, {
+      slope,
+      averageDifficulty: avgDiff,
+      averageAesthetics: avgAest,
+    });
 
     // Golfer sentiment: simple + live (leans on overall courseQuality as a proxy).
     const q = holeSummary.courseQuality;
@@ -257,7 +259,7 @@ export function HUD(props: {
           : "★★☆☆☆";
 
     return { vibeLabel, sentiment, stars, avgAest, avgDiff, slope };
-  }, [holeSummary, rating.slope]);
+  }, [course.theme, holeSummary, rating.slope]);
 
   const validHoles = useMemo(() => {
     return holeSummary.holes.filter((h) => h.isComplete && h.isValid).length;

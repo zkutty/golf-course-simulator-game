@@ -1,4 +1,5 @@
 import type { Course, LandTheme, Terrain } from "../models/types";
+import { getBiomeDefinition } from "../models/biomes";
 
 export const TERRAIN_DETAIL_KINDS = [
   "short_grass",
@@ -119,7 +120,7 @@ export function deriveTerrainDetail(
   y: number,
 ): TerrainDetailPlacement | null {
   if (x < 0 || y < 0 || x >= course.width || y >= course.height) return null;
-  const theme = course.theme ?? "parkland";
+  const theme = getBiomeDefinition(course.theme).content.materials.details;
   const terrain = course.tiles[y * course.width + x];
   const candidates = TERRAIN_DETAILS.filter((entry) =>
     entry.theme === theme &&

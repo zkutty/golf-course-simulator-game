@@ -72,6 +72,10 @@ interface Window {
     setPropertyFixture(): void;
     setPlayerProFixture(): void;
     setM39Fixture(): void;
+    setM52ReferenceBookmark(
+      view: import("./game/testing/biomeAuthoring").BiomeReferenceView,
+      rotation: import("./game/testing/biomeAuthoring").BiomeReferenceRotation,
+    ): void;
     startWeekCloseFixture(weekOverride?: number): Promise<void>;
     runGoldenWeek(): Promise<{
       beforeHash: string;

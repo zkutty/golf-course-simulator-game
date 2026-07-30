@@ -15,7 +15,9 @@ import {
   CURRENT_SAVE_SCHEMA_VERSION,
   normalizeLoadedSaveResult,
   parseSaveText,
+  payloadForPersistence,
 } from "./save";
+import { biomeCompatibilityMetadataFor } from "../game/models/biomes";
 
 function file(overrides: Record<string, unknown> = {}) {
   return {
@@ -81,6 +83,79 @@ describe("save validation and migrations", () => {
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(1);
     expect(result.payload.world.cash).toBe(DEFAULT_WORLD.cash);
+  });
+
+  it("migrates historical biome labels losslessly and persists canonical compatibility evidence", () => {
+    for (const [legacy, canonical] of [["Parkland", "parkland"], ["Links", "links"], ["Desert", "desert"]] as const) {
+      const source = file({
+        schemaVersion: 22,
+        course: { ...DEFAULT_COURSE, theme: legacy, biomeCompatibility: undefined },
+      });
+      const result = normalizeLoadedSaveResult(source);
+      expect(result.ok).toBe(true);
+      if (!result.ok) continue;
+      expect(result.payload.course.theme).toBe(canonical);
+      expect(result.payload.course.biomeCompatibility).toEqual(
+        biomeCompatibilityMetadataFor(canonical),
+      );
+      expect(result.payload.course.tiles).toEqual(DEFAULT_COURSE.tiles);
+      expect(result.payload.world.runSeed).toBe(DEFAULT_WORLD.runSeed);
+    }
+
+    const persisted = payloadForPersistence({
+      course: { ...DEFAULT_COURSE, theme: "desert", biomeCompatibility: undefined },
+      world: DEFAULT_WORLD,
+    });
+    expect(persisted.course.biomeCompatibility).toEqual(
+      biomeCompatibilityMetadataFor("desert"),
+    );
+  });
+
+  it("rejects unsupported or contradictory save and active-round biome evidence atomically", () => {
+    expect(normalizeLoadedSaveResult(file({
+      course: { ...DEFAULT_COURSE, theme: "moonbase" as never },
+    }))).toMatchObject({
+      ok: false,
+      error: { code: "INVALID_COURSE", message: expect.stringContaining("moonbase") },
+    });
+
+    const activeRound = {
+      version: 1,
+      id: "hostile-round",
+      course: {
+        theme: "moonbase",
+        holes: [{}],
+        tiles: [],
+        elevations: [],
+        width: 0,
+        height: 0,
+      },
+    };
+    expect(normalizeLoadedSaveResult(file({
+      world: {
+        ...DEFAULT_WORLD,
+        playerPro: {
+          ...createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed }),
+          activeRound,
+        },
+      },
+    }))).toMatchObject({
+      ok: false,
+      error: { code: "INVALID_WORLD", message: expect.stringContaining("moonbase") },
+    });
+
+    expect(() => payloadForPersistence({
+      course: { ...DEFAULT_COURSE, theme: "moonbase" as never },
+      world: DEFAULT_WORLD,
+    })).toThrow("Cannot save unsupported biome");
+    expect(() => payloadForPersistence({
+      course: {
+        ...DEFAULT_COURSE,
+        theme: "links",
+        biomeCompatibility: biomeCompatibilityMetadataFor("desert"),
+      },
+      world: DEFAULT_WORLD,
+    })).toThrow("does not match course biome");
   });
 
   it("advances a v19 save to v20 deterministically without changing completed Player Pro shots", () => {

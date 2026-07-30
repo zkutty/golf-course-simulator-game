@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "generatedBy": "scripts/build-atlas.mjs",
   "core": {
     "golfers": {
@@ -15,677 +15,704 @@
   "biomes": {
     "parkland": {
       "high": {
-        "buildings": {
-          "json": "buildings-decor-parkland-high.291bca113f4e.json",
-          "image": "buildings-decor-parkland-high.bc2b7a340d96.png",
-          "jsonBytes": 8257,
-          "imageBytes": 1169073,
-          "frames": 23,
-          "width": 1010,
-          "height": 840
-        },
-        "terrain": {
-          "json": "terrain-parkland-high.305de800f72a.json",
-          "image": "terrain-parkland-high.7d55990cac08.png",
-          "jsonBytes": 63383,
-          "imageBytes": 208221,
-          "frames": 180,
-          "width": 912,
-          "height": 1718
-        },
-        "details": {
-          "json": "terrain-details-parkland-high.d0164ca35c8e.json",
-          "image": "terrain-details-parkland-high.169092f97646.png",
-          "jsonBytes": 7084,
-          "imageBytes": 9307,
-          "frames": 20,
-          "width": 992,
-          "height": 134
-        },
-        "props": {
-          "json": "natural-props-parkland-high.63c1c05b9bab.json",
-          "image": "natural-props-parkland-high.5f53ac5c0850.png",
-          "jsonBytes": 4427,
-          "imageBytes": 395258,
-          "frames": 12,
-          "width": 912,
-          "height": 371
-        },
-        "fields": {
-          "fairway": {
-            "image": "field-parkland-high-fairway.1de99fb7f4f7.png",
-            "bytes": 80667,
-            "width": 512,
-            "height": 512
+        "base": {
+          "buildings": {
+            "json": "buildings-decor-parkland-high.291bca113f4e.json",
+            "image": "buildings-decor-parkland-high.bc2b7a340d96.png",
+            "jsonBytes": 8257,
+            "imageBytes": 1169073,
+            "frames": 23,
+            "width": 1010,
+            "height": 840
           },
-          "rough": {
-            "image": "field-parkland-high-rough.8ff04610b3a5.png",
-            "bytes": 78614,
-            "width": 512,
-            "height": 512
+          "terrain": {
+            "json": "terrain-parkland-high.305de800f72a.json",
+            "image": "terrain-parkland-high.7d55990cac08.png",
+            "jsonBytes": 63383,
+            "imageBytes": 208221,
+            "frames": 180,
+            "width": 912,
+            "height": 1718
           },
-          "deep_rough": {
-            "image": "field-parkland-high-deep_rough.7a05b0675838.png",
-            "bytes": 90497,
-            "width": 512,
-            "height": 512
+          "details": {
+            "json": "terrain-details-parkland-high.d0164ca35c8e.json",
+            "image": "terrain-details-parkland-high.169092f97646.png",
+            "jsonBytes": 7084,
+            "imageBytes": 9307,
+            "frames": 20,
+            "width": 992,
+            "height": 134
           },
-          "sand": {
-            "image": "field-parkland-high-sand.f73cf0d9eb6e.png",
-            "bytes": 174900,
-            "width": 512,
-            "height": 512
+          "props": {
+            "json": "natural-props-parkland-high.63c1c05b9bab.json",
+            "image": "natural-props-parkland-high.5f53ac5c0850.png",
+            "jsonBytes": 4427,
+            "imageBytes": 395258,
+            "frames": 12,
+            "width": 912,
+            "height": 371
           },
-          "waste_area": {
-            "image": "field-parkland-high-waste_area.6c87291a69e4.png",
-            "bytes": 101744,
-            "width": 512,
-            "height": 512
-          },
-          "water": {
-            "image": "field-parkland-high-water.7b154d0884fb.png",
-            "bytes": 48197,
-            "width": 512,
-            "height": 512
-          },
-          "wetland": {
-            "image": "field-parkland-high-wetland.d2fb0a5bd514.png",
-            "bytes": 62443,
-            "width": 512,
-            "height": 512
-          },
-          "green": {
-            "image": "field-parkland-high-green.6478b59a6311.png",
-            "bytes": 85597,
-            "width": 512,
-            "height": 512
-          },
-          "tee": {
-            "image": "field-parkland-high-tee.2335f6278add.png",
-            "bytes": 88070,
-            "width": 512,
-            "height": 512
-          },
-          "path": {
-            "image": "field-parkland-high-path.7134a2f54486.png",
-            "bytes": 106646,
-            "width": 512,
-            "height": 512
+          "fields": {
+            "fairway": {
+              "image": "field-parkland-high-fairway.1de99fb7f4f7.png",
+              "bytes": 80667,
+              "width": 512,
+              "height": 512
+            },
+            "rough": {
+              "image": "field-parkland-high-rough.8ff04610b3a5.png",
+              "bytes": 78614,
+              "width": 512,
+              "height": 512
+            },
+            "deep_rough": {
+              "image": "field-parkland-high-deep_rough.7a05b0675838.png",
+              "bytes": 90497,
+              "width": 512,
+              "height": 512
+            },
+            "sand": {
+              "image": "field-parkland-high-sand.f73cf0d9eb6e.png",
+              "bytes": 174900,
+              "width": 512,
+              "height": 512
+            },
+            "waste_area": {
+              "image": "field-parkland-high-waste_area.6c87291a69e4.png",
+              "bytes": 101744,
+              "width": 512,
+              "height": 512
+            },
+            "water": {
+              "image": "field-parkland-high-water.7b154d0884fb.png",
+              "bytes": 48197,
+              "width": 512,
+              "height": 512
+            },
+            "wetland": {
+              "image": "field-parkland-high-wetland.d2fb0a5bd514.png",
+              "bytes": 62443,
+              "width": 512,
+              "height": 512
+            },
+            "green": {
+              "image": "field-parkland-high-green.6478b59a6311.png",
+              "bytes": 85597,
+              "width": 512,
+              "height": 512
+            },
+            "tee": {
+              "image": "field-parkland-high-tee.2335f6278add.png",
+              "bytes": 88070,
+              "width": 512,
+              "height": 512
+            },
+            "path": {
+              "image": "field-parkland-high-path.7134a2f54486.png",
+              "bytes": 106646,
+              "width": 512,
+              "height": 512
+            }
           }
-        }
+        },
+        "seasonal": {}
       },
       "medium": {
-        "buildings": {
-          "json": "buildings-decor-parkland-medium.908e9dd88de1.json",
-          "image": "buildings-decor-parkland-medium.bc2b7a340d96.png",
-          "jsonBytes": 8259,
-          "imageBytes": 1169073,
-          "frames": 23,
-          "width": 1010,
-          "height": 840
-        },
-        "terrain": {
-          "json": "terrain-parkland-medium.646445bf5455.json",
-          "image": "terrain-parkland-medium.7d55990cac08.png",
-          "jsonBytes": 63385,
-          "imageBytes": 208221,
-          "frames": 180,
-          "width": 912,
-          "height": 1718
-        },
-        "details": {
-          "json": "terrain-details-parkland-medium.9165d1d3e5f5.json",
-          "image": "terrain-details-parkland-medium.91b9748278ba.png",
-          "jsonBytes": 3658,
-          "imageBytes": 4788,
-          "frames": 10,
-          "width": 662,
-          "height": 68
-        },
-        "props": {
-          "json": "natural-props-parkland-medium.818ed6a0b873.json",
-          "image": "natural-props-parkland-medium.5f53ac5c0850.png",
-          "jsonBytes": 4429,
-          "imageBytes": 395258,
-          "frames": 12,
-          "width": 912,
-          "height": 371
-        },
-        "fields": {
-          "fairway": {
-            "image": "field-parkland-medium-fairway.72f8c2041ff4.png",
-            "bytes": 29595,
-            "width": 256,
-            "height": 256
+        "base": {
+          "buildings": {
+            "json": "buildings-decor-parkland-medium.908e9dd88de1.json",
+            "image": "buildings-decor-parkland-medium.bc2b7a340d96.png",
+            "jsonBytes": 8259,
+            "imageBytes": 1169073,
+            "frames": 23,
+            "width": 1010,
+            "height": 840
           },
-          "rough": {
-            "image": "field-parkland-medium-rough.07341725cc99.png",
-            "bytes": 37561,
-            "width": 256,
-            "height": 256
+          "terrain": {
+            "json": "terrain-parkland-medium.646445bf5455.json",
+            "image": "terrain-parkland-medium.7d55990cac08.png",
+            "jsonBytes": 63385,
+            "imageBytes": 208221,
+            "frames": 180,
+            "width": 912,
+            "height": 1718
           },
-          "deep_rough": {
-            "image": "field-parkland-medium-deep_rough.361d9ef79637.png",
-            "bytes": 49048,
-            "width": 256,
-            "height": 256
+          "details": {
+            "json": "terrain-details-parkland-medium.9165d1d3e5f5.json",
+            "image": "terrain-details-parkland-medium.91b9748278ba.png",
+            "jsonBytes": 3658,
+            "imageBytes": 4788,
+            "frames": 10,
+            "width": 662,
+            "height": 68
           },
-          "sand": {
-            "image": "field-parkland-medium-sand.463fb4564ef7.png",
-            "bytes": 65070,
-            "width": 256,
-            "height": 256
+          "props": {
+            "json": "natural-props-parkland-medium.818ed6a0b873.json",
+            "image": "natural-props-parkland-medium.5f53ac5c0850.png",
+            "jsonBytes": 4429,
+            "imageBytes": 395258,
+            "frames": 12,
+            "width": 912,
+            "height": 371
           },
-          "waste_area": {
-            "image": "field-parkland-medium-waste_area.f28ad10cccba.png",
-            "bytes": 43628,
-            "width": 256,
-            "height": 256
-          },
-          "water": {
-            "image": "field-parkland-medium-water.ed5c5af39b00.png",
-            "bytes": 21606,
-            "width": 256,
-            "height": 256
-          },
-          "wetland": {
-            "image": "field-parkland-medium-wetland.59744c33054d.png",
-            "bytes": 24917,
-            "width": 256,
-            "height": 256
-          },
-          "green": {
-            "image": "field-parkland-medium-green.104913310515.png",
-            "bytes": 30961,
-            "width": 256,
-            "height": 256
-          },
-          "tee": {
-            "image": "field-parkland-medium-tee.b9b2ad598d7c.png",
-            "bytes": 31174,
-            "width": 256,
-            "height": 256
-          },
-          "path": {
-            "image": "field-parkland-medium-path.d3e9a6e156d9.png",
-            "bytes": 43493,
-            "width": 256,
-            "height": 256
+          "fields": {
+            "fairway": {
+              "image": "field-parkland-medium-fairway.72f8c2041ff4.png",
+              "bytes": 29595,
+              "width": 256,
+              "height": 256
+            },
+            "rough": {
+              "image": "field-parkland-medium-rough.07341725cc99.png",
+              "bytes": 37561,
+              "width": 256,
+              "height": 256
+            },
+            "deep_rough": {
+              "image": "field-parkland-medium-deep_rough.361d9ef79637.png",
+              "bytes": 49048,
+              "width": 256,
+              "height": 256
+            },
+            "sand": {
+              "image": "field-parkland-medium-sand.463fb4564ef7.png",
+              "bytes": 65070,
+              "width": 256,
+              "height": 256
+            },
+            "waste_area": {
+              "image": "field-parkland-medium-waste_area.f28ad10cccba.png",
+              "bytes": 43628,
+              "width": 256,
+              "height": 256
+            },
+            "water": {
+              "image": "field-parkland-medium-water.ed5c5af39b00.png",
+              "bytes": 21606,
+              "width": 256,
+              "height": 256
+            },
+            "wetland": {
+              "image": "field-parkland-medium-wetland.59744c33054d.png",
+              "bytes": 24917,
+              "width": 256,
+              "height": 256
+            },
+            "green": {
+              "image": "field-parkland-medium-green.104913310515.png",
+              "bytes": 30961,
+              "width": 256,
+              "height": 256
+            },
+            "tee": {
+              "image": "field-parkland-medium-tee.b9b2ad598d7c.png",
+              "bytes": 31174,
+              "width": 256,
+              "height": 256
+            },
+            "path": {
+              "image": "field-parkland-medium-path.d3e9a6e156d9.png",
+              "bytes": 43493,
+              "width": 256,
+              "height": 256
+            }
           }
-        }
+        },
+        "seasonal": {}
       },
       "low": {
-        "buildings": {
-          "json": "buildings-decor-parkland-low.8be0befed026.json",
-          "image": "buildings-decor-parkland-low.bc2b7a340d96.png",
-          "jsonBytes": 8256,
-          "imageBytes": 1169073,
-          "frames": 23,
-          "width": 1010,
-          "height": 840
+        "base": {
+          "buildings": {
+            "json": "buildings-decor-parkland-low.8be0befed026.json",
+            "image": "buildings-decor-parkland-low.bc2b7a340d96.png",
+            "jsonBytes": 8256,
+            "imageBytes": 1169073,
+            "frames": 23,
+            "width": 1010,
+            "height": 840
+          },
+          "terrain": {
+            "json": "terrain-parkland-low.e331a4c93904.json",
+            "image": "terrain-parkland-low.7d55990cac08.png",
+            "jsonBytes": 63382,
+            "imageBytes": 208221,
+            "frames": 180,
+            "width": 912,
+            "height": 1718
+          },
+          "details": null,
+          "props": null,
+          "fields": {}
         },
-        "terrain": {
-          "json": "terrain-parkland-low.e331a4c93904.json",
-          "image": "terrain-parkland-low.7d55990cac08.png",
-          "jsonBytes": 63382,
-          "imageBytes": 208221,
-          "frames": 180,
-          "width": 912,
-          "height": 1718
-        },
-        "details": null,
-        "props": null,
-        "fields": {}
+        "seasonal": {}
       }
     },
     "links": {
       "high": {
-        "buildings": {
-          "json": "buildings-decor-links-high.9249a187daa8.json",
-          "image": "buildings-decor-links-high.8c0014a6e7d2.png",
-          "jsonBytes": 8188,
-          "imageBytes": 1174975,
-          "frames": 23,
-          "width": 1010,
-          "height": 840
-        },
-        "terrain": {
-          "json": "terrain-links-high.af54278d39cd.json",
-          "image": "terrain-links-high.80bf3c61a34d.png",
-          "jsonBytes": 62840,
-          "imageBytes": 224232,
-          "frames": 180,
-          "width": 912,
-          "height": 1718
-        },
-        "details": {
-          "json": "terrain-details-links-high.762bb6b1922d.json",
-          "image": "terrain-details-links-high.ffb6c5313072.png",
-          "jsonBytes": 7021,
-          "imageBytes": 9396,
-          "frames": 20,
-          "width": 992,
-          "height": 134
-        },
-        "props": {
-          "json": "natural-props-links-high.1a3ca393f2c7.json",
-          "image": "natural-props-links-high.cf989f55b359.png",
-          "jsonBytes": 4411,
-          "imageBytes": 325687,
-          "frames": 12,
-          "width": 912,
-          "height": 352
-        },
-        "fields": {
-          "fairway": {
-            "image": "field-links-high-fairway.96cb638d825d.png",
-            "bytes": 82796,
-            "width": 512,
-            "height": 512
+        "base": {
+          "buildings": {
+            "json": "buildings-decor-links-high.9249a187daa8.json",
+            "image": "buildings-decor-links-high.8c0014a6e7d2.png",
+            "jsonBytes": 8188,
+            "imageBytes": 1174975,
+            "frames": 23,
+            "width": 1010,
+            "height": 840
           },
-          "rough": {
-            "image": "field-links-high-rough.bc199a566be4.png",
-            "bytes": 85586,
-            "width": 512,
-            "height": 512
+          "terrain": {
+            "json": "terrain-links-high.af54278d39cd.json",
+            "image": "terrain-links-high.80bf3c61a34d.png",
+            "jsonBytes": 62840,
+            "imageBytes": 224232,
+            "frames": 180,
+            "width": 912,
+            "height": 1718
           },
-          "deep_rough": {
-            "image": "field-links-high-deep_rough.c976cdc8bb32.png",
-            "bytes": 93769,
-            "width": 512,
-            "height": 512
+          "details": {
+            "json": "terrain-details-links-high.762bb6b1922d.json",
+            "image": "terrain-details-links-high.ffb6c5313072.png",
+            "jsonBytes": 7021,
+            "imageBytes": 9396,
+            "frames": 20,
+            "width": 992,
+            "height": 134
           },
-          "sand": {
-            "image": "field-links-high-sand.571d3732eb7e.png",
-            "bytes": 178927,
-            "width": 512,
-            "height": 512
+          "props": {
+            "json": "natural-props-links-high.1a3ca393f2c7.json",
+            "image": "natural-props-links-high.cf989f55b359.png",
+            "jsonBytes": 4411,
+            "imageBytes": 325687,
+            "frames": 12,
+            "width": 912,
+            "height": 352
           },
-          "waste_area": {
-            "image": "field-links-high-waste_area.c42b361141fe.png",
-            "bytes": 106423,
-            "width": 512,
-            "height": 512
-          },
-          "water": {
-            "image": "field-links-high-water.ea5e952043c3.png",
-            "bytes": 43358,
-            "width": 512,
-            "height": 512
-          },
-          "wetland": {
-            "image": "field-links-high-wetland.f8f4b14e8f55.png",
-            "bytes": 57504,
-            "width": 512,
-            "height": 512
-          },
-          "green": {
-            "image": "field-links-high-green.ba2d863c1531.png",
-            "bytes": 85310,
-            "width": 512,
-            "height": 512
-          },
-          "tee": {
-            "image": "field-links-high-tee.68a6b047c780.png",
-            "bytes": 84052,
-            "width": 512,
-            "height": 512
-          },
-          "path": {
-            "image": "field-links-high-path.92190c119f24.png",
-            "bytes": 103748,
-            "width": 512,
-            "height": 512
+          "fields": {
+            "fairway": {
+              "image": "field-links-high-fairway.96cb638d825d.png",
+              "bytes": 82796,
+              "width": 512,
+              "height": 512
+            },
+            "rough": {
+              "image": "field-links-high-rough.bc199a566be4.png",
+              "bytes": 85586,
+              "width": 512,
+              "height": 512
+            },
+            "deep_rough": {
+              "image": "field-links-high-deep_rough.c976cdc8bb32.png",
+              "bytes": 93769,
+              "width": 512,
+              "height": 512
+            },
+            "sand": {
+              "image": "field-links-high-sand.571d3732eb7e.png",
+              "bytes": 178927,
+              "width": 512,
+              "height": 512
+            },
+            "waste_area": {
+              "image": "field-links-high-waste_area.c42b361141fe.png",
+              "bytes": 106423,
+              "width": 512,
+              "height": 512
+            },
+            "water": {
+              "image": "field-links-high-water.ea5e952043c3.png",
+              "bytes": 43358,
+              "width": 512,
+              "height": 512
+            },
+            "wetland": {
+              "image": "field-links-high-wetland.f8f4b14e8f55.png",
+              "bytes": 57504,
+              "width": 512,
+              "height": 512
+            },
+            "green": {
+              "image": "field-links-high-green.ba2d863c1531.png",
+              "bytes": 85310,
+              "width": 512,
+              "height": 512
+            },
+            "tee": {
+              "image": "field-links-high-tee.68a6b047c780.png",
+              "bytes": 84052,
+              "width": 512,
+              "height": 512
+            },
+            "path": {
+              "image": "field-links-high-path.92190c119f24.png",
+              "bytes": 103748,
+              "width": 512,
+              "height": 512
+            }
           }
-        }
+        },
+        "seasonal": {}
       },
       "medium": {
-        "buildings": {
-          "json": "buildings-decor-links-medium.7ca984f187fc.json",
-          "image": "buildings-decor-links-medium.8c0014a6e7d2.png",
-          "jsonBytes": 8190,
-          "imageBytes": 1174975,
-          "frames": 23,
-          "width": 1010,
-          "height": 840
-        },
-        "terrain": {
-          "json": "terrain-links-medium.7ab81d90b6ab.json",
-          "image": "terrain-links-medium.80bf3c61a34d.png",
-          "jsonBytes": 62842,
-          "imageBytes": 224232,
-          "frames": 180,
-          "width": 912,
-          "height": 1718
-        },
-        "details": {
-          "json": "terrain-details-links-medium.71deb7b56e7e.json",
-          "image": "terrain-details-links-medium.a42e6805cc59.png",
-          "jsonBytes": 3625,
-          "imageBytes": 4819,
-          "frames": 10,
-          "width": 662,
-          "height": 68
-        },
-        "props": {
-          "json": "natural-props-links-medium.068c0ed75a63.json",
-          "image": "natural-props-links-medium.cf989f55b359.png",
-          "jsonBytes": 4413,
-          "imageBytes": 325687,
-          "frames": 12,
-          "width": 912,
-          "height": 352
-        },
-        "fields": {
-          "fairway": {
-            "image": "field-links-medium-fairway.69f4bcf41889.png",
-            "bytes": 30295,
-            "width": 256,
-            "height": 256
+        "base": {
+          "buildings": {
+            "json": "buildings-decor-links-medium.7ca984f187fc.json",
+            "image": "buildings-decor-links-medium.8c0014a6e7d2.png",
+            "jsonBytes": 8190,
+            "imageBytes": 1174975,
+            "frames": 23,
+            "width": 1010,
+            "height": 840
           },
-          "rough": {
-            "image": "field-links-medium-rough.7c84fbd5756e.png",
-            "bytes": 39140,
-            "width": 256,
-            "height": 256
+          "terrain": {
+            "json": "terrain-links-medium.7ab81d90b6ab.json",
+            "image": "terrain-links-medium.80bf3c61a34d.png",
+            "jsonBytes": 62842,
+            "imageBytes": 224232,
+            "frames": 180,
+            "width": 912,
+            "height": 1718
           },
-          "deep_rough": {
-            "image": "field-links-medium-deep_rough.acb4cd6676c6.png",
-            "bytes": 49962,
-            "width": 256,
-            "height": 256
+          "details": {
+            "json": "terrain-details-links-medium.71deb7b56e7e.json",
+            "image": "terrain-details-links-medium.a42e6805cc59.png",
+            "jsonBytes": 3625,
+            "imageBytes": 4819,
+            "frames": 10,
+            "width": 662,
+            "height": 68
           },
-          "sand": {
-            "image": "field-links-medium-sand.6db3c98cb202.png",
-            "bytes": 66868,
-            "width": 256,
-            "height": 256
+          "props": {
+            "json": "natural-props-links-medium.068c0ed75a63.json",
+            "image": "natural-props-links-medium.cf989f55b359.png",
+            "jsonBytes": 4413,
+            "imageBytes": 325687,
+            "frames": 12,
+            "width": 912,
+            "height": 352
           },
-          "waste_area": {
-            "image": "field-links-medium-waste_area.cd7730718287.png",
-            "bytes": 44634,
-            "width": 256,
-            "height": 256
-          },
-          "water": {
-            "image": "field-links-medium-water.b057d2d55040.png",
-            "bytes": 19890,
-            "width": 256,
-            "height": 256
-          },
-          "wetland": {
-            "image": "field-links-medium-wetland.a853de5f2451.png",
-            "bytes": 23317,
-            "width": 256,
-            "height": 256
-          },
-          "green": {
-            "image": "field-links-medium-green.f1070f7fd8dd.png",
-            "bytes": 30819,
-            "width": 256,
-            "height": 256
-          },
-          "tee": {
-            "image": "field-links-medium-tee.910e3c75138e.png",
-            "bytes": 30390,
-            "width": 256,
-            "height": 256
-          },
-          "path": {
-            "image": "field-links-medium-path.24aabd6f162e.png",
-            "bytes": 43642,
-            "width": 256,
-            "height": 256
+          "fields": {
+            "fairway": {
+              "image": "field-links-medium-fairway.69f4bcf41889.png",
+              "bytes": 30295,
+              "width": 256,
+              "height": 256
+            },
+            "rough": {
+              "image": "field-links-medium-rough.7c84fbd5756e.png",
+              "bytes": 39140,
+              "width": 256,
+              "height": 256
+            },
+            "deep_rough": {
+              "image": "field-links-medium-deep_rough.acb4cd6676c6.png",
+              "bytes": 49962,
+              "width": 256,
+              "height": 256
+            },
+            "sand": {
+              "image": "field-links-medium-sand.6db3c98cb202.png",
+              "bytes": 66868,
+              "width": 256,
+              "height": 256
+            },
+            "waste_area": {
+              "image": "field-links-medium-waste_area.cd7730718287.png",
+              "bytes": 44634,
+              "width": 256,
+              "height": 256
+            },
+            "water": {
+              "image": "field-links-medium-water.b057d2d55040.png",
+              "bytes": 19890,
+              "width": 256,
+              "height": 256
+            },
+            "wetland": {
+              "image": "field-links-medium-wetland.a853de5f2451.png",
+              "bytes": 23317,
+              "width": 256,
+              "height": 256
+            },
+            "green": {
+              "image": "field-links-medium-green.f1070f7fd8dd.png",
+              "bytes": 30819,
+              "width": 256,
+              "height": 256
+            },
+            "tee": {
+              "image": "field-links-medium-tee.910e3c75138e.png",
+              "bytes": 30390,
+              "width": 256,
+              "height": 256
+            },
+            "path": {
+              "image": "field-links-medium-path.24aabd6f162e.png",
+              "bytes": 43642,
+              "width": 256,
+              "height": 256
+            }
           }
-        }
+        },
+        "seasonal": {}
       },
       "low": {
-        "buildings": {
-          "json": "buildings-decor-links-low.a16fda0df09f.json",
-          "image": "buildings-decor-links-low.8c0014a6e7d2.png",
-          "jsonBytes": 8187,
-          "imageBytes": 1174975,
-          "frames": 23,
-          "width": 1010,
-          "height": 840
+        "base": {
+          "buildings": {
+            "json": "buildings-decor-links-low.a16fda0df09f.json",
+            "image": "buildings-decor-links-low.8c0014a6e7d2.png",
+            "jsonBytes": 8187,
+            "imageBytes": 1174975,
+            "frames": 23,
+            "width": 1010,
+            "height": 840
+          },
+          "terrain": {
+            "json": "terrain-links-low.d54a19016083.json",
+            "image": "terrain-links-low.80bf3c61a34d.png",
+            "jsonBytes": 62839,
+            "imageBytes": 224232,
+            "frames": 180,
+            "width": 912,
+            "height": 1718
+          },
+          "details": null,
+          "props": null,
+          "fields": {}
         },
-        "terrain": {
-          "json": "terrain-links-low.d54a19016083.json",
-          "image": "terrain-links-low.80bf3c61a34d.png",
-          "jsonBytes": 62839,
-          "imageBytes": 224232,
-          "frames": 180,
-          "width": 912,
-          "height": 1718
-        },
-        "details": null,
-        "props": null,
-        "fields": {}
+        "seasonal": {}
       }
     },
     "desert": {
       "high": {
-        "buildings": {
-          "json": "buildings-decor-desert-high.ae1b0dc467b2.json",
-          "image": "buildings-decor-desert-high.c39e277c1b6e.png",
-          "jsonBytes": 8211,
-          "imageBytes": 1169105,
-          "frames": 23,
-          "width": 1010,
-          "height": 840
-        },
-        "terrain": {
-          "json": "terrain-desert-high.ee9575111084.json",
-          "image": "terrain-desert-high.fc74b939a5af.png",
-          "jsonBytes": 63021,
-          "imageBytes": 223432,
-          "frames": 180,
-          "width": 912,
-          "height": 1718
-        },
-        "details": {
-          "json": "terrain-details-desert-high.f361939e7181.json",
-          "image": "terrain-details-desert-high.f2b6b3741a05.png",
-          "jsonBytes": 7042,
-          "imageBytes": 9263,
-          "frames": 20,
-          "width": 992,
-          "height": 134
-        },
-        "props": {
-          "json": "natural-props-desert-high.e52bf0b92023.json",
-          "image": "natural-props-desert-high.467a4916294e.png",
-          "jsonBytes": 4427,
-          "imageBytes": 335618,
-          "frames": 12,
-          "width": 912,
-          "height": 354
-        },
-        "fields": {
-          "fairway": {
-            "image": "field-desert-high-fairway.ca53fd0e0f45.png",
-            "bytes": 84674,
-            "width": 512,
-            "height": 512
+        "base": {
+          "buildings": {
+            "json": "buildings-decor-desert-high.ae1b0dc467b2.json",
+            "image": "buildings-decor-desert-high.c39e277c1b6e.png",
+            "jsonBytes": 8211,
+            "imageBytes": 1169105,
+            "frames": 23,
+            "width": 1010,
+            "height": 840
           },
-          "rough": {
-            "image": "field-desert-high-rough.cb887a39ebab.png",
-            "bytes": 86163,
-            "width": 512,
-            "height": 512
+          "terrain": {
+            "json": "terrain-desert-high.ee9575111084.json",
+            "image": "terrain-desert-high.fc74b939a5af.png",
+            "jsonBytes": 63021,
+            "imageBytes": 223432,
+            "frames": 180,
+            "width": 912,
+            "height": 1718
           },
-          "deep_rough": {
-            "image": "field-desert-high-deep_rough.eb3162d8be26.png",
-            "bytes": 93762,
-            "width": 512,
-            "height": 512
+          "details": {
+            "json": "terrain-details-desert-high.f361939e7181.json",
+            "image": "terrain-details-desert-high.f2b6b3741a05.png",
+            "jsonBytes": 7042,
+            "imageBytes": 9263,
+            "frames": 20,
+            "width": 992,
+            "height": 134
           },
-          "sand": {
-            "image": "field-desert-high-sand.dbc78bc864a6.png",
-            "bytes": 171386,
-            "width": 512,
-            "height": 512
+          "props": {
+            "json": "natural-props-desert-high.e52bf0b92023.json",
+            "image": "natural-props-desert-high.467a4916294e.png",
+            "jsonBytes": 4427,
+            "imageBytes": 335618,
+            "frames": 12,
+            "width": 912,
+            "height": 354
           },
-          "waste_area": {
-            "image": "field-desert-high-waste_area.3a53d338f515.png",
-            "bytes": 108754,
-            "width": 512,
-            "height": 512
-          },
-          "water": {
-            "image": "field-desert-high-water.791b69c1dc08.png",
-            "bytes": 51126,
-            "width": 512,
-            "height": 512
-          },
-          "wetland": {
-            "image": "field-desert-high-wetland.48323e177ec2.png",
-            "bytes": 59395,
-            "width": 512,
-            "height": 512
-          },
-          "green": {
-            "image": "field-desert-high-green.2648a9ea3e22.png",
-            "bytes": 84422,
-            "width": 512,
-            "height": 512
-          },
-          "tee": {
-            "image": "field-desert-high-tee.0929d5672ebf.png",
-            "bytes": 79848,
-            "width": 512,
-            "height": 512
-          },
-          "path": {
-            "image": "field-desert-high-path.e1bd88dabd11.png",
-            "bytes": 107825,
-            "width": 512,
-            "height": 512
+          "fields": {
+            "fairway": {
+              "image": "field-desert-high-fairway.ca53fd0e0f45.png",
+              "bytes": 84674,
+              "width": 512,
+              "height": 512
+            },
+            "rough": {
+              "image": "field-desert-high-rough.cb887a39ebab.png",
+              "bytes": 86163,
+              "width": 512,
+              "height": 512
+            },
+            "deep_rough": {
+              "image": "field-desert-high-deep_rough.eb3162d8be26.png",
+              "bytes": 93762,
+              "width": 512,
+              "height": 512
+            },
+            "sand": {
+              "image": "field-desert-high-sand.dbc78bc864a6.png",
+              "bytes": 171386,
+              "width": 512,
+              "height": 512
+            },
+            "waste_area": {
+              "image": "field-desert-high-waste_area.3a53d338f515.png",
+              "bytes": 108754,
+              "width": 512,
+              "height": 512
+            },
+            "water": {
+              "image": "field-desert-high-water.791b69c1dc08.png",
+              "bytes": 51126,
+              "width": 512,
+              "height": 512
+            },
+            "wetland": {
+              "image": "field-desert-high-wetland.48323e177ec2.png",
+              "bytes": 59395,
+              "width": 512,
+              "height": 512
+            },
+            "green": {
+              "image": "field-desert-high-green.2648a9ea3e22.png",
+              "bytes": 84422,
+              "width": 512,
+              "height": 512
+            },
+            "tee": {
+              "image": "field-desert-high-tee.0929d5672ebf.png",
+              "bytes": 79848,
+              "width": 512,
+              "height": 512
+            },
+            "path": {
+              "image": "field-desert-high-path.e1bd88dabd11.png",
+              "bytes": 107825,
+              "width": 512,
+              "height": 512
+            }
           }
-        }
+        },
+        "seasonal": {}
       },
       "medium": {
-        "buildings": {
-          "json": "buildings-decor-desert-medium.adeee417a566.json",
-          "image": "buildings-decor-desert-medium.c39e277c1b6e.png",
-          "jsonBytes": 8213,
-          "imageBytes": 1169105,
-          "frames": 23,
-          "width": 1010,
-          "height": 840
-        },
-        "terrain": {
-          "json": "terrain-desert-medium.cee16cf28ffb.json",
-          "image": "terrain-desert-medium.fc74b939a5af.png",
-          "jsonBytes": 63023,
-          "imageBytes": 223432,
-          "frames": 180,
-          "width": 912,
-          "height": 1718
-        },
-        "details": {
-          "json": "terrain-details-desert-medium.dd7a85b3e3cb.json",
-          "image": "terrain-details-desert-medium.05ae09eada15.png",
-          "jsonBytes": 3636,
-          "imageBytes": 4751,
-          "frames": 10,
-          "width": 662,
-          "height": 68
-        },
-        "props": {
-          "json": "natural-props-desert-medium.148f932bb775.json",
-          "image": "natural-props-desert-medium.467a4916294e.png",
-          "jsonBytes": 4429,
-          "imageBytes": 335618,
-          "frames": 12,
-          "width": 912,
-          "height": 354
-        },
-        "fields": {
-          "fairway": {
-            "image": "field-desert-medium-fairway.010c88c7a63d.png",
-            "bytes": 30824,
-            "width": 256,
-            "height": 256
+        "base": {
+          "buildings": {
+            "json": "buildings-decor-desert-medium.adeee417a566.json",
+            "image": "buildings-decor-desert-medium.c39e277c1b6e.png",
+            "jsonBytes": 8213,
+            "imageBytes": 1169105,
+            "frames": 23,
+            "width": 1010,
+            "height": 840
           },
-          "rough": {
-            "image": "field-desert-medium-rough.866a065ad8d6.png",
-            "bytes": 36138,
-            "width": 256,
-            "height": 256
+          "terrain": {
+            "json": "terrain-desert-medium.cee16cf28ffb.json",
+            "image": "terrain-desert-medium.fc74b939a5af.png",
+            "jsonBytes": 63023,
+            "imageBytes": 223432,
+            "frames": 180,
+            "width": 912,
+            "height": 1718
           },
-          "deep_rough": {
-            "image": "field-desert-medium-deep_rough.166df5c2a224.png",
-            "bytes": 49753,
-            "width": 256,
-            "height": 256
+          "details": {
+            "json": "terrain-details-desert-medium.dd7a85b3e3cb.json",
+            "image": "terrain-details-desert-medium.05ae09eada15.png",
+            "jsonBytes": 3636,
+            "imageBytes": 4751,
+            "frames": 10,
+            "width": 662,
+            "height": 68
           },
-          "sand": {
-            "image": "field-desert-medium-sand.363ca0ac9105.png",
-            "bytes": 64611,
-            "width": 256,
-            "height": 256
+          "props": {
+            "json": "natural-props-desert-medium.148f932bb775.json",
+            "image": "natural-props-desert-medium.467a4916294e.png",
+            "jsonBytes": 4429,
+            "imageBytes": 335618,
+            "frames": 12,
+            "width": 912,
+            "height": 354
           },
-          "waste_area": {
-            "image": "field-desert-medium-waste_area.33b40bad2177.png",
-            "bytes": 45536,
-            "width": 256,
-            "height": 256
-          },
-          "water": {
-            "image": "field-desert-medium-water.0c03f756e1d6.png",
-            "bytes": 22642,
-            "width": 256,
-            "height": 256
-          },
-          "wetland": {
-            "image": "field-desert-medium-wetland.06bc8152ac88.png",
-            "bytes": 23762,
-            "width": 256,
-            "height": 256
-          },
-          "green": {
-            "image": "field-desert-medium-green.5e68713ce05b.png",
-            "bytes": 30641,
-            "width": 256,
-            "height": 256
-          },
-          "tee": {
-            "image": "field-desert-medium-tee.6ca7b752708f.png",
-            "bytes": 29401,
-            "width": 256,
-            "height": 256
-          },
-          "path": {
-            "image": "field-desert-medium-path.df483bb3332a.png",
-            "bytes": 44747,
-            "width": 256,
-            "height": 256
+          "fields": {
+            "fairway": {
+              "image": "field-desert-medium-fairway.010c88c7a63d.png",
+              "bytes": 30824,
+              "width": 256,
+              "height": 256
+            },
+            "rough": {
+              "image": "field-desert-medium-rough.866a065ad8d6.png",
+              "bytes": 36138,
+              "width": 256,
+              "height": 256
+            },
+            "deep_rough": {
+              "image": "field-desert-medium-deep_rough.166df5c2a224.png",
+              "bytes": 49753,
+              "width": 256,
+              "height": 256
+            },
+            "sand": {
+              "image": "field-desert-medium-sand.363ca0ac9105.png",
+              "bytes": 64611,
+              "width": 256,
+              "height": 256
+            },
+            "waste_area": {
+              "image": "field-desert-medium-waste_area.33b40bad2177.png",
+              "bytes": 45536,
+              "width": 256,
+              "height": 256
+            },
+            "water": {
+              "image": "field-desert-medium-water.0c03f756e1d6.png",
+              "bytes": 22642,
+              "width": 256,
+              "height": 256
+            },
+            "wetland": {
+              "image": "field-desert-medium-wetland.06bc8152ac88.png",
+              "bytes": 23762,
+              "width": 256,
+              "height": 256
+            },
+            "green": {
+              "image": "field-desert-medium-green.5e68713ce05b.png",
+              "bytes": 30641,
+              "width": 256,
+              "height": 256
+            },
+            "tee": {
+              "image": "field-desert-medium-tee.6ca7b752708f.png",
+              "bytes": 29401,
+              "width": 256,
+              "height": 256
+            },
+            "path": {
+              "image": "field-desert-medium-path.df483bb3332a.png",
+              "bytes": 44747,
+              "width": 256,
+              "height": 256
+            }
           }
-        }
+        },
+        "seasonal": {}
       },
       "low": {
-        "buildings": {
-          "json": "buildings-decor-desert-low.de51061ef1f4.json",
-          "image": "buildings-decor-desert-low.c39e277c1b6e.png",
-          "jsonBytes": 8210,
-          "imageBytes": 1169105,
-          "frames": 23,
-          "width": 1010,
-          "height": 840
+        "base": {
+          "buildings": {
+            "json": "buildings-decor-desert-low.de51061ef1f4.json",
+            "image": "buildings-decor-desert-low.c39e277c1b6e.png",
+            "jsonBytes": 8210,
+            "imageBytes": 1169105,
+            "frames": 23,
+            "width": 1010,
+            "height": 840
+          },
+          "terrain": {
+            "json": "terrain-desert-low.d424002f5c1a.json",
+            "image": "terrain-desert-low.fc74b939a5af.png",
+            "jsonBytes": 63020,
+            "imageBytes": 223432,
+            "frames": 180,
+            "width": 912,
+            "height": 1718
+          },
+          "details": null,
+          "props": null,
+          "fields": {}
         },
-        "terrain": {
-          "json": "terrain-desert-low.d424002f5c1a.json",
-          "image": "terrain-desert-low.fc74b939a5af.png",
-          "jsonBytes": 63020,
-          "imageBytes": 223432,
-          "frames": 180,
-          "width": 912,
-          "height": 1718
-        },
-        "details": null,
-        "props": null,
-        "fields": {}
+        "seasonal": {}
       }
     }
   }

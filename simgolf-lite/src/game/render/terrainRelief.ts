@@ -1,4 +1,5 @@
 import type { LandTheme, Terrain } from "../models/types";
+import { getBiomeDefinition } from "../models/biomes";
 
 export interface TerrainReliefStyle {
   /** Presentation-only drop below the tile's simulation elevation. */
@@ -55,7 +56,8 @@ export function terrainReliefStyle(
 ): TerrainReliefStyle | null {
   const inset = terrainSurfaceInsetPx(terrain);
   if (inset <= 0) return null;
-  const bank = BANK_COLORS[theme ?? "parkland"][terrain as "sand" | "wetland" | "water"];
+  const owner = getBiomeDefinition(theme).content.materials.terrain;
+  const bank = BANK_COLORS[owner][terrain as "sand" | "wetland" | "water"];
   return {
     surfaceInsetPx: inset,
     bankLight: bank[0],
@@ -65,5 +67,6 @@ export function terrainReliefStyle(
 
 /** Links uses pronounced dune caps; other themes keep the same cue quieter. */
 export function hillReliefStrength(theme: LandTheme | undefined): number {
-  return HILL_RELIEF_STRENGTH[theme ?? "parkland"];
+  const owner = getBiomeDefinition(theme).content.materials.terrain;
+  return HILL_RELIEF_STRENGTH[owner];
 }

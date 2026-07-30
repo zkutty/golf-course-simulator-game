@@ -1,6 +1,7 @@
 import type { GoalDefinition } from "../models/objectives";
 import type { ClubCharter } from "../seasons/types";
 import type { LandTheme } from "../models/types";
+import { BIOME_KEYS, getBiomeDefinition } from "../models/biomes";
 
 export interface ScenarioGoalTemplate {
   id: string;
@@ -25,8 +26,6 @@ const CHARTERS: readonly ClubCharter[] = [
   "destination-retreat",
   "member-institution",
 ];
-
-const THEMES: readonly LandTheme[] = ["parkland", "links", "desert"];
 
 const CHARTER_GOALS: Record<ClubCharter, GoalDefinition[]> = {
   "public-gem": [
@@ -57,10 +56,10 @@ const CHARTER_GOALS: Record<ClubCharter, GoalDefinition[]> = {
  * conditions remain existing objective-engine metrics.
  */
 export const SCENARIO_GOAL_TEMPLATES: readonly ScenarioGoalTemplate[] = CHARTERS.flatMap((charter) =>
-  THEMES.map((theme) => ({
+  BIOME_KEYS.map((theme) => ({
     id: `charter-${charter}-${theme}`,
-    label: `${charter} · ${theme}`,
-    description: `Optional ${charter} mastery path for ${theme} courses.`,
+    label: `${charter} · ${getBiomeDefinition(theme).label}`,
+    description: `Optional ${charter} mastery path for ${getBiomeDefinition(theme).label} courses.`,
     charter,
     theme,
     goals: CHARTER_GOALS[charter].map((goal) => ({

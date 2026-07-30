@@ -8,6 +8,7 @@ import { PNG } from "pngjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { loadBiomeKeys } from "./biome-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUTPUT = path.join(ROOT, "src/assets/terrain/fields");
@@ -37,6 +38,15 @@ const PALETTES = {
     wetland: 0x648667, green: 0x64ae55, tee: 0x8f8457, path: 0xa28d72,
   },
 };
+const NATURAL_BLADE_TINT = {
+  parkland: 0x9fac55,
+  links: 0xc0a650,
+  desert: 0x9fac55,
+};
+const registeredBiomes = loadBiomeKeys();
+if (JSON.stringify(Object.keys(PALETTES).sort()) !== JSON.stringify([...registeredBiomes].sort())) {
+  throw new Error("M35 field palettes must cover every registered biome");
+}
 
 function hash32(value) {
   value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
@@ -144,7 +154,7 @@ function materialSample(theme, terrain, x, y, seed) {
     const blade = randomCell(Math.floor(x * 96), Math.floor(y * 96), seed);
     const threshold = terrain === "deep_rough" ? 0.79 : 0.9;
     if (blade > threshold) {
-      tint = theme === "links" ? 0xc0a650 : 0x9fac55;
+      tint = NATURAL_BLADE_TINT[theme];
       tintAmount = terrain === "deep_rough" ? 0.28 : 0.15;
     }
   }

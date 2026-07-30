@@ -1,4 +1,10 @@
 import type { LandTheme } from "../models/types";
+import type {
+  ClimateExposure,
+  ClimateFoliagePhase,
+  ClimateMoistureRegime,
+  ClimatePhenologyRegime,
+} from "../models/biomes";
 
 export const SEASONS = ["spring", "summer", "autumn", "winter"] as const;
 export type SeasonName = (typeof SEASONS)[number];
@@ -36,6 +42,64 @@ export interface DailyWeather {
   severity: number;
   theme: LandTheme;
   season: SeasonName;
+}
+
+/** A bounded, continuous handoff between two calendar-season profiles. */
+export interface ClimatePhenologyTransition {
+  readonly fromSeason: SeasonName;
+  readonly toSeason: SeasonName;
+  /** Zero for a stable profile; otherwise progresses in 1/14-day increments. */
+  readonly blend: number;
+  readonly phase: "stable" | "leaving" | "entering";
+}
+
+/**
+ * Read-only semantic state for render, ambience, vegetation, and reports.
+ * It projects from the immutable club calendar and biome registry only; it
+ * deliberately does not become save state or an alternate weather authority.
+ */
+export interface BiomeClimatePhenologyState {
+  readonly biome: LandTheme;
+  readonly calendar: Readonly<ClubCalendarDate & {
+    /** Within the calendar season, in [0, 1). */
+    seasonProgress: number;
+  }>;
+  readonly identity: Readonly<{
+    regime: ClimatePhenologyRegime;
+    exposure: ClimateExposure;
+  }>;
+  readonly transition: Readonly<ClimatePhenologyTransition>;
+  readonly climate: Readonly<{
+    targetTemperatureF: number;
+    precipitationChance: number;
+    windBaseMph: number;
+    stormChance: number;
+    droughtChance: number;
+  }>;
+  readonly vegetation: Readonly<{
+    dormancy: number;
+    flowering: number;
+    foliage: Readonly<{
+      from: ClimateFoliagePhase;
+      to: ClimateFoliagePhase;
+      dominant: ClimateFoliagePhase;
+    }>;
+    moisture: Readonly<{
+      from: ClimateMoistureRegime;
+      to: ClimateMoistureRegime;
+      dominant: ClimateMoistureRegime;
+    }>;
+  }>;
+  readonly frost: Readonly<{
+    enabled: boolean;
+    maximumTemperatureF: number;
+    precipitationChanceMultiplier: number;
+  }>;
+  readonly snow: Readonly<{
+    enabled: boolean;
+    maximumTemperatureF: number;
+    chance: number;
+  }>;
 }
 
 export interface WeatherModifiers {

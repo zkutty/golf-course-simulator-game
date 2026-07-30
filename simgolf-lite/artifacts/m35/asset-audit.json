@@ -13,19 +13,22 @@
           "bytes": 3506327,
           "mib": 3.344,
           "frames": 235,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "medium": {
           "bytes": 2958066,
           "mib": 2.821,
           "frames": 225,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "low": {
           "bytes": 2172874,
           "mib": 2.072,
           "frames": 203,
-          "fields": 0
+          "fields": 0,
+          "overlays": {}
         }
       },
       "links": {
@@ -33,19 +36,22 @@
           "bytes": 3462165,
           "mib": 3.302,
           "frames": 235,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "medium": {
           "bytes": 2911682,
           "mib": 2.777,
           "frames": 225,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "low": {
           "bytes": 2194175,
           "mib": 2.093,
           "frames": 203,
-          "fields": 0
+          "fields": 0,
+          "overlays": {}
         }
       },
       "desert": {
@@ -53,19 +59,22 @@
           "bytes": 3471416,
           "mib": 3.311,
           "frames": 235,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "medium": {
           "bytes": 2914204,
           "mib": 2.779,
           "frames": 225,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "low": {
           "bytes": 2187709,
           "mib": 2.086,
           "frames": 203,
-          "fields": 0
+          "fields": 0,
+          "overlays": {}
         }
       }
     }
@@ -78,19 +87,22 @@
           "bytes": 3506327,
           "mib": 3.344,
           "frames": 235,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "medium": {
           "bytes": 2958066,
           "mib": 2.821,
           "frames": 225,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "low": {
           "bytes": 2172874,
           "mib": 2.072,
           "frames": 203,
-          "fields": 0
+          "fields": 0,
+          "overlays": {}
         }
       },
       "links": {
@@ -98,19 +110,22 @@
           "bytes": 3462165,
           "mib": 3.302,
           "frames": 235,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "medium": {
           "bytes": 2911682,
           "mib": 2.777,
           "frames": 225,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "low": {
           "bytes": 2194175,
           "mib": 2.093,
           "frames": 203,
-          "fields": 0
+          "fields": 0,
+          "overlays": {}
         }
       },
       "desert": {
@@ -118,29 +133,32 @@
           "bytes": 3471416,
           "mib": 3.311,
           "frames": 235,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "medium": {
           "bytes": 2914204,
           "mib": 2.779,
           "frames": 225,
-          "fields": 10
+          "fields": 10,
+          "overlays": {}
         },
         "low": {
           "bytes": 2187709,
           "mib": 2.086,
           "frames": 203,
-          "fields": 0
+          "fields": 0,
+          "overlays": {}
         }
       }
     }
   },
   "initialCritical": {
-    "bytes": 3728816,
-    "mib": 3.556,
+    "bytes": 3755929,
+    "mib": 3.582,
     "files": [
-      "assets/index-BMtgG2Ar.css",
-      "assets/index-Cd3jFqQr.js",
+      "assets/index-BZnOIp0q.js",
+      "assets/index-TyFob60b.css",
       "assets/pixi-D8n702SF.js",
       "assets/react-CJopdd0D.js",
       "assets/vendor-ugxaKWoA.js",

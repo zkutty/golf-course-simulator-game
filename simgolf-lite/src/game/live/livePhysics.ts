@@ -8,6 +8,7 @@ import { isOwnedTile } from "../estate/estate";
 import { resolvePlayableShot, type PlayerShotSelection } from "../playerPro/playerPro";
 import { capabilitiesToPlayerSkills } from "./capabilities";
 import type { GolferCapabilities, LiveShotOutcome, ShotIntent } from "./m47Types";
+import { biomeCompatibilityMetadataFor, getBiomeDefinition } from "../models/biomes";
 
 function parFor(hole: Course["holes"][number]): number {
   const setting = getParSetting(hole, "member");
@@ -69,11 +70,13 @@ export function liveCourseSnapshot(args: {
       waypoints: hole.waypoints?.map((point) => ({ ...point })) ?? [],
     };
   });
+  const theme = getBiomeDefinition(args.course.theme).compatibility.saveKey;
   return {
     courseId: args.course.activeCourseId ?? "course-primary",
     courseName: args.course.name ?? "Live course",
     geometryVersion: undefined,
-    theme: args.course.theme ?? "parkland",
+    theme,
+    biomeCompatibility: biomeCompatibilityMetadataFor(theme),
     width: args.course.width,
     height: args.course.height,
     yardsPerTile: args.course.yardsPerTile,

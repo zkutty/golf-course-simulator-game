@@ -2,6 +2,7 @@ import { platformServices } from "../../platform";
 import type { PlatformServices, PlatformWorkshopItem } from "../../platform/types";
 import { packageText, validatePackageText, PACKAGE_LIMITS } from "./packageFormat";
 import type { ContentLibraryEntry, CoursePackageV1, PackageValidationResult, WorkshopPublishResult } from "./types";
+import { isLandTheme } from "../models/biomes";
 
 const MANIFEST_KEY = "coursecraft_content_library_v1";
 const PACKAGE_PREFIX = "coursecraft_content_";
@@ -23,7 +24,7 @@ function safeEntry(value: unknown): value is ContentLibraryEntry {
     (candidate.kind === "course" || candidate.kind === "challenge") &&
     typeof candidate.title === "string" && candidate.title.length <= 100 &&
     typeof candidate.author === "string" && candidate.author.length <= 80 &&
-    ["parkland", "links", "desert"].includes(candidate.theme ?? "") &&
+    isLandTheme(candidate.theme) &&
     typeof candidate.updatedAt === "string" && !Number.isNaN(Date.parse(candidate.updatedAt)) &&
     SOURCES.has(candidate.source as ContentLibraryEntry["source"]) &&
     STATES.has(candidate.state as ContentLibraryEntry["state"]) &&
@@ -138,7 +139,7 @@ export async function importContentPackage(
       replaced: existing,
     };
   }
-  const packageKey = existing?.packageKey ?? `${PACKAGE_PREFIX}${value.manifest.contentId}`;
+  const packageKey = `${PACKAGE_PREFIX}${value.manifest.contentId}@r${value.manifest.revision}-${value.manifest.checksum.slice(0, 12)}`;
   const entry: ContentLibraryEntry = {
     contentId: value.manifest.contentId,
     revision: value.manifest.revision,
@@ -155,9 +156,18 @@ export async function importContentPackage(
     preview: value.manifest.preview,
     publishedId: existing?.publishedId,
   };
+  const createdRevision = packageKey !== existing?.packageKey;
   await platform.files.writeTextAtomic(packageKey, packageText(value));
   const next = existing ? entries.map((item) => item.contentId === entry.contentId ? entry : item) : [entry, ...entries];
-  await writeManifest(platform, next);
+  try {
+    await writeManifest(platform, next);
+  } catch (error) {
+    if (createdRevision) await platform.files.delete(packageKey).catch(() => undefined);
+    throw error;
+  }
+  if (existing && existing.packageKey !== packageKey) {
+    await platform.files.delete(existing.packageKey).catch(() => undefined);
+  }
   return { validation, entry, ...(existing ? { replaced: existing } : {}) };
 }
 
@@ -187,8 +197,8 @@ export async function deleteContentPackage(contentId: string, platform = platfor
   const entries = await readManifest(platform);
   const entry = entries.find((item) => item.contentId === contentId);
   if (!entry) return false;
-  await platform.files.delete(entry.packageKey);
   await writeManifest(platform, entries.filter((item) => item.contentId !== contentId));
+  await platform.files.delete(entry.packageKey).catch(() => undefined);
   return true;
 }
 

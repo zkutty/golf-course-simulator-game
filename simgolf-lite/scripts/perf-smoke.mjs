@@ -20,12 +20,14 @@
 //        PERF_MEASURE_S (default 20)
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { loadBiomeKeys } from "./biome-registry.mjs";
 
 const WORK_BUDGET_MS = Number(process.env.PERF_WORK_BUDGET_MS || 8);
 const BUDGET_MS = Number(process.env.PERF_BUDGET_MS || 33);
 const ASSERT_FRAME = process.env.PERF_ASSERT_FRAME === "1";
 const MEASURE_S = Number(process.env.PERF_MEASURE_S || 20);
-const PERF_THEME = ["parkland", "links", "desert"].includes(process.env.PERF_THEME) ? process.env.PERF_THEME : "parkland";
+const BIOME_KEYS = loadBiomeKeys();
+const PERF_THEME = BIOME_KEYS.includes(process.env.PERF_THEME) ? process.env.PERF_THEME : BIOME_KEYS[0];
 const PERF_FIXTURE = process.env.PERF_FIXTURE === "m27" ? "m27Fixture" : "perfFixture";
 const STARTUP_BUDGET_MS = Number(process.env.PERF_STARTUP_BUDGET_MS || 5000);
 const PORT = 5199;

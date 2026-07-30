@@ -1,6 +1,7 @@
 import type { Course, Terrain } from "../../models/types";
 import type { Point } from "../../models/types";
 import { BALANCE } from "../../balance/balanceConfig";
+import { getBiomeDefinition } from "../../models/biomes";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -48,7 +49,7 @@ export function computeExpectedLandingPenalty(args: {
   const pen = BALANCE.shots.landing.penaltyStrokes;
   // Theme flavor (ZKU-166): links fescue punishes a little harder. Data-only
   // and neutral (×1) for parkland/desert.
-  const deepRoughMult = BALANCE.themes[course.theme ?? "parkland"].deepRoughPenaltyMult;
+  const deepRoughMult = BALANCE.themes[getBiomeDefinition(course.theme).key].deepRoughPenaltyMult;
 
   if (totalW <= 0) {
     return { expectedPenalty: 0, probs: {} };
@@ -62,7 +63,6 @@ export function computeExpectedLandingPenalty(args: {
 
   return { expectedPenalty: expected, probs };
 }
-
 
 
 

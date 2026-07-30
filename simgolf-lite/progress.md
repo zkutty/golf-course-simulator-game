@@ -808,3 +808,214 @@ classic course-builder references.
   630.686ms, full-estate fixture 16.883ms, render-state average 0.009834ms.
 - TypeScript build check passed in 5.24s process wall time; diff check passed.
 - No commit, push, deploy, Linear update, or generated artifact was left.
+
+## 2026-07-30 — ZK-559 biome and climate content contract
+
+- Added one typed biome registry owning current generation tuning, climate and
+  four-season phenology, presentation/preview metadata, material/prop/structure
+  ownership, audio routing, and save/content compatibility for Parkland, Links,
+  and Desert. `LandTheme` and the runtime theme list now derive from its keys.
+- M39 weather consumes resolved semantic climate state with no theme-string
+  branches. Full-output SHA-256 baselines pin nine generated estates and four
+  weather years per biome to their pre-M52 results.
+- Registry/theme/generation/seasons tests pass (27), adjacent material/prop/
+  audio/authoring tests pass (211), and the application TypeScript check passes.
+- This is a contract/model migration with deliberately identical visuals and
+  gameplay output, so no bundled-client run was warranted. ZK-560 retains the
+  wider registry-driven consumer migration.
+- Independent review tightened the boundary: the original top-level
+  `LandThemeDefinition` API is preserved through a facade derived entirely
+  from the new registry, leaving consumer-shape migration to ZK-560. The
+  runtime audit now rejects malformed generation/climate ranges, preview
+  colors, compatibility versions/keys, and colliding legacy aliases.
+
+## 2026-07-30 — ZK-561 deterministic biome climate and phenology
+
+- Added the pure, frozen `biomeClimatePhenologyForDay(theme, absoluteDay)`
+  projection. It carries fixed calendar progress, a bounded 14-day transition
+  (seven days on each side of a calendar boundary), blended numeric climate
+  and vegetation values, and categorical foliage/moisture handoff metadata.
+  It does not serialize or mutate calendar, weather, or save state.
+- Extended the biome contract with phenotype regime/exposure metadata:
+  Parkland is temperate, Links is explicitly exposed coastal, and Desert uses
+  an arid heat/drought cycle. Tropical wet/dry and Alpine frost/snow are typed
+  future contracts only; `BIOME_KEYS` remains Parkland/Links/Desert.
+- Focused tests prove deterministic seed/biome/day output, each boundary's
+  bounded continuity, calendar immutability, save/reload/long-year stability,
+  and the pre-M52 four-weather-year SHA-256. Registry validation rejects an
+  unsupported phenology regime.
+- Verification: focused biome/seasons/theme suite (3 files, 32 tests),
+  TypeScript project build, and `git diff --check` all pass. No visual-client
+  run is needed because this is a read-only semantic contract with no visible
+  consumer yet. No ZK-560 consumer/package/render migration was added.
+
+## 2026-07-30 — ZK-560 registry-driven biome consumers
+
+- Routed generation, terrain economics and penalties, estate values, relief,
+  material fields/details, natural props, structures, decorations, scenic
+  surround, previews, labels, audio, scenarios, content packages, Player Pro,
+  live snapshots, developer fixtures, balance runs, and atlas tooling through
+  `BIOME_DEFINITIONS` or `BIOME_KEYS`.
+- Removed renderer cross-biome Parkland substitution. Registered biomes now
+  keep their own content owner and use an explicitly warned, observable
+  procedural fallback when optional art is missing; atlas diagnostics retain
+  bounded fallback evidence.
+- Build tools parse the authoritative TypeScript registry with the TypeScript
+  AST, authoring profiles fail closed on key drift, and the production build
+  runs a static consumer audit. The one explicit current-schema theme allowlist
+  in `save.ts` is asserted as a narrow ZK-563-owned exception.
+- Added exhaustive generation/render-contract smoke coverage and a browser
+  flow that creates a playable course from every registered new-game card.
+  Focused Vitest passes 13 files / 270 tests; TypeScript, i18n, biome audit,
+  production build and asset audits pass. M21 plus ZK-560 Playwright passes
+  3/3 with no asset, console, or page errors.
+- The bundled client produced valid structured Parkland gameplay state and no
+  error artifact; its SwiftShader canvas capture was black. Full-page
+  Parkland, Links, and Desert Playwright captures were inspected and showed
+  distinct intact course renders. Tracked M21 baseline images were restored.
+- ZK-563 still owns replacement of the save normalizer's explicit legacy
+  theme allowlist. No commit, push, deploy, or Linear mutation was performed.
+- Independent review found and repaired one remaining fixed-biome HUD label.
+  Course vibe tone still uses the existing slope/difficulty/aesthetics
+  thresholds, while biome identity now comes from `BIOME_DEFINITIONS` through
+  localized message templates. Unit coverage pins every registered biome and
+  pseudo locale; the consumer audit rejects the stale fixed phrases.
+- The refreshed ZK-560 browser flow passes 1/1 for all three registered
+  new-game paths with exact positive/negative HUD identity assertions and no
+  asset, console, or page errors. Fresh Parkland, Links, and Desert captures
+  were visually inspected and show the correct biome-specific label and
+  distinct intact terrain.
+
+## 2026-07-30 — ZK-562 seasonal biome bundles and incremental loading
+
+- Upgraded the stable biome discovery manifest to schema v2: every
+  biome/quality tier now owns one immutable base bundle plus optional
+  per-season material, prop, and decal overlays. The build convention emits
+  only authored overlay layers; absent seasons remain base-only, and Low
+  rejects all expensive seasonal detail.
+- Added a strict runtime schema and an explicit in-memory v1-to-v2
+  compatibility path. Base and overlay requests have separate promise/cache
+  identities, selected content-owner routes stay isolated, required-base and
+  manifest failures remain retryable, and an optional overlay failure records
+  bounded diagnostics while leaving the base playable.
+- Hash/bundle audits now validate either deployed v1 or current v2, every
+  overlay asset hash and selected base-plus-overlay payload, allowed season
+  keys, and the Low policy. PWA smoke now inspects CacheStorage to reject
+  unselected-biome leakage and prove every requested biome asset is available
+  offline.
+- Focused schema/loader coverage passes 7 tests, including v1 compatibility,
+  selected-season isolation, missing-overlay fallback, overlay retry without a
+  base redownload, and Low omissions. TypeScript, targeted lint/syntax checks,
+  production build, both terrain/asset audits, and whitespace validation pass.
+- Actual selected payloads are bounded: Parkland/Links/Desert High peak at
+  3.344 MiB, Medium at 2.821 MiB, and Low at 2.093 MiB, all below 6 MiB;
+  initial critical transfer is 3.581 MiB.
+- The bundled client reached Spring Parkland gameplay with valid structured
+  text state, no console/page-error artifact, and a visually inspected intact
+  Pixi course capture in `artifacts/zk-562/bundled-client/`.
+- Remaining infrastructure-only check: the production PWA smoke could not
+  complete in this agent session. Port 4175 was occupied by another shared
+  dev process, sandbox binding on 4182 returned EPERM, and the requested
+  escalated 4182 run was user-aborted while pending. Re-run `npm run test:pwa`
+  once an allowed local port is available; no product or test assertion failed.
+- Independent-review repair: `App` now passes the existing world-owned club
+  season into `PixiStage`; both initial atlas load and the post-ready reload
+  include it, and the reload effect depends on season. Atlas activation uses a
+  monotonically increasing request identity, so a late prior-season download
+  can populate its cache but cannot replace the current base/overlay.
+- The focused loader suite now passes 8 tests, including a controlled
+  late-Spring/current-Autumn race. A production Playwright regression injects
+  missing Spring and Winter overlays, observes both current-season requests,
+  advances the real M39 calendar, and proves the base remains rendered with no
+  console/page errors. Its full-page Winter capture and the required bundled
+  client's Spring capture were visually inspected; client text reports Pixi,
+  Parkland, High quality, and the correct Spring calendar with no error file.
+
+## 2026-07-30 — ZK-563 biome persistence and package compatibility
+
+- Added save schema v23 with canonical, versioned biome/content/climate
+  compatibility evidence on courses and active Player Pro/live round
+  snapshots. Historical Parkland/Links/Desert key or display-label spellings
+  normalize losslessly; unsupported or contradictory evidence fails closed
+  before a save slot or active run can be partially replaced.
+- Registered-biome identity now survives manual saves, rotating autosaves,
+  export/import, native desktop atomic-file storage, scenario definitions and
+  fixtures, active-round restoration, and both course and challenge packages.
+- CourseCraft packages now verify manifest/course biome agreement, supported
+  content versions, and exact climate phenology/exposure metadata. Older
+  compatible packages are canonicalized and re-checksummed on import; future
+  or unknown contracts are quarantined with explicit errors.
+- Package revisions use content-addressed storage keys and update the library
+  manifest atomically. Interrupted imports preserve the previous readable
+  revision, while interrupted deletes preserve the manifest until committed.
+- The ZK-560 save allowlist exception is removed. The consumer audit now
+  requires registry-based key/metadata validation and forbids all fixed save
+  allowlists.
+- Automated verification: TypeScript, lint/i18n, the biome-consumer audit, 12
+  focused save/package/scenario/round/platform files (98 tests), and the full
+  repository suite (124 files, 969 passed, one intentional skip) pass,
+  including package fuzzing, malformed inputs, interrupted commits,
+  deterministic state, and all registered biome round trips. No browser run
+  was needed because this packet changes serialization/validation/storage
+  only and no visible path.
+
+## 2026-07-30 — ZK-623 biome-aware UI theming contract
+
+- Added a typed `BiomeUiTheme` boundary sourced from `BIOME_DEFINITIONS`.
+  It exposes only contrast-safe contextual accent, low-emphasis surface/edge,
+  climate-derived motif, and season/weather cue variables. It explicitly
+  forbids biome-specific layout, command order, shortcuts, typography, icons,
+  semantic roles, permanent controls, and the CourseCraft focus indicator.
+- The stable CourseCraft shell now receives data attributes and CSS variables
+  for its course frame/sidebar edge; the new-game wizard uses the same narrow
+  contract for selected-land feedback and a non-interactive contextual motif.
+  Invalid/incomplete biome input falls back to the registry default. Color
+  vision variants use distinguishable safe accents; reduced motion removes the
+  contextual transition. No UI state enters saves or simulation.
+- Focused contract tests cover registry mapping, WCAG-AA accent contrast,
+  fallback, CVD/reduced-motion variables, and weather cues. Browser coverage
+  verifies Parkland/Links/Desert wizard and in-game shells preserve one command
+  hierarchy and focus token, plus reduced-motion behavior. Shell references
+  now load the populated M21 fixture and first capture the Pixi terrain
+  canvas, preventing a timing-only blank-canvas screenshot from becoming
+  evidence. Reference captures:
+  `artifacts/zk-623/{wizard,terrain,shell}-{parkland,links,desert}.png`.
+- Verification: focused Vitest (3 tests), lint/i18n (0 errors; existing hook
+  warnings only), and ZK-623 Playwright (2 tests) pass. The required bundled
+  web-game client produced valid menu text state with no error output and its
+  capture was inspected. A concurrent package-format cast was the only
+  remaining shared-project TypeScript diagnostic at handoff; this UI slice
+  itself has no TypeScript errors. Human visual/aesthetic approval remains
+  intentionally deferred to the final validation gate.
+
+## 2026-07-30 — ZK-564 deterministic biome authoring audits and fixtures
+
+- Added one registry-driven, deterministic authoring reference course for each
+  registered biome. Every fixture guarantees all 10 terrains, all three
+  natural-prop families, all four structures, all 11 decorations, all four
+  semantic climate states, compatibility provenance, and 16 standard camera
+  bookmarks: overview/build/golfer-follow/direct-play at rotations 0–3.
+- Added a fail-closed manifest/frame audit covering terrain families, natural
+  props, buildings, decorations, audio contexts and provenance, content-
+  addressed asset provenance, Low/Medium/High policy, explicit biome fallback,
+  and a 6 MiB selected-payload cap. Machine-readable outputs are
+  `artifacts/zk-564/biome-{authoring-audit,missing-assets,payload-report}.json`
+  plus `biome-reference-fixtures.json`. Current result is PASS with zero
+  required gaps and zero over-budget tiers; 45 optional base/seasonal omissions
+  and three explicit fallback contracts are distinguished rather than hidden.
+- Deliberately incomplete tests remove Parkland tree frames, remove the Links
+  bridge fixture, and lower the payload budget to one byte. Each fails in its
+  correct required/over-budget report bucket. Current logical report SHA-256 is
+  `0bb39478c79b655a728d28361608251cf71fe4a088ec62eaed6727086a95338a`;
+  fixture-report SHA-256 is
+  `d61eccd6fc00a49b36edcb1e6012d6f8355f2504d0b103354c16df6b53947e2e`.
+- Verification: focused Vitest passes 5 tests; TypeScript, targeted lint (zero
+  errors; existing App hook warnings only), biome-consumer audit, and diff
+  integrity pass. ZK-564 Playwright passes after capturing all 12
+  biome/rotation canvases; representative Parkland, Links, and Desert captures
+  were visually inspected as populated and distinct with no console/page
+  errors. The bundled web-game client reached the Links fixture twice with
+  structured state covering every terrain/prop/decor category, no error
+  artifact, and an inspected intact Pixi overview capture.
+- Human art direction, aesthetics, and final gameplay validation remain
+  intentionally deferred to the final human gate.

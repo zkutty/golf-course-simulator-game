@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { formatCurrency } from "../i18n/format";
 import type { Difficulty, LandTheme, PlayMode, Terrain } from "../game/models/types";
 import type { GameSetup } from "../game/models/setup";
@@ -7,14 +7,16 @@ import { SANDBOX_STARTING_CASH } from "../game/models/setup";
 import { DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
-import { getLandTheme } from "../game/models/themes";
+import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
 import { generateCourseName } from "../utils/courseNames";
 import { StartMenuBackground } from "./StartMenuBackground";
 import { ScenarioSelect } from "./ScenarioSelect";
 import type { ScenarioDefinition } from "../game/scenarios/types";
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
+import type { MessageKey } from "../i18n/catalog";
 import { IS_DEMO } from "../config/edition";
+import { biomeUiStyle, biomeUiTheme } from "./biomeUiTheme";
 
 // New-game setup wizard (ZKU-162): Mode → Land → Difficulty → Details.
 // Output is a typed GameSetup consumed by the single createNewGame path.
@@ -27,6 +29,11 @@ const STEP_TITLE: Record<Step, string> = {
   LAND: "Pick your land",
   DIFFICULTY: "How hard should it be?",
   DETAILS: "Name your course",
+};
+const BIOME_TITLE_KEYS: Record<LandTheme, MessageKey> = {
+  parkland: "auto.ui.newgamewizard.parkland",
+  links: "auto.ui.newgamewizard.links",
+  desert: "auto.ui.newgamewizard.desert",
 };
 
 function randomSeed(): number {
@@ -53,7 +60,7 @@ function cssColor(hex: number): string {
 }
 
 function previewPalette(theme: LandTheme): Record<Terrain, string> {
-  const tints = getLandTheme(theme).tileTints;
+  const tints = getBiomeDefinition(theme).presentation.tileTints;
   const out = { ...PREVIEW_COLORS };
   for (const [terrain, hex] of Object.entries(tints) as Array<[Terrain, number]>) {
     out[terrain] = cssColor(hex);
@@ -86,11 +93,12 @@ function LandPreview(props: {
         ctx.fillRect(x * px, y * px, px, px);
       }
     }
-    const propColors = props.theme === "desert"
-      ? { tree: "#315e32", bush: "#6f7436", rock: "#714633" }
-      : props.theme === "links"
-        ? { tree: "#294f34", bush: "#9a8b38", rock: "#59646a" }
-        : { tree: "#214e2c", bush: "#477d35", rock: "#66685f" };
+    const propTints = getBiomeDefinition(props.theme).presentation.preview.propTints;
+    const propColors = {
+      tree: cssColor(propTints.tree),
+      bush: cssColor(propTints.bush),
+      rock: cssColor(propTints.rock),
+    };
     for (const obstacle of generated.obstacles) {
       ctx.fillStyle = propColors[obstacle.type];
       const radius = obstacle.type === "tree" ? 2 : 1;
@@ -140,7 +148,7 @@ function ChoiceCard(props: {
         textAlign: "left",
         padding: 16,
         borderRadius: 16,
-        border: props.selected ? "3px solid #F2C14E" : "3px solid rgba(255,255,255,0.25)",
+        border: props.selected ? "3px solid var(--biome-accent, #F2C14E)" : "3px solid rgba(255,255,255,0.25)",
         background: props.selected ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.82)",
         cursor: props.disabled ? "not-allowed" : "pointer",
         opacity: props.disabled ? 0.55 : 1,
@@ -183,7 +191,7 @@ export function NewGameWizard(props: {
 }) {
   const [step, setStep] = useState<Step>(IS_DEMO ? "SCENARIOS" : "MODE");
   const [mode, setMode] = useState<PlayMode>("challenge");
-  const [theme, setTheme] = useState<LandTheme>("parkland");
+  const [theme, setTheme] = useState<LandTheme>(BIOME_KEYS[0]);
   const [difficulty, setDifficulty] = useState<Difficulty>("normal");
   const [candidateSeeds, setCandidateSeeds] = useState<number[]>(() =>
     Array.from({ length: 4 }, randomSeed)
@@ -199,6 +207,7 @@ export function NewGameWizard(props: {
 
   const seed = candidateSeeds[selectedSeedIdx] ?? candidateSeeds[0];
   const stepIdx = step === "SCENARIOS" ? 1 : STEPS.indexOf(step);
+  const contextualUiTheme = biomeUiTheme(theme);
 
   const setup: GameSetup = {
     mode,
@@ -251,7 +260,12 @@ export function NewGameWizard(props: {
   );
 
   return (
-    <div style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden" }}>
+    <div
+      className="cc-biome-wizard"
+      data-biome={contextualUiTheme.biome}
+      data-biome-motif={contextualUiTheme.motif}
+      style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden", ...biomeUiStyle(contextualUiTheme) } as CSSProperties}
+    >
       <StartMenuBackground />
       <div
         style={{
@@ -286,7 +300,7 @@ export function NewGameWizard(props: {
                     width: i === stepIdx ? 26 : 10,
                     height: 10,
                     borderRadius: 999,
-                    background: i <= stepIdx ? "#F2C14E" : "rgba(255,255,255,0.4)",
+                    background: i <= stepIdx ? "var(--biome-accent, #F2C14E)" : "rgba(255,255,255,0.4)",
                     transition: "width 200ms ease",
                   }}
                 />
@@ -325,28 +339,20 @@ export function NewGameWizard(props: {
 
           {step === "LAND" && (
             <div style={{ display: "grid", gap: 14 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                <ChoiceCard
-                  title={translateCurrent("auto.ui.newgamewizard.parkland")}
-                  icon="🌳"
-                  blurb="Classic tree-lined golf: gentle hills, ponds, and generous turf."
-                  selected={theme === "parkland"}
-                  onSelect={() => setTheme("parkland")}
-                />
-                <ChoiceCard
-                  title={translateCurrent("auto.ui.newgamewizard.links")}
-                  icon="🌾"
-                  blurb="Windswept coastal dunes, deep rough, and barely a tree in sight."
-                  selected={theme === "links"}
-                  onSelect={() => setTheme("links")}
-                />
-                <ChoiceCard
-                  title={translateCurrent("auto.ui.newgamewizard.desert")}
-                  icon="🌵"
-                  blurb="Sand washes and rocky mesas — water is scarce and precious."
-                  selected={theme === "desert"}
-                  onSelect={() => setTheme("desert")}
-                />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+                {BIOME_KEYS.map((key) => {
+                  const biome = getBiomeDefinition(key);
+                  return (
+                    <ChoiceCard
+                      key={key}
+                      title={translateCurrent(BIOME_TITLE_KEYS[key])}
+                      icon={biome.presentation.preview.icon}
+                      blurb={biome.blurb}
+                      selected={theme === key}
+                      onSelect={() => setTheme(key)}
+                    />
+                  );
+                })}
               </div>
               <div
                 style={{
@@ -564,7 +570,7 @@ export function NewGameWizard(props: {
                   background: "rgba(0,0,0,0.05)",
                 }}
               >
-                {mode === "challenge" ? "🎯 Challenge" : "🌿 Sandbox"} • {theme} • {difficulty} <T id="auto.ui.newgamewizard.seed.3" />{" "}
+                {mode === "challenge" ? "🎯 Challenge" : "🌿 Sandbox"} • {translateCurrent(BIOME_TITLE_KEYS[theme])} • {difficulty} <T id="auto.ui.newgamewizard.seed.3" />{" "}
                 {seed}
               </div>
             </div>

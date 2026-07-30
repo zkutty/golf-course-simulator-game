@@ -1,5 +1,6 @@
 import type { Course, Difficulty, LandTheme, ScenarioConstraints } from "../models/types";
 import type { GoalDefinition } from "../models/objectives";
+import type { BiomeCompatibilityMetadata } from "../models/biomes";
 
 export type CoursePackageKind = "course" | "challenge";
 export type PackageCompatibility = "compatible" | "migratable" | "unsupported" | "corrupt";
@@ -21,6 +22,8 @@ export interface CoursePackageManifestV1 {
   requiredGameVersion: string;
   requiredSaveSchema: number;
   theme: LandTheme;
+  /** Added in save schema 23; absent packages are migrated on import. */
+  biomeCompatibility?: BiomeCompatibilityMetadata;
   checksum: string;
   preview?: {
     mime: "image/png" | "image/jpeg";

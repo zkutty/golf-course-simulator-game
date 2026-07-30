@@ -23,6 +23,13 @@ import {
 import { normalizeLoadedSaveResult } from "../../utils/save";
 import { starterPropertyCourse } from "../property/property";
 import { createRenderPerfCourse } from "../testing/referenceCourse";
+import {
+  __resetSaveStoreForTests,
+  autosave,
+  exportSlot,
+  importSave,
+  loadSlot,
+} from "../../utils/saveStore";
 
 function threeHoleCourse(): Course {
   const width = 64;
@@ -130,6 +137,42 @@ function started() {
 }
 
 describe("M36 deterministic Player Pro play", () => {
+  it("freezes canonical biome and climate compatibility evidence in active rounds", () => {
+    const { round } = started();
+    expect(round.course.biomeCompatibility).toMatchObject({
+      version: 1,
+      biome: round.course.theme,
+      contentVersion: 1,
+      climate: {
+        phenologyRegime: "temperate-four-season",
+        exposure: "moderate",
+      },
+    });
+  });
+
+  it("restores active-round biome evidence through autosave and exported-file import", async () => {
+    const { course, world: currentWorld, career, round } = started();
+    const sourceWorld = {
+      ...currentWorld,
+      playerPro: { ...career, activeRound: round },
+    };
+    __resetSaveStoreForTests();
+    const saved = await autosave({ course, world: sourceWorld });
+    const text = await exportSlot(saved.id);
+    expect(text).not.toBeNull();
+
+    __resetSaveStoreForTests();
+    const imported = await importSave(text!, "Active round import");
+    expect(imported).not.toBeNull();
+    const restored = await loadSlot(imported!.id);
+    expect(restored?.world.playerPro?.activeRound?.course).toMatchObject({
+      theme: round.course.theme,
+      biomeCompatibility: round.course.biomeCompatibility,
+    });
+    expect(restored?.world.playerPro?.activeRound?.rngSeed).toBe(round.rngSeed);
+    expect(restored?.world.playerPro?.activeRound?.rngCursor).toBe(round.rngCursor);
+  });
+
   it("resolves identical selections and seeds byte-equivalently without replacing the target", () => {
     const { career, round } = started();
     const args = {

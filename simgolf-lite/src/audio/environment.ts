@@ -2,6 +2,7 @@ import type { Course, Point, Terrain } from "../game/models/types";
 import type { SeasonName, WeatherKind } from "../game/seasons/types";
 import type { AmbientMix, AudioSurface, MusicContext } from "./AudioManager";
 import type { SunoAmbienceContext } from "./sunoLibrary";
+import { getBiomeDefinition } from "../game/models/biomes";
 
 export function audioSurfaceFor(input: {
   screen: "menu" | "setup" | "game" | "loading";
@@ -67,7 +68,7 @@ export function musicContextFor(input: MusicSelectionInput): MusicContext {
     case "menu":
       return "title";
     case "design":
-      return `build-${input.theme ?? "parkland"}`;
+      return getBiomeDefinition(input.theme).content.audio.designMusic;
     case "operate":
       return "live";
     case "play":
@@ -124,7 +125,7 @@ export function ambientMixFor(input: {
     asset.category === "access" || asset.category === "practice" || asset.category === "clubhouse"
   );
   const wet = input.weatherKind === "rain" || input.weatherKind === "heavy_rain" || input.weatherKind === "storm";
-  let bed: SunoAmbienceContext = input.course.theme ?? "parkland";
+  let bed: SunoAmbienceContext = getBiomeDefinition(input.course.theme).content.audio.ambience;
   if (wet) bed = "rain";
   else if (input.season === "winter" || input.weatherKind === "frost") bed = "winter";
   else if (input.dayMinute >= 700 || input.dayMinute < 45) bed = "night";

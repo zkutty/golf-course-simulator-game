@@ -7,6 +7,7 @@ import { translate } from "../../i18n/core";
 import { loadCareer } from "../../utils/careerStore";
 import { CAMPAIGN_CHAPTER_BY_ID } from "../campaign/content";
 import { createCampaignRun } from "../campaign/campaign";
+import { biomeCompatibilityMetadataFor } from "../models/biomes";
 
 const text = (key: Parameters<typeof translate>[1]) => translate("en", key);
 
@@ -25,6 +26,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     blurbKey: "scenario.backNine.blurb", blurb: text("scenario.backNine.blurb"),
     seed: 90101,
     theme: "parkland",
+    biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
     difficulty: "easy",
     goals: [
       {
@@ -48,6 +50,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     blurbKey: "scenario.muniRescue.blurb", blurb: text("scenario.muniRescue.blurb"),
     seed: 90202,
     theme: "parkland",
+    biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
     difficulty: "normal",
     startingCash: 15_000,
     startingReputation: 25,
@@ -74,6 +77,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     blurbKey: "scenario.swampDeal.blurb", blurb: text("scenario.swampDeal.blurb"),
     seed: 90333,
     theme: "parkland",
+    biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
     difficulty: "normal",
     startingCash: 30_000,
     constraints: { noLoans: true },
@@ -99,6 +103,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     blurbKey: "scenario.links.blurb", blurb: text("scenario.links.blurb"),
     seed: 90404,
     theme: "links",
+    biomeCompatibility: biomeCompatibilityMetadataFor("links"),
     difficulty: "normal",
     constraints: { protectedTrees: true },
     goals: [
@@ -123,6 +128,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     blurbKey: "scenario.members.blurb", blurb: text("scenario.members.blurb"),
     seed: 90505,
     theme: "parkland",
+    biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
     difficulty: "hard",
     startingCash: 40_000,
     startingReputation: 55,
@@ -150,6 +156,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     blurbKey: "scenario.championship.blurb", blurb: text("scenario.championship.blurb"),
     seed: 90666,
     theme: "parkland",
+    biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
     difficulty: "hard",
     goals: [
       {
@@ -199,7 +206,11 @@ export function createScenarioGame(s: ScenarioDefinition): { course: Course; wor
     initialGoals
   );
 
-  const course = s.fixture ? buildFixtureCourse(s.fixture, s.seed) : base.course;
+  const course = {
+    ...(s.fixture ? buildFixtureCourse(s.fixture, s.seed) : base.course),
+    theme: s.theme,
+    biomeCompatibility: s.biomeCompatibility,
+  };
 
   const world: World = {
     ...base.world,

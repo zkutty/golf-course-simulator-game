@@ -1,4 +1,5 @@
 import type { LandTheme, Obstacle, ObstacleType, Terrain } from "../models/types";
+import { getBiomeDefinition } from "../models/biomes";
 
 export type NaturalPropFrame = `${LandTheme}_${ObstacleType}_${string}`;
 export type PropSway = { amplitude: number; speed: number } | null;
@@ -178,15 +179,17 @@ export interface NaturalPropContext {
 }
 
 export function pickNaturalProp(context: NaturalPropContext): { variant: NaturalPropVariant; scale: number } {
-  const theme = context.theme ?? "parkland";
-  const all = NATURAL_PROP_REGISTRY[theme]?.[context.obstacle.type] ?? NATURAL_PROP_REGISTRY.parkland[context.obstacle.type];
+  const theme = getBiomeDefinition(context.theme).content.props.natural;
+  const all = NATURAL_PROP_REGISTRY[theme][context.obstacle.type];
   const valid = all.filter((variant) =>
     variant.allowedTerrain.includes(context.terrain) &&
     context.elevation >= (variant.minElevation ?? -Infinity) &&
     context.elevation <= (variant.maxElevation ?? Infinity) &&
     (variant.nearWater !== "require" || context.nearWater)
   );
-  const candidates = valid.length > 0 ? valid : NATURAL_PROP_REGISTRY.parkland[context.obstacle.type];
+  // Relax context filters within the selected biome instead of silently
+  // borrowing another biome's species.
+  const candidates = valid.length > 0 ? valid : all;
   const weighted = candidates.map((variant) => {
     const waterFactor = variant.nearWater === "prefer" ? (context.nearWater ? 2.5 : 0.45) : variant.nearWater === "avoid" ? (context.nearWater ? 0.2 : 1) : 1;
     const composition = context.cultivated ? variant.composition.cultivated : variant.composition.wild;

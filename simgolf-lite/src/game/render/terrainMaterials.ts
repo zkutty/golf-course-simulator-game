@@ -1,8 +1,9 @@
 import type { LandTheme, Terrain } from "../models/types";
+import { BIOME_KEYS, getBiomeDefinition } from "../models/biomes";
 import type { AutotileFeature, CardinalDirection, CornerDirection } from "./autotile";
 
 export const TERRAIN_KINDS = ["fairway", "rough", "deep_rough", "sand", "waste_area", "water", "wetland", "green", "tee", "path"] as const satisfies readonly Terrain[];
-export const LAND_THEME_KINDS = ["parkland", "links", "desert"] as const satisfies readonly LandTheme[];
+export const LAND_THEME_KINDS: readonly LandTheme[] = BIOME_KEYS;
 
 export type PaletteRole = "playing" | "natural" | "hazard" | "path";
 export type TerrainBoundaryRole =
@@ -125,14 +126,13 @@ function themeManifest(theme: LandTheme): Record<Terrain, TerrainMaterialDefinit
 }
 
 /** Exhaustive theme × terrain manifest; `satisfies` makes additions fail loudly. */
-export const TERRAIN_MATERIALS = {
-  parkland: themeManifest("parkland"),
-  links: themeManifest("links"),
-  desert: themeManifest("desert"),
-} satisfies Record<LandTheme, Record<Terrain, TerrainMaterialDefinition>>;
+export const TERRAIN_MATERIALS = Object.fromEntries(
+  BIOME_KEYS.map((theme) => [theme, themeManifest(theme)]),
+) as Record<LandTheme, Record<Terrain, TerrainMaterialDefinition>>;
 
 export function getTerrainMaterial(theme: LandTheme | undefined, terrain: Terrain): TerrainMaterialDefinition {
-  return TERRAIN_MATERIALS[theme ?? "parkland"][terrain];
+  const owner = getBiomeDefinition(theme).content.materials.terrain;
+  return TERRAIN_MATERIALS[owner][terrain];
 }
 
 export function pickTerrainBaseFrame(material: TerrainMaterialDefinition, x: number, y: number): TerrainBaseFrame {

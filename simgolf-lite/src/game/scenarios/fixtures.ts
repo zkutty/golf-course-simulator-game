@@ -5,6 +5,7 @@ import { findClubhouseSpot } from "../models/buildings";
 import { generateWildLand, generateObstacles } from "../gen/generateWildLand";
 import { createEstate, starterParcelOffset } from "../estate/estate";
 import type { FixtureKey } from "./types";
+import { biomeCompatibilityMetadataFor } from "../models/biomes";
 
 // Authored prebuilt-course fixtures (ZKU-164). Deterministic: land from the
 // scenario seed, then holes carved programmatically. Elevations are kept
@@ -75,6 +76,7 @@ function paintCourse(args: {
     ...DEFAULT_COURSE,
     name: args.name,
     theme,
+    biomeCompatibility: biomeCompatibilityMetadataFor(theme),
     width,
     height,
     tiles,

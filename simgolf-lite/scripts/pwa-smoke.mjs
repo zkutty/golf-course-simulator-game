@@ -105,6 +105,22 @@ try {
   if (loadedBiomeAssets.some((url) => url.includes("terrain-links") || url.includes("field-links") || url.includes("terrain-desert") || url.includes("field-desert"))) {
     throw new Error("Unselected biome assets were downloaded during Parkland startup");
   }
+  const cachedBiomeAssets = await page.evaluate(async () => {
+    const keys = (await caches.keys()).filter((key) => key.startsWith("coursecraft-"));
+    const requests = (await Promise.all(keys.map(async (key) => (await caches.open(key)).keys()))).flat();
+    return requests.map((request) => request.url).filter((url) => url.includes("/atlases/biomes/"));
+  });
+  if (!cachedBiomeAssets.some((url) => url.endsWith("/atlases/biomes/manifest.json"))) {
+    throw new Error("Stable biome manifest was not available in the PWA cache");
+  }
+  if (cachedBiomeAssets.some((url) => url.includes("terrain-links") || url.includes("field-links") || url.includes("terrain-desert") || url.includes("field-desert"))) {
+    throw new Error("Runtime cache leaked an unselected biome bundle");
+  }
+  for (const loaded of loadedBiomeAssets) {
+    if (!cachedBiomeAssets.includes(loaded)) {
+      throw new Error(`Loaded biome asset was not isolated in the runtime cache: ${loaded}`);
+    }
+  }
 
   await page.evaluate(() => localStorage.setItem("coursecraft_pwa_probe", "offline-save"));
   await context.setOffline(true);
@@ -125,7 +141,7 @@ try {
   if (offlineBundleResponses.some((ok) => !ok)) {
     throw new Error("Previously loaded biome assets were not available offline");
   }
-  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, scoped install, offline reload, and local save persistence`);
+  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, selected-biome cache isolation, scoped install, offline reload, and local save persistence`);
 } finally {
   await browser.close();
   preview?.close?.();

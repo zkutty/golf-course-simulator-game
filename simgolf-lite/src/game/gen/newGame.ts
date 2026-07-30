@@ -12,6 +12,7 @@ import { createEstate } from "../estate/estate";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { createDefaultPlayerPro } from "../playerPro/playerPro";
 import { createSeasonalState } from "../seasons/seasons";
+import { biomeCompatibilityMetadataFor } from "../models/biomes";
 
 /**
  * THE new-game path (ZKU-162): every fresh run — wizard, quick start, defeat
@@ -38,6 +39,7 @@ export function createNewGame(
     ...DEFAULT_COURSE,
     name: setup.courseName.trim() || DEFAULT_COURSE.name,
     theme: setup.theme,
+    biomeCompatibility: biomeCompatibilityMetadataFor(setup.theme),
     tiles,
     elevations,
     holes: Array.from({ length: 9 }, (_, i) => ({

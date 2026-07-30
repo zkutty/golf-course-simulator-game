@@ -7,12 +7,14 @@ import type { SeasonalState } from "../seasons/types";
 import type { CampaignRunState } from "../campaign/types";
 import type { M49DemandPlan, M49EconomyState } from "../m49/types";
 import type { M51CourseMobilityState, M51MobilityAggregateSummary, M51MobilityState } from "../m51/types";
+import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
+
+export type { LandTheme } from "./biomes";
 
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
 export type PlayMode = "sandbox" | "challenge" | "career";
 export type Difficulty = "easy" | "normal" | "hard";
-export type LandTheme = "parkland" | "links" | "desert";
 
 // Scenario rule overrides (ZKU-164), persisted denormalized on World so a
 // save stays self-contained even if scenario definitions change later.
@@ -355,6 +357,8 @@ export interface Course {
   // Land theme the wild land was generated with (ZKU-162/166). Older saves
   // migrate to "parkland" (the identity theme) on load.
   theme?: LandTheme;
+  /** Versioned biome/content/climate identity for portable persistence. */
+  biomeCompatibility?: BiomeCompatibilityMetadata;
   /** Optional M35 smooth-authoring metadata. Tiles remain authoritative. */
   surfaceIntent?: SurfaceIntentV1;
   /** M25 land ownership and immutable surveyed-land record. */

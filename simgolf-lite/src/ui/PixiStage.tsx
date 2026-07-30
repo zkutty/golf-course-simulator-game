@@ -9,6 +9,7 @@ import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
 import { mobilityRenderUnits } from "../game/m51/mobilityRender";
 import type { PlayerPlayableRound, PlayerProPoint } from "../game/models/playerProTypes";
+import type { SeasonName } from "../game/seasons/types";
 import type { CameraState, IsoCameraSnapshot } from "../game/render/camera";
 import {
   ELEVATION_STEP_PX,
@@ -97,7 +98,7 @@ import {
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { buildingSpec, buildingVisualFrame } from "../game/models/buildings";
 import { decorationTiles, decorationVisual } from "../game/models/decorations";
-import { getLandTheme } from "../game/models/themes";
+import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
 import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
 import type { AtlasFrame } from "../render/atlas";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
@@ -153,6 +154,7 @@ import {
   clampScenicCameraCenter,
   generateScenicSurround,
   isScenicOceanPoint,
+  scenicNaturalTerrain,
   type CoastEdge,
   type ScenicPatchKind,
 } from "../game/render/scenicSurround";
@@ -545,6 +547,8 @@ export interface PixiStageProps {
   paceBottlenecks?: PaceAdvisorFinding[];
   animationsEnabled: boolean;
   graphicsQuality: "high" | "medium" | "low";
+  /** Current club-calendar season; omitted legacy callers remain base-only. */
+  season?: SeasonName;
   /** Feeds sustained frame telemetry to the Auto quality controller. */
   onFrameTime?: (frameMs: number) => void;
   ambienceFx: boolean;
@@ -587,6 +591,13 @@ export interface PixiStageProps {
   onViewChange?: (view: IsoCameraSnapshot) => void;
   /** Imperative camera destination from minimap click-to-jump. */
   cameraJump?: { center: Point; nonce: number } | null;
+  /** Deterministic M52 reference-camera contract exercised by browser fixtures. */
+  referenceCamera?: {
+    id: string;
+    center: Point;
+    zoom: number;
+    rotation: 0 | 1 | 2 | 3;
+  } | null;
   showObstacles?: boolean;
   showGolfers?: boolean;
   showMarkers?: boolean;
@@ -894,12 +905,15 @@ function createFallbackObstacleTexture(
   canvas.height = 64;
   const context = canvas.getContext("2d");
   if (!context) return PIXI.Texture.WHITE;
-  const isDry = frame.startsWith("desert_");
-  const isLinks = frame.startsWith("links_");
-  const dark = isDry ? "#5d6138" : isLinks ? "#3f5b35" : "#315e37";
-  const mid = isDry ? "#81804b" : isLinks ? "#5f7a45" : "#4f8248";
-  const light = isDry ? "#a39b61" : isLinks ? "#83975b" : "#72a85f";
-  const trunk = isDry ? "#71543b" : "#65462f";
+  const biomeKey = BIOME_KEYS.find((key) => frame.startsWith(`${key}_`));
+  if (!biomeKey) throw new Error(`[renderer] fallback frame has no registered biome owner: ${frame}`);
+  const propTints = getBiomeDefinition(biomeKey).presentation.preview.propTints;
+  const base = propTints[type];
+  const css = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
+  const dark = css(darken(base, 0.72));
+  const mid = css(base);
+  const light = css(shade(base, 1.28));
+  const trunk = css(darken(propTints.rock, 0.78));
 
   if (type === "tree") {
     context.fillStyle = trunk;
@@ -954,7 +968,7 @@ function createFallbackObstacleTexture(
       context.fill();
     }
   } else {
-    context.fillStyle = isDry ? "#8a806d" : "#777a72";
+    context.fillStyle = css(darken(propTints.rock, 0.82));
     context.beginPath();
     context.moveTo(13, 53);
     context.lineTo(18, 31);
@@ -963,7 +977,7 @@ function createFallbackObstacleTexture(
     context.lineTo(53, 50);
     context.closePath();
     context.fill();
-    context.fillStyle = isDry ? "#b2a58c" : "#a3a69c";
+    context.fillStyle = css(shade(propTints.rock, 1.24));
     context.beginPath();
     context.moveTo(21, 42);
     context.lineTo(29, 27);
@@ -1154,8 +1168,9 @@ export function PixiStage(props: PixiStageProps) {
   } = props;
   const initialRendererConfigRef = useRef({
     resolutionScale: props.resolutionScale,
-    theme: course.theme ?? "parkland",
+    theme: getBiomeDefinition(course.theme).key,
     graphicsQuality: props.graphicsQuality,
+    season: props.season,
   });
   const terrainTool = props.terrainTool ?? "curve";
   const updateClickSplineDraft = useCallback((points: Point[]) => {
@@ -1558,6 +1573,27 @@ export function PixiStage(props: PixiStageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appReady, props.cameraJump?.nonce]);
 
+  useEffect(() => {
+    const reference = props.referenceCamera;
+    if (!appReady || !reference) return;
+    const cam = camRef.current;
+    const center = clampCenter(reference.center.x, reference.center.y);
+    cam.initialized = true;
+    setRotation((reference.rotation * 90) as IsoRotation);
+    cam.cx = cam.tcx = center.x;
+    cam.cy = cam.tcy = center.y;
+    cam.zoom = cam.tzoom = Math.max(minimumZoom(), Math.min(MAX_ZOOM, reference.zoom));
+    applyCamera();
+    reportView();
+  }, [
+    appReady,
+    applyCamera,
+    clampCenter,
+    minimumZoom,
+    props.referenceCamera,
+    reportView,
+  ]);
+
   const screenToTile = useCallback(
     (globalX: number, globalY: number): { x: number; y: number } | null => {
       const iso = screenToIsoPlane(globalX, globalY);
@@ -1668,6 +1704,7 @@ export function PixiStage(props: PixiStageProps) {
       await loadAtlases(
         initialRendererConfigRef.current.theme,
         initialRendererConfigRef.current.graphicsQuality,
+        initialRendererConfigRef.current.season,
       );
 
       app.canvas.style.display = "block";
@@ -1829,13 +1866,17 @@ export function PixiStage(props: PixiStageProps) {
   useEffect(() => {
     if (!appReady) return;
     let cancelled = false;
-    void loadAtlases(course.theme ?? "parkland", props.graphicsQuality).then(() => {
+    void loadAtlases(
+      getBiomeDefinition(course.theme).key,
+      props.graphicsQuality,
+      props.season,
+    ).then(() => {
       if (!cancelled) setAtlasRevision((revision) => revision + 1);
     });
     return () => {
       cancelled = true;
     };
-  }, [appReady, course.theme, props.graphicsQuality]);
+  }, [appReady, course.theme, props.graphicsQuality, props.season]);
 
   // Resize with ResizeObserver
   useEffect(() => {
@@ -1879,7 +1920,7 @@ export function PixiStage(props: PixiStageProps) {
   // smaller one after Pixi has initialized. Refit once per course/view
   // signature so the new estate cannot appear as a tiny object off-center.
   useEffect(() => {
-    if (!appReady || cameraState) return;
+    if (!appReady || cameraState || props.referenceCamera) return;
     const completeHole = holes[activeHoleIndex]?.tee && holes[activeHoleIndex]?.green
       ? holes[activeHoleIndex]
       : holes.find((hole) => hole.tee && hole.green);
@@ -1906,6 +1947,7 @@ export function PixiStage(props: PixiStageProps) {
     fitDefaultView,
     holes,
     props.showGridOverlays,
+    props.referenceCamera,
   ]);
 
   useEffect(() => {
@@ -1916,7 +1958,7 @@ export function PixiStage(props: PixiStageProps) {
   // CameraState prop → glide targets. Skips echoes of centers we reported
   // ourselves so user pan/zoom isn't fought by the round-trip through App.
   useEffect(() => {
-    if (!appReady) return;
+    if (!appReady || props.referenceCamera) return;
     const app = appRef.current;
     const cam = camRef.current;
     if (!app || !cam.initialized) return;
@@ -1945,7 +1987,7 @@ export function PixiStage(props: PixiStageProps) {
     } else if (Number.isFinite(cameraState.zoom)) {
       cam.tzoom = Math.max(minimumZoom(), Math.min(MAX_ZOOM, cameraState.zoom));
     }
-  }, [appReady, cameraState, rotation, fitDefaultView, minimumZoom]);
+  }, [appReady, cameraState, rotation, fitDefaultView, minimumZoom, props.referenceCamera]);
 
   // Camera controls: wheel zoom-to-cursor, drag pan, WASD/QE, smoothing.
   useEffect(() => {
@@ -2266,7 +2308,7 @@ export function PixiStage(props: PixiStageProps) {
     layers.estateSeam.removeChildren().forEach((child) => child.destroy({ children: true }));
 
     const model = generateScenicSurround(course, props.worldSeed);
-    const palette = SCENIC_COLORS[model.theme];
+    const palette = SCENIC_COLORS[getBiomeDefinition(model.theme).content.materials.terrain];
     const ground = new PIXI.Graphics();
     ground.eventMode = "none";
     const quad = (graphics: PIXI.Graphics, x: number, y: number, width: number, height: number) => {
@@ -2347,7 +2389,7 @@ export function PixiStage(props: PixiStageProps) {
       const oceanDetail = new PIXI.Container();
       oceanDetail.eventMode = "none";
       const band = 24;
-      const material = getTerrainMaterial("links", "water");
+      const material = getTerrainMaterial(model.theme, "water");
       for (let y = -band; y < course.height + band; y++) for (let x = -band; x < course.width + band; x++) {
         if (x >= 0 && y >= 0 && x < course.width && y < course.height) continue;
         if (!isScenicOceanPoint(model.coast, { x: x + 0.5, y: y + 0.5 }, course.width, course.height, model.coastline)) continue;
@@ -2402,7 +2444,7 @@ export function PixiStage(props: PixiStageProps) {
     const scenicProps = new PIXI.Container();
     scenicProps.sortableChildren = true;
     scenicProps.eventMode = "none";
-    const scenicTerrain: Terrain = model.theme === "desert" ? "waste_area" : model.theme === "links" ? "deep_rough" : "rough";
+    const scenicTerrain: Terrain = scenicNaturalTerrain(model.theme);
     for (const prop of model.props) {
       const obstacle: Obstacle = { x: Math.round(prop.x), y: Math.round(prop.y), type: prop.type };
       const picked = pickNaturalProp({
@@ -2414,16 +2456,7 @@ export function PixiStage(props: PixiStageProps) {
         nearWater: false,
         cultivated: false,
       });
-      const fallback = pickNaturalProp({
-        theme: "parkland",
-        runSeed: props.worldSeed,
-        obstacle,
-        terrain: "rough",
-        elevation: 0,
-        nearWater: false,
-        cultivated: false,
-      });
-      const texture = getPropFrame(picked.variant.frame) ?? getPropFrame(fallback.variant.frame);
+      const texture = getPropFrame(picked.variant.frame);
       const position = worldToIso(prop.x, prop.y, 0, rotation);
       if (texture) {
         const sprite = new PIXI.Sprite(texture);
@@ -2522,9 +2555,9 @@ export function PixiStage(props: PixiStageProps) {
     // Accessibility and legacy-biome tint fallback. Theme/material selection
     // itself is data-driven through the exhaustive terrain material registry.
     const THEMED_COLORS: Record<Terrain, number> = props.colorVision === "standard"
-      ? { ...COLORS, ...getLandTheme(course.theme).tileTints }
+      ? { ...COLORS, ...getBiomeDefinition(course.theme).presentation.tileTints }
       : TERRAIN_PALETTES[props.colorVision];
-    const cliffFaces = getLandTheme(course.theme).cliffFaces;
+    const cliffFaces = getBiomeDefinition(course.theme).presentation.cliffFaces;
 
     /** Rebuild one chunk's contents in place (cliffs first, tops in depth order). */
     const buildChunk = (chunk: TerrainChunk, cx: number, cy: number) => {
@@ -2891,7 +2924,7 @@ export function PixiStage(props: PixiStageProps) {
       rotation,
     );
     const themedColors: Record<Terrain, number> = props.colorVision === "standard"
-      ? { ...COLORS, ...getLandTheme(course.theme).tileTints }
+      ? { ...COLORS, ...getBiomeDefinition(course.theme).presentation.tileTints }
       : TERRAIN_PALETTES[props.colorVision];
 
     const buildMask = (rings: readonly (readonly Point[])[]) => {
@@ -2934,7 +2967,7 @@ export function PixiStage(props: PixiStageProps) {
         : null;
       if (authored && !authored.destroyed) return authored;
       const key = [
-        course.theme ?? "parkland",
+        getBiomeDefinition(course.theme).key,
         terrain,
         quality,
         props.colorVision,
@@ -3347,14 +3380,13 @@ export function PixiStage(props: PixiStageProps) {
         cultivated: isCultivated(obs.x, obs.y),
       };
       const selected = pickNaturalProp(context);
-      const fallback = pickNaturalProp({ ...context, theme: "parkland" });
       const habitat = deriveTreeHabitat(
         selected.variant.frame,
         obs,
         props.worldSeed,
         selected.scale,
       );
-      return { obs, selected, fallback, habitat };
+      return { obs, selected, habitat };
     });
     const habitatBudget = props.graphicsQuality === "high"
       ? 110
@@ -3369,11 +3401,11 @@ export function PixiStage(props: PixiStageProps) {
         .map((entry) => `${entry.obs.x},${entry.obs.y}`),
     );
 
-    preparedObstacles.forEach(({ obs, selected, fallback, habitat }) => {
+    preparedObstacles.forEach(({ obs, selected, habitat }) => {
       const selectedHabitat = habitatKeys.has(`${obs.x},${obs.y}`)
         ? habitat
         : null;
-      const atlasTex = getPropFrame(selected.variant.frame) ?? getPropFrame(fallback.variant.frame);
+      const atlasTex = getPropFrame(selected.variant.frame);
       if (atlasTex) {
         addSprite(obs, atlasTex, selected.variant, selected.scale, selectedHabitat);
         return;
@@ -3426,8 +3458,9 @@ export function PixiStage(props: PixiStageProps) {
 
     for (const b of course.buildings ?? []) {
       const spec = buildingSpec(b);
-      const tex = getPropFrame(buildingVisualFrame(b, course.theme ?? "parkland"))
-        ?? getPropFrame(buildingVisualFrame({ ...b, tier: 1 }, "parkland"))
+      const theme = getBiomeDefinition(course.theme).key;
+      const tex = getPropFrame(buildingVisualFrame(b, theme))
+        ?? getPropFrame(buildingVisualFrame({ ...b, tier: 1 }, theme))
         ?? getPropFrame(spec.frame as AtlasFrame)
         ?? getPropFrame("clubhouse");
       if (!tex) continue;
@@ -3464,12 +3497,13 @@ export function PixiStage(props: PixiStageProps) {
       desert: { access: 0x81756a, practice: 0x6f9c66, clubhouse: 0xb47a4f, resort: 0x66899a, community: 0xc38162, safety: 0x61784f },
     } as const;
     const surfaceColors = { grass: 0x779567, dirt: 0x8c7156, gravel: 0x8b8b83, asphalt: 0x555b5d, paver: 0x9a8068 } as const;
-    const colors = themeColors[course.theme ?? "parkland"];
+    const structureOwner = getBiomeDefinition(course.theme).content.structures.buildings;
+    const colors = themeColors[structureOwner];
     const resortPalette = {
       parkland: { wall: 0xe5d7b5, roof: 0x5f2f28, accent: 0xf5cb63 },
       links: { wall: 0xdad8cd, roof: 0x475d67, accent: 0xe0b653 },
       desert: { wall: 0xd7a46f, roof: 0x8b4e36, accent: 0x52a19a },
-    }[course.theme ?? "parkland"];
+    }[structureOwner];
     const lodgingAssets = (course.property?.assets ?? []).filter((asset) => asset.enabled && ["lodge", "hotel", "cottages"].includes(asset.kind));
     for (const asset of course.property?.assets ?? []) {
       const elevation = surfaceHeightAt(
@@ -3494,7 +3528,7 @@ export function PixiStage(props: PixiStageProps) {
           parkland: { wall: 0xe5cfad, roof: 0x77483c, trim: 0xf2e7cf },
           links: { wall: 0xd8d4c5, roof: 0x55666d, trim: 0xf1eee1 },
           desert: { wall: 0xd59c69, roof: 0x8b553c, trim: 0xf1d3a5 },
-        }[course.theme ?? "parkland"];
+        }[structureOwner];
         for (let index = 0; index < structures; index++) {
           const columns = asset.kind === "houses" ? Math.min(4, structures) : 2;
           const rows = Math.ceil(structures / columns);
@@ -3808,9 +3842,8 @@ export function PixiStage(props: PixiStageProps) {
     decorationSpritesRef.current = [];
 
     for (const decoration of course.decorations ?? []) {
-      const visual = decorationVisual(decoration, course.theme ?? "parkland");
-      const fallback = decorationVisual(decoration, "parkland");
-      const texture = getPropFrame(visual.frame as AtlasFrame) ?? getPropFrame(fallback.frame as AtlasFrame);
+      const visual = decorationVisual(decoration, getBiomeDefinition(course.theme).key);
+      const texture = getPropFrame(visual.frame as AtlasFrame);
       if (!texture) continue;
       const tiles = decorationTiles(decoration);
       const xs = tiles.map((tile) => tile.x);

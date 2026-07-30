@@ -1,4 +1,5 @@
 import type { Course, CourseLayout, LandTheme, World } from "../models/types";
+import { climateStateFor } from "../models/biomes";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { normalizePropertyCourse, normalizePropertyEnterprise } from "../property/property";
 import type { PropertyAsset } from "../property/types";
@@ -9,6 +10,7 @@ import {
   type AnnualAward,
   type AnnualRanking,
   type AutomationPreset,
+  type BiomeClimatePhenologyState,
   type ClubCalendarDate,
   type ClubCharter,
   type ClubCharterDefinition,
@@ -79,35 +81,134 @@ export function formatClubDate(date: ClubCalendarDate): string {
   return `Year ${date.year} · ${date.season[0].toUpperCase()}${date.season.slice(1)} ${date.weekInSeason}/8 · Day ${date.dayOfWeek + 1}`;
 }
 
-const THEME_TEMP: Record<LandTheme, number> = { parkland: 59, links: 55, desert: 72 };
-const SEASON_TEMP = { spring: 3, summer: 17, autumn: 5, winter: -12 } as const;
-const THEME_RAIN: Record<LandTheme, number> = { parkland: 0.26, links: 0.32, desert: 0.09 };
+const DAYS_PER_SEASON = DAYS_PER_WEEK * WEEKS_PER_SEASON;
+const CLIMATE_TRANSITION_DAYS = DAYS_PER_WEEK * 2;
+
+function priorSeason(season: ClubCalendarDate["season"]): ClubCalendarDate["season"] {
+  return SEASONS[(SEASONS.indexOf(season) + SEASONS.length - 1) % SEASONS.length]!;
+}
+
+function nextSeason(season: ClubCalendarDate["season"]): ClubCalendarDate["season"] {
+  return SEASONS[(SEASONS.indexOf(season) + 1) % SEASONS.length]!;
+}
+
+function phenologyTransition(date: ClubCalendarDate) {
+  const dayOfSeason = (date.weekInSeason - 1) * DAYS_PER_WEEK + date.dayOfWeek;
+  if (dayOfSeason < DAYS_PER_WEEK) {
+    return {
+      fromSeason: priorSeason(date.season),
+      toSeason: date.season,
+      blend: (DAYS_PER_WEEK + dayOfSeason + 1) / CLIMATE_TRANSITION_DAYS,
+      phase: "entering" as const,
+    };
+  }
+  if (dayOfSeason >= DAYS_PER_SEASON - DAYS_PER_WEEK) {
+    return {
+      fromSeason: date.season,
+      toSeason: nextSeason(date.season),
+      blend: (dayOfSeason - (DAYS_PER_SEASON - DAYS_PER_WEEK) + 1) / CLIMATE_TRANSITION_DAYS,
+      phase: "leaving" as const,
+    };
+  }
+  return { fromSeason: date.season, toSeason: date.season, blend: 0, phase: "stable" as const };
+}
+
+const blend = (from: number, to: number, amount: number) => from + (to - from) * amount;
+
+/**
+ * The single read-only climate/phenology projection for presentation and
+ * reporting consumers. It keeps the established calendar and daily-weather
+ * histories intact while smoothing semantic seasonal handoffs over the seven
+ * days on each side of every calendar boundary.
+ */
+export function biomeClimatePhenologyForDay(
+  theme: LandTheme,
+  absoluteDay: number,
+): BiomeClimatePhenologyState {
+  const date = calendarDate(absoluteDay);
+  const transition = phenologyTransition(date);
+  const from = climateStateFor(theme, transition.fromSeason);
+  const to = climateStateFor(theme, transition.toSeason);
+  const blendAmount = transition.blend;
+  const dominant = <Value>(fromValue: Value, toValue: Value) =>
+    blendAmount < 0.5 ? fromValue : toValue;
+
+  return Object.freeze({
+    biome: theme,
+    calendar: Object.freeze({
+      ...date,
+      seasonProgress: ((date.weekInSeason - 1) * DAYS_PER_WEEK + date.dayOfWeek) / DAYS_PER_SEASON,
+    }),
+    identity: Object.freeze({ ...from.phenology }),
+    transition: Object.freeze(transition),
+    climate: Object.freeze({
+      targetTemperatureF: blend(
+        from.temperature.baseF + from.temperature.seasonalOffsetF,
+        to.temperature.baseF + to.temperature.seasonalOffsetF,
+        blendAmount,
+      ),
+      precipitationChance: blend(from.precipitation.chance, to.precipitation.chance, blendAmount),
+      windBaseMph: blend(from.windBaseMph, to.windBaseMph, blendAmount),
+      stormChance: blend(from.stormChance, to.stormChance, blendAmount),
+      droughtChance: blend(from.droughtChance, to.droughtChance, blendAmount),
+    }),
+    vegetation: Object.freeze({
+      dormancy: blend(from.dormancy, to.dormancy, blendAmount),
+      flowering: blend(from.flowering, to.flowering, blendAmount),
+      foliage: Object.freeze({
+        from: from.foliage,
+        to: to.foliage,
+        dominant: dominant(from.foliage, to.foliage),
+      }),
+      moisture: Object.freeze({
+        from: from.precipitation.moisture,
+        to: to.precipitation.moisture,
+        dominant: dominant(from.precipitation.moisture, to.precipitation.moisture),
+      }),
+    }),
+    frost: Object.freeze({
+      enabled: from.frost.enabled || to.frost.enabled,
+      maximumTemperatureF: blend(from.frost.maximumTemperatureF, to.frost.maximumTemperatureF, blendAmount),
+      precipitationChanceMultiplier: blend(
+        from.frost.precipitationChanceMultiplier,
+        to.frost.precipitationChanceMultiplier,
+        blendAmount,
+      ),
+    }),
+    snow: Object.freeze({
+      enabled: from.snow.enabled || to.snow.enabled,
+      maximumTemperatureF: blend(from.snow.maximumTemperatureF, to.snow.maximumTemperatureF, blendAmount),
+      chance: blend(from.snow.chance, to.snow.chance, blendAmount),
+    }),
+  });
+}
 
 function rawStormCandidate(runSeed: number, theme: LandTheme, absoluteDay: number): boolean {
   const date = calendarDate(absoluteDay);
-  const seasonal = date.season === "summer" ? 0.025 : date.season === "autumn" ? 0.035 : 0.018;
-  const themeChance = theme === "links" ? 0.025 : theme === "desert" ? -0.006 : 0.008;
-  return unit(runSeed, absoluteDay, 41) < seasonal + themeChance;
+  const climate = climateStateFor(theme, date.season);
+  return unit(runSeed, absoluteDay, 41) < climate.stormChance;
 }
 
 export function weatherForDay(runSeed: number, theme: LandTheme, absoluteDay: number): DailyWeather {
   const date = calendarDate(absoluteDay);
   const day = date.absoluteDay;
+  const climate = climateStateFor(theme, date.season);
   const wave = Math.sin(((day % DAYS_PER_YEAR) / DAYS_PER_YEAR) * Math.PI * 2 - Math.PI / 2) * 5;
-  const temperatureF = Math.round(THEME_TEMP[theme] + SEASON_TEMP[date.season] + wave + (unit(runSeed, day, 11) - 0.5) * 15);
-  const windBase = theme === "links" ? 12 : theme === "desert" ? 8 : 6;
-  const windMph = Math.round(clamp(windBase + unit(runSeed, day, 17) * 18 + (date.season === "winter" ? 3 : 0), 2, 34));
-  const rainChance = clamp(THEME_RAIN[theme] + (date.season === "spring" ? 0.08 : date.season === "summer" ? -0.04 : 0), 0.04, 0.42);
+  const temperatureF = Math.round(climate.temperature.baseF + climate.temperature.seasonalOffsetF + wave + (unit(runSeed, day, 11) - 0.5) * 15);
+  const windMph = Math.round(clamp(climate.windBaseMph + unit(runSeed, day, 17) * 18, 2, 34));
+  const rainChance = climate.precipitation.chance;
   const wetRoll = unit(runSeed, day, 23);
   const storm = rawStormCandidate(runSeed, theme, day)
     && !rawStormCandidate(runSeed, theme, day - 1)
     && !rawStormCandidate(runSeed, theme, day - 2);
-  const drought = theme !== "links" && date.season === "summer" && unit(runSeed, day, 29) < (theme === "desert" ? 0.22 : 0.07);
+  const drought = climate.droughtChance > 0 && unit(runSeed, day, 29) < climate.droughtChance;
   let kind: WeatherKind = "clear";
   if (storm) kind = "storm";
-  else if (temperatureF <= 34 && wetRoll < rainChance * 0.7) kind = "frost";
+  else if (climate.frost.enabled
+    && temperatureF <= climate.frost.maximumTemperatureF
+    && wetRoll < rainChance * climate.frost.precipitationChanceMultiplier) kind = "frost";
   else if (drought) kind = "drought";
-  else if (temperatureF >= (theme === "desert" ? 100 : 91) && wetRoll > rainChance) kind = "heat";
+  else if (temperatureF >= climate.temperature.heatThresholdF && wetRoll > rainChance) kind = "heat";
   else if (wetRoll < rainChance * 0.22) kind = "heavy_rain";
   else if (wetRoll < rainChance) kind = "rain";
   else if (wetRoll < rainChance + 0.28) kind = "cloudy";

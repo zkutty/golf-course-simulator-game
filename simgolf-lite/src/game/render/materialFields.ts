@@ -22,6 +22,7 @@
  */
 
 import type { LandTheme, Terrain } from "../models/types";
+import { getBiomeDefinition } from "../models/biomes";
 import type { ColorVisionMode } from "../onboarding/profile";
 import { TERRAIN_PALETTES } from "../../accessibility/terrainPalettes";
 import {
@@ -406,7 +407,7 @@ export function contourProfileFor(
 ): ContourProfile | null {
   const boundary = terrainBoundaryFor(a, b);
   if (!boundary) return null;
-  const theme = options.theme ?? "parkland";
+  const theme = getBiomeDefinition(options.theme).content.materials.fields;
   const colorVision = options.colorVision ?? "standard";
   const profile = options.profile ?? "high";
   const other = boundary.owner === a ? b : a;
