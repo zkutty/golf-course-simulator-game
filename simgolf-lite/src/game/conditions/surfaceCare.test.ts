@@ -894,8 +894,15 @@ describe("ZK-647 local cultivated-surface care authority", () => {
       .not.toBe(surfaceCareVisualSignatures(base)[index]);
     expect(surfaceCareVisualSignatures(treatmentChanged)[index])
       .not.toBe(surfaceCareVisualSignatures(base)[index]);
-    expect(resolveEffectiveSurface(cueOnlyChanged, zone).treatment)
-      .toBe(resolveEffectiveSurface(base, zone).treatment);
+    expect(resolveEffectiveSurface(
+      cueOnlyChanged,
+      zone.cells[0] % cueOnlyChanged.width,
+      Math.floor(zone.cells[0] / cueOnlyChanged.width),
+    ).treatment).toBe(resolveEffectiveSurface(
+      base,
+      zone.cells[0] % base.width,
+      Math.floor(zone.cells[0] / base.width),
+    ).treatment);
     expect(surfaceCareVisualSignatures(cueOnlyChanged)[index])
       .toBe(surfaceCareVisualSignatures(base)[index]);
     expect(surfaceCarePresentationSignature(cueOnlyChanged))
