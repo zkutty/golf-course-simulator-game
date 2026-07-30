@@ -1,6 +1,7 @@
 import type { LandTheme, Terrain, Obstacle, ObstacleType } from "../models/types";
 import { getBiomeDefinition, type ThemeGenConfig } from "../models/biomes";
 import { isWaterHazard } from "../models/terrainRules";
+import { shuffleInPlace } from "../../utils/array";
 
 // Seeded RNG using mulberry32
 class SeededRNG {
@@ -138,7 +139,7 @@ export function generateWildLand(
       // Add neighbors (prefer existing water neighbors for connectivity)
       const neighbors = getNeighbors(current.x, current.y);
       // Shuffle neighbors for more organic growth
-      neighbors.sort(() => rng.next() - 0.5);
+      shuffleInPlace(neighbors, rng);
 
       for (const neighbor of neighbors) {
         const key = `${neighbor.x},${neighbor.y}`;
@@ -360,7 +361,7 @@ export function generateWildLand(
 
     // Remove up to 20% of water tiles, prioritizing those away from water clusters
     const toRemove = Math.floor(waterTiles.length * 0.2);
-    waterTiles.sort(() => rng.next() - 0.5); // Shuffle
+    shuffleInPlace(waterTiles, rng);
     for (let i = 0; i < Math.min(toRemove, waterTiles.length); i++) {
       const p = waterTiles[i];
       // Check if this water tile has few water neighbors (isolated)
@@ -573,10 +574,7 @@ export function generateObstacles(
     if (terrain !== "rough" && terrain !== "deep_rough") continue;
     if (getNeighbors(x, y).some((point) => isWaterHazard(getTile(point.x, point.y)))) shoreline.push({ x, y });
   }
-  for (let i = shoreline.length - 1; i > 0; i--) {
-    const j = rng.nextInt(0, i);
-    [shoreline[i], shoreline[j]] = [shoreline[j], shoreline[i]];
-  }
+  shuffleInPlace(shoreline, rng);
   for (const point of shoreline) {
     if (treesPlaced < targetTrees && rng.next() < obstacleCfg.shoreTreeChance && canPlaceObstacle(point.x, point.y, "tree")) {
       obstacles.push({ ...point, type: "tree" });

@@ -26,7 +26,7 @@ function outputHash(value: unknown): string {
 }
 
 describe("land themes (ZKU-166)", () => {
-  it("matches the pre-M52 generation and weather output baseline", () => {
+  it("matches the runtime-independent generation and weather output baseline", () => {
     const themes = ["parkland", "links", "desert"] as const satisfies readonly LandTheme[];
     const generation = themes.flatMap((theme) => SEEDS.map((seed) => gen(seed, theme)));
     const weather = themes.flatMap((theme) =>
@@ -35,7 +35,7 @@ describe("land themes (ZKU-166)", () => {
       )
     );
 
-    expect(outputHash(generation)).toBe("c3d46b2f50fbdf5b49a5d5532160501e1816dbe0ccb719609697a9144d96748b");
+    expect(outputHash(generation)).toBe("df29422e3bf81b077c22191d563ce1d84d1fd6396c5da80adc62c8b7cc9e65f5");
     expect(outputHash(weather)).toBe("57fde66c427db1bf4bb494a03d96e59103deed8630d16f648c0af0de5ba88cd7");
   });
 
