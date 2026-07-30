@@ -6,6 +6,7 @@ import {
   computeElevationChangeCost,
   computeTerrainChangeBreakdown,
 } from "./terrainEconomics";
+import { naturalFeatureRemovalQuote } from "./plantRegistry";
 import {
   collectTouchedWaterCells,
   computeWaterGrading,
@@ -139,9 +140,22 @@ export function computeTerrainBatch(input: TerrainBatchInput): TerrainStrokePrev
   const removedObstacles = course.obstacles.filter((obstacle) => (
     touchedWaterCells.has(obstacle.y * course.width + obstacle.x)
   ));
+  for (const obstacle of removedObstacles) {
+    const removal = naturalFeatureRemovalQuote({
+      theme: course.theme,
+      obstacle,
+      costMult,
+    });
+    gross += removal.gross;
+    salvage += removal.salvage;
+    net += removal.net;
+    charged += removal.charged;
+    refunded += removal.refunded;
+  }
   const earthworkCost = computeElevationChangeCost(
     grading.earthworkSteps,
     costMult,
+    course.theme,
   ).net;
   gross += earthworkCost;
   net += earthworkCost;

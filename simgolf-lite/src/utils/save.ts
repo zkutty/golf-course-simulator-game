@@ -56,9 +56,14 @@ import {
   normalizeBiomeKey,
   validateBiomeCompatibilityMetadata,
 } from "../game/models/biomes";
+import {
+  defaultDecorationPlantId,
+  isPlantId,
+  plantDefinition,
+} from "../game/models/plantRegistry";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 23 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 24 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -167,6 +172,10 @@ export interface SaveV22 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV23 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 23;
+  records?: CourseRecords;
+}
+export interface SaveV24 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -248,7 +257,7 @@ export function saveGame(payload: SavePayload) {
     persisted.world.playerPro,
     persisted.course,
   ).playerPro as World["playerPro"];
-  const save: SaveV23 = {
+  const save: SaveV24 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: persisted.course,
@@ -699,6 +708,36 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // courses and active round snapshots. The normalizer derives it for older
   // Parkland/Links/Desert files without altering deterministic state.
   22: (save) => ({ ...save, schemaVersion: 23 }),
+  // V24 persists semantic plant identity only where player provenance is
+  // unambiguous. Historical/generated obstacles remain natural and free.
+  // Missing-origin legacy planting decorations are ambiguous because starter
+  // generation can author them, so migration marks them natural/free.
+  23: (save) => {
+    if (!isRecord(save.course)) return { ...save, schemaVersion: 24 };
+    const theme = normalizeBiomeKey(save.course.theme) ?? "parkland";
+    const decorations = Array.isArray(save.course.decorations)
+      ? save.course.decorations.map((value) => {
+        if (
+          !isRecord(value)
+          || (
+            value.kind !== "flower_bed"
+            && value.kind !== "planter"
+            && value.kind !== "ornamental_feature"
+          )
+        ) return value;
+        if (value.origin !== "player") return { ...value, origin: "natural" };
+        const plantId = isPlantId(value.plantId)
+          ? value.plantId
+          : defaultDecorationPlantId(theme, value.kind);
+        return { ...value, plantId, origin: "player" };
+      })
+      : save.course.decorations;
+    return {
+      ...save,
+      schemaVersion: 24,
+      course: { ...save.course, decorations },
+    };
+  },
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -791,7 +830,7 @@ function sanitizeBuildings(raw: unknown, width: number, height: number): Buildin
 
 function sanitizeObstacles(raw: unknown, width: number, height: number): Obstacle[] {
   if (!Array.isArray(raw)) return [];
-  return raw.filter((value): value is Obstacle => {
+  return raw.filter((value): value is SaveRecord => {
     if (!isRecord(value)) return false;
     return (
       Number.isInteger(value.x) &&
@@ -802,6 +841,25 @@ function sanitizeObstacles(raw: unknown, width: number, height: number): Obstacl
       (value.y as number) < height &&
       (value.type === "tree" || value.type === "bush" || value.type === "rock")
     );
+  }).map((value): Obstacle => {
+    const type = value.type as Obstacle["type"];
+    const definition = isPlantId(value.plantId)
+      ? plantDefinition(value.plantId)
+      : undefined;
+    const plantId = definition?.semantics.kind === "obstacle"
+      && definition.semantics.obstacleType === type
+      ? definition.id
+      : undefined;
+    const origin = value.origin === "player" || value.origin === "natural"
+      ? value.origin
+      : undefined;
+    return {
+      x: value.x as number,
+      y: value.y as number,
+      type,
+      ...(plantId ? { plantId } : {}),
+      ...(origin ? { origin } : {}),
+    };
   });
 }
 

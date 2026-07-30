@@ -80,6 +80,46 @@ export interface ClimateProfile {
   seasons: Record<ClimateCalendarSeason, ClimateSeasonProfile>;
 }
 
+export type PlantEcologicalFit = "native" | "adapted" | "imported";
+
+export interface TerrainEconomyProfile {
+  /** Capital construction multiplier applied before the run difficulty. */
+  construction: number;
+  /** Recurring maintenance-burden multiplier for this surface. */
+  upkeep: number;
+  /** Relative maintained-area irrigation demand for one authored tile. */
+  irrigationDemand: number;
+}
+
+export interface BiomeEconomyProfile {
+  terrain: Record<Terrain, TerrainEconomyProfile>;
+  earthwork: {
+    constructionMultiplier: number;
+  };
+  water: {
+    /** Local commodity/scarcity price, separate from agronomic demand. */
+    scarcityPriceMultiplier: number;
+    /** Climate-authentic no-weather baseline for each club-calendar season. */
+    seasonalDemand: Record<ClimateCalendarSeason, number>;
+    /** Native vegetation demand response before ecological-fit modifiers. */
+    plantDemandMultiplier: number;
+  };
+  drainage: {
+    constructionMultiplier: number;
+    careMultiplier: number;
+  };
+  naturalFeatures: Record<"tree" | "bush" | "rock", {
+    installationCost: number;
+    clearingCost: number;
+    salvageRate: number;
+  }>;
+  plantFit: Record<PlantEcologicalFit, {
+    installationMultiplier: number;
+    careMultiplier: number;
+    waterMultiplier: number;
+  }>;
+}
+
 export interface ThemeGenConfig {
   deepRough: { clustersMin: number; clustersMax: number; sizeMin: number; sizeMax: number };
   water: {
@@ -113,6 +153,8 @@ export interface BiomeDefinition<Key extends string = string> {
   blurb: string;
   generation: ThemeGenConfig;
   climate: ClimateProfile;
+  /** Complete biome economy metadata; consumers must not branch on keys. */
+  economy: BiomeEconomyProfile;
   seasonalArt: {
     /**
      * Seasonal art inherits a declarative phenology profile. This keeps
@@ -189,6 +231,46 @@ const season = (
   },
 });
 
+const IRRIGATION_DEMAND: Record<Terrain, number> = {
+  fairway: 1,
+  green: 1.8,
+  tee: 1.2,
+  water: 0.08,
+  wetland: 0,
+  sand: 0,
+  waste_area: 0,
+  rough: 0.15,
+  deep_rough: 0.05,
+  path: 0,
+};
+
+const terrainEconomy = (
+  values: Record<Terrain, readonly [construction: number, upkeep: number]>,
+): Record<Terrain, TerrainEconomyProfile> => Object.fromEntries(
+  Object.entries(values).map(([terrain, [construction, upkeep]]) => [
+    terrain,
+    { construction, upkeep, irrigationDemand: IRRIGATION_DEMAND[terrain as Terrain] },
+  ]),
+) as Record<Terrain, TerrainEconomyProfile>;
+
+const plantFitEconomy = (): BiomeEconomyProfile["plantFit"] => ({
+  native: {
+    installationMultiplier: 0.75,
+    careMultiplier: 0.70,
+    waterMultiplier: 0.70,
+  },
+  adapted: {
+    installationMultiplier: 1,
+    careMultiplier: 1,
+    waterMultiplier: 1,
+  },
+  imported: {
+    installationMultiplier: 1.60,
+    careMultiplier: 1.75,
+    waterMultiplier: 1.60,
+  },
+});
+
 /**
  * The authoritative biome registry. Adding a key here derives LandTheme and
  * BIOME_KEYS; every required generation, climate, presentation, ownership,
@@ -225,6 +307,33 @@ export const BIOME_DEFINITIONS = defineBiomes({
           { enabled: true, maximumTemperatureF: 38, chance: .28 },
         ),
       },
+    },
+    economy: {
+      terrain: terrainEconomy({
+        fairway: [1, 1],
+        green: [1, 1],
+        tee: [1, 1],
+        water: [1, 1],
+        wetland: [1, 1],
+        sand: [1, 1],
+        waste_area: [1, 1],
+        rough: [1, 1],
+        deep_rough: [1, 1],
+        path: [1, 1],
+      }),
+      earthwork: { constructionMultiplier: 1 },
+      water: {
+        scarcityPriceMultiplier: 1,
+        seasonalDemand: { spring: 0.9, summer: 1.15, autumn: 0.9, winter: 0.75 },
+        plantDemandMultiplier: 1,
+      },
+      drainage: { constructionMultiplier: 1, careMultiplier: 1 },
+      naturalFeatures: {
+        tree: { installationCost: 240, clearingCost: 110, salvageRate: 0.25 },
+        bush: { installationCost: 90, clearingCost: 45, salvageRate: 0.2 },
+        rock: { installationCost: 160, clearingCost: 80, salvageRate: 0.3 },
+      },
+      plantFit: plantFitEconomy(),
     },
     seasonalArt: { profile: "temperate-four-season", contractVersion: 1 },
     presentation: {
@@ -276,6 +385,33 @@ export const BIOME_DEFINITIONS = defineBiomes({
           { enabled: true, maximumTemperatureF: 34, chance: .14 },
         ),
       },
+    },
+    economy: {
+      terrain: terrainEconomy({
+        fairway: [0.95, 0.90],
+        green: [1.05, 1.10],
+        tee: [1, 1],
+        water: [1.25, 1.10],
+        wetland: [0.85, 0.80],
+        sand: [0.90, 0.90],
+        waste_area: [0.90, 0.75],
+        rough: [0.85, 0.80],
+        deep_rough: [0.75, 0.70],
+        path: [1, 1],
+      }),
+      earthwork: { constructionMultiplier: 1.05 },
+      water: {
+        scarcityPriceMultiplier: 0.95,
+        seasonalDemand: { spring: 0.82, summer: 1, autumn: 0.84, winter: 0.75 },
+        plantDemandMultiplier: 0.9,
+      },
+      drainage: { constructionMultiplier: 1.15, careMultiplier: 1.1 },
+      naturalFeatures: {
+        tree: { installationCost: 270, clearingCost: 120, salvageRate: 0.25 },
+        bush: { installationCost: 80, clearingCost: 40, salvageRate: 0.2 },
+        rock: { installationCost: 145, clearingCost: 70, salvageRate: 0.3 },
+      },
+      plantFit: plantFitEconomy(),
     },
     seasonalArt: { profile: "coastal-four-season", contractVersion: 1 },
     presentation: {
@@ -334,6 +470,33 @@ export const BIOME_DEFINITIONS = defineBiomes({
         winter: season({ temperatureOffsetF: -12, precipitationChanceOffset: 0, windMphOffset: 3, stormChance: 0.018, droughtChance: 0, dormancy: 0.2, foliage: "sparse", flowering: 0.05, moisture: "dry" }),
       },
     },
+    economy: {
+      terrain: terrainEconomy({
+        fairway: [1.35, 1.55],
+        green: [1.60, 1.80],
+        tee: [1.40, 1.50],
+        water: [1.75, 1.40],
+        wetland: [1.80, 1.60],
+        sand: [0.75, 0.70],
+        waste_area: [0.60, 0.50],
+        rough: [0.70, 0.55],
+        deep_rough: [0.75, 0.60],
+        path: [0.90, 0.85],
+      }),
+      earthwork: { constructionMultiplier: 1.25 },
+      water: {
+        scarcityPriceMultiplier: 1.3,
+        seasonalDemand: { spring: 1, summer: 1.25, autumn: 1.1, winter: 0.9 },
+        plantDemandMultiplier: 1.05,
+      },
+      drainage: { constructionMultiplier: 0.8, careMultiplier: 0.8 },
+      naturalFeatures: {
+        tree: { installationCost: 300, clearingCost: 115, salvageRate: 0.25 },
+        bush: { installationCost: 105, clearingCost: 40, salvageRate: 0.2 },
+        rock: { installationCost: 120, clearingCost: 65, salvageRate: 0.3 },
+      },
+      plantFit: plantFitEconomy(),
+    },
     seasonalArt: { profile: "arid-heat-drought", contractVersion: 1 },
     presentation: {
       tileTints: {
@@ -374,6 +537,156 @@ export type LandTheme = keyof typeof BIOME_DEFINITIONS;
 export const BIOME_KEYS = Object.freeze(
   Object.keys(BIOME_DEFINITIONS) as LandTheme[],
 );
+
+export type FutureBiomeEconomySeedId =
+  | "tropical-coastal-resort"
+  | "temperate-japan"
+  | "alpine-mountain"
+  | "heathland"
+  | "australian-sandbelt";
+export interface FutureBiomeEconomySeedProfile {
+  id: FutureBiomeEconomySeedId;
+  inherits: LandTheme;
+  phenology: ClimatePhenologyRegime;
+  overrides: {
+    terrain?: Partial<Record<Terrain, Partial<TerrainEconomyProfile>>>;
+    earthwork?: Partial<BiomeEconomyProfile["earthwork"]>;
+    water?: Partial<Omit<BiomeEconomyProfile["water"], "seasonalDemand">> & {
+      seasonalDemand?: Partial<Record<ClimateCalendarSeason, number>>;
+    };
+    drainage?: Partial<BiomeEconomyProfile["drainage"]>;
+    naturalFeatures?: Partial<{
+      [Kind in keyof BiomeEconomyProfile["naturalFeatures"]]:
+        Partial<BiomeEconomyProfile["naturalFeatures"][Kind]>;
+    }>;
+  };
+}
+
+/**
+ * Typed future-content seeds inherit a complete registered contract but do not
+ * add playable biome keys. Authored packages can replace these seeds only when
+ * their generation, art, audio, and compatibility contracts are complete.
+ */
+export const FUTURE_BIOME_ECONOMY_SEEDS = {
+  "tropical-coastal-resort": {
+    id: "tropical-coastal-resort",
+    inherits: "parkland",
+    phenology: "tropical-wet-dry",
+    overrides: {
+      terrain: {
+        wetland: { construction: 0.8, upkeep: 0.85 },
+        water: { construction: 0.9, upkeep: 0.9 },
+      },
+      water: {
+        scarcityPriceMultiplier: 0.8,
+        seasonalDemand: { spring: 0.82, summer: 0.9, autumn: 0.8, winter: 1.05 },
+      },
+      drainage: { constructionMultiplier: 1.35, careMultiplier: 1.25 },
+    },
+  },
+  "temperate-japan": {
+    id: "temperate-japan",
+    inherits: "parkland",
+    phenology: "temperate-four-season",
+    overrides: {
+      terrain: {
+        water: { construction: 0.95, upkeep: 0.95 },
+        green: { construction: 1.08, upkeep: 1.12 },
+      },
+      earthwork: { constructionMultiplier: 1.15 },
+      water: {
+        scarcityPriceMultiplier: 0.9,
+        seasonalDemand: { spring: 0.88, summer: 1.08, autumn: 0.86, winter: 0.75 },
+      },
+      drainage: { constructionMultiplier: 1.2, careMultiplier: 1.15 },
+    },
+  },
+  "alpine-mountain": {
+    id: "alpine-mountain",
+    inherits: "links",
+    phenology: "alpine-frost-snow",
+    overrides: {
+      terrain: {
+        fairway: { construction: 1.15, upkeep: 1.2 },
+        green: { construction: 1.25, upkeep: 1.3 },
+      },
+      earthwork: { constructionMultiplier: 1.45 },
+      water: {
+        scarcityPriceMultiplier: 0.9,
+        seasonalDemand: { spring: 0.8, summer: 0.95, autumn: 0.78, winter: 0.75 },
+      },
+      drainage: { constructionMultiplier: 1.4, careMultiplier: 1.2 },
+    },
+  },
+  heathland: {
+    id: "heathland",
+    inherits: "links",
+    phenology: "coastal-four-season",
+    overrides: {
+      terrain: {
+        fairway: { construction: 0.9, upkeep: 0.86 },
+        deep_rough: { construction: 0.7, upkeep: 0.65 },
+        waste_area: { construction: 0.78, upkeep: 0.68 },
+      },
+      water: {
+        scarcityPriceMultiplier: 0.95,
+        seasonalDemand: { spring: 0.84, summer: 1, autumn: 0.82, winter: 0.75 },
+      },
+    },
+  },
+  "australian-sandbelt": {
+    id: "australian-sandbelt",
+    inherits: "desert",
+    phenology: "arid-heat-drought",
+    overrides: {
+      terrain: {
+        fairway: { construction: 1.18, upkeep: 1.25 },
+        green: { construction: 1.35, upkeep: 1.45 },
+        sand: { construction: 0.68, upkeep: 0.65 },
+        waste_area: { construction: 0.55, upkeep: 0.48 },
+      },
+      earthwork: { constructionMultiplier: 1.1 },
+      water: {
+        scarcityPriceMultiplier: 1.18,
+        seasonalDemand: { spring: 0.95, summer: 1.18, autumn: 1, winter: 0.82 },
+      },
+    },
+  },
+} as const satisfies Record<FutureBiomeEconomySeedId, FutureBiomeEconomySeedProfile>;
+
+export function resolveFutureBiomeEconomySeed(
+  id: FutureBiomeEconomySeedId,
+): BiomeEconomyProfile {
+  const seedProfile = FUTURE_BIOME_ECONOMY_SEEDS[id] as FutureBiomeEconomySeedProfile;
+  const base = BIOME_DEFINITIONS[seedProfile.inherits].economy;
+  const terrain = Object.fromEntries(
+    (Object.keys(base.terrain) as Terrain[]).map((terrainKey) => [
+      terrainKey,
+      { ...base.terrain[terrainKey], ...seedProfile.overrides.terrain?.[terrainKey] },
+    ]),
+  ) as Record<Terrain, TerrainEconomyProfile>;
+  const naturalFeatures = Object.fromEntries(
+    (Object.keys(base.naturalFeatures) as Array<keyof typeof base.naturalFeatures>).map((kind) => [
+      kind,
+      { ...base.naturalFeatures[kind], ...seedProfile.overrides.naturalFeatures?.[kind] },
+    ]),
+  ) as BiomeEconomyProfile["naturalFeatures"];
+  return {
+    terrain,
+    earthwork: { ...base.earthwork, ...seedProfile.overrides.earthwork },
+    water: {
+      ...base.water,
+      ...seedProfile.overrides.water,
+      seasonalDemand: {
+        ...base.water.seasonalDemand,
+        ...seedProfile.overrides.water?.seasonalDemand,
+      },
+    },
+    drainage: { ...base.drainage, ...seedProfile.overrides.drainage },
+    naturalFeatures,
+    plantFit: structuredClone(base.plantFit),
+  };
+}
 
 /**
  * Portable compatibility evidence stored with saves, round snapshots, and
@@ -594,8 +907,8 @@ export function auditBiomeDefinitions(
   const keys = new Set<string>(definitionKeys);
   const saveKeys = new Set<string>();
   const compatibilityClaims = new Map<string, string>();
-  const finite = (key: string, field: string, value: number, min: number, max: number) => {
-    if (!Number.isFinite(value) || value < min || value > max) {
+  const finite = (key: string, field: string, value: unknown, min: number, max: number) => {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) {
       errors.push(`${key}: ${field} must be finite and between ${min} and ${max}`);
     }
   };
@@ -703,6 +1016,65 @@ export function auditBiomeDefinitions(
     finite(key, "elevation amplitude", generation.elevation.amplitude, 0, 100);
     finite(key, "elevation offset", generation.elevation.offset, -100, 100);
     integer(key, "elevation maximum step", generation.elevation.maxStep);
+
+    const economy = definition.economy;
+    if (!economy || typeof economy !== "object") {
+      errors.push(`${key}: economy metadata is required`);
+    } else {
+      const terrainKeys = Object.keys(IRRIGATION_DEMAND) as Terrain[];
+      const registeredTerrainKeys = Object.keys(economy.terrain ?? {});
+      if (
+        registeredTerrainKeys.length !== terrainKeys.length
+        || terrainKeys.some((terrain) => !registeredTerrainKeys.includes(terrain))
+      ) {
+        errors.push(`${key}: economy terrain metadata must cover every terrain`);
+      }
+      for (const terrain of terrainKeys) {
+        const cell = economy.terrain?.[terrain];
+        if (!cell) {
+          errors.push(`${key}: ${terrain} economy metadata is required`);
+          continue;
+        }
+        finite(key, `${terrain} construction multiplier`, cell.construction, 0.01, 10);
+        finite(key, `${terrain} upkeep multiplier`, cell.upkeep, 0.01, 10);
+        finite(key, `${terrain} irrigation demand`, cell.irrigationDemand, 0, 10);
+      }
+      finite(key, "earthwork construction multiplier", economy.earthwork?.constructionMultiplier, 0.01, 10);
+      finite(key, "water scarcity multiplier", economy.water?.scarcityPriceMultiplier, 0.01, 10);
+      finite(key, "plant water demand multiplier", economy.water?.plantDemandMultiplier, 0.01, 10);
+      finite(key, "drainage construction multiplier", economy.drainage?.constructionMultiplier, 0.01, 10);
+      finite(key, "drainage care multiplier", economy.drainage?.careMultiplier, 0.01, 10);
+      const demandSeasons = Object.keys(economy.water?.seasonalDemand ?? {});
+      if (
+        demandSeasons.length !== CLIMATE_CALENDAR_SEASONS.length
+        || CLIMATE_CALENDAR_SEASONS.some((name) => !demandSeasons.includes(name))
+      ) {
+        errors.push(`${key}: water demand must cover every calendar season`);
+      }
+      for (const name of CLIMATE_CALENDAR_SEASONS) {
+        finite(key, `${name} water demand`, economy.water?.seasonalDemand?.[name], 0.01, 10);
+      }
+      for (const kind of ["tree", "bush", "rock"] as const) {
+        const feature = economy.naturalFeatures?.[kind];
+        if (!feature) {
+          errors.push(`${key}: ${kind} natural-feature economy metadata is required`);
+          continue;
+        }
+        finite(key, `${kind} installation cost`, feature.installationCost, 0, 1_000_000);
+        finite(key, `${kind} clearing cost`, feature.clearingCost, 0, 1_000_000);
+        finite(key, `${kind} salvage rate`, feature.salvageRate, 0, 0.5);
+      }
+      for (const fit of ["native", "adapted", "imported"] as const) {
+        const modifiers = economy.plantFit?.[fit];
+        if (!modifiers) {
+          errors.push(`${key}: ${fit} plant-fit economy metadata is required`);
+          continue;
+        }
+        finite(key, `${fit} plant installation multiplier`, modifiers.installationMultiplier, 0.01, 10);
+        finite(key, `${fit} plant care multiplier`, modifiers.careMultiplier, 0.01, 10);
+        finite(key, `${fit} plant water multiplier`, modifiers.waterMultiplier, 0.01, 10);
+      }
+    }
 
     const climate = definition.climate;
     if (definition.seasonalArt.contractVersion !== 1) {

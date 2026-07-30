@@ -27,6 +27,41 @@ describe("live weekly ledger", () => {
     expect(weekResultFromLedger(ledger).revenue).toBe(500);
   });
 
+  it("aggregates auditable biome operating costs without changing day counts", () => {
+    let ledger = createWeekLedger(3);
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+      ledger = appendDayToLedger(ledger, day(dayIndex, {
+        biomeEconomy: {
+          biome: "links",
+          maintainedAreaUnits: 1_000 + dayIndex,
+          plantingWaterUnits: 20,
+          seasonalDemandMultiplier: .82,
+          weatherDemandMultiplier: 1 + dayIndex * .01,
+          policyMultiplier: 1,
+          waterCost: 12,
+          plantCareCost: 3,
+          drainageCareCost: 2,
+          total: 17,
+          days: 1,
+        },
+      }));
+    }
+    const economy = weekResultFromLedger(ledger).biomeEconomy!;
+    expect(economy).toMatchObject({
+      biome: "links",
+      maintainedAreaUnits: 1_003,
+      plantingWaterUnits: 20,
+      policyMultiplier: 1,
+      waterCost: 84,
+      plantCareCost: 21,
+      drainageCareCost: 14,
+      total: 119,
+      days: 7,
+    });
+    expect(economy.seasonalDemandMultiplier).toBeCloseTo(.82);
+    expect(economy.weatherDemandMultiplier).toBeCloseTo(1.03);
+  });
+
   it("reconciles daily mobility rows into one exact weekly product report", () => {
     let ledger = createWeekLedger(2);
     for (let dayIndex = 0; dayIndex < 7; dayIndex++) {

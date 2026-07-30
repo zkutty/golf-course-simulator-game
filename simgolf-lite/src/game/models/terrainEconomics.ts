@@ -3,12 +3,19 @@ import { BALANCE } from "../balance/balanceConfig";
 import { getBiomeDefinition } from "./biomes";
 
 /**
- * Theme flavor on build economics (ZKU-166): data-driven per-terrain build
- * multiplier (today: desert water is precious). Neutral for parkland.
+ * Registry-driven biome construction multiplier. Difficulty remains a
+ * separate outer multiplier at every charge/refund callsite.
  */
 export function themeBuildMult(theme: LandTheme | undefined, terrain: Terrain): number {
-  if (terrain !== "water") return 1;
-  return BALANCE.themes[getBiomeDefinition(theme).key].waterBuildCostMult;
+  return getBiomeDefinition(theme).economy.terrain[terrain].construction;
+}
+
+export function themeUpkeepMult(theme: LandTheme | undefined, terrain: Terrain): number {
+  return getBiomeDefinition(theme).economy.terrain[terrain].upkeep;
+}
+
+export function themeEarthworkMult(theme: LandTheme | undefined): number {
+  return getBiomeDefinition(theme).economy.earthwork.constructionMultiplier;
 }
 
 // Capital expense: build costs per tile
@@ -30,9 +37,57 @@ export const TERRAIN_MAINT_WEIGHT: Record<Terrain, number> = {
 // with no salvage (you can't un-move dirt for money).
 export const ELEVATION_COST_PER_STEP: number = BALANCE.terrain.earthworkCostPerStep;
 
-export function computeElevationChangeCost(deltaSteps: number, costMult = 1): TerrainChangeCost {
-  const charged = Math.abs(deltaSteps) * ELEVATION_COST_PER_STEP * costMult;
+export function terrainConstructionUnitCost(
+  terrain: Terrain,
+  theme?: LandTheme,
+  costMult = 1,
+): number {
+  // Painting back to rough is the long-standing teardown/reversion path and
+  // carries no construction charge. Keep the shared unit quote identical to
+  // preview/reducer commitment so HUD and Golfopedia never advertise the raw
+  // balance-table value as a payable price.
+  if (terrain === "rough") return 0;
+  return TERRAIN_BUILD_COST[terrain] * themeBuildMult(theme, terrain) * costMult;
+}
+
+export function terrainSalvageUnitValue(
+  terrain: Terrain,
+  theme?: LandTheme,
+  costMult = 1,
+): number {
+  return TERRAIN_SALVAGE_VALUE[terrain] * themeBuildMult(theme, terrain) * costMult;
+}
+
+export function terrainMaintenanceWeight(
+  terrain: Terrain,
+  theme?: LandTheme,
+): number {
+  return TERRAIN_MAINT_WEIGHT[terrain] * themeUpkeepMult(theme, terrain);
+}
+
+export function computeElevationChangeCost(
+  deltaSteps: number,
+  costMult = 1,
+  theme?: LandTheme,
+): TerrainChangeCost {
+  const charged = Math.abs(deltaSteps)
+    * ELEVATION_COST_PER_STEP
+    * themeEarthworkMult(theme)
+    * costMult;
   return { net: charged, charged, refunded: 0 };
+}
+
+export function quoteDrainageImprovement(
+  theme: LandTheme | undefined,
+  currentLevel: number,
+  costMult = 1,
+): number {
+  return Math.round(
+    18_000
+    * (Math.max(0, Math.floor(currentLevel)) + 1)
+    * getBiomeDefinition(theme).economy.drainage.constructionMultiplier
+    * costMult,
+  );
 }
 
 export interface TerrainChangeCost {
@@ -58,10 +113,10 @@ export function computeTerrainChangeBreakdown(
 ): TerrainChangeBreakdown {
   if (prev === next) return { net: 0, charged: 0, refunded: 0, gross: 0, salvage: 0 };
 
-  const salvage = (TERRAIN_SALVAGE_VALUE[prev] ?? 0) * costMult * themeBuildMult(theme, prev);
+  const salvage = terrainSalvageUnitValue(prev, theme, costMult);
   const gross = next === "rough"
     ? 0
-    : (TERRAIN_BUILD_COST[next] ?? 0) * costMult * themeBuildMult(theme, next);
+    : terrainConstructionUnitCost(next, theme, costMult);
   const net = gross - salvage;
   return {
     net,

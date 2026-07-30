@@ -4,6 +4,7 @@ import { DEFAULT_WORLD } from "../models/defaults";
 import { courseGeometryVersion, normalizeLivingClub } from "../livingClub/livingClub";
 import type { ArchitectureShotEvidence } from "../livingClub/types";
 import { buildArchitectureReview, defaultArchitectureFilters } from "./review";
+import { terrainCostMult } from "../balance/difficulty";
 
 function course(kind: "safe" | "mandatory" = "safe"): Course {
   const width = 48;
@@ -109,5 +110,32 @@ describe("architecture rules evidence", () => {
     const mandatory = buildArchitectureReview(mandatoryCourse, world([]), defaultArchitectureFilters(mandatoryCourse));
     expect(safe.rules.feedback.some((item) => item.id.endsWith("-bailout"))).toBe(false);
     expect(mandatory.rules.feedback.some((item) => item.id.endsWith("-bailout"))).toBe(true);
+  });
+
+  it("reports recommendation construction costs at the active run difficulty", () => {
+    const mandatory = course("mandatory");
+    const filters = defaultArchitectureFilters(mandatory);
+    const normal = buildArchitectureReview(
+      mandatory,
+      { ...world([]), difficulty: "normal" },
+      filters,
+    );
+    const hard = buildArchitectureReview(
+      mandatory,
+      { ...world([]), difficulty: "hard" },
+      filters,
+    );
+    expect(normal.recommendations.length).toBeGreaterThan(0);
+    expect(hard.recommendations.map((item) => item.id)).toEqual(
+      normal.recommendations.map((item) => item.id),
+    );
+    for (let index = 0; index < normal.recommendations.length; index += 1) {
+      expect(hard.recommendations[index].constructionCost).toBe(
+        Math.round(
+          normal.recommendations[index].constructionCost
+          * terrainCostMult("hard"),
+        ),
+      );
+    }
   });
 });

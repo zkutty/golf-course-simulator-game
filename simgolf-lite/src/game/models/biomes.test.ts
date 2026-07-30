@@ -3,17 +3,20 @@ import {
   BIOME_DEFINITIONS,
   BIOME_KEYS,
   CLIMATE_CALENDAR_SEASONS,
+  FUTURE_BIOME_ECONOMY_SEEDS,
   auditBiomeDefinitions,
   biomeCompatibilityMetadataFor,
   climateStateFor,
   getBiomeDefinition,
   isLandTheme,
   normalizeBiomeKey,
+  resolveFutureBiomeEconomySeed,
   validateBiomeCompatibilityMetadata,
   type BiomeDefinition,
   type ClimatePhenologyRegime,
   type LandTheme,
 } from "./biomes";
+import type { Terrain } from "./types";
 import { LAND_THEMES, getLandTheme } from "./themes";
 import { LAND_THEME_KINDS } from "../render/terrainMaterials";
 
@@ -55,6 +58,91 @@ describe("M52 biome and climate content contract", () => {
         structures: { buildings: key, decorations: key },
         audio: { designMusic: `build-${key}`, ambience: key },
       });
+    }
+  });
+
+  it("keeps exact construction/upkeep and ecological-fit economy contracts", () => {
+    const terrain = (
+      theme: LandTheme,
+    ): Record<Terrain, readonly [construction: number, upkeep: number]> =>
+      Object.fromEntries(
+        Object.entries(BIOME_DEFINITIONS[theme].economy.terrain).map(
+          ([key, value]) => [key, [value.construction, value.upkeep]],
+        ),
+      ) as unknown as Record<Terrain, readonly [number, number]>;
+
+    expect(terrain("parkland")).toEqual({
+      fairway: [1, 1], green: [1, 1], tee: [1, 1], water: [1, 1],
+      wetland: [1, 1], sand: [1, 1], waste_area: [1, 1], rough: [1, 1],
+      deep_rough: [1, 1], path: [1, 1],
+    });
+    expect(terrain("links")).toEqual({
+      fairway: [.95, .90], green: [1.05, 1.10], tee: [1, 1],
+      water: [1.25, 1.10], wetland: [.85, .80], sand: [.90, .90],
+      waste_area: [.90, .75], rough: [.85, .80], deep_rough: [.75, .70],
+      path: [1, 1],
+    });
+    expect(terrain("desert")).toEqual({
+      fairway: [1.35, 1.55], green: [1.60, 1.80], tee: [1.40, 1.50],
+      water: [1.75, 1.40], wetland: [1.80, 1.60], sand: [.75, .70],
+      waste_area: [.60, .50], rough: [.70, .55], deep_rough: [.75, .60],
+      path: [.90, .85],
+    });
+    for (const theme of BIOME_KEYS) {
+      expect(BIOME_DEFINITIONS[theme].economy.plantFit).toEqual({
+        native: {
+          installationMultiplier: .75,
+          careMultiplier: .70,
+          waterMultiplier: .70,
+        },
+        adapted: {
+          installationMultiplier: 1,
+          careMultiplier: 1,
+          waterMultiplier: 1,
+        },
+        imported: {
+          installationMultiplier: 1.60,
+          careMultiplier: 1.75,
+          waterMultiplier: 1.60,
+        },
+      });
+    }
+  });
+
+  it("resolves all five typed future economy seeds without registering them", () => {
+    expect(Object.keys(FUTURE_BIOME_ECONOMY_SEEDS)).toEqual([
+      "tropical-coastal-resort",
+      "temperate-japan",
+      "alpine-mountain",
+      "heathland",
+      "australian-sandbelt",
+    ]);
+    expect(BIOME_KEYS).toEqual(["parkland", "links", "desert"]);
+    for (const id of Object.keys(FUTURE_BIOME_ECONOMY_SEEDS) as Array<
+      keyof typeof FUTURE_BIOME_ECONOMY_SEEDS
+    >) {
+      const resolved = resolveFutureBiomeEconomySeed(id);
+      expect(Object.keys(resolved.terrain)).toEqual(
+        Object.keys(BIOME_DEFINITIONS.parkland.economy.terrain),
+      );
+      expect(Object.keys(resolved.water.seasonalDemand)).toEqual(
+        CLIMATE_CALENDAR_SEASONS,
+      );
+      expect(Object.keys(resolved.naturalFeatures)).toEqual([
+        "tree",
+        "bush",
+        "rock",
+      ]);
+      expect(Object.keys(resolved.plantFit)).toEqual([
+        "native",
+        "adapted",
+        "imported",
+      ]);
+      const numericLeaves = JSON.stringify(resolved)
+        .match(/-?\d+(?:\.\d+)?/g)
+        ?.map(Number) ?? [];
+      expect(numericLeaves.length).toBeGreaterThan(40);
+      expect(numericLeaves.every(Number.isFinite)).toBe(true);
     }
   });
 
@@ -152,6 +240,11 @@ describe("M52 biome and climate content contract", () => {
     malformed.desert.climate.seasons.summer.frost.precipitationChanceMultiplier = 1.2;
     malformed.desert.climate.seasons.summer.snow.chance = Number.NaN;
     malformed.desert.climate.phenology.regime = "unsupported" as ClimatePhenologyRegime;
+    malformed.parkland.economy.terrain.green.upkeep = Number.NaN;
+    delete (malformed.links.economy.terrain as Partial<
+      Record<Terrain, unknown>
+    >).water;
+    malformed.desert.economy.plantFit.imported.waterMultiplier = 0;
 
     const errors = auditBiomeDefinitions(malformed).join("\n");
     expect(errors).toContain("parkland: content version must be an integer at least 1");
@@ -169,5 +262,9 @@ describe("M52 biome and climate content contract", () => {
     expect(errors).toContain("desert/summer: frost precipitation multiplier must be finite");
     expect(errors).toContain("desert/summer: snow chance must be between zero and one");
     expect(errors).toContain("desert: climate phenology regime is not supported");
+    expect(errors).toContain("parkland: green upkeep multiplier must be finite");
+    expect(errors).toContain("links: economy terrain metadata must cover every terrain");
+    expect(errors).toContain("links: water economy metadata is required");
+    expect(errors).toContain("desert: imported plant water multiplier must be finite");
   });
 });

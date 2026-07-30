@@ -3,7 +3,7 @@ import { translateCurrent } from "../../i18n/core";
 import { mulberry32, randInt } from "../../utils/rng";
 import { demandBreakdown, satisfactionBreakdown, satisfactionScore } from "./score";
 import { scoreCourseHoles } from "./holes";
-import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
+import { terrainMaintenanceWeight } from "../models/terrainEconomics";
 import { isCoursePlayable } from "./isCoursePlayable";
 import { stepLoanWeek, totalWeeklyPayments } from "./loans";
 import { getEffectiveBalance } from "../balance/difficulty";
@@ -13,6 +13,11 @@ import { operatingCourseViews } from "../models/courseLayouts";
 import { developedOwnedTileCount } from "../estate/estate";
 import { courseLayouts } from "../models/courseLayouts";
 import { advanceCampaign } from "../campaign/campaign";
+import {
+  quoteDailyBiomeOperatingCosts,
+  scaleBiomeOperatingCosts,
+} from "../models/biomeOperatingCosts";
+import { getDifficultyProfile } from "../balance/difficulty";
 
 function tickWeekSingle(
   course: Course,
@@ -68,7 +73,10 @@ function tickWeekSingle(
   const overheadTotal = overhead.insurance + overhead.utilities + overhead.admin + overhead.baseStaff;
 
   // Required maintenance grows with traffic and premium turf mix.
-  const totalWeight0 = course.tiles.reduce((acc, t) => acc + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
+  const totalWeight0 = course.tiles.reduce(
+    (acc, terrain) => acc + terrainMaintenanceWeight(terrain, course.theme),
+    0,
+  );
   const avgWeight0 = totalWeight0 / (course.tiles.length || 1);
   const requiredMaintenance =
     BALANCE.requiredMaintenance.base +
@@ -88,7 +96,18 @@ function tickWeekSingle(
   const merchantFees = revenue * BALANCE.variableCosts.merchantFeeRate;
   const variableTotal = laborVariable + consumablesVariable + merchantFees;
 
-  const nonLoanCosts = staffCost + marketingCost + maintenanceCost + overheadTotal;
+  const dailyBiomeEconomy = quoteDailyBiomeOperatingCosts({
+    course,
+    season: world.seasonal?.calendar.season,
+    currentWeather: world.seasonal?.currentWeather,
+    publishedForecast: world.seasonal?.forecast,
+    policy: world.seasonal?.operations.waterPolicy,
+    drainageLevel: world.seasonal?.operations.drainageLevel,
+    costMult: getDifficultyProfile(world.difficulty).terrainCostMult,
+  });
+  const biomeEconomy = scaleBiomeOperatingCosts(dailyBiomeEconomy, 7);
+  const nonLoanCosts =
+    staffCost + marketingCost + maintenanceCost + overheadTotal + biomeEconomy.total;
 
   const paymentDue = totalWeeklyPayments(world.loans ?? []);
   const canPayLoan = world.cash + revenue - nonLoanCosts >= paymentDue;
@@ -210,6 +229,7 @@ function tickWeekSingle(
       },
       costs,
       profit,
+      biomeEconomy,
       tax: tax > 0 ? tax : undefined,
       variableCosts: {
         labor: laborVariable,

@@ -2,13 +2,18 @@ import { useMemo, useState } from "react";
 import { formatCurrency, formatNumber, formatWeekLabel } from "../i18n/format";
 import type { TutorialTarget } from "../game/onboarding/tutorial";
 import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
-import { ELEVATION_COST_PER_STEP } from "../game/models/terrainEconomics";
+import {
+  ELEVATION_COST_PER_STEP,
+  terrainConstructionUnitCost,
+  terrainMaintenanceWeight,
+  terrainSalvageUnitValue,
+  themeEarthworkMult,
+} from "../game/models/terrainEconomics";
 import { useAudio } from "../audio/audioContext";
 import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, ObstacleType, Point, Terrain, TerrainAuthoringTool, WeekResult, World } from "../game/models/types";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
-import { TERRAIN_MAINT_WEIGHT } from "../game/models/terrainEconomics";
 import { computeCourseRatingAndSlope, computeRatingsByTee } from "../game/sim/courseRating";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
 import type { LegacyState } from "../utils/legacy";
@@ -19,7 +24,13 @@ import { GameButton } from "@/ui/gameui";
 import { ObjectiveMiniTracker, ObjectivesPanel } from "./ObjectivesPanel";
 import { BUILDING_SPECS, isConcession } from "../game/models/buildings";
 import { DECORATION_KINDS, DECORATION_SPECS, decorationCost } from "../game/models/decorations";
-import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../game/models/terrainEconomics";
+import {
+  defaultDecorationPlantId,
+  defaultObstaclePlantId,
+  naturalFeatureInstallationQuote,
+  plantDefinition,
+  plantFitForBiome,
+} from "../game/models/plantRegistry";
 import { Tooltip } from "./help/Tooltip";
 import { REPORT_HELP } from "./help/tooltipContent";
 import { T } from "../i18n/T";
@@ -197,6 +208,7 @@ export function HUD(props: {
         : tab;
   // Difficulty-resolved balance for loan terms/eligibility (ZKU-165).
   const BALANCE = getEffectiveBalance(world.difficulty);
+  const costMult = getDifficultyProfile(world.difficulty).terrainCostMult;
   const audio = useAudio();
 
   const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
@@ -219,8 +231,11 @@ export function HUD(props: {
   }, [course.tiles]);
   const totalTiles = course.tiles.length || 1;
   const totalMaintWeight = useMemo(() => {
-    return course.tiles.reduce((sum, t) => sum + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
-  }, [course.tiles]);
+    return course.tiles.reduce(
+      (sum, terrain) => sum + terrainMaintenanceWeight(terrain, course.theme),
+      0,
+    );
+  }, [course.theme, course.tiles]);
   const avgMaintWeight = totalMaintWeight / totalTiles;
   const rating = useMemo(() => computeCourseRatingAndSlope(course), [course]);
   const teeRatings = useMemo(() => computeRatingsByTee(course), [course]);
@@ -707,7 +722,9 @@ export function HUD(props: {
                     ))}
                   </div>
                   <div style={{ fontSize: 11, color: "#777" }}>
-                    <T id="auto.ui.hud.earthworks.cost" />{ELEVATION_COST_PER_STEP} <T id="auto.ui.hud.per.step.per.tile.steep.edges.auto.terrace.and.are.inc" /></div>
+                    <T id="auto.ui.hud.earthworks.cost" />
+                    {formatCurrency(ELEVATION_COST_PER_STEP * themeEarthworkMult(course.theme) * costMult)}{" "}
+                    <T id="auto.ui.hud.per.step.per.tile.steep.edges.auto.terrace.and.are.inc" /></div>
                 </div>
               )}
 
@@ -860,6 +877,15 @@ export function HUD(props: {
                 <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                   {(["tree", "bush", "rock"] as const).map((t) => {
                     const locked = !isObstacleUnlocked(t, world.reputation);
+                    const plantId = t === "rock"
+                      ? undefined
+                      : defaultObstaclePlantId(course.theme, t);
+                    const install = naturalFeatureInstallationQuote({
+                      theme: course.theme,
+                      obstacleType: t,
+                      plantId,
+                      costMult,
+                    }).net;
                     return (
                     <button
                       key={t}
@@ -877,7 +903,15 @@ export function HUD(props: {
                     >
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                         {t === "tree" ? <IconTree size={22} /> : t === "bush" ? <IconBush size={22} /> : <IconRock size={22} />}
-                        <span style={{ textTransform: "capitalize" }}>{locked ? `🔒 ${t}` : t}</span>
+                        <span>
+                          <span style={{ display: "block", textTransform: "capitalize" }}>
+                            {locked ? `🔒 ${t}` : plantId ? plantDefinition(plantId).label : t}
+                          </span>
+                          {!locked && <small style={{ display: "block", color: "#6b6555" }}>
+                            {formatCurrency(install)}
+                            {plantId ? ` · ${plantFitForBiome(course.theme, plantId)}` : ""}
+                          </small>}
+                        </span>
                       </span>
                     </button>
                   );})}
@@ -901,13 +935,28 @@ export function HUD(props: {
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
                     {DECORATION_KINDS.map((kind) => {
                       const spec = DECORATION_SPECS[kind];
-                      const example = { kind, x: 0, y: 0, rotation: decorationRotation, ...(spec.defaultSpan ? { span: decorationSpan } : {}) };
+                      const plantId = kind === "flower_bed"
+                        || kind === "planter"
+                        || kind === "ornamental_feature"
+                        ? defaultDecorationPlantId(course.theme, kind)
+                        : undefined;
+                      const example = {
+                        kind,
+                        x: 0,
+                        y: 0,
+                        rotation: decorationRotation,
+                        ...(plantId ? { plantId, origin: "player" as const } : {}),
+                        ...(spec.defaultSpan ? { span: decorationSpan } : {}),
+                      };
                       return <button
                         key={kind}
                         data-testid={`decor-kind-${kind}`}
                         onClick={() => setDecorationKind(kind)}
                         style={{ padding: 7, borderRadius: 8, border: decorationKind === kind ? "2px solid #000" : "1px solid #ccc", background: "#fff", textAlign: "left", fontSize: 11 }}
-                      ><b>{spec.name}</b><br />{formatCurrency(decorationCost(example))}</button>;
+                      ><b>{plantId ? plantDefinition(plantId).label : spec.name}</b><br />
+                        {formatCurrency(decorationCost(example, course.theme, costMult))}
+                        {plantId ? ` · ${plantFitForBiome(course.theme, plantId)}` : ""}
+                      </button>;
                     })}
                   </div>
                   <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>
@@ -1220,7 +1269,7 @@ export function HUD(props: {
                     return (
                     <Tooltip
                       key={t}
-                      content={<><b>{t.replace("_", " ")}</b><br />{locked ? translateCurrent("progression.locked", { reputation: terrainMinReputation(t) }) : <><T id="auto.ui.hud.build" />{formatCurrency(TERRAIN_BUILD_COST[t])} <T id="auto.ui.hud.tile.salvage" />{formatCurrency(TERRAIN_SALVAGE_VALUE[t])}.</>}</>}
+                      content={<><b>{t.replace("_", " ")}</b><br />{locked ? translateCurrent("progression.locked", { reputation: terrainMinReputation(t) }) : <><T id="auto.ui.hud.build" />{formatCurrency(terrainConstructionUnitCost(t, course.theme, costMult))} <T id="auto.ui.hud.tile.salvage" />{formatCurrency(terrainSalvageUnitValue(t, course.theme, costMult))}.</>}</>}
                       learnMore={() => onOpenGolfopedia(`terrain-${t}`)}
                     >
                       <button
@@ -1335,6 +1384,22 @@ export function HUD(props: {
                   </div>
                 )}
                 <div data-tooltip="All variable costs, fixed overhead, maintenance, staffing, marketing, and debt costs this week."><T id="auto.ui.hud.costs" />{formatCurrency(last.costs)}</div>
+                {last.biomeEconomy && (
+                  <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>{translateCurrent("weekClose.biomeWater")}</span>
+                      <b>{formatCurrency(last.biomeEconomy.waterCost)}</b>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>{translateCurrent("weekClose.plantCare")}</span>
+                      <span>{formatCurrency(last.biomeEconomy.plantCareCost)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>{translateCurrent("weekClose.drainageCare")}</span>
+                      <span>{formatCurrency(last.biomeEconomy.drainageCareCost)}</span>
+                    </div>
+                  </div>
+                )}
                 {last.variableCosts && (
                   <div data-tooltip="Costs that scale with rounds played and transactions completed." style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>

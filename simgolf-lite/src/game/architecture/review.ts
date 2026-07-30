@@ -18,6 +18,7 @@ import { buildStrategicPortfolio } from "./portfolio";
 import { buildStrategicRecommendations } from "./recommendations";
 import type { M48DesignComparison, M48StrategicHoleEvaluation, M48StrategicPortfolio } from "./m48Types";
 import { buildArchitectureRulesReview } from "./rulesEvidence";
+import { terrainCostMult } from "../balance/difficulty";
 
 export interface ArchitectureReviewFilters {
   kind: ArchitectureOverlayKind;
@@ -296,7 +297,11 @@ export function buildArchitectureReview(
     sourceSegments: [...new Set(living.architecture.evidence.filter((item) => item.courseId === filters.courseId).map((item) => item.sourceSegment))].sort(),
     selectedTraceId,
     strategic,
-    recommendations: buildStrategicRecommendations(selectedCourse, strategic),
+    recommendations: buildStrategicRecommendations(
+      selectedCourse,
+      strategic,
+      terrainCostMult(world.difficulty),
+    ),
     selectedStrategicHole,
     comparison: living.architecture.comparison ?? null,
     rules,

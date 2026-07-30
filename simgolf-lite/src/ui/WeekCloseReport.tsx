@@ -14,6 +14,11 @@ export function WeekCloseReport(props: { week: number; result: WeekResult; resum
     ...(result.revenueBreakdown?.property ? [[translateCurrent("property.report.revenue"), formatCurrency(result.revenueBreakdown.property)]] : []),
     ...(result.revenueBreakdown?.propertyVisitors ? [[translateCurrent("property.report.guests"), formatNumber(result.revenueBreakdown.propertyVisitors)]] : []),
     [translateCurrent("weekClose.costs"), formatCurrency(result.costs)],
+    ...(result.biomeEconomy ? [
+      [translateCurrent("weekClose.biomeWater"), formatCurrency(result.biomeEconomy.waterCost)],
+      [translateCurrent("weekClose.plantCare"), formatCurrency(result.biomeEconomy.plantCareCost)],
+      [translateCurrent("weekClose.drainageCare"), formatCurrency(result.biomeEconomy.drainageCareCost)],
+    ] : []),
     [translateCurrent("weekClose.satisfaction"), `${Math.round(result.avgSatisfaction)}%`],
     ...(result.weatherSummary ? [[
       translateCurrent("season.report.weather"),

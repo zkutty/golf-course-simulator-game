@@ -4,6 +4,7 @@ import { buildStrategicPortfolio } from "./portfolio";
 import { buildStrategicRecommendations } from "./recommendations";
 import { compareM48DesignTest, createM48DesignTestSession, refreshM48DesignTestSession } from "./comparison";
 import { evaluateStrategicArchitecture, strategicHoleForSetup } from "./strategic";
+import { terrainCostMult } from "../balance/difficulty";
 
 function course(kind: "bailout" | "mandatory" | "portfolio" = "bailout"): Course {
   const width = 64;
@@ -75,6 +76,27 @@ describe("M48 strategic architecture", () => {
     expect(portfolio.summary.holeCount).toBeGreaterThanOrEqual(9);
     expect(Object.values(portfolio.summary.favoredCohorts).some((count) => count > 0)).toBe(true);
     expect(buildStrategicRecommendations(course("mandatory"), { samplesPerOption: 3 }).every((recommendation) => recommendation.holeId)).toBe(true);
+  });
+
+  it("applies the run difficulty once to shared biome construction quotes", () => {
+    const mandatory = course("mandatory");
+    const portfolio = buildStrategicPortfolio(mandatory, { samplesPerOption: 3 });
+    const normal = buildStrategicRecommendations(mandatory, portfolio);
+    const hard = buildStrategicRecommendations(
+      mandatory,
+      portfolio,
+      terrainCostMult("hard"),
+    );
+    expect(normal.length).toBeGreaterThan(0);
+    expect(hard.map((recommendation) => recommendation.id)).toEqual(
+      normal.map((recommendation) => recommendation.id),
+    );
+    for (let index = 0; index < normal.length; index += 1) {
+      expect(hard[index].constructionCost).toBe(
+        Math.round(normal[index].constructionCost * terrainCostMult("hard")),
+      );
+      expect(hard[index].upkeepDelta).toBe(normal[index].upkeepDelta);
+    }
   });
 
   it("keeps the design/watch/play/redesign context deterministic and truthful", () => {

@@ -7,12 +7,22 @@ import { useFocusTrap } from "../accessibility/useFocusTrap";
 import { T } from "../../i18n/T";
 import { translateCurrent } from "../../i18n/core";
 import { useI18n } from "../../i18n/useI18n";
+import type { Difficulty, LandTheme } from "../../game/models/types";
 
 const SECTIONS: GolfopediaSection[] = ["Terrain", "Golfers", "Management", "Controls"];
 
-export function GolfopediaModal(props: { open: boolean; onClose: () => void; initialEntry?: string | null }) {
+export function GolfopediaModal(props: {
+  open: boolean;
+  onClose: () => void;
+  initialEntry?: string | null;
+  theme?: LandTheme;
+  difficulty?: Difficulty;
+}) {
   const { t } = useI18n();
-  const entries = useMemo(() => buildGolfopediaEntries(t), [t]);
+  const entries = useMemo(
+    () => buildGolfopediaEntries(t, props.theme, props.difficulty),
+    [props.difficulty, props.theme, t],
+  );
   const initial = entries.find((entry) => entry.id === props.initialEntry);
   const [section, setSection] = useState<GolfopediaSection>(initial?.section ?? "Terrain");
   const [query, setQuery] = useState("");

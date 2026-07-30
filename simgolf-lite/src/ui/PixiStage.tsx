@@ -34,7 +34,6 @@ import {
   golfersAtlasReady,
   loadAtlases,
 } from "../render/atlas";
-import { computeTerrainChangeCost } from "../game/models/terrainEconomics";
 import type { TerrainStrokePreview } from "../game/models/terrainStroke";
 import {
   defaultSurfaceTangents,
@@ -5485,9 +5484,8 @@ export function PixiStage(props: PixiStageProps) {
       if (!el) return;
       let cursor = "crosshair";
       if (t && editorMode === "PAINT" && selectedTerrain && worldCash !== undefined) {
-        const prevTerrain = course.tiles[t.y * course.width + t.x];
-        const cost = computeTerrainChangeCost(prevTerrain, selectedTerrain);
-        if (cost.net > 0 && worldCash < cost.net) cursor = "not-allowed";
+        const preview = onPreviewTerrainStroke?.([t]);
+        if (preview && !preview.affordable) cursor = "not-allowed";
       }
       el.style.cursor = cursor;
     };

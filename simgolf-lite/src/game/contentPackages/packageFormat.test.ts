@@ -224,6 +224,47 @@ describe("M43 course and challenge packages", () => {
     expect(Object.values(imported.m51?.cartRentals ?? {}).every((rental) => rental.buildingId.startsWith("import-m51-b"))).toBe(true);
   });
 
+  it("round-trips semantic player plant identity without upgrading natural features", async () => {
+    const source = createM26MultiCourseReferenceCourse();
+    source.obstacles = [
+      ...source.obstacles,
+      { x: 1, y: 1, type: "tree" as const },
+      {
+        x: 2,
+        y: 1,
+        type: "tree" as const,
+        plantId: "parkland-oak" as const,
+        origin: "player" as const,
+      },
+    ];
+    source.decorations = [
+      ...(source.decorations ?? []),
+      {
+        kind: "flower_bed" as const,
+        x: 3,
+        y: 1,
+        rotation: 0 as const,
+        plantId: "parkland-perennial-bed" as const,
+        origin: "player" as const,
+      },
+      { kind: "flower_bed" as const, x: 4, y: 1, rotation: 0 as const },
+    ];
+    const value = await createCoursePackage({
+      course: source,
+      title: "Semantic plants",
+      description: "Player provenance portability fixture.",
+      author: { id: "author-01", displayName: "Course Author" },
+      requiredGameVersion: "1.0.0-rc.4",
+      now: new Date("2026-07-30T12:00:00.000Z"),
+    });
+    expect((await validatePackageText(packageText(value))).status).toBe("compatible");
+    expect(value.payload.course.obstacles.slice(-2)).toEqual(source.obstacles.slice(-2));
+    expect(value.payload.course.decorations?.slice(-2)).toEqual(source.decorations.slice(-2));
+    const imported = remapImportedCourseIdentity(value, "import-plants");
+    expect(imported.obstacles.slice(-2)).toEqual(source.obstacles.slice(-2));
+    expect(imported.decorations?.slice(-2)).toEqual(source.decorations.slice(-2));
+  });
+
   it("imports, updates, lists, exports, reads, and deletes a manual package offline", async () => {
     const platform = testPlatform();
     const value = await fixture();

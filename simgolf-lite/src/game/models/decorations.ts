@@ -3,6 +3,15 @@ import { buildingAtTile } from "./buildings";
 import type { Course, Decoration, DecorationKind, DecorationRotation, LandTheme, Point, Terrain } from "./types";
 import { isOwnedTile } from "../estate/estate";
 import { BIOME_KEYS, getBiomeDefinition } from "./biomes";
+import {
+  dailyPlantCareCost,
+  isPlantId,
+  plantDefinition,
+  plantFitMultipliers,
+  plantWaterDemand,
+  resolvedDecorationPlantId,
+  type EconomyQuote,
+} from "./plantRegistry";
 
 export interface DecorationVisual {
   frame: string;
@@ -85,10 +94,59 @@ export function decorationAtTile(course: Course, x: number, y: number): Decorati
   return (course.decorations ?? []).find((decoration) => decorationTiles(decoration).some((tile) => tile.x === x && tile.y === y));
 }
 
-export function decorationCost(decoration: Decoration): number {
+export function decorationCost(
+  decoration: Decoration,
+  theme: LandTheme = "parkland",
+  costMult = 1,
+): number {
   const spec = decorationSpec(decoration.kind);
-  if (spec.category !== "structure") return spec.buildCost;
-  return spec.buildCost + Math.max(1, decoration.span ?? spec.defaultSpan ?? 1) * (decoration.kind === "bridge" ? 600 : 350);
+  const base = spec.category !== "structure"
+    ? spec.buildCost
+    : spec.buildCost
+      + Math.max(1, decoration.span ?? spec.defaultSpan ?? 1)
+        * (decoration.kind === "bridge" ? 600 : 350);
+  const plantId = resolvedDecorationPlantId(theme, decoration);
+  if (!plantId) return base * costMult;
+  const plant = plantDefinition(plantId);
+  const fit = plantFitMultipliers(theme, plantId);
+  return base * plant.installationScale * fit.installationMultiplier * costMult;
+}
+
+export function decorationRemovalQuote(
+  decoration: Decoration,
+  theme: LandTheme = "parkland",
+  costMult = 1,
+): EconomyQuote {
+  if (
+    decorationSpec(decoration.kind).category === "planting"
+    && decoration.origin !== "player"
+  ) {
+    return { net: 0, charged: 0, refunded: 0, gross: 0, salvage: 0 };
+  }
+  const installed = decorationCost(decoration, theme, costMult);
+  const salvage = Math.min(
+    installed * 0.5,
+    installed * decorationSpec(decoration.kind).salvageRate,
+  );
+  return { net: -salvage, charged: 0, refunded: salvage, gross: 0, salvage };
+}
+
+export function decorationDailyCareCost(
+  decoration: Decoration,
+  theme: LandTheme = "parkland",
+): number {
+  if (decoration.origin !== "player") return 0;
+  const plantId = resolvedDecorationPlantId(theme, decoration);
+  return plantId ? dailyPlantCareCost(theme, plantId) : 0;
+}
+
+export function decorationPlantWaterDemand(
+  decoration: Decoration,
+  theme: LandTheme = "parkland",
+): number {
+  if (decoration.origin !== "player") return 0;
+  const plantId = resolvedDecorationPlantId(theme, decoration);
+  return plantId ? plantWaterDemand(theme, plantId) : 0;
 }
 
 export function bridgeTileSet(course: Course): Set<number> {
@@ -146,5 +204,21 @@ export function normalizedDecoration(value: Decoration): Decoration {
   const rotation = ([0, 1, 2, 3] as const).includes(value.rotation as DecorationRotation) ? value.rotation as DecorationRotation : 0;
   const spec = decorationSpec(value.kind);
   const span = spec.category === "structure" ? Math.max(1, Math.min(spec.maxSpan ?? 1, Math.floor(value.span ?? spec.defaultSpan ?? 1))) : undefined;
-  return { kind: value.kind, x: Math.floor(value.x), y: Math.floor(value.y), rotation, ...(Number.isInteger(value.variant) ? { variant: value.variant } : {}), ...(span ? { span } : {}) };
+  const plant = isPlantId(value.plantId) ? plantDefinition(value.plantId) : undefined;
+  const plantId = plant?.semantics.kind === "decoration"
+    && plant.semantics.decorationKind === value.kind
+    ? plant.id
+    : undefined;
+  return {
+    kind: value.kind,
+    x: Math.floor(value.x),
+    y: Math.floor(value.y),
+    rotation,
+    ...(Number.isInteger(value.variant) ? { variant: value.variant } : {}),
+    ...(plantId ? { plantId } : {}),
+    ...(value.origin === "player" || value.origin === "natural"
+      ? { origin: value.origin }
+      : {}),
+    ...(span ? { span } : {}),
+  };
 }

@@ -1,6 +1,11 @@
-import type { Terrain } from "../../game/models/types";
+import type { Difficulty, LandTheme, Terrain } from "../../game/models/types";
 import { ARCHETYPES } from "../../game/live/archetypes";
-import { TERRAIN_BUILD_COST, TERRAIN_MAINT_WEIGHT, TERRAIN_SALVAGE_VALUE } from "../../game/models/terrainEconomics";
+import {
+  terrainConstructionUnitCost,
+  terrainMaintenanceWeight,
+  terrainSalvageUnitValue,
+} from "../../game/models/terrainEconomics";
+import { terrainCostMult } from "../../game/balance/difficulty";
 import type { Translator } from "../../i18n/context";
 import { translate } from "../../i18n/core";
 import { formatCurrency, formatNumber } from "../../i18n/format";
@@ -23,14 +28,19 @@ const terrainKeys: Record<Terrain, { title: MessageKey; summary: MessageKey }> =
 };
 const golferLabelKeys = { pro: "golfer.pro", lowHandicap: "golfer.lowHandicap", casual: "golfer.casual", senior: "golfer.senior", junior: "golfer.junior", tourist: "golfer.tourist" } as const;
 
-export function buildGolfopediaEntries(t: Translator): readonly GolfopediaEntry[] {
+export function buildGolfopediaEntries(
+  t: Translator,
+  theme: LandTheme = "parkland",
+  difficulty: Difficulty = "normal",
+): readonly GolfopediaEntry[] {
+  const costMult = terrainCostMult(difficulty);
   const terrainEntries = (Object.keys(terrainKeys) as Terrain[]).map((terrain) => ({
     id: `terrain-${terrain}`, section: "Terrain" as const, title: t(terrainKeys[terrain].title), summary: t(terrainKeys[terrain].summary),
-    details: [t("golfopedia.terrain.balance"), t("golfopedia.terrain.maintenance", { weight: TERRAIN_MAINT_WEIGHT[terrain].toFixed(2) })],
+    details: [t("golfopedia.terrain.balance"), t("golfopedia.terrain.maintenance", { weight: terrainMaintenanceWeight(terrain, theme).toFixed(2) })],
     facts: [
-      { label: t("golfopedia.fact.build"), value: t("golfopedia.value.perTile", { value: formatCurrency(TERRAIN_BUILD_COST[terrain]) }) },
-      { label: t("golfopedia.fact.salvage"), value: t("golfopedia.value.perTile", { value: formatCurrency(TERRAIN_SALVAGE_VALUE[terrain]) }) },
-      { label: t("golfopedia.fact.upkeep"), value: `${TERRAIN_MAINT_WEIGHT[terrain].toFixed(2)}×` },
+      { label: t("golfopedia.fact.build"), value: t("golfopedia.value.perTile", { value: formatCurrency(terrainConstructionUnitCost(terrain, theme, costMult)) }) },
+      { label: t("golfopedia.fact.salvage"), value: t("golfopedia.value.perTile", { value: formatCurrency(terrainSalvageUnitValue(terrain, theme, costMult)) }) },
+      { label: t("golfopedia.fact.upkeep"), value: `${terrainMaintenanceWeight(terrain, theme).toFixed(2)}×` },
     ],
   }));
   const golferEntries = Object.values(ARCHETYPES).map((archetype) => {

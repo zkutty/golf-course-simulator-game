@@ -1,5 +1,5 @@
 import type { Course, Terrain } from "../models/types";
-import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
+import { terrainMaintenanceWeight } from "../models/terrainEconomics";
 
 export type LocalizedConditionZoneId = "NW" | "NE" | "SW" | "SE";
 
@@ -29,9 +29,9 @@ export function localizedConditionZoneId(
  * Only four aggregates are retained; no condition data is copied onto tiles.
  */
 export function localizedConditionZones(
-  course: Pick<Course, "width" | "height" | "tiles">,
+  course: Pick<Course, "width" | "height" | "tiles" | "theme">,
 ): ReadonlyMap<LocalizedConditionZoneId, LocalizedConditionZone> {
-  const dimensions = `${course.width}x${course.height}`;
+  const dimensions = `${course.width}x${course.height}:${course.theme ?? "parkland"}`;
   const variants = zoneCache.get(course.tiles);
   const cached = variants?.get(dimensions);
   if (cached) return cached;
@@ -41,11 +41,11 @@ export function localizedConditionZones(
     const x = index % Math.max(1, course.width);
     const y = Math.floor(index / Math.max(1, course.width));
     const zoneId = localizedConditionZoneId(course.width, course.height, x, y);
-    const burden = TERRAIN_MAINT_WEIGHT[terrain] ?? 1;
+    const burden = terrainMaintenanceWeight(terrain, course.theme);
     const current = mutable.get(zoneId) ?? { terrain, tiles: 0, burden: 0 };
     current.tiles++;
     current.burden += burden;
-    if (burden > (TERRAIN_MAINT_WEIGHT[current.terrain] ?? 1)) current.terrain = terrain;
+    if (burden > terrainMaintenanceWeight(current.terrain, course.theme)) current.terrain = terrain;
     mutable.set(zoneId, current);
   });
 

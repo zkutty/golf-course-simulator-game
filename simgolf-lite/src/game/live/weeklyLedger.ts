@@ -28,6 +28,7 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
   const byConcession: Partial<Record<ConcessionType, number>> = {};
   const perCourse = new Map<string, NonNullable<WeekResult["perCourse"]>[number] & { satisfactionWeight: number }>();
   const weatherDays = ledger.days.flatMap((day) => day.weather ? [day.weather] : []);
+  const biomeDays = ledger.days.flatMap((day) => day.biomeEconomy ? [day.biomeEconomy] : []);
   const mobilityCourses = new Map<string, MobilityCourseAggregate>();
 
   for (const day of ledger.days) {
@@ -84,6 +85,27 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
     },
     costs,
     profit: revenue - costs,
+    ...(biomeDays.length ? (() => {
+      const days = biomeDays.reduce((sum, quote) => sum + quote.days, 0);
+      const weightedAverage = (
+        select: (quote: (typeof biomeDays)[number]) => number,
+      ) => biomeDays.reduce((sum, quote) => sum + select(quote) * quote.days, 0) / Math.max(1, days);
+      return {
+        biomeEconomy: {
+          biome: biomeDays[0].biome,
+          maintainedAreaUnits: weightedAverage((quote) => quote.maintainedAreaUnits),
+          plantingWaterUnits: weightedAverage((quote) => quote.plantingWaterUnits),
+          seasonalDemandMultiplier: weightedAverage((quote) => quote.seasonalDemandMultiplier),
+          weatherDemandMultiplier: weightedAverage((quote) => quote.weatherDemandMultiplier),
+          policyMultiplier: weightedAverage((quote) => quote.policyMultiplier),
+          waterCost: biomeDays.reduce((sum, quote) => sum + quote.waterCost, 0),
+          plantCareCost: biomeDays.reduce((sum, quote) => sum + quote.plantCareCost, 0),
+          drainageCareCost: biomeDays.reduce((sum, quote) => sum + quote.drainageCareCost, 0),
+          total: biomeDays.reduce((sum, quote) => sum + quote.total, 0),
+          days,
+        },
+      };
+    })() : {}),
     avgSatisfaction: visitors ? satisfactionWeight / visitors : 0,
     reputationDelta: ledger.days.reduce((sum, day) => sum + day.reputationDelta, 0),
     ...(mobilityCourses.size ? (() => {

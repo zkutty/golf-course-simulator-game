@@ -1,5 +1,5 @@
 import type { Course, Terrain, WeekResult, World } from "../models/types";
-import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
+import { terrainMaintenanceWeight } from "../models/terrainEconomics";
 import {
   activeWeather,
   biomeClimatePhenologyForDay,
@@ -211,7 +211,7 @@ export function seasonalVisualState(input: SeasonalVisualStateInput): SeasonalVi
     const existing = surfaces.get(cacheKey);
     if (existing) return existing;
     const zone = zones.get(zoneId);
-    const burden = TERRAIN_MAINT_WEIGHT[terrain] ?? 1;
+    const burden = terrainMaintenanceWeight(terrain, course.theme);
     const relativeBurden = burden / Math.max(.1, zone?.burden ?? 1);
     const zoneWear = clamp(wear * (.82 + relativeBurden * .18));
     const zoneHealth = clamp(turfHealth - Math.max(0, relativeBurden - 1) * .08);

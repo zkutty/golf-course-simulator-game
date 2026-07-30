@@ -4,7 +4,10 @@ import type { Terrain, WeekResult } from "../models/types";
 import { advisorMessages, allowsMessage } from "../advisor/advisor";
 import { TUTORIAL_STEPS, createTutorialProgress, reconcileTutorialProgress } from "./tutorial";
 import { GOLFOPEDIA_ENTRIES } from "../../ui/help/golfopediaData";
-import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../models/terrainEconomics";
+import {
+  terrainConstructionUnitCost,
+  terrainSalvageUnitValue,
+} from "../models/terrainEconomics";
 import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/save";
 import { REPORT_HELP, tooltipForControl } from "../../ui/help/tooltipContent";
 
@@ -104,8 +107,8 @@ describe("M14 Golfopedia", () => {
     for (const terrain of terrains) {
       const entry = GOLFOPEDIA_ENTRIES.find((candidate) => candidate.id === `terrain-${terrain}`);
       expect(entry).toBeDefined();
-      expect(entry?.facts).toContainEqual({ label: "Build", value: `$${TERRAIN_BUILD_COST[terrain].toLocaleString()} / tile` });
-      expect(entry?.facts).toContainEqual({ label: "Salvage", value: `$${TERRAIN_SALVAGE_VALUE[terrain].toLocaleString()} / tile` });
+      expect(entry?.facts).toContainEqual({ label: "Build", value: `$${terrainConstructionUnitCost(terrain).toLocaleString()} / tile` });
+      expect(entry?.facts).toContainEqual({ label: "Salvage", value: `$${terrainSalvageUnitValue(terrain).toLocaleString()} / tile` });
     }
   });
 

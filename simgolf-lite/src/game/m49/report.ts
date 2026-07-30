@@ -1,6 +1,6 @@
 import type { Course, WeekResult, World } from "../models/types";
 import { activeCourseLayout } from "../models/courseLayouts";
-import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
+import { terrainMaintenanceWeight } from "../models/terrainEconomics";
 import { buildM49DemandPlan } from "./demand";
 import { m49CourseHistory, normalizeM49State } from "./history";
 import { strategicIdentity } from "./identity";
@@ -24,7 +24,10 @@ function ledgerRevenue(result: WeekResult): number | undefined {
 }
 
 function conditionReport(course: Course, world: World, result?: WeekResult): M49CourseReport["condition"] {
-  const totalWeight = course.tiles.reduce((sum, terrain) => sum + (TERRAIN_MAINT_WEIGHT[terrain] ?? 1), 0);
+  const totalWeight = course.tiles.reduce(
+    (sum, terrain) => sum + terrainMaintenanceWeight(terrain, course.theme),
+    0,
+  );
   const avgWeight = totalWeight / Math.max(1, course.tiles.length);
   const requiredMaintenance = result?.maintenance?.required ?? Math.round(350 + totalWeight * 0.46);
   const maintenanceBudget = result?.maintenance?.budget ?? world.maintenanceBudget;

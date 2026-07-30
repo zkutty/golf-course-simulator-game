@@ -1,5 +1,21 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-07-30 — ZK-646 biome economics and planting semantics complete
+
+Current request: Implement and verify ZK-646 without committing, pushing, or changing Linear; leave subjective visual/gameplay validation deferred.
+
+- Added a complete, audited biome-economy contract for Parkland, Links, and Desert covering terrain construction/upkeep, earthworks, drainage, water scarcity and seasonality, natural-feature clearing/salvage, and native/adapted/imported plant fit. Five future-biome seed profiles resolve to complete inherited contracts without registering unfinished biomes.
+- Added 15 stable semantic plant IDs with obstacle/decor meaning, seasonal phenology, ecological fit, installation scale, recurring care and water demand, safe visual fallbacks, and registry audits.
+- Routed terrain, earthwork, obstacle, decoration, natural-feature, drainage, irrigation, live-day, weekly, condition, report, Golfopedia, cursor-preview, and architecture-recommendation economics through shared quotes. Difficulty is applied once at the outer cost layer, including exact AI recommendation construction estimates.
+- Preserved generated-land economics: untouched estate terrain and natural/generated vegetation carry no player installation or recurring plant cost; clearing has no speculative refund. Explicit player planting receives biome-fit installation, care, water, and bounded salvage economics.
+- Replaced the old flat daily operating charge with a deterministic breakdown based only on already-published seasonal weather/forecast state, maintained authored area, player plantings, irrigation policy, drainage, biome, season, and run difficulty. Parkland/Balanced retains the exact $42 neutral irrigation reference.
+- Added save schema v24, bounded/idempotent migration, hostile-data sanitization, and package round-trip coverage for semantic plant identity and provenance. Ambiguous legacy planting decorations migrate conservatively as natural rather than inventing player ownership.
+- Exposed the shared water/plant/drainage breakdown in daily and weekly ledgers, HUD, week-close reporting, and help content; weekly aggregation and live-day settlement use the same quote path without additional RNG or weather generation.
+- Verification passes: focused ZK-646 coverage, 12 files / 97 tests; full Vitest suite, 132 files / 1,029 passed with one intentional skip; production TypeScript/Vite build plus biome consumer/audio/asset audits; lint/i18n with zero errors and 12 existing hook warnings; authored-biome audit (`fe4e46804937244e3ccd5bc15fd9bd0930cefdd8f579aa6821aeb8979e1a9d50`) with all nine payloads within budget; and the full 81-run × 104-week balance matrix with zero normal-path bankruptcies and first normal profit by week 2. `git diff --check` passes.
+- A final read-only comparison against the Linear description and its sole kickoff comment found no incomplete written implementation or machine-verification acceptance criterion; Linear was not modified.
+- Subjective climate authenticity, landscaping readability, accessibility, browser/GPU rendering, and hands-on gameplay balance were intentionally not assessed in this pass, per request.
+- Concurrency integration note: the protected untracked real-hole import document and `src/game/holeTemplates/` work were not modified or included. Their private call sites remain outside this tracked ZK-646 baseline and do not block its acceptance.
+
 ## 2026-07-24 — ZK-444 estate-wide Links coastline fix in progress
 
 Current request: “ok lets go fix that please”

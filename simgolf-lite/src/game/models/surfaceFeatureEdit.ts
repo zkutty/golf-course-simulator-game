@@ -6,6 +6,7 @@ import {
   computeElevationChangeCost,
   computeTerrainChangeBreakdown,
 } from "./terrainEconomics";
+import { naturalFeatureRemovalQuote } from "./plantRegistry";
 import type { TerrainStrokePreview } from "./terrainStroke";
 import {
   buildIntentUnderlayTiles,
@@ -208,6 +209,7 @@ export function prepareSurfaceFeatureEdit(
   const earthworkCost = computeElevationChangeCost(
     grading.earthworkSteps,
     costMult,
+    course.theme,
   ).net;
   const changedTiles: TerrainStrokePreview["tiles"] = [];
   let gross = 0;
@@ -234,6 +236,18 @@ export function prepareSurfaceFeatureEdit(
     charged += cost.charged;
     refunded += cost.refunded;
     changedTiles.push({ x, y, terrain });
+  }
+  for (const obstacle of removedObstacles) {
+    const removal = naturalFeatureRemovalQuote({
+      theme: course.theme,
+      obstacle,
+      costMult,
+    });
+    gross += removal.gross;
+    salvage += removal.salvage;
+    net += removal.net;
+    charged += removal.charged;
+    refunded += removal.refunded;
   }
   gross += earthworkCost;
   net += earthworkCost;

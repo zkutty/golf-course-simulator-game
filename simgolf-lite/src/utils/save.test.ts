@@ -111,6 +111,57 @@ describe("save validation and migrations", () => {
     );
   });
 
+  it("migrates semantic planting provenance idempotently with bounded save growth", () => {
+    const course = {
+      ...DEFAULT_COURSE,
+      theme: "desert" as const,
+      biomeCompatibility: biomeCompatibilityMetadataFor("desert"),
+      obstacles: [
+        { x: 1, y: 1, type: "tree" as const },
+        { x: 2, y: 1, type: "rock" as const },
+      ],
+      decorations: [
+        { kind: "flower_bed" as const, x: 3, y: 1, rotation: 0 as const },
+        { kind: "bench" as const, x: 4, y: 1, rotation: 0 as const },
+      ],
+    };
+    const legacy = file({ schemaVersion: 23, course });
+    const legacyDecorationBytes = JSON.stringify(course.decorations).length;
+    const first = normalizeLoadedSaveResult(legacy);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.migratedFrom).toBe(23);
+    // Legacy/generated obstacles remain natural/free by omission.
+    expect(first.payload.course.obstacles).toEqual(course.obstacles);
+    // Generated and player-authored legacy plantings are indistinguishable,
+    // so missing provenance fails conservatively to natural/free.
+    expect(first.payload.course.decorations).toEqual([
+      {
+        kind: "flower_bed",
+        x: 3,
+        y: 1,
+        rotation: 0,
+        origin: "natural",
+      },
+      { kind: "bench", x: 4, y: 1, rotation: 0 },
+    ]);
+    expect(
+      JSON.stringify(first.payload.course.decorations).length
+      - legacyDecorationBytes,
+    ).toBeLessThan(256);
+    expect(JSON.stringify(first.payload).length).toBeLessThan(5_000_000);
+
+    const second = normalizeLoadedSaveResult({
+      schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
+      savedAt: 123,
+      ...first.payload,
+    });
+    expect(second.ok, second.ok ? undefined : second.error.message).toBe(true);
+    if (!second.ok) return;
+    expect(second.migratedFrom).toBeUndefined();
+    expect(second.payload).toEqual(first.payload);
+  });
+
   it("rejects unsupported or contradictory save and active-round biome evidence atomically", () => {
     expect(normalizeLoadedSaveResult(file({
       course: { ...DEFAULT_COURSE, theme: "moonbase" as never },

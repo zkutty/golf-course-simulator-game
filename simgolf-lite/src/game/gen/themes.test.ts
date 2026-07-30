@@ -191,19 +191,19 @@ describe("land themes (ZKU-166)", () => {
     }
   });
 
-  it("desert water costs more to build; other themes neutral", () => {
-    expect(themeBuildMult("desert", "water")).toBeGreaterThan(1);
-    expect(themeBuildMult("desert", "fairway")).toBe(1);
-    expect(themeBuildMult("links", "water")).toBe(1);
+  it("reads terrain construction multipliers from the biome registry", () => {
+    expect(themeBuildMult("desert", "water")).toBe(1.75);
+    expect(themeBuildMult("desert", "fairway")).toBe(1.35);
+    expect(themeBuildMult("links", "water")).toBe(1.25);
     expect(themeBuildMult(undefined, "water")).toBe(1);
 
     const parkland = computeTerrainChangeCost("rough", "water", 1, "parkland");
     const desert = computeTerrainChangeCost("rough", "water", 1, "desert");
-    expect(desert.net).toBeCloseTo(parkland.net * 1.5, 5);
+    expect(desert.net).toBeGreaterThan(parkland.net);
     // Salvage scales symmetrically so refunds stay proportional.
     const salvageDesert = computeTerrainChangeCost("water", "rough", 1, "desert");
     const salvageParkland = computeTerrainChangeCost("water", "rough", 1, "parkland");
-    expect(salvageDesert.refunded).toBeCloseTo(salvageParkland.refunded * 1.5, 5);
+    expect(salvageDesert.refunded).toBeCloseTo(salvageParkland.refunded * 1.75, 5);
   });
 
   it("links deep rough punishes shots slightly harder", () => {

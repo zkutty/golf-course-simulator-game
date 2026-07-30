@@ -1,5 +1,5 @@
 import type { ConcessionTransaction, ConcessionType, Course, World } from "../models/types";
-import { TERRAIN_MAINT_WEIGHT } from "../models/terrainEconomics";
+import { terrainMaintenanceWeight } from "../models/terrainEconomics";
 import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty";
 import { hitsLiquidityTrap } from "../sim/runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
@@ -17,6 +17,7 @@ import { m49ReputationDelta, recordM49Observations } from "../m49/history";
 import { m51MobilityAggregateSummary, settleM51MobilityDay } from "../m51/mobility";
 import type { M51LiveMobilityState } from "../m51/types";
 import { settleMobilityFleet } from "../m51/operations";
+import { quoteDailyBiomeOperatingCosts } from "../models/biomeOperatingCosts";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -68,6 +69,7 @@ export function commitDay(args: {
   const revenue = args.revenue + propertySettlement.report.revenue + hospitalityWeatherAdjustment;
   // Difficulty-resolved balance (ZKU-165): identity for normal.
   const BALANCE = getEffectiveBalance(operatingWorld.difficulty);
+  const profile = getDifficultyProfile(operatingWorld.difficulty);
   const rounds = reactions.rounds;
   const avgSatisfaction = reactions.avgSatisfaction;
 
@@ -90,7 +92,15 @@ export function commitDay(args: {
   const consumablesVariable = rounds * BALANCE.variableCosts.consumablesPerRound;
   const merchantFees = revenue * BALANCE.variableCosts.merchantFeeRate;
 
-  const waterPolicyCost = season.operations.waterPolicy === "irrigate" ? 95 : season.operations.waterPolicy === "conserve" ? 12 : 42;
+  const biomeEconomy = quoteDailyBiomeOperatingCosts({
+    course: operatingCourse,
+    season: season.calendar.season,
+    currentWeather: seasonalCommit.weather,
+    publishedForecast: season.forecast,
+    policy: season.operations.waterPolicy,
+    drainageLevel: season.operations.drainageLevel,
+    costMult: profile.terrainCostMult,
+  });
   const presentationCost = season.operations.turfPriority === "presentation" ? 65 : season.operations.turfPriority === "recovery" ? 38 : 20;
   const paceOvertime = Object.values(args.pace?.perCourse ?? {}).reduce((sum, metrics) => sum + metrics.overtimeCost, 0);
   const paceCompensation = Object.values(args.pace?.perCourse ?? {}).reduce((sum, metrics) => sum + metrics.compensationCost, 0);
@@ -99,7 +109,7 @@ export function commitDay(args: {
   const mobilityOperatingCosts = mobilitySummary?.operatingCosts ?? 0;
   const costsPreTax =
     staffCost + marketingCost + maintenanceCost + overheadTotal +
-    laborVariable + consumablesVariable + merchantFees + waterPolicyCost + presentationCost;
+    laborVariable + consumablesVariable + merchantFees + biomeEconomy.total + presentationCost;
 
   const profitPreTax = revenue - costsPreTax;
   const tax =
@@ -109,7 +119,10 @@ export function commitDay(args: {
   const profit = revenue - costs;
 
   // ---- Condition: wear from traffic vs. maintenance recovery (per day) ----
-  const totalWeight = operatingCourse.tiles.reduce((acc, t) => acc + (TERRAIN_MAINT_WEIGHT[t] ?? 1), 0);
+  const totalWeight = operatingCourse.tiles.reduce(
+    (acc, terrain) => acc + terrainMaintenanceWeight(terrain, operatingCourse.theme),
+    0,
+  );
   const avgWeight = totalWeight / (operatingCourse.tiles.length || 1);
   const priorityWearMultiplier = season.operations.turfPriority === "recovery" ? 0.82 : season.operations.turfPriority === "presentation" ? 0.94 : 1;
   const wear = Math.min(
@@ -137,7 +150,6 @@ export function commitDay(args: {
   const returnBias = (reactions.willReturnRate - 0.5) * 0.5; // -0.25..0.25
   const sentiment = clamp(nps + returnBias, -1, 1);
   const dailyRepCap = Math.max(1, BALANCE.reputation.capPerWeek / DAYS_PER_WEEK);
-  const profile = getDifficultyProfile(operatingWorld.difficulty);
   const repAsym = sentiment >= 0 ? profile.repGainMult : profile.repLossMult;
   const m49Evidence = reactions.observations;
   const audienceRepDelta = m49Evidence
@@ -235,6 +247,15 @@ export function commitDay(args: {
       },
       costs,
       profit,
+      biomeEconomy: charter.operatingCostMultiplier === 1
+        ? biomeEconomy
+        : {
+          ...biomeEconomy,
+          waterCost: biomeEconomy.waterCost * charter.operatingCostMultiplier,
+          plantCareCost: biomeEconomy.plantCareCost * charter.operatingCostMultiplier,
+          drainageCareCost: biomeEconomy.drainageCareCost * charter.operatingCostMultiplier,
+          total: biomeEconomy.total * charter.operatingCostMultiplier,
+        },
       avgSatisfaction,
       reputationDelta: repDelta,
       conditionDelta: nextCondition - seasonalCommit.course.condition,

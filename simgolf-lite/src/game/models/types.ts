@@ -8,8 +8,10 @@ import type { CampaignRunState } from "../campaign/types";
 import type { M49DemandPlan, M49EconomyState } from "../m49/types";
 import type { M51CourseMobilityState, M51MobilityAggregateSummary, M51MobilityState } from "../m51/types";
 import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
+import type { FeatureOrigin, PlantId } from "./plantTypes";
 
 export type { LandTheme } from "./biomes";
+export type { FeatureOrigin, PlantId } from "./plantTypes";
 
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
@@ -265,6 +267,12 @@ export interface Obstacle {
   x: number;
   y: number;
   type: ObstacleType;
+  /**
+   * Present only for semantic player-authored vegetation. Legacy/generated
+   * obstacles omit both fields and therefore remain natural and upkeep-free.
+   */
+  plantId?: PlantId;
+  origin?: FeatureOrigin;
 }
 
 export type DecorationKind =
@@ -278,6 +286,9 @@ export interface Decoration {
   y: number;
   rotation: DecorationRotation;
   variant?: number;
+  /** Semantic species/content identity for explicit player-authored planting. */
+  plantId?: PlantId;
+  origin?: FeatureOrigin;
   /** Hazard tiles crossed by a bridge/boardwalk; omitted for 1×1 decor. */
   span?: number;
 }
@@ -512,6 +523,21 @@ export interface SatisfactionBreakdown {
   satisfaction: number; // 0..100
 }
 
+/** Auditable daily/weekly biome-driven operating costs. */
+export interface BiomeOperatingCostBreakdown {
+  biome: LandTheme;
+  maintainedAreaUnits: number;
+  plantingWaterUnits: number;
+  seasonalDemandMultiplier: number;
+  weatherDemandMultiplier: number;
+  policyMultiplier: number;
+  waterCost: number;
+  plantCareCost: number;
+  drainageCareCost: number;
+  total: number;
+  days: number;
+}
+
 export interface WeekResult {
   visitors: number;
   turnaways?: number;
@@ -531,6 +557,7 @@ export interface WeekResult {
   };
   costs: number;
   profit: number;
+  biomeEconomy?: BiomeOperatingCostBreakdown;
   tax?: number;
   variableCosts?: {
     labor: number;

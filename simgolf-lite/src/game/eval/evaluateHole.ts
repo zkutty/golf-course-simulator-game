@@ -1,7 +1,7 @@
 import type { Course, Hole, Obstacle, Point, Terrain } from "../models/types";
 import { findBestPlayablePath } from "../sim/pathfind";
 import { sampleLine, scoreHole } from "../sim/holes";
-import { TERRAIN_BUILD_COST, TERRAIN_SALVAGE_VALUE } from "../models/terrainEconomics";
+import { computeTerrainChangeCost } from "../models/terrainEconomics";
 
 export interface HoleIssue {
   severity: "info" | "warn" | "bad";
@@ -164,7 +164,12 @@ function findContiguousWaterAlongLine(
   return { maxWaterLengthYards, waterStartYards };
 }
 
-export function evaluateHole(course: Course, hole: Hole, holeIndex: number): HoleEvaluation {
+export function evaluateHole(
+  course: Course,
+  hole: Hole,
+  holeIndex: number,
+  costMult = 1,
+): HoleEvaluation {
   const issues: HoleIssue[] = [];
 
   // Use existing scoring function for shot calculations
@@ -358,10 +363,12 @@ export function evaluateHole(course: Course, hole: Hole, holeIndex: number): Hol
     for (const p of failingSegments) {
       const terrain = tileAt(course, p);
       if (terrain && terrain !== "fairway") {
-        // Estimate: build cost of fairway minus salvage of current terrain
-        const buildCost = TERRAIN_BUILD_COST.fairway;
-        const salvage = TERRAIN_SALVAGE_VALUE[terrain] ?? 0;
-        costEstimate += Math.max(0, buildCost - salvage);
+        costEstimate += computeTerrainChangeCost(
+          terrain,
+          "fairway",
+          costMult,
+          course.theme,
+        ).charged;
       }
     }
 

@@ -1,5 +1,9 @@
 import type { LandTheme, Obstacle, ObstacleType, Terrain } from "../models/types";
 import { getBiomeDefinition } from "../models/biomes";
+import {
+  plantDefinition,
+  resolvedObstaclePlantId,
+} from "../models/plantRegistry";
 
 export type NaturalPropFrame = `${LandTheme}_${ObstacleType}_${string}`;
 export type PropSway = { amplitude: number; speed: number } | null;
@@ -181,6 +185,12 @@ export interface NaturalPropContext {
 export function pickNaturalProp(context: NaturalPropContext): { variant: NaturalPropVariant; scale: number } {
   const theme = getBiomeDefinition(context.theme).content.props.natural;
   const all = NATURAL_PROP_REGISTRY[theme][context.obstacle.type];
+  const semanticPlantId = context.obstacle.origin === "player"
+    ? resolvedObstaclePlantId(theme, context.obstacle)
+    : undefined;
+  const semanticVariant = semanticPlantId
+    ? all.find((variant) => variant.frame === plantDefinition(semanticPlantId).nativeVisualFrame)
+    : undefined;
   const valid = all.filter((variant) =>
     variant.allowedTerrain.includes(context.terrain) &&
     context.elevation >= (variant.minElevation ?? -Infinity) &&
@@ -189,7 +199,7 @@ export function pickNaturalProp(context: NaturalPropContext): { variant: Natural
   );
   // Relax context filters within the selected biome instead of silently
   // borrowing another biome's species.
-  const candidates = valid.length > 0 ? valid : all;
+  const candidates = semanticVariant ? [semanticVariant] : valid.length > 0 ? valid : all;
   const weighted = candidates.map((variant) => {
     const waterFactor = variant.nearWater === "prefer" ? (context.nearWater ? 2.5 : 0.45) : variant.nearWater === "avoid" ? (context.nearWater ? 0.2 : 1) : 1;
     const composition = context.cultivated ? variant.composition.cultivated : variant.composition.wild;

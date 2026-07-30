@@ -4,6 +4,8 @@ import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { normalizePropertyCourse, normalizePropertyEnterprise } from "../property/property";
 import type { PropertyAsset } from "../property/types";
 import type { FacilityUpkeepPolicy } from "../property/types";
+import { terrainCostMult } from "../balance/difficulty";
+import { quoteDrainageImprovement } from "../models/terrainEconomics";
 import {
   CLUB_CHARTERS,
   SEASONS,
@@ -720,7 +722,11 @@ export function previewSeasonCommand(course: Course, world: World, command: Seas
   } else if (command.type === "IMPROVE_DRAINAGE") {
     if (state.operations.drainageLevel >= 3) blockers.push("Drainage is already at the maximum strategic tier.");
     if (state.operations.drainageConstructionDays > 0) blockers.push("The current drainage project must finish first.");
-    cost = 18_000 * (state.operations.drainageLevel + 1);
+    cost = quoteDrainageImprovement(
+      course.theme,
+      state.operations.drainageLevel,
+      terrainCostMult(world.difficulty),
+    );
     days = 7 + state.operations.drainageLevel * 3;
     riskReduction = 0.11;
     summary = `Drainage tier ${state.operations.drainageLevel + 1} reduces rain damage and cancellation risk by 11%.`;

@@ -1,4 +1,4 @@
-import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation, SurfaceFeature } from "../game/models/types";
+import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation, PlantId, SurfaceFeature } from "../game/models/types";
 import type { PropertyCommand } from "../game/property/property";
 
 // Actions that mutate terrain (increment terrainVersion)
@@ -16,7 +16,7 @@ export type TerrainMutationAction =
 
 // Actions that mutate obstacles (increment obstaclesVersion)
 export type ObstacleMutationAction =
-  | { type: "PLACE_OBSTACLE"; x: number; y: number; obstacleType: ObstacleType }
+  | { type: "PLACE_OBSTACLE"; x: number; y: number; obstacleType: ObstacleType; plantId?: PlantId }
   | { type: "REMOVE_OBSTACLE"; x: number; y: number };
 
 export type BuildingMutationAction =
@@ -62,6 +62,8 @@ export type EconomyMutationAction =
   | { type: "MOVE_GREEN"; holeIndex: number; position: Point; oldPosition: Point }
   | { type: "SET_TEE_BOX"; holeIndex: number; teeSet: TeeSet; position: Point }
   | { type: "REMOVE_TEE_BOX"; holeIndex: number; teeSet: TeeSet }
+  | { type: "PLACE_OBSTACLE"; x: number; y: number; obstacleType: ObstacleType; plantId?: PlantId }
+  | { type: "REMOVE_OBSTACLE"; x: number; y: number }
   | { type: "PLACE_BUILDING"; buildingType: BuildingType; x: number; y: number }
   | { type: "REMOVE_BUILDING"; x: number; y: number }
   | { type: "PLACE_DECORATION"; decoration: Decoration }

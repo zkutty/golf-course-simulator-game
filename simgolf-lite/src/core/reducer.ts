@@ -15,7 +15,13 @@ import {
 import { getEffectiveBalance } from "../game/balance/difficulty";
 import { createLoan } from "../game/sim/loans";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
-import { canPlaceDecoration, decorationAtTile, decorationCost, decorationSpec, decorationTiles } from "../game/models/decorations";
+import {
+  canPlaceDecoration,
+  decorationAtTile,
+  decorationCost,
+  decorationRemovalQuote,
+  decorationTiles,
+} from "../game/models/decorations";
 import {
   getPinPosition,
   getTeeBox,
@@ -35,6 +41,12 @@ import { prepareSurfaceFeatureEdit } from "../game/models/surfaceFeatureEdit";
 import { applyWaterGrading } from "../game/models/waterGrading";
 import { isWaterHazard } from "../game/models/terrainRules";
 import { mutateMobilityRental } from "../game/m51/rentalBusiness";
+import {
+  naturalFeatureInstallationQuote,
+  naturalFeatureRemovalQuote,
+  resolvedDecorationPlantId,
+  resolvedObstaclePlantId,
+} from "../game/models/plantRegistry";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -217,7 +229,7 @@ export function applyAction(state: GameState, action: Action): GameState {
         const next = clampElevation(prev + delta);
         const applied = next - prev;
         if (applied !== 0) {
-          cashDelta += computeElevationChangeCost(applied, costMult).net;
+          cashDelta += computeElevationChangeCost(applied, costMult, state.course.theme).net;
           newElevations[idx] = next;
         }
       }
@@ -529,25 +541,61 @@ export function applyAction(state: GameState, action: Action): GameState {
         break;
       }
 
-      const newObstacles = [...state.course.obstacles, { x: action.x, y: action.y, type: action.obstacleType }];
+      const plantId = action.obstacleType === "rock"
+        ? undefined
+        : resolvedObstaclePlantId(state.course.theme, {
+          type: action.obstacleType,
+          plantId: action.plantId,
+        });
+      const quote = naturalFeatureInstallationQuote({
+        theme: state.course.theme,
+        obstacleType: action.obstacleType,
+        plantId,
+        costMult,
+      });
+      if (state.world.cash < quote.net) break;
+      const cash = state.world.cash - quote.net;
+      const newObstacles = [...state.course.obstacles, {
+        x: action.x,
+        y: action.y,
+        type: action.obstacleType,
+        origin: "player" as const,
+        ...(plantId ? { plantId } : {}),
+      }];
       newState = {
         ...newState,
         course: {
           ...state.course,
           obstacles: newObstacles,
         },
+        world: {
+          ...state.world,
+          cash,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash),
+        },
       };
       obstaclesVersion++;
+      economyVersion++;
       break;
     }
 
     case "REMOVE_OBSTACLE": {
       if (!isOwnedTile(state.course, action.x, action.y)) break;
+      const target = state.course.obstacles.find(
+        (o) => o.x === action.x && o.y === action.y,
+      );
+      if (!target) break;
       // Scenario constraint (ZKU-164): heritage trees can't be removed.
       if (state.world.constraints?.protectedTrees) {
-        const target = state.course.obstacles.find((o) => o.x === action.x && o.y === action.y);
         if (target?.type === "tree") break;
       }
+      const quote = naturalFeatureRemovalQuote({
+        theme: state.course.theme,
+        obstacle: target,
+        costMult,
+      });
+      if (quote.net > state.world.cash) break;
+      const cash = state.world.cash - quote.net;
       const newObstacles = state.course.obstacles.filter(
         (o) => !(o.x === action.x && o.y === action.y)
       );
@@ -557,8 +605,14 @@ export function applyAction(state: GameState, action: Action): GameState {
           ...state.course,
           obstacles: newObstacles,
         },
+        world: {
+          ...state.world,
+          cash,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash),
+        },
       };
       obstaclesVersion++;
+      economyVersion++;
       break;
     }
 
@@ -641,12 +695,16 @@ export function applyAction(state: GameState, action: Action): GameState {
       if (decorationTiles(action.decoration).some((tile) => !isOwnedTile(state.course, tile.x, tile.y))) break;
       const validation = canPlaceDecoration(state.course, action.decoration);
       if (!validation.ok) break;
-      const cost = decorationCost(action.decoration);
+      const plantId = resolvedDecorationPlantId(state.course.theme, action.decoration);
+      const decoration = plantId
+        ? { ...action.decoration, plantId, origin: "player" as const }
+        : action.decoration;
+      const cost = decorationCost(decoration, state.course.theme, costMult);
       if (state.world.cash < cost) break;
       const cash = state.world.cash - cost;
       newState = {
         ...newState,
-        course: { ...state.course, decorations: [...(state.course.decorations ?? []), action.decoration] },
+        course: { ...state.course, decorations: [...(state.course.decorations ?? []), decoration] },
         world: { ...state.world, cash, isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash) },
       };
       terrainVersion++;
@@ -658,11 +716,15 @@ export function applyAction(state: GameState, action: Action): GameState {
       const target = decorationAtTile(state.course, action.x, action.y);
       if (!target) break;
       if (decorationTiles(target).some((tile) => !isOwnedTile(state.course, tile.x, tile.y))) break;
-      const salvage = Math.round(decorationCost(target) * decorationSpec(target.kind).salvageRate);
+      const removal = decorationRemovalQuote(
+        target,
+        state.course.theme,
+        costMult,
+      );
       newState = {
         ...newState,
         course: { ...state.course, decorations: (state.course.decorations ?? []).filter((entry) => entry !== target) },
-        world: { ...state.world, cash: state.world.cash + salvage },
+        world: { ...state.world, cash: state.world.cash - removal.net },
       };
       terrainVersion++;
       economyVersion++;

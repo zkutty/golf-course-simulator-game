@@ -12,7 +12,7 @@ import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRo
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
 import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStore";
 import { SaveLoadModal } from "./ui/SaveLoadModal";
-import { computeTerrainChangeCost, ELEVATION_COST_PER_STEP } from "./game/models/terrainEconomics";
+import { computeElevationChangeCost, computeTerrainChangeCost } from "./game/models/terrainEconomics";
 import { previewTerrainStroke, type TerrainStrokePreview } from "./game/models/terrainStroke";
 import { corridorFeature, rasterizeSurfaceFeatureDetailed, regionFeature, simplifySurfacePoints } from "./game/models/surfaceIntent";
 import { prepareSurfaceFeatureEdit } from "./game/models/surfaceFeatureEdit";
@@ -91,6 +91,12 @@ import {
   canPlaceBuilding,
 } from "./game/models/buildings";
 import { canPlaceDecoration, decorationAtTile, decorationCost } from "./game/models/decorations";
+import {
+  defaultDecorationPlantId,
+  defaultObstaclePlantId,
+  naturalFeatureInstallationQuote,
+  naturalFeatureRemovalQuote,
+} from "./game/models/plantRegistry";
 import { GolfopediaModal } from "./ui/help/GolfopediaModal";
 import { TooltipSurface } from "./ui/help/TooltipSurface";
 import { AdvisorCard } from "./ui/onboarding/AdvisorCard";
@@ -1955,9 +1961,14 @@ export default function App() {
   const activeHoleEvaluation = useMemo(
     () =>
       perfProfiler.measure('evaluateHole', () =>
-        evaluateHole(activeSetupCourse, activeSetupCourse.holes[activeHoleIndex], activeHoleIndex)
+        evaluateHole(
+          activeSetupCourse,
+          activeSetupCourse.holes[activeHoleIndex],
+          activeHoleIndex,
+          costMult,
+        )
       ),
-    [activeSetupCourse, activeHoleIndex]
+    [activeSetupCourse, activeHoleIndex, costMult]
   );
   const failingCorridorSegments = useMemo(() => {
     const fairwayIssue = activeHoleEvaluation.issues.find((i) => i.code === "FAIRWAY_CONTINUITY");
@@ -3845,7 +3856,11 @@ export default function App() {
       if (x < 0 || y < 0 || x >= course.width || y >= course.height) return;
       const deltas = computeSculptDeltas(course, x, y, sculptBrush, sculptRadius);
       if (deltas.length === 0) return;
-      const cost = sculptSteps(deltas) * ELEVATION_COST_PER_STEP * costMult;
+      const cost = computeElevationChangeCost(
+        sculptSteps(deltas),
+        costMult,
+        course.theme,
+      ).net;
       if (cost > world.cash) {
         setPaintError(t("error.earthworksFunds", { amount: formatCurrency(cost) }));
         return;
@@ -3864,7 +3879,17 @@ export default function App() {
       const existingIdx = course.obstacles.findIndex((o) => o.x === x && o.y === y);
       if (existingIdx >= 0) {
         if (appProfile.gameplay.confirmBulldoze && !window.confirm(t("confirm.bulldoze"))) return;
+        const removal = naturalFeatureRemovalQuote({
+          theme: course.theme,
+          obstacle: course.obstacles[existingIdx],
+          costMult,
+        });
+        if (removal.net > world.cash) {
+          setPaintError(t("error.insufficientFunds", { amount: formatCurrency(removal.net) }));
+          return;
+        }
         dispatch({ type: "REMOVE_OBSTACLE", x, y });
+        setPaintError(null);
       } else {
         if (!isObstacleUnlocked(obstacleType, world.reputation)) {
           setPaintError(t("progression.locked", { reputation: obstacleMinReputation(obstacleType) }));
@@ -3874,8 +3899,21 @@ export default function App() {
           setPaintError(t("error.obstacleWater"));
           return;
         }
+        const plantId = obstacleType === "rock"
+          ? undefined
+          : defaultObstaclePlantId(course.theme, obstacleType);
+        const installation = naturalFeatureInstallationQuote({
+          theme: course.theme,
+          obstacleType,
+          plantId,
+          costMult,
+        });
+        if (installation.net > world.cash) {
+          setPaintError(t("error.insufficientFunds", { amount: formatCurrency(installation.net) }));
+          return;
+        }
         setPaintError(null);
-        dispatch({ type: "PLACE_OBSTACLE", x, y, obstacleType });
+        dispatch({ type: "PLACE_OBSTACLE", x, y, obstacleType, plantId });
       }
       return;
     }
@@ -3933,11 +3971,21 @@ export default function App() {
         x,
         y,
         rotation: decorationRotation,
+        ...(
+          decorationKind === "flower_bed"
+          || decorationKind === "planter"
+          || decorationKind === "ornamental_feature"
+            ? {
+              plantId: defaultDecorationPlantId(course.theme, decorationKind),
+              origin: "player" as const,
+            }
+            : {}
+        ),
         ...((decorationKind === "bridge" || decorationKind === "boardwalk") ? { span: decorationSpan } : {}),
       };
       const validation = canPlaceDecoration(course, decoration);
       if (!validation.ok) { setPaintError(t("decor.invalid", { reason: validation.reason ?? "invalid placement" })); return; }
-      const cost = decorationCost(decoration);
+      const cost = decorationCost(decoration, course.theme, costMult);
       if (world.cash < cost) { setPaintError(t("error.insufficientFunds", { amount: formatCurrency(cost) })); return; }
       dispatch({ type: "PLACE_DECORATION", decoration });
       setPaintError(null);
@@ -4359,6 +4407,8 @@ export default function App() {
         <GolfopediaModal
           open
           initialEntry={golfopediaEntry}
+          theme={course.theme}
+          difficulty={world.difficulty}
           onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
         />
       )}
