@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ObstacleType } from "../models/types";
 import { resolveObstacleCollision } from "./obstacleCollision";
 
 function resolve(args: Partial<Parameters<typeof resolveObstacleCollision>[0]> = {}) {
@@ -105,5 +106,25 @@ describe("authoritative obstacle flight collision", () => {
     expect(first.collision).toMatchObject({ kind: "obstacle", obstacleType: "bush" });
     expect(second).toEqual(first);
     expect(third).toEqual(first);
+  });
+
+  it("keeps exact nearby collision checks while bounding distant evidence work", () => {
+    const distant: Array<{ type: ObstacleType; x: number; y: number }> = Array.from({ length: 540 }, (_, index) => ({
+      type: index % 3 === 0 ? "tree" : index % 3 === 1 ? "bush" : "rock",
+      x: 2 + (index % 99),
+      y: index % 2 === 0 ? 2 : 58,
+    }));
+    const result = resolve({
+      width: 120,
+      height: 60,
+      from: { x: 1, y: 30 },
+      to: { x: 100, y: 30 },
+      flight: { profile: "low", apexHeightYards: 1 },
+      obstacles: [...distant, { type: "rock", x: 40, y: 30 }],
+    });
+
+    expect(result.clearance).toHaveLength(541);
+    expect(result.collision).toMatchObject({ kind: "obstacle", obstacleType: "rock" });
+    expect(result.clearance.some((item) => item.relationship === "around")).toBe(true);
   });
 });

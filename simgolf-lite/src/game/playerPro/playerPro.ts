@@ -41,6 +41,7 @@ import type { SharedShotOutcome, ShotFlightProfile, ShotLie } from "../rules/con
 import { classifyPenaltyAreaComponents } from "../rules/penaltyAreas";
 import { createControlledRoundSnapshotV2, decodeControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import { createSharedShotOutcome, resolveSharedRules } from "../rules/sharedOutcome";
+import { prepareObstacleInput, type FlightObstacle } from "../rules/obstacleCollision";
 import {
   calculateShotEffects,
   type CalculatedShotEffects,
@@ -52,6 +53,20 @@ const XP_PER_LEVEL = 12;
 const MAX_HISTORY = 40;
 const MAX_SHOTS = 240;
 const MAX_TRAINING = 80;
+
+const preparedObstacleInputs = new WeakMap<PlayerRoundCourseSnapshot, readonly FlightObstacle[]>();
+
+function obstacleInputFor(snapshot: PlayerRoundCourseSnapshot): readonly FlightObstacle[] {
+  const cached = preparedObstacleInputs.get(snapshot);
+  if (cached) return cached;
+  const prepared = prepareObstacleInput(snapshot.obstacles.map((obstacle) => ({
+    x: obstacle.x,
+    y: obstacle.y,
+    type: obstacle.type as ObstacleType,
+  })));
+  preparedObstacleInputs.set(snapshot, prepared);
+  return prepared;
+}
 
 const TECHNIQUE_GATES: Record<Exclude<PlayerShotTechnique, "normal">, { skill: PlayerProSkill; value: number }> = {
   draw: { skill: "driving", value: 48 },
@@ -840,11 +855,8 @@ export function resolvePlayableShot(args: {
       yardsPerTile: args.snapshot.yardsPerTile,
       elevations: args.snapshot.elevations,
       tiles: args.snapshot.tiles as readonly Terrain[],
-      obstacles: args.snapshot.obstacles.map((obstacle) => ({
-        x: obstacle.x,
-        y: obstacle.y,
-        type: obstacle.type as ObstacleType,
-      })),
+      obstacles: obstacleInputFor(args.snapshot),
+      obstaclesAreStable: true,
     },
   });
   return trace;

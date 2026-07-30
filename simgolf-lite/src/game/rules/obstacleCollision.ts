@@ -44,6 +44,8 @@ export interface ObstacleCollisionInput {
   elevations?: readonly number[];
   tiles?: readonly Terrain[];
   obstacles: readonly FlightObstacle[];
+  /** Set when the caller supplies the output of prepareObstacleInput. */
+  obstaclesAreStable?: boolean;
 }
 
 export interface FlightPathSample {
@@ -63,7 +65,7 @@ function rounded(value: number): number {
   return Number(value.toFixed(6));
 }
 
-function stableObstacles(obstacles: readonly FlightObstacle[]): FlightObstacle[] {
+export function prepareObstacleInput(obstacles: readonly FlightObstacle[]): readonly FlightObstacle[] {
   const typeOrder: Readonly<Record<ObstacleType, number>> = { bush: 0, rock: 1, tree: 2 };
   return obstacles
     .filter((obstacle): obstacle is FlightObstacle =>
@@ -73,6 +75,44 @@ function stableObstacles(obstacles: readonly FlightObstacle[]): FlightObstacle[]
     )
     .slice()
     .sort((a, b) => a.x - b.x || a.y - b.y || typeOrder[a.type] - typeOrder[b.type]);
+}
+
+function segmentDistance(point: Point, from: Point, to: Point): number {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 1e-9) return Math.hypot(point.x - from.x, point.y - from.y);
+  const progress = Math.max(0, Math.min(1, ((point.x - from.x) * dx + (point.y - from.y) * dy) / lengthSquared));
+  return Math.hypot(
+    point.x - (from.x + dx * progress),
+    point.y - (from.y + dy * progress),
+  );
+}
+
+function nearestSample(samples: readonly FlightPathSample[], obstacle: FlightObstacle): { sample: FlightPathSample; distance: number } {
+  const lastIndex = Math.max(0, samples.length - 1);
+  const first = samples[0]!;
+  const last = samples[lastIndex]!;
+  const dx = last.point.x - first.point.x;
+  const dy = last.point.y - first.point.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const projected = lengthSquared <= 1e-9
+    ? 0
+    : Math.max(0, Math.min(1, ((obstacle.x - first.point.x) * dx + (obstacle.y - first.point.y) * dy) / lengthSquared));
+  const center = Math.round(projected * lastIndex);
+  const start = Math.max(0, center - 2);
+  const end = Math.min(lastIndex, center + 2);
+  let closest = first;
+  let closestDistance = Infinity;
+  for (let index = start; index <= end; index += 1) {
+    const sample = samples[index]!;
+    const distance = Math.hypot(sample.point.x - obstacle.x, sample.point.y - obstacle.y);
+    if (distance < closestDistance) {
+      closest = sample;
+      closestDistance = distance;
+    }
+  }
+  return { sample: closest, distance: closestDistance };
 }
 
 function terrainAt(args: ObstacleCollisionInput, point: Point): { elevationYards: number; terrain: Terrain } {
@@ -129,20 +169,20 @@ function obstacleEvidence(args: {
 }): { evidence: ShotClearanceEvidence; collision: CandidateCollision | null } {
   const volumes = VOLUMES[args.obstacle.type];
   const baseHeight = terrainAt(args.input, args.obstacle).elevationYards;
-  let closest = args.samples[0]!;
-  let closestDistance = Infinity;
+  const nearest = nearestSample(args.samples, args.obstacle);
+  const closest = nearest.sample;
+  const closestDistance = nearest.distance;
   let hit: { sample: FlightPathSample; volume: ObstacleVolume } | null = null;
-  for (const sample of args.samples) {
-    const distance = Math.hypot(sample.point.x - args.obstacle.x, sample.point.y - args.obstacle.y);
-    if (distance < closestDistance) {
-      closest = sample;
-      closestDistance = distance;
-    }
-    for (const volume of volumes) {
-      const lower = baseHeight + volume.minHeightYards;
-      const upper = baseHeight + volume.maxHeightYards;
-      if (distance <= volume.radiusTiles && sample.pathHeightYards >= lower && sample.pathHeightYards <= upper) {
-        hit ??= { sample, volume };
+  const maxRadius = Math.max(...volumes.map((volume) => volume.radiusTiles));
+  if (segmentDistance(args.obstacle, args.input.from, args.input.to) <= maxRadius) {
+    for (const sample of args.samples) {
+      const distance = Math.hypot(sample.point.x - args.obstacle.x, sample.point.y - args.obstacle.y);
+      for (const volume of volumes) {
+        const lower = baseHeight + volume.minHeightYards;
+        const upper = baseHeight + volume.maxHeightYards;
+        if (distance <= volume.radiusTiles && sample.pathHeightYards >= lower && sample.pathHeightYards <= upper) {
+          hit ??= { sample, volume };
+        }
       }
     }
   }
@@ -212,7 +252,8 @@ export function resolveObstacleCollision(args: ObstacleCollisionInput): Obstacle
     }
   }
   const evidence: ShotClearanceEvidence[] = [];
-  for (const [index, obstacle] of stableObstacles(args.obstacles).entries()) {
+  const orderedObstacles = args.obstaclesAreStable ? args.obstacles : prepareObstacleInput(args.obstacles);
+  for (const [index, obstacle] of orderedObstacles.entries()) {
     const resolved = obstacleEvidence({ obstacle, samples, input: args });
     evidence.push(resolved.evidence);
     if (resolved.collision) candidates.push({ ...resolved.collision, priority: index + 1 });
