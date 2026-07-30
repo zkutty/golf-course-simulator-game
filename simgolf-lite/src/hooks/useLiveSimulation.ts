@@ -35,6 +35,7 @@ import {
   type PaceIdentitySummary,
   type PaceReportSummary,
 } from "../game/live/paceHistory";
+import { buildMobilityOperationsReports } from "../game/m51/operationsReport";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
@@ -66,6 +67,11 @@ export interface SelectedGolferDetail {
   holePlans?: StrategicHolePlan[];
   shotOutcomes?: LiveShotOutcome[];
   holeReactions?: HoleReaction[];
+  mobilityMode?: "walk" | "pushcart" | "riding_cart";
+  mobilityPredictedWalkingMinutes?: number;
+  mobilityActualTravelMinutes?: number;
+  mobilityWalkingFallbackMinutes?: number;
+  mobilityOffPathTiles?: number;
 }
 
 export interface LiveStatus {
@@ -119,6 +125,7 @@ export interface LiveStatus {
     credits: number;
     goodwillVouchers: number;
   };
+  mobility: ReturnType<typeof buildMobilityOperationsReports>;
 }
 
 function paceStatus(live: LiveState, course: Course, world: World): LiveStatus["pace"] {
@@ -184,6 +191,11 @@ function buildSelected(
     holePlans: g.holePlans,
     shotOutcomes: g.shotOutcomes,
     holeReactions: g.holeReactions,
+    mobilityMode: g.mobilityMode,
+    mobilityPredictedWalkingMinutes: g.mobilityPredictedWalkingMinutes,
+    mobilityActualTravelMinutes: g.mobilityActualTravelMinutes,
+    mobilityWalkingFallbackMinutes: g.mobilityWalkingFallbackMinutes,
+    mobilityOffPathTiles: g.mobilityOffPathTiles,
   };
 }
 
@@ -244,6 +256,7 @@ export function useLiveSimulation(args: {
       bottlenecks: [], reports7: [], reports28: [], overtimeCost: 0, compensationCost: 0,
       refunds: 0, credits: 0, goodwillVouchers: 0,
     },
+    mobility: buildMobilityOperationsReports({ course, world, week: world.week, dayIndex: 0 }),
   });
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
@@ -378,6 +391,7 @@ export function useLiveSimulation(args: {
         standings: sortedStandings(live.tournament.standings),
       } : null,
       pace: paceStatus(live, courseRef.current, worldRef.current),
+      mobility: buildMobilityOperationsReports({ course: courseRef.current, world: worldRef.current, live: live.m51, week: worldRef.current.week, dayIndex: live.dayIndex }),
     });
   }, [status.lastDay]);
 
@@ -410,6 +424,7 @@ export function useLiveSimulation(args: {
       reactions: roundReactions(live),
       dayIndex: live.dayIndex,
       pace: live.pace,
+      mobility: live.m51,
       shotTraces: live.golfers.flatMap((golfer) => golfer.segments.filter((segment) => segment.kind === "flight" && segment.shot !== "putt").map((segment) => ({
         golferId: golfer.id,
         holeId: segment.holeId,
@@ -631,6 +646,7 @@ export function useLiveSimulation(args: {
         standings: sortedStandings(restored.state.tournament.standings),
       } : null,
       pace: paceStatus(restored.state, courseRef.current, worldRef.current),
+      mobility: buildMobilityOperationsReports({ course: courseRef.current, world: worldRef.current, live: restored.state.m51, week: worldRef.current.week, dayIndex: restored.state.dayIndex }),
     });
     return true;
   }, [buildRenderData]);

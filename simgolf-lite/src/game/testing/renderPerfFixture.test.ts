@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_STATE } from "../../game/gameState";
+import { restoreLiveSimulation, snapshotLiveSimulation } from "../live/persistence";
 import { createRenderPerfLiveState } from "../live/simulation";
 import { createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createParklandVisualReferenceCourse, createRenderPerfCourse, PARKLAND_CAMERA_BOOKMARKS, PARKLAND_VISUAL_SEED } from "./referenceCourse";
 
@@ -13,6 +14,18 @@ describe("M12 render performance fixture", () => {
     expect(live.golfers).toHaveLength(100);
     expect(live.golfers.every((golfer) => golfer.finished === false)).toBe(true);
   }, 60_000);
+
+  it("snapshots and restores the 100-golfer renderer fixture within a bounded payload", () => {
+    const course = createRenderPerfCourse();
+    const live = createRenderPerfLiveState(course, { ...DEFAULT_STATE.world, runSeed: 12160 });
+    const snapshot = snapshotLiveSimulation({ state: live, pendingCash: 0, speed: "paused", selectedGolferId: null });
+    const serialized = JSON.stringify(snapshot);
+    const restored = restoreLiveSimulation(JSON.parse(serialized));
+
+    expect(new TextEncoder().encode(serialized).byteLength).toBeLessThan(1_000_000);
+    expect(restored?.state.golfers).toHaveLength(100);
+    expect(restored?.state.golfers.every((golfer) => golfer.segments.length < 100)).toBe(true);
+  });
 });
 
 describe("M22 visual release fixtures", () => {

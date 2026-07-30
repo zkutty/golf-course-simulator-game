@@ -1386,6 +1386,7 @@ export default function App() {
       sourceSegment: "player-pro",
       recency: "all",
       pinRotation: round.pinRotation,
+      mobilityMode: "all",
     });
     setShowArchitectureReview(true);
     setPlayerShotAim(null);

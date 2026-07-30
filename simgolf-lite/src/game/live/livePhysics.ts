@@ -146,7 +146,7 @@ export function resolveLiveShot(args: {
 }
 
 export function terrainAt(course: Course, point: Point): Terrain {
-  const x = Math.max(0, Math.min(course.width - 1, Math.round(point.x)));
-  const y = Math.max(0, Math.min(course.height - 1, Math.round(point.y)));
+  const x = Math.max(0, Math.min(course.width - 1, Math.floor(point.x)));
+  const y = Math.max(0, Math.min(course.height - 1, Math.floor(point.y)));
   return course.tiles[y * course.width + x] ?? "rough";
 }

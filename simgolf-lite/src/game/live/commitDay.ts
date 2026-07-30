@@ -14,6 +14,9 @@ import { advanceSeasonalDay, charterDefinition, seasonalState } from "../seasons
 import { advanceCampaign } from "../campaign/campaign";
 import { recordPaceDay } from "./paceHistory";
 import { m49ReputationDelta, recordM49Observations } from "../m49/history";
+import { m51MobilityAggregateSummary, settleM51MobilityDay } from "../m51/mobility";
+import type { M51LiveMobilityState } from "../m51/types";
+import { settleMobilityFleet } from "../m51/operations";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -46,6 +49,8 @@ export function commitDay(args: {
   pace?: PaceDayMetrics;
   shotTraces?: PropertyShotTrace[];
   observations?: RoundReactions["observations"];
+  /** M51 live state settles only here; it does not create a second cash path. */
+  mobility?: M51LiveMobilityState;
 }): { world: World; course: Course; result: DayResult } {
   const { course, world, reactions, dayIndex } = args;
   const seasonalCommit = advanceSeasonalDay(course, world, dayIndex ?? 0);
@@ -90,6 +95,8 @@ export function commitDay(args: {
   const paceOvertime = Object.values(args.pace?.perCourse ?? {}).reduce((sum, metrics) => sum + metrics.overtimeCost, 0);
   const paceCompensation = Object.values(args.pace?.perCourse ?? {}).reduce((sum, metrics) => sum + metrics.compensationCost, 0);
   const paceCosts = paceOvertime + paceCompensation;
+  const mobilitySummary = args.mobility ? m51MobilityAggregateSummary(args.mobility) : undefined;
+  const mobilityOperatingCosts = mobilitySummary?.operatingCosts ?? 0;
   const costsPreTax =
     staffCost + marketingCost + maintenanceCost + overheadTotal +
     laborVariable + consumablesVariable + merchantFees + waterPolicyCost + presentationCost;
@@ -98,7 +105,7 @@ export function commitDay(args: {
   const tax =
     BALANCE.tax.enabled && profitPreTax > 0 ? profitPreTax * BALANCE.tax.profitTaxRate : 0;
   const sharedCosts = (costsPreTax + tax + propertySettlement.report.costs) * charter.operatingCostMultiplier;
-  const costs = sharedCosts + paceCosts;
+  const costs = sharedCosts + paceCosts + mobilityOperatingCosts;
   const profit = revenue - costs;
 
   // ---- Condition: wear from traffic vs. maintenance recovery (per day) ----
@@ -120,7 +127,8 @@ export function commitDay(args: {
       * waterRecoveryMultiplier
       * priorityRecoveryMultiplier
   );
-  const nextCondition = clamp01(seasonalCommit.course.condition - wear + maintEffect);
+  const mobilityOffPathWear = Math.min(.01, (args.mobility?.assignments.reduce((sum, assignment) => sum + assignment.offPathTiles, 0) ?? 0) * 0.000002);
+  const nextCondition = clamp01(seasonalCommit.course.condition - wear - mobilityOffPathWear + maintEffect);
 
   // ---- Reputation: driven by the day's real net-promoter balance ----
   // Net promoter score of the golfers who actually finished, nudged by how many
@@ -164,9 +172,12 @@ export function commitDay(args: {
     ...(closesWeek ? { weekCompleted: operatingWorld.week } : {}),
   });
   const livingClubCommit = advanceLivingClubDay(conditionCourse, objectiveWorld, dayIndex ?? 0);
-  const nextCourse = livingClubCommit.course;
-  const campaignWorld = advanceCampaign(livingClubCommit.course, livingClubCommit.world);
-  const nextWorld = recordM49Observations(campaignWorld, m49Evidence ?? args.observations ?? [], operatingWorld.week);
+  const nextCourse = settleMobilityFleet(livingClubCommit.course, args.mobility);
+  const campaignWorld = advanceCampaign(nextCourse, livingClubCommit.world);
+  const m49World = recordM49Observations(campaignWorld, m49Evidence ?? args.observations ?? [], operatingWorld.week);
+  const nextWorld = args.mobility
+    ? settleM51MobilityDay(m49World, { live: args.mobility, week: operatingWorld.week, dayIndex: dayIndex ?? 0 })
+    : m49World;
   const courseEntries = Object.entries(args.perCourse ?? {});
   let allocatedRevenue = 0;
   let allocatedSharedCosts = 0;
@@ -177,10 +188,13 @@ export function commitDay(args: {
     const courseRevenue = last ? revenue - allocatedRevenue : Math.round(revenue * weight * 100) / 100;
     const paceMetrics = args.pace?.perCourse[courseId];
     const exactPaceCosts = (paceMetrics?.overtimeCost ?? 0) + (paceMetrics?.compensationCost ?? 0);
+    const exactMobilityCosts = mobilitySummary?.products
+      .filter((product) => product.courseId === courseId)
+      .reduce((sum, product) => sum + product.operatingCosts, 0) ?? 0;
     const allocated = last
       ? sharedCosts - allocatedSharedCosts
       : Math.round(sharedCosts * weight * 100) / 100;
-    const courseCosts = allocated + exactPaceCosts;
+    const courseCosts = allocated + exactPaceCosts + exactMobilityCosts;
     allocatedRevenue += courseRevenue;
     allocatedSharedCosts += allocated;
     const layout = layoutById(course, courseId);
@@ -224,6 +238,7 @@ export function commitDay(args: {
       avgSatisfaction,
       reputationDelta: repDelta,
       conditionDelta: nextCondition - seasonalCommit.course.condition,
+      ...(mobilitySummary ? { m51: mobilitySummary } : {}),
       promoters: reactions.promoters,
       detractors: reactions.detractors,
       willReturnRate: reactions.willReturnRate,

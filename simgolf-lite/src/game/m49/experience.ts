@@ -3,6 +3,7 @@ import type { Golfer } from "../live/types";
 import { buildStrategicPortfolio } from "../architecture/portfolio";
 import type { M48CohortId } from "../architecture/m48Types";
 import type { M49ObservedRound, M49HoleObservation } from "./types";
+import { m49MobilityCauses, m49ObservedMobilityValue } from "./mobility";
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const round = (value: number, digits = 3) => Number(value.toFixed(digits));
@@ -97,6 +98,7 @@ export function observeM49Round(args: {
   returnIntent: boolean;
   recommend: boolean;
   condition: number;
+  mobility?: Omit<NonNullable<M49ObservedRound["mobility"]>, "value">;
 }): M49ObservedRound {
   const { golfer } = args;
   const holes = holeEvidence(golfer);
@@ -109,21 +111,28 @@ export function observeM49Round(args: {
   const hospitalityDelayMinutes = golfer.hospitalityDelay ?? 0;
   const paceValue = clamp(1 - paceDelayMinutes / 90);
   const hospitalityValue = clamp(1 - hospitalityDelayMinutes / 45);
-  const satValue = clamp(golfer.mood);
   const priceAnchor = BASE_WILLINGNESS_TO_PAY[golfer.archetype];
+  const mobility = args.mobility
+    ? { ...args.mobility, value: m49ObservedMobilityValue(golfer.archetype, args.mobility) }
+    : undefined;
+  const mobilityDelta = mobility ? (mobility.value - .5) : 0;
+  const observedSatisfaction = clamp(golfer.mood + mobilityDelta * .16);
   const pricePressure = Math.max(0, args.greenFee / Math.max(1, priceAnchor) - .72);
   const valueReceived = clamp(
-    satValue * .42 + fit * .3 + args.condition * .14 + paceValue * .08 + hospitalityValue * .06 - pricePressure * .12,
+    observedSatisfaction * .42 + fit * .3 + args.condition * .14 + paceValue * .08 + hospitalityValue * .06 + mobilityDelta * .12 - pricePressure * .12,
   );
   const priceElasticity = BASE_PRICE_ELASTICITY[golfer.archetype] * (1.22 - valueReceived * .42);
   const willingnessToPay = clamp(
-    (priceAnchor * (.64 + valueReceived * .5) * (args.returnIntent ? 1.04 : .96)) / 150,
+    (priceAnchor * (.64 + valueReceived * .5 + mobilityDelta * .1) * (args.returnIntent ? 1.04 : .96)) / 150,
     .18,
     1.5,
   ) * 150;
   const causes = causeList(golfer, args.condition, paceDelayMinutes, hospitalityDelayMinutes);
+  if (mobility) causes.push(...m49MobilityCauses(mobility));
   if (args.greenFee > willingnessToPay) causes.push("price:above-observed-willingness");
   if (fit < .45) causes.push("fit:unsupported-strength");
+  const returnIntent = mobility && mobility.value < .28 ? false : args.returnIntent || (!!mobility && mobility.value >= .78 && observedSatisfaction >= .68);
+  const recommend = mobility && mobility.value < .34 ? false : args.recommend || (!!mobility && mobility.value >= .84 && observedSatisfaction >= .76);
 
   return {
     version: 1,
@@ -136,18 +145,19 @@ export function observeM49Round(args: {
     holesTotal: golfer.holePar.length,
     expectedScore: round(expectedScore, 2),
     actualScore: round(actualScore, 2),
-    satisfaction: round(golfer.mood * 100, 2),
+    satisfaction: round(observedSatisfaction * 100, 2),
     condition: round(args.condition, 3),
     greenFee: Math.max(0, round(args.greenFee, 2)),
     strategicFit: round(fit),
     valueReceived: round(valueReceived),
     willingnessToPay: round(willingnessToPay, 2),
     priceElasticity: round(priceElasticity, 3),
-    returnIntent: args.returnIntent,
-    recommend: args.recommend,
-    churnRisk: round(clamp(1 - valueReceived + (args.completed ? 0 : .18) + (paceDelayMinutes > 30 ? .12 : 0))),
+    returnIntent,
+    recommend,
+    churnRisk: round(clamp(1 - valueReceived + (args.completed ? 0 : .18) + (paceDelayMinutes > 30 ? .12 : 0) + Math.max(0, .5 - (mobility?.value ?? .5)) * .24)),
     paceDelayMinutes: round(paceDelayMinutes, 2),
     hospitalityDelayMinutes: round(hospitalityDelayMinutes, 2),
+    ...(mobility ? { mobility } : {}),
     holeEvidence: holes,
     causes: [...new Set(causes)].slice(0, 28),
   };

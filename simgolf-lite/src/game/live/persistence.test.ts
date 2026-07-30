@@ -65,6 +65,18 @@ describe("live simulation persistence", () => {
     expect(restored!.selectedGolferId).toBe(selectedGolferId);
   });
 
+  it("round-trips an active M51 rental once and drops duplicate authorization IDs", () => {
+    const { state, pendingCash } = midRound();
+    state.m51!.assignments = [{ id: "assignment-1", groupId: "group-1", courseId: "course-primary", selectionId: "selection-1", mode: "riding_cart", buildingId: "rental-1", productId: "rental-1:riding_cart", fleetUnitIds: ["fleet-1"], riders: [], status: "active", routeCacheKey: "m51:course-primary:course-primary:riding_cart:1,1>2,2", serviceDelayMinutes: 0, availableUnitsAtSelection: 1, actualTravelMinutes: 0, walkingFallbackMinutes: 0, offPathTiles: 0, seed: 4, decisionOrder: 1 }];
+    state.m51!.transactions = [
+      { id: "charge-1", groupId: "group-1", courseId: "course-primary", assignmentId: "assignment-1", buildingId: "rental-1", productId: "rental-1:riding_cart", mode: "riding_cart", amount: 24, status: "authorized", seed: 4, decisionOrder: 2, authorizedAtMinute: 20 },
+      { id: "charge-1", groupId: "group-1", courseId: "course-primary", assignmentId: "assignment-1", buildingId: "rental-1", productId: "rental-1:riding_cart", mode: "riding_cart", amount: 24, status: "authorized", seed: 4, decisionOrder: 3, authorizedAtMinute: 20 },
+    ];
+    const restored = restoreLiveSimulation(snapshotLiveSimulation({ state, pendingCash, speed: "paused", selectedGolferId: null }));
+    expect(restored?.state.m51?.assignments[0]).toMatchObject({ id: "assignment-1", status: "active", fleetUnitIds: ["fleet-1"] });
+    expect(restored?.state.m51?.transactions).toHaveLength(1);
+  });
+
   it("resumes deterministically from the same snapshot", () => {
     const { course, state, pendingCash } = midRound();
     const snapshot = snapshotLiveSimulation({ state, pendingCash, speed: "2x", selectedGolferId: null });
@@ -138,15 +150,47 @@ describe("live simulation persistence", () => {
     expect(restoreLiveSimulation(snapshot)).toBeNull();
   });
 
-  it("drops only a malformed optional shared outcome while retaining legacy live evidence", () => {
+  it("drops only malformed nested flight, collision, and relief payloads while retaining legacy live evidence", () => {
     const { state } = midRound();
-    const snapshot = JSON.parse(JSON.stringify(snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null })));
-    const outcome = snapshot.state.golfers[0].shotOutcomes?.[0];
-    expect(outcome).toBeDefined();
-    outcome.sharedOutcome = { malformed: true };
-    const restored = restoreLiveSimulation(snapshot);
-    expect(restored).not.toBeNull();
-    expect(restored!.state.golfers[0].shotOutcomes?.[0]).not.toHaveProperty("sharedOutcome");
-    expect(restored!.state.golfers[0].shotOutcomes?.[0].id).toBe(outcome.id);
+    const source = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });
+    const mutations: Array<(shared: Record<string, unknown>) => void> = [
+      (shared) => {
+        (shared.flight as Record<string, unknown>).apexHeightYards = Number.NaN;
+      },
+      (shared) => {
+        const flight = shared.flight as { clearance?: unknown[] };
+        shared.collision = {
+          kind: "obstacle",
+          point: { x: Number.POSITIVE_INFINITY, y: 1 },
+          obstacleType: "tree",
+          distanceFromStartYards: 10,
+          clearance: flight.clearance?.[0] ?? {
+            point: { x: 1, y: 1 },
+            pathHeightYards: 1,
+            requiredHeightYards: 2,
+            clearanceYards: -1,
+          },
+        };
+      },
+      (shared) => {
+        shared.relief = {
+          status: "resolved",
+          type: "lateral",
+          candidates: [],
+          selectedCandidateId: "missing",
+          finalPosition: { x: 1, y: 1 },
+        };
+      },
+    ];
+    for (const mutate of mutations) {
+      const snapshot = structuredClone(source);
+      const outcome = snapshot.state.golfers[0].shotOutcomes?.[0];
+      expect(outcome?.sharedOutcome).toBeDefined();
+      mutate(outcome!.sharedOutcome as unknown as Record<string, unknown>);
+      const restored = restoreLiveSimulation(snapshot);
+      expect(restored).not.toBeNull();
+      expect(restored!.state.golfers[0].shotOutcomes?.[0]).not.toHaveProperty("sharedOutcome");
+      expect(restored!.state.golfers[0].shotOutcomes?.[0].id).toBe(outcome!.id);
+    }
   });
 });

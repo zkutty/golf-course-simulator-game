@@ -1,5 +1,6 @@
 import type { World } from "../models/types";
 import { basePriceElasticity, baseWillingnessToPay } from "./experience";
+import { m49MobilityCauses } from "./mobility";
 import type { M49CourseHistory, M49EconomyState, M49ObservedRound, M49SegmentHistory } from "./types";
 import { M49_ECONOMY_VERSION, M49_MAX_COURSES, M49_MAX_HOLE_EVIDENCE, M49_MAX_SEGMENT_ROUNDS, M49_SEGMENTS } from "./types";
 
@@ -54,6 +55,7 @@ function normalizeSegment(raw: unknown, segment: M49ObservedRound["segment"]): M
       };
     }
   }
+  const mobility = normalizeMobility(candidate.mobility);
   return {
     observedRounds: clampInt(validNumber(candidate.observedRounds, 0), 0, M49_MAX_SEGMENT_ROUNDS),
     completedRounds: clampInt(validNumber(candidate.completedRounds, 0), 0, M49_MAX_SEGMENT_ROUNDS),
@@ -66,7 +68,36 @@ function normalizeSegment(raw: unknown, segment: M49ObservedRound["segment"]): M
     willingnessToPay: clamp(validNumber(candidate.willingnessToPay, base.willingnessToPay), 10, 500),
     priceElasticity: clamp(validNumber(candidate.priceElasticity, base.priceElasticity), .1, 4),
     lastObservedWeek: clampInt(validNumber(candidate.lastObservedWeek, 0), 0, 10_000_000),
+    ...(mobility ? { mobility } : {}),
     holeEvidence,
+  };
+}
+
+function normalizeMobility(raw: unknown): M49SegmentHistory["mobility"] | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const value = raw as Partial<NonNullable<M49SegmentHistory["mobility"]>>;
+  const observedRounds = clampInt(validNumber(value.observedRounds, 0), 0, M49_MAX_SEGMENT_ROUNDS);
+  // Do not materialize this object for old M49 histories: its absence is the
+  // explicit statement that no rental/path outcome was observed.
+  if (!observedRounds) return undefined;
+  const causes: Record<string, number> = {};
+  if (value.causes && typeof value.causes === "object") for (const [cause, count] of Object.entries(value.causes).slice(0, 24)) {
+    if (typeof count === "number" && Number.isFinite(count) && count > 0) causes[cause.slice(0, 80)] = clampInt(count, 0, M49_MAX_SEGMENT_ROUNDS);
+  }
+  return {
+    observedRounds,
+    walkingRounds: clampInt(validNumber(value.walkingRounds, 0), 0, observedRounds),
+    pushcartRounds: clampInt(validNumber(value.pushcartRounds, 0), 0, observedRounds),
+    ridingCartRounds: clampInt(validNumber(value.ridingCartRounds, 0), 0, observedRounds),
+    rentalRounds: clampInt(validNumber(value.rentalRounds, 0), 0, observedRounds),
+    stockoutFallbacks: clampInt(validNumber(value.stockoutFallbacks, 0), 0, observedRounds),
+    restrictions: clampInt(validNumber(value.restrictions, 0), 0, observedRounds),
+    tournamentPolicyRounds: clampInt(validNumber(value.tournamentPolicyRounds, 0), 0, observedRounds),
+    averageWalkingBurdenMinutes: clamp(validNumber(value.averageWalkingBurdenMinutes, 0), 0, 24 * 60),
+    averageActualTravelMinutes: clamp(validNumber(value.averageActualTravelMinutes, 0), 0, 24 * 60),
+    averagePaceMinutes: clamp(validNumber(value.averagePaceMinutes, 0), 0, 24 * 60),
+    averageValue: clamp(validNumber(value.averageValue, .5)),
+    causes,
   };
 }
 
@@ -140,6 +171,34 @@ function mergeHoleEvidence(history: M49SegmentHistory, observation: M49ObservedR
   return next;
 }
 
+function mergeMobilityEvidence(current: M49SegmentHistory["mobility"], observation: M49ObservedRound): M49SegmentHistory["mobility"] {
+  const evidence = observation.mobility;
+  if (!evidence || evidence.source !== "observed") return current;
+  const previous = current ?? {
+    observedRounds: 0, walkingRounds: 0, pushcartRounds: 0, ridingCartRounds: 0, rentalRounds: 0,
+    stockoutFallbacks: 0, restrictions: 0, tournamentPolicyRounds: 0, averageWalkingBurdenMinutes: 0,
+    averageActualTravelMinutes: 0, averagePaceMinutes: 0, averageValue: .5, causes: {},
+  };
+  const observations = previous.observedRounds + 1;
+  const causes = { ...previous.causes };
+  for (const item of m49MobilityCauses(evidence)) causes[item] = Math.min(M49_MAX_SEGMENT_ROUNDS, (causes[item] ?? 0) + 1);
+  return {
+    observedRounds: Math.min(M49_MAX_SEGMENT_ROUNDS, observations),
+    walkingRounds: Math.min(M49_MAX_SEGMENT_ROUNDS, previous.walkingRounds + (evidence.mode === "walk" ? 1 : 0)),
+    pushcartRounds: Math.min(M49_MAX_SEGMENT_ROUNDS, previous.pushcartRounds + (evidence.mode === "pushcart" ? 1 : 0)),
+    ridingCartRounds: Math.min(M49_MAX_SEGMENT_ROUNDS, previous.ridingCartRounds + (evidence.mode === "riding_cart" ? 1 : 0)),
+    rentalRounds: Math.min(M49_MAX_SEGMENT_ROUNDS, previous.rentalRounds + (evidence.rentalProvided ? 1 : 0)),
+    stockoutFallbacks: Math.min(M49_MAX_SEGMENT_ROUNDS, previous.stockoutFallbacks + (evidence.stockoutFallback ? 1 : 0)),
+    restrictions: Math.min(M49_MAX_SEGMENT_ROUNDS, previous.restrictions + (evidence.restricted ? 1 : 0)),
+    tournamentPolicyRounds: Math.min(M49_MAX_SEGMENT_ROUNDS, previous.tournamentPolicyRounds + (evidence.tournamentPolicy ? 1 : 0)),
+    averageWalkingBurdenMinutes: smooth(previous.averageWalkingBurdenMinutes, evidence.walkingBurdenMinutes, observations, 0, 24 * 60),
+    averageActualTravelMinutes: smooth(previous.averageActualTravelMinutes, evidence.actualTravelMinutes, observations, 0, 24 * 60),
+    averagePaceMinutes: smooth(previous.averagePaceMinutes, evidence.paceMinutes, observations, 0, 24 * 60),
+    averageValue: smooth(previous.averageValue, evidence.value, observations),
+    causes,
+  };
+}
+
 function mergeObservation(previous: M49SegmentHistory | undefined, observation: M49ObservedRound, week: number): M49SegmentHistory {
   const current = previous ?? emptySegment(observation.segment);
   const observations = current.observedRounds + 1;
@@ -158,6 +217,7 @@ function mergeObservation(previous: M49SegmentHistory | undefined, observation: 
     willingnessToPay: smooth(current.willingnessToPay, observation.willingnessToPay, observations, 10, 500),
     priceElasticity: smooth(current.priceElasticity, observation.priceElasticity, observations, .1, 4),
     lastObservedWeek: Math.max(current.lastObservedWeek, week),
+    mobility: mergeMobilityEvidence(current.mobility, observation),
     holeEvidence: mergeHoleEvidence(current, observation),
   };
 }

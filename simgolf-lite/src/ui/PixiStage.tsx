@@ -7,6 +7,7 @@ import * as PIXI from "pixi.js";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
+import { mobilityRenderUnits } from "../game/m51/mobilityRender";
 import type { PlayerPlayableRound, PlayerProPoint } from "../game/models/playerProTypes";
 import type { CameraState, IsoCameraSnapshot } from "../game/render/camera";
 import {
@@ -819,6 +820,8 @@ interface GolferEntry {
   } | null;
 }
 
+interface MobilityUnitEntry { holder: PIXI.Container; graphic: PIXI.Graphics; state: string; }
+
 /**
  * Chunked terrain (ZKU-142): the map is partitioned into CHUNK_TILES²-tile
  * chunks, each a static container rebuilt only when one of its tiles (or a
@@ -1073,6 +1076,7 @@ export function PixiStage(props: PixiStageProps) {
     sections: Record<string, number>;
   }>({ win: new PerfWindow(180), enabled: false, lastPollMs: 0, lastHudMs: 0, text: null, sections: {} });
   const golferPoolRef = useRef<Map<number, GolferEntry>>(new Map());
+  const mobilityUnitPoolRef = useRef<Map<string, MobilityUnitEntry>>(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
 
@@ -1773,6 +1777,7 @@ export function PixiStage(props: PixiStageProps) {
       hoverHighlightRef.current = null;
       surfaceEditorGraphicsRef.current = null;
       golferPoolRef.current.clear();
+      mobilityUnitPoolRef.current.clear();
       flagPoolRef.current.clear();
       buildingSpritesRef.current = [];
       propertyGraphicsRef.current = [];
@@ -5105,6 +5110,50 @@ export function PixiStage(props: PixiStageProps) {
           pool.delete(id);
           forgetGolfer(id);
         }
+      }
+
+      // M51 mobility equipment is a shared physical unit, never a second
+      // sprite per golfer. Vector fallbacks keep the view safe when optional
+      // cart art is absent and remain legible without color alone.
+      const mobilityPool = mobilityUnitPoolRef.current;
+      const mobilitySeen = new Set<string>();
+      for (const unit of mobilityRenderUnits(course, list ?? [])) {
+        mobilitySeen.add(unit.id);
+        let entry = mobilityPool.get(unit.id);
+        if (!entry) {
+          const holder = new PIXI.Container();
+          const graphic = new PIXI.Graphics();
+          holder.addChild(graphic);
+          layers.objects.addChild(holder);
+          entry = { holder, graphic, state: "" };
+          mobilityPool.set(unit.id, entry);
+        }
+        const elevation = surfaceHeightAt(unit.x + .5, unit.y + .5);
+        const projected = tileCenterIso(unit.x, unit.y, elevation, rotation);
+        entry.holder.position.set(projected.x, projected.y + 2);
+        const offscreen = projected.x < cullL || projected.x > cullR || projected.y < cullT || projected.y > cullB;
+        entry.holder.visible = !offscreen;
+        const depth = Math.round((entityDepth(unit.x, unit.y, elevation, rotation) - .05) * 10) / 10;
+        if (entry.holder.zIndex !== depth) entry.holder.zIndex = depth;
+        const signature = `${unit.state}:${unit.mode}`;
+        if (entry.state !== signature) {
+          entry.state = signature;
+          const graphic = entry.graphic;
+          graphic.clear();
+          if (unit.state === "walking_connection") {
+            graphic.circle(0, -4, 7); graphic.stroke({ width: 1.5, color: 0xf4f1db, alpha: .85 });
+            graphic.moveTo(-5, -4); graphic.lineTo(5, -4); graphic.stroke({ width: 1.5, color: 0x385d45, alpha: .9 });
+          } else if (unit.mode === "riding_cart") {
+            graphic.roundRect(-10, -9, 20, 10, 3); graphic.fill({ color: 0xe7dfba, alpha: unit.state === "parked" ? .62 : .95 }); graphic.stroke({ width: 1.5, color: 0x374438, alpha: .95 });
+            graphic.circle(-6, 2, 2.5); graphic.circle(6, 2, 2.5); graphic.fill({ color: 0x263126, alpha: .95 });
+          } else {
+            graphic.circle(-3, 0, 3.5); graphic.circle(4, 0, 3.5); graphic.stroke({ width: 1.5, color: 0x263126, alpha: .95 });
+            graphic.moveTo(0, -1); graphic.lineTo(0, -11); graphic.lineTo(5, -14); graphic.stroke({ width: 2, color: 0xead99b, alpha: unit.state === "parked" ? .62 : .95 });
+          }
+        }
+      }
+      for (const [id, entry] of mobilityPool) if (!mobilitySeen.has(id)) {
+        layers.objects.removeChild(entry.holder); entry.holder.destroy({ children: true }); mobilityPool.delete(id);
       }
 
       // --- Emote bubble pass (ZKU-155): screen overlay, fixed screen size

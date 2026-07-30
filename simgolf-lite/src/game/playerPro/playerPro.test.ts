@@ -273,6 +273,55 @@ describe("M36 deterministic Player Pro play", () => {
       expect(malformed.payload.world.playerPro?.identity.id).toBe(career.identity.id);
       expect(malformed.payload.world.playerPro?.activeRound).toBeNull();
     }
+
+    const committed = commitPlayerShot(round, career.skills, {
+      club: "Driver",
+      aim: { x: 34, y: 10 },
+      power: 0.86,
+      technique: "normal",
+    });
+    const hostileOutcome = {
+      ...committed,
+      pendingShot: committed.pendingShot && {
+        ...committed.pendingShot,
+        sharedOutcome: committed.pendingShot.sharedOutcome && {
+          ...committed.pendingShot.sharedOutcome,
+          flight: {
+            ...committed.pendingShot.sharedOutcome.flight,
+            apexHeightYards: Number.NaN,
+          },
+        },
+      },
+    };
+    const historicalRound = {
+      id: "historical",
+      kind: "casual" as const,
+      courseId: "course-primary",
+      courseName: "History",
+      week: 1,
+      strokes: 4,
+      penalties: 0,
+      par: 4,
+      scoreToPar: 0,
+      result: "complete" as const,
+      earnings: 0,
+      scorecard: [],
+      shots: [{ id: "legacy-history", seed: 9 }],
+      evidence: [],
+      skillGains: {},
+    };
+    const hostileNormalized = normalizePlayerPro({
+      ...career,
+      activeRound: hostileOutcome,
+      rounds: [historicalRound],
+    }, { seed: 1 });
+    expect(hostileNormalized.activeRound).toBeNull();
+    expect(hostileNormalized.rounds[0].shots).toEqual(historicalRound.shots);
+
+    expect(normalizePlayerPro({
+      ...career,
+      activeRound: { ...round, course: { ...round.course, holes: "hostile" } },
+    }, { seed: 1 }).activeRound).toBeNull();
   });
 
   it("auto-finishes with the same shot resolver and settles progression exactly once", () => {

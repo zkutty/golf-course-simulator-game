@@ -846,3 +846,95 @@ Current request: move closer to the supplied classic course-builder references w
 - Latest fixes include in-place Pixi adaptive-resolution resizing and debounced
   tutorial autosave status. See `simgolf-lite/docs/M35_CERTIFICATION.md` for
   the exact next commands and the ZK-473/ZK-466 release gates.
+
+## 2026-07-30 — M50 machine-only certification gap closure in progress
+
+Current request: close the machine-verifiable ZK-553 certification gaps for
+ZK-539, ZK-540, ZK-548, ZK-549, ZK-550, ZK-551, and ZK-552 without performing
+or claiming human visual, accessibility, balance, provider, physical-device,
+or release-owner checks.
+
+- Confirmed a clean `develop` checkout at promoted commit
+  `1010f1f0880ba5460573ba198a64e2cbb81011eb`.
+- Read the exact Linear acceptance criteria without changing issue state.
+- Baseline focused M50/rules/live/save/player test slice passes: 13 files and
+  81 tests.
+- The existing harness covers the core rules artifact, but its certification
+  evidence is still representative for preview parity and migration, does not
+  aggregate hostile M50 trace normalization or explicit round-loop bounds, and
+  labels an 84-tile-wide fixture as full-estate performance.
+- Planned scope is limited to shared hostile-payload validation, deterministic
+  certification fixtures, a true 220×140/36-hole/100-golfer scale check, and
+  the missing machine-only certification document.
+
+### M50 machine-only packet finalized on HOLD
+
+- Added strict runtime validation for persisted M50 flight, collision, ruling,
+  relief, and final-position evidence. Malformed optional live evidence is
+  dropped without losing its legacy shot; malformed active Player Pro evidence
+  invalidates only the resumable round and preserves completed history.
+- Expanded the deterministic M50 harness for five-case preview/execution
+  parity, three historical round kinds plus match/tournament/campaign and
+  Return-to-Design migration, six hostile active-round inputs, legal relief
+  invariants, bounded direct/match/tournament/AI rounds, and a true
+  220×140/36-hole/100-golfer scale fixture.
+- Focused result: 14 files, 89 passed, 1 failed. The only failing check is
+  `bounded-player-ai-rounds`: outcomes are finite, valid, deterministic,
+  capped at 240, and per-hole bounded, but at least one follow-up starts from a
+  water/wetland/OB lie.
+- Production build, TypeScript, audio manifest, service-worker injection, M35
+  asset budgets, and Parkland 4× contract audit pass.
+- Recorded commands, promoted base
+  `1010f1f0880ba5460573ba198a64e2cbb81011eb`, integration-commit placeholder,
+  limitations, proposed follow-up, and machine-only HOLD in
+  `simgolf-lite/docs/M50_CERTIFICATION.md`.
+- No visual, accessibility, human balance, listening, provider,
+  physical-device, release-owner, Linear mutation, push, or deploy action was
+  performed.
+
+### M50 ZK-551 machine blocker repaired
+
+- Traced the illegal strategic follow-up to inconsistent tile sampling:
+  controlled rules use the fractional coordinate's containing tile, while
+  Player Pro/live lie sampling rounded to a neighboring tile.
+- Aligned Player Pro outcome lies and live strategic terrain sampling with the
+  rules engine's containing-tile convention; ruling, relief ordering,
+  penalties, scoring, deterministic ordering, and loop bounds are unchanged.
+- Added a deterministic boundary regression that reproduces a fairway rest
+  adjacent to water and verifies the next strategic shot begins from a
+  playable lie.
+- Focused M50 result: 1 file and 3 tests passed in 37.66s.
+- Relevant Player Pro/live/tournament result: 7 files and 73 tests passed in
+  36.00s.
+- Updated `simgolf-lite/docs/M50_CERTIFICATION.md` from machine-only HOLD to
+  PASS. No new issue is needed; the repair is within existing ZK-551.
+
+### M51 Wave 3 ZK-545 / ZK-546 / ZK-547 implementation
+
+- Added deterministic one-mode-per-group walk/pushcart/riding-cart decisions,
+  stable per-golfer seating and transaction order, exact fleet reservations,
+  affordability/stockout/weather/facility/tournament fallbacks, service delay,
+  idempotent reload/reconcile behavior, and release on completion, abandonment,
+  or daylight.
+- Applied selected modes to the shared live itinerary through the weighted
+  travel router/cache. Actual travel now drives pace/daylight/blockage/marshal
+  behavior, bounded off-path turf/fleet wear, and observed satisfaction evidence
+  while protected surfaces and wet path-only rules use legal walking fallback.
+- Added product-level rental revenue, operating cost, utilization, stockout,
+  return/condition/wear settlement, exact daily/weekly reconciliation, bounded
+  28-day histories, and one-time core concession charges with no generic Cart
+  Rental duplicate.
+- Final verification passes: 12 focused files / 98 tests, TypeScript project
+  build, and `git diff --check`. The bundled web-game client entered a fresh
+  live game with valid structured state; the gameplay capture was inspected
+  and no console-error artifact was produced.
+- No Linear, commit, push, deployment, or later-wave UI/demand work is included.
+
+## 2026-07-30 — M51 ZK-558 machine-only certification
+
+- Preserved the shared uncommitted M47–M51 implementation and generated artifacts.
+- Focused baseline passes 19 files / 126 tests.
+- Final certification found two scoped presentation-contract failures: the implemented mobility Architecture Review overlay was omitted from its selector, and the new mobility surfaces bypassed the typed localization catalog.
+- Added the missing selector path, localized Architecture Review/Operate/Golfer Inspector mobility text, and added a pseudo-locale/machine-accessibility browser regression.
+- Added fixed-seed strategy compatibility plus 220×140/36-hole/100-golfer route/live/render/save certification coverage. The focused M51 certification passes 2/2 tests in 43.98s; TypeScript and i18n guards pass.
+- Human visual, accessibility, listening, gameplay-balance, physical-device/GPU, provider, browser-matrix, and release-owner checks remain deferred. No Linear mutation, commit, push, or deployment was performed.

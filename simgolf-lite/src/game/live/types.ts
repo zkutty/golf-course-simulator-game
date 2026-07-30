@@ -4,6 +4,7 @@ import type { LiveTournamentState } from "../tournaments/types";
 import type { DailyWeather, WeatherKind, WeatherModifiers } from "../seasons/types";
 import type { GolferCapabilities, HoleReaction, LiveShotOutcome, ShotIntent, StrategicHolePlan } from "./m47Types";
 import type { M49ObservedRound } from "../m49/types";
+import type { M51LiveMobilityState, M51MobilityAggregateSummary } from "../m51/types";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -26,6 +27,13 @@ export interface Segment {
     buildingY: number;
     item: string;
     amount: number;
+  };
+  /** M51 travel evidence attached to the same itinerary segment authority. */
+  mobility?: {
+    requestedMode: "walk" | "pushcart" | "riding_cart";
+    resolvedMode: "walk" | "pushcart" | "riding_cart";
+    minutesSaved: number;
+    offPathTiles: number;
   };
 }
 
@@ -87,6 +95,13 @@ export interface Golfer {
   hospitalityDelay?: number;
   disorderIncidents?: number;
   completionStatus?: "completed" | "daylight" | "congestion_abandonment";
+  mobilityMode?: "walk" | "pushcart" | "riding_cart";
+  mobilityAssignmentId?: string;
+  mobilityPredictedWalkingMinutes?: number;
+  mobilityActualTravelMinutes?: number;
+  mobilityWalkingFallbackMinutes?: number;
+  mobilityOffPathTiles?: number;
+  mobilityReactionApplied?: boolean;
   /** M47 identity contract; legacy saves omit this and are migrated on load. */
   capabilities?: GolferCapabilities;
   /** Bounded strategic decisions and physical evidence for this round. */
@@ -226,6 +241,8 @@ export interface LiveState {
   weather?: { daily: DailyWeather; modifiers: WeatherModifiers };
   /** Bounded finished-round evidence retained until day commit. */
   observedRounds?: M49ObservedRound[];
+  /** M51 transient group mobility contracts; walkCache remains the route-cache owner. */
+  m51?: M51LiveMobilityState;
 }
 
 // Aggregated reactions from the golfers who actually finished a round today.
@@ -283,6 +300,10 @@ export interface GolferRenderData {
   /** Strokes over/under par on the most recently scored hole (0 if none). */
   lastHoleDelta: number;
   intent?: string | null;
+  /** Shared-unit identity for renderer-only mobility visuals. */
+  mobilityAssignmentId?: string;
+  mobilityUnitId?: string;
+  mobilityUnitMode?: "walk" | "pushcart" | "riding_cart";
 }
 
 // Result of committing a finished day into the economy/reputation model.
@@ -307,6 +328,8 @@ export interface DayResult {
   avgSatisfaction: number; // 0..100
   reputationDelta: number;
   conditionDelta: number;
+  /** Bounded M51 pace/economic evidence; never a cash-settlement path. */
+  m51?: M51MobilityAggregateSummary;
   // Real-reaction detail behind the reputation move (ZKU-116).
   promoters: number;
   detractors: number;

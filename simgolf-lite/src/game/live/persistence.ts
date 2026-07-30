@@ -4,14 +4,15 @@ import { createWeekLedger, normalizeWeekLedger, type LiveWeekLedger } from "./we
 import { emptyPaceDayMetrics } from "./pace";
 import { createGolferCapabilities, normalizeGolferCapabilities, stableGolferSeed } from "./capabilities";
 import { M47_MAX_OUTCOMES, M47_MAX_PLANS, M47_MAX_REACTIONS, type LiveShotOutcome, type StrategicIntentKind } from "./m47Types";
-import type { SharedShotOutcome } from "../rules/contracts";
+import { isValidSharedShotOutcome } from "../rules/contracts";
+import { normalizeM51LiveMobilityState } from "../m51/mobility";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
 const MAX_SEGMENTS_PER_GOLFER = 5_000;
 
 export interface LiveSimulationSnapshotV1 {
-  version: 1 | 2 | 3 | 4;
+  version: 1 | 2 | 3 | 4 | 5 | 6;
   state: Omit<LiveState, "walkCache">;
   pendingCash: number;
   speed: SpeedName;
@@ -93,29 +94,8 @@ function shotOutcome(value: unknown): boolean {
     typeof value.holed === "boolean" && Array.isArray(value.facts) && value.facts.length <= 12 && value.facts.every(fact);
 }
 
-function sharedOutcome(value: unknown): value is SharedShotOutcome {
-  if (!isRecord(value) || value.rulesVersion !== 1) return false;
-  const lieEffect = value.lieEffect;
-  if (!isRecord(lieEffect) || typeof lieEffect.sourceLie !== "string" || typeof lieEffect.effectiveLie !== "string") return false;
-  if (!["carryMultiplier", "dispersionMultiplier", "rollMultiplier"].every((key) => finite(lieEffect[key]))) return false;
-  if (!["requestedCarryYards", "effectiveCarryYards", "requestedDispersionTiles", "effectiveDispersionTiles"].every((key) => finite(value[key]))) return false;
-  if (!isRecord(value.flight) || !flightProfiles.has(String(value.flight.profile)) ||
-    !finite(value.flight.launchAngleDegrees) || !finite(value.flight.apexHeightYards) ||
-    !point(value.flight.apexPosition) || !point(value.flight.carryEnd) ||
-    !Array.isArray(value.flight.clearance)) return false;
-  if (!isRecord(value.collision) || !["none", "terrain", "obstacle"].includes(String(value.collision.kind))) return false;
-  if (!point(value.physicalRest) || !point(value.finalPosition)) return false;
-  if (!isRecord(value.ruling) || !["in_play", "holed", "penalty"].includes(String(value.ruling.status)) ||
-    !["none", "out_of_bounds", "penalty_area"].includes(String(value.ruling.penaltyKind)) ||
-    !finite(value.ruling.penaltyStrokes)) return false;
-  if (!isRecord(value.relief) || !["not_required", "resolved", "unavailable"].includes(String(value.relief.status)) ||
-    !["none", "play_as_it_lies", "stroke_and_distance", "back_on_line", "lateral"].includes(String(value.relief.type)) ||
-    !Array.isArray(value.relief.candidates)) return false;
-  return true;
-}
-
 function normalizeShotOutcome(value: LiveShotOutcome): LiveShotOutcome {
-  if (value.sharedOutcome == null || sharedOutcome(value.sharedOutcome)) return value;
+  if (value.sharedOutcome == null || isValidSharedShotOutcome(value.sharedOutcome)) return value;
   const { sharedOutcome: _discarded, ...legacy } = value;
   return legacy;
 }
@@ -203,7 +183,7 @@ export function snapshotLiveSimulation(args: {
   const { walkCache: _walkCache, ...serializable } = args.state;
   void _walkCache;
   return {
-    version: 4,
+    version: 6,
     state: cloneSerializableState(serializable),
     pendingCash: args.pendingCash,
     speed: args.speed,
@@ -214,7 +194,7 @@ export function snapshotLiveSimulation(args: {
 }
 
 export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | null {
-  if (!isRecord(input) || (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4) || !isRecord(input.state)) return null;
+  if (!isRecord(input) || (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4 && input.version !== 5 && input.version !== 6) || !isRecord(input.state)) return null;
   const state = input.state;
   if (!Array.isArray(state.golfers) || state.golfers.length > MAX_GOLFERS || state.golfers.some((g) => !golfer(g))) return null;
   if (!Array.isArray(state.arrivals) || state.arrivals.length > MAX_ARRIVALS || state.arrivals.some((a) => !arrival(a))) return null;
@@ -285,6 +265,7 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
   serializable.concessionCollected ??= 0;
   serializable.concessionTransactions ??= [];
   serializable.concessionByType ??= {};
+  serializable.m51 = normalizeM51LiveMobilityState(serializable.m51, stateSeed);
   if (serializable.tournament) {
     serializable.tournament.teeSet ??= "member";
     serializable.tournament.pinRotation ??= "A";

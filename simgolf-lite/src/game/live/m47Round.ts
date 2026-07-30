@@ -1,7 +1,7 @@
-import type { Course, ConcessionType, PinRotation, Point, TeeSet } from "../models/types";
+import type { Course, PinRotation, Point, TeeSet } from "../models/types";
 import { scoreCourseHoles } from "../sim/holes";
-import { getParSetting, resolveCourseSetup } from "../models/courseSetup";
-import { planPurchase } from "./concessions";
+import { courseForRoundSetup, getParSetting, resolveCourseSetup } from "../models/courseSetup";
+import { BALANCE } from "../balance/balanceConfig";
 import { LIVE } from "./liveConfig";
 import type { BuiltRound, WalkRouter } from "./golfer";
 import { M47_MAX_OUTCOMES, type GolferCapabilities } from "./m47Types";
@@ -10,31 +10,75 @@ import { liveCourseSnapshot, resolveLiveShot, terrainAt } from "./livePhysics";
 import { evaluateHoleReaction } from "./reactions";
 import type { Personality } from "./personality";
 import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
+import { TimedItineraryBuilder } from "../m51/timedItinerary";
 
 function distance(a: Point, b: Point): number { return Math.hypot(a.x - b.x, a.y - b.y); }
 
-function walkSeg(from: Point, to: Point, holeIndex: number, cap = Infinity) {
-  return { kind: "walk" as const, from, to, holeIndex, dur: Math.min(cap, distance(from, to) * LIVE.pace.walkPerTile) };
+interface StrategicRoundHoleInfo {
+  isComplete: boolean;
+  isValid: boolean;
+  par: number;
 }
 
-function flightSeg(from: Point, to: Point, holeIndex: number, shot: "swing" | "putt") {
-  const d = distance(from, to);
-  return { kind: "flight" as const, from, to, holeIndex, dur: Math.max(LIVE.pace.flightMin, Math.min(LIVE.pace.flightMax, d * LIVE.pace.flightPerTile)), shot };
+interface StrategicRoundHoleSummary {
+  holes: StrategicRoundHoleInfo[];
 }
 
-function pauseSeg(at: Point, holeIndex: number, dur: number) {
-  return { kind: "pause" as const, from: at, to: at, holeIndex, dur };
+function inBounds(course: Course, point: Point): boolean {
+  return point.x >= 0 && point.y >= 0 && point.x < course.width && point.y < course.height;
 }
 
-function roundCourseSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): Course {
-  return {
-    ...course,
-    holes: course.holes.map((hole) => {
-      const setup = resolveCourseSetup(hole, teeSet, pinRotation);
-      const par = getParSetting(hole, setup.teeSet);
-      return { ...hole, tee: setup.tee, green: setup.pin, parMode: par.mode, parManual: par.mode === "MANUAL" ? par.par : undefined };
-    }),
-  };
+function explicitManualPar(courseHole: Course["holes"][number], teeSet: TeeSet): number | null {
+  const configured = courseHole.parByTee?.[teeSet];
+  if (configured?.mode === "MANUAL") {
+    return configured.par === 3 || configured.par === 4 || configured.par === 5 ? configured.par : null;
+  }
+  if (teeSet === "member" && courseHole.parMode === "MANUAL" && courseHole.parManual !== undefined) {
+    return courseHole.parManual === 3 || courseHole.parManual === 4 || courseHole.parManual === 5
+      ? courseHole.parManual
+      : null;
+  }
+  return null;
+}
+
+/**
+ * Round planning only needs completion, validity, and par. Manual-par courses
+ * with an unambiguous, complete setup already provide those facts; avoid the
+ * full rating/Dijkstra solve in that case. Any AUTO, fallback, missing, or
+ * invalid setup deliberately returns null so callers retain legacy scoring.
+ */
+export function manualStrategicRoundHoleSummary(
+  sourceCourse: Course,
+  setupCourse: Course,
+  teeSet: TeeSet,
+  pinRotation: PinRotation,
+): StrategicRoundHoleSummary | null {
+  if (sourceCourse.holes.length === 0 || sourceCourse.holes.length !== setupCourse.holes.length) return null;
+
+  const holes: StrategicRoundHoleInfo[] = [];
+  for (let index = 0; index < sourceCourse.holes.length; index++) {
+    const sourceHole = sourceCourse.holes[index];
+    const hole = setupCourse.holes[index];
+    const setup = resolveCourseSetup(sourceHole, teeSet, pinRotation);
+    const par = explicitManualPar(sourceHole, setup.teeSet);
+    const straightDistance = hole.tee && hole.green ? distance(hole.tee, hole.green) : 0;
+    if (
+      par === null
+      || getParSetting(sourceHole, setup.teeSet).mode !== "MANUAL"
+      || setup.usedTeeFallback
+      || setup.usedPinFallback
+      || !hole.tee
+      || !hole.green
+      || !inBounds(setupCourse, hole.tee)
+      || !inBounds(setupCourse, hole.green)
+      || hole.tee.x === hole.green.x && hole.tee.y === hole.green.y
+      || straightDistance * (setupCourse.yardsPerTile ?? 10) < BALANCE.shots.hole.minHoleDistanceYards
+    ) {
+      return null;
+    }
+    holes.push({ isComplete: true, isValid: true, par });
+  }
+  return { holes };
 }
 
 export function buildStrategicGolferRound(args: {
@@ -54,66 +98,28 @@ export function buildStrategicGolferRound(args: {
 }): BuiltRound {
   const teeSet = args.teeSet ?? "member";
   const pinRotation = args.pinRotation ?? args.course.activePinRotation ?? "A";
-  const course = roundCourseSetup(args.course, teeSet, pinRotation);
+  const course = courseForRoundSetup(args.course, teeSet, pinRotation);
   const snapshot = liveCourseSnapshot({ course, teeSet, pinRotation, rulesSnapshot: args.rulesSnapshot });
-  const summary = scoreCourseHoles(course);
-  const segments: BuiltRound["segments"] = [];
+  const summary = manualStrategicRoundHoleSummary(args.course, course, teeSet, pinRotation) ?? scoreCourseHoles(course);
+  const itinerary = new TimedItineraryBuilder({ course, cursor: { ...args.entry }, personality: args.personality, rng: args.rng, route: args.route, wallet: args.wallet });
   const holePar: number[] = [];
   const holeStrokes: number[] = [];
   const holePlans: NonNullable<BuiltRound["holePlans"]> = [];
   const shotOutcomes: NonNullable<BuiltRound["shotOutcomes"]> = [];
   const holeReactions: NonNullable<BuiltRound["holeReactions"]> = [];
-  let cursor = { ...args.entry };
-  let planningWallet = args.wallet ?? 0;
+  let cursor = itinerary.cursor;
 
   const pushWalk = (from: Point, to: Point, holeIndex: number, cap = Infinity) => {
-    if (args.route) {
-      const path = args.route(from, to);
-      if (path?.length) {
-        let current = from;
-        for (const point of path) {
-          segments.push(walkSeg(current, point, holeIndex));
-          current = point;
-        }
-        return;
-      }
-    }
-    segments.push(walkSeg(from, to, holeIndex, cap));
+    itinerary.appendWalk(from, to, holeIndex, cap);
   };
 
-  const pushPurchase = (type: ConcessionType, holeIndex: number) => {
-    const purchase = planPurchase({
-      course,
-      type,
-      from: cursor,
-      personality: args.personality,
-      satisfaction: .7,
-      wallet: planningWallet,
-      rng: args.rng,
-    });
-    if (!purchase) return;
-    pushWalk(cursor, purchase.entrance, holeIndex, LIVE.pace.interHoleWalkCap);
-    segments.push({
-      kind: "pause" as const,
-      from: purchase.entrance,
-      to: purchase.entrance,
-      holeIndex,
-      dur: purchase.serviceMinutes,
-      concession: {
-        buildingType: purchase.building.type,
-        buildingX: purchase.building.x,
-        buildingY: purchase.building.y,
-        item: purchase.item,
-        amount: purchase.amount,
-      },
-    });
-    cursor = purchase.entrance;
-    planningWallet -= purchase.amount;
+  const pushPurchase = (type: "pro_shop" | "snack_bar" | "cart_rental", holeIndex: number) => {
+    itinerary.visitConcession(type, holeIndex);
+    cursor = itinerary.cursor;
   };
 
   if (!args.skipPreRoundPurchases) {
     pushPurchase("pro_shop", -1);
-    pushPurchase("cart_rental", -1);
   }
   const firstHole = Math.max(0, args.startHole ?? 0);
   const validHoleCount = summary.holes.slice(firstHole).filter((hole) => hole.isComplete && hole.isValid).length;
@@ -166,8 +172,8 @@ export function buildStrategicGolferRound(args: {
       shotOutcomes.push(outcome);
       if (shotOutcomes.length > M47_MAX_OUTCOMES) shotOutcomes.shift();
       const putting = lie === "green" || intent.kind === "approach" && distance(from, hole.green) <= 5;
-      segments.push(pauseSeg(from, holeIndex, putting ? LIVE.pace.puttPause : LIVE.pace.swingPause));
-      segments.push(flightSeg(outcome.from, outcome.landing, holeIndex, putting ? "putt" : "swing"));
+      itinerary.appendPause(from, holeIndex, putting ? LIVE.pace.puttPause : LIVE.pace.swingPause);
+      itinerary.appendFlight(outcome.from, outcome.landing, holeIndex, putting ? "putt" : "swing");
       if (distance(outcome.landing, outcome.rest) > .05) pushWalk(outcome.landing, outcome.rest, holeIndex);
       from = { ...outcome.rest };
       lie = outcome.lieAfter;
@@ -186,10 +192,11 @@ export function buildStrategicGolferRound(args: {
     holePar.push(par);
     holeStrokes.push(outcomes.reduce((sum, outcome) => sum + 1 + outcome.penaltyStrokes, 0));
     cursor = { ...from };
+    itinerary.cursor = cursor;
     played++;
     if (!args.skipPreRoundPurchases && played === Math.max(1, Math.ceil(validHoleCount / 2))) pushPurchase("snack_bar", holeIndex);
   }
 
   pushWalk(cursor, args.exit ?? args.entry, -1, LIVE.pace.interHoleWalkCap);
-  return { segments, holePar, holeStrokes, capabilities: args.capabilities, holePlans, shotOutcomes, holeReactions };
+  return { segments: itinerary.segments, holePar, holeStrokes, capabilities: args.capabilities, holePlans, shotOutcomes, holeReactions };
 }

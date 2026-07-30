@@ -31,6 +31,9 @@ import { activeWeather, seasonalState, weatherModifiers } from "../seasons/seaso
 import { BALANCE } from "../balance/balanceConfig";
 import { paceIdentity, paceRepeatIntentModifier } from "./paceHistory";
 import { observeM49Round } from "../m49/experience";
+import { observedM49MobilityEvidence } from "../m49/mobility";
+import { emptyM51LiveMobilityState } from "../m51/mobility";
+import { applyGolferMobilityReaction, reapplyGroupMobility, releaseFinishedMobilityGroups, reserveGroupMobility } from "../m51/operations";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -139,6 +142,7 @@ export function createLiveState(
     })),
     weather: { daily: dailyWeather, modifiers: dailyWeatherModifiers },
     observedRounds: [],
+    m51: emptyM51LiveMobilityState(seed),
   };
 }
 
@@ -270,10 +274,11 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
 /** Seed 100 active golfers across one immutable round plan for render perf QA. */
 export function createRenderPerfLiveState(course: Course, world: World): LiveState {
   // The render fixture measures sprites, culling, and frame work—not route
-  // planning. Build its one golfer template on a tiny synthetic course so a
-  // 220×140 release estate cannot spend minutes solving an irrelevant round.
+  // planning. Always build its one golfer template on a tiny synthetic course
+  // so the dressed fixture's route evidence is never multiplied by 100 when
+  // the fixture is snapshotted and restored.
   const firstHole = course.holes.find((hole) => hole.tee && hole.green);
-  const templateCourse: Course = course.width * course.height > 12_000 ? {
+  const templateCourse: Course = {
     ...course,
     width: 24,
     height: 18,
@@ -283,7 +288,7 @@ export function createRenderPerfLiveState(course: Course, world: World): LiveSta
     layouts: [{ id: "perf-course", name: "Performance Course", draftHoleIds: ["perf-hole"], publishedHoleIds: ["perf-hole"], roundLength: 9, state: "open", greenFee: course.baseGreenFee, legacyPartial: true }],
     activeCourseId: "perf-course",
     obstacles: [], buildings: [], decorations: [], estate: undefined,
-  } : course;
+  };
   const state = createLiveState(templateCourse, world, 0);
   const template = spawnGolfer(state, templateCourse, { atMinute: LIVE.day.openMinute, archetype: "casual" });
   const active = activeCourseLayout(course);
@@ -364,7 +369,14 @@ export function stepLive(
       continue;
     }
     const golfers = batch.map((arrival) => spawnGolfer(state, course, { ...arrival, groupId }));
+    const mobility = reserveGroupMobility(state, course, golfers);
     state.golfers.push(...golfers);
+    if (mobility.concessionTransactions.length) {
+      state.concessionTransactions.push(...mobility.concessionTransactions);
+      state.concessionCollected += mobility.cashDelta;
+      state.concessionByType.cart_rental = (state.concessionByType.cart_rental ?? 0) + mobility.cashDelta;
+      cashDelta += mobility.cashDelta;
+    }
     state.roundsStarted += golfers.length;
     state.nextTeeFreeAtByCourse ??= {};
     state.nextTeeFreeAtByCourse[courseId] = state.dayMinute + operations.teeIntervalMinutes;
@@ -450,6 +462,7 @@ export function stepLive(
     }
   }
   const stillPlaying: Golfer[] = [];
+  const finishedForMobility: Golfer[] = [];
   for (const g of state.golfers) {
     const previousSegment = g.segIndex;
     const previousScored = g.scoredHoles;
@@ -557,6 +570,8 @@ export function stepLive(
       }
     }
     if (g.finished) {
+      finishedForMobility.push(g);
+      applyGolferMobilityReaction(state, g);
       const completed = g.completionStatus !== "daylight" &&
         g.completionStatus !== "congestion_abandonment" &&
         g.scoredHoles >= g.holePar.length;
@@ -619,6 +634,7 @@ export function stepLive(
         returnIntent: reaction.willReturn,
         recommend: reaction.promoter,
         condition: roundCourse.condition,
+        mobility: observedM49MobilityEvidence({ live: state, golfer: g, paceMinutes: Math.max(0, state.dayMinute - (g.groupStartedAt ?? group?.startedAt ?? state.dayMinute)) }),
       });
       state.observedRounds ??= [];
       state.observedRounds.push(observation);
@@ -687,6 +703,7 @@ export function stepLive(
     }
   }
   state.golfers = stillPlaying;
+  releaseFinishedMobilityGroups(state, finishedForMobility);
   const activeIds = new Set(stillPlaying.map((golfer) => golfer.id));
   for (const group of state.groups ?? []) if (group.startedAt != null && group.finishedAt == null && group.golferIds.length > 0 && group.golferIds.every((id) => !activeIds.has(id))) {
     group.finishedAt = state.dayMinute;
@@ -731,6 +748,12 @@ function shotRecordFromOutcome(outcome: LiveShotOutcome): NonNullable<CompletedR
 }
 
 export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): GolferRenderData[] {
+  const mobilityRiders = new Map<number, { assignmentId: string; unitId?: string; mode: "walk" | "pushcart" | "riding_cart" }>();
+  for (const assignment of state.m51?.assignments ?? []) {
+    if (assignment.status !== "active") continue;
+    for (const rider of assignment.riders) mobilityRiders.set(rider.golferId, { assignmentId: assignment.id, unitId: rider.fleetUnitId, mode: assignment.mode });
+    if (assignment.mode === "walk") for (const golfer of state.golfers.filter((golfer) => golfer.groupId === assignment.groupId)) mobilityRiders.set(golfer.id, { assignmentId: assignment.id, mode: "walk" });
+  }
   let outIndex = 0;
   for (const g of state.golfers) {
     // Animation facts (ZKU-153): current segment kind/progress, the stroke
@@ -768,6 +791,7 @@ export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): 
         }
       }
     }
+    const mobility = mobilityRiders.get(g.id);
     const next: GolferRenderData = {
       id: g.id,
       personId: g.personId,
@@ -796,6 +820,9 @@ export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): 
           ? (g.holeStrokes[g.scoredHoles - 1] ?? 0) - (g.holePar[g.scoredHoles - 1] ?? 0)
           : 0,
       intent: g.currentIntent?.kind ?? null,
+      mobilityAssignmentId: mobility?.assignmentId ?? g.mobilityAssignmentId,
+      mobilityUnitId: mobility?.unitId,
+      mobilityUnitMode: mobility?.mode ?? g.mobilityMode,
     };
     if (out[outIndex]) Object.assign(out[outIndex], next);
     else out.push(next);
@@ -902,5 +929,6 @@ export function reconcileGolfers(state: LiveState, course: Course): void {
     g.segElapsed = 0;
     g.ball = null;
     g.currentHole = startHole;
+    reapplyGroupMobility(state, routing, g);
   }
 }

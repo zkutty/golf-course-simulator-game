@@ -1,64 +1,18 @@
-import type { Course, PinRotation, Point, TeeSet } from "../models/types";
+import type { ConcessionType, Course, PinRotation, Point, TeeSet } from "../models/types";
 import type { GolferProfile } from "../sim/golferProfiles";
 import { solveShotsToGreen } from "../sim/shots/solveShotsToGreen";
 import { scoreCourseHoles } from "../sim/holes";
 import { LIVE } from "./liveConfig";
 import { mishitChance, puttOutcome, type Personality } from "./personality";
 import type { Golfer, Segment } from "./types";
-import type { ConcessionType } from "../models/types";
-import { planPurchase } from "./concessions";
-import { getParSetting, resolveCourseSetup } from "../models/courseSetup";
+import { courseForRoundSetup } from "../models/courseSetup";
 import type { GolferCapabilities, HoleReaction, LiveShotOutcome, StrategicHolePlan } from "./m47Types";
 import { buildStrategicGolferRound } from "./m47Round";
+import { TimedItineraryBuilder, type TimedItineraryRouter } from "../m51/timedItinerary";
 
 // Optional tile-aware router; returns waypoints from just-after `from` to `to`,
 // or null to fall back to a straight-line walk.
-export type WalkRouter = (from: Point, to: Point) => Point[] | null;
-
-const setupCourseCache = new WeakMap<Course, Map<string, Course>>();
-
-function courseForRoundSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): Course {
-  let setups = setupCourseCache.get(course);
-  if (!setups) { setups = new Map(); setupCourseCache.set(course, setups); }
-  const key = `${teeSet}:${pinRotation}`;
-  const cached = setups.get(key);
-  if (cached) return cached;
-  const resolved: Course = {
-    ...course,
-    holes: course.holes.map((hole) => {
-      const setup = resolveCourseSetup(hole, teeSet, pinRotation);
-      const par = getParSetting(hole, setup.teeSet);
-      return {
-        ...hole,
-        tee: setup.tee,
-        green: setup.pin,
-        parMode: par.mode,
-        parManual: par.mode === "MANUAL" ? par.par : undefined,
-      };
-    }),
-  };
-  setups.set(key, resolved);
-  return resolved;
-}
-
-function dist(a: Point, b: Point): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function walkSeg(from: Point, to: Point, holeIndex: number, cap = Infinity): Segment {
-  const d = dist(from, to);
-  return { kind: "walk", from, to, holeIndex, dur: Math.min(cap, d * LIVE.pace.walkPerTile) };
-}
-
-function flightSeg(from: Point, to: Point, holeIndex: number, shot: "swing" | "putt" = "swing"): Segment {
-  const d = dist(from, to);
-  const dur = Math.max(LIVE.pace.flightMin, Math.min(LIVE.pace.flightMax, d * LIVE.pace.flightPerTile));
-  return { kind: "flight", from, to, holeIndex, dur, shot };
-}
-
-function pauseSeg(at: Point, holeIndex: number, dur: number, concession?: Segment["concession"]): Segment {
-  return { kind: "pause", from: at, to: at, holeIndex, dur, concession };
-}
+export type WalkRouter = TimedItineraryRouter;
 
 export interface BuiltRound {
   segments: Segment[];
@@ -123,52 +77,26 @@ export function planFromHole(args: {
   const course = courseForRoundSetup(baseCourse, args.teeSet ?? "member", args.pinRotation ?? baseCourse.activePinRotation ?? "A");
   const { profile, rng, personality, startHole, exit, route } = args;
   const summary = scoreCourseHoles(course);
-  const segments: Segment[] = [];
+  const itinerary = new TimedItineraryBuilder({ course, cursor: args.cursor, personality, rng, route, wallet: args.wallet });
   const holePar: number[] = [];
   const holeStrokes: number[] = [];
 
   // Push a walk from -> to, routed around water when a router is provided,
   // otherwise a single straight segment (optionally duration-capped).
   const pushWalk = (from: Point, to: Point, holeIndex: number, cap = Infinity) => {
-    if (route) {
-      const path = route(from, to);
-      if (path && path.length) {
-        let cur = from;
-        for (const wp of path) {
-          segments.push(walkSeg(cur, wp, holeIndex));
-          cur = wp;
-        }
-        return;
-      }
-    }
-    segments.push(walkSeg(from, to, holeIndex, cap));
+    itinerary.appendWalk(from, to, holeIndex, cap);
   };
 
-  let cursor: Point = args.cursor;
-  let planningWallet = args.wallet ?? 0;
+  let cursor: Point = itinerary.cursor;
 
   const pushPurchase = (type: ConcessionType, holeIndex: number): void => {
-    const purchase = planPurchase({
-      course, type, from: cursor, personality, satisfaction: 0.7,
-      wallet: planningWallet, rng,
-    });
-    if (!purchase) return;
-    pushWalk(cursor, purchase.entrance, holeIndex, LIVE.pace.interHoleWalkCap);
-    segments.push(pauseSeg(purchase.entrance, holeIndex, purchase.serviceMinutes, {
-      buildingType: purchase.building.type,
-      buildingX: purchase.building.x,
-      buildingY: purchase.building.y,
-      item: purchase.item,
-      amount: purchase.amount,
-    }));
-    cursor = purchase.entrance;
-    planningWallet -= purchase.amount;
+    itinerary.visitConcession(type, holeIndex);
+    cursor = itinerary.cursor;
   };
 
-  // Pro shop and cart desk are pre-round decisions. Their service pauses are
-  // also visible queue stops, before the golfer reaches the first tee.
+  // The pro shop remains generic commerce. M51 owns Cart Rental selection,
+  // service, fleet, and charges at the group boundary.
   pushPurchase("pro_shop", -1);
-  pushPurchase("cart_rental", -1);
 
   const validHoleCount = summary.holes.filter((h) => h.isComplete && h.isValid).length;
   let playedValidHoles = 0;
@@ -193,21 +121,21 @@ export function planFromHole(args: {
     let penalties = 0;
     if (solved.reachable && solved.plan.length > 0) {
       for (const step of solved.plan) {
-        segments.push(pauseSeg(step.from, i, LIVE.pace.swingPause));
-        segments.push(flightSeg(step.from, step.to, i));
+        itinerary.appendPause(step.from, i, LIVE.pace.swingPause);
+        itinerary.appendFlight(step.from, step.to, i);
         pushWalk(step.from, step.to, i); // walk to the ball, routed around water
         shots++;
         if (rng() < mishitChance(personality)) {
           penalties++; // sprayed shot
           // Searching, choosing a recovery, and getting back into position is
           // a real pace cost rather than a scorecard-only penalty (M29).
-          segments.push(pauseSeg(step.to, i, LIVE.pace.recoverySearchPause * (1.15 - personality.skill * .35)));
+          itinerary.appendPause(step.to, i, LIVE.pace.recoverySearchPause * (1.15 - personality.skill * .35));
         }
       }
     } else {
       // Unreachable (e.g. water-blocked): a single frustrated hack straight up.
-      segments.push(pauseSeg(tee, i, LIVE.pace.swingPause));
-      segments.push(flightSeg(tee, green, i));
+      itinerary.appendPause(tee, i, LIVE.pace.swingPause);
+      itinerary.appendFlight(tee, green, i);
       pushWalk(tee, green, i);
       shots = par + 1;
     }
@@ -217,13 +145,14 @@ export function planFromHole(args: {
     const putts = puttOutcome(personality, rng());
     // A short putting flourish on the green (visuals independent of putt count).
     const near: Point = { x: green.x + 0.6, y: green.y + 0.4 };
-    segments.push(pauseSeg(green, i, LIVE.pace.puttPause));
-    segments.push(flightSeg(near, green, i, "putt"));
-    segments.push(walkSeg(near, green, i, LIVE.pace.puttWalk));
+    itinerary.appendPause(green, i, LIVE.pace.puttPause);
+    itinerary.appendFlight(near, green, i, "putt");
+    itinerary.appendWalk(near, green, i, LIVE.pace.puttWalk);
 
     holePar.push(par);
     holeStrokes.push(shots + penalties + putts);
     cursor = green;
+    itinerary.cursor = cursor;
     playedValidHoles++;
     if (playedValidHoles === Math.max(1, Math.ceil(validHoleCount / 2))) {
       pushPurchase("snack_bar", i);
@@ -233,7 +162,7 @@ export function planFromHole(args: {
   // Walk off to the exit (routed around water).
   pushWalk(cursor, exit, -1, LIVE.pace.interHoleWalkCap);
 
-  return { segments, holePar, holeStrokes };
+  return { segments: itinerary.segments, holePar, holeStrokes };
 }
 
 export function entryPoint(course: Course): Point {

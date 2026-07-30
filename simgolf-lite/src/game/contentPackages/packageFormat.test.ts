@@ -149,6 +149,16 @@ describe("M43 course and challenge packages", () => {
     expect(course.property?.assets.every((asset) => asset.id.startsWith("import-a-a")) ?? true).toBe(true);
   });
 
+  it("round-trips portable Cart Rental products/fleet with remapped building IDs", async () => {
+    const source = createM26MultiCourseReferenceCourse();
+    const courseWithRental = { ...source, buildings: [...source.buildings, { id: "rental-source", type: "cart_rental" as const, x: 6, y: 6, tier: 2 as const, price: 26 }] };
+    const value = await createCoursePackage({ course: courseWithRental, title: "Mobility package", description: "Rental fixture", author: { id: "author-01", displayName: "Course Author" }, requiredGameVersion: "1.0.0-rc.2", now: new Date("2026-07-30T12:00:00.000Z") });
+    const imported = remapImportedCourseIdentity(value, "import-m51");
+    expect(value.payload.course.m51?.cartRentals["rental-source"]?.products.riding_cart.price).toBe(26);
+    expect(imported.m51?.cartRentals["import-m51-b1"] ?? imported.m51?.cartRentals["import-m51-b2"]).toBeDefined();
+    expect(Object.values(imported.m51?.cartRentals ?? {}).every((rental) => rental.buildingId.startsWith("import-m51-b"))).toBe(true);
+  });
+
   it("imports, updates, lists, exports, reads, and deletes a manual package offline", async () => {
     const platform = testPlatform();
     const value = await fixture();

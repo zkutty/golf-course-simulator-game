@@ -13,6 +13,20 @@ function inBounds(course: Course, x: number, y: number): boolean {
   return x >= 0 && y >= 0 && x < course.width && y < course.height;
 }
 
+export interface WalkPathAuthority {
+  bridges: Set<number>;
+  blocked: Set<number>;
+  isWalkable(x: number, y: number): boolean;
+}
+
+/** Shared terrain/building/decoration authority for every mobility router. */
+export function walkPathAuthority(course: Course): WalkPathAuthority {
+  const bridges = bridgeTileSet(course);
+  const blocked = buildingFootprintSet(course);
+  for (const index of blockingDecorationSet(course)) blocked.add(index);
+  return { bridges, blocked, isWalkable: (x, y) => walkable(course, x, y, bridges, blocked) };
+}
+
 function walkable(course: Course, x: number, y: number, bridges: Set<number>, blocked: Set<number>): boolean {
   if (!inBounds(course, x, y)) return false;
   const index = y * course.width + x;
@@ -31,16 +45,26 @@ export function findWalkPath(
   to: Point,
   maxExpansions = 12_000
 ): Point[] | null {
+  const cells = findWalkPathCells(course, from, to, maxExpansions);
+  if (!cells) return null;
+  return simplifyWalkCells(cells);
+}
+
+/** Full unsimplified route evidence. Renderers should use `findWalkPath`. */
+export function findWalkPathCells(
+  course: Course,
+  from: Point,
+  to: Point,
+  maxExpansions = 12_000,
+): Point[] | null {
   const sx = Math.round(from.x);
   const sy = Math.round(from.y);
   const tx = Math.round(to.x);
   const ty = Math.round(to.y);
-  const bridges = bridgeTileSet(course);
-  const blocked = buildingFootprintSet(course);
-  for (const index of blockingDecorationSet(course)) blocked.add(index);
+  const authority = walkPathAuthority(course);
 
   // If endpoints sit on water/out-of-bounds we can't route; caller falls back.
-  if (!walkable(course, sx, sy, bridges, blocked) || !walkable(course, tx, ty, bridges, blocked)) return null;
+  if (!authority.isWalkable(sx, sy) || !authority.isWalkable(tx, ty)) return null;
   if (sx === tx && sy === ty) return [{ x: to.x, y: to.y }];
 
   const W = course.width;
@@ -62,9 +86,9 @@ export function findWalkPath(
       for (const [dx, dy] of DIRS) {
         const nx = cx + dx;
         const ny = cy + dy;
-        if (!walkable(course, nx, ny, bridges, blocked)) continue;
+        if (!authority.isWalkable(nx, ny)) continue;
         // Prevent squeezing diagonally through a water pinch.
-        if (dx !== 0 && dy !== 0 && (!walkable(course, cx + dx, cy, bridges, blocked) || !walkable(course, cx, cy + dy, bridges, blocked))) continue;
+        if (dx !== 0 && dy !== 0 && (!authority.isWalkable(cx + dx, cy) || !authority.isWalkable(cx, cy + dy))) continue;
         const nk = ny * W + nx;
         if (seen.has(nk)) continue;
         seen.add(nk);
@@ -92,7 +116,10 @@ export function findWalkPath(
 
   // Simplify to direction-change corners (waypoints exclude the start point).
   // Walking straight between consecutive corners follows the routed cells.
-  const pts: Point[] = cells.map((c) => ({ x: c % W, y: (c - (c % W)) / W }));
+  return cells.map((c) => ({ x: c % W, y: (c - (c % W)) / W }));
+}
+
+function simplifyWalkCells(pts: Point[]): Point[] {
   const simplified: Point[] = [];
   let lastDir: { dx: number; dy: number } | null = null;
   for (let i = 1; i < pts.length; i++) {

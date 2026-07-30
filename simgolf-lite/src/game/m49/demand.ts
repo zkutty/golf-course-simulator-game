@@ -7,6 +7,7 @@ import type { M49DemandPlan, M49SegmentDemand } from "./types";
 import { M49_ECONOMY_VERSION, M49_SEGMENTS } from "./types";
 import { m49CourseHistory, normalizeM49State } from "./history";
 import { basePriceElasticity, baseWillingnessToPay, strategicCohortForSegment } from "./experience";
+import { m49CurrentMobilitySupport, m49MobilityHistoryDisappointment } from "./mobility";
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const round = (value: number, digits = 3) => Number(value.toFixed(digits));
@@ -64,6 +65,11 @@ export function buildM49DemandPlan(course: Course, world: World, signals: M49Dem
   const raw: M49SegmentDemand[] = M49_SEGMENTS.map((segment) => {
     const archetype = ARCHETYPES[segment];
     const observed = history?.segments[segment];
+    const mobilityCurrent = m49CurrentMobilitySupport(course, segment);
+    const mobilityHistory = observed?.mobility;
+    const mobilityObservedValue = mobilityHistory?.averageValue;
+    const mobilityLabel = mobilityHistory ? "mixed" as const : "predicted" as const;
+    const mobilityRisk = m49MobilityHistoryDisappointment(mobilityHistory);
     const fit = strategicFit(segment, profile.portfolio);
     const observedValue = clamp(observed?.averageValue ?? fit * .62 + profile.condition * .38);
     const willingnessToPay = observed?.willingnessToPay ?? baseWillingnessToPay(segment) * (.8 + observedValue * .24);
@@ -79,7 +85,7 @@ export function buildM49DemandPlan(course: Course, world: World, signals: M49Dem
     const marketingSupport = clamp(1 - Math.max(0, profile.marketing - (fit * .62 + observedValue * .38)) * .78);
     const promiseSupport = promise ? clamp(promise.credibility * .82 + (1 - promise.disappointmentRisk) * .18) : 1;
     const bookingAppeal = clamp(
-      (profile.quality * .22 + fit * .27 + observedValue * .13 + profile.condition * .12 + difficultyFit * .08 + sceneryFit * .05 + prestigeFit * .06 + priceFit * .07 + profile.staff * .03)
+      (profile.quality * .22 + fit * .27 + observedValue * .13 + profile.condition * .12 + difficultyFit * .08 + sceneryFit * .05 + prestigeFit * .06 + priceFit * .07 + profile.staff * .03 + mobilityCurrent.score * .04 + (mobilityObservedValue ?? .5) * .03 - mobilityRisk * .035)
       * marketingSupport
       * promiseSupport
       * (1 + profile.marketing * .045),
@@ -92,6 +98,8 @@ export function buildM49DemandPlan(course: Course, world: World, signals: M49Dem
       ...(marketingSupport < .86 ? ["marketing:unsupported-strength"] : []),
       ...(promise && promiseSupport < .78 ? ["marketing:promise-disappointment"] : []),
       ...(observed?.churnRate && observed.churnRate > .55 ? ["observed:churn-risk"] : []),
+      ...mobilityCurrent.supportedBy.map((item) => `mobility:${item}`),
+      ...(mobilityHistory ? Object.keys(mobilityHistory.causes).filter((cause) => cause.includes("disappointment") || cause.includes("stockout")).slice(0, 2) : ["mobility:unobserved"]),
     ];
     return {
       segment,
@@ -107,6 +115,14 @@ export function buildM49DemandPlan(course: Course, world: World, signals: M49Dem
       churnRate: round(observed?.churnRate ?? (1 - observedValue)),
       evidenceRounds: observed?.observedRounds ?? 0,
       evidenceLabel: observed ? "mixed" : "predicted",
+      mobility: {
+        evidenceLabel: mobilityLabel,
+        currentSupport: mobilityCurrent.score,
+        ...(mobilityObservedValue == null ? {} : { observedValue: round(mobilityObservedValue) }),
+        observedRounds: mobilityHistory?.observedRounds ?? 0,
+        disappointmentRisk: round(mobilityRisk),
+        causes: mobilityHistory ? Object.keys(mobilityHistory.causes).sort().slice(0, 6) : ["mobility:current-geometry-only"],
+      },
       causes,
     };
   });

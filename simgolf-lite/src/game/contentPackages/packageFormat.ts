@@ -1,5 +1,6 @@
 import { CURRENT_SAVE_SCHEMA_VERSION } from "../../utils/save";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
+import { normalizeM51CourseMobilityState, remapM51CourseMobilityBuildingIds, validateM51CourseMobilityInput } from "../m51/mobility";
 import { validateCoursePlayability, validateScenarioAuthoring } from "../scenarioAuthoring/authoring";
 import type { Course, CourseLayout, Hole, Terrain } from "../models/types";
 import type {
@@ -146,6 +147,7 @@ function validateCourse(course: unknown, errors: string[]): course is Course {
   if (!Array.isArray(course.obstacles) || course.obstacles.length > MAX_OBSTACLES) errors.push("course: too many obstacles");
   if (!Array.isArray(course.decorations) || course.decorations.length > MAX_DECORATIONS) errors.push("course: too many decorations");
   if (!Array.isArray(course.buildings) || course.buildings.length > MAX_BUILDINGS) errors.push("course: too many buildings");
+  errors.push(...validateM51CourseMobilityInput(course.m51));
   if (course.layouts !== undefined && !Array.isArray(course.layouts)) errors.push("course: layouts must be an array");
   for (const [index, hole] of (Array.isArray(course.holes) ? course.holes : []).entries()) {
     if (!isRecord(hole)) {
@@ -281,7 +283,8 @@ export async function createCoursePackage(input: {
   const timestamp = input.now ?? new Date();
   const now = timestamp.toISOString();
   const createdAt = (input.createdAt ?? timestamp).toISOString();
-  const normalizedCourse = normalizeCourseLayouts(structuredClone(input.course));
+  const layoutNormalized = normalizeCourseLayouts(structuredClone(input.course));
+  const normalizedCourse = { ...layoutNormalized, m51: normalizeM51CourseMobilityState(layoutNormalized.m51, layoutNormalized) };
   const seedId = input.contentId ?? `cc-${await sha256(canonicalPackageJson({
     author: input.author.id,
     title: input.title,
@@ -333,7 +336,8 @@ export function remapImportedCourseIdentity(value: CoursePackageV1, instanceId: 
   const layoutIds = new Map((course.layouts ?? []).map((layout, index) => [layout.id, `${instanceId}-c${index + 1}`]));
   const holes = course.holes.map((hole, index) => remapHole(hole, holeIds.get(hole.id ?? `hole-${index + 1}`)!));
   const layouts = (course.layouts ?? []).map((layout) => remapLayout(layout, layoutIds.get(layout.id)!, holeIds));
-  return normalizeCourseLayouts({
+  const buildingIds = new Map<string, string>(course.buildings.map((building, index) => [building.id ?? `building-${index + 1}`, `${instanceId}-b${index + 1}`]));
+  const remapped = {
     ...course,
     holes,
     layouts,
@@ -343,7 +347,15 @@ export function remapImportedCourseIdentity(value: CoursePackageV1, instanceId: 
       ...course.property,
       assets: course.property.assets.map((asset, index) => ({ ...asset, id: `${instanceId}-a${index + 1}` })),
     } : undefined,
-  });
+  };
+  const normalized = normalizeCourseLayouts(remapped);
+  return {
+    ...normalized,
+    m51: normalizeM51CourseMobilityState(
+      remapM51CourseMobilityBuildingIds(course.m51, buildingIds, normalized.activeCourseId ?? "course-primary"),
+      normalized,
+    ),
+  };
 }
 
 export function packageText(value: CoursePackageV1): string {

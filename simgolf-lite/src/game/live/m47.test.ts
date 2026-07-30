@@ -4,12 +4,16 @@ import { getGolferProfile } from "../sim/golferProfiles";
 import { mulberry32 } from "../../utils/rng";
 import { createGolferCapabilities } from "./capabilities";
 import { capabilitiesToPlayerSkills } from "./capabilities";
-import { generateStrategicHolePlan } from "./strategicOptions";
+import { followUpIntent, generateStrategicHolePlan } from "./strategicOptions";
 import { buildGolferRound, entryPoint } from "./golfer";
 import { liveCourseSnapshot, resolveLiveShot } from "./livePhysics";
 import { resolvePlayableShot } from "../playerPro/playerPro";
 import { createControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import type { Personality } from "./personality";
+import { createM47CertificationCourse } from "../testing/m47Certification";
+import type { GolferCapabilities } from "./m47Types";
+import { courseForRoundSetup } from "../models/courseSetup";
+import { manualStrategicRoundHoleSummary } from "./m47Round";
 
 function testPersonality(over: Partial<Personality> = {}): Personality {
   return {
@@ -47,6 +51,27 @@ function course(): Course {
 }
 
 describe("M47 live golfer contracts", () => {
+  it("uses only explicit, unambiguous manual setup for the round-summary fast path", () => {
+    const source = createM47CertificationCourse(9);
+    const setup = courseForRoundSetup(source, "member", "A");
+    const summary = manualStrategicRoundHoleSummary(source, setup, "member", "A");
+    expect(summary?.holes).toHaveLength(9);
+    expect(summary?.holes.map((hole) => hole.par)).toEqual(source.holes.map((hole) => hole.parManual));
+    expect(summary?.holes.every((hole) => hole.isComplete && hole.isValid)).toBe(true);
+
+    const auto = { ...source, holes: [{ ...source.holes[0], parMode: "AUTO" as const, parManual: undefined }] };
+    expect(manualStrategicRoundHoleSummary(auto, courseForRoundSetup(auto, "member", "A"), "member", "A")).toBeNull();
+
+    const outOfBounds = { ...source, holes: [{ ...source.holes[0], tee: { x: -1, y: source.holes[0].tee!.y } }] };
+    expect(manualStrategicRoundHoleSummary(outOfBounds, courseForRoundSetup(outOfBounds, "member", "A"), "member", "A")).toBeNull();
+
+    const fallbackSetup = {
+      ...source,
+      holes: [{ ...source.holes[0], tee: null, teeBoxes: { forward: source.holes[0].tee }, parByTee: undefined }],
+    };
+    expect(manualStrategicRoundHoleSummary(fallbackSetup, courseForRoundSetup(fallbackSetup, "member", "A"), "member", "A")).toBeNull();
+  });
+
   it("creates deterministic bounded capabilities with recognizable dimensions", () => {
     const personality = testPersonality({ skill: .72, consistency: .64, prefs: { difficulty: .7, scenery: .2, price: 0 } });
     const a = createGolferCapabilities({ personality, seed: 42 });
@@ -160,5 +185,88 @@ describe("M47 live golfer contracts", () => {
     expect(live.relief).toEqual(player.relief);
     expect(live.finalPosition).toEqual(player.finalPosition);
     expect(live.flightProfile).toBe(player.flightProfile);
+  });
+
+  it("keeps a strategic follow-up on the rules-classified playable tile at a penalty boundary", () => {
+    const c = createM47CertificationCourse(36);
+    c.obstacles = c.holes.flatMap((hole, index) => {
+      if (!hole.tee || !hole.green) return [];
+      return [{
+        type: index % 5 === 0 ? "rock" as const : index % 3 === 0 ? "bush" as const : "tree" as const,
+        x: Number(((hole.tee.x + hole.green.x) / 2).toFixed(3)),
+        y: Number((((hole.tee.y + hole.green.y) / 2) + (index % 2 ? 0.65 : -0.65)).toFixed(3)),
+      }];
+    });
+    const personality = testPersonality({ skill: .7, consistency: .72 });
+    const capabilities: GolferCapabilities = {
+      version: 1,
+      seed: 50_553,
+      power: 78,
+      accuracy: 82,
+      irons: 80,
+      shortGame: 76,
+      recovery: 88,
+      consistency: 84,
+      riskTolerance: .52,
+      challengeSeeking: .5,
+      sceneryAffinity: .5,
+      valueSensitivity: .5,
+      riskStyle: "balanced",
+      strengths: ["recovery", "accuracy"],
+      weaknesses: ["power", "shortGame"],
+    };
+    const snapshot = liveCourseSnapshot({ course: c, teeSet: "member", pinRotation: "A" });
+    const hole = c.holes[24];
+    const from = { x: 18.397, y: 76.425 };
+    const intent = followUpIntent({
+      course: c,
+      hole: { ...hole, tee: from },
+      from,
+      lie: "fairway",
+      capabilities,
+      personality,
+      shotNumber: 1,
+      snapshot,
+    });
+    const outcome = resolveLiveShot({
+      snapshot,
+      capabilities,
+      holeId: hole.id!,
+      shotNumber: 2,
+      from,
+      lie: "fairway",
+      intent,
+      seed: 19_181_415,
+    });
+
+    const floorIndex = Math.floor(outcome.rest.y) * c.width + Math.floor(outcome.rest.x);
+    const roundedIndex = Math.round(outcome.rest.y) * c.width + Math.round(outcome.rest.x);
+    expect(outcome.ruling).toMatchObject({ status: "penalty", penaltyStrokes: 1 });
+    expect(outcome.relief).toMatchObject({ status: "resolved", type: "lateral" });
+    expect(c.tiles[floorIndex]).toBe("fairway");
+    expect(c.tiles[roundedIndex]).toBe("water");
+    expect(outcome.lieAfter).toBe("fairway");
+
+    const nextIntent = followUpIntent({
+      course: c,
+      hole: { ...hole, tee: outcome.rest },
+      from: outcome.rest,
+      lie: outcome.lieAfter,
+      capabilities,
+      personality,
+      shotNumber: 2,
+      snapshot,
+    });
+    const nextOutcome = resolveLiveShot({
+      snapshot,
+      capabilities,
+      holeId: hole.id!,
+      shotNumber: 3,
+      from: outcome.rest,
+      lie: outcome.lieAfter,
+      intent: nextIntent,
+      seed: 1_337,
+    });
+    expect(nextOutcome.lieBefore).not.toMatch(/^(water|wetland|out_of_bounds)$/);
   });
 });
