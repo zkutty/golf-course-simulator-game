@@ -606,9 +606,13 @@ export function followUpIntent(args: {
   personality: Personality;
   shotNumber: number;
   snapshot?: PlayerRoundCourseSnapshot;
+  obstacleRecoveryContext?: boolean;
 }): ShotIntent {
   const target = { ...args.hole.green! };
-  const recoveryCandidates = generateRecoveryCandidates({ ...args, sampleCount: 1 });
+  const ordinaryLie = args.lie === "tee" || args.lie === "fairway" || args.lie === "green";
+  const recoveryCandidates = !ordinaryLie || args.obstacleRecoveryContext === true
+    ? generateRecoveryCandidates({ ...args, sampleCount: 1 })
+    : [];
   if (recoveryCandidates.length > 0) {
     const chosen = args.capabilities.riskStyle === "conservative"
       ? recoveryCandidates.find((candidate) => candidate.facts.some((fact) => fact.code === "context" && fact.detail.includes("recovery:safe"))) ?? recoveryCandidates[0]

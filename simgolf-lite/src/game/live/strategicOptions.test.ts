@@ -287,6 +287,27 @@ describe("ZK-551 M50 recovery strategy", () => {
     expect(intent.flightProfile).toBeUndefined();
   });
 
+  it("only plans proactive ordinary-lie recovery after an explicit obstacle collision", () => {
+    const course = recoveryCourse([{ type: "tree", x: 10, y: 12 }]);
+    const args = {
+      course,
+      hole: course.holes[0],
+      from: { x: 8, y: 12 },
+      lie: "fairway",
+      capabilities: capabilities(),
+      personality,
+      shotNumber: 2,
+    } as const;
+    const ordinary = followUpIntent(args);
+    const obstacleRecovery = followUpIntent({ ...args, obstacleRecoveryContext: true });
+
+    expect(ordinary.id).toBe("zk-551-hole-follow-2");
+    expect(ordinary.flightProfile).toBeUndefined();
+    expect(obstacleRecovery.id).not.toBe(ordinary.id);
+    expect(obstacleRecovery.flightProfile).toBeDefined();
+    expect(obstacleRecovery.facts.some((item) => item.code === "context" && item.detail.includes("recovery:"))).toBe(true);
+  });
+
   it("does not sample recovery alternatives for a normal tee route past a distant obstacle", () => {
     const course = recoveryCourse([{ type: "tree", x: 15, y: 12 }]);
     expect(generateRecoveryCandidates({
