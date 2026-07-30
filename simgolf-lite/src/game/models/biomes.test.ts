@@ -95,7 +95,10 @@ describe("M52 biome and climate content contract", () => {
       windBaseMph: 15,
       droughtChance: 0,
       foliage: "sparse",
+      snow: { enabled: true, maximumTemperatureF: 34, chance: .14 },
     });
+    expect(climateStateFor("parkland", "winter").snow)
+      .toEqual({ enabled: true, maximumTemperatureF: 38, chance: .28 });
     const desertSummer = climateStateFor("desert", "summer");
     expect(desertSummer).toMatchObject({
       temperature: { baseF: 72, seasonalOffsetF: 17, heatThresholdF: 100 },
@@ -105,6 +108,8 @@ describe("M52 biome and climate content contract", () => {
     });
     expect(desertSummer.precipitation.chance).toBeCloseTo(0.05);
     expect(desertSummer.stormChance).toBeCloseTo(0.019);
+    expect(climateStateFor("desert", "winter").snow)
+      .toEqual({ enabled: false, maximumTemperatureF: 32, chance: 0 });
   });
 
   it("declares current and future-ready phenology semantics without adding biome keys", () => {

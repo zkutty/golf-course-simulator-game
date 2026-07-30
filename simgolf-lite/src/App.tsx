@@ -79,6 +79,11 @@ import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
 import { hashGameState } from "./utils/stateHash";
 import { seasonalVisualState } from "./game/presentation/seasonalVisualState";
+import { seasonalTerrainSummary } from "./game/render/seasonalTerrainPresentation";
+import {
+  M53_SEVERE_WEATHER_FIXTURES,
+  m53SeasonalTerrainFixture,
+} from "./game/testing/m53SeasonalTerrainFixtures";
 import {
   BUILDING_SPECS,
   CONCESSION_TYPES,
@@ -262,7 +267,7 @@ import {
   setReturnToDesignContext,
 } from "./game/livingClub/livingClub";
 import { absoluteDayFor, advanceSeasonalDay, applySeasonCommand, createSeasonalState, seasonalState } from "./game/seasons/seasons";
-import type { SeasonCommand } from "./game/seasons/types";
+import { SEASONS, type SeasonCommand, type SeasonName } from "./game/seasons/types";
 import {
   activeCampaignMatch,
   advanceCampaign,
@@ -1505,6 +1510,8 @@ export default function App() {
     const isM38Fixture = fixtureParams.get("m38Fixture") === "1";
     const isM47Fixture = fixtureParams.get("m47Fixture") === "1";
     const isM52Fixture = fixtureParams.get("m52Fixture") === "1";
+    const isM53Fixture = fixtureParams.get("m53Fixture") === "1";
+    const m53Fixture = isM53Fixture ? m53SeasonalTerrainFixture(fixtureParams) : null;
     const requestedM52View = fixtureParams.get("m52View");
     const m52View: BiomeReferenceView = BIOME_REFERENCE_VIEWS.includes(requestedM52View as BiomeReferenceView)
       ? requestedM52View as BiomeReferenceView
@@ -1515,14 +1522,14 @@ export default function App() {
       : 0;
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isPropertyFixture) return;
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isM53Fixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
     const m25SeedParam = fixtureParams.get("m25Seed");
     const parsedM25Seed = m25SeedParam == null ? Number.NaN : Number(m25SeedParam);
     const m25Seed = Number.isInteger(parsedM25Seed) ? parsedM25Seed | 0 : 250025;
     const fixtureRepParam = fixtureParams.get("m7Rep");
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
-    const requestedTheme = fixtureParams.get("m52Theme") ?? fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
+    const requestedTheme = fixtureParams.get("m53Theme") ?? fixtureParams.get("m52Theme") ?? fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = isLandTheme(requestedTheme) ? requestedTheme : BIOME_KEYS[0];
     let fixtureCourse = isPropertyFixture
       ? { ...createReferenceCourse(), property: starterPropertyCourse() }
@@ -1530,6 +1537,8 @@ export default function App() {
       ? createPlayerProReferenceCourse()
       : isM27Fixture
       ? createM27ReleaseReferenceCourse(fixtureTheme)
+      : isM53Fixture
+      ? createBiomeAuthoringReferenceCourse(fixtureTheme)
       : isM52Fixture
       ? createBiomeAuthoringReferenceCourse(fixtureTheme)
       : isM47Fixture
@@ -1574,6 +1583,9 @@ export default function App() {
     const m52Bookmark = isM52Fixture
       ? biomeCameraBookmarks(fixtureCourse).find((bookmark) =>
         bookmark.view === m52View && bookmark.rotation === m52Rotation) ?? null
+      : m53Fixture
+      ? biomeCameraBookmarks(fixtureCourse).find((bookmark) =>
+        bookmark.view === "overview" && bookmark.rotation === m53Fixture.rotation) ?? null
       : null;
     setM52ReferenceCamera(m52Bookmark);
     let fixtureWorld: World = {
@@ -1581,7 +1593,7 @@ export default function App() {
       week: 1,
       cash: isPropertyFixture ? 1_000_000 : isM25Fixture ? 500_000 : 250_000,
       reputation: Number.isFinite(fixtureRep) ? Math.max(0, Math.min(100, fixtureRep)) : 95,
-      runSeed: isM25Fixture ? m25Seed : 12160,
+      runSeed: isM25Fixture ? m25Seed : m53Fixture?.seed ?? 12160,
       isBankrupt: false,
       distressWeeks: 0,
       mode: "sandbox" as const,
@@ -1591,6 +1603,20 @@ export default function App() {
       } : {}),
       ...(isPropertyFixture ? { enterprise: emptyPropertyEnterprise() } : {}),
     };
+    if (m53Fixture) {
+      const dayOfWeek = m53Fixture.absoluteDay % 7;
+      const seasonal = createSeasonalState({
+        runSeed: fixtureWorld.runSeed,
+        theme: fixtureTheme,
+        week: Math.floor(m53Fixture.absoluteDay / 7) + 1,
+        day: dayOfWeek,
+      });
+      fixtureWorld = {
+        ...fixtureWorld,
+        week: Math.floor(m53Fixture.absoluteDay / 7) + 1,
+        seasonal,
+      };
+    }
     if (isM30Fixture) {
       const layouts = courseLayouts(fixtureCourse);
       for (let day = 0; day < 10; day++) {
@@ -1697,7 +1723,7 @@ export default function App() {
       };
       setPlayerShotAim(caddieRecommendation(started.round, career.skills).aim);
       setShowPlayerPro(false);
-    } else if (isM52Fixture) {
+    } else if (isM52Fixture || isM53Fixture) {
       setPlayerShotAim(null);
       setFollowSelected(false);
     }
@@ -1721,9 +1747,9 @@ export default function App() {
         live.selectGolfer(selectedGolferId);
         setFollowSelected(true);
       }
-    } else if (isM52Fixture) {
+    } else if (isM52Fixture || isM53Fixture) {
       live.restoreSnapshot(snapshotLiveSimulation({
-        state: createLiveState(fixtureCourse, fixtureWorld, 0),
+        state: createLiveState(fixtureCourse, fixtureWorld, m53Fixture?.absoluteDay ? m53Fixture.absoluteDay % 7 : 0),
         pendingCash: 0,
         speed: "paused",
         selectedGolferId: null,
@@ -1743,10 +1769,17 @@ export default function App() {
         selectedGolferId: null,
       }));
     }
-    setAppProfile((current) => ({ ...current, tutorialOffered: true, tutorialCompleted: true }));
+    setAppProfile((current) => ({
+      ...current,
+      tutorialOffered: true,
+      tutorialCompleted: true,
+      ...(m53Fixture ? {
+        graphics: { ...current.graphics, quality: m53Fixture.quality },
+      } : {}),
+    }));
     setTutorialProgress(null);
     setShowTutorialOffer(false);
-    if (isM52Fixture) {
+    if (isM52Fixture || isM53Fixture) {
       setViewMode(m52View === "overview" || m52View === "build" ? "ARCHITECT" : "COZY");
       setHoleEditMode("global");
       setActiveHoleIndex(0);
@@ -2579,6 +2612,12 @@ export default function App() {
             activeLayers: seasonalPresentation.activeLayers,
             renderer: seasonalPresentation.renderer,
             audio: seasonalPresentation.audio,
+            terrain: seasonalTerrainSummary(
+              seasonalPresentation,
+              resolvedGraphicsQuality,
+              appProfile.accessibility.colorVision,
+              appProfile.accessibility.reducedMotion,
+            ),
           },
         };
       })(),
@@ -2729,7 +2768,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedParcelId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedParcelId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -2842,6 +2881,35 @@ export default function App() {
         dispatch({ type: "LOAD_GAME", course: fixture.course, world: fixture.world });
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixture.course, fixture.world, 6), pendingCash: 0, speed: "paused", selectedGolferId: null }));
         setShowSeasonsLegacy(true);
+      },
+      setM53SeasonalFixture: (season: SeasonName) => {
+        if (!SEASONS.includes(season)) throw new Error(`Unknown M53 season "${season}"`);
+        const current = gameStateRef.current;
+        const biome = current.course.theme ?? BIOME_KEYS[0];
+        const fixture = M53_SEVERE_WEATHER_FIXTURES[biome][season];
+        const dayOfWeek = fixture.absoluteDay % 7;
+        const week = Math.floor(fixture.absoluteDay / 7) + 1;
+        const nextWorld: World = {
+          ...current.world,
+          week,
+          runSeed: fixture.seed,
+          seasonal: createSeasonalState({
+            runSeed: fixture.seed,
+            theme: biome,
+            week,
+            day: dayOfWeek,
+          }),
+        };
+        // Preserve the mounted Course and its tile/elevation array identities;
+        // this hook exists specifically to exercise presentation cache
+        // invalidation without a navigation, course load, or canvas remount.
+        setWorld(() => nextWorld);
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createLiveState(current.course, nextWorld, dayOfWeek),
+          pendingCash: 0,
+          speed: "paused",
+          selectedGolferId: null,
+        }));
       },
       setM52ReferenceBookmark: (view, rotation) => {
         const bookmark = biomeCameraBookmarks(gameStateRef.current.course).find((candidate) =>
@@ -3116,7 +3184,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, pendingWeekReport, screen, t, tutorialProgress]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, pendingWeekReport, screen, setWorld, t, tutorialProgress]);
 
   function newGameFromMenu() {
     void audio.unlock();
@@ -4398,6 +4466,7 @@ export default function App() {
                 graphicsQuality={resolvedGraphicsQuality}
                 season={contextualUiTheme.season}
                 seasonalVisualState={seasonalPresentation}
+                reducedMotion={appProfile.accessibility.reducedMotion}
                 onFrameTime={handleGraphicsFrame}
                 ambienceFx={appProfile.graphics.ambienceFx && resolvedGraphicsQuality !== "low"}
                 waterAnimation={appProfile.graphics.waterAnimation && resolvedGraphicsQuality !== "low"}

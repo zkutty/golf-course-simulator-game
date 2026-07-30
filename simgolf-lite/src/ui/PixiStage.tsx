@@ -104,6 +104,7 @@ import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/mode
 import type { AtlasFrame } from "../render/atlas";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
 import {
+  TERRAIN_KINDS,
   getTerrainMaterial,
   mowingShadeAt,
   pickTerrainBaseFrame,
@@ -113,6 +114,11 @@ import {
 } from "../game/render/terrainMaterials";
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
 import { deriveTerrainDetail } from "../game/render/terrainDetails";
+import {
+  seasonalTerrainDecals,
+  seasonalTerrainTreatment,
+  type SeasonalTerrainTreatment,
+} from "../game/render/seasonalTerrainPresentation";
 import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
 import {
   buildLandscapeComponents,
@@ -552,6 +558,8 @@ export interface PixiStageProps {
   season?: SeasonName;
   /** Transient M53 presentation inputs; independent of camera/quality state. */
   seasonalVisualState?: SeasonalVisualState;
+  /** Existing accessibility setting; seasonal dressing keeps its geometry still. */
+  reducedMotion?: boolean;
   /** Feeds sustained frame telemetry to the Auto quality controller. */
   onFrameTime?: (frameMs: number) => void;
   ambienceFx: boolean;
@@ -776,6 +784,7 @@ interface Layers {
   surround: PIXI.Container;
   terrain: PIXI.Container;
   smoothSurfaces: PIXI.Container;
+  seasonalTerrain: PIXI.Container;
   estateSeam: PIXI.Container;
   terrainDecals: PIXI.Container;
   surfaceEditor: PIXI.Container;
@@ -1006,6 +1015,7 @@ export function PixiStage(props: PixiStageProps) {
   const prevTilesRef = useRef<Terrain[] | null>(null);
   const prevElevationsRef = useRef<number[] | null>(null);
   const builtRotationRef = useRef<IsoRotation | null>(null);
+  const builtSeasonalTerrainSignatureRef = useRef<string | null>(null);
   const chunkRebuildsRef = useRef(0);
   const landscapeMaterialTexturesRef = useRef<Map<string, PIXI.Texture>>(new Map());
   const fallbackObstacleTexturesRef = useRef<Map<string, PIXI.Texture>>(new Map());
@@ -1729,6 +1739,7 @@ export function PixiStage(props: PixiStageProps) {
       const surround = new PIXI.Container();
       const terrain = new PIXI.Container();
       const smoothSurfaces = new PIXI.Container();
+      const seasonalTerrain = new PIXI.Container();
       const estateSeam = new PIXI.Container();
       const terrainDecals = new PIXI.Container();
       const surfaceEditor = new PIXI.Container();
@@ -1737,7 +1748,7 @@ export function PixiStage(props: PixiStageProps) {
       const fx = new PIXI.Container();
       const screenOverlay = new PIXI.Container();
 
-      world.addChild(surround, terrain, smoothSurfaces, estateSeam, terrainDecals, surfaceEditor, objects, fx);
+      world.addChild(surround, terrain, smoothSurfaces, seasonalTerrain, estateSeam, terrainDecals, surfaceEditor, objects, fx);
 
       // Ambient stack (ZKU-156): a full-screen multiply quad for the
       // time-of-day grade and a screen-space bird layer, both between the
@@ -1793,7 +1804,7 @@ export function PixiStage(props: PixiStageProps) {
       app.stage.hitArea = app.screen;
 
       appRef.current = app;
-      layersRef.current = { world, surround, terrain, smoothSurfaces, estateSeam, terrainDecals, surfaceEditor, objects, fx, screenOverlay };
+      layersRef.current = { world, surround, terrain, smoothSurfaces, seasonalTerrain, estateSeam, terrainDecals, surfaceEditor, objects, fx, screenOverlay };
       setAppReady(true);
       devLog(`initialized ${width}x${height}`);
     };
@@ -1812,6 +1823,7 @@ export function PixiStage(props: PixiStageProps) {
       chunksRef.current = [];
       prevTilesRef.current = null;
       prevElevationsRef.current = null;
+      builtSeasonalTerrainSignatureRef.current = null;
       obstacleSpritesRef.current.clear();
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
@@ -2560,6 +2572,22 @@ export function PixiStage(props: PixiStageProps) {
     const THEMED_COLORS: Record<Terrain, number> = props.colorVision === "standard"
       ? { ...COLORS, ...getBiomeDefinition(course.theme).presentation.tileTints }
       : TERRAIN_PALETTES[props.colorVision];
+    const seasonalByTerrain = Object.fromEntries(TERRAIN_KINDS.map((terrain) => [
+      terrain,
+      props.seasonalVisualState
+        ? seasonalTerrainTreatment({
+          state: props.seasonalVisualState,
+          terrain,
+          quality: props.graphicsQuality,
+          colorVision: props.colorVision,
+          baseColor: THEMED_COLORS[terrain],
+          reducedMotion: props.reducedMotion,
+        })
+        : null,
+    ])) as Record<Terrain, SeasonalTerrainTreatment | null>;
+    const seasonalTerrainSignature = TERRAIN_KINDS.map((terrain) =>
+      seasonalByTerrain[terrain]?.signature ?? `${terrain}:same-biome-base`,
+    ).join("|");
     const cliffFaces = getBiomeDefinition(course.theme).presentation.cliffFaces;
 
     /** Rebuild one chunk's contents in place (cliffs first, tops in depth order). */
@@ -2663,7 +2691,11 @@ export function PixiStage(props: PixiStageProps) {
         if (terrain === "fairway" || terrain === "green" || terrain === "tee") {
           slopeShade *= mowingShadeAt(x, y, holeAxes);
         }
-        const legacyTint = shade(darken(THEMED_COLORS[terrain], EDGE_DARKEN), slopeShade);
+        const seasonal = seasonalByTerrain[terrain];
+        const legacyTint = shade(
+          darken(seasonal?.color ?? THEMED_COLORS[terrain], EDGE_DARKEN),
+          slopeShade,
+        );
 
         // Authored parkland sources are @2× but remain 64×32 in world space.
         // Other themes intentionally use the safe legacy tint until M21.
@@ -2678,7 +2710,7 @@ export function PixiStage(props: PixiStageProps) {
         sprite.width = authored ? TILE_W + 0.75 : TILE_W;
         sprite.height = authored ? TILE_H + 0.5 : TILE_H;
         sprite.tint = authored && props.colorVision === "standard"
-          ? shade(0xffffff, slopeShade)
+          ? shade(seasonal?.textureTint ?? 0xffffff, slopeShade)
           : legacyTint;
         chunk.container.addChild(sprite);
         if (props.terrainPatterns && terrainPattern(terrain) !== "none") {
@@ -2784,7 +2816,9 @@ export function PixiStage(props: PixiStageProps) {
           lip.position.set(groundPosition.x, groundPosition.y);
           lip.width = TILE_W;
           lip.height = TILE_H;
-          lip.tint = props.colorVision === "standard" ? shade(0xffffff, slopeShade) : legacyTint;
+          lip.tint = props.colorVision === "standard"
+            ? shade(seasonal?.textureTint ?? 0xffffff, slopeShade)
+            : legacyTint;
           chunk.container.addChild(lip);
           if ((terrain === "water" || terrain === "wetland") && feature.kind === "edge") {
             chunk.foamSprites.push({ sprite: lip, phase: ((x * 5 + y * 11) % 16) / 16 * Math.PI * 2 });
@@ -2844,6 +2878,7 @@ export function PixiStage(props: PixiStageProps) {
     const fullRebuild =
       chunksRef.current.length !== cols * rows ||
       builtRotationRef.current !== rotation ||
+      builtSeasonalTerrainSignatureRef.current !== seasonalTerrainSignature ||
       !prevTiles ||
       prevTiles.length !== course.tiles.length;
 
@@ -2852,6 +2887,7 @@ export function PixiStage(props: PixiStageProps) {
       chunksRef.current.forEach((c) => c.container.destroy({ children: true }));
       chunksRef.current = [];
       builtRotationRef.current = rotation;
+      builtSeasonalTerrainSignatureRef.current = seasonalTerrainSignature;
 
       // Create chunk containers and add them back-to-front for this rotation.
       const chunkOrder: Array<{ cx: number; cy: number }> = [];
@@ -2901,7 +2937,19 @@ export function PixiStage(props: PixiStageProps) {
     prevTilesRef.current = course.tiles;
     prevElevationsRef.current = course.elevations;
     cullChunks();
-  }, [appReady, atlasRevision, course, rotation, cullChunks, props.colorVision, props.terrainPatterns, props.worldSeed]);
+  }, [
+    appReady,
+    atlasRevision,
+    course,
+    rotation,
+    cullChunks,
+    props.colorVision,
+    props.graphicsQuality,
+    props.reducedMotion,
+    props.seasonalVisualState,
+    props.terrainPatterns,
+    props.worldSeed,
+  ]);
 
   // Connected landscape presentation. Gameplay remains whole-tile and the
   // original chunk renderer stays underneath as the Low/failure fallback.
@@ -2929,6 +2977,19 @@ export function PixiStage(props: PixiStageProps) {
     const themedColors: Record<Terrain, number> = props.colorVision === "standard"
       ? { ...COLORS, ...getBiomeDefinition(course.theme).presentation.tileTints }
       : TERRAIN_PALETTES[props.colorVision];
+    const seasonalByTerrain = Object.fromEntries(TERRAIN_KINDS.map((terrain) => [
+      terrain,
+      props.seasonalVisualState
+        ? seasonalTerrainTreatment({
+          state: props.seasonalVisualState,
+          terrain,
+          quality,
+          colorVision: props.colorVision,
+          baseColor: themedColors[terrain],
+          reducedMotion: props.reducedMotion,
+        })
+        : null,
+    ])) as Record<Terrain, SeasonalTerrainTreatment | null>;
 
     const buildMask = (rings: readonly (readonly Point[])[]) => {
       const mask = new PIXI.Graphics();
@@ -3085,10 +3146,12 @@ export function PixiStage(props: PixiStageProps) {
           geometry,
           texture: textureFor("rough"),
         });
+        roughUnderlay.tint = seasonalByTerrain.rough?.textureTint ?? 0xffffff;
         roughUnderlay.eventMode = "none";
         layer.addChild(roughUnderlay);
       }
       const mesh = new PIXI.Mesh({ geometry, texture: textureFor(component.terrain) });
+      mesh.tint = seasonalByTerrain[component.terrain]?.textureTint ?? 0xffffff;
       mesh.eventMode = "none";
       const mask = buildMask(visualRings);
       mesh.mask = mask;
@@ -3099,7 +3162,7 @@ export function PixiStage(props: PixiStageProps) {
         const gy = Math.floor(firstCell / course.width);
         surfaceWaterSpritesRef.current.push({
           sprite: mesh,
-          baseTint: 0xffffff,
+          baseTint: mesh.tint,
           phase: waterShimmerPhase(gx, gy),
           gx,
           gy,
@@ -3202,9 +3265,130 @@ export function PixiStage(props: PixiStageProps) {
     landscapeComponents,
     props.colorVision,
     props.graphicsQuality,
+    props.reducedMotion,
+    props.seasonalVisualState,
     props.terrainPatterns,
     rotation,
     visualHeightfield,
+  ]);
+
+  // Seasonal terrain dressing lives above both terrain presentations and
+  // below every tee/pin/route marker. One pooled Graphics object consumes the
+  // pure bounded commands; no per-tile display state or cache survives a
+  // rebuild, and the world coordinates do not change with camera rotation.
+  useEffect(() => {
+    if (!appReady) return;
+    const layer = layersRef.current?.seasonalTerrain;
+    if (!layer) return;
+    layer.removeChildren().forEach((child) => child.destroy({ children: true }));
+    const state = props.seasonalVisualState;
+    if (!state) return;
+
+    const protectedCells = new Set<number>();
+    const protect = (point: Point | null | undefined) => {
+      if (!point) return;
+      const x = Math.floor(point.x);
+      const y = Math.floor(point.y);
+      if (x >= 0 && y >= 0 && x < course.width && y < course.height) {
+        protectedCells.add(y * course.width + x);
+      }
+    };
+    for (const hole of holes) {
+      for (const teeSet of TEE_SETS) protect(getTeeBox(hole, teeSet));
+      for (const pinRotation of PIN_ROTATIONS) protect(getPinPosition(hole, pinRotation));
+    }
+    protect(draftTee);
+    protect(draftGreen);
+
+    const decals = seasonalTerrainDecals({
+      state,
+      tiles: course.tiles,
+      width: course.width,
+      height: course.height,
+      quality: props.graphicsQuality,
+      colorVision: props.colorVision,
+      seed: props.worldSeed,
+      reducedMotion: props.reducedMotion,
+      protectedCells,
+    });
+    if (decals.length === 0) return;
+
+    const graphics = new PIXI.Graphics();
+    graphics.eventMode = "none";
+    for (const decal of decals) {
+      const point = worldToIso(
+        decal.x,
+        decal.y,
+        surfaceHeightAt(decal.x, decal.y),
+        rotation,
+      );
+      const scale = decal.scale;
+      const dx = Math.cos(decal.rotation);
+      const dy = Math.sin(decal.rotation);
+      if (decal.cue === "puddle") {
+        graphics.ellipse(point.x, point.y, 6.5 * scale, 2.2 * scale);
+        graphics.fill({ color: decal.color, alpha: decal.alpha * .55 });
+        graphics.stroke({ width: 1, color: 0xe5f3f4, alpha: decal.alpha * .75 });
+      } else if (decal.cue === "drought-crack") {
+        graphics.moveTo(point.x - dx * 5 * scale, point.y - dy * 2.2 * scale);
+        graphics.lineTo(point.x, point.y);
+        graphics.lineTo(point.x + dx * 4 * scale, point.y + dy * 2 * scale);
+        graphics.moveTo(point.x, point.y);
+        graphics.lineTo(point.x - dy * 3 * scale, point.y + dx * 1.5 * scale);
+        graphics.stroke({ width: 1.15, color: decal.color, alpha: decal.alpha });
+      } else if (decal.cue === "frost-crystal") {
+        graphics.moveTo(point.x - 4 * scale, point.y);
+        graphics.lineTo(point.x + 4 * scale, point.y);
+        graphics.moveTo(point.x, point.y - 2.2 * scale);
+        graphics.lineTo(point.x, point.y + 2.2 * scale);
+        graphics.stroke({ width: 1, color: decal.color, alpha: decal.alpha });
+      } else if (decal.cue === "partial-snow") {
+        graphics.ellipse(point.x, point.y, 7.5 * scale, 2.8 * scale);
+        graphics.fill({ color: decal.color, alpha: Math.min(.34, decal.alpha) });
+        graphics.moveTo(point.x - 4 * scale, point.y);
+        graphics.lineTo(point.x + 3 * scale, point.y - .7 * scale);
+        graphics.stroke({ width: .8, color: 0xb9c8cc, alpha: decal.alpha * .62 });
+      } else if (decal.cue === "leaf-litter") {
+        graphics.ellipse(point.x - 2.4 * scale, point.y, 2.1 * scale, .85 * scale);
+        graphics.ellipse(point.x + 2.1 * scale, point.y + 1.1 * scale, 1.8 * scale, .75 * scale);
+        graphics.fill({ color: decal.color, alpha: decal.alpha });
+      } else if (decal.cue === "recovery-sprout") {
+        graphics.moveTo(point.x, point.y + 2 * scale);
+        graphics.lineTo(point.x, point.y - 2.8 * scale);
+        graphics.moveTo(point.x, point.y - .5 * scale);
+        graphics.lineTo(point.x - 2.2 * scale, point.y - 1.7 * scale);
+        graphics.moveTo(point.x, point.y - 1.4 * scale);
+        graphics.lineTo(point.x + 2.1 * scale, point.y - 2.4 * scale);
+        graphics.stroke({ width: 1.2, color: decal.color, alpha: decal.alpha });
+      } else {
+        graphics.moveTo(point.x - 6 * scale, point.y);
+        graphics.bezierCurveTo(
+          point.x - 2 * scale,
+          point.y - 1.7 * scale,
+          point.x + 2 * scale,
+          point.y + 1.7 * scale,
+          point.x + 6 * scale,
+          point.y,
+        );
+        graphics.stroke({ width: 1, color: decal.color, alpha: decal.alpha });
+      }
+    }
+    layer.addChild(graphics);
+  }, [
+    appReady,
+    course.height,
+    course.tiles,
+    course.width,
+    draftGreen,
+    draftTee,
+    holes,
+    props.colorVision,
+    props.graphicsQuality,
+    props.reducedMotion,
+    props.seasonalVisualState,
+    props.worldSeed,
+    rotation,
+    surfaceHeightAt,
   ]);
 
   // ---------------------------------------------------------------------

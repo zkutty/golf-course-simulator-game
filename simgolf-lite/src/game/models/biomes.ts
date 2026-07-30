@@ -171,6 +171,7 @@ function defineBiomes<const Definitions extends Record<string, BiomeDefinition<s
 
 const season = (
   values: Omit<ClimateSeasonProfile, "frost" | "snow">,
+  snow?: ClimateSeasonProfile["snow"],
 ): ClimateSeasonProfile => ({
   ...values,
   frost: {
@@ -178,9 +179,10 @@ const season = (
     maximumTemperatureF: 34,
     precipitationChanceMultiplier: 0.7,
   },
-  // Existing CourseCraft weather has no snow WeatherKind. The explicit zero
-  // keeps current behavior while reserving a typed contract for later content.
-  snow: {
+  // Snow is a presentation eligibility contract rather than a new weather
+  // kind. Most seasons keep it disabled; climate-authentic winter profiles
+  // can opt into restrained cold-weather dusting without changing weather RNG.
+  snow: snow ?? {
     enabled: false,
     maximumTemperatureF: 32,
     chance: 0,
@@ -218,7 +220,10 @@ export const BIOME_DEFINITIONS = defineBiomes({
         spring: season({ temperatureOffsetF: 3, precipitationChanceOffset: 0.08, windMphOffset: 0, stormChance: 0.018, droughtChance: 0, dormancy: 0.15, foliage: "emerging", flowering: 0.85, moisture: "wet" }),
         summer: season({ temperatureOffsetF: 17, precipitationChanceOffset: -0.04, windMphOffset: 0, stormChance: 0.025, droughtChance: 0.07, dormancy: 0, foliage: "full", flowering: 0.45, moisture: "balanced" }),
         autumn: season({ temperatureOffsetF: 5, precipitationChanceOffset: 0, windMphOffset: 0, stormChance: 0.035, droughtChance: 0, dormancy: 0.25, foliage: "turning", flowering: 0.1, moisture: "balanced" }),
-        winter: season({ temperatureOffsetF: -12, precipitationChanceOffset: 0, windMphOffset: 3, stormChance: 0.018, droughtChance: 0, dormancy: 0.85, foliage: "dormant", flowering: 0, moisture: "balanced" }),
+        winter: season(
+          { temperatureOffsetF: -12, precipitationChanceOffset: 0, windMphOffset: 3, stormChance: 0.018, droughtChance: 0, dormancy: 0.85, foliage: "dormant", flowering: 0, moisture: "balanced" },
+          { enabled: true, maximumTemperatureF: 38, chance: .28 },
+        ),
       },
     },
     seasonalArt: { profile: "temperate-four-season", contractVersion: 1 },
@@ -266,7 +271,10 @@ export const BIOME_DEFINITIONS = defineBiomes({
         spring: season({ temperatureOffsetF: 3, precipitationChanceOffset: 0.08, windMphOffset: 0, stormChance: 0.018, droughtChance: 0, dormancy: 0.2, foliage: "emerging", flowering: 0.55, moisture: "wet" }),
         summer: season({ temperatureOffsetF: 17, precipitationChanceOffset: -0.04, windMphOffset: 0, stormChance: 0.025, droughtChance: 0, dormancy: 0.05, foliage: "full", flowering: 0.35, moisture: "balanced" }),
         autumn: season({ temperatureOffsetF: 5, precipitationChanceOffset: 0, windMphOffset: 0, stormChance: 0.035, droughtChance: 0, dormancy: 0.3, foliage: "turning", flowering: 0.15, moisture: "wet" }),
-        winter: season({ temperatureOffsetF: -12, precipitationChanceOffset: 0, windMphOffset: 3, stormChance: 0.018, droughtChance: 0, dormancy: 0.65, foliage: "sparse", flowering: 0, moisture: "wet" }),
+        winter: season(
+          { temperatureOffsetF: -12, precipitationChanceOffset: 0, windMphOffset: 3, stormChance: 0.018, droughtChance: 0, dormancy: 0.65, foliage: "sparse", flowering: 0, moisture: "wet" },
+          { enabled: true, maximumTemperatureF: 34, chance: .14 },
+        ),
       },
     },
     seasonalArt: { profile: "coastal-four-season", contractVersion: 1 },

@@ -119,5 +119,6 @@ interface Window {
       | { ok: false; error: string };
     startTournamentFixture(): void;
     invalidateAndCancelTournamentFixture(): void;
+    setM53SeasonalFixture(season: "spring" | "summer" | "autumn" | "winter"): void;
   };
 }

@@ -1,5 +1,54 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## 2026-07-30 — ZK-567 seasonal terrain implementation
+
+- Added a pure registry-driven seasonal-terrain presentation resolver over
+  ZK-566 `SeasonalVisualState` and ZK-379 seasonal coverage signals. It emits
+  continuous dormancy, wetness/puddling, drought, frost, climate-gated partial
+  snow, leaf-litter, and weather-recovery channels for all ten terrains.
+- Parkland/Links/Desert select four-season, exposed-muted, and
+  drought/heat-led treatment profiles through declarative coverage data; the
+  renderer has no biome-name branch. Water is aquatic-only, has zero snow,
+  and can receive only translucent sheen commands.
+- Integrated restrained tint transforms into Low tile and Medium/High
+  connected-material paths. Medium/High use a bounded world-lattice decal
+  command buffer (220/420 max); Low is transform-only with zero decals.
+  Seasonal dressing is a separate layer below all tee/pin/route markers, and
+  protected tee/pin cells are excluded.
+- Color-vision modes retain the existing ten-color palette and apply only a
+  luminance multiplier to generated Medium/High textures; cue channels and
+  geometry are unchanged. The real reduced-motion setting now reaches Pixi;
+  seasonal commands are static in both modes.
+- Enabled presentation-only winter snow eligibility in the climate registry:
+  Parkland uses a restrained 38°F/.28 contract, Links 34°F/.14, and Desert
+  remains disabled. Snow does not enter `weatherForDay`; both pinned four-year
+  weather SHA-256 tests remain unchanged and pass.
+- Added a canonical 144-state M53 fixture matrix (three biomes × four seasons
+  with authoritative severe/cold weather × four rotations × three qualities),
+  pinned at SHA-256
+  `1c40d21def13a14bc6713c091ca85047e485f28c6abb73c842ba9a69fc9400cd`.
+  The 12-state browser slice distributes every biome/season/rotation/quality,
+  passes structured terrain/water/snow/frost/drought/budget assertions,
+  populated-canvas and pixel-distinctness checks, and reports zero console or
+  page errors. Captures were generated as machine attachments only and were
+  not opened or subjectively inspected.
+- Seasonal treatment signatures now invalidate the mounted terrain chunk
+  cache even when the Course and its tile/elevation arrays retain identity.
+  A same-canvas Low-quality browser regression advances an authoritative
+  Parkland spring fixture to summer drought, observes complete-course chunk
+  rebuilds, positive drought state, and changed screenshot bytes without a
+  navigation, course reload, or canvas remount.
+- Final local verification: focused biome/seasonal coverage/state/terrain
+  tests pass (6 files, 38 tests); TypeScript, production build, biome/audio/
+  asset audits, and scoped lint (zero errors; 11 existing hook warnings) pass.
+  The canonical 12-state Playwright matrix passes, and the same-mounted cache
+  regression passes 1/1 under the canonical project configuration. Bundled
+  client state is valid with no error artifact; retained PNG evidence includes
+  hashes/provenance and was not opened. Human visual/painterly,
+  climate-authenticity/readability/accessibility-perception, device,
+  physical-GPU, and gameplay judgments remain explicitly deferred to the
+  final M53 validation phase; no screenshot has been subjectively inspected.
+
 ## M50 implementation wave — 2026-07-30
 
 ## M51 ZK-538 Wave 0 mobility/rental foundation — 2026-07-30

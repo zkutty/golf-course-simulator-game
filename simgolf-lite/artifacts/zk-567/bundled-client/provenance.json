@@ -1,0 +1,21 @@
+{
+  "issue": "ZK-567",
+  "purpose": "Machine evidence for the bundled-client seasonal-terrain path",
+  "sourceBase": "2992527",
+  "scenario": {
+    "course": "ZK-564 Parkland Authoring Reference",
+    "biome": "parkland",
+    "season": "winter",
+    "weather": "heavy_rain",
+    "quality": "high",
+    "rotation": 0
+  },
+  "files": {
+    "state-0.json": "dbbf4e4cb57c9b3bfea39addad169677959201e3e050b5b575d7c712281962a2",
+    "state-1.json": "e9400da94d52c24cb27079145ee5de57aaecfffbaef619989da7662a71d7670c",
+    "shot-0.png": "e6d18521ab1a839c1498bb4dcd6dd1e337d11200461c053414ddb7af2c9d2236",
+    "shot-1.png": "079a82cd974907b57937287b168b439b72a6866c0b4dc955d0bbad8cf33e65f4"
+  },
+  "subjectiveInspectionPerformed": false,
+  "note": "The PNG captures were retained as reproducible machine artifacts and were not opened or used for human visual acceptance."
+}
