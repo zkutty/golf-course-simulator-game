@@ -12,6 +12,8 @@ import { createControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import type { Personality } from "./personality";
 import { createM47CertificationCourse } from "../testing/m47Certification";
 import type { GolferCapabilities } from "./m47Types";
+import { courseForRoundSetup } from "../models/courseSetup";
+import { manualStrategicRoundHoleSummary } from "./m47Round";
 
 function testPersonality(over: Partial<Personality> = {}): Personality {
   return {
@@ -49,6 +51,27 @@ function course(): Course {
 }
 
 describe("M47 live golfer contracts", () => {
+  it("uses only explicit, unambiguous manual setup for the round-summary fast path", () => {
+    const source = createM47CertificationCourse(9);
+    const setup = courseForRoundSetup(source, "member", "A");
+    const summary = manualStrategicRoundHoleSummary(source, setup, "member", "A");
+    expect(summary?.holes).toHaveLength(9);
+    expect(summary?.holes.map((hole) => hole.par)).toEqual(source.holes.map((hole) => hole.parManual));
+    expect(summary?.holes.every((hole) => hole.isComplete && hole.isValid)).toBe(true);
+
+    const auto = { ...source, holes: [{ ...source.holes[0], parMode: "AUTO" as const, parManual: undefined }] };
+    expect(manualStrategicRoundHoleSummary(auto, courseForRoundSetup(auto, "member", "A"), "member", "A")).toBeNull();
+
+    const outOfBounds = { ...source, holes: [{ ...source.holes[0], tee: { x: -1, y: source.holes[0].tee!.y } }] };
+    expect(manualStrategicRoundHoleSummary(outOfBounds, courseForRoundSetup(outOfBounds, "member", "A"), "member", "A")).toBeNull();
+
+    const fallbackSetup = {
+      ...source,
+      holes: [{ ...source.holes[0], tee: null, teeBoxes: { forward: source.holes[0].tee }, parByTee: undefined }],
+    };
+    expect(manualStrategicRoundHoleSummary(fallbackSetup, courseForRoundSetup(fallbackSetup, "member", "A"), "member", "A")).toBeNull();
+  });
+
   it("creates deterministic bounded capabilities with recognizable dimensions", () => {
     const personality = testPersonality({ skill: .72, consistency: .64, prefs: { difficulty: .7, scenery: .2, price: 0 } });
     const a = createGolferCapabilities({ personality, seed: 42 });

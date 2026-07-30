@@ -792,3 +792,19 @@ classic course-builder references.
 - Added localized Operate, Architecture Review, and Golfer Inspector mobility copy plus a browser contract for selector reachability, dialog/tab/select semantics, structured text state, and pseudo locale.
 - Added final deterministic fixtures for three viable mobility strategies, M47/M49/M50 compatibility, save/import and active snapshot hashing, and a bounded 220×140/36-hole/100-golfer route/live/render workload. The focused certification passes 2/2 tests in 43.98s; TypeScript and i18n pass.
 - No distinct product feature work was introduced; both repairs are ZK-558 certification regressions. Human and external release gates remain deferred, and no Linear/commit/push/deploy action was taken.
+
+## 2026-07-30 — M50 bounded AI round hot-path repair
+
+- Added a narrowly gated round-summary fast path for explicit manual-par,
+  complete, in-bounds, non-fallback tee/pin setups. It supplies only the
+  completion, validity, and par facts needed by strategic round planning, so
+  eligible rounds avoid the full per-hole Dijkstra scoring pass.
+- AUTO, malformed/manual-invalid, missing, out-of-bounds, overlapping, and
+  tee/pin-fallback setups still call the existing `scoreCourseHoles` path.
+- Added focused M47 regression coverage for fast-path eligibility and fallback
+  boundaries. Final M47 certification: 6/6 tests, 11.42s Vitest / 11.81s
+  process wall time. Final M50 certification: 3/3 tests, 4.02s Vitest /
+  4.41s process wall time. M50 internal performance fields: AI round
+  630.686ms, full-estate fixture 16.883ms, render-state average 0.009834ms.
+- TypeScript build check passed in 5.24s process wall time; diff check passed.
+- No commit, push, deploy, Linear update, or generated artifact was left.

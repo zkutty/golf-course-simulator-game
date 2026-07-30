@@ -1,6 +1,7 @@
 import type { Course, PinRotation, Point, TeeSet } from "../models/types";
 import { scoreCourseHoles } from "../sim/holes";
-import { courseForRoundSetup } from "../models/courseSetup";
+import { courseForRoundSetup, getParSetting, resolveCourseSetup } from "../models/courseSetup";
+import { BALANCE } from "../balance/balanceConfig";
 import { LIVE } from "./liveConfig";
 import type { BuiltRound, WalkRouter } from "./golfer";
 import { M47_MAX_OUTCOMES, type GolferCapabilities } from "./m47Types";
@@ -12,6 +13,73 @@ import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import { TimedItineraryBuilder } from "../m51/timedItinerary";
 
 function distance(a: Point, b: Point): number { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+interface StrategicRoundHoleInfo {
+  isComplete: boolean;
+  isValid: boolean;
+  par: number;
+}
+
+interface StrategicRoundHoleSummary {
+  holes: StrategicRoundHoleInfo[];
+}
+
+function inBounds(course: Course, point: Point): boolean {
+  return point.x >= 0 && point.y >= 0 && point.x < course.width && point.y < course.height;
+}
+
+function explicitManualPar(courseHole: Course["holes"][number], teeSet: TeeSet): number | null {
+  const configured = courseHole.parByTee?.[teeSet];
+  if (configured?.mode === "MANUAL") {
+    return configured.par === 3 || configured.par === 4 || configured.par === 5 ? configured.par : null;
+  }
+  if (teeSet === "member" && courseHole.parMode === "MANUAL" && courseHole.parManual !== undefined) {
+    return courseHole.parManual === 3 || courseHole.parManual === 4 || courseHole.parManual === 5
+      ? courseHole.parManual
+      : null;
+  }
+  return null;
+}
+
+/**
+ * Round planning only needs completion, validity, and par. Manual-par courses
+ * with an unambiguous, complete setup already provide those facts; avoid the
+ * full rating/Dijkstra solve in that case. Any AUTO, fallback, missing, or
+ * invalid setup deliberately returns null so callers retain legacy scoring.
+ */
+export function manualStrategicRoundHoleSummary(
+  sourceCourse: Course,
+  setupCourse: Course,
+  teeSet: TeeSet,
+  pinRotation: PinRotation,
+): StrategicRoundHoleSummary | null {
+  if (sourceCourse.holes.length === 0 || sourceCourse.holes.length !== setupCourse.holes.length) return null;
+
+  const holes: StrategicRoundHoleInfo[] = [];
+  for (let index = 0; index < sourceCourse.holes.length; index++) {
+    const sourceHole = sourceCourse.holes[index];
+    const hole = setupCourse.holes[index];
+    const setup = resolveCourseSetup(sourceHole, teeSet, pinRotation);
+    const par = explicitManualPar(sourceHole, setup.teeSet);
+    const straightDistance = hole.tee && hole.green ? distance(hole.tee, hole.green) : 0;
+    if (
+      par === null
+      || getParSetting(sourceHole, setup.teeSet).mode !== "MANUAL"
+      || setup.usedTeeFallback
+      || setup.usedPinFallback
+      || !hole.tee
+      || !hole.green
+      || !inBounds(setupCourse, hole.tee)
+      || !inBounds(setupCourse, hole.green)
+      || hole.tee.x === hole.green.x && hole.tee.y === hole.green.y
+      || straightDistance * (setupCourse.yardsPerTile ?? 10) < BALANCE.shots.hole.minHoleDistanceYards
+    ) {
+      return null;
+    }
+    holes.push({ isComplete: true, isValid: true, par });
+  }
+  return { holes };
+}
 
 export function buildStrategicGolferRound(args: {
   course: Course;
@@ -32,7 +100,7 @@ export function buildStrategicGolferRound(args: {
   const pinRotation = args.pinRotation ?? args.course.activePinRotation ?? "A";
   const course = courseForRoundSetup(args.course, teeSet, pinRotation);
   const snapshot = liveCourseSnapshot({ course, teeSet, pinRotation, rulesSnapshot: args.rulesSnapshot });
-  const summary = scoreCourseHoles(course);
+  const summary = manualStrategicRoundHoleSummary(args.course, course, teeSet, pinRotation) ?? scoreCourseHoles(course);
   const itinerary = new TimedItineraryBuilder({ course, cursor: { ...args.entry }, personality: args.personality, rng: args.rng, route: args.route, wallet: args.wallet });
   const holePar: number[] = [];
   const holeStrokes: number[] = [];

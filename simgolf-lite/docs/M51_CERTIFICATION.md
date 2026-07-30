@@ -16,7 +16,7 @@ This packet covers the integrated M51 implementation through ZK-558. The exact p
 
 | Command | Result |
 | --- | --- |
-| `npm run test:ci` | 118 files, 930 passed, 1 skipped; audio audit 3/3 |
+| `npm run test:ci` | 118 files, 931 passed, 1 skipped; audio audit 3/3 |
 | `npm run test:fuzz` | 3/3 passed |
 | `npm run test:soak` | 30 weeks, 4,258 rounds, 5.84 MiB post-GC retained heap growth |
 | `npm run test:balance` | 81/81 matrix rows; 0 normal-path and 0 poor-management bankruptcies |
