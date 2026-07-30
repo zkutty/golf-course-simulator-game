@@ -84,6 +84,13 @@ function causeReport(world: World, courseId: string): M49ExperienceCause[] {
         causes.set(cause, current);
       }
     }
+    if (segment.mobility) for (const [cause, observations] of Object.entries(segment.mobility.causes)) {
+      const current = causes.get(cause) ?? { observations: 0, weightedSatisfaction: 0, revenueAtRisk: 0 };
+      current.observations += observations;
+      current.weightedSatisfaction += (segment.mobility.averageValue * 100 - 65) * observations;
+      current.revenueAtRisk += Math.max(0, .65 - segment.mobility.averageValue) * willingnessToPay * observations;
+      causes.set(cause, current);
+    }
   }
   return [...causes.entries()]
     .map(([cause, value]) => ({
@@ -92,7 +99,10 @@ function causeReport(world: World, courseId: string): M49ExperienceCause[] {
       satisfactionDelta: round(value.weightedSatisfaction / Math.max(1, value.observations)),
       revenueAtRisk: round(value.revenueAtRisk),
     }))
-    .sort((a, b) => b.observations - a.observations || b.revenueAtRisk - a.revenueAtRisk)
+    .sort((a, b) => {
+      const urgency = (cause: string) => cause.includes("stockout") ? 2 : cause.includes("disappointment") ? 1 : 0;
+      return urgency(b.cause) - urgency(a.cause) || b.observations - a.observations || b.revenueAtRisk - a.revenueAtRisk;
+    })
     .slice(0, 6);
 }
 
@@ -119,6 +129,9 @@ function buildAlerts(args: {
     if (segment.evidenceRounds > 0 && segment.churnRate > .58) {
       add({ id: `segment-churn-${segment.segment}`, severity: "warning", title: `${segment.segment} golfers are not returning`, detail: `${Math.round(segment.churnRate * 100)}% estimated churn from observed rounds.`, action: "Inspect this segment's causes before buying more reach." });
     }
+  }
+  for (const segment of Object.values(args.demand.segments)) if (segment.mobility.observedRounds > 0 && segment.mobility.disappointmentRisk >= .55) {
+    add({ id: `mobility-disappointment-${segment.segment}`, severity: "warning", title: `${segment.segment} mobility promise is disappointing`, detail: `${Math.round(segment.mobility.disappointmentRisk * 100)}% mobility disappointment risk comes from completed rounds, not fleet capacity.`, action: "Address observed stock-outs, price, restrictions, or pace before promoting mobility." });
   }
   for (const promise of normalizeM49State(args.world.m49).marketingPromises ?? []) {
     if (promise.courseId !== args.demand.courseId || promise.disappointmentRisk < .55) continue;

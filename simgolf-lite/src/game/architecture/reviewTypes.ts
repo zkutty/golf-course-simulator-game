@@ -1,3 +1,5 @@
+import type { MobilityMode } from "../m51/types";
+
 export type ArchitectureOverlayKind =
   | "traces"
   | "dispersion"
@@ -11,7 +13,8 @@ export type ArchitectureOverlayKind =
   | "advantage"
   | "bailouts"
   | "carries"
-  | "misses";
+  | "misses"
+  | "mobility";
 
 export interface ArchitectureOverlayTrace {
   id: string;
@@ -43,6 +46,17 @@ export interface ArchitectureOverlayRender {
   traces: ArchitectureOverlayTrace[];
   cells: ArchitectureOverlayCell[];
   points: ArchitectureOverlayPoint[];
+}
+
+/** Read-only route forecast metadata for the Architecture Review overlay. */
+export interface ArchitectureMobilityOverlay {
+  evidence: "predicted";
+  modes: MobilityMode[];
+  weather: "dry" | "wet" | "cart_path_only";
+  transfers: number;
+  inaccessibleDestinations: Array<{ id: string; mode: MobilityMode; reason: "prohibited" | "unreachable" }>;
+  missingLinkWarnings: string[];
+  pathUtilization: number;
 }
 
 export type ArchitectureRulesEvidenceStatus = "retained" | "reconstructed" | "historical" | "unavailable";

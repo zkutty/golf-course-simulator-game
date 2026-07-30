@@ -3,6 +3,7 @@ import type { LiveSimulationSnapshotV1 } from "../game/live/persistence";
 import { withNormalizedHoleSetup } from "../game/models/courseSetup";
 import { normalizeCourseLayouts } from "../game/models/courseLayouts";
 import { normalizedBuilding } from "../game/models/buildings";
+import { normalizeM51CourseMobilityState, normalizeM51MobilityState } from "../game/m51/mobility";
 
 function canonical(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -44,6 +45,7 @@ export function hashGameState(value: {
     buildings: (value.course.buildings ?? []).map(normalizedBuilding),
     activePinRotation: value.course.activePinRotation ?? "A",
     holes: normalized.holes.map(withNormalizedHoleSetup),
+    m51: normalizeM51CourseMobilityState(normalized.m51, normalized),
   };
-  return hashCanonicalValue({ course, world: value.world, live: value.live });
+  return hashCanonicalValue({ course, world: { ...value.world, m51: normalizeM51MobilityState(value.world.m51) }, live: value.live });
 }

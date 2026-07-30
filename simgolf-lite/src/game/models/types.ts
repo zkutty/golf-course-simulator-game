@@ -6,6 +6,7 @@ import type { LivingClubState } from "../livingClub/types";
 import type { SeasonalState } from "../seasons/types";
 import type { CampaignRunState } from "../campaign/types";
 import type { M49DemandPlan, M49EconomyState } from "../m49/types";
+import type { M51CourseMobilityState, M51MobilityAggregateSummary, M51MobilityState } from "../m51/types";
 
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
@@ -360,6 +361,8 @@ export interface Course {
   estate?: Estate;
   /** M31-M33 commercial campus, access, resort, and community assets. */
   property?: PropertyCourseState;
+  /** M51 Cart Rental offers and individually addressable fleet, portable with the course. */
+  m51?: M51CourseMobilityState;
 }
 
 export interface World {
@@ -404,6 +407,8 @@ export interface World {
   paceOperations?: PaceOperationsState;
   /** M49 bounded segment demand, observed value, price, and reputation evidence. */
   m49?: M49EconomyState;
+  /** M51 bounded mobility evidence/aggregates. Course owns the fleet and offers. */
+  m51?: M51MobilityState;
 }
 
 export type StaffRole = "groundskeeper" | "cart_attendant" | "pro_shop" | "marshal" | "tournament_director" | "club_pro" | "food_service" | "locker_attendant" | "front_desk" | "housekeeping" | "shuttle_driver";
@@ -543,6 +548,8 @@ export interface WeekResult {
   };
   avgSatisfaction: number; // 0..100
   reputationDelta: number; // signed
+  /** M51 bounded pace/economic evidence retained with legacy weekly history. */
+  m51?: M51MobilityAggregateSummary;
   perCourse?: Array<{
     courseId: string;
     courseName: string;

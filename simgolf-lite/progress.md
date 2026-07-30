@@ -2,6 +2,19 @@ Original prompt: Update my vision HTML for the new features from the new milesto
 
 ## M50 implementation wave — 2026-07-30
 
+## M51 ZK-538 Wave 0 mobility/rental foundation — 2026-07-30
+
+- Added a versioned M51 contract layer for group-level walk/pushcart/riding-cart selection, products, individual fleet units, assignments, authorization/settlement transactions, prediction-vs-observation evidence, deterministic decision order/seed, and route-cache identity.
+- Durable fleet/evidence is `World.m51`; transient daily contracts are `LiveState.m51`; the existing `LiveState.walkCache` remains the only route cache and the existing concession/`commitDay` economy remains the only money owner. No rental behavior, UI, live movement, or router change is in this Wave 0 packet.
+- Save schema v21 migrates older slots to neutral bounded M51 defaults. Focused contract tests cover deterministic identity/canonical normalization, history and save-size bounds, and settlement idempotence/cash ownership.
+- Verification: focused M51/save/live-persistence/live/M49 suite passes 5 files / 55 tests; the deterministic release-balance harness passes. Targeted M51-adjacent lint has no errors (one pre-existing hook warning). The bundled browser client emitted valid menu text state and its capture was visually inspected. A later whole-repository typecheck is blocked by unrelated in-progress M50 files in the shared worktree; no M51 diagnostics were reported.
+
+## M51 ZK-541 Wave 1 timed-itinerary extraction — 2026-07-30
+
+- Extracted `TimedItineraryBuilder` as the shared timing/concession/walk-segment authority for ordinary and M47 live planners. It retains legacy walking segments for every reserved M51 mode; no fleet, weighted routing, or UI behavior is implemented.
+- The ordinary/M47 focused suite passes after the extraction (36 tests), and TypeScript plus diff integrity pass. New helper coverage verifies no-route fallback, waypoint timing, future-mode walking compatibility, and planner-only wallet reservation. The existing live regression also checks unique concession transaction IDs.
+- M47 deterministic plan/outcome/reaction hash coverage remains in its existing focused certification test. The generated historical M47 artifact predates concurrent M50 physics work, so it is not used as a ZK-541 baseline. Do not run generated certification artifacts for this packet; use focused certification tests only.
+
 - Implemented the ranked automated slice for ZK-548, ZK-550, ZK-551, ZK-552, and ZK-553: authoritative obstacle trajectory resolution, low/standard/high Player Pro recovery preview and ruling evidence, live/AI around/under/over recovery choices, rules-backed Architecture Review feedback, and an M50 certification report.
 - Added deterministic coverage for obstacle clearance, lie/club effects, recovery scoring, preview/execution parity, penalty and relief invariants, historical evidence labeling, hostile finite shots, legacy behavior, architecture evidence, and bounded 36-hole/100-golfer performance.
 - Verified the final source with TypeScript, build plus audio/asset audits, lint/i18n, focused M50/architecture/live/Player Pro rules tests, M36 Playwright direct-play coverage, and the bundled web-game client. The client emitted valid state with no console-error artifact; a gameplay capture was visually inspected.
@@ -684,3 +697,98 @@ classic course-builder references.
 - Human licensing/listening confirmation for audio and broader manual visual
   acceptance remain intentionally open; no Linear issue is marked Done from
   automated evidence alone.
+
+## 2026-07-30 — ZK-542 M51 portable-state foundation
+
+- Moved Cart Rental offers and individually addressable fleet ownership to
+  portable course M51 state; World now retains only bounded settled evidence
+  and compact pace/economic aggregates.
+- Save v22 deterministically migrates legacy Cart Rental price to riding-cart,
+  synthesizes the balance-defined pushcart offer, and preserves tier/building
+  compatibility. Live snapshots, hashes, and course packages normalize the
+  same canonical contract and remap building references on import.
+- Focused validation: 35 M51/save/live/package/hash tests and TypeScript
+  typecheck pass; no broad certification commands were run.
+
+## 2026-07-30 — ZK-543 M51 weighted travel router
+
+- Added a bounded deterministic M51 timed-leg router/cache for walk, pushcart,
+  and riding-cart modes. Walking delegates directly to the established
+  passability/path authority; carts apply mode terrain/slope/path/weather rules
+  and only then use a safe walking fallback.
+- Cache identity includes mode, endpoints, geometry revision, and weather or
+  operational restriction identity. Full tile evidence is retained before
+  renderer waypoint simplification; the prediction API is read-only.
+- Focused routing, itinerary, ordinary-live, and M47 regressions pass (43
+  tests), along with TypeScript typecheck and whitespace validation.
+
+## 2026-07-30 — M51 Wave 3 coordinated mobility operations
+
+- Implemented ZK-545 group-level walk/pushcart/riding-cart selection using
+  stable golfer preferences, burden, course condition/value, price and wallet,
+  weather, authored-path utility, facility tier, and service coverage.
+  Reservations use group-size pushcarts or ceil(group/2) riding carts with
+  stable seats and per-golfer core concession transactions. Stockout,
+  affordability, disabled/no-facility, tournament, reload, edit, daylight, and
+  abandonment paths fall back/release without duplicate charges or fleet leaks.
+- Implemented ZK-546 product-level revenue, per-use cost, utilization,
+  stockout, return, condition, and wear settlement. Daily ledgers are
+  idempotent and bounded to 28 days; weekly reports merge exact-cent product
+  rows and retain deterministic course/facility allocation. Rental revenue
+  remains in the existing concession/cash authority.
+- Implemented ZK-547 itinerary application through the weighted M51
+  router/cache. Riding carts prefer authored paths, pushcarts receive a modest
+  speed improvement, protected/inaccessible/wet endpoints walk legally, and
+  actual travel/service delay flows through existing pace, blockage, daylight,
+  marshal, satisfaction, and observed evidence. Off-path wear is bounded.
+- Added focused operation, routing, persistence, settlement, weekly-ledger,
+  day-rollover, interruption, edit/reload, and no-duplicate-charge coverage.
+  No ZK-554–ZK-557 UI, demand/value, or identity work was added.
+- Final verification passes: 12 focused files / 98 tests, TypeScript project
+  build, and whitespace validation. The bundled gameplay client reached a
+  fresh live game with valid text state; its rendered capture was inspected
+  and no console-error artifact was produced.
+
+## 2026-07-30 — M51 Wave 4 operations, architecture, and visuals
+
+- Added ZK-554's read-only Operate mobility report. It derives current-day and
+  bounded 7/28-day values exclusively from live M51 evidence and settled
+  product ledgers, including fleet/utilization, demand-state distinctions,
+  factual recommendations, observed minutes saved, and net per occupied tee
+  hour. It does not settle cash or introduce a new economics authority.
+- Added ZK-555's bounded predicted Mobility Architecture Review overlay. It
+  uses the existing timed router and weather restrictions, exposes mode
+  filters, traces/cells/transfers/utilization, and gives separate prohibited
+  versus unreachable/missing-link explanations without mutating live state.
+- Added ZK-556's shared fleet-unit renderer contract. Unit IDs deduplicate
+  riding-cart riders, include parked and walking-connection states, preserve
+  mobility evidence in the golfer inspector, and use static shape fallbacks
+  without optional/unlicensed art.
+- Focused Wave 4/M51 tests pass (23 assertions across five files), as do the
+  application TypeScript check and whitespace validation. Per request, no
+  human visual/accessibility/gameplay check or ZK-557 work was performed.
+
+## 2026-07-30 — ZK-557 demand, value, and course identity
+
+- M49 now consumes only completed M51 assignment facts: selected mode, actual
+  travel and round pace, price/service delay, walking fallback, stock-outs,
+  weather/policy restrictions, and tournament walking-only policy. Current
+  path/offering state remains explicitly predictive; fleet quantity never
+  increases M49 value without observed use.
+- Segment demand, satisfaction/value, willingness to pay, return/recommend
+  intent, churn, amenity support, identity, report causes/alerts, and mobility
+  marketing credibility now reflect bounded observed mobility history. Old M49
+  records keep mobility absent, rather than receiving fabricated observations.
+- Fixed-seed tests cover walking-first, pushcart-oriented, and riding-cart
+  viable fixtures; segment-sensitive stock-out/price/policy outcomes; honest
+  marketing and tournament policy; report causes/alerts; migration; and
+  normalized save/hash stability. Focused M49/M51/tournament/save suite: 32
+  tests passed. Production TypeScript build and asset checks passed.
+
+## 2026-07-30 — ZK-558 final machine-only certification
+
+- The pre-addition M51/M49/save/live/M47/M50 compatibility slice passes 19 files / 126 tests.
+- Isolated and repaired two in-scope machine failures: the mobility Architecture Review state was not reachable from its overlay selector, and all new M51 UI copy failed the typed i18n extraction guard.
+- Added localized Operate, Architecture Review, and Golfer Inspector mobility copy plus a browser contract for selector reachability, dialog/tab/select semantics, structured text state, and pseudo locale.
+- Added final deterministic fixtures for three viable mobility strategies, M47/M49/M50 compatibility, save/import and active snapshot hashing, and a bounded 220×140/36-hole/100-golfer route/live/render workload. The focused certification passes 2/2 tests in 43.98s; TypeScript and i18n pass.
+- No distinct product feature work was introduced; both repairs are ZK-558 certification regressions. Human and external release gates remain deferred, and no Linear/commit/push/deploy action was taken.

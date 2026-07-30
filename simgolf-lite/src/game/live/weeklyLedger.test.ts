@@ -26,4 +26,24 @@ describe("live weekly ledger", () => {
     expect(ledger.days).toHaveLength(1);
     expect(weekResultFromLedger(ledger).revenue).toBe(500);
   });
+
+  it("reconciles daily mobility rows into one exact weekly product report", () => {
+    let ledger = createWeekLedger(2);
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+      ledger = appendDayToLedger(ledger, day(dayIndex, {
+        m51: {
+          version: 1,
+          courses: {
+            north: { courseId: "north", walkingRounds: 0, pushcartRounds: 0, ridingCartRounds: 2, observedRounds: 2, observedPaceMinutes: 400, settledRevenue: 40, operatingCosts: 8, stockouts: 0, utilizedUnits: 1, activeRentals: 0, lastSettledWeek: 2 },
+          },
+          products: [{ productId: "rental:riding_cart", courseId: "north", buildingId: "rental", mode: "riding_cart", rentals: 1, golfers: 2, utilizedUnits: 1, availableUnits: 4, stockouts: 0, returns: 1, damagedReturns: 0, grossRevenue: 40, operatingCosts: 8, netRevenue: 32, wear: .004, endingCondition: 1 - (dayIndex + 1) * .004 }],
+          grossRevenue: 40, operatingCosts: 8, netRevenue: 32,
+        },
+      }));
+    }
+    const result = weekResultFromLedger(ledger);
+    expect(result.m51).toMatchObject({ grossRevenue: 280, operatingCosts: 56, netRevenue: 224 });
+    expect(result.m51?.products).toHaveLength(1);
+    expect(result.m51?.products[0]).toMatchObject({ rentals: 7, golfers: 14, utilizedUnits: 7, returns: 7, grossRevenue: 280, operatingCosts: 56, netRevenue: 224 });
+  });
 });

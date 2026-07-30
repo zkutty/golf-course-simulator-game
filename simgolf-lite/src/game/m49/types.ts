@@ -52,8 +52,49 @@ export interface M49ObservedRound {
   churnRisk: number;
   paceDelayMinutes: number;
   hospitalityDelayMinutes: number;
+  /** Present only when this finished round had an authoritative M51 assignment. */
+  mobility?: M49ObservedMobilityEvidence;
   holeEvidence: M49HoleObservation[];
   causes: string[];
+}
+
+/**
+ * A compact M49 projection of a completed M51 assignment.  It deliberately
+ * contains no route payload, fleet capacity, or forecast: those remain M51's
+ * authority.  Old M49 saves omit this field rather than receiving invented
+ * mobility history during migration.
+ */
+export interface M49ObservedMobilityEvidence {
+  source: "observed";
+  mode: "walk" | "pushcart" | "riding_cart";
+  rentalProvided: boolean;
+  walkingBurdenMinutes: number;
+  actualTravelMinutes: number;
+  paceMinutes: number;
+  price: number;
+  serviceDelayMinutes: number;
+  walkingFallbackMinutes: number;
+  stockoutFallback: boolean;
+  restricted: boolean;
+  tournamentPolicy: boolean;
+  /** Segment-weighted value of what actually happened, normalized 0..1. */
+  value: number;
+}
+
+export interface M49SegmentMobilityHistory {
+  observedRounds: number;
+  walkingRounds: number;
+  pushcartRounds: number;
+  ridingCartRounds: number;
+  rentalRounds: number;
+  stockoutFallbacks: number;
+  restrictions: number;
+  tournamentPolicyRounds: number;
+  averageWalkingBurdenMinutes: number;
+  averageActualTravelMinutes: number;
+  averagePaceMinutes: number;
+  averageValue: number;
+  causes: Record<string, number>;
 }
 
 export interface M49SegmentHistory {
@@ -68,6 +109,8 @@ export interface M49SegmentHistory {
   willingnessToPay: number;
   priceElasticity: number;
   lastObservedWeek: number;
+  /** Undefined for M49 histories created before mobility evidence existed. */
+  mobility?: M49SegmentMobilityHistory;
   holeEvidence: Record<string, {
     observations: number;
     averageSatisfaction: number;
@@ -104,6 +147,14 @@ export interface M49SegmentDemand {
   churnRate: number;
   evidenceRounds: number;
   evidenceLabel: "predicted" | "observed" | "mixed";
+  mobility: {
+    evidenceLabel: "predicted" | "observed" | "mixed";
+    currentSupport: number;
+    observedValue?: number;
+    observedRounds: number;
+    disappointmentRisk: number;
+    causes: string[];
+  };
   causes: string[];
 }
 
@@ -137,6 +188,14 @@ export interface M49AmenitySupport {
   score: number;
   supportedBy: string[];
   missing: string[];
+  mobility?: {
+    evidenceLabel: "predicted" | "observed" | "mixed";
+    score: number;
+    observedRounds: number;
+    disappointmentRisk: number;
+    supportedBy: string[];
+    missing: string[];
+  };
 }
 
 export interface M49StrategicIdentity {
@@ -149,6 +208,13 @@ export interface M49StrategicIdentity {
   tags: string[];
   amenities: Record<GolferArchetypeName, M49AmenitySupport>;
   tournamentFieldFit: Record<"local" | "regional" | "championship", number>;
+  mobility: {
+    evidenceLabel: "predicted" | "observed" | "mixed";
+    observedRounds: number;
+    disappointmentRisk: number;
+    tournamentPolicy: "walking_only";
+    note: string;
+  };
   charterFit: number;
 }
 

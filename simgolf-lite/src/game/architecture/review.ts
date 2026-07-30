@@ -7,8 +7,11 @@ import type {
   ArchitectureOverlayPoint,
   ArchitectureOverlayRender,
   ArchitectureOverlayTrace,
+  ArchitectureMobilityOverlay,
   ArchitectureRulesReview,
 } from "./reviewTypes";
+import { buildArchitectureMobilityOverlay } from "../m51/architectureOverlay";
+import type { MobilityMode } from "../m51/types";
 import { courseGeometryVersion, normalizeLivingClub } from "../livingClub/livingClub";
 import type { ArchitectureRevisionSummary, ArchitectureShotEvidence } from "../livingClub/types";
 import { buildStrategicPortfolio } from "./portfolio";
@@ -24,6 +27,7 @@ export interface ArchitectureReviewFilters {
   sourceSegment: "all" | string;
   recency: "all" | "recent" | "current" | "historical";
   pinRotation: "all" | "A" | "B" | "C";
+  mobilityMode: "all" | MobilityMode;
 }
 
 export interface ArchitectureReviewData {
@@ -44,6 +48,7 @@ export interface ArchitectureReviewData {
   selectedStrategicHole: M48StrategicHoleEvaluation | null;
   comparison: M48DesignComparison | null;
   rules: ArchitectureRulesReview;
+  mobility: ArchitectureMobilityOverlay | null;
 }
 
 const HAZARDS = new Set<Terrain>(["sand", "waste_area", "water", "wetland", "deep_rough"]);
@@ -187,6 +192,7 @@ export function defaultArchitectureFilters(course: Course): ArchitectureReviewFi
     sourceSegment: "all",
     recency: "current",
     pinRotation: "A",
+    mobilityMode: "all",
   };
 }
 
@@ -232,7 +238,7 @@ export function buildArchitectureReview(
   else if (filters.kind === "scoring") overlay.points = scoringPoints(selectedCourse, evidence, currentGeometryVersion);
   else if (filters.kind === "hazards") overlay.cells = hazardCells(selectedCourse);
   else if (filters.kind === "walking") overlay.traces = walkingTraces(selectedCourse);
-  else overlay.points = congestionPoints(evidence, currentGeometryVersion);
+  else if (filters.kind === "congestion") overlay.points = congestionPoints(evidence, currentGeometryVersion);
 
   if (filters.kind === "options" || filters.kind === "advantage" || filters.kind === "bailouts" || filters.kind === "carries" || filters.kind === "misses") {
     const selected = selectedStrategicHole
@@ -250,6 +256,10 @@ export function buildArchitectureReview(
       overlay.points = bounded(selected.flatMap((hole) => hole.cohorts.map((cohort) => ({ id: `${hole.id}-miss-${cohort.cohortId}`, x: hole.options[0]?.location.x ?? 0, y: hole.options[0]?.location.y ?? 0, value: cohort.recoveryBurden, current: true, label: `${cohort.cohortId} ${Math.round(cohort.recoveryBurden * 100)}%` }))), 180);
     }
   }
+  const mobility = filters.kind === "mobility"
+    ? buildArchitectureMobilityOverlay({ course: selectedCourse, world, courseId: filters.courseId, modes: filters.mobilityMode === "all" ? ["walk", "pushcart", "riding_cart"] : [filters.mobilityMode] })
+    : null;
+  if (mobility) Object.assign(overlay, mobility.render);
 
   const byTee = new Map<string, { total: number; roundIds: Set<string> }>();
   for (const item of evidence) {
@@ -290,5 +300,6 @@ export function buildArchitectureReview(
     selectedStrategicHole,
     comparison: living.architecture.comparison ?? null,
     rules,
+    mobility: mobility?.mobility ?? null,
   };
 }

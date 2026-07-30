@@ -134,6 +134,8 @@ describe("M4 concessions", () => {
     expect(live.concessionCollected).toBe(
       live.concessionTransactions.reduce((sum, tx) => sum + tx.amount, 0)
     );
+    expect(new Set(live.concessionTransactions.map((transaction) => transaction.id)).size)
+      .toBe(live.concessionTransactions.length);
     expect(cash).toBe(live.greenFeeCollected + live.concessionCollected);
   });
 });
@@ -162,6 +164,26 @@ describe("buildGolferRound", () => {
     expect(round.holePar.length).toBe(1);
     // Includes shots to green plus at least one putt.
     expect(round.holeStrokes[0]).toBeGreaterThanOrEqual(2);
+  });
+
+  it("skips invalid holes and falls back to the legacy straight walk when no route exists", () => {
+    const course = makeTestCourse();
+    course.holes = [
+      { tee: null, green: null, parMode: "AUTO", name: "Invalid" },
+      ...course.holes,
+    ];
+    const entry = entryPoint(course);
+    const round = buildGolferRound({
+      course,
+      profile: getGolferProfile("SCRATCH", course),
+      entry,
+      rng: () => .5,
+      personality: testPersonality(),
+      route: () => null,
+    });
+    expect(round.holePar).toHaveLength(1);
+    expect(round.holeStrokes).toHaveLength(1);
+    expect(round.segments[0]).toMatchObject({ kind: "walk", from: entry, to: course.holes[1].tee });
   });
 });
 

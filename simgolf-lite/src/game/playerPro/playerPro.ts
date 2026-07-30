@@ -37,7 +37,14 @@ import { tournamentCalendar, TOURNAMENT_TIERS } from "../tournaments/tournaments
 import type { TournamentEvent, TournamentStanding, TournamentTier } from "../tournaments/types";
 import { activeWeather, seasonalState, weatherModifiers } from "../seasons/seasons";
 import { isOwnedTile } from "../estate/estate";
-import type { SharedShotOutcome, ShotFlightProfile, ShotLie } from "../rules/contracts";
+import {
+  isValidReliefResolution,
+  isValidSharedShotOutcome,
+  isValidShotRuling,
+  type SharedShotOutcome,
+  type ShotFlightProfile,
+  type ShotLie,
+} from "../rules/contracts";
 import { classifyPenaltyAreaComponents } from "../rules/penaltyAreas";
 import { createControlledRoundSnapshotV2, decodeControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import { createSharedShotOutcome, resolveSharedRules } from "../rules/sharedOutcome";
@@ -179,6 +186,48 @@ function point(value: unknown): value is PlayerProPoint {
   return Number.isFinite(candidate.x) && Number.isFinite(candidate.y);
 }
 
+function validActiveShotTrace(value: unknown): value is PlayerShotTrace {
+  if (!value || typeof value !== "object") return false;
+  const trace = value as PlayerShotTrace;
+  if (
+    typeof trace.id !== "string"
+    || typeof trace.holeId !== "string"
+    || !Number.isSafeInteger(trace.shotNumber)
+    || trace.shotNumber < 1
+    || typeof trace.club !== "string"
+    || !["normal", "draw", "fade", "punch", "flop", "backspin"].includes(trace.technique)
+    || (trace.flightProfile != null && !["low", "standard", "high"].includes(trace.flightProfile))
+    || !Number.isFinite(trace.power)
+    || !point(trace.from)
+    || !point(trace.aim)
+    || !point(trace.landing)
+    || !point(trace.rest)
+    || !Number.isFinite(trace.carryYards)
+    || !Number.isFinite(trace.rollYards)
+    || typeof trace.lieBefore !== "string"
+    || typeof trace.lieAfter !== "string"
+    || !Number.isSafeInteger(trace.penaltyStrokes)
+    || trace.penaltyStrokes < 0
+    || trace.penaltyStrokes > 1
+    || typeof trace.holed !== "boolean"
+    || !Number.isFinite(trace.seed)
+    || !Array.isArray(trace.evidence)
+  ) {
+    return false;
+  }
+  if (trace.sharedOutcome != null && !isValidSharedShotOutcome(trace.sharedOutcome)) return false;
+  if (trace.ruling != null && !isValidShotRuling(trace.ruling)) return false;
+  if (trace.relief != null && !isValidReliefResolution(trace.relief)) return false;
+  if (trace.finalPosition != null && !point(trace.finalPosition)) return false;
+  if (trace.ruling && trace.ruling.penaltyStrokes !== trace.penaltyStrokes) return false;
+  return !trace.sharedOutcome
+    || (
+      trace.sharedOutcome.ruling.penaltyStrokes === trace.penaltyStrokes
+      && trace.sharedOutcome.finalPosition.x === (trace.finalPosition ?? trace.rest).x
+      && trace.sharedOutcome.finalPosition.y === (trace.finalPosition ?? trace.rest).y
+    );
+}
+
 function baseSkills(background: PlayerProBackground): PlayerProSkills {
   const result = Object.fromEntries(PLAYER_PRO_SKILLS.map((skill) => [skill, DEFAULT_SKILL])) as PlayerProSkills;
   for (const [skill, amount] of Object.entries(BACKGROUND_BONUS[background]) as Array<[PlayerProSkill, number]>) {
@@ -232,11 +281,20 @@ function normalizeSkills(value: unknown, fallback: PlayerProSkills): PlayerProSk
 function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
   if (!value || typeof value !== "object") return null;
   const round = value as PlayerPlayableRound;
-  if (round.version !== 1 || typeof round.id !== "string" || !round.course || round.course.holes.length < 1) return null;
+  if (
+    round.version !== 1
+    || typeof round.id !== "string"
+    || !round.course
+    || !Array.isArray(round.course.holes)
+    || round.course.holes.length < 1
+  ) return null;
   if (!Array.isArray(round.course.tiles) || !Array.isArray(round.course.elevations) || round.course.tiles.length !== round.course.width * round.course.height) return null;
   if (!Number.isInteger(round.currentHoleIndex) || round.currentHoleIndex < 0 || round.currentHoleIndex >= round.course.holes.length) return null;
   if (!point(round.ball) || !Array.isArray(round.scorecard) || !Array.isArray(round.shots) || round.shots.length > MAX_SHOTS) return null;
   if (!["awaiting_shot", "flight", "hole_complete", "round_complete", "conceded"].includes(round.phase)) return null;
+  if (round.rulesSnapshot != null && !decodeControlledRoundSnapshotV2(round.rulesSnapshot).ok) return null;
+  if (round.shots.some((trace) => !validActiveShotTrace(trace))) return null;
+  if (round.phase === "flight" && (!round.pendingShot || !validActiveShotTrace(round.pendingShot))) return null;
   return {
     ...round,
     strokes: Math.max(0, Math.floor(finite(round.strokes))),
@@ -498,8 +556,11 @@ function courseFromSnapshot(snapshot: PlayerRoundCourseSnapshot): Course {
 }
 
 function lieAt(snapshot: PlayerRoundCourseSnapshot, pointValue: PlayerProPoint): string {
-  const x = clamp(Math.round(pointValue.x), 0, snapshot.width - 1);
-  const y = clamp(Math.round(pointValue.y), 0, snapshot.height - 1);
+  // Controlled-round rules classify a coordinate by its containing tile.
+  // Keep the playable lie on that same floor-based convention so a legal
+  // ruling or relief position cannot become a neighboring penalty lie.
+  const x = clamp(Math.floor(pointValue.x), 0, snapshot.width - 1);
+  const y = clamp(Math.floor(pointValue.y), 0, snapshot.height - 1);
   return snapshot.tiles[y * snapshot.width + x] ?? "rough";
 }
 

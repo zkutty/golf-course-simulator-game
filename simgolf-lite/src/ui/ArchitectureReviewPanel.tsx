@@ -7,7 +7,7 @@ import { useI18n } from "../i18n/useI18n";
 import type { MessageKey } from "../i18n/catalog";
 
 const OVERLAYS: ArchitectureOverlayKind[] = [
-  "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "congestion", "options", "advantage", "bailouts", "carries", "misses",
+  "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "mobility", "congestion", "options", "advantage", "bailouts", "carries", "misses",
 ];
 
 export function ArchitectureReviewPanel(props: {
@@ -58,6 +58,7 @@ export function ArchitectureReviewPanel(props: {
       <label>{t("architecture.review.pin")}<select value={props.review.filters.pinRotation} onChange={(event) => set("pinRotation", event.target.value as ArchitectureReviewFilters["pinRotation"])}>{(["A", "B", "C", "all"] as const).map((value) => <option value={value} key={value}>{value === "all" ? t("architecture.review.all") : value}</option>)}</select></label>
       <label>{t("architecture.review.segment")}<select value={props.review.filters.sourceSegment} onChange={(event) => set("sourceSegment", event.target.value)}><option value="all">{t("architecture.review.all")}</option>{props.review.sourceSegments.map((value) => <option key={value}>{value}</option>)}</select></label>
       <label style={{ gridColumn: "1 / -1" }}>{t("architecture.review.evidenceAge")}<select data-testid="architecture-age-filter" value={props.review.filters.recency} onChange={(event) => set("recency", event.target.value as ArchitectureReviewFilters["recency"])}>{(["current", "recent", "historical", "all"] as const).map((value) => <option value={value} key={value}>{t(`architecture.review.age.${value}` as MessageKey)}</option>)}</select></label>
+      {props.review.filters.kind === "mobility" && <label style={{ gridColumn: "1 / -1" }}>{t("architecture.review.mobility.mode")}<select data-testid="architecture-mobility-mode" value={props.review.filters.mobilityMode} onChange={(event) => set("mobilityMode", event.target.value as ArchitectureReviewFilters["mobilityMode"])}><option value="all">{t("architecture.review.mobility.allModes")}</option><option value="walk">{t("architecture.review.mobility.walk")}</option><option value="pushcart">{t("architecture.review.mobility.pushcart")}</option><option value="riding_cart">{t("architecture.review.mobility.ridingCart")}</option></select></label>}
     </div>
 
     <section data-status={props.review.status} style={{ marginTop: 11, padding: 10, borderRadius: 9, background: props.review.status === "ready" ? "#e0efdf" : props.review.status === "stale-only" ? "#f8e3b8" : "#fff7e6", border: "1px solid #b9aa91" }}>
@@ -68,6 +69,16 @@ export function ArchitectureReviewPanel(props: {
         <span>{t("architecture.review.historicalCount", { count: props.review.historicalEvidence })}</span>
       </div>
     </section>
+
+    {props.review.mobility && <section data-testid="architecture-mobility-summary" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#e5f0e0", border: "1px solid #8aa27f" }}>
+      <strong>{t("architecture.review.mobility.forecast")}</strong>
+      <div style={{ display: "grid", gap: 4, marginTop: 6, fontSize: 12 }}>
+        <span>{t("architecture.review.mobility.modes", { modes: props.review.mobility.modes.join(", "), weather: props.review.mobility.weather })}</span>
+        <span>{t("architecture.review.mobility.transfers", { transfers: props.review.mobility.transfers, utilization: props.review.mobility.pathUtilization })}</span>
+        <span>{t("architecture.review.mobility.inaccessible", { count: props.review.mobility.inaccessibleDestinations.length })}</span>
+        {props.review.mobility.missingLinkWarnings.map((warning) => <small key={warning}>{warning}</small>)}
+      </div>
+    </section>}
 
     <section style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#eef3df", border: "1px solid #b9aa91" }}>
       <strong>{t("architecture.review.strategy")}</strong>

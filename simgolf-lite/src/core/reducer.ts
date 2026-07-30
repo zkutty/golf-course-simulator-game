@@ -34,6 +34,7 @@ import {
 import { prepareSurfaceFeatureEdit } from "../game/models/surfaceFeatureEdit";
 import { applyWaterGrading } from "../game/models/waterGrading";
 import { isWaterHazard } from "../game/models/terrainRules";
+import { mutateMobilityRental } from "../game/m51/rentalBusiness";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -61,6 +62,26 @@ export function applyAction(state: GameState, action: Action): GameState {
   let economyVersion = state.economyVersion;
 
   switch (action.type) {
+    case "CONFIGURE_MOBILITY_PRODUCT": {
+      const result = mutateMobilityRental(state.course, state.world, { type: "configure", buildingId: action.buildingId, mode: action.mode, enabled: action.enabled, price: action.price });
+      if (!result) break;
+      newState = { ...newState, course: result.course, world: result.world }; economyVersion++; break;
+    }
+    case "PURCHASE_MOBILITY_FLEET": {
+      const result = mutateMobilityRental(state.course, state.world, { type: "purchase", buildingId: action.buildingId, mode: action.mode, quantity: action.quantity });
+      if (!result) break;
+      newState = { ...newState, course: result.course, world: result.world }; economyVersion++; break;
+    }
+    case "SALVAGE_MOBILITY_FLEET": {
+      const result = mutateMobilityRental(state.course, state.world, { type: "salvage", buildingId: action.buildingId, mode: action.mode, quantity: action.quantity });
+      if (!result) break;
+      newState = { ...newState, course: result.course, world: result.world }; economyVersion++; break;
+    }
+    case "UPGRADE_MOBILITY_RENTAL_TIER": {
+      const result = mutateMobilityRental(state.course, state.world, { type: "upgrade", buildingId: action.buildingId });
+      if (!result) break;
+      newState = { ...newState, course: result.course, world: result.world }; economyVersion++; break;
+    }
     case "PAINT_TILES": {
       const preview = computeTerrainBatch({
         course: state.course,
@@ -593,6 +614,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     case "CONFIGURE_BUILDING": {
       const target = state.course.buildings.find((b) => b.x === action.x && b.y === action.y);
       if (!target || !isConcessionType(target.type)) break;
+      if (target.type === "cart_rental" && action.tier != null) break;
       const buildings = state.course.buildings.map((b) => {
         if (b !== target) return b;
         return {

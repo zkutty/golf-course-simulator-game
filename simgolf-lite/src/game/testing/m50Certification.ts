@@ -1,5 +1,6 @@
 import type { Course, Obstacle, Point, Terrain, World } from "../models/types";
 import type {
+  PlayerPlayableRound,
   PlayerRoundCourseSnapshot,
 } from "../models/playerProTypes";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
@@ -13,8 +14,9 @@ import {
   resolvePlayableShot,
   settlePlayerRound,
   startPlayableRound,
+  type PlayerShotSelection,
 } from "../playerPro/playerPro";
-import type { GolferCapabilities } from "../live/m47Types";
+import { M47_MAX_OUTCOMES, type GolferCapabilities } from "../live/m47Types";
 import type { Personality } from "../live/personality";
 import { capabilitiesToPlayerSkills } from "../live/capabilities";
 import { liveCourseSnapshot, resolveLiveShot } from "../live/livePhysics";
@@ -26,7 +28,10 @@ import {
   availableShotClubs,
   calculateLieEffect,
 } from "../rules/shotEffects";
-import type { ShotLie } from "../rules/contracts";
+import {
+  isValidSharedShotOutcome,
+  type ShotLie,
+} from "../rules/contracts";
 import { resolveObstacleCollision } from "../rules/obstacleCollision";
 import {
   createControlledRoundSnapshotV2,
@@ -54,10 +59,15 @@ import {
   createPlayerProReferenceCourse,
 } from "./referenceCourse";
 import { createM47CertificationCourse } from "./m47Certification";
+import { buildStrategicGolferRound } from "../live/m47Round";
 import {
   createRenderPerfLiveState,
   liveRenderData,
 } from "../live/simulation";
+import { mulberry32 } from "../../utils/rng";
+import { createCampaignRun } from "../campaign/campaign";
+import { COURSE_HEIGHT, COURSE_WIDTH } from "../models/constants";
+import { createEstate } from "../estate/estate";
 
 export interface M50CertificationCheck {
   id: string;
@@ -72,11 +82,21 @@ export interface M50CertificationReport {
     recoveryCandidates: number;
     recoveryShapes: number;
     penaltyCases: number;
+    previewParityCases: number;
+    migrationHistoryRounds: number;
+    hostileNormalizationCases: number;
+    boundedPlayerRounds: number;
+    boundedAiHoles: number;
+    boundedAiOutcomes: number;
     fuzzShots: number;
     architectureEvidence: number;
+    performanceWidth: number;
+    performanceHeight: number;
+    performanceCells: number;
     performanceHoles: number;
     performanceGolfers: number;
     performanceIterations: number;
+    performanceAiRoundMs: number;
     performanceFixtureMs: number;
     performanceAverageRenderStateMs: number;
   };
@@ -91,6 +111,8 @@ export const M50_REMAINING_HUMAN_GATES = [
   "Human listening checks for shot, collision, penalty, relief, scorecard, and reaction audio presentation.",
   "Real-hardware GPU frame pacing and full-estate browser performance.",
   "Human golf-authenticity and balance review across Player Pro, live golf, matches, tournaments, and campaign play.",
+  "Provider-backed packaging, distribution, and hosted-release checks, if required by the release process.",
+  "Release-owner assignment of the final integration commit and release disposition.",
 ] as const;
 
 const RECOVERY_PERSONALITY: Personality = {
@@ -165,6 +187,69 @@ function recoveryCourse(obstacles: Obstacle[] = [{ type: "tree", x: 15, y: 12.5 
     condition: 0.9,
     theme: "parkland",
   };
+}
+
+function fullEstateCertificationCourse(): Course {
+  const compact = createM47CertificationCourse(36);
+  const offset = { x: Math.floor((COURSE_WIDTH - compact.width) / 2), y: 12 };
+  const tiles = new Array<Terrain>(COURSE_WIDTH * COURSE_HEIGHT).fill("rough");
+  const elevations = new Array<number>(COURSE_WIDTH * COURSE_HEIGHT).fill(0);
+  for (let y = 0; y < compact.height; y++) {
+    for (let x = 0; x < compact.width; x++) {
+      const source = y * compact.width + x;
+      const target = (y + offset.y) * COURSE_WIDTH + x + offset.x;
+      tiles[target] = compact.tiles[source];
+      elevations[target] = compact.elevations[source];
+    }
+  }
+  const translate = (point: Point): Point => ({ x: point.x + offset.x, y: point.y + offset.y });
+  const holes = compact.holes.map((hole) => ({
+    ...hole,
+    tee: hole.tee ? translate(hole.tee) : null,
+    green: hole.green ? translate(hole.green) : null,
+    waypoints: hole.waypoints?.map(translate),
+  }));
+  const obstacleRecoveryMatrix: Obstacle[] = holes.flatMap((hole, index) => {
+    if (!hole.tee || !hole.green) return [];
+    return [{
+      type: index % 5 === 0 ? "rock" as const : index % 3 === 0 ? "bush" as const : "tree" as const,
+      x: Number(((hole.tee.x + hole.green.x) / 2).toFixed(3)),
+      y: Number((((hole.tee.y + hole.green.y) / 2) + (index % 2 ? 0.65 : -0.65)).toFixed(3)),
+    }];
+  });
+  const holeIds = holes.map((hole) => hole.id!);
+  const course: Course = {
+    ...compact,
+    name: "M50 Full-Estate Rules Certification",
+    width: COURSE_WIDTH,
+    height: COURSE_HEIGHT,
+    tiles,
+    elevations,
+    holes,
+    obstacles: obstacleRecoveryMatrix,
+    buildings: compact.buildings.map((building) => ({
+      ...building,
+      x: building.x + offset.x,
+      y: building.y + offset.y,
+    })),
+    layouts: [{
+      id: "m50-full-estate",
+      name: "M50 Full Estate",
+      draftHoleIds: holeIds,
+      publishedHoleIds: holeIds,
+      roundLength: 18,
+      state: "open",
+      greenFee: compact.baseGreenFee,
+      legacyPartial: true,
+    }],
+    activeCourseId: "m50-full-estate",
+  };
+  const estate = createEstate(course, 50_553);
+  course.estate = {
+    ...estate,
+    ownedParcelIds: estate.parcels.map((parcel) => parcel.id),
+  };
+  return course;
 }
 
 function factDetail(
@@ -311,6 +396,48 @@ function runPenaltyReliefCheck(fixture: RulesFixture) {
       && location.value.kind === "in_bounds"
       && notNearer;
   });
+  const everyLegalCandidateSatisfiesInvariants = first.every(({ outcome }) => {
+    const reference = outcome.ruling.referencePoint ?? outcome.ruling.crossingPoint;
+    return outcome.relief.candidates.filter((candidate) => candidate.legal).every((candidate) => {
+      const location = locatePenaltyAreaPoint(
+        fixture.snapshot,
+        candidate.position,
+        fixture.classification,
+      );
+      const mapLegal = location.ok && location.value.kind === "in_bounds";
+      const typeLegal = outcome.ruling.penaltyKind === "out_of_bounds"
+        ? candidate.type === "stroke_and_distance"
+        : outcome.ruling.penaltyAreaClassification === "yellow"
+          ? candidate.type === "stroke_and_distance" || candidate.type === "back_on_line"
+          : outcome.ruling.penaltyAreaClassification === "red"
+            ? candidate.type === "stroke_and_distance"
+              || candidate.type === "back_on_line"
+              || candidate.type === "lateral"
+            : false;
+      if (!mapLegal || !typeLegal) return false;
+      if (candidate.type === "stroke_and_distance") {
+        return distanceBetween(candidate.position, previousPosition) <= 1e-9;
+      }
+      if (!reference) return false;
+      const notNearer = distanceBetween(candidate.position, fixture.hole) + 1e-9
+        >= distanceBetween(reference, fixture.hole);
+      if (candidate.type === "lateral") {
+        return notNearer && distanceBetween(candidate.position, reference) <= 8 + 1e-9;
+      }
+      const route = {
+        x: reference.x - fixture.hole.x,
+        y: reference.y - fixture.hole.y,
+      };
+      const drop = {
+        x: candidate.position.x - reference.x,
+        y: candidate.position.y - reference.y,
+      };
+      const cross = route.x * drop.y - route.y * drop.x;
+      const behindReference = route.x * drop.x + route.y * drop.y >= -1e-9;
+      return notNearer && Math.abs(cross) <= 1e-9 * Math.max(1, Math.hypot(route.x, route.y))
+        && behindReference;
+    });
+  });
   const red = first.find((item) => item.id === "red")!.outcome;
   const yellow = first.find((item) => item.id === "yellow")!.outcome;
   const outOfBounds = first.find((item) => item.id === "out-of-bounds")!.outcome;
@@ -322,8 +449,11 @@ function runPenaltyReliefCheck(fixture: RulesFixture) {
   return {
     check: check(
       "penalty-relief-invariants",
-      legal && optionsCorrect && hashCanonicalValue(first) === hashCanonicalValue(second),
-      "OB, red, and yellow rulings each add one stroke and select deterministic legal, not-nearer relief.",
+      legal
+        && everyLegalCandidateSatisfiesInvariants
+        && optionsCorrect
+        && hashCanonicalValue(first) === hashCanonicalValue(second),
+      "OB, red, and yellow rulings each add one stroke; every selectable drop is in bounds, outside hazards, type-correct, and not nearer the hole.",
     ),
     count: first.length,
     hash: hashCanonicalValue(first),
@@ -479,9 +609,112 @@ function runLiveRecoveryCheck() {
   };
 }
 
+function runPreviewExecutionParityMatrix(fixture: RulesFixture) {
+  const snapshot = playerSnapshot(fixture);
+  const skills = capabilitiesToPlayerSkills(RECOVERY_CAPABILITIES);
+  const cases: Array<{ lie: string; selection: PlayerShotSelection }> = [
+    {
+      lie: "fairway",
+      selection: { club: "Driver", aim: { x: 10, y: 4 }, power: 0.45, technique: "normal", flightProfile: "standard" },
+    },
+    {
+      lie: "rough",
+      selection: { club: "7 Iron", aim: { x: 10, y: 4 }, power: 0.55, technique: "normal", flightProfile: "low" },
+    },
+    {
+      lie: "deep_rough",
+      selection: { club: "Pitching Wedge", aim: { x: 10, y: 4 }, power: 0.7, technique: "punch", flightProfile: "low" },
+    },
+    {
+      lie: "waste_area",
+      selection: { club: "5 Iron", aim: { x: 10, y: 4 }, power: 0.55, technique: "normal", flightProfile: "standard" },
+    },
+    {
+      lie: "sand",
+      selection: { club: "Sand Wedge", aim: { x: 10, y: 4 }, power: 0.9, technique: "flop", flightProfile: "high" },
+    },
+  ];
+  const rows = cases.map(({ lie, selection }, index) => {
+    const round: PlayerPlayableRound = {
+      version: 1,
+      id: `m50-parity-${lie}`,
+      kind: "casual",
+      phase: "awaiting_shot",
+      course: snapshot,
+      rulesSnapshot: fixture.frozen,
+      teeSet: "member",
+      pinRotation: "A",
+      currentHoleIndex: 0,
+      ball: { x: 2, y: 4 },
+      lie,
+      strokes: 0,
+      penalties: 0,
+      scorecard: [{
+        holeId: fixture.classification.holeId,
+        name: "Rules Matrix",
+        par: 4,
+        strokes: 0,
+        penalties: 0,
+        complete: false,
+      }],
+      shots: [],
+      pendingShot: null,
+      rngSeed: 50_553 + index * 101,
+      rngCursor: 0,
+      autoPlay: false,
+      rewardsApplied: false,
+      startedWeek: 1,
+      startedDay: 0,
+    };
+    const seed = round.rngSeed;
+    const preview = previewPlayableShot(round, skills, selection);
+    const repeated = previewPlayableShot(round, skills, selection);
+    const committed = commitPlayerShot(round, skills, selection);
+    const direct = resolvePlayableShot({
+      snapshot,
+      rulesSnapshot: fixture.frozen,
+      holeId: fixture.classification.holeId,
+      shotNumber: 1,
+      from: round.ball,
+      lie,
+      skills,
+      selection,
+      seed,
+    });
+    const pending = committed.pendingShot;
+    return {
+      lie,
+      profile: selection.flightProfile,
+      available: preview.available,
+      phase: committed.phase,
+      valid: isValidSharedShotOutcome(preview.sharedOutcome)
+        && isValidSharedShotOutcome(pending?.sharedOutcome)
+        && preview.flightProfile === selection.flightProfile
+        && pending?.flightProfile === selection.flightProfile
+        && hashCanonicalValue(preview) === hashCanonicalValue(repeated)
+        && hashCanonicalValue(preview.sharedOutcome) === hashCanonicalValue(pending?.sharedOutcome)
+        && hashCanonicalValue(preview.sharedOutcome) === hashCanonicalValue(direct.sharedOutcome)
+        && pending?.penaltyStrokes === pending?.ruling?.penaltyStrokes
+        && pending?.penaltyStrokes === direct.penaltyStrokes,
+      outcome: preview.sharedOutcome,
+    };
+  });
+  return {
+    check: check(
+      "preview-execution-parity-matrix",
+      rows.every((row) => row.available && row.phase === "flight" && row.valid),
+      "Five fairway/rough/deep-rough/waste/sand low-standard-high fixtures keep preview, committed animation trace, and direct execution byte-equivalent.",
+    ),
+    count: rows.length,
+    hash: hashCanonicalValue(rows),
+  };
+}
+
 interface PlayerCertificationResult {
   checks: M50CertificationCheck[];
   architectureEvidence: number;
+  historyRounds: number;
+  hostileCases: number;
   hash: string;
 }
 
@@ -557,10 +790,66 @@ function runPlayerSaveArchitectureCheck(): PlayerCertificationResult {
       && trace?.to.x === shot.rest.x;
   });
 
-  const legacyActive = {
+  const baseHistory = settlement.round;
+  const matchHistory = {
+    ...baseHistory,
+    id: "m50-history-match",
+    kind: "friendly" as const,
+    result: "won" as const,
+    opponentId: "campaign-rival",
+    opponentName: "Campaign Rival",
+  };
+  const tournamentHistory = {
+    ...baseHistory,
+    id: "m50-history-tournament",
+    kind: "tournament" as const,
+    result: "complete" as const,
+    tournamentId: "m50-tournament",
+    tournamentName: "M50 Invitational",
+  };
+  const historyRounds = [baseHistory, matchHistory, tournamentHistory];
+  const campaign = {
+    ...createCampaignRun("back-nine", "public-gem"),
+    matches: [{
+      definitionId: "back-nine-opening-match",
+      roundId: matchHistory.id,
+      status: "complete" as const,
+      result: "won" as const,
+    }],
+  };
+  const careerForSave = {
+    ...settlement.career,
+    rounds: historyRounds,
+    challenges: [{
+      id: "m50-challenge",
+      opponentId: "campaign-rival",
+      opponentName: "Campaign Rival",
+      kind: "friendly" as const,
+      status: "complete" as const,
+      relationship: 4,
+      wager: 0,
+      roundId: matchHistory.id,
+      result: "won" as const,
+      settled: true,
+    }],
+    tournaments: [{
+      id: "m50-tournament-record",
+      eventId: "m50-tournament",
+      name: "M50 Invitational",
+      tier: "regional" as const,
+      status: "complete" as const,
+      roundId: tournamentHistory.id,
+      finish: 3,
+      fieldSize: 24,
+      prize: 1_000,
+      settled: true,
+    }],
+  };
+  const defaultHoleId = DEFAULT_COURSE.holes[0].id!;
+  const legacyActive: PlayerPlayableRound = {
     version: 1 as const,
     id: "m50-active-v19",
-    kind: "casual" as const,
+    kind: "tournament" as const,
     phase: "awaiting_shot" as const,
     course: {
       courseId: DEFAULT_COURSE.activeCourseId!,
@@ -584,29 +873,46 @@ function runPlayerSaveArchitectureCheck(): PlayerCertificationResult {
     teeSet: "member" as const,
     pinRotation: "A" as const,
     currentHoleIndex: 0,
-    ball: { x: 1, y: 1 },
-    lie: "tee",
-    strokes: 0,
-    penalties: 0,
-    scorecard: [],
+    ball: { x: 3, y: 2 },
+    lie: "rough",
+    strokes: 2,
+    penalties: 1,
+    scorecard: [{
+      holeId: defaultHoleId,
+      name: DEFAULT_COURSE.holes[0].name!,
+      par: 4,
+      strokes: 2,
+      penalties: 1,
+      complete: false,
+    }],
     shots: [],
     pendingShot: null,
     rngSeed: 50_553,
-    rngCursor: 0,
+    rngCursor: 3,
     autoPlay: false,
     rewardsApplied: false,
     startedWeek: 1,
     startedDay: 0,
+    returnToDesign: { holeId: defaultHoleId, shotId: null },
+    tournamentId: "m50-tournament",
+    tournamentName: "M50 Invitational",
   };
-  const historicalHash = hashCanonicalValue(settlement.career.rounds);
+  const historicalHash = hashCanonicalValue(historyRounds);
+  const challengeHash = hashCanonicalValue(careerForSave.challenges);
+  const tournamentHash = hashCanonicalValue(careerForSave.tournaments);
+  const campaignHash = hashCanonicalValue(campaign.matches);
+  const architectureHash = hashCanonicalValue(
+    normalizeLivingClub(recorded.world.livingClub).architecture.evidence,
+  );
   const v19 = {
     schemaVersion: 19,
     savedAt: 50_553,
     course: DEFAULT_COURSE,
     world: {
-      ...world,
+      ...recorded.world,
+      campaign,
       playerPro: {
-        ...settlement.career,
+        ...careerForSave,
         activeRound: legacyActive,
       },
     },
@@ -616,17 +922,138 @@ function runPlayerSaveArchitectureCheck(): PlayerCertificationResult {
   const repeatedMigration = normalizeLoadedSaveResult(JSON.parse(JSON.stringify(v19)));
   const migrationAgrees = migrated.ok && repeatedMigration.ok && migrated.migratedFrom === 19;
   const activeRoundAgrees = migrated.ok
-    && migrated.payload.world.playerPro?.activeRound?.rulesSnapshot?.version === 2;
+    && migrated.payload.world.playerPro?.activeRound?.rulesSnapshot?.version === 2
+    && migrated.payload.world.playerPro.activeRound.kind === "tournament"
+    && migrated.payload.world.playerPro.activeRound.ball.x === legacyActive.ball.x
+    && migrated.payload.world.playerPro.activeRound.ball.y === legacyActive.ball.y
+    && hashCanonicalValue(migrated.payload.world.playerPro.activeRound.scorecard)
+      === hashCanonicalValue(legacyActive.scorecard)
+    && hashCanonicalValue(migrated.payload.world.playerPro.activeRound.returnToDesign)
+      === hashCanonicalValue(legacyActive.returnToDesign);
   const historyAgrees = migrated.ok
     && historicalHash === hashCanonicalValue(migrated.payload.world.playerPro?.rounds);
+  const competitionAndCampaignAgree = migrated.ok
+    && challengeHash === hashCanonicalValue(migrated.payload.world.playerPro?.challenges)
+    && tournamentHash === hashCanonicalValue(migrated.payload.world.playerPro?.tournaments)
+    && campaignHash === hashCanonicalValue(migrated.payload.world.campaign?.matches);
+  const savedArchitectureAgrees = migrated.ok
+    && architectureHash === hashCanonicalValue(
+      normalizeLivingClub(migrated.payload.world.livingClub).architecture.evidence,
+    );
   const repeatedSnapshotAgrees = migrated.ok
     && repeatedMigration.ok
     && hashCanonicalValue(migrated.payload.world.playerPro?.activeRound?.rulesSnapshot ?? null)
       === hashCanonicalValue(repeatedMigration.payload.world.playerPro?.activeRound?.rulesSnapshot ?? null);
+  const currentReload = migrated.ok
+    ? normalizeLoadedSaveResult({
+        schemaVersion: 20,
+        savedAt: 50_554,
+        ...migrated.payload,
+      })
+    : migrated;
+  const currentReloadAgrees = currentReload.ok
+    && currentReload.payload.world.playerPro?.activeRound?.rulesSnapshot?.version === 2
+    && historicalHash === hashCanonicalValue(currentReload.payload.world.playerPro?.rounds);
   const saveAgrees = migrationAgrees
     && activeRoundAgrees
     && historyAgrees
-    && repeatedSnapshotAgrees;
+    && competitionAndCampaignAgree
+    && savedArchitectureAgrees
+    && repeatedSnapshotAgrees
+    && currentReloadAgrees;
+
+  const hostileBase = {
+    schemaVersion: 20 as const,
+    savedAt: 50_555,
+    course,
+    world: {
+      ...recorded.world,
+      playerPro: {
+        ...careerForSave,
+        activeRound: structuredClone(committed),
+      },
+    },
+    history: [],
+  };
+  type HostileSave = typeof hostileBase;
+  const corruptions: Array<{ id: string; mutate: (save: HostileSave) => void }> = [
+    {
+      id: "mask",
+      mutate: (save) => {
+        save.world.playerPro.activeRound!.rulesSnapshot = {
+          ...save.world.playerPro.activeRound!.rulesSnapshot!,
+          width: 999,
+        };
+      },
+    },
+    {
+      id: "flight",
+      mutate: (save) => {
+        save.world.playerPro.activeRound!.pendingShot!.sharedOutcome!.flight.apexHeightYards = Number.NaN;
+      },
+    },
+    {
+      id: "collision",
+      mutate: (save) => {
+        save.world.playerPro.activeRound!.pendingShot!.sharedOutcome!.collision = {
+          kind: "obstacle",
+          point: { x: Number.POSITIVE_INFINITY, y: 0 },
+          obstacleType: "tree",
+          distanceFromStartYards: 1,
+          clearance: {
+            point: { x: 1, y: 1 },
+            pathHeightYards: 1,
+            requiredHeightYards: 2,
+            clearanceYards: -1,
+          },
+        };
+      },
+    },
+    {
+      id: "relief",
+      mutate: (save) => {
+        save.world.playerPro.activeRound!.pendingShot!.sharedOutcome!.relief = {
+          ...save.world.playerPro.activeRound!.pendingShot!.sharedOutcome!.relief,
+          status: "resolved",
+          type: "lateral",
+          selectedCandidateId: "missing",
+          finalPosition: { x: 1, y: 1 },
+        };
+      },
+    },
+    {
+      id: "shot-bound",
+      mutate: (save) => {
+        const trace = save.world.playerPro.activeRound!.pendingShot!;
+        save.world.playerPro.activeRound!.shots = Array.from(
+          { length: 241 },
+          (_, index) => ({ ...trace, id: `hostile-${index}` }),
+        );
+      },
+    },
+    {
+      id: "round-shape",
+      mutate: (save) => {
+        save.world.playerPro.activeRound!.course.holes = "hostile" as never;
+      },
+    },
+  ];
+  const hostileResults = corruptions.map(({ id, mutate }) => {
+    const input = structuredClone(hostileBase);
+    mutate(input);
+    const result = normalizeLoadedSaveResult(input);
+    return {
+      id,
+      acceptedSave: result.ok,
+      activeInvalidated: result.ok && result.payload.world.playerPro?.activeRound === null,
+      historyPreserved: result.ok
+        && historicalHash === hashCanonicalValue(result.payload.world.playerPro?.rounds),
+      error: result.ok ? null : `${result.error.code}:${result.error.message}`,
+    };
+  });
+  const hostileAgrees = hostileResults.every((result) =>
+    result.acceptedSave && result.activeInvalidated && result.historyPreserved
+  );
 
   const legacyCourse = recoveryCourse([]);
   const legacyIntent = followUpIntent({
@@ -646,14 +1073,19 @@ function runPlayerSaveArchitectureCheck(): PlayerCertificationResult {
   return {
     checks: [
       check(
-        "player-preview-execution-parity",
+        "scorecard-ruling-agreement",
         parity && scoreAgrees,
-        "Player Pro preview, committed flight, ruling penalties, and scorecard remain byte-equivalent and additive.",
+        "Player Pro execution, ruling penalties, round totals, and scorecard totals remain byte-equivalent and additive.",
       ),
       check(
-        "save-v19-v20-history",
+        "save-v19-v20-compatibility",
         saveAgrees,
-        `A v19 active round gains one deterministic v20 rules snapshot while completed shot history remains unchanged (migration:${migrationAgrees}, active:${activeRoundAgrees}, history:${historyAgrees}, repeat:${repeatedSnapshotAgrees}).`,
+        `V19→v20 compatibility (migration:${migrationAgrees}, active:${activeRoundAgrees}, history:${historyAgrees}, competition/campaign:${competitionAndCampaignAgree}, architecture:${savedArchitectureAgrees}, repeat:${repeatedSnapshotAgrees}, current:${currentReloadAgrees}, currentActive:${currentReload.ok ? currentReload.payload.world.playerPro?.activeRound?.rulesSnapshot?.version ?? "null" : currentReload.error.code}, currentHistory:${currentReload.ok && historicalHash === hashCanonicalValue(currentReload.payload.world.playerPro?.rounds)}).`,
+      ),
+      check(
+        "hostile-input-normalization",
+        hostileAgrees,
+        `Malformed active-round cases preserve the save/history and invalidate only that round; failures:${hostileResults.filter((result) => !result.acceptedSave || !result.activeInvalidated || !result.historyPreserved).map((result) => `${result.id}[save:${result.acceptedSave},active:${result.activeInvalidated},history:${result.historyPreserved},error:${result.error}]`).join(",") || "none"}.`,
       ),
       check(
         "architecture-evidence",
@@ -669,6 +1101,8 @@ function runPlayerSaveArchitectureCheck(): PlayerCertificationResult {
       ),
     ],
     architectureEvidence: review.evidence.length,
+    historyRounds: historyRounds.length,
+    hostileCases: hostileResults.length,
     hash: hashCanonicalValue({
       preview: preview.sharedOutcome,
       completed: {
@@ -677,7 +1111,9 @@ function runPlayerSaveArchitectureCheck(): PlayerCertificationResult {
         scorecard: completed.scorecard,
       },
       history: migrated.ok ? migrated.payload.world.playerPro?.rounds : null,
+      campaign: migrated.ok ? migrated.payload.world.campaign?.matches : null,
       architecture: review.evidence,
+      hostile: hostileResults,
       legacyIntent,
     }),
   };
@@ -781,22 +1217,133 @@ function runFiniteFuzzCheck(fixture: RulesFixture) {
   };
 }
 
-function runPerformanceCheck() {
-  const compact = createM47CertificationCourse(36);
-  const height = Math.max(compact.height, 145);
-  const cells = compact.width * height;
-  const course: Course = {
-    ...compact,
-    height,
-    tiles: [
-      ...compact.tiles,
-      ...new Array<Terrain>(cells - compact.tiles.length).fill("rough"),
-    ],
-    elevations: [
-      ...compact.elevations,
-      ...new Array<number>(cells - compact.elevations.length).fill(0),
-    ],
+function runBoundedRoundCheck(course: Course) {
+  const career = createDefaultPlayerPro({
+    seed: 50_553,
+    name: "Bounded Round",
+    background: "operator",
+  });
+  const world: World = {
+    ...DEFAULT_WORLD,
+    runSeed: 50_553,
+    playerPro: career,
   };
+  const started = startPlayableRound({
+    course,
+    world,
+    layoutId: course.activeCourseId!,
+    teeSet: "member",
+    pinRotation: "A",
+  });
+  if (!started.ok) throw new Error(started.reason);
+  const playerKinds = [
+    { kind: "casual" as const },
+    {
+      kind: "friendly" as const,
+      opponent: {
+        id: "campaign-rival",
+        name: "Campaign Rival",
+        skill: 0.7,
+        relationshipDelta: 0,
+        wager: 0,
+        projectedStrokes: 160,
+      },
+    },
+    {
+      kind: "tournament" as const,
+      tournamentId: "m50-tournament",
+      tournamentName: "M50 Invitational",
+    },
+  ];
+  const playerRounds = playerKinds.map((identity, index) => {
+    const completed = autoFinishPlayerRound({
+      ...started.round,
+      ...identity,
+      id: `m50-bounded-player-${index}`,
+    }, career.skills);
+    const scorecardTotal = completed.scorecard.reduce(
+      (sum, hole) => sum + hole.strokes + hole.penalties,
+      0,
+    );
+    return {
+      kind: completed.kind,
+      phase: completed.phase,
+      holes: completed.scorecard.length,
+      allComplete: completed.scorecard.every((hole) => hole.complete),
+      shots: completed.shots.length,
+      penalties: completed.penalties,
+      totalsAgree: scorecardTotal === completed.strokes + completed.penalties
+        && completed.penalties === completed.shots.reduce((sum, shot) => sum + shot.penaltyStrokes, 0),
+      validOutcomes: completed.shots.every((shot) =>
+        shot.sharedOutcome == null || isValidSharedShotOutcome(shot.sharedOutcome)
+      ),
+    };
+  });
+
+  const entry = course.holes[0].tee!;
+  const aiStarted = performance.now();
+  const buildAi = () => buildStrategicGolferRound({
+    course,
+    entry,
+    rng: mulberry32(50_553),
+    personality: RECOVERY_PERSONALITY,
+    capabilities: RECOVERY_CAPABILITIES,
+    teeSet: "member",
+    pinRotation: "A",
+    skipPreRoundPurchases: true,
+  });
+  const ai = buildAi();
+  const aiRoundMs = performance.now() - aiStarted;
+  const repeatedAi = buildAi();
+  const aiScore = ai.holeStrokes.reduce((sum, strokes) => sum + strokes, 0);
+  const aiOutcomeScore = ai.shotOutcomes?.reduce(
+    (sum, outcome) => sum + 1 + outcome.penaltyStrokes,
+    0,
+  ) ?? 0;
+  const retainedOutcomesCoverWholeRound = (ai.shotOutcomes?.length ?? 0) < M47_MAX_OUTCOMES;
+  const aiOutcomesValid = ai.shotOutcomes?.every((outcome) =>
+    finiteTree(outcome)
+    && (outcome.sharedOutcome == null || isValidSharedShotOutcome(outcome.sharedOutcome))
+  ) === true;
+  const aiAvoidsPenaltyLies = ai.shotOutcomes?.every((outcome) =>
+    !["water", "wetland", "out_of_bounds"].includes(outcome.lieBefore)
+  ) === true;
+  const aiPerHoleBounded = ai.holeStrokes.every((strokes, index) =>
+    strokes <= Math.max(4, ai.holePar[index] + 5) * 2
+  );
+  const aiDeterministic = hashCanonicalValue(ai) === hashCanonicalValue(repeatedAi);
+  const aiAgrees = ai.holePar.length === 36
+    && ai.holeStrokes.length === 36
+    && (ai.shotOutcomes?.length ?? 0) <= M47_MAX_OUTCOMES
+    && aiOutcomesValid
+    && aiAvoidsPenaltyLies
+    && (!retainedOutcomesCoverWholeRound || aiScore === aiOutcomeScore)
+    && aiPerHoleBounded
+    && aiDeterministic
+    && aiRoundMs <= 30_000;
+  return {
+    check: check(
+      "bounded-player-ai-rounds",
+      playerRounds.every((round) =>
+        round.phase === "round_complete"
+        && round.holes === 36
+        && round.allComplete
+        && round.shots <= 240
+        && round.totalsAgree
+        && round.validOutcomes
+      ) && aiAgrees,
+      `Bounded rounds: players=${JSON.stringify(playerRounds)}, ai={holes:${ai.holeStrokes.length},outcomes:${ai.shotOutcomes?.length ?? 0},score:${aiScore},outcomeScore:${aiOutcomeScore},outcomesValid:${aiOutcomesValid},noPenaltyLies:${aiAvoidsPenaltyLies},perHoleBound:${aiPerHoleBounded},deterministic:${aiDeterministic},valid:${aiAgrees},ms:${aiRoundMs.toFixed(1)}}.`,
+    ),
+    playerRounds: playerRounds.length,
+    aiHoles: ai.holeStrokes.length,
+    aiOutcomes: ai.shotOutcomes?.length ?? 0,
+    aiRoundMs,
+    hash: hashCanonicalValue({ playerRounds, ai }),
+  };
+}
+
+function runPerformanceCheck(course: Course) {
+  const cells = course.width * course.height;
   const fixtureStarted = performance.now();
   const live = createRenderPerfLiveState(course, {
     ...DEFAULT_WORLD,
@@ -812,17 +1359,23 @@ function runPerformanceCheck() {
     renderedGolfers = liveRenderData(live).length;
   }
   const averageRenderStateMs = (performance.now() - renderStarted) / iterations;
-  const passed = course.holes.length === 36
+  const passed = course.width === COURSE_WIDTH
+    && course.height === COURSE_HEIGHT
+    && cells === COURSE_WIDTH * COURSE_HEIGHT
+    && course.holes.length === 36
     && live.golfers.length === 100
     && renderedGolfers === 100
     && fixtureMs <= 15_000
     && averageRenderStateMs <= 8;
   return {
     check: check(
-      "bounded-36-hole-100-golfer-performance",
+      "full-estate-36-hole-100-golfer-performance",
       passed,
-      `The existing 36-hole/100-golfer render-state fixture built in ${fixtureMs.toFixed(1)}ms and averaged ${averageRenderStateMs.toFixed(3)}ms across ${iterations} derivations.`,
+      `The 220×140 full-estate 36-hole/100-golfer fixture built in ${fixtureMs.toFixed(1)}ms and averaged ${averageRenderStateMs.toFixed(3)}ms across ${iterations} render-state derivations.`,
     ),
+    width: course.width,
+    height: course.height,
+    cells,
     holes: course.holes.length,
     golfers: live.golfers.length,
     iterations,
@@ -834,29 +1387,36 @@ function runPerformanceCheck() {
 /** Bounded automated M50 certification. Browser, audio, accessibility, and human-authenticity gates remain explicit. */
 export function runM50Certification(): M50CertificationReport {
   const fixture = rulesFixture();
+  const fullEstate = fullEstateCertificationCourse();
   const penalty = runPenaltyReliefCheck(fixture);
   const obstacle = runObstacleCheck();
   const lie = runLieBalanceCheck();
+  const parity = runPreviewExecutionParityMatrix(fixture);
   const recovery = runLiveRecoveryCheck();
   const player = runPlayerSaveArchitectureCheck();
   const fuzz = runFiniteFuzzCheck(fixture);
-  const performance = runPerformanceCheck();
+  const bounded = runBoundedRoundCheck(fullEstate);
+  const performance = runPerformanceCheck(fullEstate);
   const checks = [
     penalty.check,
     obstacle.check,
     lie.check,
+    parity.check,
     ...recovery.checks,
     ...player.checks,
     fuzz.check,
+    bounded.check,
     performance.check,
   ];
   const determinismHash = hashCanonicalValue({
     penalty: penalty.hash,
     obstacle: obstacle.hash,
     lie: lie.hash,
+    parity: parity.hash,
     recovery: recovery.hash,
     player: player.hash,
     fuzz: fuzz.hash,
+    bounded: bounded.hash,
   });
   return {
     version: 1,
@@ -865,11 +1425,21 @@ export function runM50Certification(): M50CertificationReport {
       recoveryCandidates: recovery.candidates,
       recoveryShapes: recovery.shapes,
       penaltyCases: penalty.count,
+      previewParityCases: parity.count,
+      migrationHistoryRounds: player.historyRounds,
+      hostileNormalizationCases: player.hostileCases,
+      boundedPlayerRounds: bounded.playerRounds,
+      boundedAiHoles: bounded.aiHoles,
+      boundedAiOutcomes: bounded.aiOutcomes,
       fuzzShots: fuzz.count,
       architectureEvidence: player.architectureEvidence,
+      performanceWidth: performance.width,
+      performanceHeight: performance.height,
+      performanceCells: performance.cells,
       performanceHoles: performance.holes,
       performanceGolfers: performance.golfers,
       performanceIterations: performance.iterations,
+      performanceAiRoundMs: Number(bounded.aiRoundMs.toFixed(3)),
       performanceFixtureMs: Number(performance.fixtureMs.toFixed(3)),
       performanceAverageRenderStateMs: Number(performance.averageRenderStateMs.toFixed(6)),
     },

@@ -84,6 +84,22 @@ export const BALANCE = {
     maxDurationSamplesPerDay: 160,
   },
 
+  // M51 group mobility, fleet, and bounded operating evidence.
+  mobility: {
+    pushcartDefaultPrice: 9,
+    dailyHistoryDays: 28,
+    weeklyHistoryWeeks: 28,
+    maxProducts: 72,
+    maxFleetUnits: 360,
+    maxHistoryTransactions: 360,
+    maxObservedEvidence: 360,
+    maxLiveSelections: 180,
+    maxLiveAssignments: 180,
+    maxLiveTransactions: 360,
+    maxLiveEvidence: 360,
+    maxCourseAggregates: 36,
+  },
+
   // Condition wear & recovery
   condition: {
     wearCap: 0.06,

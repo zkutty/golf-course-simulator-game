@@ -176,6 +176,29 @@ describe("save validation and migrations", () => {
       .toEqual(second.payload.world.playerPro?.activeRound?.rulesSnapshot);
   });
 
+  it("migrates legacy Cart Rental price and fleet deterministically into course-owned M51 state", () => {
+    const course = {
+      ...DEFAULT_COURSE,
+      buildings: [{ id: "cart-house", type: "cart_rental" as const, x: 4, y: 4, tier: 3 as const, price: 27 }],
+    };
+    const result = normalizeLoadedSaveResult(file({
+      schemaVersion: 21,
+      course,
+      world: {
+        ...DEFAULT_WORLD,
+        m51: { version: 1, products: { old: { id: "old", courseId: "course-primary", mode: "riding_cart", name: "Old", price: 27, enabled: true } }, fleet: { unit: { id: "unit", courseId: "course-primary", productId: "old", mode: "riding_cart", seats: 2, state: "available" } }, history: { settledTransactions: [], observedEvidence: [] } },
+      },
+    }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFrom).toBe(21);
+    expect(result.payload.course.m51?.cartRentals["cart-house"]?.tier).toBe(3);
+    expect(result.payload.course.m51?.cartRentals["cart-house"]?.products.riding_cart.price).toBe(27);
+    expect(result.payload.course.m51?.cartRentals["cart-house"]?.products.pushcart.price).toBe(9);
+    expect(result.payload.course.m51?.fleet.unit?.productId).toBe("cart-house:riding_cart");
+    expect(result.payload.world.m51).toEqual({ version: 3, history: { settledTransactions: [], observedEvidence: [], dailyLedgers: [], weeklyReports: [] }, aggregates: {} });
+  });
+
   it("repairs an untouched v18 Links starter overlay from the estate seed", () => {
     const { current, legacy } = legacyLinksOverlay();
     expect(legacy.course.tiles).not.toEqual(current.course.tiles);

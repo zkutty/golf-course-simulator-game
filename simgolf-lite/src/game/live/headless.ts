@@ -50,6 +50,7 @@ export function runLiveDaysHeadless(args: {
       reactions: roundReactions(live),
       dayIndex,
       pace: live.pace,
+      mobility: live.m51,
       shotTraces: live.golfers.flatMap((golfer) => golfer.segments.filter((segment) => segment.kind === "flight" && segment.shot !== "putt").map((segment) => ({
         golferId: golfer.id,
         holeId: segment.holeId,

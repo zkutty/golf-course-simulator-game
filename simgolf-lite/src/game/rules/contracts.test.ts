@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isValidSharedShotOutcome,
   SHOT_RULES_CONTRACT_VERSION,
   type LieEffect,
   type ReliefCandidate,
@@ -84,5 +85,18 @@ describe("authoritative shot-rules contracts", () => {
       relief: { type: "lateral" },
       finalPosition: { x: 15, y: 12 },
     });
+    expect(isValidSharedShotOutcome(outcome)).toBe(true);
+    expect(isValidSharedShotOutcome({
+      ...outcome,
+      collision: { ...collision, point: { x: Number.NaN, y: 9 } },
+    })).toBe(false);
+    expect(isValidSharedShotOutcome({
+      ...outcome,
+      relief: { ...relief, selectedCandidateId: "missing" },
+    })).toBe(false);
+    expect(isValidSharedShotOutcome({
+      ...outcome,
+      ruling: { ...ruling, penaltyStrokes: 0 },
+    })).toBe(false);
   });
 });

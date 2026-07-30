@@ -5,6 +5,7 @@ import { staffFromLevel } from "../live/pace";
 import { emptyPropertyEnterprise, starterPropertyCourse } from "../property/property";
 import { emptyLivingClubState } from "../livingClub/livingClub";
 import { createSeasonalState } from "../seasons/seasons";
+import { emptyM51CourseMobilityState, emptyM51MobilityState } from "../m51/mobility";
 
 export const DEFAULT_COURSE: Course = {
   name: "West Village Municipal",
@@ -44,6 +45,7 @@ export const DEFAULT_COURSE: Course = {
   condition: 0.75,
   theme: "parkland",
   property: starterPropertyCourse(),
+  m51: emptyM51CourseMobilityState(),
 };
 
 export const DEFAULT_WORLD: World = {
@@ -68,4 +70,5 @@ export const DEFAULT_WORLD: World = {
   livingClub: emptyLivingClubState(),
   seasonal: createSeasonalState({ runSeed: 1337, theme: "parkland" }),
   paceOperations: { version: 1, courses: {} },
+  m51: emptyM51MobilityState(),
 };

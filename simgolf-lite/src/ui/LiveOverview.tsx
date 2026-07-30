@@ -73,6 +73,28 @@ export function LiveOverview(props: { status: LiveStatus; reputation: number; st
           </div>;
         })()}
       </section>
+      <section data-testid="mobility-operations" style={{ display: "grid", gap: 6, padding: 9, borderRadius: 8, background: "rgba(112,171,91,.12)", border: "1px solid rgba(155,209,138,.35)" }}>
+        <strong>{translateCurrent("live.mobility.title")}</strong>
+        {(() => {
+          const report = reportDays === 7 ? props.status.mobility.reports7 : props.status.mobility.reports28;
+          const metricRows = (value: typeof report) => <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 4, fontSize: 11 }}>
+            <span>{translateCurrent("live.mobility.modeMix")}</span><b>{value.modeMix.walk} / {value.modeMix.pushcart} / {value.modeMix.riding_cart}</b>
+            <span>{translateCurrent("live.mobility.fleet")}</span><b>{value.fleet.owned} / {value.fleet.available} / {value.fleet.inUse}</b>
+            <span>{translateCurrent("live.mobility.peakUtilization")}</span><b>{Math.round(value.fleet.peakUtilization * 100)}%</b>
+            <span>{translateCurrent("live.mobility.rentalsStockouts")}</span><b>{value.completedRentals} / {value.stockouts}</b>
+            <span>{translateCurrent("live.mobility.conversion", { evidence: value.conversion.evidence })}</span><b>{Math.round(value.conversion.value * 100)}%</b>
+            <span>{translateCurrent("live.mobility.minutesSaved")}</span><b>{translateCurrent("live.mobility.minutes", { minutes: value.observedMinutesSaved.toFixed(0) })}</b>
+            <span>{translateCurrent("live.mobility.productEconomics")}</span><b>${value.productRevenue.toFixed(0)} / ${value.operatingCost.toFixed(0)}</b>
+            <span>{translateCurrent("live.mobility.teeHourContribution")}</span><b>${value.netContribution.toFixed(0)} / ${value.netRevenuePerOccupiedTeeHour.toFixed(0)}</b>
+          </div>;
+          return <>
+            <div data-testid="mobility-current-day" style={{ paddingBottom: 7, borderBottom: "1px solid rgba(255,255,255,.14)" }}><b style={{ fontSize: 12 }}>{translateCurrent("live.mobility.currentDay", { evidence: props.status.mobility.current.evidence })}</b><div style={{ marginTop: 5 }}>{metricRows(props.status.mobility.current)}</div></div>
+            <div data-testid="mobility-history-report"><b style={{ fontSize: 12 }}>{report.label}</b><div style={{ marginTop: 5 }}>{metricRows(report)}</div></div>
+            <small data-testid="mobility-demand-state" style={{ opacity: .8 }}>{translateCurrent("live.mobility.demand", { stockout: report.demand.stockout, lowDemand: report.demand.lowDemand, unaffordable: report.demand.unaffordable, evidence: report.demand.evidence })}</small>
+            <small data-testid="mobility-recommendation" style={{ opacity: .9 }}>{translateCurrent("live.mobility.recommendation", { state: report.recommendation.state, detail: report.recommendation.detail })}</small>
+          </>;
+        })()}
+      </section>
       <small style={{ opacity: .72 }}>{translateCurrent("live.pace.policyHint")}</small>
     </div>}
   </aside>;

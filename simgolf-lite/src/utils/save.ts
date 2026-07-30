@@ -51,9 +51,10 @@ import { normalizeSeasonalState } from "../game/seasons/seasons";
 import { normalizeCampaignRun } from "../game/campaign/campaign";
 import { normalizePaceOperationsState } from "../game/live/paceHistory";
 import { migratePlayerProActiveRoundSnapshotV20 } from "../game/rules/roundSnapshotMigration";
+import { normalizeM51CourseMobilityState, normalizeM51MobilityState } from "../game/m51/mobility";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 20 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 22 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -150,6 +151,14 @@ export interface SaveV19 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV20 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 20;
+  records?: CourseRecords;
+}
+export interface SaveV21 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 21;
+  records?: CourseRecords;
+}
+export interface SaveV22 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -177,7 +186,7 @@ export function saveGame(payload: SavePayload) {
     payload.world.playerPro,
     payload.course,
   ).playerPro as World["playerPro"];
-  const save: SaveV20 = {
+  const save: SaveV22 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: payload.course,
@@ -616,6 +625,14 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V20 adds the immutable M50 controlled-round boundary and penalty snapshot.
   // Course-aware derivation occurs after course validation and normalization.
   19: (save) => ({ ...save, schemaVersion: 20 }),
+  // V21 adds the M51 durable mobility contract. It begins empty: old Cart
+  // Rental purchases remain in the existing concession ledger until later
+  // waves explicitly bridge the two systems at commitDay.
+  20: (save) => ({ ...save, schemaVersion: 21 }),
+  // V22 moves portable Cart Rental offers/fleet to Course and leaves World
+  // with bounded evidence/aggregates. Course-aware deterministic migration
+  // happens in the normalizer after stable building IDs are available.
+  21: (save) => ({ ...save, schemaVersion: 22 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -820,6 +837,10 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       ? migrateCourseGrid(loadedCourse, (parsed.world as unknown as World).runSeed)
       : { course: loadedCourse, offset: { x: 0, y: 0 } };
     let course = normalizeCourseLayouts(withNormalizedElevations(migratedGrid.course));
+    course = {
+      ...course,
+      m51: normalizeM51CourseMobilityState(rawCourse.m51, course, (parsed.world as World).m51),
+    };
     if (rawCourse.estate && !validateEstate(rawCourse.estate, rawWidth, rawHeight)) {
       return fail("INVALID_COURSE", "The saved estate, ownership, or natural-land baseline is malformed.");
     }
@@ -878,6 +899,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
           : undefined,
       ),
       paceOperations: normalizePaceOperationsState(rawWorld.paceOperations),
+      m51: normalizeM51MobilityState(rawWorld.m51),
     };
     if (migrated.migratedFrom != null && migrated.migratedFrom <= 18) {
       course = upgradeUntouchedLegacyLinksEstate(course, world);

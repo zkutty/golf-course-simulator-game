@@ -1,4 +1,6 @@
 import type { ConcessionType, WeekResult } from "../models/types";
+import type { MobilityCourseAggregate } from "../m51/types";
+import { mergeMobilityProductSettlements } from "../m51/mobility";
 import type { DayResult } from "./types";
 
 export interface LiveWeekLedger {
@@ -26,6 +28,7 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
   const byConcession: Partial<Record<ConcessionType, number>> = {};
   const perCourse = new Map<string, NonNullable<WeekResult["perCourse"]>[number] & { satisfactionWeight: number }>();
   const weatherDays = ledger.days.flatMap((day) => day.weather ? [day.weather] : []);
+  const mobilityCourses = new Map<string, MobilityCourseAggregate>();
 
   for (const day of ledger.days) {
     for (const [type, amount] of Object.entries(day.revenueBreakdown.byConcession) as Array<[ConcessionType, number]>) {
@@ -46,6 +49,21 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
       current.satisfactionWeight += row.avgSatisfaction * row.attendance;
       current.avgSatisfaction = current.attendance ? current.satisfactionWeight / current.attendance : 0;
       perCourse.set(row.courseId, current);
+    }
+    for (const [courseId, aggregate] of Object.entries(day.m51?.courses ?? {})) {
+      const current = mobilityCourses.get(courseId) ?? { ...aggregate, walkingRounds: 0, pushcartRounds: 0, ridingCartRounds: 0, observedRounds: 0, observedPaceMinutes: 0, settledRevenue: 0, operatingCosts: 0, stockouts: 0, utilizedUnits: 0, activeRentals: 0, lastSettledWeek: 0 };
+      current.walkingRounds += aggregate.walkingRounds;
+      current.pushcartRounds += aggregate.pushcartRounds;
+      current.ridingCartRounds += aggregate.ridingCartRounds;
+      current.observedRounds += aggregate.observedRounds;
+      current.observedPaceMinutes += aggregate.observedPaceMinutes;
+      current.settledRevenue += aggregate.settledRevenue;
+      current.operatingCosts += aggregate.operatingCosts;
+      current.stockouts += aggregate.stockouts;
+      current.utilizedUnits += aggregate.utilizedUnits;
+      current.activeRentals = Math.max(current.activeRentals, aggregate.activeRentals);
+      current.lastSettledWeek = Math.max(current.lastSettledWeek, aggregate.lastSettledWeek);
+      mobilityCourses.set(courseId, current);
     }
   }
 
@@ -68,6 +86,12 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
     profit: revenue - costs,
     avgSatisfaction: visitors ? satisfactionWeight / visitors : 0,
     reputationDelta: ledger.days.reduce((sum, day) => sum + day.reputationDelta, 0),
+    ...(mobilityCourses.size ? (() => {
+      const products = mergeMobilityProductSettlements(ledger.days.flatMap((day) => day.m51?.products ?? []));
+      const grossRevenue = Math.round(products.reduce((sum, row) => sum + row.grossRevenue, 0) * 100) / 100;
+      const operatingCosts = Math.round(products.reduce((sum, row) => sum + row.operatingCosts, 0) * 100) / 100;
+      return { m51: { version: 1 as const, courses: Object.fromEntries([...mobilityCourses.entries()].sort(([a], [b]) => a.localeCompare(b))), products, grossRevenue, operatingCosts, netRevenue: Math.round((grossRevenue - operatingCosts) * 100) / 100 } };
+    })() : {}),
     perCourse: [...perCourse.values()].map(({ satisfactionWeight: _weight, ...row }) => row),
     visitorNoise: 0,
     ...(weatherDays.length ? {

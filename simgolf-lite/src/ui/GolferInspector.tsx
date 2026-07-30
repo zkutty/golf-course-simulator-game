@@ -121,6 +121,13 @@ export function GolferInspector(props: {
         {props.setupDifficulty != null ? ` · ${translateCurrent("courseSetup.difficultyDelta", { delta: props.setupDifficulty.toFixed(1) })}` : ""}
       </div>
 
+      {selected.mobilityMode && <div data-testid="golfer-mobility-inspector" style={{ marginTop: 9, padding: 8, borderRadius: 7, background: "rgba(134,239,172,.12)", border: "1px solid rgba(134,239,172,.28)", fontSize: 11 }}>
+        <b>{translateCurrent("golfer.mobility.mode", { mode: selected.mobilityMode.replace("_", " ") })}</b>
+        <div>{translateCurrent("golfer.mobility.predictedWalking", { minutes: selected.mobilityPredictedWalkingMinutes?.toFixed(0) ?? "—" })}</div>
+        <div>{translateCurrent("golfer.mobility.observedTravel", { minutes: selected.mobilityActualTravelMinutes?.toFixed(0) ?? translateCurrent("golfer.mobility.pending"), fallback: selected.mobilityWalkingFallbackMinutes?.toFixed(0) ?? "0" })}</div>
+        <div>{translateCurrent("golfer.mobility.offPath", { tiles: selected.mobilityOffPathTiles ?? 0 })}</div>
+      </div>}
+
       {props.onToggleFollow && <button aria-pressed={props.following} aria-label={translateCurrent(props.following ? "live.stopFollowing" : "live.followGolfer")} onClick={props.onToggleFollow} style={{ width: "100%", marginTop: 10, padding: "7px 9px", borderRadius: 8, border: props.following ? "1px solid #86efac" : "1px solid rgba(255,255,255,.25)", background: props.following ? "rgba(134,239,172,.2)" : "rgba(255,255,255,.08)", color: "inherit", fontWeight: 800, cursor: "pointer" }}>{props.following ? `◎ ${translateCurrent("live.following")}` : `◉ ${translateCurrent("live.follow")}`}</button>}
 
       <div style={{ marginTop: 10 }}>
