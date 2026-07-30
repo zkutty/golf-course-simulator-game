@@ -44,3 +44,54 @@ export interface ArchitectureOverlayRender {
   cells: ArchitectureOverlayCell[];
   points: ArchitectureOverlayPoint[];
 }
+
+export type ArchitectureRulesEvidenceStatus = "retained" | "reconstructed" | "historical" | "unavailable";
+
+/**
+ * Rules feedback is intentionally separate from the retained shot record.
+ * Current geometry may be reconstructed from the controlled-round contract;
+ * historical geometry is never replayed against a newer course.
+ */
+export interface ArchitectureRulesEvidence {
+  evidenceId: string;
+  holeId: string;
+  geometry: "current" | "historical";
+  status: ArchitectureRulesEvidenceStatus;
+  penalty: {
+    strokes: number;
+    kind: "none" | "out_of_bounds" | "penalty_area" | "unknown";
+    classification: "red" | "yellow" | null;
+  } | null;
+  obstacle: {
+    collision: "none" | "terrain" | "obstacle" | "not-retained";
+    type: "tree" | "bush" | "rock" | null;
+  };
+  recovery: {
+    attempted: boolean;
+    troubleLie: boolean;
+  };
+  relief: {
+    required: boolean;
+    status: "not_required" | "resolved" | "unavailable" | "unknown";
+    type: "none" | "play_as_it_lies" | "stroke_and_distance" | "back_on_line" | "lateral" | "unknown";
+    legalCandidates: number;
+  };
+}
+
+export interface ArchitectureRulesFeedback {
+  id: string;
+  level: "warning" | "advice";
+  holeId?: string;
+  message: string;
+}
+
+export interface ArchitectureRulesReview {
+  evidence: ArchitectureRulesEvidence[];
+  currentEvidence: number;
+  historicalEvidence: number;
+  penaltyCount: number;
+  obstacleCollisionCount: number;
+  recoveryAttemptCount: number;
+  reliefResolvedCount: number;
+  feedback: ArchitectureRulesFeedback[];
+}

@@ -1,5 +1,13 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## M50 implementation wave — 2026-07-30
+
+- Implemented the ranked automated slice for ZK-548, ZK-550, ZK-551, ZK-552, and ZK-553: authoritative obstacle trajectory resolution, low/standard/high Player Pro recovery preview and ruling evidence, live/AI around/under/over recovery choices, rules-backed Architecture Review feedback, and an M50 certification report.
+- Added deterministic coverage for obstacle clearance, lie/club effects, recovery scoring, preview/execution parity, penalty and relief invariants, historical evidence labeling, hostile finite shots, legacy behavior, architecture evidence, and bounded 36-hole/100-golfer performance.
+- Verified the final source with TypeScript, build plus audio/asset audits, lint/i18n, focused M50/architecture/live/Player Pro rules tests, M36 Playwright direct-play coverage, and the bundled web-game client. The client emitted valid state with no console-error artifact; a gameplay capture was visually inspected.
+- The full repository Vitest run was attempted but held on the unrelated `src/game/m26MultiCourse.test.ts` tournament-booking case, which exceeded its 20-second test limit and continued running until interrupted. No M50 files are involved in that test; the M50-focused and adjacent suites pass.
+- Human gates intentionally remain open: three-biome visual screenshots, accessibility, audio listening, real-hardware GPU performance, and human golf-authenticity/balance playtesting.
+
 ## ZK-326 terrain-authoring completion slice — 2026-07-29
 
 ## ZK-377 visual system machine-verification slice — 2026-07-29

@@ -216,15 +216,32 @@ describe("M36 deterministic Player Pro play", () => {
     expect(committed.pendingShot?.flightProfile).toBe("standard");
     expect(committed.pendingShot?.sharedOutcome?.requestedCarryYards).toBeCloseTo(preview.carryYards, 5);
     expect(committed.pendingShot?.sharedOutcome?.ruling).toMatchObject({ status: "penalty", penaltyStrokes: 1 });
+    expect(preview.sharedOutcome).toEqual(committed.pendingShot?.sharedOutcome);
+    expect(preview.sharedOutcome).toMatchObject({
+      lieEffect: { sourceLie: "tee", effectiveLie: "tee" },
+      flight: { profile: "standard", apexHeightYards: expect.any(Number), clearance: expect.any(Array) },
+      collision: { kind: expect.stringMatching(/^(none|terrain|obstacle)$/) },
+      ruling: { status: expect.stringMatching(/^(in_play|holed|penalty)$/) },
+      relief: { type: expect.any(String) },
+      finalPosition: expect.any(Object),
+    });
 
     const punch = previewPlayableShot(round, { ...career.skills, recovery: 70 }, {
       club: "Driver", aim: { x: 34, y: 10 }, power: 0.86, technique: "punch",
     });
     expect(punch.flightProfile).toBe("low");
+    const blockedPunch = previewPlayableShot(round, { ...career.skills, recovery: 70 }, {
+      club: "Driver", aim: { x: 34, y: 10 }, power: 0.86, technique: "punch", flightProfile: "high",
+    });
+    expect(blockedPunch).toMatchObject({ available: false, blocker: "technique_requires_low_flight", sharedOutcome: null });
     const flop = previewPlayableShot(round, { ...career.skills, shortGame: 70 }, {
       club: "Pitching Wedge", aim: { x: 34, y: 10 }, power: 0.7, technique: "flop",
     });
     expect(flop.flightProfile).toBe("high");
+    const blockedFlop = previewPlayableShot(round, { ...career.skills, shortGame: 70 }, {
+      club: "Pitching Wedge", aim: { x: 34, y: 10 }, power: 0.7, technique: "flop", flightProfile: "low",
+    });
+    expect(blockedFlop).toMatchObject({ available: false, blocker: "technique_requires_high_flight", sharedOutcome: null });
   });
 
   it("snapshots routing, resumes through schema v14, and drops only malformed optional rounds", () => {

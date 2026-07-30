@@ -7,12 +7,14 @@ import type {
   ArchitectureOverlayPoint,
   ArchitectureOverlayRender,
   ArchitectureOverlayTrace,
+  ArchitectureRulesReview,
 } from "./reviewTypes";
 import { courseGeometryVersion, normalizeLivingClub } from "../livingClub/livingClub";
 import type { ArchitectureRevisionSummary, ArchitectureShotEvidence } from "../livingClub/types";
 import { buildStrategicPortfolio } from "./portfolio";
 import { buildStrategicRecommendations } from "./recommendations";
 import type { M48DesignComparison, M48StrategicHoleEvaluation, M48StrategicPortfolio } from "./m48Types";
+import { buildArchitectureRulesReview } from "./rulesEvidence";
 
 export interface ArchitectureReviewFilters {
   kind: ArchitectureOverlayKind;
@@ -41,6 +43,7 @@ export interface ArchitectureReviewData {
   recommendations: ReturnType<typeof buildStrategicRecommendations>;
   selectedStrategicHole: M48StrategicHoleEvaluation | null;
   comparison: M48DesignComparison | null;
+  rules: ArchitectureRulesReview;
 }
 
 const HAZARDS = new Set<Terrain>(["sand", "waste_area", "water", "wetland", "deep_rough"]);
@@ -212,8 +215,8 @@ export function buildArchitectureReview(
   const historicalEvidence = evidence.length - currentEvidence;
   const status: ArchitectureReviewData["status"] = evidence.length === 0
     ? living.architecture.evidence.some((item) => item.courseId === filters.courseId) ? "stale-only" : "empty"
-    : evidence.length < 8 ? "sparse"
-      : currentEvidence === 0 ? "stale-only" : "ready";
+    : currentEvidence === 0 ? "stale-only"
+      : evidence.length < 8 ? "sparse" : "ready";
   const explanation = status === "empty"
     ? "Play a round on this routing to collect factual shot and scoring evidence."
     : status === "sparse"
@@ -260,6 +263,13 @@ export function buildArchitectureReview(
     rounds: item.roundIds.size,
     averageToPar: item.roundIds.size ? Number((item.total / item.roundIds.size).toFixed(2)) : 0,
   }));
+  const rules = buildArchitectureRulesReview({
+    course: selectedCourse,
+    world,
+    evidence,
+    currentGeometryVersion,
+    strategicHoles: selectedStrategicHole ? [selectedStrategicHole] : strategic.evaluation.holes,
+  });
   return {
     currentGeometryVersion,
     filters,
@@ -279,5 +289,6 @@ export function buildArchitectureReview(
     recommendations: buildStrategicRecommendations(selectedCourse, strategic),
     selectedStrategicHole,
     comparison: living.architecture.comparison ?? null,
+    rules,
   };
 }

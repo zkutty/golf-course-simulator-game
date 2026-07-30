@@ -78,6 +78,16 @@ export function ArchitectureReviewPanel(props: {
       </div>
     </section>
 
+    <section data-testid="architecture-rules-feedback" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#f7efe0", border: "1px solid #b9aa91" }}>
+      <strong>{t("architecture.review.rules.title")}</strong>
+      <div style={{ display: "flex", gap: 8, marginTop: 6, fontSize: 12 }}>
+        <span>{t("architecture.review.rules.penalties", { count: props.review.rules.penaltyCount })}</span>
+        <span>{t("architecture.review.rules.recoveries", { count: props.review.rules.recoveryAttemptCount })}</span>
+        <span>{t("architecture.review.rules.reliefs", { count: props.review.rules.reliefResolvedCount })}</span>
+      </div>
+      {props.review.rules.feedback.length > 0 && <div style={{ display: "grid", gap: 5, marginTop: 7, fontSize: 12 }}>{props.review.rules.feedback.slice(0, 4).map((item) => <p key={item.id} style={{ margin: 0, color: item.level === "warning" ? "#8a3427" : "#495c43" }}>{item.message}</p>)}</div>}
+    </section>
+
     {props.review.selectedStrategicHole && <section style={{ marginTop: 12 }}>
       <strong>{t("architecture.review.matrix")}</strong>
       <div style={{ display: "grid", gap: 5, marginTop: 6 }}>

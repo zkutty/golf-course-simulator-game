@@ -37,7 +37,7 @@ import { tournamentCalendar, TOURNAMENT_TIERS } from "../tournaments/tournaments
 import type { TournamentEvent, TournamentStanding, TournamentTier } from "../tournaments/types";
 import { activeWeather, seasonalState, weatherModifiers } from "../seasons/seasons";
 import { isOwnedTile } from "../estate/estate";
-import type { ShotFlightProfile, ShotLie } from "../rules/contracts";
+import type { SharedShotOutcome, ShotFlightProfile, ShotLie } from "../rules/contracts";
 import { classifyPenaltyAreaComponents } from "../rules/penaltyAreas";
 import { createControlledRoundSnapshotV2, decodeControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import { createSharedShotOutcome, resolveSharedRules } from "../rules/sharedOutcome";
@@ -548,6 +548,12 @@ export interface PlayerShotPreview {
   recommended: boolean;
   flightProfile: ShotFlightProfile;
   shotEffects?: CalculatedShotEffects;
+  /**
+   * The exact M50 outcome that the next committed shot will retain. It is
+   * deliberately resolved with the round's next seed so the direct-play
+   * preview cannot drift from execution.
+   */
+  sharedOutcome: SharedShotOutcome | null;
 }
 
 export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerProSkills, selection: PlayerShotSelection): PlayerShotPreview {
@@ -573,6 +579,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     recommended: false,
     flightProfile,
     shotEffects: calculated.effects,
+    sharedOutcome: null,
   };
   if (!club.lies.includes(round.lie)) return {
     available: false,
@@ -586,6 +593,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     recommended: false,
     flightProfile,
     shotEffects: calculated.effects,
+    sharedOutcome: null,
   };
   const requirement = techniqueRequirement(selection.technique, skills);
   if (requirement) return {
@@ -600,6 +608,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     recommended: false,
     flightProfile,
     shotEffects: calculated.effects,
+    sharedOutcome: null,
   };
   if (calculated.blocker) return {
     available: false,
@@ -613,6 +622,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     recommended: false,
     flightProfile,
     shotEffects: calculated.effects,
+    sharedOutcome: null,
   };
   const course = courseFromSnapshot(round.course);
   const profile = profileForPlayer(round.course, skills, club);
@@ -629,6 +639,19 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     * (1.42 - skills[skillForClub(club.name, round.lie)] / 180)
     * (round.course.weather?.dispersionMultiplier ?? 1)
     * (obstructionPenalty > 0 ? 1.55 : 1);
+  const sharedOutcome = evaluation.isValid
+    ? resolvePlayableShot({
+      snapshot: round.course,
+      rulesSnapshot: round.rulesSnapshot,
+      holeId: round.course.holes[round.currentHoleIndex].id,
+      shotNumber: round.scorecard[round.currentHoleIndex].strokes + 1,
+      from: round.ball,
+      lie: round.lie,
+      skills,
+      selection,
+      seed: round.rngSeed + round.rngCursor * 104729,
+    }).sharedOutcome ?? null
+    : null;
   return {
     available: evaluation.isValid,
     blocker: evaluation.isValid ? null : "unreachable",
@@ -641,6 +664,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     recommended: Math.abs(baseCarry * clamp(selection.power, 0.25, 1.15) - evaluation.distanceYards) < 35 && expectedPenalty < 0.35,
     flightProfile,
     shotEffects: calculated.effects,
+    sharedOutcome,
   };
 }
 

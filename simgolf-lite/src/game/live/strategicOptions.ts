@@ -1,13 +1,24 @@
 import type { Course, Hole, Point } from "../models/types";
+import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 import type { GolferProfile } from "../sim/golferProfiles";
 import { evalShotExpectedCost } from "../sim/shots/evalShotExpectedCost";
 import { getGolferProfile } from "../sim/golferProfiles";
+import type { ShotFlightProfile, ShotLie } from "../rules/contracts";
+import {
+  availableShotClubs,
+  calculateShotEffects,
+  type CalculatedShotEffects,
+  type ShotClubDefinition,
+  type ShotTechnique,
+} from "../rules/shotEffects";
+import { resolveObstacleCollision } from "../rules/obstacleCollision";
 import type { GolferCapabilities, RejectedAlternative, ShotIntent, StrategicHolePlan, StrategicIntentKind, StrategyFact } from "./m47Types";
 import type { Personality } from "./personality";
-import { terrainAt } from "./livePhysics";
+import { liveCourseSnapshot, resolveLiveShot, terrainAt } from "./livePhysics";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const playable = new Set(["tee", "fairway", "rough", "deep_rough", "green", "sand", "waste_area"]);
+const recoveryLies = new Set(["rough", "deep_rough", "sand", "waste_area"]);
 const INTENTS: StrategicIntentKind[] = ["safe", "hero", "positional", "recovery", "approach"];
 const CLUBS: Record<string, { carry: number; dispersion: number }> = {
   Driver: { carry: 270, dispersion: 3.7 },
@@ -31,6 +42,63 @@ function pointAt(a: Point, b: Point, fraction: number, offset = 0): Point {
 }
 function inBounds(course: Course, point: Point): boolean {
   return point.x >= 0 && point.y >= 0 && point.x < course.width && point.y < course.height;
+}
+
+function stableHash(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function lieQuality(lie: string): number {
+  if (lie === "cup") return 1;
+  if (lie === "green") return .96;
+  if (lie === "tee" || lie === "fairway") return .82;
+  if (lie === "rough") return .58;
+  if (lie === "waste_area") return .46;
+  if (lie === "sand") return .42;
+  if (lie === "deep_rough") return .34;
+  return .08;
+}
+
+function segmentDistance(point: Point, from: Point, to: Point): { distance: number; progress: number } {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 1e-9) return { distance: distance(point, from), progress: 0 };
+  const progress = clamp(((point.x - from.x) * dx + (point.y - from.y) * dy) / lengthSquared, 0, 1);
+  return {
+    distance: distance(point, { x: from.x + dx * progress, y: from.y + dy * progress }),
+    progress,
+  };
+}
+
+function routeObstacle(course: Course, from: Point, to: Point) {
+  return course.obstacles
+    .map((obstacle) => ({ obstacle, ...segmentDistance(obstacle, from, to) }))
+    .filter((candidate) => candidate.progress > .015 && candidate.progress < .98 && candidate.distance <= 1.45)
+    .sort((a, b) => a.progress - b.progress || a.distance - b.distance || a.obstacle.x - b.obstacle.x || a.obstacle.y - b.obstacle.y)[0] ?? null;
+}
+
+function saferAroundTarget(course: Course, from: Point, green: Point, obstacle: Point | null, advance: number, side: -1 | 1): Point {
+  const u = unit(from, green);
+  const base = obstacle
+    ? {
+        x: obstacle.x + u.x * advance,
+        y: obstacle.y + u.y * advance,
+      }
+    : {
+        x: from.x + u.x * advance,
+        y: from.y + u.y * advance,
+      };
+  const offset = obstacle ? 2.25 : 3.25;
+  return targetNear(course, {
+    x: base.x - u.y * offset * side,
+    y: base.y + u.x * offset * side,
+  }, true);
 }
 function targetNear(course: Course, raw: Point, preferSafe: boolean): Point {
   const candidates: Point[] = [];
@@ -72,6 +140,324 @@ function profileFor(capabilities: GolferCapabilities, course: Course): GolferPro
       obstacle: 1.42 - capabilities.recovery / 190,
     },
   };
+}
+
+export type RecoveryRoute = "safe" | "advance" | "hero";
+export type RecoveryShape = "around" | "under" | "over";
+
+interface RecoveryCandidateSpec {
+  route: RecoveryRoute;
+  shape: RecoveryShape;
+  target: Point;
+  technique: ShotTechnique;
+  flightProfile: ShotFlightProfile;
+}
+
+interface LegalRecoverySelection {
+  club: ShotClubDefinition;
+  effects: CalculatedShotEffects;
+  power: number;
+}
+
+function legalRecoverySelection(args: {
+  lie: ShotLie;
+  from: Point;
+  target: Point;
+  route: RecoveryRoute;
+  technique: ShotTechnique;
+  flightProfile: ShotFlightProfile;
+  capabilities: GolferCapabilities;
+  yardsPerTile: number;
+}): LegalRecoverySelection | null {
+  const targetYards = distance(args.from, args.target) * args.yardsPerTile;
+  const powerScale = .82 + args.capabilities.power / 500;
+  const legal = availableShotClubs(args.lie).flatMap((club) => {
+    const result = calculateShotEffects({
+      clubId: club.id,
+      lie: args.lie,
+      recoverySkill: args.capabilities.recovery,
+      technique: args.technique,
+      flightProfile: args.flightProfile,
+    });
+    if (!result.ok) return [];
+    const fullCarry = result.value.carryYards * powerScale;
+    const power = clamp(targetYards / Math.max(1, fullCarry), .25, 1.15);
+    const utilization = targetYards / Math.max(1, fullCarry * power);
+    const routeBias = args.route === "safe"
+      ? result.value.dispersionTiles * .08 + Math.abs(power - .72) * .22
+      : args.route === "hero"
+        ? Math.max(0, 1 - fullCarry / Math.max(1, targetYards)) * .8 - fullCarry / 2_000
+        : result.value.dispersionTiles * .035 + Math.abs(power - .88) * .12;
+    return [{ club, effects: result.value, power, score: Math.abs(1 - utilization) + routeBias }];
+  });
+  const selected = legal.sort((a, b) =>
+    a.score - b.score
+    || a.effects.dispersionTiles - b.effects.dispersionTiles
+    || a.club.carryYards - b.club.carryYards
+    || a.club.id.localeCompare(b.club.id),
+  )[0];
+  return selected ? { club: selected.club, effects: selected.effects, power: selected.power } : null;
+}
+
+function recoverySpecs(course: Course, hole: Hole, from: Point): RecoveryCandidateSpec[] {
+  const green = { ...hole.green! };
+  const route = routeObstacle(course, from, green);
+  const obstacle = route?.obstacle ?? null;
+  const remaining = distance(from, green);
+  const safeAdvance = Math.min(Math.max(3, remaining * .16), 7);
+  const positionalAdvance = Math.min(Math.max(7, remaining * .36), 16);
+  const safeLeft = saferAroundTarget(course, from, green, obstacle, safeAdvance, -1);
+  const safeRight = saferAroundTarget(course, from, green, obstacle, safeAdvance, 1);
+  const saferSide = lieQuality(terrainAt(course, safeLeft)) > lieQuality(terrainAt(course, safeRight))
+    ? -1
+    : lieQuality(terrainAt(course, safeRight)) > lieQuality(terrainAt(course, safeLeft))
+      ? 1
+      : safeLeft.y < safeRight.y ? -1 : 1;
+  const advanceAround = saferAroundTarget(course, from, green, obstacle, positionalAdvance, saferSide);
+  const directAdvance = targetNear(course, {
+    x: from.x + unit(from, green).x * positionalAdvance,
+    y: from.y + unit(from, green).y * positionalAdvance,
+  }, false);
+  return [
+    {
+      route: "safe",
+      shape: "around",
+      target: saferSide === -1 ? safeLeft : safeRight,
+      technique: "normal",
+      flightProfile: "standard",
+    },
+    {
+      route: "advance",
+      shape: "around",
+      target: advanceAround,
+      technique: saferSide === -1 ? "draw" : "fade",
+      flightProfile: "standard",
+    },
+    {
+      route: "advance",
+      shape: "under",
+      target: directAdvance,
+      technique: "punch",
+      flightProfile: "low",
+    },
+    {
+      route: "advance",
+      shape: "over",
+      target: directAdvance,
+      technique: "normal",
+      flightProfile: "high",
+    },
+    {
+      route: "hero",
+      shape: "over",
+      target: green,
+      technique: "normal",
+      flightProfile: "high",
+    },
+  ];
+}
+
+function recoveryKind(route: RecoveryRoute): StrategicIntentKind {
+  return route === "safe" ? "recovery" : route === "hero" ? "hero" : "positional";
+}
+
+function recoveryScore(intent: ShotIntent, capabilities: GolferCapabilities): number {
+  const riskPenalty = intent.hazardRisk * (1 - capabilities.riskTolerance) * 1.7;
+  const consistencyPenalty = intent.variance * (1 - capabilities.consistency / 100) * .28;
+  const styleBonus = capabilities.riskStyle === "aggressive" && intent.kind === "hero"
+    ? .58
+    : capabilities.riskStyle === "conservative" && intent.kind === "recovery"
+      ? .92
+      : capabilities.riskStyle === "balanced" && intent.kind === "positional"
+        ? .22
+        : 0;
+  const challengeBonus = intent.kind === "hero" ? capabilities.challengeSeeking * .28 : 0;
+  return intent.expectedStrokes + riskPenalty + consistencyPenalty - intent.nextShotQuality * .24 - styleBonus - challengeBonus;
+}
+
+function hasRecoveryContext(course: Course, from: Point, green: Point, lie: string): boolean {
+  return recoveryLies.has(lie)
+    || lie === "water"
+    || lie === "wetland"
+    || routeObstacle(course, from, green) !== null;
+}
+
+function recoveryCandidate(args: {
+  course: Course;
+  hole: Hole;
+  from: Point;
+  lie: ShotLie;
+  capabilities: GolferCapabilities;
+  personality: Personality;
+  shotNumber: number;
+  profile: GolferProfile;
+  snapshot: PlayerRoundCourseSnapshot;
+  spec: RecoveryCandidateSpec;
+}): ShotIntent | null {
+  const selection = legalRecoverySelection({
+    lie: args.lie,
+    from: args.from,
+    target: args.spec.target,
+    route: args.spec.route,
+    technique: args.spec.technique,
+    flightProfile: args.spec.flightProfile,
+    capabilities: args.capabilities,
+    yardsPerTile: args.course.yardsPerTile,
+  });
+  if (!selection) return null;
+
+  const kind = recoveryKind(args.spec.route);
+  const id = `${args.hole.id ?? "hole"}-recovery-${args.shotNumber}-${args.spec.route}-${args.spec.shape}`;
+  const clubSpec = args.profile.clubs.find((candidate) => candidate.name === selection.club.label) ?? args.profile.clubs[0];
+  const expected = evalShotExpectedCost({
+    course: args.course,
+    from: args.from,
+    to: args.spec.target,
+    golfer: args.profile,
+    club: clubSpec,
+  });
+  const plannedClearance = resolveObstacleCollision({
+    from: args.from,
+    to: args.spec.target,
+    flight: {
+      profile: args.spec.flightProfile,
+      apexHeightYards: selection.effects.flight.apexHeightYards,
+    },
+    width: args.course.width,
+    height: args.course.height,
+    yardsPerTile: args.course.yardsPerTile,
+    elevations: args.course.elevations,
+    tiles: args.course.tiles,
+    obstacles: args.course.obstacles,
+  });
+  const baseIntent: ShotIntent = {
+    id,
+    kind,
+    from: { ...args.from },
+    target: { ...args.spec.target },
+    club: selection.club.label,
+    power: selection.power,
+    technique: args.spec.technique,
+    flightProfile: args.spec.flightProfile,
+    expectedStrokes: 1,
+    variance: 0,
+    hazardRisk: 0,
+    nextShotQuality: 0,
+    facts: [],
+  };
+  const samples = Array.from({ length: 3 }, (_, index) => resolveLiveShot({
+    snapshot: args.snapshot,
+    capabilities: args.capabilities,
+    holeId: args.hole.id ?? args.snapshot.holes[0]?.id ?? "hole-1",
+    shotNumber: args.shotNumber,
+    from: args.from,
+    lie: args.lie,
+    intent: baseIntent,
+    seed: stableHash(`${args.capabilities.seed}:${id}:${index}`),
+  }));
+  const obstacleHits = samples.filter((outcome) => outcome.sharedOutcome?.collision.kind === "obstacle").length;
+  const terrainHits = samples.filter((outcome) => outcome.sharedOutcome?.collision.kind === "terrain").length;
+  const penaltyCost = samples.reduce((sum, outcome) => sum + outcome.penaltyStrokes, 0) / samples.length;
+  const reliefCount = samples.filter((outcome) => outcome.relief?.status === "resolved").length;
+  const averageRemaining = samples.reduce((sum, outcome) => sum + distance(outcome.finalPosition ?? outcome.rest, args.hole.green!), 0) / samples.length;
+  const averageLieQuality = samples.reduce((sum, outcome) => sum + lieQuality(outcome.lieAfter), 0) / samples.length;
+  const collisionRate = (obstacleHits + terrainHits * .65) / samples.length;
+  const relevantClearance = plannedClearance.clearance
+    .filter((evidence) => evidence.relationship !== "around" || (evidence.horizontalClearanceYards ?? 0) < args.course.yardsPerTile * 3)
+    .sort((a, b) => Math.abs(a.clearanceYards) - Math.abs(b.clearanceYards))[0];
+  const dispersionYards = selection.effects.dispersionTiles
+    * (1.42 - args.capabilities.accuracy / 180)
+    * args.course.yardsPerTile;
+  const clearanceRisk = relevantClearance?.relationship === "through"
+    ? 1
+    : relevantClearance?.relationship === "around"
+      ? clamp((dispersionYards - (relevantClearance.horizontalClearanceYards ?? 0)) / Math.max(1, dispersionYards) * .5 + .2, 0, .8)
+      : relevantClearance?.relationship === "over"
+        ? clamp((dispersionYards * .35 - relevantClearance.clearanceYards) / Math.max(1, dispersionYards), 0, .8)
+        : relevantClearance?.relationship === "under"
+          ? clamp(.18 + dispersionYards / 80, .18, .5)
+          : 0;
+  const collisionRisk = clamp(collisionRate * .72 + clearanceRisk * .28, 0, 1);
+  const landingRisk = samples.reduce((sum, outcome) => sum + (lieQuality(outcome.lieAfter) < .2 ? 1 : lieQuality(outcome.lieAfter) < .5 ? .34 : .06), 0) / samples.length;
+  const hazardRisk = clamp(penaltyCost * .72 + collisionRisk * .68 + landingRisk * .28, 0, 1);
+  const nextShotQuality = clamp(
+    averageLieQuality * .62
+      + (1 - clamp(averageRemaining / Math.max(1, distance(args.from, args.hole.green!)), 0, 1)) * .38,
+    0,
+    1,
+  );
+  const variance = clamp(
+    (100 - args.capabilities.consistency) / 100 * .5
+      + (100 - args.capabilities.accuracy) / 100 * .2
+      + hazardRisk * .3,
+    .04,
+    1,
+  );
+  const routeCost = args.spec.route === "safe" ? .04 : args.spec.route === "hero" ? -.08 : .04;
+  const expectedStrokes = 1
+    + Math.max(0, expected.expectedShotCost - 1)
+    + penaltyCost
+    + collisionRisk * (1.15 - args.capabilities.recovery / 260)
+    + (1 - nextShotQuality) * .52
+    + routeCost;
+  const collisionDetail = relevantClearance
+    ? `obstacle:${relevantClearance.obstacleType ?? "terrain"} relationship:${relevantClearance.relationship ?? "clear"} clearance:${relevantClearance.clearanceYards.toFixed(1)}yd collision-risk:${Math.round(collisionRisk * 100)}%`
+    : `obstacle:clear collision-risk:${Math.round(collisionRisk * 100)}%`;
+  const firstRules = samples[0]?.sharedOutcome;
+  const facts: StrategyFact[] = [
+    { code: "capability-fit", detail: `recovery:${Math.round(args.capabilities.recovery)} accuracy:${Math.round(args.capabilities.accuracy)} consistency:${Math.round(args.capabilities.consistency)}` },
+    { code: "risk", detail: `hazard:${Math.round(hazardRisk * 100)}% collision:${Math.round(collisionRisk * 100)}% penalty:${Math.round(penaltyCost * 100)}%` },
+    { code: "terrain", detail: `source:${args.lie} expected-landing:${terrainAt(args.course, args.spec.target)}` },
+    { code: "next-shot", detail: `quality:${Math.round(nextShotQuality * 100)}% remaining:${Math.round(averageRemaining * args.course.yardsPerTile)}yd` },
+    { code: "context", detail: `recovery:${args.spec.route} shape:${args.spec.shape} flight:${args.spec.flightProfile} technique:${args.spec.technique} club:${selection.club.label}` },
+    { code: "outcome", detail: collisionDetail },
+    { code: "outcome", detail: `rules:${firstRules?.ruling.status ?? "legacy"} relief:${firstRules?.relief.type ?? "none"} relief-rate:${Math.round(reliefCount / samples.length * 100)}%` },
+    { code: "outcome", detail: `expected-cost:${expectedStrokes.toFixed(3)}` },
+    { code: "context", detail: `preference:${args.personality.prefs.difficulty.toFixed(2)}` },
+  ];
+  return {
+    ...baseIntent,
+    expectedStrokes,
+    variance,
+    hazardRisk,
+    nextShotQuality,
+    facts,
+  };
+}
+
+/**
+ * Build a stable, legal M50 recovery set from the current ball state. The
+ * candidates retain the old M47 intent vocabulary while adding explicit
+ * around/under/over flight and authoritative outcome evidence.
+ */
+export function generateRecoveryCandidates(args: {
+  course: Course;
+  hole: Hole;
+  from: Point;
+  lie: string;
+  capabilities: GolferCapabilities;
+  personality: Personality;
+  shotNumber?: number;
+}): ShotIntent[] {
+  if (!args.hole.green || !hasRecoveryContext(args.course, args.from, args.hole.green, args.lie)) return [];
+  const lie = args.lie as ShotLie;
+  const profile = profileFor(args.capabilities, args.course);
+  const snapshot = liveCourseSnapshot({
+    course: args.course,
+    teeSet: "member",
+    pinRotation: args.course.activePinRotation ?? "A",
+  });
+  return recoverySpecs(args.course, args.hole, args.from)
+    .map((spec) => recoveryCandidate({
+      ...args,
+      lie,
+      shotNumber: args.shotNumber ?? 1,
+      profile,
+      snapshot,
+      spec,
+    }))
+    .filter((candidate): candidate is ShotIntent => candidate !== null)
+    .sort((a, b) => recoveryScore(a, args.capabilities) - recoveryScore(b, args.capabilities) || a.id.localeCompare(b.id));
 }
 
 function chooseClub(kind: StrategicIntentKind, from: Point, target: Point, capabilities: GolferCapabilities, lie: string): { name: string; power: number } {
@@ -139,8 +525,21 @@ export function generateStrategicHolePlan(args: {
   personality: Personality;
 }): StrategicHolePlan {
   const profile = profileFor(args.capabilities, args.course);
-  const candidates = INTENTS.map((kind) => buildIntent({ ...args, kind, profile }));
-  const score = (intent: ShotIntent) => {
+  const recoveryCandidates = args.hole.tee && args.hole.green
+    ? generateRecoveryCandidates({
+        course: args.course,
+        hole: args.hole,
+        from: args.hole.tee,
+        lie: terrainAt(args.course, args.hole.tee),
+        capabilities: args.capabilities,
+        personality: args.personality,
+        shotNumber: 1,
+      })
+    : [];
+  const candidates = recoveryCandidates.length > 0
+    ? recoveryCandidates
+    : INTENTS.map((kind) => buildIntent({ ...args, kind, profile }));
+  const legacyScore = (intent: ShotIntent) => {
     const riskPenalty = intent.hazardRisk * (1 - args.capabilities.riskTolerance) * 1.4;
     const challengeBonus = intent.kind === "hero" ? args.capabilities.challengeSeeking * .25 : 0;
     const styleBonus = args.capabilities.riskStyle === "aggressive" && intent.kind === "hero"
@@ -152,6 +551,9 @@ export function generateStrategicHolePlan(args: {
           : 0;
     return intent.expectedStrokes + riskPenalty - challengeBonus - styleBonus - intent.nextShotQuality * .08;
   };
+  const score = recoveryCandidates.length > 0
+    ? (intent: ShotIntent) => recoveryScore(intent, args.capabilities)
+    : legacyScore;
   const ordered = candidates.slice().sort((a, b) => score(a) - score(b) || INTENTS.indexOf(a.kind) - INTENTS.indexOf(b.kind));
   const chosen = ordered[0];
   const rejected: RejectedAlternative[] = ordered.slice(1, 4).map((alternative) => ({
@@ -180,6 +582,14 @@ export function followUpIntent(args: {
   shotNumber: number;
 }): ShotIntent {
   const target = { ...args.hole.green! };
+  const recoveryCandidates = generateRecoveryCandidates(args);
+  if (recoveryCandidates.length > 0) {
+    return {
+      ...recoveryCandidates[0],
+      id: `${args.hole.id ?? "hole"}-follow-${args.shotNumber}-${recoveryCandidates[0].id.split("-").slice(-2).join("-")}`,
+      from: { ...args.from },
+    };
+  }
   const kind: StrategicIntentKind = args.lie === "rough" || args.lie === "deep_rough" || args.lie === "sand" || args.lie === "waste_area"
     ? "recovery"
     : distance(args.from, target) <= 5 ? "approach" : "positional";
