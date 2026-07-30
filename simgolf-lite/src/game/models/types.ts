@@ -149,6 +149,12 @@ export interface SurfaceCareRecordV1 {
   /** Incremental resod establishment demand/application above routine care. */
   lastElevatedWaterDemand: number;
   lastElevatedWaterApplied: number;
+  /**
+   * Latest observed repair-task service only. These never inherit generic
+   * mowing/allocation telemetry when a task is purchased.
+   */
+  lastRepairProgressed?: boolean;
+  lastRepairServiceRatio?: number;
   lastObservedAbsoluteDay: number;
 }
 

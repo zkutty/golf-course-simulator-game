@@ -196,6 +196,12 @@ import {
   observedSurfaceCareEvidence,
   surfaceCareConditionSummary,
 } from "./game/conditions/surfaceCare";
+import { surfaceCarePresentationSummary } from "./game/render/surfaceCarePresentation";
+import {
+  createM53SurfaceCareRoutineFixture,
+  createM53SurfaceCarePresentationFixture,
+  resolveM53SurfaceCarePresentationFixture,
+} from "./game/testing/m53SurfaceCareFixtures";
 
 function textSharedOutcome(outcome: SharedShotOutcome | null | undefined) {
   if (!outcome) return null;
@@ -2488,6 +2494,12 @@ export default function App() {
     const liveStateById = new Map((live.getSnapshot()?.state.golfers ?? []).map((golfer) => [golfer.id, golfer]));
     const textSurfaceCareSummary = surfaceCareConditionSummary(course);
     const textSurfaceCareEvidence = observedSurfaceCareEvidence(course);
+    const textSurfaceCarePresentation = surfaceCarePresentationSummary({
+      course,
+      quality: resolvedGraphicsQuality,
+      seed: world.runSeed,
+      reducedMotion: appProfile.accessibility.reducedMotion || !effectiveAnimations,
+    });
     const renderText = () => JSON.stringify({
       coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
       screen,
@@ -2515,6 +2527,7 @@ export default function App() {
           lastAdvancedAbsoluteDay:
             course.surfaceCare?.lastAdvancedAbsoluteDay ?? null,
           ...textSurfaceCareSummary,
+          presentation: textSurfaceCarePresentation,
           evidence: textSurfaceCareEvidence.map((zone) => ({
             key: zone.key,
             surfaceId: zone.surfaceId,
@@ -2947,6 +2960,27 @@ export default function App() {
         setWorld(() => nextWorld);
         live.restoreSnapshot(snapshotLiveSimulation({
           state: createLiveState(current.course, nextWorld, dayOfWeek),
+          pendingCash: 0,
+          speed: "paused",
+          selectedGolferId: null,
+        }));
+      },
+      setM53SurfaceCareFixture: (
+        mode: "evidence" | "resolved" | "healthy" | "cue-only" | "mowing" = "evidence",
+      ) => {
+        const current = gameStateRef.current;
+        const nextCourse = mode === "resolved"
+          ? resolveM53SurfaceCarePresentationFixture(current.course)
+          : mode === "evidence"
+            ? createM53SurfaceCarePresentationFixture(current.course)
+            : createM53SurfaceCareRoutineFixture(current.course, mode);
+        dispatch({ type: "LOAD_GAME", course: nextCourse, world: current.world });
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createLiveState(
+            nextCourse,
+            current.world,
+            0,
+          ),
           pendingCash: 0,
           speed: "paused",
           selectedGolferId: null,

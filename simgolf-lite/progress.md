@@ -1,5 +1,55 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## 2026-07-30 — ZK-569 local course wear and care evidence
+
+- Added a pure, bounded surface-care presentation projection. It consumes
+  only genuinely observed sparse `surfaceCare` records, their stable topology,
+  and the existing effective-surface result; it does not own simulation state
+  or persist decals.
+- Added deterministic world-anchored cues for traffic wear, divots,
+  compaction, mud/softness, dry stress, wet-disease risk, weed pressure,
+  overgrowth, thinning, bare failure, reseed/resod work, active recovery
+  dressing, and allocated-service-only groundskeeper work. Risk cues are
+  labelled as pressure/risk rather than diagnoses absent from authority.
+- Commands are capped at 96/240/480 for Low/Medium/High. Anchors remain
+  stable across day updates, JSON save/reload, and all four rotations; changes
+  to every cue-driving record field enter the renderer invalidation signature.
+  Traffic lines align to the nearest authored hole route, and cue headings are
+  projected through the same isometric rotation as their world anchors.
+- Added a dedicated Pixi layer below markers/objects. Groundskeeper motion is
+  cosmetic and exists only for an active repair whose latest
+  observation explicitly records suitable-day repair progress and service at
+  or above the repair threshold; generic pre-task allocation cannot leak into
+  this cue. Reduced motion snaps it to the stable anchor. Repair/recovery/work
+  cues vanish when the latest day stalls or the task authority resolves.
+- Terrain-chunk invalidation contains only effective terrain, treatment, and
+  mowing. A separate compact care-presentation hash owns cue/task/route
+  changes, so cue-only changes rebuild the bounded care layer without
+  rebuilding terrain chunks.
+- Focused verification passes 2 files / 24 tests plus TypeScript.
+  Coverage includes no-authority gating, two-hole local divergence at one
+  global condition, M51 off-path traffic, drought/understaffing, all cue
+  families, repair completion removal, save/reload/rotation/cache behavior,
+  effective-physics parity, 224-day determinism, exact dense 128×128
+  quality-tier budgets, and runtime bounds.
+- The ZK-569 Playwright regression passes 1/1 with all fourteen cue families,
+  multiple hole buckets, layer/occlusion ordering, worker gating, populated
+  canvas pixels, and exact zero-command cleanup after authoritative
+  resolution. On the same mounted canvas, a cue-only transition produces care
+  graphics with exactly zero terrain-chunk rebuilds, while a mowing transition
+  rebuilds terrain chunks. Its before/after screenshots were retained as
+  machine attachments and were not opened. The bundled web-game client also
+  emitted valid game text state and captures with no client error artifact;
+  the care telemetry is a compact deterministic hash/summary.
+- Final repository verification passes 135 Vitest files / 1069 tests with one
+  intentional skip, production build, biome consumer and authored-biome
+  audits, exact audio manifest, service-worker asset injection, M35/parkland
+  asset audits, and lint/i18n with zero errors (12 hook warnings).
+- Human visual/readability/accessibility-perception/device/GPU judgments are
+  intentionally deferred to the final validation phase. Browser captures may
+  be produced as machine evidence but must not be opened or subjectively
+  assessed during this implementation wave.
+
 ## 2026-07-30 — ZK-567 seasonal terrain implementation
 
 - Added a pure registry-driven seasonal-terrain presentation resolver over

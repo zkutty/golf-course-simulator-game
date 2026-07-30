@@ -20,6 +20,14 @@ interface Window {
     viewport(): { width: number; height: number } | null;
     tileToScreen(x: number, y: number): { x: number; y: number } | null;
     screenToTile(x: number, y: number): { x: number; y: number } | null;
+    surfaceCareLayer(): {
+      children: number;
+      workers: number;
+      index: number;
+      seasonalIndex: number;
+      markerIndex: number;
+      objectsIndex: number;
+    } | null;
   };
   __coursecraftTest?: {
     state(): {
@@ -120,5 +128,8 @@ interface Window {
     startTournamentFixture(): void;
     invalidateAndCancelTournamentFixture(): void;
     setM53SeasonalFixture(season: "spring" | "summer" | "autumn" | "winter"): void;
+    setM53SurfaceCareFixture(
+      mode?: "evidence" | "resolved" | "healthy" | "cue-only" | "mowing",
+    ): void;
   };
 }

@@ -25,6 +25,7 @@ import {
   resolveEffectiveSurface,
   startSurfaceRepair,
   surfaceCareConditionSummary,
+  surfaceCarePresentationSignature,
   surfaceCareQualityForHole,
   surfaceCareTopology,
   surfaceCareVisualSignatures,
@@ -867,6 +868,22 @@ describe("ZK-647 local cultivated-surface care authority", () => {
         },
       },
     };
+    const cueOnlyChanged: Course = {
+      ...base,
+      surfaceCare: {
+        ...state,
+        records: {
+          ...state.records,
+          [zone.key]: {
+            ...state.records[zone.key],
+            wear: 0.32,
+            lastTraffic: 80,
+            lastObservedAbsoluteDay:
+              state.records[zone.key].lastObservedAbsoluteDay + 1,
+          },
+        },
+      },
+    };
     expect(effectiveSurfaceTiles(mowingChanged)[index]).toBe(
       effectiveSurfaceTiles(base)[index],
     );
@@ -877,6 +894,12 @@ describe("ZK-647 local cultivated-surface care authority", () => {
       .not.toBe(surfaceCareVisualSignatures(base)[index]);
     expect(surfaceCareVisualSignatures(treatmentChanged)[index])
       .not.toBe(surfaceCareVisualSignatures(base)[index]);
+    expect(resolveEffectiveSurface(cueOnlyChanged, zone).treatment)
+      .toBe(resolveEffectiveSurface(base, zone).treatment);
+    expect(surfaceCareVisualSignatures(cueOnlyChanged)[index])
+      .toBe(surfaceCareVisualSignatures(base)[index]);
+    expect(surfaceCarePresentationSignature(cueOnlyChanged))
+      .not.toBe(surfaceCarePresentationSignature(base));
   });
 
   it("uses the authored course condition before local care history exists", () => {

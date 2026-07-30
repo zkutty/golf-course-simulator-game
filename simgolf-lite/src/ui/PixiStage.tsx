@@ -123,6 +123,10 @@ import {
   seasonalTerrainTreatment,
   type SeasonalTerrainTreatment,
 } from "../game/render/seasonalTerrainPresentation";
+import {
+  surfaceCareVisualCommands,
+  type SurfaceCareVisualCommand,
+} from "../game/render/surfaceCarePresentation";
 import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
 import {
   buildLandscapeComponents,
@@ -186,6 +190,7 @@ import {
   courseWithEffectiveSurfaces,
   effectiveTerrainForPaintPreview,
   normalizeSurfaceCareState,
+  surfaceCarePresentationSignature,
   surfaceCareTopology,
   surfaceCareVisualSignatures,
 } from "../game/conditions/surfaceCare";
@@ -808,6 +813,7 @@ interface Layers {
   terrain: PIXI.Container;
   smoothSurfaces: PIXI.Container;
   seasonalTerrain: PIXI.Container;
+  surfaceCare: PIXI.Container;
   estateSeam: PIXI.Container;
   terrainDecals: PIXI.Container;
   surfaceEditor: PIXI.Container;
@@ -1065,6 +1071,13 @@ export function PixiStage(props: PixiStageProps) {
   const propertyGraphicsRef = useRef<PIXI.Graphics[]>([]);
   const playerShotOverlayRef = useRef<PIXI.Container | null>(null);
   const decorationSpritesRef = useRef<Array<{ sprite: PIXI.Sprite; shadow: PIXI.Graphics }>>([]);
+  const surfaceCareWorkersRef = useRef<Array<{
+    graphics: PIXI.Graphics;
+    baseX: number;
+    baseY: number;
+    phase: number;
+    animated: boolean;
+  }>>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const surfaceWaterSpritesRef = useRef<Array<{
     sprite: PIXI.Sprite | PIXI.Mesh;
@@ -1214,6 +1227,10 @@ export function PixiStage(props: PixiStageProps) {
   const effectiveTiles = effectiveRenderCourse.tiles;
   const careVisualSignatures = useMemo(
     () => surfaceCareVisualSignatures(course),
+    [course],
+  );
+  const carePresentationSignature = useMemo(
+    () => surfaceCarePresentationSignature(course),
     [course],
   );
   const initialRendererConfigRef = useRef({
@@ -1708,6 +1725,18 @@ export function PixiStage(props: PixiStageProps) {
           getElevation(course, Math.floor(x), Math.floor(y)),
         );
       },
+      surfaceCareLayer: () => {
+        const layers = layersRef.current;
+        if (!layers) return null;
+        return {
+          children: layers.surfaceCare.children.length,
+          workers: surfaceCareWorkersRef.current.length,
+          index: layers.world.getChildIndex(layers.surfaceCare),
+          seasonalIndex: layers.world.getChildIndex(layers.seasonalTerrain),
+          markerIndex: layers.world.getChildIndex(layers.terrainDecals),
+          objectsIndex: layers.world.getChildIndex(layers.objects),
+        };
+      },
       screenToTile,
     };
     window.__coursecraftPixiTest = api;
@@ -1777,6 +1806,7 @@ export function PixiStage(props: PixiStageProps) {
       const terrain = new PIXI.Container();
       const smoothSurfaces = new PIXI.Container();
       const seasonalTerrain = new PIXI.Container();
+      const surfaceCare = new PIXI.Container();
       const estateSeam = new PIXI.Container();
       const terrainDecals = new PIXI.Container();
       const surfaceEditor = new PIXI.Container();
@@ -1785,7 +1815,7 @@ export function PixiStage(props: PixiStageProps) {
       const fx = new PIXI.Container();
       const screenOverlay = new PIXI.Container();
 
-      world.addChild(surround, terrain, smoothSurfaces, seasonalTerrain, estateSeam, terrainDecals, surfaceEditor, objects, fx);
+      world.addChild(surround, terrain, smoothSurfaces, seasonalTerrain, surfaceCare, estateSeam, terrainDecals, surfaceEditor, objects, fx);
 
       // Ambient stack (ZKU-156): a full-screen multiply quad for the
       // time-of-day grade and a screen-space bird layer, both between the
@@ -1841,7 +1871,7 @@ export function PixiStage(props: PixiStageProps) {
       app.stage.hitArea = app.screen;
 
       appRef.current = app;
-      layersRef.current = { world, surround, terrain, smoothSurfaces, seasonalTerrain, estateSeam, terrainDecals, surfaceEditor, objects, fx, screenOverlay };
+      layersRef.current = { world, surround, terrain, smoothSurfaces, seasonalTerrain, surfaceCare, estateSeam, terrainDecals, surfaceEditor, objects, fx, screenOverlay };
       setAppReady(true);
       devLog(`initialized ${width}x${height}`);
     };
@@ -1870,6 +1900,7 @@ export function PixiStage(props: PixiStageProps) {
       flagPoolRef.current.clear();
       buildingSpritesRef.current = [];
       propertyGraphicsRef.current = [];
+      surfaceCareWorkersRef.current = [];
       playerShotOverlayRef.current = null;
       rippleGraphicsRef.current = null;
       ripplesRef.current = [];
@@ -3482,6 +3513,215 @@ export function PixiStage(props: PixiStageProps) {
     surfaceHeightAt,
   ]);
 
+  // Local care evidence is a separate bounded presentation layer. Commands
+  // come only from observed sparse surface-care records plus their exact
+  // effective surfaces; the renderer owns no condition state or decal
+  // history. Anchors stay in world space so camera rotation cannot move or
+  // reselect a wear/divot/repair cue.
+  useEffect(() => {
+    if (!appReady) return;
+    const layer = layersRef.current?.surfaceCare;
+    if (!layer) return;
+    layer.removeChildren().forEach((child) => child.destroy({ children: true }));
+    surfaceCareWorkersRef.current = [];
+
+    const commands = surfaceCareVisualCommands({
+      course,
+      quality: props.graphicsQuality,
+      seed: props.worldSeed,
+      reducedMotion: props.reducedMotion || !props.animationsEnabled,
+    });
+    if (commands.length === 0) return;
+
+    const pooled = new PIXI.Graphics();
+    pooled.eventMode = "none";
+    const pointFor = (command: SurfaceCareVisualCommand) => worldToIso(
+      command.x,
+      command.y,
+      surfaceHeightAt(command.x, command.y),
+      rotation,
+    );
+    const cueColor = (command: SurfaceCareVisualCommand) => (
+      props.colorVision === "standard"
+        ? command.color
+        : command.cue === "dry-stress"
+          || command.cue === "bare-failure"
+          || command.cue.startsWith("repair-")
+          ? 0x272a2c
+          : 0xf2f3f3
+    );
+
+    for (const command of commands) {
+      const point = pointFor(command);
+      const scale = command.scale;
+      const headingPoint = worldToIso(
+        command.x + Math.cos(command.rotation) * 0.25,
+        command.y + Math.sin(command.rotation) * 0.25,
+        surfaceHeightAt(
+          command.x + Math.cos(command.rotation) * 0.25,
+          command.y + Math.sin(command.rotation) * 0.25,
+        ),
+        rotation,
+      );
+      const headingLength = Math.max(
+        0.0001,
+        Math.hypot(headingPoint.x - point.x, headingPoint.y - point.y),
+      );
+      const dx = (headingPoint.x - point.x) / headingLength;
+      const dy = (headingPoint.y - point.y) / headingLength;
+      const color = cueColor(command);
+      const alpha = Math.min(0.68, command.alpha);
+      if (command.cue === "groundskeeper-work") {
+        const worker = new PIXI.Graphics();
+        worker.eventMode = "none";
+        worker.circle(0, -8 * scale, 2.25 * scale);
+        worker.fill({ color: 0xd7b38b, alpha: Math.min(0.9, alpha + 0.18) });
+        worker.moveTo(0, -5.7 * scale);
+        worker.lineTo(0, 1.2 * scale);
+        worker.moveTo(-3 * scale, -3 * scale);
+        worker.lineTo(3 * scale, -1 * scale);
+        worker.moveTo(0, 1.2 * scale);
+        worker.lineTo(-2.5 * scale, 5 * scale);
+        worker.moveTo(0, 1.2 * scale);
+        worker.lineTo(2.5 * scale, 5 * scale);
+        worker.stroke({ width: 1.5, color, alpha: Math.min(0.94, alpha + 0.2), cap: "round" });
+        worker.moveTo(3 * scale, -4 * scale);
+        worker.lineTo(5.5 * scale, 5 * scale);
+        worker.lineTo(8 * scale, 5.5 * scale);
+        worker.stroke({ width: 1.1, color: 0x62513a, alpha: 0.9, cap: "round" });
+        worker.position.set(point.x, point.y);
+        layer.addChild(worker);
+        surfaceCareWorkersRef.current.push({
+          graphics: worker,
+          baseX: point.x,
+          baseY: point.y,
+          phase: command.rotation,
+          animated: command.animated,
+        });
+        continue;
+      }
+
+      if (command.cue === "worn-line") {
+        pooled.moveTo(point.x - dx * 7 * scale, point.y - dy * 2.8 * scale);
+        pooled.bezierCurveTo(
+          point.x - dy * 2.2 * scale,
+          point.y + dx * 1.1 * scale,
+          point.x + dy * 1.8 * scale,
+          point.y - dx * 0.9 * scale,
+          point.x + dx * 7 * scale,
+          point.y + dy * 2.8 * scale,
+        );
+        pooled.stroke({ width: 2.2, color, alpha, cap: "round" });
+      } else if (command.cue === "divot") {
+        pooled.ellipse(point.x, point.y, 2.8 * scale, 1.15 * scale);
+        pooled.fill({ color, alpha });
+        pooled.moveTo(point.x - 2.8 * scale, point.y - 0.2 * scale);
+        pooled.lineTo(point.x + 2.2 * scale, point.y - 0.7 * scale);
+        pooled.stroke({ width: 0.8, color: 0xd4c58b, alpha: alpha * 0.8 });
+      } else if (command.cue === "compaction") {
+        for (let offset = -1; offset <= 1; offset++) {
+          pooled.moveTo(
+            point.x - dx * 5.5 * scale - dy * offset * 1.4,
+            point.y - dy * 2.4 * scale + dx * offset * 0.7,
+          );
+          pooled.lineTo(
+            point.x + dx * 5.5 * scale - dy * offset * 1.4,
+            point.y + dy * 2.4 * scale + dx * offset * 0.7,
+          );
+        }
+        pooled.stroke({ width: 0.8, color, alpha: alpha * 0.86, cap: "round" });
+      } else if (command.cue === "mud-softness") {
+        pooled.ellipse(point.x, point.y, 6.2 * scale, 2.1 * scale);
+        pooled.fill({ color, alpha: alpha * 0.62 });
+        pooled.ellipse(point.x - 1.8 * scale, point.y - 0.4 * scale, 1.3 * scale, 0.5 * scale);
+        pooled.stroke({ width: 0.8, color: 0xd9e1d1, alpha: alpha * 0.72 });
+      } else if (command.cue === "dry-stress") {
+        pooled.moveTo(point.x - 5 * scale, point.y);
+        pooled.lineTo(point.x - 1 * scale, point.y - 1.2 * scale);
+        pooled.lineTo(point.x + 2 * scale, point.y + 1.4 * scale);
+        pooled.lineTo(point.x + 5 * scale, point.y - 0.4 * scale);
+        pooled.moveTo(point.x - 1 * scale, point.y - 1.2 * scale);
+        pooled.lineTo(point.x, point.y - 3.2 * scale);
+        pooled.stroke({ width: 1.2, color, alpha, cap: "round" });
+      } else if (command.cue === "wet-disease-risk") {
+        pooled.circle(point.x - 2.2 * scale, point.y, 2.4 * scale);
+        pooled.circle(point.x + 1.8 * scale, point.y + 0.5 * scale, 2.1 * scale);
+        pooled.stroke({ width: 1.1, color, alpha });
+      } else if (command.cue === "weed-pressure" || command.cue === "overgrowth") {
+        const bladeCount = command.cue === "overgrowth" ? 5 : 3;
+        for (let blade = 0; blade < bladeCount; blade++) {
+          const offset = (blade - (bladeCount - 1) / 2) * 2 * scale;
+          pooled.moveTo(point.x + offset, point.y + 2 * scale);
+          pooled.lineTo(
+            point.x + offset + Math.sin(command.rotation + blade) * 2.2 * scale,
+            point.y - (3.5 + blade % 2 * 2) * scale,
+          );
+        }
+        pooled.stroke({ width: 1.1, color, alpha, cap: "round" });
+      } else if (command.cue === "thinning") {
+        for (let dash = -2; dash <= 2; dash++) {
+          pooled.moveTo(point.x + dash * 2.4 * scale, point.y + (dash % 2) * 0.6);
+          pooled.lineTo(point.x + dash * 2.4 * scale + dx * 1.5, point.y - 1.5 * scale);
+        }
+        pooled.stroke({ width: 0.9, color, alpha });
+      } else if (command.cue === "bare-failure") {
+        pooled.ellipse(point.x, point.y, 7.2 * scale, 2.7 * scale);
+        pooled.fill({ color, alpha: alpha * 0.72 });
+        pooled.ellipse(point.x - 2.1 * scale, point.y - 0.4 * scale, 2.2 * scale, 0.7 * scale);
+        pooled.stroke({ width: 1, color: 0xd0b17d, alpha: alpha * 0.68 });
+      } else if (command.cue === "repair-reseed") {
+        for (let row = -1; row <= 1; row++) {
+          for (let seed = -2; seed <= 2; seed++) {
+            pooled.circle(
+              point.x + seed * 2.3 * scale + row * 0.7,
+              point.y + row * 1.35 * scale,
+              0.65 * scale,
+            );
+          }
+        }
+        pooled.fill({ color, alpha });
+      } else if (command.cue === "repair-resod") {
+        for (let row = -1; row <= 1; row++) {
+          pooled.rect(
+            point.x - 6.2 * scale + (row % 2) * 1.7 * scale,
+            point.y + row * 1.7 * scale,
+            4.1 * scale,
+            1.35 * scale,
+          );
+          pooled.rect(
+            point.x - 1.4 * scale + (row % 2) * 1.7 * scale,
+            point.y + row * 1.7 * scale,
+            4.1 * scale,
+            1.35 * scale,
+          );
+        }
+        pooled.stroke({ width: 0.8, color, alpha });
+      } else {
+        // Recovery dressing exists only while the authoritative task exists
+        // and has positive progress. Completion removes the command exactly.
+        pooled.ellipse(point.x, point.y, 6.4 * scale, 2.1 * scale);
+        pooled.stroke({ width: 1, color, alpha: alpha * 0.86 });
+        for (let sprout = -1; sprout <= 1; sprout++) {
+          pooled.moveTo(point.x + sprout * 3.2 * scale, point.y + 1.2 * scale);
+          pooled.lineTo(point.x + sprout * 3.2 * scale, point.y - 2.2 * scale);
+        }
+        pooled.stroke({ width: 1, color: 0x75a65c, alpha });
+      }
+    }
+    layer.addChildAt(pooled, 0);
+  }, [
+    appReady,
+    carePresentationSignature,
+    course,
+    props.animationsEnabled,
+    props.colorVision,
+    props.graphicsQuality,
+    props.reducedMotion,
+    props.worldSeed,
+    rotation,
+    surfaceHeightAt,
+  ]);
+
   // ---------------------------------------------------------------------
   // Objects layer — obstacles, ground-anchored and depth-sorted
   // ---------------------------------------------------------------------
@@ -4940,6 +5180,23 @@ export function PixiStage(props: PixiStageProps) {
       } else {
         for (const entry of obstacleSpritesRef.current.values()) {
           if (entry.swayPhase !== null && entry.sprite.skew.x !== 0) entry.sprite.skew.x = 0;
+        }
+      }
+
+      // Repair workers are shown only when the observed care record reports
+      // an active task and sufficient allocated service. Motion is cosmetic,
+      // bounded, and snaps to the stable anchor when animation is disabled.
+      for (const worker of surfaceCareWorkersRef.current) {
+        if (props.animationsEnabled && worker.animated) {
+          const phase = nowMs / 520 + worker.phase;
+          worker.graphics.position.set(
+            worker.baseX + Math.sin(phase) * 1.1,
+            worker.baseY + Math.abs(Math.sin(phase * 0.5)) * 0.5,
+          );
+          worker.graphics.rotation = Math.sin(phase * 0.7) * 0.025;
+        } else {
+          worker.graphics.position.set(worker.baseX, worker.baseY);
+          worker.graphics.rotation = 0;
         }
       }
 

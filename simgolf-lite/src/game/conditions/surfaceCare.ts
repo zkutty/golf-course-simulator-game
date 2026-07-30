@@ -251,6 +251,18 @@ export interface SurfaceCareZoneEvidence {
   action: string;
 }
 
+/**
+ * Read-only bridge for presentation and reporting consumers. The sparse
+ * authority stays in SurfaceCareStateV1; consumers receive the normalized
+ * record, stable topology, and the exact effective-surface projection
+ * together so they cannot reconstruct a competing condition model.
+ */
+export interface ObservedSurfaceCareZone {
+  zone: SurfaceCareZone;
+  record: SurfaceCareRecordV1;
+  effective: EffectiveSurface;
+}
+
 export interface SurfaceCareDayReport {
   absoluteDay: number;
   zones: number;
@@ -505,6 +517,8 @@ function defaultRecord(zone: SurfaceCareZone, absoluteDay = -1): SurfaceCareReco
     lastIrrigationApplied: 0,
     lastElevatedWaterDemand: 0,
     lastElevatedWaterApplied: 0,
+    lastRepairProgressed: false,
+    lastRepairServiceRatio: 0,
     lastObservedAbsoluteDay: absoluteDay,
   };
 }
@@ -628,6 +642,10 @@ function sanitizeRecord(
     lastIrrigationApplied,
     lastElevatedWaterDemand,
     lastElevatedWaterApplied,
+    lastRepairProgressed: candidate.lastRepairProgressed === true,
+    lastRepairServiceRatio: clamp(
+      finite(candidate.lastRepairServiceRatio, 0),
+    ),
     lastObservedAbsoluteDay: absoluteDay,
   };
 }
@@ -1081,7 +1099,10 @@ function advanceRecord(args: {
   let repair = previous.repair ? { ...previous.repair } : undefined;
   let repairProgress = previous.repairProgress;
   let repairRequired = previous.repairRequired;
+  let lastRepairProgressed = false;
+  let lastRepairServiceRatio = 0;
   if (repair) {
+    lastRepairServiceRatio = service;
     const suitable = repair.kind === "reseed"
       ? suitableGrowingDay(weather, dormancy, moisture)
       : weather.kind !== "storm"
@@ -1089,6 +1110,7 @@ function advanceRecord(args: {
         && moisture >= 0.3
         && moisture <= 0.86;
     const progressed = suitable && service >= 0.55;
+    lastRepairProgressed = progressed;
     if (progressed) repair.progressDays++;
     if (
       progressed
@@ -1149,6 +1171,8 @@ function advanceRecord(args: {
     lastIrrigationApplied: irrigation.applied,
     lastElevatedWaterDemand: irrigation.elevatedDemand,
     lastElevatedWaterApplied: irrigation.elevatedApplied,
+    lastRepairProgressed,
+    lastRepairServiceRatio: round4(lastRepairServiceRatio),
     lastObservedAbsoluteDay: absoluteDay,
   };
 }
@@ -1239,7 +1263,7 @@ function effectiveFromRecord(record: SurfaceCareRecordV1): EffectiveSurface {
   };
 }
 
-function visualSignatureForRecord(record: SurfaceCareRecordV1): string {
+function terrainVisualSignatureForRecord(record: SurfaceCareRecordV1): string {
   const effective = effectiveFromRecord(record);
   return [
     effective.effectiveTerrain,
@@ -1249,8 +1273,8 @@ function visualSignatureForRecord(record: SurfaceCareRecordV1): string {
 }
 
 /**
- * Ephemeral renderer invalidation state. It is derived from sparse records and
- * never persisted per tile.
+ * Per-tile terrain-chunk invalidation only. Bounded care-layer cues have their
+ * own compact signature and must not cause terrain geometry/material rebuilds.
  */
 export function surfaceCareVisualSignatures(course: Course): string[] {
   if (course.surfaceCare == null) {
@@ -1263,9 +1287,59 @@ export function surfaceCareVisualSignatures(course: Course): string[] {
     const zone = key ? topology.zonesByKey.get(key) : undefined;
     const record = key && zone ? state?.records[key] : undefined;
     return record
-      ? visualSignatureForRecord(record)
+      ? terrainVisualSignatureForRecord(record)
       : `${terrain}:authored`;
   });
+}
+
+/**
+ * Compact invalidation identity for the separate bounded care layer. It
+ * includes every input used to select care cues, but is never expanded per
+ * tile and never participates in terrain-chunk dirty checks.
+ */
+export function surfaceCarePresentationSignature(course: Course): string {
+  const state = normalizeSurfaceCareState(course.surfaceCare, course);
+  if (!state) return "00000000";
+  const topology = surfaceCareTopology(course);
+  const parts = topology.zones.flatMap((zone) => {
+    const record = state.records[zone.key];
+    if (!record || record.lastObservedAbsoluteDay < 0) return [];
+    const effective = effectiveFromRecord(record);
+    return [[
+      zone.key,
+      zone.surfaceId,
+      zone.cells.length,
+      effective.effectiveTerrain,
+      effective.treatment,
+      record.mowingQuality.toFixed(4),
+      record.moisture.toFixed(4),
+      record.turfHealth.toFixed(4),
+      record.wear.toFixed(4),
+      record.drainageStress.toFixed(4),
+      record.missedMowingDays,
+      record.insufficientWaterDays,
+      record.saturatedDays,
+      Number(record.repairRequired),
+      record.repair?.kind ?? "none",
+      record.repair?.progressDays ?? 0,
+      record.repair?.requiredDays ?? 0,
+      record.repair?.startedAbsoluteDay ?? -1,
+      record.repairProgress.toFixed(4),
+      record.lastTraffic.toFixed(4),
+      Number(record.lastRepairProgressed === true),
+      (record.lastRepairServiceRatio ?? 0).toFixed(4),
+      record.lastObservedAbsoluteDay,
+    ].join(":")];
+  });
+  const holeRoutes = course.holes.map((hole, index) => [
+    hole.id ?? `hole-${index + 1}`,
+    hole.tee ? `${hole.tee.x},${hole.tee.y}` : "no-tee",
+    ...(hole.waypoints ?? []).map((point) => `${point.x},${point.y}`),
+    hole.green ? `${hole.green.x},${hole.green.y}` : "no-green",
+  ].join(":"));
+  return hashText(`${parts.join("|")}#${holeRoutes.join("|")}`)
+    .toString(16)
+    .padStart(8, "0");
 }
 
 export function resolveEffectiveSurfaceAtIndex(
@@ -1317,6 +1391,28 @@ export function resolveEffectiveSurface(
   const safeX = Math.max(0, Math.min(course.width - 1, Math.floor(x)));
   const safeY = Math.max(0, Math.min(course.height - 1, Math.floor(y)));
   return resolveEffectiveSurfaceAtIndex(course, safeY * course.width + safeX);
+}
+
+/**
+ * Returns only genuinely observed sparse zones. Defaults synthesized for
+ * unobserved terrain are intentionally excluded: absence of evidence must
+ * never become a visible maintenance problem.
+ */
+export function observedSurfaceCareZones(
+  course: Course,
+): readonly ObservedSurfaceCareZone[] {
+  const state = normalizeSurfaceCareState(course.surfaceCare, course);
+  if (!state) return Object.freeze([]);
+  const topology = surfaceCareTopology(course);
+  return Object.freeze(topology.zones.flatMap((zone) => {
+    const record = state.records[zone.key];
+    if (!record || record.lastObservedAbsoluteDay < 0) return [];
+    return [Object.freeze({
+      zone,
+      record,
+      effective: effectiveFromRecord(record),
+    })];
+  }));
 }
 
 /** Local playing quality sampled along a published hole, including its green. */
@@ -1730,6 +1826,10 @@ export function startSurfaceRepair(
             ...record,
             repair,
             repairProgress: 0,
+            // Generic care allocation can predate the purchase. A worker is
+            // not observable until a later authoritative repair-day advance.
+            lastRepairProgressed: false,
+            lastRepairServiceRatio: 0,
           },
         },
       },
