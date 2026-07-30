@@ -24,6 +24,12 @@ export interface ShotClearanceEvidence {
   pathHeightYards: number;
   requiredHeightYards: number;
   clearanceYards: number;
+  /** Present for terrain-feature clearance checks. */
+  obstacleType?: ObstacleType;
+  /** How the sampled trajectory related to this obstacle volume. */
+  relationship?: "around" | "under" | "over" | "through";
+  /** Horizontal clearance is reported when the path goes around a volume. */
+  horizontalClearanceYards?: number;
 }
 
 export interface ShotFlight {

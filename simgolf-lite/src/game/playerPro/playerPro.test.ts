@@ -151,6 +151,31 @@ describe("M36 deterministic Player Pro play", () => {
     expect(first.evidence.some((item) => item.skill === "driving")).toBe(true);
   });
 
+  it("forwards the frozen course obstacle context into the shared outcome", () => {
+    const { career, round } = started();
+    const args = {
+      snapshot: round.course,
+      holeId: round.course.holes[0].id,
+      shotNumber: 1,
+      from: round.ball,
+      lie: round.lie,
+      skills: career.skills,
+      selection: { club: "Driver", aim: { x: 34, y: 10 }, power: 0.86, technique: "normal" as const },
+      seed: 99177,
+    };
+    const clear = resolvePlayableShot(args);
+    const obstructed = resolvePlayableShot({
+      ...args,
+      snapshot: {
+        ...round.course,
+        obstacles: [{ type: "rock", x: Math.round(clear.landing.x), y: Math.round(clear.landing.y) }],
+      },
+    });
+
+    expect(obstructed.sharedOutcome?.collision).toMatchObject({ kind: "obstacle", obstacleType: "rock" });
+    expect(obstructed.sharedOutcome?.flight.clearance[0]).toMatchObject({ obstacleType: "rock" });
+  });
+
   it("uses one preview contract for continuous power, lie blockers, hazards, and committed shots", () => {
     const { career, round } = started();
     const low = previewPlayableShot(round, career.skills, { club: "Driver", aim: { x: 34, y: 10 }, power: 0.45, technique: "normal" });

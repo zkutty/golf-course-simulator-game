@@ -1,5 +1,6 @@
 import type {
   Course,
+  ObstacleType,
   Terrain,
   World,
   TeeSet,
@@ -809,6 +810,18 @@ export function resolvePlayableShot(args: {
     ruling: rules.ruling,
     relief: rules.relief,
     finalPosition,
+    obstacleCollision: {
+      width: args.snapshot.width,
+      height: args.snapshot.height,
+      yardsPerTile: args.snapshot.yardsPerTile,
+      elevations: args.snapshot.elevations,
+      tiles: args.snapshot.tiles as readonly Terrain[],
+      obstacles: args.snapshot.obstacles.map((obstacle) => ({
+        x: obstacle.x,
+        y: obstacle.y,
+        type: obstacle.type as ObstacleType,
+      })),
+    },
   });
   return trace;
 }
