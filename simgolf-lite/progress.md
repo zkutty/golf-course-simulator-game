@@ -1042,3 +1042,33 @@ classic course-builder references.
   `artifacts/zk-565/{machine-certification-v1.json,ZK-565_MACHINE_CERTIFICATION_V1.md}`.
   Physical-GPU p95 plus human art, gameplay, accessibility, and aesthetic
   approval remain intentionally deferred to the final validation phase.
+
+## 2026-07-30 — ZK-565 M52 machine certification v2
+
+- V2 supersedes, but preserves, the V1 record. Descendant candidate
+  `b895812981df39cf0cf01044bd9223b8511026db` was rejected by GitHub run
+  `30559567366`: the generation baseline expected `c3d46b2f…`, while the CI
+  runtime produced `e09728b7…`. The root cause was seeded RNG consumption
+  inside `Array.sort` comparators, whose call order/count varies by runtime.
+- Repaired candidate `c69316ae8133b6fe484aadc2006fd9a3bfaf4552`
+  uses fixed-draw Fisher-Yates shuffles. Node 24.11.1 and Node 25.8.2 produce
+  the same canonical generation SHA-256 `df29422e3bf81b077c22191d563ce1d84d1fd6396c5da80adc62c8b7cc9e65f5`;
+  the four-year weather SHA-256 remains
+  `57fde66c427db1bf4bb494a03d96e59103deed8630d16f648c0af0de5ba88cd7`.
+  Existing saved terrain/obstacles/elevations remain compatible. Same-seed
+  newly generated Parkland/Desert courses intentionally change to the
+  portable sequence.
+- Fresh exact-candidate gates pass: full Vitest (125 files, 981 passed, one
+  skip), TypeScript, lint/i18n, build and asset audits, 9 focused
+  save/package/atlas files (71 tests), 13 browser scenarios/all 48 reference
+  states, PWA, performance smoke, and two V2 bundled-client scenarios with
+  inspected populated/distinct captures and zero error artifacts. Exact-SHA
+  CI run `30560782249` and its playtest deployment also passed.
+- Fresh budgets: 1,033 ms cold start, 3,874 ms fixture load, 0.434 ms
+  renderer work, 3.582 MiB initial critical payload, 3.344 MiB largest
+  selected tier, and 1,183,165-byte largest atlas pair. Headless frame p95 is
+  report-only.
+- V2 reports:
+  `artifacts/zk-565/{machine-certification-v2.json,ZK-565_MACHINE_CERTIFICATION_V2.md}`.
+  Human playtesting, art/aesthetic judgment, human accessibility/device
+  validation, and physical-GPU p95 remain explicitly deferred and open.

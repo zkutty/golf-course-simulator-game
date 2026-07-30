@@ -10,7 +10,7 @@
         "generator": "createBiomeAuthoringReferenceCourse",
         "registryContentVersion": 1
       },
-      "courseHash": "dd69880e8eeffbf3a7d6deb6567f4296c16847a8615485d567b17ab9b1bb8fe0",
+      "courseHash": "78c63cfbaa43b0d0c426e2a534f965febeea717e24f3fad4c1682c46cffc712b",
       "terrain": [
         "deep_rough",
         "fairway",
@@ -231,7 +231,7 @@
           "focus": "ball-and-green"
         }
       ],
-      "fixtureHash": "2383b7e8cc3a6c5f7714f7b2d9eabf5ddc24deb68d2ff3c7614a0dea85a40e27"
+      "fixtureHash": "7b4c64129a1c755efd146f35f6fe1e23c01ad8462f65e21397350d87005e5379"
     },
     {
       "id": "zk-564-links",
@@ -474,7 +474,7 @@
         "generator": "createBiomeAuthoringReferenceCourse",
         "registryContentVersion": 1
       },
-      "courseHash": "08dbd235ccea125b883b52c17c0e5d87ead337f55757b27ad698a5528b75b6dc",
+      "courseHash": "6ebf356c35dd636e515e2e9790bc546b014fdd63782725c0ce0253bab7b2704f",
       "terrain": [
         "deep_rough",
         "fairway",
@@ -695,7 +695,7 @@
           "focus": "ball-and-green"
         }
       ],
-      "fixtureHash": "6e37b9c9c41ba814647871874a2f6bbbbfe8e8cd7757b4f41a8d02bb18813f7e"
+      "fixtureHash": "002425fa57728deeded207c2083a8c11da2eb37856b882022e9507107a882923"
     }
   ]
 }

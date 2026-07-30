@@ -11,12 +11,12 @@
       "biome": "parkland",
       "terrain": [
         "rough",
-        "sand",
         "water",
-        "wetland",
         "deep_rough",
-        "waste_area",
+        "wetland",
         "path",
+        "waste_area",
+        "sand",
         "fairway",
         "tee",
         "green"
