@@ -78,6 +78,7 @@ import { createLiveState, createRenderPerfLiveState } from "./game/live/simulati
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
 import { hashGameState } from "./utils/stateHash";
+import { seasonalVisualState } from "./game/presentation/seasonalVisualState";
 import {
   BUILDING_SPECS,
   CONCESSION_TYPES,
@@ -260,7 +261,7 @@ import {
   resolveStoryChoice,
   setReturnToDesignContext,
 } from "./game/livingClub/livingClub";
-import { absoluteDayFor, activeWeather, advanceSeasonalDay, applySeasonCommand, createSeasonalState, seasonalState, weatherModifiers } from "./game/seasons/seasons";
+import { absoluteDayFor, advanceSeasonalDay, applySeasonCommand, createSeasonalState, seasonalState } from "./game/seasons/seasons";
 import type { SeasonCommand } from "./game/seasons/types";
 import {
   activeCampaignMatch,
@@ -2154,6 +2155,11 @@ export default function App() {
     audioCameraCenterRef.current = audioCameraCenter;
   }, [audioCameraCenter]);
 
+  const seasonalPresentation = useMemo(
+    () => seasonalVisualState({ course, world, day: live.status.dayIndex, result: last }),
+    [course, last, live.status.dayIndex, world],
+  );
+
   // One app-state mapping owns music selection. Track files remain preload=none
   // until the first user gesture unlocks the manager.
   useEffect(() => {
@@ -2197,8 +2203,7 @@ export default function App() {
       visibleGolfers: live.status.onCourse,
       paused: worldAudioPaused,
       enabled: worldAudioEnabled,
-      weatherKind: activeWeather(world, course, live.status.dayIndex).kind,
-      season: seasonalState(world, course, live.status.dayIndex).calendar.season,
+      seasonalVisualState: seasonalPresentation,
     }));
   }, [
     audio,
@@ -2210,6 +2215,7 @@ export default function App() {
     live.status.dayMinute,
     live.status.onCourse,
     audioSurface,
+    seasonalPresentation,
     world,
   ]);
 
@@ -2552,13 +2558,11 @@ export default function App() {
       simulation: { speed: live.speed, dayMinute: live.status.dayMinute, clock: live.status.clockLabel, onCourse: live.status.onCourse, roundsToday: live.status.roundsToday, arrivalsRemaining: live.status.arrivalsRemaining, weekReport: pendingWeekReport ? { week: pendingWeekReport.week, profit: pendingWeekReport.result.profit, weather: pendingWeekReport.result.weatherSummary ?? null } : null, overviewOpen: showLiveOverview, following: followSelected ? live.selectedId : null, pace: live.status.pace, golfers: live.status.golfers.map((golfer) => ({ id: golfer.id, courseId: golfer.courseId, currentHoleId: golfer.currentHoleId, scoreToPar: golfer.scoreToPar })) },
       seasons: (() => {
         const state = seasonalState(world, course, live.status.dayIndex);
-        const weather = activeWeather(world, course, live.status.dayIndex);
-        const modifiers = weatherModifiers(weather, state.operations.drainageLevel);
         return {
           panelOpen: showSeasonsLegacy,
-          calendar: state.calendar,
-          weather,
-          modifiers,
+          calendar: seasonalPresentation.climate.calendar,
+          weather: seasonalPresentation.weather,
+          modifiers: seasonalPresentation.modifiers,
           forecast: state.forecast,
           charter: state.charter,
           automation: state.automation,
@@ -2566,6 +2570,16 @@ export default function App() {
           yearbooks: state.yearbooks.map((book) => ({ id: book.id, year: book.year, charter: book.charter, awards: book.awards, ranking: book.rankings.find((ranking) => ranking.player)?.rank ?? null, dismissed: book.dismissed })),
           timelineEntries: state.timeline.length,
           hallOfFame: state.hallOfFame.length,
+          presentation: {
+            climate: seasonalPresentation.climate,
+            weather: seasonalPresentation.weather,
+            modifiers: seasonalPresentation.modifiers,
+            condition: seasonalPresentation.condition,
+            maintenance: seasonalPresentation.maintenance,
+            activeLayers: seasonalPresentation.activeLayers,
+            renderer: seasonalPresentation.renderer,
+            audio: seasonalPresentation.audio,
+          },
         };
       })(),
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
@@ -2715,7 +2729,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, selected, selectedParcelId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedParcelId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -4196,8 +4210,8 @@ export default function App() {
   // Context is intentionally computed at the edge of the UI only. It never
   // enters simulation/save state and cannot alter shell commands or focus.
   const contextualUiTheme = biomeUiTheme(course.theme, {
-    season: seasonalState(world, course, live.status.dayIndex).calendar.season,
-    weather: activeWeather(world, course, live.status.dayIndex).kind,
+    season: seasonalPresentation.climate.calendar.season,
+    weather: seasonalPresentation.weather.kind,
     colorVision: appProfile.accessibility.colorVision,
     reducedMotion: appProfile.accessibility.reducedMotion,
   });
@@ -4383,6 +4397,7 @@ export default function App() {
                 animationsEnabled={effectiveAnimations && resolvedGraphicsQuality !== "low"}
                 graphicsQuality={resolvedGraphicsQuality}
                 season={contextualUiTheme.season}
+                seasonalVisualState={seasonalPresentation}
                 onFrameTime={handleGraphicsFrame}
                 ambienceFx={appProfile.graphics.ambienceFx && resolvedGraphicsQuality !== "low"}
                 waterAnimation={appProfile.graphics.waterAnimation && resolvedGraphicsQuality !== "low"}

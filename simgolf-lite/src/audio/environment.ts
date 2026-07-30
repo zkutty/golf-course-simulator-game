@@ -3,6 +3,7 @@ import type { SeasonName, WeatherKind } from "../game/seasons/types";
 import type { AmbientMix, AudioSurface, MusicContext } from "./AudioManager";
 import type { SunoAmbienceContext } from "./sunoLibrary";
 import { getBiomeDefinition } from "../game/models/biomes";
+import type { SeasonalVisualState } from "../game/presentation/seasonalVisualState";
 
 export function audioSurfaceFor(input: {
   screen: "menu" | "setup" | "game" | "loading";
@@ -91,6 +92,8 @@ export function ambientMixFor(input: {
   enabled?: boolean;
   weatherKind?: WeatherKind;
   season?: SeasonName;
+  /** Preferred M53 projection; legacy callers may still pass weather/season. */
+  seasonalVisualState?: Pick<SeasonalVisualState, "audio">;
   radius?: number;
 }): AmbientMix {
   const radius = input.radius ?? 9;
@@ -124,10 +127,12 @@ export function ambientMixFor(input: {
   const nearCampus = nearbyProperty.some((asset) =>
     asset.category === "access" || asset.category === "practice" || asset.category === "clubhouse"
   );
-  const wet = input.weatherKind === "rain" || input.weatherKind === "heavy_rain" || input.weatherKind === "storm";
+  const weatherKind = input.seasonalVisualState?.audio.weatherKind ?? input.weatherKind;
+  const season = input.seasonalVisualState?.audio.season ?? input.season;
+  const wet = weatherKind === "rain" || weatherKind === "heavy_rain" || weatherKind === "storm";
   let bed: SunoAmbienceContext = getBiomeDefinition(input.course.theme).content.audio.ambience;
   if (wet) bed = "rain";
-  else if (input.season === "winter" || input.weatherKind === "frost") bed = "winter";
+  else if (season === "winter" || weatherKind === "frost") bed = "winter";
   else if (input.dayMinute >= 700 || input.dayMinute < 45) bed = "night";
   else if (nearResort) bed = "resort";
   else if (nearCampus) bed = "campus";

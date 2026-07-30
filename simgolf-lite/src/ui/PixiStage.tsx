@@ -10,6 +10,7 @@ import type { GolferRenderData } from "../game/live/types";
 import { mobilityRenderUnits } from "../game/m51/mobilityRender";
 import type { PlayerPlayableRound, PlayerProPoint } from "../game/models/playerProTypes";
 import type { SeasonName } from "../game/seasons/types";
+import type { SeasonalVisualState } from "../game/presentation/seasonalVisualState";
 import type { CameraState, IsoCameraSnapshot } from "../game/render/camera";
 import {
   ELEVATION_STEP_PX,
@@ -549,6 +550,8 @@ export interface PixiStageProps {
   graphicsQuality: "high" | "medium" | "low";
   /** Current club-calendar season; omitted legacy callers remain base-only. */
   season?: SeasonName;
+  /** Transient M53 presentation inputs; independent of camera/quality state. */
+  seasonalVisualState?: SeasonalVisualState;
   /** Feeds sustained frame telemetry to the Auto quality controller. */
   onFrameTime?: (frameMs: number) => void;
   ambienceFx: boolean;

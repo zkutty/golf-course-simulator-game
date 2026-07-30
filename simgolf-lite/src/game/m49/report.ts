@@ -5,6 +5,7 @@ import { buildM49DemandPlan } from "./demand";
 import { m49CourseHistory, normalizeM49State } from "./history";
 import { strategicIdentity } from "./identity";
 import type { M49CourseReport, M49ExperienceCause, M49ReportAlert } from "./types";
+import { localizedConditionZones } from "../conditions/localizedConditionZones";
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
@@ -32,26 +33,12 @@ function conditionReport(course: Course, world: World, result?: WeekResult): M49
   const recoveryHeadroom = (maintenanceBudget - requiredMaintenance) / Math.max(1, requiredMaintenance);
   const projectedRecovery = clamp(course.condition + recoveryHeadroom * .12 - wearPressure * .08);
 
-  const zones = new Map<string, { terrain: string; tiles: number; burden: number }>();
-  const halfWidth = Math.max(1, course.width / 2);
-  const halfHeight = Math.max(1, course.height / 2);
-  course.tiles.forEach((terrain, index) => {
-    const x = index % Math.max(1, course.width);
-    const y = Math.floor(index / Math.max(1, course.width));
-    const zoneId = `${y < halfHeight ? "N" : "S"}${x < halfWidth ? "W" : "E"}`;
-    const burden = TERRAIN_MAINT_WEIGHT[terrain] ?? 1;
-    const current = zones.get(zoneId) ?? { terrain, tiles: 0, burden: 0 };
-    current.tiles += 1;
-    current.burden += burden;
-    if (burden > (TERRAIN_MAINT_WEIGHT[current.terrain as keyof typeof TERRAIN_MAINT_WEIGHT] ?? 1)) current.terrain = terrain;
-    zones.set(zoneId, current);
-  });
-  const hotSpots = [...zones.entries()]
-    .map(([zoneId, zone]) => ({
-      zoneId,
+  const hotSpots = [...localizedConditionZones(course).values()]
+    .map((zone) => ({
+      zoneId: zone.zoneId,
       terrain: zone.terrain,
       tiles: zone.tiles,
-      burden: round(zone.burden / Math.max(1, zone.tiles), 3),
+      burden: zone.burden,
       action: shortfall > 0 ? "Increase maintenance or reduce wear here" : "Keep this zone on the current care plan",
     }))
     .sort((a, b) => b.burden - a.burden)
