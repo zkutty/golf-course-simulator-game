@@ -909,15 +909,14 @@ classic course-builder references.
   production build, both terrain/asset audits, and whitespace validation pass.
 - Actual selected payloads are bounded: Parkland/Links/Desert High peak at
   3.344 MiB, Medium at 2.821 MiB, and Low at 2.093 MiB, all below 6 MiB;
-  initial critical transfer is 3.581 MiB.
+  initial critical transfer is 3.582 MiB.
 - The bundled client reached Spring Parkland gameplay with valid structured
   text state, no console/page-error artifact, and a visually inspected intact
   Pixi course capture in `artifacts/zk-562/bundled-client/`.
-- Remaining infrastructure-only check: the production PWA smoke could not
-  complete in this agent session. Port 4175 was occupied by another shared
-  dev process, sandbox binding on 4182 returned EPERM, and the requested
-  escalated 4182 run was user-aborted while pending. Re-run `npm run test:pwa`
-  once an allowed local port is available; no product or test assertion failed.
+- Final exact-candidate PWA smoke passes strict-CSP gameplay, selected-biome
+  cache isolation with no unselected-biome leakage, scoped service-worker
+  install, offline reload of every requested hashed asset, and local save
+  persistence. No machine-only infrastructure check remains open.
 - Independent-review repair: `App` now passes the existing world-owned club
   season into `PixiStage`; both initial atlas load and the post-ready reload
   include it, and the reload effect depends on season. Atlas activation uses a
@@ -980,13 +979,12 @@ classic course-builder references.
   canvas, preventing a timing-only blank-canvas screenshot from becoming
   evidence. Reference captures:
   `artifacts/zk-623/{wizard,terrain,shell}-{parkland,links,desert}.png`.
-- Verification: focused Vitest (3 tests), lint/i18n (0 errors; existing hook
-  warnings only), and ZK-623 Playwright (2 tests) pass. The required bundled
-  web-game client produced valid menu text state with no error output and its
-  capture was inspected. A concurrent package-format cast was the only
-  remaining shared-project TypeScript diagnostic at handoff; this UI slice
-  itself has no TypeScript errors. Human visual/aesthetic approval remains
-  intentionally deferred to the final validation gate.
+- Verification: focused `biomeUiTheme` Vitest (4 tests), integrated
+  TypeScript, lint/i18n (0 errors; existing hook warnings only), and ZK-623
+  Playwright (2 tests) pass. The required bundled web-game client produced
+  valid menu text state with no error output and its capture was inspected.
+  Human visual/aesthetic approval remains intentionally deferred to the final
+  validation gate.
 
 ## 2026-07-30 — ZK-564 deterministic biome authoring audits and fixtures
 
@@ -1003,19 +1001,44 @@ classic course-builder references.
   plus `biome-reference-fixtures.json`. Current result is PASS with zero
   required gaps and zero over-budget tiers; 45 optional base/seasonal omissions
   and three explicit fallback contracts are distinguished rather than hidden.
-- Deliberately incomplete tests remove Parkland tree frames, remove the Links
-  bridge fixture, and lower the payload budget to one byte. Each fails in its
-  correct required/over-budget report bucket. Current logical report SHA-256 is
-  `0bb39478c79b655a728d28361608251cf71fe4a088ec62eaed6727086a95338a`;
+- Negative coverage removes required Parkland tree frames and a Links bridge
+  fixture, sets the payload budget to exactly `selectedBytes - 1` and proves
+  `overByBytes = 1`, rejects a real SHA-256 content/filename digest mismatch,
+  and rejects Low tiers that ship prohibited detail, prop, or field layers.
+  Current logical report SHA-256 is
+  `009f7acf540f7ba1d2f3e7e38cd6964070fe9fe53b896468478480bb13fcdf4e`;
   fixture-report SHA-256 is
-  `d61eccd6fc00a49b36edcb1e6012d6f8355f2504d0b103354c16df6b53947e2e`.
-- Verification: focused Vitest passes 5 tests; TypeScript, targeted lint (zero
+  `12ae3d207c058174e15c11faf183004538fbb7755c4bebc4f6a29beabfb88ad9`.
+- Verification: focused Vitest passes 6/6; TypeScript, targeted lint (zero
   errors; existing App hook warnings only), biome-consumer audit, and diff
-  integrity pass. ZK-564 Playwright passes after capturing all 12
-  biome/rotation canvases; representative Parkland, Links, and Desert captures
+  integrity pass. ZK-564 Playwright executes all 48 states across three
+  biomes × four modes × four rotations, including real golfer-follow and
+  direct-play behavior, and produces 12 bounded mode captures. The captures
   were visually inspected as populated and distinct with no console/page
   errors. The bundled web-game client reached the Links fixture twice with
   structured state covering every terrain/prop/decor category, no error
-  artifact, and an inspected intact Pixi overview capture.
+  artifact, and an inspected populated canvas/minimap capture.
 - Human art direction, aesthetics, and final gameplay validation remain
   intentionally deferred to the final human gate.
+
+## 2026-07-30 — ZK-565 M52 machine certification
+
+- Certified immutable candidate
+  `a26e1346a6af451d1f42f7d1face459f3971327b` as machine **PASS**. The first
+  candidate exposed a real schema-v23 save/reload hash-parity defect; the
+  reviewed repair now canonicalizes and validates top-level and active-round
+  biome identity before hashing.
+- Fresh exact-candidate verification passes: full Vitest (125 files, 980
+  passed, one intentional skip), production build, lint/i18n, biome consumer
+  and authoring/asset audits, 9 focused save/package/atlas files (71 tests),
+  13 Playwright scenarios including all 48 biome/view/rotation states, PWA
+  offline/cache isolation, the 100-golfer performance smoke, and two bundled
+  client scenarios with inspected screenshots/text and no error artifact.
+- Fresh budgets: 847 ms cold start, 3,913 ms fixture load, 0.369 ms renderer
+  JS work, 3.582 MiB initial non-audio critical payload, 3.344 MiB largest
+  selected-biome tier, and 1,183,165-byte largest atlas pair. Headless frame
+  p95 remains report-only because software GL throttles near 10 fps.
+- Reports:
+  `artifacts/zk-565/{machine-certification-v1.json,ZK-565_MACHINE_CERTIFICATION_V1.md}`.
+  Physical-GPU p95 plus human art, gameplay, accessibility, and aesthetic
+  approval remain intentionally deferred to the final validation phase.
