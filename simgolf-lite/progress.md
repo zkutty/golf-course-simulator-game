@@ -1,5 +1,17 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## M60 Vision page execution — 2026-07-31
+
+- Added a timeless six-stage Vision narrative and a five-landscape gallery for
+  Tropical Coastal Resort, Temperate Japan, Alpine Mountain, Heathland, and
+  Australian Sandbelt. All new artwork is project-bound, responsive, and
+  covered by browser and offline/PWA regression checks.
+- The M60 art contract is documented in `docs/M60_VISION_ART_CONTRACT.md`.
+  Approved content-bible contracts for Tropical, Temperate Japan, and Alpine
+  Mountain live in `docs/biomes/`.
+- Vision media is cache-on-demand rather than precached, keeping installation
+  lightweight while preserving offline access after a page visit.
+
 ## M50 implementation wave — 2026-07-30
 
 ## M51 ZK-538 Wave 0 mobility/rental foundation — 2026-07-30

@@ -13,9 +13,10 @@ function walk(directory) {
     if (statSync(path).isDirectory()) walk(path);
     else {
       const url = relative(dist, path).split(sep).join("/");
-      // Audio and biome/quality atlases are cache-on-demand. Precaching them
-      // would make installing one theme download every theme.
-      if (url !== "sw.js" && !url.startsWith("audio/") && !url.startsWith("atlases/")) files.push(url);
+      // Audio, Vision artwork, and biome/quality atlases are cache-on-demand.
+      // Precaching them would make installing the app download media the
+      // player has not asked to see.
+      if (url !== "sw.js" && !url.startsWith("audio/") && !url.startsWith("atlases/") && !url.startsWith("vision/")) files.push(url);
     }
   }
 }

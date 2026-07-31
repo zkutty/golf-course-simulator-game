@@ -73,6 +73,25 @@ try {
   if (!registration.scope.endsWith(normalizedBase)) throw new Error(`Service-worker scope ${registration.scope} does not match ${normalizedBase}`);
   if (!registration.scriptURL.endsWith(`${normalizedBase}sw.js`)) throw new Error(`Service worker loaded from wrong path: ${registration.scriptURL}`);
 
+  const cachedVisionAssets = () => page.evaluate(async () => {
+    const keys = (await caches.keys()).filter((key) => key.startsWith("coursecraft-"));
+    const requests = (await Promise.all(keys.map(async (key) => (await caches.open(key)).keys()))).flat();
+    return requests.map((request) => request.url).filter((url) => url.includes("/vision/"));
+  });
+  if ((await cachedVisionAssets()).length) throw new Error("Vision media was precached before the Vision page was opened");
+
+  await page.goto(new URL("?view=vision", baseURL).href, { waitUntil: "domcontentloaded" });
+  await page.getByTestId("vision-page").waitFor({ state: "visible" });
+  await page.locator("#vision-biomes").scrollIntoViewIfNeeded();
+  await page.waitForTimeout(400);
+  const viewedVisionAssets = await cachedVisionAssets();
+  if (!viewedVisionAssets.some((url) => url.endsWith("/vision/coursecraft-world.jpg"))) {
+    throw new Error("The viewed Vision hero was not stored in the runtime cache");
+  }
+  if (!viewedVisionAssets.some((url) => url.includes("/vision/tropical-coastal-resort"))) {
+    throw new Error("A viewed Vision gallery image was not stored in the runtime cache");
+  }
+
   const manifest = await page.evaluate(async () => {
     const link = document.querySelector('link[rel="manifest"]');
     const response = await fetch(link.href);
@@ -81,6 +100,7 @@ try {
   if (!manifest.url.includes(`${normalizedBase}manifest.webmanifest`)) throw new Error(`Manifest loaded from wrong path: ${manifest.url}`);
   if (manifest.body.start_url !== "./" || manifest.body.scope !== "./") throw new Error("Manifest is not deploy-subpath relative");
 
+  await page.goto(baseURL, { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "Quick Start" }).click();
   const tutorial = page.getByRole("dialog", { name: "First-launch tutorial" });
   if (await tutorial.count()) await tutorial.getByRole("button", { name: "Skip tutorial" }).click();
@@ -141,7 +161,7 @@ try {
   if (offlineBundleResponses.some((ok) => !ok)) {
     throw new Error("Previously loaded biome assets were not available offline");
   }
-  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, selected-biome cache isolation, scoped install, offline reload, and local save persistence`);
+  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, Vision cache-on-demand, selected-biome cache isolation, scoped install, offline reload, and local save persistence`);
 } finally {
   await browser.close();
   preview?.close?.();

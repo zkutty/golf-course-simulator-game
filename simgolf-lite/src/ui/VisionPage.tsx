@@ -11,11 +11,18 @@ type Feature = {
   detail: MessageKey;
 };
 
-type FutureFeature = {
-  milestone: MessageKey;
+type SystemStory = {
+  eyebrow: MessageKey;
   title: MessageKey;
   body: MessageKey;
   detail: MessageKey;
+};
+
+type BiomePreview = {
+  slug: string;
+  title: MessageKey;
+  body: MessageKey;
+  alt: MessageKey;
 };
 
 const FEATURES: Feature[] = [
@@ -27,25 +34,36 @@ const FEATURES: Feature[] = [
   { icon: "✦", title: "vision.feature.legacy.title", body: "vision.feature.legacy.body", detail: "vision.feature.legacy.detail" },
 ];
 
-const FUTURE_FEATURES: FutureFeature[] = [
-  { milestone: "vision.future.play.milestone", title: "vision.future.play.title", body: "vision.future.play.body", detail: "vision.future.play.detail" },
-  { milestone: "vision.future.feedback.milestone", title: "vision.future.feedback.title", body: "vision.future.feedback.body", detail: "vision.future.feedback.detail" },
-  { milestone: "vision.future.people.milestone", title: "vision.future.people.title", body: "vision.future.people.body", detail: "vision.future.people.detail" },
-  { milestone: "vision.future.seasons.milestone", title: "vision.future.seasons.title", body: "vision.future.seasons.body", detail: "vision.future.seasons.detail" },
-  { milestone: "vision.future.campaign.milestone", title: "vision.future.campaign.title", body: "vision.future.campaign.body", detail: "vision.future.campaign.detail" },
-  { milestone: "vision.future.premium.milestone", title: "vision.future.premium.title", body: "vision.future.premium.body", detail: "vision.future.premium.detail" },
+const SYSTEM_STORIES: SystemStory[] = [
+  { eyebrow: "vision.loop.card.design.eyebrow", title: "vision.loop.card.design.title", body: "vision.loop.card.design.body", detail: "vision.loop.card.design.detail" },
+  { eyebrow: "vision.loop.card.watch.eyebrow", title: "vision.loop.card.watch.title", body: "vision.loop.card.watch.body", detail: "vision.loop.card.watch.detail" },
+  { eyebrow: "vision.loop.card.play.eyebrow", title: "vision.loop.card.play.title", body: "vision.loop.card.play.body", detail: "vision.loop.card.play.detail" },
+  { eyebrow: "vision.loop.card.operate.eyebrow", title: "vision.loop.card.operate.title", body: "vision.loop.card.operate.body", detail: "vision.loop.card.operate.detail" },
+  { eyebrow: "vision.loop.card.evolve.eyebrow", title: "vision.loop.card.evolve.title", body: "vision.loop.card.evolve.body", detail: "vision.loop.card.evolve.detail" },
+  { eyebrow: "vision.loop.card.remember.eyebrow", title: "vision.loop.card.remember.title", body: "vision.loop.card.remember.body", detail: "vision.loop.card.remember.detail" },
 ];
 
 const CHAPTERS = [
   { number: "01", title: "vision.chapter.land.title", body: "vision.chapter.land.body" },
   { number: "02", title: "vision.chapter.course.title", body: "vision.chapter.course.body" },
   { number: "03", title: "vision.chapter.club.title", body: "vision.chapter.club.body" },
-  { number: "04", title: "vision.chapter.legacy.title", body: "vision.chapter.legacy.body" },
+  { number: "04", title: "vision.chapter.play.title", body: "vision.chapter.play.body" },
+  { number: "05", title: "vision.chapter.seasons.title", body: "vision.chapter.seasons.body" },
+  { number: "06", title: "vision.chapter.legacy.title", body: "vision.chapter.legacy.body" },
 ] satisfies Array<{ number: string; title: MessageKey; body: MessageKey }>;
+
+const BIOMES: BiomePreview[] = [
+  { slug: "tropical-coastal-resort", title: "vision.biome.tropical.title", body: "vision.biome.tropical.body", alt: "vision.biome.tropical.alt" },
+  { slug: "temperate-japan", title: "vision.biome.japan.title", body: "vision.biome.japan.body", alt: "vision.biome.japan.alt" },
+  { slug: "alpine-mountain", title: "vision.biome.alpine.title", body: "vision.biome.alpine.body", alt: "vision.biome.alpine.alt" },
+  { slug: "heathland", title: "vision.biome.heathland.title", body: "vision.biome.heathland.body", alt: "vision.biome.heathland.alt" },
+  { slug: "australian-sandbelt", title: "vision.biome.sandbelt.title", body: "vision.biome.sandbelt.body", alt: "vision.biome.sandbelt.alt" },
+];
 
 const WORLD_IMAGE = `${import.meta.env.BASE_URL}vision/coursecraft-world.jpg`;
 const CLUBHOUSE_IMAGE = `${import.meta.env.BASE_URL}vision/clubhouse-campus.jpg`;
 const COAST_IMAGE = `${import.meta.env.BASE_URL}vision/coastal-routing.jpg`;
+const VISION_IMAGE_BASE = `${import.meta.env.BASE_URL}vision/`;
 
 export function VisionPage({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
@@ -88,6 +106,7 @@ export function VisionPage({ onClose }: { onClose: () => void }) {
           <a href="#vision-story">{t("vision.nav.story")}</a>
           <a href="#vision-systems">{t("vision.nav.systems")}</a>
           <a href="#vision-play">{t("vision.nav.play")}</a>
+          <a href="#vision-biomes">{t("vision.nav.biomes")}</a>
           <a href="#vision-world">{t("vision.nav.world")}</a>
         </div>
         <div className="cc-vision-nav-actions">
@@ -169,16 +188,38 @@ export function VisionPage({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="cc-vision-future-grid">
-          {FUTURE_FEATURES.map((feature, index) => (
+          {SYSTEM_STORIES.map((feature, index) => (
             <article key={feature.title} className="cc-vision-future-card">
               <div className="cc-vision-future-card-topline">
                 <span>{String(index + 1).padStart(2, "0")}</span>
-                <small>{t(feature.milestone)}</small>
+                <small>{t(feature.eyebrow)}</small>
               </div>
               <h3>{t(feature.title)}</h3>
               <p>{t(feature.body)}</p>
               <strong>{t(feature.detail)}</strong>
             </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="cc-vision-biomes" id="vision-biomes">
+        <div className="cc-vision-section-heading cc-vision-biomes-heading">
+          <p className="cc-vision-kicker">{t("vision.biomes.kicker")}</p>
+          <h2>{t("vision.biomes.title")}</h2>
+          <p>{t("vision.biomes.body")}</p>
+        </div>
+        <div className="cc-vision-biome-grid">
+          {BIOMES.map((biome) => (
+            <figure className="cc-vision-biome" key={biome.slug}>
+              <picture>
+                <source media="(max-width: 680px)" srcSet={`${VISION_IMAGE_BASE}${biome.slug}-mobile.jpg`} />
+                <img src={`${VISION_IMAGE_BASE}${biome.slug}.jpg`} alt={t(biome.alt)} loading="lazy" />
+              </picture>
+              <figcaption>
+                <h3>{t(biome.title)}</h3>
+                <p>{t(biome.body)}</p>
+              </figcaption>
+            </figure>
           ))}
         </div>
       </section>
