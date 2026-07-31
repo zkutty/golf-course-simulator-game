@@ -4,7 +4,60 @@ export interface SunoAudioAsset {
   issue: string;
   sourceUrl: string;
   src: string;
+  provenance: SunoAudioProvenance;
 }
+
+export interface SunoAudioProvenance {
+  source: {
+    kind: "suno-generation";
+    creator: "Zach Kutlow";
+    generatedOn: "2026-07-24";
+  };
+  license: {
+    status: "pending-release-audit";
+    basis: "subscribed-owner-account";
+  };
+  mastering: {
+    runtimeFormat: "MP3";
+    bitrateKbps: 96;
+    treatment: "source-export-no-project-remaster-documented";
+  };
+  loop: {
+    mode: "sequential-playlist";
+    seamless: false;
+    overlappingCrossfade: false;
+  };
+  loudness: {
+    status: "unmeasured";
+    runtimeControl: "master-and-channel-gain";
+  };
+}
+
+const SUNO_PROVENANCE: SunoAudioProvenance = Object.freeze({
+  source: Object.freeze({
+    kind: "suno-generation",
+    creator: "Zach Kutlow",
+    generatedOn: "2026-07-24",
+  }),
+  license: Object.freeze({
+    status: "pending-release-audit",
+    basis: "subscribed-owner-account",
+  }),
+  mastering: Object.freeze({
+    runtimeFormat: "MP3",
+    bitrateKbps: 96,
+    treatment: "source-export-no-project-remaster-documented",
+  }),
+  loop: Object.freeze({
+    mode: "sequential-playlist",
+    seamless: false,
+    overlappingCrossfade: false,
+  }),
+  loudness: Object.freeze({
+    status: "unmeasured",
+    runtimeControl: "master-and-channel-gain",
+  }),
+});
 
 function asset(
   issue: string,
@@ -19,6 +72,7 @@ function asset(
     issue,
     sourceUrl: `https://suno.com/song/${id}`,
     src: `/audio/${kind}/suno/${filename}.mp3`,
+    provenance: SUNO_PROVENANCE,
   };
 }
 

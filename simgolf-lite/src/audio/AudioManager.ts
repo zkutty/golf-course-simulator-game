@@ -6,6 +6,11 @@ import {
   type SunoAudioAsset,
   type SunoMusicContext,
 } from "./sunoLibrary";
+import type { SeasonName, WeatherKind } from "../game/seasons/types";
+import {
+  hasWeatherPriority,
+  type ProceduralAmbienceFamily,
+} from "./seasonalAmbience";
 
 export interface AudioVolumes {
   masterVolume: number;
@@ -27,13 +32,77 @@ export type SfxName =
 
 export interface AmbientMix {
   enabled: boolean;
+  season: SeasonName;
+  weatherKind: WeatherKind;
   birds: number;
   water: number;
   wind: number;
   murmur: number;
   crickets: number;
+  rain: number;
   bed: SunoAmbienceContext;
   paused: boolean;
+}
+
+export interface AudioDebugSnapshot {
+  unlocked: boolean;
+  contextState: AudioContextState | "unavailable";
+  surface: AudioSurface;
+  hidden: boolean;
+  masterMuted: boolean;
+  muteWhenHidden: boolean;
+  worldAmbienceAllowed: boolean;
+  authoredAmbienceAllowed: boolean;
+  authoredNatureOwner: boolean;
+  authoredFallback: boolean;
+  authoredFallbackBed: SunoAmbienceContext | null;
+  authoredAttempts: {
+    total: number;
+    inFlightBeds: SunoAmbienceContext[];
+    current: {
+      bed: SunoAmbienceContext;
+      generation: number;
+    } | null;
+  };
+  authoredMedia: {
+    trackId: string | null;
+    volume: number;
+    paused: boolean;
+    currentTime: number;
+  } | null;
+  mediaSlots: {
+    music: Array<{
+      trackId: string | null;
+      volume: number;
+      paused: boolean;
+    }>;
+    ambience: Array<{
+      trackId: string | null;
+      volume: number;
+      paused: boolean;
+    }>;
+  };
+  resolvedMusicContext: MusicContext;
+  playingMusicContext: MusicContext;
+  playingAmbience: SunoAmbienceContext | null;
+  priority: "weather" | "score" | "season";
+  effectiveAmbienceBus: number;
+  actualAmbienceBusGain: number;
+  proceduralSourceCount: number;
+  proceduralRampVersion: number;
+  proceduralSourceCounts: Record<ProceduralAmbienceFamily, number>;
+  proceduralTargets: Record<ProceduralAmbienceFamily, number>;
+  proceduralActuals: Record<ProceduralAmbienceFamily, number>;
+  desiredActiveProceduralFamilies: ProceduralAmbienceFamily[];
+  actualActiveProceduralFamilies: ProceduralAmbienceFamily[];
+  transition: {
+    version: number;
+    fromSeason: SeasonName;
+    toSeason: SeasonName;
+    fromWeather: WeatherKind;
+    toWeather: WeatherKind;
+    durationMs: number;
+  };
 }
 
 export const MUSIC_PLAYLISTS: Record<SunoMusicContext, readonly SunoAudioAsset[]> = SUNO_MUSIC_PLAYLISTS;
@@ -50,6 +119,15 @@ function clamp01(value: number): number {
 function nowMs(): number {
   return typeof performance === "undefined" ? Date.now() : performance.now();
 }
+
+const PROCEDURAL_FAMILIES: readonly ProceduralAmbienceFamily[] = [
+  "birds",
+  "water",
+  "wind",
+  "murmur",
+  "crickets",
+  "rain",
+];
 
 class AudioManager {
   private static instance: AudioManager | null = null;
@@ -78,20 +156,43 @@ class AudioManager {
   private ambiencePlayClaims = new WeakMap<HTMLAudioElement, number>();
   private playingAmbience: SunoAmbienceContext | null = null;
   private ambienceTrackIndex = new Map<SunoAmbienceContext, number>();
+  private currentAmbienceRequest: {
+    bed: SunoAmbienceContext;
+    generation: number;
+    promise: Promise<void>;
+  } | null = null;
+  private ambienceInFlight = new Map<number, SunoAmbienceContext>();
+  private ambienceAttemptCounts = new Map<SunoAmbienceContext, number>();
   private fadeVersions = new WeakMap<HTMLAudioElement, number>();
   private ctx: AudioContext | null = null;
   private sfxBus: GainNode | null = null;
   private ambienceBus: GainNode | null = null;
-  private ambienceLayers = new Map<"birds" | "water" | "wind" | "murmur" | "crickets", GainNode>();
+  private ambienceLayers = new Map<ProceduralAmbienceFamily, GainNode>();
   private ambienceSources: AudioBufferSourceNode[] = [];
+  private proceduralSourceCounts = new Map<ProceduralAmbienceFamily, number>();
+  private proceduralTargets = new Map<ProceduralAmbienceFamily, number>();
   private proceduralMixKey = "";
+  private proceduralRampVersion = 0;
+  private authoredAmbienceFallback = false;
+  private authoredAmbienceFallbackBed: SunoAmbienceContext | null = null;
+  private transitionVersion = 0;
+  private lastTransition = {
+    fromSeason: "summer" as SeasonName,
+    toSeason: "summer" as SeasonName,
+    fromWeather: "clear" as WeatherKind,
+    toWeather: "clear" as WeatherKind,
+    durationMs: 0,
+  };
   private ambientMix: AmbientMix = {
     enabled: false,
+    season: "summer",
+    weatherKind: "clear",
     birds: 0,
     water: 0,
     wind: 0,
     murmur: 0,
     crickets: 0,
+    rain: 0,
     bed: "parkland",
     paused: true,
   };
@@ -149,6 +250,21 @@ class AudioManager {
     return this.worldAmbienceAllowed() && this.resolvedContext() === "silent";
   }
 
+  private authoredNatureOwner(): boolean {
+    const active = this.ambienceSlots?.[this.activeAmbienceSlot];
+    return this.authoredAmbienceAllowed()
+      && this.playingAmbience != null
+      && active != null
+      && !active.paused;
+  }
+
+  private priority(): AudioDebugSnapshot["priority"] {
+    const context = this.resolvedContext();
+    if (context === "tension" || context.startsWith("tournament-")) return "score";
+    if (hasWeatherPriority(this.ambientMix.weatherKind)) return "weather";
+    return "season";
+  }
+
   private ambientSampleLevel(): number {
     if (!this.authoredAmbienceAllowed()) return 0;
     const activity = Math.max(
@@ -157,6 +273,7 @@ class AudioManager {
       this.ambientMix.wind,
       this.ambientMix.murmur,
       this.ambientMix.crickets,
+      this.ambientMix.rain,
       0.28,
     );
     return this.effective("ambienceVolume") * (this.ambientMix.paused ? 0.12 : 0.58 + activity * 0.22);
@@ -215,17 +332,21 @@ class AudioManager {
       this.ambienceBus.connect(this.ctx.destination);
       await this.ctx.resume().catch(() => undefined);
       this.createAmbientBed();
-      this.scheduleAmbientAccent();
+      this.rampProceduralAmbience(0);
     }
     this.unlocked = true;
     if (this.resolvedContext() !== "silent") await this.requestPlaylist(this.resolvedContext());
-    if (this.authoredAmbienceAllowed()) await this.switchAmbience(this.ambientMix.bed);
+    if (this.authoredAmbienceAllowed()) await this.requestAmbience(this.ambientMix.bed);
   }
 
   setSurface(surface: AudioSurface): void {
     if (surface === this.surface) return;
+    const wasAuthoredAllowed = this.authoredAmbienceAllowed();
     this.surface = surface;
     if (!this.worldAmbienceAllowed()) this.stopAmbience();
+    else if (!wasAuthoredAllowed && this.authoredAmbienceAllowed() && this.unlocked) {
+      void this.requestAmbience(this.ambientMix.bed);
+    }
     if (this.ctx) this.rampProceduralAmbience();
   }
 
@@ -257,6 +378,7 @@ class AudioManager {
     const previous = this.resolvedContext();
     this.context = context;
     const next = this.resolvedContext();
+    if (this.ctx) this.rampProceduralAmbience(0.65);
     if (next === previous && this.playingContext === next) return Promise.resolve();
     return this.requestPlaylist(next);
   }
@@ -265,6 +387,7 @@ class AudioManager {
     const previous = this.resolvedContext();
     this.override = context;
     const next = this.resolvedContext();
+    if (this.ctx) this.rampProceduralAmbience(0.65);
     if (next === previous && this.playingContext === next) return Promise.resolve();
     return this.requestPlaylist(next);
   }
@@ -313,7 +436,7 @@ class AudioManager {
     if (context === "silent") {
       this.playingContext = "silent";
       this.stopMusicSlots();
-      if (this.authoredAmbienceAllowed()) await this.switchAmbience(this.ambientMix.bed);
+      if (this.authoredAmbienceAllowed()) await this.requestAmbience(this.ambientMix.bed);
       return;
     }
     // CourseCraft owns one file-backed background recording at a time.
@@ -393,13 +516,27 @@ class AudioManager {
     await this.requestPlaylist(context);
   }
 
-  private async switchAmbience(bed: SunoAmbienceContext): Promise<void> {
+  private requestAmbience(bed: SunoAmbienceContext): Promise<void> {
+    const existing = this.currentAmbienceRequest;
+    if (existing?.bed === bed && existing.generation === this.ambienceSwitchVersion) return existing.promise;
+    const generation = ++this.ambienceSwitchVersion;
+    const promise = this.switchAmbience(bed, generation);
+    this.currentAmbienceRequest = { bed, generation, promise };
+    this.ambienceInFlight.set(generation, bed);
+    void promise.finally(() => {
+      this.ambienceInFlight.delete(generation);
+      if (this.currentAmbienceRequest?.generation === generation) this.currentAmbienceRequest = null;
+    });
+    return promise;
+  }
+
+  private async switchAmbience(bed: SunoAmbienceContext, generation: number): Promise<void> {
     if (!this.unlocked || !this.ambienceSlots) return;
     if (!this.authoredAmbienceAllowed()) {
       this.stopAmbience();
       return;
     }
-    const switchVersion = ++this.ambienceSwitchVersion;
+    this.ambienceAttemptCounts.set(bed, (this.ambienceAttemptCounts.get(bed) ?? 0) + 1);
     const old = this.ambienceSlots[this.activeAmbienceSlot];
     const list = AMBIENCE_PLAYLISTS[bed];
     const index = this.ambienceTrackIndex.get(bed) ?? 0;
@@ -420,14 +557,31 @@ class AudioManager {
     next.currentTime = 0;
     next.volume = 0;
     next.load();
-    this.ambiencePlayClaims.set(next, switchVersion);
+    this.ambiencePlayClaims.set(next, generation);
     try {
       await next.play();
     } catch {
+      if (
+        generation === this.ambienceSwitchVersion
+        && this.currentAmbienceRequest?.generation === generation
+        && this.currentAmbienceRequest.bed === bed
+        && this.ambientMix.bed === bed
+        && this.authoredAmbienceAllowed()
+      ) {
+        this.authoredAmbienceFallback = true;
+        this.authoredAmbienceFallbackBed = bed;
+        this.rampProceduralAmbience(0.35);
+      }
       return;
     }
-    if (switchVersion !== this.ambienceSwitchVersion || !this.authoredAmbienceAllowed()) {
-      if (this.ambiencePlayClaims.get(next) === switchVersion) {
+    if (
+      generation !== this.ambienceSwitchVersion
+      || this.currentAmbienceRequest?.generation !== generation
+      || this.currentAmbienceRequest.bed !== bed
+      || this.ambientMix.bed !== bed
+      || !this.authoredAmbienceAllowed()
+    ) {
+      if (this.ambiencePlayClaims.get(next) === generation) {
         next.volume = 0;
         next.pause();
       }
@@ -435,12 +589,21 @@ class AudioManager {
     }
     this.activeAmbienceSlot = nextSlot;
     this.playingAmbience = bed;
+    this.authoredAmbienceFallback = false;
+    this.authoredAmbienceFallbackBed = null;
+    // Successful media play is the handoff point. The incoming file starts at
+    // zero while the current procedural nature gains ramp down over the same
+    // bounded interval; loading and failed attempts never suppress fallback.
+    this.rampProceduralAmbience(0.35);
     this.fadeElement(next, this.ambientSampleLevel(), 350, false);
   }
 
   private stopAmbience(): void {
     this.ambienceSwitchVersion += 1;
+    this.currentAmbienceRequest = null;
     this.playingAmbience = null;
+    this.authoredAmbienceFallback = false;
+    this.authoredAmbienceFallbackBed = null;
     this.ambienceSlots?.forEach((slot) => this.stopElement(slot));
   }
 
@@ -461,7 +624,8 @@ class AudioManager {
     const offset = list.length > 1 ? 1 + Math.floor(Math.random() * (list.length - 1)) : 0;
     this.ambienceTrackIndex.set(bed, (current + offset) % list.length);
     this.playingAmbience = null;
-    await this.switchAmbience(bed);
+    this.rampProceduralAmbience(0.35);
+    await this.requestAmbience(bed);
   }
 
   async playSting(name: StingName): Promise<void> {
@@ -552,15 +716,15 @@ class AudioManager {
       brown = (brown + (Math.random() * 2 - 1) * .035) * .995;
       data[i] = brown;
     }
-    const configs: Array<["birds" | "water" | "wind" | "murmur" | "crickets", BiquadFilterType, number]> = [
+    const configs: Array<[ProceduralAmbienceFamily, BiquadFilterType, number]> = [
       ["birds", "highpass", 1900], ["water", "bandpass", 760], ["wind", "lowpass", 520],
-      ["murmur", "bandpass", 340], ["crickets", "highpass", 3100],
+      ["murmur", "bandpass", 340], ["crickets", "highpass", 3100], ["rain", "highpass", 1100],
     ];
     for (const [name, type, frequency] of configs) {
       const source = ctx.createBufferSource();
       source.buffer = buffer;
       source.loop = true;
-      source.playbackRate.value = name === "water" ? .72 : name === "birds" ? 1.7 : 1;
+      source.playbackRate.value = name === "water" ? .72 : name === "birds" ? 1.7 : name === "rain" ? 1.16 : 1;
       const filter = ctx.createBiquadFilter();
       filter.type = type;
       filter.frequency.value = frequency;
@@ -570,68 +734,88 @@ class AudioManager {
       source.start();
       this.ambienceSources.push(source);
       this.ambienceLayers.set(name, gain);
+      this.proceduralSourceCounts.set(name, (this.proceduralSourceCounts.get(name) ?? 0) + 1);
     }
-  }
-
-  private scheduleAmbientAccent(): void {
-    globalThis.setTimeout(() => {
-      this.playAmbientAccent();
-      this.scheduleAmbientAccent();
-    }, 18_000 + Math.random() * 22_000);
-  }
-
-  private playAmbientAccent(): void {
-    const ctx = this.ctx;
-    const bus = this.ambienceBus;
-    if (!ctx || !bus || !this.worldAmbienceAllowed() || this.ambientMix.paused || this.effective("ambienceVolume") <= 0) return;
-    const t = ctx.currentTime;
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const bird = this.ambientMix.birds >= Math.max(this.ambientMix.murmur, this.ambientMix.wind);
-    const crowd = !bird && this.ambientMix.murmur > .3;
-    oscillator.type = bird ? "sine" : crowd ? "triangle" : "sawtooth";
-    oscillator.frequency.setValueAtTime(bird ? 1450 : crowd ? 240 : 72, t);
-    oscillator.frequency.exponentialRampToValueAtTime(bird ? 2350 : crowd ? 170 : 58, t + (bird ? .22 : .8));
-    gain.gain.setValueAtTime(.0001, t);
-    gain.gain.linearRampToValueAtTime(bird ? .045 : .025, t + .08);
-    gain.gain.exponentialRampToValueAtTime(.0001, t + (bird ? .65 : 1.4));
-    oscillator.connect(gain).connect(bus);
-    oscillator.start(t);
-    oscillator.stop(t + (bird ? .7 : 1.45));
   }
 
   setAmbientMix(mix: AmbientMix): void {
     const bedChanged = mix.bed !== this.ambientMix.bed;
+    const seasonChanged = mix.season !== this.ambientMix.season;
+    const weatherChanged = mix.weatherKind !== this.ambientMix.weatherKind;
     const wasEnabled = this.ambientMix.enabled;
+    const previousSeason = this.ambientMix.season;
+    const previousWeather = this.ambientMix.weatherKind;
+    const durationSeconds = mix.paused
+      ? 0.25
+      : seasonChanged
+        ? 1.6
+        : weatherChanged
+          ? 0.65
+          : bedChanged
+            ? 0.8
+            : 1;
     this.ambientMix = { ...mix };
+    if (seasonChanged || weatherChanged) {
+      this.transitionVersion += 1;
+      this.lastTransition = {
+        fromSeason: previousSeason,
+        toSeason: mix.season,
+        fromWeather: previousWeather,
+        toWeather: mix.weatherKind,
+        durationMs: durationSeconds * 1000,
+      };
+    }
     if (this.unlocked) {
       if (!this.authoredAmbienceAllowed()) this.stopAmbience();
-      else if (!wasEnabled || bedChanged || this.playingAmbience == null) void this.switchAmbience(mix.bed);
+      else if (
+        !wasEnabled
+        || bedChanged
+        || (this.playingAmbience == null && !this.authoredAmbienceFallback)
+      ) {
+        void this.requestAmbience(mix.bed);
+      }
       else this.rampActiveAmbience();
     }
     if (!this.ctx) return;
-    this.rampProceduralAmbience();
+    this.rampProceduralAmbience(durationSeconds);
   }
 
-  private rampProceduralAmbience(): void {
+  private rampProceduralAmbience(seconds = 1): void {
     // Gameplay owns world ambience. Menu, Vision, setup, and loading surfaces
     // are Suno music/SFX-only and must never leak course audio across a route.
     const key = [
       this.surface,
+      this.resolvedContext(),
       this.ambientMix.enabled,
       this.ambientMix.paused,
+      this.ambientMix.season,
+      this.ambientMix.weatherKind,
       this.ambientMix.birds,
       this.ambientMix.water,
       this.ambientMix.wind,
       this.ambientMix.murmur,
       this.ambientMix.crickets,
+      this.ambientMix.rain,
+      this.authoredNatureOwner(),
     ].join("|");
     if (key === this.proceduralMixKey) return;
     this.proceduralMixKey = key;
-    const scale = !this.worldAmbienceAllowed() ? 0 : this.ambientMix.paused ? 0.025 : 0.22;
-    for (const name of ["birds", "water", "wind", "murmur", "crickets"] as const) {
+    this.proceduralRampVersion += 1;
+    const baseScale = !this.worldAmbienceAllowed() ? 0 : this.ambientMix.paused ? 0.025 : 0.22;
+    const priority = this.priority();
+    for (const name of PROCEDURAL_FAMILIES) {
       const gain = this.ambienceLayers.get(name);
-      if (gain) this.rampParam(gain.gain, clamp01(this.ambientMix[name]) * scale, 1);
+      const natureFamily = name !== "murmur";
+      const authoredOwned = natureFamily && this.authoredNatureOwner();
+      const weatherSignal = priority === "score"
+        && hasWeatherPriority(this.ambientMix.weatherKind)
+        && (name === "rain" || name === "wind");
+      const priorityScale = priority === "score" && baseScale > 0 && !this.ambientMix.paused
+        ? (weatherSignal ? 0.14 : 0.05)
+        : baseScale;
+      const level = clamp01(this.ambientMix[name]) * (authoredOwned ? 0 : priorityScale);
+      this.proceduralTargets.set(name, level);
+      if (gain) this.rampParam(gain.gain, level, seconds);
     }
   }
 
@@ -643,11 +827,14 @@ class AudioManager {
         const previous = { ...this.ambientMix };
         this.setAmbientMix({
           enabled: true,
+          season: "summer",
+          weatherKind: "clear",
           birds: .65,
           water: .45,
           wind: .35,
           murmur: 0,
           crickets: 0,
+          rain: 0,
           bed: "parkland",
           paused: false,
         });
@@ -657,10 +844,95 @@ class AudioManager {
   }
 
   private applyImmediateMute(): void {
-    this.musicSlots?.forEach((slot) => { slot.volume = 0; });
-    this.ambienceSlots?.forEach((slot) => { slot.volume = 0; });
-    if (this.sfxBus) this.sfxBus.gain.value = 0;
-    if (this.ambienceBus) this.ambienceBus.gain.value = 0;
+    this.musicSlots?.forEach((slot) => {
+      this.fadeVersions.set(slot, (this.fadeVersions.get(slot) ?? 0) + 1);
+      slot.volume = 0;
+    });
+    this.ambienceSlots?.forEach((slot) => {
+      this.fadeVersions.set(slot, (this.fadeVersions.get(slot) ?? 0) + 1);
+      slot.volume = 0;
+    });
+    if (this.ctx && this.sfxBus) {
+      this.sfxBus.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.sfxBus.gain.setValueAtTime(0, this.ctx.currentTime);
+    }
+    if (this.ctx && this.ambienceBus) {
+      this.ambienceBus.gain.cancelScheduledValues(this.ctx.currentTime);
+      this.ambienceBus.gain.setValueAtTime(0, this.ctx.currentTime);
+    }
+  }
+
+  debugSnapshot(): AudioDebugSnapshot {
+    const sourceCounts = Object.fromEntries(
+      PROCEDURAL_FAMILIES.map((family) => [family, this.proceduralSourceCounts.get(family) ?? 0]),
+    ) as Record<ProceduralAmbienceFamily, number>;
+    const targets = Object.fromEntries(
+      PROCEDURAL_FAMILIES.map((family) => [family, this.proceduralTargets.get(family) ?? 0]),
+    ) as Record<ProceduralAmbienceFamily, number>;
+    const actuals = Object.fromEntries(
+      PROCEDURAL_FAMILIES.map((family) => [family, this.ambienceLayers.get(family)?.gain.value ?? 0]),
+    ) as Record<ProceduralAmbienceFamily, number>;
+    const activeAuthored = this.ambienceSlots?.[this.activeAmbienceSlot];
+    return {
+      unlocked: this.unlocked,
+      contextState: this.ctx?.state ?? "unavailable",
+      surface: this.surface,
+      hidden: this.hidden,
+      masterMuted: this.volumes.masterMuted,
+      muteWhenHidden: this.volumes.muteWhenHidden,
+      worldAmbienceAllowed: this.worldAmbienceAllowed(),
+      authoredAmbienceAllowed: this.authoredAmbienceAllowed(),
+      authoredNatureOwner: this.authoredNatureOwner(),
+      authoredFallback: this.authoredAmbienceFallback,
+      authoredFallbackBed: this.authoredAmbienceFallbackBed,
+      authoredAttempts: {
+        total: [...this.ambienceAttemptCounts.values()].reduce((sum, count) => sum + count, 0),
+        inFlightBeds: [...this.ambienceInFlight.values()],
+        current: this.currentAmbienceRequest
+          ? {
+              bed: this.currentAmbienceRequest.bed,
+              generation: this.currentAmbienceRequest.generation,
+            }
+          : null,
+      },
+      authoredMedia: activeAuthored
+        ? {
+            trackId: activeAuthored.dataset.trackId ?? null,
+            volume: activeAuthored.volume,
+            paused: activeAuthored.paused,
+            currentTime: activeAuthored.currentTime,
+          }
+        : null,
+      mediaSlots: {
+        music: this.musicSlots?.map((slot) => ({
+          trackId: slot.dataset.trackId ?? null,
+          volume: slot.volume,
+          paused: slot.paused,
+        })) ?? [],
+        ambience: this.ambienceSlots?.map((slot) => ({
+          trackId: slot.dataset.trackId ?? null,
+          volume: slot.volume,
+          paused: slot.paused,
+        })) ?? [],
+      },
+      resolvedMusicContext: this.resolvedContext(),
+      playingMusicContext: this.playingContext,
+      playingAmbience: this.playingAmbience,
+      priority: this.priority(),
+      effectiveAmbienceBus: this.worldAmbienceAllowed() ? this.effective("ambienceVolume") : 0,
+      actualAmbienceBusGain: this.ambienceBus?.gain.value ?? 0,
+      proceduralSourceCount: this.ambienceSources.length,
+      proceduralRampVersion: this.proceduralRampVersion,
+      proceduralSourceCounts: sourceCounts,
+      proceduralTargets: targets,
+      proceduralActuals: actuals,
+      desiredActiveProceduralFamilies: PROCEDURAL_FAMILIES.filter((family) => targets[family] > 0),
+      actualActiveProceduralFamilies: PROCEDURAL_FAMILIES.filter((family) => actuals[family] > 0.00001),
+      transition: {
+        version: this.transitionVersion,
+        ...this.lastTransition,
+      },
+    };
   }
 }
 

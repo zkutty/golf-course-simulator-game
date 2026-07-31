@@ -4,6 +4,7 @@ import type { AmbientMix, AudioSurface, MusicContext } from "./AudioManager";
 import type { SunoAmbienceContext } from "./sunoLibrary";
 import { getBiomeDefinition } from "../game/models/biomes";
 import type { SeasonalVisualState } from "../game/presentation/seasonalVisualState";
+import { SEASONAL_AMBIENCE_LAYERS, WEATHER_AMBIENCE_LAYERS } from "./seasonalAmbience";
 
 export function audioSurfaceFor(input: {
   screen: "menu" | "setup" | "game" | "loading";
@@ -127,9 +128,19 @@ export function ambientMixFor(input: {
   const nearCampus = nearbyProperty.some((asset) =>
     asset.category === "access" || asset.category === "practice" || asset.category === "clubhouse"
   );
-  const weatherKind = input.seasonalVisualState?.audio.weatherKind ?? input.weatherKind;
-  const season = input.seasonalVisualState?.audio.season ?? input.season;
+  const weatherKind = input.seasonalVisualState?.audio.weatherKind ?? input.weatherKind ?? "clear";
+  const season = input.seasonalVisualState?.audio.season ?? input.season ?? "summer";
   const wet = weatherKind === "rain" || weatherKind === "heavy_rain" || weatherKind === "storm";
+  const seasonLayer = SEASONAL_AMBIENCE_LAYERS[season];
+  const weatherLayer = WEATHER_AMBIENCE_LAYERS[weatherKind];
+  const weatherRain = input.seasonalVisualState?.audio.rain ?? weatherLayer.rain;
+  const weatherWind = input.seasonalVisualState?.audio.wind ?? weatherLayer.windFloor;
+  const wildlife = input.seasonalVisualState?.audio.wildlife ?? 1;
+  const propertyMurmur = nearResort ? 0.26 : nearCampus ? 0.16 : 0;
+  const baseBirds = clamp01(obstacleCount / 18 + dawn * .42);
+  const baseWind = clamp01(
+    (share("rough") + share("deep_rough") + share("sand") + share("waste_area")) * 1.35 + .12,
+  );
   let bed: SunoAmbienceContext = getBiomeDefinition(input.course.theme).content.audio.ambience;
   if (wet) bed = "rain";
   else if (season === "winter" || weatherKind === "frost") bed = "winter";
@@ -139,11 +150,14 @@ export function ambientMixFor(input: {
   else if (share("water") + share("wetland") * .8 >= .12) bed = "water";
   return {
     enabled: input.enabled ?? true,
-    birds: clamp01(obstacleCount / 18 + dawn * .42),
+    season,
+    weatherKind,
+    birds: clamp01(baseBirds * seasonLayer.birds * weatherLayer.birds * wildlife),
     water: clamp01((share("water") + share("wetland") * .8) * 3.2),
-    wind: clamp01((share("rough") + share("deep_rough") + share("sand") + share("waste_area")) * 1.35 + .12),
-    murmur: clamp01(input.visibleGolfers / 16),
-    crickets: clamp01(dusk),
+    wind: clamp01(Math.max(baseWind * seasonLayer.wind, weatherLayer.windFloor, weatherWind)),
+    murmur: clamp01((input.visibleGolfers / 16 + propertyMurmur) * weatherLayer.activity),
+    crickets: clamp01(dusk * seasonLayer.insects * weatherLayer.insects * wildlife),
+    rain: clamp01(weatherRain),
     bed,
     paused: input.paused,
   };

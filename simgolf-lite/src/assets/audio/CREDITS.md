@@ -23,6 +23,12 @@ masters. Confirm the owner account's applicable Suno subscription terms during
 the final release licensing audit; do not infer redistribution rights from this
 credits file alone.
 
+Each runtime track entry also carries a machine-auditable production record:
+Suno source and owner-generation date; license status pending the release
+audit; the locally hosted 96 kbps MP3 source-export treatment; sequential,
+non-seamless, non-overlapping playlist behavior; and loudness explicitly marked
+`unmeasured`. Runtime mixer gain is not represented as measured mastering data.
+
 ## M15 original soundtrack
 
 The following instrumental loops were generated specifically for CourseCraft by
@@ -73,10 +79,22 @@ artifact.
   cannot strand an outgoing slot in an audible or unpaused state.
 - Runtime golf, interface, crowd, and sting voices connect only to the WebAudio
   SFX gain bus, capped at eight voices.
-- During gameplay, procedural wind, water, birds, crickets, and crowd detail
-  connects only to the WebAudio ambience gain bus. These environmental textures
-  contain no file-backed song. Pausing retains a quiet idle bed rather than
-  fully stopping the course atmosphere.
+- During gameplay, procedural wind, water, birds, crickets, rain, and crowd
+  detail connects only to the WebAudio ambience gain bus. Spring, summer,
+  autumn, winter, weather, biome, property, water, and time-of-day context
+  reshape those shared families; they do not start duplicate family sources.
+  Each family has exactly one runtime source. These environmental textures
+  contain no file-backed song and their source/license/mastering/loop/loudness
+  record is exported by `src/audio/seasonalAmbience.ts`.
+- Procedural nature remains the owner while authored ambience is loading or
+  unavailable. After a successful media play, the incoming file begins at zero
+  and fades up while procedural nature ramps down over the same bounded 350 ms
+  handoff. That intentional crossfade can briefly overlap the two paths; steady
+  state has one nature owner. A failed play leaves procedural fallback stable,
+  and ordinary camera/day/golfer updates do not retry the failed bed.
+- Tournament and crisis scores retain score ownership while weather detail is
+  bounded beneath them. Pausing retains a quiet idle bed rather than fully
+  stopping the course atmosphere.
 - The SFX and ambience buses connect directly to the destination; there are no
   source nodes connected around them. The compatibility sound facade delegates
   back to the same SFX bus.
