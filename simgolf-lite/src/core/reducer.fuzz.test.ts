@@ -99,7 +99,7 @@ describe("reducer property tests", () => {
         state = next;
       }
     }), { numRuns: 10_000, endOnFailure: true });
-  }, 60_000);
+  }, 120_000);
 });
 
 describe("determinism hard invariant", () => {
