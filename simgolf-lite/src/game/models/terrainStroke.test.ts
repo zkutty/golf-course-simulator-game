@@ -6,6 +6,10 @@ import type { Course, Terrain } from "./types";
 import { previewTerrainStroke } from "./terrainStroke";
 import { computeElevationChangeCost } from "./terrainEconomics";
 import { corridorFeature, rasterizeSurfaceFeatureDetailed } from "./surfaceIntent";
+import {
+  maintainedAreaDemandUnits,
+  playerPlantingDemand,
+} from "./biomeOperatingCosts";
 
 function course(tiles: Terrain[] = new Array(12).fill("rough")): Course {
   return {
@@ -57,6 +61,12 @@ describe("terrain paint strokes", () => {
     ]);
     expect(preview).toMatchObject({ changedCount: 2, duplicateCount: 1, unchangedCount: 1, excludedCount: 1 });
     expect(preview.excluded.outOfBounds).toBe(1);
+    expect(preview.excludedTiles).toContainEqual({
+      x: 4,
+      y: 2,
+      terrain: "fairway",
+      reason: "outOfBounds",
+    });
 
     const locked = previewTerrainStroke(c, [{ x: 2, y: 1 }], "water", 25_000, 1, 0);
     expect(locked).toMatchObject({ changedCount: 0, excludedCount: 1 });
@@ -245,6 +255,12 @@ describe("terrain paint strokes", () => {
       true,
     );
     expect(preview.excluded.protected).toBe(1);
+    expect(preview.excludedTiles).toContainEqual({
+      x: 1,
+      y: 1,
+      terrain: "water",
+      reason: "protected",
+    });
     expect(preview.removedObstacles).toEqual([{ x: 2, y: 1, type: "bush" }]);
 
     const after = applyAction(before, {
@@ -254,6 +270,94 @@ describe("terrain paint strokes", () => {
     expect(after.course.tiles[1 * c.width + 1]).toBe("rough");
     expect(after.course.tiles[1 * c.width + 2]).toBe("water");
     expect(after.course.obstacles).toEqual([{ x: 1, y: 1, type: "tree" }]);
+  });
+
+  it("quotes exact Desert summer irrigation modifiers and precommit deltas", () => {
+    const c = { ...course(), theme: "desert" as const };
+    const preview = previewTerrainStroke(
+      c,
+      [{ x: 1, y: 1 }],
+      "green",
+      25_000,
+      1,
+      100,
+      false,
+      {
+        season: "summer",
+        currentWeather: {
+          absoluteDay: 42,
+          kind: "drought",
+          temperatureF: 105,
+          windMph: 18,
+          rainInches: 0,
+          severity: 0.8,
+          theme: "desert",
+          season: "summer",
+        },
+        waterPolicy: "conserve",
+      },
+    );
+    expect(preview.constructionCost).toBe(preview.gross);
+    expect(preview.terrainSalvage).toBe(preview.salvage);
+    expect(preview.naturalClearingCost).toBe(0);
+    expect(preview.irrigationDemandDelta).toBeCloseTo(1.65, 8);
+    expect(preview.weeklyUpkeepWeightDelta).toBeGreaterThan(0);
+    expect(preview.weeklyIrrigationCostDelta).toBeGreaterThan(0);
+    expect(preview.irrigationMultipliers).toEqual({
+      seasonal: 1.25,
+      weather: 1.25,
+      scarcity: 1.3,
+      policy: 12 / 42,
+    });
+    expect(preview.climateWarnings).toContainEqual({
+      kind: "water-pressure",
+      biome: "desert",
+      seasonal: 1.25,
+      weather: 1.25,
+      scarcity: 1.3,
+      policy: 12 / 42,
+    });
+  });
+
+  it("quotes post-removal planting water and weekly care for a water stroke", () => {
+    const c = course();
+    c.elevations.fill(4);
+    c.obstacles = [{
+      x: 1,
+      y: 1,
+      type: "tree",
+      plantId: "parkland-oak",
+      origin: "player",
+    }];
+    const costMult = 1.4;
+    const preview = previewTerrainStroke(
+      c,
+      [{ x: 1, y: 1 }],
+      "water",
+      25_000,
+      costMult,
+      100,
+    );
+    const afterCourse = {
+      ...c,
+      tiles: c.tiles.map((terrain, index) =>
+        index === c.width + 1 ? "water" as const : terrain
+      ),
+      obstacles: [],
+    };
+    const plantingBefore = playerPlantingDemand(c);
+    const plantingAfter = playerPlantingDemand(afterCourse);
+    expect(preview.removedObstacles).toEqual(c.obstacles);
+    expect(preview.irrigationDemandDelta).toBeCloseTo(
+      maintainedAreaDemandUnits(afterCourse) + plantingAfter.waterUnits
+      - maintainedAreaDemandUnits(c) - plantingBefore.waterUnits,
+      8,
+    );
+    expect(preview.weeklyPlantCareCostDelta).toBeCloseTo(
+      (plantingAfter.careCost - plantingBefore.careCost) * costMult * 7,
+      8,
+    );
+    expect(preview.weeklyPlantCareCostDelta).toBeLessThan(0);
   });
 
   it("rejects new obstacles on water and wetland", () => {

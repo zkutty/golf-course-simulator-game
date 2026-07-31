@@ -1215,3 +1215,117 @@ classic course-builder references.
 - Human gameplay, visual/aesthetic review, accessibility/device checks, and
   final repair-workflow validation remain intentionally deferred to the final
   human-testing phase.
+
+## 2026-07-30 — ZK-648 M53 illustrated Design dock and exact edit preview
+
+- Replaced the duplicated text-first terrain/obstacle/decor controls with one
+  registry-driven Design dock. Terrain, Nature, and Decor cards derive from
+  the authoritative terrain, plant, decoration, and biome registries while
+  preserving semantic plant IDs and shared installation/removal economics.
+  The dock uses biome/quality atlas material and prop frames with explicit
+  safe same-biome fallbacks that do not change gameplay semantics.
+- Added a compact curve/spline/area/edit, width, undo, and redo toolbar; a
+  two-row desktop palette; a narrow side drawer; roving keyboard navigation;
+  touch long-press; non-color-only lock/affordability/risk states; and a
+  persistent selected-item inspector. The inspector reports exact ecological
+  fit, build, salvage, weekly care, water, degradation, and current-season
+  risk facts from shared authorities. Player-visible copy is in the typed
+  localization catalog.
+- Terrain and surface-feature previews now locate protected, unowned, locked,
+  outside, unchanged, and duplicate cells separately. The map ghost uses the
+  active biome/season/color-vision material plus shapes and patterns for
+  unaffordable or excluded cells. The precommit summary reports exact changed
+  cells, construction, terrain and natural salvage, natural clearing,
+  earthwork, removed features, upkeep weight, irrigation demand and weekly
+  cost, cash, affordability, climate warnings, and the exact season, weather,
+  scarcity, and policy multipliers used by the shared irrigation quote.
+- Machine verification passes: TypeScript; lint/i18n with zero errors and 12
+  existing React-hook warnings; focused registry/economics/edit coverage
+  (4 files, 32 tests); full Vitest (136 files, 1,074 passed, one intentional
+  skip); production build plus biome consumer/audio/offline/M35/Parkland asset
+  audits; biome authoring audit; and two Playwright scenarios covering
+  desktop/narrow layout, keyboard, touch, atlas/fallback evidence, semantic
+  selection, decoration controls, material ghost, and the full precommit
+  summary. The bundled web-game client independently entered the Desert
+  fixture with the dock visible and emitted structured game state with no
+  console/page error artifact.
+- Browser captures were produced as machine artifacts but intentionally not
+  visually judged. Human gameplay, visual/aesthetic approval,
+  accessibility/device validation, and final cross-feature testing remain
+  explicitly deferred to the end-of-milestone human validation phase.
+
+### ZK-648 independent-review hardening
+
+- Closed all eight review findings. Live Pixi ghosts now invalidate on
+  terrain, color-vision, quality, reduced-motion, and seasonal treatment
+  changes; stale stroke materials are rejected. Surface edits preview every
+  authoritative changed cell with its final per-cell material and locate
+  protected/unowned exclusions instead of reducing them to color-only counts.
+- Tutorial start and paint-corridor resume now restore Design, Architect,
+  Paint/curve, and Fairway state while keeping the authoritative Design dock
+  mounted and interactive. Bridge/boardwalk inspector facts, map footprint,
+  affordability, and commit all normalize the live span through the shared
+  decoration authority.
+- Terrain and surface edits now compare exact before/after managed-area plus
+  player-planting demand after removed natural features, including the exact
+  weekly planting-care delta. Swatches use the active authoritative seasonal
+  terrain/plant tint and alpha with a safe fallback. New terrain, biome,
+  degradation, risk, warning, and fallback copy is routed through typed
+  localization keys and structured warning data.
+- Category tabs now implement wrapping arrow, Home, and End activation with
+  roving focus, stable mounted tabpanel targets, and valid `aria-controls`.
+  Regression coverage exercises tab semantics, live span re-quoting,
+  authoritative seasonal swatch refresh, stale material-ghost clearing, and
+  an actual Fairway tutorial drag after starting from another workspace and
+  material.
+- Final machine gates: TypeScript and `git diff --check` pass; lint/i18n passes
+  with zero errors and the 12 existing hook warnings; full Vitest passes 136
+  files / 1,079 tests with one intentional skip; production build and all
+  biome/audio/offline/M35/Parkland audits pass; the five focused Playwright
+  scenarios pass in one clean run. The bundled browser client independently
+  entered the Desert summer/drought fixture with the Design dock visible,
+  emitted structured state, and produced no console/page error artifact.
+- The bundled capture was retained under `/tmp/zk648-bundled-smoke` but not
+  visually judged. Human gameplay, visual/aesthetic approval,
+  accessibility/device validation, and final cross-feature testing remain
+  deferred to the end-of-milestone human validation phase.
+
+### ZK-648 final review follow-up
+
+- Centralized terrain, obstacle, and decoration activation so editor mode,
+  semantic plant/decor choice, selected catalog item, terrain, and inferred
+  dock category move together. Curve/Spline/Area/Edit, keyboard shortcuts,
+  tutorial entry, initial state, and fresh-run reset now use the same coherent
+  terrain path; obstacle activation resolves a biome-correct semantic plant.
+- Replaced selection-derived card tab stops with a true per-category roving
+  focus target. Arrow/Home/End updates the sole `tabindex="0"` option, and
+  reverse Tab returns to the last focused option.
+- Routed every plant and decor primary label through exhaustive typed
+  `PlantId` and `DecorationKind` localization maps. Pseudo-locale coverage now
+  asserts translated labels in Terrain, Nature, and Decor.
+- Verification passes: focused catalog tests (7/7), TypeScript, lint/i18n
+  (zero errors; 12 existing hook warnings), full Vitest (136 files, 1,079
+  passed and one intentional skip), production build/audits, and a clean
+  six-scenario Design dock Playwright run. The expanded coherence scenario
+  also passes alone after adding keyboard T/O assertions.
+- The bundled web-game client independently entered the Desert summer/drought
+  fixture with Design visible and emitted a coherent Paint/curve/Fairway tuple
+  with no console/page error artifact. Its screenshot was produced under
+  `/tmp/zk648-final-bundled-smoke-coherent` and intentionally not inspected.
+
+### ZK-648 final navigation cleanup
+
+- Routed the HUD Design button through the centralized terrain activation
+  path, so entering Design from Decor restores the selected terrain item,
+  clears the plant selection, and returns the dock to Terrain.
+- Removed Hole Inspector's duplicate legacy Paint/Obstacle buttons and raw
+  ten-terrain palette, along with their obsolete raw state-setter props. The
+  illustrated Design dock remains the sole terrain/nature/decor palette.
+- Focused HUD coherence E2E passes. TypeScript, focused catalog tests,
+  lint/i18n, production build/audits, and isolated reruns of the two full-suite
+  timeout cases pass. The full suite otherwise passed 134/136 files; the two
+  initial failures were timeout-only under parallel load with no assertion
+  mismatch.
+- Bundled-client state/error smoke passed with a coherent Paint/curve/Fairway
+  tuple and no error artifact. The screenshot under
+  `/tmp/zk648-final-cleanup-smoke` was intentionally not inspected.

@@ -5,9 +5,19 @@ import type { Course, Obstacle, SurfaceFeature, SurfaceIntentV1, Terrain } from 
 import {
   computeElevationChangeCost,
   computeTerrainChangeBreakdown,
+  terrainMaintenanceWeight,
 } from "./terrainEconomics";
 import { naturalFeatureRemovalQuote } from "./plantRegistry";
-import type { TerrainStrokePreview } from "./terrainStroke";
+import type {
+  TerrainBatchInput,
+  TerrainStrokePreview,
+} from "./terrainStroke";
+import {
+  maintainedAreaDemandUnits,
+  playerPlantingDemand,
+  quoteIrrigationFromDemand,
+} from "./biomeOperatingCosts";
+import { getBiomeDefinition } from "./biomes";
 import {
   buildIntentUnderlayTiles,
   normalizeSurfaceIntent,
@@ -32,10 +42,13 @@ export interface PreparedSurfaceFeatureEdit {
 function noChangePreview(
   cash: number,
   excluded: TerrainStrokePreview["excluded"],
+  excludedTiles: TerrainStrokePreview["excludedTiles"] = [],
 ): TerrainStrokePreview {
   return {
+    previewKind: "surface-edit",
     tiles: [],
     acceptedTiles: [],
+    excludedTiles,
     changedCount: 0,
     duplicateCount: 0,
     unchangedCount: 0,
@@ -46,6 +59,21 @@ function noChangePreview(
     elevationDeltas: [],
     earthworkSteps: 0,
     earthworkCost: 0,
+    constructionCost: 0,
+    terrainSalvage: 0,
+    naturalClearingCost: 0,
+    naturalSalvage: 0,
+    weeklyUpkeepWeightDelta: 0,
+    irrigationDemandDelta: 0,
+    weeklyIrrigationCostDelta: 0,
+    weeklyPlantCareCostDelta: 0,
+    irrigationMultipliers: {
+      seasonal: 1,
+      weather: 1,
+      scarcity: 1,
+      policy: 1,
+    },
+    climateWarnings: [],
     gross: 0,
     salvage: 0,
     net: 0,
@@ -69,6 +97,10 @@ export function prepareSurfaceFeatureEdit(
   costMult: number,
   reputation: number,
   protectedTrees = false,
+  options: Pick<
+    TerrainBatchInput,
+    "season" | "currentWeather" | "publishedForecast" | "waterPolicy"
+  > = {},
 ): PreparedSurfaceFeatureEdit | null {
   const intent = course.surfaceIntent;
   const existing = intent?.features.find((feature) => feature.id === candidate.id);
@@ -91,6 +123,12 @@ export function prepareSurfaceFeatureEdit(
 
   const rawRaster = rasterizeSurfaceFeatureDetailed(sanitized, course.width, course.height);
   if (!isTerrainUnlocked(existing.terrain, reputation)) {
+    const excludedTiles: TerrainStrokePreview["excludedTiles"] =
+      rawRaster.tiles.map((point) => ({
+        ...point,
+        terrain: existing.terrain,
+        reason: "locked",
+      }));
     return {
       feature: existing,
       intent,
@@ -102,7 +140,7 @@ export function prepareSurfaceFeatureEdit(
         unowned: 0,
         locked: rawRaster.tiles.length,
         protected: 0,
-      }),
+      }, excludedTiles),
       commitAllowed: false,
     };
   }
@@ -117,14 +155,25 @@ export function prepareSurfaceFeatureEdit(
     : null;
   let unowned = 0;
   let protectedCount = 0;
+  const excludedTiles: TerrainStrokePreview["excludedTiles"] = [];
   for (const point of rawRaster.tiles) {
     if (!isOwnedTile(course, point.x, point.y)) {
       unowned++;
+      excludedTiles.push({
+        ...point,
+        terrain: existing.terrain,
+        reason: "unowned",
+      });
       continue;
     }
     const index = point.y * course.width + point.x;
     if (protectedTreeIndices?.has(index)) {
       protectedCount++;
+      excludedTiles.push({
+        ...point,
+        terrain: existing.terrain,
+        reason: "protected",
+      });
       continue;
     }
     acceptedIndices.add(index);
@@ -146,7 +195,7 @@ export function prepareSurfaceFeatureEdit(
         unowned,
         locked: 0,
         protected: protectedCount,
-      }),
+      }, excludedTiles),
       commitAllowed: false,
     };
   }
@@ -191,6 +240,15 @@ export function prepareSurfaceFeatureEdit(
       }
     }
   }
+  // Moving an authored surface must not restore underlay across land that is
+  // no longer authorable. Keep every unowned cell byte-for-byte authoritative
+  // and report the candidate footprint above as a located exclusion.
+  for (let index = 0; index < finalTiles.length; index++) {
+    if (finalTiles[index] === course.tiles[index]) continue;
+    const x = index % course.width;
+    const y = Math.floor(index / course.width);
+    if (!isOwnedTile(course, x, y)) finalTiles[index] = course.tiles[index];
+  }
 
   const grading = computeWaterGrading(course, finalTiles, feature.coverage);
   const elevations = applyWaterGrading(course, grading);
@@ -217,6 +275,11 @@ export function prepareSurfaceFeatureEdit(
   let net = 0;
   let charged = 0;
   let refunded = 0;
+  let constructionCost = 0;
+  let terrainSalvage = 0;
+  let naturalClearingCost = 0;
+  let naturalSalvage = 0;
+  let weeklyUpkeepWeightDelta = 0;
   for (let index = 0; index < finalTiles.length; index++) {
     const terrain = finalTiles[index];
     if (terrain === course.tiles[index]) continue;
@@ -235,6 +298,11 @@ export function prepareSurfaceFeatureEdit(
     net += cost.net;
     charged += cost.charged;
     refunded += cost.refunded;
+    constructionCost += cost.gross;
+    terrainSalvage += cost.salvage;
+    weeklyUpkeepWeightDelta +=
+      terrainMaintenanceWeight(terrain, course.theme)
+      - terrainMaintenanceWeight(course.tiles[index], course.theme);
     changedTiles.push({ x, y, terrain });
   }
   for (const obstacle of removedObstacles) {
@@ -248,15 +316,66 @@ export function prepareSurfaceFeatureEdit(
     net += removal.net;
     charged += removal.charged;
     refunded += removal.refunded;
+    naturalClearingCost += removal.gross;
+    naturalSalvage += removal.salvage;
   }
   gross += earthworkCost;
   net += earthworkCost;
   charged += earthworkCost;
   const shortfall = Math.max(0, net - cash);
   const acceptedTiles = clipped.tiles.map((point) => ({ ...point, terrain: existing.terrain }));
+  const afterCourse = { ...course, tiles: finalTiles, obstacles };
+  const maintainedBefore = maintainedAreaDemandUnits(course);
+  const maintainedAfter = maintainedAreaDemandUnits(afterCourse);
+  const plantingBefore = playerPlantingDemand(course);
+  const plantingAfter = playerPlantingDemand(afterCourse);
+  const irrigationBefore = quoteIrrigationFromDemand({
+    theme: course.theme,
+    maintainedAreaUnits: maintainedBefore,
+    plantingWaterUnits: plantingBefore.waterUnits,
+    costMult,
+    season: options.season,
+    currentWeather: options.currentWeather,
+    publishedForecast: options.publishedForecast,
+    policy: options.waterPolicy,
+  });
+  const irrigationAfter = quoteIrrigationFromDemand({
+    theme: course.theme,
+    maintainedAreaUnits: maintainedAfter,
+    plantingWaterUnits: plantingAfter.waterUnits,
+    costMult,
+    season: options.season,
+    currentWeather: options.currentWeather,
+    publishedForecast: options.publishedForecast,
+    policy: options.waterPolicy,
+  });
+  const irrigationDemandDelta =
+    maintainedAfter + plantingAfter.waterUnits
+    - maintainedBefore - plantingBefore.waterUnits;
+  const weeklyIrrigationCostDelta =
+    (irrigationAfter.waterCost - irrigationBefore.waterCost) * 7;
+  const weeklyPlantCareCostDelta =
+    (plantingAfter.careCost - plantingBefore.careCost) * costMult * 7;
+  const biome = getBiomeDefinition(course.theme);
+  const climateWarnings = irrigationDemandDelta > 0 && (
+    irrigationAfter.seasonalDemandMultiplier > 1.05
+    || irrigationAfter.weatherDemandMultiplier > 1.05
+    || biome.economy.water.scarcityPriceMultiplier > 1.05
+  )
+    ? [{
+      kind: "water-pressure" as const,
+      biome: biome.key,
+      seasonal: irrigationAfter.seasonalDemandMultiplier,
+      weather: irrigationAfter.weatherDemandMultiplier,
+      scarcity: biome.economy.water.scarcityPriceMultiplier,
+      policy: irrigationAfter.policyMultiplier,
+    }]
+    : [];
   const preview: TerrainStrokePreview = {
+    previewKind: "surface-edit",
     tiles: changedTiles,
     acceptedTiles,
+    excludedTiles,
     changedCount: changedTiles.length,
     duplicateCount: 0,
     unchangedCount: acceptedTiles.filter(
@@ -268,6 +387,21 @@ export function prepareSurfaceFeatureEdit(
     elevationDeltas: grading.deltas,
     earthworkSteps: grading.earthworkSteps,
     earthworkCost,
+    constructionCost,
+    terrainSalvage,
+    naturalClearingCost,
+    naturalSalvage,
+    weeklyUpkeepWeightDelta,
+    irrigationDemandDelta,
+    weeklyIrrigationCostDelta,
+    weeklyPlantCareCostDelta,
+    irrigationMultipliers: {
+      seasonal: irrigationAfter.seasonalDemandMultiplier,
+      weather: irrigationAfter.weatherDemandMultiplier,
+      scarcity: biome.economy.water.scarcityPriceMultiplier,
+      policy: irrigationAfter.policyMultiplier,
+    },
+    climateWarnings,
     gross,
     salvage,
     net,

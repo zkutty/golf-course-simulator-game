@@ -4,6 +4,10 @@ import { DEFAULT_STATE } from "../gameState";
 import type { Course, SurfaceFeature, Terrain } from "./types";
 import { corridorFeature, rasterizeSurfaceFeatureDetailed } from "./surfaceIntent";
 import { prepareSurfaceFeatureEdit } from "./surfaceFeatureEdit";
+import {
+  maintainedAreaDemandUnits,
+  playerPlantingDemand,
+} from "./biomeOperatingCosts";
 
 function authoredCourse(terrain: Terrain = "fairway"): { course: Course; feature: SurfaceFeature } {
   const width = 18;
@@ -53,6 +57,10 @@ describe("surface feature editing", () => {
     expect(prepared?.commitAllowed).toBe(true);
     expect(prepared?.preview.affordable).toBe(true);
     expect(prepared?.preview.changedCount).toBeGreaterThan(0);
+    expect(prepared?.preview.previewKind).toBe("surface-edit");
+    expect(new Set(prepared?.preview.tiles.map((tile) => tile.terrain))).toEqual(
+      new Set(["rough", "fairway"]),
+    );
     expect(prepared?.intent.features).toHaveLength(1);
     expect(prepared?.intent.features[0].id).toBe(feature.id);
     expect(prepared?.tiles[4 * course.width + 8]).toBe("rough");
@@ -125,6 +133,12 @@ describe("surface feature editing", () => {
     expect(prepared?.commitAllowed).toBe(false);
     expect(prepared?.preview.changedCount).toBe(0);
     expect(prepared?.preview.excluded.unowned).toBeGreaterThan(0);
+    expect(prepared?.preview.excludedTiles.length).toBe(
+      prepared?.preview.excluded.unowned,
+    );
+    expect(prepared?.preview.excludedTiles.every(
+      (tile) => tile.reason === "unowned",
+    )).toBe(true);
     expect(prepared?.intent).toBe(course.surfaceIntent);
     expect(prepared?.tiles).toEqual(course.tiles);
 
@@ -184,13 +198,42 @@ describe("surface feature editing", () => {
     ));
     expect(target).toBeDefined();
     course.obstacles = [
-      { ...target!, type: "tree" },
+      {
+        ...target!,
+        type: "tree",
+        plantId: "parkland-oak",
+        origin: "player",
+      },
       { x: 0, y: 0, type: "rock" },
     ];
 
-    const prepared = prepareSurfaceFeatureEdit(course, moved, 100_000, 1, 100);
-    expect(prepared?.preview.removedObstacles).toEqual([{ ...target!, type: "tree" }]);
+    const costMult = 1.25;
+    const prepared = prepareSurfaceFeatureEdit(
+      course,
+      moved,
+      100_000,
+      costMult,
+      100,
+    );
+    expect(prepared?.preview.removedObstacles).toEqual([course.obstacles[0]]);
     expect(prepared?.obstacles).toEqual([{ x: 0, y: 0, type: "rock" }]);
+    const afterCourse = {
+      ...course,
+      tiles: prepared!.tiles,
+      obstacles: prepared!.obstacles,
+    };
+    const plantingBefore = playerPlantingDemand(course);
+    const plantingAfter = playerPlantingDemand(afterCourse);
+    expect(prepared?.preview.irrigationDemandDelta).toBeCloseTo(
+      maintainedAreaDemandUnits(afterCourse) + plantingAfter.waterUnits
+      - maintainedAreaDemandUnits(course) - plantingBefore.waterUnits,
+      8,
+    );
+    expect(prepared?.preview.weeklyPlantCareCostDelta).toBeCloseTo(
+      (plantingAfter.careCost - plantingBefore.careCost) * costMult * 7,
+      8,
+    );
+    expect(prepared?.preview.weeklyPlantCareCostDelta).toBeLessThan(0);
 
     const state = applyAction({
       ...DEFAULT_STATE,
@@ -199,5 +242,51 @@ describe("surface feature editing", () => {
     }, { type: "EDIT_SURFACE_FEATURE", feature: moved });
     expect(state.course.obstacles).toEqual(prepared?.obstacles);
     expect(state.obstaclesVersion).toBe(DEFAULT_STATE.obstaclesVersion + 1);
+  });
+
+  it("locates protected water-edit cells and keeps them out of changed materials", () => {
+    const { course, feature } = authoredCourse("water");
+    course.elevations.fill(6);
+    if (feature.geometry.kind !== "corridor") throw new Error("expected corridor fixture");
+    const moved: SurfaceFeature = {
+      ...feature,
+      geometry: {
+        ...feature.geometry,
+        knots: feature.geometry.knots.map((point) => ({
+          x: point.x,
+          y: point.y + 4,
+        })),
+      },
+    };
+    const target = rasterizeSurfaceFeatureDetailed(
+      moved,
+      course.width,
+      course.height,
+    ).tiles.find((point) => !feature.coverage.includes(
+      point.y * course.width + point.x,
+    ))!;
+    course.obstacles = [{ ...target, type: "tree" }];
+
+    const prepared = prepareSurfaceFeatureEdit(
+      course,
+      moved,
+      100_000,
+      1,
+      100,
+      true,
+    );
+    expect(prepared?.preview.excludedTiles).toContainEqual({
+      ...target,
+      terrain: "water",
+      reason: "protected",
+    });
+    expect(prepared?.preview.excluded.protected).toBe(1);
+    expect(prepared?.tiles[target.y * course.width + target.x]).not.toBe(
+      "water",
+    );
+    expect(prepared?.preview.tiles).not.toContainEqual({
+      ...target,
+      terrain: "water",
+    });
   });
 });

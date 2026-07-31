@@ -28,6 +28,13 @@ interface Window {
       markerIndex: number;
       objectsIndex: number;
     } | null;
+    terrainPreview(): {
+      revision: number;
+      previewKind: "stroke" | "surface-edit";
+      selectedTerrain: import("./game/models/types").Terrain | null;
+      materials: import("./game/models/types").Terrain[];
+      colors: Partial<Record<import("./game/models/types").Terrain, number>>;
+    } | null;
   };
   __coursecraftTest?: {
     state(): {

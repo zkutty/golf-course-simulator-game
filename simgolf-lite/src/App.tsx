@@ -7,6 +7,11 @@ import "./ui/cozyLayout.css";
 import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
 import { HUD } from "./ui/HUD";
+import { DesignDock } from "./ui/DesignDock";
+import {
+  buildDesignCatalog,
+  type DesignCatalogItem,
+} from "./ui/designCatalog";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, ParSetting, PinRotation, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool, WeekResult, World } from "./game/models/types";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
@@ -90,13 +95,21 @@ import {
   buildingAtTile,
   canPlaceBuilding,
 } from "./game/models/buildings";
-import { canPlaceDecoration, decorationAtTile, decorationCost } from "./game/models/decorations";
+import {
+  canPlaceDecoration,
+  decorationAtTile,
+  decorationCost,
+  decorationSpec,
+  normalizedDecoration,
+} from "./game/models/decorations";
 import {
   defaultDecorationPlantId,
   defaultObstaclePlantId,
   naturalFeatureInstallationQuote,
   naturalFeatureRemovalQuote,
+  plantDefinition,
 } from "./game/models/plantRegistry";
+import type { PlantId } from "./game/models/plantTypes";
 import { GolfopediaModal } from "./ui/help/GolfopediaModal";
 import { TooltipSurface } from "./ui/help/TooltipSurface";
 import { AdvisorCard } from "./ui/onboarding/AdvisorCard";
@@ -488,6 +501,10 @@ export default function App() {
   const [teeSetupPrompt, setTeeSetupPrompt] = useState<{ holeIndex: number } | null>(null);
   const [pendingTeePlacement, setPendingTeePlacement] = useState<{ holeIndex: number; teeSet: TeeSet; point: Point; netCost: number } | null>(null);
   const [obstacleType, setObstacleType] = useState<ObstacleType>("tree");
+  const [selectedPlantId, setSelectedPlantId] = useState<PlantId | null>(null);
+  const [selectedDesignItemId, setSelectedDesignItemId] = useState(
+    "terrain:fairway",
+  );
   const [sculptBrush, setSculptBrush] = useState<SculptBrush>("raise");
   const [sculptRadius, setSculptRadius] = useState<SculptRadius>(1);
   const [buildingType, setBuildingType] = useState<ConcessionType>("snack_bar");
@@ -495,6 +512,70 @@ export default function App() {
   const [decorationRotation, setDecorationRotation] = useState<DecorationRotation>(0);
   const [decorationSpan, setDecorationSpan] = useState(3);
   const [decorationAction, setDecorationAction] = useState<"place" | "rotate" | "remove">("place");
+
+  const activateTerrainEditing = useCallback((
+    tool: TerrainAuthoringTool = terrainTool,
+    terrain: Terrain = selected,
+  ) => {
+    setTerrainTool(tool);
+    setSelected(terrain);
+    setSelectedPlantId(null);
+    setSelectedDesignItemId(`terrain:${terrain}`);
+    setEditorMode("PAINT");
+    setPaintError(null);
+  }, [selected, terrainTool]);
+
+  const activateObstacleEditing = useCallback((
+    nextObstacleType: ObstacleType = obstacleType,
+    requestedPlantId: PlantId | null = selectedPlantId,
+    requestedItemId?: string,
+  ) => {
+    const requestedPlant = requestedPlantId
+      ? plantDefinition(requestedPlantId)
+      : null;
+    const plantId = nextObstacleType === "rock"
+      ? null
+      : requestedPlant?.semantics.kind === "obstacle"
+          && requestedPlant.semantics.obstacleType === nextObstacleType
+        ? requestedPlantId
+        : defaultObstaclePlantId(course.theme, nextObstacleType);
+    setObstacleType(nextObstacleType);
+    setSelectedPlantId(plantId);
+    setSelectedDesignItemId(
+      requestedItemId
+        ?? (plantId ? `plant:${plantId}` : "nature:rock"),
+    );
+    setEditorMode("OBSTACLE");
+    setPaintError(null);
+  }, [course.theme, obstacleType, selectedPlantId]);
+
+  const activateDecorationEditing = useCallback((
+    nextDecorationKind: DecorationKind,
+    requestedPlantId: PlantId | null,
+    requestedItemId?: string,
+  ) => {
+    const requestedPlant = requestedPlantId
+      ? plantDefinition(requestedPlantId)
+      : null;
+    const plantId = requestedPlant?.semantics.kind === "decoration"
+        && requestedPlant.semantics.decorationKind === nextDecorationKind
+      ? requestedPlantId
+      : null;
+    const maxSpan = decorationSpec(nextDecorationKind).maxSpan;
+    setDecorationKind(nextDecorationKind);
+    setSelectedPlantId(plantId);
+    setSelectedDesignItemId(
+      requestedItemId
+        ?? (plantId ? `plant:${plantId}` : `decor:${nextDecorationKind}`),
+    );
+    if (maxSpan) {
+      setDecorationSpan((current) =>
+        Math.max(1, Math.min(maxSpan, Math.floor(current))));
+    }
+    setDecorationAction("place");
+    setEditorMode("DECOR");
+    setPaintError(null);
+  }, []);
 
   const [pendingWeekReport, setPendingWeekReport] = useState<{
     week: number;
@@ -1886,9 +1967,9 @@ export default function App() {
       } else if (eventMatchesBinding(event, bindings.speed3)) {
         event.preventDefault(); resumeSpeedRef.current = "4x"; live.setSpeed("4x");
       } else if (eventMatchesBinding(event, bindings.terrainTool)) {
-        event.preventDefault(); setEditorMode("PAINT");
+        event.preventDefault(); activateTerrainEditing();
       } else if (eventMatchesBinding(event, bindings.obstacleTool)) {
-        event.preventDefault(); setEditorMode("OBSTACLE");
+        event.preventDefault(); activateObstacleEditing();
       } else if (eventMatchesBinding(event, bindings.buildingTool)) {
         event.preventDefault(); setEditorMode("BUILDING");
       } else if (eventMatchesBinding(event, bindings.quicksave)) {
@@ -1897,7 +1978,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [appProfile.accessibility.keybindings, flow.base, flow.modal, flow.paused, live, openPauseMenu, quickSave, resumeFromPause, toggleClock, tutorialProgress]);
+  }, [activateObstacleEditing, activateTerrainEditing, appProfile.accessibility.keybindings, flow.base, flow.modal, flow.paused, live, openPauseMenu, quickSave, resumeFromPause, toggleClock, tutorialProgress]);
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -2276,8 +2357,16 @@ export default function App() {
 
   // THE new-run path (ZKU-162): every fresh run goes through createNewGame
   // (or createScenarioGame for career runs) and then this shared reset.
+  function prepareTutorialPaintCorridor() {
+    selectWorkspace("design");
+    setPhotoMode(false);
+    setViewMode("ARCHITECT");
+    activateTerrainEditing("curve", "fairway");
+  }
+
   function beginTutorial(tutorialCourse = course, tutorialWorld = world) {
     const progress = createTutorialProgress(tutorialCourse, tutorialWorld);
+    prepareTutorialPaintCorridor();
     setTutorialProgress(progress);
     saveTutorialProgress(progress);
     updateAppProfile({ tutorialOffered: true });
@@ -2310,7 +2399,7 @@ export default function App() {
     setRecords(freshRecords);
     setLast(undefined);
     setPendingWeekReport(null);
-    setEditorMode("PAINT");
+    activateTerrainEditing("curve", "fairway");
     setActiveHoleIndex(0);
     setWizardStep("TEE");
     setDraftTee(null);
@@ -2320,6 +2409,8 @@ export default function App() {
     setShowLandOffice(false);
     setSelectedParcelId(newCourse.estate?.starterParcelId ?? null);
     setObstacleType("tree");
+    setDecorationKind("bench");
+    setDecorationAction("place");
     setFlyoverNonce(0);
     setPeakCash(newWorld.cash);
     setPeakRep(newWorld.reputation);
@@ -2367,6 +2458,19 @@ export default function App() {
     const nextStep = TUTORIAL_STEPS[reconciled.stepIndex];
     setA11yMessage(`${t(nextStep.titleKey)}. ${t(nextStep.bodyKey)}`);
   }, [course, screen, t, tutorialProgress]);
+
+  useEffect(() => {
+    if (
+      screen !== "game"
+      || !tutorialProgress
+      || TUTORIAL_STEPS[tutorialProgress.stepIndex]?.id !== "paint-corridor"
+    ) return;
+    prepareTutorialPaintCorridor();
+    // The lesson transition or loaded step is the only trigger. Keeping these
+    // controls authoritative prevents an older selection from making the
+    // fairway-painting lesson impossible.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screen, tutorialProgress?.stepIndex]);
 
   // `goals` overrides the mode's default goal set (defeat-retry keeps a
   // run's exact goals).
@@ -2780,6 +2884,9 @@ export default function App() {
         mode: editorMode,
         terrainTool,
         selectedTerrain: selected,
+        designDockVisible: workspace === "design" && !photoMode && !playerRoundLocksEditing,
+        selectedDesignItem: selectedDesignItemId,
+        selectedPlantId,
         selectedDecoration: decorationKind,
         decorationRotation,
         decorationSpan,
@@ -2821,7 +2928,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedParcelId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -3336,6 +3443,12 @@ export default function App() {
       costMult,
       world.reputation,
       world.constraints?.protectedTrees,
+      {
+        season: seasonalPresentation.climate.calendar.season,
+        currentWeather: seasonalPresentation.weather,
+        publishedForecast: world.seasonal?.forecast ?? [],
+        waterPolicy: world.seasonal?.operations.waterPolicy,
+      },
     );
     if (!preview.affordable) {
       setPaintError(t("error.insufficientFunds", {
@@ -3425,6 +3538,12 @@ export default function App() {
       costMult,
       world.reputation,
       world.constraints?.protectedTrees,
+      {
+        season: seasonalPresentation.climate.calendar.season,
+        currentWeather: seasonalPresentation.weather,
+        publishedForecast: world.seasonal?.forecast ?? [],
+        waterPolicy: world.seasonal?.operations.waterPolicy,
+      },
     );
   }, [
     buildTerrainSurfaceFeature,
@@ -3434,6 +3553,10 @@ export default function App() {
     costMult,
     world.reputation,
     world.constraints?.protectedTrees,
+    world.seasonal?.forecast,
+    world.seasonal?.operations.waterPolicy,
+    seasonalPresentation.climate.calendar.season,
+    seasonalPresentation.weather,
   ]);
 
   const commitTerrainStroke = useCallback((points: Point[]) => {
@@ -3509,10 +3632,16 @@ export default function App() {
       costMult,
       world.reputation,
       world.constraints?.protectedTrees,
+      {
+        season: seasonalPresentation.climate.calendar.season,
+        currentWeather: seasonalPresentation.weather,
+        publishedForecast: world.seasonal?.forecast ?? [],
+        waterPolicy: world.seasonal?.operations.waterPolicy,
+      },
     )?.preview ?? null;
     recordM35Metric("surfacePreview", performance.now() - startedAt);
     return preview;
-  }, [course, world.cash, world.reputation, world.constraints?.protectedTrees, costMult]);
+  }, [course, world.cash, world.reputation, world.constraints?.protectedTrees, world.seasonal?.forecast, world.seasonal?.operations.waterPolicy, costMult, seasonalPresentation.climate.calendar.season, seasonalPresentation.weather]);
 
   const commitSurfaceFeatureEdit = useCallback((feature: SurfaceFeature) => {
     const startedAt = performance.now();
@@ -3524,6 +3653,12 @@ export default function App() {
       costMult,
       world.reputation,
       world.constraints?.protectedTrees,
+      {
+        season: seasonalPresentation.climate.calendar.season,
+        currentWeather: seasonalPresentation.weather,
+        publishedForecast: world.seasonal?.forecast ?? [],
+        waterPolicy: world.seasonal?.operations.waterPolicy,
+      },
     );
     if (!prepared?.commitAllowed) {
       setPaintError(t("progression.locked", { reputation: terrainMinReputation(feature.terrain) }));
@@ -3565,6 +3700,10 @@ export default function App() {
     world.constraints?.protectedTrees,
     world.isBankrupt,
     world.reputation,
+    world.seasonal?.forecast,
+    world.seasonal?.operations.waterPolicy,
+    seasonalPresentation.climate.calendar.season,
+    seasonalPresentation.weather,
   ]);
 
   // Smart fairway painting: paint fairway along centerline with specified width in yards
@@ -3900,7 +4039,7 @@ export default function App() {
             const tee = getTeeBox(hole, teeSet);
             if (!tee || tee.x !== x || tee.y !== y) continue;
             setSelectedTeeSet(teeSet);
-            setEditorMode("PAINT");
+            activateTerrainEditing();
             enterHoleEditMode(i, teeSet);
             return;
           }
@@ -3963,9 +4102,15 @@ export default function App() {
           setPaintError(t("error.obstacleWater"));
           return;
         }
+        const selectedPlant = selectedPlantId
+          ? plantDefinition(selectedPlantId)
+          : undefined;
         const plantId = obstacleType === "rock"
           ? undefined
-          : defaultObstaclePlantId(course.theme, obstacleType);
+          : selectedPlant?.semantics.kind === "obstacle"
+            && selectedPlant.semantics.obstacleType === obstacleType
+            ? selectedPlant.id
+            : defaultObstaclePlantId(course.theme, obstacleType);
         const installation = naturalFeatureInstallationQuote({
           theme: course.theme,
           obstacleType,
@@ -4030,23 +4175,29 @@ export default function App() {
         setPaintError(null);
         return;
       }
-      const decoration = {
+      const selectedPlant = selectedPlantId
+        ? plantDefinition(selectedPlantId)
+        : undefined;
+      const semanticPlantId = (
+        decorationKind === "flower_bed"
+        || decorationKind === "planter"
+        || decorationKind === "ornamental_feature"
+      )
+        ? selectedPlant?.semantics.kind === "decoration"
+          && selectedPlant.semantics.decorationKind === decorationKind
+          ? selectedPlant.id
+          : defaultDecorationPlantId(course.theme, decorationKind)
+        : undefined;
+      const decoration = normalizedDecoration({
         kind: decorationKind,
         x,
         y,
         rotation: decorationRotation,
-        ...(
-          decorationKind === "flower_bed"
-          || decorationKind === "planter"
-          || decorationKind === "ornamental_feature"
-            ? {
-              plantId: defaultDecorationPlantId(course.theme, decorationKind),
-              origin: "player" as const,
-            }
-            : {}
-        ),
+        ...(semanticPlantId
+          ? { plantId: semanticPlantId, origin: "player" as const }
+          : {}),
         ...((decorationKind === "bridge" || decorationKind === "boardwalk") ? { span: decorationSpan } : {}),
-      };
+      });
       const validation = canPlaceDecoration(course, decoration);
       if (!validation.ok) { setPaintError(t("decor.invalid", { reason: validation.reason ?? "invalid placement" })); return; }
       const cost = decorationCost(decoration, course.theme, costMult);
@@ -4359,12 +4510,13 @@ export default function App() {
     }
     const next = { ...tutorialProgress, stepIndex: tutorialProgress.stepIndex + 1 };
     const nextStep = TUTORIAL_STEPS[next.stepIndex];
+    if (nextStep.id === "paint-corridor") prepareTutorialPaintCorridor();
     if (["shot-plan", "weekly-report", "green-fee", "maintenance", "first-profit"].includes(nextStep.id)) {
       setViewMode("ARCHITECT");
     }
     if (nextStep.id === "shot-plan") {
       setActiveHoleIndex(Math.max(0, activeHoleIndex - 1));
-      setEditorMode("PAINT");
+      activateTerrainEditing();
     }
     if (nextStep.id === "fix-corridor") enterHoleEditMode(activeHoleIndex);
     if (step.id === "fix-corridor") {
@@ -4395,6 +4547,40 @@ export default function App() {
     colorVision: appProfile.accessibility.colorVision,
     reducedMotion: appProfile.accessibility.reducedMotion,
   });
+  const designCatalog = buildDesignCatalog({
+    theme: course.theme,
+    season: seasonalPresentation.climate.calendar.season,
+    weatherKind: seasonalPresentation.weather.kind,
+    costMult,
+    colorVision: appProfile.accessibility.colorVision,
+    graphicsQuality: resolvedGraphicsQuality,
+    reducedMotion: appProfile.accessibility.reducedMotion,
+    seasonalVisualState: seasonalPresentation,
+    decorationSpan,
+    t,
+  });
+
+  function selectDesignItem(item: DesignCatalogItem) {
+    if (item.terrain) {
+      activateTerrainEditing(terrainTool, item.terrain);
+      return;
+    }
+    if (item.obstacleType) {
+      activateObstacleEditing(
+        item.obstacleType,
+        item.plantId ?? null,
+        item.id,
+      );
+      return;
+    }
+    if (item.decorationKind) {
+      activateDecorationEditing(
+        item.decorationKind,
+        item.plantId ?? null,
+        item.id,
+      );
+    }
+  }
 
   if (screen === "setup") {
     return (
@@ -4677,6 +4863,36 @@ export default function App() {
                 disabled={{ courses: playerRoundLocksEditing, land: playerRoundLocksEditing }}
               />
             )}
+            {workspace === "design"
+              && !photoMode
+              && !playerRoundLocksEditing
+              && (
+                <DesignDock
+                  theme={course.theme ?? BIOME_KEYS[0]}
+                  quality={resolvedGraphicsQuality}
+                  catalog={designCatalog}
+                  selectedItemId={selectedDesignItemId}
+                  cash={world.cash}
+                  reputation={world.reputation}
+                  terrainTool={terrainTool}
+                  onTerrainTool={(tool) => activateTerrainEditing(tool)}
+                  terrainBrushWidth={terrainBrushWidth}
+                  onTerrainBrushWidth={setTerrainBrushWidth}
+                  onUndo={undoTerrainEdit}
+                  onRedo={redoTerrainEdit}
+                  onSelect={selectDesignItem}
+                  decorationAction={decorationAction}
+                  onDecorationAction={setDecorationAction}
+                  decorationRotation={decorationRotation}
+                  onDecorationRotation={setDecorationRotation}
+                  decorationSpan={decorationSpan}
+                  onDecorationSpan={setDecorationSpan}
+                  onOpenGolfopedia={(entry) => {
+                    setGolfopediaEntry(entry);
+                    flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" });
+                  }}
+                />
+              )}
             {showContextualInspector && !tutorialProgress && (
               <ContextualInspectorPanel
                 courseName={course.name}
@@ -4988,12 +5204,6 @@ export default function App() {
                     });
                   }}
                   onSmartPaintFairway={smartPaintFairway}
-                  editorMode={editorMode}
-                  setEditorMode={setEditorMode}
-                  selectedTerrain={selected}
-                  setSelected={setSelected}
-                  obstacleType={obstacleType}
-                  setObstacleType={setObstacleType}
                   onBeginTeePlacement={(teeSet) => { setSetupPlacement({ kind: "tee", key: teeSet }); setEditorMode("HOLE_WIZARD"); setPaintError(null); }}
                   onBeginPinPlacement={(pinRotation) => { setSetupPlacement({ kind: "pin", key: pinRotation }); setEditorMode("HOLE_WIZARD"); setPaintError(null); }}
                   selectedTeeSet={selectedTeeSet}
@@ -5011,10 +5221,6 @@ export default function App() {
         world={world}
         last={last}
         prev={history.length >= 2 ? history[history.length - 2] : undefined}
-        selected={selected}
-        setSelected={setSelected}
-        terrainTool={terrainTool}
-        setTerrainTool={setTerrainTool}
         terrainBrushWidth={terrainBrushWidth}
         setTerrainBrushWidth={setTerrainBrushWidth}
         onUndoTerrain={undoTerrainEdit}
@@ -5027,11 +5233,10 @@ export default function App() {
         setMaintenance={(n) => setWorld((w) => ({ ...w, maintenanceBudget: n }))}
         editorMode={editorMode}
         setEditorMode={setEditorMode}
+        onEnterDesignMode={() => activateTerrainEditing()}
         startWizard={startWizard}
         startPlaceTee={startPlaceTee}
         startPlaceGreen={startPlaceGreen}
-        obstacleType={obstacleType}
-        setObstacleType={setObstacleType}
         buildingType={buildingType}
         setBuildingType={setBuildingType}
         concessionTypes={CONCESSION_TYPES}

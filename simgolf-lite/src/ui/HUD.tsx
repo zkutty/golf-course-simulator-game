@@ -4,13 +4,11 @@ import type { TutorialTarget } from "../game/onboarding/tutorial";
 import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
 import {
   ELEVATION_COST_PER_STEP,
-  terrainConstructionUnitCost,
   terrainMaintenanceWeight,
-  terrainSalvageUnitValue,
   themeEarthworkMult,
 } from "../game/models/terrainEconomics";
 import { useAudio } from "../audio/audioContext";
-import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, ObstacleType, Point, Terrain, TerrainAuthoringTool, WeekResult, World } from "../game/models/types";
+import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, Point, Terrain, WeekResult, World } from "../game/models/types";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
@@ -19,33 +17,18 @@ import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibi
 import type { LegacyState } from "../utils/legacy";
 import { getEffectiveBalance, getDifficultyProfile } from "../game/balance/difficulty";
 import paperTex from "../assets/textures/paper.svg";
-import { IconBush, IconCash, IconCondition, IconHoles, IconReputation, IconRock, IconTree, LogoCourseCraft } from "@/assets/icons";
+import { IconCash, IconCondition, IconHoles, IconReputation, LogoCourseCraft } from "@/assets/icons";
 import { GameButton } from "@/ui/gameui";
 import { ObjectiveMiniTracker, ObjectivesPanel } from "./ObjectivesPanel";
 import { BUILDING_SPECS, isConcession } from "../game/models/buildings";
-import { DECORATION_KINDS, DECORATION_SPECS, decorationCost } from "../game/models/decorations";
-import {
-  defaultDecorationPlantId,
-  defaultObstaclePlantId,
-  naturalFeatureInstallationQuote,
-  plantDefinition,
-  plantFitForBiome,
-} from "../game/models/plantRegistry";
 import { Tooltip } from "./help/Tooltip";
 import { REPORT_HELP } from "./help/tooltipContent";
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
-import type { MessageKey } from "../i18n/catalog";
 import { HoleMinimap } from "./HoleMinimap";
-import { concessionMinReputation, isConcessionUnlocked, isObstacleUnlocked, isTerrainUnlocked, obstacleMinReputation, reputationTier, terrainMinReputation } from "../game/progression/progression";
+import { concessionMinReputation, isConcessionUnlocked, reputationTier } from "../game/progression/progression";
 import { courseVibeLabel } from "./courseVibe";
 
-const TERRAIN_GROUPS: ReadonlyArray<{ label: MessageKey; terrains: Terrain[] }> = [
-  { label: "terrain.group.playing", terrains: ["tee", "fairway", "green"] },
-  { label: "terrain.group.hazards", terrains: ["sand", "water", "wetland"] },
-  { label: "terrain.group.paths", terrains: ["path"] },
-  { label: "terrain.group.natural", terrains: ["rough", "deep_rough", "waste_area"] },
-];
 type Tab = "Editor" | "Metrics" | "Results" | "Upgrades";
 
 export function HUD(props: {
@@ -53,10 +36,6 @@ export function HUD(props: {
   world: World;
   last?: WeekResult;
   prev?: WeekResult;
-  selected: Terrain;
-  setSelected: (t: Terrain) => void;
-  terrainTool: TerrainAuthoringTool;
-  setTerrainTool: (tool: TerrainAuthoringTool) => void;
   terrainBrushWidth: number;
   setTerrainBrushWidth: (width: number) => void;
   onUndoTerrain: () => void;
@@ -65,6 +44,7 @@ export function HUD(props: {
   setMaintenance: (n: number) => void;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
   setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR") => void;
+  onEnterDesignMode: () => void;
   sculptBrush?: SculptBrush;
   setSculptBrush?: (b: SculptBrush) => void;
   sculptRadius?: SculptRadius;
@@ -72,8 +52,6 @@ export function HUD(props: {
   startWizard: () => void;
   startPlaceTee?: () => void;
   startPlaceGreen?: () => void;
-  obstacleType: ObstacleType;
-  setObstacleType: (t: ObstacleType) => void;
   buildingType: ConcessionType;
   setBuildingType: (t: ConcessionType) => void;
   concessionTypes: readonly ConcessionType[];
@@ -129,34 +107,17 @@ export function HUD(props: {
     world,
     last,
     prev,
-    selected,
-    setSelected,
-    terrainTool,
-    setTerrainTool,
-    terrainBrushWidth,
-    setTerrainBrushWidth,
-    onUndoTerrain,
-    onRedoTerrain,
     setGreenFee,
     setMaintenance,
     editorMode,
     setEditorMode,
+    onEnterDesignMode,
     startWizard,
     startPlaceTee,
     startPlaceGreen,
-    obstacleType,
-    setObstacleType,
     buildingType,
     setBuildingType,
     concessionTypes,
-    decorationKind,
-    setDecorationKind,
-    decorationRotation,
-    setDecorationRotation,
-    decorationSpan,
-    setDecorationSpan,
-    decorationAction,
-    setDecorationAction,
     onConfigureBuilding,
     activeHoleIndex,
     setActiveHoleIndex,
@@ -601,18 +562,18 @@ export function HUD(props: {
               </div>
               <div data-tutorial-target="editor-tools" style={{ display: "flex", gap: 6, marginBottom: 10 }}>
                 <button
-                  onClick={() => setEditorMode("PAINT")}
-                  data-tutorial-target="terrain-palette"
+                  onClick={onEnterDesignMode}
                   style={{
                     flex: 1,
                     padding: "8px 6px",
                     borderRadius: 10,
-                    border: editorMode === "PAINT" ? "2px solid #000" : "1px solid #ccc",
+                    border: editorMode === "PAINT" || editorMode === "OBSTACLE" || editorMode === "DECOR" ? "2px solid #000" : "1px solid #ccc",
                     background: "#fff",
                     fontSize: 12,
                   }}
                 >
-                  <T id="auto.ui.hud.paint" /></button>
+                  <T id="workspace.design" />
+                </button>
                 <button
                   onClick={startWizard}
                   data-tutorial-target={editorMode === "HOLE_WIZARD" ? undefined : "hole-wizard"}
@@ -626,18 +587,6 @@ export function HUD(props: {
                   }}
                 >
                   <T id="auto.ui.hud.hole.wizard" /></button>
-                <button
-                  onClick={() => setEditorMode("OBSTACLE")}
-                  style={{
-                    flex: 1,
-                    padding: "8px 6px",
-                    borderRadius: 10,
-                    border: editorMode === "OBSTACLE" ? "2px solid #000" : "1px solid #ccc",
-                    background: "#fff",
-                    fontSize: 12,
-                  }}
-                >
-                  <T id="auto.ui.hud.obstacles" /></button>
                 <button
                   onClick={() => setEditorMode("SCULPT")}
                   style={{
@@ -662,20 +611,6 @@ export function HUD(props: {
                   }}
                 >
                   <T id="auto.ui.hud.shops" /></button>
-                <button
-                  data-testid="decor-tool"
-                  onClick={() => setEditorMode("DECOR")}
-                  style={{
-                    flex: 1,
-                    padding: "8px 6px",
-                    borderRadius: 10,
-                    border: editorMode === "DECOR" ? "2px solid #000" : "1px solid #ccc",
-                    background: "#fff",
-                    fontSize: 12,
-                  }}
-                >
-                  {translateCurrent("decor.tool")}
-                </button>
               </div>
 
               {editorMode === "SCULPT" && props.sculptBrush && props.setSculptBrush && props.setSculptRadius && (
@@ -870,106 +805,11 @@ export function HUD(props: {
                   {draftGreen ? `(${draftGreen.x},${draftGreen.y})` : "—"}
                 </div>
               </Section></div>
-            ) : editorMode === "OBSTACLE" ? (
-              <Section title={translateCurrent("auto.ui.hud.place.obstacle")}>
-                <div style={{ color: "#444" }}>
-                  <T id="auto.ui.hud.click.on.the.canvas.to.place.remove.an.obstacle.does.n" /></div>
-                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                  {(["tree", "bush", "rock"] as const).map((t) => {
-                    const locked = !isObstacleUnlocked(t, world.reputation);
-                    const plantId = t === "rock"
-                      ? undefined
-                      : defaultObstaclePlantId(course.theme, t);
-                    const install = naturalFeatureInstallationQuote({
-                      theme: course.theme,
-                      obstacleType: t,
-                      plantId,
-                      costMult,
-                    }).net;
-                    return (
-                    <button
-                      key={t}
-                      disabled={locked}
-                      title={locked ? translateCurrent("progression.locked", { reputation: obstacleMinReputation(t) }) : undefined}
-                      onClick={() => setObstacleType(t)}
-                      style={{
-                        flex: 1,
-                        padding: 10,
-                        borderRadius: 10,
-                        border: obstacleType === t ? "2px solid #000" : "1px solid #ccc",
-                        background: locked ? "#eee" : "#fff",
-                        opacity: locked ? .58 : 1,
-                      }}
-                    >
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                        {t === "tree" ? <IconTree size={22} /> : t === "bush" ? <IconBush size={22} /> : <IconRock size={22} />}
-                        <span>
-                          <span style={{ display: "block", textTransform: "capitalize" }}>
-                            {locked ? `🔒 ${t}` : plantId ? plantDefinition(plantId).label : t}
-                          </span>
-                          {!locked && <small style={{ display: "block", color: "#6b6555" }}>
-                            {formatCurrency(install)}
-                            {plantId ? ` · ${plantFitForBiome(course.theme, plantId)}` : ""}
-                          </small>}
-                        </span>
-                      </span>
-                    </button>
-                  );})}
+            ) : editorMode === "OBSTACLE" || editorMode === "DECOR" ? (
+              <Section title={translateCurrent("designDock.guidanceTitle")}>
+                <div style={{ color: "#444", fontSize: 12 }}>
+                  <T id="designDock.guidance" />
                 </div>
-              </Section>
-            ) : editorMode === "DECOR" ? (
-              <Section title={translateCurrent("decor.title")}>
-                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-                  {(["place", "rotate", "remove"] as const).map((action) => (
-                    <button
-                      key={action}
-                      data-testid={`decor-action-${action}`}
-                      onClick={() => setDecorationAction(action)}
-                      style={{ flex: 1, padding: 7, borderRadius: 8, border: decorationAction === action ? "2px solid #000" : "1px solid #ccc", background: "#fff", textTransform: "capitalize" }}
-                    >
-                      {translateCurrent(`decor.${action}` as MessageKey)}
-                    </button>
-                  ))}
-                </div>
-                {decorationAction === "place" && <>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}>
-                    {DECORATION_KINDS.map((kind) => {
-                      const spec = DECORATION_SPECS[kind];
-                      const plantId = kind === "flower_bed"
-                        || kind === "planter"
-                        || kind === "ornamental_feature"
-                        ? defaultDecorationPlantId(course.theme, kind)
-                        : undefined;
-                      const example = {
-                        kind,
-                        x: 0,
-                        y: 0,
-                        rotation: decorationRotation,
-                        ...(plantId ? { plantId, origin: "player" as const } : {}),
-                        ...(spec.defaultSpan ? { span: decorationSpan } : {}),
-                      };
-                      return <button
-                        key={kind}
-                        data-testid={`decor-kind-${kind}`}
-                        onClick={() => setDecorationKind(kind)}
-                        style={{ padding: 7, borderRadius: 8, border: decorationKind === kind ? "2px solid #000" : "1px solid #ccc", background: "#fff", textAlign: "left", fontSize: 11 }}
-                      ><b>{plantId ? plantDefinition(plantId).label : spec.name}</b><br />
-                        {formatCurrency(decorationCost(example, course.theme, costMult))}
-                        {plantId ? ` · ${plantFitForBiome(course.theme, plantId)}` : ""}
-                      </button>;
-                    })}
-                  </div>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 8 }}>
-                    <span style={{ fontSize: 12 }}>{translateCurrent("decor.direction")}</span>
-                    {([0, 1, 2, 3] as const).map((rotation) => <button key={rotation} aria-label={translateCurrent("decor.rotation", { rotation: rotation * 90 })} onClick={() => setDecorationRotation(rotation)} style={{ padding: 6, border: decorationRotation === rotation ? "2px solid #000" : "1px solid #ccc", background: "#fff" }}>{rotation * 90}°</button>)}
-                  </div>
-                  {(decorationKind === "bridge" || decorationKind === "boardwalk") && <label style={{ display: "grid", gap: 4, marginTop: 8, fontSize: 12 }}>
-                    {translateCurrent("decor.span", { span: decorationSpan })}
-                    <input aria-label={translateCurrent("decor.spanLabel")} type="range" min={1} max={decorationKind === "bridge" ? 6 : 8} value={decorationSpan} onChange={(event) => setDecorationSpan(Number(event.target.value))} />
-                  </label>}
-                  <div style={{ marginTop: 8, color: "#555", fontSize: 11 }}>{translateCurrent("decor.placeHint")}</div>
-                </>}
-                {decorationAction !== "place" && <div style={{ color: "#555", fontSize: 12 }}>{translateCurrent(decorationAction === "rotate" ? "decor.rotateHint" : "decor.removeHint")}</div>}
               </Section>
             ) : editorMode === "BUILDING" ? (
               <>
@@ -1189,105 +1029,8 @@ export function HUD(props: {
                 </Section>
                 )}
 
-                <div style={{ marginBottom: 8 }}>
-                  <b><T id="auto.ui.hud.terrain.brush" /></b>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
-                  {(["curve", "spline", "area", "edit"] as const).map((tool) => (
-                    <button
-                      key={tool}
-                      type="button"
-                      data-testid={`terrain-tool-${tool}`}
-                      aria-pressed={terrainTool === tool}
-                      onClick={() => setTerrainTool(tool)}
-                      style={{
-                        padding: "6px 8px",
-                        borderRadius: 8,
-                        border: terrainTool === tool ? "2px solid #2f4a35" : "1px solid #b8ad98",
-                        background: terrainTool === tool ? "#e5f0df" : "#fff",
-                        fontWeight: 700,
-                      }}
-                    >
-                      {translateCurrent(
-                        tool === "curve"
-                          ? "terrainEdit.curve"
-                          : tool === "spline"
-                            ? "terrainEdit.spline"
-                            : tool === "area"
-                              ? "terrainEdit.area"
-                              : "terrainEdit.edit",
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 6, marginBottom: 8 }}>
-                  <button type="button" aria-label={translateCurrent("terrainEdit.undo")} onClick={onUndoTerrain}>↶</button>
-                  <button type="button" aria-label={translateCurrent("terrainEdit.redo")} onClick={onRedoTerrain}>↷</button>
-                </div>
-                <label style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, alignItems: "center", marginBottom: 10, fontSize: 11 }}>
-                  <span>{translateCurrent("terrainEdit.width")}</span>
-                  <input
-                    aria-label={translateCurrent("terrainEdit.width")}
-                    type="range"
-                    min={1}
-                    max={12}
-                    step={1}
-                    value={terrainBrushWidth}
-                    disabled={terrainTool === "area" || terrainTool === "edit"}
-                    onChange={(event) => setTerrainBrushWidth(Number(event.target.value))}
-                  />
-                  <b>{terrainBrushWidth}</b>
-                </label>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 5, margin: "-4px 0 10px" }}>
-                  {([
-                    ["terrainEdit.narrow", 2],
-                    ["terrainEdit.medium", 5],
-                    ["terrainEdit.wide", 9],
-                  ] as const).map(([label, width]) => (
-                    <button
-                      key={label}
-                      type="button"
-                      data-testid={`terrain-width-${width}`}
-                      disabled={terrainTool === "area" || terrainTool === "edit"}
-                      aria-pressed={terrainBrushWidth === width}
-                      onClick={() => setTerrainBrushWidth(width)}
-                      style={{
-                        padding: "4px 5px",
-                        borderRadius: 6,
-                        border: terrainBrushWidth === width ? "2px solid #2f4a35" : "1px solid #b8ad98",
-                        background: terrainBrushWidth === width ? "#e5f0df" : "#fff",
-                        fontSize: 10,
-                      }}
-                    >
-                      {translateCurrent(label)}
-                    </button>
-                  ))}
-                </div>
-                <div data-tutorial-target="terrain-palette" style={{ display: "grid", gap: 8 }}>
-                  {TERRAIN_GROUPS.map((group) => <div key={group.label}><div style={{ fontSize: 10, fontWeight: 700, color: "#6c604d", marginBottom: 4 }}>{translateCurrent(group.label)}</div><div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{group.terrains.map((t) => {
-                    const locked = !isTerrainUnlocked(t, world.reputation);
-                    return (
-                    <Tooltip
-                      key={t}
-                      content={<><b>{t.replace("_", " ")}</b><br />{locked ? translateCurrent("progression.locked", { reputation: terrainMinReputation(t) }) : <><T id="auto.ui.hud.build" />{formatCurrency(terrainConstructionUnitCost(t, course.theme, costMult))} <T id="auto.ui.hud.tile.salvage" />{formatCurrency(terrainSalvageUnitValue(t, course.theme, costMult))}.</>}</>}
-                      learnMore={() => onOpenGolfopedia(`terrain-${t}`)}
-                    >
-                      <button
-                        disabled={locked}
-                        onClick={() => setSelected(t)}
-                        style={{
-                          padding: "6px 8px",
-                          borderRadius: 8,
-                          border: selected === t ? "2px solid #000" : "1px solid #ccc",
-                          background: locked ? "#eee" : "#fff",
-                          opacity: locked ? .58 : 1,
-                          fontSize: 12,
-                        }}
-                      >
-                        {locked ? `🔒 ${t}` : t}
-                      </button>
-                    </Tooltip>
-                  );})}</div></div>)}
+                <div style={{ padding: 8, border: "1px solid #cbbd9d", borderRadius: 8, color: "#555", fontSize: 12 }}>
+                  <T id="designDock.terrainGuidance" />
                 </div>
               </>
             )}

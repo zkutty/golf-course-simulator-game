@@ -42,6 +42,7 @@ import {
   withDefaultSurfaceTangents,
 } from "../game/models/surfaceIntent";
 import { formatCurrency } from "../i18n/format";
+import type { MessageKey } from "../i18n/catalog";
 import { useI18n } from "../i18n/useI18n";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth, frontCorner, placeObject } from "../game/render/objectPlacement";
@@ -97,7 +98,11 @@ import {
 } from "../game/render/worldEffects";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { buildingSpec, buildingVisualFrame } from "../game/models/buildings";
-import { decorationTiles, decorationVisual } from "../game/models/decorations";
+import {
+  decorationTiles,
+  decorationVisual,
+  normalizedDecoration,
+} from "../game/models/decorations";
 import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
 import {
   plantDefinition,
@@ -194,6 +199,28 @@ import {
   surfaceCareTopology,
   surfaceCareVisualSignatures,
 } from "../game/conditions/surfaceCare";
+
+const TERRAIN_LABEL_KEYS: Record<Terrain, MessageKey> = {
+  fairway: "designDock.terrain.fairway",
+  rough: "designDock.terrain.rough",
+  deep_rough: "designDock.terrain.deepRough",
+  sand: "designDock.terrain.sand",
+  waste_area: "designDock.terrain.wasteArea",
+  water: "designDock.terrain.water",
+  wetland: "designDock.terrain.wetland",
+  green: "designDock.terrain.green",
+  tee: "designDock.terrain.tee",
+  path: "designDock.terrain.path",
+};
+
+const BIOME_LABEL_KEYS: Record<
+  NonNullable<Course["theme"]>,
+  MessageKey
+> = {
+  parkland: "designDock.biome.parkland",
+  links: "designDock.biome.links",
+  desert: "designDock.biome.desert",
+};
 
 /**
  * PixiStage — the isometric WebGL renderer for the course (ZKU-138/139).
@@ -1147,6 +1174,13 @@ export function PixiStage(props: PixiStageProps) {
   const mobilityUnitPoolRef = useRef<Map<string, MobilityUnitEntry>>(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
+  const terrainPreviewRenderRef = useRef<{
+    revision: number;
+    previewKind: TerrainStrokePreview["previewKind"];
+    selectedTerrain: Terrain | null;
+    materials: Terrain[];
+    colors: Partial<Record<Terrain, number>>;
+  } | null>(null);
 
   // Free camera (ZKU-141): current values lerp toward targets each frame.
   // Center is in world tile coordinates so it survives rotation changes.
@@ -1737,6 +1771,13 @@ export function PixiStage(props: PixiStageProps) {
           objectsIndex: layers.world.getChildIndex(layers.objects),
         };
       },
+      terrainPreview: () => terrainPreviewRenderRef.current
+        ? {
+          ...terrainPreviewRenderRef.current,
+          materials: [...terrainPreviewRenderRef.current.materials],
+          colors: { ...terrainPreviewRenderRef.current.colors },
+        }
+        : null,
       screenToTile,
     };
     window.__coursecraftPixiTest = api;
@@ -4915,37 +4956,147 @@ export function PixiStage(props: PixiStageProps) {
       // Hover visuals only redraw when dirty.
       if (overlayDirtyRef.current) {
         overlayDirtyRef.current = false;
+        const previewRevision =
+          (terrainPreviewRenderRef.current?.revision ?? 0) + 1;
+        terrainPreviewRenderRef.current = null;
 
         const highlight = hoverHighlightRef.current;
         const hover = hoverTileRef.current;
         if (highlight) {
           highlight.clear();
           if (hover) {
-            const outlineTile = (tx: number, ty: number, alpha: number) => {
+            const tileDiamond = (tx: number, ty: number) => {
               const top = worldToIso(
                 tx + 0.5,
                 ty,
                 surfaceHeightAt(tx + 0.5, ty),
                 rotation,
               );
-              highlight.poly([
+              return [
                 top.x, top.y,
                 top.x + TILE_W / 2, top.y + TILE_H / 2,
                 top.x, top.y + TILE_H,
                 top.x - TILE_W / 2, top.y + TILE_H / 2,
-              ]);
+              ];
+            };
+            const outlineTile = (tx: number, ty: number, alpha: number) => {
+              highlight.poly(tileDiamond(tx, ty));
               highlight.stroke({ width: 2, color: 0xffffff, alpha });
             };
+            const markTileState = (
+              tx: number,
+              ty: number,
+              state: "accepted" | "unaffordable" | "protected" | "excluded",
+              color: number,
+              pattern: ReturnType<typeof terrainPattern>,
+            ) => {
+              const diamond = tileDiamond(tx, ty);
+              highlight.poly(diamond);
+              highlight.fill({
+                color,
+                alpha: state === "accepted" ? 0.26 : 0.2,
+              });
+              highlight.stroke({
+                width: state === "accepted" ? 2 : 2.8,
+                color: state === "accepted" ? 0xffffff : 0xffe2b0,
+                alpha: 0.96,
+              });
+              const centerX = diamond[0];
+              const centerY = diamond[1] + TILE_H / 2;
+              if (pattern === "stripe" || pattern === "crosshatch") {
+                highlight.moveTo(centerX - 13, centerY + 2);
+                highlight.lineTo(centerX + 5, centerY - 7);
+                highlight.moveTo(centerX - 5, centerY + 7);
+                highlight.lineTo(centerX + 13, centerY - 2);
+                highlight.stroke({ width: 1.3, color: 0xffffff, alpha: 0.72 });
+              }
+              if (pattern === "crosshatch") {
+                highlight.moveTo(centerX - 12, centerY - 3);
+                highlight.lineTo(centerX + 6, centerY + 6);
+                highlight.stroke({ width: 1.2, color: 0x223024, alpha: 0.7 });
+              } else if (pattern === "dots") {
+                for (const offset of [-8, 0, 8]) {
+                  highlight.circle(centerX + offset, centerY, 1.5);
+                  highlight.fill({ color: 0xffffff, alpha: 0.85 });
+                }
+              }
+              if (state !== "accepted") {
+                highlight.moveTo(centerX - 8, centerY - 5);
+                highlight.lineTo(centerX + 8, centerY + 5);
+                highlight.moveTo(centerX + 8, centerY - 5);
+                highlight.lineTo(centerX - 8, centerY + 5);
+                highlight.stroke({ width: 2.4, color: 0xffffff, alpha: 0.98 });
+                if (state === "protected") {
+                  highlight.circle(centerX, centerY, 8.5);
+                  highlight.stroke({ width: 1.8, color: 0xffffff, alpha: 0.98 });
+                }
+              }
+            };
             const strokePreview = terrainStrokePreviewRef.current;
-            if (editorMode === "PAINT" && strokePreview) {
-              for (const tile of strokePreview.acceptedTiles) {
-                outlineTile(
+            const strokeMaterial = strokePreview?.acceptedTiles[0]?.terrain
+              ?? strokePreview?.excludedTiles[0]?.terrain;
+            const currentStrokePreview = strokePreview?.previewKind === "surface-edit"
+              || strokeMaterial == null
+              || strokeMaterial === selectedTerrain;
+            if (editorMode === "PAINT" && strokePreview && currentStrokePreview) {
+              const themedColors: Record<Terrain, number> = props.colorVision === "standard"
+                ? { ...COLORS, ...getBiomeDefinition(course.theme).presentation.tileTints }
+                : TERRAIN_PALETTES[props.colorVision];
+              const previewColor = (terrain: Terrain) =>
+                props.seasonalVisualState
+                  ? seasonalTerrainTreatment({
+                    state: props.seasonalVisualState,
+                    terrain,
+                    quality: props.graphicsQuality,
+                    colorVision: props.colorVision,
+                    baseColor: themedColors[terrain],
+                    reducedMotion: props.reducedMotion,
+                  }).color
+                  : themedColors[terrain];
+              const previewTiles = strokePreview.previewKind === "surface-edit"
+                ? strokePreview.tiles
+                : strokePreview.acceptedTiles;
+              const previewMaterials = [
+                ...new Set(previewTiles.map((tile) => tile.terrain)),
+              ];
+              terrainPreviewRenderRef.current = {
+                revision: previewRevision,
+                previewKind: strokePreview.previewKind,
+                selectedTerrain: selectedTerrain ?? null,
+                materials: previewMaterials,
+                colors: Object.fromEntries(
+                  previewMaterials.map((terrain) => [
+                    terrain,
+                    previewColor(terrain),
+                  ]),
+                ),
+              };
+              for (const tile of previewTiles) {
+                markTileState(
                   tile.x,
                   tile.y,
-                  props.graphicsQuality === "low" ? 0.82 : 0.2,
+                  strokePreview.affordable ? "accepted" : "unaffordable",
+                  strokePreview.affordable ? previewColor(tile.terrain) : 0x8f3528,
+                  terrainPattern(tile.terrain),
+                );
+              }
+              for (const tile of strokePreview.excludedTiles) {
+                if (
+                  tile.x < 0
+                  || tile.y < 0
+                  || tile.x >= course.width
+                  || tile.y >= course.height
+                ) continue;
+                markTileState(
+                  tile.x,
+                  tile.y,
+                  tile.reason === "protected" ? "protected" : "excluded",
+                  tile.reason === "protected" ? 0x6d5a2e : 0x555b60,
+                  "crosshatch",
                 );
               }
               if (
+                strokePreview.previewKind === "stroke" &&
                 props.graphicsQuality !== "low" &&
                 selectedTerrain &&
                 strokePreview.acceptedTiles.length > 0
@@ -5028,10 +5179,15 @@ export function PixiStage(props: PixiStageProps) {
                     });
                     if (points.length < 3) continue;
                     highlight.poly(points.flatMap((point) => [point.x, point.y]));
-                    highlight.fill({ color: 0xffffff, alpha: 0.09 });
+                    highlight.fill({
+                      color: strokePreview.affordable
+                        ? previewColor(selectedTerrain)
+                        : 0x8f3528,
+                      alpha: 0.16,
+                    });
                     highlight.stroke({
                       width: 2.4,
-                      color: 0xffffff,
+                      color: strokePreview.affordable ? 0xffffff : 0xffd7c7,
                       alpha: 0.88,
                       join: "round",
                       cap: "round",
@@ -5050,13 +5206,13 @@ export function PixiStage(props: PixiStageProps) {
                 }
               }
             } else if (editorMode === "DECOR" && props.selectedDecorationKind) {
-              const preview = decorationTiles({
+              const preview = decorationTiles(normalizedDecoration({
                 kind: props.selectedDecorationKind,
                 x: hover.x,
                 y: hover.y,
                 rotation: props.decorationRotation ?? 0,
                 ...((props.selectedDecorationKind === "bridge" || props.selectedDecorationKind === "boardwalk") ? { span: props.decorationSpan ?? 3 } : {}),
-              });
+              }));
               for (const tile of preview) if (tile.x >= 0 && tile.y >= 0 && tile.x < course.width && tile.y < course.height) outlineTile(tile.x, tile.y, .75);
             } else {
               outlineTile(hover.x, hover.y, 0.9);
@@ -5914,11 +6070,14 @@ export function PixiStage(props: PixiStageProps) {
       }
     };
 
+    // Every dependency below can change the material or non-color state of a
+    // live ghost. Force the replacement closure to paint on its first tick.
+    overlayDirtyRef.current = true;
     app.ticker.add(tick);
     return () => {
       app.ticker?.remove(tick);
     };
-  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, props.onFrameTime, clampCenter, surfaceHeightAt]);
+  }, [appReady, wizardStep, holes, activeHoleIndex, draftTee, worldPointToScreen, golfersRef, liveActive, course, effectiveTiles, rotation, editorMode, selectedTerrain, props.colorVision, props.graphicsQuality, props.reducedMotion, props.seasonalVisualState, props.sculptRadius, props.selectedDecorationKind, props.decorationRotation, props.decorationSpan, props.animationsEnabled, props.ambienceFx, props.waterAnimation, props.treeSway, props.flagColor, props.selectedGolferId, props.followSelected, props.showGolfers, props.onFrameTime, clampCenter, surfaceHeightAt]);
 
   // ---------------------------------------------------------------------
   // Input — pointer events through the inverse camera transform
@@ -6409,11 +6568,21 @@ export function PixiStage(props: PixiStageProps) {
           <span style={{ marginTop: 8 }}>{t("renderer.error.body")}</span>
         </div>
       )}
-      {terrainStrokePreview && selectedTerrain && (
+      {terrainStrokePreview
+        && selectedTerrain
+        && (
+          terrainStrokePreview.previewKind === "surface-edit"
+          || (
+            terrainStrokePreview.acceptedTiles[0]?.terrain
+            ?? terrainStrokePreview.excludedTiles[0]?.terrain
+          ) === selectedTerrain
+        )
+        && (
         <div
           data-testid="terrain-stroke-preview"
           role="status"
           aria-live="polite"
+          data-affordable={terrainStrokePreview.affordable}
           style={{
             position: "absolute",
             top: 14,
@@ -6431,10 +6600,34 @@ export function PixiStage(props: PixiStageProps) {
             zIndex: 20,
           }}
         >
-          <div style={{ fontWeight: 800, fontSize: 14, textTransform: "capitalize" }}>
-            {t("terrainStroke.title", { terrain: selectedTerrain.replaceAll("_", " "), count: terrainStrokePreview.changedCount })}
+          <div style={{ opacity: 0.72, fontSize: 10, fontWeight: 900, letterSpacing: ".08em", textTransform: "uppercase" }}>
+            {t("terrainStroke.precommit")}
           </div>
-          <div>{t("terrainStroke.costs", { gross: formatCurrency(terrainStrokePreview.gross), salvage: formatCurrency(terrainStrokePreview.salvage) })}</div>
+          <div style={{ fontWeight: 800, fontSize: 14, textTransform: "capitalize" }}>
+            {terrainStrokePreview.affordable ? "✓" : "!"}{" "}
+            {terrainStrokePreview.previewKind === "surface-edit"
+              ? t("terrainStroke.surfaceEditTitle", {
+                count: terrainStrokePreview.changedCount,
+              })
+              : t("terrainStroke.title", {
+                terrain: t(TERRAIN_LABEL_KEYS[selectedTerrain]),
+                count: terrainStrokePreview.changedCount,
+              })}
+          </div>
+          <div>
+            {t("terrainStroke.constructionDetail", {
+              construction: formatCurrency(terrainStrokePreview.constructionCost),
+              salvage: formatCurrency(terrainStrokePreview.terrainSalvage),
+            })}
+          </div>
+          {(terrainStrokePreview.naturalClearingCost > 0 || terrainStrokePreview.naturalSalvage > 0) && (
+            <div>
+              {t("terrainStroke.naturalDetail", {
+                clearing: formatCurrency(terrainStrokePreview.naturalClearingCost),
+                salvage: formatCurrency(terrainStrokePreview.naturalSalvage),
+              })}
+            </div>
+          )}
           {terrainStrokePreview.earthworkSteps > 0 && (
             <div>
               {t("terrainStroke.earthwork", {
@@ -6450,6 +6643,43 @@ export function PixiStage(props: PixiStageProps) {
               })}
             </div>
           )}
+          <div>
+            {t("terrainStroke.operationsDetail", {
+              upkeep: `${terrainStrokePreview.weeklyUpkeepWeightDelta >= 0 ? "+" : ""}${terrainStrokePreview.weeklyUpkeepWeightDelta.toFixed(2)}`,
+              demand: `${terrainStrokePreview.irrigationDemandDelta >= 0 ? "+" : ""}${terrainStrokePreview.irrigationDemandDelta.toFixed(2)}`,
+            })}
+          </div>
+          <div>
+            {t("terrainStroke.irrigationDetail", {
+              cost: `${terrainStrokePreview.weeklyIrrigationCostDelta >= 0 ? "+" : "-"}${formatCurrency(Math.abs(terrainStrokePreview.weeklyIrrigationCostDelta))}`,
+              season: terrainStrokePreview.irrigationMultipliers.seasonal.toFixed(2),
+              weather: terrainStrokePreview.irrigationMultipliers.weather.toFixed(2),
+              scarcity: terrainStrokePreview.irrigationMultipliers.scarcity.toFixed(2),
+              policy: terrainStrokePreview.irrigationMultipliers.policy.toFixed(2),
+            })}
+          </div>
+          <div>
+            {t("terrainStroke.plantCareDetail", {
+              cost: `${terrainStrokePreview.weeklyPlantCareCostDelta >= 0 ? "+" : "-"}${formatCurrency(Math.abs(terrainStrokePreview.weeklyPlantCareCostDelta))}`,
+            })}
+          </div>
+          {terrainStrokePreview.climateWarnings.map((warning, index) => (
+            <div key={`${warning.kind}-${index}`} style={{ marginTop: 2, fontWeight: 700 }}>
+              {t("terrainStroke.climateWarning", {
+                warning: warning.kind === "water-pressure"
+                  ? t("terrainStroke.warning.waterPressure", {
+                    biome: t(BIOME_LABEL_KEYS[warning.biome]),
+                    season: warning.seasonal.toFixed(2),
+                    weather: warning.weather.toFixed(2),
+                    scarcity: warning.scarcity.toFixed(2),
+                    policy: warning.policy.toFixed(2),
+                  })
+                  : warning.kind === "saturation-pressure"
+                    ? t("terrainStroke.warning.saturation")
+                    : t("terrainStroke.warning.heatDrought"),
+              })}
+            </div>
+          ))}
           {terrainStrokePreview.excluded.protected > 0 && (
             <div>
               {t("terrainStroke.protected", {
@@ -6462,8 +6692,16 @@ export function PixiStage(props: PixiStageProps) {
           </div>
           <div>{t("terrainStroke.cash", { cash: formatCurrency(terrainStrokePreview.cash), projected: formatCurrency(terrainStrokePreview.projectedCash) })}</div>
           {(terrainStrokePreview.excludedCount > 0 || terrainStrokePreview.unchangedCount > 0 || terrainStrokePreview.duplicateCount > 0) && (
-            <div style={{ opacity: 0.82 }}>
-              {t("terrainStroke.exclusions", { excluded: terrainStrokePreview.excludedCount, unchanged: terrainStrokePreview.unchangedCount, duplicates: terrainStrokePreview.duplicateCount })}
+            <div style={{ opacity: 0.88 }}>
+              {t("terrainStroke.exclusionsDetailed", {
+                count: terrainStrokePreview.excludedCount,
+                protected: terrainStrokePreview.excluded.protected,
+                unowned: terrainStrokePreview.excluded.unowned,
+                locked: terrainStrokePreview.excluded.locked,
+                outside: terrainStrokePreview.excluded.outOfBounds,
+                unchanged: terrainStrokePreview.unchangedCount,
+                duplicate: terrainStrokePreview.duplicateCount,
+              })}
             </div>
           )}
           {!terrainStrokePreview.affordable && (
