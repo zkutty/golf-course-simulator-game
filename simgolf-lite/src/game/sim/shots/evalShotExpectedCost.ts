@@ -2,6 +2,7 @@ import type { Course, Point } from "../../models/types";
 import type { ClubSpec, GolferProfile } from "../golferProfiles";
 import { computeExpectedLandingPenalty } from "./landingPenalty";
 import { evalShotWithWaterCarry } from "./waterCarry";
+import type { ShotHandedness, ShotSlopeContext } from "../../models/shotSlope";
 
 export function evalShotExpectedCost(args: {
   course: Course;
@@ -9,6 +10,11 @@ export function evalShotExpectedCost(args: {
   to: Point;
   golfer: GolferProfile;
   club: ClubSpec;
+  /** Optional frozen evaluation facts for retained/replayed shots. */
+  shotSlope?: ShotSlopeContext;
+  /** Temporary compatibility spelling for integrations using `slopeContext`. */
+  slopeContext?: ShotSlopeContext;
+  handedness?: ShotHandedness;
 }) {
   const base = evalShotWithWaterCarry(args);
   if (!base.isValid) return base;
@@ -29,7 +35,6 @@ export function evalShotExpectedCost(args: {
     debug: [...base.debug, `landPen=+${expectedLandingPenalty.toFixed(2)}`],
   };
 }
-
 
 
 

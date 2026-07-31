@@ -4,6 +4,7 @@ import { BALANCE } from "../../balance/balanceConfig";
 import { evalShotBase } from "./shotEval";
 import { isWaterHazard } from "../../models/terrainRules";
 import { courseWithEffectiveSurfaces } from "../../conditions/surfaceCare";
+import type { ShotHandedness, ShotSlopeContext } from "../../models/shotSlope";
 
 function clamp01(x: number) {
   return Math.max(0, Math.min(1, x));
@@ -47,10 +48,24 @@ export function evalShotWithWaterCarry(args: {
   to: Point;
   golfer: GolferProfile;
   club: ClubSpec;
+  /** Optional frozen evaluation facts for retained/replayed shots. */
+  shotSlope?: ShotSlopeContext;
+  /** Temporary compatibility spelling for integrations using `slopeContext`. */
+  slopeContext?: ShotSlopeContext;
+  handedness?: ShotHandedness;
 }) {
   const course = courseWithEffectiveSurfaces(args.course);
   const { from, to, golfer, club } = args;
-  const base = evalShotBase({ from, to, golfer, club, course });
+  const base = evalShotBase({
+    from,
+    to,
+    golfer,
+    club,
+    course,
+    shotSlope: args.shotSlope,
+    slopeContext: args.slopeContext,
+    handedness: args.handedness,
+  });
 
   const line = bresenham(from, to);
   // compute longest contiguous water segment crossed along the shot line (excluding the start tile)
@@ -99,6 +114,5 @@ export function evalShotWithWaterCarry(args: {
 
   return base;
 }
-
 
 

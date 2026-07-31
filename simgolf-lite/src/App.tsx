@@ -13,6 +13,7 @@ import {
   type DesignCatalogItem,
 } from "./ui/designCatalog";
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
+import { GameSession, useGameSessionSelector } from "./game/session";
 import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, ParSetting, PinRotation, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool, WeekResult, World } from "./game/models/types";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
 import {
@@ -73,7 +74,6 @@ import {
   type LoadingBiomeContext,
 } from "./ui/loadingBiomeContext";
 import { generateCourseName } from "./utils/courseNames";
-import { applyAction } from "./core/reducer";
 import type { Action } from "./core/actions";
 import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
@@ -357,7 +357,11 @@ export default function App() {
     if (sequence !== changeSequenceRef.current) return;
     setDirty(false);
   }, []);
-  const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
+  const [gameSession] = useState(() => new GameSession({
+    initialState: DEFAULT_STATE,
+    platform: platformServices,
+  }));
+  const gameState = useGameSessionSelector(gameSession, (state) => state);
 
   useEffect(() => {
     if (flow.base !== "loading" && pendingLoadingContext !== null) {
@@ -411,7 +415,6 @@ export default function App() {
   const [records, setRecords] = useState<CourseRecords>(() => emptyCourseRecords(DEFAULT_STATE.course.holes.length));
   const recordsRef = useRef(records);
   const sculptedRef = useRef(false);
-  const gameStateRef = useRef(gameState);
   const { course, world } = gameState;
   const activeLayout = useMemo(() => activeCourseLayout(course), [course]);
   const activeOperatingCourse = useMemo(() => courseForLayout(course, activeLayout.id), [course, activeLayout.id]);
@@ -428,71 +431,50 @@ export default function App() {
     if (DEBUG_PERF && (action.type !== "SET_MODE" && action.type !== "SET_ACTIVE_HOLE" && action.type !== "SET_BRUSH")) {
       logReducerDispatch();
     }
-    setGameState((prevState) => {
-      const controlledRound = prevState.world.playerPro?.activeRound;
-      const editingLocked = controlledRound && controlledRound.phase !== "round_complete" && controlledRound.phase !== "conceded";
-      const physicalEdit = new Set([
-        "PAINT_TILES", "EDIT_SURFACE_FEATURE", "SCULPT_TILES", "PLACE_TEE", "MOVE_TEE", "PLACE_GREEN", "MOVE_GREEN",
-        "SET_TEE_BOX", "REMOVE_TEE_BOX", "SET_PIN_POSITION", "REMOVE_PIN_POSITION", "ADD_WAYPOINT",
-        "UPDATE_WAYPOINT", "REMOVE_WAYPOINT", "PLACE_OBSTACLE", "REMOVE_OBSTACLE", "PLACE_BUILDING",
-        "REMOVE_BUILDING", "PLACE_DECORATION", "REMOVE_DECORATION", "ROTATE_DECORATION", "SET_COURSE_LAYOUTS",
-      ]).has(action.type);
-      if (editingLocked && physicalEdit) return prevState;
-      const nextState = applyAction(prevState, action);
-      if ((action.type === "PAINT_TILES" || action.type === "EDIT_SURFACE_FEATURE") && nextState !== prevState) {
-        terrainUndoRef.current = [...terrainUndoRef.current.slice(-19), {
-          course: prevState.course,
-          world: prevState.world,
-          capital: capitalRef.current,
-        }];
-        terrainRedoRef.current = [];
-      } else if (action.type === "NEW_GAME" || action.type === "LOAD_GAME") {
-        terrainUndoRef.current = [];
-        terrainRedoRef.current = [];
-      }
-      return nextState;
-    });
+    const previous = gameSession.getState();
+    const controlledRound = previous.world.playerPro?.activeRound;
+    const editingLocked = controlledRound && controlledRound.phase !== "round_complete" && controlledRound.phase !== "conceded";
+    const physicalEdit = new Set([
+      "PAINT_TILES", "EDIT_SURFACE_FEATURE", "SCULPT_TILES", "PLACE_TEE", "MOVE_TEE", "PLACE_GREEN", "MOVE_GREEN",
+      "SET_TEE_BOX", "REMOVE_TEE_BOX", "SET_PIN_POSITION", "REMOVE_PIN_POSITION", "ADD_WAYPOINT",
+      "UPDATE_WAYPOINT", "REMOVE_WAYPOINT", "PLACE_OBSTACLE", "REMOVE_OBSTACLE", "PLACE_BUILDING",
+      "REMOVE_BUILDING", "PLACE_DECORATION", "REMOVE_DECORATION", "ROTATE_DECORATION", "SET_COURSE_LAYOUTS",
+    ]).has(action.type);
+    if (editingLocked && physicalEdit) return;
+    const next = gameSession.dispatch(action);
+    if ((action.type === "PAINT_TILES" || action.type === "EDIT_SURFACE_FEATURE") && next !== previous) {
+      terrainUndoRef.current = [...terrainUndoRef.current.slice(-19), {
+        course: previous.course,
+        world: previous.world,
+        capital: capitalRef.current,
+      }];
+      terrainRedoRef.current = [];
+    } else if (action.type === "NEW_GAME" || action.type === "LOAD_GAME") {
+      terrainUndoRef.current = [];
+      terrainRedoRef.current = [];
+    }
     if (action.type !== "NEW_GAME" && action.type !== "LOAD_GAME" && !action.type.startsWith("SET_")) markDirty();
-  }, [markDirty]);
+  }, [gameSession, markDirty]);
 
   // Versioned integration setters for live-simulation and UI configuration
   // commits that are intentionally outside the serializable core action list.
   const setCourse = useCallback((updater: (c: typeof course) => typeof course) => {
     markDirty();
-    setGameState((prevState) => {
-      const nextCourse = updater(prevState.course);
-      if (nextCourse === prevState.course) return prevState;
-      return {
-        ...prevState,
-        course: nextCourse,
-        terrainVersion: prevState.terrainVersion + 1,
-        markersVersion: prevState.markersVersion + 1,
-        economyVersion: prevState.economyVersion + 1,
-      };
-    });
-  }, [markDirty]);
+    gameSession.updateCourse(updater);
+  }, [gameSession, markDirty]);
   
   const setWorld = useCallback((updater: (w: typeof world) => typeof world) => {
     markDirty();
-    setGameState((prevState) => {
-      const nextWorld = updater(prevState.world);
-      if (nextWorld === prevState.world) return prevState;
-      return {
-        ...prevState,
-        world: nextWorld,
-        economyVersion: prevState.economyVersion + 1,
-      };
-    });
-  }, [markDirty]);
+    gameSession.updateWorld(updater);
+  }, [gameSession, markDirty]);
   const [last, setLast] = useState<WeekResult | undefined>(undefined);
   const [history, setHistory] = useState<WeekResult[]>([]);
   const historyRef = useRef(history);
 
   useEffect(() => {
-    gameStateRef.current = gameState;
     historyRef.current = history;
     recordsRef.current = records;
-  }, [gameState, history, records]);
+  }, [history, records]);
 
   const [editorMode, setEditorMode] = useState<EditorMode>("PAINT");
   const [terrainTool, setTerrainTool] = useState<TerrainAuthoringTool>("curve");
@@ -612,13 +594,13 @@ export default function App() {
   const undoTerrainEdit = useCallback(() => {
     const snapshot = terrainUndoRef.current.pop();
     if (!snapshot) return;
-    const current = gameStateRef.current;
+    const current = gameSession.getState();
     terrainRedoRef.current = [...terrainRedoRef.current.slice(-19), {
       course: current.course,
       world: current.world,
       capital,
     }];
-    setGameState((state) => ({
+    gameSession.update((state) => ({
       ...state,
       course: snapshot.course,
       world: snapshot.world,
@@ -629,18 +611,18 @@ export default function App() {
     setCapital(snapshot.capital);
     setPaintError(t("terrainEdit.undone"));
     markDirty();
-  }, [capital, markDirty, t]);
+  }, [capital, gameSession, markDirty, t]);
 
   const redoTerrainEdit = useCallback(() => {
     const snapshot = terrainRedoRef.current.pop();
     if (!snapshot) return;
-    const current = gameStateRef.current;
+    const current = gameSession.getState();
     terrainUndoRef.current = [...terrainUndoRef.current.slice(-19), {
       course: current.course,
       world: current.world,
       capital,
     }];
-    setGameState((state) => ({
+    gameSession.update((state) => ({
       ...state,
       course: snapshot.course,
       world: snapshot.world,
@@ -651,7 +633,7 @@ export default function App() {
     setCapital(snapshot.capital);
     setPaintError(t("terrainEdit.redone"));
     markDirty();
-  }, [capital, markDirty, t]);
+  }, [capital, gameSession, markDirty, t]);
 
   useEffect(() => {
     if (screen !== "game" || editorMode !== "PAINT") return;
@@ -811,7 +793,7 @@ export default function App() {
   };
 
   const startContentTestPlay = useCallback((testRun: { course: Course; world: World }) => {
-    setGameState((current) => {
+    gameSession.update((current) => {
       if (!contentTestSnapshotRef.current) contentTestSnapshotRef.current = structuredClone(current);
       return {
         ...current,
@@ -824,15 +806,15 @@ export default function App() {
     });
     setShowContentLibrary(false);
     setA11yMessage(t("content.testMode"));
-  }, [t]);
+  }, [gameSession, t]);
 
   const exitContentTestPlay = useCallback(() => {
     const snapshot = contentTestSnapshotRef.current;
     if (!snapshot) return;
     contentTestSnapshotRef.current = null;
-    setGameState(snapshot);
+    gameSession.replaceState(snapshot);
     setA11yMessage(t("content.testEnded"));
-  }, [t]);
+  }, [gameSession, t]);
   const lastCourseCardRef = useRef<Blob | null>(null);
   const pwa = usePwa();
   const playerPro = useMemo(
@@ -851,19 +833,19 @@ export default function App() {
   }, [setWorld, world.playerPro]);
 
   const runPropertyCommand = useCallback((command: PropertyCommand) => {
-    const current = gameStateRef.current;
+    const current = gameSession.getState();
     const result = applyPropertyCommand(current.course, current.world, command);
     if (result.ok) {
       dispatch({ type: "PROPERTY_COMMAND", command });
     }
     return result;
-  }, [dispatch]);
+  }, [dispatch, gameSession]);
 
   const runSeasonCommand = useCallback((command: SeasonCommand) => {
-    const current = gameStateRef.current;
+    const current = gameSession.getState();
     const result = applySeasonCommand(current.course, current.world, command);
     if (!result.ok) return result;
-    setGameState((latest) => {
+    gameSession.update((latest) => {
       const next = latest === current ? result : applySeasonCommand(latest.course, latest.world, command);
       if (!next.ok) return latest;
       return {
@@ -876,30 +858,30 @@ export default function App() {
     });
     markDirty();
     return result;
-  }, [markDirty]);
+  }, [gameSession, markDirty]);
 
   const achievementContext = useCallback((nextRecords = recordsRef.current, perfectMood = false): AchievementContext => ({
-    course: gameStateRef.current.course,
-    world: gameStateRef.current.world,
+    course: gameSession.getState().course,
+    world: gameSession.getState().world,
     records: nextRecords,
-    rating: computeCourseRatingAndSlope(gameStateRef.current.course).courseRating,
+    rating: computeCourseRatingAndSlope(gameSession.getState().course).courseRating,
     tutorialCompleted: loadAppProfile().tutorialCompleted,
     profitStreak: nextRecords.currentProfitStreak,
     sculpted: sculptedRef.current,
-    recoveredDistress: prevDistress > 0 && gameStateRef.current.world.distressWeeks === 0,
+    recoveredDistress: prevDistress > 0 && gameSession.getState().world.distressWeeks === 0,
     perfectMood,
-  }), [prevDistress]);
+  }), [gameSession, prevDistress]);
 
   const checkAchievements = useCallback((nextRecords = recordsRef.current, perfectMood = false) => {
     const current = loadAppProfile();
-    const evaluated = evaluateAchievements(current, achievementContext(nextRecords, perfectMood), gameStateRef.current.course.name);
+    const evaluated = evaluateAchievements(current, achievementContext(nextRecords, perfectMood), gameSession.getState().course.name);
     if (!evaluated.earned.length) return;
     saveAppProfile(evaluated.profile);
     setAppProfile(evaluated.profile);
     setAchievementQueue((queue) => [...queue, ...evaluated.earned]);
     void platformServices.achievements.unlock(evaluated.earned.map((achievement) => achievement.id)).catch(() => undefined);
     void audio.playSting("celebration");
-  }, [achievementContext, audio]);
+  }, [achievementContext, audio, gameSession]);
 
   useEffect(() => {
     let cancelled = false;
@@ -947,7 +929,7 @@ export default function App() {
         const nextRecords = recordWeek(recordsRef.current, {
           week: completedWeek.week,
           cash: completedWeek.cash,
-          rating: computeCourseRatingAndSlope(gameStateRef.current.course).courseRating,
+          rating: computeCourseRatingAndSlope(gameSession.getState().course).courseRating,
           reputation: completedWeek.reputation,
           result: report,
         });
@@ -970,27 +952,24 @@ export default function App() {
       // setState reader snapshots post-commit state without extra renders.
       if (appProfile.gameplay.autosaveCadence === "off") return;
       if (appProfile.gameplay.autosaveCadence === "weekly" && result.dayIndex !== 6) return;
-      setGameState((current) => {
-        const sequence = changeSequenceRef.current;
-        void autosave({ course: current.course, world: current.world, history: historyRef.current, records: recordsRef.current, live: liveSnapshot, tutorial: tutorialProgress })
-          .then(() => markClean(sequence));
-        return current;
-      });
+      const sequence = changeSequenceRef.current;
+      void gameSession.save(autosave, { history: historyRef.current, records: recordsRef.current, live: liveSnapshot, tutorial: tutorialProgress })
+        .then(() => markClean(sequence));
     },
     onRoundCompleted: (round, dayIndex) => {
-      const captured = recordCompletedRound(recordsRef.current, round, gameStateRef.current.world.week);
+      const captured = recordCompletedRound(recordsRef.current, round, gameSession.getState().world.week);
       recordsRef.current = captured.records;
       setRecords(captured.records);
       for (const holeIndex of captured.aceHoles) {
         const holeId = round.holeIds?.[holeIndex];
-        const globalIndex = holeId ? gameStateRef.current.course.holes.findIndex((hole) => hole.id === holeId) : holeIndex;
-        const point = gameStateRef.current.course.holes[globalIndex]?.green ?? undefined;
-        publishRetentionEvent({ type: "hole-in-one", category: "play", severity: "major", message: t("retention.holeInOne", { golfer: round.golferName, hole: holeIndex + 1 }), week: gameStateRef.current.world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, holeIndex: globalIndex, holeId, courseId: round.courseId, point });
+        const globalIndex = holeId ? gameSession.getState().course.holes.findIndex((hole) => hole.id === holeId) : holeIndex;
+        const point = gameSession.getState().course.holes[globalIndex]?.green ?? undefined;
+        publishRetentionEvent({ type: "hole-in-one", category: "play", severity: "major", message: t("retention.holeInOne", { golfer: round.golferName, hole: holeIndex + 1 }), week: gameSession.getState().world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, holeIndex: globalIndex, holeId, courseId: round.courseId, point });
       }
       if (captured.courseRecord) {
         const lastHoleId = lastItem(round.holeIds);
-        const lastHole = lastHoleId ? gameStateRef.current.course.holes.find((hole) => hole.id === lastHoleId) : lastItem(gameStateRef.current.course.holes);
-        publishRetentionEvent({ type: "course-record", category: "play", severity: "major", message: t("retention.courseRecord", { golfer: round.golferName, score: round.scoreToPar > 0 ? `+${round.scoreToPar}` : round.scoreToPar }), week: gameStateRef.current.world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, courseId: round.courseId, holeId: lastHoleId, point: lastHole?.green ?? undefined });
+        const lastHole = lastHoleId ? gameSession.getState().course.holes.find((hole) => hole.id === lastHoleId) : lastItem(gameSession.getState().course.holes);
+        publishRetentionEvent({ type: "course-record", category: "play", severity: "major", message: t("retention.courseRecord", { golfer: round.golferName, score: round.scoreToPar > 0 ? `+${round.scoreToPar}` : round.scoreToPar }), week: gameSession.getState().world.week, day: dayIndex, golferId: round.golferId, golferName: round.golferName, courseId: round.courseId, holeId: lastHoleId, point: lastHole?.green ?? undefined });
       }
       checkAchievements(captured.records, round.mood >= .99);
     },
@@ -1018,29 +997,25 @@ export default function App() {
   });
 
   useEffect(() => {
-    const removeQuitListener = platformServices.app.onQuitRequested(async () => {
-      try {
-        if (dirty && flow.base === "in-game") {
-          const sequence = changeSequenceRef.current;
-          const current = gameStateRef.current;
-          await autosave({
-            course: current.course,
-            world: current.world,
-            history: historyRef.current,
-            records: recordsRef.current,
-            live: live.getSnapshot(),
-            tutorial: tutorialProgress,
-          });
-          markClean(sequence);
-        }
-        await platformServices.app.requestQuit({ dirty: false, resumableBoundary: true });
-      } catch {
+    let sequence = changeSequenceRef.current;
+    return gameSession.bindPlatformQuitBoundary({
+      shouldSave: () => {
+        sequence = changeSequenceRef.current;
+        return dirty && flow.base === "in-game";
+      },
+      attachments: () => ({
+        history: historyRef.current,
+        records: recordsRef.current,
+        live: live.getSnapshot(),
+        tutorial: tutorialProgress,
+      }),
+      persist: autosave,
+      onPersisted: () => markClean(sequence),
+      onError: () => {
         setA11yMessage("CourseCraft could not reach a safe save boundary; the game remains open.");
-        await platformServices.app.requestQuit({ dirty: true, resumableBoundary: false }).catch(() => undefined);
-      }
+      },
     });
-    return removeQuitListener;
-  }, [dirty, flow.base, live, markClean, tutorialProgress]);
+  }, [dirty, flow.base, gameSession, live, markClean, tutorialProgress]);
   const getLiveSnapshot = live.getSnapshot;
 
   useEffect(() => {
@@ -1161,7 +1136,7 @@ export default function App() {
   }, [live]);
 
   const beginPlayerRound = useCallback((layoutId: string, teeSet: TeeSet, pinRotation: PinRotation): string | null => {
-    const current = gameStateRef.current;
+    const current = gameSession.getState();
     const started = startPlayableRound({
       course: current.course,
       world: current.world,
@@ -1176,10 +1151,10 @@ export default function App() {
     updatePlayerPro(() => next);
     enterPlayerRoundView(next);
     return null;
-  }, [enterPlayerRoundView, live.status.dayIndex, updatePlayerPro]);
+  }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
 
   const beginArchitectureTestRound = useCallback((layoutId: string): string | null => {
-    const current = gameStateRef.current;
+    const current = gameSession.getState();
     const holeId = architectureFilters.holeId === "all"
       ? current.course.holes.find((hole) => hole.id)?.id
       : architectureFilters.holeId;
@@ -1215,7 +1190,7 @@ export default function App() {
     });
     enterPlayerRoundView({ ...career, activeRound: started.round });
     return null;
-  }, [architectureFilters, enterPlayerRoundView, live.status.dayIndex, setWorld, t]);
+  }, [architectureFilters, enterPlayerRoundView, gameSession, live.status.dayIndex, setWorld, t]);
 
   useEffect(() => {
     const living = normalizeLivingClub(world.livingClub);
@@ -1233,7 +1208,7 @@ export default function App() {
   }, [course, setWorld, world.livingClub]);
 
   const startCampaignMatch = useCallback((): string | null => {
-    const current = gameStateRef.current;
+    const current = gameSession.getState();
     const match = activeCampaignMatch(current.world.campaign);
     if (!match || !current.world.campaign) return t("campaign.match.unavailable");
     const nonMatchBlockers = campaignPhaseBlockers(current.course, current.world).filter((blocker) => !blocker.startsWith("campaign.blocker.match:"));
@@ -1271,7 +1246,7 @@ export default function App() {
         activeRound: started.round,
       };
       const nextWorld = registerCampaignMatch({ ...current.world, playerPro: nextCareer }, match.id, started.round.id);
-      setGameState((latest) => latest === current ? { ...latest, world: nextWorld, economyVersion: latest.economyVersion + 1 } : latest);
+      gameSession.update((latest) => latest === current ? { ...latest, world: nextWorld, economyVersion: latest.economyVersion + 1 } : latest);
       enterPlayerRoundView(nextCareer);
       markDirty();
       return null;
@@ -1305,14 +1280,14 @@ export default function App() {
       activeRound: started.round,
     };
     const nextWorld = registerCampaignMatch({ ...scheduledWorld, playerPro: nextCareer }, match.id, started.round.id, event.id);
-    setGameState((latest) => latest === current ? { ...latest, world: nextWorld, economyVersion: latest.economyVersion + 1 } : latest);
+    gameSession.update((latest) => latest === current ? { ...latest, world: nextWorld, economyVersion: latest.economyVersion + 1 } : latest);
     enterPlayerRoundView(nextCareer);
     markDirty();
     return null;
-  }, [enterPlayerRoundView, live.status.dayIndex, markDirty, t]);
+  }, [enterPlayerRoundView, gameSession, live.status.dayIndex, markDirty, t]);
 
   const trainPlayerPro = useCallback((option: PlayerTrainingOption): string | null => {
-    const current = gameStateRef.current.world;
+    const current = gameSession.getState().world;
     const career = normalizePlayerPro(current.playerPro, { seed: current.runSeed, founderName: current.founderName });
     const trained = completePlayerTraining(career, current, option, live.status.dayIndex);
     if (trained.cost <= 0) return option.blocker ?? (current.cash < option.cost ? "cash" : "unavailable");
@@ -1332,10 +1307,10 @@ export default function App() {
     }));
     if (soundEnabled) void audio.playSfx("cash");
     return null;
-  }, [audio, live, setWorld, soundEnabled]);
+  }, [audio, gameSession, live, setWorld, soundEnabled]);
 
   const challengePlayerPro = useCallback((opponent: PlayerOpponent, kind: "friendly" | "wager", wager: number): string | null => {
-    const current = gameStateRef.current;
+    const current = gameSession.getState();
     const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
     if (kind === "wager" && current.world.cash < wager) return "cash";
     const created = createPlayerChallenge(career, opponent, kind, wager);
@@ -1365,10 +1340,10 @@ export default function App() {
     updatePlayerPro(() => next);
     enterPlayerRoundView(next);
     return null;
-  }, [enterPlayerRoundView, live.status.dayIndex, updatePlayerPro]);
+  }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
 
   const enterPlayerTournament = useCallback((event: TournamentEvent): string | null => {
-    const current = gameStateRef.current;
+    const current = gameSession.getState();
     const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
     const registered = registerPlayerTournament(career, event);
     if (registered === career) return "eligibility";
@@ -1390,7 +1365,7 @@ export default function App() {
     updatePlayerPro(() => next);
     enterPlayerRoundView(next);
     return null;
-  }, [enterPlayerRoundView, live.status.dayIndex, updatePlayerPro]);
+  }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
 
   const commitControlledShot = useCallback((selection: PlayerShotSelection) => {
     updatePlayerPro((career) => {
@@ -1462,7 +1437,7 @@ export default function App() {
       const events = settlement.tournamentEvent
         ? tournamentCalendar(current).events.map((candidate) => candidate.id === settlement.tournamentEvent!.id ? settlement.tournamentEvent! : candidate)
         : null;
-      return advanceCampaign(gameStateRef.current.course, {
+      return advanceCampaign(gameSession.getState().course, {
         ...recorded.world,
         cash: recorded.world.cash + settlement.cashDelta,
         reputation: Math.max(0, Math.min(100, recorded.world.reputation + settlement.reputationDelta)),
@@ -1473,13 +1448,13 @@ export default function App() {
         },
       });
     });
-  }, [activePlayerRound, setWorld]);
+  }, [activePlayerRound, gameSession, setWorld]);
 
   useEffect(() => {
     const round = activePlayerRound;
     if (!round || round.phase === "flight") return;
     const timer = window.setTimeout(() => {
-      const current = gameStateRef.current;
+      const current = gameSession.getState();
       void autosave({
         course: current.course,
         world: current.world,
@@ -1490,18 +1465,18 @@ export default function App() {
       });
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [activePlayerRound, live, tutorialProgress]);
+  }, [activePlayerRound, gameSession, live, tutorialProgress]);
 
   const returnPlayerToDesign = useCallback(() => {
-    const round = gameStateRef.current.world.playerPro?.activeRound;
+    const round = gameSession.getState().world.playerPro?.activeRound;
     if (!round) return;
     const selectedTrace = round.shots[round.shots.length - 1] ?? null;
     const holeId = selectedTrace?.holeId ?? round.course.holes[round.currentHoleIndex]?.id;
-    const holeIndex = gameStateRef.current.course.holes.findIndex((hole) => hole.id === holeId);
+    const holeIndex = gameSession.getState().course.holes.findIndex((hole) => hole.id === holeId);
     if (holeIndex >= 0) {
       setActiveHoleIndex(holeIndex);
       setHoleEditMode("hole");
-      const center = selectedTrace?.rest ?? gameStateRef.current.course.holes[holeIndex]?.green;
+      const center = selectedTrace?.rest ?? gameSession.getState().course.holes[holeIndex]?.green;
       if (center) setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }));
     }
     setWorld((current) => {
@@ -1510,7 +1485,7 @@ export default function App() {
       const living = normalizeLivingClub(contextual.livingClub);
       const session = living.architecture.testSession;
       if (!session) return { ...contextual, playerPro: { ...career, activeRound: null } };
-      const returnedSession = refreshM48DesignTestSession({ course: gameStateRef.current.course, session: { ...session, stage: "returned" } });
+      const returnedSession = refreshM48DesignTestSession({ course: gameSession.getState().course, session: { ...session, stage: "returned" } });
       return {
         ...contextual,
         playerPro: { ...career, activeRound: null },
@@ -1531,18 +1506,18 @@ export default function App() {
     setPlayerShotAim(null);
     setShowPlayerPro(false);
     live.setSpeed(playerRoundResumeSpeedRef.current);
-  }, [live, setWorld]);
+  }, [gameSession, live, setWorld]);
 
   const runStaffCommand = useCallback((command: Parameters<typeof applyStaffCommand>[1]): string | null => {
-    const snapshot = gameStateRef.current.world;
+    const snapshot = gameSession.getState().world;
     const initial = applyStaffCommand(snapshot, command);
     if (!initial.ok) return initial.reason ?? "missing";
     setWorld((current) => current === snapshot ? initial.world : applyStaffCommand(current, command).world);
     return null;
-  }, [setWorld]);
+  }, [gameSession, setWorld]);
 
   const chooseStory = useCallback((instanceId: string, choiceId: string) => {
-    setGameState((current) => {
+    gameSession.update((current) => {
       const result = resolveStoryChoice(current.course, current.world, instanceId, choiceId);
       if (!result.ok) return current;
       return {
@@ -1554,10 +1529,10 @@ export default function App() {
       };
     });
     markDirty();
-  }, [markDirty]);
+  }, [gameSession, markDirty]);
 
   const chooseCampaign = useCallback((sceneId: string, choiceId: string) => {
-    setGameState((current) => {
+    gameSession.update((current) => {
       const result = resolveCampaignChoice(current.course, current.world, sceneId, choiceId);
       if (!result.ok) return current;
       const recorded = lastItem(result.world.campaign?.choices);
@@ -1571,7 +1546,7 @@ export default function App() {
       };
     });
     markDirty();
-  }, [markDirty]);
+  }, [gameSession, markDirty]);
 
   const continueCampaign = useCallback(() => {
     setWorld((current) => continueCampaignInSandbox(current));
@@ -1584,7 +1559,7 @@ export default function App() {
   }, [setWorld]);
 
   const closeLivingClub = useCallback(() => {
-    const living = normalizeLivingClub(gameStateRef.current.world.livingClub);
+    const living = normalizeLivingClub(gameSession.getState().world.livingClub);
     const presentedMajor = living.story.instances.find((instance) =>
       instance.priority === "major" && instance.status === "presented"
     );
@@ -1594,10 +1569,10 @@ export default function App() {
       majorStoryPausedRef.current = false;
       live.setSpeed(storyResumeSpeedRef.current);
     }
-  }, [live, setWorld]);
+  }, [gameSession, live, setWorld]);
 
   const bookTournament = useCallback((tier: TournamentTier, daysAhead: number): string | null => {
-    const current = gameStateRef.current;
+    const current = gameSession.getState();
     const created = createTournamentEvent({
       course: current.course,
       world: current.world,
@@ -1611,7 +1586,7 @@ export default function App() {
     setA11yMessage(t("tournament.booked"));
     if (soundEnabled) void audio.playSfx("cash");
     return null;
-  }, [audio, live.status.dayIndex, setWorld, soundEnabled, t]);
+  }, [audio, gameSession, live.status.dayIndex, setWorld, soundEnabled, t]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || perfFixtureLoadedRef.current) return;
@@ -1710,7 +1685,7 @@ export default function App() {
       : null;
     setM52ReferenceCamera(m52Bookmark);
     let fixtureWorld: World = {
-      ...gameStateRef.current.world,
+      ...gameSession.getState().world,
       week: 1,
       cash: isPropertyFixture ? 1_000_000 : isM25Fixture ? 500_000 : 250_000,
       reputation: Number.isFinite(fixtureRep) ? Math.max(0, Math.min(100, fixtureRep)) : 95,
@@ -1910,7 +1885,7 @@ export default function App() {
     setPendingLoadingContext(null);
     flowDispatch({ type: "ENTER_GAME" });
     live.setSpeed((isPerfFixture || isM27Fixture) && !isPerfMeasurement ? "4x" : "paused");
-  }, [dispatch, live, t]);
+  }, [dispatch, gameSession, live, t]);
 
   const resumeSpeedRef = useRef<SpeedName>(appProfile.gameplay.defaultGameSpeed);
 
@@ -1938,14 +1913,13 @@ export default function App() {
   const quickSave = useCallback(async () => {
     if (flow.base !== "in-game") return;
     const sequence = changeSequenceRef.current;
-    const current = gameStateRef.current;
-    await saveToSlot("quick-save", "manual", t("save.quick"), {
-      course: current.course, world: current.world, history: historyRef.current,
-      records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress,
-    });
+    await gameSession.save(
+      (payload) => saveToSlot("quick-save", "manual", t("save.quick"), payload),
+      { history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress },
+    );
     markClean(sequence);
     setA11yMessage(t("save.quickComplete"));
-  }, [flow.base, live, markClean, t, tutorialProgress]);
+  }, [flow.base, gameSession, live, markClean, t, tutorialProgress]);
 
 
   const quitToTitle = useCallback(() => {
@@ -2028,12 +2002,11 @@ export default function App() {
     if (flow.base !== "in-game" || (cadence !== "5m" && cadence !== "15m")) return;
     const interval = window.setInterval(() => {
       const sequence = changeSequenceRef.current;
-      const current = gameStateRef.current;
-      void autosave({ course: current.course, world: current.world, history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress })
+      void gameSession.save(autosave, { history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress })
         .then(() => markClean(sequence));
     }, cadence === "5m" ? 300_000 : 900_000);
     return () => window.clearInterval(interval);
-  }, [appProfile.gameplay.autosaveCadence, flow.base, live, markClean, tutorialProgress]);
+  }, [appProfile.gameplay.autosaveCadence, flow.base, gameSession, live, markClean, tutorialProgress]);
 
   const canvasPaneRef = useRef<HTMLDivElement | null>(null);
   const [paneSize, setPaneSize] = useState({ width: 0, height: 0 });
@@ -2455,7 +2428,7 @@ export default function App() {
     const sequence = ++tutorialSaveSequenceRef.current;
     setTutorialSaveStatus("saving");
     const timer = window.setTimeout(() => {
-      const current = gameStateRef.current;
+      const current = gameSession.getState();
       void autosave({
         course: current.course,
         world: current.world,
@@ -2468,7 +2441,7 @@ export default function App() {
       });
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [screen, course, tutorialProgress, getLiveSnapshot]);
+  }, [screen, course, gameSession, tutorialProgress, getLiveSnapshot]);
 
   // Milestones and resumed saves reconcile from authoritative course state,
   // rather than relying on a one-shot ninth-hole event that may already have
@@ -2570,7 +2543,10 @@ export default function App() {
       setPaintError(t("demo.saveRejected"));
       return false;
     }
-    dispatch({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
+    recordBugAction({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
+    terrainUndoRef.current = [];
+    terrainRedoRef.current = [];
+    gameSession.restore(loaded);
     live.restoreSnapshot(loaded.live);
     setHistory(loaded.history ?? []);
     setLast(loaded.history?.[loaded.history.length - 1]);
@@ -2961,7 +2937,7 @@ export default function App() {
     if (import.meta.env.MODE !== "e2e") return;
     window.__coursecraftTest = {
       state: () => {
-        const current = gameStateRef.current;
+        const current = gameSession.getState();
         const liveSnapshot = live.getSnapshot();
         return {
           screen,
@@ -3035,7 +3011,7 @@ export default function App() {
         flowDispatch({ type: "BACK_TO_TITLE" });
       },
       terrainSurfaceState: () => {
-        const current = gameStateRef.current.course;
+        const current = gameSession.getState().course;
         const scoredHoles = scoreCourseHoles(current).holes;
         return {
           width: current.width,
@@ -3075,18 +3051,18 @@ export default function App() {
       m35Metrics: m35TelemetrySnapshot,
       resetM35Metrics: resetM35Telemetry,
       setPaintCash: (cash: number) => {
-        setGameState((current) => ({ ...current, world: { ...current.world, cash } }));
+        gameSession.update((current) => ({ ...current, world: { ...current.world, cash } }));
       },
       setPropertyFixture: () => {
         const fixtureCourse = { ...createReferenceCourse(), property: starterPropertyCourse() };
-        const fixtureWorld = { ...gameStateRef.current.world, cash: 1_000_000, reputation: 82, enterprise: emptyPropertyEnterprise(), isBankrupt: false, distressWeeks: 0 };
+        const fixtureWorld = { ...gameSession.getState().world, cash: 1_000_000, reputation: 82, enterprise: emptyPropertyEnterprise(), isBankrupt: false, distressWeeks: 0 };
         dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
       },
       setPlayerProFixture: () => {
         const fixtureCourse = createPlayerProReferenceCourse();
         const fixtureWorld = {
-          ...gameStateRef.current.world,
+          ...gameSession.getState().world,
           cash: 250_000,
           reputation: 75,
           runSeed: 360037,
@@ -3102,7 +3078,7 @@ export default function App() {
       setM39Fixture: () => {
         const fixtureCourse = createPlayerProReferenceCourse();
         const baseWorld: World = {
-          ...gameStateRef.current.world,
+          ...gameSession.getState().world,
           week: 32,
           cash: 750_000,
           reputation: 84,
@@ -3122,7 +3098,7 @@ export default function App() {
       },
       setM53SeasonalFixture: (season: SeasonName) => {
         if (!SEASONS.includes(season)) throw new Error(`Unknown M53 season "${season}"`);
-        const current = gameStateRef.current;
+        const current = gameSession.getState();
         const biome = current.course.theme ?? BIOME_KEYS[0];
         const fixture = M53_SEVERE_WEATHER_FIXTURES[biome][season];
         const dayOfWeek = fixture.absoluteDay % 7;
@@ -3152,7 +3128,7 @@ export default function App() {
       setM53SurfaceCareFixture: (
         mode: "evidence" | "resolved" | "healthy" | "cue-only" | "mowing" = "evidence",
       ) => {
-        const current = gameStateRef.current;
+        const current = gameSession.getState();
         const nextCourse = mode === "resolved"
           ? resolveM53SurfaceCarePresentationFixture(current.course)
           : mode === "evidence"
@@ -3171,14 +3147,14 @@ export default function App() {
         }));
       },
       setM52ReferenceBookmark: (view, rotation) => {
-        const bookmark = biomeCameraBookmarks(gameStateRef.current.course).find((candidate) =>
+        const bookmark = biomeCameraBookmarks(gameSession.getState().course).find((candidate) =>
           candidate.view === view && candidate.rotation === rotation);
         if (!bookmark) throw new Error(`Unknown ZK-564 reference bookmark ${view}-r${rotation}`);
         setM52ReferenceCamera(bookmark);
       },
       startWeekCloseFixture: async (weekOverride?: number) => {
-        const course = gameStateRef.current.course;
-        const world = { ...gameStateRef.current.world, week: weekOverride ?? gameStateRef.current.world.week, cash: Math.max(100_000, gameStateRef.current.world.cash), runSeed: 424242, isBankrupt: false, distressWeeks: 0 };
+        const course = gameSession.getState().course;
+        const world = { ...gameSession.getState().world, week: weekOverride ?? gameSession.getState().world.week, cash: Math.max(100_000, gameSession.getState().world.cash), runSeed: 424242, isBankrupt: false, distressWeeks: 0 };
         dispatch({ type: "LOAD_GAME", course, world });
         await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
         const state = createLiveState(course, world, 6);
@@ -3197,7 +3173,7 @@ export default function App() {
         live.setSpeed("4x");
       },
       runGoldenWeek: async () => {
-        const current = gameStateRef.current;
+        const current = gameSession.getState();
         const course = createReferenceCourse();
         const world = {
           ...current.world,
@@ -3252,7 +3228,7 @@ export default function App() {
       },
       runResortGoldenPath: async () => {
         let fixtureCourse: Course = { ...createReferenceCourse(), property: starterPropertyCourse() };
-        let fixtureWorld: World = { ...gameStateRef.current.world, cash: 1_000_000, reputation: 82, enterprise: emptyPropertyEnterprise(), isBankrupt: false, distressWeeks: 0 };
+        let fixtureWorld: World = { ...gameSession.getState().world, cash: 1_000_000, reputation: 82, enterprise: emptyPropertyEnterprise(), isBankrupt: false, distressWeeks: 0 };
         const commands: PropertyCommand[] = [
           { type: "BUILD", kind: "driving_range" },
           { type: "BUILD", kind: "clubhouse" },
@@ -3317,7 +3293,7 @@ export default function App() {
       },
       runM33GoldenPath: async () => {
         let fixtureCourse: Course = { ...createReferenceCourse(), property: starterPropertyCourse() };
-        let fixtureWorld: World = { ...gameStateRef.current.world, cash: 2_000_000, reputation: 86, enterprise: emptyPropertyEnterprise(), isBankrupt: false, distressWeeks: 0, week: 3 };
+        let fixtureWorld: World = { ...gameSession.getState().world, cash: 2_000_000, reputation: 86, enterprise: emptyPropertyEnterprise(), isBankrupt: false, distressWeeks: 0, week: 3 };
         const runCommand = (command: PropertyCommand) => {
           const result = applyPropertyCommand(fixtureCourse, fixtureWorld, command);
           if (!result.ok) throw new Error(result.message);
@@ -3415,7 +3391,7 @@ export default function App() {
           : { ok: false as const, error: result.error.message };
       },
       startTournamentFixture: () => {
-        const current = gameStateRef.current;
+        const current = gameSession.getState();
         const fixtureWorld = { ...current.world, tournaments: { version: 2 as const, events: [] } };
         const created = createTournamentEvent({ course: current.course, world: fixtureWorld, tier: "local", currentDay: live.status.dayIndex, daysAhead: 1 });
         if (!created.ok) throw new Error(created.reason);
@@ -3431,7 +3407,7 @@ export default function App() {
         live.setSpeed("4x");
       },
       invalidateAndCancelTournamentFixture: () => {
-        const current = gameStateRef.current;
+        const current = gameSession.getState();
         const editedCourse = { ...current.course, holes: current.course.holes.map((hole) => ({ ...hole, pinPositions: { ...hole.pinPositions, B: null, C: null } })) };
         const warnedWorld = revalidateScheduledTournaments(editedCourse, current.world);
         const scheduled = tournamentCalendar(warnedWorld).events.find((event) => event.status === "scheduled");
@@ -3445,7 +3421,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, pendingLoadingContext, pendingWeekReport, screen, setWorld, t, tutorialProgress]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, gameSession, live, pendingLoadingContext, pendingWeekReport, screen, setWorld, t, tutorialProgress]);
 
   function newGameFromMenu() {
     void audio.unlock();
@@ -4736,7 +4712,7 @@ export default function App() {
         onProfileChange={handleProfileChange}
       />
       {showRetention && <RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} />}
-      {pwa.updateAvailable && <PwaUpdateToast onReload={() => { const current = gameStateRef.current; void autosave({ course: current.course, world: current.world, history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress }).finally(pwa.applyUpdate); }} />}
+      {pwa.updateAvailable && <PwaUpdateToast onReload={() => { void gameSession.save(autosave, { history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress }).finally(pwa.applyUpdate); }} />}
       </>
     );
   }
@@ -4760,7 +4736,7 @@ export default function App() {
       {showRetention && <RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} />}
       {!photoMode && <AchievementToasts queue={achievementQueue} biomeContext={contextualUiTheme} onDismiss={() => setAchievementQueue((queue) => queue.slice(1))} />}
       {photoMode && <PhotoModeOverlay showGolfers={photoGolfers} showMarkers={photoMarkers} onToggleGolfers={() => setPhotoGolfers((value) => !value)} onToggleMarkers={() => setPhotoMarkers((value) => !value)} onCapture={() => void capturePhoto()} onCard={() => void captureCard()} onShare={() => void shareCard()} onExit={exitPhotoMode} />}
-      {pwa.updateAvailable && <PwaUpdateToast onReload={() => { const current = gameStateRef.current; void autosave({ course: current.course, world: current.world, history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress }).finally(pwa.applyUpdate); }} />}
+      {pwa.updateAvailable && <PwaUpdateToast onReload={() => { void gameSession.save(autosave, { history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress }).finally(pwa.applyUpdate); }} />}
       {flow.modal === "save-load" && pwa.storagePersistent === false && <div role="status" className="cc-storage-warning">{t("pwa.storageWarning")}</div>}
       {flow.modal === "golfopedia" && (
         <GolfopediaModal

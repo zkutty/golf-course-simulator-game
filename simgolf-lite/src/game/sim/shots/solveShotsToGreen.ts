@@ -3,6 +3,7 @@ import type { GolferProfile } from "../golferProfiles";
 import { evalShotExpectedCost } from "./evalShotExpectedCost";
 import { BALANCE } from "../../balance/balanceConfig";
 import { courseWithEffectiveSurfaces } from "../../conditions/surfaceCare";
+import type { ShotSlopeContext } from "../../models/shotSlope";
 
 export interface ShotPlanStep {
   from: Point;
@@ -11,6 +12,8 @@ export interface ShotPlanStep {
   expectedShotCost: number;
   utilization: number;
   debug: string[];
+  /** Optional frozen slope facts for consumers that retain a plan step. */
+  shotSlope?: ShotSlopeContext;
 }
 
 export interface ShotSolveResult {
@@ -159,6 +162,7 @@ export function solveShotsToGreen(args: {
                 expectedShotCost: ev.expectedShotCost,
                 utilization: ev.utilization,
                 debug: ev.debug,
+                shotSlope: ev.shotSlope,
               },
             });
             pq.push(nd, toK);
@@ -182,6 +186,7 @@ export function solveShotsToGreen(args: {
               expectedShotCost: evG.expectedShotCost,
               utilization: evG.utilization,
               debug: evG.debug,
+              shotSlope: evG.shotSlope,
             },
           });
           pq.push(nd, goalK);
@@ -208,7 +213,6 @@ export function solveShotsToGreen(args: {
 
   return { reachable: true, expectedShotsToGreen: best, plan };
 }
-
 
 
 

@@ -1,6 +1,7 @@
 import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import type { ReliefResolution, ShotRuling, SharedShotOutcome } from "../rules/contracts";
 import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
+import type { ShotSlopeContext } from "./shotSlope";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -105,6 +106,8 @@ export interface PlayerShotTrace {
   ruling?: ShotRuling;
   relief?: ReliefResolution;
   finalPosition?: PlayerProPoint;
+  /** Optional immutable ZK-631 slope facts. Older completed shots omit it. */
+  shotSlope?: ShotSlopeContext;
 }
 
 export interface PlayerRoundScorecardHole {

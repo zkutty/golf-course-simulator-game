@@ -1,7 +1,12 @@
 import type { Course, Point } from "../../models/types";
 import type { ClubSpec, GolferProfile } from "../golferProfiles";
 import { BALANCE } from "../../balance/balanceConfig";
-import { getElevation } from "../../models/elevation";
+import {
+  analyzeShotSlope,
+  normalizeShotSlopeContext,
+  type ShotHandedness,
+  type ShotSlopeContext,
+} from "../../models/shotSlope";
 
 export interface ShotEval {
   distanceYards: number;
@@ -14,6 +19,8 @@ export interface ShotEval {
   expectedShotCost: number;
   debug: string[];
   isValid: boolean;
+  /** Optional immutable context for consumers that persist a completed shot. */
+  shotSlope?: ShotSlopeContext;
 }
 
 function distTiles(a: Point, b: Point) {
@@ -31,19 +38,29 @@ export function evalShotBase(args: {
   // production callers pass it; it stays optional so geometry-only tests
   // and tools keep working.
   course?: Course;
+  /** A previously captured frozen slope context takes precedence over course. */
+  shotSlope?: ShotSlopeContext;
+  /** Compatibility alias while callers converge on `shotSlope`. */
+  slopeContext?: ShotSlopeContext;
+  handedness?: ShotHandedness;
 }): ShotEval {
   const { from, to, golfer, club, course } = args;
   const dTiles = distTiles(from, to);
   const flatYards = dTiles * golfer.yardsPerTile;
+  const shotSlope = normalizeShotSlopeContext(args.shotSlope ?? args.slopeContext)
+    ?? (course ? analyzeShotSlope({
+      course,
+      from,
+      to,
+      yardsPerTile: golfer.yardsPerTile,
+      handedness: args.handedness,
+      yardsPerElevationStep: BALANCE.elevation.shotYardsPerStep,
+    }) : undefined);
+  const elevDelta = shotSlope?.targetElevationDelta ?? 0;
   // Uphill plays longer, downhill shorter (never below half the flat
-  // distance, so extreme drops can't make shots free).
-  const elevDelta = course
-    ? getElevation(course, to.x, to.y) - getElevation(course, from.x, from.y)
-    : 0;
-  const dYards = Math.max(
-    flatYards * 0.5,
-    flatYards + elevDelta * BALANCE.elevation.shotYardsPerStep
-  );
+  // distance, so extreme drops can't make shots free). The frozen context
+  // lets retained/replayed shots stay independent of later sculpting.
+  const dYards = shotSlope?.playsLikeDistanceYards ?? flatYards;
   const utilization = club.carryYards <= 0 ? 99 : dYards / club.carryYards;
 
   // Dispersion grows as utilization pushes beyond 90% of carry.
@@ -66,6 +83,7 @@ export function evalShotBase(args: {
     expectedCarryPenalty,
     expectedShotCost,
     isValid: true,
+    ...(shotSlope ? { shotSlope } : {}),
     debug: [
       elevDelta !== 0 ? `d=${dYards.toFixed(0)}y (flat ${flatYards.toFixed(0)}y, elev ${elevDelta > 0 ? "+" : ""}${elevDelta})` : `d=${dYards.toFixed(0)}y`,
       `club=${club.name}(${club.carryYards}y)`,
@@ -74,5 +92,4 @@ export function evalShotBase(args: {
     ],
   };
 }
-
 

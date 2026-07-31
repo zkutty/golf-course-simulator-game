@@ -1,5 +1,36 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## AI build wave 1 — ZK-678 and ZK-631 — 2026-07-31
+
+- Added a typed `GameSession` boundary plus selector-based React bridge and an
+  incremental App migration. The session owns authoritative state access,
+  commands, persistence coordination, lifecycle, and subscriptions without
+  changing reducer, save, clock, or PlatformServices ownership.
+- Added a pure versioned shot-slope contract with frozen-elevation analysis,
+  optional backwards-compatible serialization, and propagation through shot
+  evaluation, water carry, expected cost, and solver paths. Historical shots
+  remain valid when no slope data is present.
+- Integrated verification passes: TypeScript; 39 focused session/slope/elevation/
+  shot/save tests; scoped lint with zero errors (three existing App Hook
+  warnings); and a browser menu smoke with valid `render_game_to_text` state,
+  a visible CourseCraft menu, and no client-error artifact.
+- Broader production build/release evidence and human visual/audio/device gates
+  remain deferred. Next AI build packet is ZK-679 renderer scene systems, after
+  reviewing this GameSession seam.
+
+## ZK-646 verification refresh — 2026-07-31
+
+- Confirmed the committed biome-aware terrain, irrigation, and planting economics
+  implementation at `67a5b8c` rather than duplicating it in a new slice.
+- Fresh focused parity coverage passed: 5 Vitest files / 44 tests covering economy
+  quotes, biome registry completeness, plant install/removal economics, weekly
+  ledger reporting, and save compatibility.
+- The isolated M53 core certification report passed all checks, including the
+  Parkland $42 neutral irrigation reference, 0.75–1.25 weather-demand bounds,
+  climate-appropriate starter viability, Desert xeric parity, and no universal
+  biome economic winner. Retained human/device/release gates remain open, so
+  keep ZK-646 In Progress until promotion and final Linear reconciliation.
+
 ## M60 Vision page execution — 2026-07-31
 
 - Started Linear issues ZK-615 and ZK-619. The M60 contract now lives in
