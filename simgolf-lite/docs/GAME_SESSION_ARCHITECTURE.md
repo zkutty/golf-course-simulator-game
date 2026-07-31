@@ -23,6 +23,16 @@ reducer. It is intentionally not a replacement for simulation authorities:
   Save attachments keep live snapshots, history, tutorial, and records on
   their existing authorities during the incremental migration.
 
+## Selector scope instrumentation
+
+`GameSessionRenderInstrumentation` measures selector invalidations for three
+representative surfaces: `live-hud`, `editor-inspector`, and
+`management-report`. It is deliberately headless and counts only changes to a
+surface's selector projection—the same condition that causes a mounted
+`useGameSessionSelector` consumer to rerender. Use it in tests or a host
+diagnostic harness to prevent unrelated economy, editor, and live-game changes
+from widening a panel's update scope.
+
 ## Migration rule
 
 New application-level game-state access should enter through `GameSession`.

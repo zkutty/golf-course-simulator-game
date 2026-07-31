@@ -6,4 +6,9 @@ export type {
   PlatformQuitBoundary,
   SaveAttachments,
 } from "./GameSession";
+export {
+  GAME_SESSION_PANEL_SURFACES,
+  GameSessionRenderInstrumentation,
+} from "./renderInstrumentation";
+export type { GameSessionPanelSurface } from "./renderInstrumentation";
 export { shallowEqual, useGameSessionSelector } from "./react";

@@ -1,5 +1,30 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## AI acceptance closure — ZK-631 and ZK-678 — 2026-07-31
+
+- Expanded ZK-631's slope contract coverage for fractional positions,
+  map-edge clamping, malformed elevation payloads, zero-length aim vectors,
+  and a bounded fractional-position matrix.
+- Added ZK-678 selector-scope instrumentation for the live HUD, editor
+  inspector, and management report. The test demonstrates economy updates
+  invalidate only live/management, UI tool selection only editor, and course
+  edits only editor; an initial broad management version dependency was found
+  and removed.
+- Focused tests, TypeScript, and scoped ESLint pass. Browser smoke remains to
+  run before promotion.
+
+## AI renderer foundation — ZK-679 — 2026-07-31
+
+- Started the renderer seam with a pure typed `RenderSnapshot` and explicit
+  revisions for terrain/materials, structures/props, mobile entities,
+  overlays/diagnostics, atmosphere, and viewport/input. The current Pixi host
+  and visual behavior remain untouched in this foundation slice.
+- Added isolation coverage proving cash-only changes do not invalidate static
+  rendering, while editor, terrain, marker, live, atmosphere, and viewport
+  changes each target only their declared system. The next slice is to make
+  PixiStage consume the snapshot through explicit scene-system lifecycle
+  adapters.
+
 ## AI build wave 1 — ZK-678 and ZK-631 — 2026-07-31
 
 - Added a typed `GameSession` boundary plus selector-based React bridge and an

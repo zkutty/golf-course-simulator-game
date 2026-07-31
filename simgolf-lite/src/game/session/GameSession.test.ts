@@ -5,6 +5,7 @@ import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/sa
 import { hashGameState } from "../../utils/stateHash";
 import { DEFAULT_STATE } from "../gameState";
 import { GameSession } from "./GameSession";
+import { GameSessionRenderInstrumentation } from "./renderInstrumentation";
 import { shallowEqual } from "./react";
 
 function platform(
@@ -43,6 +44,40 @@ describe("GameSession application boundary", () => {
 
     expect(courseRenders).not.toHaveBeenCalled();
     expect(economyRenders).toHaveBeenCalledOnce();
+  });
+
+  it("measures narrow invalidation scopes for live, editor, and management panels", () => {
+    const session = new GameSession({ initialState: DEFAULT_STATE, platform: platform() });
+    const instrumentation = new GameSessionRenderInstrumentation(session);
+
+    session.updateWorld((world) => ({ ...world, cash: world.cash + 1 }));
+    expect(instrumentation.snapshot()).toEqual({
+      "live-hud": 1,
+      "editor-inspector": 0,
+      "management-report": 1,
+    });
+
+    session.replaceState({ ...session.getState(), selectedTerrain: "rough" });
+    expect(instrumentation.snapshot()).toEqual({
+      "live-hud": 1,
+      "editor-inspector": 1,
+      "management-report": 1,
+    });
+
+    session.updateCourse((course) => ({ ...course, name: `${course.name} reviewed` }));
+    expect(instrumentation.snapshot()).toEqual({
+      "live-hud": 1,
+      "editor-inspector": 2,
+      "management-report": 1,
+    });
+
+    instrumentation.dispose();
+    session.updateWorld((world) => ({ ...world, reputation: world.reputation + 1 }));
+    expect(instrumentation.snapshot()).toEqual({
+      "live-hud": 1,
+      "editor-inspector": 2,
+      "management-report": 1,
+    });
   });
 
   it("composes saves and restores historical payloads without changing schema migration", async () => {

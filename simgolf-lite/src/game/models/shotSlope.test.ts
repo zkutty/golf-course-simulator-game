@@ -4,6 +4,7 @@ import type { Course, Terrain } from "./types";
 import type { GolferProfile } from "../sim/golferProfiles";
 import {
   analyzeShotSlope,
+  elevationAtFrozenPoint,
   normalizeShotSlopeContext,
   normalizeShotSlopeCarrier,
   serializeShotSlopeContext,
@@ -88,6 +89,81 @@ describe("shot slope context", () => {
       yardsPerTile: 10,
     });
     expect(Math.abs(steep.naturalCurveBiasTiles)).toBeLessThanOrEqual(0.35);
+  });
+
+  it("rounds fractional ball positions and clamps map edges without changing the captured facts", () => {
+    const course = courseWithElevation(3, 3, (x, y) => x + y * 10);
+    expect(elevationAtFrozenPoint(course, { x: 0.49, y: 1.51 })).toBe(20);
+    expect(elevationAtFrozenPoint(course, { x: -100.1, y: 99.9 })).toBe(20);
+
+    const context = analyzeShotSlope({
+      course,
+      from: { x: 0.49, y: 0.49 },
+      to: { x: 2.49, y: 0.49 },
+      yardsPerTile: 10,
+    });
+    expect(context).toMatchObject({
+      flatDistanceYards: 20,
+      targetElevationDelta: 2,
+      playsLikeDistanceYards: 25,
+      localGradient: { alongTargetLine: 1, crossTargetLine: 10 },
+    });
+  });
+
+  it("fails safely for malformed elevation snapshots and a zero-length aim", () => {
+    const malformed = {
+      width: 3,
+      height: 3,
+      elevations: [0, Number.NaN, Number.POSITIVE_INFINITY] as number[],
+    };
+    const context = analyzeShotSlope({
+      course: malformed,
+      from: { x: Number.NaN, y: Number.NEGATIVE_INFINITY },
+      to: { x: Number.POSITIVE_INFINITY, y: 0 },
+      yardsPerTile: Number.NaN,
+    });
+    expect(context).toMatchObject({
+      flatDistanceYards: 0,
+      targetElevationDelta: 0,
+      playsLikeDistanceYards: 0,
+    });
+
+    const zeroAim = analyzeShotSlope({
+      course: courseWithElevation(3, 3, (_x, y) => y * 20),
+      from: { x: 1.5, y: 1.5 },
+      to: { x: 1.5, y: 1.5 },
+      yardsPerTile: 10,
+    });
+    const values = [
+      zeroAim.flatDistanceYards,
+      zeroAim.targetElevationDelta,
+      zeroAim.playsLikeDistanceYards,
+      zeroAim.localGradient.alongTargetLine,
+      zeroAim.localGradient.crossTargetLine,
+      zeroAim.naturalCurveBiasTiles,
+    ];
+    expect(values.every(Number.isFinite)).toBe(true);
+    expect(Math.abs(zeroAim.naturalCurveBiasTiles)).toBeLessThanOrEqual(0.35);
+  });
+
+  it("keeps every finite fractional-position matrix case serializable and bounded", () => {
+    const course = courseWithElevation(4, 4, (x, y) => x * 7 - y * 5);
+    const coordinates = [-3.4, -0.51, 0, 0.49, 1.5, 3.49, 8.2];
+    for (const fromX of coordinates) {
+      for (const fromY of coordinates) {
+        for (const toX of coordinates) {
+          const context = analyzeShotSlope({
+            course,
+            from: { x: fromX, y: fromY },
+            to: { x: toX, y: fromY + 0.51 },
+            yardsPerTile: 10,
+            handedness: toX < fromX ? "left" : "right",
+          });
+          expect(serializeShotSlopeContext(context)).toEqual(context);
+          expect(Math.abs(context.naturalCurveBiasTiles)).toBeLessThanOrEqual(0.35);
+        }
+      }
+    }
   });
 
   it("round-trips a canonical context and ignores malformed optional payloads", () => {
