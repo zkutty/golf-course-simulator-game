@@ -230,5 +230,5 @@ test("accessible palettes, patterns, text scaling, and reduced motion apply live
   }
 
   await page.getByRole("button", { name: "Flyover" }).click();
-  await expect(page.getByRole("status")).toContainText("disabled while reduced motion");
+  await expect(page.getByText("Flyover is disabled while reduced motion is on.")).toBeVisible();
 });
