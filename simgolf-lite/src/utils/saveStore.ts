@@ -177,6 +177,20 @@ export function __failNextManifestWriteForTests(): void {
   failNextManifestWrite = true;
 }
 
+/** E2E-only fixture support for pre-M13 manifests and missing revisions. */
+export async function __omitSlotThemeForTests(id: string): Promise<void> {
+  const manifest = await readManifest();
+  const entry = manifest.find((candidate) => candidate.id === id);
+  if (!entry) return;
+  delete entry.theme;
+  await writeManifest(manifest);
+}
+
+export async function __deleteSlotPayloadForTests(id: string): Promise<void> {
+  const manifest = await readManifest();
+  await kv.del(payloadKey(manifest.find((candidate) => candidate.id === id), id));
+}
+
 // ---------------------------------------------------------------------
 // Manifest + slots
 // ---------------------------------------------------------------------

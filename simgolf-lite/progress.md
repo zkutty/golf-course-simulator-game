@@ -1329,3 +1329,63 @@ classic course-builder references.
 - Bundled-client state/error smoke passed with a coherent Paint/curve/Fairway
   tuple and no error artifact. The screenshot under
   `/tmp/zk648-final-cleanup-smoke` was intentionally not inspected.
+
+## 2026-07-30 — ZK-626 contextual biome UI contract
+
+- Added one exhaustive registry-backed contextual UI profile for Parkland,
+  Links, and Desert. Contextual course, setup/loading, design, inspector,
+  Seasons/Legacy, upkeep, advisor, empty-state, and notification surfaces now
+  carry typed biome/character/motif/illustration/season/weather/status
+  attributes without changing shell commands, layout, typography, icons,
+  shortcuts, permanent navigation, focus tokens, or simulation/save state.
+- Closed independent-review findings by actually consuming the subordinate
+  seasonal surface token and rendering restrained non-colour canopy,
+  wind-line, or irrigation-ring geometry from the registry illustration.
+  Positive/advisory/warning/critical semantic surfaces and edges retain
+  precedence while biome geometry remains distinguishable when color-vision
+  modes intentionally collapse the accent hue.
+- Seasons/Legacy condition evidence, yearbook empty state, timeline empty
+  state, and a real supporting illustration all use the same typed child
+  helper and full context attributes. Loading now captures the pending wizard,
+  scenario, recent-save, or selected-save destination biome before entering
+  the loading screen and releases that transient context after entry/failure,
+  rather than showing the stale active course.
+- Verification passes: TypeScript/build; focused theme tests (6/6); full
+  Vitest (136 files, 1,081 passed and one intentional skip); lint/i18n with
+  zero errors and the 12 existing hook warnings; production biome,
+  audio/offline, M35, Parkland, and explicit biome-authoring audits; and three
+  Playwright scenarios. Browser coverage verifies all 12 biome/season states
+  at desktop/narrow widths, stable command/layout signatures, CVD,
+  reduced-motion/focus, warning and positive status precedence, subordinate
+  season surfaces, actual named Seasons/Legacy children/empty variants,
+  WeekClose upkeep, and Desert wizard plus Links scenario loading
+  destinations.
+- The bundled browser client independently entered the Links winter/frost
+  fixture, emitted structured state with the expected biome/season/weather,
+  and produced no console/page error artifact. Its machine capture under
+  `/tmp/zk626-review-bundled-smoke` was intentionally not opened or visually
+  assessed. Generated audit JSON was restored; unrelated shared skills,
+  blueprint documentation, and hole-template work remain untouched.
+
+### ZK-626 final loading-context hardening
+
+- Replaced the transient loading-theme scalar with a complete typed
+  destination context. New-game and scenario loading use the selected biome
+  with neutral summer/clear presentation; pre-payload manifests do the same,
+  and missing pre-M13 manifest themes resolve to canonical Parkland rather
+  than inheriting the active course. Once a save parses, its normalized biome,
+  calendar season, and deterministic weather derive from the saved live day.
+- Continue paints the manifest context first and then the parsed-save context.
+  Continue and selected-slot loading defer game application until the parsed
+  loading state has committed to a browser frame. All success, invalid/missing
+  payload, title, setup-cancel, defeat-exit, and fixture paths clear transient
+  context, with an invariant cleanup when the flow is not loading.
+- Focused verification passes: TypeScript; theme/loading unit coverage (8/8);
+  lint/i18n with zero errors and the 12 existing warnings; and four browser
+  scenarios covering stale Desert/winter source state, neutral wizard and
+  scenario destinations, legacy manifest Parkland-neutral to parsed Links
+  ordering, selected-save parsed season/weather, and missing-payload cleanup.
+  Full Vitest passes 136 files / 1,083 tests with one intentional skip, and
+  production build plus biome/audio/offline/M35/Parkland audits pass.
+- No screenshots were opened or inspected. Transient Playwright failure
+  artifacts were removed after the render-commit race was corrected.

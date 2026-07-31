@@ -16,7 +16,7 @@ import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
 import type { MessageKey } from "../i18n/catalog";
 import { IS_DEMO } from "../config/edition";
-import { biomeUiStyle, biomeUiTheme } from "./biomeUiTheme";
+import { biomeContextAttributes, biomeUiStyle, biomeUiTheme } from "./biomeUiTheme";
 
 // New-game setup wizard (ZKU-162): Mode → Land → Difficulty → Details.
 // Output is a typed GameSetup consumed by the single createNewGame path.
@@ -262,8 +262,7 @@ export function NewGameWizard(props: {
   return (
     <div
       className="cc-biome-wizard"
-      data-biome={contextualUiTheme.biome}
-      data-biome-motif={contextualUiTheme.motif}
+      {...biomeContextAttributes(contextualUiTheme, "new-game-preview")}
       style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden", ...biomeUiStyle(contextualUiTheme) } as CSSProperties}
     >
       <StartMenuBackground />

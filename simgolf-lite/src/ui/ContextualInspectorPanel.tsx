@@ -2,6 +2,10 @@ import { useState, type CSSProperties } from "react";
 import { IconUi } from "../assets/icons";
 import type { MessageKey } from "../i18n/catalog";
 import { translateCurrent } from "../i18n/core";
+import {
+  biomeContextAttributes,
+  type BiomeUiTheme,
+} from "./biomeUiTheme";
 
 export type InspectorFocus = "course" | "operations" | "property" | "people" | "legacy";
 
@@ -98,6 +102,7 @@ export function ContextualInspectorPanel(props: {
   onSetViewMode: (mode: "COZY" | "ARCHITECT") => void;
   onSetPacePreset: (preset: "relaxed" | "balanced" | "brisk") => void;
   onClose: () => void;
+  biomeContext?: BiomeUiTheme;
 }) {
   const [focus, setFocus] = useState<InspectorFocus>(props.initialFocus ?? "course");
   const copy = FOCUS_COPY[focus];
@@ -110,7 +115,18 @@ export function ContextualInspectorPanel(props: {
   };
 
   return (
-    <section className="cc-contextual-inspector" role="dialog" aria-modal="false" aria-labelledby="contextual-inspector-title" aria-describedby="contextual-inspector-description" data-testid="contextual-inspector" style={panelStyle}>
+    <section
+      className="cc-contextual-inspector"
+      role="dialog"
+      aria-modal="false"
+      aria-labelledby="contextual-inspector-title"
+      aria-describedby="contextual-inspector-description"
+      data-testid="contextual-inspector"
+      {...(props.biomeContext
+        ? biomeContextAttributes(props.biomeContext, "contextual-inspector")
+        : {})}
+      style={panelStyle}
+    >
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "start", gap: 10 }}>
         <div>
           <div className="cc-inspector-eyebrow" style={{ fontSize: 10, letterSpacing: ".14em", textTransform: "uppercase", fontWeight: 900 }}>{translateCurrent("inspector.eyebrow")}</div>

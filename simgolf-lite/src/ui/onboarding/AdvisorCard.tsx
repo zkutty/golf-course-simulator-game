@@ -2,10 +2,29 @@ import type { AdvisorMessage } from "../../game/advisor/advisor";
 import { AdvisorPresenter } from "./AdvisorPresenter";
 import { presenterButtonStyle } from "./presenterStyles";
 import { T } from "../../i18n/T";
+import {
+  biomeContextAttributes,
+  type BiomeUiTheme,
+} from "../biomeUiTheme";
 
-export function AdvisorCard(props: { message: AdvisorMessage; onDismiss: () => void; onShowHole?: (holeIndex: number) => void }) {
+export function AdvisorCard(props: { message: AdvisorMessage; onDismiss: () => void; onShowHole?: (holeIndex: number) => void; biomeContext?: BiomeUiTheme }) {
   return (
-    <div data-testid="advisor-card" data-priority={props.message.priority} style={{ position: "fixed", right: 18, bottom: 68, zIndex: 9000, animation: "cc-advisor-in .28s ease-out" }}>
+    <div
+      data-testid="advisor-card"
+      data-priority={props.message.priority}
+      {...(props.biomeContext
+        ? biomeContextAttributes(
+          props.biomeContext,
+          "notification",
+          props.message.priority === "warning"
+            ? "warning"
+            : props.message.priority === "celebration"
+              ? "positive"
+              : "advisory",
+        )
+        : {})}
+      style={{ position: "fixed", right: 18, bottom: 68, zIndex: 9000, animation: "cc-advisor-in .28s ease-out" }}
+    >
       <AdvisorPresenter
         compact
         eyebrow={props.message.priority === "warning" ? "Caddie warning" : props.message.priority === "celebration" ? "Caddie celebration" : "A word from your caddie"}

@@ -27,6 +27,12 @@ import {
   surfaceCareConditionSummary,
 } from "../game/conditions/surfaceCare";
 import type { SurfaceRepairKind } from "../game/models/types";
+import {
+  biomeContextAttributes,
+  type BiomeContextSurface,
+  type BiomeStatusTone,
+  type BiomeUiTheme,
+} from "./biomeUiTheme";
 
 const AUTOMATION_SYSTEMS: AutomationSystem[] = ["hours", "upkeep", "pricing", "staffing", "parking", "lodging", "community", "safety"];
 const TURF_PRIORITIES: TurfPriority[] = ["playability", "recovery", "presentation"];
@@ -65,6 +71,7 @@ export function SeasonsLegacyPanel(props: {
     absoluteDay: number,
   ) => void;
   onClose: () => void;
+  biomeContext?: BiomeUiTheme;
 }) {
   const [tab, setTab] = useState<"season" | "identity" | "legacy">("season");
   const [message, setMessage] = useState<string | null>(null);
@@ -92,6 +99,12 @@ export function SeasonsLegacyPanel(props: {
     charter,
     confirmed: true,
   });
+  const contextAttributes = (
+    surface: BiomeContextSurface,
+    status: BiomeStatusTone = "neutral",
+  ) => props.biomeContext
+    ? biomeContextAttributes(props.biomeContext, surface, status)
+    : {};
 
   return (
     <aside
@@ -99,6 +112,9 @@ export function SeasonsLegacyPanel(props: {
       aria-modal="false"
       aria-labelledby="season-legacy-title"
       data-testid="seasons-legacy-panel"
+      {...(props.biomeContext
+        ? biomeContextAttributes(props.biomeContext, "seasons-legacy")
+        : {})}
       style={{ position: "absolute", zIndex: 205, top: 58, right: 14, width: "min(620px,calc(100% - 28px))", maxHeight: "calc(100% - 86px)", overflow: "auto", border: "3px solid #755824", borderRadius: 14, background: "linear-gradient(145deg,#fbf1d0,#dbe7cf)", color: "#302819", boxShadow: "0 20px 55px rgba(0,0,0,.45)", padding: 14 }}
     >
       <header style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
@@ -106,6 +122,11 @@ export function SeasonsLegacyPanel(props: {
           <small style={{ textTransform: "uppercase", letterSpacing: ".11em", fontWeight: 900 }}>{translateCurrent("season.eyebrow")}</small>
           <h2 id="season-legacy-title" style={{ margin: "2px 0" }}>{translateCurrent("season.title")}</h2>
           <div data-testid="club-calendar-date">{formatClubDate(state.calendar)}</div>
+          <span
+            aria-hidden="true"
+            data-testid="biome-supporting-illustration"
+            {...contextAttributes("supporting-illustration")}
+          />
         </div>
         <button aria-label={translateCurrent("common.close")} onClick={props.onClose} style={button}>×</button>
       </header>
@@ -136,7 +157,14 @@ export function SeasonsLegacyPanel(props: {
             wear: percent(modifiers.turfWearMultiplier),
           })}</div>
         </section>
-        {careEvidence.length > 0 && <section style={card} data-testid="surface-care-operations">
+        {careEvidence.length > 0 && <section
+          style={card}
+          data-testid="surface-care-operations"
+          {...contextAttributes(
+            "condition-report",
+            careSummary.repairRequiredZones > 0 ? "warning" : "neutral",
+          )}
+        >
           <h3 style={{ margin: "0 0 7px" }}>{translateCurrent("season.surfaceCare.title")}</h3>
           <div style={{ fontSize: 12, marginBottom: 7 }}>
             {translateCurrent("season.surfaceCare.summary", {
@@ -275,7 +303,11 @@ export function SeasonsLegacyPanel(props: {
       </div>}
 
       {tab === "legacy" && <div style={{ display: "grid", gap: 10 }}>
-        {state.yearbooks.length === 0 && <section style={card}>{translateCurrent("season.legacy.empty")}</section>}
+        {state.yearbooks.length === 0 && <section
+          style={card}
+          data-testid="yearbook-empty-state"
+          {...contextAttributes("empty-state")}
+        >{translateCurrent("season.legacy.empty")}</section>}
         {[...state.yearbooks].reverse().map((book) => <section key={book.id} data-testid={`yearbook-${book.year}`} style={card}>
           <h3 style={{ margin: 0 }}>{translateCurrent("season.yearbook.title", { year: book.year })}</h3>
           <div>{CHARTER_DEFINITIONS[book.charter].name} · {formatCurrency(book.cash)} · {Math.round(book.reputation)} {translateCurrent("season.yearbook.reputation")}</div>
@@ -285,7 +317,12 @@ export function SeasonsLegacyPanel(props: {
         </section>)}
         <section style={card}>
           <h3 style={{ margin: "0 0 7px" }}>{translateCurrent("season.timeline.title")}</h3>
-          {state.timeline.length === 0 ? <div>{translateCurrent("season.timeline.empty")}</div> : <ol>{[...state.timeline].reverse().slice(0, 30).map((entry) => <li key={entry.id}><strong>{entry.title}</strong><br /><small>{entry.detail}</small></li>)}</ol>}
+          {state.timeline.length === 0
+            ? <div
+              data-testid="timeline-empty-state"
+              {...contextAttributes("empty-state")}
+            >{translateCurrent("season.timeline.empty")}</div>
+            : <ol>{[...state.timeline].reverse().slice(0, 30).map((entry) => <li key={entry.id}><strong>{entry.title}</strong><br /><small>{entry.detail}</small></li>)}</ol>}
         </section>
       </div>}
     </aside>

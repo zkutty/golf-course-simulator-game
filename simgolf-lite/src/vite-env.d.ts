@@ -51,9 +51,22 @@ interface Window {
       cash: number;
       terrainVersion: number;
       economyVersion: number;
+      loadingContext: import("./ui/loadingBiomeContext").LoadingBiomeContext | null;
       terrainCounts: Partial<Record<import("./game/models/types").Terrain, number>>;
       courseHash: string;
     };
+    seedLoadingSaveFixture(options: {
+      id: string;
+      theme: import("./game/models/types").LandTheme;
+      week: number;
+      dayIndex: number;
+      omitManifestTheme?: boolean;
+      deletePayload?: boolean;
+    }): Promise<{
+      id: string;
+      context: import("./ui/loadingBiomeContext").LoadingBiomeContext;
+    }>;
+    returnToTitle(): void;
     terrainSurfaceState(): {
       width: number;
       height: number;

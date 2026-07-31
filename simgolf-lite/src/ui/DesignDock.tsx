@@ -39,6 +39,10 @@ import {
   isTerrainAtlasFrame,
 } from "./designCatalog";
 import "./designDock.css";
+import {
+  biomeContextAttributes,
+  type BiomeUiTheme,
+} from "./biomeUiTheme";
 
 interface DesignDockProps {
   theme: LandTheme;
@@ -61,6 +65,7 @@ interface DesignDockProps {
   decorationSpan: number;
   onDecorationSpan: (span: number) => void;
   onOpenGolfopedia: (entry: string) => void;
+  biomeContext?: BiomeUiTheme;
 }
 
 const CATEGORY_LABEL_KEYS: Record<DesignCategory, MessageKey> = {
@@ -412,6 +417,9 @@ export function DesignDock(props: DesignDockProps) {
       data-testid="design-dock"
       data-category={category}
       data-tutorial-target="terrain-palette"
+      {...(props.biomeContext
+        ? biomeContextAttributes(props.biomeContext, "design-dock")
+        : {})}
     >
       <div className="cc-design-dock__shell">
         <div className="cc-design-toolbar" aria-label={t("designDock.toolbarAria")}>

@@ -2,8 +2,12 @@ import type { Course, WeekResult, World } from "../game/models/types";
 import { buildM49CourseReport } from "../game/m49/report";
 import { formatCurrency, formatNumber } from "../i18n/format";
 import { translateCurrent } from "../i18n/core";
+import {
+  biomeContextAttributes,
+  type BiomeUiTheme,
+} from "./biomeUiTheme";
 
-export function WeekCloseReport(props: { week: number; result: WeekResult; resumeSpeed: string; onContinue: () => void; course?: Course; world?: World }) {
+export function WeekCloseReport(props: { week: number; result: WeekResult; resumeSpeed: string; onContinue: () => void; course?: Course; world?: World; biomeContext?: BiomeUiTheme }) {
   const { result } = props;
   const management = props.course && props.world
     ? buildM49CourseReport({ course: props.course, world: props.world, result, generatedAtWeek: props.week })
@@ -31,7 +35,18 @@ export function WeekCloseReport(props: { week: number; result: WeekResult; resum
   ];
   return (
     <div role="dialog" aria-modal="true" aria-labelledby="week-close-title" data-testid="week-close-report" data-resume-speed={props.resumeSpeed} style={{ position: "fixed", inset: 0, zIndex: 99960, display: "grid", placeItems: "center", padding: 20, background: "rgba(16,24,18,.72)" }}>
-      <section data-tutorial-target="weekly-report" className="cc-tycoon-panel" style={{ width: "min(440px, 94vw)", padding: 22, border: "3px solid #8b652e", boxShadow: "0 18px 55px rgba(0,0,0,.45)" }}>
+      <section
+        data-tutorial-target="weekly-report"
+        className="cc-tycoon-panel"
+        {...(props.biomeContext
+          ? biomeContextAttributes(
+            props.biomeContext,
+            "upkeep-report",
+            result.profit < 0 ? "warning" : "neutral",
+          )
+          : {})}
+        style={{ width: "min(440px, 94vw)", padding: 22, border: "3px solid #8b652e", boxShadow: "0 18px 55px rgba(0,0,0,.45)" }}
+      >
         <div style={{ textTransform: "uppercase", letterSpacing: ".12em", fontSize: 11, color: "#75613e", fontWeight: 900 }}>{translateCurrent("weekClose.eyebrow", { week: props.week })}</div>
         <h2 id="week-close-title" style={{ margin: "4px 0 16px", color: "#344338" }}>{translateCurrent("weekClose.title")}</h2>
         <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "9px 18px", marginBottom: 16 }}>

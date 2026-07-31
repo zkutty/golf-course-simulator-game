@@ -28,6 +28,10 @@ import { translateCurrent } from "../i18n/core";
 import { HoleMinimap } from "./HoleMinimap";
 import { concessionMinReputation, isConcessionUnlocked, reputationTier } from "../game/progression/progression";
 import { courseVibeLabel } from "./courseVibe";
+import {
+  biomeContextAttributes,
+  type BiomeUiTheme,
+} from "./biomeUiTheme";
 
 type Tab = "Editor" | "Metrics" | "Results" | "Upgrades";
 
@@ -101,6 +105,7 @@ export function HUD(props: {
   onOpenGolfopedia: (entry?: string) => void;
   onStartTutorial: () => void;
   tutorialTarget?: TutorialTarget;
+  biomeContext?: BiomeUiTheme;
 }) {
   const {
     course,
@@ -263,7 +268,12 @@ export function HUD(props: {
         backgroundSize: viewMode === "COZY" ? "320px 320px" : undefined,
       }}
     >
-      <div style={{ padding: 12, borderBottom: "1px solid rgba(0,0,0,0.06)", background: "rgba(255,255,255,0.22)" }}>
+      <div
+        {...(props.biomeContext
+          ? biomeContextAttributes(props.biomeContext, "course-header")
+          : {})}
+        style={{ padding: 12, borderBottom: "1px solid rgba(0,0,0,0.06)", background: "rgba(255,255,255,0.22)" }}
+      >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <LogoCourseCraft height={44} />

@@ -15,7 +15,14 @@ import {
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, ParSetting, PinRotation, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool, WeekResult, World } from "./game/models/types";
 import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
-import { autosave, loadSlot, mostRecentSlot, saveToSlot } from "./utils/saveStore";
+import {
+  __deleteSlotPayloadForTests,
+  __omitSlotThemeForTests,
+  autosave,
+  loadSlot,
+  mostRecentSlot,
+  saveToSlot,
+} from "./utils/saveStore";
 import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeElevationChangeCost, computeTerrainChangeCost } from "./game/models/terrainEconomics";
 import { previewTerrainStroke, type TerrainStrokePreview } from "./game/models/terrainStroke";
@@ -55,7 +62,16 @@ import { createScenarioGame, getScenario, SCENARIOS } from "./game/scenarios/sce
 import type { ScenarioDefinition } from "./game/scenarios/types";
 import { recordCampaignChoice, recordScenarioAttempt, recordScenarioCompleted } from "./utils/careerStore";
 import { NewGameWizard } from "./ui/NewGameWizard";
-import { biomeUiStyle, biomeUiTheme } from "./ui/biomeUiTheme";
+import {
+  biomeContextAttributes,
+  biomeUiStyle,
+  biomeUiTheme,
+} from "./ui/biomeUiTheme";
+import {
+  neutralLoadingBiomeContext,
+  savedLoadingBiomeContext,
+  type LoadingBiomeContext,
+} from "./ui/loadingBiomeContext";
 import { generateCourseName } from "./utils/courseNames";
 import { applyAction } from "./core/reducer";
 import type { Action } from "./core/actions";
@@ -328,6 +344,7 @@ export default function App() {
   const [flow, flowDispatch] = useReducer(reduceScreenFlow, INITIAL_SCREEN_FLOW);
   const [showVision, setShowVision] = useState(() => new URLSearchParams(window.location.search).get("view") === "vision");
   const [appProfile, setAppProfile] = useState<AppProfile>(() => loadAppProfile());
+  const [pendingLoadingContext, setPendingLoadingContext] = useState<LoadingBiomeContext | null>(null);
   const screen = flow.base === "title" ? "menu" : flow.base === "setup-wizard" ? "setup" : flow.base === "in-game" ? "game" : "loading";
   const audioSurface = audioSurfaceFor({ screen, showVision });
   const changeSequenceRef = useRef(0);
@@ -341,6 +358,12 @@ export default function App() {
     setDirty(false);
   }, []);
   const [gameState, setGameState] = useState<GameState>(DEFAULT_STATE);
+
+  useEffect(() => {
+    if (flow.base !== "loading" && pendingLoadingContext !== null) {
+      setPendingLoadingContext(null);
+    }
+  }, [flow.base, pendingLoadingContext]);
 
   useEffect(() => {
     const syncVisionRoute = () => setShowVision(new URLSearchParams(window.location.search).get("view") === "vision");
@@ -1884,6 +1907,7 @@ export default function App() {
     }
     if (isM27Fixture && !isPerfMeasurement) setShowCourseManager(true);
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
+    setPendingLoadingContext(null);
     flowDispatch({ type: "ENTER_GAME" });
     live.setSpeed((isPerfFixture || isM27Fixture) && !isPerfMeasurement ? "4x" : "paused");
   }, [dispatch, live, t]);
@@ -1927,6 +1951,7 @@ export default function App() {
   const quitToTitle = useCallback(() => {
     if (dirty && !window.confirm(t("quit.confirm"))) return;
     live.setSpeed("paused");
+    setPendingLoadingContext(null);
     flowDispatch({ type: "BACK_TO_TITLE" });
   }, [dirty, live, t]);
 
@@ -2485,6 +2510,7 @@ export default function App() {
 
   // Career (ZKU-164): scenarios build their run from the authored definition.
   function startScenario(scenario: ScenarioDefinition) {
+    setPendingLoadingContext(neutralLoadingBiomeContext(scenario.theme));
     flowDispatch({ type: "BEGIN_LOADING", label: t("scenario.preparing", { name: t(scenario.nameKey) }) });
     window.setTimeout(() => {
       recordScenarioAttempt(scenario.id);
@@ -2492,6 +2518,7 @@ export default function App() {
       live.restoreSnapshot(undefined);
       startRun(newCourse, newWorld);
       live.setSpeed(appProfile.gameplay.defaultGameSpeed);
+      setPendingLoadingContext(null);
       flowDispatch({ type: "ENTER_GAME" });
     }, 0);
   }
@@ -2950,12 +2977,62 @@ export default function App() {
           cash: current.world.cash,
           terrainVersion: current.terrainVersion,
           economyVersion: current.economyVersion,
+          loadingContext: pendingLoadingContext,
           terrainCounts: current.course.tiles.reduce((counts, terrain) => ({
             ...counts,
             [terrain]: (counts[terrain] ?? 0) + 1,
           }), {} as Partial<Record<Terrain, number>>),
           courseHash: hashGameState({ course: current.course, world: current.world, live: liveSnapshot }),
         };
+      },
+      seedLoadingSaveFixture: async (options) => {
+        const theme = isLandTheme(options.theme) ? options.theme : BIOME_KEYS[0];
+        const week = Math.max(1, Math.floor(options.week));
+        const dayIndex = Math.max(0, Math.min(6, Math.floor(options.dayIndex)));
+        const run = createNewGame({
+          mode: "sandbox",
+          courseName: `ZK-626 ${theme} loading save`,
+          seed: 626_000 + week * 10 + dayIndex,
+          theme,
+          difficulty: "normal",
+        });
+        const saveWorld = {
+          ...run.world,
+          week,
+          seasonal: createSeasonalState({
+            runSeed: run.world.runSeed,
+            theme,
+            week,
+            day: dayIndex,
+          }),
+        };
+        const payload: SavePayload = {
+          course: run.course,
+          world: saveWorld,
+          history: [],
+          live: snapshotLiveSimulation({
+            state: createLiveState(run.course, saveWorld, dayIndex),
+            pendingCash: 0,
+            speed: "paused",
+            selectedGolferId: null,
+          }),
+          records: emptyCourseRecords(run.course.holes.length),
+          tutorial: null,
+        };
+        const meta = await saveToSlot(
+          options.id,
+          "manual",
+          `ZK-626 ${options.id}`,
+          payload,
+        );
+        if (options.omitManifestTheme) await __omitSlotThemeForTests(meta.id);
+        if (options.deletePayload) await __deleteSlotPayloadForTests(meta.id);
+        return { id: meta.id, context: savedLoadingBiomeContext(payload) };
+      },
+      returnToTitle: () => {
+        live.setSpeed("paused");
+        setPendingLoadingContext(null);
+        flowDispatch({ type: "BACK_TO_TITLE" });
       },
       terrainSurfaceState: () => {
         const current = gameStateRef.current.course;
@@ -3159,8 +3236,10 @@ export default function App() {
         setPrevOutcome(loaded.world.objectives?.outcome ?? "OPEN");
         setShowVictory(false);
         scenarioRecordedRef.current = loaded.world.campaign?.completed ?? loaded.world.objectives?.outcome === "WON";
+        setPendingLoadingContext(null);
         flowDispatch({ type: "BACK_TO_TITLE" });
         flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
+        setPendingLoadingContext(null);
         flowDispatch({ type: "ENTER_GAME" });
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
         return {
@@ -3366,7 +3445,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, pendingWeekReport, screen, setWorld, t, tutorialProgress]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, live, pendingLoadingContext, pendingWeekReport, screen, setWorld, t, tutorialProgress]);
 
   function newGameFromMenu() {
     void audio.unlock();
@@ -3376,10 +3455,12 @@ export default function App() {
   function startNewGame(setup: GameSetup) {
     void audio.unlock();
     void audio.playSfx("confirm");
+    setPendingLoadingContext(neutralLoadingBiomeContext(setup.theme));
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.growCourse") });
     window.setTimeout(() => {
       restartRun(setup);
       live.setSpeed(appProfile.gameplay.defaultGameSpeed);
+      setPendingLoadingContext(null);
       flowDispatch({ type: "ENTER_GAME" });
     }, 0);
   }
@@ -3393,15 +3474,26 @@ export default function App() {
   async function continueFromMenu() {
     void audio.unlock();
     const recent = await mostRecentSlot();
-    if (!recent) return;
+    if (!recent) {
+      setPendingLoadingContext(null);
+      return;
+    }
+    setPendingLoadingContext(neutralLoadingBiomeContext(recent.theme));
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreLatest") });
     const loaded = await loadSlot(recent.id);
     if (!loaded) {
+      setPendingLoadingContext(null);
       flowDispatch({ type: "BACK_TO_TITLE" });
       return;
     }
-    if (applyLoadedGame(loaded)) flowDispatch({ type: "ENTER_GAME" });
-    else flowDispatch({ type: "BACK_TO_TITLE" });
+    setPendingLoadingContext(savedLoadingBiomeContext(loaded));
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        const applied = applyLoadedGame(loaded);
+        setPendingLoadingContext(null);
+        flowDispatch({ type: applied ? "ENTER_GAME" : "BACK_TO_TITLE" });
+      }, 0);
+    });
   }
 
   function takeBridgeLoan() {
@@ -4487,13 +4579,16 @@ export default function App() {
       }}
       onSaved={() => markClean(payloadSequenceRef.current)}
       onLoaded={(payload) => {
+        setPendingLoadingContext(savedLoadingBiomeContext(payload));
         flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
-        if (applyLoadedGame(payload)) {
-          flowDispatch({ type: "ENTER_GAME" });
-          setPaintError(t("save.loaded"));
-        } else {
-          flowDispatch({ type: "BACK_TO_TITLE" });
-        }
+        window.requestAnimationFrame(() => {
+          window.setTimeout(() => {
+            const applied = applyLoadedGame(payload);
+            setPendingLoadingContext(null);
+            flowDispatch({ type: applied ? "ENTER_GAME" : "BACK_TO_TITLE" });
+            if (applied) setPaintError(t("save.loaded"));
+          }, 0);
+        });
         window.setTimeout(() => setPaintError(null), 2000);
       }}
     />
@@ -4541,12 +4636,21 @@ export default function App() {
 
   // Context is intentionally computed at the edge of the UI only. It never
   // enters simulation/save state and cannot alter shell commands or focus.
-  const contextualUiTheme = biomeUiTheme(course.theme, {
-    season: seasonalPresentation.climate.calendar.season,
-    weather: seasonalPresentation.weather.kind,
-    colorVision: appProfile.accessibility.colorVision,
-    reducedMotion: appProfile.accessibility.reducedMotion,
-  });
+  const contextualUiTheme = biomeUiTheme(
+    screen === "loading" && pendingLoadingContext
+      ? pendingLoadingContext.theme
+      : course.theme,
+    {
+      season: screen === "loading" && pendingLoadingContext
+        ? pendingLoadingContext.season
+        : seasonalPresentation.climate.calendar.season,
+      weather: screen === "loading" && pendingLoadingContext
+        ? pendingLoadingContext.weather
+        : seasonalPresentation.weather.kind,
+      colorVision: appProfile.accessibility.colorVision,
+      reducedMotion: appProfile.accessibility.reducedMotion,
+    },
+  );
   const designCatalog = buildDesignCatalog({
     theme: course.theme,
     season: seasonalPresentation.climate.calendar.season,
@@ -4586,7 +4690,10 @@ export default function App() {
     return (
       <>
         <NewGameWizard
-          onCancel={() => flowDispatch({ type: "BACK_TO_TITLE" })}
+          onCancel={() => {
+            setPendingLoadingContext(null);
+            flowDispatch({ type: "BACK_TO_TITLE" });
+          }}
           onStart={startNewGame}
           onStartScenario={startScenario}
         />
@@ -4595,7 +4702,7 @@ export default function App() {
   }
 
   if (screen === "loading") {
-    return <LoadingCard label={flow.loadingLabel ?? "Loading CourseCraft…"} />;
+    return <LoadingCard label={flow.loadingLabel ?? "Loading CourseCraft…"} context={contextualUiTheme} />;
   }
 
   if (screen === "menu" && showVision) {
@@ -4638,7 +4745,9 @@ export default function App() {
     <div
       className={`cc-app${photoMode ? " cc-photo-mode" : ""}`}
       data-biome={contextualUiTheme.biome}
+      data-biome-character={contextualUiTheme.character}
       data-biome-motif={contextualUiTheme.motif}
+      data-biome-illustration={contextualUiTheme.illustration}
       data-biome-fallback={contextualUiTheme.fallback || undefined}
       data-season={contextualUiTheme.season}
       data-weather={contextualUiTheme.weather}
@@ -4649,7 +4758,7 @@ export default function App() {
         <GameBackground />
         {saveLoadModal}
       {showRetention && <RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} />}
-      {!photoMode && <AchievementToasts queue={achievementQueue} onDismiss={() => setAchievementQueue((queue) => queue.slice(1))} />}
+      {!photoMode && <AchievementToasts queue={achievementQueue} biomeContext={contextualUiTheme} onDismiss={() => setAchievementQueue((queue) => queue.slice(1))} />}
       {photoMode && <PhotoModeOverlay showGolfers={photoGolfers} showMarkers={photoMarkers} onToggleGolfers={() => setPhotoGolfers((value) => !value)} onToggleMarkers={() => setPhotoMarkers((value) => !value)} onCapture={() => void capturePhoto()} onCard={() => void captureCard()} onShare={() => void shareCard()} onExit={exitPhotoMode} />}
       {pwa.updateAvailable && <PwaUpdateToast onReload={() => { const current = gameStateRef.current; void autosave({ course: current.course, world: current.world, history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress }).finally(pwa.applyUpdate); }} />}
       {flow.modal === "save-load" && pwa.storagePersistent === false && <div role="status" className="cc-storage-warning">{t("pwa.storageWarning")}</div>}
@@ -4686,6 +4795,7 @@ export default function App() {
       {!tutorialProgress && !showTutorialOffer && !flow.modal && !flow.paused && !showVictory && !showBridgePrompt && advisorMessage && (
         <AdvisorCard
           message={advisorMessage}
+          biomeContext={contextualUiTheme}
           onDismiss={dismissAdvisor}
           onShowHole={(holeIndex) => {
             const holeId = activeOperatingCourse.holes[holeIndex]?.id;
@@ -4711,7 +4821,10 @@ export default function App() {
             if (scenario) startScenario(scenario);
             else restartRun(currentRunSetup(seed), world.objectives?.goals ?? null);
           }}
-          onNewGame={() => flowDispatch({ type: "BACK_TO_TITLE" })}
+          onNewGame={() => {
+            setPendingLoadingContext(null);
+            flowDispatch({ type: "BACK_TO_TITLE" });
+          }}
           onLoad={() => { setSaveModalCanSave(false); flowDispatch({ type: "OPEN_MODAL", modal: "save-load" }); }}
         />
       )}
@@ -4745,7 +4858,10 @@ export default function App() {
           onDecline={() => setShowBridgePrompt(false)}
         />
       )}
-        <div className="cc-course-frame">
+        <div
+          className="cc-course-frame"
+          {...biomeContextAttributes(contextualUiTheme, "course-frame")}
+        >
           <div ref={canvasPaneRef} className="cc-course-pane" data-tutorial-target="course">
             <PixiStage
                 course={course}
@@ -4891,6 +5007,7 @@ export default function App() {
                     setGolfopediaEntry(entry);
                     flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" });
                   }}
+                  biomeContext={contextualUiTheme}
                 />
               )}
             {showContextualInspector && !tutorialProgress && (
@@ -4913,6 +5030,7 @@ export default function App() {
                 onSetViewMode={setViewMode}
                 onSetPacePreset={live.setPacePreset}
                 onClose={() => setShowContextualInspector(false)}
+                biomeContext={contextualUiTheme}
               />
             )}
             {contentTestSnapshotRef.current && !tutorialProgress && (
@@ -5010,6 +5128,7 @@ export default function App() {
                 absoluteDay,
               })}
               onClose={() => setShowSeasonsLegacy(false)}
+              biomeContext={contextualUiTheme}
             />}
             {showCampaign && world.campaign && !tutorialProgress && <CampaignPanel
               course={course}
@@ -5320,12 +5439,13 @@ export default function App() {
         }}
         onStartTutorial={() => beginTutorial()}
         tutorialTarget={tutorialProgress ? TUTORIAL_STEPS[tutorialProgress.stepIndex].target : undefined}
+        biomeContext={contextualUiTheme}
       />
           )}
         </div>
         </div>
         <NewsTicker visible={!tutorialProgress && !photoMode && appProfile.gameplay.tickerVisible} onJump={jumpToEvent} onHide={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: false } })} />
-        {pendingWeekReport && <WeekCloseReport week={pendingWeekReport.week} result={pendingWeekReport.result} course={course} world={world} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={() => {
+        {pendingWeekReport && <WeekCloseReport week={pendingWeekReport.week} result={pendingWeekReport.result} course={course} world={world} biomeContext={contextualUiTheme} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={() => {
           const resumeSpeed = pendingWeekReport.resumeSpeed;
           setPendingWeekReport(null);
           live.setSpeed(resumeSpeed);

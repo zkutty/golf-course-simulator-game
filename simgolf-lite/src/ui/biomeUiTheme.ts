@@ -11,7 +11,9 @@ import type { WeatherKind } from "../game/seasons/types";
  * low-emphasis surfaces, a descriptive motif, and a weather/season cue.
  */
 export const BIOME_UI_ALLOWED_SURFACES = [
-  "course-frame", "contextual-sidebar-edge", "new-game-selection", "context-badge",
+  "course-frame", "course-header", "contextual-inspector", "design-dock",
+  "new-game-preview", "loading", "seasons-legacy", "condition-report",
+  "upkeep-report", "empty-state", "notification", "supporting-illustration",
 ] as const;
 
 export const BIOME_UI_FORBIDDEN_SURFACES = [
@@ -20,6 +22,38 @@ export const BIOME_UI_FORBIDDEN_SURFACES = [
 ] as const;
 
 export type BiomeUiMotif = "leaf" | "wind" | "sun";
+export type BiomeUiCharacter = "neutral" | "coastal" | "mineral";
+export type BiomeUiIllustration = "canopy" | "wind-lines" | "irrigation-rings";
+export type BiomeContextSurface = (typeof BIOME_UI_ALLOWED_SURFACES)[number];
+export type BiomeStatusTone =
+  | "neutral"
+  | "positive"
+  | "advisory"
+  | "warning"
+  | "critical";
+
+export const BIOME_CONTEXT_PROFILES = {
+  parkland: {
+    character: "neutral",
+    motif: "leaf",
+    illustration: "canopy",
+  },
+  links: {
+    character: "coastal",
+    motif: "wind",
+    illustration: "wind-lines",
+  },
+  desert: {
+    character: "mineral",
+    motif: "sun",
+    illustration: "irrigation-rings",
+  },
+} as const satisfies Record<LandTheme, {
+  character: BiomeUiCharacter;
+  motif: BiomeUiMotif;
+  illustration: BiomeUiIllustration;
+}>;
+
 export type BiomeUiTheme = Readonly<{
   biome: LandTheme;
   /** True when an absent/stale value was reduced to the registry fallback. */
@@ -29,6 +63,10 @@ export type BiomeUiTheme = Readonly<{
   surface: string;
   edge: string;
   motif: BiomeUiMotif;
+  character: BiomeUiCharacter;
+  illustration: BiomeUiIllustration;
+  seasonSurface: string;
+  weatherEdge: string;
   season: ClimateCalendarSeason;
   weather: WeatherKind;
   reducedMotion: boolean;
@@ -111,10 +149,7 @@ function accessibleAccent(source: string, mode: ColorVisionMode): string {
 }
 
 function motifFor(theme: LandTheme): BiomeUiMotif {
-  const regime = getBiomeDefinition(theme).climate.phenology.regime;
-  if (regime === "coastal-four-season") return "wind";
-  if (regime === "arid-heat-drought") return "sun";
-  return "leaf";
+  return BIOME_CONTEXT_PROFILES[theme].motif;
 }
 
 function accentSource(theme: LandTheme): string {
@@ -145,6 +180,13 @@ export function biomeUiTheme(theme: unknown, options: BiomeUiThemeOptions = {}):
     : weather === "heat" || weather === "drought"
       ? "#8a5800"
       : accent;
+  const seasonMix = {
+    spring: 0.92,
+    summer: 0.88,
+    autumn: 0.9,
+    winter: 0.94,
+  } satisfies Record<ClimateCalendarSeason, number>;
+  const profile = BIOME_CONTEXT_PROFILES[resolved.theme];
   return Object.freeze({
     biome: resolved.theme,
     fallback: resolved.fallback,
@@ -152,7 +194,11 @@ export function biomeUiTheme(theme: unknown, options: BiomeUiThemeOptions = {}):
     accentOnLight: contrastSafeAccent(accent),
     surface: mix(accent, BRAND_PAPER, 0.9),
     edge: contrastSafeAccent(weatherEdge),
-    motif: motifFor(resolved.theme),
+    motif: profile.motif,
+    character: profile.character,
+    illustration: profile.illustration,
+    seasonSurface: mix(accent, BRAND_PAPER, seasonMix[season]),
+    weatherEdge: contrastSafeAccent(weatherEdge),
     season,
     weather,
     reducedMotion: options.reducedMotion === true,
@@ -167,7 +213,26 @@ export function biomeUiStyle(theme: BiomeUiTheme): Record<`--biome-${string}`, s
     "--biome-accent": theme.accent,
     "--biome-accent-on-light": theme.accentOnLight,
     "--biome-surface": theme.surface,
+    "--biome-season-surface": theme.seasonSurface,
     "--biome-edge": theme.edge,
+    "--biome-weather-edge": theme.weatherEdge,
     "--biome-motion-duration": theme.reducedMotion ? "0ms" : "180ms",
   };
+}
+
+export function biomeContextAttributes(
+  theme: BiomeUiTheme,
+  surface: BiomeContextSurface,
+  status: BiomeStatusTone = "neutral",
+) {
+  return {
+    "data-biome-context": surface,
+    "data-biome": theme.biome,
+    "data-biome-character": theme.character,
+    "data-biome-motif": theme.motif,
+    "data-biome-illustration": theme.illustration,
+    "data-season": theme.season,
+    "data-weather": theme.weather,
+    "data-status-tone": status,
+  } as const;
 }

@@ -122,6 +122,77 @@
   background: var(--ui-warning-border);
 }
 
+/* ZK-626: contextual biome identity. These tokens may mark contextual
+ * containers, but never permanent navigation, controls, typography, icons,
+ * command placement, focus rings, or semantic status colours. */
+[data-biome-context] {
+  --biome-context-edge: var(--biome-weather-edge, var(--biome-edge, #586858));
+  --biome-context-surface: var(--biome-season-surface, var(--biome-surface, transparent));
+  --biome-context-pattern: none;
+  --biome-context-pattern-size: auto;
+  outline: 2px solid var(--biome-context-edge);
+  outline-offset: -2px;
+  background-color: var(--biome-context-surface) !important;
+  background-image: var(--biome-context-pattern) !important;
+  background-size: var(--biome-context-pattern-size) !important;
+  background-position: center !important;
+  transition: outline-color var(--biome-motion-duration, 180ms) ease;
+}
+
+[data-biome-context][data-biome-illustration="canopy"] {
+  --biome-context-pattern:
+    radial-gradient(circle at 25% 35%, rgba(24, 37, 28, .09) 0 3px, transparent 3.5px),
+    radial-gradient(circle at 75% 65%, rgba(24, 37, 28, .06) 0 5px, transparent 5.5px);
+  --biome-context-pattern-size: 34px 34px;
+}
+
+[data-biome-context][data-biome-illustration="wind-lines"] {
+  --biome-context-pattern:
+    repeating-linear-gradient(165deg, transparent 0 12px, rgba(24, 37, 28, .08) 12px 14px, transparent 14px 24px);
+  --biome-context-pattern-size: 48px 32px;
+}
+
+[data-biome-context][data-biome-illustration="irrigation-rings"] {
+  --biome-context-pattern:
+    repeating-radial-gradient(circle at center, transparent 0 7px, rgba(24, 37, 28, .08) 7px 9px, transparent 9px 15px);
+  --biome-context-pattern-size: 44px 44px;
+}
+
+[data-biome-context][data-status-tone="positive"] {
+  --biome-context-edge: var(--ui-positive-border);
+  --biome-context-surface: var(--ui-positive-surface);
+}
+
+[data-biome-context][data-status-tone="advisory"] {
+  --biome-context-edge: var(--ui-advisory-border);
+  --biome-context-surface: var(--ui-advisory-surface);
+}
+
+[data-biome-context][data-status-tone="warning"] {
+  --biome-context-edge: var(--ui-warning-border);
+  --biome-context-surface: var(--ui-warning-surface);
+}
+
+[data-biome-context][data-status-tone="critical"] {
+  --biome-context-edge: var(--ui-danger-border);
+  --biome-context-surface: var(--ui-danger-surface);
+}
+
+[data-biome-context="loading"] [data-biome-context-card],
+[data-biome-context="empty-state"] {
+  box-shadow: inset 3px 0 0 var(--biome-context-edge);
+}
+
+[data-biome-context="supporting-illustration"] {
+  display: inline-block;
+  width: 42px;
+  height: 22px;
+  margin-top: 7px;
+  border: 1px solid var(--biome-context-edge);
+  border-radius: 999px;
+  color: var(--biome-accent-on-light);
+}
+
 .cc-contextual-inspector button {
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
