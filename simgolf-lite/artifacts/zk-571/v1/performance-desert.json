@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "theme": "desert",
+  "fixture": "perfFixture",
+  "coldStartupMs": 1084,
+  "fixtureLoadMs": 4005,
+  "renderer": {
+    "fps": 10.042875352466298,
+    "meanMs": 99.57307692307693,
+    "p95Ms": 100,
+    "maxMs": 100,
+    "workMs": 0.4480769267449012,
+    "sections": {
+      "hover+flags": 0.10769230280167018,
+      "water+sway": 0.14166667446112022,
+      "ambient": 0.035897438342754655,
+      "golfers+emotes": 0.16282051113935617
+    },
+    "golfers": 100,
+    "bubbles": 0,
+    "ripples": 0,
+    "impacts": 0,
+    "ambientObjects": 6,
+    "chunksVisible": 14,
+    "chunksTotal": 35,
+    "objects": 1048
+  },
+  "effective": {
+    "theme": "desert",
+    "fixture": "perfFixture",
+    "measureSeconds": 20,
+    "warmupSeconds": 8,
+    "frameAssertion": false,
+    "budgets": {
+      "rendererWorkMilliseconds": 8,
+      "coldStartupMilliseconds": 5000,
+      "frameMilliseconds": 33
+    }
+  },
+  "gateValidation": {
+    "coldStartupWithinBudget": true,
+    "rendererWorkWithinBudget": true,
+    "frameWithinBudget": null,
+    "passed": true
+  }
+}

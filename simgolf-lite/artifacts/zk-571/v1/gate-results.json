@@ -1,0 +1,270 @@
+{
+  "version": 1,
+  "certificationId": "m53-zk571-v1",
+  "automatedPassed": true,
+  "completeRun": true,
+  "releaseDisposition": "automated-evidence-passed-final-gates-deferred",
+  "coreDeterminismHash": "b3647ff8",
+  "gates": [
+    {
+      "id": "certification-runner-contract",
+      "title": "Certification runner hostile-environment and evidence-schema contract",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 120000,
+      "covers": [
+        "pinned performance environment",
+        "performance evidence schema",
+        "hostile inherited environment"
+      ],
+      "command": "node --test scripts/zk571-certification-contract.test.mjs"
+    },
+    {
+      "id": "deterministic-core-report",
+      "title": "Deterministic M53 report and risk register",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 120000,
+      "covers": [
+        "living seasons",
+        "all weather kinds",
+        "ZK-646 economics",
+        "adaptive quality",
+        "risk register"
+      ],
+      "command": "npm run test:cert:m53:core"
+    },
+    {
+      "id": "authoritative-focused-units",
+      "title": "Authoritative season/economy/care/save/direct-golf/live/performance units",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 600000,
+      "covers": [
+        "multi-year transitions",
+        "ZK-647 persistence/performance",
+        "historical/current saves",
+        "direct golf",
+        "live operations"
+      ],
+      "command": "npx vitest run src/game/testing/m53Certification.test.ts src/game/testing/m53SeasonalTerrainFixtures.test.ts src/game/seasons/seasons.test.ts src/game/models/biomeEconomics.test.ts src/game/conditions/surfaceCare.test.ts src/utils/save.test.ts src/game/testing/renderPerfFixture.test.ts src/game/testing/m50Certification.test.ts src/game/testing/m51Certification.test.ts --maxWorkers=2"
+    },
+    {
+      "id": "broad-unit-suite",
+      "title": "Complete unit and integration suite",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 900000,
+      "covers": [
+        "regression surface"
+      ],
+      "command": "npm test -- --maxWorkers=2"
+    },
+    {
+      "id": "deterministic-soak",
+      "title": "Repository deterministic soak",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 900000,
+      "covers": [
+        "long-horizon simulation",
+        "save/reload determinism"
+      ],
+      "command": "npm run test:soak"
+    },
+    {
+      "id": "production-build-payload",
+      "title": "Production build and authoritative payload audits",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 600000,
+      "covers": [
+        "bundle",
+        "payload",
+        "audio assets",
+        "service-worker assets",
+        "biome assets"
+      ],
+      "command": "npm run build"
+    },
+    {
+      "id": "audio-asset-unit-audit",
+      "title": "Audio provenance, codec, manifest, and fallback audit",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 120000,
+      "covers": [
+        "audio assets",
+        "fallback"
+      ],
+      "command": "npm run test:audio-audit"
+    },
+    {
+      "id": "browser-screenshot-matrix",
+      "title": "Browser/PWA-facing state, pixel, responsive, accessibility, dock, care, and audio matrix",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 1200000,
+      "covers": [
+        "ZK-648 dock",
+        "screenshot matrix",
+        "adaptive quality",
+        "surface care",
+        "audio",
+        "responsive",
+        "accessibility semantics"
+      ],
+      "command": "npx playwright test e2e/zk571-certification.e2e.ts e2e/zk567-seasonal-terrain.e2e.ts e2e/zk569-surface-care.e2e.ts e2e/zk570-audio.e2e.ts e2e/design-dock.e2e.ts",
+      "effectiveEnvironment": {
+        "isolatedCurrentSourceServer": true,
+        "ci": "1",
+        "reuseExistingServer": false,
+        "zk567BaseUrl": "",
+        "screenshotDirectory": "screenshots"
+      }
+    },
+    {
+      "id": "pwa-smoke",
+      "title": "Installable/offline PWA smoke",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 600000,
+      "covers": [
+        "PWA",
+        "offline shell"
+      ],
+      "command": "npm run test:pwa",
+      "effectiveEnvironment": {
+        "externalUrlAllowed": false,
+        "base": "/",
+        "port": 4175
+      }
+    },
+    {
+      "id": "desktop-unit",
+      "title": "Desktop integration unit suite",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 120000,
+      "covers": [
+        "desktop bridge",
+        "window/security behavior"
+      ],
+      "command": "npm run test:desktop"
+    },
+    {
+      "id": "performance-parkland",
+      "title": "Parkland authoritative performance smoke",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 180000,
+      "covers": [
+        "renderer work",
+        "cold startup",
+        "adaptive quality",
+        "parkland"
+      ],
+      "command": "npm run test:perf",
+      "evidenceFile": "performance-parkland.json",
+      "evidenceValidation": {
+        "ok": true,
+        "errors": []
+      }
+    },
+    {
+      "id": "performance-links",
+      "title": "Links authoritative performance smoke",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 180000,
+      "covers": [
+        "renderer work",
+        "cold startup",
+        "adaptive quality",
+        "links"
+      ],
+      "command": "npm run test:perf",
+      "evidenceFile": "performance-links.json",
+      "evidenceValidation": {
+        "ok": true,
+        "errors": []
+      }
+    },
+    {
+      "id": "performance-desert",
+      "title": "Desert authoritative performance smoke",
+      "execution": "executed",
+      "outcome": "pass",
+      "termination": "completed",
+      "timeoutMilliseconds": 180000,
+      "covers": [
+        "renderer work",
+        "cold startup",
+        "adaptive quality",
+        "desert"
+      ],
+      "command": "npm run test:perf",
+      "evidenceFile": "performance-desert.json",
+      "evidenceValidation": {
+        "ok": true,
+        "errors": []
+      }
+    },
+    {
+      "id": "linear-prerequisite-reconciliation",
+      "title": "Linear prerequisite and M53 milestone status reconciliation",
+      "execution": "deferred",
+      "outcome": "not-run",
+      "reason": "ZK-379 and supporting M53 issue/milestone statuses remain pending final human validation and Linear reconciliation; do not close ZK-571."
+    },
+    {
+      "id": "human-visual-matrix",
+      "title": "Human visual review of generated screenshot matrix",
+      "execution": "deferred",
+      "outcome": "not-run",
+      "reason": "Review the retained 12 fixed-camera, High-quality desktop captures (3 biomes × 4 seasons) plus the single narrow responsive sample; separately review all four rotations and Low/Medium/High adaptive-quality transitions interactively."
+    },
+    {
+      "id": "human-listening-matrix",
+      "title": "Human listening and mix-quality review",
+      "execution": "deferred",
+      "outcome": "not-run",
+      "reason": "No subjective listening is permitted in this machine-only pass."
+    },
+    {
+      "id": "physical-gpu-frame-pacing",
+      "title": "Physical GPU frame-pacing certification",
+      "execution": "deferred",
+      "outcome": "not-run",
+      "reason": "Headless software rendering reports raw frame spacing but does not assert it."
+    },
+    {
+      "id": "signed-distribution",
+      "title": "Signed provider-backed desktop/hosted distribution",
+      "execution": "not-applicable",
+      "outcome": "not-run",
+      "reason": "No signing, storefront, provider, or deployment target is in scope."
+    }
+  ],
+  "unresolvedRiskIds": [
+    "ZK571-R1",
+    "ZK571-R2",
+    "ZK571-R3",
+    "ZK571-R4",
+    "ZK571-R5",
+    "ZK571-R6",
+    "ZK571-R7"
+  ]
+}

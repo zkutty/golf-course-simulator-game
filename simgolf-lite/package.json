@@ -30,6 +30,8 @@
     "test:cert:m47": "vite build --ssr src/game/testing/m47CertificationCli.ts --outDir m47-cert-dist --emptyOutDir --minify false && node m47-cert-dist/m47CertificationCli.js",
     "test:cert:m48": "vitest run src/game/architecture/m48.test.ts",
     "test:cert:m49": "vite build --ssr src/game/testing/m49CertificationCli.ts --outDir m49-cert-dist --emptyOutDir --minify false && node m49-cert-dist/m49CertificationCli.js",
+    "test:cert:m53:core": "node scripts/m53-core-certify.mjs",
+    "release:certify:m53": "node scripts/zk571-certify.mjs",
     "test:balance": "vite build --ssr src/game/testing/releaseBalanceCli.ts --outDir balance-dist --emptyOutDir --minify false && node balance-dist/releaseBalanceCli.js",
     "tune": "vite build --ssr src/game/tuning/tuneCli.ts --outDir tune-dist --emptyOutDir --minify false && node tune-dist/tuneCli.js",
     "gen:sprites": "node scripts/gen-placeholder-sprites.mjs && node scripts/gen-terrain-materials.mjs && node scripts/gen-terrain-details.mjs && node scripts/process-biome-props.mjs && node scripts/gen-golfer-sprites.mjs",

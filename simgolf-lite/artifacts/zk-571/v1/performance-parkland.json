@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "theme": "parkland",
+  "fixture": "perfFixture",
+  "coldStartupMs": 1104,
+  "fixtureLoadMs": 3955,
+  "renderer": {
+    "fps": 10.053340334385625,
+    "meanMs": 99.46942675159237,
+    "p95Ms": 100,
+    "maxMs": 100,
+    "workMs": 0.4624203785209899,
+    "sections": {
+      "hover+flags": 0.10127388595775434,
+      "water+sway": 0.184713372758999,
+      "ambient": 0.022292993630573247,
+      "golfers+emotes": 0.1541401261736633
+    },
+    "golfers": 100,
+    "bubbles": 0,
+    "ripples": 0,
+    "impacts": 0,
+    "ambientObjects": 6,
+    "chunksVisible": 14,
+    "chunksTotal": 35,
+    "objects": 1048
+  },
+  "effective": {
+    "theme": "parkland",
+    "fixture": "perfFixture",
+    "measureSeconds": 20,
+    "warmupSeconds": 8,
+    "frameAssertion": false,
+    "budgets": {
+      "rendererWorkMilliseconds": 8,
+      "coldStartupMilliseconds": 5000,
+      "frameMilliseconds": 33
+    }
+  },
+  "gateValidation": {
+    "coldStartupWithinBudget": true,
+    "rendererWorkWithinBudget": true,
+    "frameWithinBudget": null,
+    "passed": true
+  }
+}

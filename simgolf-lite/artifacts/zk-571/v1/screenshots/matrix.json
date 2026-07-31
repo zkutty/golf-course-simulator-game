@@ -1,0 +1,264 @@
+{
+  "version": 1,
+  "certificationId": "m53-zk571-v1",
+  "inspection": "machine-only",
+  "subjectiveInspectionPerformed": false,
+  "retainedEvidence": "Twelve same-camera/high-quality biome × season captures and one responsive UI capture are retained for the deferred human pass.",
+  "ephemeralEvidence": "Playwright traces, retry screenshots, videos, and attachment copies remain ephemeral test output.",
+  "captures": [
+    {
+      "fixtureId": "parkland-spring-storm-r0-high",
+      "biome": "parkland",
+      "season": "spring",
+      "weather": "storm",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "parkland-spring-storm-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "bc6fea89",
+      "sha256": "8109218d2b063ff9c1221e1d00e3ed78c51734e64de0dd4451210089e7ed9a9c",
+      "bytes": 600629
+    },
+    {
+      "fixtureId": "parkland-summer-drought-r0-high",
+      "biome": "parkland",
+      "season": "summer",
+      "weather": "drought",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "parkland-summer-drought-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "91e51f70",
+      "sha256": "53abfd09a2db3f33143a2bde87568a9a0584bf94ad797b08b0f3a526903fe6fc",
+      "bytes": 591947
+    },
+    {
+      "fixtureId": "parkland-autumn-storm-r0-high",
+      "biome": "parkland",
+      "season": "autumn",
+      "weather": "storm",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "parkland-autumn-storm-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "b3ffffa5",
+      "sha256": "0d9107770d304ce20422231d271d3e1066169958853bc6f0cbb4f5ad57d046c7",
+      "bytes": 594379
+    },
+    {
+      "fixtureId": "parkland-winter-heavy_rain-r0-high",
+      "biome": "parkland",
+      "season": "winter",
+      "weather": "heavy_rain",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "parkland-winter-heavy_rain-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "547359c6",
+      "sha256": "61ea953d9d52c800c56025b4b87ea493280866399b5aaeba25e5406f6bfd466b",
+      "bytes": 593419
+    },
+    {
+      "fixtureId": "links-spring-storm-r0-high",
+      "biome": "links",
+      "season": "spring",
+      "weather": "storm",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "links-spring-storm-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "b223fd9f",
+      "sha256": "1383132a6f9720160de87242360bb37661cc365995ae91d8f679a87e59634124",
+      "bytes": 625770
+    },
+    {
+      "fixtureId": "links-summer-storm-r0-high",
+      "biome": "links",
+      "season": "summer",
+      "weather": "storm",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "links-summer-storm-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "b20d5afd",
+      "sha256": "72dc788f0ac950f746f1c6bc3cdd919d6d5d2b0ef172b59c75001eba45177ba3",
+      "bytes": 623789
+    },
+    {
+      "fixtureId": "links-autumn-storm-r0-high",
+      "biome": "links",
+      "season": "autumn",
+      "weather": "storm",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "links-autumn-storm-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "e039964b",
+      "sha256": "39b7e309003e7a0b7deb995ba9c557764a4a697101c8e6fbde4f9fde4b656c26",
+      "bytes": 623061
+    },
+    {
+      "fixtureId": "links-winter-frost-r0-high",
+      "biome": "links",
+      "season": "winter",
+      "weather": "frost",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "links-winter-frost-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "7de9faee",
+      "sha256": "f5d243907befc09ec1ef37ceb0faeddb70519874c156b5c0ffef3cb3b300de2d",
+      "bytes": 623215
+    },
+    {
+      "fixtureId": "desert-spring-storm-r0-high",
+      "biome": "desert",
+      "season": "spring",
+      "weather": "storm",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "desert-spring-storm-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "4a0bed23",
+      "sha256": "bf42b572a5267f71f1935283364e4ef465980aa0312ad77af0f0ff366525f6b7",
+      "bytes": 586552
+    },
+    {
+      "fixtureId": "desert-summer-drought-r0-high",
+      "biome": "desert",
+      "season": "summer",
+      "weather": "drought",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "desert-summer-drought-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "cb38f583",
+      "sha256": "27e8e69d50e3e45dfabd7fde08c1d2accc4f62f979850c770ff65b665bf66d2c",
+      "bytes": 579539
+    },
+    {
+      "fixtureId": "desert-autumn-storm-r0-high",
+      "biome": "desert",
+      "season": "autumn",
+      "weather": "storm",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "desert-autumn-storm-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "d02d6b44",
+      "sha256": "6588f5566433a5fbe0eca75500ce48d16dec6589f2c47d848654d0b8c19cf7ed",
+      "bytes": 579833
+    },
+    {
+      "fixtureId": "desert-winter-storm-r0-high",
+      "biome": "desert",
+      "season": "winter",
+      "weather": "storm",
+      "rotation": 0,
+      "quality": "high",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "filename": "desert-winter-storm-r0-high.png",
+      "width": 992,
+      "height": 846,
+      "populatedPixels": 839232,
+      "populatedRatio": 1,
+      "pixelHash": "f15d39cf",
+      "sha256": "b7c560ecddae673fea632086e54a546559b015e378d86809906162581789227c",
+      "bytes": 571848
+    }
+  ],
+  "responsiveCapture": {
+    "filename": "responsive-narrow.png",
+    "viewport": {
+      "width": 760,
+      "height": 900
+    },
+    "width": 760,
+    "height": 900,
+    "populatedPixels": 684000,
+    "populatedRatio": 1,
+    "pixelHash": "c183ed5e",
+    "sha256": "27c724e465136f4a61a3d456d72068c9954d3258dbcb6c73f726b998c3a7db06",
+    "bytes": 191894
+  }
+}

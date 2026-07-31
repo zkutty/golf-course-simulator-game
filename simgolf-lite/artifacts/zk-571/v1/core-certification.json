@@ -1,0 +1,638 @@
+{
+  "version": 1,
+  "certificationId": "m53-zk571-v1",
+  "checks": [
+    {
+      "id": "canonical-144-state-matrix",
+      "passed": true,
+      "detail": "The canonical matrix contains every biome × season × rotation × adaptive-quality state.",
+      "sources": [
+        "src/game/testing/m53SeasonalTerrainFixtures.ts",
+        "src/game/testing/m53SeasonalTerrainFixtures.test.ts"
+      ],
+      "observed": {
+        "states": 144,
+        "biomes": 3,
+        "seasons": 4,
+        "rotations": 4,
+        "qualities": 3
+      },
+      "contract": {
+        "states": 144,
+        "biomes": 3,
+        "seasons": 4,
+        "rotations": 4,
+        "qualities": 3
+      }
+    },
+    {
+      "id": "authoritative-severe-weather-fixtures",
+      "passed": true,
+      "detail": "Every severe-weather fixture is reproduced by authoritative weather projection; no renderer-only override is accepted.",
+      "sources": [
+        "src/game/testing/m53SeasonalTerrainFixtures.ts#M53_SEVERE_WEATHER_FIXTURES",
+        "src/game/seasons/seasons.ts#weatherForDay"
+      ],
+      "observed": {
+        "matches": 12,
+        "cases": 12,
+        "hash": "35caa959"
+      },
+      "contract": {
+        "matches": 12,
+        "cases": 12
+      }
+    },
+    {
+      "id": "deterministic-eight-year-climate",
+      "passed": true,
+      "detail": "Each biome reproduces the same eight-year daily weather hash from the fixed certification seed.",
+      "sources": [
+        "src/game/seasons/seasons.ts#weatherForDay"
+      ],
+      "observed": {
+        "years": 8,
+        "daysPerBiome": 1792,
+        "hashes": [
+          "5d3d1fea",
+          "c0a4354f",
+          "6f171aa8"
+        ],
+        "repeatHashes": [
+          "5d3d1fea",
+          "c0a4354f",
+          "6f171aa8"
+        ]
+      },
+      "contract": {
+        "years": 8,
+        "daysPerBiome": 1792,
+        "repeatHashesEqual": true
+      }
+    },
+    {
+      "id": "all-weather-kinds",
+      "passed": true,
+      "detail": "The cross-biome climate timeline exercises all 8 authoritative weather kinds.",
+      "sources": [
+        "src/game/seasons/types.ts#WeatherKind",
+        "src/game/seasons/seasons.ts#weatherForDay"
+      ],
+      "observed": [
+        "clear",
+        "cloudy",
+        "drought",
+        "frost",
+        "heat",
+        "heavy_rain",
+        "rain",
+        "storm"
+      ],
+      "contract": [
+        "clear",
+        "cloudy",
+        "rain",
+        "heavy_rain",
+        "storm",
+        "heat",
+        "drought",
+        "frost"
+      ]
+    },
+    {
+      "id": "seasonal-calendar-coverage",
+      "passed": true,
+      "detail": "Every biome contains the same complete, deterministic four-season calendar without skipped or duplicated days.",
+      "sources": [
+        "src/game/seasons/seasons.ts#calendarDate"
+      ],
+      "observed": {
+        "parkland": {
+          "spring": 448,
+          "summer": 448,
+          "autumn": 448,
+          "winter": 448
+        },
+        "links": {
+          "spring": 448,
+          "summer": 448,
+          "autumn": 448,
+          "winter": 448
+        },
+        "desert": {
+          "spring": 448,
+          "summer": 448,
+          "autumn": 448,
+          "winter": 448
+        }
+      },
+      "contract": {
+        "daysPerSeasonPerBiome": 448
+      }
+    },
+    {
+      "id": "bounded-climate-transitions",
+      "passed": true,
+      "detail": "All multi-year season-boundary projections stay finite/bounded, and fixed-camera seasonal differentiation comes from four distinct registry states per biome.",
+      "sources": [
+        "src/game/seasons/seasons.ts#biomeClimatePhenologyForDay",
+        "src/game/models/biomes.ts#climate"
+      ],
+      "observed": {
+        "boundarySamples": 288,
+        "seasonalRegistrySignatures": {
+          "parkland": {
+            "spring": "913d8430",
+            "summer": "270a6275",
+            "autumn": "8f7d430d",
+            "winter": "6e8051e3"
+          },
+          "links": {
+            "spring": "1a6c8e92",
+            "summer": "3dc6732b",
+            "autumn": "d9b5d98c",
+            "winter": "928a07f7"
+          },
+          "desert": {
+            "spring": "a8ba9a2b",
+            "summer": "68d86b68",
+            "autumn": "49d2f159",
+            "winter": "f46d9b0a"
+          }
+        }
+      },
+      "contract": {
+        "blendMinimum": 0,
+        "blendMaximum": 1,
+        "distinctSeasonalRegistryStatesPerBiome": 4
+      }
+    },
+    {
+      "id": "distinct-climate-strategies",
+      "passed": true,
+      "detail": "Parkland, Links, and Desert have distinct registry climate regimes and distinct climate-appropriate terrain strategies.",
+      "sources": [
+        "src/game/models/biomes.ts#BIOMES",
+        "src/game/models/biomeEconomics.test.ts#climate-appropriate-starter-landscapes"
+      ],
+      "observed": {
+        "climateProfiles": {
+          "parkland": "temperate-four-season",
+          "links": "coastal-four-season",
+          "desert": "arid-heat-drought"
+        },
+        "strategyVectors": [
+          "4e10078e",
+          "87f05f25",
+          "ee987e0d"
+        ]
+      },
+      "contract": {
+        "distinctClimateProfiles": 3,
+        "distinctTerrainVectors": 3
+      }
+    },
+    {
+      "id": "shared-maintenance-viability",
+      "passed": true,
+      "detail": "All three climate-appropriate strategies fit the authoritative default weekly maintenance envelope.",
+      "sources": [
+        "src/game/models/biomeEconomics.test.ts#climate-appropriate-starter-landscapes",
+        "src/game/models/defaults.ts#DEFAULT_WORLD.maintenanceBudget"
+      ],
+      "observed": {
+        "parkland": 228.6380118750115,
+        "links": 131.25563849999344,
+        "desert": 135.04917562499983
+      },
+      "contract": {
+        "eachLessThanWeeklyMaintenanceBudget": 900
+      }
+    },
+    {
+      "id": "desert-xeric-parity",
+      "passed": true,
+      "detail": "The xeric Desert strategy remains below the existing authoritative 1.25× Parkland operating-cost contract.",
+      "sources": [
+        "src/game/models/biomeEconomics.test.ts#climate-appropriate-starter-landscapes"
+      ],
+      "observed": {
+        "desertDaily": 19.292739374999975,
+        "parklandDaily": 32.66257312500164,
+        "ratio": 0.5906680805938189
+      },
+      "contract": {
+        "ratioLessThan": 1.25
+      }
+    },
+    {
+      "id": "no-single-biome-economic-dominance",
+      "passed": true,
+      "detail": "No home strategy is simultaneously cheapest to operate and largest in maintained playing-surface capacity, preserving a cost/capacity tradeoff without a universal winner.",
+      "sources": [
+        "src/game/models/biomeOperatingCosts.ts#quoteDailyBiomeOperatingCosts",
+        "src/game/models/terrainEconomics.ts#terrainConstructionUnitCost"
+      ],
+      "observed": {
+        "operatingWinner": "links",
+        "playingCapacityWinner": "parkland",
+        "homeOperating": {
+          "parkland": 32.66257312500164,
+          "links": 18.75080549999906,
+          "desert": 19.292739374999975
+        },
+        "homePlayingCapacity": {
+          "parkland": 2100,
+          "links": 1560,
+          "desert": 970
+        }
+      },
+      "contract": {
+        "operatingWinnerMustDifferFromPlayingCapacityWinner": true
+      }
+    },
+    {
+      "id": "weather-demand-bounds",
+      "passed": true,
+      "detail": "Every severe climate sample stays within the authoritative 0.75–1.25 irrigation-demand range.",
+      "sources": [
+        "src/game/models/biomeOperatingCosts.ts#weatherIrrigationDemandMultiplier",
+        "src/game/models/biomeEconomics.test.ts#weather-demand"
+      ],
+      "observed": [
+        {
+          "biome": "parkland",
+          "season": "spring",
+          "multiplier": 0.75
+        },
+        {
+          "biome": "parkland",
+          "season": "summer",
+          "multiplier": 1.25
+        },
+        {
+          "biome": "parkland",
+          "season": "autumn",
+          "multiplier": 0.75
+        },
+        {
+          "biome": "parkland",
+          "season": "winter",
+          "multiplier": 0.75
+        },
+        {
+          "biome": "links",
+          "season": "spring",
+          "multiplier": 0.75
+        },
+        {
+          "biome": "links",
+          "season": "summer",
+          "multiplier": 0.75
+        },
+        {
+          "biome": "links",
+          "season": "autumn",
+          "multiplier": 0.75
+        },
+        {
+          "biome": "links",
+          "season": "winter",
+          "multiplier": 0.75
+        },
+        {
+          "biome": "desert",
+          "season": "spring",
+          "multiplier": 0.75
+        },
+        {
+          "biome": "desert",
+          "season": "summer",
+          "multiplier": 1.25
+        },
+        {
+          "biome": "desert",
+          "season": "autumn",
+          "multiplier": 0.75
+        },
+        {
+          "biome": "desert",
+          "season": "winter",
+          "multiplier": 0.75
+        }
+      ],
+      "contract": {
+        "minimum": 0.75,
+        "maximum": 1.25
+      }
+    },
+    {
+      "id": "risk-register-is-explicit",
+      "passed": true,
+      "detail": "Unresolved human, GPU, audio, accessibility, provider, and legacy timing risks remain open or deferred rather than inferred passing.",
+      "sources": [
+        "src/game/testing/m53Certification.ts#M53_UNRESOLVED_RISKS"
+      ],
+      "observed": [
+        {
+          "id": "ZK571-R1",
+          "status": "open",
+          "severity": "medium"
+        },
+        {
+          "id": "ZK571-R2",
+          "status": "deferred",
+          "severity": "high"
+        },
+        {
+          "id": "ZK571-R3",
+          "status": "deferred",
+          "severity": "high"
+        },
+        {
+          "id": "ZK571-R4",
+          "status": "deferred",
+          "severity": "high"
+        },
+        {
+          "id": "ZK571-R5",
+          "status": "deferred",
+          "severity": "medium"
+        },
+        {
+          "id": "ZK571-R6",
+          "status": "deferred",
+          "severity": "medium"
+        },
+        {
+          "id": "ZK571-R7",
+          "status": "deferred",
+          "severity": "high"
+        }
+      ],
+      "contract": {
+        "unresolvedRisks": 7,
+        "allowedStatuses": [
+          "open",
+          "deferred"
+        ]
+      }
+    }
+  ],
+  "evidence": {
+    "fixtureStates": 144,
+    "biomes": 3,
+    "seasons": 4,
+    "rotations": 4,
+    "qualities": 3,
+    "weather": {
+      "years": 8,
+      "daysPerBiome": 1792,
+      "rows": [
+        {
+          "biome": "parkland",
+          "hash": "5d3d1fea",
+          "seasons": {
+            "spring": 448,
+            "summer": 448,
+            "autumn": 448,
+            "winter": 448
+          },
+          "weatherKinds": [
+            "clear",
+            "cloudy",
+            "drought",
+            "heavy_rain",
+            "rain",
+            "storm"
+          ],
+          "maximumSeverity": 0.9500000000000001
+        },
+        {
+          "biome": "links",
+          "hash": "c0a4354f",
+          "seasons": {
+            "spring": 448,
+            "summer": 448,
+            "autumn": 448,
+            "winter": 448
+          },
+          "weatherKinds": [
+            "clear",
+            "cloudy",
+            "frost",
+            "heavy_rain",
+            "rain",
+            "storm"
+          ],
+          "maximumSeverity": 0.9833333333333334
+        },
+        {
+          "biome": "desert",
+          "hash": "6f171aa8",
+          "seasons": {
+            "spring": 448,
+            "summer": 448,
+            "autumn": 448,
+            "winter": 448
+          },
+          "weatherKinds": [
+            "clear",
+            "cloudy",
+            "drought",
+            "heat",
+            "heavy_rain",
+            "rain",
+            "storm"
+          ],
+          "maximumSeverity": 0.9611111111111111
+        }
+      ],
+      "repeatHashes": [
+        "5d3d1fea",
+        "c0a4354f",
+        "6f171aa8"
+      ],
+      "allKinds": [
+        "clear",
+        "cloudy",
+        "drought",
+        "frost",
+        "heat",
+        "heavy_rain",
+        "rain",
+        "storm"
+      ]
+    },
+    "economics": {
+      "home": {
+        "parkland": {
+          "maintainedAreaUnits": 2665.0000000001346,
+          "maintainedPlayingSurfaceTiles": 2100,
+          "dailyOperatingCost": 32.66257312500164,
+          "weeklyOperatingCost": 228.6380118750115,
+          "constructionCost": 312000,
+          "terrainVector": {
+            "fairway": 1600,
+            "green": 300,
+            "tee": 200,
+            "rough": 1900
+          }
+        },
+        "links": {
+          "maintainedAreaUnits": 1851.9999999999072,
+          "maintainedPlayingSurfaceTiles": 1560,
+          "dailyOperatingCost": 18.75080549999906,
+          "weeklyOperatingCost": 131.25563849999344,
+          "constructionCost": 279120,
+          "terrainVector": {
+            "fairway": 1200,
+            "green": 200,
+            "tee": 160,
+            "deep_rough": 2000,
+            "waste_area": 440
+          }
+        },
+        "desert": {
+          "maintainedAreaUnits": 1113.9999999999986,
+          "maintainedPlayingSurfaceTiles": 970,
+          "dailyOperatingCost": 19.292739374999975,
+          "weeklyOperatingCost": 135.04917562499983,
+          "constructionCost": 326400,
+          "terrainVector": {
+            "fairway": 700,
+            "green": 150,
+            "tee": 120,
+            "waste_area": 2000,
+            "sand": 1030
+          }
+        }
+      },
+      "crossBiome": {
+        "parkland": {
+          "parkland": {
+            "dailyOperatingCost": 32.66257312500164,
+            "constructionCost": 312000
+          },
+          "links": {
+            "dailyOperatingCost": 22.698343499998863,
+            "constructionCost": 297800
+          },
+          "desert": {
+            "dailyOperatingCost": 13.65332324999998,
+            "constructionCost": 319400
+          }
+        },
+        "links": {
+          "parkland": {
+            "dailyOperatingCost": 26.982125625001355,
+            "constructionCost": 306900
+          },
+          "links": {
+            "dailyOperatingCost": 18.75080549999906,
+            "constructionCost": 279120
+          },
+          "desert": {
+            "dailyOperatingCost": 11.278832249999985,
+            "constructionCost": 300210
+          }
+        },
+        "desert": {
+          "parkland": {
+            "dailyOperatingCost": 46.15363593750233,
+            "constructionCost": 445200
+          },
+          "links": {
+            "dailyOperatingCost": 32.07374624999839,
+            "constructionCost": 373380
+          },
+          "desert": {
+            "dailyOperatingCost": 19.292739374999975,
+            "constructionCost": 326400
+          }
+        }
+      }
+    },
+    "climateProfiles": {
+      "parkland": "temperate-four-season",
+      "links": "coastal-four-season",
+      "desert": "arid-heat-drought"
+    },
+    "severeWeatherHash": "35caa959",
+    "strategyHash": "17313a69"
+  },
+  "budgets": {
+    "currentSaveJsonCharacters": 5000000,
+    "releaseSaveBytes": 4000000,
+    "seasonalStateJsonCharacters": 180000,
+    "surfaceCareJsonCharacters": 600000,
+    "surfaceCareAdvanceMilliseconds": 500,
+    "hundredGolferSnapshotBytes": 1000000,
+    "rendererWorkMilliseconds": 8,
+    "coldStartupMilliseconds": 5000,
+    "selectedBiomePayloadBytes": 6291456,
+    "initialBundleBytes": 8388608
+  },
+  "unresolvedRisks": [
+    {
+      "id": "ZK571-R1",
+      "status": "open",
+      "severity": "medium",
+      "evidence": "The combined legacy browser audio suite has a known timing-sensitive flake when many audio scenarios share one long run.",
+      "mitigation": "Keep ZK-570 audio certification isolated and deterministic; do not treat a legacy combined-suite retry as listening evidence."
+    },
+    {
+      "id": "ZK571-R2",
+      "status": "deferred",
+      "severity": "high",
+      "evidence": "Machine pixel/state assertions cannot establish visual quality, legibility, golf authenticity, or absence of subtle compositing artifacts.",
+      "mitigation": "Review the retained 12 fixed-camera, High-quality desktop captures (3 biomes × 4 seasons) plus the single narrow responsive sample. Separately perform an interactive review of all four rotations and Low/Medium/High adaptive-quality transitions; these are not represented as 144 retained screenshots."
+    },
+    {
+      "id": "ZK571-R3",
+      "status": "deferred",
+      "severity": "high",
+      "evidence": "Automated audio state and asset checks cannot establish mix quality, clipping perception, fatigue, or transition musicality.",
+      "mitigation": "Human listening review of design, management, and golf music plus biome ambience, weather overlays, transitions, mute, and fallback behavior."
+    },
+    {
+      "id": "ZK571-R4",
+      "status": "deferred",
+      "severity": "high",
+      "evidence": "Headless software rendering reports frame spacing but does not assert physical-GPU frame pacing.",
+      "mitigation": "Real-hardware GPU frame pacing and thermal/load review for each biome and adaptive-quality path."
+    },
+    {
+      "id": "ZK571-R5",
+      "status": "deferred",
+      "severity": "medium",
+      "evidence": "Automated roles, names, state, and focus checks do not replace assistive-technology and human accessibility review.",
+      "mitigation": "Keyboard-only, screen-reader, reduced-motion, text-scaling, contrast, and color-independent-marking review."
+    },
+    {
+      "id": "ZK571-R6",
+      "status": "deferred",
+      "severity": "medium",
+      "evidence": "Provider signing, storefront distribution, and hosted release state are outside the local repository certification boundary.",
+      "mitigation": "Signed desktop package, provider-backed distribution, and hosted-release verification if required by release operations."
+    },
+    {
+      "id": "ZK571-R7",
+      "status": "deferred",
+      "severity": "high",
+      "evidence": "ZK-379 and supporting M53 issue/milestone statuses remain pending final human validation and Linear reconciliation.",
+      "mitigation": "Reconcile the prerequisite and supporting Linear statuses only after final human validation; do not close ZK-571 from machine evidence alone."
+    }
+  ],
+  "humanVerificationMatrix": [
+    "Review the retained 12 fixed-camera, High-quality desktop captures (3 biomes × 4 seasons) plus the single narrow responsive sample.",
+    "Separately perform an interactive review of all four rotations and Low/Medium/High adaptive-quality transitions; these are not represented as 144 retained screenshots.",
+    "Human listening review of design, management, and golf music plus biome ambience, weather overlays, transitions, mute, and fallback behavior.",
+    "Keyboard-only, screen-reader, reduced-motion, text-scaling, contrast, and color-independent-marking review.",
+    "Real-hardware GPU frame pacing and thermal/load review for each biome and adaptive-quality path.",
+    "Golf-authenticity and long-horizon balance playtesting for climate strategy, direct golf, live operations, wear, recovery, and repair.",
+    "Signed desktop package, provider-backed distribution, and hosted-release verification if required by release operations."
+  ],
+  "passed": true,
+  "determinismHash": "b3647ff8"
+}

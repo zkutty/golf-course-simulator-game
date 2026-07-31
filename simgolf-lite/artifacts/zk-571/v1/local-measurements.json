@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "certificationId": "m53-zk571-v1",
+  "note": "Host-specific elapsed timings are measurements only and are excluded from deterministic pass/fail evidence.",
+  "timings": [
+    {
+      "id": "certification-runner-contract",
+      "elapsedMilliseconds": 134,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 120000,
+      "errorCode": null
+    },
+    {
+      "id": "deterministic-core-report",
+      "elapsedMilliseconds": 663,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 120000,
+      "errorCode": null
+    },
+    {
+      "id": "authoritative-focused-units",
+      "elapsedMilliseconds": 5865,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 600000,
+      "errorCode": null
+    },
+    {
+      "id": "broad-unit-suite",
+      "elapsedMilliseconds": 79427,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 900000,
+      "errorCode": null
+    },
+    {
+      "id": "deterministic-soak",
+      "elapsedMilliseconds": 90641,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 900000,
+      "errorCode": null
+    },
+    {
+      "id": "production-build-payload",
+      "elapsedMilliseconds": 13488,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 600000,
+      "errorCode": null
+    },
+    {
+      "id": "audio-asset-unit-audit",
+      "elapsedMilliseconds": 398,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 120000,
+      "errorCode": null
+    },
+    {
+      "id": "browser-screenshot-matrix",
+      "elapsedMilliseconds": 479741,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 1200000,
+      "errorCode": null
+    },
+    {
+      "id": "pwa-smoke",
+      "elapsedMilliseconds": 28716,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 600000,
+      "errorCode": null
+    },
+    {
+      "id": "desktop-unit",
+      "elapsedMilliseconds": 355,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 120000,
+      "errorCode": null
+    },
+    {
+      "id": "performance-parkland",
+      "elapsedMilliseconds": 38394,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 180000,
+      "errorCode": null
+    },
+    {
+      "id": "performance-links",
+      "elapsedMilliseconds": 38193,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 180000,
+      "errorCode": null
+    },
+    {
+      "id": "performance-desert",
+      "elapsedMilliseconds": 39024,
+      "exitCode": 0,
+      "signal": null,
+      "termination": "completed",
+      "timeoutMilliseconds": 180000,
+      "errorCode": null
+    }
+  ]
+}
