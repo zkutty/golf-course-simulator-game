@@ -1053,7 +1053,7 @@ export const en = {
   "confirm.restartScenario": "Restart this scenario from the beginning?",
   "confirm.bulldoze": "Bulldoze this obstacle?",
   "confirm.salvage": "Salvage this {building}?",
-  "loading.restoreCourse": "Restoring your course…", "loading.growCourse": "Growing your new course…", "loading.restoreLatest": "Restoring your latest course…",
+  "loading.restoreCourse": "Restoring your course…", "loading.growCourse": "Growing your new course…", "loading.restoreLatest": "Restoring your latest course…", "loading.vision": "Loading Vision…",
   "error.insufficientFunds": "Insufficient funds: need {amount}.",
   "error.insufficientFairway": "Insufficient funds: need {amount} to paint fairway.",
   "error.insufficientMove": "Insufficient funds to move {marker}: need {amount}.",

@@ -4689,7 +4689,7 @@ export default function App() {
 
   if (screen === "menu" && showVision) {
     return (
-      <Suspense fallback={<LoadingCard label="Loading Vision…" context={contextualUiTheme} />}>
+      <Suspense fallback={<LoadingCard label={t("loading.vision")} context={contextualUiTheme} />}>
         <VisionPage onClose={closeVision} />
       </Suspense>
     );
