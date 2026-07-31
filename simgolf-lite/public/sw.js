@@ -23,7 +23,8 @@ self.addEventListener("fetch", (event) => {
   if (relativePath.startsWith("api/")) return;
   // Content-hashed base and seasonal atlas files are cached only after the
   // selected biome/tier/season requests them; no other biome is prefetched.
-  const cacheFirst = relativePath.startsWith("audio/") || relativePath.startsWith("atlases/") || relativePath.startsWith("icons/") || url.origin !== location.origin;
+  // Vision artwork follows the same rule, so installation remains media-light.
+  const cacheFirst = relativePath.startsWith("audio/") || relativePath.startsWith("atlases/") || relativePath.startsWith("icons/") || relativePath.startsWith("vision/") || url.origin !== location.origin;
   if (cacheFirst) {
     event.respondWith(caches.match(event.request).then(async (cached) => {
       if (cached) return cached;

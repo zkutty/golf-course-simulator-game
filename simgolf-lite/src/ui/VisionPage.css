@@ -623,6 +623,88 @@
   text-transform: uppercase;
 }
 
+.cc-vision-biomes {
+  width: min(1440px, calc(100% - 48px));
+  margin: clamp(112px, 14vw, 190px) auto;
+  scroll-margin-top: 88px;
+}
+
+.cc-vision-biomes-heading {
+  max-width: 820px;
+  margin-bottom: 50px;
+}
+
+.cc-vision-biome-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cc-vision-biome {
+  min-height: 500px;
+  position: relative;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(31, 57, 40, .22);
+  border-radius: 22px;
+  background: #183b29;
+  box-shadow: 0 18px 40px rgba(31, 48, 36, .12);
+}
+
+.cc-vision-biome picture,
+.cc-vision-biome img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.cc-vision-biome picture {
+  position: absolute;
+  inset: 0;
+}
+
+.cc-vision-biome img {
+  object-fit: cover;
+  transition: transform .45s ease;
+}
+
+.cc-vision-biome::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(180deg, transparent 27%, rgba(9, 25, 15, .84) 100%);
+}
+
+.cc-vision-biome:hover img {
+  transform: scale(1.045);
+}
+
+.cc-vision-biome figcaption {
+  position: absolute;
+  z-index: 1;
+  right: 20px;
+  bottom: 20px;
+  left: 20px;
+  color: #fff9ec;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, .35);
+}
+
+.cc-vision-biome h3 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(22px, 1.8vw, 29px);
+  letter-spacing: -.025em;
+  line-height: 1.04;
+}
+
+.cc-vision-biome p {
+  margin: 10px 0 0;
+  color: rgba(255, 249, 236, .82);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .cc-vision-systems {
   padding: 10px 0 clamp(110px, 13vw, 180px);
 }
@@ -923,6 +1005,12 @@
   .cc-vision-future-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .cc-vision-biome-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cc-vision-biome {
+    min-height: 410px;
+  }
   .cc-vision-arc-line {
     grid-template-columns: repeat(2, 1fr);
     row-gap: 54px;
@@ -1016,7 +1104,8 @@
   }
   .cc-vision-systems,
   .cc-vision-arc,
-  .cc-vision-future {
+  .cc-vision-future,
+  .cc-vision-biomes {
     width: calc(100% - 36px);
   }
   .cc-vision-future {
@@ -1028,6 +1117,15 @@
   }
   .cc-vision-future-card {
     min-height: 0;
+  }
+  .cc-vision-biomes {
+    margin-block: 92px;
+  }
+  .cc-vision-biome-grid {
+    grid-template-columns: 1fr;
+  }
+  .cc-vision-biome {
+    min-height: min(118vw, 480px);
   }
   .cc-vision-feature-grid {
     grid-template-columns: 1fr;

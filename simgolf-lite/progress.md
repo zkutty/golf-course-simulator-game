@@ -1,5 +1,37 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## M60 Vision page execution — 2026-07-31
+
+- Started Linear issues ZK-615 and ZK-619. The M60 contract now lives in
+  `docs/M60_VISION_ART_CONTRACT.md` and defines the existing editorial visual
+  language, the five biome gallery requirements, provenance, exclusions,
+  payload budgets, and the outstanding human-review gate.
+- Replaced player-facing milestone/future labels with localized timeless system
+  stories for design, watching play, direct Player Pro golf, club operation,
+  seasons, and legacy. The long-game arc now has six stages.
+- Added equal-weight Tropical Coastal Resort, Temperate Japan, Alpine Mountain,
+  Heathland, and Australian Sandbelt gallery cards with original project-bound
+  artwork, 1536px JPEG sources, and 768px mobile sources. Existing Vision
+  images were recompressed as part of the page media budget work.
+- The new art needs browser, accessibility, offline/PWA, and human
+  golf/cultural/provenance validation before it can be certified. The active
+  Vision audio issue ZK-443 remains an external certification dependency.
+- Added a Vision-specific PWA regression: install starts with no Vision media
+  in the precache, and the hero plus viewed gallery art enter the runtime
+  cache only after the page is opened. `npm run test:pwa` passes this path.
+
+## Biome content-bible wave — 2026-07-31
+
+- Started ZK-572, ZK-579, and ZK-586 after the M52 foundation certification.
+  Draft production contracts now live in `docs/biomes/` for Tropical Coastal
+  Resort, Temperate Japan, and Alpine Mountain. They define visual identity,
+  playable-land requirements, seasonal/care direction, material-dock scope,
+  sound, prohibited shortcuts, and explicit human review gates.
+- ZK-601 (Heathland) and ZK-608 (Australian Sandbelt) remain in Backlog because
+  their actual Linear dependency, the M57 ship/hold report ZK-600, is still
+  open. Do not start or claim their formal content-bible work complete until
+  that gate is cleared.
+
 ## 2026-07-30 — ZK-569 local course wear and care evidence
 
 - Added a pure, bounded surface-care presentation projection. It consumes
