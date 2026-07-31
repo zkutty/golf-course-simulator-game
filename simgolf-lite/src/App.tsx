@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState, useCallback, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useMemo, useReducer, useRef, useState, useCallback, type CSSProperties } from "react";
 import { formatCurrency } from "./i18n/format";
 import { useI18n } from "./i18n/useI18n";
 import { perfProfiler } from "./utils/performanceProfiler";
@@ -187,7 +187,6 @@ import { WeekCloseReport } from "./ui/WeekCloseReport";
 import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
 import { analyzeResidentialSafety, applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
-import { VisionPage } from "./ui/VisionPage";
 import { PlayerProPanel, PlayerShotHud } from "./ui/PlayerProPanel";
 import { ArchitectureReviewPanel } from "./ui/ArchitectureReviewPanel";
 import { LivingClubPanel } from "./ui/LivingClubPanel";
@@ -338,6 +337,13 @@ import {
 type EditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 type WizardStep = "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
 type ViewMode = "global" | "hole";
+
+// Vision is a media-heavy title-menu surface. Keep the core play path eager and
+// load this optional route only when the user explicitly opens it.
+const VisionPage = lazy(async () => {
+  const module = await import("./ui/VisionPage");
+  return { default: module.VisionPage };
+});
 
 export default function App() {
   const { t } = useI18n();
@@ -4682,7 +4688,11 @@ export default function App() {
   }
 
   if (screen === "menu" && showVision) {
-    return <VisionPage onClose={closeVision} />;
+    return (
+      <Suspense fallback={<LoadingCard label="Loading Vision…" context={contextualUiTheme} />}>
+        <VisionPage onClose={closeVision} />
+      </Suspense>
+    );
   }
 
   if (screen === "menu") {
