@@ -6,7 +6,7 @@
   "main": "desktop/main.mjs",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/biome-consumer-audit.mjs && tsc -b && vite build && node scripts/audit-audio-assets.mjs && node scripts/inject-sw-assets.mjs && node scripts/m35-asset-audit.mjs && node scripts/parkland-4x-asset-audit.mjs",
+    "build": "node scripts/biome-consumer-audit.mjs && tsc -b && vite build && node scripts/audit-audio-assets.mjs && node scripts/inject-sw-assets.mjs && node scripts/m35-asset-audit.mjs && node scripts/parkland-4x-asset-audit.mjs && node scripts/zk680-surface-budget.mjs",
     "build:demo": "VITE_EDITION=demo npm run build",
     "lint": "eslint . && npm run lint:i18n",
     "lint:i18n": "node scripts/check-i18n.mjs",
@@ -40,6 +40,8 @@
     "gen:terrain:parkland-4x": "node scripts/gen-parkland-4x-fallback.mjs",
     "gen:m35-art": "node scripts/gen-m35-landscape-fields.mjs",
     "audit:m35-assets": "node scripts/m35-asset-audit.mjs",
+    "audit:surface-residency": "node scripts/zk680-surface-budget.mjs",
+    "test:surface-residency": "node --test scripts/zk680-surface-budget.test.mjs",
     "audit:biome-consumers": "node scripts/biome-consumer-audit.mjs",
     "audit:biome-authoring": "vite build --config vite.biome-audit.config.ts --ssr src/game/testing/biomeAuthoringAuditCli.ts --outDir biome-audit-dist --emptyOutDir --minify false && node biome-audit-dist/biomeAuthoringAuditCli.js",
     "audit:terrain:parkland-4x": "node scripts/parkland-4x-asset-audit.mjs",

@@ -24,7 +24,6 @@ import {
   mostRecentSlot,
   saveToSlot,
 } from "./utils/saveStore";
-import { SaveLoadModal } from "./ui/SaveLoadModal";
 import { computeElevationChangeCost, computeTerrainChangeCost } from "./game/models/terrainEconomics";
 import { previewTerrainStroke, type TerrainStrokePreview } from "./game/models/terrainStroke";
 import { corridorFeature, rasterizeSurfaceFeatureDetailed, regionFeature, simplifySurfacePoints } from "./game/models/surfaceIntent";
@@ -49,7 +48,6 @@ import { canTakeBridgeLoan, canTakeExpansionLoan } from "./game/sim/loanEligibil
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { getEffectiveBalance, terrainCostMult } from "./game/balance/difficulty";
 import { GameBackground } from "./ui/gameui";
-import { StartMenu } from "./ui/StartMenu";
 import { useAudio } from "./audio/audioContext";
 import { HoleInspector } from "./ui/HoleInspector";
 import { evaluateHole } from "./game/eval/evaluateHole";
@@ -62,7 +60,6 @@ import { BIOME_KEYS, isLandTheme } from "./game/models/biomes";
 import { createScenarioGame, getScenario, SCENARIOS } from "./game/scenarios/scenarios";
 import type { ScenarioDefinition } from "./game/scenarios/types";
 import { recordCampaignChoice, recordScenarioAttempt, recordScenarioCompleted } from "./utils/careerStore";
-import { NewGameWizard } from "./ui/NewGameWizard";
 import {
   biomeContextAttributes,
   biomeUiStyle,
@@ -126,7 +123,6 @@ import {
   plantDefinition,
 } from "./game/models/plantRegistry";
 import type { PlantId } from "./game/models/plantTypes";
-import { GolfopediaModal } from "./ui/help/GolfopediaModal";
 import { TooltipSurface } from "./ui/help/TooltipSurface";
 import { AdvisorCard } from "./ui/onboarding/AdvisorCard";
 import { TutorialOverlay } from "./ui/onboarding/TutorialOverlay";
@@ -144,7 +140,6 @@ import { advisorMessages, allowsMessage, type AdvisorMessage } from "./game/advi
 import { INITIAL_SCREEN_FLOW, reduceScreenFlow } from "./app/screenFlow";
 import { PauseOverlay } from "./ui/appShell/PauseOverlay";
 import { LoadingCard } from "./ui/appShell/LoadingCard";
-import { SettingsModal } from "./ui/SettingsModal";
 import { LIVE, type SpeedName } from "./game/live/liveConfig";
 import { courseForCourseSetup, getParSetting, getPinPosition, getTeeBox, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSetup } from "./game/models/courseSetup";
 import { eventMatchesBinding } from "./accessibility/keybindings";
@@ -154,7 +149,6 @@ import { emptyCourseRecords, recordCompletedRound, recordWeek } from "./game/ret
 import type { CompletedRound, CourseRecords, RetentionEvent } from "./game/retention/types";
 import { publishRetentionEvent, subscribeRetentionEvents } from "./game/retention/eventBus";
 import { evaluateAchievements, type AchievementContext, type AchievementDefinition } from "./game/retention/achievements";
-import { RetentionHub } from "./ui/retention/RetentionHub";
 import { AchievementToasts } from "./ui/retention/AchievementToasts";
 import { NewsTicker } from "./ui/retention/NewsTicker";
 import { PhotoModeOverlay } from "./ui/retention/PhotoModeOverlay";
@@ -327,6 +321,7 @@ import { CampaignSceneModal } from "./ui/CampaignSceneModal";
 import { CampaignPanel } from "./ui/CampaignPanel";
 import { WorkspaceNav, type WorkspaceActionId, type WorkspaceId } from "./ui/WorkspaceNav";
 import { ContextualInspectorPanel } from "./ui/ContextualInspectorPanel";
+import { DeferredSurface } from "./app/DeferredSurface";
 import { ContentLibraryPanel } from "./ui/ContentLibraryPanel";
 import { IS_DEMO, saveAvailableInEdition } from "./config/edition";
 import {
@@ -344,6 +339,12 @@ const VisionPage = lazy(async () => {
   const module = await import("./ui/VisionPage");
   return { default: module.VisionPage };
 });
+const StartMenu = lazy(() => import("./ui/StartMenu").then(({ StartMenu }) => ({ default: StartMenu })));
+const NewGameWizard = lazy(() => import("./ui/NewGameWizard").then(({ NewGameWizard }) => ({ default: NewGameWizard })));
+const SaveLoadModal = lazy(() => import("./ui/SaveLoadModal").then(({ SaveLoadModal }) => ({ default: SaveLoadModal })));
+const SettingsModal = lazy(() => import("./ui/SettingsModal").then(({ SettingsModal }) => ({ default: SettingsModal })));
+const RetentionHub = lazy(() => import("./ui/retention/RetentionHub").then(({ RetentionHub }) => ({ default: RetentionHub })));
+const GolfopediaModal = lazy(() => import("./ui/help/GolfopediaModal").then(({ GolfopediaModal }) => ({ default: GolfopediaModal })));
 
 export default function App() {
   const { t } = useI18n();
@@ -4550,7 +4551,8 @@ export default function App() {
     });
   }, [world.isBankrupt, weeksSurvived, peakRep]);
 
-  const saveLoadModal = (
+  const saveLoadModal = flow.modal === "save-load" ? (
+    <DeferredSurface label={t("deferredSurface.savedGames")}>
     <SaveLoadModal
       open={flow.modal === "save-load"}
       onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
@@ -4574,7 +4576,8 @@ export default function App() {
         window.setTimeout(() => setPaintError(null), 2000);
       }}
     />
-  );
+    </DeferredSurface>
+  ) : null;
 
   function advanceTutorial() {
     if (!tutorialProgress) return;
@@ -4670,7 +4673,7 @@ export default function App() {
 
   if (screen === "setup") {
     return (
-      <>
+      <DeferredSurface label={t("deferredSurface.newGameSetup")}>
         <NewGameWizard
           onCancel={() => {
             setPendingLoadingContext(null);
@@ -4679,7 +4682,7 @@ export default function App() {
           onStart={startNewGame}
           onStartScenario={startScenario}
         />
-      </>
+      </DeferredSurface>
     );
   }
 
@@ -4698,7 +4701,7 @@ export default function App() {
   if (screen === "menu") {
     return (
       <>
-      <StartMenu
+      <DeferredSurface label={t("deferredSurface.mainMenu")}><StartMenu
         canLoad={canLoadFromMenu}
         onNewGame={newGameFromMenu}
         onQuickStart={() => IS_DEMO ? startScenario(SCENARIOS[0]) : startNewGame(quickStartSetup())}
@@ -4713,15 +4716,15 @@ export default function App() {
           void audio.unlock();
           if (soundEnabled) void audio.playSfx("button");
         }}
-      />
+      /></DeferredSurface>
       {saveLoadModal}
-      <SettingsModal
+      {flow.modal === "options" && <DeferredSurface label={t("deferredSurface.settings")}><SettingsModal
         open={flow.modal === "options"}
         onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
         profile={appProfile}
         onProfileChange={handleProfileChange}
-      />
-      {showRetention && <RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} />}
+      /></DeferredSurface>}
+      {showRetention && <DeferredSurface label={t("deferredSurface.achievements")}><RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} /></DeferredSurface>}
       {pwa.updateAvailable && <PwaUpdateToast onReload={() => { void gameSession.save(autosave, { history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress }).finally(pwa.applyUpdate); }} />}
       </>
     );
@@ -4743,19 +4746,19 @@ export default function App() {
       <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{a11yMessage}</div>
         <GameBackground />
         {saveLoadModal}
-      {showRetention && <RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} />}
+      {showRetention && <DeferredSurface label={t("deferredSurface.achievements")}><RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} /></DeferredSurface>}
       {!photoMode && <AchievementToasts queue={achievementQueue} biomeContext={contextualUiTheme} onDismiss={() => setAchievementQueue((queue) => queue.slice(1))} />}
       {photoMode && <PhotoModeOverlay showGolfers={photoGolfers} showMarkers={photoMarkers} onToggleGolfers={() => setPhotoGolfers((value) => !value)} onToggleMarkers={() => setPhotoMarkers((value) => !value)} onCapture={() => void capturePhoto()} onCard={() => void captureCard()} onShare={() => void shareCard()} onExit={exitPhotoMode} />}
       {pwa.updateAvailable && <PwaUpdateToast onReload={() => { void gameSession.save(autosave, { history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress }).finally(pwa.applyUpdate); }} />}
       {flow.modal === "save-load" && pwa.storagePersistent === false && <div role="status" className="cc-storage-warning">{t("pwa.storageWarning")}</div>}
       {flow.modal === "golfopedia" && (
-        <GolfopediaModal
+        <DeferredSurface label={t("deferredSurface.golfopedia")}><GolfopediaModal
           open
           initialEntry={golfopediaEntry}
           theme={course.theme}
           difficulty={world.difficulty}
           onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
-        />
+        /></DeferredSurface>
       )}
       {tutorialProgress && (
         <TutorialOverlay
@@ -5448,12 +5451,12 @@ export default function App() {
             onQuit={quitToTitle}
           />
         )}
-        <SettingsModal
+        {flow.modal === "options" && <DeferredSurface label={t("deferredSurface.settings")}><SettingsModal
           open={flow.modal === "options"}
           onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
           profile={appProfile}
           onProfileChange={handleProfileChange}
-        />
+        /></DeferredSurface>}
       </TooltipSurface>
     </div>
   );

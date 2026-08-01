@@ -72,6 +72,9 @@ export default defineConfig({
     },
   },
   build: {
+    // The manifest is a build-time audit input only (the service worker skips
+    // dot-directories). It makes initial versus on-demand residency explicit.
+    manifest: true,
     // Maps are generated only for authenticated Sentry CI builds and deleted
     // after upload by the plugin, so they never ship with the game.
     sourcemap: sentryBuildEnabled ? "hidden" : false,
