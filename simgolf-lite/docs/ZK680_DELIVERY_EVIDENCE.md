@@ -8,8 +8,12 @@ desktop measurements are stored in
 `npm run build` runs `audit:delivery`. It verifies that the initial
 application JavaScript bundle remains at or below the pre-split size, that the
 Vision route remains a bounded deferred chunk, and that M35 critical-transfer,
-biome, and total-dist delivery limits hold. The report prints the exact
-before/after delta and the agreed cap for every metric.
+biome, total-dist, cold-startup, and 36-hole fixture-load delivery limits hold.
+The report prints the exact before/after delta and the agreed cap for every
+metric. The startup and fixture values come from the same Playwright performance
+harness used by `npm run test:perf`; rerun it with
+`PERF_OUTPUT_PATH=artifacts/zk-680/current-performance.json` before updating
+the committed measurement.
 
 `npm run desktop:pack:dir` additionally feeds the Electron directory output
 through the same contract. The package manifest records raw package and ASAR

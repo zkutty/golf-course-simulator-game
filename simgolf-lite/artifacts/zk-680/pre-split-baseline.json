@@ -11,6 +11,8 @@
     "maxSelectedBiomeBytes": 3506327,
     "distBytes": 114878859,
     "desktopPackageBytes": 495074219,
-    "desktopAsarBytes": 206569606
+    "desktopAsarBytes": 206569606,
+    "coldStartupMs": 1033,
+    "fixtureLoadMs": 3874
   }
 }
