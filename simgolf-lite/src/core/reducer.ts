@@ -51,6 +51,8 @@ import {
   reconcileSurfaceCareAfterEdit,
   startSurfaceRepair,
 } from "../game/conditions/surfaceCare";
+import { normalizeGreenSurfaceV1, withNormalizedGreenContract } from "../game/greens/greenSurface";
+import { fineGreenEarthworkSteps } from "../game/greens/fineGreenSculpt";
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -170,7 +172,9 @@ export function applyAction(state: GameState, action: Action): GameState {
           }),
         };
       }
-      committedCourse = reconcileSurfaceCareAfterEdit(state.course, committedCourse);
+      committedCourse = withNormalizedGreenContract(
+        reconcileSurfaceCareAfterEdit(state.course, committedCourse),
+      );
       newState = {
         ...newState,
         course: committedCourse,
@@ -197,13 +201,13 @@ export function applyAction(state: GameState, action: Action): GameState {
         state.world.constraints?.protectedTrees,
       );
       if (!prepared?.commitAllowed || !prepared.preview.affordable) break;
-      const editedCourse = reconcileSurfaceCareAfterEdit(state.course, {
+      const editedCourse = withNormalizedGreenContract(reconcileSurfaceCareAfterEdit(state.course, {
         ...state.course,
         tiles: prepared.tiles,
         elevations: prepared.elevations,
         obstacles: prepared.obstacles,
         surfaceIntent: prepared.intent,
-      });
+      }));
       newState = {
         ...newState,
         course: editedCourse,
@@ -269,6 +273,32 @@ export function applyAction(state: GameState, action: Action): GameState {
           ...state.world,
           cash: state.world.cash - cashDelta,
           isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(state.world.cash - cashDelta),
+        },
+      };
+      terrainVersion++;
+      economyVersion++;
+      break;
+    }
+
+    case "SCULPT_GREEN": {
+      if (state.world.isBankrupt) break;
+      const surface = normalizeGreenSurfaceV1(action.surface, state.course);
+      const steps = fineGreenEarthworkSteps(
+        state.course,
+        state.course.greenSurface,
+        surface,
+      );
+      if (!Number.isFinite(steps) || steps <= 0) break;
+      const cashDelta = computeElevationChangeCost(steps, costMult, state.course.theme).net;
+      if (cashDelta > state.world.cash) break;
+      const cash = state.world.cash - cashDelta;
+      newState = {
+        ...newState,
+        course: { ...state.course, greenSurface: surface },
+        world: {
+          ...state.world,
+          cash,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash),
         },
       };
       terrainVersion++;

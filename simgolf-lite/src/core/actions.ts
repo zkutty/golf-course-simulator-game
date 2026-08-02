@@ -1,4 +1,5 @@
 import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation, PlantId, SurfaceFeature, SurfaceRepairKind } from "../game/models/types";
+import type { GreenSurfaceV1 } from "../game/greens/greenSurface";
 import type { PropertyCommand } from "../game/property/property";
 
 // Actions that mutate terrain (increment terrainVersion)
@@ -6,6 +7,7 @@ export type TerrainMutationAction =
   | { type: "PAINT_TILES"; tiles: Array<{ x: number; y: number; terrain: Terrain }>; surfaceFeature?: SurfaceFeature }
   | { type: "EDIT_SURFACE_FEATURE"; feature: SurfaceFeature }
   | { type: "SCULPT_TILES"; deltas: Array<{ x: number; y: number; delta: number }> }
+  | { type: "SCULPT_GREEN"; surface: GreenSurfaceV1 }
   | { type: "PLACE_TEE"; holeIndex: number; position: Point }
   | { type: "MOVE_TEE"; holeIndex: number; position: Point; oldPosition: Point }
   | { type: "PLACE_GREEN"; holeIndex: number; position: Point }
@@ -56,6 +58,7 @@ export type EconomyMutationAction =
   | { type: "PAINT_TILES"; tiles: Array<{ x: number; y: number; terrain: Terrain }>; surfaceFeature?: SurfaceFeature }
   | { type: "EDIT_SURFACE_FEATURE"; feature: SurfaceFeature }
   | { type: "SCULPT_TILES"; deltas: Array<{ x: number; y: number; delta: number }> }
+  | { type: "SCULPT_GREEN"; surface: GreenSurfaceV1 }
   | { type: "PLACE_TEE"; holeIndex: number; position: Point }
   | { type: "MOVE_TEE"; holeIndex: number; position: Point; oldPosition: Point }
   | { type: "PLACE_GREEN"; holeIndex: number; position: Point }

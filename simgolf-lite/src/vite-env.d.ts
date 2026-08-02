@@ -81,6 +81,7 @@ interface Window {
         issues: string[];
       }>;
       obstacles: import("./game/models/types").Obstacle[];
+      greenSurface: import("./game/greens/greenSurface").GreenSurfaceV1 | null;
       features: Array<{
         id: string;
         terrain: import("./game/models/types").Terrain;

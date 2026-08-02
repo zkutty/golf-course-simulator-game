@@ -35,6 +35,12 @@ import {
   loadAtlases,
 } from "../render/atlas";
 import type { TerrainStrokePreview } from "../game/models/terrainStroke";
+import type {
+  FineGreenBrush,
+  FineGreenRadius,
+  FineGreenSculptPreview,
+} from "../game/greens/fineGreenSculpt";
+import { buildGreenSurfaceOverlayCommands } from "../game/greens/greenSurfaceRender";
 import {
   defaultSurfaceTangents,
   sampleCorridor,
@@ -640,6 +646,8 @@ export interface PixiStageProps {
   decorationRotation?: DecorationRotation;
   decorationSpan?: number;
   sculptRadius?: number;
+  fineGreenBrush?: FineGreenBrush;
+  fineGreenRadius?: FineGreenRadius;
   wizardStep: "TEE" | "GREEN" | "CONFIRM" | "MOVE_TEE" | "MOVE_GREEN";
   draftTee: Point | null;
   draftGreen: Point | null;
@@ -649,6 +657,8 @@ export interface PixiStageProps {
   terrainTool?: TerrainAuthoringTool;
   onPreviewSurfaceFeatureEdit?: (feature: SurfaceFeature) => TerrainStrokePreview | null;
   onCommitSurfaceFeatureEdit?: (feature: SurfaceFeature) => void;
+  onPreviewFineGreenStroke?: (points: Point[]) => FineGreenSculptPreview;
+  onCommitFineGreenStroke?: (points: Point[]) => void;
   selectedTerrain?: Terrain;
   worldCash?: number;
   flagColor?: string;
@@ -1202,6 +1212,12 @@ export function PixiStage(props: PixiStageProps) {
     points: Point[];
     last: Point;
   } | null>(null);
+  const [fineGreenStrokePreview, setFineGreenStrokePreview] = useState<FineGreenSculptPreview | null>(null);
+  const fineGreenStrokeRef = useRef<{
+    pointerId: number;
+    points: Point[];
+    last: Point;
+  } | null>(null);
   const [clickSplineDraft, setClickSplineDraft] = useState<Point[]>([]);
   const clickSplineDraftRef = useRef<Point[]>([]);
   const [clickSplineHover, setClickSplineHover] = useState<Point | null>(null);
@@ -1240,6 +1256,8 @@ export function PixiStage(props: PixiStageProps) {
     onCommitTerrainStroke,
     onPreviewSurfaceFeatureEdit,
     onCommitSurfaceFeatureEdit,
+    onPreviewFineGreenStroke,
+    onCommitFineGreenStroke,
     selectedTerrain,
     worldCash,
     editorMode,
@@ -4572,7 +4590,6 @@ export function PixiStage(props: PixiStageProps) {
     const graphics = surfaceEditorGraphicsRef.current;
     if (!graphics) return;
     graphics.clear();
-    if (editorMode !== "PAINT") return;
 
     const project = (point: Point) => worldToIso(
       point.x,
@@ -4580,6 +4597,72 @@ export function PixiStage(props: PixiStageProps) {
       surfaceHeightAt(point.x, point.y),
       rotation,
     );
+
+    if (editorMode === "SCULPT" || props.showGridOverlays) {
+      const overlay = buildGreenSurfaceOverlayCommands({
+        course,
+        surface: fineGreenStrokePreview?.surface,
+        colorVision: props.colorVision,
+        quality: props.graphicsQuality,
+      });
+      for (const shade of overlay.shades) {
+        const corners = [
+          project({ x: shade.x + 0.5, y: shade.y }),
+          project({ x: shade.x + 1, y: shade.y + 0.5 }),
+          project({ x: shade.x + 0.5, y: shade.y + 1 }),
+          project({ x: shade.x, y: shade.y + 0.5 }),
+        ];
+        graphics.poly(corners.flatMap((point) => [point.x, point.y]));
+        graphics.fill({
+          color: shade.uphill ? overlay.palette.uphill : overlay.palette.downhill,
+          alpha: shade.intensity,
+        });
+      }
+      for (const contour of overlay.contours) {
+        const from = project(contour.from);
+        const to = project(contour.to);
+        graphics.moveTo(from.x, from.y);
+        graphics.lineTo(to.x, to.y);
+        graphics.stroke({ width: contour.major ? 2.5 : 1.7, color: overlay.palette.outline, alpha: 0.58, cap: "round" });
+        graphics.moveTo(from.x, from.y);
+        graphics.lineTo(to.x, to.y);
+        graphics.stroke({ width: contour.major ? 1.2 : 0.75, color: overlay.palette.contour, alpha: 0.92, cap: "round" });
+      }
+      for (const line of overlay.fallLines) {
+        const from = project(line.from);
+        const to = project(line.to);
+        graphics.moveTo(from.x, from.y);
+        graphics.lineTo(to.x, to.y);
+        graphics.stroke({ width: 2.6, color: overlay.palette.outline, alpha: 0.72, cap: "round" });
+        // Alternating light dots make fall direction legible without hue.
+        for (const fraction of [0.2, 0.5, 0.8]) {
+          graphics.circle(from.x + (to.x - from.x) * fraction, from.y + (to.y - from.y) * fraction, 1.5);
+          graphics.fill({ color: overlay.palette.contour, alpha: 0.95 });
+        }
+      }
+      for (const arrow of overlay.arrows) {
+        const at = project(arrow.at);
+        const tip = project({
+          x: arrow.at.x + arrow.downhill.x * 0.22,
+          y: arrow.at.y + arrow.downhill.y * 0.22,
+        });
+        const tail = project({
+          x: arrow.at.x - arrow.downhill.x * 0.12,
+          y: arrow.at.y - arrow.downhill.y * 0.12,
+        });
+        graphics.moveTo(tail.x, tail.y);
+        graphics.lineTo(tip.x, tip.y);
+        graphics.stroke({ width: 2.2, color: overlay.palette.downhill, alpha: 0.96, cap: "round" });
+        const angle = Math.atan2(tip.y - at.y, tip.x - at.x);
+        for (const side of [-1, 1]) {
+          graphics.moveTo(tip.x, tip.y);
+          graphics.lineTo(tip.x - Math.cos(angle + side * 0.55) * 6, tip.y - Math.sin(angle + side * 0.55) * 6);
+          graphics.stroke({ width: 2, color: overlay.palette.downhill, alpha: 0.96, cap: "round" });
+        }
+      }
+    }
+
+    if (editorMode !== "PAINT") return;
     const drawPath = (points: readonly Point[], closed: boolean, color: number, alpha: number) => {
       if (points.length < 2) return;
       const first = project(points[0]);
@@ -4646,6 +4729,11 @@ export function PixiStage(props: PixiStageProps) {
     clickSplineDraft,
     clickSplineHover,
     editorMode,
+    course,
+    fineGreenStrokePreview,
+    props.colorVision,
+    props.graphicsQuality,
+    props.showGridOverlays,
     rotation,
     selectedSurfaceFeature,
     selectedSurfaceNode,
@@ -5912,6 +6000,43 @@ export function PixiStage(props: PixiStageProps) {
       onCommitTerrainStroke?.(stroke.points);
     };
 
+    const cancelFineGreenStroke = () => {
+      fineGreenStrokeRef.current = null;
+      setFineGreenStrokePreview(null);
+      overlayDirtyRef.current = true;
+    };
+
+    const beginFineGreenStroke = (point: Point, pointerId: number) => {
+      if (!onPreviewFineGreenStroke) return;
+      const points = [point];
+      fineGreenStrokeRef.current = { pointerId, points, last: point };
+      setFineGreenStrokePreview(onPreviewFineGreenStroke(points));
+      overlayDirtyRef.current = true;
+    };
+
+    const extendFineGreenStroke = (point: Point, pointerId: number) => {
+      const stroke = fineGreenStrokeRef.current;
+      if (!stroke || stroke.pointerId !== pointerId || !onPreviewFineGreenStroke) return;
+      const nextPoints = resampleWorldLine(stroke.last, point);
+      if (nextPoints.length === 0) return;
+      stroke.points.push(...nextPoints);
+      if (stroke.points.length > 2_048) {
+        stroke.points = stroke.points.filter((_, index) => index % 2 === 0 || index === stroke.points.length - 1);
+      }
+      stroke.last = point;
+      setFineGreenStrokePreview(onPreviewFineGreenStroke(stroke.points));
+      overlayDirtyRef.current = true;
+    };
+
+    const finishFineGreenStroke = (pointerId: number) => {
+      const stroke = fineGreenStrokeRef.current;
+      if (!stroke || stroke.pointerId !== pointerId) return;
+      fineGreenStrokeRef.current = null;
+      setFineGreenStrokePreview(null);
+      overlayDirtyRef.current = true;
+      onCommitFineGreenStroke?.(stroke.points);
+    };
+
     const featureForId = (id: string | null): SurfaceFeature | null => {
       if (!id) return null;
       return surfaceEditDraftRef.current
@@ -5981,10 +6106,28 @@ export function PixiStage(props: PixiStageProps) {
     // federated event layer also guarantees release/cancel delivery when the
     // pointer leaves the canvas or crosses an overlay.
     const handleCanvasPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0 || props.playableShotMode || editorMode !== "PAINT" || !selectedTerrain) return;
+      if (event.button !== 0 || props.playableShotMode) return;
       if (flyoverRef.current) return;
       const point = canvasPoint(event);
       if (!point) return;
+
+      if (editorMode === "SCULPT") {
+        const x = Math.floor(point.x);
+        const y = Math.floor(point.y);
+        if (
+          x >= 0 && y >= 0 && x < course.width && y < course.height
+          && course.tiles[y * course.width + x] === "green"
+          && onPreviewFineGreenStroke && onCommitFineGreenStroke
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          beginFineGreenStroke(point, event.pointerId);
+          try { pointerSurface.setPointerCapture(event.pointerId); } catch { /* synthetic pointer */ }
+        }
+        return;
+      }
+
+      if (editorMode !== "PAINT" || !selectedTerrain) return;
 
       if (terrainTool === "spline" && onPreviewTerrainStroke && onCommitTerrainStroke) {
         event.preventDefault();
@@ -6077,6 +6220,13 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     const handleCanvasPointerMove = (event: PointerEvent) => {
+      if (fineGreenStrokeRef.current?.pointerId === event.pointerId) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const point = canvasPoint(event);
+        if (point) extendFineGreenStroke(point, event.pointerId);
+        return;
+      }
       if (surfaceEditDragRef.current?.pointerId === event.pointerId) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -6104,6 +6254,17 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     const handleCanvasPointerUp = (event: PointerEvent) => {
+      if (fineGreenStrokeRef.current?.pointerId === event.pointerId) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const point = canvasPoint(event);
+        if (point) extendFineGreenStroke(point, event.pointerId);
+        finishFineGreenStroke(event.pointerId);
+        try {
+          if (pointerSurface.hasPointerCapture(event.pointerId)) pointerSurface.releasePointerCapture(event.pointerId);
+        } catch { /* capture may already be released */ }
+        return;
+      }
       if (surfaceEditDragRef.current?.pointerId === event.pointerId) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -6127,6 +6288,11 @@ export function PixiStage(props: PixiStageProps) {
     };
 
     const handleCanvasPointerCancel = (event: PointerEvent) => {
+      if (fineGreenStrokeRef.current?.pointerId === event.pointerId) {
+        event.stopImmediatePropagation();
+        cancelFineGreenStroke();
+        return;
+      }
       if (surfaceEditDragRef.current?.pointerId === event.pointerId) {
         event.stopImmediatePropagation();
         cancelSurfaceEdit();
@@ -6172,6 +6338,12 @@ export function PixiStage(props: PixiStageProps) {
       const t = screenToTile(e.global.x, e.global.y);
       if (!t) return;
       if (editorMode === "PAINT" && !props.playableShotMode) return; // handled by native captured pointer events above
+      if (
+        editorMode === "SCULPT"
+        && !props.playableShotMode
+        && t.x >= 0 && t.y >= 0 && t.x < course.width && t.y < course.height
+        && course.tiles[t.y * course.width + t.x] === "green"
+      ) return; // fine-green strokes are handled by native pointer capture
       onClickTile(t.x, t.y);
     };
 
@@ -6200,6 +6372,7 @@ export function PixiStage(props: PixiStageProps) {
       if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
       if (event.key === "Escape") {
         if (terrainStrokeRef.current) cancelTerrainStroke();
+        if (fineGreenStrokeRef.current) cancelFineGreenStroke();
         if (surfaceEditDragRef.current) cancelSurfaceEdit();
         if (clickSplineDraftRef.current.length > 0) {
           updateClickSplineDraft([]);
@@ -6286,7 +6459,7 @@ export function PixiStage(props: PixiStageProps) {
       pointerSurface.removeEventListener("pointercancel", handleCanvasPointerCancel, true);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [appReady, screenToTile, screenToWorldPoint, screenToIsoPlane, onClickTile, onPreviewTerrainStroke, onCommitTerrainStroke, onPreviewSurfaceFeatureEdit, onCommitSurfaceFeatureEdit, editorMode, terrainTool, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.graphicsQuality, props.showGolfers, props.playableShotMode, surfaceHeightAt, updateClickSplineDraft, updateClickSplineHover, updateSelectedSurface, updateSurfaceEditDraft]);
+  }, [appReady, screenToTile, screenToWorldPoint, screenToIsoPlane, onClickTile, onPreviewTerrainStroke, onCommitTerrainStroke, onPreviewSurfaceFeatureEdit, onCommitSurfaceFeatureEdit, onPreviewFineGreenStroke, onCommitFineGreenStroke, editorMode, terrainTool, selectedTerrain, worldCash, course, rotation, cameraState, onPickGolfer, liveActive, golfersRef, endFlyover, props.graphicsQuality, props.showGolfers, props.playableShotMode, surfaceHeightAt, updateClickSplineDraft, updateClickSplineHover, updateSelectedSurface, updateSurfaceEditDraft]);
 
   return (
     <div
@@ -6472,6 +6645,40 @@ export function PixiStage(props: PixiStageProps) {
             </div>
           )}
           <div style={{ opacity: 0.65, marginTop: 3 }}>{t("terrainStroke.instructions")}</div>
+        </div>
+      )}
+      {fineGreenStrokePreview && (
+        <div
+          data-testid="fine-green-stroke-preview"
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "absolute",
+            top: 14,
+            right: 14,
+            minWidth: 220,
+            padding: "11px 13px",
+            borderRadius: 10,
+            pointerEvents: "none",
+            color: "#f7f1de",
+            background: fineGreenStrokePreview.netCost <= (props.worldCash ?? 0)
+              ? "rgba(22,30,22,0.94)"
+              : "rgba(92,24,20,0.96)",
+            border: "1px solid rgba(242,232,201,0.35)",
+            boxShadow: "0 8px 28px rgba(0,0,0,0.42)",
+            fontSize: 12,
+            lineHeight: 1.45,
+            zIndex: 20,
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: 14 }}>
+            {t("greenSculpt.previewTitle", { count: fineGreenStrokePreview.changedSamples })}
+          </div>
+          <div>{t("greenSculpt.previewCost", { cost: formatCurrency(fineGreenStrokePreview.netCost) })}</div>
+          {fineGreenStrokePreview.clippedPoints > 0 && (
+            <div>{t("greenSculpt.previewClipped", { count: fineGreenStrokePreview.clippedPoints })}</div>
+          )}
+          <div style={{ opacity: 0.72 }}>{t("greenSculpt.previewRelease")}</div>
         </div>
       )}
       {editorMode === "PAINT" && (terrainTool === "spline" || terrainTool === "edit") && (

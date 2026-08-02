@@ -3,6 +3,12 @@ import { formatCurrency, formatNumber, formatWeekLabel } from "../i18n/format";
 import type { TutorialTarget } from "../game/onboarding/tutorial";
 import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
 import {
+  FINE_GREEN_BRUSHES,
+  FINE_GREEN_RADII,
+  type FineGreenBrush,
+  type FineGreenRadius,
+} from "../game/greens/fineGreenSculpt";
+import {
   ELEVATION_COST_PER_STEP,
   terrainMaintenanceWeight,
   themeEarthworkMult,
@@ -25,6 +31,7 @@ import { Tooltip } from "./help/Tooltip";
 import { REPORT_HELP } from "./help/tooltipContent";
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
+import type { MessageKey } from "../i18n/catalog";
 import { HoleMinimap } from "./HoleMinimap";
 import { concessionMinReputation, isConcessionUnlocked, reputationTier } from "../game/progression/progression";
 import { courseVibeLabel } from "./courseVibe";
@@ -34,6 +41,16 @@ import {
 } from "./biomeUiTheme";
 
 type Tab = "Editor" | "Metrics" | "Results" | "Upgrades";
+
+const FINE_GREEN_BRUSH_LABELS: Record<FineGreenBrush, MessageKey> = {
+  raise: "greenSculpt.brush.raise",
+  lower: "greenSculpt.brush.lower",
+  smooth: "greenSculpt.brush.smooth",
+  tilt: "greenSculpt.brush.tilt",
+  ridge: "greenSculpt.brush.ridge",
+  bowl: "greenSculpt.brush.bowl",
+  flatten: "greenSculpt.brush.flatten",
+};
 
 export function HUD(props: {
   course: Course;
@@ -53,6 +70,10 @@ export function HUD(props: {
   setSculptBrush?: (b: SculptBrush) => void;
   sculptRadius?: SculptRadius;
   setSculptRadius?: (r: SculptRadius) => void;
+  fineGreenBrush?: FineGreenBrush;
+  setFineGreenBrush?: (brush: FineGreenBrush) => void;
+  fineGreenRadius?: FineGreenRadius;
+  setFineGreenRadius?: (radius: FineGreenRadius) => void;
   startWizard: () => void;
   startPlaceTee?: () => void;
   startPlaceGreen?: () => void;
@@ -625,8 +646,61 @@ export function HUD(props: {
 
               {editorMode === "SCULPT" && props.sculptBrush && props.setSculptBrush && props.setSculptRadius && (
                 <div style={{ marginBottom: 10 }}>
+                  {props.fineGreenBrush && props.setFineGreenBrush && props.setFineGreenRadius && (
+                    <div
+                      data-testid="fine-green-sculpt-controls"
+                      style={{ marginBottom: 12, padding: 8, border: "1px solid #b9c9b7", borderRadius: 10, background: "#f5faf3" }}
+                    >
+                      <div style={{ marginBottom: 4 }}><b><T id="greenSculpt.title" /></b></div>
+                      <div style={{ marginBottom: 7, color: "#485648", fontSize: 11 }}>
+                        <T id="greenSculpt.help" />
+                      </div>
+                      <div role="group" aria-label={translateCurrent("greenSculpt.brushAria")} style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 7 }}>
+                        {FINE_GREEN_BRUSHES.map((brush) => (
+                          <button
+                            key={brush}
+                            data-testid={`fine-green-brush-${brush}`}
+                            aria-pressed={props.fineGreenBrush === brush}
+                            onClick={() => props.setFineGreenBrush!(brush)}
+                            style={{
+                              flex: "1 1 29%",
+                              minWidth: 62,
+                              padding: "6px 5px",
+                              borderRadius: 8,
+                              border: props.fineGreenBrush === brush ? "2px solid #17281c" : "1px solid #aab7a8",
+                              background: "#fff",
+                              fontSize: 11,
+                              textTransform: "capitalize",
+                            }}
+                          >
+                            <T id={FINE_GREEN_BRUSH_LABELS[brush]} />
+                          </button>
+                        ))}
+                      </div>
+                      <div role="group" aria-label={translateCurrent("greenSculpt.radiusAria")} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <span style={{ fontSize: 11, color: "#485648" }}><T id="greenSculpt.radius" /></span>
+                        {FINE_GREEN_RADII.map((radius) => (
+                          <button
+                            key={radius}
+                            aria-pressed={props.fineGreenRadius === radius}
+                            onClick={() => props.setFineGreenRadius!(radius)}
+                            style={{
+                              width: 38,
+                              padding: "5px 0",
+                              borderRadius: 8,
+                              border: props.fineGreenRadius === radius ? "2px solid #17281c" : "1px solid #aab7a8",
+                              background: "#fff",
+                              fontSize: 11,
+                            }}
+                          >
+                            {radius}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div style={{ marginBottom: 6 }}>
-                    <b><T id="auto.ui.hud.sculpt.brush" /></b>
+                    <b><T id="greenSculpt.coarseTitle" /></b>
                   </div>
                   <div style={{ display: "flex", gap: 6, marginBottom: 8, flexWrap: "wrap" }}>
                     {(["raise", "lower", "smooth", "level"] as const).map((b) => (

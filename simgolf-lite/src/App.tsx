@@ -40,6 +40,12 @@ import {
   resetM35Telemetry,
 } from "./game/render/m35Telemetry";
 import { computeSculptDeltas, sculptSteps, type SculptBrush, type SculptRadius } from "./game/models/sculpt";
+import {
+  computeFineGreenSculptPreview,
+  type FineGreenBrush,
+  type FineGreenRadius,
+  type FineGreenSculptPreview,
+} from "./game/greens/fineGreenSculpt";
 import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
@@ -432,7 +438,7 @@ export default function App() {
 
   // Dispatch function for actions
   const dispatch = useCallback((action: Action) => {
-    if (action.type === "SCULPT_TILES") sculptedRef.current = true;
+    if (action.type === "SCULPT_TILES" || action.type === "SCULPT_GREEN") sculptedRef.current = true;
     recordBugAction(action);
     // Log reducer dispatch count (only for mutations, not UI-only actions)
     if (DEBUG_PERF && (action.type !== "SET_MODE" && action.type !== "SET_ACTIVE_HOLE" && action.type !== "SET_BRUSH")) {
@@ -442,14 +448,14 @@ export default function App() {
     const controlledRound = previous.world.playerPro?.activeRound;
     const editingLocked = controlledRound && controlledRound.phase !== "round_complete" && controlledRound.phase !== "conceded";
     const physicalEdit = new Set([
-      "PAINT_TILES", "EDIT_SURFACE_FEATURE", "SCULPT_TILES", "PLACE_TEE", "MOVE_TEE", "PLACE_GREEN", "MOVE_GREEN",
+      "PAINT_TILES", "EDIT_SURFACE_FEATURE", "SCULPT_TILES", "SCULPT_GREEN", "PLACE_TEE", "MOVE_TEE", "PLACE_GREEN", "MOVE_GREEN",
       "SET_TEE_BOX", "REMOVE_TEE_BOX", "SET_PIN_POSITION", "REMOVE_PIN_POSITION", "ADD_WAYPOINT",
       "UPDATE_WAYPOINT", "REMOVE_WAYPOINT", "PLACE_OBSTACLE", "REMOVE_OBSTACLE", "PLACE_BUILDING",
       "REMOVE_BUILDING", "PLACE_DECORATION", "REMOVE_DECORATION", "ROTATE_DECORATION", "SET_COURSE_LAYOUTS",
     ]).has(action.type);
     if (editingLocked && physicalEdit) return;
     const next = gameSession.dispatch(action);
-    if ((action.type === "PAINT_TILES" || action.type === "EDIT_SURFACE_FEATURE") && next !== previous) {
+    if ((action.type === "PAINT_TILES" || action.type === "EDIT_SURFACE_FEATURE" || action.type === "SCULPT_TILES" || action.type === "SCULPT_GREEN") && next !== previous) {
       terrainUndoRef.current = [...terrainUndoRef.current.slice(-19), {
         course: previous.course,
         world: previous.world,
@@ -519,6 +525,8 @@ export default function App() {
   );
   const [sculptBrush, setSculptBrush] = useState<SculptBrush>("raise");
   const [sculptRadius, setSculptRadius] = useState<SculptRadius>(1);
+  const [fineGreenBrush, setFineGreenBrush] = useState<FineGreenBrush>("raise");
+  const [fineGreenRadius, setFineGreenRadius] = useState<FineGreenRadius>(1);
   const [buildingType, setBuildingType] = useState<ConcessionType>("snack_bar");
   const [decorationKind, setDecorationKind] = useState<DecorationKind>("bench");
   const [decorationRotation, setDecorationRotation] = useState<DecorationRotation>(0);
@@ -643,7 +651,7 @@ export default function App() {
   }, [capital, gameSession, markDirty, t]);
 
   useEffect(() => {
-    if (screen !== "game" || editorMode !== "PAINT") return;
+    if (screen !== "game" || (editorMode !== "PAINT" && editorMode !== "SCULPT")) return;
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
@@ -1049,7 +1057,11 @@ export default function App() {
       mode: world.mode ?? "sandbox",
       screen,
       seed: String(world.runSeed),
-      tool: editorMode === "PAINT" ? `PAINT:${terrainTool}:${selected}` : editorMode,
+      tool: editorMode === "PAINT"
+        ? `PAINT:${terrainTool}:${selected}`
+        : editorMode === "SCULPT"
+          ? `SCULPT:${fineGreenBrush}:${fineGreenRadius}`
+          : editorMode,
       week: world.week,
       ...(minimapView
         ? {
@@ -1066,6 +1078,8 @@ export default function App() {
     activeHoleIndex,
     activeLayout.id,
     editorMode,
+    fineGreenBrush,
+    fineGreenRadius,
     flow.modal,
     live.status.dayIndex,
     minimapView,
@@ -2905,6 +2919,11 @@ export default function App() {
         selectedTeeSet,
         setupPlacement: setupPlacement ? { kind: setupPlacement.kind, key: setupPlacement.key } : null,
         teePlacementPending: pendingTeePlacement ? { teeSet: pendingTeePlacement.teeSet, point: pendingTeePlacement.point, netCost: pendingTeePlacement.netCost } : null,
+        fineGreen: {
+          brush: fineGreenBrush,
+          radius: fineGreenRadius,
+          shapedTiles: course.greenSurface?.tiles.length ?? 0,
+        },
       },
       graphics: { quality: appProfile.graphics.quality, resolvedQuality: resolvedGraphicsQuality, animations: effectiveAnimations, waterAnimation: effectiveAnimations && appProfile.graphics.waterAnimation, treeSway: effectiveAnimations && appProfile.graphics.treeSway },
       retention: { photoMode, recordsOpen: showRetention, achievementsEarned: appProfile.achievements.earned.length, totalRounds: records.totalRounds, aces: records.aces.length, tickerVisible: appProfile.gameplay.tickerVisible },
@@ -2938,7 +2957,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, flow.base, flow.modal, flow.paused, followSelected, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, flow.base, flow.modal, flow.paused, followSelected, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -3038,6 +3057,9 @@ export default function App() {
             issues: [...(scoredHoles[index]?.issues ?? [])],
           })),
           obstacles: current.obstacles.map((obstacle) => ({ ...obstacle })),
+          greenSurface: current.greenSurface
+            ? structuredClone(current.greenSurface)
+            : null,
           features: (current.surfaceIntent?.features ?? []).map((feature) => ({
             id: feature.id,
             terrain: feature.terrain,
@@ -3698,6 +3720,43 @@ export default function App() {
     void audio.playSfx("brush");
   }, [world.isBankrupt, getTerrainStrokePreview, buildTerrainSurfaceFeature, selected, course.width, course.height, dispatch, audio, t]);
 
+  const getFineGreenStrokePreview = useCallback((points: Point[]): FineGreenSculptPreview => (
+    computeFineGreenSculptPreview({
+      course,
+      points,
+      brush: fineGreenBrush,
+      radius: fineGreenRadius,
+      costMult,
+    })
+  ), [course, costMult, fineGreenBrush, fineGreenRadius]);
+
+  const commitFineGreenStroke = useCallback((points: Point[]) => {
+    if (world.isBankrupt) return;
+    const preview = getFineGreenStrokePreview(points);
+    if (preview.changedSamples === 0) {
+      setPaintError(preview.clippedPoints > 0
+        ? "Fine contour brushes apply only to existing green terrain."
+        : null);
+      return;
+    }
+    if (preview.netCost > world.cash) {
+      setPaintError(t("error.earthworksFunds", {
+        amount: formatCurrency(Math.ceil(preview.netCost)),
+      }));
+      return;
+    }
+    dispatch({ type: "SCULPT_GREEN", surface: preview.surface });
+    setCapital((capital) => ({
+      ...capital,
+      spent: capital.spent + preview.netCost,
+    }));
+    setPaintError(preview.clippedPoints > 0
+      ? `Shaped ${preview.changedSamples} fine samples; clipped ${preview.clippedPoints} off-green points.`
+      : null);
+    setA11yMessage(`Green contour ${fineGreenBrush} applied to ${preview.changedSamples} samples.`);
+    void audio.playSfx("sculpt");
+  }, [audio, dispatch, fineGreenBrush, getFineGreenStrokePreview, t, world.cash, world.isBankrupt]);
+
   const getSurfaceFeatureEditPreview = useCallback((feature: SurfaceFeature): TerrainStrokePreview | null => {
     const startedAt = performance.now();
     const preview = prepareSurfaceFeatureEdit(
@@ -4132,6 +4191,9 @@ export default function App() {
     
     if (editorMode === "SCULPT") {
       if (x < 0 || y < 0 || x >= course.width || y >= course.height) return;
+      // Native captured pointer strokes own fine-green sculpting so mouse and
+      // touch share continuous previews and one atomic undo entry.
+      if (course.tiles[y * course.width + x] === "green") return;
       const deltas = computeSculptDeltas(course, x, y, sculptBrush, sculptRadius);
       if (deltas.length === 0) return;
       const cost = computeElevationChangeCost(
@@ -4905,6 +4967,8 @@ export default function App() {
                 terrainTool={terrainTool}
                 onPreviewSurfaceFeatureEdit={getSurfaceFeatureEditPreview}
                 onCommitSurfaceFeatureEdit={commitSurfaceFeatureEdit}
+                onPreviewFineGreenStroke={getFineGreenStrokePreview}
+                onCommitFineGreenStroke={commitFineGreenStroke}
                 selectedTerrain={selected}
                 worldCash={world.cash}
                 flagColor={legacy.selected.flagColor}
@@ -4925,6 +4989,8 @@ export default function App() {
                 playerShotAim={playerShotAim}
                 playableShotMode={activePlayerRound?.phase === "awaiting_shot"}
                 sculptRadius={sculptRadius}
+                fineGreenBrush={fineGreenBrush}
+                fineGreenRadius={fineGreenRadius}
                 onCameraUpdate={(camera) => {
                   holeEditCameraManualRef.current = true;
                   setHoleEditCamera(camera);
@@ -5389,6 +5455,10 @@ export default function App() {
         setSculptBrush={setSculptBrush}
         sculptRadius={sculptRadius}
         setSculptRadius={setSculptRadius}
+        fineGreenBrush={fineGreenBrush}
+        setFineGreenBrush={setFineGreenBrush}
+        fineGreenRadius={fineGreenRadius}
+        setFineGreenRadius={setFineGreenRadius}
         viewMode={viewMode}
         setViewMode={setViewMode}
         onFlyover={startFlyover}

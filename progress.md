@@ -1078,3 +1078,36 @@ or release-owner checks.
   production build/audits, and unsigned macOS arm64 package smoke pass. The
   packaged ASAR contains both Worker and benchmark chunks.
 - Physical-device, long-session, and subjective human checks remain postponed.
+
+## 2026-08-02 — ZK-638 fine-green sculpting and rendering
+
+- Added a dedicated fine-surface authoring path over the v26 GreenSurface
+  contract. Raise, lower, smooth, tilt, ridge, bowl, and flatten operate on
+  shared 4×4 fixed-point nodes, clip to owned green coverage, retain one
+  physical height across tile seams, clamp every offset, blend perimeter
+  samples back to the coarse survey, and emit sparse canonical records.
+- Fine earthwork is priced from exact changed fixed-point volume and commits
+  atomically through the reducer. Terrain repaint/edit also normalizes the
+  fine surface immediately, removing orphaned non-green records. Coarse and
+  fine sculpt edits now enter the existing bounded full-course undo/redo stack.
+- Added captured mouse and touch strokes with resampling, continuous affordable
+  previews, Escape cancellation, one-release commits, live-region feedback,
+  seven localized brush controls, and three radii. Structured game text and
+  E2E diagnostics expose the selected brush/radius and shaped-tile count.
+- Added deterministic bounded renderer projections for quarter-step contour
+  lines, downhill arrows, dotted fall lines, and restrained uphill/downhill
+  shading. Double strokes, dots, and arrowheads preserve meaning without hue;
+  geometry remains identical across color-vision palettes and is static under
+  reduced motion. Low quality decimates records and every quality shares an
+  8,192-command cap.
+- Focused verification passes: 6 Vitest files / 43 tests (including reducer
+  fuzz and adjacent terrain/elevation paths), TypeScript, scoped ESLint with
+  zero errors and only the existing Hook warnings, and git diff check. The
+  dedicated Playwright scenario passes 1/1 in 22 seconds, covering real mouse
+  preview/commit, exact terrain/economy version changes, undo/redo, synthetic
+  touch through the same capture path, and zero console/page errors.
+- The required bundled web-game client entered the M23 course fixture and
+  emitted valid structured state with the fine-green editor contract and no
+  client-error artifact. Its canvas capture and the focused full-page Sculpt
+  capture were visually inspected; controls, contour/arrows, course, and HUD
+  rendered coherently. Full repository/release gates remain for integration.
