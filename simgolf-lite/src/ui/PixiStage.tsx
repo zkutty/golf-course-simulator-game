@@ -103,7 +103,6 @@ import {
   appendBoundedEffect,
 } from "../game/render/worldEffects";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
-import { buildingSpec, buildingVisualFrame } from "../game/models/buildings";
 import {
   decorationTiles,
   decorationVisual,
@@ -210,6 +209,7 @@ import {
   createSurfaceCareSceneSystem,
   type SurfaceCareWorkerSprite,
 } from "./renderer/scenes/surfaceCareScene";
+import { createStructuresPropsSceneSystem } from "./renderer/scenes/structuresPropsScene";
 
 const TERRAIN_LABEL_KEYS: Record<Terrain, MessageKey> = {
   fairway: "designDock.terrain.fairway",
@@ -1111,7 +1111,6 @@ export function PixiStage(props: PixiStageProps) {
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
   const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
-  const buildingSpritesRef = useRef<PIXI.Sprite[]>([]);
   const propertyGraphicsRef = useRef<PIXI.Graphics[]>([]);
   const playerShotOverlayRef = useRef<PIXI.Container | null>(null);
   const decorationSpritesRef = useRef<Array<{ sprite: PIXI.Sprite; shadow: PIXI.Graphics }>>([]);
@@ -1425,6 +1424,29 @@ export function PixiStage(props: PixiStageProps) {
       rotation,
       surfaceHeightAt,
     ],
+    structuresProps: [
+      atlasRevision,
+      course.buildings,
+      course.theme,
+      rotation,
+      surfaceHeightAt,
+    ],
+    overlaysDiagnostics: [
+      props.playerRound,
+      props.playerShotAim,
+      rotation,
+      surfaceHeightAt,
+    ],
+    estateSurvey: [
+      course.elevations,
+      course.estate,
+      course.height,
+      course.width,
+      props.colorVision,
+      props.selectedParcelId,
+      props.surveyMode,
+      rotation,
+    ],
   });
   const renderSnapshot = useMemo<RenderSnapshot>(() => ({
     course,
@@ -1438,6 +1460,11 @@ export function PixiStage(props: PixiStageProps) {
     colorVision: props.colorVision,
     reducedMotion: Boolean(props.reducedMotion),
     animationsEnabled: props.animationsEnabled,
+    atlasRevision,
+    playerRound: props.playerRound,
+    playerShotAim: props.playerShotAim,
+    surveyMode: Boolean(props.surveyMode),
+    selectedParcelId: props.selectedParcelId,
     worldSeed: props.worldSeed,
     surfaceHeightAt,
     revisions: renderRevisions,
@@ -1447,11 +1474,16 @@ export function PixiStage(props: PixiStageProps) {
     draftTee,
     effectiveTiles,
     holes,
+    atlasRevision,
     props.animationsEnabled,
     props.colorVision,
     props.graphicsQuality,
+    props.playerRound,
+    props.playerShotAim,
     props.reducedMotion,
+    props.selectedParcelId,
     props.seasonalVisualState,
+    props.surveyMode,
     props.worldSeed,
     renderRevisions,
     rotation,
@@ -2021,7 +2053,6 @@ export function PixiStage(props: PixiStageProps) {
       golferPoolRef.current.clear();
       mobilityUnitPoolRef.current.clear();
       flagPoolRef.current.clear();
-      buildingSpritesRef.current = [];
       propertyGraphicsRef.current = [];
       surfaceCareWorkersRef.current = [];
       playerShotOverlayRef.current = null;
@@ -3530,6 +3561,7 @@ export function PixiStage(props: PixiStageProps) {
         layers.surfaceCare,
         (workers) => { surfaceCareWorkersRef.current = workers; },
       ),
+      createStructuresPropsSceneSystem(layers.objects),
     ]);
     sceneSystemHostRef.current = host;
     return () => {
@@ -3828,44 +3860,6 @@ export function PixiStage(props: PixiStageProps) {
     seasonalPlantsSignature,
     surfaceHeightAt,
   ]);
-
-  // ---------------------------------------------------------------------
-  // Objects layer — buildings (multi-tile footprints, ZKU-152)
-  // ---------------------------------------------------------------------
-
-  useEffect(() => {
-    if (!appReady) return;
-    const layers = layersRef.current;
-    if (!layers) return;
-
-    buildingSpritesRef.current.forEach((sprite) => {
-      layers.objects.removeChild(sprite);
-      sprite.destroy();
-    });
-    buildingSpritesRef.current = [];
-
-    for (const b of course.buildings ?? []) {
-      const spec = buildingSpec(b);
-      const theme = getBiomeDefinition(course.theme).key;
-      const tex = getPropFrame(buildingVisualFrame(b, theme))
-        ?? getPropFrame(buildingVisualFrame({ ...b, tier: 1 }, theme))
-        ?? getPropFrame(spec.frame as AtlasFrame)
-        ?? getPropFrame("clubhouse");
-      if (!tex) continue;
-      const footprint = { x: b.x, y: b.y, w: spec.w, d: spec.d };
-      const anchor = frontCorner(footprint, rotation);
-      const e = surfaceHeightAt(anchor.x, anchor.y);
-      const placement = placeObject(footprint, e, rotation);
-      const sprite = new PIXI.Sprite(tex);
-      sprite.anchor.set(0.5, 1);
-      sprite.position.set(placement.position.x, placement.position.y);
-      sprite.width = spec.w * TILE_W;
-      sprite.height = (sprite.width * tex.height) / tex.width;
-      sprite.zIndex = placement.zIndex;
-      layers.objects.addChild(sprite);
-      buildingSpritesRef.current.push(sprite);
-    }
-  }, [appReady, course, rotation, surfaceHeightAt]);
 
   // M31-M33 property assets use lightweight deterministic vector footprints.
   // They rotate/zoom/depth-sort with the world and never create one entity per

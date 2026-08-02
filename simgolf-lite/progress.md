@@ -1,5 +1,9 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## Renderer milestone continuation (2026-08-02)
+
+Current user request: implement the remaining agent-ready renderer milestone work; human certification remains deferred. ZK-680 and ZK-681 are committed with automated evidence. ZK-679 has snapshot-driven seasonal terrain, surface care, static buildings, and Player Pro overlay systems; terrain/water, remaining static props, mobile entities, atmosphere, and camera/input are still in PixiStage. Preserve generated audit/screenshot artifacts unless deliberately updating evidence.
+
 ## ZK-692 IndexedDB durability regression — 2026-08-02
 
 - Changed the IndexedDB KV driver to resolve writes/deletes only after their

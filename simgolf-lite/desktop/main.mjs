@@ -18,6 +18,8 @@ const WINDOW_STATE_KEY = "coursecraft_window_state_v1";
 let mainWindow = null;
 let store = null;
 let safeMode = process.argv.includes("--safe-mode");
+const analysisWorkerBenchmark = process.argv.includes("--analysis-worker-benchmark");
+if (analysisWorkerBenchmark) app.commandLine.appendSwitch("allow-file-access-from-files");
 let quitApproved = false;
 let quitRequestInFlight = false;
 let windowMode = "windowed";
@@ -194,7 +196,7 @@ function registerIpcHandlers() {
   });
 }
 
-async function createWindow() {
+async function createWindow({ benchmark = false } = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) return;
   if (!store) {
     store = new NativeStore(app.getPath("userData"));
@@ -210,11 +212,11 @@ async function createWindow() {
     show: false,
     backgroundColor: "#28382f",
     webPreferences: {
-      preload: path.join(root, "preload.mjs"),
+      ...(benchmark ? {} : { preload: path.join(root, "preload.mjs") }),
       contextIsolation: true,
-      sandbox: true,
+      sandbox: !benchmark,
       nodeIntegration: false,
-      webSecurity: true,
+      webSecurity: !benchmark,
       devTools: !app.isPackaged,
     },
   });
@@ -234,11 +236,17 @@ async function createWindow() {
   for (const eventName of ["move", "resize", "maximize", "unmaximize", "enter-full-screen", "leave-full-screen"]) {
     mainWindow.on(eventName, () => void persistWindowState());
   }
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
+  if (!benchmark) mainWindow.once("ready-to-show", () => mainWindow?.show());
   mainWindow.on("closed", () => { mainWindow = null; quitRequestInFlight = false; });
   const developmentUrl = process.env.COURSECRAFT_DEV_SERVER_URL;
-  if (developmentUrl && /^http:\/\/127\.0\.0\.1:\d+$/.test(developmentUrl)) await mainWindow.loadURL(developmentUrl);
-  else await mainWindow.loadFile(path.join(root, "..", "dist", "index.html"));
+  if (developmentUrl && /^http:\/\/127\.0\.0\.1:\d+$/.test(developmentUrl)) {
+    const fixture = benchmark ? "?fixture=zk681-analysis-worker" : "";
+    await mainWindow.loadURL(`${developmentUrl}/${fixture}`);
+  } else {
+    await mainWindow.loadFile(path.join(root, "..", "dist", "index.html"), benchmark
+      ? { query: { fixture: "zk681-analysis-worker" } }
+      : undefined);
+  }
   await steam.initialize();
 }
 
@@ -256,9 +264,35 @@ function handleDisplayMetricsChanged() {
   void persistWindowState();
 }
 
-app.whenReady().then(() => {
+async function runPackagedAnalysisWorkerBenchmark() {
+  await createWindow({ benchmark: true });
+  const report = await mainWindow.webContents.executeJavaScript(`(async () => {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+      if (window.__coursecraftAnalysisWorkerBenchmark) {
+        return await window.__coursecraftAnalysisWorkerBenchmark;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error("Analysis Worker benchmark fixture did not install.");
+  })()`, true);
+  console.log(`COURSECRAFT_ANALYSIS_WORKER_BENCHMARK=${JSON.stringify(report)}`);
+  quitApproved = true;
+  app.quit();
+}
+
+app.whenReady().then(async () => {
   screen.on("display-metrics-changed", handleDisplayMetricsChanged);
-  return createWindow();
+  if (analysisWorkerBenchmark) {
+    try {
+      await runPackagedAnalysisWorkerBenchmark();
+    } catch (error) {
+      console.error("COURSECRAFT_ANALYSIS_WORKER_BENCHMARK_ERROR=", error);
+      quitApproved = true;
+      app.exit(1);
+    }
+    return;
+  }
+  await createWindow();
 });
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") requestRendererQuit();

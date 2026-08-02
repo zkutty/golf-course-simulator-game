@@ -5,6 +5,7 @@ import { collectDesktopPackageEvidence } from "./desktop-package-evidence.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const baselinePath = join(root, "artifacts/zk-680/pre-split-baseline.json");
+const performancePath = join(root, "artifacts/zk-680/current-performance.json");
 
 export const DELIVERY_BUDGETS = {
   // The initial game graph may never exceed the pre-split bundle.
@@ -18,6 +19,8 @@ export const DELIVERY_BUDGETS = {
   distBytes: 114878859 + 2 * 1024 * 1024,
   desktopPackageBytes: 495074219 + 4 * 1024 * 1024,
   desktopAsarBytes: 206569606 + 2 * 1024 * 1024,
+  coldStartupMs: 5000,
+  fixtureLoadMs: 6000,
 };
 
 function walkBytes(directory) {
@@ -72,12 +75,15 @@ export function collectWebDeliveryEvidence(distDirectory = join(root, "dist")) {
   const initialEntry = manifest[entry];
   if (!initialEntry.file.endsWith(".js")) throw new Error("Application entry has no JavaScript output.");
   const audit = readJson(auditPath);
+  const performance = readJson(performancePath);
   return {
     initialJavaScriptBytes: statSync(join(distDirectory, initialEntry.file)).size,
     visionPageJavaScriptBytes: routeJavascriptBytes(manifest, distDirectory, "src/ui/VisionPage.tsx"),
     initialCriticalTransferBytes: Number(audit?.initialCritical?.bytes),
     maxSelectedBiomeBytes: maxSelectedBiomeBytes(audit),
     distBytes: walkBytes(distDirectory),
+    coldStartupMs: Number(performance.coldStartupMs),
+    fixtureLoadMs: Number(performance.fixtureLoadMs),
   };
 }
 
