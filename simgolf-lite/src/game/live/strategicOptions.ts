@@ -16,6 +16,7 @@ import type { GolferCapabilities, RejectedAlternative, ShotIntent, StrategicHole
 import type { Personality } from "./personality";
 import { liveCourseSnapshot, resolveLiveShot, terrainAt } from "./livePhysics";
 import { analyzeShotSlope } from "../models/shotSlope";
+import { planGreenLandingZones, type GreenLandingCandidate } from "./greenLandingStrategy";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const playable = new Set(["tee", "fairway", "rough", "deep_rough", "green", "sand", "waste_area"]);
@@ -555,6 +556,62 @@ function buildIntent(args: { course: Course; hole: Hole; kind: StrategicIntentKi
   };
 }
 
+function greenReachable(course: Course, hole: Hole, from: Point, capabilities: GolferCapabilities): boolean {
+  if (!hole.green) return false;
+  const playsLikeYards = analyzeShotSlope({ course, from, to: hole.green, yardsPerTile: course.yardsPerTile }).playsLikeDistanceYards;
+  const maximumCarry = CLUBS.Driver.carry * (.84 + capabilities.power / 480) * 1.12;
+  // A golfer needs a little reserve for dispersion and elevation; a target at
+  // the absolute 112% hero ceiling is not treated as a viable green attack.
+  return playsLikeYards <= maximumCarry * .92;
+}
+
+function chooseGreenClub(course: Course, from: Point, target: Point, capabilities: GolferCapabilities): { name: string; power: number } {
+  const playsLikeYards = analyzeShotSlope({ course, from, to: target, yardsPerTile: course.yardsPerTile }).playsLikeDistanceYards;
+  const powerScale = .84 + capabilities.power / 480;
+  const names = ["Chip", "Sand Wedge", "Pitching Wedge", "7 Iron", "5 Iron", "3 Wood", "Driver"];
+  const name = names.find((candidate) => CLUBS[candidate].carry * powerScale * 1.08 >= playsLikeYards) ?? "Driver";
+  return { name, power: clamp(playsLikeYards / Math.max(1, CLUBS[name].carry * powerScale), .25, 1.08) };
+}
+
+function buildGreenLandingIntent(args: {
+  course: Course;
+  hole: Hole;
+  from: Point;
+  lie: string;
+  capabilities: GolferCapabilities;
+  candidate: GreenLandingCandidate;
+}): ShotIntent {
+  const club = chooseGreenClub(args.course, args.from, args.candidate.target, args.capabilities);
+  return {
+    id: args.candidate.id,
+    kind: "approach",
+    from: { ...args.from },
+    target: { ...args.candidate.target },
+    club: club.name,
+    power: club.power,
+    technique: args.candidate.role === "run-up" ? "punch" : args.candidate.role === "attack" && args.capabilities.irons >= 72 ? "backspin" : "normal",
+    flightProfile: args.candidate.role === "run-up" ? "low" : args.candidate.role === "attack" ? "high" : "standard",
+    expectedStrokes: args.candidate.score,
+    variance: args.candidate.variance,
+    hazardRisk: args.candidate.hazardRisk,
+    nextShotQuality: args.candidate.nextShotQuality,
+    facts: args.candidate.facts,
+  };
+}
+
+function greenLandingIntents(args: {
+  course: Course;
+  hole: Hole;
+  from: Point;
+  lie: string;
+  capabilities: GolferCapabilities;
+  personality: Personality;
+  snapshot: PlayerRoundCourseSnapshot;
+}): ShotIntent[] {
+  if (!greenReachable(args.course, args.hole, args.from, args.capabilities)) return [];
+  return planGreenLandingZones(args).map((candidate) => buildGreenLandingIntent({ ...args, candidate }));
+}
+
 export function generateStrategicHolePlan(args: {
   course: Course;
   hole: Hole;
@@ -562,8 +619,17 @@ export function generateStrategicHolePlan(args: {
   capabilities: GolferCapabilities;
   personality: Personality;
   snapshot?: PlayerRoundCourseSnapshot;
+  /** Architecture review compares named route types rather than green-zone aims. */
+  includeGreenLandingZones?: boolean;
 }): StrategicHolePlan {
   const profile = profileFor(args.capabilities, args.course);
+  const snapshot = args.snapshot ?? (args.includeGreenLandingZones === false
+    ? undefined
+    : liveCourseSnapshot({
+        course: args.course,
+        teeSet: "member",
+        pinRotation: args.course.activePinRotation ?? "A",
+      }));
   const teeLie = args.hole.tee ? terrainAt(args.course, args.hole.tee) : null;
   const recoveryCandidates = args.hole.tee && args.hole.green && teeLie && recoveryLies.has(teeLie)
     ? generateRecoveryCandidates({
@@ -575,12 +641,17 @@ export function generateStrategicHolePlan(args: {
         personality: args.personality,
         shotNumber: 1,
         sampleCount: 1,
-        snapshot: args.snapshot,
+        snapshot,
       })
+    : [];
+  const landingCandidates = snapshot && args.includeGreenLandingZones !== false && recoveryCandidates.length === 0 && args.hole.tee && teeLie
+    ? greenLandingIntents({ ...args, from: args.hole.tee, lie: teeLie, snapshot })
     : [];
   const candidates = recoveryCandidates.length > 0
     ? recoveryCandidates
-    : INTENTS.map((kind) => buildIntent({ ...args, kind, profile }));
+    : landingCandidates.length > 0
+      ? landingCandidates
+      : INTENTS.map((kind) => buildIntent({ ...args, kind, profile }));
   const legacyScore = (intent: ShotIntent) => {
     const riskPenalty = intent.hazardRisk * (1 - args.capabilities.riskTolerance) * 1.4;
     const challengeBonus = intent.kind === "hero" ? args.capabilities.challengeSeeking * .25 : 0;
@@ -595,13 +666,22 @@ export function generateStrategicHolePlan(args: {
   };
   const score = recoveryCandidates.length > 0
     ? (intent: ShotIntent) => recoveryScore(intent, args.capabilities)
-    : legacyScore;
+    : landingCandidates.length > 0
+      ? (intent: ShotIntent) => intent.expectedStrokes
+      : legacyScore;
   const ordered = candidates.slice().sort((a, b) => score(a) - score(b) || INTENTS.indexOf(a.kind) - INTENTS.indexOf(b.kind));
   const chosen = ordered[0];
-  const rejected: RejectedAlternative[] = ordered.slice(1, 4).map((alternative) => ({
+  const rejected: RejectedAlternative[] = ordered.slice(1, 6).map((alternative) => ({
+    intentId: alternative.id,
     kind: alternative.kind,
+    target: { ...alternative.target },
+    score: Number(score(alternative).toFixed(3)),
     expectedStrokes: Number(alternative.expectedStrokes.toFixed(3)),
-    reason: score(alternative) > score(chosen) + .25 ? "higher modeled risk or lower next-shot quality" : "slightly less fit for this golfer",
+    reason: landingCandidates.length > 0
+      ? score(alternative) > score(chosen) + .25
+        ? "higher expected putts, miss risk, or rollout exposure"
+        : "viable green zone, but less aligned with this golfer's capability and risk profile"
+      : score(alternative) > score(chosen) + .25 ? "higher modeled risk or lower next-shot quality" : "slightly less fit for this golfer",
     facts: alternative.facts,
   }));
   return {
@@ -640,6 +720,17 @@ export function followUpIntent(args: {
       from: { ...args.from },
     };
   }
+  const snapshot = args.snapshot ?? liveCourseSnapshot({
+    course: args.course,
+    teeSet: "member",
+    pinRotation: args.course.activePinRotation ?? "A",
+  });
+  const landingCandidates = greenLandingIntents({ ...args, snapshot });
+  if (landingCandidates.length > 0) return {
+    ...landingCandidates[0],
+    id: `${args.hole.id ?? "hole"}-follow-${args.shotNumber}-${landingCandidates[0].id.split("-").slice(-3).join("-")}`,
+    from: { ...args.from },
+  };
   const kind: StrategicIntentKind = args.lie === "rough" || args.lie === "deep_rough" || args.lie === "sand" || args.lie === "waste_area"
     ? "recovery"
     : distance(args.from, target) <= 5 ? "approach" : "positional";

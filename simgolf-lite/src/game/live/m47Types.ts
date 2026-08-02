@@ -52,7 +52,13 @@ export interface ShotIntent {
 }
 
 export interface RejectedAlternative {
+  /** Stable candidate identity retained for green-zone inspection. */
+  intentId?: string;
   kind: StrategicIntentKind;
+  /** Exact aim point considered; absent only on legacy plans. */
+  target?: Point;
+  /** Deterministic option score used for ordering, when available. */
+  score?: number;
   expectedStrokes: number;
   reason: string;
   facts: StrategyFact[];

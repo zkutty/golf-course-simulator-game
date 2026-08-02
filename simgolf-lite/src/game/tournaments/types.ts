@@ -7,7 +7,7 @@ export type TournamentStatus = "scheduled" | "completed" | "cancelled";
 
 export type TournamentRequirementId =
   | "reputation" | "deposit" | "date" | "calendar" | "holes"
-  | "rotations" | "route" | "rating" | "slope" | "surface-care";
+  | "rotations" | "route" | "rating" | "slope" | "surface-care" | "pin-fairness";
 
 export interface TournamentRequirement {
   id: TournamentRequirementId;

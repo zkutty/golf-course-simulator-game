@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import { strategicIdentity } from "../m49/identity";
 import { surfaceCareConditionSummary } from "../conditions/surfaceCare";
+import { analyzePinRotation } from "../greens/pinFairness";
 
 export interface TournamentCourseStandard {
   teeSet: TeeSet;
@@ -35,6 +36,26 @@ function rangeLabel(bounds: readonly [number, number]): string {
 
 function requirement(requirement: TournamentRequirement): TournamentRequirement {
   return requirement;
+}
+
+function requiredPinReadiness(tier: TournamentTier): number {
+  return tier === "championship" ? .68 : tier === "regional" ? .55 : .4;
+}
+
+function pinFairnessRequirement(course: Course, tier: TournamentTier, pinRotation: (typeof PIN_ROTATIONS)[number]): TournamentRequirement {
+  const fairness = analyzePinRotation(course, pinRotation);
+  const required = requiredPinReadiness(tier);
+  const worst = [...fairness.warnings].sort((left, right) => right.warning.severity - left.warning.severity)[0];
+  return requirement({
+    id: "pin-fairness",
+    label: `Pin ${pinRotation} fairness`,
+    passed: fairness.configuredHoles > 0 && fairness.legalHoles === fairness.configuredHoles && fairness.tournamentReadiness >= required,
+    current: `${Math.round(fairness.tournamentReadiness * 100)}% ready; casual ${fairness.satisfactionDelta.toFixed(1)} satisfaction, +${fairness.paceMinutesDelta.toFixed(2)} min/hole`,
+    required: `${Math.round(required * 100)}% setup readiness`,
+    guidance: worst
+      ? `${worst.holeName}: ${worst.warning.message} Move that cohort-visible warning or select another legal rotation.`
+      : `Configure a legal Pin ${pinRotation} on every hole.`,
+  });
 }
 
 function chooseSetup(
@@ -75,6 +96,7 @@ export function evaluateTournamentCourseQualification(
     requirement({ id: "route", label: "Prescribed route", passed: routePass, current: routePass ? `${standard.teeSet} / Pin ${chosen.pinRotation}` : "No complete route", required: `${standard.teeSet} tee route`, guidance: `Repair every invalid ${standard.teeSet} tee-to-pin corridor.` }),
     requirement({ id: "rating", label: "Course rating", passed: ratingPass, current: ratingValue.toFixed(1), required: rangeLabel(standard.rating), guidance: ratingValue < standard.rating[0] ? "Add strategic length or difficulty to the prescribed setup." : "Reduce excessive length or difficulty in the prescribed setup." }),
     requirement({ id: "slope", label: "Slope", passed: slopePass, current: `${slopeValue}`, required: `${standard.slope[0]}–${standard.slope[1]}`, guidance: slopeValue < standard.slope[0] ? "Add challenge that affects bogey golfers without overwhelming scratch golfers." : "Ease hazards and forced carries that disproportionately punish bogey golfers." }),
+    pinFairnessRequirement(course, tier, chosen?.pinRotation ?? "A"),
   ];
   if (course.surfaceCare && Object.keys(course.surfaceCare.records).length > 0) {
     const readiness = surfaceCareConditionSummary(course).tournamentReadiness;
@@ -121,6 +143,7 @@ export function revalidatePrescribedTournamentSetup(
     route: requirement({ id: "route", label: "Prescribed route", passed: routePass, current: routePass ? `${teeSet} / Pin ${pinRotation}` : `${teeSet} / Pin ${pinRotation} is invalid`, required: `${teeSet} tee route`, guidance: `Restore the booked ${teeSet} tee-to-Pin ${pinRotation} route on every hole.` }),
     rating: requirement({ id: "rating", label: "Course rating", passed: ratingPass, current: setup.courseRating.toFixed(1), required: rangeLabel(standard.rating), guidance: setup.courseRating < standard.rating[0] ? "Add strategic length or difficulty to the booked setup." : "Reduce excessive length or difficulty in the booked setup." }),
     slope: requirement({ id: "slope", label: "Slope", passed: slopePass, current: `${setup.slope}`, required: `${standard.slope[0]}–${standard.slope[1]}`, guidance: setup.slope < standard.slope[0] ? "Add balanced challenge to the booked setup." : "Ease hazards that disproportionately punish bogey golfers." }),
+    "pin-fairness": pinFairnessRequirement(course, tier, pinRotation),
   };
   const requirements = base.requirements.map((item) => replacements[item.id] ?? item);
   return {

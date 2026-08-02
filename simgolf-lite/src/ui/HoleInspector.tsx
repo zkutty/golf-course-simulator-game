@@ -6,6 +6,7 @@ import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
 import type { ReactNode } from "react";
 import { getParSetting, getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup } from "../game/models/courseSetup";
+import { analyzePinFairness } from "../game/greens/pinFairness";
 
 interface HoleInspectorProps {
   holeIndex: number;
@@ -224,7 +225,23 @@ export function HoleInspector({
               </div>}
             </div>;
           })}
-          {PIN_ROTATIONS.map((pinRotation) => { const point = getPinPosition(hole, pinRotation); return <MarkerRow key={`${pinRotation}-${point?.x ?? "x"}-${point?.y ?? "y"}`} id={`pin-${pinRotation}`} label={translateCurrent("courseSetup.pin", { rotation: pinRotation })} placed={!!point} onPlace={() => onBeginPinPlacement?.(pinRotation)} onRemove={() => onRemovePinPosition?.(pinRotation)} />; })}
+          {PIN_ROTATIONS.map((pinRotation) => {
+            const point = getPinPosition(hole, pinRotation);
+            const fairness = point ? analyzePinFairness(course, hole, point, pinRotation) : null;
+            return <div key={`${pinRotation}-${point?.x ?? "x"}-${point?.y ?? "y"}`} data-testid={`pin-fairness-${pinRotation}`} style={{ padding: 6, border: "1px solid #d7c8aa", borderRadius: 6, background: "rgba(255,255,255,.55)" }}>
+              <MarkerRow id={`pin-${pinRotation}`} label={translateCurrent("courseSetup.pin", { rotation: pinRotation })} placed={!!point} onPlace={() => onBeginPinPlacement?.(pinRotation)} onRemove={() => onRemovePinPosition?.(pinRotation)} />
+              {fairness && <div style={{ marginTop: 5, fontSize: 10, color: fairness.legal ? "#4c574c" : "#8b2e1b" }}>
+                <strong>{fairness.legal ? translateCurrent("courseSetup.tournamentReady", { percent: Math.round(fairness.tournamentReadiness * 100) }) : translateCurrent("courseSetup.invalidCup")}</strong>
+                {fairness.legal && <div>{translateCurrent("courseSetup.pinDifficulty", { difficulty: Math.round(fairness.difficulty * 100), edge: fairness.edgeClearanceTiles.toFixed(1) })}</div>}
+                {fairness.legal && <div data-testid={`pin-cohorts-${pinRotation}`} style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4, marginTop: 4 }}>
+                  {(["scratch", "bogey", "casual"] as const).map((cohort) => <span key={cohort} title={translateCurrent("courseSetup.pinCohortTitle", { cohort, putts: fairness.cohorts[cohort].expectedPutts.toFixed(2), pace: `${fairness.cohorts[cohort].paceMinutesDelta >= 0 ? "+" : ""}${fairness.cohorts[cohort].paceMinutesDelta.toFixed(2)}`, satisfaction: fairness.cohorts[cohort].satisfactionDelta.toFixed(1), complaint: Math.round(fairness.cohorts[cohort].complaintRisk * 100) })}>
+                    <b style={{ display: "block", textTransform: "capitalize" }}>{cohort}</b>{translateCurrent("courseSetup.pinCohortCompact", { putts: fairness.cohorts[cohort].expectedPutts.toFixed(2), satisfaction: fairness.cohorts[cohort].satisfactionDelta.toFixed(1) })}
+                  </span>)}
+                </div>}
+                {[...fairness.blockingReasons, ...fairness.warnings.map((warning) => warning.message)].map((message) => <div key={message} role="alert" style={{ marginTop: 3, color: "#8b2e1b" }}>{message}</div>)}
+              </div>}
+            </div>;
+          })}
         </div>
         {setupIssues.length > 0 && <ul style={{ margin: "8px 0 0", paddingLeft: 18, color: "#8b2e1b", fontSize: 11 }}>{setupIssues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>}
         <small style={{ display: "block", marginTop: 7, opacity: .68 }}>{translateCurrent("courseSetup.help")}</small>

@@ -57,7 +57,7 @@ import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
 import { getEffectiveBalance, terrainCostMult } from "./game/balance/difficulty";
 import { GameBackground } from "./ui/gameui";
 import { useAudio } from "./audio/audioContext";
-import { HoleInspector } from "./ui/HoleInspector";
+const HoleInspector = lazy(() => import("./ui/HoleInspector").then((module) => ({ default: module.HoleInspector })));
 import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState, IsoCameraSnapshot } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
@@ -5399,6 +5399,7 @@ export default function App() {
                   <T id="auto.app.next" /></button>
               </div>
               <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+                <Suspense fallback={<div aria-live="polite" style={{ padding: 16 }}><T id="courseSetup.loadingInspector" /></div>}>
                 <HoleInspector
                   holeIndex={activeHoleIndex}
                   evaluation={activeHoleEvaluation}
@@ -5430,6 +5431,7 @@ export default function App() {
                   onRemovePinPosition={(pinRotation) => dispatch({ type: "REMOVE_PIN_POSITION", holeIndex: activeHoleIndex, pinRotation })}
                   onSetActivePinRotation={(pinRotation) => dispatch({ type: "SET_ACTIVE_PIN_ROTATION", pinRotation })}
                 />
+                </Suspense>
               </div>
             </div>
           ) : (

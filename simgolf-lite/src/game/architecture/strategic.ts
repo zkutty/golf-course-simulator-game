@@ -196,6 +196,7 @@ function evaluateOption(args: {
     par: args.par,
     capabilities: args.cohort.capabilities,
     personality: personality(.5, args.cohort.capabilities.consistency / 100, args.cohort.capabilities.riskTolerance > .66 ? .6 : -.15),
+    includeGreenLandingZones: false,
   });
   const relevant = [plan.chosen, ...plan.rejected.map((item) => ({ expectedStrokes: item.expectedStrokes, kind: item.kind }))]
     .find((candidate) => candidate.kind === planKind(args.kind)) ?? plan.chosen;
@@ -205,13 +206,31 @@ function evaluateOption(args: {
   const adjustedRisk = clamp((facts.hazardRisk + facts.contiguousHazard * .42) * (1 - skillRiskReduction));
   const viable = facts.safeSurface >= .42 && forcedCarry < .7 && adjustedRisk < .62;
   const riskPenalty = adjustedRisk * (1.18 - args.cohort.capabilities.riskTolerance * .42) + forcedCarry * (1 - args.cohort.capabilities.riskTolerance) * .78;
-  const capabilityBonus = args.kind === "hero" ? args.cohort.capabilities.power / 650 : args.kind === "safe" ? args.cohort.capabilities.accuracy / 720 : args.cohort.capabilities.shortGame / 740;
+  // A power player can convert a hazardous direct carry into a credible
+  // advantage; safe, run-up, and recovery lines retain their specialist
+  // advantages. This preserves architecture review's cohort differentiation
+  // independently of the live green-zone planner.
+  const capabilityBonus = args.kind === "hero"
+    ? args.cohort.capabilities.power / 175
+    : args.kind === "safe"
+      ? args.cohort.capabilities.accuracy / 720
+      : args.kind === "runup"
+        ? args.cohort.capabilities.shortGame / 430
+        : args.kind === "recovery"
+          ? args.cohort.capabilities.recovery / 430
+          : (args.cohort.capabilities.accuracy + args.cohort.capabilities.irons) / 1_400;
   const base = Number.isFinite(relevant.expectedStrokes) ? relevant.expectedStrokes : args.par + 1;
+  // A recovery route only earns its short-game/recovery advantage after a
+  // miss. Selecting it directly from a playable tee or fairway should carry
+  // a real opportunity cost against safe, positional, and direct options.
+  const recoveryContextPenalty = args.kind === "recovery" && ["tee", "fairway", "green"].includes(terrainAt(args.course, args.hole.tee ?? args.hole.green!) ?? "")
+    ? .62
+    : 0;
   const rng = deterministic(args.seed);
   const scores: number[] = [];
   for (let index = 0; index < args.samples; index++) {
     const noise = (rng() - .5) * (1 - args.cohort.capabilities.consistency / 100) * .62;
-    scores.push(Math.max(1, base + riskPenalty - capabilityBonus + noise));
+    scores.push(Math.max(1, base + riskPenalty + recoveryContextPenalty - capabilityBonus + noise));
   }
   const expected = scores.reduce((sum, value) => sum + value, 0) / Math.max(1, scores.length);
   const variance = scores.reduce((sum, value) => sum + (value - expected) ** 2, 0) / Math.max(1, scores.length);

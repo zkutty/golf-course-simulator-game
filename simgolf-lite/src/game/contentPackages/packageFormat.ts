@@ -3,6 +3,7 @@ import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { normalizeM51CourseMobilityState, remapM51CourseMobilityBuildingIds, validateM51CourseMobilityInput } from "../m51/mobility";
 import { validateCoursePlayability, validateScenarioAuthoring } from "../scenarioAuthoring/authoring";
 import type { Course, CourseLayout, Hole, Terrain } from "../models/types";
+import { validateHoleCourseSetup } from "../models/courseSetup";
 import type {
   ChallengePayloadV1,
   CoursePackageManifestV1,
@@ -199,6 +200,13 @@ function validateCourse(course: unknown, errors: string[]): course is Course {
     }
     for (const holeId of [...layout.draftHoleIds, ...layout.publishedHoleIds]) {
       if (!holeIds.has(holeId)) errors.push(`course: layout ${layout.id} references missing hole ${holeId}`);
+    }
+  }
+  if (errors.length === 0) {
+    for (const [index, hole] of (course.holes as Hole[]).entries()) {
+      for (const issue of validateHoleCourseSetup(course as unknown as Course, hole)) {
+        errors.push(`course.holes[${index}]: ${issue.message}`);
+      }
     }
   }
   return errors.length === 0;

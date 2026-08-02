@@ -1,5 +1,6 @@
 import type { Course, Hole, ParSetting, PinRotation, Point, TeeSet } from "./types";
 import { PIN_ROTATIONS, TEE_SETS } from "./types";
+import { pinPhysicalBlockers } from "../greens/pinFairness";
 
 export { PIN_ROTATIONS, TEE_SETS };
 
@@ -145,7 +146,7 @@ export function preferredTeeForArchetype(archetype: string): TeeSet {
 }
 
 export interface CourseSetupIssue {
-  code: "OUT_OF_BOUNDS" | "DUPLICATE" | "PIN_NOT_ON_GREEN" | "TEE_ORDER";
+  code: "OUT_OF_BOUNDS" | "DUPLICATE" | "PIN_NOT_ON_GREEN" | "PIN_INVALID_CUP" | "TEE_ORDER";
   message: string;
 }
 
@@ -169,8 +170,12 @@ export function validateHoleCourseSetup(course: Course, hole: Hole): CourseSetup
   }
   for (const rotation of PIN_ROTATIONS) {
     const pin = getPinPosition(hole, rotation);
-    if (pin && inBounds(pin) && course.tiles[pin.y * course.width + pin.x] !== "green") {
-      issues.push({ code: "PIN_NOT_ON_GREEN", message: `Pin ${rotation} must sit on green terrain.` });
+    if (pin && inBounds(pin)) {
+      const blockers = pinPhysicalBlockers(course, pin);
+      for (const message of blockers) issues.push({
+        code: course.tiles[pin.y * course.width + pin.x] === "green" ? "PIN_INVALID_CUP" : "PIN_NOT_ON_GREEN",
+        message: `Pin ${rotation}: ${message}`,
+      });
     }
   }
   const pin = getPinPosition(hole, "A") ?? PIN_ROTATIONS.map((key) => getPinPosition(hole, key)).find(Boolean) ?? null;

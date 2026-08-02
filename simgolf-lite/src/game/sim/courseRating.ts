@@ -4,6 +4,7 @@ import { getGolferProfile, type GolferProfile } from "./golferProfiles";
 import { BALANCE } from "../balance/balanceConfig";
 import { courseForCourseSetup, getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../models/courseSetup";
 import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
+import { analyzePinFairness } from "../greens/pinFairness";
 
 export interface RatingSummary {
   holesUsed: number; // 9 or 18
@@ -89,7 +90,7 @@ function computeExpectedScoreForHole(
   holeIndex: number,
   profile: GolferProfile,
   summary: ReturnType<typeof scoreCourseHoles>,
-  puttingPenalty = 0,
+  expectedPutts = 2,
 ) {
   const h = summary.holes[holeIndex];
   if (!h || !h.isComplete || !h.isValid) {
@@ -122,10 +123,7 @@ function computeExpectedScoreForHole(
     profile,
   });
 
-  // Two putts baseline; keep MVP simple.
-  const puttingBaseline = 2;
-  const sensitivity = profile.name === "BOGEY" ? BALANCE.courseSetup.pinDifficulty.bogeySensitivity : 1;
-  const expected = baseShots + penalty + puttingBaseline + puttingPenalty * sensitivity;
+  const expected = baseShots + penalty + expectedPutts;
   return expected;
 }
 
@@ -133,25 +131,24 @@ function inBounds(course: Course, point: Point): boolean {
   return point.x >= 0 && point.y >= 0 && point.x < course.width && point.y < course.height;
 }
 
-function pinDifficultyPenalty(course: Course, pin: Point | null): number {
+/** Existing coarse setup difficulty remains the compatibility baseline. */
+function coarsePinDifficultyPenalty(course: Course, pin: Point | null): number {
   if (!pin || !inBounds(course, pin)) return 0;
   const cfg = BALANCE.courseSetup.pinDifficulty;
   let nearestNonGreen: number = cfg.edgeRadiusTiles;
   let adjacentHazards = 0;
   let elevationChange = 0;
   const pinElevation = course.elevations[pin.y * course.width + pin.x] ?? 0;
-  for (let dy = -cfg.edgeRadiusTiles; dy <= cfg.edgeRadiusTiles; dy++) {
-    for (let dx = -cfg.edgeRadiusTiles; dx <= cfg.edgeRadiusTiles; dx++) {
-      if (dx === 0 && dy === 0) continue;
-      const point = { x: pin.x + dx, y: pin.y + dy };
-      if (!inBounds(course, point)) continue;
-      const distance = Math.hypot(dx, dy);
-      const index = point.y * course.width + point.x;
-      const terrain = course.tiles[index];
-      if (terrain !== "green") nearestNonGreen = Math.min(nearestNonGreen, distance);
-      if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && (terrain === "water" || terrain === "wetland" || terrain === "sand")) adjacentHazards++;
-      if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) elevationChange = Math.max(elevationChange, Math.abs((course.elevations[index] ?? 0) - pinElevation));
-    }
+  for (let dy = -cfg.edgeRadiusTiles; dy <= cfg.edgeRadiusTiles; dy++) for (let dx = -cfg.edgeRadiusTiles; dx <= cfg.edgeRadiusTiles; dx++) {
+    if (dx === 0 && dy === 0) continue;
+    const point = { x: pin.x + dx, y: pin.y + dy };
+    if (!inBounds(course, point)) continue;
+    const distance = Math.hypot(dx, dy);
+    const index = point.y * course.width + point.x;
+    const terrain = course.tiles[index];
+    if (terrain !== "green") nearestNonGreen = Math.min(nearestNonGreen, distance);
+    if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1 && (terrain === "water" || terrain === "wetland" || terrain === "sand")) adjacentHazards++;
+    if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) elevationChange = Math.max(elevationChange, Math.abs((course.elevations[index] ?? 0) - pinElevation));
   }
   const edge = clamp(1 - nearestNonGreen / cfg.edgeRadiusTiles, 0, 1) * cfg.edgePenaltyMax;
   const hazard = adjacentHazards * cfg.adjacentHazardPenalty;
@@ -174,6 +171,9 @@ interface RatingGeometryCache {
   height: number;
   yardsPerTile: number;
   holeSignature: string;
+  greenSurface: Course["greenSurface"];
+  greenProgram: Course["greenProgram"];
+  greenLocalState: Course["greenLocalState"];
   setups: Map<string, SetupRatingSummary>;
   ratings?: Record<TeeSet, PublishedTeeRating>;
   rating?: RatingSummary;
@@ -216,6 +216,9 @@ function ratingGeometry(course: Course): RatingGeometryCache {
     entry.width === course.width &&
     entry.height === course.height &&
     entry.yardsPerTile === yardsPerTile &&
+    entry.greenSurface === course.greenSurface &&
+    entry.greenProgram === course.greenProgram &&
+    entry.greenLocalState === course.greenLocalState &&
     entry.holeSignature === holeSignature
   );
   if (cached) return cached;
@@ -225,6 +228,9 @@ function ratingGeometry(course: Course): RatingGeometryCache {
     width: course.width,
     height: course.height,
     yardsPerTile,
+    greenSurface: course.greenSurface,
+    greenProgram: course.greenProgram,
+    greenLocalState: course.greenLocalState,
     holeSignature,
     setups: new Map(),
   };
@@ -254,14 +260,23 @@ export function computeRatingForSetup(course: Course, teeSet: TeeSet, pinRotatio
     const tee = getTeeBox(original, teeSet);
     const pin = getPinPosition(original, pinRotation);
     if (!tee || !pin) setupComplete = false;
-    const penalty = pinDifficultyPenalty(setupCourse, pin);
+    const fairness = analyzePinFairness(setupCourse, original, pin, pinRotation);
+    const coarsePenalty = coarsePinDifficultyPenalty(setupCourse, pin);
+    // Retain the published coarse-rating baseline while the authoritative fine
+    // surface and automatic-putt model add only their newly observed excess.
+    const scratchAutomaticDelta = fairness.cohorts.scratch.scoreDelta * .25;
+    const scratchPutting = 2 + coarsePenalty + scratchAutomaticDelta;
+    const bogeyAutomaticDelta = scratchAutomaticDelta
+      + Math.max(0, fairness.cohorts.bogey.scoreDelta - fairness.cohorts.scratch.scoreDelta) * .12;
+    const bogeyPutting = 2 + coarsePenalty * BALANCE.courseSetup.pinDifficulty.bogeySensitivity + bogeyAutomaticDelta;
     const info = holeSummary.holes[i];
-    scratchTotal += computeExpectedScoreForHole(setupCourse, i, scratch, holeSummary, penalty);
-    bogeyTotal += computeExpectedScoreForHole(setupCourse, i, bogey, holeSummary, penalty);
-    if (info?.isComplete && info.isValid && tee && pin) {
+    scratchTotal += computeExpectedScoreForHole(setupCourse, i, scratch, holeSummary, scratchPutting);
+    bogeyTotal += computeExpectedScoreForHole(setupCourse, i, bogey, holeSummary, bogeyPutting);
+    if (!fairness.legal) setupComplete = false;
+    if (info?.isComplete && info.isValid && tee && pin && fairness.legal) {
       validHoles++;
       effectiveYardage += info.effectiveDistance * setupCourse.yardsPerTile;
-      pinDelta += penalty;
+      pinDelta += coarsePenalty + (fairness.cohorts.scratch.scoreDelta + fairness.cohorts.bogey.scoreDelta) / 2;
     }
   }
   const mult = holesUsed === 9 ? 2 : 1;

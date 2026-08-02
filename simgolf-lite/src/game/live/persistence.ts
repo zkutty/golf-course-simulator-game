@@ -87,6 +87,9 @@ function holePlan(value: unknown): boolean {
   return isRecord(value) && value.version === 1 && typeof value.holeId === "string" && finite(value.par) && finite(value.expectedScore) &&
     shotIntent(value.chosen) && Array.isArray(value.rejected) && value.rejected.length <= 5 && value.rejected.every((alternative) =>
       isRecord(alternative) && intentKinds.has(alternative.kind as StrategicIntentKind) && finite(alternative.expectedStrokes) &&
+      (alternative.intentId == null || typeof alternative.intentId === "string") &&
+      (alternative.target == null || point(alternative.target)) &&
+      (alternative.score == null || finite(alternative.score)) &&
       typeof alternative.reason === "string" && Array.isArray(alternative.facts) && alternative.facts.length <= 8 && alternative.facts.every(fact)
     );
 }

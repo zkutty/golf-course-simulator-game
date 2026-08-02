@@ -10,7 +10,7 @@ export function evaluateHoleReaction(args: {
   personality: Personality;
   condition: number;
 }): HoleReaction {
-  const actualScore = args.outcomes.reduce((sum, outcome) => sum + 1 + outcome.penaltyStrokes, 0);
+  const actualScore = args.outcomes.reduce((sum, outcome) => sum + 1 + outcome.penaltyStrokes + (outcome.greenPutting?.putts ?? 0), 0);
   const actualVsExpected = args.plan.expectedScore - actualScore;
   const heroSuccess = args.plan.chosen.kind === "hero" && args.outcomes.length > 0 && args.outcomes[0].penaltyStrokes === 0;
   const forcedMismatch = args.plan.chosen.hazardRisk > .7 && args.plan.chosen.kind !== "hero" && args.capabilities.power < 45;
