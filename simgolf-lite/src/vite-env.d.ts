@@ -12,6 +12,7 @@ interface ImportMetaEnv {
 }
 
 interface Window {
+  __coursecraftAnalysisWorkerBenchmark?: Promise<import("./game/analysis/benchmark").AnalysisWorkerBenchmarkReport>;
   coursecraftDesktop?: import("./platform/types").CourseCraftDesktopBridge;
   render_game_to_text?: () => string;
   advanceTime?: (ms: number) => void;

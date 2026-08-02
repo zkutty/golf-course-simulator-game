@@ -23,10 +23,14 @@ function platform(): PlatformServices {
 
 class FakeWorker implements AnalysisWorkerPort<{ value: number }, number> {
   readonly sent: AnalysisWorkerMessage<{ value: number }>[] = [];
+  readonly transfers: Transferable[][] = [];
   terminated = false;
   private listener?: (event: MessageEvent<AnalysisJobResult<number>>) => void;
 
-  postMessage(message: AnalysisWorkerMessage<{ value: number }>): void { this.sent.push(message); }
+  postMessage(message: AnalysisWorkerMessage<{ value: number }>, transfer: Transferable[] = []): void {
+    this.sent.push(message);
+    this.transfers.push(transfer);
+  }
   addEventListener(_type: "message", listener: (event: MessageEvent<AnalysisJobResult<number>>) => void): void { this.listener = listener; }
   removeEventListener(): void { this.listener = undefined; }
   terminate(): void { this.terminated = true; }
@@ -60,5 +64,17 @@ describe("versioned analysis jobs", () => {
 
     expect(worker.sent.filter((message) => message.type === "cancel")).toHaveLength(2);
     expect(worker.terminated).toBe(true);
+  });
+
+  it("forwards an explicit transfer list to the worker port", () => {
+    const session = new GameSession({ initialState: DEFAULT_STATE, platform: platform() });
+    const worker = new FakeWorker();
+    const client = new VersionedAnalysisJobClient(session, worker);
+    const buffer = new ArrayBuffer(16);
+
+    client.submit("surface-slope", { value: 1 }, vi.fn(), [buffer]);
+
+    expect(worker.transfers[0]).toEqual([buffer]);
+    client.dispose();
   });
 });

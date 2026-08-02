@@ -1059,3 +1059,22 @@ or release-owner checks.
 - Course packages now carry, validate, migrate, checksum, and remap green state. Active Player Pro rounds deep-freeze green geometry/program/local state and validate it on save/resume; course geometry versions include fine contours.
 - Independent review tightened green geometry identity to include canonical dimensions and row-major coarse green coverage, so flat green additions/removals and grid-shape changes invalidate caches and snapshots even without sparse contour offsets.
 - Verification: focused contract/save/package/round/hash/schema suites pass (8 files, 72 tests); TypeScript, scoped ESLint, and git diff check pass. A broader Vitest run was stopped without a surfaced failure so integration can run the full release suite.
+
+## 2026-08-02 — ZK-681 real analysis Worker benchmark
+
+- Added a real module Web Worker behind the existing revision-aware advisory
+  job client. Transfer lists are explicit, superseded/cancelled responses are
+  dropped, and `GameSession` teardown terminates the Worker.
+- Benchmarked the existing architecture/routing analyzer and the existing
+  shot-slope/tree-habitat analyzers on deterministic production fixtures in
+  Playwright Chromium. Main/Worker digests match exactly; cancellation, stale
+  revision rejection, teardown, and a 246,400-byte transferred elevation
+  buffer are covered by machine tests.
+- The committed report records 137.8 ms main-thread architecture analysis and
+  12.0 ms slope/habitat analysis on this machine. Decision: adopt the persistent
+  Worker for on-demand advisory architecture/heavy analysis only; keep the
+  below-budget surface proxy and all authoritative work on the main thread.
+- TypeScript, focused unit tests (4 files / 16 tests), real-Worker Playwright,
+  production build/audits, and unsigned macOS arm64 package smoke pass. The
+  packaged ASAR contains both Worker and benchmark chunks.
+- Physical-device, long-session, and subjective human checks remain postponed.

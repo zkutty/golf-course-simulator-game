@@ -22,7 +22,7 @@ export type AnalysisWorkerMessage<Payload> =
   | { type: "cancel"; id: string };
 
 export interface AnalysisWorkerPort<Payload, Result> {
-  postMessage(message: AnalysisWorkerMessage<Payload>): void;
+  postMessage(message: AnalysisWorkerMessage<Payload>, transfer?: Transferable[]): void;
   addEventListener(type: "message", listener: (event: MessageEvent<AnalysisJobResult<Result>>) => void): void;
   removeEventListener(type: "message", listener: (event: MessageEvent<AnalysisJobResult<Result>>) => void): void;
   terminate(): void;
@@ -51,11 +51,19 @@ export class VersionedAnalysisJobClient<Payload, Result> {
     this.removeSessionTeardown = this.session.registerTeardown(() => this.dispose());
   }
 
-  submit(kind: string, payload: Payload, onResult: (result: Result) => void): () => void {
+  submit(
+    kind: string,
+    payload: Payload,
+    onResult: (result: Result) => void,
+    transfer: readonly Transferable[] = [],
+  ): () => void {
     this.assertActive();
     const id = `analysis-${this.nextId++}`;
     this.callbacks.set(id, onResult);
-    this.worker.postMessage({ type: "run", job: { id, kind, revision: this.session.revision, payload } });
+    this.worker.postMessage(
+      { type: "run", job: { id, kind, revision: this.session.revision, payload } },
+      [...transfer],
+    );
     return () => this.cancel(id);
   }
 

@@ -12,15 +12,21 @@ import { BugReportLauncher } from './ui/BugReportDialog'
 initializeMonitoring()
 installGlobalBugCapture()
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <I18nProvider>
-      <AppErrorBoundary onError={reportAppError}>
-        <AudioProvider>
-          <App />
-        </AudioProvider>
-      </AppErrorBoundary>
-      <BugReportLauncher />
-    </I18nProvider>
-  </StrictMode>,
-)
+if (new URLSearchParams(window.location.search).get("fixture") === "zk681-analysis-worker") {
+  void import("./game/analysis/benchmark").then(({ installAnalysisWorkerBenchmarkFixture }) => {
+    installAnalysisWorkerBenchmarkFixture()
+  })
+} else {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <I18nProvider>
+        <AppErrorBoundary onError={reportAppError}>
+          <AudioProvider>
+            <App />
+          </AudioProvider>
+        </AppErrorBoundary>
+        <BugReportLauncher />
+      </I18nProvider>
+    </StrictMode>,
+  )
+}

@@ -15,6 +15,7 @@
     "test:ci": "vitest run --maxWorkers=2 && npm run test:audio-audit",
     "test:e2e": "playwright test",
     "test:e2e:golden": "playwright test e2e/golden-path.e2e.ts e2e/vision-page.e2e.ts",
+    "test:analysis-worker": "playwright test e2e/zk681-analysis-worker.e2e.ts",
     "test:release:browsers": "playwright test --config playwright.release.config.ts",
     "test:desktop": "node --test desktop/*.test.mjs",
     "desktop": "npm run build && electron .",

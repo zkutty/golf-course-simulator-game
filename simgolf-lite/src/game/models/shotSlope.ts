@@ -53,7 +53,7 @@ export interface ShotSlopeCompatible {
 export interface FrozenCourseElevation {
   readonly width: number;
   readonly height: number;
-  readonly elevations?: readonly number[];
+  readonly elevations?: readonly number[] | Float64Array;
 }
 
 export interface AnalyzeShotSlopeInput {

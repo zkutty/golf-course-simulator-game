@@ -1,0 +1,88 @@
+{
+  "capturedAt": "2026-08-02T13:02:44.019Z",
+  "engine": "Playwright Chromium (Electron-compatible Blink/V8 Worker path)",
+  "scope": "Automated machine evidence; no physical-device or subjective human validation.",
+  "report": {
+    "schemaVersion": 1,
+    "fixtureVersion": 1,
+    "runtime": {
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.7827.55 Safari/537.36",
+      "hardwareConcurrency": 10,
+      "crossOriginIsolated": false
+    },
+    "measurements": [
+      {
+        "workload": "architecture-routing",
+        "payloadBytes": 391031,
+        "transferBytes": 0,
+        "mainComputeMs": 137.8,
+        "workerDispatchMs": 2.3,
+        "workerComputeMs": 146.7,
+        "workerEndToEndMs": 287.6,
+        "workerMessageOverheadMs": 138.6,
+        "outputEquivalent": true,
+        "outputDigest": "0b238e27",
+        "output": {
+          "workload": "architecture-routing",
+          "total": 32.9,
+          "warningCount": 6,
+          "warningIds": [
+            "clubhouse-final",
+            "clubhouse-first",
+            "earthwork-heavy",
+            "transfer-heritage-16-heritage-17",
+            "transfer-heritage-18-meadow-1",
+            "terrain-retention"
+          ],
+          "componentScores": {
+            "routing": 42.4,
+            "naturalFit": 47.5,
+            "variety": 41.5,
+            "safety": 100,
+            "walkability": 72.7
+          },
+          "strategicTotal": 0,
+          "analyzedHoles": 36
+        }
+      },
+      {
+        "workload": "surface-habitat",
+        "payloadBytes": 461251,
+        "transferBytes": 246400,
+        "mainComputeMs": 12,
+        "workerDispatchMs": 2.2,
+        "workerComputeMs": 11.3,
+        "workerEndToEndMs": 16.2,
+        "workerMessageOverheadMs": 2.7,
+        "outputEquivalent": true,
+        "outputDigest": "a8f9eb29",
+        "output": {
+          "workload": "surface-habitat",
+          "slopeSamples": 9216,
+          "habitatSamples": 177,
+          "playsLikeYards": 6363206.812654,
+          "elevationDelta": 180,
+          "crossSlope": 32.067498,
+          "curveBias": -5.654476,
+          "habitatLobes": 828,
+          "habitatDetails": 1770,
+          "habitatRoots": 621,
+          "habitatRank": 87.672145
+        }
+      }
+    ],
+    "semantics": {
+      "cancellationRejectedCallback": true,
+      "staleRevisionRejectedCallback": true,
+      "sessionTeardownTerminatesWorker": true
+    },
+    "gate": {
+      "mainThreadBudgetMs": 8,
+      "equivalenceRequired": true,
+      "cancellationRequired": true,
+      "staleRevisionRequired": true
+    },
+    "decision": "adopt-advisory-worker",
+    "rationale": "At least one representative analyzer exceeded the 8 ms main-thread budget, while Worker output remained equivalent and advisory cancellation/revision guards passed. Adopt only for on-demand non-authoritative analysis."
+  }
+}
