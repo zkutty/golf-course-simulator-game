@@ -1051,3 +1051,11 @@ or release-owner checks.
   Human visual/aesthetic/accessibility/device/listening validation remains
   explicitly deferred to the final phase; no Linear mutation, commit, push,
   promotion, or deployment was performed.
+
+## 2026-08-02 — ZK-637 fine-green contract complete
+
+- Added the authoritative sparse GreenSurfaceV1 contract: canonical row-major 4×4 signed fixed-point offsets relative to the existing frozen coarse elevation grid, strict package/snapshot validation, bounded save normalization, green-mask cleanup, canonical serialization/hash, and green geometry identity.
+- Added receptive/balanced/championship/custom GreenProgram policy and canonical per-hole health, moisture, compaction, and wear state. Legacy v25 saves migrate to schema v26 with flat fine contours, balanced policy, healthy local state, unchanged A/B/C setups, and preserved M53 surfaceCare.
+- Course packages now carry, validate, migrate, checksum, and remap green state. Active Player Pro rounds deep-freeze green geometry/program/local state and validate it on save/resume; course geometry versions include fine contours.
+- Independent review tightened green geometry identity to include canonical dimensions and row-major coarse green coverage, so flat green additions/removals and grid-shape changes invalidate caches and snapshots even without sparse contour offsets.
+- Verification: focused contract/save/package/round/hash/schema suites pass (8 files, 72 tests); TypeScript, scoped ESLint, and git diff check pass. A broader Vitest run was stopped without a surfaced failure so integration can run the full release suite.

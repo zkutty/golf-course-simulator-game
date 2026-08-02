@@ -7,6 +7,11 @@ import { emptyLivingClubState } from "../livingClub/livingClub";
 import { createSeasonalState } from "../seasons/seasons";
 import { emptyM51CourseMobilityState, emptyM51MobilityState } from "../m51/mobility";
 import { biomeCompatibilityMetadataFor } from "./biomes";
+import {
+  createFlatGreenSurfaceV1,
+  createGreenProgram,
+  createHealthyGreenLocalState,
+} from "../greens/greenSurface";
 
 export const DEFAULT_COURSE: Course = {
   name: "West Village Municipal",
@@ -49,6 +54,10 @@ export const DEFAULT_COURSE: Course = {
   property: starterPropertyCourse(),
   m51: emptyM51CourseMobilityState(),
 };
+
+DEFAULT_COURSE.greenSurface = createFlatGreenSurfaceV1();
+DEFAULT_COURSE.greenProgram = createGreenProgram("balanced");
+DEFAULT_COURSE.greenLocalState = createHealthyGreenLocalState(DEFAULT_COURSE);
 
 export const DEFAULT_WORLD: World = {
   week: 1,

@@ -54,6 +54,11 @@ import {
 } from "../rules/contracts";
 import { classifyPenaltyAreaComponents } from "../rules/penaltyAreas";
 import { createControlledRoundSnapshotV2, decodeControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
+import {
+  createGreenRoundSnapshot,
+  decodeGreenRoundSnapshot,
+  withNormalizedGreenContract,
+} from "../greens/greenSurface";
 import { createSharedShotOutcome, resolveSharedRules } from "../rules/sharedOutcome";
 import { prepareObstacleInput, type FlightObstacle } from "../rules/obstacleCollision";
 import {
@@ -300,6 +305,10 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
   if (!point(round.ball) || !Array.isArray(round.scorecard) || !Array.isArray(round.shots) || round.shots.length > MAX_SHOTS) return null;
   if (!["awaiting_shot", "flight", "hole_complete", "round_complete", "conceded"].includes(round.phase)) return null;
   if (round.rulesSnapshot != null && !decodeControlledRoundSnapshotV2(round.rulesSnapshot).ok) return null;
+  const greenSnapshot = round.course.greenSnapshot == null
+    ? null
+    : decodeGreenRoundSnapshot(round.course.greenSnapshot, round.course);
+  if (greenSnapshot && !greenSnapshot.ok) return null;
   if (round.shots.some((trace) => !validActiveShotTrace(trace))) return null;
   if (round.phase === "flight" && (!round.pendingShot || !validActiveShotTrace(round.pendingShot))) return null;
   const theme = normalizeBiomeKey(round.course.theme);
@@ -315,6 +324,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
       ...round.course,
       theme,
       biomeCompatibility: biomeCompatibility.metadata,
+      ...(greenSnapshot?.ok ? { greenSnapshot: greenSnapshot.value } : {}),
     },
     strokes: Math.max(0, Math.floor(finite(round.strokes))),
     penalties: Math.max(0, Math.floor(finite(round.penalties))),
@@ -409,6 +419,7 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
   const season = seasonalState(world, course, day);
   const weather = activeWeather(world, course, day);
   const modifiers = weatherModifiers(weather, season.operations.drainageLevel);
+  const greenSnapshot = createGreenRoundSnapshot(view);
   return {
     courseId: layout.id,
     courseName: layout.name,
@@ -424,6 +435,7 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
     elevations: course.elevations.slice(),
     obstacles: course.obstacles.map((obstacle) => ({ ...obstacle })),
     holes: holes as PlayerRoundCourseSnapshot["holes"],
+    greenSnapshot,
     weather: {
       kind: weather.kind,
       temperatureF: weather.temperatureF,
@@ -542,7 +554,7 @@ export function startPlayableRound(args: {
 }
 
 function courseFromSnapshot(snapshot: PlayerRoundCourseSnapshot): Course {
-  return {
+  const course: Course = {
     width: snapshot.width,
     height: snapshot.height,
     tiles: snapshot.tiles as Terrain[],
@@ -576,6 +588,12 @@ function courseFromSnapshot(snapshot: PlayerRoundCourseSnapshot): Course {
     theme: snapshot.theme,
     biomeCompatibility: snapshot.biomeCompatibility,
   };
+  return withNormalizedGreenContract({
+    ...course,
+    greenSurface: snapshot.greenSnapshot?.surface,
+    greenProgram: snapshot.greenSnapshot?.program,
+    greenLocalState: snapshot.greenSnapshot?.localState,
+  });
 }
 
 function lieAt(snapshot: PlayerRoundCourseSnapshot, pointValue: PlayerProPoint): string {

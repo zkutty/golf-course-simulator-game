@@ -30,6 +30,12 @@ import {
   importSave,
   loadSlot,
 } from "../../utils/saveStore";
+import {
+  createGreenProgram,
+  greenGeometryVersion,
+  normalizeGreenLocalState,
+  normalizeGreenSurfaceV1,
+} from "../greens/greenSurface";
 
 function threeHoleCourse(): Course {
   const width = 64;
@@ -150,6 +156,41 @@ describe("M36 deterministic Player Pro play", () => {
     });
   });
 
+  it("freezes fine contours, program, and local condition for the active round", () => {
+    const course = threeHoleCourse();
+    const target = course.holes[0].green!;
+    course.greenSurface = normalizeGreenSurfaceV1({ tiles: [{
+      x: target.x,
+      y: target.y,
+      offsets: Array.from({ length: 16 }, (_, index) => index - 8),
+    }] }, course);
+    course.greenProgram = createGreenProgram("championship");
+    course.greenLocalState = normalizeGreenLocalState({ holes: [{
+      holeId: "hole-1",
+      health: 0.82,
+      moisture: 0.43,
+      compaction: 0.31,
+      wear: 0.24,
+    }] }, course);
+    const result = startPlayableRound({ course, world: world(), layoutId: "slice" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const frozen = structuredClone(result.round.course.greenSnapshot!);
+    expect(frozen.geometryVersion).toBe(greenGeometryVersion(course));
+    expect(frozen.program.preset).toBe("championship");
+    expect(frozen.localState.holes.find((hole) => hole.holeId === "hole-1")).toMatchObject({
+      health: 0.82,
+      moisture: 0.43,
+      compaction: 0.31,
+      wear: 0.24,
+    });
+
+    course.greenSurface.tiles[0].offsets[0] = 777;
+    course.greenProgram.targetSpeedFeet = 6;
+    course.greenLocalState.holes[0].health = 0;
+    expect(result.round.course.greenSnapshot).toEqual(frozen);
+  });
+
   it("restores active-round biome evidence through autosave and exported-file import", async () => {
     const { course, world: currentWorld, career, round } = started();
     const sourceWorld = {
@@ -168,6 +209,7 @@ describe("M36 deterministic Player Pro play", () => {
     expect(restored?.world.playerPro?.activeRound?.course).toMatchObject({
       theme: round.course.theme,
       biomeCompatibility: round.course.biomeCompatibility,
+      greenSnapshot: round.course.greenSnapshot,
     });
     expect(restored?.world.playerPro?.activeRound?.rngSeed).toBe(round.rngSeed);
     expect(restored?.world.playerPro?.activeRound?.rngCursor).toBe(round.rngCursor);

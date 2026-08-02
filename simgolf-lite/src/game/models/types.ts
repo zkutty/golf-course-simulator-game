@@ -9,6 +9,7 @@ import type { M49DemandPlan, M49EconomyState } from "../m49/types";
 import type { M51CourseMobilityState, M51MobilityAggregateSummary, M51MobilityState } from "../m51/types";
 import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
 import type { FeatureOrigin, PlantId } from "./plantTypes";
+import type { GreenLocalStateV1, GreenProgram, GreenSurfaceV1 } from "../greens/greenSurface";
 
 export type { LandTheme } from "./biomes";
 export type { FeatureOrigin, PlantId } from "./plantTypes";
@@ -440,6 +441,12 @@ export interface Course {
   surfaceIntent?: SurfaceIntentV1;
   /** Sparse M53 cultivated-surface condition and repair state. */
   surfaceCare?: SurfaceCareStateV1;
+  /** Sparse M62 4×4 fixed-point contours relative to coarse elevations. */
+  greenSurface?: GreenSurfaceV1;
+  /** Course-wide M62 green preparation policy. */
+  greenProgram?: GreenProgram;
+  /** Per-hole M62 health, moisture, compaction, and wear. */
+  greenLocalState?: GreenLocalStateV1;
   /** M25 land ownership and immutable surveyed-land record. */
   estate?: Estate;
   /** M31-M33 commercial campus, access, resort, and community assets. */

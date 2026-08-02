@@ -52,7 +52,10 @@ import {
 } from "../game/seasons/seasons";
 import { normalizeCampaignRun } from "../game/campaign/campaign";
 import { normalizePaceOperationsState } from "../game/live/paceHistory";
-import { migratePlayerProActiveRoundSnapshotV20 } from "../game/rules/roundSnapshotMigration";
+import {
+  migratePlayerProActiveRoundGreenSnapshotV26,
+  migratePlayerProActiveRoundSnapshotV20,
+} from "../game/rules/roundSnapshotMigration";
 import { normalizeM51CourseMobilityState, normalizeM51MobilityState } from "../game/m51/mobility";
 import {
   biomeCompatibilityMetadataFor,
@@ -65,9 +68,10 @@ import {
   plantDefinition,
 } from "../game/models/plantRegistry";
 import { normalizeSurfaceCareState } from "../game/conditions/surfaceCare";
+import { withNormalizedGreenContract } from "../game/greens/greenSurface";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 25 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 26 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -184,6 +188,10 @@ export interface SaveV24 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV25 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 25;
+  records?: CourseRecords;
+}
+export interface SaveV26 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -216,11 +224,11 @@ function courseForPersistence(course: Course): Course {
     theme,
   );
   if (!compatibility.ok) throw new Error(`Cannot save: ${compatibility.error}`);
-  return {
+  return withNormalizedGreenContract({
     ...course,
     theme,
     biomeCompatibility: biomeCompatibilityMetadataFor(theme),
-  };
+  });
 }
 
 /**
@@ -261,11 +269,15 @@ export function payloadForPersistence(payload: SavePayload): SavePayload {
 
 export function saveGame(payload: SavePayload) {
   const persisted = payloadForPersistence(payload);
-  const migratedPlayerPro = migratePlayerProActiveRoundSnapshotV20(
+  const rulesPlayerPro = migratePlayerProActiveRoundSnapshotV20(
     persisted.world.playerPro,
     persisted.course,
   ).playerPro as World["playerPro"];
-  const save: SaveV25 = {
+  const migratedPlayerPro = migratePlayerProActiveRoundGreenSnapshotV26(
+    rulesPlayerPro,
+    persisted.course,
+  ).playerPro as World["playerPro"];
+  const save: SaveV26 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: persisted.course,
@@ -749,6 +761,10 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V25 adds sparse cultivated-surface care records. Historical courses begin
   // healthy; no invented neglect or replayed maintenance history is created.
   24: (save) => ({ ...save, schemaVersion: 25 }),
+  // V26 adds sparse fine-green contours, one course-wide preparation program,
+  // bounded per-hole local condition, and immutable active-round carriers.
+  // Course-aware defaults and round freezing happen after topology validation.
+  25: (save) => ({ ...save, schemaVersion: 26 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -1010,6 +1026,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       ...course,
       m51: normalizeM51CourseMobilityState(rawCourse.m51, course, (parsed.world as World).m51),
     };
+    course = withNormalizedGreenContract(course);
     course = {
       ...course,
       surfaceCare: normalizeSurfaceCareState(rawCourse.surfaceCare, course, {
@@ -1030,9 +1047,13 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
 
     const roundBiomeError = activeRoundBiomeError(rawWorld.playerPro);
     if (roundBiomeError) return fail("INVALID_WORLD", roundBiomeError);
-    const rawPlayerPro = migrated.migratedFrom === 19 || migrated.migratedFrom == null
+    const rulesPlayerPro = migrated.migratedFrom === 19 || migrated.migratedFrom == null
       ? migratePlayerProActiveRoundSnapshotV20(rawWorld.playerPro, course).playerPro
       : rawWorld.playerPro;
+    const rawPlayerPro = migratePlayerProActiveRoundGreenSnapshotV26(
+      rulesPlayerPro,
+      course,
+    ).playerPro;
     const rawConstraints = rawWorld.constraints;
     const world: World = {
       ...DEFAULT_WORLD,

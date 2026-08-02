@@ -139,6 +139,62 @@ describe("save validation and migrations", () => {
     expect(result.payload.course.condition).toBe(DEFAULT_COURSE.condition);
   });
 
+  it("migrates v25 to flat healthy greens without changing M53 care or A/B/C setups", () => {
+    const tiles = DEFAULT_COURSE.tiles.slice();
+    for (let y = 2; y < 6; y++) for (let x = 2; x < 6; x++) tiles[y * DEFAULT_COURSE.width + x] = "green";
+    const pins = {
+      A: { x: 3, y: 3 },
+      B: { x: 4, y: 3 },
+      C: { x: 3, y: 4 },
+    };
+    const authored = {
+      ...DEFAULT_COURSE,
+      tiles,
+      holes: DEFAULT_COURSE.holes.map((hole, index) => index === 0 ? {
+        ...hole,
+        green: pins.A,
+        pinPositions: pins,
+      } : hole),
+    };
+    const weather = weatherForDay(DEFAULT_WORLD.runSeed, authored.theme ?? "parkland", 7);
+    const cared = advanceSurfaceCareDay({
+      course: authored,
+      world: { ...DEFAULT_WORLD, week: 2 },
+      absoluteDay: 7,
+      weather,
+      climate: biomeClimatePhenologyForDay(authored.theme ?? "parkland", 7),
+      turfPriority: "playability",
+      waterPolicy: "balanced",
+      drainageLevel: 0,
+      rounds: 12,
+    }).course;
+    const legacy = structuredClone(cared) as typeof cared & {
+      greenSurface?: unknown;
+      greenProgram?: unknown;
+      greenLocalState?: unknown;
+    };
+    delete legacy.greenSurface;
+    delete legacy.greenProgram;
+    delete legacy.greenLocalState;
+
+    const result = normalizeLoadedSaveResult(file({
+      schemaVersion: 25,
+      course: legacy,
+      world: { ...file().world, week: 2 },
+    }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFrom).toBe(25);
+    expect(result.payload.course.greenSurface).toMatchObject({ version: 1, tiles: [] });
+    expect(result.payload.course.greenProgram?.preset).toBe("balanced");
+    expect(result.payload.course.greenLocalState?.holes).toHaveLength(DEFAULT_COURSE.holes.length);
+    expect(result.payload.course.greenLocalState?.holes.every((hole) =>
+      hole.health === 1 && hole.moisture === 0.58 && hole.compaction === 0 && hole.wear === 0
+    )).toBe(true);
+    expect(result.payload.course.holes[0].pinPositions).toEqual(pins);
+    expect(result.payload.course.surfaceCare).toEqual(cared.surfaceCare);
+  });
+
   it("normalizes hostile surface-care records to current topology and bounds", () => {
     const tiles = DEFAULT_COURSE.tiles.slice();
     for (let y = 1; y < 5; y++) for (let x = 1; x < 5; x++) {
@@ -495,6 +551,11 @@ describe("save validation and migrations", () => {
     expect(first.payload.world.playerPro?.rounds).toEqual(second.payload.world.playerPro?.rounds);
     expect(first.payload.world.playerPro?.rounds[0]?.shots).toEqual(rounds[0].shots);
     expect(first.payload.world.playerPro?.activeRound?.rulesSnapshot?.version).toBe(2);
+    expect(first.payload.world.playerPro?.activeRound?.course.greenSnapshot).toMatchObject({
+      version: 1,
+      surface: { version: 1, tiles: [] },
+      program: { preset: "balanced" },
+    });
     expect(first.payload.world.playerPro?.activeRound?.rulesSnapshot)
       .toEqual(second.payload.world.playerPro?.activeRound?.rulesSnapshot);
   });

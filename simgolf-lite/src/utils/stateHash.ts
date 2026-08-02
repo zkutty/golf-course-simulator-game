@@ -9,28 +9,10 @@ import {
   normalizeBiomeKey,
   validateBiomeCompatibilityMetadata,
 } from "../game/models/biomes";
+import { withNormalizedGreenContract } from "../game/greens/greenSurface";
 
-function canonical(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .filter((key) => record[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonical(record[key])}`)
-    .join(",")}}`;
-}
-
-/** Stable, order-independent FNV-1a hash for persisted certification evidence. */
-export function hashCanonicalValue(value: unknown): string {
-  const text = canonical(value);
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
+export { hashCanonicalValue } from "./canonical";
+import { hashCanonicalValue } from "./canonical";
 
 export function hashGameState(value: {
   course: Course;
@@ -55,7 +37,7 @@ export function hashGameState(value: {
   if (!compatibility.ok) {
     throw new Error(`Cannot hash: ${compatibility.error}`);
   }
-  const course = {
+  const course = withNormalizedGreenContract({
     ...normalized,
     theme,
     biomeCompatibility: biomeCompatibilityMetadataFor(theme),
@@ -64,7 +46,7 @@ export function hashGameState(value: {
     activePinRotation: value.course.activePinRotation ?? "A",
     holes: normalized.holes.map(withNormalizedHoleSetup),
     m51: normalizeM51CourseMobilityState(normalized.m51, normalized),
-  };
+  });
   const activeRound = value.world.playerPro?.activeRound;
   const playerPro = activeRound
     ? (() => {

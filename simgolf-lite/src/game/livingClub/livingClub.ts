@@ -13,6 +13,7 @@ import { normalizeTournamentCalendar } from "../tournaments/tournaments";
 import { courseForLayout } from "../models/courseLayouts";
 import { STORY_DEFINITION_BY_ID, SYSTEMIC_EVENT_DEFINITIONS } from "./content";
 import { lastItem } from "../../utils/array";
+import { greenGeometryVersion } from "../greens/greenSurface";
 import type {
   ArchitectureRevisionSummary,
   ArchitectureShotEvidence,
@@ -70,6 +71,7 @@ function hashValue(hash: number, value: string | number): number {
 
 export function courseGeometryVersion(course: Course): string {
   let hash = hashText(`${course.width}:${course.height}:${course.activeCourseId ?? "course"}`);
+  hash = hashValue(hash, greenGeometryVersion(course));
   for (const terrain of course.tiles) hash = hashValue(hash, terrain);
   for (const elevation of course.elevations) hash = hashValue(hash, elevation);
   for (const hole of course.holes) {
@@ -97,6 +99,7 @@ export function courseGeometryVersion(course: Course): string {
 export function snapshotGeometryVersion(snapshot: PlayerPlayableRound["course"]): string {
   if (typeof snapshot.geometryVersion === "string" && snapshot.geometryVersion.startsWith("g-")) return snapshot.geometryVersion;
   let hash = hashText(`${snapshot.width}:${snapshot.height}:${snapshot.courseId}`);
+  hash = hashValue(hash, snapshot.greenSnapshot?.geometryVersion ?? greenGeometryVersion(snapshot));
   for (const terrain of snapshot.tiles) hash = hashValue(hash, terrain);
   for (const elevation of snapshot.elevations) hash = hashValue(hash, elevation);
   for (const hole of snapshot.holes) {

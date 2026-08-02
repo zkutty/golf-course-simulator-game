@@ -2,6 +2,7 @@ import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import type { ReliefResolution, ShotRuling, SharedShotOutcome } from "../rules/contracts";
 import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
 import type { ShotSlopeContext } from "./shotSlope";
+import type { GreenRoundSnapshotV1 } from "../greens/greenSurface";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -67,6 +68,8 @@ export interface PlayerRoundCourseSnapshot {
   elevations: number[];
   obstacles: Array<PlayerProPoint & { type: string }>;
   holes: PlayerRoundHoleSnapshot[];
+  /** Immutable M62 fine-green geometry, policy, and local condition. */
+  greenSnapshot?: GreenRoundSnapshotV1;
   /** Frozen M50 rules map used by Player Pro and live callers. */
   rulesSnapshot?: ControlledRoundSnapshotV2;
   weather?: {

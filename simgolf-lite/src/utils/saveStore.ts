@@ -104,20 +104,62 @@ function nativePlatformKV(): KV {
   };
 }
 
-function indexedDbKV(): KV & { ready: Promise<void> } {
+function indexedDbKV(factory: IDBFactory = indexedDB): KV & { ready: Promise<void> } {
   const open = new Promise<IDBDatabase>((resolve, reject) => {
-    const req = indexedDB.open("coursecraft-saves", 1);
+    const req = factory.open("coursecraft-saves", 1);
     req.onupgradeneeded = () => req.result.createObjectStore("kv");
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
   const tx = async <T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>) => {
     const db = await open;
+    const awaitCommit = mode === "readwrite";
     return new Promise<T>((resolve, reject) => {
       const t = db.transaction("kv", mode);
-      const r = run(t.objectStore("kv"));
-      r.onsuccess = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
+      let request: IDBRequest<T> | undefined;
+      let requestSucceeded = false;
+      let result: T;
+      let settled = false;
+
+      const fail = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+
+      // A successful write request is only an intermediate acknowledgement.
+      // Its data is not visible/durable until the transaction completes, and
+      // a later abort must still reject the operation. A readonly get has no
+      // commit boundary: request success already means it observed a visible
+      // value, so returning then avoids making the load UI wait on unrelated
+      // transaction cleanup after a completed save.
+      t.oncomplete = () => {
+        if (settled) return;
+        if (!requestSucceeded) {
+          fail(new Error("IndexedDB transaction completed without a successful request"));
+          return;
+        }
+        settled = true;
+        resolve(result);
+      };
+      t.onerror = () => fail(t.error ?? request?.error ?? new Error("IndexedDB transaction failed"));
+      t.onabort = () => fail(t.error ?? request?.error ?? new Error("IndexedDB transaction aborted"));
+
+      try {
+        request = run(t.objectStore("kv"));
+        request.onsuccess = () => {
+          if (!awaitCommit) {
+            settled = true;
+            resolve(request!.result);
+            return;
+          }
+          requestSucceeded = true;
+          result = request!.result;
+        };
+        request.onerror = () => fail(request!.error ?? t.error ?? new Error("IndexedDB request failed"));
+      } catch (error) {
+        fail(error);
+      }
     });
   };
   return {
@@ -126,6 +168,11 @@ function indexedDbKV(): KV & { ready: Promise<void> } {
     set: (k, v) => tx("readwrite", (s) => s.put(v, k)).then(() => undefined),
     del: (k) => tx("readwrite", (s) => s.delete(k)).then(() => undefined),
   };
+}
+
+/** Test hook: create the real IndexedDB driver against a controlled factory. */
+export function __createIndexedDbKVForTests(factory: IDBFactory): KV & { ready: Promise<void> } {
+  return indexedDbKV(factory);
 }
 
 function fallbackKV(): KV {

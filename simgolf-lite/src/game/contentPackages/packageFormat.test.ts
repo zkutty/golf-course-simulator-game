@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createM26MultiCourseReferenceCourse } from "../testing/referenceCourse";
 import { browserPlatform } from "../../platform/browserPlatform";
+import { CURRENT_SAVE_SCHEMA_VERSION } from "../../utils/save";
 import type { PlatformServices, PlatformWorkshopItem } from "../../platform/types";
 import {
   canonicalPackageJson,
@@ -99,6 +100,38 @@ describe("M43 course and challenge packages", () => {
       contentVersion: 1,
     });
     expect(value.payload.course.biomeCompatibility).toEqual(value.manifest.biomeCompatibility);
+    expect(value.payload.course.greenSurface).toMatchObject({ version: 1, samplesPerAxis: 4 });
+    expect(value.payload.course.greenProgram?.preset).toBe("balanced");
+    expect(value.payload.course.greenLocalState?.holes).toHaveLength(value.payload.course.holes.length);
+  });
+
+  it("migrates legacy green carriers and rejects signed hostile fine contours", async () => {
+    const value = await fixture();
+    const legacy = structuredClone(value);
+    legacy.manifest.requiredSaveSchema = 25;
+    delete legacy.payload.course.greenSurface;
+    delete legacy.payload.course.greenProgram;
+    delete legacy.payload.course.greenLocalState;
+    const migrated = await validatePackageText(packageText(await resign(legacy)));
+    expect(migrated.status).toBe("migratable");
+    if (migrated.status === "migratable") {
+      expect(migrated.value.manifest.requiredSaveSchema).toBe(CURRENT_SAVE_SCHEMA_VERSION);
+      expect(migrated.value.payload.course.greenSurface).toMatchObject({ version: 1, tiles: [] });
+      expect(migrated.value.payload.course.greenProgram?.preset).toBe("balanced");
+      expect(migrated.value.payload.course.greenLocalState?.holes.every((hole) => hole.health === 1)).toBe(true);
+      expect((await validatePackageText(packageText(migrated.value))).status).toBe("compatible");
+    }
+
+    const hostile = structuredClone(value);
+    hostile.payload.course.greenSurface!.tiles = [{
+      x: -1,
+      y: 0,
+      offsets: Array(16).fill(99_999),
+    }];
+    expect(await validatePackageText(packageText(await resign(hostile)))).toMatchObject({
+      status: "corrupt",
+      errors: expect.arrayContaining([expect.stringContaining("Fine contours")]),
+    });
   });
 
   it("migrates historical biome labels and rejects unsupported or contradictory biome/climate metadata", async () => {
@@ -212,6 +245,8 @@ describe("M43 course and challenge packages", () => {
     )).toBe(true);
     expect(course.buildings.every((building) => building.id?.startsWith("import-a-b"))).toBe(true);
     expect(course.property?.assets.every((asset) => asset.id.startsWith("import-a-a")) ?? true).toBe(true);
+    expect(course.greenLocalState?.holes.map((condition) => condition.holeId).sort())
+      .toEqual(course.holes.map((hole) => hole.id!).sort());
   });
 
   it("round-trips portable Cart Rental products/fleet with remapped building IDs", async () => {

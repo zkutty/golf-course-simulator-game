@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  __createIndexedDbKVForTests,
   __resetSaveStoreForTests,
   __failNextManifestWriteForTests,
   autosave,
@@ -25,9 +26,122 @@ function payload(week = 1, cash = 25_000, name = "Test Links"): SavePayload {
   };
 }
 
+type Handler = ((event: Event) => void) | null;
+
+interface FakeRequest<T> {
+  onsuccess: Handler;
+  onerror: Handler;
+  onupgradeneeded: Handler;
+  result: T;
+  error: DOMException | null;
+}
+
+interface FakeTransaction {
+  oncomplete: Handler;
+  onerror: Handler;
+  onabort: Handler;
+  error: DOMException | null;
+  store: {
+    put: (value: string, key: string) => IDBRequest<IDBValidKey>;
+    get: (key: string) => IDBRequest<string | undefined>;
+  };
+  objectStore: () => IDBObjectStore;
+}
+
+function deferredRequest<T>(result: T): FakeRequest<T> {
+  return { onsuccess: null, onerror: null, onupgradeneeded: null, result, error: null };
+}
+
+function controlledIndexedDb() {
+  const write = deferredRequest<IDBValidKey>("key");
+  const read = deferredRequest<string | undefined>("saved value");
+  const transaction = {
+    oncomplete: null,
+    onerror: null,
+    onabort: null,
+    error: null,
+    store: {
+      put: () => write as unknown as IDBRequest<IDBValidKey>,
+      get: () => read as unknown as IDBRequest<string | undefined>,
+    },
+    objectStore: () => transaction.store as unknown as IDBObjectStore,
+  } as FakeTransaction;
+  const database = {
+    transaction: () => transaction as unknown as IDBTransaction,
+  } as unknown as IDBDatabase;
+  const open = deferredRequest<IDBDatabase>(database);
+  const factory = {
+    open: () => open as unknown as IDBOpenDBRequest,
+  } as unknown as IDBFactory;
+  return { factory, open, transaction, write, read };
+}
+
 describe("saveStore", () => {
   beforeEach(() => {
     __resetSaveStoreForTests();
+  });
+
+  it("waits for an IndexedDB transaction to complete before confirming a write", async () => {
+    const fake = controlledIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    fake.open.onsuccess?.(new Event("success"));
+    await driver.ready;
+
+    let settled = false;
+    const write = driver.set("key", "value").then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    fake.write.onsuccess?.(new Event("success"));
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    fake.transaction.oncomplete?.(new Event("complete"));
+    await write;
+    expect(settled).toBe(true);
+  });
+
+  it("returns a readonly value at request success after a durable write boundary", async () => {
+    const fake = controlledIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    fake.open.onsuccess?.(new Event("success"));
+    await driver.ready;
+
+    const read = driver.get("key");
+    await Promise.resolve();
+    fake.read.onsuccess?.(new Event("success"));
+
+    await expect(read).resolves.toBe("saved value");
+    expect(fake.transaction.oncomplete).not.toBeNull();
+  });
+
+  it("rejects an IndexedDB write when its transaction aborts after request success", async () => {
+    const fake = controlledIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    fake.open.onsuccess?.(new Event("success"));
+    await driver.ready;
+
+    const write = driver.set("key", "value");
+    await Promise.resolve();
+    fake.write.onsuccess?.(new Event("success"));
+    fake.transaction.error = new DOMException("disk full", "QuotaExceededError");
+    fake.transaction.onabort?.(new Event("abort"));
+
+    await expect(write).rejects.toMatchObject({ name: "QuotaExceededError" });
+  });
+
+  it("rejects an IndexedDB write when its transaction reports an error", async () => {
+    const fake = controlledIndexedDb();
+    const driver = __createIndexedDbKVForTests(fake.factory);
+    fake.open.onsuccess?.(new Event("success"));
+    await driver.ready;
+
+    const write = driver.set("key", "value");
+    await Promise.resolve();
+    fake.transaction.error = new DOMException("database failure", "UnknownError");
+    fake.transaction.onerror?.(new Event("error"));
+
+    await expect(write).rejects.toMatchObject({ name: "UnknownError" });
   });
 
   it("saves, lists, and loads a manual slot round-trip", async () => {

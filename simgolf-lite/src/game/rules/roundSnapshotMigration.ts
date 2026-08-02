@@ -5,6 +5,11 @@ import {
   decodeControlledRoundSnapshotV2,
   type ControlledRoundSnapshotV2,
 } from "./roundSnapshot";
+import {
+  createGreenRoundSnapshot,
+  decodeGreenRoundSnapshot,
+  withNormalizedGreenContract,
+} from "../greens/greenSurface";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -178,6 +183,78 @@ export function migratePlayerProActiveRoundSnapshotV20(
       playerPro: {
         ...rawPlayerPro,
         activeRound: { ...activeRound, rulesSnapshot: snapshot },
+      },
+      status: "migrated",
+    };
+  } catch {
+    return invalidate(rawPlayerPro);
+  }
+}
+
+/**
+ * Adds or validates the M62 green carrier on a resumable round. Existing
+ * snapshots are checked only against their own frozen course, so later course
+ * edits cannot rewrite a round already in progress. Missing legacy carriers
+ * are created from the normalized saved-course contract.
+ */
+export function migratePlayerProActiveRoundGreenSnapshotV26(
+  rawPlayerPro: unknown,
+  savedCourse: Course,
+): ActiveRoundSnapshotMigrationResult {
+  if (!isRecord(rawPlayerPro) || rawPlayerPro.activeRound == null) {
+    return { playerPro: rawPlayerPro, status: "unchanged" };
+  }
+  const activeRound = rawPlayerPro.activeRound;
+  if (!isRecord(activeRound) || !isRecord(activeRound.course)) return invalidate(rawPlayerPro);
+  const roundCourse = activeRound.course;
+  if (
+    !Number.isInteger(roundCourse.width)
+    || !Number.isInteger(roundCourse.height)
+    || !Array.isArray(roundCourse.tiles)
+    || !Array.isArray(roundCourse.holes)
+    || roundCourse.holes.length < 1
+    || roundCourse.holes.length > 36
+    || roundCourse.holes.some((hole) => !isRecord(hole) || typeof hole.id !== "string" || !hole.id)
+  ) return invalidate(rawPlayerPro);
+  const cells = (roundCourse.width as number) * (roundCourse.height as number);
+  if (!Number.isSafeInteger(cells) || cells < 1 || roundCourse.tiles.length !== cells) return invalidate(rawPlayerPro);
+
+  const carrier = {
+    width: roundCourse.width as number,
+    height: roundCourse.height as number,
+    tiles: roundCourse.tiles as string[],
+    holes: roundCourse.holes as Array<{ id: string }>,
+  };
+  if (roundCourse.greenSnapshot != null) {
+    const decoded = decodeGreenRoundSnapshot(roundCourse.greenSnapshot, carrier);
+    if (!decoded.ok) return invalidate(rawPlayerPro);
+    return {
+      playerPro: {
+        ...rawPlayerPro,
+        activeRound: {
+          ...activeRound,
+          course: { ...roundCourse, greenSnapshot: decoded.value },
+        },
+      },
+      status: "validated",
+    };
+  }
+
+  try {
+    const normalizedCourse = withNormalizedGreenContract(savedCourse);
+    const greenSnapshot = createGreenRoundSnapshot({
+      ...carrier,
+      greenSurface: normalizedCourse.greenSurface,
+      greenProgram: normalizedCourse.greenProgram,
+      greenLocalState: normalizedCourse.greenLocalState,
+    });
+    return {
+      playerPro: {
+        ...rawPlayerPro,
+        activeRound: {
+          ...activeRound,
+          course: { ...roundCourse, greenSnapshot },
+        },
       },
       status: "migrated",
     };

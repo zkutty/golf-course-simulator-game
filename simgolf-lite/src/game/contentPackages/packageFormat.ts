@@ -14,6 +14,11 @@ import {
   normalizeBiomeKey,
   validateBiomeCompatibilityMetadata,
 } from "../models/biomes";
+import {
+  greenContractValidationErrors,
+  remapGreenLocalState,
+  withNormalizedGreenContract,
+} from "../greens/greenSurface";
 
 const MAX_TEXT_BYTES = 16 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 2 * 1024 * 1024;
@@ -152,6 +157,11 @@ function validateCourse(course: unknown, errors: string[]): course is Course {
   if (!Array.isArray(course.obstacles) || course.obstacles.length > MAX_OBSTACLES) errors.push("course: too many obstacles");
   if (!Array.isArray(course.decorations) || course.decorations.length > MAX_DECORATIONS) errors.push("course: too many decorations");
   if (!Array.isArray(course.buildings) || course.buildings.length > MAX_BUILDINGS) errors.push("course: too many buildings");
+  const greenFields = [course.greenSurface, course.greenProgram, course.greenLocalState];
+  if (greenFields.some((field) => field !== undefined)) {
+    if (greenFields.some((field) => field === undefined)) errors.push("course: fine-green contract fields must be carried together");
+    else errors.push(...greenContractValidationErrors(course as unknown as Course).map((error) => `course.${error.path}: ${error.message}`));
+  }
   errors.push(...validateM51CourseMobilityInput(course.m51));
   if (course.layouts !== undefined && !Array.isArray(course.layouts)) errors.push("course: layouts must be an array");
   for (const [index, hole] of (Array.isArray(course.holes) ? course.holes : []).entries()) {
@@ -303,7 +313,12 @@ export async function validatePackageText(text: string): Promise<PackageValidati
     || manifest.theme !== manifestTheme
     || (isRecord(rawCourse) && rawCourse.theme !== courseTheme)
   );
-  const requiresMigration = requiredSaveSchema < CURRENT_SAVE_SCHEMA_VERSION || requiresBiomeMigration;
+  const requiresGreenMigration = courseValid && isRecord(rawCourse) && (
+    rawCourse.greenSurface == null
+    || rawCourse.greenProgram == null
+    || rawCourse.greenLocalState == null
+  );
+  const requiresMigration = requiredSaveSchema < CURRENT_SAVE_SCHEMA_VERSION || requiresBiomeMigration || requiresGreenMigration;
   let normalizedValue = value as unknown as CoursePackageV1;
   if (requiresMigration && manifestTheme && courseTheme && compatibility?.ok) {
     const withoutChecksum = {
@@ -315,11 +330,11 @@ export async function validatePackageText(text: string): Promise<PackageValidati
       },
       payload: {
         ...normalizedValue.payload,
-        course: {
+        course: withNormalizedGreenContract({
           ...normalizedValue.payload.course,
           theme: courseTheme,
           biomeCompatibility: compatibility.metadata,
-        },
+        }),
       },
     };
     normalizedValue = {
@@ -364,12 +379,12 @@ export async function createCoursePackage(input: {
     throw new Error(`Cannot package unsupported biome "${String(layoutNormalized.theme)}".`);
   }
   const biomeCompatibility = biomeCompatibilityMetadataFor(theme);
-  const normalizedCourse = {
+  const normalizedCourse = withNormalizedGreenContract({
     ...layoutNormalized,
     theme,
     biomeCompatibility,
     m51: normalizeM51CourseMobilityState(layoutNormalized.m51, layoutNormalized),
-  };
+  });
   const seedId = input.contentId ?? `cc-${await sha256(canonicalPackageJson({
     author: input.author.id,
     title: input.title,
@@ -433,6 +448,7 @@ export function remapImportedCourseIdentity(value: CoursePackageV1, instanceId: 
       ...course.property,
       assets: course.property.assets.map((asset, index) => ({ ...asset, id: `${instanceId}-a${index + 1}` })),
     } : undefined,
+    greenLocalState: remapGreenLocalState(course.greenLocalState, holeIds, holes),
   };
   const normalized = normalizeCourseLayouts(remapped);
   return {

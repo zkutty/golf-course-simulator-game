@@ -1,5 +1,16 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-692 IndexedDB durability regression — 2026-08-02
+
+- Changed the IndexedDB KV driver to resolve writes/deletes only after their
+  enclosing transaction completes, rather than after a request-level success
+  event. Transaction errors and aborts now reject even if the request had
+  already succeeded; readonly reads still resolve when they observe a value,
+  because they have no durability boundary to cross.
+- Added controlled-driver regressions for delayed completion and a post-request
+  transaction abort. This keeps the save UI from reporting a completed quick
+  save before the slot is committed and immediately listable.
+
 ## AI acceptance closure — ZK-631 and ZK-678 — 2026-07-31
 
 - Expanded ZK-631's slope contract coverage for fractional positions,
