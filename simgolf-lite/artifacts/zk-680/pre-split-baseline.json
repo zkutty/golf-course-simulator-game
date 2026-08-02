@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "reference": {
+    "commit": "c8383d5748714ca1cda2dc95c97c4db27db96e10",
+    "label": "Before ZK-680 code splitting"
+  },
+  "measurements": {
+    "initialJavaScriptBytes": 1608719,
+    "visionPageJavaScriptBytes": 12510,
+    "initialCriticalTransferBytes": 3786822,
+    "maxSelectedBiomeBytes": 3506327,
+    "distBytes": 114878859,
+    "desktopPackageBytes": 495074219,
+    "desktopAsarBytes": 206569606
+  }
+}
