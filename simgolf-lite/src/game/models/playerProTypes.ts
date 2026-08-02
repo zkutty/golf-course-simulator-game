@@ -143,6 +143,8 @@ export interface PlayerPlayableRound {
   version: 1;
   id: string;
   kind: PlayerRoundKind;
+  /** Frozen at round start; absent only on legacy active-round payloads. */
+  handedness?: PlayerProHandedness;
   phase: PlayerRoundPhase;
   course: PlayerRoundCourseSnapshot;
   /** Immutable M50 boundary/penalty foundation captured for save v20. */

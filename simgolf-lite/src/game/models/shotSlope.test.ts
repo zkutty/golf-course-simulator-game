@@ -6,8 +6,11 @@ import {
   analyzeShotSlope,
   elevationAdjustedCarryYards,
   elevationAtFrozenPoint,
+  MAX_TOTAL_CURVE_BIAS_TILES,
   normalizeShotSlopeContext,
   normalizeShotSlopeCarrier,
+  oneStepNaturalCurveCapTiles,
+  resolveShotCurve,
   serializeShotSlopeContext,
 } from "./shotSlope";
 import { evalShotBase } from "../sim/shots/shotEval";
@@ -71,8 +74,8 @@ describe("shot slope context", () => {
     expect(right.localGradient.crossTargetLine).toBe(8);
     expect(right.sidehill).toBe("ball_above_feet");
     expect(left.sidehill).toBe("ball_below_feet");
-    expect(right.naturalCurveBiasTiles).toBe(-0.35);
-    expect(left.naturalCurveBiasTiles).toBe(-0.35);
+    expect(right.naturalCurveBiasTiles).toBe(-0.47);
+    expect(left.naturalCurveBiasTiles).toBe(-0.47);
   });
 
   it("is bounded, deterministic, and does not invent an edge gradient", () => {
@@ -89,7 +92,7 @@ describe("shot slope context", () => {
       to: { x: 2, y: 1 },
       yardsPerTile: 10,
     });
-    expect(Math.abs(steep.naturalCurveBiasTiles)).toBeLessThanOrEqual(0.35);
+    expect(Math.abs(steep.naturalCurveBiasTiles)).toBeLessThanOrEqual(oneStepNaturalCurveCapTiles(1));
   });
 
   it("rounds fractional ball positions and clamps map edges without changing the captured facts", () => {
@@ -161,7 +164,7 @@ describe("shot slope context", () => {
             handedness: toX < fromX ? "left" : "right",
           });
           expect(serializeShotSlopeContext(context)).toEqual(context);
-          expect(Math.abs(context.naturalCurveBiasTiles)).toBeLessThanOrEqual(0.35);
+          expect(Math.abs(context.naturalCurveBiasTiles)).toBeLessThanOrEqual(1.25);
         }
       }
     }
@@ -212,5 +215,109 @@ describe("shot slope context", () => {
     expect(elevationAdjustedCarryYards(160, { ...context, targetElevationDelta: -4 })).toBe(170);
     expect(elevationAdjustedCarryYards(160, { ...context, targetElevationDelta: 10_000 })).toBe(80);
     expect(elevationAdjustedCarryYards(160, { ...context, targetElevationDelta: -10_000 })).toBe(240);
+  });
+
+  it("scales a one-step cross slope by shot length and caps natural curvature at 1.25 tiles", () => {
+    const oneStep = courseWithElevation(80, 5, (_x, y) => y);
+    const short = analyzeShotSlope({
+      course: oneStep,
+      from: { x: 2, y: 2 },
+      to: { x: 12, y: 2 },
+      yardsPerTile: 10,
+    });
+    const long = analyzeShotSlope({
+      course: oneStep,
+      from: { x: 2, y: 2 },
+      to: { x: 42, y: 2 },
+      yardsPerTile: 10,
+    });
+
+    expect(oneStepNaturalCurveCapTiles(10)).toBeCloseTo(0.75, 8);
+    expect(oneStepNaturalCurveCapTiles(40)).toBe(1.25);
+    expect(short.naturalCurveBiasTiles).toBeCloseTo(-0.75, 8);
+    expect(long.naturalCurveBiasTiles).toBe(-1.25);
+  });
+
+  it("mirrors above- and below-feet curvature for both hands", () => {
+    const risingRight = courseWithElevation(20, 7, (_x, y) => y);
+    const risingLeft = courseWithElevation(20, 7, (_x, y) => -y);
+    const analyze = (course: Course, handedness: "right" | "left") => analyzeShotSlope({
+      course,
+      from: { x: 2, y: 3 },
+      to: { x: 14, y: 3 },
+      yardsPerTile: 10,
+      handedness,
+    });
+    const rightAbove = analyze(risingRight, "right");
+    const rightBelow = analyze(risingLeft, "right");
+    const leftAbove = analyze(risingLeft, "left");
+    const leftBelow = analyze(risingRight, "left");
+
+    expect(rightAbove).toMatchObject({ sidehill: "ball_above_feet" });
+    expect(rightBelow).toMatchObject({ sidehill: "ball_below_feet" });
+    expect(leftAbove).toMatchObject({ sidehill: "ball_above_feet" });
+    expect(leftBelow).toMatchObject({ sidehill: "ball_below_feet" });
+    expect(rightAbove.naturalCurveBiasTiles).toBeLessThan(0);
+    expect(rightBelow.naturalCurveBiasTiles).toBeGreaterThan(0);
+    expect(leftAbove.naturalCurveBiasTiles).toBeGreaterThan(0);
+    expect(leftBelow.naturalCurveBiasTiles).toBeLessThan(0);
+    expect(leftAbove.naturalCurveBiasTiles).toBe(-rightAbove.naturalCurveBiasTiles);
+    expect(leftBelow.naturalCurveBiasTiles).toBe(-rightBelow.naturalCurveBiasTiles);
+  });
+
+  it("combines matching and opposing shapes player-relatively and bounds total curvature", () => {
+    const slope = courseWithElevation(120, 7, (_x, y) => y);
+    const rightAbove = analyzeShotSlope({
+      course: slope,
+      from: { x: 2, y: 3 },
+      to: { x: 102, y: 3 },
+      yardsPerTile: 10,
+      handedness: "right",
+    });
+    const leftBelow = analyzeShotSlope({
+      course: slope,
+      from: { x: 2, y: 3 },
+      to: { x: 102, y: 3 },
+      yardsPerTile: 10,
+      handedness: "left",
+    });
+    const rightNormal = resolveShotCurve({ shotSlope: rightAbove, shotLengthTiles: 100, club: "Driver", technique: "normal" });
+    const rightDraw = resolveShotCurve({ shotSlope: rightAbove, shotLengthTiles: 100, club: "Driver", technique: "draw" });
+    const rightFade = resolveShotCurve({ shotSlope: rightAbove, shotLengthTiles: 100, club: "Driver", technique: "fade" });
+    const leftDraw = resolveShotCurve({ shotSlope: leftBelow, shotLengthTiles: 100, club: "Driver", technique: "draw" });
+    const leftFade = resolveShotCurve({ shotSlope: leftBelow, shotLengthTiles: 100, club: "Driver", technique: "fade" });
+
+    expect(rightNormal.combinedCurveTiles).toBe(-1.25);
+    expect(rightDraw.combinedCurveTiles).toBe(-MAX_TOTAL_CURVE_BIAS_TILES);
+    expect(rightFade.combinedCurveTiles).toBeCloseTo(0.95, 8);
+    expect(leftDraw.combinedCurveTiles).toBeCloseTo(0.95, 8);
+    expect(leftFade.combinedCurveTiles).toBe(-MAX_TOTAL_CURVE_BIAS_TILES);
+    for (const result of [rightNormal, rightDraw, rightFade, leftDraw, leftFade]) {
+      expect(Math.abs(result.combinedCurveTiles)).toBeLessThanOrEqual(MAX_TOTAL_CURVE_BIAS_TILES);
+    }
+  });
+
+  it("applies natural curve to every airborne club family while leaving putts and flat normal shots unchanged", () => {
+    const sloped = analyzeShotSlope({
+      course: courseWithElevation(40, 7, (_x, y) => y),
+      from: { x: 2, y: 3 },
+      to: { x: 27, y: 3 },
+      yardsPerTile: 10,
+    });
+    for (const clubName of ["Driver", "3 Wood", "5 Iron", "Pitching Wedge", "Sand Wedge", "Chip"]) {
+      expect(resolveShotCurve({ shotSlope: sloped, shotLengthTiles: 25, club: clubName, technique: "normal" }).combinedCurveTiles).not.toBe(0);
+    }
+    expect(resolveShotCurve({ shotSlope: sloped, shotLengthTiles: 25, club: "Putter", technique: "draw" })).toMatchObject({
+      naturalCurveTiles: 0,
+      intentionalCurveTiles: 0,
+      combinedCurveTiles: 0,
+    });
+    const flat = analyzeShotSlope({
+      course: courseWithElevation(40, 7, () => 0),
+      from: { x: 2, y: 3 },
+      to: { x: 27, y: 3 },
+      yardsPerTile: 10,
+    });
+    expect(resolveShotCurve({ shotSlope: flat, shotLengthTiles: 25, club: "Driver", technique: "normal" }).combinedCurveTiles).toBe(0);
   });
 });

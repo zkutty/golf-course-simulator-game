@@ -70,6 +70,8 @@ import {
   analyzeShotSlope,
   elevationAdjustedCarryYards,
   normalizeShotSlopeContext,
+  resolveShotCurve,
+  type ShotHandedness,
 } from "../models/shotSlope";
 import {
   isValidGreenRollout,
@@ -340,6 +342,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
   if (!biomeCompatibility.ok) return null;
   return {
     ...round,
+    handedness: round.handedness === "left" ? "left" : "right",
     course: {
       ...round.course,
       theme,
@@ -546,6 +549,7 @@ export function startPlayableRound(args: {
       version: 1,
       id,
       kind: args.kind ?? "casual",
+      handedness: args.world.playerPro?.identity.handedness === "left" ? "left" : "right",
       phase: "awaiting_shot",
       course: frozenCourse,
       rulesSnapshot,
@@ -786,7 +790,14 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     x: clamp(Math.round(selection.aim.x), 0, round.course.width - 1),
     y: clamp(Math.round(selection.aim.y), 0, round.course.height - 1),
   };
-  const evaluation = evalShotExpectedCost({ course, from: round.ball, to: aim, golfer: profile, club: adjustedClub });
+  const evaluation = evalShotExpectedCost({
+    course,
+    from: round.ball,
+    to: aim,
+    golfer: profile,
+    club: adjustedClub,
+    handedness: round.handedness,
+  });
   const obstacleClose = round.course.obstacles.some((obstacle) => Math.hypot(obstacle.x - round.ball.x, obstacle.y - round.ball.y) < 1.6);
   const obstructionPenalty = obstacleClose && selection.technique !== "punch" && club.name !== "Sand Wedge" && club.name !== "Chip" ? 0.65 : 0;
   const expectedPenalty = Math.max(0, evaluation.expectedShotCost - 1) + obstructionPenalty;
@@ -804,6 +815,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
       lie: round.lie,
       skills,
       selection,
+      handedness: round.handedness,
       seed: round.rngSeed + round.rngCursor * 104729,
     })
     : null;
@@ -854,6 +866,7 @@ export function resolvePlayableShot(args: {
   lie: string;
   skills: PlayerProSkills;
   selection: PlayerShotSelection;
+  handedness?: ShotHandedness;
   seed: number;
 }): PlayerShotTrace {
   const club = CLUBS.find((candidate) => candidate.name === args.selection.club) ?? CLUBS[4];
@@ -885,6 +898,7 @@ export function resolvePlayableShot(args: {
     from: args.from,
     to: args.selection.aim,
     yardsPerTile: args.snapshot.yardsPerTile,
+    handedness: args.handedness,
   });
   const maxTiles = elevationAdjustedCarryYards(nominalPhysicalCarryYards, shotSlope) / args.snapshot.yardsPerTile;
   const intendedTiles = Math.min(aimDistance, maxTiles);
@@ -901,8 +915,12 @@ export function resolvePlayableShot(args: {
   const rng = mulberry32(args.seed | 0);
   const lateral = gaussian(rng) * dispersion * 0.42;
   const longitudinal = gaussian(rng) * dispersion * 0.22;
-  const curveSign = args.selection.technique === "draw" ? -1 : args.selection.technique === "fade" ? 1 : 0;
-  const curve = curveSign * Math.min(2.2, intendedTiles * 0.055);
+  const curve = resolveShotCurve({
+    shotSlope,
+    shotLengthTiles: intendedTiles,
+    club: club.name,
+    technique: args.selection.technique,
+  }).combinedCurveTiles;
   let landing: PlayerProPoint = {
     x: args.from.x + ux * (intendedTiles + longitudinal) - uy * (lateral + curve),
     y: args.from.y + uy * (intendedTiles + longitudinal) + ux * (lateral + curve),
@@ -1076,6 +1094,7 @@ export function commitPlayerShot(round: PlayerPlayableRound, skills: PlayerProSk
     lie: round.lie,
     skills,
     selection,
+    handedness: round.handedness,
     seed: round.rngSeed + round.rngCursor * 104729,
   });
   return {
@@ -1131,6 +1150,7 @@ function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkill
     from: round.ball,
     to: hole.pin,
     yardsPerTile: round.course.yardsPerTile,
+    handedness: round.handedness,
   });
   const distance = shotSlope.playsLikeDistanceYards;
   const clubs = availablePlayerClubs(round.lie);

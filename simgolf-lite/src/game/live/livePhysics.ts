@@ -6,7 +6,7 @@ import { classifyPenaltyAreaComponents } from "../rules/penaltyAreas";
 import { resolveCourseSetup, getParSetting } from "../models/courseSetup";
 import { isOwnedTile } from "../estate/estate";
 import { resolvePlayableShot, type PlayerShotSelection } from "../playerPro/playerPro";
-import { capabilitiesToPlayerSkills } from "./capabilities";
+import { capabilitiesToPlayerSkills, stableGolferHandedness } from "./capabilities";
 import type { GolferCapabilities, LiveShotOutcome, ShotIntent } from "./m47Types";
 import { biomeCompatibilityMetadataFor, getBiomeDefinition } from "../models/biomes";
 import { effectiveSurfaceTiles, resolveEffectiveSurface } from "../conditions/surfaceCare";
@@ -119,6 +119,7 @@ export function resolveLiveShot(args: {
     lie: args.lie,
     skills: capabilitiesToPlayerSkills(args.capabilities),
     selection,
+    handedness: stableGolferHandedness(args.capabilities.seed),
     seed: args.seed,
   });
   const facts = args.intent.facts.slice();

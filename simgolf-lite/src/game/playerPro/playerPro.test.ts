@@ -214,6 +214,66 @@ describe("M36 deterministic Player Pro play", () => {
     expect(result.round.course.greenSnapshot).toEqual(frozen);
   });
 
+  it("freezes Player Pro handedness and keeps sidehill preview, commit, save, and mirrored shapes identical", () => {
+    const course = threeHoleCourse();
+    course.elevations = Array.from({ length: course.width * course.height }, (_, index) => -Math.floor(index / course.width));
+    const baseLeftCareer = createDefaultPlayerPro({ seed: 633, handedness: "left" });
+    const leftCareer = {
+      ...baseLeftCareer,
+      skills: { ...baseLeftCareer.skills, driving: 70 },
+    };
+    const leftWorld = { ...world(), playerPro: leftCareer };
+    const startedLeft = startPlayableRound({ course, world: leftWorld, layoutId: "slice" });
+    expect(startedLeft.ok).toBe(true);
+    if (!startedLeft.ok) return;
+    expect(startedLeft.round.handedness).toBe("left");
+
+    const selection = {
+      club: "Driver",
+      aim: { x: 30, y: startedLeft.round.ball.y },
+      power: 0.9,
+      technique: "draw" as const,
+    };
+    const preview = previewPlayableShot(startedLeft.round, leftCareer.skills, selection);
+    const committed = commitPlayerShot(startedLeft.round, leftCareer.skills, selection);
+    expect(committed.pendingShot?.shotSlope).toMatchObject({
+      handedness: "left",
+      sidehill: "ball_above_feet",
+    });
+    expect(preview.sharedOutcome).toEqual(committed.pendingShot?.sharedOutcome);
+    const restored = normalizePlayerPro(
+      JSON.parse(JSON.stringify({ ...leftCareer, activeRound: committed })),
+      { seed: 633 },
+    );
+    expect(restored.activeRound?.handedness).toBe("left");
+    expect(restored.activeRound?.pendingShot).toEqual(committed.pendingShot);
+
+    const snapshot = startedLeft.round.course;
+    const mirroredSnapshot = {
+      ...snapshot,
+      elevations: snapshot.elevations.map((elevation) => -elevation),
+    };
+    const direct = (handedness: "right" | "left", technique: "normal" | "draw") => resolvePlayableShot({
+      snapshot: handedness === "right" ? mirroredSnapshot : snapshot,
+      holeId: snapshot.holes[0].id,
+      shotNumber: 1,
+      from: startedLeft.round.ball,
+      lie: startedLeft.round.lie,
+      skills: leftCareer.skills,
+      selection: { ...selection, technique },
+      handedness,
+      seed: 633_001,
+    });
+    const rightNormal = direct("right", "normal");
+    const rightDraw = direct("right", "draw");
+    const leftNormal = direct("left", "normal");
+    const leftDraw = direct("left", "draw");
+    expect(rightDraw.shotSlope?.sidehill).toBe("ball_above_feet");
+    expect(leftDraw.shotSlope?.sidehill).toBe("ball_above_feet");
+    expect(rightDraw.landing.y).toBeLessThan(rightNormal.landing.y - 0.8);
+    expect(leftDraw.landing.y).toBeGreaterThan(leftNormal.landing.y + 0.8);
+  });
+
   it("restores active-round biome evidence through autosave and exported-file import", async () => {
     const { course, world: currentWorld, career, round } = started();
     const sourceWorld = {

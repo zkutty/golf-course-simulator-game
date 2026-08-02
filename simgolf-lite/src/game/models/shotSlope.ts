@@ -10,6 +10,7 @@ export const SHOT_SLOPE_CONTEXT_VERSION = 1 as const;
 
 export type ShotHandedness = "right" | "left";
 export type ShotSidehill = "flat" | "ball_above_feet" | "ball_below_feet";
+export type ShotCurveTechnique = "normal" | "draw" | "fade" | "punch" | "flop" | "backspin";
 
 /**
  * Elevation change per tile in the target-line coordinate system.
@@ -67,8 +68,12 @@ export interface AnalyzeShotSlopeInput {
 }
 
 const SIDEHILL_EPSILON = 0.025;
-const MAX_NATURAL_CURVE_BIAS_TILES = 0.35;
-const CURVE_BIAS_PER_CROSS_SLOPE = 0.18;
+export const MAX_NATURAL_CURVE_BIAS_TILES = 1.25;
+export const MAX_TOTAL_CURVE_BIAS_TILES = 2.75;
+const NATURAL_CURVE_BASE_TILES = 0.35;
+const NATURAL_CURVE_PER_SHOT_TILE = 0.04;
+const MAX_INTENTIONAL_CURVE_BIAS_TILES = 2.2;
+const INTENTIONAL_CURVE_PER_SHOT_TILE = 0.055;
 export const MIN_ELEVATION_CARRY_MULTIPLIER = 0.5;
 export const MAX_ELEVATION_CARRY_MULTIPLIER = 1.5;
 
@@ -135,6 +140,83 @@ function freezeContext(context: ShotSlopeContextV1): ShotSlopeContextV1 {
 }
 
 /**
+ * Maximum natural curve from a one-step cross slope. Longer airborne shots
+ * have more time to move laterally, but the lie effect stays bounded.
+ */
+export function oneStepNaturalCurveCapTiles(shotLengthTiles: number): number {
+  const length = Math.max(0, finite(shotLengthTiles));
+  return Math.min(
+    MAX_NATURAL_CURVE_BIAS_TILES,
+    NATURAL_CURVE_BASE_TILES + length * NATURAL_CURVE_PER_SHOT_TILE,
+  );
+}
+
+export interface ShotCurveResolution {
+  handedness: ShotHandedness;
+  sidehill: ShotSidehill;
+  naturalCurveTiles: number;
+  intentionalCurveTiles: number;
+  combinedCurveTiles: number;
+  oneStepNaturalCapTiles: number;
+}
+
+/**
+ * Combines immutable sidehill tendency with the selected shot shape. Negative
+ * values finish left of the target line and positive values finish right.
+ * Draw/fade are player-relative, so they mirror for a left-handed golfer.
+ */
+export function resolveShotCurve(args: {
+  shotSlope: ShotSlopeContext;
+  shotLengthTiles: number;
+  club: string;
+  technique: ShotCurveTechnique;
+}): ShotCurveResolution {
+  const context = normalizeShotSlopeContext(args.shotSlope);
+  if (!context) throw new Error("Cannot resolve curve from an invalid shot-slope context.");
+  const length = Math.max(0, finite(args.shotLengthTiles));
+  const oneStepNaturalCapTiles = oneStepNaturalCurveCapTiles(length);
+  const putter = args.club.trim().toLowerCase() === "putter";
+  if (putter || length <= 1e-9) {
+    return Object.freeze({
+      handedness: context.handedness,
+      sidehill: context.sidehill,
+      naturalCurveTiles: 0,
+      intentionalCurveTiles: 0,
+      combinedCurveTiles: 0,
+      oneStepNaturalCapTiles,
+    });
+  }
+  const naturalCurveTiles = clamp(
+    context.naturalCurveBiasTiles,
+    -oneStepNaturalCapTiles,
+    oneStepNaturalCapTiles,
+  );
+  const handednessSign = context.handedness === "right" ? 1 : -1;
+  const techniqueSign = args.technique === "draw"
+    ? -handednessSign
+    : args.technique === "fade"
+      ? handednessSign
+      : 0;
+  const intentionalCurveTiles = techniqueSign * Math.min(
+    MAX_INTENTIONAL_CURVE_BIAS_TILES,
+    length * INTENTIONAL_CURVE_PER_SHOT_TILE,
+  );
+  const combinedCurveTiles = clamp(
+    naturalCurveTiles + intentionalCurveTiles,
+    -MAX_TOTAL_CURVE_BIAS_TILES,
+    MAX_TOTAL_CURVE_BIAS_TILES,
+  );
+  return Object.freeze({
+    handedness: context.handedness,
+    sidehill: context.sidehill,
+    naturalCurveTiles,
+    intentionalCurveTiles,
+    combinedCurveTiles,
+    oneStepNaturalCapTiles,
+  });
+}
+
+/**
  * The single authoritative shot-slope analyzer. Its output is independent of
  * mutable course objects, deterministic, and safe to persist with a shot.
  */
@@ -165,13 +247,15 @@ export function analyzeShotSlope(input: AnalyzeShotSlopeInput): ShotSlopeContext
     : playerRelativeCrossSlope < -SIDEHILL_EPSILON
       ? "ball_below_feet"
       : "flat";
-  const naturalCurveBiasTiles = sidehill === "flat"
+  const naturalCurveCap = oneStepNaturalCurveCapTiles(distanceTiles);
+  const naturalCurveBiasTiles = sidehill === "flat" || distanceTiles <= 1e-9
     ? 0
     : clamp(
-        -handednessSign * Math.sign(playerRelativeCrossSlope) * Math.abs(localGradient.crossTargetLine)
-          * CURVE_BIAS_PER_CROSS_SLOPE,
-        -MAX_NATURAL_CURVE_BIAS_TILES,
-        MAX_NATURAL_CURVE_BIAS_TILES,
+        -Math.sign(localGradient.crossTargetLine)
+          * Math.min(1, Math.abs(localGradient.crossTargetLine))
+          * naturalCurveCap,
+        -naturalCurveCap,
+        naturalCurveCap,
       );
 
   return freezeContext({
@@ -246,7 +330,11 @@ export function normalizeShotSlopeContext(value: unknown): ShotSlopeContextV1 | 
     },
     handedness: candidate.handedness,
     sidehill: candidate.sidehill as ShotSidehill,
-    naturalCurveBiasTiles: clamp(candidate.naturalCurveBiasTiles as number, -MAX_NATURAL_CURVE_BIAS_TILES, MAX_NATURAL_CURVE_BIAS_TILES),
+    naturalCurveBiasTiles: clamp(
+      candidate.naturalCurveBiasTiles as number,
+      -MAX_NATURAL_CURVE_BIAS_TILES,
+      MAX_NATURAL_CURVE_BIAS_TILES,
+    ),
   });
 }
 

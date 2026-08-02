@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { Course, Terrain } from "../models/types";
 import { getGolferProfile } from "../sim/golferProfiles";
 import { mulberry32 } from "../../utils/rng";
-import { createGolferCapabilities } from "./capabilities";
-import { capabilitiesToPlayerSkills } from "./capabilities";
+import {
+  capabilitiesToPlayerSkills,
+  createGolferCapabilities,
+  stableGolferHandedness,
+} from "./capabilities";
 import { followUpIntent, generateStrategicHolePlan } from "./strategicOptions";
 import { buildGolferRound, entryPoint } from "./golfer";
 import { liveCourseSnapshot, resolveLiveShot } from "./livePhysics";
@@ -84,6 +87,9 @@ describe("M47 live golfer contracts", () => {
       expect(a[key]).toBeGreaterThanOrEqual(0);
       expect(a[key]).toBeLessThanOrEqual(100);
     }
+    expect(stableGolferHandedness(a.seed)).toBe("right");
+    expect(stableGolferHandedness(a.seed)).toBe(stableGolferHandedness(b.seed));
+    expect(stableGolferHandedness(43)).toBe("left");
   });
 
   it("retains rejected alternatives and changes the chosen route by risk style", () => {
@@ -178,6 +184,7 @@ describe("M47 live golfer contracts", () => {
         technique: intent.technique,
         flightProfile: intent.flightProfile,
       },
+      handedness: stableGolferHandedness(capabilities.seed),
       seed: sharedArgs.seed,
     });
     expect(live.sharedOutcome).toEqual(player.sharedOutcome);
@@ -187,6 +194,61 @@ describe("M47 live golfer contracts", () => {
     expect(live.relief).toEqual(player.relief);
     expect(live.finalPosition).toEqual(player.finalPosition);
     expect(live.flightProfile).toBe(player.flightProfile);
+  });
+
+  it("derives stable live handedness from capability seed and mirrors sidehill draw flight", () => {
+    const base = course();
+    const rightCourse = {
+      ...base,
+      elevations: Array.from({ length: base.width * base.height }, (_, index) => Math.floor(index / base.width)),
+    };
+    const leftCourse = {
+      ...base,
+      elevations: rightCourse.elevations.map((elevation) => -elevation),
+    };
+    const personality = testPersonality({ skill: .75, consistency: .8 });
+    const common = createGolferCapabilities({ personality, seed: 42 });
+    const rightCapabilities = { ...common, seed: 42 };
+    const leftCapabilities = { ...common, seed: 43 };
+    const from = { x: 8, y: 12 };
+    const target = { x: 35, y: 12 };
+    const intent = {
+      id: "zk-633-draw",
+      kind: "approach" as const,
+      from,
+      target,
+      club: "Driver",
+      power: .9,
+      technique: "draw" as const,
+      expectedStrokes: 1,
+      variance: 0,
+      hazardRisk: 0,
+      nextShotQuality: 1,
+      facts: [],
+    };
+    const resolve = (hand: "right" | "left", technique: "normal" | "draw") => resolveLiveShot({
+      snapshot: liveCourseSnapshot({
+        course: hand === "right" ? rightCourse : leftCourse,
+        teeSet: "member",
+        pinRotation: "A",
+      }),
+      capabilities: hand === "right" ? rightCapabilities : leftCapabilities,
+      holeId: base.holes[0].id!,
+      shotNumber: 1,
+      from,
+      lie: "fairway",
+      intent: { ...intent, technique },
+      seed: 633_047,
+    });
+    const rightNormal = resolve("right", "normal");
+    const rightDraw = resolve("right", "draw");
+    const leftNormal = resolve("left", "normal");
+    const leftDraw = resolve("left", "draw");
+
+    expect(rightDraw.shotSlope).toMatchObject({ handedness: "right", sidehill: "ball_above_feet" });
+    expect(leftDraw.shotSlope).toMatchObject({ handedness: "left", sidehill: "ball_above_feet" });
+    expect(rightDraw.landing.y).toBeLessThan(rightNormal.landing.y - .8);
+    expect(leftDraw.landing.y).toBeGreaterThan(leftNormal.landing.y + .8);
   });
 
   it("keeps a strategic follow-up on the rules-classified playable tile at a penalty boundary", () => {

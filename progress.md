@@ -1,5 +1,13 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-08-02 — ZK-633 sidehill curvature implementation in progress
+
+- Added one authoritative handedness-aware sidehill/intentional curve resolver. A one-step cross slope scales with airborne shot length and caps at `min(1.25, 0.35 + shotLengthTiles * 0.04)`; combined natural and intentional shape stays within 2.75 tiles.
+- Player Pro freezes handedness at round start and uses it for caddie analysis, exact preview, commit, active-save normalization, and retained shot-slope evidence. Live golfers derive the same stable identity from the already-persisted capability seed, without new save state.
+- Right/left draw and fade now mirror, above/below-feet lies curve in the correct player-relative direction, matching shapes amplify, opposing shapes offset, every non-putter club family consumes the effect, and putters/flat normal shots remain unchanged.
+- Final validation passes: 149 Vitest files / 1,159 tests with one intentional skip plus five audio-audit tests; production build and all asset/delivery budgets; lint/i18n with zero errors and 12 existing hook warnings; `git diff --check`; and the required bundled web-game client through Quick Start. Its structured state reached a valid 220×140 Parkland game without a console-error artifact, and the final course renderer capture was visually inspected.
+- No new blocker or distinct follow-up issue was discovered. ZK-633 is ready for coordinator review and integration; Linear, commits, pushes, and production were intentionally left untouched.
+
 ## 2026-08-02 — ZK-640 automatic putting in progress
 
 - Added the deterministic automatic-putting authority, attached its immutable result to Player Pro/live green arrivals, and made the result add 1–3 putts and complete the hole without manual input.

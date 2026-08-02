@@ -5,6 +5,7 @@ import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSaveResult } from "../../ut
 import { __resetSaveStoreForTests, loadSlot, saveToSlot } from "../../utils/saveStore";
 import { createLiveState, stepLive } from "./simulation";
 import { restoreLiveSimulation, snapshotLiveSimulation } from "./persistence";
+import { stableGolferHandedness } from "./capabilities";
 
 function playableCourse(): Course {
   const width = 60;
@@ -63,6 +64,25 @@ describe("live simulation persistence", () => {
     expect(restored!.pendingCash).toBe(pendingCash);
     expect(restored!.speed).toBe("4x");
     expect(restored!.selectedGolferId).toBe(selectedGolferId);
+  });
+
+  it("retains capability-derived handedness and frozen sidehill evidence without new live save state", () => {
+    const { state } = midRound();
+    const golfer = state.golfers[0];
+    expect(golfer.capabilities).toBeDefined();
+    expect(golfer.shotOutcomes?.length).toBeGreaterThan(0);
+    const handedness = stableGolferHandedness(golfer.capabilities!.seed);
+    expect(golfer.shotOutcomes?.every((outcome) => outcome.shotSlope?.handedness === handedness)).toBe(true);
+
+    const snapshot = snapshotLiveSimulation({
+      state,
+      pendingCash: 0,
+      speed: "paused",
+      selectedGolferId: golfer.id,
+    });
+    const restored = restoreLiveSimulation(JSON.parse(JSON.stringify(snapshot)));
+    expect(restored?.state.golfers[0].capabilities?.seed).toBe(golfer.capabilities!.seed);
+    expect(restored?.state.golfers[0].shotOutcomes).toEqual(golfer.shotOutcomes);
   });
 
   it("round-trips an active M51 rental once and drops duplicate authorization IDs", () => {

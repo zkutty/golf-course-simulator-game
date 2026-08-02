@@ -1,5 +1,6 @@
 import type { Personality } from "./personality";
 import type { GolferCapabilities, RiskStyle } from "./m47Types";
+import type { ShotHandedness } from "../models/shotSlope";
 
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
@@ -36,6 +37,11 @@ function labels(values: Record<string, number>): { strengths: string[]; weakness
 
 export function stableGolferSeed(identity: string, fallback: number): number {
   return hashSeed(identity || `golfer:${fallback >>> 0}`);
+}
+
+/** Stable physics identity derived from the already-persisted capability seed. */
+export function stableGolferHandedness(seed: number): ShotHandedness {
+  return ((Math.max(0, Math.floor(seed)) >>> 0) & 1) === 0 ? "right" : "left";
 }
 
 export function createGolferCapabilities(args: {
