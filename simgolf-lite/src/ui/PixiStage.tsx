@@ -124,14 +124,9 @@ import {
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
 import { deriveTerrainDetail } from "../game/render/terrainDetails";
 import {
-  seasonalTerrainDecals,
   seasonalTerrainTreatment,
   type SeasonalTerrainTreatment,
 } from "../game/render/seasonalTerrainPresentation";
-import {
-  surfaceCareVisualCommands,
-  type SurfaceCareVisualCommand,
-} from "../game/render/surfaceCarePresentation";
 import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
 import {
   buildLandscapeComponents,
@@ -199,6 +194,16 @@ import {
   surfaceCareTopology,
   surfaceCareVisualSignatures,
 } from "../game/conditions/surfaceCare";
+import {
+  RenderRevisionTracker,
+  type RenderSnapshot,
+} from "./renderer/RenderSnapshot";
+import { SceneSystemHost } from "./renderer/SceneSystemHost";
+import { createSeasonalTerrainSceneSystem } from "./renderer/scenes/seasonalTerrainScene";
+import {
+  createSurfaceCareSceneSystem,
+  type SurfaceCareWorkerSprite,
+} from "./renderer/scenes/surfaceCareScene";
 
 const TERRAIN_LABEL_KEYS: Record<Terrain, MessageKey> = {
   fairway: "designDock.terrain.fairway",
@@ -1063,6 +1068,8 @@ export function PixiStage(props: PixiStageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const layersRef = useRef<Layers | null>(null);
+  const sceneSystemHostRef = useRef<SceneSystemHost | null>(null);
+  const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
   const [atlasRevision, setAtlasRevision] = useState(0);
   const seasonalPlantsSignature = seasonalPlantSceneSignature(
@@ -1098,13 +1105,7 @@ export function PixiStage(props: PixiStageProps) {
   const propertyGraphicsRef = useRef<PIXI.Graphics[]>([]);
   const playerShotOverlayRef = useRef<PIXI.Container | null>(null);
   const decorationSpritesRef = useRef<Array<{ sprite: PIXI.Sprite; shadow: PIXI.Graphics }>>([]);
-  const surfaceCareWorkersRef = useRef<Array<{
-    graphics: PIXI.Graphics;
-    baseX: number;
-    baseY: number;
-    phase: number;
-    animated: boolean;
-  }>>([]);
+  const surfaceCareWorkersRef = useRef<SurfaceCareWorkerSprite[]>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const surfaceWaterSpritesRef = useRef<Array<{
     sprite: PIXI.Sprite | PIXI.Mesh;
@@ -1374,6 +1375,69 @@ export function PixiStage(props: PixiStageProps) {
     landscapeComponentByCell,
     props.graphicsQuality,
     visualHeightfield,
+  ]);
+
+  // ZK-679 first slice: scene systems consume one typed snapshot. Each
+  // revision list mirrors only the inputs read by that system, so unrelated
+  // React renders no longer imply that every extracted layer must rebuild.
+  const renderRevisions = renderRevisionTrackerRef.current.update({
+    seasonalTerrain: [
+      course.height,
+      effectiveTiles,
+      course.width,
+      draftGreen,
+      draftTee,
+      holes,
+      props.colorVision,
+      props.graphicsQuality,
+      props.reducedMotion,
+      props.seasonalVisualState,
+      props.worldSeed,
+      rotation,
+      surfaceHeightAt,
+    ],
+    surfaceCare: [
+      carePresentationSignature,
+      course,
+      props.animationsEnabled,
+      props.colorVision,
+      props.graphicsQuality,
+      props.reducedMotion,
+      props.worldSeed,
+      rotation,
+      surfaceHeightAt,
+    ],
+  });
+  const renderSnapshot = useMemo<RenderSnapshot>(() => ({
+    course,
+    effectiveTiles,
+    holes,
+    draftTee,
+    draftGreen,
+    rotation,
+    seasonalVisualState: props.seasonalVisualState,
+    graphicsQuality: props.graphicsQuality,
+    colorVision: props.colorVision,
+    reducedMotion: Boolean(props.reducedMotion),
+    animationsEnabled: props.animationsEnabled,
+    worldSeed: props.worldSeed,
+    surfaceHeightAt,
+    revisions: renderRevisions,
+  }), [
+    course,
+    draftGreen,
+    draftTee,
+    effectiveTiles,
+    holes,
+    props.animationsEnabled,
+    props.colorVision,
+    props.graphicsQuality,
+    props.reducedMotion,
+    props.seasonalVisualState,
+    props.worldSeed,
+    renderRevisions,
+    rotation,
+    surfaceHeightAt,
   ]);
 
   // ---------------------------------------------------------------------
@@ -3435,333 +3499,31 @@ export function PixiStage(props: PixiStageProps) {
     visualHeightfield,
   ]);
 
-  // Seasonal terrain dressing lives above both terrain presentations and
-  // below every tee/pin/route marker. One pooled Graphics object consumes the
-  // pure bounded commands; no per-tile display state or cache survives a
-  // rebuild, and the world coordinates do not change with camera rotation.
+  // Extracted scene systems are installed once for the Pixi application and
+  // receive new snapshots through the host below. Layer order and ownership
+  // remain unchanged; only rebuild policy has moved out of this component.
   useEffect(() => {
     if (!appReady) return;
-    const layer = layersRef.current?.seasonalTerrain;
-    if (!layer) return;
-    layer.removeChildren().forEach((child) => child.destroy({ children: true }));
-    const state = props.seasonalVisualState;
-    if (!state) return;
-
-    const protectedCells = new Set<number>();
-    const protect = (point: Point | null | undefined) => {
-      if (!point) return;
-      const x = Math.floor(point.x);
-      const y = Math.floor(point.y);
-      if (x >= 0 && y >= 0 && x < course.width && y < course.height) {
-        protectedCells.add(y * course.width + x);
-      }
+    const layers = layersRef.current;
+    if (!layers) return;
+    const host = new SceneSystemHost([
+      createSeasonalTerrainSceneSystem(layers.seasonalTerrain),
+      createSurfaceCareSceneSystem(
+        layers.surfaceCare,
+        (workers) => { surfaceCareWorkersRef.current = workers; },
+      ),
+    ]);
+    sceneSystemHostRef.current = host;
+    return () => {
+      if (sceneSystemHostRef.current === host) sceneSystemHostRef.current = null;
+      host.dispose();
     };
-    for (const hole of holes) {
-      for (const teeSet of TEE_SETS) protect(getTeeBox(hole, teeSet));
-      for (const pinRotation of PIN_ROTATIONS) protect(getPinPosition(hole, pinRotation));
-    }
-    protect(draftTee);
-    protect(draftGreen);
+  }, [appReady]);
 
-    const decals = seasonalTerrainDecals({
-      state,
-      tiles: effectiveTiles,
-      width: course.width,
-      height: course.height,
-      quality: props.graphicsQuality,
-      colorVision: props.colorVision,
-      seed: props.worldSeed,
-      reducedMotion: props.reducedMotion,
-      protectedCells,
-    });
-    if (decals.length === 0) return;
-
-    const graphics = new PIXI.Graphics();
-    graphics.eventMode = "none";
-    for (const decal of decals) {
-      const point = worldToIso(
-        decal.x,
-        decal.y,
-        surfaceHeightAt(decal.x, decal.y),
-        rotation,
-      );
-      const scale = decal.scale;
-      const dx = Math.cos(decal.rotation);
-      const dy = Math.sin(decal.rotation);
-      if (decal.cue === "puddle") {
-        graphics.ellipse(point.x, point.y, 6.5 * scale, 2.2 * scale);
-        graphics.fill({ color: decal.color, alpha: decal.alpha * .55 });
-        graphics.stroke({ width: 1, color: 0xe5f3f4, alpha: decal.alpha * .75 });
-      } else if (decal.cue === "drought-crack") {
-        graphics.moveTo(point.x - dx * 5 * scale, point.y - dy * 2.2 * scale);
-        graphics.lineTo(point.x, point.y);
-        graphics.lineTo(point.x + dx * 4 * scale, point.y + dy * 2 * scale);
-        graphics.moveTo(point.x, point.y);
-        graphics.lineTo(point.x - dy * 3 * scale, point.y + dx * 1.5 * scale);
-        graphics.stroke({ width: 1.15, color: decal.color, alpha: decal.alpha });
-      } else if (decal.cue === "frost-crystal") {
-        graphics.moveTo(point.x - 4 * scale, point.y);
-        graphics.lineTo(point.x + 4 * scale, point.y);
-        graphics.moveTo(point.x, point.y - 2.2 * scale);
-        graphics.lineTo(point.x, point.y + 2.2 * scale);
-        graphics.stroke({ width: 1, color: decal.color, alpha: decal.alpha });
-      } else if (decal.cue === "partial-snow") {
-        graphics.ellipse(point.x, point.y, 7.5 * scale, 2.8 * scale);
-        graphics.fill({ color: decal.color, alpha: Math.min(.34, decal.alpha) });
-        graphics.moveTo(point.x - 4 * scale, point.y);
-        graphics.lineTo(point.x + 3 * scale, point.y - .7 * scale);
-        graphics.stroke({ width: .8, color: 0xb9c8cc, alpha: decal.alpha * .62 });
-      } else if (decal.cue === "leaf-litter") {
-        graphics.ellipse(point.x - 2.4 * scale, point.y, 2.1 * scale, .85 * scale);
-        graphics.ellipse(point.x + 2.1 * scale, point.y + 1.1 * scale, 1.8 * scale, .75 * scale);
-        graphics.fill({ color: decal.color, alpha: decal.alpha });
-      } else if (decal.cue === "recovery-sprout") {
-        graphics.moveTo(point.x, point.y + 2 * scale);
-        graphics.lineTo(point.x, point.y - 2.8 * scale);
-        graphics.moveTo(point.x, point.y - .5 * scale);
-        graphics.lineTo(point.x - 2.2 * scale, point.y - 1.7 * scale);
-        graphics.moveTo(point.x, point.y - 1.4 * scale);
-        graphics.lineTo(point.x + 2.1 * scale, point.y - 2.4 * scale);
-        graphics.stroke({ width: 1.2, color: decal.color, alpha: decal.alpha });
-      } else {
-        graphics.moveTo(point.x - 6 * scale, point.y);
-        graphics.bezierCurveTo(
-          point.x - 2 * scale,
-          point.y - 1.7 * scale,
-          point.x + 2 * scale,
-          point.y + 1.7 * scale,
-          point.x + 6 * scale,
-          point.y,
-        );
-        graphics.stroke({ width: 1, color: decal.color, alpha: decal.alpha });
-      }
-    }
-    layer.addChild(graphics);
-  }, [
-    appReady,
-    course.height,
-    effectiveTiles,
-    course.width,
-    draftGreen,
-    draftTee,
-    holes,
-    props.colorVision,
-    props.graphicsQuality,
-    props.reducedMotion,
-    props.seasonalVisualState,
-    props.worldSeed,
-    rotation,
-    surfaceHeightAt,
-  ]);
-
-  // Local care evidence is a separate bounded presentation layer. Commands
-  // come only from observed sparse surface-care records plus their exact
-  // effective surfaces; the renderer owns no condition state or decal
-  // history. Anchors stay in world space so camera rotation cannot move or
-  // reselect a wear/divot/repair cue.
   useEffect(() => {
     if (!appReady) return;
-    const layer = layersRef.current?.surfaceCare;
-    if (!layer) return;
-    layer.removeChildren().forEach((child) => child.destroy({ children: true }));
-    surfaceCareWorkersRef.current = [];
-
-    const commands = surfaceCareVisualCommands({
-      course,
-      quality: props.graphicsQuality,
-      seed: props.worldSeed,
-      reducedMotion: props.reducedMotion || !props.animationsEnabled,
-    });
-    if (commands.length === 0) return;
-
-    const pooled = new PIXI.Graphics();
-    pooled.eventMode = "none";
-    const pointFor = (command: SurfaceCareVisualCommand) => worldToIso(
-      command.x,
-      command.y,
-      surfaceHeightAt(command.x, command.y),
-      rotation,
-    );
-    const cueColor = (command: SurfaceCareVisualCommand) => (
-      props.colorVision === "standard"
-        ? command.color
-        : command.cue === "dry-stress"
-          || command.cue === "bare-failure"
-          || command.cue.startsWith("repair-")
-          ? 0x272a2c
-          : 0xf2f3f3
-    );
-
-    for (const command of commands) {
-      const point = pointFor(command);
-      const scale = command.scale;
-      const headingPoint = worldToIso(
-        command.x + Math.cos(command.rotation) * 0.25,
-        command.y + Math.sin(command.rotation) * 0.25,
-        surfaceHeightAt(
-          command.x + Math.cos(command.rotation) * 0.25,
-          command.y + Math.sin(command.rotation) * 0.25,
-        ),
-        rotation,
-      );
-      const headingLength = Math.max(
-        0.0001,
-        Math.hypot(headingPoint.x - point.x, headingPoint.y - point.y),
-      );
-      const dx = (headingPoint.x - point.x) / headingLength;
-      const dy = (headingPoint.y - point.y) / headingLength;
-      const color = cueColor(command);
-      const alpha = Math.min(0.68, command.alpha);
-      if (command.cue === "groundskeeper-work") {
-        const worker = new PIXI.Graphics();
-        worker.eventMode = "none";
-        worker.circle(0, -8 * scale, 2.25 * scale);
-        worker.fill({ color: 0xd7b38b, alpha: Math.min(0.9, alpha + 0.18) });
-        worker.moveTo(0, -5.7 * scale);
-        worker.lineTo(0, 1.2 * scale);
-        worker.moveTo(-3 * scale, -3 * scale);
-        worker.lineTo(3 * scale, -1 * scale);
-        worker.moveTo(0, 1.2 * scale);
-        worker.lineTo(-2.5 * scale, 5 * scale);
-        worker.moveTo(0, 1.2 * scale);
-        worker.lineTo(2.5 * scale, 5 * scale);
-        worker.stroke({ width: 1.5, color, alpha: Math.min(0.94, alpha + 0.2), cap: "round" });
-        worker.moveTo(3 * scale, -4 * scale);
-        worker.lineTo(5.5 * scale, 5 * scale);
-        worker.lineTo(8 * scale, 5.5 * scale);
-        worker.stroke({ width: 1.1, color: 0x62513a, alpha: 0.9, cap: "round" });
-        worker.position.set(point.x, point.y);
-        layer.addChild(worker);
-        surfaceCareWorkersRef.current.push({
-          graphics: worker,
-          baseX: point.x,
-          baseY: point.y,
-          phase: command.rotation,
-          animated: command.animated,
-        });
-        continue;
-      }
-
-      if (command.cue === "worn-line") {
-        pooled.moveTo(point.x - dx * 7 * scale, point.y - dy * 2.8 * scale);
-        pooled.bezierCurveTo(
-          point.x - dy * 2.2 * scale,
-          point.y + dx * 1.1 * scale,
-          point.x + dy * 1.8 * scale,
-          point.y - dx * 0.9 * scale,
-          point.x + dx * 7 * scale,
-          point.y + dy * 2.8 * scale,
-        );
-        pooled.stroke({ width: 2.2, color, alpha, cap: "round" });
-      } else if (command.cue === "divot") {
-        pooled.ellipse(point.x, point.y, 2.8 * scale, 1.15 * scale);
-        pooled.fill({ color, alpha });
-        pooled.moveTo(point.x - 2.8 * scale, point.y - 0.2 * scale);
-        pooled.lineTo(point.x + 2.2 * scale, point.y - 0.7 * scale);
-        pooled.stroke({ width: 0.8, color: 0xd4c58b, alpha: alpha * 0.8 });
-      } else if (command.cue === "compaction") {
-        for (let offset = -1; offset <= 1; offset++) {
-          pooled.moveTo(
-            point.x - dx * 5.5 * scale - dy * offset * 1.4,
-            point.y - dy * 2.4 * scale + dx * offset * 0.7,
-          );
-          pooled.lineTo(
-            point.x + dx * 5.5 * scale - dy * offset * 1.4,
-            point.y + dy * 2.4 * scale + dx * offset * 0.7,
-          );
-        }
-        pooled.stroke({ width: 0.8, color, alpha: alpha * 0.86, cap: "round" });
-      } else if (command.cue === "mud-softness") {
-        pooled.ellipse(point.x, point.y, 6.2 * scale, 2.1 * scale);
-        pooled.fill({ color, alpha: alpha * 0.62 });
-        pooled.ellipse(point.x - 1.8 * scale, point.y - 0.4 * scale, 1.3 * scale, 0.5 * scale);
-        pooled.stroke({ width: 0.8, color: 0xd9e1d1, alpha: alpha * 0.72 });
-      } else if (command.cue === "dry-stress") {
-        pooled.moveTo(point.x - 5 * scale, point.y);
-        pooled.lineTo(point.x - 1 * scale, point.y - 1.2 * scale);
-        pooled.lineTo(point.x + 2 * scale, point.y + 1.4 * scale);
-        pooled.lineTo(point.x + 5 * scale, point.y - 0.4 * scale);
-        pooled.moveTo(point.x - 1 * scale, point.y - 1.2 * scale);
-        pooled.lineTo(point.x, point.y - 3.2 * scale);
-        pooled.stroke({ width: 1.2, color, alpha, cap: "round" });
-      } else if (command.cue === "wet-disease-risk") {
-        pooled.circle(point.x - 2.2 * scale, point.y, 2.4 * scale);
-        pooled.circle(point.x + 1.8 * scale, point.y + 0.5 * scale, 2.1 * scale);
-        pooled.stroke({ width: 1.1, color, alpha });
-      } else if (command.cue === "weed-pressure" || command.cue === "overgrowth") {
-        const bladeCount = command.cue === "overgrowth" ? 5 : 3;
-        for (let blade = 0; blade < bladeCount; blade++) {
-          const offset = (blade - (bladeCount - 1) / 2) * 2 * scale;
-          pooled.moveTo(point.x + offset, point.y + 2 * scale);
-          pooled.lineTo(
-            point.x + offset + Math.sin(command.rotation + blade) * 2.2 * scale,
-            point.y - (3.5 + blade % 2 * 2) * scale,
-          );
-        }
-        pooled.stroke({ width: 1.1, color, alpha, cap: "round" });
-      } else if (command.cue === "thinning") {
-        for (let dash = -2; dash <= 2; dash++) {
-          pooled.moveTo(point.x + dash * 2.4 * scale, point.y + (dash % 2) * 0.6);
-          pooled.lineTo(point.x + dash * 2.4 * scale + dx * 1.5, point.y - 1.5 * scale);
-        }
-        pooled.stroke({ width: 0.9, color, alpha });
-      } else if (command.cue === "bare-failure") {
-        pooled.ellipse(point.x, point.y, 7.2 * scale, 2.7 * scale);
-        pooled.fill({ color, alpha: alpha * 0.72 });
-        pooled.ellipse(point.x - 2.1 * scale, point.y - 0.4 * scale, 2.2 * scale, 0.7 * scale);
-        pooled.stroke({ width: 1, color: 0xd0b17d, alpha: alpha * 0.68 });
-      } else if (command.cue === "repair-reseed") {
-        for (let row = -1; row <= 1; row++) {
-          for (let seed = -2; seed <= 2; seed++) {
-            pooled.circle(
-              point.x + seed * 2.3 * scale + row * 0.7,
-              point.y + row * 1.35 * scale,
-              0.65 * scale,
-            );
-          }
-        }
-        pooled.fill({ color, alpha });
-      } else if (command.cue === "repair-resod") {
-        for (let row = -1; row <= 1; row++) {
-          pooled.rect(
-            point.x - 6.2 * scale + (row % 2) * 1.7 * scale,
-            point.y + row * 1.7 * scale,
-            4.1 * scale,
-            1.35 * scale,
-          );
-          pooled.rect(
-            point.x - 1.4 * scale + (row % 2) * 1.7 * scale,
-            point.y + row * 1.7 * scale,
-            4.1 * scale,
-            1.35 * scale,
-          );
-        }
-        pooled.stroke({ width: 0.8, color, alpha });
-      } else {
-        // Recovery dressing exists only while the authoritative task exists
-        // and has positive progress. Completion removes the command exactly.
-        pooled.ellipse(point.x, point.y, 6.4 * scale, 2.1 * scale);
-        pooled.stroke({ width: 1, color, alpha: alpha * 0.86 });
-        for (let sprout = -1; sprout <= 1; sprout++) {
-          pooled.moveTo(point.x + sprout * 3.2 * scale, point.y + 1.2 * scale);
-          pooled.lineTo(point.x + sprout * 3.2 * scale, point.y - 2.2 * scale);
-        }
-        pooled.stroke({ width: 1, color: 0x75a65c, alpha });
-      }
-    }
-    layer.addChildAt(pooled, 0);
-  }, [
-    appReady,
-    carePresentationSignature,
-    course,
-    props.animationsEnabled,
-    props.colorVision,
-    props.graphicsQuality,
-    props.reducedMotion,
-    props.worldSeed,
-    rotation,
-    surfaceHeightAt,
-  ]);
+    sceneSystemHostRef.current?.sync(renderSnapshot);
+  }, [appReady, renderSnapshot]);
 
   // ---------------------------------------------------------------------
   // Objects layer — obstacles, ground-anchored and depth-sorted
