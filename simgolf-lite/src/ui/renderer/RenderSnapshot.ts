@@ -4,7 +4,7 @@ import type { SeasonalVisualState } from "../../game/presentation/seasonalVisual
 import type { IsoRotation } from "../../game/render/iso";
 import type { PlayerPlayableRound, PlayerProPoint } from "../../game/models/playerProTypes";
 
-export type RenderSceneId = "seasonalTerrain" | "surfaceCare" | "structuresProps" | "overlaysDiagnostics";
+export type RenderSceneId = "seasonalTerrain" | "surfaceCare" | "structuresProps" | "overlaysDiagnostics" | "estateSurvey";
 
 export type RenderRevisions = Readonly<Record<RenderSceneId, number>>;
 
@@ -24,6 +24,8 @@ export interface RenderSnapshot {
   readonly atlasRevision: number;
   readonly playerRound?: PlayerPlayableRound | null;
   readonly playerShotAim?: PlayerProPoint | null;
+  readonly surveyMode: boolean;
+  readonly selectedParcelId?: string | null;
   readonly worldSeed: number;
   readonly surfaceHeightAt: (x: number, y: number) => number;
   readonly revisions: RenderRevisions;
@@ -52,6 +54,7 @@ export class RenderRevisionTracker {
     surfaceCare: 0,
     structuresProps: 0,
     overlaysDiagnostics: 0,
+    estateSurvey: 0,
   };
 
   update(next: RenderRevisionDependencies): RenderRevisions {
