@@ -12,3 +12,10 @@ export {
 } from "./renderInstrumentation";
 export type { GameSessionPanelSurface } from "./renderInstrumentation";
 export { shallowEqual, useGameSessionSelector } from "./react";
+export { VersionedAnalysisJobClient } from "./analysisJobs";
+export type {
+  AnalysisJob,
+  AnalysisJobResult,
+  AnalysisWorkerMessage,
+  AnalysisWorkerPort,
+} from "./analysisJobs";

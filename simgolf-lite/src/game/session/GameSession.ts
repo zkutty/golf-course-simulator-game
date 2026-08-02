@@ -38,6 +38,7 @@ export class GameSession {
   private state: GameState;
   private readonly reducer: (state: GameState, action: Action) => GameState;
   private readonly listeners = new Set<Listener>();
+  private readonly teardownCallbacks = new Set<() => void>();
   private changeSequence = 0;
   private cleanSequence = 0;
   private disposed = false;
@@ -54,11 +55,27 @@ export class GameSession {
     return this.changeSequence !== this.cleanSequence;
   }
 
+  /** Monotonic revision for asynchronous, non-authoritative analysis work. */
+  get revision(): number {
+    return this.changeSequence;
+  }
+
   subscribe = (listener: Listener): (() => void) => {
     this.assertActive();
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   };
+
+  /**
+   * Owns the lifetime of non-authoritative integrations (for example a
+   * benchmark Worker). App close tears those integrations down before the
+   * session drops its state and subscriptions.
+   */
+  registerTeardown(callback: () => void): () => void {
+    this.assertActive();
+    this.teardownCallbacks.add(callback);
+    return () => this.teardownCallbacks.delete(callback);
+  }
 
   subscribeSelector<Selection>(
     selector: GameStateSelector<Selection>,
@@ -178,6 +195,8 @@ export class GameSession {
 
   dispose(): void {
     this.disposed = true;
+    for (const callback of [...this.teardownCallbacks]) callback();
+    this.teardownCallbacks.clear();
     this.listeners.clear();
   }
 
