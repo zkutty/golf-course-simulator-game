@@ -4,6 +4,7 @@ import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
 import type { ShotSlopeContext } from "./shotSlope";
 import type { GreenRoundSnapshotV1 } from "../greens/greenSurface";
 import type { GreenRolloutV1 } from "../greens/greenRollout";
+import type { GreenPuttingV1 } from "../greens/greenPutting";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -116,6 +117,8 @@ export interface PlayerShotTrace {
   shotSlope?: ShotSlopeContext;
   /** Optional V1 path; absent on historical pre-M62 traces. */
   greenRollout?: GreenRolloutV1;
+  /** Immutable automatic-putting resolution when this shot reached the green. */
+  greenPutting?: GreenPuttingV1;
 }
 
 export interface PlayerRoundScorecardHole {

@@ -144,6 +144,28 @@ function started() {
 }
 
 describe("M36 deterministic Player Pro play", () => {
+  it("automatically completes a green arrival and preserves the resolved putt count", () => {
+    const { career, round } = started();
+    const committed = commitPlayerShot(round, career.skills, { club: "Pitching Wedge", aim: { x: 34, y: 7 }, power: .25, technique: "normal" });
+    expect(committed.pendingShot).not.toBeNull();
+    if (!committed.pendingShot) throw new Error("Expected a pending shot");
+    const automatic = {
+      ...committed,
+      pendingShot: {
+        ...committed.pendingShot,
+        holed: false,
+        lieAfter: "green",
+        greenPutting: { version: 1 as const, seed: 640, putts: 2 as const, leaveDistanceYards: 12, breakTiles: .4, pinDifficulty: .2, realizedSpeedFeet: 10, effectiveMoisture: .5, wear: .1, puttingSkill: .7, consistency: .7 },
+      },
+    };
+    const finished = finishPlayerShot(automatic);
+    expect(finished.phase).toBe("hole_complete");
+    expect(finished.strokes).toBe(round.strokes + 3);
+    expect(finished.scorecard[0].strokes).toBe(3);
+    expect(finished.shots[0].greenPutting?.putts).toBe(2);
+    const resumed = normalizePlayerPro({ ...career, activeRound: finished }, { seed: 71 });
+    expect(resumed.activeRound?.shots[0].greenPutting).toEqual(finished.shots[0].greenPutting);
+  });
   it("freezes canonical biome and climate compatibility evidence in active rounds", () => {
     const { round } = started();
     expect(round.course.biomeCompatibility).toMatchObject({

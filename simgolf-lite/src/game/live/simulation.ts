@@ -756,6 +756,7 @@ function shotRecordFromOutcome(outcome: LiveShotOutcome): NonNullable<CompletedR
     lieBefore: outcome.lieBefore,
     lieAfter: outcome.lieAfter,
     greenRollout: outcome.greenRollout,
+    greenPutting: outcome.greenPutting,
   };
 }
 

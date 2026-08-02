@@ -126,6 +126,11 @@ export function resolveLiveShot(args: {
   facts.push({ code: "outcome", detail: `rest:${trace.lieAfter}` });
   if (trace.greenRollout && facts.length < 12) facts.push({ code: "outcome", detail: `green-pace:${trace.greenRollout.pace}:${trace.greenRollout.evidence.realizedSpeedFeet}` });
   if (trace.greenRollout && facts.length < 12) facts.push({ code: "outcome", detail: `green-break:${trace.greenRollout.breakTiles}` });
+  // `resolvePlayableShot` is the shared flight/green-arrival authority. Carry
+  // its immutable putting result through unchanged rather than resolving a
+  // second caller-specific sequence.
+  const greenPutting = trace.greenPutting;
+  if (greenPutting && facts.length < 12) facts.push({ code: "outcome", detail: `auto-putts:${greenPutting.putts}` });
   return {
     version: 1,
     id: trace.id,
@@ -153,6 +158,7 @@ export function resolveLiveShot(args: {
     finalPosition: trace.finalPosition,
     shotSlope: trace.shotSlope,
     greenRollout: trace.greenRollout,
+    greenPutting,
     sharedOutcome: trace.sharedOutcome,
   };
 }

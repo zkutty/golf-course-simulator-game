@@ -2,6 +2,7 @@ import type { Point } from "../models/types";
 import type { ReliefResolution, SharedShotOutcome, ShotFlightProfile, ShotRuling } from "../rules/contracts";
 import type { ShotSlopeContext } from "../models/shotSlope";
 import type { GreenRolloutV1 } from "../greens/greenRollout";
+import type { GreenPuttingV1 } from "../greens/greenPutting";
 
 export const M47_CAPABILITY_VERSION = 1 as const;
 export const M47_MAX_PLANS = 36 as const;
@@ -98,6 +99,8 @@ export interface LiveShotOutcome {
   shotSlope?: ShotSlopeContext;
   /** Optional authoritative M62 ground path; absent on legacy outcomes. */
   greenRollout?: GreenRolloutV1;
+  /** Resolved, save-safe automatic putting for a ball that reached green. */
+  greenPutting?: GreenPuttingV1;
 }
 
 export interface HoleReaction {

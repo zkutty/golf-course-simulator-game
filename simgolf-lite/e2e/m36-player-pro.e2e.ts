@@ -149,7 +149,14 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
       physicalRest: expect.any(Object),
       finalPosition: expect.any(Object),
     },
+    automaticPutting: {
+      holes: expect.any(Number),
+      putts: expect.any(Number),
+      latest: expect.objectContaining({ putts: expect.any(Number), leaveDistanceYards: expect.any(Number) }),
+    },
   });
+  expect(completed.automaticPutting.holes).toBeGreaterThan(0);
+  expect(completed.automaticPutting.putts).toBeGreaterThanOrEqual(completed.automaticPutting.holes);
   await expect(hud).toContainText("Career gains, records, and competition rewards were settled once.");
   const completeShot = await page.screenshot({ path: "artifacts/m36-player-pro-complete.png", fullPage: true });
   await testInfo.attach("player-pro-complete", { body: completeShot, contentType: "image/png" });

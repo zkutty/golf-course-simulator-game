@@ -8,6 +8,7 @@ import { isValidSharedShotOutcome } from "../rules/contracts";
 import { normalizeM51LiveMobilityState } from "../m51/mobility";
 import { normalizeShotSlopeContext } from "../models/shotSlope";
 import { isValidGreenRollout } from "../greens/greenRollout";
+import { isValidGreenPutting } from "../greens/greenPutting";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
@@ -98,7 +99,8 @@ function shotOutcome(value: unknown): boolean {
     typeof value.lieAfter === "string" && ["carryYards", "rollYards", "penaltyStrokes", "seed"].every((key) => finite(value[key])) &&
     typeof value.holed === "boolean" && Array.isArray(value.facts) && value.facts.length <= 12 && value.facts.every(fact) &&
     (value.shotSlope == null || normalizeShotSlopeContext(value.shotSlope) != null) &&
-    (value.greenRollout == null || isValidGreenRollout(value.greenRollout));
+    (value.greenRollout == null || isValidGreenRollout(value.greenRollout)) &&
+    (value.greenPutting == null || isValidGreenPutting(value.greenPutting));
 }
 
 function normalizeShotOutcome(value: LiveShotOutcome): LiveShotOutcome {

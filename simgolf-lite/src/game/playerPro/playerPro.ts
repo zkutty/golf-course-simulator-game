@@ -77,6 +77,12 @@ import {
   type GreenRolloutV1,
   type GreenRolloutSpin,
 } from "../greens/greenRollout";
+import {
+  estimateAutomaticPutts,
+  isValidGreenPutting,
+  resolveAutomaticPutts,
+  type GreenPuttingEstimate,
+} from "../greens/greenPutting";
 
 const DEFAULT_SKILL = 40;
 const XP_PER_LEVEL = 12;
@@ -241,6 +247,7 @@ function validActiveShotTrace(value: unknown): value is PlayerShotTrace {
   if (trace.sharedOutcome != null && !isValidSharedShotOutcome(trace.sharedOutcome)) return false;
   if (trace.shotSlope != null && !normalizeShotSlopeContext(trace.shotSlope)) return false;
   if (trace.greenRollout != null && !isValidGreenRollout(trace.greenRollout)) return false;
+  if (trace.greenPutting != null && !isValidGreenPutting(trace.greenPutting)) return false;
   if (trace.ruling != null && !isValidShotRuling(trace.ruling)) return false;
   if (trace.relief != null && !isValidReliefResolution(trace.relief)) return false;
   if (trace.finalPosition != null && !point(trace.finalPosition)) return false;
@@ -692,6 +699,8 @@ export interface PlayerShotPreview {
   sharedOutcome: SharedShotOutcome | null;
   /** Exact M62 path paired with `sharedOutcome` for preview/commit parity. */
   greenRollout: GreenRolloutV1 | null;
+  /** Planning-only, deliberately unseeded automatic-putt information. */
+  automaticPuttingEstimate: GreenPuttingEstimate | null;
 }
 
 export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerProSkills, selection: PlayerShotSelection): PlayerShotPreview {
@@ -719,6 +728,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     shotEffects: calculated.effects,
     sharedOutcome: null,
     greenRollout: null,
+    automaticPuttingEstimate: null,
   };
   if (!club.lies.includes(round.lie)) return {
     available: false,
@@ -734,6 +744,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     shotEffects: calculated.effects,
     sharedOutcome: null,
     greenRollout: null,
+    automaticPuttingEstimate: null,
   };
   const requirement = techniqueRequirement(selection.technique, skills);
   if (requirement) return {
@@ -750,6 +761,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     shotEffects: calculated.effects,
     sharedOutcome: null,
     greenRollout: null,
+    automaticPuttingEstimate: null,
   };
   if (calculated.blocker) return {
     available: false,
@@ -765,6 +777,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     shotEffects: calculated.effects,
     sharedOutcome: null,
     greenRollout: null,
+    automaticPuttingEstimate: null,
   };
   const course = courseFromSnapshot(round.course);
   const profile = profileForPlayer(round.course, skills, club);
@@ -795,6 +808,15 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     })
     : null;
   const sharedOutcome = resolved?.sharedOutcome ?? null;
+  const automaticPuttingEstimate = resolved && !resolved.holed && resolved.lieAfter === "green"
+    ? estimateAutomaticPutts({
+      snapshot: round.course,
+      holeId: round.course.holes[round.currentHoleIndex].id,
+      rest: resolved.rest,
+      rollout: resolved.greenRollout,
+      skills,
+    })
+    : null;
   return {
     available: evaluation.isValid,
     blocker: evaluation.isValid ? null : "unreachable",
@@ -809,6 +831,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     shotEffects: calculated.effects,
     sharedOutcome,
     greenRollout: resolved?.greenRollout ?? null,
+    automaticPuttingEstimate,
   };
 }
 
@@ -1005,6 +1028,18 @@ export function resolvePlayableShot(args: {
     relief: rules.relief,
     finalPosition: { ...finalPosition },
   };
+  if (!trace.holed && trace.lieAfter === "green") {
+    trace.greenPutting = resolveAutomaticPutts({
+      snapshot: args.snapshot,
+      holeId: args.holeId,
+      rest: trace.rest,
+      rollout: greenRollout,
+      skills: args.skills,
+      // A distinct deterministic stream prevents a putt result from changing
+      // any already-resolved flight result when the putting model evolves.
+      seed: (args.seed ^ 0x640a77) >>> 0,
+    });
+  }
   trace.sharedOutcome = createSharedShotOutcome({
     trace,
     effects: calculated.effects,
@@ -1054,18 +1089,19 @@ export function commitPlayerShot(round: PlayerPlayableRound, skills: PlayerProSk
 export function finishPlayerShot(round: PlayerPlayableRound): PlayerPlayableRound {
   if (round.phase !== "flight" || !round.pendingShot) return round;
   const trace = round.pendingShot;
+  const automaticPutts = trace.greenPutting?.putts ?? 0;
   const scorecard = round.scorecard.map((hole, index) => index === round.currentHoleIndex ? {
     ...hole,
-    strokes: hole.strokes + 1,
+    strokes: hole.strokes + 1 + automaticPutts,
     penalties: hole.penalties + trace.penaltyStrokes,
-    complete: trace.holed,
+    complete: trace.holed || automaticPutts > 0,
   } : hole);
   return {
     ...round,
-    phase: trace.holed ? "hole_complete" : "awaiting_shot",
+    phase: trace.holed || automaticPutts > 0 ? "hole_complete" : "awaiting_shot",
     ball: trace.rest,
     lie: trace.lieAfter,
-    strokes: round.strokes + 1,
+    strokes: round.strokes + 1 + automaticPutts,
     penalties: round.penalties + trace.penaltyStrokes,
     scorecard,
     shots: [...round.shots, trace].slice(-MAX_SHOTS),
@@ -1299,6 +1335,7 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
       rest: { ...shot.rest },
       evidence: shot.evidence.map((item) => ({ ...item })),
       greenRollout: shot.greenRollout ? structuredClone(shot.greenRollout) : undefined,
+      greenPutting: shot.greenPutting ? { ...shot.greenPutting } : undefined,
     })),
     evidence,
     skillGains,

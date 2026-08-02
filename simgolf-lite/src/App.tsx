@@ -287,6 +287,9 @@ function textRulesSnapshot(snapshot: ControlledRoundSnapshotV2 | null | undefine
 function textCompletedRound(round: PlayerCareerRound | null | undefined) {
   if (!round) return null;
   const latestShot = lastItem(round.shots) ?? null;
+  const automaticPutting = round.shots
+    .map((shot) => shot.greenPutting)
+    .filter((result): result is NonNullable<typeof result> => result != null);
   return {
     id: round.id,
     kind: round.kind,
@@ -300,6 +303,11 @@ function textCompletedRound(round: PlayerCareerRound | null | undefined) {
     rulesSnapshot: textRulesSnapshot(round.rulesSnapshot),
     latestShot: textShotTrace(latestShot),
     latestSharedOutcome: textSharedOutcome(latestShot?.sharedOutcome),
+    automaticPutting: {
+      holes: automaticPutting.length,
+      putts: automaticPutting.reduce((total, result) => total + result.putts, 0),
+      latest: automaticPutting.at(-1) ?? null,
+    },
   };
 }
 import {

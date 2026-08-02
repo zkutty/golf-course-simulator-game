@@ -192,9 +192,22 @@ export function buildStrategicGolferRound(args: {
         outcome.greenRollout ? { landing: outcome.greenRollout.landing, rollPath: outcome.greenRollout.path } : undefined,
       );
       if (distance(outcome.landing, outcome.rest) > .05) pushWalk(outcome.landing, outcome.rest, holeIndex);
+      // Automatic putting remains visible and contributes its own bounded pace
+      // evidence. The score itself comes from the immutable outcome below.
+      if (outcome.greenPutting) {
+        const pin = hole.green;
+        const dx = outcome.rest.x - pin.x;
+        const dy = outcome.rest.y - pin.y;
+        const length = Math.hypot(dx, dy) || 1;
+        const near = { x: pin.x + dx / length * .32, y: pin.y + dy / length * .32 };
+        for (let putt = 0; putt < outcome.greenPutting.putts; putt++) {
+          itinerary.appendPause(near, holeIndex, LIVE.pace.puttPause);
+          itinerary.appendFlight(near, pin, holeIndex, "putt");
+        }
+      }
       from = { ...outcome.rest };
       lie = outcome.lieAfter;
-      holed = outcome.holed;
+      holed = outcome.holed || !!outcome.greenPutting;
       shotNumber++;
     }
 
@@ -207,7 +220,7 @@ export function buildStrategicGolferRound(args: {
       condition: surfaceCareQualityForHole(course, hole),
     }));
     holePar.push(par);
-    holeStrokes.push(outcomes.reduce((sum, outcome) => sum + 1 + outcome.penaltyStrokes, 0));
+    holeStrokes.push(outcomes.reduce((sum, outcome) => sum + 1 + outcome.penaltyStrokes + (outcome.greenPutting?.putts ?? 0), 0));
     cursor = { ...from };
     itinerary.cursor = cursor;
     played++;

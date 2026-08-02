@@ -1,5 +1,12 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-08-02 — ZK-640 automatic putting in progress
+
+- Added the deterministic automatic-putting authority, attached its immutable result to Player Pro/live green arrivals, and made the result add 1–3 putts and complete the hole without manual input.
+- Preview exposes only an unseeded expected-putts explanation; committed evidence retains leave, break, pace, pin difficulty, moisture, wear, skill, consistency, and seed for save/resume parity.
+- Focused resolver, Player Pro, and live parity tests pass (27 tests), along with TypeScript. Browser/client validation and full regression remain pending.
+- Final local validation: focused resolver/Player Pro/live suite (27 tests), Player Pro browser regression, TypeScript, lint/i18n (0 errors; 12 existing hook warnings), production build/audits, and diff check pass. The browser capture visibly shows the completed-round ruling card with the automatic-putting evidence. Generated test/build artifacts were restored after inspection.
+
 ## 2026-07-30 — ZK-568 seasonal vegetation implementation complete
 
 Current request: Implement ZK-568 without committing or pushing; keep subjective visual/gameplay validation deferred.
