@@ -320,3 +320,73 @@ describe("ZK-551 M50 recovery strategy", () => {
     })).toEqual([]);
   });
 });
+
+describe("ZK-632 elevation-aware live strategy", () => {
+  it("uses plays-like distance for live club/power selection and authoritative carry", () => {
+    const from = { x: 8, y: 12 };
+    const variant = (rise: number) => {
+      const course = recoveryCourse([]);
+      course.elevations = course.elevations.map((_value, index) => {
+        const x = index % course.width;
+        if (rise > 0 && x >= 15) return rise;
+        if (rise < 0 && x < 15) return -rise;
+        return 0;
+      });
+      return course;
+    };
+    const liveCapabilities = capabilities({ power: 72 });
+    const intentFor = (course: Course) => followUpIntent({
+      course,
+      hole: { ...course.holes[0], tee: from },
+      from,
+      lie: "fairway",
+      capabilities: liveCapabilities,
+      personality,
+      shotNumber: 2,
+    });
+    const downhillIntent = intentFor(variant(-12));
+    const flatIntent = intentFor(variant(0));
+    const uphillIntent = intentFor(variant(12));
+    const nominal = new Map([
+      ["Driver", 270], ["3 Wood", 235], ["5 Iron", 185], ["7 Iron", 155],
+      ["Pitching Wedge", 115], ["Sand Wedge", 78], ["Chip", 38], ["Putter", 28],
+    ]);
+
+    expect(nominal.get(uphillIntent.club)).toBeGreaterThan(nominal.get(downhillIntent.club)!);
+    expect([uphillIntent.club, uphillIntent.power]).not.toEqual([downhillIntent.club, downhillIntent.power]);
+    // Flat terrain deliberately retains the legacy strategic selection.
+    expect(flatIntent).toMatchObject({ club: "Driver" });
+
+    const outcomeFor = (course: Course) => {
+      const snapshot = liveCourseSnapshot({ course, teeSet: "member", pinRotation: "A" });
+      const intent = {
+        ...flatIntent,
+        id: "zk-632-fixed-live-shot",
+        from,
+        target: { ...course.holes[0].green! },
+        club: "Driver",
+        power: 0.9,
+      };
+      return resolveLiveShot({
+        snapshot,
+        capabilities: liveCapabilities,
+        holeId: course.holes[0].id!,
+        shotNumber: 2,
+        from,
+        lie: "fairway",
+        intent,
+        seed: 632_002,
+      });
+    };
+    const uphill = outcomeFor(variant(12));
+    const flat = outcomeFor(variant(0));
+    const downhill = outcomeFor(variant(-12));
+
+    expect(uphill.shotSlope?.playsLikeDistanceYards).toBe(flat.shotSlope!.playsLikeDistanceYards + 30);
+    expect(downhill.shotSlope?.playsLikeDistanceYards).toBe(flat.shotSlope!.playsLikeDistanceYards - 30);
+    expect(uphill.carryYards).toBeLessThan(flat.carryYards);
+    expect(flat.carryYards).toBeLessThan(downhill.carryYards);
+    expect(uphill.sharedOutcome?.requestedCarryYards).toBe(flat.sharedOutcome?.requestedCarryYards);
+    expect(downhill.sharedOutcome?.requestedCarryYards).toBe(flat.sharedOutcome?.requestedCarryYards);
+  });
+});

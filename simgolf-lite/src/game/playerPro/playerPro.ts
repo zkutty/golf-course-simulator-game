@@ -66,6 +66,11 @@ import {
   type CalculatedShotEffects,
   type ShotClubId,
 } from "../rules/shotEffects";
+import {
+  analyzeShotSlope,
+  elevationAdjustedCarryYards,
+  normalizeShotSlopeContext,
+} from "../models/shotSlope";
 
 const DEFAULT_SKILL = 40;
 const XP_PER_LEVEL = 12;
@@ -228,6 +233,7 @@ function validActiveShotTrace(value: unknown): value is PlayerShotTrace {
     return false;
   }
   if (trace.sharedOutcome != null && !isValidSharedShotOutcome(trace.sharedOutcome)) return false;
+  if (trace.shotSlope != null && !normalizeShotSlopeContext(trace.shotSlope)) return false;
   if (trace.ruling != null && !isValidShotRuling(trace.ruling)) return false;
   if (trace.relief != null && !isValidReliefResolution(trace.relief)) return false;
   if (trace.finalPosition != null && !point(trace.finalPosition)) return false;
@@ -828,9 +834,17 @@ export function resolvePlayableShot(args: {
   const obstructionPenalty = obstacleClose && args.selection.technique !== "punch" && club.name !== "Sand Wedge" && club.name !== "Chip";
   const weatherCarry = args.snapshot.weather?.carryMultiplier ?? 1;
   const powerScale = 0.82 + args.skills.power / 500;
-  const maxTiles = calculated.effects.carryYards * powerScale * weatherCarry * power * (obstructionPenalty ? 0.78 : 1) / args.snapshot.yardsPerTile;
+  const requestedCarryYards = calculated.effects.carryYards * powerScale * weatherCarry * power;
+  const nominalPhysicalCarryYards = requestedCarryYards * (obstructionPenalty ? 0.78 : 1);
+  const shotSlope = analyzeShotSlope({
+    course: args.snapshot,
+    from: args.from,
+    to: args.selection.aim,
+    yardsPerTile: args.snapshot.yardsPerTile,
+  });
+  const maxTiles = elevationAdjustedCarryYards(nominalPhysicalCarryYards, shotSlope) / args.snapshot.yardsPerTile;
   const intendedTiles = Math.min(aimDistance, maxTiles);
-  const evaluation = evalShotExpectedCost({ course, from: args.from, to: args.selection.aim, golfer: profile, club: adjustedClub });
+  const evaluation = evalShotExpectedCost({ course, from: args.from, to: args.selection.aim, golfer: profile, club: adjustedClub, shotSlope });
   const clubSkill = args.skills[skillForClub(club.name, args.lie)];
   const weatherDispersion = args.snapshot.weather?.dispersionMultiplier ?? 1;
   const dispersion = Math.max(
@@ -938,6 +952,7 @@ export function resolvePlayableShot(args: {
     holed,
     seed: args.seed,
     evidence,
+    shotSlope,
     ruling: rules.ruling,
     relief: rules.relief,
     finalPosition: { ...finalPosition },
@@ -945,7 +960,7 @@ export function resolvePlayableShot(args: {
   trace.sharedOutcome = createSharedShotOutcome({
     trace,
     effects: calculated.effects,
-    requestedCarryYards: calculated.effects.carryYards * powerScale * weatherCarry * power,
+    requestedCarryYards,
     requestedDispersionTiles: dispersion,
     physicalRest: rawRest,
     ruling: rules.ruling,
@@ -1027,7 +1042,13 @@ export function advancePlayerRound(round: PlayerPlayableRound): PlayerPlayableRo
 
 function recommendedSelection(round: PlayerPlayableRound, skills: PlayerProSkills): PlayerShotSelection {
   const hole = round.course.holes[round.currentHoleIndex];
-  const distance = Math.hypot(hole.pin.x - round.ball.x, hole.pin.y - round.ball.y) * round.course.yardsPerTile;
+  const shotSlope = analyzeShotSlope({
+    course: round.course,
+    from: round.ball,
+    to: hole.pin,
+    yardsPerTile: round.course.yardsPerTile,
+  });
+  const distance = shotSlope.playsLikeDistanceYards;
   const clubs = availablePlayerClubs(round.lie);
   const powerScale = 0.82 + skills.power / 500;
   const club = [...clubs].sort((a, b) => Math.abs(a.carryYards * powerScale - distance) - Math.abs(b.carryYards * powerScale - distance))[0] ?? clubs[0];

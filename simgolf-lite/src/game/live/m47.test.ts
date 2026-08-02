@@ -189,6 +189,9 @@ describe("M47 live golfer contracts", () => {
 
   it("keeps a strategic follow-up on the rules-classified playable tile at a penalty boundary", () => {
     const c = createM47CertificationCourse(36);
+    // This regression isolates floor-vs-round rules classification. Elevation
+    // reach is covered separately and must not move this seed off its boundary.
+    c.elevations.fill(0);
     c.obstacles = c.holes.flatMap((hole, index) => {
       if (!hole.tee || !hole.green) return [];
       return [{

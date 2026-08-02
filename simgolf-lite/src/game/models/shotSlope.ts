@@ -69,6 +69,8 @@ export interface AnalyzeShotSlopeInput {
 const SIDEHILL_EPSILON = 0.025;
 const MAX_NATURAL_CURVE_BIAS_TILES = 0.35;
 const CURVE_BIAS_PER_CROSS_SLOPE = 0.18;
+export const MIN_ELEVATION_CARRY_MULTIPLIER = 0.5;
+export const MAX_ELEVATION_CARRY_MULTIPLIER = 1.5;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -81,6 +83,10 @@ function finite(value: unknown, fallback = 0): number {
 function finitePositive(value: unknown, fallback: number): number {
   const result = finite(value, fallback);
   return result > 0 ? result : fallback;
+}
+
+function canonicalZero(value: number): number {
+  return Object.is(value, -0) ? 0 : value;
 }
 
 function boundedCell(value: number, size: number): number {
@@ -149,8 +155,8 @@ export function analyzeShotSlope(input: AnalyzeShotSlopeInput): ShotSlopeContext
   );
   const gradient = frozenGradient(input.course, input.from);
   const localGradient: ShotSlopeGradient = {
-    alongTargetLine: gradient.x * unitX + gradient.y * unitY,
-    crossTargetLine: gradient.x * -unitY + gradient.y * unitX,
+    alongTargetLine: canonicalZero(gradient.x * unitX + gradient.y * unitY),
+    crossTargetLine: canonicalZero(gradient.x * -unitY + gradient.y * unitX),
   };
   const handednessSign = handedness === "right" ? 1 : -1;
   const playerRelativeCrossSlope = localGradient.crossTargetLine * handednessSign;
@@ -184,6 +190,28 @@ export function analyzeShotSlope(input: AnalyzeShotSlopeInput): ShotSlopeContext
 export const analyzeShotSlopeContext = analyzeShotSlope;
 
 /**
+ * Converts a fully-modified nominal carry into horizontal reach for the
+ * captured target elevation. The elevation correction is applied once, after
+ * lie/skill/weather/flight/power/obstruction modifiers, and is bounded against
+ * that nominal value. Flat shots deliberately return the original number so
+ * their physical path is unchanged.
+ */
+export function elevationAdjustedCarryYards(
+  nominalCarryYards: number,
+  context: ShotSlopeContext,
+): number {
+  const nominal = Math.max(0, finite(nominalCarryYards));
+  const normalized = normalizeShotSlopeContext(context);
+  if (!normalized || nominal === 0 || normalized.targetElevationDelta === 0) return nominal;
+  const elevationYards = normalized.targetElevationDelta * BALANCE.elevation.shotYardsPerStep;
+  return clamp(
+    nominal - elevationYards,
+    nominal * MIN_ELEVATION_CARRY_MULTIPLIER,
+    nominal * MAX_ELEVATION_CARRY_MULTIPLIER,
+  );
+}
+
+/**
  * Produces a canonical, JSON-safe V1 context. Invalid optional payloads are
  * ignored rather than changing historical shot outcomes during a save load.
  */
@@ -213,8 +241,8 @@ export function normalizeShotSlopeContext(value: unknown): ShotSlopeContextV1 | 
     targetElevationDelta: candidate.targetElevationDelta as number,
     playsLikeDistanceYards: Math.max(0, candidate.playsLikeDistanceYards as number),
     localGradient: {
-      alongTargetLine: local.alongTargetLine as number,
-      crossTargetLine: local.crossTargetLine as number,
+      alongTargetLine: canonicalZero(local.alongTargetLine as number),
+      crossTargetLine: canonicalZero(local.crossTargetLine as number),
     },
     handedness: candidate.handedness,
     sidehill: candidate.sidehill as ShotSidehill,

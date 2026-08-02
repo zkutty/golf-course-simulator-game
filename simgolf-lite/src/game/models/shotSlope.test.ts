@@ -4,6 +4,7 @@ import type { Course, Terrain } from "./types";
 import type { GolferProfile } from "../sim/golferProfiles";
 import {
   analyzeShotSlope,
+  elevationAdjustedCarryYards,
   elevationAtFrozenPoint,
   normalizeShotSlopeContext,
   normalizeShotSlopeCarrier,
@@ -201,5 +202,15 @@ describe("shot slope context", () => {
     expect(replay.distanceYards).toBe(50);
     expect(fresh.distanceYards).toBe(87.5);
     expect(replay.shotSlope).toEqual(captured);
+  });
+
+  it("applies exactly 2.5 yards per elevation step and bounds horizontal reach", () => {
+    const course = courseWithElevation(3, 3, () => 0);
+    const context = analyzeShotSlope({ course, from: { x: 0, y: 0 }, to: { x: 2, y: 0 }, yardsPerTile: 10 });
+    expect(elevationAdjustedCarryYards(160, context)).toBe(160);
+    expect(elevationAdjustedCarryYards(160, { ...context, targetElevationDelta: 4 })).toBe(150);
+    expect(elevationAdjustedCarryYards(160, { ...context, targetElevationDelta: -4 })).toBe(170);
+    expect(elevationAdjustedCarryYards(160, { ...context, targetElevationDelta: 10_000 })).toBe(80);
+    expect(elevationAdjustedCarryYards(160, { ...context, targetElevationDelta: -10_000 })).toBe(240);
   });
 });

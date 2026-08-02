@@ -6,6 +6,7 @@ import { createGolferCapabilities, normalizeGolferCapabilities, stableGolferSeed
 import { M47_MAX_OUTCOMES, M47_MAX_PLANS, M47_MAX_REACTIONS, type LiveShotOutcome, type StrategicIntentKind } from "./m47Types";
 import { isValidSharedShotOutcome } from "../rules/contracts";
 import { normalizeM51LiveMobilityState } from "../m51/mobility";
+import { normalizeShotSlopeContext } from "../models/shotSlope";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
@@ -91,7 +92,8 @@ function shotOutcome(value: unknown): boolean {
     typeof value.intentId === "string" && typeof value.club === "string" && techniques.has(String(value.technique)) &&
     point(value.from) && point(value.aim) && point(value.landing) && point(value.rest) && typeof value.lieBefore === "string" &&
     typeof value.lieAfter === "string" && ["carryYards", "rollYards", "penaltyStrokes", "seed"].every((key) => finite(value[key])) &&
-    typeof value.holed === "boolean" && Array.isArray(value.facts) && value.facts.length <= 12 && value.facts.every(fact);
+    typeof value.holed === "boolean" && Array.isArray(value.facts) && value.facts.length <= 12 && value.facts.every(fact) &&
+    (value.shotSlope == null || normalizeShotSlopeContext(value.shotSlope) != null);
 }
 
 function normalizeShotOutcome(value: LiveShotOutcome): LiveShotOutcome {

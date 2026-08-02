@@ -5,6 +5,7 @@ import type { TournamentEvent } from "../tournaments/types";
 import {
   activatePlayerChallenge,
   autoFinishPlayerRound,
+  caddieRecommendation,
   commitPlayerShot,
   completePlayerTraining,
   createDefaultPlayerPro,
@@ -423,6 +424,85 @@ describe("M36 deterministic Player Pro play", () => {
     expect(duplicate.round).toBeNull();
     expect(duplicate.cashDelta).toBe(0);
     expect(duplicate.career.rounds).toHaveLength(1);
+  });
+
+  it("uses one frozen elevation adjustment for Player Pro preview and committed physical carry", () => {
+    const { career, round } = started();
+    const selection = { club: "Driver", aim: { x: 60, y: round.ball.y }, power: 0.9, technique: "normal" as const };
+    const variant = (rise: number) => {
+      const elevations = round.course.elevations.slice();
+      if (rise > 0) elevations[Math.round(selection.aim.y) * round.course.width + Math.round(selection.aim.x)] = rise;
+      if (rise < 0) elevations[Math.round(round.ball.y) * round.course.width + Math.round(round.ball.x)] = -rise;
+      return { ...round.course, elevations };
+    };
+    const args = {
+      holeId: round.course.holes[0].id,
+      shotNumber: 1,
+      from: round.ball,
+      lie: round.lie,
+      skills: career.skills,
+      selection,
+      seed: 632_001,
+    };
+    const uphill = resolvePlayableShot({ ...args, snapshot: variant(8) });
+    const flat = resolvePlayableShot({ ...args, snapshot: variant(0) });
+    const downhill = resolvePlayableShot({ ...args, snapshot: variant(-8) });
+
+    expect(uphill.shotSlope).toMatchObject({ targetElevationDelta: 8, playsLikeDistanceYards: 570 });
+    expect(flat.shotSlope).toMatchObject({ targetElevationDelta: 0, playsLikeDistanceYards: 550 });
+    expect(downhill.shotSlope).toMatchObject({ targetElevationDelta: -8, playsLikeDistanceYards: 530 });
+    expect(uphill.landing.x).toBeCloseTo(flat.landing.x - 2, 3);
+    expect(downhill.landing.x).toBeCloseTo(flat.landing.x + 2, 3);
+    expect(uphill.carryYards).toBeLessThan(flat.carryYards);
+    expect(flat.carryYards).toBeLessThan(downhill.carryYards);
+    expect(uphill.sharedOutcome?.requestedCarryYards).toBe(flat.sharedOutcome?.requestedCarryYards);
+    expect(downhill.sharedOutcome?.requestedCarryYards).toBe(flat.sharedOutcome?.requestedCarryYards);
+    expect(uphill.sharedOutcome?.effectiveCarryYards).not.toBe(uphill.sharedOutcome?.requestedCarryYards);
+
+    const uphillRound = { ...round, course: variant(8) };
+    const preview = previewPlayableShot(uphillRound, career.skills, selection);
+    const committed = commitPlayerShot(uphillRound, career.skills, selection);
+    expect(preview.targetYards).toBe(570);
+    expect(preview.sharedOutcome).toEqual(committed.pendingShot?.sharedOutcome);
+    expect(committed.pendingShot?.shotSlope).toEqual(uphill.shotSlope);
+  });
+
+  it("uses plays-like distance for caddie club/power and autoplay selection", () => {
+    const { career, round } = started();
+    const ball = { x: 18, y: round.ball.y };
+    const pin = round.course.holes[0].pin;
+    const variant = (rise: number) => {
+      const elevations = round.course.elevations.slice();
+      if (rise > 0) elevations[pin.y * round.course.width + pin.x] = rise;
+      if (rise < 0) elevations[ball.y * round.course.width + ball.x] = -rise;
+      return { ...round, ball, lie: "fairway", course: { ...round.course, elevations } };
+    };
+    const downhillRound = variant(-12);
+    const flatRound = variant(0);
+    const uphillRound = variant(12);
+    const downhill = caddieRecommendation(downhillRound, career.skills);
+    const flat = caddieRecommendation(flatRound, career.skills);
+    const uphill = caddieRecommendation(uphillRound, career.skills);
+    const nominal = new Map([
+      ["Driver", 270], ["3 Wood", 235], ["5 Iron", 185], ["7 Iron", 155],
+      ["Pitching Wedge", 115], ["Sand Wedge", 78], ["Chip", 38], ["Putter", 28],
+    ]);
+
+    expect(nominal.get(uphill.club)).toBeGreaterThan(nominal.get(flat.club)!);
+    expect(nominal.get(flat.club)).toBeGreaterThan(nominal.get(downhill.club)!);
+    expect(new Set([
+      `${downhill.club}:${downhill.power}`,
+      `${flat.club}:${flat.power}`,
+      `${uphill.club}:${uphill.power}`,
+    ]).size).toBe(3);
+    expect(uphill.power).not.toBe(downhill.power);
+
+    const completed = autoFinishPlayerRound(uphillRound, career.skills);
+    expect(completed.shots[0]).toMatchObject({
+      club: uphill.club,
+      power: uphill.power,
+      aim: uphill.aim,
+    });
   });
 
   it.each([9, 18] as const)("completes and resumes the %i-hole certification route without duplicated settlement", (holeCount) => {

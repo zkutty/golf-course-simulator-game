@@ -15,6 +15,7 @@ import { resolveObstacleCollision } from "../rules/obstacleCollision";
 import type { GolferCapabilities, RejectedAlternative, ShotIntent, StrategicHolePlan, StrategicIntentKind, StrategyFact } from "./m47Types";
 import type { Personality } from "./personality";
 import { liveCourseSnapshot, resolveLiveShot, terrainAt } from "./livePhysics";
+import { analyzeShotSlope } from "../models/shotSlope";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const playable = new Set(["tee", "fairway", "rough", "deep_rough", "green", "sand", "waste_area"]);
@@ -176,6 +177,7 @@ interface LegalRecoverySelection {
 }
 
 function legalRecoverySelection(args: {
+  course: Course;
   lie: ShotLie;
   from: Point;
   target: Point;
@@ -185,7 +187,12 @@ function legalRecoverySelection(args: {
   capabilities: GolferCapabilities;
   yardsPerTile: number;
 }): LegalRecoverySelection | null {
-  const targetYards = distance(args.from, args.target) * args.yardsPerTile;
+  const targetYards = analyzeShotSlope({
+    course: args.course,
+    from: args.from,
+    to: args.target,
+    yardsPerTile: args.yardsPerTile,
+  }).playsLikeDistanceYards;
   const powerScale = .82 + args.capabilities.power / 500;
   const legal = availableShotClubs(args.lie).flatMap((club) => {
     const result = calculateShotEffects({
@@ -313,6 +320,7 @@ function recoveryCandidate(args: {
   sampleCount?: number;
 }): ShotIntent | null {
   const selection = legalRecoverySelection({
+    course: args.course,
     lie: args.lie,
     from: args.from,
     target: args.spec.target,
@@ -481,11 +489,20 @@ export function generateRecoveryCandidates(args: {
     .sort((a, b) => recoveryScore(a, args.capabilities) - recoveryScore(b, args.capabilities) || a.id.localeCompare(b.id));
 }
 
-function chooseClub(kind: StrategicIntentKind, from: Point, target: Point, capabilities: GolferCapabilities, lie: string): { name: string; power: number } {
-  const d = distance(from, target) * 10;
+function chooseClub(course: Course, kind: StrategicIntentKind, from: Point, target: Point, capabilities: GolferCapabilities, lie: string): { name: string; power: number } {
+  const shotSlope = analyzeShotSlope({ course, from, to: target, yardsPerTile: course.yardsPerTile });
+  const d = shotSlope.playsLikeDistanceYards;
   const names = lie === "green" ? ["Putter", "Chip"] : kind === "hero" ? ["Driver", "3 Wood", "5 Iron"] : kind === "safe" ? ["3 Wood", "5 Iron", "Driver"] : ["Driver", "3 Wood", "5 Iron", "7 Iron", "Pitching Wedge"];
   const available = names.filter((name) => CLUBS[name]);
-  const name = available.find((candidate) => CLUBS[candidate].carry * 1.1 >= d) ?? available[available.length - 1] ?? "7 Iron";
+  const legacyName = available.find((candidate) => CLUBS[candidate].carry * 1.1 >= d) ?? available[available.length - 1] ?? "7 Iron";
+  const powerScale = .84 + capabilities.power / 480;
+  const name = shotSlope.targetElevationDelta === 0
+    ? legacyName
+    : available.slice().sort((a, b) =>
+        Math.abs(CLUBS[a].carry * powerScale - d) - Math.abs(CLUBS[b].carry * powerScale - d)
+        || CLUBS[a].carry - CLUBS[b].carry
+        || a.localeCompare(b),
+      )[0] ?? legacyName;
   const carry = CLUBS[name].carry * (.84 + capabilities.power / 480);
   return { name, power: clamp(d / Math.max(1, carry), .35, kind === "hero" ? 1.12 : .98) };
 }
@@ -505,7 +522,7 @@ function candidateTarget(course: Course, hole: Hole, kind: StrategicIntentKind):
 function buildIntent(args: { course: Course; hole: Hole; kind: StrategicIntentKind; capabilities: GolferCapabilities; personality: Personality; profile: GolferProfile; }): ShotIntent {
   const from = { ...args.hole.tee! };
   const target = candidateTarget(args.course, args.hole, args.kind);
-  const club = chooseClub(args.kind, from, target, args.capabilities, terrainAt(args.course, from));
+  const club = chooseClub(args.course, args.kind, from, target, args.capabilities, terrainAt(args.course, from));
   const clubSpec = args.profile.clubs.find((candidate) => candidate.name === club.name) ?? args.profile.clubs[0];
   const evaluation = evalShotExpectedCost({ course: args.course, from, to: target, golfer: args.profile, club: clubSpec });
   const terrain = terrainAt(args.course, target);

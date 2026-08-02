@@ -145,6 +145,7 @@ export function resolveLiveShot(args: {
     ruling: trace.ruling,
     relief: trace.relief,
     finalPosition: trace.finalPosition,
+    shotSlope: trace.shotSlope,
     sharedOutcome: trace.sharedOutcome,
   };
 }

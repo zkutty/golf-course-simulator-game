@@ -1,5 +1,6 @@
 import type { Point } from "../models/types";
 import type { ReliefResolution, SharedShotOutcome, ShotFlightProfile, ShotRuling } from "../rules/contracts";
+import type { ShotSlopeContext } from "../models/shotSlope";
 
 export const M47_CAPABILITY_VERSION = 1 as const;
 export const M47_MAX_PLANS = 36 as const;
@@ -92,6 +93,8 @@ export interface LiveShotOutcome {
   ruling?: ShotRuling;
   relief?: ReliefResolution;
   finalPosition?: Point;
+  /** Immutable ZK-631/ZK-632 target-elevation facts for this outcome. */
+  shotSlope?: ShotSlopeContext;
 }
 
 export interface HoleReaction {

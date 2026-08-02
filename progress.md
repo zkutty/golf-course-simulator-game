@@ -1149,3 +1149,35 @@ or release-owner checks.
   errors. Its full-page HUD capture and the required bundled-client gameplay
   capture were visually inspected.
 - No Linear, commit, push, deployment, or generated audit artifact is included.
+
+## 2026-08-02 — ZK-632 elevation-aware resolved carry in progress
+
+- Added one authoritative conversion from fully modified nominal carry to
+  horizontal reach using the frozen ZK-631 slope context: 2.5 yards are removed
+  per uphill elevation step (or added downhill), bounded to 50–150% of nominal.
+  Flat targets return the original number exactly.
+- Player Pro now freezes the slope context on each new trace, uses it for the
+  physical carry cap and shot-cost evaluation, and retains pre-elevation
+  requested carry separately from achieved carry. Preview and commit resolve
+  the same seeded shared outcome.
+- Caddie and autoplay select club/power from plays-like distance. Live recovery,
+  strategic first/follow-up selection, shot samples, and persisted outcomes use
+  the same plays-like/physical rule; legacy flat strategic selection is retained.
+- Canonicalized negative zero in slope gradients so new frozen evidence remains
+  byte-stable across JSON persistence. Historical completed traces with no slope
+  payload remain untouched.
+- Focused verification passes 6 files / 57 tests, covering exact
+  correction/bounds, fixed-seed uphill/flat/downhill reach, requested-vs-achieved
+  evidence, caddie/autoplay choice, preview/commit parity, live strategy and
+  persistence. TypeScript, scoped ESLint, and `git diff --check` pass.
+- Full `test:ci` passes 147 files / 1,142 tests with one intentional skip plus
+  5/5 audio-audit tests. Full TypeScript, ESLint/i18n (zero errors; 12 existing
+  Hook warnings), production build and asset/performance audits, and
+  `git diff --check` pass.
+- The required bundled web-game client produced two valid structured M23 course
+  states with no browser-error artifact; its latest canvas capture was visually
+  inspected. The focused M36 Player Pro browser flow also passes 1/1, and both
+  the shot-decision/caddie view and completed-round capture were visually
+  inspected with coherent controls, evidence, terrain, and HUD.
+- No Linear, commit, push, deploy, or generated validation artifact is included
+  in this delegated slice.
