@@ -25,6 +25,8 @@ test("ZK-681 profiles real advisory analysis in a browser Worker", async ({ page
     "surface-habitat",
   ]);
   expect(report.measurements.every((item) => item.outputEquivalent)).toBe(true);
+  expect(report.measurements.every((item) => item.mainInputDelayMs >= item.mainComputeMs)).toBe(true);
+  expect(report.measurements.every((item) => item.workerInputDelayMs >= 0)).toBe(true);
   expect(report.measurements.find((item) => item.workload === "surface-habitat")?.transferBytes).toBeGreaterThan(0);
   expect(report.semantics).toEqual({
     cancellationRejectedCallback: true,

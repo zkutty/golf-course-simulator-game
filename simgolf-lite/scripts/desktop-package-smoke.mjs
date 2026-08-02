@@ -1,5 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { promisify } from "node:util";
 import { collectDesktopPackageEvidence } from "./desktop-package-evidence.mjs";
 import { assertDeliveryBudgets } from "./zk680-delivery-evidence.mjs";
 
@@ -8,6 +10,11 @@ const packageJson = JSON.parse(await readFile(new URL("../package.json", import.
 
 const evidence = await collectDesktopPackageEvidence(output);
 const delivery = await assertDeliveryBudgets({ desktopDirectory: output });
+const run = promisify(execFile);
+await run(process.execPath, ["scripts/zk681-packaged-worker-benchmark.mjs"], {
+  cwd: path.resolve(new URL("../", import.meta.url).pathname),
+  timeout: 150_000,
+});
 
 const manifest = {
   schemaVersion: 2,

@@ -27,9 +27,15 @@ export interface WorkerBenchmarkMeasurement {
   payloadBytes: number;
   transferBytes: number;
   mainComputeMs: number;
+  mainInputDelayMs: number;
+  mainHeapBeforeBytes: number | null;
+  mainHeapAfterBytes: number | null;
   workerDispatchMs: number;
   workerComputeMs: number;
   workerEndToEndMs: number;
+  workerInputDelayMs: number;
+  workerHeapBeforeBytes: number | null;
+  workerHeapAfterBytes: number | null;
   workerMessageOverheadMs: number;
   outputEquivalent: boolean;
   outputDigest: string;
@@ -37,12 +43,13 @@ export interface WorkerBenchmarkMeasurement {
 }
 
 export interface AnalysisWorkerBenchmarkReport {
-  schemaVersion: 1;
+  schemaVersion: 2;
   fixtureVersion: number;
   runtime: {
     userAgent: string;
     hardwareConcurrency: number;
     crossOriginIsolated: boolean;
+    rendererHeapMeasurementAvailable: boolean;
   };
   measurements: WorkerBenchmarkMeasurement[];
   semantics: {
@@ -66,6 +73,29 @@ function rounded(value: number): number {
 
 function utf8Bytes(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
+
+type PerformanceWithMemory = Performance & {
+  memory?: { usedJSHeapSize?: unknown };
+};
+
+function rendererHeapBytes(): number | null {
+  const value = (performance as PerformanceWithMemory).memory?.usedJSHeapSize;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+async function measureInputDelay<T>(task: () => T | Promise<T>): Promise<{ result: T; delayMs: number }> {
+  const scheduledAt = performance.now();
+  let handledAt = scheduledAt;
+  const inputTask = new Promise<void>((resolve) => {
+    window.setTimeout(() => {
+      handledAt = performance.now();
+      resolve();
+    }, 0);
+  });
+  const result = await task();
+  await inputTask;
+  return { result, delayMs: Math.max(0, handledAt - scheduledAt) };
 }
 
 function createSurfacePayload(): SurfaceHabitatPayload {
@@ -134,12 +164,16 @@ async function runMeasurement(
     (sum, item) => sum + (item instanceof ArrayBuffer ? item.byteLength : 0),
     0,
   );
+  const mainHeapBeforeBytes = rendererHeapBytes();
   const mainStartedAt = performance.now();
-  const mainOutput = runAnalysisWorkload(mainPayload);
+  const mainResult = await measureInputDelay(() => runAnalysisWorkload(mainPayload));
+  const mainOutput = mainResult.result;
   const mainComputeMs = performance.now() - mainStartedAt;
+  const mainHeapAfterBytes = rendererHeapBytes();
+  const workerHeapBeforeBytes = rendererHeapBytes();
   const workerStartedAt = performance.now();
   let workerDispatchMs = 0;
-  const workerOutcome = await new Promise<AnalysisWorkerOutcome>((resolve, reject) => {
+  const workerResult = await measureInputDelay(() => new Promise<AnalysisWorkerOutcome>((resolve, reject) => {
     const timeout = window.setTimeout(
       () => reject(new Error(`${workerPayload.workload} Worker benchmark timed out.`)),
       RESPONSE_TIMEOUT_MS,
@@ -150,8 +184,10 @@ async function runMeasurement(
       resolve(outcome);
     }, transfer);
     workerDispatchMs = performance.now() - dispatchStartedAt;
-  });
+  }));
+  const workerOutcome = workerResult.result;
   const workerEndToEndMs = performance.now() - workerStartedAt;
+  const workerHeapAfterBytes = rendererHeapBytes();
   if (workerOutcome.status === "error") throw new Error(workerOutcome.message);
   const mainDigest = analysisOutputDigest(mainOutput);
   const workerDigest = analysisOutputDigest(workerOutcome.output);
@@ -160,9 +196,15 @@ async function runMeasurement(
     payloadBytes,
     transferBytes,
     mainComputeMs: rounded(mainComputeMs),
+    mainInputDelayMs: rounded(mainResult.delayMs),
+    mainHeapBeforeBytes,
+    mainHeapAfterBytes,
     workerDispatchMs: rounded(workerDispatchMs),
     workerComputeMs: rounded(workerOutcome.computeMs),
     workerEndToEndMs: rounded(workerEndToEndMs),
+    workerInputDelayMs: rounded(workerResult.delayMs),
+    workerHeapBeforeBytes,
+    workerHeapAfterBytes,
     workerMessageOverheadMs: rounded(Math.max(0, workerEndToEndMs - workerOutcome.computeMs - workerDispatchMs)),
     outputEquivalent: mainDigest === workerDigest,
     outputDigest: workerDigest,
@@ -244,12 +286,13 @@ export async function runAnalysisWorkerBenchmark(): Promise<AnalysisWorkerBenchm
   const exceedsFrameBudget = measurements.some((measurement) => measurement.mainComputeMs > 8);
   const decision = gatePassed && exceedsFrameBudget ? "adopt-advisory-worker" : "defer-worker";
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     fixtureVersion: FIXTURE_VERSION,
     runtime: {
       userAgent: navigator.userAgent,
       hardwareConcurrency: navigator.hardwareConcurrency,
       crossOriginIsolated: window.crossOriginIsolated,
+      rendererHeapMeasurementAvailable: rendererHeapBytes() !== null,
     },
     measurements,
     semantics,

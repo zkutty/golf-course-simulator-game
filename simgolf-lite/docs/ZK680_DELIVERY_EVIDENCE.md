@@ -20,5 +20,11 @@ through the same contract. The package manifest records raw package and ASAR
 bytes plus SHA-256 evidence for every ASAR. Desktop package and ASAR budgets
 allow only the documented bounded release overhead above the baseline.
 
+Desktop builds set Vite's base to `./`, so the packaged `file:` renderer resolves
+its JavaScript, assets, and service-worker resources relative to `index.html`
+rather than from the filesystem root. The package smoke then launches the
+packaged renderer's ZK-681 fixture, which verifies that those relative assets
+load in the unsigned app as well as checking the ASAR and size contract.
+
 This is automated delivery evidence only. Signing, notarization, and physical
 device certification remain separate release gates.
