@@ -10,6 +10,11 @@ Original prompt: Update my vision HTML for the new features from the new milesto
 - Added controlled-driver regressions for delayed completion and a post-request
   transaction abort. This keeps the save UI from reporting a completed quick
   save before the slot is committed and immediately listable.
+- Added a copied same-runtime manifest snapshot only after the manifest write
+  commits. Immediate Save → Load listing now avoids a second delayed IndexedDB
+  read transaction, while interrupted manifest writes retain the prior cache.
+  The snapshot is page-global to cover Vite module instances, and an already
+  open Load dialog refreshes on the committed-manifest notification.
 
 ## AI acceptance closure — ZK-631 and ZK-678 — 2026-07-31
 

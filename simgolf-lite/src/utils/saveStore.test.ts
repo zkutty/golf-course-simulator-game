@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   __createIndexedDbKVForTests,
   __resetSaveStoreForTests,
+  __setSaveStoreKVForTests,
   __failNextManifestWriteForTests,
   autosave,
   deleteSlot,
@@ -13,6 +14,7 @@ import {
   quicksave,
   renameSlot,
   saveToSlot,
+  subscribeToSaveSlots,
 } from "./saveStore";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
 import { CURRENT_SAVE_SCHEMA_VERSION, type SavePayload } from "./save";
@@ -158,6 +160,43 @@ describe("saveStore", () => {
     expect(loaded).not.toBeNull();
     expect(loaded!.world.week).toBe(7);
     expect(loaded!.course.elevations).toHaveLength(DEFAULT_COURSE.width * DEFAULT_COURSE.height);
+  });
+
+  it("lists a durably committed slot from the manifest snapshot without another KV read", async () => {
+    const values = new Map<string, string>();
+    let reads = 0;
+    __setSaveStoreKVForTests({
+      get: async (key) => {
+        reads++;
+        return values.get(key) ?? null;
+      },
+      set: async (key, value) => void values.set(key, value),
+      del: async (key) => void values.delete(key),
+    });
+
+    const meta = await saveToSlot(null, "manual", "Committed", payload(6));
+    const readsBeforeListing = reads;
+    const slots = await listSlots();
+
+    expect(slots).toMatchObject([{ id: meta.id, name: "Committed", week: 6 }]);
+    expect(reads).toBe(readsBeforeListing);
+  });
+
+  it("notifies open slot pickers only after the manifest commit succeeds", async () => {
+    let notifications = 0;
+    const unsubscribe = subscribeToSaveSlots(() => {
+      notifications++;
+    });
+    try {
+      const meta = await saveToSlot(null, "manual", "Committed", payload(2));
+      expect(notifications).toBe(1);
+
+      __failNextManifestWriteForTests();
+      await expect(saveToSlot(meta.id, "manual", meta.name, payload(3))).rejects.toThrow("interrupted");
+      expect(notifications).toBe(1);
+    } finally {
+      unsubscribe();
+    }
   });
 
   it("overwrites when saving to an existing slot id", async () => {

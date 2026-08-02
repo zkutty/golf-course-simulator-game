@@ -210,6 +210,30 @@ let kv: KV = pickKV();
 let migrated = false;
 let writeSeq = 0;
 let failNextManifestWrite = false;
+const manifestListeners = new Set<() => void>();
+/**
+ * A same-runtime snapshot of the last durably committed manifest. The save
+ * flow writes the payload, then the manifest; once the manifest transaction
+ * completes, listing that save does not need to queue behind another browser
+ * IndexedDB read transaction.
+ */
+interface ManifestCacheHost {
+  __coursecraftSaveStoreManifestV1?: SaveSlotMeta[];
+}
+
+function copyManifest(manifest: readonly SaveSlotMeta[]): SaveSlotMeta[] {
+  return manifest.map((meta) => ({ ...meta }));
+}
+
+function manifestCache(): SaveSlotMeta[] | null {
+  const cached = (globalThis as ManifestCacheHost).__coursecraftSaveStoreManifestV1;
+  return Array.isArray(cached) ? cached : null;
+}
+
+function commitManifestCache(manifest: readonly SaveSlotMeta[]): void {
+  (globalThis as ManifestCacheHost).__coursecraftSaveStoreManifestV1 = copyManifest(manifest);
+  for (const listener of manifestListeners) listener();
+}
 
 /** Test hook: swap in a fresh in-memory driver. */
 export function __resetSaveStoreForTests(): void {
@@ -217,6 +241,22 @@ export function __resetSaveStoreForTests(): void {
   migrated = false;
   writeSeq = 0;
   failNextManifestWrite = false;
+  delete (globalThis as ManifestCacheHost).__coursecraftSaveStoreManifestV1;
+}
+
+/** Test hook: exercise the store against a deliberately slow KV driver. */
+export function __setSaveStoreKVForTests(driver: KV): void {
+  kv = driver;
+  migrated = false;
+  writeSeq = 0;
+  failNextManifestWrite = false;
+  delete (globalThis as ManifestCacheHost).__coursecraftSaveStoreManifestV1;
+}
+
+/** Notify an open slot picker after a durable manifest update. */
+export function subscribeToSaveSlots(listener: () => void): () => void {
+  manifestListeners.add(listener);
+  return () => manifestListeners.delete(listener);
 }
 
 /** Test hook for proving an interrupted commit preserves the active revision. */
@@ -243,6 +283,8 @@ export async function __deleteSlotPayloadForTests(id: string): Promise<void> {
 // ---------------------------------------------------------------------
 
 async function readManifest(): Promise<SaveSlotMeta[]> {
+  const cached = manifestCache();
+  if (cached) return copyManifest(cached);
   const raw = await kv.get(MANIFEST_KEY);
   if (!raw) return [];
   try {
@@ -259,6 +301,9 @@ async function writeManifest(manifest: SaveSlotMeta[]): Promise<void> {
     throw new Error("Simulated interrupted manifest commit");
   }
   await kv.set(MANIFEST_KEY, JSON.stringify(manifest));
+  // Cache only after the write transaction resolves, so a failed manifest
+  // update can never advertise a slot that was not durably committed.
+  commitManifestCache(manifest);
 }
 
 function payloadKey(meta: SaveSlotMeta | undefined, id: string): string {

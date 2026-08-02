@@ -9,6 +9,7 @@ import {
   loadSlotResult,
   renameSlot,
   saveToSlot,
+  subscribeToSaveSlots,
   type SaveSlotMeta,
 } from "../utils/saveStore";
 import { useFocusTrap } from "./accessibility/useFocusTrap";
@@ -62,6 +63,10 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
   useEffect(() => {
     if (props.open) refresh(); // async slot fetch → setState after await is fine
   }, [props.open, refresh]);
+
+  useEffect(() => subscribeToSaveSlots(() => {
+    if (props.open) refresh();
+  }), [props.open, refresh]);
 
   if (!props.open) return null;
 
