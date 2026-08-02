@@ -10,6 +10,7 @@ import type { M51CourseMobilityState, M51MobilityAggregateSummary, M51MobilitySt
 import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
 import type { FeatureOrigin, PlantId } from "./plantTypes";
 import type { GreenLocalStateV1, GreenProgram, GreenSurfaceV1 } from "../greens/greenSurface";
+import type { GreenKeepingReport } from "../greens/greenMaintenance";
 
 export type { LandTheme } from "./biomes";
 export type { FeatureOrigin, PlantId } from "./plantTypes";
@@ -706,5 +707,11 @@ export interface WeekResult {
     averageCondition: number;
     tournamentReadiness: number;
     repairRequiredZones: number;
+  };
+  /** Last-day realized green program plus period-average delivery. */
+  greenKeeping?: GreenKeepingReport & {
+    days: number;
+    averageSatisfactionDelta: number;
+    averagePaceMinutesDelta: number;
   };
 }

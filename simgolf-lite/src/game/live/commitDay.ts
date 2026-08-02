@@ -27,6 +27,7 @@ import {
   advanceSurfaceCareDay,
   surfaceCareWaterCostMultiplier,
 } from "../conditions/surfaceCare";
+import { advanceGreenKeepingDay } from "../greens/greenMaintenance";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -122,6 +123,17 @@ export function commitDay(args: {
       0,
     ) ?? 0,
   });
+  const greenKeepingCommit = advanceGreenKeepingDay({
+    course: surfaceCareCommit.course,
+    world: operatingWorld,
+    absoluteDay: seasonalCommit.weather.absoluteDay,
+    weather: seasonalCommit.weather,
+    drainageLevel: season.operations.drainageLevel,
+    waterPolicy: season.operations.waterPolicy,
+    rounds,
+    shotTraces: args.shotTraces,
+    closedHoleIds: season.operations.closedHoleIds,
+  });
   const quotedBiomeEconomy = quoteDailyBiomeOperatingCosts({
     course: operatingCourse,
     season: season.calendar.season,
@@ -211,7 +223,7 @@ export function commitDay(args: {
   const nextCashRaw = operatingWorld.cash + propertySettlement.report.revenue + hospitalityWeatherAdjustment - costs;
   const bankrupt = hitsLiquidityTrap(nextCashRaw);
 
-  const conditionCourse = { ...surfaceCareCommit.course, condition: nextCondition };
+  const conditionCourse = { ...greenKeepingCommit.course, condition: nextCondition };
   const nextWorldBase: World = {
     ...operatingWorld,
     cash: nextCashRaw,
@@ -307,6 +319,7 @@ export function commitDay(args: {
       reputationDelta: repDelta,
       conditionDelta: nextCondition - seasonalCommit.course.condition,
       surfaceCare: surfaceCareCommit.report,
+      greenKeeping: greenKeepingCommit.report,
       ...(mobilitySummary ? { m51: mobilitySummary } : {}),
       promoters: reactions.promoters,
       detractors: reactions.detractors,

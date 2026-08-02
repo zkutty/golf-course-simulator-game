@@ -33,6 +33,9 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
   const surfaceCareDays = ledger.days.flatMap((day) =>
     day.surfaceCare ? [day.surfaceCare] : []
   );
+  const greenKeepingDays = ledger.days.flatMap((day) =>
+    day.greenKeeping ? [day.greenKeeping] : []
+  );
 
   for (const day of ledger.days) {
     for (const [type, amount] of Object.entries(day.revenueBreakdown.byConcession) as Array<[ConcessionType, number]>) {
@@ -159,6 +162,20 @@ export function weekResultFromLedger(ledger: LiveWeekLedger): WeekResult {
           surfaceCareDays[surfaceCareDays.length - 1].tournamentReadiness,
         repairRequiredZones:
           surfaceCareDays[surfaceCareDays.length - 1].repairRequiredZones,
+      },
+    } : {}),
+    ...(greenKeepingDays.length ? {
+      greenKeeping: {
+        ...greenKeepingDays[greenKeepingDays.length - 1],
+        days: greenKeepingDays.length,
+        averageSatisfactionDelta: greenKeepingDays.reduce(
+          (sum, report) => sum + report.satisfactionDelta,
+          0,
+        ) / greenKeepingDays.length,
+        averagePaceMinutesDelta: greenKeepingDays.reduce(
+          (sum, report) => sum + report.paceMinutesDelta,
+          0,
+        ) / greenKeepingDays.length,
       },
     } : {}),
   };

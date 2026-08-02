@@ -1111,3 +1111,41 @@ or release-owner checks.
   client-error artifact. Its canvas capture and the focused full-page Sculpt
   capture were visually inspected; controls, contour/arrows, course, and HUD
   rendered coherently. Full repository/release gates remain for integration.
+
+## 2026-08-02 — ZK-642 green programs and local maintenance
+
+- Added one deterministic greenkeeping authority shared by live-day commits
+  and direct weekly simulation. Receptive, balanced, championship, and custom
+  targets now produce realized per-green speed, firmness, health, moisture,
+  compaction, wear, bounded pace pressure, and satisfaction evidence from the
+  actual maintenance budget, groundskeeper coverage/proficiency, traffic,
+  weather, irrigation policy, drainage, and rest.
+- Extended the v26 local-state contract with canonical landing and pin zones,
+  bounded rolling traffic, and an idempotent daily cursor. Early canonical v26
+  payloads without those ZK-642 fields remain valid and normalize forward;
+  existing per-hole aggregate condition becomes both zone baselines without
+  invented history.
+- Real approach traces drive landing wear while completed-round concentration
+  drives pin wear. Closed or unused holes recover over time, and favorable
+  moisture, drainage, staff, and funding improve recovery without erasing
+  persistent local damage.
+- Added a production HUD program panel with three presets, five advanced
+  controls, an explicit custom state, required weekly capacity, budget/staff
+  delivery, and projected pace/satisfaction tradeoffs. Seasonal weather and
+  water policy affect delivery but never rewrite the persisted program; this
+  is covered by a direct seasonal-automation regression.
+- Weekly reports and live ledgers retain the final realized program plus
+  period averages. Championship intensity raises authoritative required
+  maintenance relative to the balanced baseline; the maintenance budget
+  remains the sole cash-settlement path, avoiding a duplicate care charge.
+  Structured game text exposes targets, realized conditions, delivery, and
+  tradeoffs for diagnostics and accessibility.
+- Verification: full repository `test:ci` passes 147 files / 1,138 tests with
+  one intentional skip plus 5/5 audio-audit tests; focused ZK-642 and adjacent
+  contract/save/season/live suites pass 8 files / 78 tests; TypeScript, full
+  ESLint/i18n, production Vite build, and `git diff --check` pass. The dedicated
+  ZK-642 Playwright flow passes, switching balanced → championship → custom
+  through real HUD controls with matching structured state and no browser
+  errors. Its full-page HUD capture and the required bundled-client gameplay
+  capture were visually inspected.
+- No Linear, commit, push, deployment, or generated audit artifact is included.

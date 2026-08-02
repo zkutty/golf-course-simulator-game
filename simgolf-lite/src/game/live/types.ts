@@ -6,6 +6,7 @@ import type { GolferCapabilities, HoleReaction, LiveShotOutcome, ShotIntent, Str
 import type { M49ObservedRound } from "../m49/types";
 import type { M51LiveMobilityState, M51MobilityAggregateSummary } from "../m51/types";
 import type { SurfaceCareDayReport } from "../conditions/surfaceCare";
+import type { GreenKeepingReport } from "../greens/greenMaintenance";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -332,6 +333,8 @@ export interface DayResult {
   conditionDelta: number;
   /** Sparse, observed local maintenance evidence from the authoritative care simulation. */
   surfaceCare?: SurfaceCareDayReport;
+  /** Per-green program delivery, realized conditions, and local traffic evidence. */
+  greenKeeping?: GreenKeepingReport;
   /** Bounded M51 pace/economic evidence; never a cash-settlement path. */
   m51?: M51MobilityAggregateSummary;
   // Real-reaction detail behind the reputation move (ZKU-116).

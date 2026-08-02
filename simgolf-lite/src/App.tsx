@@ -46,6 +46,8 @@ import {
   type FineGreenRadius,
   type FineGreenSculptPreview,
 } from "./game/greens/fineGreenSculpt";
+import { normalizeGreenProgram } from "./game/greens/greenSurface";
+import { greenKeepingOverview } from "./game/greens/greenMaintenance";
 import { maxSlopeInRect } from "./game/models/elevation";
 import type { ObstacleType } from "./game/models/types";
 import { scoreCourseHoles } from "./game/sim/holes";
@@ -2621,6 +2623,7 @@ export default function App() {
         };
     const liveStateById = new Map((live.getSnapshot()?.state.golfers ?? []).map((golfer) => [golfer.id, golfer]));
     const textSurfaceCareSummary = surfaceCareConditionSummary(course);
+    const textGreenKeeping = greenKeepingOverview(course, world);
     const textSurfaceCareEvidence = observedSurfaceCareEvidence(course);
     const textSurfaceCarePresentation = surfaceCarePresentationSummary({
       course,
@@ -2671,6 +2674,35 @@ export default function App() {
             repairRequired: zone.repairRequired,
             action: zone.action,
           })),
+        },
+        greenKeeping: {
+          program: course.greenProgram?.preset ?? "balanced",
+          explicitAdvancedControls: textGreenKeeping.explicitAdvancedControls,
+          targets: {
+            speedFeet: course.greenProgram?.targetSpeedFeet ?? 9.5,
+            firmness: course.greenProgram?.targetFirmness ?? 0.5,
+            mowingHeightMillimeters: course.greenProgram?.mowingHeightMillimeters ?? 3.5,
+            rollingPasses: course.greenProgram?.rollingPasses ?? 1,
+            irrigationTarget: course.greenProgram?.irrigationTarget ?? 0.58,
+          },
+          realized: {
+            speedFeet: textGreenKeeping.realizedSpeedFeet,
+            firmness: textGreenKeeping.realizedFirmness,
+            health: textGreenKeeping.averageHealth,
+            moisture: textGreenKeeping.averageMoisture,
+            compaction: textGreenKeeping.averageCompaction,
+            wear: textGreenKeeping.averageWear,
+          },
+          delivery: {
+            requiredWeeklyBudget: textGreenKeeping.requiredWeeklyBudget,
+            allocatedDailyBudget: textGreenKeeping.allocatedDailyBudget,
+            requiredDailyBudget: textGreenKeeping.requiredDailyBudget,
+            staffCoverage: textGreenKeeping.staffCoverage,
+          },
+          tradeoffs: {
+            paceMinutesDelta: textGreenKeeping.paceMinutesDelta,
+            satisfactionDelta: textGreenKeeping.satisfactionDelta,
+          },
         },
         holesOpen: course.holes.filter((hole) => hole.tee && hole.green).length,
         terrainCounts: course.tiles.reduce((counts, terrain) => ({ ...counts, [terrain]: (counts[terrain] ?? 0) + 1 }), {} as Partial<Record<Terrain, number>>),
@@ -5405,6 +5437,10 @@ export default function App() {
           setCourse((c) => updateLayout(c, activeCourseLayout(c).id, { greenFee: n }));
         }}
         setMaintenance={(n) => setWorld((w) => ({ ...w, maintenanceBudget: n }))}
+        setGreenProgram={(program) => setCourse((current) => ({
+          ...current,
+          greenProgram: normalizeGreenProgram(program),
+        }))}
         editorMode={editorMode}
         setEditorMode={setEditorMode}
         onEnterDesignMode={() => activateTerrainEditing()}

@@ -8,6 +8,13 @@ import {
   type FineGreenBrush,
   type FineGreenRadius,
 } from "../game/greens/fineGreenSculpt";
+import { greenKeepingOverview } from "../game/greens/greenMaintenance";
+import {
+  createGreenProgram,
+  normalizeGreenProgram,
+  type GreenProgram,
+  type GreenProgramPreset,
+} from "../game/greens/greenSurface";
 import {
   ELEVATION_COST_PER_STEP,
   terrainMaintenanceWeight,
@@ -63,6 +70,7 @@ export function HUD(props: {
   onRedoTerrain: () => void;
   setGreenFee: (n: number) => void;
   setMaintenance: (n: number) => void;
+  setGreenProgram: (program: GreenProgram) => void;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
   setEditorMode: (m: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR") => void;
   onEnterDesignMode: () => void;
@@ -135,6 +143,7 @@ export function HUD(props: {
     prev,
     setGreenFee,
     setMaintenance,
+    setGreenProgram,
     editorMode,
     setEditorMode,
     onEnterDesignMode,
@@ -201,6 +210,8 @@ export function HUD(props: {
   const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
   const price = useMemo(() => Math.round(priceAttractiveness(course) * 100), [course]);
   const liveDemand = useMemo(() => demandBreakdown(course, world), [course, world]);
+  const greenKeeping = useMemo(() => greenKeepingOverview(course, world), [course, world]);
+  const greenProgram = useMemo(() => normalizeGreenProgram(course.greenProgram), [course.greenProgram]);
   const activeHole = holeSummary.holes[activeHoleIndex];
   const wizardCanConfirm = editorMode === "HOLE_WIZARD" && wizardStep === "CONFIRM" && !!draftTee && !!draftGreen;
   const holeDef = course.holes[activeHoleIndex];
@@ -1303,6 +1314,27 @@ export function HUD(props: {
                     </div>
                   </div>
                 )}
+                {last.greenKeeping && (
+                  <div data-testid="green-keeping-week-report" style={{ marginTop: 6, padding: 7, borderTop: "1px solid #d5ddd5", borderRadius: 7, background: "#f3f7f1", fontSize: 12, color: "#39473c" }}>
+                    <div style={{ fontWeight: 800, marginBottom: 4 }}><T id="greenKeeping.weekReport" /></div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span><T id="greenKeeping.weekCondition" /></span>
+                      <b><T id="greenKeeping.conditionValue" params={{ speed: last.greenKeeping.realizedSpeedFeet.toFixed(1), firmness: Math.round(last.greenKeeping.realizedFirmness * 100) }} /></b>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span><T id="greenKeeping.weekHealth" /></span>
+                      <span><T id="greenKeeping.healthValue" params={{ health: Math.round(last.greenKeeping.averageHealth * 100), wear: Math.round(last.greenKeeping.averageWear * 100) }} /></span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span><T id="greenKeeping.weekDelivery" /></span>
+                      <span><T id="greenKeeping.deliveryValue" params={{ budget: Math.round(Math.min(1, last.greenKeeping.allocatedDailyBudget / Math.max(1, last.greenKeeping.requiredDailyBudget)) * 100), staff: Math.round(last.greenKeeping.staffCoverage * 100) }} /></span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span><T id="greenKeeping.weekEffect" /></span>
+                      <span><T id="greenKeeping.tradeoffValue" params={{ pace: last.greenKeeping.averagePaceMinutesDelta > 0 ? `+${last.greenKeeping.averagePaceMinutesDelta.toFixed(1)}` : last.greenKeeping.averagePaceMinutesDelta.toFixed(1), satisfaction: last.greenKeeping.averageSatisfactionDelta > 0 ? `+${last.greenKeeping.averageSatisfactionDelta.toFixed(1)}` : last.greenKeeping.averageSatisfactionDelta.toFixed(1) }} /></span>
+                    </div>
+                  </div>
+                )}
                 <div data-tooltip="Revenue minus operating costs before any displayed profit tax.">
                   <b><T id="auto.ui.hud.profit" /></b> {formatCurrency(last.profit)}
                 </div>
@@ -1490,6 +1522,87 @@ export function HUD(props: {
                   style={{ width: "100%" }}
                 />
               </label>
+            </Section>
+
+            <Section title={translateCurrent("greenKeeping.title")}>
+              <div style={{ fontSize: 12, color: "#4b594e", marginBottom: 9 }}>
+                <T id="greenKeeping.summary" params={{
+                  speed: greenKeeping.realizedSpeedFeet.toFixed(1),
+                  firmness: Math.round(greenKeeping.realizedFirmness * 100),
+                  health: Math.round(greenKeeping.averageHealth * 100),
+                }} />
+              </div>
+              <div role="group" aria-label={translateCurrent("greenKeeping.programLabel")} data-testid="green-program-presets" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 5 }}>
+                {(["receptive", "balanced", "championship"] as const).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    data-testid={`green-program-${preset}`}
+                    aria-pressed={greenProgram.preset === preset}
+                    onClick={() => setGreenProgram(createGreenProgram(preset))}
+                    style={{
+                      padding: "7px 4px",
+                      borderRadius: 8,
+                      border: greenProgram.preset === preset ? "2px solid #294d32" : "1px solid #b9c4ba",
+                      background: greenProgram.preset === preset ? "#dfeee1" : "#fff",
+                      color: "#213327",
+                      fontSize: 11,
+                      fontWeight: 750,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <T id={`greenKeeping.preset.${preset}` as MessageKey} />
+                  </button>
+                ))}
+              </div>
+              <div style={{ marginTop: 9, padding: 8, border: "1px solid #d8dfd8", borderRadius: 9, background: "rgba(255,255,255,.62)", display: "grid", gap: 7 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, display: "flex", justifyContent: "space-between" }}>
+                  <span><T id="greenKeeping.advanced" /></span>
+                  <span>{greenProgram.preset === "custom" ? <T id="greenKeeping.custom" /> : <T id="greenKeeping.followsPreset" />}</span>
+                </div>
+                {([
+                  ["targetSpeedFeet", "greenKeeping.speed", 6, 15, 0.1, greenProgram.targetSpeedFeet, " ft"],
+                  ["targetFirmness", "greenKeeping.firmness", 0, 1, 0.01, greenProgram.targetFirmness, "%"],
+                  ["mowingHeightMillimeters", "greenKeeping.mowing", 2, 6, 0.1, greenProgram.mowingHeightMillimeters, " mm"],
+                  ["rollingPasses", "greenKeeping.rolling", 0, 2, 1, greenProgram.rollingPasses, ""],
+                  ["irrigationTarget", "greenKeeping.irrigation", 0.2, 0.9, 0.01, greenProgram.irrigationTarget, "%"],
+                ] as const).map(([field, label, min, max, step, value, suffix]) => (
+                  <label key={field} style={{ display: "grid", gap: 2, fontSize: 11 }}>
+                    <span style={{ display: "flex", justifyContent: "space-between" }}>
+                      <T id={label} />
+                      <b>{field === "targetFirmness" || field === "irrigationTarget" ? Math.round(value * 100) : value}{suffix}</b>
+                    </span>
+                    <input
+                      data-testid={`green-program-${field}`}
+                      type="range"
+                      min={min}
+                      max={max}
+                      step={step}
+                      value={value}
+                      onChange={(event) => setGreenProgram(normalizeGreenProgram({
+                        ...greenProgram,
+                        preset: "custom" as GreenProgramPreset,
+                        [field]: Number(event.target.value),
+                      }))}
+                    />
+                  </label>
+                ))}
+              </div>
+              <div data-testid="green-keeping-realized" style={{ marginTop: 9, display: "grid", gap: 4, fontSize: 11, color: "#49554b" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span><T id="greenKeeping.budget" /></span>
+                  <b>{formatCurrency(greenKeeping.requiredWeeklyBudget)} / <T id="greenKeeping.week" /></b>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span><T id="greenKeeping.delivery" /></span>
+                  <b><T id="greenKeeping.deliveryValue" params={{ budget: Math.round(Math.min(1, greenKeeping.allocatedDailyBudget / Math.max(1, greenKeeping.requiredDailyBudget)) * 100), staff: Math.round(greenKeeping.staffCoverage * 100) }} /></b>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span><T id="greenKeeping.tradeoffs" /></span>
+                  <b><T id="greenKeeping.tradeoffValue" params={{ pace: greenKeeping.paceMinutesDelta > 0 ? `+${greenKeeping.paceMinutesDelta}` : greenKeeping.paceMinutesDelta, satisfaction: greenKeeping.satisfactionDelta > 0 ? `+${greenKeeping.satisfactionDelta}` : greenKeeping.satisfactionDelta }} /></b>
+                </div>
+              </div>
+              <div style={{ marginTop: 7, fontSize: 10, color: "#68736a" }}><T id="greenKeeping.automationNote" /></div>
             </Section>
 
             <Section title={translateCurrent("auto.ui.hud.financing")}>

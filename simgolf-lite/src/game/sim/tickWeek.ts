@@ -30,6 +30,12 @@ import {
   surfaceCareWaterCostMultiplier,
   type SurfaceCareDayReport,
 } from "../conditions/surfaceCare";
+import {
+  advanceGreenKeepingDay,
+  requiredGreenKeepingBudget,
+  type GreenKeepingReport,
+} from "../greens/greenMaintenance";
+import { createGreenProgram } from "../greens/greenSurface";
 
 function advanceSurfaceCareWeek(
   course: Course,
@@ -99,6 +105,50 @@ function advanceSurfaceCareWeek(
   };
 }
 
+function advanceGreenKeepingWeek(
+  course: Course,
+  world: World,
+  visitors: number,
+): {
+  course: Course;
+  summary: GreenKeepingReport & {
+    days: number;
+    averageSatisfactionDelta: number;
+    averagePaceMinutesDelta: number;
+  };
+} {
+  const operations = seasonalState(world, course, 0).operations;
+  const baseRounds = Math.floor(Math.max(0, visitors) / 7);
+  const remainder = Math.max(0, visitors) % 7;
+  const reports: GreenKeepingReport[] = [];
+  let nextCourse = course;
+  for (let day = 0; day < 7; day++) {
+    const absoluteDay = absoluteDayFor(world.week, day);
+    const commit = advanceGreenKeepingDay({
+      course: nextCourse,
+      world,
+      absoluteDay,
+      weather: weatherForDay(world.runSeed, nextCourse.theme ?? "parkland", absoluteDay),
+      drainageLevel: operations.drainageLevel,
+      waterPolicy: operations.waterPolicy,
+      rounds: baseRounds + (day < remainder ? 1 : 0),
+      closedHoleIds: operations.closedHoleIds,
+    });
+    nextCourse = commit.course;
+    reports.push(commit.report);
+  }
+  const last = reports[reports.length - 1];
+  return {
+    course: nextCourse,
+    summary: {
+      ...last,
+      days: reports.length,
+      averageSatisfactionDelta: reports.reduce((sum, report) => sum + report.satisfactionDelta, 0) / reports.length,
+      averagePaceMinutesDelta: reports.reduce((sum, report) => sum + report.paceMinutesDelta, 0) / reports.length,
+    },
+  };
+}
+
 function tickWeekSingle(
   course: Course,
   world: World,
@@ -134,6 +184,9 @@ function tickWeekSingle(
   const surfaceCare = advanceCare
     ? advanceSurfaceCareWeek(course, world, visitors)
     : undefined;
+  const greenKeeping = advanceCare
+    ? advanceGreenKeepingWeek(surfaceCare?.course ?? course, world, visitors)
+    : undefined;
 
   const avgSatBase = satisfactionScore(course, world); // 0..100
 
@@ -162,11 +215,14 @@ function tickWeekSingle(
     0,
   );
   const avgWeight0 = totalWeight0 / (course.tiles.length || 1);
+  const balancedGreenBudget = requiredGreenKeepingBudget(course, createGreenProgram("balanced"));
+  const greenProgramPremium = requiredGreenKeepingBudget(course) - balancedGreenBudget;
   const requiredMaintenance =
     BALANCE.requiredMaintenance.base +
     developedOwnedTileCount(course) * BALANCE.requiredMaintenance.perDevelopedTile +
     Math.max(0, operatingCourses - 1) * BALANCE.requiredMaintenance.perAdditionalOperatingCourse +
-    visitors * avgWeight0 * BALANCE.requiredMaintenance.perVisitorK;
+    visitors * avgWeight0 * BALANCE.requiredMaintenance.perVisitorK +
+    greenProgramPremium;
   const maintShortfall = requiredMaintenance - maintenanceCost; // >0 underfunded
 
   // Variable costs per round + merchant fees
@@ -260,7 +316,7 @@ function tickWeekSingle(
   // Satisfaction penalty if maintenance is underfunded
   const satPenalty =
     maintShortfall > 0 ? Math.min(12, (maintShortfall / Math.max(1, requiredMaintenance)) * 12) : 0;
-  const avgSat = Math.max(0, Math.min(100, avgSatBase - satPenalty));
+  const avgSat = Math.max(0, Math.min(100, avgSatBase - satPenalty + (greenKeeping?.summary.averageSatisfactionDelta ?? 0)));
 
   // Reputation update: satisfaction moves it
   const raw = (avgSat - BALANCE.reputation.satPivot) / BALANCE.reputation.satDivisor;
@@ -297,7 +353,7 @@ function tickWeekSingle(
   const topIssues = buildTopIssues(holes);
 
   const nextCourse = {
-    ...(surfaceCare?.course ?? course),
+    ...(greenKeeping?.course ?? surfaceCare?.course ?? course),
     condition: clamp01(nextCondition),
   };
   const nextWorldBase: World = {
@@ -356,6 +412,7 @@ function tickWeekSingle(
       topIssues,
       maintenancePressure: { totalWeight, avgWeight, wear },
       ...(surfaceCare ? { surfaceCare: surfaceCare.summary } : {}),
+      ...(greenKeeping ? { greenKeeping: greenKeeping.summary } : {}),
     },
   };
 }
@@ -386,6 +443,7 @@ export function tickWeek(
   const revenue = rows.reduce((sum, row) => sum + row.output.result.revenue, 0);
   const variableCosts = rows.reduce((sum, row) => sum + (row.output.result.variableCosts?.total ?? 0), 0);
   const surfaceCare = advanceSurfaceCareWeek(course, world, visitors);
+  const greenKeeping = advanceGreenKeepingWeek(surfaceCare.course, world, visitors);
   const waterMultiplier = surfaceCareWaterCostMultiplier({
     totalIrrigationApplied:
       surfaceCare.summary.totalIrrigationApplied / Math.max(1, surfaceCare.summary.days),
@@ -428,7 +486,7 @@ export function tickWeek(
   if (perCourse.length) perCourse[perCourse.length - 1].profit -= tax;
   return {
     course: {
-      ...surfaceCare.course,
+      ...greenKeeping.course,
       condition: surfaceCare.summary.zones
         ? surfaceCareConditionSummary(surfaceCare.course).overallCondition
         : primary.course.condition,
@@ -461,6 +519,7 @@ export function tickWeek(
       avgSatisfaction: weightedSatisfaction,
       perCourse,
       surfaceCare: surfaceCare.summary,
+      greenKeeping: greenKeeping.summary,
     },
   };
 }

@@ -49,10 +49,30 @@ export interface GreenHoleConditionV1 {
   moisture: number;
   compaction: number;
   wear: number;
+  /**
+   * The two persistent traffic/recovery zones used by greenkeeping. Optional
+   * only for v26 saves created before ZK-642; normalization always restores
+   * both canonical records.
+   */
+  zones?: GreenZoneConditionV1[];
+}
+
+export type GreenZoneKind = "landing" | "pin";
+
+export interface GreenZoneConditionV1 {
+  zone: GreenZoneKind;
+  health: number;
+  moisture: number;
+  compaction: number;
+  wear: number;
+  /** Bounded rolling traffic pressure, not an unbounded visit history. */
+  traffic: number;
 }
 
 export interface GreenLocalStateV1 {
   version: 1;
+  /** Prevents a resumed/duplicated day commit from applying care twice. */
+  lastAdvancedAbsoluteDay?: number;
   holes: GreenHoleConditionV1[];
 }
 
@@ -166,7 +186,18 @@ function holeIds(carrier: Pick<GreenCourseCarrier, "holes">): string[] {
 }
 
 function healthyHole(holeId: string): GreenHoleConditionV1 {
-  return { holeId, health: 1, moisture: 0.58, compaction: 0, wear: 0 };
+  return {
+    holeId,
+    health: 1,
+    moisture: 0.58,
+    compaction: 0,
+    wear: 0,
+    zones: [healthyZone("landing"), healthyZone("pin")],
+  };
+}
+
+function healthyZone(zone: GreenZoneKind): GreenZoneConditionV1 {
+  return { zone, health: 1, moisture: 0.58, compaction: 0, wear: 0, traffic: 0 };
 }
 
 export function createFlatGreenSurfaceV1(): GreenSurfaceV1 {
@@ -184,7 +215,7 @@ export function createGreenProgram(preset: Exclude<GreenProgramPreset, "custom">
 }
 
 export function createHealthyGreenLocalState(carrier: Pick<GreenCourseCarrier, "holes">): GreenLocalStateV1 {
-  return { version: 1, holes: holeIds(carrier).map(healthyHole) };
+  return { version: 1, lastAdvancedAbsoluteDay: -1, holes: holeIds(carrier).map(healthyHole) };
 }
 
 function normalizeOffsets(value: unknown): number[] | null {
@@ -308,12 +339,27 @@ export function validateGreenProgram(value: unknown): GreenContractResult<GreenP
 
 function normalizedCondition(value: unknown, id: string): GreenHoleConditionV1 {
   const candidate = isRecord(value) ? value : {};
+  const rawZones = Array.isArray(candidate.zones) ? candidate.zones : [];
+  const zone = (kind: GreenZoneKind): GreenZoneConditionV1 => {
+    const raw = rawZones.find((item) => isRecord(item) && item.zone === kind);
+    const record = isRecord(raw) ? raw : candidate;
+    return {
+      zone: kind,
+      health: quantize(clamp(finite(record.health, 1), 0, 1)),
+      moisture: quantize(clamp(finite(record.moisture, 0.58), 0, 1)),
+      compaction: quantize(clamp(finite(record.compaction, 0), 0, 1)),
+      wear: quantize(clamp(finite(record.wear, 0), 0, 1)),
+      traffic: quantize(clamp(finite(record.traffic, 0), 0, 1)),
+    };
+  };
+  const zones = [zone("landing"), zone("pin")];
   return {
     holeId: id,
-    health: quantize(clamp(finite(candidate.health, 1), 0, 1)),
-    moisture: quantize(clamp(finite(candidate.moisture, 0.58), 0, 1)),
-    compaction: quantize(clamp(finite(candidate.compaction, 0), 0, 1)),
-    wear: quantize(clamp(finite(candidate.wear, 0), 0, 1)),
+    health: quantize((zones[0].health + zones[1].health) / 2),
+    moisture: quantize((zones[0].moisture + zones[1].moisture) / 2),
+    compaction: quantize((zones[0].compaction + zones[1].compaction) / 2),
+    wear: quantize((zones[0].wear + zones[1].wear) / 2),
+    zones,
   };
 }
 
@@ -330,6 +376,10 @@ export function normalizeGreenLocalState(value: unknown, carrier: Pick<GreenCour
   }
   return {
     version: 1,
+    lastAdvancedAbsoluteDay: Math.max(-1, Math.floor(finite(
+      isRecord(value) ? value.lastAdvancedAbsoluteDay : undefined,
+      -1,
+    ))),
     holes: allowedIds.map((id) => candidates.get(id) ?? healthyHole(id)),
   };
 }
@@ -338,7 +388,18 @@ export function validateGreenLocalState(value: unknown, carrier: Pick<GreenCours
   if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.holes)) return failure("invalid-local-state", "greenLocalState", "Green local state version 1 is required.");
   if (value.holes.length > GREEN_LOCAL_STATE_MAX_HOLES) return failure("oversized", "greenLocalState.holes", "Green local state exceeds 36 holes.");
   const normalized = normalizeGreenLocalState(value, carrier);
-  if (canonicalJson(normalized) !== canonicalJson(value)) return failure("invalid-local-state", "greenLocalState", "Green local state must cover each stable hole once in canonical order with bounded values.");
+  if (canonicalJson(normalized) !== canonicalJson(value)) {
+    // Transitional compatibility for canonical v26 payloads written between
+    // ZK-637 and ZK-642. They had the same version and per-hole aggregates,
+    // but not yet the daily cursor or landing/pin subzones.
+    const legacy = {
+      version: 1,
+      holes: normalized.holes.map(({ zones: _zones, ...hole }) => hole),
+    };
+    if (canonicalJson(legacy) !== canonicalJson(value)) {
+      return failure("invalid-local-state", "greenLocalState", "Green local state must cover each stable hole once in canonical order with bounded values.");
+    }
+  }
   return success(normalized);
 }
 

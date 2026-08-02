@@ -119,11 +119,18 @@ describe("M62 deterministic fine-green contract", () => {
       { holeId: "hole-b", health: -2, moisture: 9, compaction: Infinity, wear: 0.12349 },
       { holeId: "missing", health: 0 },
     ] }, carrier());
-    expect(local.holes).toEqual([
+    expect(local.lastAdvancedAbsoluteDay).toBe(-1);
+    expect(local.holes).toMatchObject([
       { holeId: "hole-a", health: 1, moisture: 0.58, compaction: 0, wear: 0 },
       { holeId: "hole-b", health: 0, moisture: 1, compaction: 0, wear: 0.123 },
     ]);
+    expect(local.holes.every((hole) => hole.zones?.map((zone) => zone.zone).join(",") === "landing,pin")).toBe(true);
     expect(validateGreenLocalState(local, carrier()).ok).toBe(true);
+    const earlyV26 = {
+      version: 1 as const,
+      holes: local.holes.map(({ zones: _zones, ...hole }) => hole),
+    };
+    expect(validateGreenLocalState(earlyV26, carrier())).toEqual({ ok: true, value: local });
   });
 
   it("freezes every green input and rejects geometry tampering", () => {
