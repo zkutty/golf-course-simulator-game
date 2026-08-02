@@ -1181,3 +1181,43 @@ or release-owner checks.
   inspected with coherent controls, evidence, terrain, and HUD.
 - No Linear, commit, push, deploy, or generated validation artifact is included
   in this delegated slice.
+
+## 2026-08-02 — ZK-639 authoritative green rollout complete
+
+- Added one bounded deterministic ground-path resolver. It bilinearly samples
+  the frozen 4×4 fixed-point green surface, derives local gradients, applies
+  gravity/cross-slope break and condition-dependent friction, and retains the
+  exact landing/path/rest, surface transitions, lie, pace, break, workload,
+  and input evidence. Non-green shots that never touch a green preserve the
+  established physical line exactly through the same resolver.
+- Frozen program/local condition, weather, drainage, club, source lie,
+  trajectory, landing angle, spin, requested rollout, and seed feed the path.
+  Level, uphill, downhill, sidehill, tier, false-front, wet-slow, dry-fast,
+  leaving/re-entering-green, and pathological bounded-workload matrices are
+  covered by focused tests.
+- Player Pro preview and commit now expose byte-identical resolver output;
+  active/career traces retain and validate it. Live golfers freeze the same
+  green/weather/drainage snapshot, forward the same result, and preserve it in
+  completed-round and architecture evidence. Rules consume the retained path
+  for boundary crossings while legacy penalty-boundary behavior remains exact.
+- Live flight segments carry the retained landing/path and the sim plus Pixi
+  animation follow it instead of redrawing a straight ground chord. Player Pro
+  and architecture overlays render the retained polyline, and the shot HUD
+  reports pace, realized speed, roll, break, and physical lie.
+- The Player Pro surface is now a deferred application chunk so the additional
+  authoritative evidence does not regress the ZK-680 initial-download budget.
+  The production build reports 1,592,069 initial JavaScript bytes, 16,650 bytes
+  below its 1,608,719-byte limit, while the service worker still precaches the
+  deferred surface for offline use.
+- Verification passes: full repository `test:ci` at 148 files / 1,148 tests
+  with one intentional skip plus 5/5 audio-audit tests; post-refactor focused
+  resolver, Player Pro/live parity, certification, and animation tests at 5
+  files / 61 tests; TypeScript; full ESLint/i18n with zero errors and 12
+  existing Hook warnings; production build and every asset/performance audit.
+  The dedicated Player Pro Playwright flow passes 1/1 after the deferred chunk
+  split, asserting preview/result rollout evidence and structured trace parity.
+  The required bundled client entered a live course, produced two coherent
+  structured states and no browser-error artifact; its canvas and the Player
+  Pro ground-path UI were visually inspected.
+- No Linear, commit, push, deploy, or generated validation artifact is included
+  in this delegated slice.

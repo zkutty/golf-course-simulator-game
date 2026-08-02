@@ -33,6 +33,7 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Flight: low");
   await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Route evidence:");
   await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Penalty risk:");
+  await expect(page.getByTestId("player-shot-green-rollout-preview")).toContainText("Ground path:");
   await page.getByTestId("player-shot-flight-high").click();
   await expect(page.getByTestId("player-shot-flight-high")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("player-shot-rules-preview")).toContainText("Flight: high");
@@ -88,6 +89,24 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
       ruling: expect.any(Object),
       relief: expect.any(Object),
     },
+    greenRollout: {
+      version: 1,
+      landing: expect.any(Object),
+      path: expect.arrayContaining([expect.any(Object)]),
+      rest: expect.any(Object),
+      rollYards: expect.any(Number),
+      breakTiles: expect.any(Number),
+      pace: expect.stringMatching(/^(slow|medium|fast)$/),
+      evidence: {
+        geometryHash: expect.any(String),
+        program: expect.stringMatching(/^(receptive|balanced|championship|custom)$/),
+        realizedSpeedFeet: expect.any(Number),
+        realizedFirmness: expect.any(Number),
+        effectiveMoisture: expect.any(Number),
+        drainageLevel: expect.any(Number),
+        trajectory: expect.stringMatching(/^(low|standard|high)$/),
+      },
+    },
   });
   expect(afterShot.recentTrace.ruling).toHaveProperty("referencePoint");
   expect(afterShot.recentTrace.ruling).toHaveProperty("crossingPoint");
@@ -96,6 +115,7 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   await expect(page.getByTestId("player-shot-ruling")).toContainText("Collision:");
   await expect(page.getByTestId("player-shot-ruling")).toContainText("Relief:");
   await expect(page.getByTestId("player-shot-ruling")).toContainText("Final playable position:");
+  await expect(page.getByTestId("player-shot-green-rollout-result")).toContainText("Ground path:");
   const repeatedText = await page.evaluate(() => {
     const readLatestTrace = () => {
       const playerPro = JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro;

@@ -141,6 +141,7 @@ export function createLiveState(
         : operations];
     })),
     weather: { daily: dailyWeather, modifiers: dailyWeatherModifiers },
+    greenDrainageLevel: seasonal.operations.drainageLevel,
     observedRounds: [],
     m51: emptyM51LiveMobilityState(seed),
   };
@@ -212,6 +213,16 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
     teeSet,
     pinRotation,
     capabilities,
+    weather: state.weather ? {
+      kind: state.weather.daily.kind,
+      temperatureF: state.weather.daily.temperatureF,
+      windMph: state.weather.daily.windMph,
+      rainInches: state.weather.daily.rainInches,
+      carryMultiplier: state.weather.modifiers.carryMultiplier,
+      dispersionMultiplier: state.weather.modifiers.dispersionMultiplier,
+      paceMultiplier: state.weather.modifiers.paceMultiplier,
+    } : undefined,
+    drainageLevel: state.greenDrainageLevel,
   });
   if (state.weather && state.weather.modifiers.paceMultiplier !== 1) {
     round.segments = round.segments.map((segment) => segment.kind === "walk" || segment.kind === "pause"
@@ -744,6 +755,7 @@ function shotRecordFromOutcome(outcome: LiveShotOutcome): NonNullable<CompletedR
     rest: { ...outcome.rest },
     lieBefore: outcome.lieBefore,
     lieAfter: outcome.lieAfter,
+    greenRollout: outcome.greenRollout,
   };
 }
 
@@ -801,6 +813,10 @@ export function liveRenderData(state: LiveState, out: GolferRenderData[] = []): 
       ballY: g.ball ? g.ball.y : null,
       ballToX: g.ball && seg?.kind === "flight" ? seg.to.x : null,
       ballToY: g.ball && seg?.kind === "flight" ? seg.to.y : null,
+      ballLandingX: g.ball && seg?.kind === "flight" ? seg.landing?.x ?? null : null,
+      ballLandingY: g.ball && seg?.kind === "flight" ? seg.landing?.y ?? null : null,
+      ballUsesResolvedRollout: g.ball != null && seg?.kind === "flight" && !!seg.rollPath?.length,
+      ballRolloutStartT: g.ball && seg?.kind === "flight" ? seg.rolloutStartT ?? null : null,
       color: g.color,
       mood: g.mood,
       thought: g.thought,
@@ -898,6 +914,16 @@ export function reconcileGolfers(state: LiveState, course: Course): void {
           pinRotation: g.pinRotation,
           startHole,
           skipPreRoundPurchases: true,
+          weather: state.weather ? {
+            kind: state.weather.daily.kind,
+            temperatureF: state.weather.daily.temperatureF,
+            windMph: state.weather.daily.windMph,
+            rainInches: state.weather.daily.rainInches,
+            carryMultiplier: state.weather.modifiers.carryMultiplier,
+            dispersionMultiplier: state.weather.modifiers.dispersionMultiplier,
+            paceMultiplier: state.weather.modifiers.paceMultiplier,
+          } : undefined,
+          drainageLevel: state.greenDrainageLevel,
         })
       : planFromHole({
           course: routing,

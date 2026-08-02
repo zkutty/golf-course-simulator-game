@@ -23,6 +23,11 @@ export interface Segment {
   // Render-facing only (ZKU-153): which stroke a "flight" represents, so the
   // renderer can pick the swing vs putt animation. Never read by sim logic.
   shot?: "swing" | "putt";
+  /** Exact M62 touchdown and ground path retained from the shot resolver. */
+  landing?: Point;
+  rollPath?: Point[];
+  /** Fraction of this segment at which the retained ground path begins. */
+  rolloutStartT?: number;
   concession?: {
     buildingType: ConcessionType;
     buildingX: number;
@@ -241,6 +246,8 @@ export interface LiveState {
   overtimeRateByCourse?: Record<string, number>;
   operationsByCourse?: Record<string, CourseOperations>;
   weather?: { daily: DailyWeather; modifiers: WeatherModifiers };
+  /** Frozen seasonal drainage tier paired with the live day's weather. */
+  greenDrainageLevel?: number;
   /** Bounded finished-round evidence retained until day commit. */
   observedRounds?: M49ObservedRound[];
   /** M51 transient group mobility contracts; walkCache remains the route-cache owner. */
@@ -272,6 +279,10 @@ export interface GolferRenderData {
    *  The render layer draws its own arc/bounce profile toward it (ZKU-154). */
   ballToX: number | null;
   ballToY: number | null;
+  ballLandingX?: number | null;
+  ballLandingY?: number | null;
+  ballUsesResolvedRollout?: boolean;
+  ballRolloutStartT?: number | null;
   color: string;
   mood: number;
   thought: string | null;

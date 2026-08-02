@@ -341,6 +341,7 @@ export function PlayerShotHud(props: {
             {previewRouteEvidence && <div>{t("playerPro.shot.routeEvidence", { evidence: previewRouteEvidence })}</div>}
             <div>{t("playerPro.shot.penaltyRisk", { ruling: rulingLabel(preview.sharedOutcome.ruling, t) })}</div>
             <div>{t("playerPro.shot.reliefPreview", { type: preview.sharedOutcome.relief.type.replaceAll("_", " "), position: pointLabel(preview.sharedOutcome.finalPosition) })}</div>
+            {preview.greenRollout && <div data-testid="player-shot-green-rollout-preview">{t("playerPro.shot.greenRollout", { pace: preview.greenRollout.pace, speed: preview.greenRollout.evidence.realizedSpeedFeet.toFixed(1), roll: preview.greenRollout.rollYards.toFixed(1), break: preview.greenRollout.breakTiles.toFixed(2), lie: preview.greenRollout.lieAfter.replaceAll("_", " ") })}</div>}
           </div>}
           {preview.blocker && <div role="alert">{t("playerPro.shot.blocked", { reason: preview.blocker })}</div>}
         </div>
@@ -353,6 +354,7 @@ export function PlayerShotHud(props: {
         <div>{t("playerPro.shot.collision", { collision: collisionLabel(latestOutcome?.collision, t) })}</div>
         <div>{t("playerPro.shot.relief", { relief: latestRelief ? `${latestRelief.type.replaceAll("_", " ")} (${latestRelief.status})` : t("playerPro.shot.legacyRelief") })}</div>
         <div>{t("playerPro.shot.finalPosition", { position: pointLabel(latestFinalPosition) })}</div>
+        {latestShot.greenRollout && <div data-testid="player-shot-green-rollout-result">{t("playerPro.shot.greenRollout", { pace: latestShot.greenRollout.pace, speed: latestShot.greenRollout.evidence.realizedSpeedFeet.toFixed(1), roll: latestShot.greenRollout.rollYards.toFixed(1), break: latestShot.greenRollout.breakTiles.toFixed(2), lie: latestShot.greenRollout.lieAfter.replaceAll("_", " ") })}</div>}
       </section>}
       {props.round.phase === "hole_complete" && <button data-testid="next-player-hole" onClick={props.onAdvance} style={{ width: "100%", marginTop: 10 }}>{t("playerPro.shot.next")}</button>}
       {(props.round.phase === "round_complete" || props.round.phase === "conceded") && <div style={{ marginTop: 10, display: "grid", gap: 7 }}><strong>{t("playerPro.round.complete")}</strong><small>{t("playerPro.round.settled")}</small><button data-testid="return-to-design" onClick={props.onReturnToDesign}>{t("playerPro.shot.returnDesign")}</button></div>}

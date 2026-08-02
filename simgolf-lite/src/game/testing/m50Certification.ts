@@ -779,15 +779,19 @@ function runPlayerSaveArchitectureCheck(): PlayerCertificationResult {
   );
   const architectureAgrees = settlement.round.shots.every((shot) => {
     const evidence = evidenceById.get(`evidence-player-${settlement.round!.id}-${shot.id}`);
-    const trace = review.overlay.traces.find((candidate) => candidate.id === evidence?.id);
+    const traces = review.overlay.traces.filter((candidate) => candidate.id.startsWith(`${evidence?.id}-`));
+    const firstTrace = traces[0];
+    const lastTrace = traces.at(-1);
     return evidence?.from.x === shot.from.x
       && evidence?.from.y === shot.from.y
       && evidence?.landing.x === shot.landing.x
       && evidence?.landing.y === shot.landing.y
       && evidence?.rest.x === shot.rest.x
       && evidence?.rest.y === shot.rest.y
-      && trace?.from.x === shot.from.x
-      && trace?.to.x === shot.rest.x;
+      && firstTrace?.from.x === shot.from.x
+      && firstTrace?.from.y === shot.from.y
+      && lastTrace?.to.x === shot.rest.x
+      && lastTrace?.to.y === shot.rest.y;
   });
 
   const baseHistory = settlement.round;
@@ -1091,7 +1095,8 @@ function runPlayerSaveArchitectureCheck(): PlayerCertificationResult {
         "architecture-evidence",
         architectureAgrees
           && review.evidence.length === settlement.round.shots.length
-          && review.overlay.traces.length === settlement.round.shots.length,
+          && review.overlay.traces.length >= settlement.round.shots.length
+          && review.overlay.traces.length <= settlement.round.shots.length * 99,
         "Settled Player Pro shots retain matching architecture evidence and review traces.",
       ),
       check(

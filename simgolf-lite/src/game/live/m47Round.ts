@@ -12,6 +12,7 @@ import { surfaceCareQualityForHole } from "../conditions/surfaceCare";
 import type { Personality } from "./personality";
 import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import { TimedItineraryBuilder } from "../m51/timedItinerary";
+import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 
 function distance(a: Point, b: Point): number { return Math.hypot(a.x - b.x, a.y - b.y); }
 
@@ -96,11 +97,20 @@ export function buildStrategicGolferRound(args: {
   rulesSnapshot?: ControlledRoundSnapshotV2;
   startHole?: number;
   skipPreRoundPurchases?: boolean;
+  weather?: PlayerRoundCourseSnapshot["weather"];
+  drainageLevel?: number;
 }): BuiltRound {
   const teeSet = args.teeSet ?? "member";
   const pinRotation = args.pinRotation ?? args.course.activePinRotation ?? "A";
   const course = courseForRoundSetup(args.course, teeSet, pinRotation);
-  const snapshot = liveCourseSnapshot({ course, teeSet, pinRotation, rulesSnapshot: args.rulesSnapshot });
+  const snapshot = liveCourseSnapshot({
+    course,
+    teeSet,
+    pinRotation,
+    rulesSnapshot: args.rulesSnapshot,
+    weather: args.weather,
+    drainageLevel: args.drainageLevel,
+  });
   const summary = manualStrategicRoundHoleSummary(args.course, course, teeSet, pinRotation) ?? scoreCourseHoles(course);
   const itinerary = new TimedItineraryBuilder({ course, cursor: { ...args.entry }, personality: args.personality, rng: args.rng, route: args.route, wallet: args.wallet });
   const holePar: number[] = [];
@@ -174,7 +184,13 @@ export function buildStrategicGolferRound(args: {
       if (shotOutcomes.length > M47_MAX_OUTCOMES) shotOutcomes.shift();
       const putting = lie === "green" || intent.kind === "approach" && distance(from, hole.green) <= 5;
       itinerary.appendPause(from, holeIndex, putting ? LIVE.pace.puttPause : LIVE.pace.swingPause);
-      itinerary.appendFlight(outcome.from, outcome.landing, holeIndex, putting ? "putt" : "swing");
+      itinerary.appendFlight(
+        outcome.from,
+        outcome.rest,
+        holeIndex,
+        putting ? "putt" : "swing",
+        outcome.greenRollout ? { landing: outcome.greenRollout.landing, rollPath: outcome.greenRollout.path } : undefined,
+      );
       if (distance(outcome.landing, outcome.rest) > .05) pushWalk(outcome.landing, outcome.rest, holeIndex);
       from = { ...outcome.rest };
       lie = outcome.lieAfter;

@@ -181,6 +181,7 @@ describe("M47 live golfer contracts", () => {
       seed: sharedArgs.seed,
     });
     expect(live.sharedOutcome).toEqual(player.sharedOutcome);
+    expect(live.greenRollout).toEqual(player.greenRollout);
     expect(live.ruling).toEqual(player.ruling);
     expect(live.relief).toEqual(player.relief);
     expect(live.finalPosition).toEqual(player.finalPosition);

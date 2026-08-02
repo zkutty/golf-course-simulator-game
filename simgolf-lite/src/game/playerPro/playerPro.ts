@@ -71,6 +71,12 @@ import {
   elevationAdjustedCarryYards,
   normalizeShotSlopeContext,
 } from "../models/shotSlope";
+import {
+  isValidGreenRollout,
+  resolveGreenRollout,
+  type GreenRolloutV1,
+  type GreenRolloutSpin,
+} from "../greens/greenRollout";
 
 const DEFAULT_SKILL = 40;
 const XP_PER_LEVEL = 12;
@@ -234,6 +240,7 @@ function validActiveShotTrace(value: unknown): value is PlayerShotTrace {
   }
   if (trace.sharedOutcome != null && !isValidSharedShotOutcome(trace.sharedOutcome)) return false;
   if (trace.shotSlope != null && !normalizeShotSlopeContext(trace.shotSlope)) return false;
+  if (trace.greenRollout != null && !isValidGreenRollout(trace.greenRollout)) return false;
   if (trace.ruling != null && !isValidShotRuling(trace.ruling)) return false;
   if (trace.relief != null && !isValidReliefResolution(trace.relief)) return false;
   if (trace.finalPosition != null && !point(trace.finalPosition)) return false;
@@ -331,6 +338,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
       theme,
       biomeCompatibility: biomeCompatibility.metadata,
       ...(greenSnapshot?.ok ? { greenSnapshot: greenSnapshot.value } : {}),
+      greenDrainageLevel: clamp(Math.round(finite(round.course.greenDrainageLevel)), 0, 3),
     },
     strokes: Math.max(0, Math.floor(finite(round.strokes))),
     penalties: Math.max(0, Math.floor(finite(round.penalties))),
@@ -354,7 +362,11 @@ function normalizeCareerRound(value: unknown): PlayerCareerRound | null {
     scoreToPar: Math.floor(finite(round.scoreToPar)),
     earnings: finite(round.earnings),
     scorecard: Array.isArray(round.scorecard) ? round.scorecard : [],
-    shots: Array.isArray(round.shots) ? round.shots.slice(-MAX_SHOTS) : [],
+    shots: Array.isArray(round.shots) ? round.shots.slice(-MAX_SHOTS).map((shot) => {
+      if (shot.greenRollout == null || isValidGreenRollout(shot.greenRollout)) return shot;
+      const { greenRollout: _discarded, ...legacy } = shot;
+      return legacy;
+    }) : [],
     evidence: Array.isArray(round.evidence) ? round.evidence : [],
     skillGains: round.skillGains && typeof round.skillGains === "object" ? round.skillGains : {},
   };
@@ -442,6 +454,7 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
     obstacles: course.obstacles.map((obstacle) => ({ ...obstacle })),
     holes: holes as PlayerRoundCourseSnapshot["holes"],
     greenSnapshot,
+    greenDrainageLevel: season.operations.drainageLevel,
     weather: {
       kind: weather.kind,
       temperatureF: weather.temperatureF,
@@ -677,6 +690,8 @@ export interface PlayerShotPreview {
    * preview cannot drift from execution.
    */
   sharedOutcome: SharedShotOutcome | null;
+  /** Exact M62 path paired with `sharedOutcome` for preview/commit parity. */
+  greenRollout: GreenRolloutV1 | null;
 }
 
 export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerProSkills, selection: PlayerShotSelection): PlayerShotPreview {
@@ -703,6 +718,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     flightProfile,
     shotEffects: calculated.effects,
     sharedOutcome: null,
+    greenRollout: null,
   };
   if (!club.lies.includes(round.lie)) return {
     available: false,
@@ -717,6 +733,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     flightProfile,
     shotEffects: calculated.effects,
     sharedOutcome: null,
+    greenRollout: null,
   };
   const requirement = techniqueRequirement(selection.technique, skills);
   if (requirement) return {
@@ -732,6 +749,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     flightProfile,
     shotEffects: calculated.effects,
     sharedOutcome: null,
+    greenRollout: null,
   };
   if (calculated.blocker) return {
     available: false,
@@ -746,6 +764,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     flightProfile,
     shotEffects: calculated.effects,
     sharedOutcome: null,
+    greenRollout: null,
   };
   const course = courseFromSnapshot(round.course);
   const profile = profileForPlayer(round.course, skills, club);
@@ -762,7 +781,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     * (1.42 - skills[skillForClub(club.name, round.lie)] / 180)
     * (round.course.weather?.dispersionMultiplier ?? 1)
     * (obstructionPenalty > 0 ? 1.55 : 1);
-  const sharedOutcome = evaluation.isValid
+  const resolved = evaluation.isValid
     ? resolvePlayableShot({
       snapshot: round.course,
       rulesSnapshot: round.rulesSnapshot,
@@ -773,8 +792,9 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
       skills,
       selection,
       seed: round.rngSeed + round.rngCursor * 104729,
-    }).sharedOutcome ?? null
+    })
     : null;
+  const sharedOutcome = resolved?.sharedOutcome ?? null;
   return {
     available: evaluation.isValid,
     blocker: evaluation.isValid ? null : "unreachable",
@@ -788,6 +808,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     flightProfile,
     shotEffects: calculated.effects,
     sharedOutcome,
+    greenRollout: resolved?.greenRollout ?? null,
   };
 }
 
@@ -872,20 +893,46 @@ export function resolvePlayableShot(args: {
   const landingTerrain = outside ? "out_of_play" : lieAt(args.snapshot, landing);
   const legacyHazard = outside || landingTerrain === "water" || landingTerrain === "wetland";
   const hasFrozenRules = args.rulesSnapshot !== undefined || args.snapshot.rulesSnapshot !== undefined;
-  let rollTiles = club.name === "Putter" ? 0 : calculated.effects.rolloutYards / args.snapshot.yardsPerTile;
-  if (args.snapshot.weather) {
-    if (["rain", "heavy_rain", "storm"].includes(args.snapshot.weather.kind)) rollTiles *= 0.55;
-    else if (args.snapshot.weather.kind === "drought" || args.snapshot.weather.kind === "heat") rollTiles *= 1.22;
-    else if (args.snapshot.weather.kind === "frost") rollTiles *= 0.78;
-  }
-  const rawRest = rollTiles === 0
-    ? { ...rawLanding }
-    : {
-        x: rawLanding.x + ux * rollTiles,
-        y: rawLanding.y + uy * rollTiles,
-      };
   const hole = args.snapshot.holes.find((candidate) => candidate.id === args.holeId) ?? args.snapshot.holes[0];
   if (!hole) throw new Error(`Unknown hole ${args.holeId}`);
+  const rolloutLanding = club.name === "Putter" ? { ...args.from } : rawLanding;
+  const rolloutDx = club.name === "Putter" ? rawLanding.x - args.from.x : ux;
+  const rolloutDy = club.name === "Putter" ? rawLanding.y - args.from.y : uy;
+  const rolloutLength = Math.hypot(rolloutDx, rolloutDy);
+  const rolloutDirection = rolloutLength > 1e-9
+    ? { x: rolloutDx / rolloutLength, y: rolloutDy / rolloutLength }
+    : { x: ux, y: uy };
+  const requestedRollYards = club.name === "Putter"
+    ? Math.hypot(rawLanding.x - args.from.x, rawLanding.y - args.from.y) * args.snapshot.yardsPerTile
+    : calculated.effects.rolloutYards;
+  const spin: GreenRolloutSpin = args.selection.technique === "backspin"
+    ? "backspin"
+    : args.selection.technique === "draw"
+      ? "draw"
+      : args.selection.technique === "fade"
+        ? "fade"
+        : "neutral";
+  const greenRollout = resolveGreenRollout({
+    course: {
+      ...course,
+      holes: course.holes.map((candidate) => ({ id: candidate.id, green: candidate.green })),
+    },
+    holeId: args.holeId,
+    landing: rolloutLanding,
+    direction: rolloutDirection,
+    requestedRollYards,
+    yardsPerTile: args.snapshot.yardsPerTile,
+    club: club.name,
+    sourceLie: args.lie,
+    launchAngleDegrees: calculated.effects.flight.launchAngleDegrees,
+    landingAngleDegrees: club.name === "Putter" ? 0 : clamp(18 + calculated.effects.flight.launchAngleDegrees * 0.75, 0, 70),
+    trajectory: flightProfile,
+    spin,
+    weather: args.snapshot.weather,
+    drainageLevel: args.snapshot.greenDrainageLevel,
+    seed: args.seed,
+  });
+  const rawRest = greenRollout.rest;
   const puttingSkill = args.skills.putting;
   const cupRadius = club.name === "Putter" ? 0.42 + puttingSkill / 240 : 0.22;
   const physicalHoled = (hasFrozenRules || !legacyHazard) && rawRest.x >= 0 && rawRest.y >= 0
@@ -897,7 +944,7 @@ export function resolvePlayableShot(args: {
     hole: hole.pin,
     previousPosition: args.from,
     physicalRest: rawRest,
-    rollPath: rollTiles === 0 ? [rawLanding] : [rawLanding, rawRest],
+    rollPath: greenRollout.path,
     clubLengthTiles: club.carryYards / Math.max(1, args.snapshot.yardsPerTile),
     holed: physicalHoled,
     legacyPenaltyStrokes: hasFrozenRules ? 0 : (legacyHazard ? 1 : 0),
@@ -942,10 +989,10 @@ export function resolvePlayableShot(args: {
     power,
     from: roundedPoint(args.from),
     aim: roundedPoint(args.selection.aim),
-    landing: roundedPoint(landing),
+    landing: roundedPoint(rolloutLanding),
     rest: roundedPoint(rest),
     carryYards: Number((Math.hypot(landing.x - args.from.x, landing.y - args.from.y) * args.snapshot.yardsPerTile).toFixed(1)),
-    rollYards: Number((Math.hypot(rest.x - landing.x, rest.y - landing.y) * args.snapshot.yardsPerTile).toFixed(1)),
+    rollYards: greenRollout.rollYards,
     lieBefore: args.lie,
     lieAfter,
     penaltyStrokes: rules.ruling.penaltyStrokes,
@@ -953,6 +1000,7 @@ export function resolvePlayableShot(args: {
     seed: args.seed,
     evidence,
     shotSlope,
+    greenRollout,
     ruling: rules.ruling,
     relief: rules.relief,
     finalPosition: { ...finalPosition },
@@ -1250,6 +1298,7 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
       landing: { ...shot.landing },
       rest: { ...shot.rest },
       evidence: shot.evidence.map((item) => ({ ...item })),
+      greenRollout: shot.greenRollout ? structuredClone(shot.greenRollout) : undefined,
     })),
     evidence,
     skillGains,

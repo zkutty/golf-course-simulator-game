@@ -1316,6 +1316,7 @@ export const en = {
   "playerPro.shot.routeEvidence": "Route evidence: {evidence}",
   "playerPro.shot.penaltyRisk": "Penalty risk: {ruling}",
   "playerPro.shot.reliefPreview": "Relief: {type} · final playable {position}",
+  "playerPro.shot.greenRollout": "Ground path: {pace} · {speed} ft · {roll} yd · break {break} tiles · {lie}",
   "playerPro.shot.latestRuling": "Latest shot ruling",
   "playerPro.shot.latestRulingShot": "Latest ruling · shot {shot}",
   "playerPro.shot.ruling": "Ruling: {ruling}",

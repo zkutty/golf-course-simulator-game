@@ -303,6 +303,7 @@ describe("M36 deterministic Player Pro play", () => {
     expect(committed.pendingShot?.sharedOutcome?.requestedCarryYards).toBeCloseTo(preview.carryYards, 5);
     expect(committed.pendingShot?.sharedOutcome?.ruling).toMatchObject({ status: "penalty", penaltyStrokes: 1 });
     expect(preview.sharedOutcome).toEqual(committed.pendingShot?.sharedOutcome);
+    expect(preview.greenRollout).toEqual(committed.pendingShot?.greenRollout);
     expect(preview.sharedOutcome).toMatchObject({
       lieEffect: { sourceLie: "tee", effectiveLie: "tee" },
       flight: { profile: "standard", apexHeightYards: expect.any(Number), clearance: expect.any(Array) },

@@ -14,6 +14,7 @@ import { courseForLayout } from "../models/courseLayouts";
 import { STORY_DEFINITION_BY_ID, SYSTEMIC_EVENT_DEFINITIONS } from "./content";
 import { lastItem } from "../../utils/array";
 import { greenGeometryVersion } from "../greens/greenSurface";
+import { isValidGreenRollout } from "../greens/greenRollout";
 import type {
   ArchitectureRevisionSummary,
   ArchitectureShotEvidence,
@@ -252,6 +253,7 @@ function normalizeEvidence(raw: unknown): ArchitectureShotEvidence | null {
   if (!evidence.id || !evidence.courseId || !evidence.holeId || !evidence.geometryVersion || !validPoint(evidence.from) || !validPoint(evidence.landing) || !validPoint(evidence.rest)) return null;
   return {
     ...evidence,
+    ...(evidence.greenRollout && isValidGreenRollout(evidence.greenRollout) ? { greenRollout: evidence.greenRollout } : { greenRollout: undefined }),
     week: Math.max(1, Math.floor(finite(evidence.week, 1))),
     day: clamp(Math.floor(finite(evidence.day)), 0, 6),
     shotNumber: Math.max(1, Math.floor(finite(evidence.shotNumber, 1))),
@@ -593,6 +595,7 @@ export function recordLivingClubRound(world: World, course: Course, round: Compl
     waitMinutes: round.waitMinutes ?? 0,
     lieBefore: shot.lieBefore,
     lieAfter: shot.lieAfter,
+    greenRollout: shot.greenRollout,
   }));
   living = {
     ...living,
@@ -653,6 +656,7 @@ export function recordPlayerRoundArchitecture(
     waitMinutes: 0,
     lieBefore: shot.lieBefore,
     lieAfter: shot.lieAfter,
+    greenRollout: shot.greenRollout,
   }));
   living = {
     ...living,

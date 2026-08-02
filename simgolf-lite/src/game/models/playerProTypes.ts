@@ -3,6 +3,7 @@ import type { ReliefResolution, ShotRuling, SharedShotOutcome } from "../rules/c
 import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
 import type { ShotSlopeContext } from "./shotSlope";
 import type { GreenRoundSnapshotV1 } from "../greens/greenSurface";
+import type { GreenRolloutV1 } from "../greens/greenRollout";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -70,6 +71,8 @@ export interface PlayerRoundCourseSnapshot {
   holes: PlayerRoundHoleSnapshot[];
   /** Immutable M62 fine-green geometry, policy, and local condition. */
   greenSnapshot?: GreenRoundSnapshotV1;
+  /** Frozen drainage authority paired with round weather for green rollout. */
+  greenDrainageLevel?: number;
   /** Frozen M50 rules map used by Player Pro and live callers. */
   rulesSnapshot?: ControlledRoundSnapshotV2;
   weather?: {
@@ -111,6 +114,8 @@ export interface PlayerShotTrace {
   finalPosition?: PlayerProPoint;
   /** Optional immutable ZK-631 slope facts. Older completed shots omit it. */
   shotSlope?: ShotSlopeContext;
+  /** Optional V1 path; absent on historical pre-M62 traces. */
+  greenRollout?: GreenRolloutV1;
 }
 
 export interface PlayerRoundScorecardHole {

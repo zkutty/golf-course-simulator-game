@@ -7,6 +7,7 @@ import { M47_MAX_OUTCOMES, M47_MAX_PLANS, M47_MAX_REACTIONS, type LiveShotOutcom
 import { isValidSharedShotOutcome } from "../rules/contracts";
 import { normalizeM51LiveMobilityState } from "../m51/mobility";
 import { normalizeShotSlopeContext } from "../models/shotSlope";
+import { isValidGreenRollout } from "../greens/greenRollout";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
@@ -54,6 +55,9 @@ function segment(value: unknown): value is Segment {
     value.dur >= 0 &&
     Number.isInteger(value.holeIndex) &&
     (value.shot == null || value.shot === "swing" || value.shot === "putt") &&
+    (value.landing == null || point(value.landing)) &&
+    (value.rollPath == null || (Array.isArray(value.rollPath) && value.rollPath.length <= 98 && value.rollPath.every((entry) => point(entry)))) &&
+    (value.rolloutStartT == null || (finite(value.rolloutStartT) && value.rolloutStartT >= 0 && value.rolloutStartT <= 1)) &&
     (value.concession == null || (
       isRecord(value.concession) && typeof value.concession.buildingType === "string" &&
       finite(value.concession.buildingX) && finite(value.concession.buildingY) &&
@@ -93,7 +97,8 @@ function shotOutcome(value: unknown): boolean {
     point(value.from) && point(value.aim) && point(value.landing) && point(value.rest) && typeof value.lieBefore === "string" &&
     typeof value.lieAfter === "string" && ["carryYards", "rollYards", "penaltyStrokes", "seed"].every((key) => finite(value[key])) &&
     typeof value.holed === "boolean" && Array.isArray(value.facts) && value.facts.length <= 12 && value.facts.every(fact) &&
-    (value.shotSlope == null || normalizeShotSlopeContext(value.shotSlope) != null);
+    (value.shotSlope == null || normalizeShotSlopeContext(value.shotSlope) != null) &&
+    (value.greenRollout == null || isValidGreenRollout(value.greenRollout));
 }
 
 function normalizeShotOutcome(value: LiveShotOutcome): LiveShotOutcome {
@@ -285,7 +290,13 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
     };
   }
   return {
-    state: { ...serializable, walkCache: new Map() },
+    state: {
+      ...serializable,
+      greenDrainageLevel: finite(serializable.greenDrainageLevel)
+        ? Math.max(0, Math.min(3, Math.round(serializable.greenDrainageLevel)))
+        : 0,
+      walkCache: new Map(),
+    },
     pendingCash: input.pendingCash,
     speed,
     selectedGolferId: input.selectedGolferId as number | null,

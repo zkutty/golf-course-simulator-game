@@ -4158,7 +4158,26 @@ export function PixiStage(props: PixiStageProps) {
         rotation,
       );
       graphics.moveTo(from.x, from.y - 5);
-      graphics.lineTo(rest.x, rest.y - 5);
+      if (trace.greenRollout?.path.length) {
+        const landing = worldToIso(
+          trace.greenRollout.landing.x + 0.5,
+          trace.greenRollout.landing.y + 0.5,
+          surfaceHeightAt(trace.greenRollout.landing.x + 0.5, trace.greenRollout.landing.y + 0.5),
+          rotation,
+        );
+        graphics.lineTo(landing.x, landing.y - 5);
+        for (const point of trace.greenRollout.path.slice(1)) {
+          const projected = worldToIso(
+            point.x + 0.5,
+            point.y + 0.5,
+            surfaceHeightAt(point.x + 0.5, point.y + 0.5),
+            rotation,
+          );
+          graphics.lineTo(projected.x, projected.y - 5);
+        }
+      } else {
+        graphics.lineTo(rest.x, rest.y - 5);
+      }
       graphics.stroke({ width: 2.5, color: trace.penaltyStrokes > 0 ? 0xc84a37 : 0xf7f0c2, alpha: 0.78 });
       graphics.circle(rest.x, rest.y - 5, 5);
       graphics.fill({ color: trace.penaltyStrokes > 0 ? 0xd34b39 : 0xffffff, alpha: 0.95 });
@@ -5665,8 +5684,11 @@ export function PixiStage(props: PixiStageProps) {
                 ? { x: golfer.ballToX, y: golfer.ballToY }
                 : { x: golfer.ballX, y: golfer.ballY };
             const distTiles = Math.hypot(to.x - from.x, to.y - from.y);
-            const restTx = Math.floor(to.x + 0.5);
-            const restTy = Math.floor(to.y + 0.5);
+            const impact = golfer.ballLandingX != null && golfer.ballLandingY != null
+              ? { x: golfer.ballLandingX, y: golfer.ballLandingY }
+              : to;
+            const restTx = Math.floor(impact.x + 0.5);
+            const restTy = Math.floor(impact.y + 0.5);
             const restTerrain =
               restTx >= 0 && restTy >= 0 && restTx < course.width && restTy < course.height
                 ? effectiveTiles[restTy * course.width + restTx]
@@ -5680,18 +5702,23 @@ export function PixiStage(props: PixiStageProps) {
             let hidden = false;
             if (props.animationsEnabled && golfer.segKind === "flight") {
               const pose = ballFlightPose(golfer.segT, distTiles, shot, behavior);
-              gx = from.x + (to.x - from.x) * pose.groundFrac;
-              gy = from.y + (to.y - from.y) * pose.groundFrac;
+              if (!golfer.ballUsesResolvedRollout) {
+                gx = from.x + (to.x - from.x) * pose.groundFrac;
+                gy = from.y + (to.y - from.y) * pose.groundFrac;
+              }
               heightPx = pose.heightPx;
               shadowK = pose.shadow;
               hidden = pose.hidden;
               // Touchdown FX, once per flight, on the surface actually hit.
-              if (pose.landed && !entry.ballLanded) {
+              const resolvedLanded = golfer.ballUsesResolvedRollout
+                ? golfer.segT >= (golfer.ballRolloutStartT ?? (shot === "putt" ? 0 : 0.72))
+                : pose.landed;
+              if (resolvedLanded && !entry.ballLanded) {
                 entry.ballLanded = true;
                 if (behavior.fx === "splash") {
                   appendBoundedEffect(
                     ripplesRef.current,
-                    { x: to.x, y: to.y, t0: nowMs },
+                    { x: impact.x, y: impact.y, t0: nowMs },
                     MAX_ACTIVE_RIPPLES,
                   );
                 } else if (behavior.fx) {
@@ -5710,7 +5737,7 @@ export function PixiStage(props: PixiStageProps) {
                   heron2.state === "standing" &&
                   heron2.spot &&
                   heron2.g &&
-                  Math.hypot(to.x - heron2.spot.x, to.y - heron2.spot.y) < HERON_STARTLE_TILES
+                  Math.hypot(impact.x - heron2.spot.x, impact.y - heron2.spot.y) < HERON_STARTLE_TILES
                 ) {
                   heron2.state = "flying";
                   heron2.flyT0 = nowMs;

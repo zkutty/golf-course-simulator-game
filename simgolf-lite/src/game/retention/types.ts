@@ -1,5 +1,6 @@
 import type { GolferArchetypeName } from "../live/types";
 import type { GolferCapabilities, HoleReaction, LiveShotOutcome, StrategicHolePlan } from "../live/m47Types";
+import type { GreenRolloutV1 } from "../greens/greenRollout";
 
 export type RetentionEventCategory = "play" | "economy" | "milestone";
 export type RetentionEventSeverity = "routine" | "notable" | "major";
@@ -53,6 +54,7 @@ export interface CompletedRound {
     rest: { x: number; y: number };
     lieBefore?: string;
     lieAfter?: string;
+    greenRollout?: GreenRolloutV1;
   }>;
 }
 

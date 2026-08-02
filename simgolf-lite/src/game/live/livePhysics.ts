@@ -10,6 +10,7 @@ import { capabilitiesToPlayerSkills } from "./capabilities";
 import type { GolferCapabilities, LiveShotOutcome, ShotIntent } from "./m47Types";
 import { biomeCompatibilityMetadataFor, getBiomeDefinition } from "../models/biomes";
 import { effectiveSurfaceTiles, resolveEffectiveSurface } from "../conditions/surfaceCare";
+import { createGreenRoundSnapshot } from "../greens/greenSurface";
 
 function parFor(hole: Course["holes"][number]): number {
   const setting = getParSetting(hole, "member");
@@ -58,6 +59,7 @@ export function liveCourseSnapshot(args: {
   teeSet: TeeSet;
   pinRotation: PinRotation;
   weather?: PlayerRoundCourseSnapshot["weather"];
+  drainageLevel?: number;
   rulesSnapshot?: ControlledRoundSnapshotV2;
 }): PlayerRoundCourseSnapshot {
   const holes = args.course.holes.map((hole, index) => {
@@ -85,6 +87,8 @@ export function liveCourseSnapshot(args: {
     elevations: args.course.elevations.slice(),
     obstacles: args.course.obstacles.map((obstacle) => ({ x: obstacle.x, y: obstacle.y, type: obstacle.type })),
     holes,
+    greenSnapshot: createGreenRoundSnapshot(args.course),
+    greenDrainageLevel: Math.max(0, Math.min(3, Math.round(args.drainageLevel ?? 0))),
     rulesSnapshot: args.rulesSnapshot ?? deriveRulesSnapshot(args.course, holes),
     weather: args.weather,
   };
@@ -120,6 +124,8 @@ export function resolveLiveShot(args: {
   const facts = args.intent.facts.slice();
   if (trace.penaltyStrokes > 0) facts.push({ code: "outcome", detail: `penalty:${trace.penaltyStrokes}` });
   facts.push({ code: "outcome", detail: `rest:${trace.lieAfter}` });
+  if (trace.greenRollout && facts.length < 12) facts.push({ code: "outcome", detail: `green-pace:${trace.greenRollout.pace}:${trace.greenRollout.evidence.realizedSpeedFeet}` });
+  if (trace.greenRollout && facts.length < 12) facts.push({ code: "outcome", detail: `green-break:${trace.greenRollout.breakTiles}` });
   return {
     version: 1,
     id: trace.id,
@@ -146,6 +152,7 @@ export function resolveLiveShot(args: {
     relief: trace.relief,
     finalPosition: trace.finalPosition,
     shotSlope: trace.shotSlope,
+    greenRollout: trace.greenRollout,
     sharedOutcome: trace.sharedOutcome,
   };
 }

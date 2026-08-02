@@ -1,4 +1,5 @@
 import type { M48DesignComparison, M48DesignTestSession } from "../architecture/m48Types";
+import type { GreenRolloutV1 } from "../greens/greenRollout";
 
 export type LivingGolferArchetype =
   | "casual"
@@ -237,6 +238,8 @@ export interface ArchitectureShotEvidence {
   waitMinutes: number;
   lieBefore?: string;
   lieAfter?: string;
+  /** Exact retained ground path used by the architecture trace overlay. */
+  greenRollout?: GreenRolloutV1;
 }
 
 export interface ArchitectureRevisionSummary {

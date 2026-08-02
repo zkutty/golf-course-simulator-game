@@ -72,9 +72,27 @@ export class TimedItineraryBuilder {
     this.segments.push(this.walkSegment(from, to, holeIndex, cap));
   }
 
-  appendFlight(from: Point, to: Point, holeIndex: number, shot: "swing" | "putt" = "swing"): void {
+  appendFlight(
+    from: Point,
+    to: Point,
+    holeIndex: number,
+    shot: "swing" | "putt" = "swing",
+    trajectory?: { landing: Point; rollPath: readonly Point[] },
+  ): void {
     const duration = Math.max(LIVE.pace.flightMin, Math.min(LIVE.pace.flightMax, distance(from, to) * LIVE.pace.flightPerTile));
-    this.segments.push({ kind: "flight", from, to, holeIndex, dur: duration, shot });
+    this.segments.push({
+      kind: "flight",
+      from,
+      to,
+      holeIndex,
+      dur: duration,
+      shot,
+      ...(trajectory ? {
+        landing: { ...trajectory.landing },
+        rollPath: trajectory.rollPath.map((point) => ({ ...point })),
+        rolloutStartT: shot === "putt" ? 0 : 0.72,
+      } : {}),
+    });
   }
 
   appendPause(at: Point, holeIndex: number, duration: number, concession?: Segment["concession"]): void {

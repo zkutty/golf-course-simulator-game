@@ -9,6 +9,7 @@ import { courseForRoundSetup } from "../models/courseSetup";
 import type { GolferCapabilities, HoleReaction, LiveShotOutcome, StrategicHolePlan } from "./m47Types";
 import { buildStrategicGolferRound } from "./m47Round";
 import { TimedItineraryBuilder, type TimedItineraryRouter } from "../m51/timedItinerary";
+import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 
 // Optional tile-aware router; returns waypoints from just-after `from` to `to`,
 // or null to fall back to a straight-line walk.
@@ -19,6 +20,8 @@ export interface BuiltRound {
   holePar: number[];
   holeStrokes: number[];
   capabilities?: GolferCapabilities;
+  weather?: PlayerRoundCourseSnapshot["weather"];
+  drainageLevel?: number;
   holePlans?: StrategicHolePlan[];
   shotOutcomes?: LiveShotOutcome[];
   holeReactions?: HoleReaction[];
@@ -38,6 +41,8 @@ export function buildGolferRound(args: {
   teeSet?: TeeSet;
   pinRotation?: PinRotation;
   capabilities?: GolferCapabilities;
+  weather?: PlayerRoundCourseSnapshot["weather"];
+  drainageLevel?: number;
 }): BuiltRound {
   if (args.capabilities) return buildStrategicGolferRound({ ...args, capabilities: args.capabilities });
   return planFromHole({
@@ -52,6 +57,8 @@ export function buildGolferRound(args: {
     wallet: args.wallet,
     teeSet: args.teeSet,
     pinRotation: args.pinRotation,
+    weather: args.weather,
+    drainageLevel: args.drainageLevel,
   });
 }
 
@@ -72,6 +79,8 @@ export function planFromHole(args: {
   teeSet?: TeeSet;
   pinRotation?: PinRotation;
   capabilities?: GolferCapabilities;
+  weather?: PlayerRoundCourseSnapshot["weather"];
+  drainageLevel?: number;
 }): BuiltRound {
   const baseCourse = args.course;
   const course = courseForRoundSetup(baseCourse, args.teeSet ?? "member", args.pinRotation ?? baseCourse.activePinRotation ?? "A");
@@ -176,9 +185,20 @@ function lerp(a: Point, b: Point, t: number): Point {
   return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
 }
 
-function ballArc(from: Point, to: Point, t: number): Point {
-  // Straight-line ground track; the render layer adds a visual hop.
-  return lerp(from, to, t);
+function retainedPathPoint(path: readonly Point[], t: number): Point {
+  if (path.length < 2) return path[0] ? { ...path[0] } : { x: 0, y: 0 };
+  const scaled = Math.max(0, Math.min(1, t)) * (path.length - 1);
+  const index = Math.min(path.length - 2, Math.floor(scaled));
+  return lerp(path[index], path[index + 1], scaled - index);
+}
+
+function ballArc(segment: Segment, t: number): Point {
+  const path = segment.rollPath;
+  const landing = segment.landing;
+  if (!path?.length || !landing) return lerp(segment.from, segment.to, t);
+  const rolloutStart = Math.max(0, Math.min(0.95, segment.rolloutStartT ?? (segment.shot === "putt" ? 0 : 0.72)));
+  if (rolloutStart > 0 && t < rolloutStart) return lerp(segment.from, landing, t / rolloutStart);
+  return retainedPathPoint(path, rolloutStart >= 1 ? 1 : (t - rolloutStart) / Math.max(0.0001, 1 - rolloutStart));
 }
 
 // Advance a single golfer by `dtMin` game-minutes, walking through its segment
@@ -229,7 +249,7 @@ export function advanceGolfer(g: Golfer, dtMin: number, condition: number): void
       g.ball = null;
     } else if (seg.kind === "flight") {
       g.pos = seg.from;
-      g.ball = ballArc(seg.from, seg.to, t);
+      g.ball = ballArc(seg, t);
     } else {
       g.pos = seg.from;
       g.ball = null;

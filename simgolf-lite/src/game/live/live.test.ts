@@ -260,6 +260,29 @@ describe("advanceGolfer", () => {
     }
     expect(sawBall).toBe(true);
   });
+
+  it("animates the retained authoritative rollout path instead of a straight chord", () => {
+    const course = makeTestCourse();
+    const g = freshGolfer(course);
+    g.segments = [{
+      kind: "flight",
+      from: { x: 0, y: 0 },
+      to: { x: 2, y: 0 },
+      landing: { x: 0, y: 0 },
+      rollPath: [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 0 }],
+      rolloutStartT: 0,
+      dur: 10,
+      holeIndex: 0,
+      shot: "putt",
+    }];
+    g.segIndex = 0;
+    g.segElapsed = 0;
+    g.pos = { x: 0, y: 0 };
+    advanceGolfer(g, 5, course.condition);
+    expect(g.ball).toEqual({ x: 1, y: 1 });
+    advanceGolfer(g, 2.5, course.condition);
+    expect(g.ball).toEqual({ x: 1.5, y: 0.5 });
+  });
 });
 
 describe("planDay + volume", () => {

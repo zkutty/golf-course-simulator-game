@@ -189,7 +189,6 @@ import { WeekCloseReport } from "./ui/WeekCloseReport";
 import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
 import { analyzeResidentialSafety, applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
-import { PlayerProPanel, PlayerShotHud } from "./ui/PlayerProPanel";
 import { ArchitectureReviewPanel } from "./ui/ArchitectureReviewPanel";
 import { LivingClubPanel } from "./ui/LivingClubPanel";
 import { SeasonsLegacyPanel } from "./ui/SeasonsLegacyPanel";
@@ -353,6 +352,8 @@ const SaveLoadModal = lazy(() => import("./ui/SaveLoadModal").then(({ SaveLoadMo
 const SettingsModal = lazy(() => import("./ui/SettingsModal").then(({ SettingsModal }) => ({ default: SettingsModal })));
 const RetentionHub = lazy(() => import("./ui/retention/RetentionHub").then(({ RetentionHub }) => ({ default: RetentionHub })));
 const GolfopediaModal = lazy(() => import("./ui/help/GolfopediaModal").then(({ GolfopediaModal }) => ({ default: GolfopediaModal })));
+const PlayerProPanel = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerProPanel }) => ({ default: PlayerProPanel })));
+const PlayerShotHud = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerShotHud }) => ({ default: PlayerShotHud })));
 
 export default function App() {
   const { t } = useI18n();
@@ -5137,6 +5138,7 @@ export default function App() {
                 onClose={() => setShowContentLibrary(false)}
               />
             )}
+            <Suspense fallback={null}>
             {showPlayerPro && !tutorialProgress && <PlayerProPanel
               career={playerPro}
               course={course}
@@ -5161,6 +5163,7 @@ export default function App() {
               onConcede={concedeControlledRound}
               onReturnToDesign={returnPlayerToDesign}
             />}
+            </Suspense>
             {playerRoundLocksEditing && <div role="status" style={{ position: "absolute", left: "50%", top: 54, transform: "translateX(-50%)", zIndex: 112, padding: "6px 10px", borderRadius: 8, background: "rgba(54,69,48,.92)", color: "white", fontSize: 12 }}>{t("playerPro.round.editLocked")}</div>}
             {showProgression && !tutorialProgress && <ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} />}
             {showTournaments && !tutorialProgress && <TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}

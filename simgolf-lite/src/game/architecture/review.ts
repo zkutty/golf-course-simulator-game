@@ -85,13 +85,22 @@ function traces(
 ): ArchitectureOverlayTrace[] {
   return bounded(evidence
     .filter((item) => !recoveryOnly || item.shotType === "recovery")
-    .map((item) => ({
-      id: item.id,
-      from: item.from,
-      to: item.rest,
-      current: item.geometryVersion === currentGeometryVersion,
-      emphasized: item.id === selectedTraceId,
-    })), 320);
+    .flatMap((item) => {
+      const rolloutPoints = item.greenRollout?.path?.length
+        ? [item.from, item.greenRollout.landing, ...item.greenRollout.path.slice(1)]
+        : [item.from, item.rest];
+      const physicalRest = rolloutPoints.at(-1);
+      const points = physicalRest && (physicalRest.x !== item.rest.x || physicalRest.y !== item.rest.y)
+        ? [...rolloutPoints, item.rest]
+        : rolloutPoints;
+      return points.slice(1).map((to, index) => ({
+        id: `${item.id}-${index}`,
+        from: points[index],
+        to,
+        current: item.geometryVersion === currentGeometryVersion,
+        emphasized: item.id === selectedTraceId,
+      }));
+    }), 320);
 }
 
 function landingCells(
