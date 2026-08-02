@@ -2,8 +2,9 @@ import type { ColorVisionMode } from "../../game/onboarding/profile";
 import type { Course, Hole, Point, Terrain } from "../../game/models/types";
 import type { SeasonalVisualState } from "../../game/presentation/seasonalVisualState";
 import type { IsoRotation } from "../../game/render/iso";
+import type { PlayerPlayableRound, PlayerProPoint } from "../../game/models/playerProTypes";
 
-export type RenderSceneId = "seasonalTerrain" | "surfaceCare" | "structuresProps";
+export type RenderSceneId = "seasonalTerrain" | "surfaceCare" | "structuresProps" | "overlaysDiagnostics";
 
 export type RenderRevisions = Readonly<Record<RenderSceneId, number>>;
 
@@ -21,6 +22,8 @@ export interface RenderSnapshot {
   readonly animationsEnabled: boolean;
   /** Asset completion is a declared input for systems that resolve atlas frames. */
   readonly atlasRevision: number;
+  readonly playerRound?: PlayerPlayableRound | null;
+  readonly playerShotAim?: PlayerProPoint | null;
   readonly worldSeed: number;
   readonly surfaceHeightAt: (x: number, y: number) => number;
   readonly revisions: RenderRevisions;
@@ -48,6 +51,7 @@ export class RenderRevisionTracker {
     seasonalTerrain: 0,
     surfaceCare: 0,
     structuresProps: 0,
+    overlaysDiagnostics: 0,
   };
 
   update(next: RenderRevisionDependencies): RenderRevisions {
