@@ -12,8 +12,9 @@ import {
 function dependencies(
   seasonalTerrain: readonly unknown[],
   surfaceCare: readonly unknown[],
+  structuresProps: readonly unknown[] = [],
 ): RenderRevisionDependencies {
-  return { seasonalTerrain, surfaceCare };
+  return { seasonalTerrain, surfaceCare, structuresProps };
 }
 
 function snapshot(
@@ -21,7 +22,7 @@ function snapshot(
   surfaceCare: number,
 ): RenderSnapshot {
   return {
-    revisions: { seasonalTerrain, surfaceCare },
+    revisions: { seasonalTerrain, surfaceCare, structuresProps: 0 },
   } as RenderSnapshot;
 }
 
@@ -32,17 +33,17 @@ describe("RenderRevisionTracker", () => {
     const season = {};
 
     const first = tracker.update(dependencies([course, season], [course, "high"]));
-    expect(first).toEqual({ seasonalTerrain: 1, surfaceCare: 1 });
+    expect(first).toEqual({ seasonalTerrain: 1, surfaceCare: 1, structuresProps: 1 });
 
     const unchanged = tracker.update(dependencies([course, season], [course, "high"]));
     expect(unchanged).toBe(first);
 
     const winter = {};
     const seasonalChange = tracker.update(dependencies([course, winter], [course, "high"]));
-    expect(seasonalChange).toEqual({ seasonalTerrain: 2, surfaceCare: 1 });
+    expect(seasonalChange).toEqual({ seasonalTerrain: 2, surfaceCare: 1, structuresProps: 1 });
 
     const careChange = tracker.update(dependencies([course, winter], [course, "medium"]));
-    expect(careChange).toEqual({ seasonalTerrain: 2, surfaceCare: 2 });
+    expect(careChange).toEqual({ seasonalTerrain: 2, surfaceCare: 2, structuresProps: 1 });
   });
 
   it("copies dependency lists so caller mutation is observed", () => {
