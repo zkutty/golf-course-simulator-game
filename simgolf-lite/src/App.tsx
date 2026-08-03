@@ -4144,7 +4144,6 @@ export default function App() {
     dispatch({ type: "PLACE_TEE", holeIndex: activeHoleIndex, position: tee });
     dispatch({ type: "PLACE_GREEN", holeIndex: activeHoleIndex, position: green });
     void audio.playSfx("confirm");
-    setFlyoverNonce((n) => n + 1); // cinematic hole flyover (ZKU-157)
 
     if (!tutorialProgress) setTeeSetupPrompt({ holeIndex: activeHoleIndex });
     setSelectedTeeSet("member");

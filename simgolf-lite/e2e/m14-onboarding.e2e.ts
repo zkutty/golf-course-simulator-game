@@ -205,6 +205,7 @@ async function placeHole(
   end: { x: number; y: number } | null = null,
 ) {
   const canvas = await gameCanvas(page);
+  const cameraBeforePlacement = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera);
   if (start && end) {
     await clickTile(page, canvas, start);
     // Placing the tee changes the wizard step and can resize/remount the
@@ -216,17 +217,18 @@ async function placeHole(
     await canvas.click({ position: tee, force: true });
     await canvas.click({ position: green, force: true });
   }
-  await expect(page.getByText("click or Esc to skip")).toBeVisible();
-  await page.keyboard.press("Escape");
+  // Completing a wizard hole must not start a delayed flyover or replace the
+  // player's current framing. This helper is used repeatedly through the
+  // tutorial's multi-hole path.
+  await page.waitForTimeout(1_000);
   await expect(page.getByText("click or Esc to skip")).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera)).toEqual(cameraBeforePlacement);
   await expect(page.getByRole("dialog", { name: "Game paused" })).toHaveCount(0);
 }
 
 async function paintAndPlaceHole(page: Page, start: { x: number; y: number }, end: { x: number; y: number }) {
-  // Confirming a hole launches a close cinematic view. Escape skips that
-  // flyover, but deliberately restores its previous camera, so fixed canvas
-  // coordinates would otherwise drift toward the prior hole as the tutorial
-  // advances. Snap to the same whole-course overview contract used by F.
+  // Keep every route projected from the same whole-course overview as the
+  // tutorial advances through repeated hole placements.
   await waitForPixiTest(page);
   await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
   await page.getByRole("button", { name: "Paint", exact: true }).click();
