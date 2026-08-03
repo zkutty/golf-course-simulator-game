@@ -1497,3 +1497,20 @@ classic course-builder references.
   production build plus biome/audio/offline/M35/Parkland audits pass.
 - No screenshots were opened or inspected. Transient Playwright failure
   artifacts were removed after the render-commit race was corrected.
+
+## ZK-636 M61 release certification — 2026-08-02
+
+- Added one focused certification contract covering flat/uphill/downhill,
+  both sidehill lies and handednesses, matching/counter shapes, caddie club
+  progression, fixed-seed preview/commit/save parity, unchanged historical
+  traces, replay/design evidence agreement, and bounded analysis, preview,
+  strategic-plan, Player Pro round, and live-day workloads.
+- Added a real M36 browser scenario that selects uphill, downhill, and
+  sidehill targets through the visible Player Pro controls, commits the
+  chosen sidehill shot, checks text-state parity, and covers animation,
+  responsive layout, reduced motion, color-safe terrain, and live-region
+  semantics. The stable run passed without console or page errors.
+- All temporary browser/report artifacts live under `/private/tmp`; no
+  generated certification artifact is retained in the repository. Final
+  integrated build, broader release checks, and promotion remain coordinator
+  gates after the concurrent ZK-644 packet is integrated.

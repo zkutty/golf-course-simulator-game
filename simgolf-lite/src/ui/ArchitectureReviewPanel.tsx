@@ -8,6 +8,7 @@ import type { MessageKey } from "../i18n/catalog";
 
 const OVERLAYS: ArchitectureOverlayKind[] = [
   "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "mobility", "congestion", "options", "advantage", "bailouts", "carries", "misses",
+  "green-preferred", "green-putts", "green-leaves", "green-misses", "green-rollout", "green-risk",
 ];
 
 export function ArchitectureReviewPanel(props: {
@@ -41,7 +42,7 @@ export function ArchitectureReviewPanel(props: {
       <button aria-label={t("common.close")} onClick={props.onClose}>✕</button>
     </header>
 
-    <nav aria-label={t("architecture.review.overlays")} style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 5, margin: "12px 0" }}>
+    <nav aria-label={t("architecture.review.overlays")} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(92px,1fr))", gap: 5, margin: "12px 0" }}>
       {OVERLAYS.map((kind) => <button
         key={kind}
         data-testid={`architecture-overlay-${kind}`}
@@ -57,6 +58,7 @@ export function ArchitectureReviewPanel(props: {
       <label>{t("architecture.review.tee")}<select value={props.review.filters.teeSet} onChange={(event) => set("teeSet", event.target.value as ArchitectureReviewFilters["teeSet"])}>{(["all", "forward", "member", "championship"] as const).map((value) => <option value={value} key={value}>{value === "all" ? t("architecture.review.all") : value}</option>)}</select></label>
       <label>{t("architecture.review.pin")}<select value={props.review.filters.pinRotation} onChange={(event) => set("pinRotation", event.target.value as ArchitectureReviewFilters["pinRotation"])}>{(["A", "B", "C", "all"] as const).map((value) => <option value={value} key={value}>{value === "all" ? t("architecture.review.all") : value}</option>)}</select></label>
       <label>{t("architecture.review.segment")}<select value={props.review.filters.sourceSegment} onChange={(event) => set("sourceSegment", event.target.value)}><option value="all">{t("architecture.review.all")}</option>{props.review.sourceSegments.map((value) => <option key={value}>{value}</option>)}</select></label>
+      {props.review.filters.kind.startsWith("green-") && <label>{t("architecture.green.cohort")}<select data-testid="architecture-green-cohort" value={props.review.filters.cohortId} onChange={(event) => set("cohortId", event.target.value as ArchitectureReviewFilters["cohortId"])}>{(["all", "power", "accuracy", "shortGame", "recovery", "casual"] as const).map((value) => <option value={value} key={value}>{value === "all" ? t("architecture.review.all") : t(`architecture.green.cohort.${value}` as MessageKey)}</option>)}</select></label>}
       <label style={{ gridColumn: "1 / -1" }}>{t("architecture.review.evidenceAge")}<select data-testid="architecture-age-filter" value={props.review.filters.recency} onChange={(event) => set("recency", event.target.value as ArchitectureReviewFilters["recency"])}>{(["current", "recent", "historical", "all"] as const).map((value) => <option value={value} key={value}>{t(`architecture.review.age.${value}` as MessageKey)}</option>)}</select></label>
       {props.review.filters.kind === "mobility" && <label style={{ gridColumn: "1 / -1" }}>{t("architecture.review.mobility.mode")}<select data-testid="architecture-mobility-mode" value={props.review.filters.mobilityMode} onChange={(event) => set("mobilityMode", event.target.value as ArchitectureReviewFilters["mobilityMode"])}><option value="all">{t("architecture.review.mobility.allModes")}</option><option value="walk">{t("architecture.review.mobility.walk")}</option><option value="pushcart">{t("architecture.review.mobility.pushcart")}</option><option value="riding_cart">{t("architecture.review.mobility.ridingCart")}</option></select></label>}
     </div>
@@ -69,6 +71,54 @@ export function ArchitectureReviewPanel(props: {
         <span>{t("architecture.review.historicalCount", { count: props.review.historicalEvidence })}</span>
       </div>
     </section>
+
+    {props.review.returnToDesign && <section data-testid="architecture-return-context" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#e7edf6", border: "1px solid #8391a7" }}>
+      <strong>{t("architecture.green.return.title")}</strong>
+      <p style={{ margin: "5px 0", fontSize: 12 }}>{t("architecture.green.return.body", {
+        hole: props.review.returnToDesign.holeId,
+        geometry: props.review.returnToDesign.geometryVersion === props.review.currentGeometryVersion ? t("architecture.review.current") : t("architecture.review.historical"),
+      })}</p>
+      <button data-testid="architecture-return-jump" onClick={() => props.onJump(props.review.returnToDesign!.point, props.review.returnToDesign!.holeId)}>{t("architecture.green.return.jump")}</button>
+    </section>}
+
+    {props.review.filters.kind.startsWith("green-") && !props.review.greenStrategy && <section data-testid="architecture-green-loading" role="status" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#edf3e2", border: "1px solid #7f966e" }}>{t("architecture.green.loading")}</section>}
+
+    {props.review.greenStrategy && <section data-testid="architecture-green-strategy" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#edf3e2", border: "1px solid #7f966e" }}>
+      <strong>{t("architecture.green.title")}</strong>
+      <p data-testid="architecture-green-source" style={{ margin: "5px 0", fontSize: 12 }}>{t("architecture.green.source", {
+        geometry: props.review.greenStrategy.forecastGeometryVersion,
+        program: props.review.greenStrategy.maintenanceProgram,
+        samples: props.review.greenStrategy.predictiveSamples,
+      })}</p>
+      <small style={{ display: "block", marginBottom: 6 }}>{t("architecture.green.filterScope")}</small>
+      {props.review.greenStrategy.observedHistorical > 0 && <p data-testid="architecture-green-history" style={{ margin: "5px 0", padding: 6, border: "1px dashed #725e8e", background: "#f2ecf7", fontSize: 12 }}><b>{t("architecture.green.history.title")}</b> {t("architecture.green.history.body", { count: props.review.greenStrategy.observedHistorical })}</p>}
+      <div aria-label={t("architecture.green.legend")} style={{ display: "grid", gap: 4, marginTop: 8 }}>
+        {props.review.greenStrategy.legend.map((item) => <div key={item.id} style={{ display: "grid", gridTemplateColumns: "28px 1fr", gap: 6, alignItems: "start", fontSize: 11 }}>
+          <span aria-hidden="true" style={{ textAlign: "center", border: "1px solid currentColor", borderRadius: 3, fontWeight: 900 }}>{item.pattern === "dots" ? "••" : item.pattern === "cross" ? "++" : item.pattern === "diagonal" ? "///" : "■"}</span>
+          <span><b>{t(`architecture.green.legend.${item.id}.label` as MessageKey)}</b> · {t(`architecture.green.legend.${item.id}.body` as MessageKey)}</span>
+        </div>)}
+      </div>
+      <div data-testid="architecture-green-report" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(135px,1fr))", gap: 5, marginTop: 9, fontSize: 12 }}>
+        <span>{t("architecture.green.report.attack", { value: props.review.greenStrategy.report.attackExpectedPutts ?? t("architecture.green.na") })}</span>
+        <span>{t("architecture.green.report.safe", { value: props.review.greenStrategy.report.safeExpectedPutts ?? t("architecture.green.na") })}</span>
+        <span>{t("architecture.green.report.approach", { value: props.review.greenStrategy.report.approachAdvantage })}</span>
+        <span>{t("architecture.green.report.shortSide", { value: Math.round(props.review.greenStrategy.report.shortSidePunishment * 100) })}</span>
+        <span>{t("architecture.green.report.rotation", { value: Math.round(props.review.greenStrategy.report.rotationVariety * 100) })}</span>
+        <span>{t("architecture.green.report.cohorts", { value: Math.round(props.review.greenStrategy.report.cohortSeparation * 100) })}</span>
+        <span>{t("architecture.green.report.unfairness", { value: Math.round(props.review.greenStrategy.report.unfairness * 100) })}</span>
+      </div>
+      <details style={{ marginTop: 8 }}>
+        <summary>{t("architecture.green.textEquivalent")}</summary>
+        <p style={{ fontSize: 12 }}>{props.review.greenStrategy.textSummary}</p>
+      </details>
+      {props.review.greenStrategy.recommendations.length > 0 && <div style={{ display: "grid", gap: 5, marginTop: 9 }}>
+        <b>{t("architecture.green.actions")}</b>
+        {props.review.greenStrategy.recommendations.map((item) => <button key={item.id} data-severity={item.severity} onClick={() => props.onJump(item.location, item.holeId)} style={{ textAlign: "left", background: item.severity === "warning" ? "#fff0e6" : "#fffdf6" }}>
+          <b>{t(item.titleKey as MessageKey)}</b><small style={{ display: "block" }}>{t(item.detailKey as MessageKey)} · {t("architecture.green.jump")}</small>
+        </button>)}
+      </div>}
+      <small style={{ display: "block", marginTop: 8 }}>{t("architecture.green.static")}</small>
+    </section>}
 
     {props.review.mobility && <section data-testid="architecture-mobility-summary" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#e5f0e0", border: "1px solid #8aa27f" }}>
       <strong>{t("architecture.review.mobility.forecast")}</strong>

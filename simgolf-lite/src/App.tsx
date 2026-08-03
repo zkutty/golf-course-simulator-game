@@ -189,7 +189,6 @@ import { WeekCloseReport } from "./ui/WeekCloseReport";
 import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
 import { analyzeResidentialSafety, applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
-import { ArchitectureReviewPanel } from "./ui/ArchitectureReviewPanel";
 import { LivingClubPanel } from "./ui/LivingClubPanel";
 import { SeasonsLegacyPanel } from "./ui/SeasonsLegacyPanel";
 import type { PlayerCareerRound, PlayerProCareer, PlayerProPoint, PlayerShotTrace } from "./game/models/playerProTypes";
@@ -218,7 +217,8 @@ import {
 import type { TournamentEvent } from "./game/tournaments/types";
 import { decodeControlledRoundSnapshotV2, type ControlledRoundSnapshotV2 } from "./game/rules/roundSnapshot";
 import type { SharedShotOutcome } from "./game/rules/contracts";
-import { buildArchitectureReview, defaultArchitectureFilters } from "./game/architecture/review";
+import { buildArchitectureReview, defaultArchitectureFilters, withGreenStrategyHeatmap } from "./game/architecture/review";
+import type { GreenStrategyHeatmap } from "./game/architecture/greenStrategyHeatmap";
 import { compareM48DesignTest, createM48DesignTestSession, refreshM48DesignTestSession } from "./game/architecture/comparison";
 import { strategicGeometryVersion } from "./game/architecture/strategic";
 import {
@@ -363,6 +363,7 @@ const RetentionHub = lazy(() => import("./ui/retention/RetentionHub").then(({ Re
 const GolfopediaModal = lazy(() => import("./ui/help/GolfopediaModal").then(({ GolfopediaModal }) => ({ default: GolfopediaModal })));
 const PlayerProPanel = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerProPanel }) => ({ default: PlayerProPanel })));
 const PlayerShotHud = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerShotHud }) => ({ default: PlayerShotHud })));
+const ArchitectureReviewPanel = lazy(() => import("./ui/ArchitectureReviewPanel").then(({ ArchitectureReviewPanel }) => ({ default: ArchitectureReviewPanel })));
 
 export default function App() {
   const { t } = useI18n();
@@ -759,10 +760,35 @@ export default function App() {
   const architectureReport = useMemo(() => showCourseManager ? analyzeArchitecture(activeOperatingCourse) : null, [activeOperatingCourse, showCourseManager]);
   const [showArchitectureReview, setShowArchitectureReview] = useState(false);
   const [architectureFilters, setArchitectureFilters] = useState(() => defaultArchitectureFilters(course));
-  const architectureReview = useMemo(
+  const architectureReviewBase = useMemo(
     () => buildArchitectureReview(course, world, architectureFilters),
     [architectureFilters, course, world],
   );
+  const [architectureGreenStrategy, setArchitectureGreenStrategy] = useState<GreenStrategyHeatmap | null>(null);
+  const architectureReview = useMemo(
+    () => withGreenStrategyHeatmap(architectureReviewBase, architectureGreenStrategy),
+    [architectureGreenStrategy, architectureReviewBase],
+  );
+  useEffect(() => {
+    let canceled = false;
+    if (!architectureFilters.kind.startsWith("green-")) {
+      setArchitectureGreenStrategy(null);
+      return () => { canceled = true; };
+    }
+    setArchitectureGreenStrategy(null);
+    void import("./game/architecture/greenStrategyHeatmap").then((module) => {
+      const result = module.buildGreenStrategyHeatmapForReview({
+        course,
+        filters: architectureFilters,
+        evidence: architectureReviewBase.evidence,
+        currentGeometryVersion: architectureReviewBase.currentGeometryVersion,
+      });
+      if (!canceled) setArchitectureGreenStrategy(result);
+    }).catch(() => {
+      if (!canceled) setArchitectureGreenStrategy(null);
+    });
+    return () => { canceled = true; };
+  }, [architectureFilters, architectureReviewBase.currentGeometryVersion, architectureReviewBase.evidence, course]);
   useEffect(() => {
     if (normalizeCourseLayouts(course).layouts!.some((layout) => layout.id === architectureFilters.courseId)) return;
     setArchitectureFilters(defaultArchitectureFilters(course));
@@ -1533,6 +1559,7 @@ export default function App() {
       sourceSegment: "player-pro",
       recency: "all",
       pinRotation: round.pinRotation,
+      cohortId: "all",
       mobilityMode: "all",
     });
     setShowArchitectureReview(true);
@@ -2868,6 +2895,28 @@ export default function App() {
           cells: architectureReview.overlay.cells.length,
           points: architectureReview.overlay.points.length,
         },
+        greenStrategy: architectureReview.greenStrategy ? {
+          evidenceSource: architectureReview.greenStrategy.evidenceSource,
+          forecastGeometryVersion: architectureReview.greenStrategy.forecastGeometryVersion,
+          maintenanceProgram: architectureReview.greenStrategy.maintenanceProgram,
+          selectedPins: architectureReview.greenStrategy.selectedPins,
+          selectedCohorts: architectureReview.greenStrategy.selectedCohorts,
+          predictiveSamples: architectureReview.greenStrategy.predictiveSamples,
+          observedCurrent: architectureReview.greenStrategy.observedCurrent,
+          observedHistorical: architectureReview.greenStrategy.observedHistorical,
+          observedGeometryVersions: architectureReview.greenStrategy.observedGeometryVersions,
+          report: architectureReview.greenStrategy.report,
+          recommendations: architectureReview.greenStrategy.recommendations.map((item) => ({ id: item.id, kind: item.kind, holeId: item.holeId, severity: item.severity, metric: item.metric })),
+          legend: architectureReview.greenStrategy.legend,
+          textSummary: architectureReview.greenStrategy.textSummary,
+          reducedMotionSafe: architectureReview.greenStrategy.reducedMotionSafe,
+        } : null,
+        returnToDesign: architectureReview.returnToDesign ? {
+          holeId: architectureReview.returnToDesign.holeId,
+          geometryVersion: architectureReview.returnToDesign.geometryVersion,
+          currentGeometry: architectureReview.returnToDesign.geometryVersion === architectureReview.currentGeometryVersion,
+          point: architectureReview.returnToDesign.point,
+        } : null,
         revisions: architectureReview.revisions.map((revision) => ({
           geometryVersion: revision.geometryVersion,
           rounds: revision.rounds,

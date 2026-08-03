@@ -9,17 +9,20 @@ import type {
   ArchitectureOverlayTrace,
   ArchitectureMobilityOverlay,
   ArchitectureRulesReview,
+  GreenStrategyOverlayKind,
 } from "./reviewTypes";
 import { buildArchitectureMobilityOverlay } from "../m51/architectureOverlay";
 import type { MobilityMode } from "../m51/types";
 import { courseGeometryVersion, normalizeLivingClub } from "../livingClub/livingClub";
-import type { ArchitectureRevisionSummary, ArchitectureShotEvidence } from "../livingClub/types";
+import type { ArchitectureRevisionSummary, ArchitectureShotEvidence, ReturnToDesignContext } from "../livingClub/types";
 import { buildStrategicPortfolio } from "./portfolio";
 import { buildStrategicRecommendations } from "./recommendations";
 import type { M48DesignComparison, M48StrategicHoleEvaluation, M48StrategicPortfolio } from "./m48Types";
+import type { M48CohortId } from "./m48Types";
 import { buildArchitectureRulesReview } from "./rulesEvidence";
 import { terrainCostMult } from "../balance/difficulty";
 import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
+import type { GreenStrategyHeatmap } from "./greenStrategyHeatmap";
 
 export interface ArchitectureReviewFilters {
   kind: ArchitectureOverlayKind;
@@ -29,6 +32,7 @@ export interface ArchitectureReviewFilters {
   sourceSegment: "all" | string;
   recency: "all" | "recent" | "current" | "historical";
   pinRotation: "all" | "A" | "B" | "C";
+  cohortId: "all" | M48CohortId;
   mobilityMode: "all" | MobilityMode;
 }
 
@@ -51,9 +55,18 @@ export interface ArchitectureReviewData {
   comparison: M48DesignComparison | null;
   rules: ArchitectureRulesReview;
   mobility: ArchitectureMobilityOverlay | null;
+  greenStrategy: GreenStrategyHeatmap | null;
+  returnToDesign: ReturnToDesignContext | null;
 }
 
 const HAZARDS = new Set<Terrain>(["sand", "waste_area", "water", "wetland", "deep_rough"]);
+const GREEN_STRATEGY_KINDS = new Set<ArchitectureOverlayKind>([
+  "green-preferred", "green-putts", "green-leaves", "green-misses", "green-rollout", "green-risk",
+]);
+
+function isGreenStrategyKind(kind: ArchitectureOverlayKind): kind is GreenStrategyOverlayKind {
+  return GREEN_STRATEGY_KINDS.has(kind);
+}
 
 function bounded<T>(values: T[], max: number): T[] {
   if (values.length <= max) return values;
@@ -206,6 +219,7 @@ export function defaultArchitectureFilters(course: Course): ArchitectureReviewFi
     sourceSegment: "all",
     recency: "current",
     pinRotation: "A",
+    cohortId: "all",
     mobilityMode: "all",
   };
 }
@@ -320,5 +334,20 @@ export function buildArchitectureReview(
     comparison: living.architecture.comparison ?? null,
     rules,
     mobility: mobility?.mobility ?? null,
+    greenStrategy: null,
+    returnToDesign: living.architecture.returnContext?.courseId === filters.courseId
+      ? living.architecture.returnContext
+      : null,
   };
+}
+
+/** Attach the lazily evaluated M62 green projection without rebuilding the base review. */
+export function withGreenStrategyHeatmap(
+  review: ArchitectureReviewData,
+  greenStrategy: GreenStrategyHeatmap | null,
+): ArchitectureReviewData {
+  if (!isGreenStrategyKind(review.filters.kind) || !greenStrategy || greenStrategy.overlay.kind !== review.filters.kind) {
+    return review.greenStrategy == null ? review : { ...review, greenStrategy: null };
+  }
+  return { ...review, greenStrategy, overlay: greenStrategy.overlay };
 }

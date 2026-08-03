@@ -1,5 +1,13 @@
 import type { MobilityMode } from "../m51/types";
 
+export type GreenStrategyOverlayKind =
+  | "green-preferred"
+  | "green-putts"
+  | "green-leaves"
+  | "green-misses"
+  | "green-rollout"
+  | "green-risk";
+
 export type ArchitectureOverlayKind =
   | "traces"
   | "dispersion"
@@ -14,7 +22,11 @@ export type ArchitectureOverlayKind =
   | "bailouts"
   | "carries"
   | "misses"
-  | "mobility";
+  | "mobility"
+  | GreenStrategyOverlayKind;
+
+export type ArchitectureOverlaySource = "predicted" | "observed" | "reference";
+export type ArchitectureOverlayPattern = "solid" | "dots" | "cross" | "diagonal";
 
 export interface ArchitectureOverlayTrace {
   id: string;
@@ -24,6 +36,8 @@ export interface ArchitectureOverlayTrace {
   emphasized?: boolean;
   /** Read-only automation/review explanation, absent on historical traces. */
   label?: string;
+  source?: ArchitectureOverlaySource;
+  pattern?: ArchitectureOverlayPattern;
 }
 
 export interface ArchitectureOverlayCell {
@@ -32,6 +46,9 @@ export interface ArchitectureOverlayCell {
   y: number;
   value: number;
   current: boolean;
+  label?: string;
+  source?: ArchitectureOverlaySource;
+  pattern?: ArchitectureOverlayPattern;
 }
 
 export interface ArchitectureOverlayPoint {
@@ -41,6 +58,8 @@ export interface ArchitectureOverlayPoint {
   value: number;
   current: boolean;
   label?: string;
+  source?: ArchitectureOverlaySource;
+  pattern?: ArchitectureOverlayPattern;
 }
 
 export interface ArchitectureOverlayRender {

@@ -4463,6 +4463,21 @@ export function PixiStage(props: PixiStageProps) {
 
     if (props.architectureOverlay) {
       const g = new PIXI.Graphics();
+      const patternMark = (x: number, y: number, pattern: "solid" | "dots" | "cross" | "diagonal" | undefined, radius: number, color = 0xffffff) => {
+        if (pattern === "dots") {
+          g.circle(x - radius * .32, y, Math.max(1.2, radius * .11));
+          g.circle(x + radius * .32, y, Math.max(1.2, radius * .11));
+          g.fill({ color, alpha: .95 });
+        } else if (pattern === "cross") {
+          g.moveTo(x - radius * .45, y); g.lineTo(x + radius * .45, y);
+          g.moveTo(x, y - radius * .45); g.lineTo(x, y + radius * .45);
+          g.stroke({ width: 2, color, alpha: .95 });
+        } else if (pattern === "diagonal") {
+          g.moveTo(x - radius * .5, y + radius * .3); g.lineTo(x + radius * .1, y - radius * .3);
+          g.moveTo(x - radius * .1, y + radius * .3); g.lineTo(x + radius * .5, y - radius * .3);
+          g.stroke({ width: 1.8, color, alpha: .95 });
+        }
+      };
       const project = (point: Point) => {
         return tileCenterIso(
           point.x,
@@ -4485,31 +4500,37 @@ export function PixiStage(props: PixiStageProps) {
           top.x, top.y + TILE_H,
           top.x - TILE_W / 2, top.y + TILE_H / 2,
         ]);
+        const cellColor = cell.source === "predicted" ? 0xf0a51a : cell.current ? 0x28a69a : 0x7b6aa8;
         g.fill({
-          color: cell.current ? 0xf0a51a : 0x7b6aa8,
+          color: cellColor,
           alpha: cell.current ? intensity : Math.min(0.48, intensity),
         });
         if (!cell.current) g.stroke({ width: 1, color: 0xf6e8ff, alpha: 0.75 });
+        patternMark(top.x, top.y + TILE_H / 2, cell.pattern, Math.max(7, TILE_H * .35));
       }
       for (const trace of props.architectureOverlay.traces) {
         const from = project(trace.from);
         const to = project(trace.to);
         g.moveTo(from.x, from.y);
         g.lineTo(to.x, to.y);
+        const traceColor = trace.source === "predicted" ? 0xf0a51a : trace.emphasized ? 0xfff08a : trace.current ? 0x29d7c0 : 0x9a7bc1;
         g.stroke({
           width: trace.emphasized ? 5 : 2.5,
-          color: trace.emphasized ? 0xfff08a : trace.current ? 0x29d7c0 : 0x9a7bc1,
+          color: traceColor,
           alpha: trace.current ? 0.9 : 0.6,
         });
         g.circle(to.x, to.y, trace.emphasized ? 6 : 3);
-        g.fill({ color: trace.current ? 0x29d7c0 : 0x9a7bc1, alpha: 0.9 });
+        g.fill({ color: traceColor, alpha: 0.9 });
+        patternMark((from.x + to.x) / 2, (from.y + to.y) / 2, trace.pattern, trace.emphasized ? 8 : 6);
       }
       for (const point of props.architectureOverlay.points) {
         const projected = project(point);
         const radius = Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35));
+        const pointColor = point.source === "predicted" ? 0xf0a51a : point.current ? 0x36cfc9 : 0x8d77b7;
         g.circle(projected.x, projected.y, radius);
-        g.fill({ color: point.current ? 0x36cfc9 : 0x8d77b7, alpha: 0.35 });
+        g.fill({ color: pointColor, alpha: 0.35 });
         g.stroke({ width: 2, color: point.current ? 0xeafffb : 0xf1e9ff, alpha: 0.9 });
+        patternMark(projected.x, projected.y, point.pattern, radius);
       }
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
