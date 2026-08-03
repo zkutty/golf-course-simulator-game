@@ -443,4 +443,22 @@ describe("ZK-635 shared slope evidence propagation", () => {
     expect(preview.rest).toEqual(slopePlan.chosen.previewRest);
     expect(preview.slopeExplanation).toContain("sidehill:");
   });
+
+  it("keeps repeated selected-intent previews inside the focused strategy budget", () => {
+    const course = recoveryCourse([]);
+    const golfer = capabilities({ seed: 635_020, power: 64 });
+    const started = performance.now();
+    const plans = Array.from({ length: 20 }, (_, index) => generateStrategicHolePlan({
+      course,
+      hole: course.holes[0],
+      par: 4,
+      capabilities: { ...golfer, seed: golfer.seed + index },
+      personality,
+      includeGreenLandingZones: false,
+    }));
+    const elapsed = performance.now() - started;
+
+    expect(plans.every((plan) => plan.chosen.previewSeed != null && plan.chosen.previewLanding && plan.chosen.previewRest)).toBe(true);
+    expect(elapsed).toBeLessThan(2_500);
+  });
 });
