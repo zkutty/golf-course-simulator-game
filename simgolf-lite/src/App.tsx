@@ -3046,7 +3046,6 @@ export default function App() {
       graphics: {
         quality: fixtureGraphicsQuality ?? appProfile.graphics.quality,
         resolvedQuality: resolvedGraphicsQuality,
-        rendererQuality: resolvedGraphicsQuality,
         atlasBundle: activeBiomeBundle(),
         atlasQuality: activeBiomeBundle()?.split(":", 2)[1] ?? null,
         animations: effectiveAnimations,
