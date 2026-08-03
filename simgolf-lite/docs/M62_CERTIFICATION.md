@@ -1,0 +1,142 @@
+# M62 final certification packet (ZK-645)
+
+## Disposition
+
+The deterministic M62 certification contract passes **9/9 automated checks** on
+the released dependency baseline `bbafeae`. The machine disposition is **PASS**
+for the evidence below and **HOLD** for the five explicitly listed human,
+physical-device, and release-owner gates. This packet does not authorize or
+claim a production promotion.
+
+The machine-readable source of truth is
+[`artifacts/m62/certification-report.json`](../artifacts/m62/certification-report.json).
+Its determinism hash is `c468d4dc`; component hashes are `ef3d0de1` (fixtures),
+`3ec3bd5c` (AI), `272cd549` (putting), `9ef1ccae` (consequences), `0443ab44`
+(compatibility), `3e28a728` (Architecture Review), and `cd1f2294` (full estate).
+
+## Automated evidence
+
+- Fourteen named green fixtures cover level, tiered, false-front, bowl, ridge,
+  uphill, downhill, sidehill, wet/slow, dry/fast, worn, recovered, edge-pin,
+  and severe-but-legal greens. The report validates deterministic rollout,
+  distinct terrain/condition relations, and bounded output.
+- One hundred capability/style cohorts choose among three preferred targets
+  and three green roles without a universal target. Candidate sets are bounded.
+- Automatic putting covers the complete 1–3 putt result domain and expected
+  putts increase monotonically from strong/close to weak/long inputs.
+- A/B/C pin rotations remain physically legal while producing distinct
+  difficulty, rating, pace, satisfaction, complaint, and tournament-readiness
+  evidence. Edge and severe legal pins remain warnings, not invalid states.
+- Receptive, balanced, and championship maintenance expose increasing costs
+  and distinct realized speeds. Neglect causes harm; a seven-day rest/closure
+  intervention demonstrates recovery.
+- Player preview/commit, automatic scorecard settlement, completed replay,
+  Architecture Review, and live/Player paths retain one shared rollout/putting
+  contract.
+- v23 migration, v24 active-round reconstruction/freezing, malformed-active
+  isolation, completed-history preservation, and hostile signed-package
+  rejection are covered.
+- The production-scale fixture is 220 x 140 cells, 36 holes, and 100 active
+  golfers. The course and live snapshot round trips remain below 5 MiB and
+  1 MiB respectively.
+- Architecture Review sampling is deterministic and bounded to 45 overlay
+  items in 148.0 ms on the final run, with text equivalents, reduced-motion-safe static
+  patterns, and non-colour contour/arrow geometry.
+
+## Validation record
+
+Run from `simgolf-lite`:
+
+```text
+npm run test:cert:m62
+  PASS — 14 files, 92 tests; certification 9/9; hash c468d4dc
+
+npx playwright test e2e/zk645-m62-certification.e2e.ts --reporter=line
+  PASS — 1 test in 33.8s
+
+npx tsc -b --pretty false
+  PASS
+
+npm run lint
+  PASS — zero errors; 12 pre-existing React hook warnings
+
+npm run build
+  PASS — TypeScript, production Vite bundle, and all asset/delivery audits
+
+git diff --check
+  PASS
+```
+
+The browser contract asserts every M62 overlay selector, fully exercises
+representative preferred-landing and risk overlays, verifies A/B/C/All pin and
+golfer-cohort controls, bounded text-state evidence, reduced-motion wording,
+responsive containment, and zero console/page errors. Exhaustive computation
+of all six overlay kinds remains in the certification/unit contract so the
+browser test does not repeat six expensive lazy computations.
+
+Durable visual evidence:
+
+- [`artifacts/m62/screenshots/zk645-m62-desktop.png`](../artifacts/m62/screenshots/zk645-m62-desktop.png)
+  (`fb2ce74c62e8f123ec8424cb42fa393ad92d792fbcacd82996ca6cac0b18bff8`)
+- [`artifacts/m62/screenshots/zk645-m62-mobile.png`](../artifacts/m62/screenshots/zk645-m62-mobile.png)
+  (`2e72509e65ea383ab459abcedd995f22c62214beef6d3bf3aaffcb2bf0ee849e`)
+
+The required bundled browser client also emitted coherent fixture state with
+24 current evidence shots, 48 bounded traces, and no console/page error
+artifact at
+[`artifacts/m62/bundled-client/state-0.json`](../artifacts/m62/bundled-client/state-0.json).
+Its canvas-only capture was black under SwiftShader and was discarded rather
+than presented as visual evidence; the two inspected full-page Playwright
+captures above are the visual record.
+
+## Explicitly unproven gates
+
+1. Human golf-authenticity playtest across all fourteen fixtures, including
+   funnel-green and universal-target judgment.
+2. Assistive-technology and physical text-scaling review of overlays/reports.
+3. Physical supported-browser, installed-PWA, and packaged-desktop review.
+4. Physical GPU/thermal soak on representative low- and high-tier hardware.
+5. Release-owner sign-off on the exact integrated commit after development and
+   production monitoring.
+
+## Remaining full release commands
+
+The release owner must run these against the exact integrated candidate. They
+are intentionally not represented by this focused packet unless separately
+recorded by the release workflow:
+
+```bash
+npm run test:ci
+npm run test:fuzz
+npm run test:soak
+npm run test:balance
+npm run test:perf
+npm run test:pwa
+npm run test:release:browsers
+npm run test:desktop
+npm run desktop:pack:dir
+```
+
+Then promote the unchanged tested artifact through the normal development to
+production workflow and monitor the production deployment. Record the exact
+candidate SHA, CI run, artifact identity, production URL, and monitoring result
+in the release issue; the baseline SHA alone is not sufficient.
+
+## Follow-up discovered during certification
+
+Proposed Linear issue: **Bound full-estate base Architecture Review computation
+before lazy overlays**.
+
+The diagnostic certification run measured the existing base
+`buildArchitectureReview` on the synthetic 220 x 140 / 36-hole estate at about
+53.3 seconds, while the M62 green-strategy heatmap itself completed in about
+148 ms.
+This does not invalidate the bounded M62 overlay result, but it could make the
+base review stall before a lazy overlay is requested at maximum scale.
+
+- Urgency: high release follow-up; treat as a device-review blocker if the
+  maximum-estate Architecture Review is part of the production acceptance path.
+- Dependencies: ZK-645 evidence plus the existing Architecture Review baseline.
+- Suggested agent: implementation-capable coding agent with high reasoning;
+  validate worker/chunking/caching tradeoffs and browser responsiveness.
+- Suggested effort: medium.

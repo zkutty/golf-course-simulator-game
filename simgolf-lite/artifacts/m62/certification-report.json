@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "fixture": {
+    "seed": 62645,
+    "width": 220,
+    "height": 140,
+    "holes": 36,
+    "activeGolfers": 100,
+    "greenFixtures": [
+      "level",
+      "tiered",
+      "false-front",
+      "bowl",
+      "ridge",
+      "uphill",
+      "downhill",
+      "sidehill",
+      "wet-slow",
+      "dry-fast",
+      "worn",
+      "recovered",
+      "edge-pin",
+      "severe-legal"
+    ]
+  },
+  "checks": [
+    {
+      "id": "named-green-fixture-matrix",
+      "passed": true,
+      "detail": "14 named fixtures produced bounded byte-stable rollout evidence with 13 distinct hashes; invalid=none; relations={\"bowlFine\":true,\"downhillLonger\":true,\"falseFrontFine\":true,\"ridgeFine\":true,\"sidehillBreaks\":true,\"uphillShorter\":true,\"wetShorterThanDry\":true}."
+    },
+    {
+      "id": "ai-differentiation-no-universal-target",
+      "passed": true,
+      "detail": "100 capability/style cohorts selected 3 preferred targets across 3 green roles; every candidate set stayed within 16."
+    },
+    {
+      "id": "automatic-putting-1-3-and-skill",
+      "passed": true,
+      "detail": "Fixed frozen inputs resolved the complete 1–3 putt domain; expected putts increased monotonically from strong/close to weak/long."
+    },
+    {
+      "id": "abc-pin-rating-pace-complaint-tournament-consequences",
+      "passed": true,
+      "detail": "A/B/C stayed physically legal and produced distinct difficulty/rating evidence plus bounded pace, satisfaction, complaint, and tournament-readiness consequences; edge and severe legal pins remained warning-only."
+    },
+    {
+      "id": "maintenance-tradeoffs-wear-recovery-and-operations",
+      "passed": true,
+      "detail": "Receptive/balanced/championship exposed increasing cost and distinct realized speed (no universally dominant program); neglected greens accumulated operational harm and a seven-day closed/rested intervention recovered health and wear."
+    },
+    {
+      "id": "preview-execution-scorecard-replay-trace-architecture-parity",
+      "passed": true,
+      "detail": "Player preview/commit, automatic scorecard settlement, completed-round replay evidence, Architecture Review trace, and live/Player shared physics retained one M62 rollout/putting outcome."
+    },
+    {
+      "id": "v23-v24-save-resume-freezing-history-malformed-package",
+      "passed": true,
+      "detail": "v23 migrated to schema 26; v24 rebuilt and froze the active green carrier; malformed active evidence was isolated while completed round/shot identity was preserved and its malformed carrier sanitized; signed hostile package contours were rejected."
+    },
+    {
+      "id": "full-estate-36-hole-100-golfer-bounded-snapshots",
+      "passed": true,
+      "detail": "The 220×140/30,800-cell estate carried 36 green contracts and 100 active golfers; live and course snapshots round-tripped below 1 MiB and 5 MiB in 17.5 ms."
+    },
+    {
+      "id": "architecture-accessibility-and-bounded-overlays",
+      "passed": true,
+      "detail": "Architecture sampling was deterministic in 148.0 ms, retained 45 bounded static-pattern overlay items plus text evidence, preserved contour/arrow geometry across color-vision palettes, and integrated with the current review geometry."
+    }
+  ],
+  "metrics": {
+    "fixtureCases": 14,
+    "distinctFixtureHashes": 13,
+    "aiCohorts": 100,
+    "aiPreferredTargets": 3,
+    "aiPreferredRoles": 3,
+    "automaticPuttValues": [
+      1,
+      2,
+      3
+    ],
+    "pinRotations": 3,
+    "maintenancePrograms": 3,
+    "packageBytes": 127869,
+    "currentSaveBytes": 31130,
+    "fullEstateSaveBytes": 411288,
+    "liveSnapshotBytes": 225247,
+    "architectureSamples": 104,
+    "architectureOverlayItems": 45,
+    "architectureBytes": 13283,
+    "fullEstateFixtureMs": 17.491917000000058,
+    "architectureMs": 147.99166600000012
+  },
+  "hashes": {
+    "fixtures": "ef3d0de1",
+    "ai": "3ec3bd5c",
+    "putting": "272cd549",
+    "consequences": "9ef1ccae",
+    "compatibility": "0443ab44",
+    "architecture": "3e28a728",
+    "fullEstate": "cd1f2294"
+  },
+  "determinismHash": "c468d4dc",
+  "remainingHumanGates": [
+    "Human golf-authenticity playtest across the fourteen named green fixtures, including funnel-green and universal-target judgment.",
+    "Assistive-technology and physical text-scaling review of the green overlays and reports.",
+    "Physical supported-browser, installed-PWA, and packaged-desktop device review.",
+    "Physical GPU/thermal soak on representative low- and high-tier hardware.",
+    "Release-owner production sign-off after the exact integrated commit passes development and production monitoring."
+  ],
+  "passed": true
+}

@@ -1543,3 +1543,24 @@ classic course-builder references.
 - Added exact catalog, copy/alt-text, collection, keyboard-anchor, desktop,
   tablet, and phone Playwright coverage. Final browser/build validation and
   screenshot review are recorded with this isolated implementation packet.
+
+## ZK-645 M62 final certification packet — 2026-08-03
+
+- Added a deterministic 9-check certification runner and committed JSON packet
+  spanning fourteen named green fixtures, 100 AI cohorts, the complete 1–3
+  automatic-putt domain, A/B/C setup consequences, maintenance and recovery,
+  preview/commit/replay/Architecture parity, persistence/package hardening, a
+  220 x 140 / 36-hole / 100-golfer estate, and bounded accessible overlays.
+- Focused coverage passes 14 files / 92 tests with report hash `c468d4dc`.
+  TypeScript, lint/i18n (zero errors and the 12 existing warnings), production
+  build/audits, and the representative desktop/mobile browser contract also
+  pass; the browser test asserts all six selectors, fully exercises
+  preferred/risk overlays, keeps overlay evidence bounded, and reports no
+  console/page errors.
+- The certification document and machine report explicitly separate proven
+  automation from human authenticity, assistive-technology/text-scaling,
+  physical browser/PWA/desktop, GPU/thermal, and release-owner production gates.
+- A diagnostic maximum-estate base Architecture Review took about 53.3 seconds
+  before the lazy M62 overlay path (about 148 ms). This is documented as a proposed
+  high-priority follow-up rather than hidden or misreported as M62 overlay cost.
+- No Linear mutation, push, production promotion, or production claim was made.

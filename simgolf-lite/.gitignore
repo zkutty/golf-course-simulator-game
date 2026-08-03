@@ -13,6 +13,7 @@ dist-ssr
 desktop-dist/
 soak-dist/
 biome-audit-dist/
+m62-cert-dist/
 test-results/
 *.local
 .env*
