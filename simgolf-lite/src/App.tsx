@@ -2430,7 +2430,10 @@ export default function App() {
   }
 
   function beginTutorial(tutorialCourse = course, tutorialWorld = world) {
-    const progress = createTutorialProgress(tutorialCourse, tutorialWorld);
+    const observedCompletedRounds = live.getSnapshot()?.state.observedRounds?.filter((round) =>
+      round.completed && round.holesTotal > 0 && round.holesPlayed >= round.holesTotal
+    ).length ?? 0;
+    const progress = createTutorialProgress(tutorialCourse, tutorialWorld, observedCompletedRounds);
     prepareTutorialPaintCorridor();
     setTutorialProgress(progress);
     saveTutorialProgress(progress);

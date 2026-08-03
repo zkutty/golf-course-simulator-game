@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import type { Terrain, WeekResult } from "../models/types";
 import { advisorMessages, allowsMessage } from "../advisor/advisor";
-import { TUTORIAL_STEPS, createTutorialProgress, reconcileTutorialProgress, reconcileTutorialSession } from "./tutorial";
+import { TUTORIAL_STEPS, createTutorialProgress, normalizeTutorialProgress, reconcileTutorialProgress, reconcileTutorialSession } from "./tutorial";
 import { GOLFOPEDIA_ENTRIES } from "../../ui/help/golfopediaData";
 import {
   terrainConstructionUnitCost,
@@ -49,6 +49,23 @@ describe("M14 onboarding data", () => {
     }
     const paintStep = TUTORIAL_STEPS.find((step) => step.id === "paint-corridor")!;
     expect(paintStep.canAdvance({ course, world: DEFAULT_WORLD, onCourse: 0 }, progress.baseline)).toBe(true);
+  });
+
+  it("requires a live group on a fresh tutorial but accepts completed observed play on rerun", () => {
+    const watchStep = TUTORIAL_STEPS.find((step) => step.id === "watch-golfers")!;
+    const fresh = createTutorialProgress(DEFAULT_COURSE, DEFAULT_WORLD);
+    const rerun = createTutorialProgress(DEFAULT_COURSE, DEFAULT_WORLD, 36);
+    const context = { course: DEFAULT_COURSE, world: DEFAULT_WORLD, onCourse: 0 };
+
+    expect(watchStep.canAdvance(context, fresh.baseline)).toBe(false);
+    expect(watchStep.canAdvance({ ...context, onCourse: 1 }, fresh.baseline)).toBe(true);
+    expect(watchStep.canAdvance(context, rerun.baseline)).toBe(true);
+  });
+
+  it("normalizes legacy tutorial baselines without observed-round evidence", () => {
+    const progress = createTutorialProgress(DEFAULT_COURSE, DEFAULT_WORLD);
+    const { observedCompletedRounds: _legacyMissing, ...legacyBaseline } = progress.baseline;
+    expect(normalizeTutorialProgress({ ...progress, baseline: legacyBaseline })?.baseline.observedCompletedRounds).toBe(0);
   });
 
   it("round-trips the current tutorial step with a game save", () => {

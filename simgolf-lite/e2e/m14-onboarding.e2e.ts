@@ -478,11 +478,12 @@ test("complete fresh-state tutorial playthrough B with reload resume and rerun",
   // A rerun on an already completed nine-hole course reconciles immediately;
   // it must not strand the player on an already-satisfied construction step.
   await expectStep(page, "watch-golfers");
-  if (await page.getByRole("button", { name: "Continue" }).count() === 0) {
+  const continueButton = page.getByRole("button", { name: "Continue" });
+  if (!await continueButton.isEnabled()) {
     await page.getByTitle("Speed 1x").click();
-    await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
+    await expect(continueButton).toBeEnabled();
   }
-  await page.getByRole("button", { name: "Continue" }).click();
+  await continueButton.click();
   await expectStep(page, "weekly-report");
   await page.getByRole("button", { name: "Continue" }).click();
   await expectStep(page, "green-fee");

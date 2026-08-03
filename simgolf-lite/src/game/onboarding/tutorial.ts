@@ -40,6 +40,7 @@ export interface TutorialBaseline {
   greenFee: number;
   maintenanceBudget: number;
   week: number;
+  observedCompletedRounds: number;
 }
 
 export interface TutorialProgress {
@@ -115,7 +116,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     eyebrowKey: "tutorial.lesson7.eyebrow", titleKey: "tutorial.lesson7.title", bodyKey: "tutorial.lesson7.body",
     target: "speed-controls",
     expression: "excited",
-    canAdvance: ({ onCourse }) => onCourse > 0,
+    canAdvance: ({ onCourse }, baseline) => onCourse > 0 || baseline.observedCompletedRounds > 0,
   },
   {
     id: "weekly-report",
@@ -155,7 +156,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   },
 ];
 
-export function createTutorialProgress(course: Course, world: World): TutorialProgress {
+export function createTutorialProgress(course: Course, world: World, observedCompletedRounds = 0): TutorialProgress {
   return {
     active: true,
     stepIndex: 0,
@@ -164,6 +165,7 @@ export function createTutorialProgress(course: Course, world: World): TutorialPr
       greenFee: course.baseGreenFee,
       maintenanceBudget: world.maintenanceBudget,
       week: world.week,
+      observedCompletedRounds: Math.max(0, Math.floor(observedCompletedRounds)),
     },
   };
 }
@@ -215,7 +217,13 @@ export function normalizeTutorialProgress(value: unknown): TutorialProgress | nu
     !Number.isFinite(baseline.maintenanceBudget) ||
     !Number.isFinite(baseline.week)
   ) return null;
-  return { ...progress, stepIndex: Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, progress.stepIndex)) };
+  const observedCompletedRounds = baseline.observedCompletedRounds;
+  if (observedCompletedRounds != null && (!Number.isFinite(observedCompletedRounds) || observedCompletedRounds < 0)) return null;
+  return {
+    ...progress,
+    stepIndex: Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, progress.stepIndex)),
+    baseline: { ...baseline, observedCompletedRounds: Math.floor(observedCompletedRounds ?? 0) },
+  };
 }
 
 export function saveTutorialProgress(progress: TutorialProgress | null): void {
