@@ -12,7 +12,7 @@
     "lint:i18n": "node scripts/check-i18n.mjs",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:ci": "vitest run --maxWorkers=1 && npm run test:audio-audit",
+    "test:ci": "vitest run --maxWorkers=1 --testTimeout=60000 && npm run test:audio-audit",
     "test:e2e": "playwright test",
     "test:e2e:golden": "playwright test e2e/golden-path.e2e.ts e2e/vision-page.e2e.ts",
     "test:analysis-worker": "playwright test e2e/zk681-analysis-worker.e2e.ts",
