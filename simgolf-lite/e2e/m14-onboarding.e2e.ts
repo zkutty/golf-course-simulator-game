@@ -589,13 +589,26 @@ test("representative delegated and contextual tooltips work by mouse and keyboar
   }
 
   await page.getByRole("button", { name: "Architect" }).click();
-  const fairway = page.getByRole("button", { name: "fairway", exact: true });
+  const designDock = page.getByTestId("design-dock");
+  await expect(designDock).toHaveAttribute("data-collapsed", "true");
+  await page.getByRole("button", { name: "Expand design dock" }).click();
+  await expect(designDock).toHaveAttribute("data-collapsed", "false");
+  const fairway = page.getByTestId("design-card-terrain-fairway");
+  await expect(fairway).toHaveAttribute("role", "option");
+  await fairway.hover();
+  await expect(page.getByRole("tooltip")).toContainText(/build \$/i);
+  await page.mouse.move(20, 20);
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
   await fairway.focus();
-  await expect(page.getByRole("tooltip")).toContainText("Build $");
-  await page.getByRole("button", { name: /Learn more in Golfopedia/ }).click();
+  await expect(fairway).toBeFocused();
+  await expect(page.getByRole("tooltip")).toContainText(/build \$/i);
+  const golfopedia = designDock.getByRole("button", { name: "Golfopedia", exact: true });
+  await page.keyboard.press("Tab");
+  await expect(golfopedia).toBeFocused();
+  await page.keyboard.press("Enter");
   await expect(page.getByTestId("golfopedia-entry")).toHaveAttribute("data-entry-id", "terrain-fairway");
   await page.keyboard.press("Escape");
-  await expect(fairway).toBeFocused();
+  await expect(golfopedia).toBeFocused();
 });
 
 test("back, modal close, and Escape paths do not trap the player", async ({ page }) => {
