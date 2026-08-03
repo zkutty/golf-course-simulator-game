@@ -34,7 +34,11 @@ function rentalCourse(options: { carts?: number; pushcarts?: number; paths?: boo
     ...DEFAULT_COURSE,
     name: "Mobility Links", width, height, tiles, elevations: new Array(width * height).fill(0),
     holes: [{ id: "hole-1", tee: { x: 4, y: 12 }, green: { x: 50, y: 12 }, parMode: "AUTO", name: "Long walk" }],
-    layouts: [{ id: "course-primary", name: "Mobility Links", draftHoleIds: ["hole-1"], publishedHoleIds: ["hole-1"], roundLength: 9, state: "open", greenFee: 65 }],
+    // This focused one-hole fixture represents a legacy partial layout. Live
+    // arrival planning now correctly rejects incomplete authored courses, so
+    // retain the explicit legacy opt-in while exercising M51's full-day
+    // assignment/return lifecycle.
+    layouts: [{ id: "course-primary", name: "Mobility Links", draftHoleIds: ["hole-1"], publishedHoleIds: ["hole-1"], roundLength: 9, state: "open", greenFee: 65, legacyPartial: true }],
     buildings: [{ id: buildingId, type: "cart_rental", x: 2, y: 2, tier: 2, price: 20 }],
     obstacles: [], decorations: [],
     m51: {
