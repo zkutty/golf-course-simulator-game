@@ -355,6 +355,8 @@ interface HoleScoreCacheEntry {
   height: number;
   yardsPerTile: number;
   holeIndex: number;
+  theme: Course["theme"];
+  themeSensitive: boolean;
   obstacles: Course["obstacles"];
   tileDependencies: Map<number, Terrain>;
   elevationDependencies: Map<number, number>;
@@ -403,6 +405,7 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
     cached.height === course.height &&
     cached.yardsPerTile === (course.yardsPerTile ?? 10) &&
     cached.holeIndex === holeIndex &&
+    (!cached.themeSensitive || cached.theme === course.theme) &&
     cached.obstacles === course.obstacles &&
     dependenciesMatch(cached.tileDependencies, course.tiles) &&
     dependenciesMatch(cached.elevationDependencies, elevations)
@@ -427,6 +430,11 @@ export function scoreHole(course: Course, hole: Hole, holeIndex: number): HoleSc
     height: course.height,
     yardsPerTile: course.yardsPerTile ?? 10,
     holeIndex,
+    theme: course.theme,
+    // Theme-specific shot scoring currently applies only to deep rough. If
+    // the exact tracked solve footprint never read deep rough, an otherwise
+    // identical immutable geometry is safe to reuse across biome roots.
+    themeSensitive: [...tileDependencies.values()].some((terrain) => terrain === "deep_rough"),
     obstacles: course.obstacles,
     tileDependencies,
     elevationDependencies,

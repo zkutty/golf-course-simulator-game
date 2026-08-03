@@ -83,6 +83,30 @@ describe("M18 core hardening", () => {
     expect(stats.hits).toBe(1);
   });
 
+  it("reuses exact geometry across biome roots only when tracked terrain is biome-neutral", () => {
+    const parkland = separatedTwoHoleCourse();
+    const parklandResult = scoreCourseHoles(parkland);
+    const desert = { ...parkland, theme: "desert" as const };
+    const desertResult = scoreCourseHoles(desert);
+
+    expect(desertResult).toEqual(parklandResult);
+    expect(__getHoleScoreCacheStatsForTests()).toEqual({ hits: 2, misses: 2 });
+
+    __resetHoleScoreCacheForTests();
+    scoreCourseHoles({ ...parkland });
+    const deepRoughIndex = __getHoleScoreDependenciesForTests(parkland.holes[0])[0];
+    expect(deepRoughIndex).toBeTypeOf("number");
+    const deepRoughTiles = parkland.tiles.slice();
+    deepRoughTiles[deepRoughIndex] = "deep_rough";
+    const deepRoughParkland = { ...parkland, tiles: deepRoughTiles };
+    scoreCourseHoles(deepRoughParkland);
+    const beforeThemeChange = __getHoleScoreCacheStatsForTests();
+    scoreCourseHoles({ ...deepRoughParkland, theme: "desert" });
+    const afterThemeChange = __getHoleScoreCacheStatsForTests();
+
+    expect(afterThemeChange.misses - beforeThemeChange.misses).toBeGreaterThan(0);
+  });
+
   it.runIf(process.env.M18_BENCH === "1")(
     "measurably reduces scoring work for a paint stroke on a full nine-hole course",
     () => {

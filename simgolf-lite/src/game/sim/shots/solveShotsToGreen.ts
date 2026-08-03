@@ -76,6 +76,9 @@ class MinHeap<T> {
   get size() {
     return this.a.length;
   }
+  get minKey(): number | null {
+    return this.a[0]?.k ?? null;
+  }
 }
 
 function candidateOK(t: Terrain) {
@@ -111,6 +114,38 @@ export function solveShotsToGreen(args: {
 
   const startK = key(tee);
   const goalK = key(green);
+
+  // Every valid shot costs at least one stroke. A best direct shot below two
+  // strokes therefore proves the global optimum without constructing the
+  // search frontier: every indirect route needs at least two shots. Strict
+  // comparison retains the same club-order tie break as Dijkstra below.
+  let bestDirect: {
+    club: (typeof golfer.clubs)[number];
+    evaluation: ReturnType<typeof evalShotExpectedCost>;
+  } | null = null;
+  for (const club of golfer.clubs) {
+    const direct = evalShotExpectedCost({ course, from: tee, to: green, golfer, club });
+    if (!direct.isValid || !Number.isFinite(direct.expectedShotCost)) continue;
+    if (bestDirect == null || direct.expectedShotCost < bestDirect.evaluation.expectedShotCost) {
+      bestDirect = { club, evaluation: direct };
+    }
+    if (direct.expectedShotCost === 1) break;
+  }
+  if (bestDirect && bestDirect.evaluation.expectedShotCost < 2) {
+    return {
+      reachable: true,
+      expectedShotsToGreen: bestDirect.evaluation.expectedShotCost,
+      plan: [{
+        from: tee,
+        to: green,
+        club: bestDirect.club.name,
+        expectedShotCost: bestDirect.evaluation.expectedShotCost,
+        utilization: bestDirect.evaluation.utilization,
+        debug: bestDirect.evaluation.debug,
+        shotSlope: bestDirect.evaluation.shotSlope,
+      }],
+    };
+  }
 
   const dist = new Map<number, number>();
   const prev = new Map<number, { fromK: number; step: ShotPlanStep }>();
@@ -193,6 +228,15 @@ export function solveShotsToGreen(args: {
         }
       }
     }
+
+    // Dijkstra can finish as soon as no unsettled state is cheaper than the
+    // best known goal. Equal-cost alternatives cannot replace the retained
+    // predecessor because relaxation above is intentionally strict (`<`).
+    // This matters on open ground where hundreds of one-stroke candidates
+    // otherwise churn before the one-stroke goal happens to leave the heap.
+    const goalDistance = dist.get(goalK);
+    const unsettledDistance = pq.minKey;
+    if (goalDistance != null && (unsettledDistance == null || goalDistance <= unsettledDistance)) break;
   }
 
   const best = dist.get(goalK);
@@ -213,6 +257,3 @@ export function solveShotsToGreen(args: {
 
   return { reachable: true, expectedShotsToGreen: best, plan };
 }
-
-
-

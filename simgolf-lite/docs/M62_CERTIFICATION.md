@@ -141,3 +141,28 @@ both below the enforced 750 ms interactive budget. The regression retains all
 rules findings, and the existing lazy green-overlay boundary. No prediction,
 sampling, or deferred-result state was introduced, so the existing text state
 and accessibility loading/text-equivalent contracts require no new qualifier.
+
+## ZK-699 release balance runtime and coverage closure
+
+The pre-fix `npm run test:balance` process remained CPU-bound without terminal
+output after 72 minutes. A V8 profile isolated the recurring cost in
+`scoreHoleUncached` / `solveShotsToGreen`: recreated release properties defeated
+the exact dependency cache, while open or mildly degraded holes expanded many
+equal-cost shot states after a globally optimal direct result was already known.
+
+ZK-699 reuses immutable release-property geometry across management paths,
+allows cross-biome hole-cache reuse only when the exact tracked terrain contains
+no theme-sensitive deep rough, and applies two exact shortest-path bounds. A
+best direct shot below two strokes is globally optimal because every indirect
+route costs at least two strokes; otherwise Dijkstra stops when its known goal
+is no greater than the smallest unsettled cost. Strict comparison preserves the
+existing club and predecessor tie order. Focused coverage proves neutral-biome
+reuse and deep-rough invalidation.
+
+The same work exposed that the old harness's bankruptcy early exit executed
+only 8,218 of its claimed 8,424 weeks. Every one of the 81 rows now executes all
+104 weeks. The runner retains an exact first-bankruptcy projection of the old
+8,218-week behavior, verifies bankruptcy remains finite and sticky through the
+206 newly covered weeks, pins canonical hash `38b861f9`, and pins legacy
+projection hash `6dc8d6f2`. Two complete local runs finished in 234,612 ms and
+237,481 ms against an enforced 720,000 ms budget.

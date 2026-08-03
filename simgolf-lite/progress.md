@@ -1,5 +1,25 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-699 release balance performance and full-duration coverage — 2026-08-03
+
+- Profiled the non-terminal release balance gate and traced its dominant cost
+  to exact hole scoring and shot search, not the already bounded ZK-698
+  Architecture Review path.
+- Reused immutable physical release geometry across the 81 management paths,
+  with cross-biome score reuse allowed only when tracked terrain contains no
+  theme-sensitive deep rough. Added focused hit/invalidation regression.
+- Added exact shortest-path termination: a best direct result below two strokes
+  cannot be beaten by an indirect route, and Dijkstra stops once no unsettled
+  state is cheaper than its known goal. No sampling or matrix reduction was
+  introduced.
+- Found the previous bankruptcy early exit executed 8,218 rather than the
+  claimed 8,424 weeks. All 81 rows now run 104 weeks, retain a hashable legacy
+  projection, and prove bankruptcy never accidentally recovers during the 206
+  newly covered post-bankruptcy weeks.
+- Two complete runs passed at 234,612 ms and 237,481 ms under the enforced
+  720,000 ms budget. Full hash is `38b861f9`; legacy projection hash is
+  `6dc8d6f2`. Production promotion remains owned by the parent release workflow.
+
 ## ZK-698 full-estate Architecture Review performance — 2026-08-03
 
 - Reproduced the cold base `buildArchitectureReview` regression at 52.39s on

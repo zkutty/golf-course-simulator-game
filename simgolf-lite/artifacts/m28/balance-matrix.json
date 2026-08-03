@@ -1,6 +1,9 @@
 {
   "ok": true,
   "weeksPerRun": 104,
+  "simulatedWeeks": 8424,
+  "legacyProjectedSimulatedWeeks": 8218,
+  "postBankruptcyWeeks": 206,
   "runs": 81,
   "matrix": {
     "themes": 3,
@@ -9,8 +12,8 @@
     "strategies": 3
   },
   "summary": {
-    "normalPathBankruptcies": 0,
-    "poorManagementBankruptcies": 0,
+    "normalPathBankruptcies": 1,
+    "poorManagementBankruptcies": 3,
     "latestNormalFirstProfitWeek": 2
   },
   "rows": [
@@ -23,12 +26,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3245351,
-      "peakCash": 3245351,
+      "lossWeeks": 1,
+      "finalCash": 3003168,
+      "peakCash": 3003168,
       "minimumCash": 35000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 71,
+      "condition": 0.903
     },
     {
       "theme": "parkland",
@@ -39,12 +42,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3277687,
-      "peakCash": 3277687,
+      "lossWeeks": 2,
+      "finalCash": 1866821,
+      "peakCash": 1866821,
       "minimumCash": 185000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.483
     },
     {
       "theme": "parkland",
@@ -55,12 +58,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2887258,
-      "peakCash": 2887258,
+      "lossWeeks": 30,
+      "finalCash": 1108699,
+      "peakCash": 1108699,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.384
     },
     {
       "theme": "parkland",
@@ -71,12 +74,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2773850,
-      "peakCash": 2773850,
+      "lossWeeks": 17,
+      "finalCash": 1222367,
+      "peakCash": 1222367,
       "minimumCash": 25000,
-      "reputation": 100,
-      "condition": 0.753
+      "reputation": 0,
+      "condition": 0.473
     },
     {
       "theme": "parkland",
@@ -87,12 +90,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2814439,
-      "peakCash": 2814439,
+      "lossWeeks": 8,
+      "finalCash": 1760774,
+      "peakCash": 1760774,
       "minimumCash": 175000,
-      "reputation": 100,
-      "condition": 0.784
+      "reputation": 0,
+      "condition": 0.507
     },
     {
       "theme": "parkland",
@@ -103,12 +106,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2348736,
-      "peakCash": 2348736,
-      "minimumCash": 15000,
-      "reputation": 93,
-      "condition": 0.803
+      "lossWeeks": 19,
+      "finalCash": 1150080,
+      "peakCash": 1152204,
+      "minimumCash": 14536,
+      "reputation": 0,
+      "condition": 0.421
     },
     {
       "theme": "parkland",
@@ -119,12 +122,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2197770,
-      "peakCash": 2197770,
+      "lossWeeks": 23,
+      "finalCash": 1736684,
+      "peakCash": 1757868,
       "minimumCash": 17500,
-      "reputation": 67,
-      "condition": 0.424
+      "reputation": 20,
+      "condition": 0.543
     },
     {
       "theme": "parkland",
@@ -135,12 +138,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 3,
-      "finalCash": 2255230,
-      "peakCash": 2255230,
+      "lossWeeks": 1,
+      "finalCash": 1486071,
+      "peakCash": 1486071,
       "minimumCash": 167500,
-      "reputation": 72,
-      "condition": 0.418
+      "reputation": 0,
+      "condition": 0.485
     },
     {
       "theme": "parkland",
@@ -151,12 +154,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 1776096,
-      "peakCash": 1776096,
+      "lossWeeks": 48,
+      "finalCash": 640886,
+      "peakCash": 640886,
       "minimumCash": 15000,
-      "reputation": 20,
-      "condition": 0.648
+      "reputation": 0,
+      "condition": 0.482
     },
     {
       "theme": "parkland",
@@ -167,12 +170,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 4289580,
-      "peakCash": 4289580,
+      "lossWeeks": 33,
+      "finalCash": 2109977,
+      "peakCash": 2109977,
       "minimumCash": 35000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.422
     },
     {
       "theme": "parkland",
@@ -183,12 +186,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 4317025,
-      "peakCash": 4317025,
+      "lossWeeks": 26,
+      "finalCash": 1617025,
+      "peakCash": 1617025,
       "minimumCash": 185000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.498
     },
     {
       "theme": "parkland",
@@ -199,12 +202,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3885035,
-      "peakCash": 3885035,
+      "lossWeeks": 4,
+      "finalCash": 3344966,
+      "peakCash": 3344966,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 30,
+      "condition": 0.921
     },
     {
       "theme": "parkland",
@@ -215,12 +218,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3800425,
-      "peakCash": 3800425,
+      "lossWeeks": 46,
+      "finalCash": 1330608,
+      "peakCash": 1356495,
       "minimumCash": 25000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.385
     },
     {
       "theme": "parkland",
@@ -231,12 +234,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3853112,
-      "peakCash": 3853112,
+      "lossWeeks": 8,
+      "finalCash": 1807450,
+      "peakCash": 1807450,
       "minimumCash": 175000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.489
     },
     {
       "theme": "parkland",
@@ -247,12 +250,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3318438,
-      "peakCash": 3318438,
+      "lossWeeks": 10,
+      "finalCash": 2459651,
+      "peakCash": 2472626,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 12,
+      "condition": 0.569
     },
     {
       "theme": "parkland",
@@ -263,12 +266,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3253128,
-      "peakCash": 3253128,
+      "lossWeeks": 35,
+      "finalCash": 1514006,
+      "peakCash": 1514006,
       "minimumCash": 17500,
-      "reputation": 100,
-      "condition": 0.591
+      "reputation": 0,
+      "condition": 0.486
     },
     {
       "theme": "parkland",
@@ -280,11 +283,11 @@
       "bankrupt": false,
       "firstProfitWeek": 2,
       "lossWeeks": 0,
-      "finalCash": 3304070,
-      "peakCash": 3304070,
+      "finalCash": 3048874,
+      "peakCash": 3048874,
       "minimumCash": 167500,
-      "reputation": 100,
-      "condition": 0.612
+      "reputation": 49,
+      "condition": 0.923
     },
     {
       "theme": "parkland",
@@ -295,12 +298,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2716877,
-      "peakCash": 2716877,
+      "lossWeeks": 20,
+      "finalCash": 1481808,
+      "peakCash": 1481808,
       "minimumCash": 15000,
-      "reputation": 85,
-      "condition": 0.755
+      "reputation": 0,
+      "condition": 0.414
     },
     {
       "theme": "parkland",
@@ -311,12 +314,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 8694586,
-      "peakCash": 8694586,
+      "lossWeeks": 8,
+      "finalCash": 6754131,
+      "peakCash": 6754131,
       "minimumCash": 35000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 86,
+      "condition": 0.724
     },
     {
       "theme": "parkland",
@@ -327,12 +330,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 8739357,
-      "peakCash": 8739357,
+      "lossWeeks": 55,
+      "finalCash": 2077363,
+      "peakCash": 2169692,
       "minimumCash": 185000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.365
     },
     {
       "theme": "parkland",
@@ -343,12 +346,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 8014751,
-      "peakCash": 8014751,
+      "lossWeeks": 25,
+      "finalCash": 3206890,
+      "peakCash": 3213578,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.358
     },
     {
       "theme": "parkland",
@@ -359,12 +362,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7790846,
-      "peakCash": 7790846,
+      "lossWeeks": 33,
+      "finalCash": 2667845,
+      "peakCash": 2667845,
       "minimumCash": 25000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.471
     },
     {
       "theme": "parkland",
@@ -375,12 +378,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7757212,
-      "peakCash": 7757212,
+      "lossWeeks": 9,
+      "finalCash": 3881400,
+      "peakCash": 3889137,
       "minimumCash": 175000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.468
     },
     {
       "theme": "parkland",
@@ -391,12 +394,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 6994990,
-      "peakCash": 6994990,
+      "lossWeeks": 24,
+      "finalCash": 2898099,
+      "peakCash": 2920602,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.362
     },
     {
       "theme": "parkland",
@@ -407,12 +410,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 6987767,
-      "peakCash": 6987767,
+      "lossWeeks": 2,
+      "finalCash": 6027188,
+      "peakCash": 6027188,
       "minimumCash": 17500,
       "reputation": 100,
-      "condition": 0.935
+      "condition": 0.785
     },
     {
       "theme": "parkland",
@@ -423,12 +426,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7105645,
-      "peakCash": 7105645,
+      "lossWeeks": 7,
+      "finalCash": 3680410,
+      "peakCash": 3680410,
       "minimumCash": 167500,
-      "reputation": 100,
-      "condition": 0.944
+      "reputation": 0,
+      "condition": 0.465
     },
     {
       "theme": "parkland",
@@ -439,12 +442,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 6120321,
-      "peakCash": 6120321,
-      "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 0.975
+      "lossWeeks": 50,
+      "finalCash": 1671184,
+      "peakCash": 1671184,
+      "minimumCash": 9668,
+      "reputation": 0,
+      "condition": 0.346
     },
     {
       "theme": "links",
@@ -455,12 +458,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3255194,
-      "peakCash": 3255194,
+      "lossWeeks": 20,
+      "finalCash": 1913852,
+      "peakCash": 1915973,
       "minimumCash": 35000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.475
     },
     {
       "theme": "links",
@@ -471,12 +474,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3281085,
-      "peakCash": 3281085,
+      "lossWeeks": 5,
+      "finalCash": 2952432,
+      "peakCash": 2952432,
       "minimumCash": 185000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 80,
+      "condition": 0.505
     },
     {
       "theme": "links",
@@ -487,12 +490,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2900941,
-      "peakCash": 2900941,
+      "lossWeeks": 4,
+      "finalCash": 2596497,
+      "peakCash": 2596497,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 39,
+      "condition": 0.894
     },
     {
       "theme": "links",
@@ -503,12 +506,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2765022,
-      "peakCash": 2765022,
+      "lossWeeks": 26,
+      "finalCash": 1372184,
+      "peakCash": 1372184,
       "minimumCash": 25000,
-      "reputation": 100,
-      "condition": 0.762
+      "reputation": 0,
+      "condition": 0.392
     },
     {
       "theme": "links",
@@ -519,12 +522,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2823752,
-      "peakCash": 2823752,
+      "lossWeeks": 16,
+      "finalCash": 1956205,
+      "peakCash": 1956205,
       "minimumCash": 175000,
-      "reputation": 100,
-      "condition": 0.774
+      "reputation": 9,
+      "condition": 0.5
     },
     {
       "theme": "links",
@@ -535,12 +538,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2337702,
-      "peakCash": 2337702,
+      "lossWeeks": 14,
+      "finalCash": 1200146,
+      "peakCash": 1200146,
       "minimumCash": 15000,
-      "reputation": 95,
-      "condition": 0.815
+      "reputation": 0,
+      "condition": 0.415
     },
     {
       "theme": "links",
@@ -551,12 +554,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2190576,
-      "peakCash": 2190576,
+      "lossWeeks": 20,
+      "finalCash": 1602332,
+      "peakCash": 1602332,
       "minimumCash": 17500,
-      "reputation": 66,
-      "condition": 0.435
+      "reputation": 0,
+      "condition": 0.493
     },
     {
       "theme": "links",
@@ -567,12 +570,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 3,
-      "finalCash": 2256561,
-      "peakCash": 2256561,
+      "lossWeeks": 17,
+      "finalCash": 1207639,
+      "peakCash": 1207639,
       "minimumCash": 167500,
-      "reputation": 73,
-      "condition": 0.417
+      "reputation": 0,
+      "condition": 0.421
     },
     {
       "theme": "links",
@@ -583,12 +586,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 1760604,
-      "peakCash": 1760604,
+      "lossWeeks": 3,
+      "finalCash": 2095327,
+      "peakCash": 2095327,
       "minimumCash": 15000,
-      "reputation": 20,
-      "condition": 0.671
+      "reputation": 35,
+      "condition": 0.845
     },
     {
       "theme": "links",
@@ -599,12 +602,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 4282038,
-      "peakCash": 4282038,
+      "lossWeeks": 51,
+      "finalCash": 1065521,
+      "peakCash": 1076188,
       "minimumCash": 35000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.378
     },
     {
       "theme": "links",
@@ -615,12 +618,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 4288293,
-      "peakCash": 4288293,
+      "lossWeeks": 39,
+      "finalCash": 1277017,
+      "peakCash": 1277017,
       "minimumCash": 185000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.503
     },
     {
       "theme": "links",
@@ -631,12 +634,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3870014,
-      "peakCash": 3870014,
+      "lossWeeks": 12,
+      "finalCash": 2091164,
+      "peakCash": 2091164,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.478
     },
     {
       "theme": "links",
@@ -647,12 +650,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3794380,
-      "peakCash": 3794380,
+      "lossWeeks": 16,
+      "finalCash": 1738880,
+      "peakCash": 1749621,
       "minimumCash": 25000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.449
     },
     {
       "theme": "links",
@@ -663,12 +666,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3804560,
-      "peakCash": 3804560,
+      "lossWeeks": 17,
+      "finalCash": 1595397,
+      "peakCash": 1599147,
       "minimumCash": 175000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.473
     },
     {
       "theme": "links",
@@ -679,12 +682,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3323798,
-      "peakCash": 3323798,
+      "lossWeeks": 16,
+      "finalCash": 2027532,
+      "peakCash": 2027532,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.488
     },
     {
       "theme": "links",
@@ -695,12 +698,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3244340,
-      "peakCash": 3244340,
+      "lossWeeks": 24,
+      "finalCash": 1480125,
+      "peakCash": 1480125,
       "minimumCash": 17500,
-      "reputation": 100,
-      "condition": 0.6
+      "reputation": 0,
+      "condition": 0.488
     },
     {
       "theme": "links",
@@ -712,11 +715,11 @@
       "bankrupt": false,
       "firstProfitWeek": 2,
       "lossWeeks": 0,
-      "finalCash": 3287865,
-      "peakCash": 3287865,
+      "finalCash": 2955882,
+      "peakCash": 2955882,
       "minimumCash": 167500,
-      "reputation": 100,
-      "condition": 0.629
+      "reputation": 43,
+      "condition": 0.945
     },
     {
       "theme": "links",
@@ -727,12 +730,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2730152,
-      "peakCash": 2730152,
+      "lossWeeks": 53,
+      "finalCash": 707232,
+      "peakCash": 707232,
       "minimumCash": 15000,
-      "reputation": 88,
-      "condition": 0.741
+      "reputation": 0,
+      "condition": 0.422
     },
     {
       "theme": "links",
@@ -743,12 +746,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 8693277,
-      "peakCash": 8693277,
+      "lossWeeks": 24,
+      "finalCash": 3658629,
+      "peakCash": 3663044,
       "minimumCash": 35000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.48
     },
     {
       "theme": "links",
@@ -759,12 +762,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 8763664,
-      "peakCash": 8763664,
+      "lossWeeks": 24,
+      "finalCash": 3529103,
+      "peakCash": 3529103,
       "minimumCash": 185000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.464
     },
     {
       "theme": "links",
@@ -775,12 +778,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7991691,
-      "peakCash": 7991691,
+      "lossWeeks": 18,
+      "finalCash": 3525109,
+      "peakCash": 3525109,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.491
     },
     {
       "theme": "links",
@@ -791,12 +794,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7746595,
-      "peakCash": 7746595,
+      "lossWeeks": 42,
+      "finalCash": 2372911,
+      "peakCash": 2372911,
       "minimumCash": 25000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.376
     },
     {
       "theme": "links",
@@ -807,12 +810,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7750979,
-      "peakCash": 7750979,
+      "lossWeeks": 37,
+      "finalCash": 2482109,
+      "peakCash": 2482109,
       "minimumCash": 175000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.488
     },
     {
       "theme": "links",
@@ -823,12 +826,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 6966569,
-      "peakCash": 6966569,
+      "lossWeeks": 18,
+      "finalCash": 4729141,
+      "peakCash": 4729141,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 29,
+      "condition": 0.505
     },
     {
       "theme": "links",
@@ -839,12 +842,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7004844,
-      "peakCash": 7004844,
+      "lossWeeks": 31,
+      "finalCash": 2719959,
+      "peakCash": 2719959,
       "minimumCash": 17500,
-      "reputation": 100,
-      "condition": 0.941
+      "reputation": 0,
+      "condition": 0.404
     },
     {
       "theme": "links",
@@ -855,12 +858,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7071242,
-      "peakCash": 7071242,
+      "lossWeeks": 10,
+      "finalCash": 5691776,
+      "peakCash": 5691776,
       "minimumCash": 167500,
       "reputation": 100,
-      "condition": 0.939
+      "condition": 0.879
     },
     {
       "theme": "links",
@@ -871,12 +874,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 6150735,
-      "peakCash": 6150735,
+      "lossWeeks": 46,
+      "finalCash": 1836549,
+      "peakCash": 1836549,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 0.985
+      "reputation": 0,
+      "condition": 0.387
     },
     {
       "theme": "desert",
@@ -887,12 +890,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3255900,
-      "peakCash": 3255900,
-      "minimumCash": 35000,
-      "reputation": 100,
-      "condition": 1
+      "lossWeeks": 86,
+      "finalCash": 147612,
+      "peakCash": 156135,
+      "minimumCash": 32874,
+      "reputation": 0,
+      "condition": 0.4
     },
     {
       "theme": "desert",
@@ -903,12 +906,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3274420,
-      "peakCash": 3274420,
+      "lossWeeks": 57,
+      "finalCash": 664423,
+      "peakCash": 665313,
       "minimumCash": 185000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.463
     },
     {
       "theme": "desert",
@@ -917,14 +920,14 @@
       "strategy": "poor-management",
       "seed": 285432,
       "weeks": 104,
-      "bankrupt": false,
+      "bankrupt": true,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2885890,
-      "peakCash": 2885890,
-      "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "lossWeeks": 83,
+      "finalCash": 159461,
+      "peakCash": 159461,
+      "minimumCash": -4699,
+      "reputation": 0,
+      "condition": 0.392
     },
     {
       "theme": "desert",
@@ -935,12 +938,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2780470,
-      "peakCash": 2780470,
+      "lossWeeks": 47,
+      "finalCash": 765476,
+      "peakCash": 765476,
       "minimumCash": 25000,
-      "reputation": 100,
-      "condition": 0.745
+      "reputation": 0,
+      "condition": 0.392
     },
     {
       "theme": "desert",
@@ -951,12 +954,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2808259,
-      "peakCash": 2808259,
-      "minimumCash": 175000,
-      "reputation": 100,
-      "condition": 0.791
+      "lossWeeks": 64,
+      "finalCash": 451815,
+      "peakCash": 459327,
+      "minimumCash": 170218,
+      "reputation": 0,
+      "condition": 0.462
     },
     {
       "theme": "desert",
@@ -967,12 +970,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2349972,
-      "peakCash": 2349972,
-      "minimumCash": 15000,
-      "reputation": 93,
-      "condition": 0.802
+      "lossWeeks": 74,
+      "finalCash": 255620,
+      "peakCash": 257760,
+      "minimumCash": 7706,
+      "reputation": 0,
+      "condition": 0.399
     },
     {
       "theme": "desert",
@@ -983,12 +986,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2186427,
-      "peakCash": 2186427,
+      "lossWeeks": 79,
+      "finalCash": 189113,
+      "peakCash": 228622,
       "minimumCash": 17500,
-      "reputation": 67,
-      "condition": 0.441
+      "reputation": 0,
+      "condition": 0.4
     },
     {
       "theme": "desert",
@@ -999,12 +1002,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 3,
-      "finalCash": 2260126,
-      "peakCash": 2260126,
+      "lossWeeks": 41,
+      "finalCash": 752439,
+      "peakCash": 752439,
       "minimumCash": 167500,
-      "reputation": 74,
-      "condition": 0.411
+      "reputation": 0,
+      "condition": 0.399
     },
     {
       "theme": "desert",
@@ -1013,14 +1016,14 @@
       "strategy": "poor-management",
       "seed": 286014,
       "weeks": 104,
-      "bankrupt": false,
+      "bankrupt": true,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 1743346,
-      "peakCash": 1743346,
-      "minimumCash": 15000,
-      "reputation": 20,
-      "condition": 0.697
+      "lossWeeks": 93,
+      "finalCash": -48385,
+      "peakCash": 32908,
+      "minimumCash": -48385,
+      "reputation": 0,
+      "condition": 0.399
     },
     {
       "theme": "desert",
@@ -1031,12 +1034,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 4267766,
-      "peakCash": 4267766,
+      "lossWeeks": 71,
+      "finalCash": 566187,
+      "peakCash": 566187,
       "minimumCash": 35000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.473
     },
     {
       "theme": "desert",
@@ -1047,12 +1050,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 4303313,
-      "peakCash": 4303313,
+      "lossWeeks": 63,
+      "finalCash": 799868,
+      "peakCash": 874098,
       "minimumCash": 185000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.395
     },
     {
       "theme": "desert",
@@ -1063,12 +1066,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3864904,
-      "peakCash": 3864904,
+      "lossWeeks": 79,
+      "finalCash": 330185,
+      "peakCash": 370298,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.395
     },
     {
       "theme": "desert",
@@ -1079,12 +1082,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3784158,
-      "peakCash": 3784158,
+      "lossWeeks": 82,
+      "finalCash": 259848,
+      "peakCash": 275182,
       "minimumCash": 25000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.395
     },
     {
       "theme": "desert",
@@ -1095,12 +1098,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3830114,
-      "peakCash": 3830114,
-      "minimumCash": 175000,
-      "reputation": 100,
-      "condition": 1
+      "lossWeeks": 88,
+      "finalCash": 133939,
+      "peakCash": 258395,
+      "minimumCash": 96227,
+      "reputation": 0,
+      "condition": 0.395
     },
     {
       "theme": "desert",
@@ -1111,12 +1114,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3311271,
-      "peakCash": 3311271,
-      "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 0.999
+      "lossWeeks": 50,
+      "finalCash": 845918,
+      "peakCash": 845918,
+      "minimumCash": 4755,
+      "reputation": 0,
+      "condition": 0.477
     },
     {
       "theme": "desert",
@@ -1127,12 +1130,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3239168,
-      "peakCash": 3239168,
+      "lossWeeks": 60,
+      "finalCash": 597892,
+      "peakCash": 597892,
       "minimumCash": 17500,
-      "reputation": 100,
-      "condition": 0.606
+      "reputation": 0,
+      "condition": 0.485
     },
     {
       "theme": "desert",
@@ -1143,12 +1146,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 3298024,
-      "peakCash": 3298024,
+      "lossWeeks": 70,
+      "finalCash": 435401,
+      "peakCash": 435401,
       "minimumCash": 167500,
-      "reputation": 100,
-      "condition": 0.618
+      "reputation": 0,
+      "condition": 0.388
     },
     {
       "theme": "desert",
@@ -1159,12 +1162,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 2719869,
-      "peakCash": 2719869,
+      "lossWeeks": 59,
+      "finalCash": 581174,
+      "peakCash": 583361,
       "minimumCash": 15000,
-      "reputation": 87,
-      "condition": 0.752
+      "reputation": 0,
+      "condition": 0.395
     },
     {
       "theme": "desert",
@@ -1175,12 +1178,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 8701567,
-      "peakCash": 8701567,
+      "lossWeeks": 96,
+      "finalCash": 220395,
+      "peakCash": 309288,
       "minimumCash": 35000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.384
     },
     {
       "theme": "desert",
@@ -1191,12 +1194,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 8702773,
-      "peakCash": 8702773,
+      "lossWeeks": 78,
+      "finalCash": 968031,
+      "peakCash": 995381,
       "minimumCash": 185000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.385
     },
     {
       "theme": "desert",
@@ -1207,12 +1210,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7992190,
-      "peakCash": 7992190,
+      "lossWeeks": 74,
+      "finalCash": 1058960,
+      "peakCash": 1072603,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.384
     },
     {
       "theme": "desert",
@@ -1221,14 +1224,14 @@
       "strategy": "conservative",
       "seed": 287275,
       "weeks": 104,
-      "bankrupt": false,
+      "bankrupt": true,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7766975,
-      "peakCash": 7766975,
-      "minimumCash": 25000,
-      "reputation": 100,
-      "condition": 1
+      "lossWeeks": 100,
+      "finalCash": 19029,
+      "peakCash": 210717,
+      "minimumCash": -7108,
+      "reputation": 0,
+      "condition": 0.384
     },
     {
       "theme": "desert",
@@ -1239,12 +1242,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7777156,
-      "peakCash": 7777156,
+      "lossWeeks": 39,
+      "finalCash": 2646796,
+      "peakCash": 2646796,
       "minimumCash": 175000,
-      "reputation": 100,
-      "condition": 1
+      "reputation": 0,
+      "condition": 0.434
     },
     {
       "theme": "desert",
@@ -1253,14 +1256,14 @@
       "strategy": "poor-management",
       "seed": 287469,
       "weeks": 104,
-      "bankrupt": false,
+      "bankrupt": true,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 6976105,
-      "peakCash": 6976105,
-      "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 1
+      "lossWeeks": 99,
+      "finalCash": -19163,
+      "peakCash": 66955,
+      "minimumCash": -83289,
+      "reputation": 0,
+      "condition": 0.384
     },
     {
       "theme": "desert",
@@ -1271,12 +1274,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 6990135,
-      "peakCash": 6990135,
+      "lossWeeks": 80,
+      "finalCash": 710729,
+      "peakCash": 750642,
       "minimumCash": 17500,
-      "reputation": 100,
-      "condition": 0.928
+      "reputation": 0,
+      "condition": 0.384
     },
     {
       "theme": "desert",
@@ -1287,12 +1290,12 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 7057967,
-      "peakCash": 7057967,
+      "lossWeeks": 75,
+      "finalCash": 860196,
+      "peakCash": 884066,
       "minimumCash": 167500,
-      "reputation": 100,
-      "condition": 0.943
+      "reputation": 0,
+      "condition": 0.385
     },
     {
       "theme": "desert",
@@ -1303,12 +1306,18 @@
       "weeks": 104,
       "bankrupt": false,
       "firstProfitWeek": 2,
-      "lossWeeks": 0,
-      "finalCash": 6104303,
-      "peakCash": 6104303,
+      "lossWeeks": 71,
+      "finalCash": 928209,
+      "peakCash": 930561,
       "minimumCash": 15000,
-      "reputation": 100,
-      "condition": 0.988
+      "reputation": 0,
+      "condition": 0.428
     }
-  ]
+  ],
+  "canonicalHash": "38b861f9",
+  "legacyProjectionHash": "6dc8d6f2",
+  "performance": {
+    "elapsedMs": 237481,
+    "runtimeBudgetMs": 720000
+  }
 }
