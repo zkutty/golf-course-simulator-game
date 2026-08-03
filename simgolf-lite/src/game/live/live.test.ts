@@ -8,7 +8,10 @@ import {
   createLiveState,
   stepLive,
   avgSatisfactionSoFar,
+  courseCanReceiveLiveArrivals,
+  ensureOpeningDayArrivals,
   roundReactions,
+  shouldHoldUnopenedLiveDay,
   reconcileGolfers,
 } from "./simulation";
 import type { RoundReactions } from "./types";
@@ -61,6 +64,32 @@ function makeTestCourse(): Course {
     yardsPerTile: 10,
     baseGreenFee: 65,
     condition: 0.8,
+  };
+}
+
+function makeTutorialNine(playable = true): Course {
+  const base = makeTestCourse();
+  const holes = Array.from({ length: 9 }, (_, index) => ({
+    id: `hole-${index + 1}`,
+    tee: { x: 4, y: 12 },
+    green: playable || index < 8 ? { x: 50, y: 12 } : null,
+    parMode: "AUTO" as const,
+    name: `Hole ${index + 1}`,
+  }));
+  const holeIds = holes.map((hole) => hole.id);
+  return {
+    ...base,
+    holes,
+    layouts: [{
+      id: "course-primary",
+      name: "Tutorial Nine",
+      draftHoleIds: holeIds,
+      publishedHoleIds: holeIds,
+      roundLength: 9,
+      state: "open",
+      greenFee: base.baseGreenFee,
+    }],
+    activeCourseId: "course-primary",
   };
 }
 
@@ -302,6 +331,59 @@ describe("planDay + volume", () => {
     for (let i = 1; i < arrivals.length; i++) {
       expect(arrivals[i].atMinute).toBeGreaterThanOrEqual(arrivals[i - 1].atMinute);
     }
+  });
+});
+
+describe("opening-day arrival handoff", () => {
+  it("plans a deterministic first group when a real nine-hole course becomes playable", () => {
+    const world: World = { ...DEFAULT_WORLD, runSeed: 702 };
+    const invalid = makeTutorialNine(false);
+    const live = createLiveState(invalid, world, 0);
+
+    expect(live.arrivals).toHaveLength(0);
+    expect(courseCanReceiveLiveArrivals(invalid)).toBe(false);
+    expect(shouldHoldUnopenedLiveDay(live, false)).toBe(true);
+    expect(ensureOpeningDayArrivals(live, invalid, world)).toBe(false);
+
+    const playable = makeTutorialNine(true);
+    expect(courseCanReceiveLiveArrivals(playable)).toBe(true);
+    expect(ensureOpeningDayArrivals(live, playable, world)).toBe(true);
+    expect(shouldHoldUnopenedLiveDay(live, true)).toBe(false);
+    expect(live.arrivals.length).toBeGreaterThan(0);
+    expect(live.arrivals[0].atMinute).toBe(2);
+    expect(live.groups?.length).toBeGreaterThan(0);
+    expect(live.perCourse?.["course-primary"].arrivals).toBe(live.arrivals.length);
+
+    const canonical = live.arrivals.map((arrival) =>
+      `${arrival.atMinute}:${arrival.courseId}:${arrival.groupId}:${arrival.archetype}`
+    );
+    const restoredEmpty = createLiveState(invalid, world, 0);
+    expect(ensureOpeningDayArrivals(restoredEmpty, playable, world)).toBe(true);
+    expect(restoredEmpty.arrivals.map((arrival) =>
+      `${arrival.atMinute}:${arrival.courseId}:${arrival.groupId}:${arrival.archetype}`
+    )).toEqual(canonical);
+
+    stepLive(live, playable, 3);
+    expect(live.golfers.length).toBeGreaterThan(0);
+    expect(shouldHoldUnopenedLiveDay(live, false)).toBe(false);
+    const admitted = live.roundsStarted;
+    expect(ensureOpeningDayArrivals(live, playable, world)).toBe(false);
+    expect(live.roundsStarted).toBe(admitted);
+  });
+
+  it("never creates arrivals for an invalid normal layout", () => {
+    const world: World = { ...DEFAULT_WORLD, runSeed: 702 };
+    const invalid = makeTutorialNine(false);
+    const live = createLiveState(invalid, world, 0);
+
+    expect(live.arrivals).toEqual([]);
+    expect(live.groups).toEqual([]);
+    expect(ensureOpeningDayArrivals(live, invalid, world)).toBe(false);
+
+    const lateOpening = createLiveState(invalid, world, 0);
+    lateOpening.dayMinute = 601;
+    expect(ensureOpeningDayArrivals(lateOpening, makeTutorialNine(true), world)).toBe(false);
+    expect(lateOpening.arrivals).toEqual([]);
   });
 });
 

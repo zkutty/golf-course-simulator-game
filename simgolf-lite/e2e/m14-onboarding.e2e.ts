@@ -323,9 +323,25 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
   }
 
   await capture(page, run, "step-07-before-watch-golfers");
+  // The ninth real authored hole must populate the ordinary live tee sheet;
+  // the tutorial cannot depend on a forced fixture or a synthetic golfer.
+  await expect.poll(
+    () => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.dayMinute ?? -1),
+  ).toBeLessThan(60);
+  await expect.poll(
+    () => page.evaluate(() => {
+      const simulation = JSON.parse(window.render_game_to_text?.() ?? "{}").simulation;
+      return (simulation?.arrivalsRemaining ?? 0) + (simulation?.onCourse ?? 0);
+    }),
+    { timeout: 15_000 },
+  ).toBeGreaterThan(0);
   await page.getByTitle("Speed 1x").click();
   await expect.poll(
     async () => Number((await page.getByTestId("live-stat-on-course").locator("span").first().innerText())),
+    { timeout: 15_000 },
+  ).toBeGreaterThan(0);
+  await expect.poll(
+    () => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.onCourse ?? 0),
     { timeout: 15_000 },
   ).toBeGreaterThan(0);
   await capture(page, run, "step-07-after-golfers-arrive");

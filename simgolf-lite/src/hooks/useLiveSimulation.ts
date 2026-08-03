@@ -3,14 +3,15 @@ import type { Course, CourseOperations, PacePreset, PinRotation, TeeSet, WeekRes
 import { LIVE, type SpeedName } from "../game/live/liveConfig";
 import {
   createLiveState,
+  courseCanReceiveLiveArrivals,
+  ensureOpeningDayArrivals,
   liveRenderData,
   reconcileGolfers,
   roundReactions,
+  shouldHoldUnopenedLiveDay,
   stepLive,
 } from "../game/live/simulation";
 import { commitDay } from "../game/live/commitDay";
-import { isCoursePlayable } from "../game/sim/isCoursePlayable";
-import { planEstateDay } from "../game/live/spawn";
 import type { DayResult, GolferRenderData, LiveState } from "../game/live/types";
 import {
   restoreLiveSimulation,
@@ -286,7 +287,7 @@ export function useLiveSimulation(args: {
   const onAudioRef = useRef(onAudioEvent);
   const onRoundRef = useRef(onRoundCompleted);
   const skipNextReconcileRef = useRef(false);
-  const wasPlayableRef = useRef(isCoursePlayable(course));
+  const courseCanReceiveArrivalsRef = useRef(courseCanReceiveLiveArrivals(course));
 
   const buildRenderData = useCallback((live: LiveState) => {
     renderBufferIndexRef.current = renderBufferIndexRef.current === 0 ? 1 : 0;
@@ -314,29 +315,14 @@ export function useLiveSimulation(args: {
       prev.holes !== course.holes ||
       prev.obstacles !== course.obstacles ||
       prev.buildings !== course.buildings;
+    const live = liveRef.current;
+    courseCanReceiveArrivalsRef.current = courseCanReceiveLiveArrivals(course);
+    if (enabled && live) ensureOpeningDayArrivals(live, course, worldRef.current);
     if (!changed) return;
     geomRef.current = { tiles: course.tiles, holes: course.holes, obstacles: course.obstacles, buildings: course.buildings };
-    if (skipNextReconcileRef.current) {
-      skipNextReconcileRef.current = false;
-      return;
-    }
-    const live = liveRef.current;
-    const playable = isCoursePlayable(course);
-    const becamePlayable = playable && !wasPlayableRef.current;
-    wasPlayableRef.current = playable;
-    if (enabled && live && becamePlayable) {
-      const arrivals = planEstateDay(course, worldRef.current, live.seed);
-      if (arrivals.length > 0) {
-        arrivals[0] = {
-          ...arrivals[0],
-          atMinute: Math.min(arrivals[0].atMinute, live.dayMinute + 2),
-        };
-        arrivals.sort((a, b) => a.atMinute - b.atMinute);
-      }
-      live.arrivals = arrivals;
-      live.nextArrivalIdx = 0;
-      live.nextTeeFreeAt = live.dayMinute;
-    }
+    const skipGolferReconcile = skipNextReconcileRef.current;
+    skipNextReconcileRef.current = false;
+    if (skipGolferReconcile) return;
     if (enabled && live && live.golfers.length > 0) {
       reconcileGolfers(live, course);
       golfersRef.current = buildRenderData(live);
@@ -498,6 +484,14 @@ export function useLiveSimulation(args: {
   }, [flushCash, setCourse, setWorld]);
 
   const advanceSimulation = useCallback((live: LiveState, realMs: number) => {
+    // A fresh course has no operating day to consume yet. Keep the opening
+    // clock at the clubhouse while the player authors a valid layout, even if
+    // their preferred default speed is 1x. Once any round has started, course
+    // edits never freeze or rewind that real day.
+    if (shouldHoldUnopenedLiveDay(live, courseCanReceiveArrivalsRef.current)) {
+      clockRemainderRef.current = 0;
+      return;
+    }
     const clock = consumeClock(realMs, speedRef.current, clockRemainderRef.current);
     clockRemainderRef.current = clock.remainderMinutes;
     if (clock.steps === 0) return;

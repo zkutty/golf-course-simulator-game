@@ -1,5 +1,32 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-702 tutorial opening-day live arrivals — 2026-08-03
+
+- Replaced the transient React `becamePlayable` edge with an idempotent,
+  deterministic opening-day planner. A normal layout now receives no arrivals
+  until it passes the shared course-playability gate; explicit legacy partial
+  layouts retain their existing one-hole compatibility.
+- Held only a pristine, unopened live day at the clubhouse clock while no
+  operating layout is playable. The player's default 1x speed no longer burns
+  through the last-tee cutoff during real tutorial authoring. Once any round
+  has started, later edits cannot freeze, rewind, or refill that day.
+- Direct live/multi-course/tournament coverage passes 58/58. It proves invalid
+  8/9 layouts have zero arrivals/groups, valid and restored openings produce
+  the same canonical tee sheet, the first group enters at +2 game minutes,
+  late openings still respect the 600-minute cutoff, and admitted days do not
+  duplicate arrivals.
+- The real M14 fresh-A flow passed the repaired boundary at 20.95 game minutes
+  with one golfer on course, one round started, and a $65 green fee, then
+  completed all 12 tutorial lessons and graduation. Its fresh normal-play
+  capture was visually inspected before generated captures were restored; it
+  showed a populated, readable course, live HUD, and completed-week celebration.
+- The full M14 terminal sweep found a distinct post-graduation layering defect:
+  the design-dock terrain tabpanel intercepts pointer events intended for the
+  visible live-controls pause-menu button. Test A timed out only after the
+  tutorial, Golfopedia, and advisor checks had passed; B was stopped and the
+  remaining tests were not run so this separate defect can be recorded and
+  routed without expanding ZK-702 silently.
+
 ## ZK-701 normal-path balance closure — 2026-08-03
 
 - Diagnosed the sole normal-path bankruptcy as a condition-driven closure, not

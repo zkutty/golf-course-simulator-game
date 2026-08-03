@@ -34,6 +34,7 @@ import { observeM49Round } from "../m49/experience";
 import { observedM49MobilityEvidence } from "../m49/mobility";
 import { emptyM51LiveMobilityState } from "../m51/mobility";
 import { applyGolferMobilityReaction, reapplyGroupMobility, releaseFinishedMobilityGroups, reserveGroupMobility } from "../m51/operations";
+import { isCoursePlayable } from "../sim/isCoursePlayable";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -48,6 +49,28 @@ function makeRouter(course: Course, cache: Map<string, Point[] | null>) {
   };
 }
 
+function eligibleArrivalViews(course: Course) {
+  return operatingCourseViews(course).filter(({ layout, course: view }) =>
+    layout.legacyPartial === true || isCoursePlayable(view)
+  );
+}
+
+/** True when at least one operating layout may receive a real tee sheet. */
+export function courseCanReceiveLiveArrivals(course: Course): boolean {
+  return eligibleArrivalViews(course).length > 0;
+}
+
+export function shouldHoldUnopenedLiveDay(
+  state: LiveState,
+  canReceiveArrivals: boolean,
+): boolean {
+  return !canReceiveArrivals
+    && state.arrivals.length === 0
+    && state.golfers.length === 0
+    && state.roundsStarted === 0
+    && state.roundsFinished === 0;
+}
+
 export function createLiveState(
   course: Course,
   world: World,
@@ -55,15 +78,26 @@ export function createLiveState(
 ): LiveState {
   const seed = (world.runSeed | 0) + dayIndex * 7919;
   const courseViews = operatingCourseViews(course);
+  // Legacy one-hole fixtures/saves explicitly opt into partial operation. A
+  // normal authored layout must pass the same playability gate used by the
+  // economy and tutorial before it can receive a tee sheet.
+  const arrivalViews = eligibleArrivalViews(course);
   const tournamentEvent = tournamentForDate(world, dayIndex, course);
-  const rawArrivals = tournamentEvent
+  const tournamentCourse = tournamentEvent
+    ? tournamentEvent.courseId
+      ? arrivalViews.find(({ layout }) => layout.id === tournamentEvent.courseId)
+      : arrivalViews[0]
+    : undefined;
+  const rawArrivals = tournamentEvent && tournamentCourse
     ? planTournamentDay(
       tournamentEvent,
       LIVE.day.firstArrivalMinute,
       LIVE.day.teeGapMinutes,
       courseOperations(course, tournamentEvent.courseId).maxGroupSize,
     )
-    : planEstateDay(course, world, seed, courseViews, dayIndex);
+    : tournamentEvent
+      ? []
+      : planEstateDay(course, world, seed, arrivalViews, dayIndex);
   const seasonal = seasonalState(world, course, dayIndex);
   const dailyWeather = activeWeather(world, course, dayIndex);
   const dailyWeatherModifiers = weatherModifiers(dailyWeather, seasonal.operations.drainageLevel);
@@ -145,6 +179,56 @@ export function createLiveState(
     observedRounds: [],
     m51: emptyM51LiveMobilityState(seed),
   };
+}
+
+/**
+ * Populate the tee sheet when an initially unplayable course is opened during
+ * the current day. The predicate is deliberately state-based rather than an
+ * ephemeral React transition: a restored opening-day snapshot with no
+ * arrivals receives the same deterministic handoff, while a day that has
+ * already admitted or completed golfers can never be refilled.
+ */
+export function ensureOpeningDayArrivals(
+  state: LiveState,
+  course: Course,
+  world: World,
+): boolean {
+  const pristineOpeningDay =
+    !state.dayOver
+    && state.arrivals.length === 0
+    && state.nextArrivalIdx === 0
+    && state.golfers.length === 0
+    && state.roundsStarted === 0
+    && state.roundsFinished === 0
+    && state.greenFeeCollected === 0
+    && state.concessionCollected === 0
+    && state.dayMinute <= LIVE.day.lastArrivalMinute;
+  if (!pristineOpeningDay) return false;
+
+  const planned = createLiveState(course, world, state.dayIndex);
+  if (planned.arrivals.length === 0) return false;
+
+  const currentMinute = state.dayMinute;
+  const firstGroupId = planned.arrivals[0]?.groupId;
+  const acceleratedMinute = Math.min(
+    planned.arrivals[0]?.atMinute ?? LIVE.day.firstArrivalMinute,
+    currentMinute + 2,
+  );
+  planned.arrivals = planned.arrivals.map((arrival) =>
+    arrival.groupId === firstGroupId ? { ...arrival, atMinute: acceleratedMinute } : arrival
+  ).sort((a, b) => a.atMinute - b.atMinute || (a.courseId ?? "").localeCompare(b.courseId ?? ""));
+  for (const group of planned.groups ?? []) {
+    if (group.id === firstGroupId) group.bookedAt = acceleratedMinute;
+  }
+
+  // The current state is known to be pristine, so replacing its day-planning
+  // structures cannot discard play. Preserve only the clock already shown to
+  // the player and keep the mutable state object's identity for the rAF loop.
+  Object.assign(state, planned, {
+    dayMinute: currentMinute,
+    nextTeeFreeAt: currentMinute,
+  });
+  return true;
 }
 
 // Turn a finished golfer's observed round into a discrete reaction. Kept here
