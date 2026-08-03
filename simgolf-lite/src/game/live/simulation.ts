@@ -65,6 +65,11 @@ export function shouldHoldUnopenedLiveDay(
   canReceiveArrivals: boolean,
 ): boolean {
   return !canReceiveArrivals
+    // This is an opening-day guard, not an all-day freeze. Once the final tee
+    // window has passed, an empty day must be allowed to close and settle.
+    // That also preserves authoritative week closure for restored/synthetic
+    // late-day states that contain no arrivals.
+    && state.dayMinute <= LIVE.day.lastArrivalMinute
     && state.arrivals.length === 0
     && state.golfers.length === 0
     && state.roundsStarted === 0

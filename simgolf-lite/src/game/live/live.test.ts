@@ -26,6 +26,7 @@ import { mulberry32 } from "../../utils/rng";
 import type { Golfer } from "./types";
 import { normalizeOperations, PACE_PRESETS, staffFromLevel } from "./pace";
 import { activeWeather, charterBenefits, seasonalState, weatherModifiers } from "../seasons/seasons";
+import { LIVE } from "./liveConfig";
 
 // A neutral, middling personality for tests that don't care about spread.
 function testPersonality(over: Partial<Personality> = {}): Personality {
@@ -384,6 +385,15 @@ describe("opening-day arrival handoff", () => {
     lateOpening.dayMinute = 601;
     expect(ensureOpeningDayArrivals(lateOpening, makeTutorialNine(true), world)).toBe(false);
     expect(lateOpening.arrivals).toEqual([]);
+  });
+
+  it("does not hold an unopened invalid layout past the final tee window", () => {
+    const live = createLiveState(makeTutorialNine(false), { ...DEFAULT_WORLD, runSeed: 702 }, 0);
+    live.dayMinute = LIVE.day.closeMinute;
+
+    expect(shouldHoldUnopenedLiveDay(live, false)).toBe(false);
+    stepLive(live, makeTutorialNine(false), 1);
+    expect(live.dayOver).toBe(true);
   });
 });
 

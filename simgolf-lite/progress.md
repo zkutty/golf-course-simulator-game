@@ -1697,3 +1697,15 @@ classic course-builder references.
   same four bounded advances at normal speed. Its inspector, responsive,
   pseudo-localization, and console assertions are unchanged, and the complete
   Chrome/Firefox/WebKit release matrix passes 6/6.
+
+## ZK-710 Sunday week-close integration — 2026-08-03
+
+- The opening-day arrival guard was holding an invalid layout indefinitely,
+  including an empty Sunday state after the final tee window. The live clock
+  therefore never reached the authoritative `finishDay` path or its weekly
+  report.
+- The guard now applies only through the final tee window. An otherwise empty
+  late day can settle, while a genuine unopened authoring day remains held at
+  the clubhouse. Live unit coverage passes 33/33; the focused Sunday browser
+  case and the full ten-test golden browser suite both pass. The week-close
+  dialog capture was visually inspected.
