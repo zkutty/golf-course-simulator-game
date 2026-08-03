@@ -345,6 +345,15 @@ export function loadedBiomeBundle(theme: LandTheme, quality: AtlasQuality): bool
   return loadedBiomeBundles.has(`${theme}:${quality}`);
 }
 
+/**
+ * The bundle currently selected by the renderer. This is deliberately
+ * distinct from residency: several biome/quality bundles may be cached, but
+ * exactly one may supply frames to the live scene.
+ */
+export function activeBiomeBundle(): string | null {
+  return activeBundleKey;
+}
+
 /** True only when that optional overlay exists and finished loading. */
 export function loadedSeasonalOverlay(
   theme: LandTheme,

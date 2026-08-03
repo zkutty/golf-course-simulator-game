@@ -34,6 +34,7 @@ import {
   resolveGraphicsQuality,
   type ResolvedGraphicsQuality,
 } from "./game/render/graphicsQuality";
+import { activeBiomeBundle } from "./render/atlas";
 import {
   m35TelemetrySnapshot,
   recordM35Metric,
@@ -370,6 +371,16 @@ export default function App() {
   const [flow, flowDispatch] = useReducer(reduceScreenFlow, INITIAL_SCREEN_FLOW);
   const [showVision, setShowVision] = useState(() => new URLSearchParams(window.location.search).get("view") === "vision");
   const [appProfile, setAppProfile] = useState<AppProfile>(() => loadAppProfile());
+  // M53 screenshots are evidence for an explicit renderer tier, not a
+  // request to change the player's persisted preference. Keep the fixture
+  // contract at runtime so profile-change reconciliation, camera state
+  // updates, and a remounted Pixi stage cannot replace it later.
+  const fixtureGraphicsQuality = useMemo<ResolvedGraphicsQuality | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("m53Fixture") === "1"
+      ? m53SeasonalTerrainFixture(params).quality
+      : null;
+  }, []);
   const [pendingLoadingContext, setPendingLoadingContext] = useState<LoadingBiomeContext | null>(null);
   const screen = flow.base === "title" ? "menu" : flow.base === "setup-wizard" ? "setup" : flow.base === "in-game" ? "game" : "loading";
   const audioSurface = audioSurfaceFor({ screen, showVision });
@@ -707,20 +718,21 @@ export default function App() {
     new AdaptiveGraphicsQualityController(startupGraphicsQuality),
   );
   useEffect(() => {
-    if (appProfile.graphics.quality !== "auto") return;
+    if (fixtureGraphicsQuality || appProfile.graphics.quality !== "auto") return;
     adaptiveGraphicsRef.current.reset(startupGraphicsQuality);
     setAutoGraphicsQuality(startupGraphicsQuality);
-  }, [appProfile.graphics.quality, startupGraphicsQuality]);
-  const resolvedGraphicsQuality: ResolvedGraphicsQuality = safeMode
-    ? "low"
-    : appProfile.graphics.quality === "auto"
-      ? autoGraphicsQuality
-      : appProfile.graphics.quality;
+  }, [appProfile.graphics.quality, fixtureGraphicsQuality, startupGraphicsQuality]);
+  const resolvedGraphicsQuality: ResolvedGraphicsQuality = fixtureGraphicsQuality
+    ?? (safeMode
+      ? "low"
+      : appProfile.graphics.quality === "auto"
+        ? autoGraphicsQuality
+        : appProfile.graphics.quality);
   const handleGraphicsFrame = useCallback((frameMs: number) => {
-    if (appProfile.graphics.quality !== "auto") return;
+    if (fixtureGraphicsQuality || appProfile.graphics.quality !== "auto") return;
     const decision = adaptiveGraphicsRef.current.pushFrame(frameMs);
     if (decision.changed) setAutoGraphicsQuality(decision.quality);
-  }, [appProfile.graphics.quality]);
+  }, [appProfile.graphics.quality, fixtureGraphicsQuality]);
   const effectiveResolutionScale = appProfile.graphics.resolutionScale *
     qualityResolutionMultiplier(resolvedGraphicsQuality);
   const [showShotPlan, setShowShotPlan] = useState(true);
@@ -1934,9 +1946,6 @@ export default function App() {
       ...current,
       tutorialOffered: true,
       tutorialCompleted: true,
-      ...(m53Fixture ? {
-        graphics: { ...current.graphics, quality: m53Fixture.quality },
-      } : {}),
     }));
     setTutorialProgress(null);
     setShowTutorialOffer(false);
@@ -3034,7 +3043,16 @@ export default function App() {
           shapedTiles: course.greenSurface?.tiles.length ?? 0,
         },
       },
-      graphics: { quality: appProfile.graphics.quality, resolvedQuality: resolvedGraphicsQuality, animations: effectiveAnimations, waterAnimation: effectiveAnimations && appProfile.graphics.waterAnimation, treeSway: effectiveAnimations && appProfile.graphics.treeSway },
+      graphics: {
+        quality: fixtureGraphicsQuality ?? appProfile.graphics.quality,
+        resolvedQuality: resolvedGraphicsQuality,
+        rendererQuality: resolvedGraphicsQuality,
+        atlasBundle: activeBiomeBundle(),
+        atlasQuality: activeBiomeBundle()?.split(":", 2)[1] ?? null,
+        animations: effectiveAnimations,
+        waterAnimation: effectiveAnimations && appProfile.graphics.waterAnimation,
+        treeSway: effectiveAnimations && appProfile.graphics.treeSway,
+      },
       retention: { photoMode, recordsOpen: showRetention, achievementsEarned: appProfile.achievements.earned.length, totalRounds: records.totalRounds, aces: records.aces.length, tickerVisible: appProfile.gameplay.tickerVisible },
       tournament: {
         panelOpen: showTournaments,
@@ -3070,7 +3088,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
