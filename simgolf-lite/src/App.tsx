@@ -876,6 +876,11 @@ export default function App() {
   );
   const activePlayerRound = playerPro.activeRound;
   const playerRoundLocksEditing = !!activePlayerRound && activePlayerRound.phase !== "round_complete" && activePlayerRound.phase !== "conceded";
+  const designDockVisible = workspace === "design"
+    && (editorMode === "PAINT" || editorMode === "OBSTACLE" || editorMode === "DECOR")
+    && holeEditMode !== "hole"
+    && !photoMode
+    && !playerRoundLocksEditing;
 
   useEffect(() => {
     if (world.playerPro) return;
@@ -1998,7 +2003,9 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
-      const typing = target?.matches("input, textarea, select, [contenteditable='true']") ?? false;
+      const editingOrControl = target?.matches(
+        "input, textarea, select, button, a[href], [role='button'], [contenteditable='true']",
+      ) ?? false;
       if (event.key === "Escape") {
         if (flow.modal) {
           event.preventDefault();
@@ -2014,7 +2021,7 @@ export default function App() {
         }
         return;
       }
-      if (typing || flow.modal || flow.paused || flow.base !== "in-game") return;
+      if (editingOrControl || flow.modal || flow.paused || flow.base !== "in-game") return;
       const bindings = appProfile.accessibility.keybindings;
       if (eventMatchesBinding(event, bindings.pause)) {
         event.preventDefault();
@@ -3008,7 +3015,7 @@ export default function App() {
         mode: editorMode,
         terrainTool,
         selectedTerrain: selected,
-        designDockVisible: workspace === "design" && !photoMode && !playerRoundLocksEditing,
+        designDockVisible,
         selectedDesignItem: selectedDesignItemId,
         selectedPlantId,
         selectedDecoration: decorationKind,
@@ -3061,7 +3068,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, flow.base, flow.modal, flow.paused, followSelected, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -4836,6 +4843,18 @@ export default function App() {
     }
   }
 
+  function resumeDesignEditing() {
+    const selectedItem = [
+      ...designCatalog.terrain,
+      ...designCatalog.nature,
+      ...designCatalog.decor,
+    ].find((item) => item.id === selectedDesignItemId);
+    if (selectedItem?.obstacleType) setEditorMode("OBSTACLE");
+    else if (selectedItem?.decorationKind) setEditorMode("DECOR");
+    else setEditorMode("PAINT");
+    setPaintError(null);
+  }
+
   if (screen === "setup") {
     return (
       <DeferredSurface label={t("deferredSurface.newGameSetup")}>
@@ -5137,10 +5156,7 @@ export default function App() {
                 disabled={{ courses: playerRoundLocksEditing, land: playerRoundLocksEditing }}
               />
             )}
-            {workspace === "design"
-              && !photoMode
-              && !playerRoundLocksEditing
-              && (
+            {designDockVisible && (
                 <DesignDock
                   theme={course.theme ?? BIOME_KEYS[0]}
                   quality={resolvedGraphicsQuality}
@@ -5518,7 +5534,7 @@ export default function App() {
         }))}
         editorMode={editorMode}
         setEditorMode={setEditorMode}
-        onEnterDesignMode={() => activateTerrainEditing()}
+        onEnterDesignMode={resumeDesignEditing}
         startWizard={startWizard}
         startPlaceTee={startPlaceTee}
         startPlaceGreen={startPlaceGreen}

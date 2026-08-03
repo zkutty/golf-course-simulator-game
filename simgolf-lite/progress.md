@@ -1,5 +1,32 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-695 responsive Design dock — 2026-08-03
+
+- Replaced the fixed, always-expanded course overlay with a safe collapsed
+  Design affordance. Expansion is explicit and keyboard/touch reachable; the
+  expanded desktop panel reserves the minimap edge and measures the live bar,
+  while compact layouts use a bounded scrollable drawer that temporarily
+  replaces the minimap/live layer until closed.
+- The dock now leaves the interaction tree in Hole Wizard, Sculpt, Shops, the
+  per-hole inspector, Operate, Legacy, photo mode, and Player Pro editing lock.
+  Returning to Design restores the selected catalog item, terrain tool, and
+  decoration state instead of resetting to Fairway. Global game shortcuts no
+  longer consume Space while a real button/link owns keyboard focus.
+- Focused evidence passes: Design catalog 7/7; TypeScript; scoped lint with
+  zero errors; desktop and 390x844 real-touch Playwright 2/2; visually inspected
+  expanded captures; and the real M14 two-cycle authoring test 1/1 in 3.9m.
+  Both added holes validate, and the former Hole Wizard canvas interception is
+  gone.
+- Full tutorial A passes in 8.9m. Both post-graduation pause/options/resume
+  cycles complete, including the original blocked pause click in 4.0s.
+- The broader M14 sweep found a distinct reload-camera blocker in tutorial B:
+  the final resumed hole changes only camera `viewMode` from COZY to ARCHITECT
+  because reload restores COZY and the ninth-hole reconciler explicitly forces
+  ARCHITECT. B failed at the camera equality contract after 9.1m; the next case
+  was stopped and four were not run. Record and fix that issue separately,
+  then rerun B plus the remaining skip/Golfopedia/tooltips/Escape/responsive
+  cases. Do not weaken the camera assertion.
+
 ## ZK-702 tutorial opening-day live arrivals — 2026-08-03
 
 - Replaced the transient React `becamePlayable` edge with an idempotent,

@@ -299,6 +299,11 @@ describe("registry-driven Design dock catalog", () => {
       />,
     );
     expect(html).toContain('aria-label="Course design dock"');
+    expect(html).toContain('data-collapsed="true"');
+    expect(html).toContain('aria-label="Expand design dock"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('aria-controls="design-dock-content"');
+    expect(html).toContain('id="design-dock-content" class="cc-design-dock__body" hidden=""');
     expect(html).toContain('data-tutorial-target="terrain-palette"');
     expect(html).toContain('role="listbox"');
     expect(html).toContain('id="design-tab-terrain"');
@@ -313,6 +318,6 @@ describe("registry-driven Design dock catalog", () => {
     expect(html).toContain('aria-label="Selected design material details"');
     expect(html).toContain("Weekly care");
     expect(html).toContain("Current-season risk");
-    expect(html).toContain("Terrain brush width");
+    expect(html).not.toContain("Terrain brush width");
   });
 });

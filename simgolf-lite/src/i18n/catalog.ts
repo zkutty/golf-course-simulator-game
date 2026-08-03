@@ -290,6 +290,8 @@ export const en = {
   "greenSculpt.previewClipped": "{count} off-green points clipped",
   "greenSculpt.previewRelease": "Release to apply as one undoable edit.",
   "designDock.aria": "Course design dock",
+  "designDock.collapse": "Collapse design dock",
+  "designDock.expand": "Expand design dock",
   "designDock.toolbarAria": "Surface authoring toolbar",
   "designDock.toolsAria": "Curve and area tools",
   "designDock.width": "Width",

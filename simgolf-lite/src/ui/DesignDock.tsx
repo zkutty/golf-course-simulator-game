@@ -282,6 +282,7 @@ export function DesignDock(props: DesignDockProps) {
     props.catalog[category].some((item) => item.id === props.selectedItemId)
   ) ?? "terrain";
   const [category, setCategory] = useState<DesignCategory>(selectedCategory);
+  const [collapsed, setCollapsed] = useState(true);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [focusedItemIds, setFocusedItemIds] = useState<
     Partial<Record<DesignCategory, string>>
@@ -416,6 +417,7 @@ export function DesignDock(props: DesignDockProps) {
       aria-label={t("designDock.aria")}
       data-testid="design-dock"
       data-category={category}
+      data-collapsed={collapsed}
       data-tutorial-target="terrain-palette"
       {...(props.biomeContext
         ? biomeContextAttributes(props.biomeContext, "design-dock")
@@ -424,46 +426,60 @@ export function DesignDock(props: DesignDockProps) {
       <div className="cc-design-dock__shell">
         <div className="cc-design-toolbar" aria-label={t("designDock.toolbarAria")}>
           <strong>{t("workspace.design")}</strong>
-          <div className="cc-design-toolbar__tools" role="group" aria-label={t("designDock.toolsAria")}>
-            {(["curve", "spline", "area", "edit"] as const).map((tool) => (
-              <button
-                key={tool}
-                type="button"
-                data-testid={`design-tool-${tool}`}
-                aria-pressed={props.terrainTool === tool}
-                onClick={() => props.onTerrainTool(tool)}
-              >
-                {tool === "curve"
-                  ? t("terrainEdit.curve")
-                  : tool === "spline"
-                    ? t("terrainEdit.spline")
-                    : tool === "area"
-                      ? t("terrainEdit.area")
-                      : t("terrainEdit.edit")}
-              </button>
-            ))}
-          </div>
-          <label className="cc-design-toolbar__width">
-            <span>{t("designDock.width")}</span>
-            <input
-              aria-label={t("designDock.widthAria")}
-              type="range"
-              min={1}
-              max={12}
-              step={1}
-              value={props.terrainBrushWidth}
-              disabled={props.terrainTool === "area" || props.terrainTool === "edit"}
-              onChange={(event) => props.onTerrainBrushWidth(Number(event.target.value))}
-            />
-            <output>{props.terrainBrushWidth}</output>
-          </label>
-          <div className="cc-design-toolbar__history" role="group" aria-label={t("designDock.historyAria")}>
-            <button type="button" aria-label={t("terrainEdit.undo")} onClick={props.onUndo}>↶</button>
-            <button type="button" aria-label={t("terrainEdit.redo")} onClick={props.onRedo}>↷</button>
-          </div>
+          {!collapsed && (
+            <>
+              <div className="cc-design-toolbar__tools" role="group" aria-label={t("designDock.toolsAria")}>
+                {(["curve", "spline", "area", "edit"] as const).map((tool) => (
+                  <button
+                    key={tool}
+                    type="button"
+                    data-testid={`design-tool-${tool}`}
+                    aria-pressed={props.terrainTool === tool}
+                    onClick={() => props.onTerrainTool(tool)}
+                  >
+                    {tool === "curve"
+                      ? t("terrainEdit.curve")
+                      : tool === "spline"
+                        ? t("terrainEdit.spline")
+                        : tool === "area"
+                          ? t("terrainEdit.area")
+                          : t("terrainEdit.edit")}
+                  </button>
+                ))}
+              </div>
+              <label className="cc-design-toolbar__width">
+                <span>{t("designDock.width")}</span>
+                <input
+                  aria-label={t("designDock.widthAria")}
+                  type="range"
+                  min={1}
+                  max={12}
+                  step={1}
+                  value={props.terrainBrushWidth}
+                  disabled={props.terrainTool === "area" || props.terrainTool === "edit"}
+                  onChange={(event) => props.onTerrainBrushWidth(Number(event.target.value))}
+                />
+                <output>{props.terrainBrushWidth}</output>
+              </label>
+              <div className="cc-design-toolbar__history" role="group" aria-label={t("designDock.historyAria")}>
+                <button type="button" aria-label={t("terrainEdit.undo")} onClick={props.onUndo}>↶</button>
+                <button type="button" aria-label={t("terrainEdit.redo")} onClick={props.onRedo}>↷</button>
+              </div>
+            </>
+          )}
+          <button
+            type="button"
+            className="cc-design-toolbar__collapse"
+            aria-label={t(collapsed ? "designDock.expand" : "designDock.collapse")}
+            aria-expanded={!collapsed}
+            aria-controls="design-dock-content"
+            onClick={() => setCollapsed((value) => !value)}
+          >
+            <span aria-hidden="true">{collapsed ? "+" : "−"}</span>
+          </button>
         </div>
 
-        <div className="cc-design-dock__body">
+        <div id="design-dock-content" className="cc-design-dock__body" hidden={collapsed}>
           <div className="cc-design-categories" role="tablist" aria-label={t("designDock.categoriesAria")}>
             {DESIGN_CATEGORIES.map((nextCategory) => (
               <button

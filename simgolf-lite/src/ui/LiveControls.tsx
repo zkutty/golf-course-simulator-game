@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { LIVE, type SpeedName } from "../game/live/liveConfig";
 import { formatCurrency, formatDayLabel, formatWeekLabel } from "../i18n/format";
 import type { LiveStatus } from "../hooks/useLiveSimulation";
@@ -34,9 +35,30 @@ export function LiveControls(props: {
 }) {
   const { status, speed, onSetSpeed, cash, reputation } = props;
   const last = status.lastDay;
+  const controlsRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const controls = controlsRef.current;
+    const coursePane = controls?.closest<HTMLElement>(".cc-course-pane");
+    if (!controls || !coursePane) return;
+    const publishClearance = () => {
+      coursePane.style.setProperty(
+        "--cc-live-controls-clearance",
+        `${Math.ceil(controls.getBoundingClientRect().height) + 30}px`,
+      );
+    };
+    publishClearance();
+    const observer = new ResizeObserver(publishClearance);
+    observer.observe(controls);
+    return () => {
+      observer.disconnect();
+      coursePane.style.removeProperty("--cc-live-controls-clearance");
+    };
+  }, []);
 
   return (
     <div
+      ref={controlsRef}
       className="cc-live-controls"
       data-tutorial-target="speed-controls"
       style={{
