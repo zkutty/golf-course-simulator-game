@@ -100,7 +100,11 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     id: "open-course",
     eyebrowKey: "tutorial.lesson6.eyebrow", titleKey: "tutorial.lesson6.title", bodyKey: "tutorial.lesson6.body",
     target: "hole-wizard",
-    allowedTargets: ["hole-wizard", "course", "terrain-palette"],
+    // Completing a hole returns the wizard to its next empty slot. The player
+    // must be able to use Design to resume terrain authoring before building
+    // that next hole, so keep the editor-mode controls outside the tutorial
+    // mask as well as the wizard and course surface.
+    allowedTargets: ["hole-wizard", "editor-tools", "course", "terrain-palette"],
     expression: "pleased",
     canAdvance: ({ course }) => isCoursePlayable(course),
   },

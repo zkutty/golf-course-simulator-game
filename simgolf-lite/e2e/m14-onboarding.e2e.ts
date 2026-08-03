@@ -6,8 +6,6 @@ const evidenceDir = path.join(process.cwd(), "artifacts", "zk-211", "playwright"
 mkdirSync(evidenceDir, { recursive: true });
 test.setTimeout(900_000);
 
-const tee = { x: 580, y: 370 };
-const green = { x: 640, y: 400 };
 type SurfaceLayout = ReturnType<NonNullable<Window["__coursecraftTest"]>["terrainSurfaceState"]>;
 
 function remainingHoleRoutes(surface: SurfaceLayout) {
@@ -47,7 +45,10 @@ function remainingHoleRoutes(surface: SurfaceLayout) {
     };
     return distance(a) - distance(b) || a[0].y - b[0].y || a[0].x - b[0].x;
   });
-  return candidates;
+  const occupied = surface.holes.flatMap((hole) => [hole.tee, hole.green].filter(Boolean));
+  return candidates.filter((route) => !route.some((point) => (
+    occupied.some((marker) => marker!.x === point.x && marker!.y === point.y)
+  )));
 }
 
 function tutorial(page: Page) {
@@ -131,7 +132,7 @@ async function clickTile(
   point: { x: number; y: number },
 ) {
   const position = await projectedTilePosition(page, canvas, point);
-  await canvas.click({ position: position.canvas, force: true });
+  await canvas.click({ position: position.canvas });
 }
 
 async function dragTiles(
@@ -201,22 +202,17 @@ async function visibleHoleRoutes(
 
 async function placeHole(
   page: Page,
-  start: { x: number; y: number } | null = null,
-  end: { x: number; y: number } | null = null,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
 ) {
   const canvas = await gameCanvas(page);
   const cameraBeforePlacement = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").camera);
-  if (start && end) {
-    await clickTile(page, canvas, start);
-    // Placing the tee changes the wizard step and can resize/remount the
-    // canvas when the tutorial panel advances. Wait for that UI transition
-    // before projecting the green against the current renderer viewport.
-    await expect(page.getByText("Click to place green", { exact: true })).toBeVisible();
-    await clickTile(page, canvas, end);
-  } else {
-    await canvas.click({ position: tee, force: true });
-    await canvas.click({ position: green, force: true });
-  }
+  await clickTile(page, canvas, start);
+  // Placing the tee changes the wizard step and can resize/remount the
+  // canvas when the tutorial panel advances. Wait for that UI transition
+  // before projecting the green against the current renderer viewport.
+  await expect(page.getByText("Click to place green", { exact: true })).toBeVisible();
+  await clickTile(page, await gameCanvas(page), end);
   // Completing a wizard hole must not start a delayed flyover or replace the
   // player's current framing. This helper is used repeatedly through the
   // tutorial's multi-hole path.
@@ -231,7 +227,10 @@ async function paintAndPlaceHole(page: Page, start: { x: number; y: number }, en
   // tutorial advances through repeated hole placements.
   await waitForPixiTest(page);
   await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
-  await page.getByRole("button", { name: "Paint", exact: true }).click();
+  // The tutorial explicitly leaves this real control interactive after every
+  // completed hole. Do not use a forced click or test-only state mutation:
+  // this proves the mask permits the authoring loop to continue.
+  await page.locator('[data-tutorial-target="editor-tools"]').getByRole("button", { name: "Design", exact: true }).click();
   const canvas = await gameCanvas(page);
   await dragTiles(page, canvas, start, end);
   await page.getByRole("button", { name: "Hole Wizard" }).click();
@@ -253,7 +252,10 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
 
   await capture(page, run, "step-02-before-paint-corridor");
   const canvas = await gameCanvas(page);
-  await dragCanvas(page, canvas, tee, green);
+  const initialSurface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
+  const [initialRoute] = await visibleHoleRoutes(page, canvas, initialSurface);
+  if (!initialRoute) throw new Error("Expected a reachable opening tutorial route");
+  await dragTiles(page, canvas, initialRoute[0], initialRoute[1]);
   await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
   await capture(page, run, "step-02-after-paint-corridor");
   await page.getByRole("button", { name: "Continue" }).click();
@@ -269,7 +271,7 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
 
   await capture(page, run, "step-03-before-place-hole");
   await page.getByRole("button", { name: "Hole Wizard" }).click();
-  await placeHole(page);
+  await placeHole(page, initialRoute[0], initialRoute[1]);
   await expect(page.getByRole("button", { name: "Continue" })).toBeEnabled();
   await capture(page, run, "step-03-after-place-hole");
   await page.getByRole("button", { name: "Continue" }).click();
@@ -379,6 +381,40 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
   await capture(page, run, "step-12-after-normal-play");
 }
 
+test("open-course keeps Design reachable through two real hole-wizard cycles", async ({ page }) => {
+  await startFreshTutorial(page, "design-loop");
+  await page.getByRole("button", { name: "Show me the tools" }).click();
+  await expectStep(page, "paint-corridor");
+
+  const canvas = await gameCanvas(page);
+  const initialSurface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
+  const [initialRoute] = await visibleHoleRoutes(page, canvas, initialSurface);
+  if (!initialRoute) throw new Error("Expected a reachable opening tutorial route");
+  await dragTiles(page, canvas, initialRoute[0], initialRoute[1]);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expectStep(page, "place-hole");
+  await page.getByRole("button", { name: "Hole Wizard" }).click();
+  await placeHole(page, initialRoute[0], initialRoute[1]);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expectStep(page, "shot-plan");
+  await page.getByRole("button", { name: "I see it" }).click();
+  await expectStep(page, "fix-corridor");
+  await page.getByLabel("Show fix overlay").check();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expectStep(page, "open-course");
+
+  const surface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
+  const routes = await visibleHoleRoutes(page, await gameCanvas(page), surface);
+  for (const [offset, route] of routes.slice(0, 2).entries()) {
+    const design = page.locator('[data-tutorial-target="editor-tools"]').getByRole("button", { name: "Design", exact: true });
+    await expect(design).toBeVisible();
+    await paintAndPlaceHole(page, route[0], route[1]);
+    await expect.poll(
+      () => page.evaluate((index) => window.__coursecraftTest!.terrainSurfaceState().holes[index].valid, offset + 1),
+    ).toBe(true);
+  }
+});
+
 test("complete fresh-state tutorial playthrough A", async ({ page }) => {
   await finishTutorial(page, "fresh-a");
   const advisor = page.getByTestId("advisor-card");
@@ -455,14 +491,14 @@ test("initial and mid-tutorial skip paths remain playable", async ({ page }) => 
   await page.getByRole("button", { name: /Quick Start/ }).click();
   await page.getByRole("button", { name: "Skip tutorial" }).click();
   await expect(page.getByRole("dialog", { name: "First-launch tutorial" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Paint" })).toBeEnabled();
+  await expect(page.locator('[data-tutorial-target="editor-tools"]').getByRole("button", { name: "Design", exact: true })).toBeEnabled();
 
   await page.getByRole("button", { name: "Tutorial" }).click();
   await page.getByRole("button", { name: "Show me the tools" }).click();
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Skip tutorial" }).click();
   await expect(tutorial(page)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Paint" })).toBeEnabled();
+  await expect(page.locator('[data-tutorial-target="editor-tools"]').getByRole("button", { name: "Design", exact: true })).toBeEnabled();
 });
 
 test("Golfopedia global entry, keyboard close, and every data-driven entry", async ({ page }) => {

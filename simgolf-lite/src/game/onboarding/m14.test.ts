@@ -32,6 +32,11 @@ describe("M14 onboarding data", () => {
     expect(TUTORIAL_STEPS.at(-1)?.id).toBe("graduation");
   });
 
+  it("keeps Design reachable while the open-course lesson awaits another hole", () => {
+    const openCourse = TUTORIAL_STEPS.find((step) => step.id === "open-course")!;
+    expect(openCourse.allowedTargets).toContain("editor-tools");
+  });
+
   it("captures a run baseline and accepts threshold-based painting", () => {
     const progress = createTutorialProgress(DEFAULT_COURSE, DEFAULT_WORLD);
     const course = { ...DEFAULT_COURSE, tiles: [...DEFAULT_COURSE.tiles] };
