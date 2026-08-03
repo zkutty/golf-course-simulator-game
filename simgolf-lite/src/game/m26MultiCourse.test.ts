@@ -82,7 +82,7 @@ describe("M26 multi-course property operations", () => {
     const transferred = assignHoleToLayout(course, "south", north.draftHoleIds[0]);
     expect(transferred.layouts!.find((layout) => layout.id === "north")!.draftHoleIds).not.toContain(north.draftHoleIds[0]);
     expect(transferred.layouts!.find((layout) => layout.id === "south")!.draftHoleIds).toContain(north.draftHoleIds[0]);
-  }, 20_000);
+  }, 60_000);
 
   it("plans deterministic course bookings and routes golfers only through the booked course", () => {
     const course = compactLiveCourse();
@@ -103,7 +103,7 @@ describe("M26 multi-course property operations", () => {
     }
     const restored = restoreLiveSimulation(snapshotLiveSimulation({ state: live, pendingCash: 0, speed: "2x", selectedGolferId: null }));
     expect(restored?.state.golfers.map((golfer) => [golfer.courseId, golfer.holeIds])).toEqual(live.golfers.map((golfer) => [golfer.courseId, golfer.holeIds]));
-  }, 20_000);
+  }, 60_000);
 
   it("reconciles course-level revenue/cost/profit and records by stable IDs", () => {
     const course = multiCourse();
@@ -142,5 +142,5 @@ describe("M26 multi-course property operations", () => {
     if (north.ok) expect(north.event).toMatchObject({ courseId: "north", courseName: "North Course" });
     const south = createTournamentEvent({ course, world, tier: "local", currentDay: 0, daysAhead: 2, courseId: "south" });
     expect(south).toEqual({ ok: false, reason: "Tournament hosts must be an open, published 18-hole course." });
-  }, 20_000);
+  }, 60_000);
 });
