@@ -59,6 +59,9 @@ export interface ArchitectureReviewData {
   returnToDesign: ReturnToDesignContext | null;
 }
 
+/** Cold release-estate CPU budget; warm reviews return from the strategic cache. */
+export const ARCHITECTURE_REVIEW_INTERACTIVE_BUDGET_MS = 750 as const;
+
 const HAZARDS = new Set<Terrain>(["sand", "waste_area", "water", "wetland", "deep_rough"]);
 const GREEN_STRATEGY_KINDS = new Set<ArchitectureOverlayKind>([
   "green-preferred", "green-putts", "green-leaves", "green-misses", "green-rollout", "green-risk",

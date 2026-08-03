@@ -719,6 +719,8 @@ export function generateStrategicHolePlan(args: {
   snapshot?: PlayerRoundCourseSnapshot;
   /** Architecture review compares named route types rather than green-zone aims. */
   includeGreenLandingZones?: boolean;
+  /** Skip physical preview resolution when a caller consumes only analytic ranking fields. */
+  includeSelectedPreview?: boolean;
 }): StrategicHolePlan {
   const profile = profileFor(args.capabilities, args.course);
   const snapshot = args.snapshot ?? (args.includeGreenLandingZones === false
@@ -769,16 +771,18 @@ export function generateStrategicHolePlan(args: {
       : legacyScore;
   const ordered = candidates.slice().sort((a, b) => score(a) - score(b) || INTENTS.indexOf(a.kind) - INTENTS.indexOf(b.kind));
   const chosenCandidate = ordered[0];
-  const chosen = withSelectedPreview({
-    course: args.course,
-    hole: args.hole,
-    capabilities: args.capabilities,
-    intent: chosenCandidate,
-    from: chosenCandidate.from,
-    lie: teeLie ?? "tee",
-    shotNumber: 1,
-    snapshot,
-  });
+  const chosen = args.includeSelectedPreview === false
+    ? chosenCandidate
+    : withSelectedPreview({
+        course: args.course,
+        hole: args.hole,
+        capabilities: args.capabilities,
+        intent: chosenCandidate,
+        from: chosenCandidate.from,
+        lie: teeLie ?? "tee",
+        shotNumber: 1,
+        snapshot,
+      });
   const rejected: RejectedAlternative[] = ordered.slice(1, 6).map((alternative) => ({
     intentId: alternative.id,
     kind: alternative.kind,

@@ -47,6 +47,7 @@ describe("ZK-645 M62 release certification", () => {
     expect(report.metrics.architectureBytes).toBeLessThan(256_000);
     expect(report.metrics.fullEstateFixtureMs).toBeLessThan(15_000);
     expect(report.metrics.architectureMs).toBeLessThan(30_000);
+    expect(report.metrics.baseArchitectureReviewMs).toBeLessThan(750);
   });
 
   it("keeps subjective and physical-device evidence explicitly open", () => {

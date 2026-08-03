@@ -1,5 +1,22 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-698 full-estate Architecture Review performance — 2026-08-03
+
+- Reproduced the cold base `buildArchitectureReview` regression at 52.39s on
+  the deterministic 220×140 / 36-hole / 100-golfer M62 release fixture.
+- Removed exact redundant work without reducing scope: route facts now compute
+  once per setup, each cohort plan computes once instead of once per option
+  kind, and the M48 consumer skips only physical preview carriers it never
+  returns. Default live/player callers still resolve selected previews.
+- The fixed findings hash remains `f7ff4b96`; the release contract retains 36
+  holes, 108 pin setups, 8 samples per option, recommendations/rules, and an
+  unattached lazy M62 overlay. Node 22 cold measurement is 87.6ms; the bundled
+  certification report records 66.1ms against the enforced 750ms budget.
+- Focused 33 tests, TypeScript, and the full 14-file/92-test M62 certification
+  pass. No sampling or deferred state was added, so text-state/accessibility
+  qualifiers are unchanged. Production promotion and human/device gates remain
+  owned by the parent release workflow.
+
 ## Renderer milestone continuation (2026-08-02)
 
 Current user request: implement the remaining agent-ready renderer milestone work; human certification remains deferred. ZK-680 and ZK-681 are committed with automated evidence. ZK-679 has snapshot-driven seasonal terrain, surface care, static buildings, and Player Pro overlay systems; terrain/water, remaining static props, mobile entities, atmosphere, and camera/input are still in PixiStage. Preserve generated audit/screenshot artifacts unless deliberately updating evidence.

@@ -10,9 +10,9 @@ claim a production promotion.
 
 The machine-readable source of truth is
 [`artifacts/m62/certification-report.json`](../artifacts/m62/certification-report.json).
-Its determinism hash is `c468d4dc`; component hashes are `ef3d0de1` (fixtures),
+Its determinism hash is `47e900b8`; component hashes are `ef3d0de1` (fixtures),
 `3ec3bd5c` (AI), `272cd549` (putting), `9ef1ccae` (consequences), `0443ab44`
-(compatibility), `3e28a728` (Architecture Review), and `cd1f2294` (full estate).
+(compatibility), `cc1aec26` (Architecture Review), and `cd1f2294` (full estate).
 
 ## Automated evidence
 
@@ -40,8 +40,10 @@ Its determinism hash is `c468d4dc`; component hashes are `ef3d0de1` (fixtures),
   golfers. The course and live snapshot round trips remain below 5 MiB and
   1 MiB respectively.
 - Architecture Review sampling is deterministic and bounded to 45 overlay
-  items in 148.0 ms on the final run, with text equivalents, reduced-motion-safe static
-  patterns, and non-colour contour/arrow geometry.
+  items in 152.4 ms on the final run, with text equivalents, reduced-motion-safe static
+  patterns, and non-colour contour/arrow geometry. The cold full-estate base
+  review completed in 66.1 ms against a 750 ms interactive budget while
+  retaining all 36 holes, 108 pin setups, and 8 samples per option.
 
 ## Validation record
 
@@ -49,10 +51,10 @@ Run from `simgolf-lite`:
 
 ```text
 npm run test:cert:m62
-  PASS — 14 files, 92 tests; certification 9/9; hash c468d4dc
+  PASS — 14 files, 92 tests; certification 9/9; hash 47e900b8
 
 npx playwright test e2e/zk645-m62-certification.e2e.ts --reporter=line
-  PASS — 1 test in 33.8s
+  PASS — 1 test in 32.1s
 
 npx tsc -b --pretty false
   PASS
@@ -122,21 +124,20 @@ production workflow and monitor the production deployment. Record the exact
 candidate SHA, CI run, artifact identity, production URL, and monitoring result
 in the release issue; the baseline SHA alone is not sufficient.
 
-## Follow-up discovered during certification
+## ZK-698 Architecture Review performance closure
 
-Proposed Linear issue: **Bound full-estate base Architecture Review computation
-before lazy overlays**.
+The original cold `buildArchitectureReview` path took 52.39 seconds on the
+synthetic 220 x 140 / 36-hole / 100-golfer release fixture. It repeated the
+same analytic cohort plan once for each of five option kinds, recomputed route
+facts per cohort, and resolved full physical previews whose fields were
+discarded before the M48 portfolio was returned.
 
-The diagnostic certification run measured the existing base
-`buildArchitectureReview` on the synthetic 220 x 140 / 36-hole estate at about
-53.3 seconds, while the M62 green-strategy heatmap itself completed in about
-148 ms.
-This does not invalidate the bounded M62 overlay result, but it could make the
-base review stall before a lazy overlay is requested at maximum scale.
-
-- Urgency: high release follow-up; treat as a device-review blocker if the
-  maximum-estate Architecture Review is part of the production acceptance path.
-- Dependencies: ZK-645 evidence plus the existing Architecture Review baseline.
-- Suggested agent: implementation-capable coding agent with high reasoning;
-  validate worker/chunking/caching tradeoffs and browser responsiveness.
-- Suggested effort: medium.
+ZK-698 shares each analytic cohort plan and route-fact projection and explicitly
+skips only the discarded physical preview in the Architecture Review consumer.
+The fixed-fixture findings hash remains `f7ff4b96` before and after. A focused
+Node 22 cold run measured 87.6 ms; the bundled certification run measured 66.1 ms,
+both below the enforced 750 ms interactive budget. The regression retains all
+36 holes, 108 pin setups, 8 deterministic samples per option, recommendations,
+rules findings, and the existing lazy green-overlay boundary. No prediction,
+sampling, or deferred-result state was introduced, so the existing text state
+and accessibility loading/text-equivalent contracts require no new qualifier.

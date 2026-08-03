@@ -62,12 +62,12 @@
     {
       "id": "full-estate-36-hole-100-golfer-bounded-snapshots",
       "passed": true,
-      "detail": "The 220×140/30,800-cell estate carried 36 green contracts and 100 active golfers; live and course snapshots round-tripped below 1 MiB and 5 MiB in 17.5 ms."
+      "detail": "The 220×140/30,800-cell estate carried 36 green contracts and 100 active golfers; live and course snapshots round-tripped below 1 MiB and 5 MiB in 8.1 ms."
     },
     {
       "id": "architecture-accessibility-and-bounded-overlays",
       "passed": true,
-      "detail": "Architecture sampling was deterministic in 148.0 ms, retained 45 bounded static-pattern overlay items plus text evidence, preserved contour/arrow geometry across color-vision palettes, and integrated with the current review geometry."
+      "detail": "Architecture sampling was deterministic in 152.4 ms and the full 36-hole base review completed in 66.1 ms (budget 750 ms), retaining every pin/cohort/sample finding while lazy green overlays stayed unattached until requested."
     }
   ],
   "metrics": {
@@ -90,8 +90,9 @@
     "architectureSamples": 104,
     "architectureOverlayItems": 45,
     "architectureBytes": 13283,
-    "fullEstateFixtureMs": 17.491917000000058,
-    "architectureMs": 147.99166600000012
+    "fullEstateFixtureMs": 8.059291999999914,
+    "architectureMs": 152.42720899999995,
+    "baseArchitectureReviewMs": 66.06212499999992
   },
   "hashes": {
     "fixtures": "ef3d0de1",
@@ -99,10 +100,10 @@
     "putting": "272cd549",
     "consequences": "9ef1ccae",
     "compatibility": "0443ab44",
-    "architecture": "3e28a728",
+    "architecture": "cc1aec26",
     "fullEstate": "cd1f2294"
   },
-  "determinismHash": "c468d4dc",
+  "determinismHash": "47e900b8",
   "remainingHumanGates": [
     "Human golf-authenticity playtest across the fourteen named green fixtures, including funnel-green and universal-target judgment.",
     "Assistive-technology and physical text-scaling review of the green overlays and reports.",

@@ -142,6 +142,9 @@ function lineFacts(course: Course, path: Point[]) {
   };
 }
 
+type StrategicLineFacts = ReturnType<typeof lineFacts>;
+type StrategicPlan = ReturnType<typeof generateStrategicHolePlan>;
+
 function deterministic(seed: number): () => number {
   let value = (seed >>> 0) || 1;
   return () => {
@@ -184,27 +187,20 @@ function evaluateOption(args: {
   hole: Hole;
   cohort: M48CohortDefinition;
   kind: M48OptionKind;
+  path: Point[];
+  facts: StrategicLineFacts;
+  plan: StrategicPlan;
   samples: number;
   seed: number;
   par: number;
 }): M48OptionEvidence {
-  const path = optionPath(args.course, args.hole, args.kind);
-  const facts = lineFacts(args.course, path);
-  const plan = generateStrategicHolePlan({
-    course: args.course,
-    hole: args.hole,
-    par: args.par,
-    capabilities: args.cohort.capabilities,
-    personality: personality(.5, args.cohort.capabilities.consistency / 100, args.cohort.capabilities.riskTolerance > .66 ? .6 : -.15),
-    includeGreenLandingZones: false,
-  });
-  const relevant = [plan.chosen, ...plan.rejected.map((item) => ({ expectedStrokes: item.expectedStrokes, kind: item.kind }))]
-    .find((candidate) => candidate.kind === planKind(args.kind)) ?? plan.chosen;
+  const relevant = [args.plan.chosen, ...args.plan.rejected.map((item) => ({ expectedStrokes: item.expectedStrokes, kind: item.kind }))]
+    .find((candidate) => candidate.kind === planKind(args.kind)) ?? args.plan.chosen;
   const powerCarry = 2.2 + args.cohort.capabilities.power / 55;
-  const forcedCarry = clamp(facts.contiguousHazard * computePathDistanceTiles(path) / Math.max(3, 3 + powerCarry * 1.2));
+  const forcedCarry = clamp(args.facts.contiguousHazard * computePathDistanceTiles(args.path) / Math.max(3, 3 + powerCarry * 1.2));
   const skillRiskReduction = args.cohort.capabilities.accuracy / 100 * .22 + args.cohort.capabilities.recovery / 100 * .13;
-  const adjustedRisk = clamp((facts.hazardRisk + facts.contiguousHazard * .42) * (1 - skillRiskReduction));
-  const viable = facts.safeSurface >= .42 && forcedCarry < .7 && adjustedRisk < .62;
+  const adjustedRisk = clamp((args.facts.hazardRisk + args.facts.contiguousHazard * .42) * (1 - skillRiskReduction));
+  const viable = args.facts.safeSurface >= .42 && forcedCarry < .7 && adjustedRisk < .62;
   const riskPenalty = adjustedRisk * (1.18 - args.cohort.capabilities.riskTolerance * .42) + forcedCarry * (1 - args.cohort.capabilities.riskTolerance) * .78;
   // A power player can convert a hazardous direct carry into a credible
   // advantage; safe, run-up, and recovery lines retain their specialist
@@ -234,16 +230,16 @@ function evaluateOption(args: {
   }
   const expected = scores.reduce((sum, value) => sum + value, 0) / Math.max(1, scores.length);
   const variance = scores.reduce((sum, value) => sum + (value - expected) ** 2, 0) / Math.max(1, scores.length);
-  const bailoutQuality = clamp(facts.safeSurface * (1 - adjustedRisk) * (args.kind === "safe" || args.kind === "recovery" ? 1.12 : .72));
+  const bailoutQuality = clamp(args.facts.safeSurface * (1 - adjustedRisk) * (args.kind === "safe" || args.kind === "recovery" ? 1.12 : .72));
   const heroReward = 0;
   return {
     id: `${args.hole.id ?? "hole"}-${args.kind}`,
     kind: args.kind,
     label: args.kind === "hero" ? "Hero line" : args.kind === "safe" ? "Safe route" : args.kind === "runup" ? "Run-up" : args.kind === "recovery" ? "Recovery line" : "Positional line",
-    geometry: path,
-    location: path[Math.floor(path.length / 2)] ?? args.hole.green ?? args.hole.tee!,
+    geometry: args.path,
+    location: args.path[Math.floor(args.path.length / 2)] ?? args.hole.green ?? args.hole.tee!,
     viable,
-    safeSurface: round(facts.safeSurface),
+    safeSurface: round(args.facts.safeSurface),
     hazardRisk: round(adjustedRisk),
     forcedCarryBurden: round(forcedCarry),
     bailoutQuality: round(bailoutQuality),
@@ -254,7 +250,7 @@ function evaluateOption(args: {
     sampleCount: args.samples,
     sampleStatus: args.samples > 0 ? "simulated" : "insufficient",
     facts: [
-      `surface:${Math.round(facts.safeSurface * 100)}%`,
+      `surface:${Math.round(args.facts.safeSurface * 100)}%`,
       `hazard:${Math.round(adjustedRisk * 100)}%`,
       `carry:${Math.round(forcedCarry * 100)}%`,
       `capability:${args.cohort.capabilities.strengths.join(",")}`,
@@ -271,7 +267,27 @@ function holeEvaluation(args: { course: Course; hole: Hole; holeIndex: number; s
   const par = parSetting.mode === "MANUAL" ? parSetting.par : computeAutoPar(computePathDistanceTiles(routePoints(args.hole)));
   const definitions = m48Cohorts(args.seed);
   const kinds: M48OptionKind[] = ["safe", "hero", "positional", "runup", "recovery"];
-  const options = definitions.flatMap((cohort, cohortIndex) => kinds.map((kind) => evaluateOption({ course: args.course, hole: args.hole, cohort, kind, samples: args.samples, seed: args.seed + cohortIndex * 101 + kinds.indexOf(kind) * 17, par })));
+  const paths = new Map(kinds.map((kind) => {
+    const path = optionPath(args.course, args.hole, kind);
+    return [kind, { path, facts: lineFacts(args.course, path) }] as const;
+  }));
+  const options = definitions.flatMap((cohort, cohortIndex) => {
+    const plan = generateStrategicHolePlan({
+      course: args.course,
+      hole: args.hole,
+      par,
+      capabilities: cohort.capabilities,
+      personality: personality(.5, cohort.capabilities.consistency / 100, cohort.capabilities.riskTolerance > .66 ? .6 : -.15),
+      includeGreenLandingZones: false,
+      // M48 consumes only analytic ranking fields. Resolving physical preview
+      // carriers here would be discarded before the portfolio is returned.
+      includeSelectedPreview: false,
+    });
+    return kinds.map((kind) => {
+      const prepared = paths.get(kind)!;
+      return evaluateOption({ course: args.course, hole: args.hole, cohort, kind, ...prepared, plan, samples: args.samples, seed: args.seed + cohortIndex * 101 + kinds.indexOf(kind) * 17, par });
+    });
+  });
   const byKind = kinds.map((kind) => options.filter((option) => option.kind === kind));
   const optionSummary = byKind.map((items) => ({ ...items[0], expectedStrokes: items.reduce((sum, item) => sum + item.expectedStrokes, 0) / Math.max(1, items.length), viable: items.some((item) => item.viable), bailoutQuality: items.reduce((sum, item) => sum + item.bailoutQuality, 0) / Math.max(1, items.length), forcedCarryBurden: items.reduce((sum, item) => sum + item.forcedCarryBurden, 0) / Math.max(1, items.length), heroLineReward: items.reduce((sum, item) => sum + item.heroLineReward, 0) / Math.max(1, items.length) }));
   const cohortEvidence: M48CohortEvidence[] = definitions.map((cohort) => {

@@ -39,7 +39,7 @@ import {
   startPlayableRound,
 } from "../playerPro/playerPro";
 import { recordPlayerRoundArchitecture } from "../livingClub/livingClub";
-import { buildArchitectureReview, defaultArchitectureFilters, withGreenStrategyHeatmap } from "../architecture/review";
+import { ARCHITECTURE_REVIEW_INTERACTIVE_BUDGET_MS, buildArchitectureReview, defaultArchitectureFilters, withGreenStrategyHeatmap } from "../architecture/review";
 import { buildGreenStrategyHeatmap, buildGreenStrategyHeatmapForReview, GREEN_STRATEGY_MAX_OVERLAY_ITEMS } from "../architecture/greenStrategyHeatmap";
 import { computeRatingForSetup } from "../sim/courseRating";
 import { evaluateTournamentCourseQualification } from "../tournaments/eligibility";
@@ -112,6 +112,7 @@ export interface M62CertificationReport {
     architectureBytes: number;
     fullEstateFixtureMs: number;
     architectureMs: number;
+    baseArchitectureReviewMs: number;
   };
   hashes: {
     fixtures: string;
@@ -358,7 +359,7 @@ function strategicCourse(rotation: PinRotation = "A"): Course {
   return courseForCourseSetup(withNormalizedGreenContract(course), "member", rotation);
 }
 
-function buildFullEstateCourse(): Course {
+export function buildM62FullEstateCourse(): Course {
   const source = createRenderPerfCourse("parkland");
   const width = 220;
   const height = 140;
@@ -721,7 +722,7 @@ export async function runM62Certification(): Promise<M62CertificationReport> {
   ));
 
   const fullEstateStarted = performance.now();
-  const fullEstate = buildFullEstateCourse();
+  const fullEstate = buildM62FullEstateCourse();
   const live = createRenderPerfLiveState(fullEstate, { ...structuredClone(DEFAULT_WORLD), runSeed: M62_CERTIFICATION_SEED, cash: 1_000_000, reputation: 95 });
   const fullEstateFixtureMs = performance.now() - fullEstateStarted;
   const liveSnapshot = snapshotLiveSimulation({ state: live, pendingCash: 0, speed: "paused", selectedGolferId: null });
@@ -752,6 +753,17 @@ export async function runM62Certification(): Promise<M62CertificationReport> {
   const architectureRepeated = buildGreenStrategyHeatmap({ course: fullEstate, filters: architectureFilters, evidence: [], currentGeometryVersion: productionGeometryVersion });
   const architectureMs = performance.now() - architectureStarted;
   const architectureItems = architecture.overlay.cells.length + architecture.overlay.points.length + architecture.overlay.traces.length;
+  const baseArchitectureStarted = performance.now();
+  const fullEstateReviewFilters = {
+    ...defaultArchitectureFilters(fullEstate),
+    kind: "green-rollout" as const,
+    holeId: fullEstate.holes[0].id!,
+    teeSet: "member" as const,
+    pinRotation: "all" as const,
+    cohortId: "all" as const,
+  };
+  const fullEstateBaseReview = buildArchitectureReview(fullEstate, DEFAULT_WORLD, fullEstateReviewFilters);
+  const baseArchitectureReviewMs = performance.now() - baseArchitectureStarted;
   const sculpted = surfaceFixture("ridge");
   const standardOverlay = buildGreenSurfaceOverlayCommands({ course: sculpted, quality: "high", colorVision: "standard" });
   const cvdOverlay = buildGreenSurfaceOverlayCommands({ course: sculpted, quality: "high", colorVision: "deuteranopia" });
@@ -769,8 +781,16 @@ export async function runM62Certification(): Promise<M62CertificationReport> {
       && standardOverlay.contours.length + standardOverlay.arrows.length + standardOverlay.fallLines.length + standardOverlay.shades.length <= GREEN_OVERLAY_COMMAND_BUDGET
       && canonicalJson(standardOverlay.contours) === canonicalJson(cvdOverlay.contours)
       && canonicalJson(standardOverlay.arrows) === canonicalJson(cvdOverlay.arrows)
-      && integratedReview.greenStrategy?.forecastGeometryVersion === baseReview.currentGeometryVersion,
-    `Architecture sampling was deterministic in ${architectureMs.toFixed(1)} ms, retained ${architectureItems} bounded static-pattern overlay items plus text evidence, preserved contour/arrow geometry across color-vision palettes, and integrated with the current review geometry.`,
+      && integratedReview.greenStrategy?.forecastGeometryVersion === baseReview.currentGeometryVersion
+      && fullEstateBaseReview.strategic.evaluation.holes.length === 108
+      && new Set(fullEstateBaseReview.strategic.evaluation.holes.map((hole) => hole.holeId)).size === 36
+      && fullEstateBaseReview.strategic.evaluation.holes.every((hole) => hole.sampleCount === 8)
+      && fullEstateBaseReview.greenStrategy == null
+      && fullEstateBaseReview.overlay.traces.length === 0
+      && fullEstateBaseReview.overlay.cells.length === 0
+      && fullEstateBaseReview.overlay.points.length === 0
+      && baseArchitectureReviewMs < ARCHITECTURE_REVIEW_INTERACTIVE_BUDGET_MS,
+    `Architecture sampling was deterministic in ${architectureMs.toFixed(1)} ms and the full 36-hole base review completed in ${baseArchitectureReviewMs.toFixed(1)} ms (budget ${ARCHITECTURE_REVIEW_INTERACTIVE_BUDGET_MS} ms), retaining every pin/cohort/sample finding while lazy green overlays stayed unattached until requested.`,
   ));
 
   const hashes = {
@@ -779,7 +799,7 @@ export async function runM62Certification(): Promise<M62CertificationReport> {
     putting: hashCanonicalValue(puttingRows),
     consequences: hashCanonicalValue({ rotations, programs, neglected: neglected.report, recovered: recoveredReport, tournament: pinRequirement }),
     compatibility: hashCanonicalValue({ v23: v23.ok ? v23.payload.course : v23, v24: v24.ok ? v24Snapshot : v24, malformedHistory, packageManifest: packed.manifest }),
-    architecture: hashCanonicalValue({ architecture, standardOverlay, integrated: integratedReview.greenStrategy }),
+    architecture: hashCanonicalValue({ architecture, standardOverlay, integrated: integratedReview.greenStrategy, fullEstateBaseReview }),
     fullEstate: hashCanonicalValue({ course: fullEstate, live: liveSnapshot }),
   };
   return {
@@ -811,6 +831,7 @@ export async function runM62Certification(): Promise<M62CertificationReport> {
       architectureBytes: bytes(architecture),
       fullEstateFixtureMs,
       architectureMs,
+      baseArchitectureReviewMs,
     },
     hashes,
     determinismHash: hashCanonicalValue(hashes),
