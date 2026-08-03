@@ -46,13 +46,38 @@ export function GolfopediaModal(props: {
   return (
     <div role="dialog" aria-modal="true" aria-label={translateCurrent("auto.ui.help.golfopediamodal.golfopedia")} style={{ position: "fixed", inset: 0, zIndex: 99980, display: "grid", placeItems: "center", padding: 18, background: "rgba(19,28,20,.68)" }} onClick={props.onClose}>
       <div ref={trapRef} style={{ width: "min(980px, 100%)", height: "min(720px, 92vh)", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 18, border: "2px solid #3d4a3e", background: "#f7f0dd", boxShadow: "0 28px 80px rgba(0,0,0,.4)" }} onClick={(event) => event.stopPropagation()}>
+        <style>{`
+          [data-golfopedia-tabs] [data-gameui="tab"]:hover:not([aria-selected="true"]) {
+            background: #dfe8d5 !important;
+            border-color: #73866f !important;
+            color: #2d4933 !important;
+          }
+          [data-golfopedia-tabs] [data-gameui="tab"][aria-selected="true"] {
+            border-color: #3d4a3e !important;
+            box-shadow: inset 0 -3px 0 #e6bc64, 0 10px 20px rgba(0,0,0,.14) !important;
+          }
+          [data-golfopedia-tabs] [data-gameui="tab"]:focus-visible,
+          [data-golfopedia-sidebar-entry]:focus-visible {
+            outline: 3px solid #b58533;
+            outline-offset: 2px;
+          }
+          [data-golfopedia-sidebar-entry]:hover:not([aria-current="page"]) {
+            background: #e1ead7 !important;
+            box-shadow: inset 3px 0 0 #8da184;
+          }
+          [data-golfopedia-sidebar-entry][aria-current="page"] {
+            border-left: 4px solid #e6bc64 !important;
+            padding-left: 7px !important;
+            box-shadow: inset 0 -2px 0 rgba(255,255,255,.45);
+          }
+        `}</style>
         <header style={{ padding: 18, borderBottom: "1px solid rgba(61,74,62,.25)", background: "#e8dcc0" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
             <div><div style={{ fontFamily: "var(--font-heading)", fontWeight: 900, fontSize: 25, color: "#344338" }}><T id="auto.ui.help.golfopediamodal.golfopedia" /></div><div style={{ color: "#6b755f", fontSize: 12 }}><T id="auto.ui.help.golfopediamodal.the.course.designer.s.pocket.reference" /></div></div>
             <button onClick={props.onClose} aria-label={translateCurrent("auto.ui.help.golfopediamodal.close.golfopedia")} style={{ border: "1px solid #687266", borderRadius: 8, background: "#fffaf0", padding: "8px 11px", cursor: "pointer", fontWeight: 900 }}>✕</button>
           </div>
           <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
-            <div style={{ maxWidth: "100%", overflowX: "auto", paddingBottom: 2 }}>
+            <div data-golfopedia-tabs data-tooltip-skip style={{ maxWidth: "100%", overflowX: "auto", paddingBottom: 2 }}>
               <GameTabs tabs={SECTIONS} activeTab={section} onTabChange={(tab) => {
                 const nextSection = tab as GolfopediaSection;
                 setSection(nextSection);
@@ -64,8 +89,8 @@ export function GolfopediaModal(props: {
           </div>
         </header>
         <div style={{ display: "grid", gridTemplateColumns: "minmax(190px, 30%) 1fr", minHeight: 0, flex: 1 }}>
-          <nav style={{ overflowY: "auto", borderRight: "1px solid rgba(61,74,62,.2)", padding: 10 }}>
-            {filtered.map((entry) => <button key={entry.id} onClick={() => setSelectedId(entry.id)} style={{ display: "block", width: "100%", textAlign: "left", border: 0, borderRadius: 9, padding: "10px 11px", marginBottom: 4, background: selected.id === entry.id ? "#3d4a3e" : "transparent", color: selected.id === entry.id ? "white" : "#3d4a3e", cursor: "pointer", fontWeight: 800 }}>{entry.title}</button>)}
+          <nav data-tooltip-skip style={{ overflowY: "auto", borderRight: "1px solid rgba(61,74,62,.2)", padding: 10 }}>
+            {filtered.map((entry) => <button data-golfopedia-sidebar-entry key={entry.id} aria-current={selected.id === entry.id ? "page" : undefined} onClick={() => setSelectedId(entry.id)} style={{ display: "block", width: "100%", textAlign: "left", border: 0, borderRadius: 9, padding: "10px 11px", marginBottom: 4, background: selected.id === entry.id ? "#3d4a3e" : "transparent", color: selected.id === entry.id ? "white" : "#3d4a3e", cursor: "pointer", fontWeight: 800 }}>{entry.title}</button>)}
             {filtered.length === 0 && <div style={{ padding: 12, color: "#6b7280", fontSize: 13 }}><T id="auto.ui.help.golfopediamodal.no.entries.match.that.search" /></div>}
           </nav>
           <article data-testid="golfopedia-entry" data-entry-id={selected.id} style={{ overflowY: "auto", padding: "clamp(20px, 4vw, 42px)", color: "#354039" }}>

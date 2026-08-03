@@ -5,7 +5,7 @@ type ActiveTooltip = { content: string; left: number; top: number; placement: "a
 
 function eligibleTarget(raw: EventTarget | null): HTMLElement | null {
   if (!(raw instanceof Element)) return null;
-  if (raw.closest("[data-rich-tooltip]")) return null;
+  if (raw.closest("[data-rich-tooltip], [data-tooltip-skip]")) return null;
   return raw.closest<HTMLElement>("[data-tooltip], [title], button, input, select");
 }
 
