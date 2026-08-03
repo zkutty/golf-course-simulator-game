@@ -150,6 +150,12 @@
   transform: translateY(-2px);
 }
 
+.cc-vision a:focus-visible,
+.cc-vision button:focus-visible {
+  outline: 3px solid #f3d37b;
+  outline-offset: 4px;
+}
+
 .cc-vision-button-gold {
   border-color: #f1d47f;
   background: linear-gradient(145deg, #efce76, #bd8e39);
@@ -631,12 +637,43 @@
 
 .cc-vision-biomes-heading {
   max-width: 820px;
-  margin-bottom: 50px;
+  margin-bottom: 42px;
+}
+
+.cc-vision-biome-collection + .cc-vision-biome-collection {
+  margin-top: clamp(56px, 8vw, 100px);
+}
+
+.cc-vision-biome-collection-heading {
+  max-width: 720px;
+  display: grid;
+  grid-template-columns: minmax(175px, .45fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  margin: 0 0 22px;
+  border-top: 1px solid rgba(31, 57, 40, .22);
+  padding-top: 16px;
+}
+
+.cc-vision-biome-collection-heading h3 {
+  margin: 0;
+  color: var(--vision-rust);
+  font-family: var(--font-heading);
+  font-size: clamp(20px, 2.1vw, 28px);
+  letter-spacing: -.025em;
+  line-height: 1.1;
+}
+
+.cc-vision-biome-collection-heading p {
+  margin: 0;
+  color: #586b60;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
 .cc-vision-biome-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
 }
 
@@ -690,7 +727,7 @@
   text-shadow: 0 2px 14px rgba(0, 0, 0, .35);
 }
 
-.cc-vision-biome h3 {
+.cc-vision-biome h4 {
   margin: 0;
   font-family: var(--font-heading);
   font-size: clamp(22px, 1.8vw, 29px);
@@ -1005,9 +1042,6 @@
   .cc-vision-future-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  .cc-vision-biome-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .cc-vision-biome {
     min-height: 410px;
   }
@@ -1120,6 +1154,10 @@
   }
   .cc-vision-biomes {
     margin-block: 92px;
+  }
+  .cc-vision-biome-collection-heading {
+    grid-template-columns: 1fr;
+    gap: 7px;
   }
   .cc-vision-biome-grid {
     grid-template-columns: 1fr;

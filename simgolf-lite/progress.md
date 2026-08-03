@@ -1530,3 +1530,16 @@ classic course-builder references.
 - Focused unit, type, lint, Playwright, state, and visual checks passed in the
   isolated worktrees. The combined branch still requires the full development
   and production promotion gate before any issue is marked Done.
+
+## ZK-693 Vision core landscapes — 2026-08-03
+
+- Replaced the partial Vision landscape list with one typed, complete
+  eight-biome catalog. Parkland, Links, and Desert now lead a labeled
+  foundational collection; the expanded collection retains all existing
+  editorial cards.
+- Reused only project-owned Vision/game captures: clean Parkland and Desert
+  crops plus the existing coastal-routing panorama for Links, with responsive
+  mobile sources, lazy loading, and the established runtime-cache path intact.
+- Added exact catalog, copy/alt-text, collection, keyboard-anchor, desktop,
+  tablet, and phone Playwright coverage. Final browser/build validation and
+  screenshot review are recorded with this isolated implementation packet.

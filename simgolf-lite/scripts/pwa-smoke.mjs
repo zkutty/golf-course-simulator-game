@@ -88,8 +88,8 @@ try {
   if (!viewedVisionAssets.some((url) => url.endsWith("/vision/coursecraft-world.jpg"))) {
     throw new Error("The viewed Vision hero was not stored in the runtime cache");
   }
-  if (!viewedVisionAssets.some((url) => url.includes("/vision/tropical-coastal-resort"))) {
-    throw new Error("A viewed Vision gallery image was not stored in the runtime cache");
+  if (!viewedVisionAssets.some((url) => url.includes("/vision/parkland"))) {
+    throw new Error("A viewed core Vision gallery image was not stored in the runtime cache");
   }
 
   const manifest = await page.evaluate(async () => {

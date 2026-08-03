@@ -23,13 +23,19 @@ template or a list of delivery status.
 
 ## Biome gallery requirements
 
-Each of the five gallery cards receives the same footprint and editorial
-weight. The first source is 1536px wide or smaller and must stay at or below
-300 KiB; the 768px mobile source should stay at or below 120 KiB. JPEG is the
-universal fallback and `picture` selects the mobile source below 680px.
+All eight gallery cards receive the same footprint and editorial weight. The
+three foundational CourseCraft landscapes are presented as a distinct first
+collection, followed by five expanded landscapes; neither collection is a
+roadmap or a lower-quality treatment. The first source is 1536px wide or
+smaller and must stay at or below 300 KiB; the 768px mobile source should stay
+at or below 120 KiB. JPEG is the universal fallback and `picture` selects the
+mobile source below 680px.
 
 | Biome | Required read | Exclusions |
 | --- | --- | --- |
+| Parkland | Traditional wooded inland golf, mature trees, ponds/streams, maintained turf | Generic flat lawn, scenery without golf |
+| Links | Exposed coast, dunes/fescue, wind-shaped ground, firm running golf | Inland heathland treatment, resort beach shorthand |
+| Desert | Rock/washes, sparse native planting, oasis contrast, deliberately irrigated golf | Unirrigated fairways, empty sandscape, outback cliché |
 | Tropical Coastal Resort | Ocean edge, volcanic stone, palms, resort activity, strategic golf | Island-ring/ferry fantasy, tiki shorthand |
 | Temperate Japan | Wooded elevation, quiet water, contemporary clubhouse, restrained seasonal cues | Temples, shrines, torii, caricature, copied course identity |
 | Alpine Mountain | Conifers, rock, stream, partial high snow, working lodge course | Ski resort, avalanche, buried course |
@@ -38,10 +44,13 @@ universal fallback and `picture` selects the mobile source below 680px.
 
 ## Provenance and review
 
-The five initial panoramas are original project assets generated in this
-execution with the built-in image generator. Their prompts require a generic
-setting, no real-course likeness, no branding/text, and no artist imitation.
-Before release, a human reviewer must confirm golf credibility, crop quality,
+The expanded panoramas are original project assets generated in the M60
+execution with the built-in image generator. Parkland and Desert use clean
+editorial crops derived from project-owned in-game biome captures; Links uses
+the existing project-owned coastal-routing panorama and a mobile crop. No
+third-party imagery is permitted. All sources require a generic setting, no
+real-course likeness, no branding/text, and no artist imitation. Before
+release, a human reviewer must confirm golf credibility, crop quality,
 cultural/ecological appropriateness where applicable, and that no artifact or
 unintended likeness remains.
 

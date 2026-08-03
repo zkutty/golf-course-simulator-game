@@ -19,7 +19,10 @@ type SystemStory = {
 };
 
 type BiomePreview = {
-  slug: string;
+  id: "parkland" | "links" | "desert" | "tropical-coastal-resort" | "temperate-japan" | "alpine-mountain" | "heathland" | "australian-sandbelt";
+  collection: "core" | "expanded";
+  image: string;
+  mobileImage: string;
   title: MessageKey;
   body: MessageKey;
   alt: MessageKey;
@@ -52,13 +55,21 @@ const CHAPTERS = [
   { number: "06", title: "vision.chapter.legacy.title", body: "vision.chapter.legacy.body" },
 ] satisfies Array<{ number: string; title: MessageKey; body: MessageKey }>;
 
-const BIOMES: BiomePreview[] = [
-  { slug: "tropical-coastal-resort", title: "vision.biome.tropical.title", body: "vision.biome.tropical.body", alt: "vision.biome.tropical.alt" },
-  { slug: "temperate-japan", title: "vision.biome.japan.title", body: "vision.biome.japan.body", alt: "vision.biome.japan.alt" },
-  { slug: "alpine-mountain", title: "vision.biome.alpine.title", body: "vision.biome.alpine.body", alt: "vision.biome.alpine.alt" },
-  { slug: "heathland", title: "vision.biome.heathland.title", body: "vision.biome.heathland.body", alt: "vision.biome.heathland.alt" },
-  { slug: "australian-sandbelt", title: "vision.biome.sandbelt.title", body: "vision.biome.sandbelt.body", alt: "vision.biome.sandbelt.alt" },
-];
+/**
+ * The complete Vision landscape catalog. Keep the editorial page grounded in
+ * the same eight supported landscapes rather than maintaining a second,
+ * partial gallery list.
+ */
+export const VISION_BIOMES = [
+  { id: "parkland", collection: "core", image: "parkland", mobileImage: "parkland-mobile", title: "vision.biome.parkland.title", body: "vision.biome.parkland.body", alt: "vision.biome.parkland.alt" },
+  { id: "links", collection: "core", image: "coastal-routing", mobileImage: "links-mobile", title: "vision.biome.links.title", body: "vision.biome.links.body", alt: "vision.biome.links.alt" },
+  { id: "desert", collection: "core", image: "desert", mobileImage: "desert-mobile", title: "vision.biome.desert.title", body: "vision.biome.desert.body", alt: "vision.biome.desert.alt" },
+  { id: "tropical-coastal-resort", collection: "expanded", image: "tropical-coastal-resort", mobileImage: "tropical-coastal-resort-mobile", title: "vision.biome.tropical.title", body: "vision.biome.tropical.body", alt: "vision.biome.tropical.alt" },
+  { id: "temperate-japan", collection: "expanded", image: "temperate-japan", mobileImage: "temperate-japan-mobile", title: "vision.biome.japan.title", body: "vision.biome.japan.body", alt: "vision.biome.japan.alt" },
+  { id: "alpine-mountain", collection: "expanded", image: "alpine-mountain", mobileImage: "alpine-mountain-mobile", title: "vision.biome.alpine.title", body: "vision.biome.alpine.body", alt: "vision.biome.alpine.alt" },
+  { id: "heathland", collection: "expanded", image: "heathland", mobileImage: "heathland-mobile", title: "vision.biome.heathland.title", body: "vision.biome.heathland.body", alt: "vision.biome.heathland.alt" },
+  { id: "australian-sandbelt", collection: "expanded", image: "australian-sandbelt", mobileImage: "australian-sandbelt-mobile", title: "vision.biome.sandbelt.title", body: "vision.biome.sandbelt.body", alt: "vision.biome.sandbelt.alt" },
+] as const satisfies readonly BiomePreview[];
 
 const WORLD_IMAGE = `${import.meta.env.BASE_URL}vision/coursecraft-world.jpg`;
 const CLUBHOUSE_IMAGE = `${import.meta.env.BASE_URL}vision/clubhouse-campus.jpg`;
@@ -208,20 +219,33 @@ export function VisionPage({ onClose }: { onClose: () => void }) {
           <h2>{t("vision.biomes.title")}</h2>
           <p>{t("vision.biomes.body")}</p>
         </div>
-        <div className="cc-vision-biome-grid">
-          {BIOMES.map((biome) => (
-            <figure className="cc-vision-biome" key={biome.slug}>
-              <picture>
-                <source media="(max-width: 680px)" srcSet={`${VISION_IMAGE_BASE}${biome.slug}-mobile.jpg`} />
-                <img src={`${VISION_IMAGE_BASE}${biome.slug}.jpg`} alt={t(biome.alt)} loading="lazy" />
-              </picture>
-              <figcaption>
-                <h3>{t(biome.title)}</h3>
-                <p>{t(biome.body)}</p>
-              </figcaption>
-            </figure>
-          ))}
-        </div>
+        {(["core", "expanded"] as const).map((collection) => {
+          const biomes = VISION_BIOMES.filter((biome) => biome.collection === collection);
+          const heading = collection === "core" ? "vision.biomes.core.title" : "vision.biomes.expanded.title";
+          const body = collection === "core" ? "vision.biomes.core.body" : "vision.biomes.expanded.body";
+          return (
+            <section className="cc-vision-biome-collection" data-biome-collection={collection} aria-labelledby={`vision-biomes-${collection}`} key={collection}>
+              <div className="cc-vision-biome-collection-heading">
+                <h3 id={`vision-biomes-${collection}`}>{t(heading)}</h3>
+                <p>{t(body)}</p>
+              </div>
+              <div className="cc-vision-biome-grid">
+                {biomes.map((biome) => (
+                  <figure className="cc-vision-biome" data-biome-id={biome.id} key={biome.id}>
+                    <picture>
+                      <source media="(max-width: 680px)" srcSet={`${VISION_IMAGE_BASE}${biome.mobileImage}.jpg`} />
+                      <img src={`${VISION_IMAGE_BASE}${biome.image}.jpg`} alt={t(biome.alt)} loading="lazy" />
+                    </picture>
+                    <figcaption>
+                      <h4>{t(biome.title)}</h4>
+                      <p>{t(biome.body)}</p>
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </section>
 
       <section className="cc-vision-caddie">
