@@ -72,6 +72,7 @@ import {
   normalizeShotSlopeContext,
   resolveShotCurve,
   type ShotHandedness,
+  type ShotSlopeContext,
 } from "../models/shotSlope";
 import {
   isValidGreenRollout,
@@ -705,6 +706,11 @@ export interface PlayerShotPreview {
   greenRollout: GreenRolloutV1 | null;
   /** Planning-only, deliberately unseeded automatic-putt information. */
   automaticPuttingEstimate: GreenPuttingEstimate | null;
+  /**
+   * Frozen M61 evidence for this exact preview.  UI, caddie, and text-state
+   * consumers must present this value instead of re-reading mutable terrain.
+   */
+  shotSlope: ShotSlopeContext | null;
 }
 
 export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerProSkills, selection: PlayerShotSelection): PlayerShotPreview {
@@ -733,6 +739,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     sharedOutcome: null,
     greenRollout: null,
     automaticPuttingEstimate: null,
+    shotSlope: null,
   };
   if (!club.lies.includes(round.lie)) return {
     available: false,
@@ -749,6 +756,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     sharedOutcome: null,
     greenRollout: null,
     automaticPuttingEstimate: null,
+    shotSlope: null,
   };
   const requirement = techniqueRequirement(selection.technique, skills);
   if (requirement) return {
@@ -766,6 +774,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     sharedOutcome: null,
     greenRollout: null,
     automaticPuttingEstimate: null,
+    shotSlope: null,
   };
   if (calculated.blocker) return {
     available: false,
@@ -782,6 +791,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     sharedOutcome: null,
     greenRollout: null,
     automaticPuttingEstimate: null,
+    shotSlope: null,
   };
   const course = courseFromSnapshot(round.course);
   const profile = profileForPlayer(round.course, skills, club);
@@ -844,6 +854,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     sharedOutcome,
     greenRollout: resolved?.greenRollout ?? null,
     automaticPuttingEstimate,
+    shotSlope: resolved?.shotSlope ?? null,
   };
 }
 
@@ -1578,6 +1589,21 @@ export function playerTechniqueCatalog(skills: PlayerProSkills): Array<{ techniq
 
 export function caddieRecommendation(round: PlayerPlayableRound, skills: PlayerProSkills): PlayerShotSelection {
   return recommendedSelection(round, skills);
+}
+
+/**
+ * A caddie line is presentation of the same seeded Player Pro preview that
+ * commit uses.  It deliberately carries no independent elevation, sidehill,
+ * curve, or risk formula.
+ */
+export function caddieShotGuidance(round: PlayerPlayableRound, skills: PlayerProSkills): Readonly<{
+  selection: PlayerShotSelection;
+  preview: PlayerShotPreview;
+  shotSlope: ShotSlopeContext | null;
+}> {
+  const selection = caddieRecommendation(round, skills);
+  const preview = previewPlayableShot(round, skills, selection);
+  return Object.freeze({ selection, preview, shotSlope: preview.shotSlope });
 }
 
 export function playerTournamentPrizePreview(event: TournamentEvent): string {

@@ -5,6 +5,7 @@ import type { TournamentEvent } from "../tournaments/types";
 import {
   activatePlayerChallenge,
   autoFinishPlayerRound,
+  caddieShotGuidance,
   caddieRecommendation,
   commitPlayerShot,
   completePlayerTraining,
@@ -272,6 +273,26 @@ describe("M36 deterministic Player Pro play", () => {
     expect(leftDraw.shotSlope?.sidehill).toBe("ball_above_feet");
     expect(rightDraw.landing.y).toBeLessThan(rightNormal.landing.y - 0.8);
     expect(leftDraw.landing.y).toBeGreaterThan(leftNormal.landing.y + 0.8);
+  });
+
+  it("derives caddie slope, sidehill, and risk guidance from the exact committed preview", () => {
+    const course = threeHoleCourse();
+    course.elevations = Array.from({ length: course.width * course.height }, (_, index) => -Math.floor(index / course.width));
+    const baseCareer = createDefaultPlayerPro({ seed: 634, handedness: "left" });
+    const career = { ...baseCareer, skills: { ...baseCareer.skills, driving: 70 } };
+    const result = startPlayableRound({ course, world: { ...world(), playerPro: career }, layoutId: "slice" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const guidance = caddieShotGuidance(result.round, career.skills);
+    expect(guidance.selection).toEqual(caddieRecommendation(result.round, career.skills));
+    expect(guidance.preview).toMatchObject({ available: true, risk: expect.stringMatching(/^(low|medium|high)$/) });
+    expect(guidance.shotSlope).toMatchObject({ handedness: "left", sidehill: "ball_above_feet" });
+    expect(guidance.preview.shotSlope).toEqual(guidance.shotSlope);
+
+    const committed = commitPlayerShot(result.round, career.skills, guidance.selection);
+    expect(committed.pendingShot?.shotSlope).toEqual(guidance.shotSlope);
+    expect(committed.pendingShot?.sharedOutcome).toEqual(guidance.preview.sharedOutcome);
   });
 
   it("restores active-round biome evidence through autosave and exported-file import", async () => {

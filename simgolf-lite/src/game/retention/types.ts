@@ -2,6 +2,8 @@ import type { GolferArchetypeName } from "../live/types";
 import type { GolferCapabilities, HoleReaction, LiveShotOutcome, StrategicHolePlan } from "../live/m47Types";
 import type { GreenRolloutV1 } from "../greens/greenRollout";
 import type { GreenPuttingV1 } from "../greens/greenPutting";
+import type { ShotSlopeContext } from "../models/shotSlope";
+import type { ReliefResolution, SharedShotOutcome, ShotRuling } from "../rules/contracts";
 
 export type RetentionEventCategory = "play" | "economy" | "milestone";
 export type RetentionEventSeverity = "routine" | "notable" | "major";
@@ -51,10 +53,18 @@ export interface CompletedRound {
     shotNumber: number;
     shotType: "drive" | "approach" | "recovery" | "putt";
     from: { x: number; y: number };
+    aim?: { x: number; y: number };
     landing: { x: number; y: number };
     rest: { x: number; y: number };
     lieBefore?: string;
     lieAfter?: string;
+    /** Frozen physical/evidence payloads; all optional for historical rounds. */
+    shotSlope?: ShotSlopeContext;
+    slopeExplanation?: string;
+    sharedOutcome?: SharedShotOutcome;
+    ruling?: ShotRuling;
+    relief?: ReliefResolution;
+    finalPosition?: { x: number; y: number };
     greenRollout?: GreenRolloutV1;
     greenPutting?: GreenPuttingV1;
   }>;

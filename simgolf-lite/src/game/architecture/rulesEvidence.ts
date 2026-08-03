@@ -124,8 +124,8 @@ function reconstruct(evidence: ArchitectureShotEvidence, context: RulesContext |
     holeId: evidence.holeId,
     hole,
     previousPosition: evidence.from,
-    physicalRest: evidence.rest,
-    rollPath: [evidence.landing, evidence.rest],
+    physicalRest: evidence.physicalRest ?? evidence.rest,
+    rollPath: [evidence.landing, evidence.physicalRest ?? evidence.rest],
     clubLengthTiles: 1,
     holed: false,
   });

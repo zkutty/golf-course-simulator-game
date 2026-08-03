@@ -13,7 +13,7 @@ import {
 } from "../game/models/playerProTypes";
 import {
   availablePlayerClubs,
-  caddieRecommendation,
+  caddieShotGuidance,
   eligiblePlayerOpponents,
   flightProfileForTechnique,
   playerTechniqueCatalog,
@@ -96,6 +96,22 @@ function clearanceLabel(clearance: readonly ShotClearanceEvidence[], t: Translat
     distance: distance.toFixed(1),
     point: pointLabel(nearest.point),
   });
+}
+
+function riskLabel(risk: "low" | "medium" | "high", t: Translator): string {
+  return t(`playerPro.shot.risk.${risk}` as MessageKey);
+}
+
+function slopeDirection(adjustmentYards: number, t: Translator): string {
+  return t(adjustmentYards > 0 ? "playerPro.shot.slope.uphill" : adjustmentYards < 0 ? "playerPro.shot.slope.downhill" : "playerPro.shot.slope.level");
+}
+
+function sidehillLabel(sidehill: "flat" | "ball_above_feet" | "ball_below_feet", t: Translator): string {
+  return t(`playerPro.shot.sidehill.${sidehill}` as MessageKey);
+}
+
+function curveDirection(curveTiles: number, t: Translator): string {
+  return t(curveTiles < 0 ? "playerPro.shot.curve.left" : curveTiles > 0 ? "playerPro.shot.curve.right" : "playerPro.shot.curve.straight");
 }
 
 function SkillGrid(props: { career: PlayerProCareer }) {
@@ -251,10 +267,10 @@ export function PlayerShotHud(props: {
   onReturnToDesign: () => void;
 }) {
   const { t } = useI18n();
-  const recommendation = useMemo(() => caddieRecommendation(props.round, props.career.skills), [props.career.skills, props.round]);
+  const caddie = useMemo(() => caddieShotGuidance(props.round, props.career.skills), [props.career.skills, props.round]);
   const clubs = availablePlayerClubs(props.round.lie);
-  const [club, setClub] = useState(recommendation.club);
-  const [power, setPower] = useState(recommendation.power);
+  const [club, setClub] = useState(caddie.selection.club);
+  const [power, setPower] = useState(caddie.selection.power);
   const [technique, setTechnique] = useState<PlayerShotTechnique>("normal");
   const [flightProfile, setFlightProfile] = useState<ShotFlightProfile>("standard");
   const [flightNotice, setFlightNotice] = useState<string | null>(null);
@@ -274,7 +290,7 @@ export function PlayerShotHud(props: {
   const latestFinalPosition = latestOutcome?.finalPosition ?? latestShot?.finalPosition ?? latestShot?.rest ?? null;
 
   const useCaddie = () => {
-    const next = caddieRecommendation(props.round, props.career.skills);
+    const next = caddie.selection;
     setClub(next.club);
     setPower(next.power);
     setTechnique(next.technique);
@@ -314,6 +330,15 @@ export function PlayerShotHud(props: {
         <label>{t("playerPro.shot.club")}<select data-testid="player-shot-club" value={selectedClub} onChange={(event) => setClub(event.target.value)} style={{ display: "block", width: "100%", padding: 8 }}>{clubs.map((candidate) => <option key={candidate.name} value={candidate.name}>{t("playerPro.shot.clubOption", { club: candidate.name, yards: candidate.carryYards })}</option>)}</select></label>
         <label>{t("playerPro.shot.power", { power: Math.round(power * 100) })}<input data-testid="player-shot-power" type="range" min={25} max={115} value={Math.round(power * 100)} onChange={(event) => setPower(Number(event.target.value) / 100)} style={{ width: "100%" }} /></label>
         <label>{t("playerPro.shot.technique")}<select value={technique} onChange={(event) => chooseTechnique(event.target.value as PlayerShotTechnique)} style={{ display: "block", width: "100%", padding: 8 }}>{techniques.map((item) => <option key={item.technique} value={item.technique} disabled={!item.unlocked}>{t(techniqueKey(item.technique))}{item.requirement ? ` · ${item.requirement}` : ""}</option>)}</select></label>
+        <section data-testid="player-shot-caddie-guidance" role="status" aria-live="polite" aria-label={t("playerPro.shot.caddieGuidance.title")} style={{ display: "grid", gap: 3, padding: 8, borderRadius: 8, border: "1px solid rgba(66,97,67,.35)", background: "#e4efdb", fontSize: 12 }}>
+          <strong>{t("playerPro.shot.caddieGuidance.title")}</strong>
+          <div>{t("playerPro.shot.caddieGuidance.line", { club: caddie.selection.club, power: Math.round(caddie.selection.power * 100), risk: riskLabel(caddie.preview.risk, t) })}</div>
+          {caddie.shotSlope && <>
+            <div>{t("playerPro.shot.caddieGuidance.distance", { playsLike: Math.round(caddie.shotSlope.playsLikeDistanceYards), adjustment: Math.abs(Math.round(caddie.shotSlope.playsLikeDistanceYards - caddie.shotSlope.flatDistanceYards)), direction: slopeDirection(caddie.shotSlope.playsLikeDistanceYards - caddie.shotSlope.flatDistanceYards, t) })}</div>
+            <div>{t("playerPro.shot.caddieGuidance.sidehill", { sidehill: sidehillLabel(caddie.shotSlope.sidehill, t), curve: Math.abs(caddie.shotSlope.naturalCurveBiasTiles).toFixed(1), direction: curveDirection(caddie.shotSlope.naturalCurveBiasTiles, t) })}</div>
+          </>}
+          <small>{t("playerPro.shot.caddieGuidance.risk", { penalty: caddie.preview.expectedPenalty.toFixed(2) })}</small>
+        </section>
         <fieldset style={{ margin: 0, padding: 8, border: "1px solid rgba(73,55,23,.28)", borderRadius: 8 }}>
           <legend style={{ fontSize: 12, fontWeight: 800 }}>{t("playerPro.shot.flight")}</legend>
           <div role="group" aria-label={t("playerPro.shot.flightProfile")} style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 5 }}>

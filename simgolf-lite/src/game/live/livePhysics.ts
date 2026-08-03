@@ -11,6 +11,7 @@ import type { GolferCapabilities, LiveShotOutcome, ShotIntent } from "./m47Types
 import { biomeCompatibilityMetadataFor, getBiomeDefinition } from "../models/biomes";
 import { effectiveSurfaceTiles, resolveEffectiveSurface } from "../conditions/surfaceCare";
 import { createGreenRoundSnapshot } from "../greens/greenSurface";
+import { shotSlopeEvidenceFacts, shotSlopeExplanation } from "../models/shotSlopeEvidence";
 
 function parFor(hole: Course["holes"][number]): number {
   const setting = getParSetting(hole, "member");
@@ -123,8 +124,11 @@ export function resolveLiveShot(args: {
     seed: args.seed,
   });
   const facts = args.intent.facts.slice();
-  if (trace.penaltyStrokes > 0) facts.push({ code: "outcome", detail: `penalty:${trace.penaltyStrokes}` });
-  facts.push({ code: "outcome", detail: `rest:${trace.lieAfter}` });
+  for (const fact of shotSlopeEvidenceFacts(trace.shotSlope)) {
+    if (facts.length < 12 && !facts.some((candidate) => candidate.detail === fact.detail)) facts.push(fact);
+  }
+  if (trace.penaltyStrokes > 0 && facts.length < 12) facts.push({ code: "outcome", detail: `penalty:${trace.penaltyStrokes}` });
+  if (facts.length < 12) facts.push({ code: "outcome", detail: `rest:${trace.lieAfter}` });
   if (trace.greenRollout && facts.length < 12) facts.push({ code: "outcome", detail: `green-pace:${trace.greenRollout.pace}:${trace.greenRollout.evidence.realizedSpeedFeet}` });
   if (trace.greenRollout && facts.length < 12) facts.push({ code: "outcome", detail: `green-break:${trace.greenRollout.breakTiles}` });
   // `resolvePlayableShot` is the shared flight/green-arrival authority. Carry
@@ -158,11 +162,18 @@ export function resolveLiveShot(args: {
     relief: trace.relief,
     finalPosition: trace.finalPosition,
     shotSlope: trace.shotSlope,
+    slopeExplanation: shotSlopeExplanation(trace.shotSlope),
     greenRollout: trace.greenRollout,
     greenPutting,
     sharedOutcome: trace.sharedOutcome,
   };
 }
+
+/**
+ * Deterministic live preview. Commit uses the exact same authority, so the
+ * same frozen inputs and seed are byte-identical without applying slope twice.
+ */
+export const previewLiveShot = resolveLiveShot;
 
 export function terrainAt(course: Course, point: Point): Terrain {
   return resolveEffectiveSurface(course, point.x, point.y).effectiveTerrain;

@@ -36,6 +36,7 @@ import {
   type PaceReportSummary,
 } from "../game/live/paceHistory";
 import { buildMobilityOperationsReports } from "../game/m51/operationsReport";
+import { livePropertyShotTraces } from "../game/live/safetyEvidence";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
@@ -425,15 +426,7 @@ export function useLiveSimulation(args: {
       dayIndex: live.dayIndex,
       pace: live.pace,
       mobility: live.m51,
-      shotTraces: live.golfers.flatMap((golfer) => golfer.segments.filter((segment) => segment.kind === "flight" && segment.shot !== "putt").map((segment) => ({
-        golferId: golfer.id,
-        holeId: segment.holeId,
-        holeName: courseRef.current.holes.find((hole) => hole.id === segment.holeId)?.name,
-        teeSet: golfer.teeSet,
-        shotType: segment.holeIndex >= 0 && segment.from.x === (courseRef.current.holes[segment.holeIndex]?.tee?.x ?? Number.NaN) && segment.from.y === (courseRef.current.holes[segment.holeIndex]?.tee?.y ?? Number.NaN) ? "drive" as const : "approach" as const,
-        from: segment.from,
-        to: segment.to,
-      }))),
+      shotTraces: livePropertyShotTraces(live, courseRef.current),
     });
     result.dayIndex = live.dayIndex;
     weekLedgerRef.current = appendDayToLedger(weekLedgerRef.current, result);

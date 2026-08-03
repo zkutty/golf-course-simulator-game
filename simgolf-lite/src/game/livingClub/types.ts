@@ -1,5 +1,6 @@
 import type { M48DesignComparison, M48DesignTestSession } from "../architecture/m48Types";
 import type { GreenRolloutV1 } from "../greens/greenRollout";
+import type { ShotSlopeContext } from "../models/shotSlope";
 
 export type LivingGolferArchetype =
   | "casual"
@@ -232,12 +233,17 @@ export interface ArchitectureShotEvidence {
   shotType: ArchitectureShotType;
   shotNumber: number;
   from: { x: number; y: number };
+  aim?: { x: number; y: number };
   landing: { x: number; y: number };
+  physicalRest?: { x: number; y: number };
   rest: { x: number; y: number };
   scoreToPar: number;
   waitMinutes: number;
   lieBefore?: string;
   lieAfter?: string;
+  /** Original immutable slope facts; absent on historical evidence. */
+  shotSlope?: ShotSlopeContext;
+  slopeExplanation?: string;
   /** Exact retained ground path used by the architecture trace overlay. */
   greenRollout?: GreenRolloutV1;
 }

@@ -155,4 +155,27 @@ describe("M33 golf community, real estate, and safety", () => {
     const trace: PropertyShotTrace = { golferId: 0, holeId: "hole-risk", holeName: "Risky 1st", teeSet: "member", shotType: "drive", from: { x: 0, y: 5 }, to: { x: 80, y: 5 } };
     expect(settlePropertyDay(course, world, 0, 1, [trace]).report.incidents).toHaveLength(0);
   });
+
+  it("uses retained physical rest instead of the intended aim for safety exposure", () => {
+    const homes: PropertyAsset = { id: "homes", kind: "houses", name: "Aim-line homes", category: "community", tier: 1, x: 20, y: 1, width: 12, height: 8, capacity: 20, condition: 1, price: 0, units: 1, enabled: true, tenure: "sold" };
+    const household: ResidentHousehold = { id: "household-home", assetId: homes.id, units: 1, occupied: 1, satisfaction: 75, complaints: 0 };
+    const course: Course = { ...DEFAULT_COURSE, property: { ...emptyPropertyCourse(), assets: [homes] } };
+    const world: World = { ...DEFAULT_WORLD, cash: 1_000_000, runSeed: 987, enterprise: { ...emptyPropertyEnterprise(), residents: [household] } };
+    const trace: PropertyShotTrace = {
+      golferId: 0,
+      holeId: "hole-slope",
+      holeName: "Sidehill 1st",
+      teeSet: "member",
+      shotType: "drive",
+      from: { x: 0, y: 5 },
+      to: { x: 80, y: 5 },
+      aim: { x: 80, y: 5 },
+      landing: { x: 8, y: 18 },
+      physicalRest: { x: 10, y: 20 },
+      rest: { x: 10, y: 20 },
+      slopeExplanation: "sidehill:ball_above_feet",
+    };
+
+    expect(settlePropertyDay(course, world, 0, 1, [trace]).report.incidents).toHaveLength(0);
+  });
 });

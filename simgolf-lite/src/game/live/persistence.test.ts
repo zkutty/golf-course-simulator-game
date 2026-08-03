@@ -73,6 +73,8 @@ describe("live simulation persistence", () => {
     expect(golfer.shotOutcomes?.length).toBeGreaterThan(0);
     const handedness = stableGolferHandedness(golfer.capabilities!.seed);
     expect(golfer.shotOutcomes?.every((outcome) => outcome.shotSlope?.handedness === handedness)).toBe(true);
+    expect(golfer.shotOutcomes?.every((outcome) => outcome.slopeExplanation?.includes("plays-like:"))).toBe(true);
+    expect(golfer.holePlans?.every((plan) => plan.chosen.shotSlope?.handedness === handedness)).toBe(true);
 
     const snapshot = snapshotLiveSimulation({
       state,
@@ -83,6 +85,7 @@ describe("live simulation persistence", () => {
     const restored = restoreLiveSimulation(JSON.parse(JSON.stringify(snapshot)));
     expect(restored?.state.golfers[0].capabilities?.seed).toBe(golfer.capabilities!.seed);
     expect(restored?.state.golfers[0].shotOutcomes).toEqual(golfer.shotOutcomes);
+    expect(restored?.state.golfers[0].holePlans).toEqual(golfer.holePlans);
   });
 
   it("round-trips an active M51 rental once and drops duplicate authorization IDs", () => {

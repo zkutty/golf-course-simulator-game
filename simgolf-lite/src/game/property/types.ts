@@ -458,7 +458,13 @@ export interface PropertyShotTrace {
   teeSet?: "championship" | "member" | "forward";
   shotType: "drive" | "approach" | "recovery" | "putt";
   from: { x: number; y: number };
+  /** Compatibility endpoint; new traces also retain each physical position. */
   to: { x: number; y: number };
+  aim?: { x: number; y: number };
+  landing?: { x: number; y: number };
+  physicalRest?: { x: number; y: number };
+  rest?: { x: number; y: number };
+  slopeExplanation?: string;
 }
 
 export interface PropertyDayReport {

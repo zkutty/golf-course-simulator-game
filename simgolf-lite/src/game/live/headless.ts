@@ -3,6 +3,7 @@ import { commitDay } from "./commitDay";
 import { createLiveState, roundReactions, stepLive } from "./simulation";
 import type { DayResult, LiveState } from "./types";
 import { appendDayToLedger, createWeekLedger, weekResultFromLedger } from "./weeklyLedger";
+import { livePropertyShotTraces } from "./safetyEvidence";
 
 export interface HeadlessRunResult {
   course: Course;
@@ -51,15 +52,7 @@ export function runLiveDaysHeadless(args: {
       dayIndex,
       pace: live.pace,
       mobility: live.m51,
-      shotTraces: live.golfers.flatMap((golfer) => golfer.segments.filter((segment) => segment.kind === "flight" && segment.shot !== "putt").map((segment) => ({
-        golferId: golfer.id,
-        holeId: segment.holeId,
-        holeName: course.holes.find((hole) => hole.id === segment.holeId)?.name,
-        teeSet: golfer.teeSet,
-        shotType: segment.holeIndex >= 0 && segment.from.x === (course.holes[segment.holeIndex]?.tee?.x ?? Number.NaN) && segment.from.y === (course.holes[segment.holeIndex]?.tee?.y ?? Number.NaN) ? "drive" as const : "approach" as const,
-        from: segment.from,
-        to: segment.to,
-      }))),
+      shotTraces: livePropertyShotTraces(live, course),
     });
     ledger = appendDayToLedger(ledger, { ...committed.result, dayIndex });
     const closesWeek = dayIndex === 6;

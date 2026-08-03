@@ -22,6 +22,8 @@ export interface ArchitectureOverlayTrace {
   to: { x: number; y: number };
   current: boolean;
   emphasized?: boolean;
+  /** Read-only automation/review explanation, absent on historical traces. */
+  label?: string;
 }
 
 export interface ArchitectureOverlayCell {

@@ -138,6 +138,9 @@ describe("M38 living club and architecture certification", () => {
     });
     expect(review.currentEvidence).toBe(completed.shots.length);
     expect(review.historicalEvidence).toBe(0);
+    expect(review.evidence.every((item) => item.shotSlope && item.slopeExplanation)).toBe(true);
+    expect(review.evidence.every((item) => item.physicalRest)).toBe(true);
+    expect(review.overlay.traces.some((trace) => trace.label?.includes("plays-like:"))).toBe(true);
 
     const lastShot = completed.shots.at(-1)!;
     const returned = setReturnToDesignContext(recorded.world, completed, lastShot.id);

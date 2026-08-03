@@ -1,5 +1,6 @@
 import type { GolferCapabilities, HoleReaction, LiveShotOutcome, StrategicHolePlan } from "./m47Types";
 import type { Personality } from "./personality";
+import { shotSlopeEvidenceFacts } from "../models/shotSlopeEvidence";
 
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
 
@@ -25,6 +26,11 @@ export function evaluateHoleReaction(args: {
   if (heroSuccess) facts.push({ code: "outcome", detail: "hero-success" });
   if (forcedMismatch) facts.push({ code: "outcome", detail: "forced-carry-mismatch" });
   if (args.condition < .55) facts.push({ code: "context", detail: `condition:${args.condition.toFixed(2)}` });
+  for (const shot of args.outcomes) {
+    for (const fact of shotSlopeEvidenceFacts(shot.shotSlope)) {
+      if (facts.length < 12 && !facts.some((candidate) => candidate.detail === fact.detail)) facts.push(fact);
+    }
+  }
   const outcome = forcedMismatch ? "unfair" : satisfaction >= 82 ? "delighted" : satisfaction >= 68 ? "pleased" : satisfaction >= 52 ? "neutral" : "frustrated";
   const thought = forcedMismatch
     ? "That carry asked for more power than I had."
@@ -34,7 +40,9 @@ export function evaluateHoleReaction(args: {
         ? "That plan matched my game well."
         : actualVsExpected <= -.5
           ? "The hole asked more than the plan promised."
-          : "The hole felt fair.";
+          : args.outcomes.some((shot) => shot.shotSlope?.targetElevationDelta !== 0 || shot.shotSlope?.sidehill !== "flat")
+            ? "The slope shaped the shot exactly as the plan described."
+            : "The hole felt fair.";
   return {
     version: 1,
     holeId: args.plan.holeId,

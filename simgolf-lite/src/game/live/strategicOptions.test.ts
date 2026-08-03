@@ -3,7 +3,7 @@ import type { Course, Obstacle, Point, Terrain } from "../models/types";
 import { calculateShotEffects, SHOT_CLUBS } from "../rules/shotEffects";
 import type { GolferCapabilities } from "./m47Types";
 import type { Personality } from "./personality";
-import { liveCourseSnapshot, resolveLiveShot } from "./livePhysics";
+import { liveCourseSnapshot, previewLiveShot, resolveLiveShot } from "./livePhysics";
 import {
   followUpIntent,
   generateRecoveryCandidates,
@@ -388,5 +388,59 @@ describe("ZK-632 elevation-aware live strategy", () => {
     expect(flat.carryYards).toBeLessThan(downhill.carryYards);
     expect(uphill.sharedOutcome?.requestedCarryYards).toBe(flat.sharedOutcome?.requestedCarryYards);
     expect(downhill.sharedOutcome?.requestedCarryYards).toBe(flat.sharedOutcome?.requestedCarryYards);
+  });
+});
+
+describe("ZK-635 shared slope evidence propagation", () => {
+  it("counter-aims from the authoritative sidehill curve and keeps fixed-seed preview and commit identical", () => {
+    const flat = recoveryCourse([]);
+    const sidehill = recoveryCourse([]);
+    const teeY = sidehill.holes[0].tee!.y;
+    sidehill.elevations = sidehill.elevations.map((_value, index) => {
+      const y = Math.floor(index / sidehill.width);
+      return y > teeY ? 2 : 0;
+    });
+    const golfer = capabilities({ seed: 635_001, power: 64 });
+    const plan = (course: Course) => generateStrategicHolePlan({
+      course,
+      hole: course.holes[0],
+      par: 4,
+      capabilities: golfer,
+      personality,
+      includeGreenLandingZones: false,
+    });
+    const flatPlan = plan(flat);
+    const slopePlan = plan(sidehill);
+
+    expect(slopePlan.chosen.shotSlope?.sidehill).not.toBe("flat");
+    expect(
+      slopePlan.chosen.target.x !== flatPlan.chosen.target.x
+      || slopePlan.chosen.target.y !== flatPlan.chosen.target.y
+      || slopePlan.chosen.club !== flatPlan.chosen.club,
+    ).toBe(true);
+    expect(slopePlan.chosen.facts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ detail: expect.stringContaining("elevation:") }),
+      expect.objectContaining({ detail: expect.stringContaining("sidehill:") }),
+    ]));
+
+    const snapshot = liveCourseSnapshot({ course: sidehill, teeSet: "member", pinRotation: "A" });
+    const args = {
+      snapshot,
+      capabilities: golfer,
+      holeId: sidehill.holes[0].id!,
+      shotNumber: 1,
+      from: slopePlan.chosen.from,
+      lie: "tee",
+      intent: slopePlan.chosen,
+      seed: slopePlan.chosen.previewSeed!,
+    };
+    const preview = previewLiveShot(args);
+    const committed = resolveLiveShot(args);
+
+    expect(preview).toEqual(committed);
+    expect(preview.shotSlope).toEqual(slopePlan.chosen.shotSlope);
+    expect(preview.landing).toEqual(slopePlan.chosen.previewLanding);
+    expect(preview.rest).toEqual(slopePlan.chosen.previewRest);
+    expect(preview.slopeExplanation).toContain("sidehill:");
   });
 });

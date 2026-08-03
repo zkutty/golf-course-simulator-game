@@ -2063,14 +2063,15 @@ export function settlePropertyDay(course: Course, world: World, day: number, cor
     }) : [];
     const exposed = modeledTraces.flatMap((trace) => residentialAssets.map((asset) => {
       const target = { x: asset.x + asset.width / 2, y: asset.y + asset.height / 2 };
-      return { trace, asset, distance: pointSegmentDistance(target, trace.from, trace.to), target };
+      const physicalEnd = trace.physicalRest ?? trace.rest ?? trace.landing ?? trace.to;
+      return { trace, asset, physicalEnd, distance: pointSegmentDistance(target, trace.from, physicalEnd), target };
     }).filter((candidate) => candidate.distance < 22))
       .sort((a, b) => a.distance - b.distance || (a.trace.holeId ?? "").localeCompare(b.trace.holeId ?? "") || a.asset.id.localeCompare(b.asset.id));
     const candidate = exposed[0];
     const roll = ((world.runSeed + world.week * 31 + day * 17 + sequence * 13 + (candidate?.trace.golferId ?? 0) * 7) >>> 0) % 1000 / 1000;
     const geometricMitigation = candidate ? property.assets.filter((asset) => asset.enabled && asset.category === "safety").reduce((sum, mitigationAsset) => {
       const center = { x: mitigationAsset.x + mitigationAsset.width / 2, y: mitigationAsset.y + mitigationAsset.height / 2 };
-      const onTrajectory = pointSegmentDistance(center, candidate.trace.from, candidate.trace.to) <= Math.max(2, mitigationAsset.width / 2 + 1);
+      const onTrajectory = pointSegmentDistance(center, candidate.trace.from, candidate.physicalEnd) <= Math.max(2, mitigationAsset.width / 2 + 1);
       const nearHome = Math.hypot(center.x - candidate.target.x, center.y - candidate.target.y) < 26;
       if (!onTrajectory || !nearHome) return sum;
       const height = mitigationAsset.coverageHeight ?? (mitigationAsset.kind === "netting" ? 18 : 5);

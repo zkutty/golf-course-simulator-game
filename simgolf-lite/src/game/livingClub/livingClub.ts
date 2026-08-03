@@ -15,6 +15,8 @@ import { STORY_DEFINITION_BY_ID, SYSTEMIC_EVENT_DEFINITIONS } from "./content";
 import { lastItem } from "../../utils/array";
 import { greenGeometryVersion } from "../greens/greenSurface";
 import { isValidGreenRollout } from "../greens/greenRollout";
+import { normalizeShotSlopeContext } from "../models/shotSlope";
+import { shotSlopeExplanation } from "../models/shotSlopeEvidence";
 import type {
   ArchitectureRevisionSummary,
   ArchitectureShotEvidence,
@@ -251,8 +253,14 @@ function normalizeEvidence(raw: unknown): ArchitectureShotEvidence | null {
     return typeof x === "number" && Number.isFinite(x) && typeof y === "number" && Number.isFinite(y);
   };
   if (!evidence.id || !evidence.courseId || !evidence.holeId || !evidence.geometryVersion || !validPoint(evidence.from) || !validPoint(evidence.landing) || !validPoint(evidence.rest)) return null;
+  const shotSlope = normalizeShotSlopeContext(evidence.shotSlope);
   return {
     ...evidence,
+    ...(validPoint(evidence.aim) ? { aim: { ...evidence.aim } } : { aim: undefined }),
+    ...(validPoint(evidence.physicalRest) ? { physicalRest: { ...evidence.physicalRest } } : { physicalRest: undefined }),
+    ...(shotSlope
+      ? { shotSlope, slopeExplanation: shotSlopeExplanation(shotSlope) }
+      : { shotSlope: undefined, slopeExplanation: undefined }),
     ...(evidence.greenRollout && isValidGreenRollout(evidence.greenRollout) ? { greenRollout: evidence.greenRollout } : { greenRollout: undefined }),
     week: Math.max(1, Math.floor(finite(evidence.week, 1))),
     day: clamp(Math.floor(finite(evidence.day)), 0, 6),
@@ -589,12 +597,16 @@ export function recordLivingClubRound(world: World, course: Course, round: Compl
     shotType: shot.shotType,
     shotNumber: shot.shotNumber,
     from: shot.from,
+    aim: shot.aim,
     landing: shot.landing,
+    physicalRest: shot.sharedOutcome?.physicalRest ?? shot.greenRollout?.rest ?? shot.landing,
     rest: shot.rest,
     scoreToPar: round.scoreToPar,
     waitMinutes: round.waitMinutes ?? 0,
     lieBefore: shot.lieBefore,
     lieAfter: shot.lieAfter,
+    shotSlope: shot.shotSlope,
+    slopeExplanation: shot.slopeExplanation ?? shotSlopeExplanation(shot.shotSlope),
     greenRollout: shot.greenRollout,
   }));
   living = {
@@ -650,12 +662,16 @@ export function recordPlayerRoundArchitecture(
     shotType: playerShotType(shot.club, shot.lieBefore, shot.shotNumber),
     shotNumber: shot.shotNumber,
     from: shot.from,
+    aim: shot.aim,
     landing: shot.landing,
+    physicalRest: shot.sharedOutcome?.physicalRest ?? shot.greenRollout?.rest ?? shot.landing,
     rest: shot.rest,
     scoreToPar: careerRound.scoreToPar,
     waitMinutes: 0,
     lieBefore: shot.lieBefore,
     lieAfter: shot.lieAfter,
+    shotSlope: shot.shotSlope,
+    slopeExplanation: shotSlopeExplanation(shot.shotSlope),
     greenRollout: shot.greenRollout,
   }));
   living = {

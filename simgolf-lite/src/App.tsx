@@ -199,6 +199,7 @@ import {
   advancePlayerRound,
   autoFinishPlayerRound,
   caddieRecommendation,
+  caddieShotGuidance,
   commitPlayerShot,
   completePlayerTraining,
   concedePlayerRound,
@@ -2640,6 +2641,9 @@ export default function App() {
       seed: world.runSeed,
       reducedMotion: appProfile.accessibility.reducedMotion || !effectiveAnimations,
     });
+    const textCaddieGuidance = activePlayerRound
+      ? caddieShotGuidance(activePlayerRound, playerPro.skills)
+      : null;
     const renderText = () => JSON.stringify({
       coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
       screen,
@@ -2938,6 +2942,12 @@ export default function App() {
           aim: playerShotAim,
           strokes: activePlayerRound.strokes,
           penalties: activePlayerRound.penalties,
+          caddieGuidance: textCaddieGuidance ? {
+            selection: textCaddieGuidance.selection,
+            risk: textCaddieGuidance.preview.risk,
+            expectedPenalty: textCaddieGuidance.preview.expectedPenalty,
+            shotSlope: textCaddieGuidance.shotSlope,
+          } : null,
           scorecard: activePlayerRound.scorecard,
           rulesSnapshot: textRulesSnapshot(activePlayerRound.rulesSnapshot),
           pendingShot: textShotTrace(activePlayerRound.pendingShot),
@@ -2989,6 +2999,10 @@ export default function App() {
           pinRotation: golfer.pinRotation,
           latestSharedOutcome: textSharedOutcome(latestOutcome?.sharedOutcome),
           latestRuling: latestOutcome?.sharedOutcome?.ruling ?? null,
+          latestShotSlope: latestOutcome?.shotSlope ?? null,
+          latestSlopeExplanation: latestOutcome?.slopeExplanation ?? null,
+          latestLanding: latestOutcome?.landing ?? null,
+          latestRest: latestOutcome?.rest ?? null,
         };
       }),
     });

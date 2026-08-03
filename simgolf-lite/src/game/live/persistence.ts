@@ -79,8 +79,12 @@ function shotIntent(value: unknown): boolean {
   return isRecord(value) && typeof value.id === "string" && intentKinds.has(value.kind as StrategicIntentKind) &&
     point(value.from) && point(value.target) && typeof value.club === "string" && techniques.has(String(value.technique)) &&
     (value.flightProfile == null || flightProfiles.has(String(value.flightProfile))) &&
+    (value.shotSlope == null || normalizeShotSlopeContext(value.shotSlope) != null) &&
+    (value.previewLanding == null || point(value.previewLanding)) &&
+    (value.previewRest == null || point(value.previewRest)) &&
+    (value.previewSeed == null || finite(value.previewSeed)) &&
     ["power", "expectedStrokes", "variance", "hazardRisk", "nextShotQuality"].every((key) => finite(value[key])) &&
-    Array.isArray(value.facts) && value.facts.length <= 8 && value.facts.every(fact);
+    Array.isArray(value.facts) && value.facts.length <= 12 && value.facts.every(fact);
 }
 
 function holePlan(value: unknown): boolean {
@@ -90,7 +94,7 @@ function holePlan(value: unknown): boolean {
       (alternative.intentId == null || typeof alternative.intentId === "string") &&
       (alternative.target == null || point(alternative.target)) &&
       (alternative.score == null || finite(alternative.score)) &&
-      typeof alternative.reason === "string" && Array.isArray(alternative.facts) && alternative.facts.length <= 8 && alternative.facts.every(fact)
+      typeof alternative.reason === "string" && Array.isArray(alternative.facts) && alternative.facts.length <= 12 && alternative.facts.every(fact)
     );
 }
 
@@ -102,6 +106,7 @@ function shotOutcome(value: unknown): boolean {
     typeof value.lieAfter === "string" && ["carryYards", "rollYards", "penaltyStrokes", "seed"].every((key) => finite(value[key])) &&
     typeof value.holed === "boolean" && Array.isArray(value.facts) && value.facts.length <= 12 && value.facts.every(fact) &&
     (value.shotSlope == null || normalizeShotSlopeContext(value.shotSlope) != null) &&
+    (value.slopeExplanation == null || typeof value.slopeExplanation === "string") &&
     (value.greenRollout == null || isValidGreenRollout(value.greenRollout)) &&
     (value.greenPutting == null || isValidGreenPutting(value.greenPutting));
 }

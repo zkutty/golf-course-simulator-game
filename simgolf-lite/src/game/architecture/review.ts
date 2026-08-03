@@ -86,9 +86,10 @@ function traces(
   return bounded(evidence
     .filter((item) => !recoveryOnly || item.shotType === "recovery")
     .flatMap((item) => {
+      const retainedPhysicalRest = item.physicalRest ?? item.rest;
       const rolloutPoints = item.greenRollout?.path?.length
         ? [item.from, item.greenRollout.landing, ...item.greenRollout.path.slice(1)]
-        : [item.from, item.rest];
+        : [item.from, retainedPhysicalRest];
       const physicalRest = rolloutPoints.at(-1);
       const points = physicalRest && (physicalRest.x !== item.rest.x || physicalRest.y !== item.rest.y)
         ? [...rolloutPoints, item.rest]
@@ -99,6 +100,7 @@ function traces(
         to,
         current: item.geometryVersion === currentGeometryVersion,
         emphasized: item.id === selectedTraceId,
+        label: item.slopeExplanation,
       }));
     }), 320);
 }
@@ -128,8 +130,9 @@ function dispersionPoints(
     id: item.id,
     x: item.landing.x,
     y: item.landing.y,
-    value: Math.hypot(item.landing.x - item.rest.x, item.landing.y - item.rest.y),
+    value: Math.hypot(item.landing.x - (item.physicalRest ?? item.rest).x, item.landing.y - (item.physicalRest ?? item.rest).y),
     current: item.geometryVersion === currentGeometryVersion,
+    label: item.slopeExplanation,
   })), 240);
 }
 

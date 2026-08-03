@@ -49,6 +49,12 @@ export interface ShotIntent {
   hazardRisk: number;
   nextShotQuality: number;
   facts: StrategyFact[];
+  /** Frozen preview facts; optional for historical plans. */
+  shotSlope?: ShotSlopeContext;
+  /** Physical fixed-seed preview positions, never a second physics result. */
+  previewLanding?: Point;
+  previewRest?: Point;
+  previewSeed?: number;
 }
 
 export interface RejectedAlternative {
@@ -103,6 +109,8 @@ export interface LiveShotOutcome {
   finalPosition?: Point;
   /** Immutable ZK-631/ZK-632 target-elevation facts for this outcome. */
   shotSlope?: ShotSlopeContext;
+  /** Human-readable explanation derived only from the frozen slope context. */
+  slopeExplanation?: string;
   /** Optional authoritative M62 ground path; absent on legacy outcomes. */
   greenRollout?: GreenRolloutV1;
   /** Resolved, save-safe automatic putting for a ball that reached green. */

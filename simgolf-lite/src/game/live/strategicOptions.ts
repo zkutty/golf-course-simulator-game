@@ -15,8 +15,10 @@ import { resolveObstacleCollision } from "../rules/obstacleCollision";
 import type { GolferCapabilities, RejectedAlternative, ShotIntent, StrategicHolePlan, StrategicIntentKind, StrategyFact } from "./m47Types";
 import type { Personality } from "./personality";
 import { liveCourseSnapshot, resolveLiveShot, terrainAt } from "./livePhysics";
-import { analyzeShotSlope } from "../models/shotSlope";
+import { analyzeShotSlope, resolveShotCurve, type ShotCurveTechnique } from "../models/shotSlope";
 import { planGreenLandingZones, type GreenLandingCandidate } from "./greenLandingStrategy";
+import { stableGolferHandedness } from "./capabilities";
+import { shotSlopeEvidenceFacts } from "../models/shotSlopeEvidence";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const playable = new Set(["tee", "fairway", "rough", "deep_rough", "green", "sand", "waste_area"]);
@@ -139,6 +141,37 @@ function targetNear(course: Course, raw: Point, preferSafe: boolean): Point {
     };
     return terrainScore(a) - terrainScore(b) || distance(a, raw) - distance(b, raw) || a.y - b.y || a.x - b.x;
   })[0];
+}
+
+/** Counter-aims with the authoritative curve resolver; flight still applies it once. */
+function slopeAwareAim(args: {
+  course: Course;
+  from: Point;
+  desired: Point;
+  club: string;
+  technique: ShotCurveTechnique;
+  capabilities: GolferCapabilities;
+}): Point {
+  const shotSlope = analyzeShotSlope({
+    course: args.course,
+    from: args.from,
+    to: args.desired,
+    yardsPerTile: args.course.yardsPerTile,
+    handedness: stableGolferHandedness(args.capabilities.seed),
+  });
+  const length = distance(args.from, args.desired);
+  const curve = resolveShotCurve({
+    shotSlope,
+    shotLengthTiles: length,
+    club: args.club,
+    technique: args.technique,
+  }).combinedCurveTiles;
+  if (Math.abs(curve) < 1e-9 || length < 1e-9) return { ...args.desired };
+  const direction = unit(args.from, args.desired);
+  return targetNear(args.course, {
+    x: args.desired.x + direction.y * curve,
+    y: args.desired.y - direction.x * curve,
+  }, true);
 }
 
 function profileFor(capabilities: GolferCapabilities, course: Course): GolferProfile {
@@ -371,6 +404,13 @@ function recoveryCandidate(args: {
     hazardRisk: 0,
     nextShotQuality: 0,
     facts: [],
+    shotSlope: analyzeShotSlope({
+      course: args.course,
+      from: args.from,
+      to: args.spec.target,
+      yardsPerTile: args.course.yardsPerTile,
+      handedness: stableGolferHandedness(args.capabilities.seed),
+    }),
   };
   const samples = Array.from({ length: args.sampleCount ?? 3 }, (_, index) => resolveLiveShot({
     snapshot: args.snapshot,
@@ -449,6 +489,9 @@ function recoveryCandidate(args: {
     hazardRisk,
     nextShotQuality,
     facts,
+    previewLanding: samples[0] ? { ...samples[0].landing } : undefined,
+    previewRest: samples[0] ? { ...samples[0].rest } : undefined,
+    previewSeed: samples[0]?.seed,
   };
 }
 
@@ -520,13 +563,53 @@ function candidateTarget(course: Course, hole: Hole, kind: StrategicIntentKind):
   return targetNear(course, pointAt(tee, green, .46, -3.5), true);
 }
 
-function buildIntent(args: { course: Course; hole: Hole; kind: StrategicIntentKind; capabilities: GolferCapabilities; personality: Personality; profile: GolferProfile; }): ShotIntent {
+function buildIntent(args: { course: Course; hole: Hole; kind: StrategicIntentKind; capabilities: GolferCapabilities; personality: Personality; profile: GolferProfile; snapshot?: PlayerRoundCourseSnapshot; }): ShotIntent {
   const from = { ...args.hole.tee! };
-  const target = candidateTarget(args.course, args.hole, args.kind);
-  const club = chooseClub(args.course, args.kind, from, target, args.capabilities, terrainAt(args.course, from));
+  const desiredTarget = candidateTarget(args.course, args.hole, args.kind);
+  const club = chooseClub(args.course, args.kind, from, desiredTarget, args.capabilities, terrainAt(args.course, from));
+  const technique = args.kind === "recovery" ? "punch" : "normal";
+  const target = slopeAwareAim({ course: args.course, from, desired: desiredTarget, club: club.name, technique, capabilities: args.capabilities });
   const clubSpec = args.profile.clubs.find((candidate) => candidate.name === club.name) ?? args.profile.clubs[0];
-  const evaluation = evalShotExpectedCost({ course: args.course, from, to: target, golfer: args.profile, club: clubSpec });
-  const terrain = terrainAt(args.course, target);
+  const shotSlope = analyzeShotSlope({
+    course: args.course,
+    from,
+    to: target,
+    yardsPerTile: args.course.yardsPerTile,
+    handedness: stableGolferHandedness(args.capabilities.seed),
+  });
+  const evaluation = evalShotExpectedCost({ course: args.course, from, to: target, golfer: args.profile, club: clubSpec, shotSlope });
+  const snapshot = args.snapshot ?? liveCourseSnapshot({
+    course: args.course,
+    teeSet: "member",
+    pinRotation: args.course.activePinRotation ?? "A",
+  });
+  const previewSeed = stableHash(`${args.capabilities.seed}:${args.hole.id ?? "hole"}:${args.kind}:slope-preview`);
+  const previewBase: ShotIntent = {
+    id: `${args.hole.id ?? "hole"}-${args.kind}`,
+    kind: args.kind,
+    from,
+    target,
+    club: club.name,
+    power: club.power,
+    technique,
+    expectedStrokes: 1,
+    variance: 0,
+    hazardRisk: 0,
+    nextShotQuality: 0,
+    facts: [],
+    shotSlope,
+  };
+  const preview = resolveLiveShot({
+    snapshot,
+    capabilities: args.capabilities,
+    holeId: args.hole.id ?? snapshot.holes[0]?.id ?? "hole-1",
+    shotNumber: 1,
+    from,
+    lie: terrainAt(args.course, from),
+    intent: previewBase,
+    seed: previewSeed,
+  });
+  const terrain = terrainAt(args.course, preview.rest);
   const terrainRisk = terrain === "water" || terrain === "wetland" ? .95 : terrain === "deep_rough" ? .46 : terrain === "sand" || terrain === "waste_area" ? .32 : .08;
   const distanceRisk = clamp(evaluation.utilization - .82, 0, .4);
   const hazardRisk = clamp(terrainRisk + distanceRisk + clubSpec.dispersionTilesBase / 14, 0, 1);
@@ -539,20 +622,18 @@ function buildIntent(args: { course: Course; hole: Hole; kind: StrategicIntentKi
     { code: "terrain", detail: `landing:${terrain}` },
     { code: "next-shot", detail: `quality:${Math.round(nextShotQuality * 100)}%` },
     { code: "context", detail: `preference:${args.personality.prefs.difficulty.toFixed(2)}` },
+    ...shotSlopeEvidenceFacts(shotSlope),
   ];
   return {
-    id: `${args.hole.id ?? "hole"}-${args.kind}`,
-    kind: args.kind,
-    from,
-    target,
-    club: club.name,
-    power: club.power,
-    technique: args.kind === "recovery" ? "punch" : "normal",
+    ...previewBase,
     expectedStrokes: 1 + Math.max(0, evaluation.expectedShotCost - 1) + hazardRisk * (1.25 - args.capabilities.riskTolerance),
     variance,
     hazardRisk,
     nextShotQuality,
     facts,
+    previewLanding: { ...preview.landing },
+    previewRest: { ...preview.rest },
+    previewSeed,
   };
 }
 
@@ -580,9 +661,17 @@ function buildGreenLandingIntent(args: {
   lie: string;
   capabilities: GolferCapabilities;
   candidate: GreenLandingCandidate;
+  snapshot: PlayerRoundCourseSnapshot;
 }): ShotIntent {
   const club = chooseGreenClub(args.course, args.from, args.candidate.target, args.capabilities);
-  return {
+  const shotSlope = analyzeShotSlope({
+    course: args.course,
+    from: args.from,
+    to: args.candidate.target,
+    yardsPerTile: args.course.yardsPerTile,
+    handedness: stableGolferHandedness(args.capabilities.seed),
+  });
+  const intent: ShotIntent = {
     id: args.candidate.id,
     kind: "approach",
     from: { ...args.from },
@@ -596,6 +685,24 @@ function buildGreenLandingIntent(args: {
     hazardRisk: args.candidate.hazardRisk,
     nextShotQuality: args.candidate.nextShotQuality,
     facts: args.candidate.facts,
+    shotSlope,
+  };
+  const previewSeed = stableHash(`${args.capabilities.seed}:${intent.id}:slope-preview`);
+  const preview = resolveLiveShot({
+    snapshot: args.snapshot,
+    capabilities: args.capabilities,
+    holeId: args.hole.id ?? args.snapshot.holes[0]?.id ?? "hole-1",
+    shotNumber: 1,
+    from: args.from,
+    lie: args.lie,
+    intent,
+    seed: previewSeed,
+  });
+  return {
+    ...intent,
+    previewLanding: { ...preview.landing },
+    previewRest: { ...preview.rest },
+    previewSeed,
   };
 }
 
@@ -651,7 +758,7 @@ export function generateStrategicHolePlan(args: {
     ? recoveryCandidates
     : landingCandidates.length > 0
       ? landingCandidates
-      : INTENTS.map((kind) => buildIntent({ ...args, kind, profile }));
+      : INTENTS.map((kind) => buildIntent({ ...args, kind, profile, snapshot }));
   const legacyScore = (intent: ShotIntent) => {
     const riskPenalty = intent.hazardRisk * (1 - args.capabilities.riskTolerance) * 1.4;
     const challengeBonus = intent.kind === "hero" ? args.capabilities.challengeSeeking * .25 : 0;
@@ -735,6 +842,6 @@ export function followUpIntent(args: {
     ? "recovery"
     : distance(args.from, target) <= 5 ? "approach" : "positional";
   const profile = profileFor(args.capabilities, args.course);
-  const intent = buildIntent({ course: args.course, hole: { ...args.hole, tee: args.from, green: target }, kind, capabilities: args.capabilities, personality: args.personality, profile });
+  const intent = buildIntent({ course: args.course, hole: { ...args.hole, tee: args.from, green: target }, kind, capabilities: args.capabilities, personality: args.personality, profile, snapshot: args.snapshot });
   return { ...intent, id: `${args.hole.id ?? "hole"}-follow-${args.shotNumber}`, from: { ...args.from } };
 }
