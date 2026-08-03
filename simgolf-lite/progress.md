@@ -1514,3 +1514,19 @@ classic course-builder references.
   generated certification artifact is retained in the repository. Final
   integrated build, broader release checks, and promotion remain coordinator
   gates after the concurrent ZK-644 packet is integrated.
+
+## 2026-08-03 — Bug-only delivery wave ZK-697, ZK-694, ZK-672
+
+- ZK-697 now guarantees a deterministic natural pond and wetland fringe on a
+  new Parkland starter property only when estate-wide generation placed no
+  water there. The setup preview and committed course share the same generator,
+  preserving exact terrain, elevation, and natural-obstacle parity.
+- ZK-694 suppresses delegated fallback tooltips on Golfopedia's self-explanatory
+  tabs and sidebar navigation while retaining meaningful glossary tooltips,
+  keyboard focus visibility, and non-color selected-state cues.
+- ZK-672 removes the automatic flyover trigger from Hole Wizard confirmation;
+  the camera now remains exactly where the player left it, while the explicit
+  inspector Flyover action continues to start and skip the cinematic normally.
+- Focused unit, type, lint, Playwright, state, and visual checks passed in the
+  isolated worktrees. The combined branch still requires the full development
+  and production promotion gate before any issue is marked Done.
