@@ -2774,6 +2774,7 @@ export function PixiStage(props: PixiStageProps) {
   }, [
     appReady,
     course,
+    props.graphicsQuality,
     props.worldSeed,
     rotation,
     props.seasonalVisualState,
@@ -4323,6 +4324,7 @@ export function PixiStage(props: PixiStageProps) {
     appReady,
     course,
     effectiveTiles,
+    props.graphicsQuality,
     rotation,
     props.seasonalVisualState,
     seasonalPlantsSignature,
