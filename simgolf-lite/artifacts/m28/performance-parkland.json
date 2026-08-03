@@ -1,19 +1,20 @@
 {
+  "version": 1,
   "theme": "parkland",
   "fixture": "perfFixture",
-  "coldStartupMs": 1033,
-  "fixtureLoadMs": 3874,
+  "coldStartupMs": 1113,
+  "fixtureLoadMs": 2538,
   "renderer": {
-    "fps": 10.052665853180498,
-    "meanMs": 99.47610062893082,
+    "fps": 10,
+    "meanMs": 100,
     "p95Ms": 100,
     "maxMs": 100,
-    "workMs": 0.4339622581529917,
+    "workMs": 0.41137725007748177,
     "sections": {
-      "hover+flags": 0.08679245178054713,
-      "water+sway": 0.16163521667696396,
-      "ambient": 0.039622641959280336,
-      "golfers+emotes": 0.1459119477362003
+      "hover+flags": 0.09101797577863682,
+      "water+sway": 0.15089818674647165,
+      "ambient": 0.013173657263110497,
+      "golfers+emotes": 0.15628743028926279
     },
     "golfers": 100,
     "bubbles": 0,
@@ -23,5 +24,23 @@
     "chunksVisible": 28,
     "chunksTotal": 35,
     "objects": 1048
+  },
+  "effective": {
+    "theme": "parkland",
+    "fixture": "perfFixture",
+    "measureSeconds": 20,
+    "warmupSeconds": 8,
+    "frameAssertion": false,
+    "budgets": {
+      "rendererWorkMilliseconds": 8,
+      "coldStartupMilliseconds": 5000,
+      "frameMilliseconds": 33
+    }
+  },
+  "gateValidation": {
+    "coldStartupWithinBudget": true,
+    "rendererWorkWithinBudget": true,
+    "frameWithinBudget": null,
+    "passed": true
   }
 }

@@ -1,4 +1,7 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
+
+const releaseVersion = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
 
 test("M28 clean-profile golden path survives save, reload, input, resize, and accessible settings", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -6,7 +9,7 @@ test("M28 clean-profile golden path survives save, reload, input, resize, and ac
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
 
   await page.goto("/");
-  await expect(page.getByText("v1.0.0-rc.3")).toBeVisible();
+  await expect(page.getByText(`v${releaseVersion}`)).toBeVisible();
   await page.getByRole("button", { name: "Options" }).click();
   await page.getByRole("tab", { name: "Audio" }).click();
   await page.getByLabel("Master volume").fill("0");

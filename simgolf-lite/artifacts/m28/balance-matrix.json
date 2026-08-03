@@ -1317,7 +1317,7 @@
   "canonicalHash": "afe65778",
   "legacyProjectionHash": "55131e55",
   "performance": {
-    "elapsedMs": 237246,
+    "elapsedMs": 250759,
     "runtimeBudgetMs": 720000
   }
 }

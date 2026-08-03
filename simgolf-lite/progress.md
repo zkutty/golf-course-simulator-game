@@ -1681,3 +1681,19 @@ classic course-builder references.
   before the lazy M62 overlay path (about 148 ms). This is documented as a proposed
   high-priority follow-up rather than hidden or misreported as M62 overlay cost.
 - No Linear mutation, push, production promotion, or production claim was made.
+
+## ZK-709 release browser certification repair — 2026-08-03
+
+- Bound the M28 release-label assertion to the authoritative `package.json`
+  version, matching Vite's runtime version injection and avoiding another
+  stale release-candidate literal.
+- Bounded the content-rich live Golfer Inspector on compact viewports and gave
+  its detail region an internal, contained scroll. Chrome and Firefox both
+  pass the complete two-test release slice (M28 golden path plus M47 mobile
+  inspector) and the refreshed 390×844 capture was visually inspected.
+- The WebKit closure was not a renderer or parallel-worker failure: it
+  reproduced at one worker only while the test drove 4× virtual time. The
+  inspector needs only the first scheduled arrival, so the test now uses the
+  same four bounded advances at normal speed. Its inspector, responsive,
+  pseudo-localization, and console assertions are unchanged, and the complete
+  Chrome/Firefox/WebKit release matrix passes 6/6.

@@ -12,7 +12,9 @@ test("M47 Golfer Inspector exposes evidence and remains accessible/responsive", 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?m47Fixture=1");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course?.name), { timeout: 45_000 }).toBe("M47 18-Hole Certification Course");
-  await page.getByTestId("speed-4x").click();
+  // Four 2s normal-speed advances reach the first tee time without collapsing
+  // the browser test into a non-representative accelerated simulation burst.
+  await page.getByTestId("speed-1x").click();
   await advanceLive(page, 4);
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").simulation?.onCourse), { timeout: 30_000 }).toBeGreaterThan(0);
 
@@ -59,7 +61,7 @@ test("M47 Golfer Inspector exposes evidence and remains accessible/responsive", 
   await expect(page.locator("html")).toHaveAttribute("data-color-vision", "deuteranopia");
   await expect(page.locator("html")).toHaveAttribute("data-terrain-patterns", "true");
   await expect.poll(() => page.evaluate(() => document.documentElement.style.fontSize)).toBe("130%");
-  await page.getByTestId("speed-4x").click();
+  await page.getByTestId("speed-1x").click();
   await advanceLive(page, 4);
   await page.locator('button[aria-label][aria-pressed]').filter({ hasText: "👥" }).click();
   await page.getByTestId("live-overview").locator("button:has(b)").first().click();

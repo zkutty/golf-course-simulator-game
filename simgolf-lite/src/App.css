@@ -68,6 +68,18 @@
   border-radius: 0;
 }
 
+/* The live golfer inspector is deliberately content-rich. On compact viewports,
+   keep its close/follow controls inside the visible game frame and let its
+   details scroll rather than pushing the document outside the viewport. */
+@media (max-width: 600px) {
+  .cc-golfer-inspector {
+    box-sizing: border-box;
+    max-height: min(740px, calc(100vh - 90px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
 .cc-storage-warning {
   position: fixed;
   left: 50%;

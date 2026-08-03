@@ -62,12 +62,12 @@
     {
       "id": "full-estate-36-hole-100-golfer-bounded-snapshots",
       "passed": true,
-      "detail": "The 220×140/30,800-cell estate carried 36 green contracts and 100 active golfers; live and course snapshots round-tripped below 1 MiB and 5 MiB in 8.1 ms."
+      "detail": "The 220×140/30,800-cell estate carried 36 green contracts and 100 active golfers; live and course snapshots round-tripped below 1 MiB and 5 MiB in 8.3 ms."
     },
     {
       "id": "architecture-accessibility-and-bounded-overlays",
       "passed": true,
-      "detail": "Architecture sampling was deterministic in 152.4 ms and the full 36-hole base review completed in 66.1 ms (budget 750 ms), retaining every pin/cohort/sample finding while lazy green overlays stayed unattached until requested."
+      "detail": "Architecture sampling was deterministic in 155.2 ms and the full 36-hole base review completed in 70.9 ms (budget 750 ms), retaining every pin/cohort/sample finding while lazy green overlays stayed unattached until requested."
     }
   ],
   "metrics": {
@@ -90,9 +90,9 @@
     "architectureSamples": 104,
     "architectureOverlayItems": 45,
     "architectureBytes": 13283,
-    "fullEstateFixtureMs": 8.059291999999914,
-    "architectureMs": 152.42720899999995,
-    "baseArchitectureReviewMs": 66.06212499999992
+    "fullEstateFixtureMs": 8.304874999999981,
+    "architectureMs": 155.23850000000002,
+    "baseArchitectureReviewMs": 70.89295800000002
   },
   "hashes": {
     "fixtures": "ef3d0de1",

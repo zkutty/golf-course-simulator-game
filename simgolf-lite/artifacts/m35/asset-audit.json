@@ -3,6 +3,7 @@
   "limitsMiB": {
     "atlas": 8,
     "selectedBiome": 6,
+    "cumulativeResidency": 12,
     "initialCritical": 8
   },
   "public": {
@@ -14,21 +15,27 @@
           "mib": 3.344,
           "frames": 235,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 3506327,
+          "cumulativeResidencyMiB": 3.344
         },
         "medium": {
           "bytes": 2958066,
           "mib": 2.821,
           "frames": 225,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2958066,
+          "cumulativeResidencyMiB": 2.821
         },
         "low": {
           "bytes": 2172874,
           "mib": 2.072,
           "frames": 203,
           "fields": 0,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2172874,
+          "cumulativeResidencyMiB": 2.072
         }
       },
       "links": {
@@ -37,21 +44,27 @@
           "mib": 3.302,
           "frames": 235,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 3462165,
+          "cumulativeResidencyMiB": 3.302
         },
         "medium": {
           "bytes": 2911682,
           "mib": 2.777,
           "frames": 225,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2911682,
+          "cumulativeResidencyMiB": 2.777
         },
         "low": {
           "bytes": 2194175,
           "mib": 2.093,
           "frames": 203,
           "fields": 0,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2194175,
+          "cumulativeResidencyMiB": 2.093
         }
       },
       "desert": {
@@ -60,21 +73,27 @@
           "mib": 3.311,
           "frames": 235,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 3471416,
+          "cumulativeResidencyMiB": 3.311
         },
         "medium": {
           "bytes": 2914204,
           "mib": 2.779,
           "frames": 225,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2914204,
+          "cumulativeResidencyMiB": 2.779
         },
         "low": {
           "bytes": 2187709,
           "mib": 2.086,
           "frames": 203,
           "fields": 0,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2187709,
+          "cumulativeResidencyMiB": 2.086
         }
       }
     }
@@ -88,21 +107,27 @@
           "mib": 3.344,
           "frames": 235,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 3506327,
+          "cumulativeResidencyMiB": 3.344
         },
         "medium": {
           "bytes": 2958066,
           "mib": 2.821,
           "frames": 225,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2958066,
+          "cumulativeResidencyMiB": 2.821
         },
         "low": {
           "bytes": 2172874,
           "mib": 2.072,
           "frames": 203,
           "fields": 0,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2172874,
+          "cumulativeResidencyMiB": 2.072
         }
       },
       "links": {
@@ -111,21 +136,27 @@
           "mib": 3.302,
           "frames": 235,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 3462165,
+          "cumulativeResidencyMiB": 3.302
         },
         "medium": {
           "bytes": 2911682,
           "mib": 2.777,
           "frames": 225,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2911682,
+          "cumulativeResidencyMiB": 2.777
         },
         "low": {
           "bytes": 2194175,
           "mib": 2.093,
           "frames": 203,
           "fields": 0,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2194175,
+          "cumulativeResidencyMiB": 2.093
         }
       },
       "desert": {
@@ -134,31 +165,37 @@
           "mib": 3.311,
           "frames": 235,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 3471416,
+          "cumulativeResidencyMiB": 3.311
         },
         "medium": {
           "bytes": 2914204,
           "mib": 2.779,
           "frames": 225,
           "fields": 10,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2914204,
+          "cumulativeResidencyMiB": 2.779
         },
         "low": {
           "bytes": 2187709,
           "mib": 2.086,
           "frames": 203,
           "fields": 0,
-          "overlays": {}
+          "overlays": {},
+          "cumulativeResidencyBytes": 2187709,
+          "cumulativeResidencyMiB": 2.086
         }
       }
     }
   },
   "initialCritical": {
-    "bytes": 3755841,
-    "mib": 3.582,
+    "bytes": 3793831,
+    "mib": 3.618,
     "files": [
-      "assets/index-CCrYgI3c.js",
-      "assets/index-TyFob60b.css",
+      "assets/index-BTjAXyly.js",
+      "assets/index-C77xb2QC.css",
       "assets/pixi-D8n702SF.js",
       "assets/react-CJopdd0D.js",
       "assets/vendor-ugxaKWoA.js",
