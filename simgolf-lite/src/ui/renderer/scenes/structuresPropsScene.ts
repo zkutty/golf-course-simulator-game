@@ -24,10 +24,10 @@ export function createStructuresPropsSceneSystem(layer: PIXI.Container): RenderS
       const theme = getBiomeDefinition(snapshot.course.theme).key;
       for (const building of snapshot.course.buildings ?? []) {
         const spec = buildingSpec(building);
-        const texture = getPropFrame(buildingVisualFrame(building, theme))
-          ?? getPropFrame(buildingVisualFrame({ ...building, tier: 1 }, theme))
-          ?? getPropFrame(spec.frame as AtlasFrame)
-          ?? getPropFrame("clubhouse");
+        const texture = getPropFrame(theme, snapshot.graphicsQuality, buildingVisualFrame(building, theme))
+          ?? getPropFrame(theme, snapshot.graphicsQuality, buildingVisualFrame({ ...building, tier: 1 }, theme))
+          ?? getPropFrame(theme, snapshot.graphicsQuality, spec.frame as AtlasFrame)
+          ?? getPropFrame(theme, snapshot.graphicsQuality, "clubhouse");
         if (!texture) continue;
         const footprint = { x: building.x, y: building.y, w: spec.w, d: spec.d };
         const anchor = frontCorner(footprint, snapshot.rotation);

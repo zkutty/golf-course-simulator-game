@@ -1,5 +1,12 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-08-03 — ZK-674 biome-safe terrain atlas lookup complete
+
+- Replaced renderer texture lookups that implicitly read the globally active atlas with strict `(biome, quality, frame)` lookup paths for terrain, terrain detail, props, structures, and seasonal frame overlays. Cached bundles may remain resident, but a renderer can no longer borrow the currently active Links/Parkland bundle while drawing a Desert course or drop into that bundle's legacy fallback during a rebuild.
+- Retained the one-argument Design Dock compatibility path exactly (active seasonal overlay → active bundle → legacy fallback), without touching Design Dock files or behavior.
+- Added deterministic atlas-cache regressions covering Parkland-high followed by Desert-low residency, wrong-biome rejection, and terrain/detail/prop selection. Added a real-browser Desert slow/rapid zoom regression using a high-quality seasonal fixture; assets and browser console remain clean. Existing M21 coverage continues to exercise all primary biomes and four rotations.
+- ZK-327 was checked read-only and is related but not a prerequisite: ZK-674's cache ownership defect is entirely in the already-present atlas/render paths.
+
 ## 2026-08-02 — ZK-633 sidehill curvature implementation in progress
 
 - Added one authoritative handedness-aware sidehill/intentional curve resolver. A one-step cross slope scales with airborne shot length and caps at `min(1.25, 0.35 + shotLengthTiles * 0.04)`; combined natural and intentional shape stays within 2.75 tiles.

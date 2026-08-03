@@ -2632,7 +2632,7 @@ export function PixiStage(props: PixiStageProps) {
         if (!isScenicOceanPoint(model.coast, { x: x + 0.5, y: y + 0.5 }, course.width, course.height, model.coastline)) continue;
         const distance = Math.max(-x, x - course.width + 1, -y, y - course.height + 1, 0);
         if (distance > band) continue;
-        const texture = getTerrainFrame(pickTerrainBaseFrame(material, x, y));
+        const texture = getTerrainFrame(model.theme, props.graphicsQuality, pickTerrainBaseFrame(material, x, y));
         if (!texture) continue;
         const position = worldToIso(x + 0.5, y, 0, rotation);
         const tile = new PIXI.Sprite(texture);
@@ -2707,7 +2707,7 @@ export function PixiStage(props: PixiStageProps) {
           nearWater: false,
           climate: seasonalClimate,
         });
-      const texture = getPropFrame(picked.variant.frame);
+      const texture = getPropFrame(model.theme, props.graphicsQuality, picked.variant.frame);
       const position = worldToIso(prop.x, prop.y, 0, rotation);
       if (texture) {
         const sprite = new PIXI.Sprite(texture);
@@ -2955,7 +2955,7 @@ export function PixiStage(props: PixiStageProps) {
         // Authored parkland sources are @2× but remain 64×32 in world space.
         // Other themes intentionally use the safe legacy tint until M21.
         const authored = material.source === "atlas-2x"
-          ? getTerrainFrame(pickTerrainBaseFrame(material, x, y))
+          ? getTerrainFrame(course.theme, props.graphicsQuality, pickTerrainBaseFrame(material, x, y))
           : null;
         const sprite = new PIXI.Sprite(authored ?? diamond);
         sprite.anchor.set(0.5, 0);
@@ -2995,7 +2995,9 @@ export function PixiStage(props: PixiStageProps) {
           x,
           y,
         );
-        const terrainDetailTexture = terrainDetail ? getTerrainDetailFrame(terrainDetail.frame) : null;
+        const terrainDetailTexture = terrainDetail
+          ? getTerrainDetailFrame(course.theme, props.graphicsQuality, terrainDetail.frame)
+          : null;
         if (terrainDetail && terrainDetailTexture) {
           const detail = new PIXI.Sprite(terrainDetailTexture);
           detail.eventMode = "none";
@@ -3071,7 +3073,7 @@ export function PixiStage(props: PixiStageProps) {
         const features = autotileFeatures(rotateAutotileMask(boundaryMask, rotation));
         for (const feature of features) {
           const transitionTexture = material.source === "atlas-2x"
-            ? getTerrainFrame(terrainTransitionFrame(material, feature))
+            ? getTerrainFrame(course.theme, props.graphicsQuality, terrainTransitionFrame(material, feature))
             : null;
           if (!transitionTexture) continue;
           const lip = new PIXI.Sprite(transitionTexture);
@@ -3814,7 +3816,7 @@ export function PixiStage(props: PixiStageProps) {
       const selectedHabitat = habitatKeys.has(`${obs.x},${obs.y}`)
         ? habitat
         : null;
-      const atlasTex = getPropFrame(selected.variant.frame);
+      const atlasTex = getPropFrame(course.theme, props.graphicsQuality, selected.variant.frame);
       if (atlasTex) {
         addSprite(
           obs,
@@ -4277,7 +4279,7 @@ export function PixiStage(props: PixiStageProps) {
           climate: seasonalClimate,
         })
         : null;
-      const texture = getPropFrame(visual.frame as AtlasFrame);
+      const texture = getPropFrame(course.theme, props.graphicsQuality, visual.frame as AtlasFrame);
       if (!texture) continue;
       const tiles = decorationTiles(decoration);
       const xs = tiles.map((tile) => tile.x);

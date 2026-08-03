@@ -17,6 +17,8 @@ import {
   type AtlasSeasonalOverlay,
 } from "./atlasManifest";
 
+export type { AtlasQuality } from "./atlasManifest";
+
 /**
  * Typed texture-atlas loader (ZKU-147).
  *
@@ -320,6 +322,17 @@ export function getLandscapeMaterialField(
   return overlay ?? landscapeFields.get(`${key}:${terrain}`) ?? null;
 }
 
+function requestedBundleKey(theme: LandTheme | undefined, quality: AtlasQuality): string {
+  return `${getBiomeDefinition(theme).key}:${quality}`;
+}
+
+function activeOverlayFor(theme: LandTheme | undefined, quality: AtlasQuality): string | null {
+  const key = requestedBundleKey(theme, quality);
+  return activeBundleKey === key && activeOverlayKey?.startsWith(`${key}:`)
+    ? activeOverlayKey
+    : null;
+}
+
 function warnMissing(name: string, message: string): void {
   if (import.meta.env.DEV && !warned.has(name)) {
     warned.add(name);
@@ -376,46 +389,78 @@ function frameFamily(name: AtlasFrame): "natural-props" | "buildings" | "decorat
 
 /** Typed seasonal lookup reserved for later family-specific renderers. */
 export function getSeasonalFrame(
+  theme: LandTheme | undefined,
+  quality: AtlasQuality,
   family: AtlasSeasonalFrameFamily,
   name: string,
 ): Texture | null {
-  if (!activeOverlayKey) return null;
-  return seasonalFrameSheets.get(`${activeOverlayKey}:${family}`)?.textures[name] ?? null;
+  const overlayKey = activeOverlayFor(theme, quality);
+  if (!overlayKey) return null;
+  return seasonalFrameSheets.get(`${overlayKey}:${family}`)?.textures[name] ?? null;
 }
 
 /**
  * A frame texture, or null when unavailable (caller uses its fallback).
  * Warns once per missing frame in dev.
  */
-export function getPropFrame(name: AtlasFrame): Texture | null {
+export function getPropFrame(name: AtlasFrame): Texture | null;
+export function getPropFrame(theme: LandTheme | undefined, quality: AtlasQuality, name: AtlasFrame): Texture | null;
+export function getPropFrame(
+  themeOrName: LandTheme | AtlasFrame | undefined,
+  quality?: AtlasQuality,
+  explicitName?: AtlasFrame,
+): Texture | null {
+  const key = explicitName ? requestedBundleKey(themeOrName as LandTheme | undefined, quality!) : activeBundleKey;
+  const name = explicitName ?? themeOrName as AtlasFrame;
   const family = frameFamily(name);
-  const seasonal = getSeasonalFrame(family, name);
-  const base = family === "natural-props"
-    ? (activeBundleKey ? naturalPropsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
-      ?? naturalPropsSheets.get("legacy")?.textures[name]
-      ?? null
-    : (activeBundleKey ? buildingsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
-      ?? buildingsSheets.get("legacy")?.textures[name]
-      ?? null;
+  const seasonal = explicitName
+    ? getSeasonalFrame(themeOrName as LandTheme | undefined, quality!, family, name)
+    : activeOverlayKey
+      ? seasonalFrameSheets.get(`${activeOverlayKey}:${family}`)?.textures[name] ?? null
+      : null;
+  const base = explicitName
+    ? family === "natural-props"
+      ? (key ? naturalPropsSheets.get(key)?.textures[name] ?? null : null)
+      : (key ? buildingsSheets.get(key)?.textures[name] ?? null : null)
+    : family === "natural-props"
+      ? (activeBundleKey ? naturalPropsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
+        ?? naturalPropsSheets.get("legacy")?.textures[name]
+        ?? null
+      : (activeBundleKey ? buildingsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
+        ?? buildingsSheets.get("legacy")?.textures[name]
+        ?? null;
   const tex = seasonal ?? base;
   if (!tex) warnMissing(name, `[atlas] missing frame "${name}" — falling back to procedural sprite`);
   return tex;
 }
 
 /** Authored @2× terrain texture, kept at 64×32 logical world size. */
-export function getTerrainFrame(name: TerrainAtlasFrame): Texture | null {
-  const tex = (activeBundleKey ? terrainSheets.get(activeBundleKey)?.textures[name] ?? null : null)
-    ?? terrainSheets.get("legacy")?.textures[name]
-    ?? null;
+export function getTerrainFrame(name: TerrainAtlasFrame): Texture | null;
+export function getTerrainFrame(theme: LandTheme | undefined, quality: AtlasQuality, name: TerrainAtlasFrame): Texture | null;
+export function getTerrainFrame(
+  themeOrName: LandTheme | TerrainAtlasFrame | undefined,
+  quality?: AtlasQuality,
+  explicitName?: TerrainAtlasFrame,
+): Texture | null {
+  const name = explicitName ?? themeOrName as TerrainAtlasFrame;
+  const key = explicitName ? requestedBundleKey(themeOrName as LandTheme | undefined, quality!) : activeBundleKey;
+  const tex = explicitName
+    ? (key ? terrainSheets.get(key)?.textures[name] ?? null : null)
+    : (activeBundleKey ? terrainSheets.get(activeBundleKey)?.textures[name] ?? null : null)
+      ?? terrainSheets.get("legacy")?.textures[name]
+      ?? null;
   if (!tex) warnMissing(name, `[atlas] missing terrain frame "${name}" — using safe material fallback`);
   return tex;
 }
 
 /** Optional @2× terrain-dressing sprite. Missing detail never affects play. */
-export function getTerrainDetailFrame(name: TerrainDetailFrame): Texture | null {
-  const tex = getSeasonalFrame("terrain-details", name)
-    ?? (activeBundleKey ? terrainDetailsSheets.get(activeBundleKey)?.textures[name] ?? null : null)
-    ?? terrainDetailsSheets.get("legacy")?.textures[name]
+export function getTerrainDetailFrame(
+  theme: LandTheme | undefined,
+  quality: AtlasQuality,
+  name: TerrainDetailFrame,
+): Texture | null {
+  const tex = getSeasonalFrame(theme, quality, "terrain-details", name)
+    ?? terrainDetailsSheets.get(requestedBundleKey(theme, quality))?.textures[name]
     ?? null;
   if (!tex && terrainDetailsSheets.size > 0) {
     warnMissing(name, `[atlas] missing terrain detail frame "${name}" — omitting optional dressing`);

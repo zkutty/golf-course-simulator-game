@@ -14,6 +14,8 @@ import {
   getLandscapeMaterialField,
   getPropFrame,
   getSeasonalFrame,
+  getTerrainDetailFrame,
+  getTerrainFrame,
   loadAtlases,
   loadedBiomeBundle,
   loadedSeasonalOverlay,
@@ -125,13 +127,13 @@ describe("incremental biome atlas loading", () => {
 
     await loadAtlases("parkland", "high", "autumn");
 
-    expect(getPropFrame("parkland_tree_oak") as unknown).toMatchObject({
+    expect(getPropFrame("parkland", "high", "parkland_tree_oak") as unknown).toMatchObject({
       marker: "seasonal-natural",
     });
-    expect(getPropFrame("clubhouse") as unknown).toMatchObject({
+    expect(getPropFrame("parkland", "high", "clubhouse") as unknown).toMatchObject({
       marker: "seasonal-building",
     });
-    expect(getSeasonalFrame("natural-props", "clubhouse") as unknown).toMatchObject({
+    expect(getSeasonalFrame("parkland", "high", "natural-props", "clubhouse") as unknown).toMatchObject({
       marker: "wrong-family-natural",
     });
   });
@@ -203,5 +205,37 @@ describe("incremental biome atlas loading", () => {
       "parkland:high:autumn",
       "parkland:high:spring",
     ]);
+  });
+
+  it("keeps terrain, detail, and prop lookups pinned to their requested biome and tier", async () => {
+    assetsLoad.mockImplementation(async (url: string) => {
+      if (url.endsWith(".json")) {
+        const marker = url.includes("parkland-high") ? "parkland-high"
+          : url.includes("desert-low") ? "desert-low"
+          : "other";
+        return {
+          textures: marker === "parkland-high"
+            ? {
+              parkland_fairway_base_0: { marker },
+              parkland_short_grass_0: { marker },
+              parkland_tree_oak: { marker },
+            }
+            : marker === "desert-low"
+              ? { desert_fairway_base_0: { marker }, desert_saguaro: { marker } }
+              : {},
+        };
+      }
+      return { source: { style: {} } };
+    });
+
+    await loadAtlases("parkland", "high");
+    await loadAtlases("desert", "low");
+
+    expect(getTerrainFrame("parkland", "high", "parkland_fairway_base_0") as unknown).toMatchObject({ marker: "parkland-high" });
+    expect(getTerrainFrame("desert", "low", "desert_fairway_base_0") as unknown).toMatchObject({ marker: "desert-low" });
+    expect(getTerrainFrame("desert", "low", "parkland_fairway_base_0")).toBeNull();
+    expect(getTerrainDetailFrame("parkland", "high", "parkland_short_grass_0") as unknown).toMatchObject({ marker: "parkland-high" });
+    expect(getPropFrame("parkland", "high", "parkland_tree_oak") as unknown).toMatchObject({ marker: "parkland-high" });
+    expect(getPropFrame("desert", "low", "parkland_tree_oak")).toBeNull();
   });
 });
