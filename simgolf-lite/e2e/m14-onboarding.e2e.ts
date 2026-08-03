@@ -4,7 +4,16 @@ import path from "node:path";
 
 const evidenceDir = path.join(process.cwd(), "artifacts", "zk-211", "playwright");
 mkdirSync(evidenceDir, { recursive: true });
+const FULL_TUTORIAL_CI_BUDGET_MS = 840_000;
 test.setTimeout(900_000);
+// Recording the continuously animated Pixi canvas makes each pointer action
+// seconds slower and pushed the full real-UI path past 15 minutes. Keep the
+// normal and CI first attempt native-speed; CI's configured retry records the
+// full trace/video if the first attempt fails. Explicit stage screenshots and
+// Playwright's failure screenshot remain available on every attempt.
+test.use({ trace: "on-first-retry", video: "on-first-retry" });
+
+const TUTORIAL_SAVE_TIMEOUT_MS = 30_000;
 
 type SurfaceLayout = ReturnType<NonNullable<Window["__coursecraftTest"]>["terrainSurfaceState"]>;
 
@@ -55,6 +64,10 @@ function tutorial(page: Page) {
   return page.getByTestId("tutorial-overlay");
 }
 
+async function expectTutorialSaved(page: Page) {
+  await expect(tutorial(page).getByText("Progress saved")).toBeVisible({ timeout: TUTORIAL_SAVE_TIMEOUT_MS });
+}
+
 async function expectStep(page: Page, id: string) {
   await expect(tutorial(page)).toHaveAttribute("data-step-id", id, { timeout: 30_000 });
 }
@@ -71,7 +84,7 @@ async function startFreshTutorial(page: Page, run: string) {
   await capture(page, run, "00-first-launch-offer");
   await page.getByRole("button", { name: "Start guided course" }).click();
   await expectStep(page, "meet-land");
-  await expect(tutorial(page).getByText("Progress saved")).toBeVisible();
+  await expectTutorialSaved(page);
   await page.keyboard.press("Escape");
   await expectStep(page, "meet-land");
   await expect(page.getByRole("dialog", { name: "Game paused" })).toHaveCount(0);
@@ -262,7 +275,7 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
   await expectStep(page, "place-hole");
 
   if (reloadStages) {
-    await expect(tutorial(page).getByText("Progress saved")).toBeVisible();
+    await expectTutorialSaved(page);
     await page.reload();
     await expect(page.getByRole("button", { name: /Continue/ })).toBeVisible();
     await page.getByRole("button", { name: /Continue/ }).click();
@@ -316,7 +329,7 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
   await expectStep(page, "watch-golfers");
   await capture(page, run, "step-06-after-open-course");
   if (reloadStages) {
-    await expect(tutorial(page).getByText("Progress saved")).toBeVisible();
+    await expectTutorialSaved(page);
     await page.reload();
     await page.getByRole("button", { name: /Continue/ }).click();
     await expectStep(page, "watch-golfers");
@@ -365,7 +378,7 @@ async function finishTutorial(page: Page, run: string, reloadStages = false) {
   await expectStep(page, "maintenance");
 
   if (reloadStages) {
-    await expect(tutorial(page).getByText("Progress saved")).toBeVisible();
+    await expectTutorialSaved(page);
     await page.reload();
     await expect(page.getByRole("button", { name: /Continue/ })).toBeVisible();
     await page.getByRole("button", { name: /Continue/ }).click();
@@ -462,7 +475,9 @@ test("complete fresh-state tutorial playthrough A", async ({ page }) => {
   await expect(advisor).toHaveCount(0);
 });
 
-test("complete fresh-state tutorial playthrough B with reload resume and rerun", async ({ page }) => {
+test("complete fresh-state tutorial playthrough B with reload resume and rerun", async ({ page }, testInfo) => {
+  testInfo.setTimeout(FULL_TUTORIAL_CI_BUDGET_MS);
+  const runtimeStartedAt = Date.now();
   await finishTutorial(page, "fresh-b", true);
   await page.getByRole("button", { name: "Tutorial" }).click();
   await expectStep(page, "meet-land");
@@ -501,6 +516,8 @@ test("complete fresh-state tutorial playthrough B with reload resume and rerun",
   await page.getByRole("button", { name: "Skip tutorial" }).click();
   await expect(tutorial(page)).toHaveCount(0);
   await expect(page.getByRole("button", { name: /Help/ })).toBeEnabled();
+  expect(Date.now() - runtimeStartedAt, "full tutorial B exceeded its measured 14-minute CI budget")
+    .toBeLessThan(FULL_TUTORIAL_CI_BUDGET_MS);
 });
 
 test("initial and mid-tutorial skip paths remain playable", async ({ page }) => {
