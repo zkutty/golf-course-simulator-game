@@ -6,7 +6,7 @@ import type { PlayerProAppearance, PlayerProBackground, PlayerProHandedness } fr
 import { SANDBOX_STARTING_CASH } from "../game/models/setup";
 import { DEFAULT_WORLD } from "../game/models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
-import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
+import { generateNewGameLandscape } from "../game/gen/generateWildLand";
 import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
 import { generateCourseName } from "../utils/courseNames";
 import { StartMenuBackground } from "./StartMenuBackground";
@@ -76,7 +76,7 @@ function LandPreview(props: {
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const generated = useMemo(
-    () => generateWildLandWithObstacles(COURSE_WIDTH, COURSE_HEIGHT, props.seed | 0, [], props.theme),
+    () => generateNewGameLandscape(COURSE_WIDTH, COURSE_HEIGHT, props.seed | 0, [], props.theme),
     [props.seed, props.theme]
   );
 

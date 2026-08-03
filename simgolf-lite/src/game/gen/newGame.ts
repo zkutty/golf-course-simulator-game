@@ -7,7 +7,7 @@ import { COURSE_WIDTH, COURSE_HEIGHT } from "../models/constants";
 import { findClubhouseSpot } from "../models/buildings";
 import { CHALLENGE_GOALS } from "../objectives/goals";
 import { getDifficultyProfile } from "../balance/difficulty";
-import { generateWildLandWithObstacles } from "./generateWildLand";
+import { generateNewGameLandscape } from "./generateWildLand";
 import { createEstate } from "../estate/estate";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { createDefaultPlayerPro } from "../playerPro/playerPro";
@@ -27,7 +27,7 @@ export function createNewGame(
   goals?: GoalDefinition[] | null
 ): { course: Course; world: World } {
   const seed = setup.seed | 0;
-  const { tiles, obstacles, elevations } = generateWildLandWithObstacles(
+  const { tiles, obstacles, elevations } = generateNewGameLandscape(
     COURSE_WIDTH,
     COURSE_HEIGHT,
     seed,

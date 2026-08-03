@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createNewGame } from "./newGame";
-import { generateWildLandWithObstacles } from "./generateWildLand";
+import { generateNewGameLandscape, generateWildLandWithObstacles } from "./generateWildLand";
 import type { GameSetup } from "../models/setup";
 import { CHALLENGE_GOALS } from "../objectives/goals";
 import { DEFAULT_WORLD } from "../models/defaults";
 import { COURSE_HEIGHT, COURSE_WIDTH, STARTER_PARCEL_HEIGHT, STARTER_PARCEL_WIDTH } from "../models/constants";
-import { starterParcelOffset } from "../estate/estate";
+import { isOwnedTile, starterParcelOffset } from "../estate/estate";
 
 function setup(over: Partial<GameSetup> = {}): GameSetup {
   return {
@@ -42,6 +42,52 @@ describe("createNewGame (ZKU-162)", () => {
     for (const obstacle of generated.obstacles) {
       expect(course.obstacles).toContainEqual(obstacle);
     }
+  });
+
+  it("uses the exact setup-preview landscape when committing a Parkland run", () => {
+    const seed = 7;
+    const preview = generateNewGameLandscape(COURSE_WIDTH, COURSE_HEIGHT, seed, [], "parkland");
+    const { course } = createNewGame(setup({ seed, theme: "parkland" }));
+
+    expect(course.tiles).toEqual(preview.tiles);
+    expect(course.elevations).toEqual(preview.elevations);
+    for (const obstacle of preview.obstacles) expect(course.obstacles).toContainEqual(obstacle);
+  });
+
+  it("keeps Parkland's owned starter property visibly natural across representative seeds", () => {
+    for (const seed of [1, 7, 42, 1234, 424242, 99001]) {
+      const { course } = createNewGame(setup({ seed, theme: "parkland" }));
+      const owned = course.tiles.flatMap((terrain, index) =>
+        isOwnedTile(course, index % course.width, Math.floor(index / course.width))
+          ? [{ terrain, elevation: course.elevations[index] ?? 0 }]
+          : [],
+      );
+      const ownedObstacles = course.obstacles.filter((obstacle) =>
+        isOwnedTile(course, obstacle.x, obstacle.y),
+      );
+
+      expect(owned.some(({ terrain }) => terrain === "water")).toBe(true);
+      expect(new Set(owned.map(({ terrain }) => terrain)).size).toBeGreaterThanOrEqual(3);
+      expect(Math.max(...owned.map(({ elevation }) => elevation)) - Math.min(...owned.map(({ elevation }) => elevation))).toBeGreaterThanOrEqual(2);
+      expect(ownedObstacles.length).toBeGreaterThanOrEqual(12);
+    }
+  });
+
+  it("keeps Parkland starter landscapes seed-stable, distinct, and serializable", () => {
+    const landscape = (seed: number) => {
+      const run = createNewGame(setup({ seed, theme: "parkland" }));
+      return {
+        tiles: run.course.tiles.filter((_, index) => isOwnedTile(run.course, index % run.course.width, Math.floor(index / run.course.width))),
+        elevations: run.course.elevations.filter((_, index) => isOwnedTile(run.course, index % run.course.width, Math.floor(index / run.course.width))),
+        obstacles: run.course.obstacles.filter((obstacle) => isOwnedTile(run.course, obstacle.x, obstacle.y)),
+      };
+    };
+    const first = landscape(42);
+    expect(landscape(42)).toEqual(first);
+    expect(landscape(424242)).not.toEqual(first);
+
+    const run = createNewGame(setup({ seed: 42, theme: "parkland" }));
+    expect(JSON.parse(JSON.stringify(run))).toEqual(run);
   });
 
   it("lets an estate coastline cross the starter boundary without a clipped water seam", () => {

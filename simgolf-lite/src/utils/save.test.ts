@@ -85,6 +85,27 @@ describe("save validation and migrations", () => {
     expect(result.migratedFrom).toBeUndefined();
   });
 
+  it("round-trips a newly generated Parkland starter landscape without rewriting it", () => {
+    const run = createNewGame({
+      mode: "sandbox",
+      courseName: "Starter Pond",
+      seed: 7,
+      theme: "parkland",
+      difficulty: "normal",
+    });
+    const result = parseSaveText(JSON.stringify(file({
+      course: run.course,
+      world: run.world,
+    })));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.payload.course.tiles).toEqual(run.course.tiles);
+    expect(result.payload.course.elevations).toEqual(run.course.elevations);
+    expect(result.payload.course.obstacles).toEqual(run.course.obstacles);
+    expect(result.payload.course.estate).toEqual(run.course.estate);
+    expect(result.payload.world.runSeed).toBe(run.world.runSeed);
+  });
+
   it("round-trips sparse local surface care without changing authored terrain", () => {
     const tiles = DEFAULT_COURSE.tiles.slice();
     for (let y = 2; y < 7; y++) for (let x = 2; x < 11; x++) {

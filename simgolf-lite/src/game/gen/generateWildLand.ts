@@ -2,6 +2,12 @@ import type { LandTheme, Terrain, Obstacle, ObstacleType } from "../models/types
 import { getBiomeDefinition, type ThemeGenConfig } from "../models/biomes";
 import { isWaterHazard } from "../models/terrainRules";
 import { shuffleInPlace } from "../../utils/array";
+import {
+  COURSE_HEIGHT,
+  COURSE_WIDTH,
+  STARTER_PARCEL_HEIGHT,
+  STARTER_PARCEL_WIDTH,
+} from "../models/constants";
 
 // Seeded RNG using mulberry32
 class SeededRNG {
@@ -25,6 +31,87 @@ class SeededRNG {
   nextFloat(min: number, max: number): number {
     return this.next() * (max - min) + min;
   }
+}
+
+function seededValue(seed: number, salt: number): number {
+  let value = (seed ^ salt) >>> 0;
+  value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
+  value = Math.imul(value ^ (value >>> 15), 0x846ca68b);
+  return (value ^ (value >>> 16)) >>> 0;
+}
+
+/**
+ * Full-estate generation deliberately allows ponds to land in future parcels.
+ * A new Parkland operator, however, must receive at least one native water
+ * feature on the owned starter property. Add the smallest deterministic pond
+ * only when the estate-wide pass did not place one there; this keeps every
+ * existing generated feature and avoids the old clipped starter-overlay seam.
+ */
+function ensureParklandStarterLandscape(
+  tiles: Terrain[],
+  elevations: number[],
+  obstacles: Obstacle[],
+  seed: number,
+): { tiles: Terrain[]; elevations: number[]; obstacles: Obstacle[] } {
+  const offsetX = Math.floor((COURSE_WIDTH - STARTER_PARCEL_WIDTH) / 2);
+  const offsetY = Math.floor((COURSE_HEIGHT - STARTER_PARCEL_HEIGHT) / 2);
+  const hasStarterWater = tiles.some((terrain, index) => {
+    if (terrain !== "water") return false;
+    const x = index % COURSE_WIDTH;
+    const y = Math.floor(index / COURSE_WIDTH);
+    return x >= offsetX && x < offsetX + STARTER_PARCEL_WIDTH
+      && y >= offsetY && y < offsetY + STARTER_PARCEL_HEIGHT;
+  });
+  if (hasStarterWater) return { tiles, elevations, obstacles };
+
+  const centerX = offsetX + 18 + seededValue(seed, 0x4a31) % (STARTER_PARCEL_WIDTH - 36);
+  const centerY = offsetY + 14 + seededValue(seed, 0x9287) % (STARTER_PARCEL_HEIGHT - 28);
+  const radiusX = 4 + seededValue(seed, 0x1b0f) % 3;
+  const radiusY = 3 + seededValue(seed, 0xe1c3) % 2;
+  const nextTiles = [...tiles];
+  const nextElevations = [...elevations];
+  const pond = new Set<number>();
+  const featureTiles = new Set<number>();
+
+  for (let y = centerY - radiusY; y <= centerY + radiusY; y++) {
+    for (let x = centerX - radiusX; x <= centerX + radiusX; x++) {
+      const dx = (x - centerX) / radiusX;
+      const dy = (y - centerY) / radiusY;
+      const edgeNoise = seededValue(seed + x * 17 + y * 31, 0x7559) % 100;
+      if (dx * dx + dy * dy > (edgeNoise < 18 ? 0.82 : 1.08)) continue;
+      const index = y * COURSE_WIDTH + x;
+      pond.add(index);
+      featureTiles.add(index);
+      nextTiles[index] = "water";
+      nextElevations[index] = 0;
+    }
+  }
+
+  // The generated pond gets a sparse wetland fringe instead of a hard tile
+  // edge. It is derived from the same seed and only touches untouched natural
+  // ground, keeping it a visible native feature rather than player-authored
+  // landscaping.
+  for (const index of pond) {
+    const x = index % COURSE_WIDTH;
+    const y = Math.floor(index / COURSE_WIDTH);
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+      const nx = x + dx;
+      const ny = y + dy;
+      const neighbor = ny * COURSE_WIDTH + nx;
+      if (nx < offsetX || ny < offsetY || nx >= offsetX + STARTER_PARCEL_WIDTH || ny >= offsetY + STARTER_PARCEL_HEIGHT) continue;
+      if (nextTiles[neighbor] !== "rough" && nextTiles[neighbor] !== "deep_rough") continue;
+      if (seededValue(seed + nx * 13 + ny * 19, 0x0f53) % 100 >= 42) continue;
+      featureTiles.add(neighbor);
+      nextTiles[neighbor] = "wetland";
+      nextElevations[neighbor] = 0;
+    }
+  }
+
+  return {
+    tiles: nextTiles,
+    elevations: nextElevations,
+    obstacles: obstacles.filter((obstacle) => !featureTiles.has(obstacle.y * COURSE_WIDTH + obstacle.x)),
+  };
 }
 
 // Generation constants now come from the land theme (ZKU-166); parkland is
@@ -669,4 +756,22 @@ export function generateWildLandWithObstacles(
   const obstacles = generateObstacles(width, height, tiles, seed, reservedZones, theme);
   const elevations = generateElevations(width, height, seed, tiles, theme);
   return { tiles, obstacles, elevations };
+}
+
+/**
+ * Shared new-game landscape authority for both the setup preview and the
+ * committed course. Generic generation remains available for scenarios and
+ * migrations that must preserve their historical output exactly.
+ */
+export function generateNewGameLandscape(
+  width: number,
+  height: number,
+  seed: number,
+  reservedZones: Point[] = [],
+  theme?: LandTheme,
+): { tiles: Terrain[]; obstacles: Obstacle[]; elevations: number[] } {
+  const generated = generateWildLandWithObstacles(width, height, seed, reservedZones, theme);
+  return theme === "parkland" && width === COURSE_WIDTH && height === COURSE_HEIGHT
+    ? ensureParklandStarterLandscape(generated.tiles, generated.elevations, generated.obstacles, seed)
+    : generated;
 }
