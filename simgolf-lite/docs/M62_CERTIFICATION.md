@@ -5,8 +5,9 @@
 The deterministic M62 certification contract passes **9/9 automated checks** on
 the released dependency baseline `bbafeae`. The machine disposition is **PASS**
 for the evidence below and **HOLD** for the five explicitly listed human,
-physical-device, and release-owner gates. This packet does not authorize or
-claim a production promotion.
+physical-device, and release-owner gates. The baseline alone did not authorize
+a production promotion; the exact integrated release and its production
+evidence are recorded in the addendum below.
 
 The machine-readable source of truth is
 [`artifacts/m62/certification-report.json`](../artifacts/m62/certification-report.json).
@@ -192,3 +193,50 @@ bankruptcies and three poor-management bankruptcies. The historical early-stop
 projection is 8,227 weeks with 197 post-bankruptcy weeks. Canonical hash
 `afe65778` and legacy-projection hash `55131e55` are pinned; the clean full run
 completed in 237,246 ms against the unchanged 720,000 ms budget.
+
+## Production release addendum — 2026-08-03
+
+The exact integrated M62 candidate `120ca2f39636573ef709ee83333988df2b5dcf53`
+was promoted unchanged through development and production after the automated
+record above was refreshed. The checked-in machine report continues to be the
+source of truth for M62 physics/determinism; the final release measurements
+were 8.3 ms full-estate snapshot round-trip, 155.2 ms Architecture sampling,
+and 70.9 ms base Architecture Review (all within the existing bounds).
+
+### Final automated and deployment evidence
+
+- Local final CI: 156 test files, 1,200 passing tests, one intentional skip,
+  plus audio audit 5/5.
+- M62 certification: 14 files, 92 tests, 9/9 checks, determinism hash
+  `47e900b8`.
+- Full balance matrix: 81 paths × 104 weeks (8,424 weeks) in 250,759 ms under
+  the 720,000 ms budget; canonical hash `afe65778`, legacy projection hash
+  `55131e55`, zero normal-path bankruptcies, and three deliberate
+  poor-management bankruptcies.
+- Fuzz: 3/3. Soak: 30 weeks / 3,764 rounds / state hash `672a3c24`.
+  Performance: 0.32 ms game-tick work against an 8 ms bound. PWA smoke,
+  desktop tests (10/10), and packaged arm64 desktop smoke passed.
+- Cross-browser release suite: 6/6 across Chrome, Firefox, and WebKit. The
+  complete real M14 onboarding suite passed 8/8 in 24.3 minutes, including the
+  11.1-minute reload/resume/rerun path.
+- Development CI [30829597727](https://github.com/zkutty/golf-course-simulator-game/actions/runs/30829597727)
+  and production CI/deployment [30830631537](https://github.com/zkutty/golf-course-simulator-game/actions/runs/30830631537)
+  both passed. The tested artifact SHA-256 was
+  `26b05b89dc2cc18795fd8aed16a69b33f2b242a6bc5aec13389d718a75cf2244`.
+- Cloudflare deployed Worker version `96b016a4-46b9-44fc-aeae-5c6396556eed` at
+  https://coursecraft-playtest.zbkutlow.workers.dev; post-deploy HTTP health
+  check returned 200.
+
+### Outstanding human certification gates
+
+These gates are intentionally **not** machine-completed or release-signed by
+this packet. ZK-645 remains In Progress until a release owner records evidence
+for each one against the exact deployed commit above:
+
+1. Human golf-authenticity playtest across all fourteen fixtures, including
+   funnel-green and universal-target judgment.
+2. Assistive-technology and physical text-scaling review of overlays/reports.
+3. Physical supported-browser, installed-PWA, and packaged-desktop review.
+4. GPU/thermal soak on representative low- and high-tier hardware.
+5. Release-owner sign-off after reviewing the completed development and
+   production monitoring evidence.
