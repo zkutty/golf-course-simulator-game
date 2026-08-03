@@ -7,6 +7,12 @@ Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and pus
 - Added deterministic atlas-cache regressions covering Parkland-high followed by Desert-low residency, wrong-biome rejection, and terrain/detail/prop selection. Added a real-browser Desert slow/rapid zoom regression using a high-quality seasonal fixture; assets and browser console remain clean. Existing M21 coverage continues to exercise all primary biomes and four rotations.
 - ZK-327 was checked read-only and is related but not a prerequisite: ZK-674's cache ownership defect is entirely in the already-present atlas/render paths.
 
+## 2026-08-03 — ZK-703 tutorial camera reconciliation complete
+
+- Removed the silent `ARCHITECT` override from ninth-hole durable-progress reconciliation. The new pure `reconcileTutorialSession` preserves the restored or player-selected `COZY`/`ARCHITECT` camera mode while advancing tutorial progress.
+- Focused M14 unit coverage passes (12/12), along with TypeScript and lint (zero errors).
+- Real M14 B evidence preserved final-hole camera equality, 9/9 valid holes, 36 scheduled arrivals with one golfer on course, graduation, reload, and tutorial rerun. Broader rerun coverage then stopped on the distinct ZK-704 case: Watch Golfers can remain disabled after all 36 completed rounds; no ZK-704 behavior is included here.
+
 ## 2026-08-02 — ZK-633 sidehill curvature implementation in progress
 
 - Added one authoritative handedness-aware sidehill/intentional curve resolver. A one-step cross slope scales with airborne shot length and caps at `min(1.25, 0.35 + shotLengthTiles * 0.04)`; combined natural and intentional shape stays within 2.75 tiles.

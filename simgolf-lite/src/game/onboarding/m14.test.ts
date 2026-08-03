@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import type { Terrain, WeekResult } from "../models/types";
 import { advisorMessages, allowsMessage } from "../advisor/advisor";
-import { TUTORIAL_STEPS, createTutorialProgress, reconcileTutorialProgress } from "./tutorial";
+import { TUTORIAL_STEPS, createTutorialProgress, reconcileTutorialProgress, reconcileTutorialSession } from "./tutorial";
 import { GOLFOPEDIA_ENTRIES } from "../../ui/help/golfopediaData";
 import {
   terrainConstructionUnitCost,
@@ -63,7 +63,7 @@ describe("M14 onboarding data", () => {
     expect(loaded?.tutorial).toEqual(progress);
   });
 
-  it("reconciles a ninth valid hole exactly once, including after resume", () => {
+  it("reconciles a ninth valid hole exactly once across resume without changing camera mode", () => {
     const openCourseIndex = TUTORIAL_STEPS.findIndex((step) => step.id === "open-course");
     const progress = { ...createTutorialProgress(DEFAULT_COURSE, DEFAULT_WORLD), stepIndex: openCourseIndex };
     const width = 60;
@@ -84,6 +84,11 @@ describe("M14 onboarding data", () => {
     const reconciled = reconcileTutorialProgress(progress, course);
     expect(TUTORIAL_STEPS[reconciled.stepIndex].id).toBe("watch-golfers");
     expect(reconcileTutorialProgress(reconciled, course)).toBe(reconciled);
+    for (const viewMode of ["COZY", "ARCHITECT"] as const) {
+      const session = reconcileTutorialSession(progress, course, viewMode);
+      expect(session.progress).toEqual(reconciled);
+      expect(session.viewMode).toBe(viewMode);
+    }
   });
 });
 

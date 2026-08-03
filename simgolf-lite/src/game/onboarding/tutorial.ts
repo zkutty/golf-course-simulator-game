@@ -48,6 +48,8 @@ export interface TutorialProgress {
   baseline: TutorialBaseline;
 }
 
+export type TutorialViewMode = "COZY" | "ARCHITECT";
+
 const STORAGE_KEY = "coursecraft_tutorial_progress_v1";
 
 const always = () => true;
@@ -178,6 +180,18 @@ export function reconcileTutorialProgress(progress: TutorialProgress, course: Co
   if (TUTORIAL_STEPS[progress.stepIndex]?.id !== "open-course") return progress;
   if (validHoles(course) < FULL_COURSE_HOLE_COUNT) return progress;
   return { ...progress, stepIndex: progress.stepIndex + 1 };
+}
+
+/**
+ * Reconcile tutorial progress without changing the restored or player-selected
+ * camera mode. Progress reconciliation is not a visible camera transition.
+ */
+export function reconcileTutorialSession(
+  progress: TutorialProgress,
+  course: Course,
+  viewMode: TutorialViewMode,
+): { progress: TutorialProgress; viewMode: TutorialViewMode } {
+  return { progress: reconcileTutorialProgress(progress, course), viewMode };
 }
 
 export function loadTutorialProgress(): TutorialProgress | null {

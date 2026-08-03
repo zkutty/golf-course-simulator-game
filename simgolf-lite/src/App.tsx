@@ -139,7 +139,7 @@ import {
   TUTORIAL_STEPS,
   createTutorialProgress,
   loadTutorialProgress,
-  reconcileTutorialProgress,
+  reconcileTutorialSession,
   saveTutorialProgress,
   type TutorialProgress,
 } from "./game/onboarding/tutorial";
@@ -2515,14 +2515,13 @@ export default function App() {
   // fired. The pure reconciler advances only the open-course lesson once.
   useEffect(() => {
     if (screen !== "game" || !tutorialProgress) return;
-    const reconciled = reconcileTutorialProgress(tutorialProgress, course);
-    if (reconciled === tutorialProgress) return;
-    setViewMode("ARCHITECT");
-    setTutorialProgress(reconciled);
-    saveTutorialProgress(reconciled);
-    const nextStep = TUTORIAL_STEPS[reconciled.stepIndex];
+    const reconciled = reconcileTutorialSession(tutorialProgress, course, viewMode);
+    if (reconciled.progress === tutorialProgress) return;
+    setTutorialProgress(reconciled.progress);
+    saveTutorialProgress(reconciled.progress);
+    const nextStep = TUTORIAL_STEPS[reconciled.progress.stepIndex];
     setA11yMessage(`${t(nextStep.titleKey)}. ${t(nextStep.bodyKey)}`);
-  }, [course, screen, t, tutorialProgress]);
+  }, [course, screen, t, tutorialProgress, viewMode]);
 
   useEffect(() => {
     if (
