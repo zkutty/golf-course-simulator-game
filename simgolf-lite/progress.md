@@ -1,5 +1,31 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-701 normal-path balance closure — 2026-08-03
+
+- Diagnosed the sole normal-path bankruptcy as a condition-driven closure, not
+  an excessive water bill: Desert / 36 / normal / conservative earned only $5
+  testing rounds while condition remained below 0.40 and exhausted the
+  unchanged two-week distress runway immediately before turf recovery.
+- Increased only balanced irrigation application depth from 0.075 to 0.079.
+  The corrected path still reaches -$2,089 for one distress week, receives no
+  cash grant or weaker fail rule, reopens the next week, and finishes all 104
+  weeks solvent.
+- Extracted the canonical release fixture for direct regression coverage. The
+  exact normal path is pinned non-bankrupt and three representative Desert poor
+  paths remain bankrupt/sticky through week 104.
+- Full 81×104 coverage passes all 8,424 weeks in 237,246 ms under 720,000 ms.
+  There are zero normal and three poor-management bankruptcies; canonical hash
+  is `afe65778`, legacy projection is 8,227 weeks / hash `55131e55`, and 197
+  post-bankruptcy weeks remain covered.
+- Final verification passes: 23 focused release/surface-care/multi-course tests;
+  full CI at 156 files / 1,189 passing / 1 intentional skip plus 5/5 audio;
+  M62 certification at 14 files / 92 tests and determinism `47e900b8`;
+  TypeScript; lint with zero errors and 12 existing Hook warnings; production
+  build/audits; and the M62 desktop/mobile Playwright regression at 1/1. The
+  retained captures were visually inspected and showed a populated, readable
+  Architecture Review over a correctly rendered game canvas/HUD.
+- Production promotion remains owned by the parent release workflow.
+
 ## ZK-699 release balance performance and full-duration coverage — 2026-08-03
 
 - Profiled the non-terminal release balance gate and traced its dominant cost

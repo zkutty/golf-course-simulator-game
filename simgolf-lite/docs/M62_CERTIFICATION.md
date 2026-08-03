@@ -166,3 +166,29 @@ only 8,218 of its claimed 8,424 weeks. Every one of the 81 rows now executes all
 206 newly covered weeks, pins canonical hash `38b861f9`, and pins legacy
 projection hash `6dc8d6f2`. Two complete local runs finished in 234,612 ms and
 237,481 ms against an enforced 720,000 ms budget.
+
+## ZK-701 normal-path balance closure
+
+The complete ZK-699 matrix exposed one remaining normal-path bankruptcy:
+Desert / 36 holes / normal / conservative. Week-level diagnosis showed that
+irrigation operating cost itself was only about $226 per week. The actual
+failure was a condition-driven public-play closure: balanced irrigation applied
+1,277 of 2,310 weekly demand units, condition stayed just below the 0.40
+playability gate, and testing-round revenue fell to $35–$65 against roughly
+$2,350 of weekly obligations. Cash reached -$157 and then -$2,463 on
+consecutive weeks, exhausting the unchanged two-week distress runway one week
+before condition recovered.
+
+ZK-701 raises only the balanced irrigation root-zone application cap from
+0.075 to 0.079. It does not grant cash, lower operating costs, change the
+playability threshold, or relax bankruptcy. The corrected target still reaches
+negative $2,089 in cash for one distress week, then reopens and finishes week
+104 with $60,164 without bankruptcy. Focused 104-week coverage also pins the previously
+bankrupt Desert 9/easy, Desert 9/hard, and Desert 36/normal poor-management
+paths as bankrupt and sticky through the full duration.
+
+The complete matrix still executes all 8,424 weeks and now reports zero normal
+bankruptcies and three poor-management bankruptcies. The historical early-stop
+projection is 8,227 weeks with 197 post-bankruptcy weeks. Canonical hash
+`afe65778` and legacy-projection hash `55131e55` are pinned; the clean full run
+completed in 237,246 ms against the unchanged 720,000 ms budget.

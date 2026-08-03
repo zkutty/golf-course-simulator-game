@@ -951,7 +951,7 @@ function irrigationPlan(
   area: number,
 ): IrrigationPlan {
   const policyCapacity =
-    policy === "irrigate" ? 0.145 : policy === "balanced" ? 0.075 : 0.025;
+    policy === "irrigate" ? 0.145 : policy === "balanced" ? 0.079 : 0.025;
   const establishmentMultiplier =
     repair?.kind === "resod" && repair.elevatedWaterDaysRemaining > 0
     ? 1.35

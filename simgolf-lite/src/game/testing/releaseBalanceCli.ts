@@ -1,84 +1,21 @@
 /// <reference types="node" />
 import { mkdirSync, writeFileSync } from "node:fs";
-import type { Course, Difficulty, LandTheme, Terrain, World } from "../models/types";
-import { DEFAULT_WORLD } from "../models/defaults";
-import { getDifficultyProfile } from "../balance/difficulty";
+import type { Difficulty, LandTheme } from "../models/types";
 import { tickWeek } from "../sim/tickWeek";
-import { createLoan } from "../sim/loans";
 import { BIOME_KEYS } from "../models/biomes";
 import { hashCanonicalValue } from "../../utils/stateHash";
+import {
+  configureReleaseBalanceStrategy,
+  releaseBalanceInitialWorld,
+  releaseBalanceProperty,
+  type ReleasePropertySize,
+  type ReleaseStrategy,
+} from "./releaseBalanceFixtures";
 
-type PropertySize = 9 | 18 | 36;
-type Strategy = "conservative" | "aggressive-expansion" | "poor-management";
 interface BalanceRow {
-  theme: LandTheme; size: PropertySize; difficulty: Difficulty; strategy: Strategy; seed: number;
+  theme: LandTheme; size: ReleasePropertySize; difficulty: Difficulty; strategy: ReleaseStrategy; seed: number;
   weeks: number; bankrupt: boolean; firstProfitWeek: number | null; lossWeeks: number;
   finalCash: number; peakCash: number; minimumCash: number; reputation: number; condition: number;
-}
-
-const propertyCache = new Map<string, Course>();
-const propertyGeometryCache = new Map<PropertySize, Course>();
-
-function property(theme: LandTheme, size: PropertySize): Course {
-  const cacheKey = `${theme}:${size}`;
-  const cached = propertyCache.get(cacheKey);
-  if (cached) return cached;
-  const cachedGeometry = propertyGeometryCache.get(size);
-  if (cachedGeometry) {
-    const course = {
-      ...cachedGeometry,
-      name: `M28 ${theme} ${size}`,
-      theme,
-    };
-    propertyCache.set(cacheKey, course);
-    return course;
-  }
-  // Compact, fully playable routings keep the 8,424-week matrix fast while
-  // exercising the real demand, capacity, maintenance, loan, tax, distress,
-  // reputation, and multi-course reconciliation paths.
-  const width = 32;
-  const height = size * 2 + 4;
-  const tiles: Terrain[] = Array.from({ length: width * height }, () => "fairway");
-  const holes = Array.from({ length: size }, (_, index) => {
-    const y = 3 + index * 2;
-    const forward = index % 2 === 0;
-    const tee = { x: forward ? 2 : width - 3, y };
-    const green = { x: forward ? width - 3 : 2, y };
-    tiles[y * width + tee.x] = "tee";
-    tiles[y * width + green.x] = "green";
-    return { id: `m28-${index + 1}`, name: `Release ${index + 1}`, tee, green, teeBoxes: { member: tee }, pinPositions: { A: green }, parMode: "MANUAL" as const, parManual: 4 as const, holeIndex: index + 1 };
-  });
-  const groups = size === 36 ? [holes.slice(0, 18), holes.slice(18)] : [holes];
-  const layouts = groups.map((group, index) => ({ id: `release-${index + 1}`, name: `Release ${index + 1}`, draftHoleIds: group.map((hole) => hole.id), publishedHoleIds: group.map((hole) => hole.id), roundLength: group.length === 9 ? 9 as const : 18 as const, state: "open" as const, greenFee: size === 9 ? 70 : 95 }));
-  const course: Course = {
-    width, height, tiles, elevations: new Array(width * height).fill(0), holes,
-    obstacles: [], buildings: [{ type: "clubhouse", x: 14, y: 0 }], decorations: [],
-    yardsPerTile: 10, name: `M28 ${theme} ${size}`, baseGreenFee: size === 9 ? 70 : 95,
-    condition: .85, theme, layouts, activeCourseId: layouts[0].id,
-  };
-  // Every management path starts from the same immutable physical property.
-  // Sharing that identity lets the production hole-score dependency cache
-  // reuse exact terrain/elevation solves across strategy and difficulty rows.
-  // tickWeek commits new Course roots, so no scenario can mutate this fixture.
-  propertyGeometryCache.set(size, course);
-  propertyCache.set(cacheKey, course);
-  return course;
-}
-
-function initialWorld(difficulty: Difficulty, strategy: Strategy, seed: number): World {
-  const startingCash = Math.round(DEFAULT_WORLD.cash * getDifficultyProfile(difficulty).startingCashMult);
-  if (strategy !== "aggressive-expansion") return {
-    ...DEFAULT_WORLD,
-    difficulty,
-    runSeed: seed,
-    cash: strategy === "poor-management" ? Math.min(15_000, startingCash) : startingCash,
-    reputation: strategy === "poor-management" ? 20 : DEFAULT_WORLD.reputation,
-    loans: [],
-    isBankrupt: false,
-    distressWeeks: 0,
-  };
-  const loan = createLoan({ kind: "EXPANSION", principal: 150_000, apr: .12, termWeeks: 104, idSeed: seed });
-  return { ...DEFAULT_WORLD, difficulty, runSeed: seed, cash: startingCash + loan.principal, loans: [loan], isBankrupt: false, distressWeeks: 0 };
 }
 
 const startedAt = performance.now();
@@ -87,10 +24,8 @@ const legacyProjectedRows: BalanceRow[] = [];
 let runIndex = 0;
 for (const theme of BIOME_KEYS) for (const size of [9, 18, 36] as const) for (const difficulty of ["easy", "normal", "hard"] as const) for (const strategy of ["conservative", "aggressive-expansion", "poor-management"] as const) {
   const seed: number = 280000 + runIndex++ * 97;
-  let course = property(theme, size);
-  if (strategy === "aggressive-expansion") course = { ...course, baseGreenFee: Math.max(110, course.baseGreenFee), condition: .9 };
-  if (strategy === "poor-management") course = { ...course, baseGreenFee: 150, condition: .45 };
-  let world = initialWorld(difficulty, strategy, seed);
+  let course = configureReleaseBalanceStrategy(releaseBalanceProperty(theme, size), strategy);
+  let world = releaseBalanceInitialWorld(difficulty, strategy, seed);
   let firstProfitWeek: number | null = null;
   let lossWeeks = 0;
   let peakCash = world.cash;
@@ -128,7 +63,7 @@ if (simulatedWeeks !== expectedSimulatedWeeks) {
   throw new Error(`Expected ${expectedSimulatedWeeks} simulated weeks, got ${simulatedWeeks}`);
 }
 const legacyProjectedSimulatedWeeks = legacyProjectedRows.reduce((sum, row) => sum + row.weeks, 0);
-const expectedLegacyProjectedSimulatedWeeks = 8_218;
+const expectedLegacyProjectedSimulatedWeeks = 8_227;
 if (legacyProjectedSimulatedWeeks !== expectedLegacyProjectedSimulatedWeeks) {
   throw new Error(`Expected legacy early-stop projection of ${expectedLegacyProjectedSimulatedWeeks} weeks, got ${legacyProjectedSimulatedWeeks}`);
 }
@@ -162,8 +97,8 @@ if (elapsedMs > runtimeBudgetMs) {
 }
 const canonicalHash = hashCanonicalValue(canonical);
 const legacyProjectionHash = hashCanonicalValue({ weeksPerRun: 104, rows: legacyProjectedRows });
-const expectedCanonicalHash = "38b861f9";
-const expectedLegacyProjectionHash = "6dc8d6f2";
+const expectedCanonicalHash = "afe65778";
+const expectedLegacyProjectionHash = "55131e55";
 if (canonicalHash !== expectedCanonicalHash) {
   throw new Error(`Release balance canonical hash changed: expected ${expectedCanonicalHash}, got ${canonicalHash}`);
 }
