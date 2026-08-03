@@ -10,10 +10,8 @@ async function graphicsState(page: Page) {
     const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
     return {
       fixture: state.seasons?.presentation?.terrain?.quality,
-      requested: state.graphics?.quality,
-      resolved: state.graphics?.resolvedQuality,
-      atlas: state.graphics?.atlasQuality,
-      bundle: state.graphics?.atlasBundle,
+      renderer: state.graphics?.quality,
+      atlas: state.graphics?.atlas,
       rotation: state.camera?.rotation,
     };
   });
@@ -22,10 +20,8 @@ async function graphicsState(page: Page) {
 async function expectSelectedTier(page: Page, quality: FixtureQuality, rotation: number) {
   await expect.poll(() => graphicsState(page), { timeout: 120_000 }).toMatchObject({
     fixture: quality,
-    requested: quality,
-    resolved: quality,
+    renderer: quality,
     atlas: quality,
-    bundle: `desert:${quality}`,
     rotation,
   });
 }
