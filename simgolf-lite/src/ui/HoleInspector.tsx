@@ -259,10 +259,10 @@ export function HoleInspector({
               max={18}
               value={hole.holeIndex ?? holeIndex + 1}
               onChange={(e) => {
-                const val = parseInt(e.target.value, 10);
-                if (!isNaN(val) && val >= 1 && val <= 18) {
+                const value = e.target.value;
+                if (/^(?:[1-9]|1[0-8])$/.test(value)) {
                   // Update hole index in course
-                  onSetHoleIndex(val - 1);
+                  onSetHoleIndex(Number(value));
                 }
               }}
               style={{

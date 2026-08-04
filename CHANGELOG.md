@@ -6,6 +6,18 @@ versioning follows [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0-rc.5] - 2026-08-04
+
+### Added
+- Competition scoring authority (ZK-715): deterministic scratch and net stroke
+  play, Stableford, and match-play scoring with handicap allocation, ties, and
+  incomplete-hole handling covered by focused tests.
+
+### Fixed
+- Hole stroke-index editing (ZK-742): the inspector keeps one-based values from
+  1 through 18 and silently preserves the last valid value when an edit is
+  malformed or out of range.
+
 ## [1.0.0-rc.4] - 2026-07-29
 
 ### Added

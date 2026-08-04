@@ -1210,6 +1210,39 @@ or release-owner checks.
 - No Linear, commit, push, deploy, or generated validation artifact is included
   in this delegated slice.
 
+## 2026-08-04 — Approved ZK-715/ZK-742 M66 integration complete
+
+Current request: “Now please implement rest”
+
+- Created clean integration branch `codex/m66-approved-integration` from
+  `origin/develop` at `3e552a3`, leaving the dirty shared checkout untouched.
+- Applied the approved ZK-715 REVISE decision: the reviewed pure competition
+  `types.ts`, `handicap.ts`, `scoring.ts`, and focused tests are the
+  authoritative scoring packet. Shared-checkout `characters.ts` and
+  `inventory.ts` remain untouched draft inputs for their later M67 issues.
+- Applied the approved ZK-742 silent-rejection behavior: manual values remain
+  one-based through the real editor callback, while malformed and out-of-range
+  values leave the last valid index unchanged.
+- Source comparisons against both reviewed worktrees are exact.
+- Combined verification passes: 3 focused files / 35 tests; full Vitest at
+  159 files / 1,237 passed with one intentional skip; TypeScript; scoped
+  ESLint; production build; audio, biome, M35, Parkland, surface, and delivery
+  audits; and `git diff --check`.
+- The required bundled web-game client entered a valid Quick Start course,
+  emitted two coherent structured states, and produced no browser-error
+  artifact. Its final course screenshot was visually inspected.
+- A real-browser M23 inspector fixture verified the integrated callback through
+  the visible number input: initial `1`, valid edit `18`, rejected `19`
+  leaving `18`, with no console or page errors. The full inspector capture
+  was visually inspected; the development report bar partially overlays the
+  control at the viewport bottom, but the value and surrounding course setup
+  remain coherent. A failed diagnostic that waited on the wrong Quick Start
+  mode and a later capture-only overlay-hiding attempt did not expose a product
+  failure and made no repository changes.
+- Integration is the scoped `1.0.0-rc.5` release candidate. Release evidence,
+  deployment observations, and parent issue transitions are recorded in Linear
+  only after the exact commit succeeds in staging and production.
+
 ## 2026-08-02 — ZK-639 authoritative green rollout complete
 
 - Added one bounded deterministic ground-path resolver. It bilinearly samples
