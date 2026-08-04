@@ -69,9 +69,14 @@ import {
 } from "../game/models/plantRegistry";
 import { normalizeSurfaceCareState } from "../game/conditions/surfaceCare";
 import { withNormalizedGreenContract } from "../game/greens/greenSurface";
+import {
+  decodeRoundHandicapSnapshot,
+  migrateLegacyPlayerProHandicap,
+  normalizeHandicapProfile,
+} from "../game/competition/persistence";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 27 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 28 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -196,6 +201,10 @@ export interface SaveV26 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV27 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 27;
+  records?: CourseRecords;
+}
+export interface SaveV28 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -240,6 +249,8 @@ function courseForPersistence(course: Course): Course {
  * state remains unchanged; only the serialized copy is enriched.
  */
 export function payloadForPersistence(payload: SavePayload): SavePayload {
+  const handicapError = playerProHandicapError(payload.world.playerPro);
+  if (handicapError) throw new Error(`Cannot save: ${handicapError}`);
   const course = courseForPersistence(payload.course);
   const activeRound = payload.world.playerPro?.activeRound;
   const roundTheme = normalizeBiomeKey(activeRound?.course.theme);
@@ -281,7 +292,7 @@ export function saveGame(payload: SavePayload) {
     rulesPlayerPro,
     persisted.course,
   ).playerPro as World["playerPro"];
-  const save: SaveV27 = {
+  const save: SaveV28 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: persisted.course,
@@ -772,6 +783,18 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // V27 records stroke-index provenance. Course normalization marks existing
   // valid indexes legacy rather than claiming they are complete or automatic.
   26: (save) => ({ ...save, schemaVersion: 27 }),
+  // V28 adds Player Pro handicap profiles and immutable per-round posting
+  // evidence. Missing legacy state seeds exactly once from saved skills.
+  27: (save) => ({
+    ...save,
+    schemaVersion: 28,
+    ...(isRecord(save.world) && isRecord(save.world.playerPro) ? {
+      world: {
+        ...save.world,
+        playerPro: migrateLegacyPlayerProHandicap(save.world.playerPro),
+      },
+    } : {}),
+  }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -943,6 +966,44 @@ function activeRoundBiomeError(rawPlayerPro: unknown): string | null {
   return compatibility.ok ? null : compatibility.error;
 }
 
+function playerProHandicapError(rawPlayerPro: unknown, allowMissingActiveSnapshot = false): string | null {
+  if (!isRecord(rawPlayerPro)) return null;
+  const rawSkills = isRecord(rawPlayerPro.skills) ? rawPlayerPro.skills : {};
+  const skill = (name: string) => isFiniteNumber(rawSkills[name]) ? rawSkills[name] as number : 0;
+  const profile = normalizeHandicapProfile(rawPlayerPro.handicapProfile, {
+    power: skill("power"),
+    driving: skill("driving"),
+    irons: skill("irons"),
+    shortGame: skill("shortGame"),
+    putting: skill("putting"),
+    recovery: skill("recovery"),
+  });
+  if (!profile.ok) return profile.error.message;
+  if (Array.isArray(rawPlayerPro.rounds)) for (let index = 0; index < rawPlayerPro.rounds.length; index += 1) {
+    const round = rawPlayerPro.rounds[index];
+    if (!isRecord(round) || round.handicapSnapshot == null) continue;
+    const snapshot = decodeRoundHandicapSnapshot(
+      round.handicapSnapshot,
+      `world.playerPro.rounds[${index}].handicapSnapshot`,
+    );
+    if ("code" in snapshot) return snapshot.message;
+  }
+  if (!isRecord(rawPlayerPro.activeRound) || rawPlayerPro.activeRound.version !== 1) return null;
+  if (rawPlayerPro.activeRound.handicapSnapshot == null) {
+    if (allowMissingActiveSnapshot) return null;
+    return "The active Player Pro round is missing its round-start handicap snapshot; the last complete save was not changed.";
+  }
+  const snapshot = decodeRoundHandicapSnapshot(
+    rawPlayerPro.activeRound.handicapSnapshot,
+    "world.playerPro.activeRound.handicapSnapshot",
+  );
+  if ("code" in snapshot) return snapshot.message;
+  if (snapshot.roundId !== rawPlayerPro.activeRound.id) {
+    return "The active Player Pro round handicap snapshot belongs to a different round; the last complete save was not changed.";
+  }
+  return null;
+}
+
 /**
  * Validate + normalize a parsed save of any vintage into a playable
  * payload, or null if it's unusable. Shared by the legacy single-slot
@@ -1054,6 +1115,11 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
 
     const roundBiomeError = activeRoundBiomeError(rawWorld.playerPro);
     if (roundBiomeError) return fail("INVALID_WORLD", roundBiomeError);
+    const handicapError = playerProHandicapError(
+      rawWorld.playerPro,
+      migrated.migratedFrom != null && migrated.migratedFrom < 28,
+    );
+    if (handicapError) return fail("INVALID_WORLD", handicapError);
     const rulesPlayerPro = migrated.migratedFrom === 19 || migrated.migratedFrom == null
       ? migratePlayerProActiveRoundSnapshotV20(rawWorld.playerPro, course).playerPro
       : rawWorld.playerPro;

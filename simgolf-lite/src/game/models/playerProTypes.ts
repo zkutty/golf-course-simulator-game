@@ -5,6 +5,7 @@ import type { ShotSlopeContext } from "./shotSlope";
 import type { GreenRoundSnapshotV1 } from "../greens/greenSurface";
 import type { GreenRolloutV1 } from "../greens/greenRollout";
 import type { GreenPuttingV1 } from "../greens/greenPutting";
+import type { HandicapProfile, RoundHandicapSnapshot } from "../competition/persistence";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -152,6 +153,8 @@ export interface PlayerPlayableRound {
   handedness?: PlayerProHandedness;
   phase: PlayerRoundPhase;
   course: PlayerRoundCourseSnapshot;
+  /** Immutable handicap, confidence, setup, and eligibility evidence captured at round start. */
+  handicapSnapshot?: RoundHandicapSnapshot;
   /** Immutable M50 boundary/penalty foundation captured for save v20. */
   rulesSnapshot?: ControlledRoundSnapshotV2;
   teeSet: "forward" | "member" | "championship";
@@ -204,6 +207,8 @@ export interface PlayerCareerRound {
   holeSnapshots?: PlayerRoundHoleSnapshot[];
   /** Reserved for immutable rulings retained by later M50 settlement wiring. */
   rulesSnapshot?: ControlledRoundSnapshotV2;
+  /** The exact handicap authority used when this round began. */
+  handicapSnapshot?: RoundHandicapSnapshot;
 }
 
 export interface PlayerTrainingRecord {
@@ -270,4 +275,5 @@ export interface PlayerProCareer {
   earnings: number;
   reputation: number;
   settlementLedger: string[];
+  handicapProfile: HandicapProfile;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
-import { createDefaultPlayerPro } from "../game/playerPro/playerPro";
+import { createDefaultPlayerPro, settlePlayerRound } from "../game/playerPro/playerPro";
 import { createEstate, starterParcelOffset } from "../game/estate/estate";
 import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
 import { createNewGame } from "../game/gen/newGame";
@@ -41,6 +41,64 @@ function file(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function legacyHandicapRound(phase: "awaiting_shot" | "round_complete" = "awaiting_shot") {
+  const holes = Array.from({ length: 9 }, (_, index) => ({
+    id: `hole-${index + 1}`,
+    name: `Handicap Hole ${index + 1}`,
+    par: 4,
+    strokeIndex: index + 1,
+    tee: { x: 2, y: index + 2 },
+    pin: { x: 12, y: index + 2 },
+    waypoints: [],
+  }));
+  return {
+    version: 1 as const,
+    id: "legacy-handicap-round",
+    kind: "casual" as const,
+    handedness: "right" as const,
+    phase,
+    course: {
+      courseId: DEFAULT_COURSE.activeCourseId!,
+      courseName: DEFAULT_COURSE.name,
+      geometryVersion: "geometry:v1",
+      theme: DEFAULT_COURSE.theme!,
+      biomeCompatibility: biomeCompatibilityMetadataFor(DEFAULT_COURSE.theme!),
+      width: DEFAULT_COURSE.width,
+      height: DEFAULT_COURSE.height,
+      yardsPerTile: DEFAULT_COURSE.yardsPerTile,
+      tiles: [...DEFAULT_COURSE.tiles],
+      elevations: [...DEFAULT_COURSE.elevations],
+      obstacles: [],
+      holes,
+      rating: { courseRating: 36, slope: 113 },
+    },
+    teeSet: "member" as const,
+    pinRotation: "A" as const,
+    currentHoleIndex: 0,
+    ball: { ...holes[0].tee },
+    lie: "tee",
+    strokes: phase === "round_complete" ? 45 : 0,
+    penalties: 0,
+    scorecard: holes.map((hole) => ({
+      holeId: hole.id,
+      name: hole.name,
+      par: hole.par,
+      strokes: phase === "round_complete" ? 5 : 0,
+      penalties: 0,
+      complete: phase === "round_complete",
+    })),
+    shots: [],
+    pendingShot: null,
+    rngSeed: 19,
+    rngCursor: 0,
+    autoPlay: false,
+    rewardsApplied: false,
+    startedWeek: 4,
+    startedDay: 2,
+    completedWeek: phase === "round_complete" ? 4 : undefined,
+  };
+}
+
 function legacyLinksOverlay(seed = 25) {
   const current = createNewGame({
     mode: "sandbox",
@@ -76,6 +134,110 @@ function legacyLinksOverlay(seed = 25) {
 }
 
 describe("save validation and migrations", () => {
+  it("migrates a v27 Player Pro career once and preserves unrelated and historical data", () => {
+    const legacyCareer = createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed });
+    const { handicapProfile: _legacyMissing, ...withoutHandicap } = legacyCareer;
+    const historical = {
+      id: "historical-round",
+      kind: "casual" as const,
+      courseId: "old-course",
+      courseName: "Old Course",
+      week: 2,
+      strokes: 40,
+      penalties: 0,
+      par: 36,
+      scoreToPar: 4,
+      result: "complete" as const,
+      earnings: 0,
+      scorecard: [],
+      shots: [],
+      evidence: [],
+      skillGains: {},
+    };
+    const result = normalizeLoadedSaveResult(file({
+      schemaVersion: 27,
+      world: {
+        ...file().world,
+        cash: 12_345,
+        playerPro: { ...withoutHandicap, rounds: [historical] },
+      },
+      history: [{ week: 1, revenue: 2, costs: 1, profit: 1, rounds: 3 }],
+    }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFrom).toBe(27);
+    expect(result.payload.world.cash).toBe(12_345);
+    expect(result.payload.world.playerPro?.rounds[0]).toMatchObject(historical);
+    expect(result.payload.world.playerPro?.handicapProfile).toMatchObject({
+      version: 1,
+      handicapIndex: 17.3,
+      source: "skill-seed",
+      scoreRecords: [],
+    });
+  });
+
+  it("migrates active and completed-unposted rounds with a stable snapshot and posting key", () => {
+    for (const phase of ["awaiting_shot", "round_complete"] as const) {
+      const legacyCareer = createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed });
+      const { handicapProfile: _legacyMissing, ...withoutHandicap } = legacyCareer;
+      const first = normalizeLoadedSaveResult(file({
+        schemaVersion: 27,
+        world: { ...file().world, playerPro: { ...withoutHandicap, activeRound: legacyHandicapRound(phase) } },
+      }));
+      expect(first.ok).toBe(true);
+      if (!first.ok) continue;
+      const snapshot = first.payload.world.playerPro?.activeRound?.handicapSnapshot;
+      expect(snapshot).toMatchObject({
+        roundId: "legacy-handicap-round",
+        postingKey: "handicap-post:legacy-handicap-round",
+        postingState: "unposted",
+        eligibility: { eligible: true },
+      });
+      const second = normalizeLoadedSaveResult({
+        schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
+        savedAt: 999,
+        ...first.payload,
+      });
+      expect(second.ok).toBe(true);
+      if (!second.ok) continue;
+      expect(second.payload.world.playerPro?.activeRound?.handicapSnapshot).toEqual(snapshot);
+      if (phase === "round_complete") {
+        const career = second.payload.world.playerPro!;
+        const activeRound = career.activeRound!;
+        const settled = settlePlayerRound(career, activeRound);
+        expect(settled.career.handicapProfile.scoreRecords).toHaveLength(1);
+        expect(settled.career.handicapProfile.scoreRecords[0]).toMatchObject({
+          roundId: activeRound.id,
+          postingState: "unposted",
+          evidence: { differential: expect.any(Number) },
+        });
+        const duplicate = settlePlayerRound(settled.career, activeRound);
+        expect(duplicate.round).toBeNull();
+        expect(duplicate.career.handicapProfile.scoreRecords).toHaveLength(1);
+      }
+    }
+  });
+
+  it("rejects corrupt current handicap state atomically with an actionable path", () => {
+    const playerPro = createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed });
+    const result = normalizeLoadedSaveResult(file({
+      world: {
+        ...file().world,
+        playerPro: {
+          ...playerPro,
+          handicapProfile: { ...playerPro.handicapProfile, handicapIndex: 99 },
+        },
+      },
+    }));
+    expect(result).toMatchObject({
+      ok: false,
+      error: {
+        code: "INVALID_WORLD",
+        message: expect.stringContaining("world.playerPro.handicapProfile.handicapIndex"),
+      },
+    });
+  });
+
   it("migrates historical indexes as legacy evidence without certifying an incomplete scorecard", () => {
     const course = {
       ...DEFAULT_COURSE,

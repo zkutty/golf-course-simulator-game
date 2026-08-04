@@ -87,6 +87,14 @@ import {
   resolveAutomaticPutts,
   type GreenPuttingEstimate,
 } from "../greens/greenPutting";
+import {
+  captureRoundHandicapSnapshot,
+  createHandicapProfile,
+  createHandicapScoreRecord,
+  decodeRoundHandicapSnapshot,
+  normalizeHandicapProfile,
+  recordCompletedHandicapRound,
+} from "../competition/persistence";
 
 const DEFAULT_SKILL = 40;
 const XP_PER_LEVEL = 12;
@@ -280,6 +288,7 @@ export function createDefaultPlayerPro(args: {
   background?: PlayerProBackground;
 }): PlayerProCareer {
   const background = args.background ?? "architect";
+  const skills = baseSkills(background);
   return {
     version: 1,
     identity: {
@@ -289,7 +298,7 @@ export function createDefaultPlayerPro(args: {
       handedness: args.handedness ?? "right",
       background,
     },
-    skills: baseSkills(background),
+    skills,
     skillXp: Object.fromEntries(PLAYER_PRO_SKILLS.map((skill) => [skill, 0])) as PlayerProSkills,
     careerPoints: 0,
     unlockedTechniques: ["normal"],
@@ -302,6 +311,7 @@ export function createDefaultPlayerPro(args: {
     earnings: 0,
     reputation: 0,
     settlementLedger: [],
+    handicapProfile: createHandicapProfile(skills),
   };
 }
 
@@ -342,6 +352,9 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
     theme,
   );
   if (!biomeCompatibility.ok) return null;
+  const handicapSnapshot = round.handicapSnapshot == null
+    ? undefined
+    : decodeRoundHandicapSnapshot(round.handicapSnapshot);
   return {
     ...round,
     handedness: round.handedness === "left" ? "left" : "right",
@@ -359,6 +372,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
     rewardsApplied: round.rewardsApplied === true,
     autoPlay: round.autoPlay === true,
     shots: round.shots.slice(-MAX_SHOTS),
+    ...(handicapSnapshot && !("code" in handicapSnapshot) ? { handicapSnapshot } : { handicapSnapshot: undefined }),
   };
 }
 
@@ -366,6 +380,9 @@ function normalizeCareerRound(value: unknown): PlayerCareerRound | null {
   if (!value || typeof value !== "object") return null;
   const round = value as PlayerCareerRound;
   if (typeof round.id !== "string" || !round.id || typeof round.courseId !== "string") return null;
+  const handicapSnapshot = round.handicapSnapshot == null
+    ? undefined
+    : decodeRoundHandicapSnapshot(round.handicapSnapshot, `completed round ${round.id}.handicapSnapshot`);
   return {
     ...round,
     strokes: Math.max(0, Math.floor(finite(round.strokes))),
@@ -381,6 +398,7 @@ function normalizeCareerRound(value: unknown): PlayerCareerRound | null {
     }) : [],
     evidence: Array.isArray(round.evidence) ? round.evidence : [],
     skillGains: round.skillGains && typeof round.skillGains === "object" ? round.skillGains : {},
+    ...(handicapSnapshot && !("code" in handicapSnapshot) ? { handicapSnapshot } : { handicapSnapshot: undefined }),
   };
 }
 
@@ -391,11 +409,35 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
   const identity = candidate.identity && typeof candidate.identity === "object" ? candidate.identity : fallback.identity;
   const background: PlayerProBackground = identity.background === "operator" || identity.background === "host" ? identity.background : "architect";
   const skills = normalizeSkills(candidate.skills, baseSkills(background));
+  const handicap = normalizeHandicapProfile(candidate.handicapProfile, skills);
+  if (!handicap.ok) throw new Error(handicap.error.message);
   const xp = normalizeSkills(candidate.skillXp, Object.fromEntries(PLAYER_PRO_SKILLS.map((skill) => [skill, 0])) as PlayerProSkills);
   const techniques = (Array.isArray(candidate.unlockedTechniques) ? candidate.unlockedTechniques : ["normal"])
     .filter((value): value is PlayerShotTechnique => ["normal", "draw", "fade", "punch", "flop", "backspin"].includes(value))
     .filter((value, index, all) => all.indexOf(value) === index);
   if (!techniques.includes("normal")) techniques.unshift("normal");
+  const normalizedActiveRound = normalizeActiveRound(candidate.activeRound);
+  const activeRound = normalizedActiveRound && !normalizedActiveRound.handicapSnapshot
+    ? {
+        ...normalizedActiveRound,
+        handicapSnapshot: captureRoundHandicapSnapshot({
+          roundId: normalizedActiveRound.id,
+          handicapIndex: handicap.profile.handicapIndex,
+          confidence: handicap.profile.confidence,
+          course: {
+            id: normalizedActiveRound.course.courseId,
+            name: normalizedActiveRound.course.courseName,
+            geometryVersion: normalizedActiveRound.course.geometryVersion,
+            teeSet: normalizedActiveRound.teeSet,
+            pinRotation: normalizedActiveRound.pinRotation,
+            rating: normalizedActiveRound.course.rating,
+            holes: normalizedActiveRound.course.holes,
+          },
+          startedWeek: normalizedActiveRound.startedWeek,
+          startedDay: normalizedActiveRound.startedDay,
+        }),
+      }
+    : normalizedActiveRound;
   return {
     version: 1,
     identity: {
@@ -409,7 +451,7 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
     skillXp: xp,
     careerPoints: Math.max(0, Math.floor(finite(candidate.careerPoints))),
     unlockedTechniques: techniques,
-    activeRound: normalizeActiveRound(candidate.activeRound),
+    activeRound,
     rounds: Array.isArray(candidate.rounds)
       ? candidate.rounds.map(normalizeCareerRound).filter((round): round is PlayerCareerRound => round != null).slice(-MAX_HISTORY)
       : [],
@@ -422,6 +464,7 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
     settlementLedger: Array.isArray(candidate.settlementLedger)
       ? candidate.settlementLedger.filter((entry): entry is string => typeof entry === "string").slice(-160)
       : [],
+    handicapProfile: handicap.profile,
   };
 }
 
@@ -549,7 +592,29 @@ export function startPlayableRound(args: {
   if (!snapshot) return { ok: false, reason: "Every routed hole needs a valid tee, pin, and playable setup." };
   const rulesSnapshot = rulesSnapshotForRound(args.course, snapshot);
   const frozenCourse = rulesSnapshot ? { ...snapshot, rulesSnapshot } : snapshot;
-  const id = `pro-round-${args.world.runSeed >>> 0}-${args.world.week}-${args.day ?? 0}-${args.kind ?? "casual"}-${(args.world.playerPro?.rounds.length ?? 0) + 1}`;
+  const handicapProfile = args.world.playerPro?.handicapProfile
+    ?? createHandicapProfile(args.world.playerPro?.skills ?? baseSkills("architect"));
+  const roundOrdinal = Math.max(
+    args.world.playerPro?.rounds.length ?? 0,
+    handicapProfile.scoreRecords.length,
+  ) + 1;
+  const id = `pro-round-${args.world.runSeed >>> 0}-${args.world.week}-${args.day ?? 0}-${args.kind ?? "casual"}-${roundOrdinal}`;
+  const handicapSnapshot = captureRoundHandicapSnapshot({
+    roundId: id,
+    handicapIndex: handicapProfile.handicapIndex,
+    confidence: handicapProfile.confidence,
+    course: {
+      id: frozenCourse.courseId,
+      name: frozenCourse.courseName,
+      geometryVersion: frozenCourse.geometryVersion,
+      teeSet,
+      pinRotation,
+      rating: frozenCourse.rating,
+      holes: frozenCourse.holes,
+    },
+    startedWeek: args.world.week,
+    startedDay: args.day ?? 0,
+  });
   return {
     ok: true,
     round: {
@@ -559,6 +624,7 @@ export function startPlayableRound(args: {
       handedness: args.world.playerPro?.identity.handedness === "left" ? "left" : "right",
       phase: "awaiting_shot",
       course: frozenCourse,
+      handicapSnapshot,
       rulesSnapshot,
       teeSet,
       pinRotation,
@@ -1377,6 +1443,7 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
     evidence,
     skillGains,
     rulesSnapshot: round.rulesSnapshot,
+    handicapSnapshot: round.handicapSnapshot,
   };
   const challenges = career.challenges.map((challenge) => challenge.roundId === round.id ? {
     ...challenge,
@@ -1388,6 +1455,18 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
   const tournaments = tournamentRecord
     ? [...career.tournaments.filter((record) => record.eventId !== tournamentRecord!.eventId), tournamentRecord]
     : career.tournaments;
+  const handicapProfile = round.handicapSnapshot
+    ? recordCompletedHandicapRound(
+        career.handicapProfile,
+        createHandicapScoreRecord(round.handicapSnapshot, {
+          roundId: round.id,
+          completedWeek: round.completedWeek ?? round.startedWeek,
+          completedDay: round.startedDay,
+          conceded: round.phase === "conceded",
+          scorecard: round.scorecard,
+        }),
+      )
+    : career.handicapProfile;
   return {
     cashDelta,
     reputationDelta,
@@ -1407,6 +1486,7 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
       earnings: career.earnings + cashDelta,
       reputation: clamp(career.reputation + reputationDelta, 0, 100),
       settlementLedger: [...career.settlementLedger, ledgerId].slice(-160),
+      handicapProfile,
     },
   };
 }
