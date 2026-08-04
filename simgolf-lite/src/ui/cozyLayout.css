@@ -122,6 +122,37 @@
   background: var(--ui-warning-border);
 }
 
+/* The sidebar course header has a fixed-width home. Let its identity and
+ * controls form two lines before either can cover the course name or week. */
+.cc-hud [data-biome-context="course-header"] > div:first-child {
+  flex-wrap: wrap;
+}
+
+.cc-hud [data-biome-context="course-header"] > div:first-child > div:first-child {
+  flex: 1 1 150px;
+}
+
+.cc-hud [data-biome-context="course-header"] > div:first-child > div:last-child {
+  flex: 1 1 190px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* The sidebar is permanent application chrome. Its former paper texture read
+ * as a loading placeholder beside the course view, so leave theme treatment
+ * to the contextual header rather than the entire top-right shell. */
+.cc-sidebar-frame .cc-hud {
+  background-image: none !important;
+}
+
+/* `course-header` wraps the visible status cards as well as the title. Keep
+ * its biome colour/keyline, but not the illustrative motif behind live data. */
+.cc-hud [data-biome-context="course-header"] {
+  --biome-context-pattern: none;
+  --biome-context-pattern-size: auto;
+  background-image: none !important;
+}
+
 /* ZK-626: contextual biome identity. These tokens may mark contextual
  * containers, but never permanent navigation, controls, typography, icons,
  * command placement, focus rings, or semantic status colours. */
@@ -301,6 +332,31 @@
   z-index: 15;
 }
 
+/* The minimap is a live terrain view, not a contextual illustration. Keep its
+ * backing opaque while it draws so a slow or failed canvas never reads as a
+ * theme-pattern placeholder. */
+.cc-minimap[data-render-state="loading"],
+.cc-minimap[data-render-state="error"] {
+  background-image: none;
+}
+
+.cc-minimap-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(38, 55, 47, .92);
+  color: #fff4bd;
+  font: 800 12px/1.25 var(--font-body);
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+}
+
+.cc-minimap[data-render-state="error"] .cc-minimap-status {
+  background: rgba(91, 39, 27, .94);
+}
+
 .cc-minimap canvas,
 .cc-hole-thumbnail canvas {
   display: block;
@@ -353,6 +409,18 @@
   margin-top: 2px;
   transform-origin: center;
   transition: transform 180ms ease;
+}
+
+/* Biome motifs are reserved for supporting illustration, never shell chrome
+ * or live utility surfaces. These keep their contextual tint/keyline while
+ * avoiding Parkland's canopy dots, Links lines, and Desert rings leaking into
+ * the top-right dock and caddie backing. */
+.cc-design-dock[data-biome-context],
+[data-testid="advisor-card"][data-biome-context],
+[data-testid="achievement-toast"][data-biome-context] {
+  --biome-context-pattern: none;
+  --biome-context-pattern-size: auto;
+  background-image: none !important;
 }
 
 .cc-hole-thumbnail {

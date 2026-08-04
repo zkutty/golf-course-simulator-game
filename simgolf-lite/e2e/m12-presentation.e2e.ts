@@ -11,7 +11,37 @@ test("M12 iso minimap, tycoon chrome, and sole-renderer fixture", async ({ page 
 
   const minimap = page.getByLabel("Isometric course minimap");
   await expect(minimap).toBeVisible();
+  const minimapShell = page.locator(".cc-minimap");
+  await expect(minimapShell).toHaveAttribute("data-render-state", "ready");
+  await expect(minimapShell).not.toHaveAttribute("aria-busy", "true");
+  await expect.poll(() => minimap.evaluate((canvas) => {
+    const context = (canvas as HTMLCanvasElement).getContext("2d");
+    const pixels = context?.getImageData(0, 0, canvas.width, canvas.height).data;
+    if (!pixels) return 0;
+    let nonBackground = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index] !== 38 || pixels[index + 1] !== 55 || pixels[index + 2] !== 47) nonBackground += 1;
+    }
+    return nonBackground;
+  })).toBeGreaterThan(1_000);
   await expect(page.getByLabel("View bearing 0 degrees")).toBeVisible();
+  const headerLayout = await page.locator('[data-biome-context="course-header"] > div').first().evaluate((row) => {
+    const [identity, controls] = [...row.children] as HTMLElement[];
+    const a = identity.getBoundingClientRect();
+    const b = controls.getBoundingClientRect();
+    return {
+      overlaps: a.x < b.x + b.width && a.x + a.width > b.x
+        && a.y < b.y + b.height && a.y + a.height > b.y,
+      withinHeader: b.right <= row.parentElement!.getBoundingClientRect().right
+        && b.bottom <= row.parentElement!.getBoundingClientRect().bottom,
+    };
+  });
+  expect(headerLayout).toEqual({ overlaps: false, withinHeader: true });
+  const statusPanel = page.locator('[data-biome-context="course-header"]');
+  await expect(statusPanel).toHaveCSS("background-image", "none");
+  await expect(statusPanel).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(page.getByTestId("design-dock")).toHaveCSS("background-image", "none");
+  await expect(page.locator(".cc-sidebar-frame .cc-hud")).toHaveCSS("background-image", "none");
   const controls = page.locator(".cc-live-controls");
   const miniBox = await minimap.boundingBox();
   const controlsBox = await controls.boundingBox();
