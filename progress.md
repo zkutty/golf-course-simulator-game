@@ -1,5 +1,14 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-08-04 — ZK-680 initial JavaScript recovery in progress
+
+- Fresh lease `codex/zk680-zk716-budget-split` starts at `origin/develop` `5a9acc6`; no inherited worktree changes were present.
+- Baseline production build delivery evidence measured `initialJavaScriptBytes` at 1,600,315 B, already 8,404 B below the pinned 1,608,719 B reference. The task still requires a structural split to leave room for the independently verified ZK-716 persistence patch.
+- Deferred the optional Live Overview, weekly report, Property Management, Living Club, and Seasons & Legacy App-routed panels with the existing `DeferredSurface` accessible loading/error/offline boundary. The core Pixi/game loop and persistence/competition modules remain untouched.
+- Final production build (which includes TypeScript), biome/audio/asset/surface audits, and ZK-680 delivery evidence pass. `initialJavaScriptBytes` is 1,517,006 B: 91,713 B below the 1,608,719 B reference and 83,309 B lower than this lease's 1,600,315 B pre-change build. The five new deferred chunks are 9.72–38.23 kB raw and offline injected with the rest of the app assets.
+- Focused property/contextual/weekly-report browser routes were exercised; the bundled browser client reached a valid 220×140 Parkland game after a right/pause/space action burst. Its temporary capture was visually inspected, `render_game_to_text` reported the live game, and no error JSON was produced. Lint/i18n passes with the 12 pre-existing hook warnings; full Vitest completed without a source failure.
+- Generated route captures and build/audit artifacts were restored or removed. No persistence/save/schema/competition, frame-loop, or budget-configuration changes were made. Ready for the ZK-716 persistence patch to integrate against this budget headroom.
+
 ## 2026-08-03 — ZK-674 biome-safe terrain atlas lookup complete
 
 - Replaced renderer texture lookups that implicitly read the globally active atlas with strict `(biome, quality, frame)` lookup paths for terrain, terrain detail, props, structures, and seasonal frame overlays. Cached bundles may remain resident, but a renderer can no longer borrow the currently active Links/Parkland bundle while drawing a Desert course or drop into that bundle's legacy fallback during a rebuild.

@@ -85,7 +85,6 @@ import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
 import { LiveControls } from "./ui/LiveControls";
 import { GolferInspector } from "./ui/GolferInspector";
-import { LiveOverview } from "./ui/LiveOverview";
 import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
@@ -185,12 +184,8 @@ import { activeCourseLayout, courseForLayout, courseLayouts, normalizeCourseLayo
 import { analyzeArchitecture } from "./game/architecture/architecture";
 import { emptyPaceDayMetrics, ensureCoursePaceMetrics, normalizedStaff, staffFromLevel } from "./game/live/pace";
 import { recordPaceDay } from "./game/live/paceHistory";
-import { WeekCloseReport } from "./ui/WeekCloseReport";
 import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
-import { PropertyManagementPanel } from "./ui/PropertyManagementPanel";
 import { analyzeResidentialSafety, applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
-import { LivingClubPanel } from "./ui/LivingClubPanel";
-import { SeasonsLegacyPanel } from "./ui/SeasonsLegacyPanel";
 import type { PlayerCareerRound, PlayerProCareer, PlayerProPoint, PlayerShotTrace } from "./game/models/playerProTypes";
 import {
   activatePlayerChallenge,
@@ -365,6 +360,13 @@ const PlayerProPanel = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerPr
 const PlayerShotHud = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerShotHud }) => ({ default: PlayerShotHud })));
 const ArchitectureReviewPanel = lazy(() => import("./ui/ArchitectureReviewPanel").then(({ ArchitectureReviewPanel }) => ({ default: ArchitectureReviewPanel })));
 const CourseManagerPanel = lazy(() => import("./ui/CourseManagerPanel").then(({ CourseManagerPanel }) => ({ default: CourseManagerPanel })));
+// These management surfaces are never needed for the frame loop. Defer their
+// UI code until the player explicitly opens the corresponding workspace.
+const LiveOverview = lazy(() => import("./ui/LiveOverview").then(({ LiveOverview }) => ({ default: LiveOverview })));
+const WeekCloseReport = lazy(() => import("./ui/WeekCloseReport").then(({ WeekCloseReport }) => ({ default: WeekCloseReport })));
+const PropertyManagementPanel = lazy(() => import("./ui/PropertyManagementPanel").then(({ PropertyManagementPanel }) => ({ default: PropertyManagementPanel })));
+const LivingClubPanel = lazy(() => import("./ui/LivingClubPanel").then(({ LivingClubPanel }) => ({ default: LivingClubPanel })));
+const SeasonsLegacyPanel = lazy(() => import("./ui/SeasonsLegacyPanel").then(({ SeasonsLegacyPanel }) => ({ default: SeasonsLegacyPanel })));
 
 export default function App() {
   const { t } = useI18n();
@@ -5293,7 +5295,7 @@ export default function App() {
               }}
               onClose={() => setShowArchitectureReview(false)}
             />}
-            {showLivingClub && !tutorialProgress && <LivingClubPanel
+            {showLivingClub && !tutorialProgress && <DeferredSurface label={t("livingClub.title")}><LivingClubPanel
               course={course}
               world={world}
               profile={appProfile}
@@ -5308,8 +5310,8 @@ export default function App() {
               onChooseStory={chooseStory}
               onDeferStory={deferStory}
               onClose={closeLivingClub}
-            />}
-            {showSeasonsLegacy && !tutorialProgress && <SeasonsLegacyPanel
+            /></DeferredSurface>}
+            {showSeasonsLegacy && !tutorialProgress && <DeferredSurface label={t("season.open")}><SeasonsLegacyPanel
               course={course}
               world={world}
               day={live.status.dayIndex}
@@ -5322,7 +5324,7 @@ export default function App() {
               })}
               onClose={() => setShowSeasonsLegacy(false)}
               biomeContext={contextualUiTheme}
-            />}
+            /></DeferredSurface>}
             {showCampaign && world.campaign && !tutorialProgress && <CampaignPanel
               course={course}
               world={world}
@@ -5337,8 +5339,8 @@ export default function App() {
               world={world}
               onChoose={chooseCampaign}
             />}
-            {showPropertyManagement && !tutorialProgress && <PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} />}
-            {showLiveOverview && !tutorialProgress && <LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} />}
+            {showPropertyManagement && !tutorialProgress && <DeferredSurface label={t("property.aria")}><PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} /></DeferredSurface>}
+            {showLiveOverview && !tutorialProgress && <DeferredSurface label={t("live.overview")}><LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} /></DeferredSurface>}
             {teeSetupPrompt && !tutorialProgress && (
               <div data-testid="tee-setup-offer" role="dialog" aria-label={t("courseSetup.offerAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 145, top: 64, right: 16, width: 280, padding: 14 }}>
                 <strong>{t("courseSetup.offerTitle")}</strong>
@@ -5649,11 +5651,11 @@ export default function App() {
         </div>
         </div>
         <NewsTicker visible={!tutorialProgress && !photoMode && appProfile.gameplay.tickerVisible} onJump={jumpToEvent} onHide={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: false } })} />
-        {pendingWeekReport && <WeekCloseReport week={pendingWeekReport.week} result={pendingWeekReport.result} course={course} world={world} biomeContext={contextualUiTheme} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={() => {
+        {pendingWeekReport && <DeferredSurface label={t("weekClose.title")}><WeekCloseReport week={pendingWeekReport.week} result={pendingWeekReport.result} course={course} world={world} biomeContext={contextualUiTheme} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={() => {
           const resumeSpeed = pendingWeekReport.resumeSpeed;
           setPendingWeekReport(null);
           live.setSpeed(resumeSpeed);
-        }} />}
+        }} /></DeferredSurface>}
         {flow.paused && (
           <PauseOverlay
             career={world.mode === "career"}
