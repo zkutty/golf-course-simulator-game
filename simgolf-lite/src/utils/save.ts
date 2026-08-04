@@ -71,7 +71,7 @@ import { normalizeSurfaceCareState } from "../game/conditions/surfaceCare";
 import { withNormalizedGreenContract } from "../game/greens/greenSurface";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 26 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 27 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -192,6 +192,10 @@ export interface SaveV25 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV26 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 26;
+  records?: CourseRecords;
+}
+export interface SaveV27 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -277,7 +281,7 @@ export function saveGame(payload: SavePayload) {
     rulesPlayerPro,
     persisted.course,
   ).playerPro as World["playerPro"];
-  const save: SaveV26 = {
+  const save: SaveV27 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: persisted.course,
@@ -765,6 +769,9 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
   // bounded per-hole local condition, and immutable active-round carriers.
   // Course-aware defaults and round freezing happen after topology validation.
   25: (save) => ({ ...save, schemaVersion: 26 }),
+  // V27 records stroke-index provenance. Course normalization marks existing
+  // valid indexes legacy rather than claiming they are complete or automatic.
+  26: (save) => ({ ...save, schemaVersion: 27 }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {

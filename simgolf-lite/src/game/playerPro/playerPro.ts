@@ -38,6 +38,7 @@ import { evalShotExpectedCost } from "../sim/shots/evalShotExpectedCost";
 import { activeCourseLayout, courseForLayout, layoutById } from "../models/courseLayouts";
 import { getParSetting, resolveCourseSetup } from "../models/courseSetup";
 import { computeAutoPar } from "../sim/holeMetrics";
+import { computeRatingForSetup } from "../sim/courseRating";
 import { mulberry32 } from "../../utils/rng";
 import { tournamentCalendar, TOURNAMENT_TIERS } from "../tournaments/tournaments";
 import type { TournamentEvent, TournamentStanding, TournamentTier } from "../tournaments/types";
@@ -442,6 +443,9 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
       tee: { ...setup.tee },
       pin: { ...setup.pin },
       waypoints: hole.waypoints?.map((candidate) => ({ ...candidate })) ?? [],
+      strokeIndex: Number.isInteger(hole.holeIndex) ? hole.holeIndex! : null,
+      teeSet: setup.teeSet,
+      pinRotation: setup.pinRotation,
     };
   });
   if (holes.some((hole) => !hole)) return null;
@@ -449,6 +453,7 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
   const weather = activeWeather(world, course, day);
   const modifiers = weatherModifiers(weather, season.operations.drainageLevel);
   const greenSnapshot = createGreenRoundSnapshot(view);
+  const rating = computeRatingForSetup(view, teeSet, pinRotation);
   return {
     courseId: layout.id,
     courseName: layout.name,
@@ -464,6 +469,7 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
     elevations: course.elevations.slice(),
     obstacles: course.obstacles.map((obstacle) => ({ ...obstacle })),
     holes: holes as PlayerRoundCourseSnapshot["holes"],
+    rating: { courseRating: rating.courseRating, slope: rating.slope },
     greenSnapshot,
     greenDrainageLevel: season.operations.drainageLevel,
     weather: {

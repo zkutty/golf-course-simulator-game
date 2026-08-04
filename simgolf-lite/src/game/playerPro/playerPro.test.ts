@@ -145,6 +145,18 @@ function started() {
 }
 
 describe("M36 deterministic Player Pro play", () => {
+  it("freezes stroke indexes, setup, par, and rating at round start", () => {
+    const course = threeHoleCourse();
+    course.holes[0] = { ...course.holes[0], holeIndex: 7, holeIndexSource: "manual" };
+    const result = startPlayableRound({ course, world: world(), layoutId: "slice", teeSet: "member", pinRotation: "A" });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.round.course.holes[0]).toMatchObject({ strokeIndex: 7, teeSet: "member", pinRotation: "A", par: 4 });
+    expect(result.round.course.rating).toEqual(expect.objectContaining({ courseRating: expect.any(Number), slope: expect.any(Number) }));
+    course.holes[0] = { ...course.holes[0], holeIndex: 1, parManual: 5 };
+    expect(result.round.course.holes[0]).toMatchObject({ strokeIndex: 7, par: 4 });
+  });
+
   it("automatically completes a green arrival and preserves the resolved putt count", () => {
     const { career, round } = started();
     const committed = commitPlayerShot(round, career.skills, { club: "Pitching Wedge", aim: { x: 34, y: 7 }, power: .25, technique: "normal" });

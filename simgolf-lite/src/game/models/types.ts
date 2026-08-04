@@ -174,6 +174,7 @@ export type ParSetting =
   | { mode: "MANUAL"; par: 3 | 4 | 5 };
 export const PIN_ROTATIONS = ["A", "B", "C"] as const;
 export type PinRotation = (typeof PIN_ROTATIONS)[number];
+export type HoleIndexSource = "auto" | "manual" | "legacy";
 
 export interface Hole {
   /** Stable identity used by layouts, records, events, and navigation. */
@@ -191,7 +192,11 @@ export interface Hole {
   parMode: "AUTO" | "MANUAL";
   parManual?: 3 | 4 | 5;
   name?: string;
-  holeIndex?: number; // Stroke index (1-18, defaults to array index + 1)
+  /** Stroke index used for net scoring. It is intentionally optional for
+   * legacy/gross-only routes that have not been certified. */
+  holeIndex?: number;
+  /** Provenance prevents publish from silently replacing an authored index. */
+  holeIndexSource?: HoleIndexSource;
 }
 
 export type CourseOperatingState = "open" | "closed";

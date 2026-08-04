@@ -54,6 +54,10 @@ export interface PlayerRoundHoleSnapshot {
   tee: PlayerProPoint;
   pin: PlayerProPoint;
   waypoints: PlayerProPoint[];
+  /** Immutable ZK-717 handicap facts captured when the round begins. */
+  strokeIndex?: number | null;
+  teeSet?: "forward" | "member" | "championship";
+  pinRotation?: "A" | "B" | "C";
 }
 
 export interface PlayerRoundCourseSnapshot {
@@ -70,6 +74,7 @@ export interface PlayerRoundCourseSnapshot {
   elevations: number[];
   obstacles: Array<PlayerProPoint & { type: string }>;
   holes: PlayerRoundHoleSnapshot[];
+  rating?: { courseRating: number; slope: number };
   /** Immutable M62 fine-green geometry, policy, and local condition. */
   greenSnapshot?: GreenRoundSnapshotV1;
   /** Frozen drainage authority paired with round weather for green rollout. */

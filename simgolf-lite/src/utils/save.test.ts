@@ -76,6 +76,18 @@ function legacyLinksOverlay(seed = 25) {
 }
 
 describe("save validation and migrations", () => {
+  it("migrates historical indexes as legacy evidence without certifying an incomplete scorecard", () => {
+    const course = {
+      ...DEFAULT_COURSE,
+      holes: DEFAULT_COURSE.holes.map((hole, index) => index === 0 ? { ...hole, holeIndex: 1 } : hole),
+    };
+    const result = normalizeLoadedSaveResult(file({ schemaVersion: 26, course }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFrom).toBe(26);
+    expect(result.payload.course.holes[0].holeIndexSource).toBe("legacy");
+  });
+
   it("round-trips a current save without changing gameplay state", () => {
     const result = parseSaveText(JSON.stringify(file()));
     expect(result.ok).toBe(true);

@@ -4,6 +4,93 @@ import { normalizeOperations } from "./courseOperations";
 
 export const MAX_ESTATE_HOLES = 36;
 
+export interface StrokeIndexValidation {
+  valid: boolean;
+  reasons: string[];
+}
+
+function holeLabel(hole: Hole, index: number): string {
+  return hole.name?.trim() || `Hole ${index + 1}`;
+}
+
+/** Returns the exact repairs required before a route can be used for net or
+ * handicap-posted play. Gross and legacy practice flows must not call this as
+ * a general playability gate. */
+export function validateStrokeIndexes(course: Course): StrokeIndexValidation {
+  const holes = course.holes;
+  const required = holes.length === 9 || holes.length === 18 ? holes.length : 0;
+  if (!required) return { valid: false, reasons: ["Net and handicap-posted play requires a complete 9- or 18-hole scorecard."] };
+  const missing = holes.map((hole, index) => ({ hole, index })).filter(({ hole }) =>
+    !Number.isInteger(hole.holeIndex) || (hole.holeIndex as number) < 1 || (hole.holeIndex as number) > required,
+  );
+  const byIndex = new Map<number, number[]>();
+  holes.forEach((hole, index) => {
+    if (Number.isInteger(hole.holeIndex) && (hole.holeIndex as number) >= 1 && (hole.holeIndex as number) <= required) {
+      const value = hole.holeIndex as number;
+      byIndex.set(value, [...(byIndex.get(value) ?? []), index]);
+    }
+  });
+  const duplicates = [...byIndex.entries()].filter(([, indexes]) => indexes.length > 1);
+  const absent = Array.from({ length: required }, (_, index) => index + 1).filter((value) => !byIndex.has(value));
+  const reasons: string[] = [];
+  if (missing.length) reasons.push(`Assign a stroke index to ${missing.map(({ hole, index }) => holeLabel(hole, index)).join(", ")}.`);
+  for (const [value, indexes] of duplicates) reasons.push(`Stroke index ${value} is duplicated on ${indexes.map((index) => holeLabel(holes[index], index)).join(", ")}.`);
+  if (absent.length) reasons.push(`Assign missing stroke index${absent.length === 1 ? "" : "es"}: ${absent.join(", ")}.`);
+  return { valid: reasons.length === 0, reasons };
+}
+
+/** Deterministic handicap ranking: modeled bogey-minus-scratch gap descends;
+ * ties use stable hole identity then route position. Eighteen-hole routes put
+ * the nine largest gaps on odd indexes before allocating even indexes. */
+export function automaticStrokeIndexes(course: Course): number[] | null {
+  if (course.holes.length !== 9 && course.holes.length !== 18) return null;
+  const summary = scoreCourseHoles(course);
+  return strokeIndexesForModeledGaps(course.holes.map((hole, index) => ({
+    id: hole.id ?? "",
+    gap: (summary.holes[index]?.bogeyShotsToGreen ?? -Infinity) - (summary.holes[index]?.scratchShotsToGreen ?? Infinity),
+  })));
+}
+
+/** Table-testable allocation helper. Input order is the routed scorecard. */
+export function strokeIndexesForModeledGaps(values: readonly { id: string; gap: number }[]): number[] | null {
+  if (values.length !== 9 && values.length !== 18) return null;
+  const ranked = values.map((value, index) => ({
+    index,
+    ...value,
+  })).sort((a, b) => b.gap - a.gap || a.id.localeCompare(b.id) || a.index - b.index);
+  const indexes = new Array<number>(values.length);
+  if (values.length === 9) ranked.forEach((entry, rank) => { indexes[entry.index] = rank + 1; });
+  else {
+    ranked.slice(0, 9).forEach((entry, rank) => { indexes[entry.index] = rank * 2 + 1; });
+    ranked.slice(9).forEach((entry, rank) => { indexes[entry.index] = rank * 2 + 2; });
+  }
+  return indexes;
+}
+
+function withPublishedAutomaticStrokeIndexes(course: Course, courseId: string): Course {
+  const layout = layoutById(course, courseId);
+  if (!layout) return course;
+  const view = courseForLayout(course, courseId, true);
+  const indexes = automaticStrokeIndexes(view);
+  if (!indexes) return course;
+  const indexById = new Map(view.holes.map((hole, index) => [hole.id!, indexes[index]]));
+  const manualIndexes = new Set(view.holes
+    .filter((hole) => hole.holeIndexSource === "manual" && Number.isInteger(hole.holeIndex) && (hole.holeIndex as number) >= 1 && (hole.holeIndex as number) <= view.holes.length)
+    .map((hole) => hole.holeIndex as number));
+  const availableIndexes = Array.from({ length: view.holes.length }, (_, index) => index + 1)
+    .filter((index) => !manualIndexes.has(index));
+  const automaticIds = view.holes
+    .filter((hole) => hole.holeIndexSource !== "manual")
+    .sort((a, b) => (indexById.get(a.id!) ?? Infinity) - (indexById.get(b.id!) ?? Infinity) || a.id!.localeCompare(b.id!))
+    .map((hole) => hole.id!);
+  const assignedAutomaticIndexes = new Map(automaticIds.map((id, index) => [id, availableIndexes[index]]));
+  const holes = course.holes.map((hole) => {
+    if (!hole.id || hole.holeIndexSource === "manual" || !assignedAutomaticIndexes.has(hole.id)) return hole;
+    return { ...hole, holeIndex: assignedAutomaticIndexes.get(hole.id), holeIndexSource: "auto" as const };
+  });
+  return { ...course, holes };
+}
+
 // Course state is updated immutably throughout the reducer. Preserve one
 // normalized object and one published/draft view per revision so downstream
 // scoring WeakMaps keep working across repeated layout lookups.
@@ -28,7 +115,10 @@ export function normalizeCourseLayouts(input: Course): Course {
   const usedHoleIds = new Set<string>();
   const normalizedHoles = input.holes.slice(0, MAX_ESTATE_HOLES).map((hole, index) => {
     const id = uniqueId(typeof hole.id === "string" && hole.id.trim() ? hole.id.trim() : `hole-${index + 1}`, usedHoleIds);
-    return hole.id === id ? hole : { ...hole, id };
+    const holeIndexSource = hole.holeIndexSource === "auto" || hole.holeIndexSource === "manual" || hole.holeIndexSource === "legacy"
+      ? hole.holeIndexSource
+      : Number.isInteger(hole.holeIndex) ? "legacy" as const : undefined;
+    return hole.id === id && hole.holeIndexSource === holeIndexSource ? hole : { ...hole, id, ...(holeIndexSource ? { holeIndexSource } : {}) };
   });
   const holes = normalizedHoles.length === input.holes.length &&
     normalizedHoles.every((hole, index) => hole === input.holes[index])
@@ -222,10 +312,11 @@ export function publishLayout(course: Course, courseId: string): { course: Cours
   const normalized = normalizeCourseLayouts(course);
   const validation = validateDraftRouting(normalized, courseId);
   if (!validation.valid) return { course: normalized, reasons: validation.reasons };
-  const layouts = normalized.layouts!.map((layout) => layout.id === courseId
+  const ranked = withPublishedAutomaticStrokeIndexes(normalized, courseId);
+  const layouts = ranked.layouts!.map((layout) => layout.id === courseId
     ? { ...layout, publishedHoleIds: [...layout.draftHoleIds], roundLength: layout.draftHoleIds.length as 9 | 18, state: "open" as const, legacyPartial: undefined }
     : layout);
-  return { course: { ...normalized, layouts }, reasons: [] };
+  return { course: { ...ranked, layouts }, reasons: [] };
 }
 
 export function selectLayout(course: Course, courseId: string): Course {

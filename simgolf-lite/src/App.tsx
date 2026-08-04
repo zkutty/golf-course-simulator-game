@@ -5512,6 +5512,7 @@ export default function App() {
                       holes[activeHoleIndex] = {
                         ...holes[activeHoleIndex],
                         holeIndex: newIndex,
+                        holeIndexSource: "manual",
                       };
                       return { ...c, holes };
                     });
