@@ -2,9 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   normalizeCourseLayouts,
   publishLayout,
-  strokeIndexesForModeledGaps,
-  validateStrokeIndexes,
 } from "./courseLayouts";
+import { strokeIndexesForModeledGaps, validateStrokeIndexes } from "./strokeIndexes";
 import type { Course } from "./types";
 import { createTournamentStandardsCourse } from "../testing/referenceCourse";
 

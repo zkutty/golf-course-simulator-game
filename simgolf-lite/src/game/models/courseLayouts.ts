@@ -4,55 +4,19 @@ import { normalizeOperations } from "./courseOperations";
 
 export const MAX_ESTATE_HOLES = 36;
 
-export interface StrokeIndexValidation {
-  valid: boolean;
-  reasons: string[];
-}
-
-function holeLabel(hole: Hole, index: number): string {
-  return hole.name?.trim() || `Hole ${index + 1}`;
-}
-
-/** Returns the exact repairs required before a route can be used for net or
- * handicap-posted play. Gross and legacy practice flows must not call this as
- * a general playability gate. */
-export function validateStrokeIndexes(course: Course): StrokeIndexValidation {
-  const holes = course.holes;
-  const required = holes.length === 9 || holes.length === 18 ? holes.length : 0;
-  if (!required) return { valid: false, reasons: ["Net and handicap-posted play requires a complete 9- or 18-hole scorecard."] };
-  const missing = holes.map((hole, index) => ({ hole, index })).filter(({ hole }) =>
-    !Number.isInteger(hole.holeIndex) || (hole.holeIndex as number) < 1 || (hole.holeIndex as number) > required,
-  );
-  const byIndex = new Map<number, number[]>();
-  holes.forEach((hole, index) => {
-    if (Number.isInteger(hole.holeIndex) && (hole.holeIndex as number) >= 1 && (hole.holeIndex as number) <= required) {
-      const value = hole.holeIndex as number;
-      byIndex.set(value, [...(byIndex.get(value) ?? []), index]);
-    }
-  });
-  const duplicates = [...byIndex.entries()].filter(([, indexes]) => indexes.length > 1);
-  const absent = Array.from({ length: required }, (_, index) => index + 1).filter((value) => !byIndex.has(value));
-  const reasons: string[] = [];
-  if (missing.length) reasons.push(`Assign a stroke index to ${missing.map(({ hole, index }) => holeLabel(hole, index)).join(", ")}.`);
-  for (const [value, indexes] of duplicates) reasons.push(`Stroke index ${value} is duplicated on ${indexes.map((index) => holeLabel(holes[index], index)).join(", ")}.`);
-  if (absent.length) reasons.push(`Assign missing stroke index${absent.length === 1 ? "" : "es"}: ${absent.join(", ")}.`);
-  return { valid: reasons.length === 0, reasons };
-}
-
 /** Deterministic handicap ranking: modeled bogey-minus-scratch gap descends;
  * ties use stable hole identity then route position. Eighteen-hole routes put
  * the nine largest gaps on odd indexes before allocating even indexes. */
 export function automaticStrokeIndexes(course: Course): number[] | null {
   if (course.holes.length !== 9 && course.holes.length !== 18) return null;
   const summary = scoreCourseHoles(course);
-  return strokeIndexesForModeledGaps(course.holes.map((hole, index) => ({
+  return rankStrokeIndexes(course.holes.map((hole, index) => ({
     id: hole.id ?? "",
     gap: (summary.holes[index]?.bogeyShotsToGreen ?? -Infinity) - (summary.holes[index]?.scratchShotsToGreen ?? Infinity),
   })));
 }
 
-/** Table-testable allocation helper. Input order is the routed scorecard. */
-export function strokeIndexesForModeledGaps(values: readonly { id: string; gap: number }[]): number[] | null {
+function rankStrokeIndexes(values: readonly { id: string; gap: number }[]): number[] | null {
   if (values.length !== 9 && values.length !== 18) return null;
   const ranked = values.map((value, index) => ({
     index,

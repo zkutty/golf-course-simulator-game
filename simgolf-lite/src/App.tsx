@@ -181,7 +181,6 @@ import { createTournamentEvent, prepareTournamentDay, revalidateScheduledTournam
 import { evaluateTournamentCourseQualification } from "./game/tournaments/eligibility";
 import type { TournamentTier } from "./game/tournaments/types";
 import { debugLog } from "./utils/debugLog";
-import { CourseManagerPanel } from "./ui/CourseManagerPanel";
 import { activeCourseLayout, courseForLayout, courseLayouts, normalizeCourseLayouts, selectLayout, updateLayout } from "./game/models/courseLayouts";
 import { analyzeArchitecture } from "./game/architecture/architecture";
 import { emptyPaceDayMetrics, ensureCoursePaceMetrics, normalizedStaff, staffFromLevel } from "./game/live/pace";
@@ -365,6 +364,7 @@ const GolfopediaModal = lazy(() => import("./ui/help/GolfopediaModal").then(({ G
 const PlayerProPanel = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerProPanel }) => ({ default: PlayerProPanel })));
 const PlayerShotHud = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerShotHud }) => ({ default: PlayerShotHud })));
 const ArchitectureReviewPanel = lazy(() => import("./ui/ArchitectureReviewPanel").then(({ ArchitectureReviewPanel }) => ({ default: ArchitectureReviewPanel })));
+const CourseManagerPanel = lazy(() => import("./ui/CourseManagerPanel").then(({ CourseManagerPanel }) => ({ default: CourseManagerPanel })));
 
 export default function App() {
   const { t } = useI18n();
@@ -5271,7 +5271,7 @@ export default function App() {
             {showProgression && !tutorialProgress && <ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} />}
             {showTournaments && !tutorialProgress && <TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
             {showLandOffice && !tutorialProgress && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
-            {showCourseManager && !tutorialProgress && <CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onOpenArchitectureReview={() => { setShowArchitectureReview(true); setShowCourseManager(false); }} onClose={() => setShowCourseManager(false)} />}
+            {showCourseManager && !tutorialProgress && <Suspense fallback={<div aria-live="polite" style={{ padding: 16 }}>{t("courseSetup.loadingInspector")}</div>}><CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onOpenArchitectureReview={() => { setShowArchitectureReview(true); setShowCourseManager(false); }} onClose={() => setShowCourseManager(false)} /></Suspense>}
             {showArchitectureReview && !tutorialProgress && <ArchitectureReviewPanel
               course={course}
               review={architectureReview}
