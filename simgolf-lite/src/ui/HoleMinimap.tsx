@@ -71,23 +71,18 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
   const transformRef = useRef<MinimapTransform | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [renderState, setRenderState] = useState<"loading" | "ready" | "error">("loading");
-  const [baseVersion, setBaseVersion] = useState(0);
 
   useEffect(() => {
     setRenderState("loading");
-    baseRef.current = null;
-    transformRef.current = null;
-    const timer = window.setTimeout(() => {
-      try {
+    try {
       const bounds = boundsFor(course, hole, holeIndex);
       const transform = makeMinimapTransform(bounds);
       transformRef.current = transform;
       const base = document.createElement("canvas");
-      const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
-      base.width = SIZE * pixelRatio;
-      base.height = SIZE * pixelRatio;
+      const pixelRatio = devicePixelRatio || 1;
+      base.width = base.height = SIZE * pixelRatio;
       const ctx = base.getContext("2d");
-      if (!ctx) throw new Error("Unable to create the minimap canvas context.");
+      if (!ctx) throw Error();
       ctx.scale(pixelRatio, pixelRatio);
       ctx.fillStyle = "#26372f";
       ctx.fillRect(0, 0, SIZE, SIZE);
@@ -127,9 +122,8 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
           if (boundary) strokeDiamond(ctx, point, transform.scale, owned.has(estate.parcels[parcelIndex].id) ? "rgba(117,220,135,.75)" : "rgba(255,239,188,.52)");
         }
       }
-      const markerHoles = hole ? [hole] : course.holes;
       const activePin = course.activePinRotation ?? "A";
-      for (const markerHole of markerHoles) {
+      for (const markerHole of hole ? [hole] : course.holes) {
         for (const teeSet of TEE_SETS) {
           const marker = getTeeBox(markerHole, teeSet);
           if (!marker) continue;
@@ -147,19 +141,11 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
           ctx.beginPath(); ctx.arc(point.x, point.y, 1.8, 0, Math.PI * 2); ctx.fill();
         }
       }
-      ctx.globalAlpha = 1;
       baseRef.current = base;
-      setBaseVersion((version) => version + 1);
       setRenderState("ready");
-      } catch (error) {
-        // The shell must communicate a failed map rather than leaving an
-        // indistinguishable blank panel. Rendering can recover on the next
-        // course or hole update.
-        console.error("Unable to render course minimap", error);
-        setRenderState("error");
-      }
-    }, 0); // Yield once, then paint the first usable course frame immediately.
-    return () => window.clearTimeout(timer);
+    } catch {
+      setRenderState("error");
+    }
   }, [course, hole, holeIndex]);
 
   useEffect(() => {
@@ -171,7 +157,6 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
       if (!canvas || !base || !transform) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      ctx.clearRect(0, 0, SIZE, SIZE);
       ctx.drawImage(base, 0, 0, SIZE, SIZE);
 
       if (!thumbnail) {
@@ -200,7 +185,7 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
     render();
     const interval = window.setInterval(render, 333); // live dots + viewport at 3 Hz
     return () => window.clearInterval(interval);
-  }, [baseVersion, collapsed, course, golfersRef, thumbnail, view]);
+  }, [collapsed, course, golfersRef, renderState, thumbnail, view]);
 
   if (collapsed && !thumbnail) {
     return <button className="cc-minimap-toggle" onClick={() => setCollapsed(false)} aria-label={translateCurrent("minimap.open")}>◇</button>;
@@ -210,7 +195,7 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
     <div
       className={thumbnail ? "cc-hole-thumbnail" : "cc-minimap"}
       data-render-state={renderState}
-      aria-busy={renderState === "loading" || undefined}
+      aria-busy={renderState === "loading"}
     >
       {!thumbnail && <button className="cc-minimap-collapse" onClick={() => setCollapsed(true)} aria-label={translateCurrent("minimap.collapse")}>−</button>}
       {!thumbnail && <div className="cc-minimap-compass" aria-label={translateCurrent("minimap.bearing", { degrees: view?.rotation ?? 0 })}>{translateCurrent("minimap.north")}<span style={{ transform: `rotate(${-(view?.rotation ?? 0)}deg)` }}>▲</span></div>}
@@ -230,7 +215,7 @@ export function HoleMinimap({ course, hole, holeIndex = 0, view, golfersRef, onC
       />
       {!thumbnail && renderState !== "ready" && (
         <div className="cc-minimap-status" role={renderState === "error" ? "alert" : "status"}>
-          {renderState === "error" ? "Course map unavailable" : "Drawing course map…"}
+          {renderState === "error" ? "Map unavailable" : "Drawing map…"}
         </div>
       )}
     </div>
