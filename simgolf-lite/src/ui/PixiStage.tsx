@@ -171,7 +171,6 @@ import {
 } from "../game/render/treeHabitat";
 import { isWaterHazard } from "../game/models/terrainRules";
 import { T } from "../i18n/T";
-import { decodeParcelMap } from "../game/estate/estate";
 import type { ArchitectureWarning } from "../game/architecture/architecture";
 import type { ArchitectureOverlayRender } from "../game/architecture/reviewTypes";
 import {
@@ -210,6 +209,8 @@ import {
   type SurfaceCareWorkerSprite,
 } from "./renderer/scenes/surfaceCareScene";
 import { createStructuresPropsSceneSystem } from "./renderer/scenes/structuresPropsScene";
+import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
+import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
 
 const TERRAIN_LABEL_KEYS: Record<Terrain, MessageKey> = {
   fairway: "designDock.terrain.fairway",
@@ -295,7 +296,6 @@ const EDGE_DARKEN = 0.88;
 
 const MARKER_LABEL = "hole-marker";
 const ROUTE_LABEL = "route-overlay";
-const ESTATE_LABEL = "estate-overlay";
 
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 8;
@@ -1112,7 +1112,6 @@ export function PixiStage(props: PixiStageProps) {
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
   const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
   const propertyGraphicsRef = useRef<PIXI.Graphics[]>([]);
-  const playerShotOverlayRef = useRef<PIXI.Container | null>(null);
   const decorationSpritesRef = useRef<Array<{ sprite: PIXI.Sprite; shadow: PIXI.Graphics }>>([]);
   const surfaceCareWorkersRef = useRef<SurfaceCareWorkerSprite[]>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
@@ -2055,7 +2054,6 @@ export function PixiStage(props: PixiStageProps) {
       flagPoolRef.current.clear();
       propertyGraphicsRef.current = [];
       surfaceCareWorkersRef.current = [];
-      playerShotOverlayRef.current = null;
       rippleGraphicsRef.current = null;
       ripplesRef.current = [];
       impactsRef.current = [];
@@ -3565,6 +3563,8 @@ export function PixiStage(props: PixiStageProps) {
         (workers) => { surfaceCareWorkersRef.current = workers; },
       ),
       createStructuresPropsSceneSystem(layers.objects),
+      createPlayerShotOverlaySceneSystem(layers.fx),
+      createEstateSurveySceneSystem(layers.terrainDecals),
     ]);
     sceneSystemHostRef.current = host;
     return () => {
@@ -4101,133 +4101,6 @@ export function PixiStage(props: PixiStageProps) {
       propertyGraphicsRef.current.push(graphic);
     }
   }, [appReady, course, props.resortOperations, rotation, surfaceHeightAt]);
-
-  // Player Pro shot decision overlay. It is one retained container rebuilt
-  // only when the decision changes, never per frame. Preview and animation
-  // facts come from the same pure resolver used by the authoritative round.
-  useEffect(() => {
-    if (!appReady) return;
-    const layers = layersRef.current;
-    if (!layers) return;
-    if (playerShotOverlayRef.current) {
-      layers.fx.removeChild(playerShotOverlayRef.current);
-      playerShotOverlayRef.current.destroy({ children: true });
-      playerShotOverlayRef.current = null;
-    }
-    const round = props.playerRound;
-    if (!round) return;
-    const overlay = new PIXI.Container();
-    overlay.label = "player-pro-shot-overlay";
-    const graphics = new PIXI.Graphics();
-    const ballElevation = surfaceHeightAt(round.ball.x + 0.5, round.ball.y + 0.5);
-    const ball = worldToIso(round.ball.x + 0.5, round.ball.y + 0.5, ballElevation, rotation);
-    graphics.circle(ball.x, ball.y - 7, 7);
-    graphics.fill({ color: 0xffd25b, alpha: 0.95 });
-    graphics.stroke({ width: 2.5, color: 0x253c2b, alpha: 1 });
-    graphics.circle(ball.x, ball.y - 7, 11);
-    graphics.stroke({ width: 2, color: 0xfff0a0, alpha: 0.75 });
-
-    if (props.playerShotAim && round.phase === "awaiting_shot") {
-      const aimElevation = surfaceHeightAt(props.playerShotAim.x + 0.5, props.playerShotAim.y + 0.5);
-      const aim = worldToIso(props.playerShotAim.x + 0.5, props.playerShotAim.y + 0.5, aimElevation, rotation);
-      graphics.moveTo(ball.x, ball.y - 7);
-      graphics.lineTo(aim.x, aim.y - 5);
-      graphics.stroke({ width: 2.2, color: 0xffe27a, alpha: 0.9 });
-      graphics.ellipse(aim.x, aim.y - 5, TILE_W * 1.4, TILE_H * 1.1);
-      graphics.fill({ color: 0xffd25b, alpha: 0.13 });
-      graphics.stroke({ width: 2, color: 0x6f4e16, alpha: 0.9 });
-      graphics.circle(aim.x, aim.y - 5, 3.5);
-      graphics.fill({ color: 0xffffff, alpha: 0.95 });
-    }
-
-    const trace = round.pendingShot ?? round.shots[round.shots.length - 1];
-    if (trace) {
-      const from = worldToIso(
-        trace.from.x + 0.5,
-        trace.from.y + 0.5,
-        surfaceHeightAt(trace.from.x + 0.5, trace.from.y + 0.5),
-        rotation,
-      );
-      const rest = worldToIso(
-        trace.rest.x + 0.5,
-        trace.rest.y + 0.5,
-        surfaceHeightAt(trace.rest.x + 0.5, trace.rest.y + 0.5),
-        rotation,
-      );
-      graphics.moveTo(from.x, from.y - 5);
-      if (trace.greenRollout?.path.length) {
-        const landing = worldToIso(
-          trace.greenRollout.landing.x + 0.5,
-          trace.greenRollout.landing.y + 0.5,
-          surfaceHeightAt(trace.greenRollout.landing.x + 0.5, trace.greenRollout.landing.y + 0.5),
-          rotation,
-        );
-        graphics.lineTo(landing.x, landing.y - 5);
-        for (const point of trace.greenRollout.path.slice(1)) {
-          const projected = worldToIso(
-            point.x + 0.5,
-            point.y + 0.5,
-            surfaceHeightAt(point.x + 0.5, point.y + 0.5),
-            rotation,
-          );
-          graphics.lineTo(projected.x, projected.y - 5);
-        }
-      } else {
-        graphics.lineTo(rest.x, rest.y - 5);
-      }
-      graphics.stroke({ width: 2.5, color: trace.penaltyStrokes > 0 ? 0xc84a37 : 0xf7f0c2, alpha: 0.78 });
-      graphics.circle(rest.x, rest.y - 5, 5);
-      graphics.fill({ color: trace.penaltyStrokes > 0 ? 0xd34b39 : 0xffffff, alpha: 0.95 });
-    }
-    overlay.addChild(graphics);
-    layers.fx.addChild(overlay);
-    playerShotOverlayRef.current = overlay;
-    return () => {
-      if (playerShotOverlayRef.current === overlay) playerShotOverlayRef.current = null;
-      overlay.parent?.removeChild(overlay);
-      overlay.destroy({ children: true });
-    };
-  }, [appReady, course, props.playerRound, props.playerShotAim, rotation, surfaceHeightAt]);
-
-  // Estate ownership veil and survey boundaries (M25). A single batched
-  // Graphics object keeps the expanded 220x140 map inexpensive to inspect.
-  useEffect(() => {
-    if (!appReady) return;
-    const layers = layersRef.current;
-    if (!layers) return;
-    const stale = layers.terrainDecals.children.filter((child) => child.label === ESTATE_LABEL);
-    stale.forEach((child) => { layers.terrainDecals.removeChild(child); child.destroy(); });
-    const estate = course.estate;
-    if (!estate) return;
-    const map = decodeParcelMap(estate, course.width * course.height);
-    if (!map) return;
-    const selectedIndex = estate.parcels.findIndex((parcel) => parcel.id === props.selectedParcelId);
-    const owned = new Set(estate.ownedParcelIds);
-    const fill = new PIXI.Graphics();
-    const boundary = new PIXI.Graphics();
-    const boundaryColor = props.colorVision === "tritanopia" ? 0xff4f8b : props.colorVision === "protanopia" ? 0x3f9cff : 0xffd45a;
-    const diamond = (graphics: PIXI.Graphics, x: number, y: number) => {
-      const top = worldToIso(x + 0.5, y, course.elevations[y * course.width + x] ?? 0, rotation);
-      graphics.poly([top.x, top.y, top.x + TILE_W / 2, top.y + TILE_H / 2, top.x, top.y + TILE_H, top.x - TILE_W / 2, top.y + TILE_H / 2]);
-    };
-    for (let y = 0; y < course.height; y++) for (let x = 0; x < course.width; x++) {
-      const index = y * course.width + x;
-      const parcelIndex = map[index];
-      const parcel = estate.parcels[parcelIndex];
-      const selected = parcelIndex === selectedIndex && props.surveyMode;
-      if (!owned.has(parcel.id) || selected) {
-        diamond(fill, x, y);
-        fill.fill({ color: selected ? boundaryColor : 0x111820, alpha: selected ? .2 : props.surveyMode ? .08 : .22 });
-      }
-      if (props.surveyMode) {
-        const differs = x === 0 || y === 0 || x === course.width - 1 || y === course.height - 1 || map[index - 1] !== parcelIndex || map[index + 1] !== parcelIndex || map[index - course.width] !== parcelIndex || map[index + course.width] !== parcelIndex;
-        if (differs) { diamond(boundary, x, y); boundary.stroke({ width: selected ? 2.4 : 1.2, color: selected ? boundaryColor : owned.has(parcel.id) ? 0x75dc87 : 0xf4eee0, alpha: selected ? .95 : .58 }); }
-      }
-    }
-    fill.label = ESTATE_LABEL; boundary.label = ESTATE_LABEL;
-    fill.eventMode = "none"; boundary.eventMode = "none";
-    layers.terrainDecals.addChild(fill, boundary);
-  }, [appReady, course.elevations, course.estate, course.height, course.width, props.colorVision, props.selectedParcelId, props.surveyMode, rotation]);
 
   // ---------------------------------------------------------------------
   // Objects layer — player-authored furniture, bridges, and boardwalks

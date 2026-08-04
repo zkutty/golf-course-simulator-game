@@ -47,7 +47,29 @@ export function createPlayerShotOverlaySceneSystem(layer: PIXI.Container): Rende
         const from = worldToIso(trace.from.x + 0.5, trace.from.y + 0.5, snapshot.surfaceHeightAt(trace.from.x + 0.5, trace.from.y + 0.5), snapshot.rotation);
         const rest = worldToIso(trace.rest.x + 0.5, trace.rest.y + 0.5, snapshot.surfaceHeightAt(trace.rest.x + 0.5, trace.rest.y + 0.5), snapshot.rotation);
         graphics.moveTo(from.x, from.y - 5);
-        graphics.lineTo(rest.x, rest.y - 5);
+        if (trace.greenRollout?.path.length) {
+          const landing = worldToIso(
+            trace.greenRollout.landing.x + 0.5,
+            trace.greenRollout.landing.y + 0.5,
+            snapshot.surfaceHeightAt(
+              trace.greenRollout.landing.x + 0.5,
+              trace.greenRollout.landing.y + 0.5,
+            ),
+            snapshot.rotation,
+          );
+          graphics.lineTo(landing.x, landing.y - 5);
+          for (const point of trace.greenRollout.path.slice(1)) {
+            const projected = worldToIso(
+              point.x + 0.5,
+              point.y + 0.5,
+              snapshot.surfaceHeightAt(point.x + 0.5, point.y + 0.5),
+              snapshot.rotation,
+            );
+            graphics.lineTo(projected.x, projected.y - 5);
+          }
+        } else {
+          graphics.lineTo(rest.x, rest.y - 5);
+        }
         graphics.stroke({ width: 2.5, color: trace.penaltyStrokes > 0 ? 0xc84a37 : 0xf7f0c2, alpha: 0.78 });
         graphics.circle(rest.x, rest.y - 5, 5);
         graphics.fill({ color: trace.penaltyStrokes > 0 ? 0xd34b39 : 0xffffff, alpha: 0.95 });

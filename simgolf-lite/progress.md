@@ -1615,6 +1615,17 @@ classic course-builder references.
 - No screenshots were opened or inspected. Transient Playwright failure
   artifacts were removed after the render-commit race was corrected.
 
+## ZK-679 scene-host follow-up — 2026-08-03
+
+- Wired the already-defined Player Pro shot-overlay and estate-survey scene
+  systems into `SceneSystemHost`, replacing their duplicate `PixiStage`
+  effects. Their declared snapshot revisions now control rebuilds and teardown.
+- Preserved the green-rollout trace path when migrating the Player Pro overlay.
+- Verification: TypeScript; focused scene-host/GameSession tests (11); M36
+  Player Pro Playwright; and M25 Land Estates Playwright. Both browser captures
+  were visually inspected. Remaining ZK-679 work is the larger static/mobile,
+  atmosphere, and viewport/input scene extraction.
+
 ## ZK-636 M61 release certification — 2026-08-02
 
 - Added one focused certification contract covering flat/uphill/downhill,
