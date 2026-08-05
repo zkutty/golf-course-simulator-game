@@ -96,6 +96,15 @@ import {
   postCompletedHandicapRound,
 } from "../competition/persistence";
 import { defaultPlayerProInventory, normalizePlayerProInventory } from "./inventoryPersistence";
+import {
+  applyPracticeConfidence,
+  applyRoundConfidence,
+  confidenceAtDay,
+  confidenceDispersionMultiplier,
+  createPlayerConfidence,
+  normalizePlayerConfidence,
+} from "./confidence";
+import { absoluteDayFor } from "../seasons/seasons";
 
 const DEFAULT_SKILL = 40;
 const XP_PER_LEVEL = 12;
@@ -314,6 +323,7 @@ export function createDefaultPlayerPro(args: {
     reputation: 0,
     settlementLedger: [],
     handicapProfile: createHandicapProfile(skills),
+    confidence: createPlayerConfidence(),
     ...defaultPlayerProInventory(identityId),
   };
 }
@@ -358,6 +368,9 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
   const handicapSnapshot = round.handicapSnapshot == null
     ? undefined
     : decodeRoundHandicapSnapshot(round.handicapSnapshot);
+  const confidenceSnapshot = round.confidenceSnapshot == null
+    ? undefined
+    : normalizePlayerConfidence(round.confidenceSnapshot);
   return {
     ...round,
     handedness: round.handedness === "left" ? "left" : "right",
@@ -376,6 +389,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
     autoPlay: round.autoPlay === true,
     shots: round.shots.slice(-MAX_SHOTS),
     ...(handicapSnapshot && !("code" in handicapSnapshot) ? { handicapSnapshot } : { handicapSnapshot: undefined }),
+    ...(confidenceSnapshot ? { confidenceSnapshot } : {}),
   };
 }
 
@@ -439,8 +453,11 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
           startedWeek: normalizedActiveRound.startedWeek,
           startedDay: normalizedActiveRound.startedDay,
         }),
+        confidenceSnapshot: normalizedActiveRound.confidenceSnapshot ?? normalizePlayerConfidence(candidate.confidence),
       }
-    : normalizedActiveRound;
+    : normalizedActiveRound && !normalizedActiveRound.confidenceSnapshot
+      ? { ...normalizedActiveRound, confidenceSnapshot: normalizePlayerConfidence(candidate.confidence) }
+      : normalizedActiveRound;
   const identityId = typeof identity.id === "string" && identity.id ? identity.id : fallback.identity.id;
   return {
     version: 1,
@@ -469,6 +486,7 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
       ? candidate.settlementLedger.filter((entry): entry is string => typeof entry === "string").slice(-160)
       : [],
     handicapProfile: handicap.profile,
+    confidence: normalizePlayerConfidence(candidate.confidence),
     ...normalizePlayerProInventory(candidate, identityId),
   };
 }
@@ -599,6 +617,10 @@ export function startPlayableRound(args: {
   const frozenCourse = rulesSnapshot ? { ...snapshot, rulesSnapshot } : snapshot;
   const handicapProfile = args.world.playerPro?.handicapProfile
     ?? createHandicapProfile(args.world.playerPro?.skills ?? baseSkills("architect"));
+  const confidence = confidenceAtDay(
+    args.world.playerPro?.confidence ?? createPlayerConfidence(),
+    absoluteDayFor(args.world.week, args.day ?? 0),
+  );
   const roundOrdinal = Math.max(
     args.world.playerPro?.rounds.length ?? 0,
     handicapProfile.scoreRecords.length,
@@ -630,6 +652,7 @@ export function startPlayableRound(args: {
       phase: "awaiting_shot",
       course: frozenCourse,
       handicapSnapshot,
+      confidenceSnapshot: confidence,
       rulesSnapshot,
       teeSet,
       pinRotation,
@@ -891,6 +914,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
   const dispersionTiles = calculated.effects.dispersionTiles
     * (1.42 - skills[skillForClub(club.name, round.lie)] / 180)
     * (round.course.weather?.dispersionMultiplier ?? 1)
+    * confidenceDispersionMultiplier(round.confidenceSnapshot)
     * (obstructionPenalty > 0 ? 1.55 : 1);
   const resolved = evaluation.isValid
     ? resolvePlayableShot({
@@ -998,6 +1022,7 @@ export function resolvePlayableShot(args: {
     calculated.effects.dispersionTiles
       * (1.42 - clubSkill / 180)
       * weatherDispersion
+      * confidenceDispersionMultiplier(args.confidenceSnapshot)
       * (obstructionPenalty ? 1.55 : 1),
   );
   const rng = mulberry32(args.seed | 0);
@@ -1460,10 +1485,11 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
   const tournaments = tournamentRecord
     ? [...career.tournaments.filter((record) => record.eventId !== tournamentRecord!.eventId), tournamentRecord]
     : career.tournaments;
+  const completionDay = absoluteDayFor(round.completedWeek ?? round.startedWeek, round.startedDay);
+  let confidence = confidenceAtDay(career.confidence, completionDay);
   const handicapProfile = round.handicapSnapshot
-    ? postCompletedHandicapRound(
-        career.handicapProfile,
-        createHandicapScoreRecord(round.handicapSnapshot, {
+    ? (() => {
+        const score = createHandicapScoreRecord(round.handicapSnapshot, {
           roundId: round.id,
           completedWeek: round.completedWeek ?? round.startedWeek,
           completedDay: round.startedDay,
@@ -1476,8 +1502,14 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
                 ? "practice"
                 : "casual",
           scorecard: round.scorecard,
-        }),
-      )
+        });
+        confidence = applyRoundConfidence(confidence, {
+          indexBefore: round.handicapSnapshot.handicapIndex,
+          differential: score.evidence.differential,
+          conceded: round.phase === "conceded",
+        });
+        return postCompletedHandicapRound(career.handicapProfile, score);
+      })()
     : career.handicapProfile;
   return {
     cashDelta,
@@ -1499,6 +1531,7 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
       reputation: clamp(career.reputation + reputationDelta, 0, 100),
       settlementLedger: [...career.settlementLedger, ledgerId].slice(-160),
       handicapProfile,
+      confidence,
     },
   };
 }
@@ -1507,6 +1540,7 @@ export interface PlayerTrainingOption {
   id: string;
   facilityId: string;
   facilityName: string;
+  tier: number;
   skill: PlayerProSkill;
   cost: number;
   minutes: number;
@@ -1544,6 +1578,7 @@ export function playerTrainingOptions(course: Course, world: World, day: number,
       id: `${asset.id}:${skill}`,
       facilityId: asset.id,
       facilityName: asset.name,
+      tier: asset.tier,
       skill,
       cost: Math.max(25, Math.round(asset.price * 2 + asset.tier * 20)),
       minutes: 45 + asset.tier * 5,
@@ -1580,6 +1615,10 @@ export function completePlayerTraining(career: PlayerProCareer, world: World, op
       skills,
       skillXp,
       unlockedTechniques: unlockTechniques(skills),
+      confidence: applyPracticeConfidence(
+        confidenceAtDay(career.confidence, absoluteDayFor(world.week, day)),
+        option.tier,
+      ),
       training: [...career.training, record].slice(-MAX_TRAINING),
       settlementLedger: [...career.settlementLedger, id].slice(-160),
     },

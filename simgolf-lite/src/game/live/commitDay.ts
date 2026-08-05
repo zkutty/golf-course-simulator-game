@@ -28,6 +28,7 @@ import {
   surfaceCareWaterCostMultiplier,
 } from "../conditions/surfaceCare";
 import { advanceGreenKeepingDay } from "../greens/greenMaintenance";
+import { advancePlayerProConfidence } from "../playerPro/confidence";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -249,6 +250,9 @@ export function commitDay(args: {
   const nextWorld = args.mobility
     ? settleM51MobilityDay(m49World, { live: args.mobility, week: operatingWorld.week, dayIndex: dayIndex ?? 0 })
     : m49World;
+  const confidenceWorld = nextWorld.playerPro
+    ? { ...nextWorld, playerPro: advancePlayerProConfidence(nextWorld.playerPro, seasonalCommit.weather.absoluteDay) }
+    : nextWorld;
   const courseEntries = Object.entries(args.perCourse ?? {});
   let allocatedRevenue = 0;
   let allocatedSharedCosts = 0;
@@ -287,7 +291,7 @@ export function commitDay(args: {
 
   return {
     course: nextCourse,
-    world: nextWorld,
+    world: confidenceWorld,
     result: {
       dayIndex: dayIndex ?? 0,
       rounds,

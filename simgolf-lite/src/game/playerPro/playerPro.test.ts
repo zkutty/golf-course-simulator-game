@@ -692,11 +692,25 @@ describe("M37 growth, training, matches, and tournaments", () => {
     expect(first.cost).toBeGreaterThan(0);
     expect(first.career.training).toHaveLength(1);
     expect(first.career.skillXp.driving).toBe(4);
+    expect(first.career.confidence).toMatchObject({ current: 56, reason: "practice", trend: "rising" });
     const trainedWorld = { ...currentWorld, playerPro: first.career };
     const secondOption = playerTrainingOptions(course, trainedWorld, 0, 600).find((option) => option.skill === "irons")!;
     const second = completePlayerTraining(first.career, trainedWorld, secondOption, 0);
     const cappedWorld = { ...trainedWorld, playerPro: second.career };
     expect(playerTrainingOptions(course, cappedWorld, 0, 600).every((option) => option.blocker === "daily_cap")).toBe(true);
+  });
+
+  it("freezes confidence for a round and restores it without changing the future state", () => {
+    const currentWorld = world();
+    const career = { ...currentWorld.playerPro!, confidence: { ...currentWorld.playerPro!.confidence, current: 80, lastUpdatedAbsoluteDay: 0 } };
+    const started = startPlayableRound({ course: threeHoleCourse(), world: { ...currentWorld, playerPro: career }, layoutId: "slice", day: 1 });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    // 80 decays toward neutral once before the immutable round snapshot is made.
+    expect(started.round.confidenceSnapshot).toMatchObject({ current: 74, reason: "daily_decay" });
+    const restored = normalizePlayerPro({ ...career, activeRound: started.round }, { seed: currentWorld.runSeed });
+    expect(restored.activeRound?.confidenceSnapshot).toEqual(started.round.confidenceSnapshot);
+    expect(restored.confidence.current).toBe(80);
   });
 
   it("settles friendly/wager matches and tournament prizes atomically", () => {
