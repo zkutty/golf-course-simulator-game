@@ -46,7 +46,26 @@ export interface HandicapDifferentialEvidence {
   courseRating: number | null;
   slopeRating: number | null;
   differential: number | null;
-  holeScores: readonly { holeId: string; gross: number; par: number }[];
+  holeScores: readonly { holeId: string; gross: number; par: number; adjustedGross: number }[];
+  /** Individual gross cards survive even when a team format selects another ball. */
+  individualGrossEvidence: readonly {
+    playerId: string;
+    holeScores: readonly { holeId: string; gross: number; par: number }[];
+  }[];
+}
+
+export type HandicapRoundSource = "casual" | "challenge" | "team" | "tournament" | "practice" | "legacy";
+
+export interface HandicapIndexCalculation {
+  indexBefore: number;
+  candidateIndex: number;
+  indexAfter: number;
+  downwardLimit: number;
+  upwardLimit: number;
+  movementCapped: boolean;
+  differentialRecordCount: number;
+  bestDifferentialCount: number;
+  selectedRecordIds: readonly string[];
 }
 
 export interface HandicapScoreRecord {
@@ -57,12 +76,14 @@ export interface HandicapScoreRecord {
   postingState: "ineligible" | "unposted" | "posted";
   snapshot: RoundHandicapSnapshot;
   eligibility: HandicapRoundEligibility;
+  source: HandicapRoundSource;
   evidence: HandicapDifferentialEvidence;
   completedWeek: number;
   completedDay: number;
   postedWeek?: number;
   postedDay?: number;
   handicapIndexAfter?: number;
+  calculation?: HandicapIndexCalculation;
 }
 
 export interface HandicapProfile {
@@ -97,6 +118,11 @@ type RoundSnapshotSource = {
 };
 type CompletedRoundSource = {
   roundId: string; completedWeek: number; completedDay: number; conceded?: boolean;
+  source?: HandicapRoundSource; withdrawn?: boolean; legacyPartialRouting?: boolean;
+  individualGrossEvidence?: readonly {
+    playerId: string;
+    holeScores: readonly { holeId: string; gross: number; par: number }[];
+  }[];
   scorecard: readonly { holeId: string; par: number; strokes: number; penalties: number; complete: boolean }[];
 };
 
@@ -171,13 +197,26 @@ function decodeScoreRecord(raw: unknown, path: string): HandicapScoreRecord | Ha
   const snapshot = decodeRoundHandicapSnapshot(raw.snapshot, `${path}.snapshot`);
   if ("code" in snapshot) return snapshot;
   if (snapshot.roundId !== raw.roundId || !validEligibility(raw.eligibility) || raw.eligibility.eligible !== (raw.postingState !== "ineligible")) return diagnosis(path, "score record and snapshot identities or eligibility disagree.");
+  const source = typeof raw.source === "string" && ["casual", "challenge", "team", "tournament", "practice", "legacy"].includes(raw.source)
+    ? raw.source as HandicapRoundSource
+    : "casual";
   const evidence = raw.evidence;
   if (!record(evidence) || !integer(evidence.grossScore) || !Array.isArray(evidence.holeScores)
-    || evidence.holeScores.some((hole: unknown) => !record(hole) || typeof hole.holeId !== "string" || !integer(hole.gross, 1) || !integer(hole.par))
+    || evidence.holeScores.some((hole: unknown) => !record(hole) || typeof hole.holeId !== "string" || !integer(hole.gross, 1) || !integer(hole.par) || (hole.adjustedGross != null && !integer(hole.adjustedGross)))
     || (raw.eligibility.eligible ? !integer(evidence.adjustedGrossScore) || !finite(evidence.differential) : evidence.adjustedGrossScore !== null || evidence.differential !== null)) return diagnosis(`${path}.evidence`, "differential evidence is incomplete.");
   if (!integer(raw.completedWeek, 1) || !integer(raw.completedDay)
     || (raw.postingState === "posted" && (!integer(raw.postedWeek, 1) || !integer(raw.postedDay) || !boundedIndex(raw.handicapIndexAfter)))) return diagnosis(path, "completion or posting time is incomplete.");
-  return freeze({ ...structuredClone(raw), snapshot } as HandicapScoreRecord);
+  const holeScores = (evidence.holeScores as Array<{ holeId: string; gross: number; par: number; adjustedGross?: number }>).map((hole) => ({
+    ...hole,
+    adjustedGross: hole.adjustedGross ?? hole.gross,
+  }));
+  const individualGrossEvidence = Array.isArray(evidence.individualGrossEvidence)
+    ? evidence.individualGrossEvidence
+    : [{ playerId: "player-pro", holeScores: holeScores.map(({ adjustedGross: _adjusted, ...hole }) => hole) }];
+  return freeze({
+    ...structuredClone(raw), source, snapshot,
+    evidence: { ...structuredClone(evidence), holeScores, individualGrossEvidence },
+  } as HandicapScoreRecord);
 }
 
 /** Missing means a legacy career and seeds once; malformed present state is never replaced. */
@@ -202,7 +241,9 @@ export function normalizeHandicapProfile(raw: unknown, skills: SkillRatings): Ha
   if (posted.some((entry) => !ledger.includes(entry.postingKey)) || ledger.some((key) => !posted.some((entry) => entry.postingKey === key))) return { ok: false, error: diagnosis(`${path}.postingLedger`, "ledger entries must exactly match posted records.") };
   if (raw.confidence.eligibleRoundCount !== records.filter((entry) => entry.eligibility.eligible).length) return { ok: false, error: diagnosis(`${path}.confidence.eligibleRoundCount`, "it does not match eligible-round evidence.") };
   const lastPosted = posted.at(-1);
-  const established = lastPosted && raw.handicapIndex === lastPosted.handicapIndexAfter && raw.source === "scores" && raw.confidence.status === "established" && raw.confidence.lastPostedRoundId === lastPosted.roundId;
+  const postedEligibleCount = posted.length;
+  const expectedStatus = postedEligibleCount >= 3 ? "established" : "provisional";
+  const established = lastPosted && raw.handicapIndex === lastPosted.handicapIndexAfter && raw.source === "scores" && raw.confidence.status === expectedStatus && raw.confidence.lastPostedRoundId === lastPosted.roundId;
   const provisional = !lastPosted && raw.source === "skill-seed" && raw.confidence.status === "provisional" && raw.confidence.lastPostedRoundId === null;
   if (!established && !provisional) return { ok: false, error: diagnosis(path, "index, confidence, and last posted score disagree.") };
   return { ok: true, seeded: false, profile: freeze({ ...structuredClone(raw), scoreRecords: records } as unknown as HandicapProfile) };
@@ -246,17 +287,66 @@ export function createHandicapScoreRecord(snapshot: RoundHandicapSnapshot, compl
   if (snapshot.roundId !== completed.roundId) throw new Error("The handicap snapshot and completed round IDs do not match.");
   if (!integer(completed.completedWeek, 1) || !integer(completed.completedDay)) throw new Error("Completed handicap rounds require a valid week and day.");
   const complete = completed.scorecard.length === snapshot.course.holes.length && completed.scorecard.every((hole, index) => hole.complete && hole.holeId === snapshot.course.holes[index]?.id && integer(hole.strokes) && integer(hole.penalties));
-  const eligibility = snapshot.eligibility.eligible && complete && !completed.conceded ? freeze({ eligible: true, reasons: [] }) : freeze({ eligible: false, reasons: [...snapshot.eligibility.reasons, ...(!complete ? ["The completed scorecard is missing one or more authoritative hole scores."] : []), ...(completed.conceded ? ["A conceded round is not eligible for handicap posting."] : [])] });
-  const holeScores = complete ? completed.scorecard.map((hole) => ({ holeId: hole.holeId, gross: hole.strokes + hole.penalties, par: hole.par })) : [];
-  const grossScore = holeScores.reduce((sum, hole) => sum + hole.gross, 0);
+  const source = completed.source ?? "casual";
+  const excludedSource = source === "practice" || source === "legacy";
+  const reasons = [
+    ...snapshot.eligibility.reasons,
+    ...(!complete ? ["The completed scorecard is missing one or more authoritative hole scores."] : []),
+    ...(completed.conceded ? ["A conceded round is not eligible for handicap posting."] : []),
+    ...(completed.withdrawn ? ["A withdrawn round is not eligible for handicap posting."] : []),
+    ...(source === "practice" ? ["Practice rounds are not eligible for handicap posting."] : []),
+    ...(source === "legacy" || completed.legacyPartialRouting ? ["Partial legacy routings are not eligible for handicap posting."] : []),
+  ];
+  const eligibility = snapshot.eligibility.eligible && complete && !completed.conceded && !completed.withdrawn && !excludedSource && !completed.legacyPartialRouting
+    ? freeze({ eligible: true, reasons: [] })
+    : freeze({ eligible: false, reasons });
+  const rawHoleScores = complete ? completed.scorecard.map((hole) => ({ holeId: hole.holeId, gross: hole.strokes + hole.penalties, par: hole.par })) : [];
+  const grossScore = rawHoleScores.reduce((sum, hole) => sum + hole.gross, 0);
   let adjustedGrossScore: number | null = null;
   let differential: number | null = null;
   if (eligibility.eligible && snapshot.course.courseRating != null && snapshot.course.slopeRating != null) {
+    const established = snapshot.confidence.status === "established";
     const playingHandicap = courseHandicap(snapshot.handicapIndex, { courseRating: snapshot.course.courseRating, slopeRating: snapshot.course.slopeRating, par: snapshot.course.par }).rounded;
-    adjustedGrossScore = adjustedGrossScoreFn(playingHandicap, snapshot, holeScores);
+    adjustedGrossScore = established
+      ? adjustedGrossScoreFn(playingHandicap, snapshot, rawHoleScores)
+      : rawHoleScores.reduce((sum, hole) => sum + Math.min(hole.gross, hole.par + 5), 0);
     differential = scoreDifferential(adjustedGrossScore, snapshot.course.courseRating, snapshot.course.slopeRating);
   }
-  return freeze({ version: 1, id: `handicap-score:${completed.roundId}`, roundId: completed.roundId, postingKey: snapshot.postingKey, postingState: eligibility.eligible ? "unposted" : "ineligible", snapshot, eligibility, evidence: { grossScore, adjustedGrossScore, courseRating: snapshot.course.courseRating, slopeRating: snapshot.course.slopeRating, differential, holeScores }, completedWeek: completed.completedWeek, completedDay: completed.completedDay });
+  const holeScores = rawHoleScores.map((hole, index) => ({
+    ...hole,
+    adjustedGross: eligibility.eligible
+      ? snapshot.confidence.status === "established"
+        ? adjustedHoleScoreFn(playingHandicapForSnapshot(snapshot), snapshot, hole.gross, index)
+        : Math.min(hole.gross, hole.par + 5)
+      : hole.gross,
+  }));
+  const individualGrossEvidence = completed.individualGrossEvidence?.length
+    ? completed.individualGrossEvidence.map((entry) => ({ playerId: entry.playerId, holeScores: entry.holeScores.map((hole) => ({ ...hole })) }))
+    : [{ playerId: "player-pro", holeScores: rawHoleScores.map((hole) => ({ ...hole })) }];
+  return freeze({ version: 1, id: `handicap-score:${completed.roundId}`, roundId: completed.roundId, postingKey: snapshot.postingKey, postingState: eligibility.eligible ? "unposted" : "ineligible", snapshot, eligibility, source, evidence: { grossScore, adjustedGrossScore, courseRating: snapshot.course.courseRating, slopeRating: snapshot.course.slopeRating, differential, holeScores, individualGrossEvidence }, completedWeek: completed.completedWeek, completedDay: completed.completedDay });
+}
+
+function playingHandicapForSnapshot(snapshot: RoundHandicapSnapshot): number {
+  if (snapshot.course.courseRating == null || snapshot.course.slopeRating == null) return 0;
+  return courseHandicap(snapshot.handicapIndex, {
+    courseRating: snapshot.course.courseRating,
+    slopeRating: snapshot.course.slopeRating,
+    par: snapshot.course.par,
+  }).rounded;
+}
+
+function adjustedHoleScoreFn(playingHandicap: number, snapshot: RoundHandicapSnapshot, gross: number, index: number): number {
+  const score = adjustedGrossScore({
+    id: "player-pro",
+    playingHandicap,
+    holeScores: snapshot.course.holes.map((_, holeIndex) => ({
+      playerId: "player-pro",
+      gross: holeIndex === index ? gross : 1,
+      status: "played" as const,
+    })),
+  }, snapshot.course.holes.map((hole) => ({ id: hole.id, par: hole.par, strokeIndex: hole.strokeIndex! })));
+  const otherMinimums = snapshot.course.holes.reduce((sum, _, holeIndex) => sum + (holeIndex === index ? 0 : 1), 0);
+  return score - otherMinimums;
 }
 
 function adjustedGrossScoreFn(playingHandicap: number, snapshot: RoundHandicapSnapshot, scores: readonly { gross: number }[]): number {
@@ -273,6 +363,97 @@ export function recordCompletedHandicapRound(profile: HandicapProfile, score: Ha
   return freeze({ ...profile, confidence: { ...profile.confidence, eligibleRoundCount: profile.confidence.eligibleRoundCount + (score.eligibility.eligible ? 1 : 0) }, scoreRecords: [...profile.scoreRecords, score] });
 }
 
+const MAX_DIFFERENTIALS = 20;
+
+/** Exact latest-20 WHS count bands used after the provisional two-score blend. */
+export function bestDifferentialCount(recordCount: number): number {
+  if (recordCount < 3) return 0;
+  if (recordCount <= 5) return 1;
+  if (recordCount <= 8) return 2;
+  if (recordCount <= 11) return 3;
+  if (recordCount <= 14) return 4;
+  if (recordCount <= 16) return 5;
+  if (recordCount <= 18) return 6;
+  if (recordCount === 19) return 7;
+  return 8;
+}
+
+export function formatHandicapIndex(index: number): string {
+  const normalized = clamp(round1(index), HANDICAP_INDEX_MIN, HANDICAP_INDEX_MAX);
+  return normalized < 0 ? `+${Math.abs(normalized).toFixed(1)}` : normalized.toFixed(1);
+}
+
+export function calculateHandicapIndex(profile: HandicapProfile, score: HandicapScoreRecord): HandicapIndexCalculation {
+  if (!score.eligibility.eligible || score.evidence.differential == null) throw new Error(`Handicap score record ${score.roundId} is ineligible for posting.`);
+  const previous = profile.scoreRecords
+    .filter((entry) => entry.postingState === "posted" && entry.evidence.differential != null && entry.postingKey !== score.postingKey)
+    .slice(-(MAX_DIFFERENTIALS - 1));
+  const recent = [...previous, score];
+  const count = bestDifferentialCount(recent.length);
+  let selected: HandicapScoreRecord[];
+  let candidate: number;
+  if (recent.length < 3) {
+    selected = recent;
+    const seed = profile.scoreRecords.find((entry) => entry.postingState === "posted")?.snapshot.handicapIndex
+      ?? score.snapshot.handicapIndex;
+    candidate = round1((seed + recent.reduce((sum, entry) => sum + entry.evidence.differential!, 0)) / (recent.length + 1));
+  } else {
+    selected = [...recent]
+      .sort((left, right) => left.evidence.differential! - right.evidence.differential! || left.roundId.localeCompare(right.roundId))
+      .slice(0, count);
+    candidate = round1(selected.reduce((sum, entry) => sum + entry.evidence.differential!, 0) / selected.length);
+  }
+  candidate = clamp(candidate, HANDICAP_INDEX_MIN, HANDICAP_INDEX_MAX);
+  const indexBefore = profile.handicapIndex;
+  const downwardLimit = clamp(round1(indexBefore - 3), HANDICAP_INDEX_MIN, HANDICAP_INDEX_MAX);
+  const upwardLimit = clamp(round1(indexBefore + 1), HANDICAP_INDEX_MIN, HANDICAP_INDEX_MAX);
+  const indexAfter = round1(clamp(candidate, downwardLimit, upwardLimit));
+  return freeze({
+    indexBefore,
+    candidateIndex: candidate,
+    indexAfter,
+    downwardLimit,
+    upwardLimit,
+    movementCapped: indexAfter !== candidate,
+    differentialRecordCount: recent.length,
+    bestDifferentialCount: count,
+    selectedRecordIds: selected.map((entry) => entry.id),
+  });
+}
+
+/** Records and posts one completion as a single immutable transition. */
+export function postCompletedHandicapRound(profile: HandicapProfile, score: HandicapScoreRecord): HandicapProfile {
+  const existing = profile.scoreRecords.find((entry) => entry.roundId === score.roundId || entry.postingKey === score.postingKey);
+  if (existing?.postingState === "posted" || profile.postingLedger.includes(score.postingKey)) return profile;
+  const recorded = existing ? profile : recordCompletedHandicapRound(profile, score);
+  if (!score.eligibility.eligible) return recorded;
+  const calculation = calculateHandicapIndex(recorded, score);
+  const index = recorded.scoreRecords.findIndex((entry) => entry.postingKey === score.postingKey);
+  if (index < 0) throw new Error(`No handicap score record exists for posting key ${score.postingKey}.`);
+  const records = [...recorded.scoreRecords];
+  records[index] = freeze({
+    ...records[index],
+    postingState: "posted",
+    postedWeek: score.completedWeek,
+    postedDay: score.completedDay,
+    handicapIndexAfter: calculation.indexAfter,
+    calculation,
+  });
+  const postedCount = records.filter((entry) => entry.postingState === "posted").length;
+  return freeze({
+    ...recorded,
+    handicapIndex: calculation.indexAfter,
+    source: "scores",
+    confidence: {
+      ...recorded.confidence,
+      status: postedCount >= 3 ? "established" : "provisional",
+      lastPostedRoundId: score.roundId,
+    },
+    scoreRecords: records,
+    postingLedger: [...recorded.postingLedger, score.postingKey],
+  });
+}
+
 /** ZK-718 can call this after calculating an index; repeated calls are no-ops. */
 export function markHandicapScoreRecordPosted(profile: HandicapProfile, args: { postingKey: string; handicapIndex: number; postedWeek: number; postedDay: number }): HandicapProfile {
   if (profile.postingLedger.includes(args.postingKey)) return profile;
@@ -284,5 +465,6 @@ export function markHandicapScoreRecordPosted(profile: HandicapProfile, args: { 
   if (!integer(args.postedWeek, 1) || !integer(args.postedDay)) throw new Error("Posted handicap records require a valid week and day.");
   const records = [...profile.scoreRecords];
   records[index] = freeze({ ...current, postingState: "posted", postedWeek: args.postedWeek, postedDay: args.postedDay, handicapIndexAfter: args.handicapIndex });
-  return freeze({ ...profile, handicapIndex: args.handicapIndex, source: "scores", confidence: { ...profile.confidence, status: "established", lastPostedRoundId: current.roundId }, scoreRecords: records, postingLedger: [...profile.postingLedger, args.postingKey] });
+  const postedCount = records.filter((entry) => entry.postingState === "posted").length;
+  return freeze({ ...profile, handicapIndex: args.handicapIndex, source: "scores", confidence: { ...profile.confidence, status: postedCount >= 3 ? "established" : "provisional", lastPostedRoundId: current.roundId }, scoreRecords: records, postingLedger: [...profile.postingLedger, args.postingKey] });
 }

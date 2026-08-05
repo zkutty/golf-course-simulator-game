@@ -26,6 +26,7 @@ import {
   biomeClimatePhenologyForDay,
   weatherForDay,
 } from "../game/seasons/seasons";
+import { emptyLivingClubState } from "../game/livingClub/livingClub";
 
 function file(overrides: Record<string, unknown> = {}) {
   return {
@@ -208,7 +209,7 @@ describe("save validation and migrations", () => {
         expect(settled.career.handicapProfile.scoreRecords).toHaveLength(1);
         expect(settled.career.handicapProfile.scoreRecords[0]).toMatchObject({
           roundId: activeRound.id,
-          postingState: "unposted",
+          postingState: "posted",
           evidence: { differential: expect.any(Number) },
         });
         const duplicate = settlePlayerRound(settled.career, activeRound);
@@ -257,6 +258,78 @@ describe("save validation and migrations", () => {
     expect(result.payload.course).toEqual(DEFAULT_COURSE);
     expect(result.payload.world).toEqual(file().world);
     expect(result.migratedFrom).toBeUndefined();
+  });
+
+  it("round-trips inventory, equipment, appraisal identity, and rival custody without duplication", () => {
+    const playerPro = createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed });
+    const item = {
+      id: "stable-watch-1",
+      definitionId: "authored-watch-1",
+      name: "Field Chronometer",
+      category: "watch" as const,
+      ownerId: playerPro.identity.id,
+      custodianId: playerPro.identity.id,
+      authoredValue: 4200,
+      remainingValue: 4200,
+      prestige: 78,
+      unique: true,
+      confirmationRequired: true,
+      transferable: true as const,
+      transferHistory: [],
+    };
+    const custodyItem = { ...item, id: "lost-watch-2", ownerId: "rival-1", custodianId: "rival-1", transferHistory: [{ id: "settle-1", week: 3, day: 2, fromOwnerId: playerPro.identity.id, toOwnerId: "rival-1", custodianId: "rival-1", reason: "stake" as const }] };
+    const world = {
+      ...file().world,
+      playerPro: {
+        ...playerPro,
+        inventory: { ...playerPro.inventory, items: [item] },
+        equipmentLoadout: { clubItemIds: [], watchItemId: item.id },
+        rivalCustody: [{ id: "challenge-1:watch", rivalId: "rival-1", rivalName: "Rival", challengeId: "challenge-1", itemId: custodyItem.id, itemSnapshot: custodyItem, acquiredWeek: 3, acquiredDay: 2, status: "held" as const }],
+      },
+    };
+    const first = parseSaveText(JSON.stringify(file({ world })));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.payload.world.playerPro).toMatchObject({
+      inventory: { items: [{ id: item.id, definitionId: item.definitionId }] },
+      equipmentLoadout: { watchItemId: item.id },
+      rivalCustody: [{ id: "challenge-1:watch", itemId: custodyItem.id, status: "held" }],
+    });
+    const second = parseSaveText(JSON.stringify({ schemaVersion: CURRENT_SAVE_SCHEMA_VERSION, savedAt: 999, ...first.payload }));
+    expect(second.ok).toBe(true);
+    if (!second.ok) return;
+    expect(second.payload.world.playerPro?.inventory.items).toHaveLength(1);
+    expect(second.payload.world.playerPro?.rivalCustody).toHaveLength(1);
+  });
+
+  it("migrates deterministic regular profiles without replacing names or relationships", () => {
+    const world = {
+      ...file().world,
+      livingClub: {
+        ...emptyLivingClubState(),
+        regulars: [{
+          id: "named-regular-1",
+          kind: "regular",
+          name: "Existing Name",
+          rounds: 4,
+          relationship: { score: 31, tier: "friend", interactionIds: ["talk-1", "round-2"] },
+        }],
+      },
+    };
+    const result = normalizeLoadedSaveResult(file({ world }));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.payload.world.livingClub?.regulars[0]).toMatchObject({
+      id: "named-regular-1",
+      name: "Existing Name",
+      relationship: { score: 31, interactionIds: ["talk-1", "round-2"] },
+      backstory: { version: 1, source: "curated-package" },
+      rivalProfile: { version: 1 },
+    });
+    const again = normalizeLoadedSaveResult({ schemaVersion: CURRENT_SAVE_SCHEMA_VERSION, savedAt: 999, ...result.payload });
+    expect(again.ok).toBe(true);
+    if (!again.ok) return;
+    expect(again.payload.world.livingClub?.regulars[0]).toEqual(result.payload.world.livingClub?.regulars[0]);
   });
 
   it("round-trips a newly generated Parkland starter landscape without rewriting it", () => {

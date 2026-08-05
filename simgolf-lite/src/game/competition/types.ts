@@ -70,3 +70,132 @@ export interface MeasurementEvidence {
   eligible: boolean;
   withdrawn?: boolean;
 }
+
+export type CompetitionScoringMode = "gross-stroke" | "net-stroke" | "gross-match" | "net-match" | "stableford";
+export type CompetitionTeamFormat = "individual" | TeamFormat;
+export type SideBetKind = "skins" | "nassau" | "closest-to-pin" | "longest-drive";
+
+export type InventoryCategory = "club" | "bag" | "outfit" | "watch" | "vehicle" | "trophy" | "keepsake" | "plant-stock" | "service-credit";
+export type NonTransferableRewardKind = "species-knowledge" | "learned-technique" | "relationship" | "memory" | "profile-unlock";
+
+export interface EquipmentModifier {
+  channel: "carry" | "dispersion" | "recovery" | "putting" | "spin";
+  multiplier: number;
+  context?: string;
+}
+
+export interface InventoryTransfer {
+  id: string;
+  week: number;
+  day: number;
+  fromOwnerId: string;
+  toOwnerId: string;
+  custodianId: string;
+  reason: "reward" | "stake" | "recovery" | "import";
+}
+
+export interface InventoryItem {
+  id: string;
+  definitionId: string;
+  name: string;
+  category: InventoryCategory;
+  ownerId: string;
+  custodianId: string;
+  authoredValue: number;
+  remainingValue: number;
+  prestige: number;
+  unique: boolean;
+  confirmationRequired: boolean;
+  transferable: true;
+  transferHistory: readonly InventoryTransfer[];
+  modifiers?: readonly EquipmentModifier[];
+  remainingPlacements?: number;
+  frozenInstallValueEach?: number;
+  speciesId?: string;
+  description?: string;
+}
+
+export interface PlayerInventory {
+  version: 1;
+  ownerId: string;
+  items: readonly InventoryItem[];
+  escrowItemIds: readonly string[];
+  selectedVehicleId?: string;
+  displayItemIds: readonly string[];
+}
+
+export interface EquipmentLoadout {
+  clubItemIds: readonly string[];
+  bagItemId?: string;
+  outfitItemId?: string;
+  watchItemId?: string;
+}
+
+export interface RewardDefinition {
+  id: string;
+  name: string;
+  itemDefinitionId?: string;
+  nonTransferableKind?: NonTransferableRewardKind;
+  profileStyleId?: string;
+  techniqueId?: LearnedTechnique;
+  speciesId?: string;
+}
+
+export interface AppraisalBasis {
+  authoredValue: number;
+  remainingValue: number;
+  remainingPlacements?: number;
+  frozenInstallValueEach?: number;
+}
+
+export interface AppraisedValue {
+  itemId?: string;
+  cash?: number;
+  value: number;
+  frozenWeek: number;
+  frozenDay: number;
+  basis: AppraisalBasis | { cashFaceValue: number };
+}
+
+export interface StakeBundle {
+  cash: number;
+  itemIds: readonly string[];
+  appraisal: readonly AppraisedValue[];
+  totalValue: number;
+  confirmationItemIds: readonly string[];
+  acceptedAt?: { week: number; day: number };
+}
+
+export interface RivalHolding {
+  rivalId: string;
+  item: InventoryItem;
+  visible: boolean;
+}
+
+export interface RivalCustodyRecord {
+  id: string;
+  rivalId: string;
+  rivalName: string;
+  challengeId: string;
+  itemId: string;
+  itemSnapshot: InventoryItem;
+  acquiredWeek: number;
+  acquiredDay: number;
+  recoveredWeek?: number;
+  recoveredDay?: number;
+  status: "held" | "recovered";
+}
+
+export type LearnedTechnique = "fairway-finder" | "knockdown-approach" | "soft-hands" | "splash-specialist" | "lag-putt";
+
+export interface ChallengeRivalProfile {
+  version: 1;
+  riskTolerance: number;
+  preferredFormats: readonly (CompetitionScoringMode | CompetitionTeamFormat | SideBetKind)[];
+  preferredTees: readonly ("forward" | "member" | "championship")[];
+  preferredStakeCategories: readonly InventoryCategory[];
+  preferredPartnerIds: readonly string[];
+  signatureTechnique?: LearnedTechnique;
+  knownHoldingIds: readonly string[];
+  mentorMatchesRequired: number;
+}

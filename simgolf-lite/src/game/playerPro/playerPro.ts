@@ -93,8 +93,9 @@ import {
   createHandicapScoreRecord,
   decodeRoundHandicapSnapshot,
   normalizeHandicapProfile,
-  recordCompletedHandicapRound,
+  postCompletedHandicapRound,
 } from "../competition/persistence";
+import { defaultPlayerProInventory, normalizePlayerProInventory } from "./inventoryPersistence";
 
 const DEFAULT_SKILL = 40;
 const XP_PER_LEVEL = 12;
@@ -289,10 +290,11 @@ export function createDefaultPlayerPro(args: {
 }): PlayerProCareer {
   const background = args.background ?? "architect";
   const skills = baseSkills(background);
+  const identityId = `player-pro-${args.seed >>> 0}`;
   return {
     version: 1,
     identity: {
-      id: `player-pro-${args.seed >>> 0}`,
+      id: identityId,
       name: args.name?.trim().slice(0, 30) || "Alex Green",
       appearance: args.appearance ?? "classic",
       handedness: args.handedness ?? "right",
@@ -312,6 +314,7 @@ export function createDefaultPlayerPro(args: {
     reputation: 0,
     settlementLedger: [],
     handicapProfile: createHandicapProfile(skills),
+    ...defaultPlayerProInventory(identityId),
   };
 }
 
@@ -438,10 +441,11 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
         }),
       }
     : normalizedActiveRound;
+  const identityId = typeof identity.id === "string" && identity.id ? identity.id : fallback.identity.id;
   return {
     version: 1,
     identity: {
-      id: typeof identity.id === "string" && identity.id ? identity.id : fallback.identity.id,
+      id: identityId,
       name: typeof identity.name === "string" && identity.name.trim() ? identity.name.trim().slice(0, 30) : fallback.identity.name,
       appearance: identity.appearance === "sport" || identity.appearance === "heritage" ? identity.appearance : "classic",
       handedness: identity.handedness === "left" ? "left" : "right",
@@ -465,6 +469,7 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
       ? candidate.settlementLedger.filter((entry): entry is string => typeof entry === "string").slice(-160)
       : [],
     handicapProfile: handicap.profile,
+    ...normalizePlayerProInventory(candidate, identityId),
   };
 }
 
@@ -1456,13 +1461,20 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
     ? [...career.tournaments.filter((record) => record.eventId !== tournamentRecord!.eventId), tournamentRecord]
     : career.tournaments;
   const handicapProfile = round.handicapSnapshot
-    ? recordCompletedHandicapRound(
+    ? postCompletedHandicapRound(
         career.handicapProfile,
         createHandicapScoreRecord(round.handicapSnapshot, {
           roundId: round.id,
           completedWeek: round.completedWeek ?? round.startedWeek,
           completedDay: round.startedDay,
           conceded: round.phase === "conceded",
+          source: round.kind === "tournament"
+            ? "tournament"
+            : round.kind === "friendly" || round.kind === "wager"
+              ? "challenge"
+              : round.kind === "exhibition"
+                ? "practice"
+                : "casual",
           scorecard: round.scorecard,
         }),
       )

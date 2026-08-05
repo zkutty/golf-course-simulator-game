@@ -74,6 +74,7 @@ import {
   migrateLegacyPlayerProHandicap,
   normalizeHandicapProfile,
 } from "../game/competition/persistence";
+import { normalizePeopleProfiles } from "../game/competition/characters";
 
 const KEY = "simgolf_lite_save_v1";
 export const CURRENT_SAVE_SCHEMA_VERSION = 28 as const;
@@ -1150,7 +1151,10 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
         seed: rawWorld.runSeed,
         founderName: typeof rawWorld.founderName === "string" ? rawWorld.founderName : undefined,
       }),
-      livingClub: normalizeLivingClub(rawWorld.livingClub),
+      livingClub: normalizePeopleProfiles(
+        normalizeLivingClub(rawWorld.livingClub),
+        typeof rawWorld.runSeed === "number" ? rawWorld.runSeed : 1337,
+      ),
       seasonal: normalizeSeasonalState(rawWorld.seasonal, {
         runSeed: typeof rawWorld.runSeed === "number" ? rawWorld.runSeed : 1337,
         theme: course.theme,

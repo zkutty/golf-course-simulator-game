@@ -1,6 +1,7 @@
 import type { M48DesignComparison, M48DesignTestSession } from "../architecture/m48Types";
 import type { GreenRolloutV1 } from "../greens/greenRollout";
 import type { ShotSlopeContext } from "../models/shotSlope";
+import type { ChallengeRivalProfile, InventoryItem, RewardDefinition } from "../competition/types";
 
 export type LivingGolferArchetype =
   | "casual"
@@ -102,6 +103,63 @@ export interface RegularGolfer {
   memories: PersonMemory[];
   recentThoughts: string[];
   history: RegularVisit[];
+  backstory?: PersonBackstory;
+  rivalProfile?: ChallengeRivalProfile;
+}
+
+export type PersonOccupation =
+  | "nursery-horticulture"
+  | "club-fitter"
+  | "instructor"
+  | "landscaper-agronomist"
+  | "contractor-builder"
+  | "restaurateur-chef"
+  | "tailor-apparel"
+  | "mechanic-dealer"
+  | "jeweler-watch-collector"
+  | "card-dealer-casino-host"
+  | "hotelier-event-organizer"
+  | "photographer-artist";
+
+export type BackstoryRevealTrigger =
+  | { kind: "conversation"; id: string }
+  | { kind: "completed-round"; roundId: string }
+  | { kind: "rematch"; challengeId: string }
+  | { kind: "story"; triggerId: string };
+
+export interface RelationshipGatedFact {
+  id: string;
+  text: string;
+  allowedTriggers: readonly BackstoryRevealTrigger["kind"][];
+  revealedBy?: BackstoryRevealTrigger;
+}
+
+export interface PersonBackstory {
+  version: 1;
+  source: "authored-anchor" | "curated-package";
+  authoredId: string;
+  occupation: PersonOccupation;
+  communityRole: string;
+  publicBiography: string;
+  golfOrigin: string;
+  motivation: string;
+  personality: string;
+  competitiveTemperament: "measured" | "fierce" | "social";
+  riskTolerance: number;
+  preferredPartners: readonly string[];
+  signatureSkill: string;
+  holdings: readonly InventoryItem[];
+  rewardHooks: readonly RewardDefinition[];
+  generatedDetails: {
+    history: string;
+    familyOrCommunityConnection: string;
+    favoriteCourseId?: string;
+    favoriteHoleId?: string;
+  };
+  publicFactIds: readonly string[];
+  revealedHistory: readonly RelationshipGatedFact[];
+  knownHoldingIds: readonly string[];
+  hiddenFacts: readonly RelationshipGatedFact[];
 }
 
 export type StoryFactKey =

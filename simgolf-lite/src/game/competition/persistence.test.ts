@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  bestDifferentialCount,
+  calculateHandicapIndex,
   captureRoundHandicapSnapshot,
   createHandicapProfile,
   createHandicapScoreRecord,
+  formatHandicapIndex,
   markHandicapScoreRecordPosted,
   migrateLegacyPlayerProHandicap,
   normalizeHandicapProfile,
+  postCompletedHandicapRound,
   provisionalHandicapIndex,
   recordCompletedHandicapRound,
 } from "./persistence";
@@ -126,7 +130,7 @@ describe("ZK-716 handicap persistence", () => {
     expect(posted).toMatchObject({
       handicapIndex: 12.3,
       source: "scores",
-      confidence: { status: "established", lastPostedRoundId: "round-1" },
+      confidence: { status: "provisional", lastPostedRoundId: "round-1" },
       postingLedger: ["handicap-post:round-1"],
     });
   });
@@ -174,5 +178,93 @@ describe("ZK-716 handicap persistence", () => {
     expect(incomplete.eligibility.reasons[0]).toContain("missing");
     const conceded = createHandicapScoreRecord(snapshot(), { ...completed(), conceded: true });
     expect(conceded.eligibility.reasons[0]).toContain("conceded");
+  });
+});
+
+describe("ZK-718 handicap posting", () => {
+  function score(roundId: string, differential: number, profile = createHandicapProfile(skills)) {
+    const frozen = captureRoundHandicapSnapshot({
+      roundId,
+      handicapIndex: profile.handicapIndex,
+      confidence: profile.confidence,
+      course: course(),
+      startedWeek: 4,
+      startedDay: 1,
+    });
+    const value = createHandicapScoreRecord(frozen, {
+      roundId,
+      source: "casual",
+      completedWeek: 4,
+      completedDay: 1,
+      scorecard: course().holes.map((hole) => ({ holeId: hole.id, par: hole.par, strokes: 5, penalties: 0, complete: true })),
+    });
+    return { ...value, evidence: { ...value.evidence, differential } };
+  }
+
+  it("matches every latest-20 best-count band fixture", () => {
+    const expected = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 5, 5, 6, 6, 7, 8];
+    expect(Array.from({ length: 21 }, (_, count) => bestDifferentialCount(count))).toEqual(expected);
+  });
+
+  it("blends the first two scores with the one-time seed, then becomes score-only", () => {
+    const base = createHandicapProfile(skills);
+    const first = postCompletedHandicapRound(base, score("one", 17.3, base));
+    const second = postCompletedHandicapRound(first, score("two", 16.3, first));
+    const thirdRecord = score("three", 15.3, second);
+    const calculation = calculateHandicapIndex(recordCompletedHandicapRound(second, thirdRecord), thirdRecord);
+    const third = postCompletedHandicapRound(second, thirdRecord);
+    expect(first).toMatchObject({ handicapIndex: 17.3, confidence: { status: "provisional" } });
+    expect(second).toMatchObject({ handicapIndex: 17, confidence: { status: "provisional" } });
+    expect(calculation).toMatchObject({ candidateIndex: 15.3, differentialRecordCount: 3, bestDifferentialCount: 1 });
+    expect(third).toMatchObject({ handicapIndex: 15.3, confidence: { status: "established" } });
+  });
+
+  it("shows downward/upward movement caps and uses unambiguous plus display", () => {
+    const base = createHandicapProfile(skills);
+    const down = postCompletedHandicapRound(base, score("down", -8, base));
+    expect(down.scoreRecords[0].calculation).toMatchObject({
+      indexBefore: 17.3,
+      candidateIndex: 4.7,
+      indexAfter: 14.3,
+      movementCapped: true,
+    });
+    const highBase = { ...base, handicapIndex: -2 };
+    const highScore = score("up", 10, highBase);
+    const up = postCompletedHandicapRound(highBase, highScore);
+    expect(up.scoreRecords[0].calculation).toMatchObject({ indexBefore: -2, indexAfter: -1, movementCapped: true });
+    expect(formatHandicapIndex(-1.2)).toBe("+1.2");
+    expect(formatHandicapIndex(1.2)).toBe("1.2");
+  });
+
+  it("excludes practice, concessions, withdrawals, and partial legacy routes with explicit reasons", () => {
+    const frozen = snapshot();
+    const cases = [
+      { source: "practice" as const, expected: "Practice" },
+      { source: "casual" as const, conceded: true, expected: "conceded" },
+      { source: "challenge" as const, withdrawn: true, expected: "withdrawn" },
+      { source: "legacy" as const, legacyPartialRouting: true, expected: "legacy" },
+    ];
+    for (const fixture of cases) {
+      const result = createHandicapScoreRecord(frozen, { ...completed(), ...fixture });
+      expect(result.postingState).toBe("ineligible");
+      expect(result.eligibility.reasons.join(" ")).toContain(fixture.expected);
+    }
+  });
+
+  it("posts atomically, remains idempotent, and retains team members' individual gross cards", () => {
+    const base = createHandicapProfile(skills);
+    const value = createHandicapScoreRecord(snapshot(), {
+      ...completed(),
+      source: "team",
+      individualGrossEvidence: ["player-pro", "partner"].map((playerId, offset) => ({
+        playerId,
+        holeScores: course().holes.map((hole) => ({ holeId: hole.id, par: hole.par, gross: 5 + offset })),
+      })),
+    });
+    const posted = postCompletedHandicapRound(base, value);
+    expect(posted.scoreRecords).toHaveLength(1);
+    expect(posted.scoreRecords[0]).toMatchObject({ postingState: "posted", source: "team" });
+    expect(posted.scoreRecords[0].evidence.individualGrossEvidence.map((entry) => entry.playerId)).toEqual(["player-pro", "partner"]);
+    expect(postCompletedHandicapRound(posted, value)).toBe(posted);
   });
 });
