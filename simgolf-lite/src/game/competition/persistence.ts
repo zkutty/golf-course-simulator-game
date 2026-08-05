@@ -216,7 +216,7 @@ function decodeScoreRecord(raw: unknown, path: string): HandicapScoreRecord | Ha
   return freeze({
     ...structuredClone(raw), source, snapshot,
     evidence: { ...structuredClone(evidence), holeScores, individualGrossEvidence },
-  } as HandicapScoreRecord);
+  } as unknown as HandicapScoreRecord);
 }
 
 /** Missing means a legacy career and seeds once; malformed present state is never replaced. */
