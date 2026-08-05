@@ -109,7 +109,7 @@ export function ContentLibraryPanel(props: {
     });
     const saved = await saveAuthoredHoleTemplatePackage(value);
     if (!saved.entry) throw new Error(saved.validation.status === "corrupt" || saved.validation.status === "unsupported" ? saved.validation.errors.join(" ") : t("content.failed"));
-    return `Saved hole template: ${value.manifest.title}`;
+    return t("content.holeSaved", { title: value.manifest.title });
   });
 
   const testPlay = (entry: ContentLibraryEntry) => run(async () => {
@@ -146,11 +146,11 @@ export function ContentLibraryPanel(props: {
           <label style={{ gridColumn: "1 / -1", display: "grid", gap: 4 }}>{t("content.description")}<textarea style={{ width: "100%", minHeight: 64, boxSizing: "border-box", padding: "7px 8px", resize: "vertical" }} value={description} maxLength={1000} onChange={(event) => setDescription(event.target.value)} /></label>
           <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button disabled={busy} type="submit">{t("content.saveCurrent")}</button>
-            <select aria-label="Hole to capture" value={holeId} onChange={(event) => setHoleId(event.target.value)} disabled={busy || props.course.holes.length === 0}>
-              <option value="">Choose hole</option>
-              {props.course.holes.map((hole, index) => <option key={hole.id} value={hole.id}>Hole {index + 1}</option>)}
+            <select aria-label={t("content.captureHoleLabel")} value={holeId} onChange={(event) => setHoleId(event.target.value)} disabled={busy || props.course.holes.length === 0}>
+              <option value="">{t("content.captureHolePlaceholder")}</option>
+              {props.course.holes.map((hole, index) => <option key={hole.id} value={hole.id}>{t("content.holeLabel", { number: index + 1 })}</option>)}
             </select>
-            <button disabled={busy || !holeId} type="button" onClick={() => void authorHole()}>Save hole template</button>
+            <button disabled={busy || !holeId} type="button" onClick={() => void authorHole()}>{t("content.saveHoleTemplate")}</button>
             <button disabled={busy} type="button" onClick={() => void importFile()}>{t("content.import")}</button>
             <button disabled={busy || !platformServices.capabilities.workshop} type="button" onClick={() => void run(async () => {
               await refreshWorkshopLibrary();
@@ -159,9 +159,9 @@ export function ContentLibraryPanel(props: {
           </div>
         </form>
         <p role="status" aria-live="polite" style={{ margin: 0 }}>{status}</p>
-        <label style={{ display: "grid", gap: 4 }}>Filter packages
+        <label style={{ display: "grid", gap: 4 }}>{t("content.filterPackages")}
           <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)}>
-            <option value="all">All packages</option><option value="course">Courses</option><option value="challenge">Challenges</option><option value="hole-template">Hole templates</option>
+            <option value="all">{t("content.filterAll")}</option><option value="course">{t("content.filterCourses")}</option><option value="challenge">{t("content.filterChallenges")}</option><option value="hole-template">{t("content.filterHoleTemplates")}</option>
           </select>
         </label>
         <div style={{ display: "grid", gap: 7 }}>
