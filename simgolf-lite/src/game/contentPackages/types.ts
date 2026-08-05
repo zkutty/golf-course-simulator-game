@@ -1,8 +1,9 @@
 import type { Course, Difficulty, LandTheme, ScenarioConstraints } from "../models/types";
 import type { GoalDefinition } from "../models/objectives";
 import type { BiomeCompatibilityMetadata } from "../models/biomes";
+import type { HoleTemplateV1 } from "../holeTemplates/types";
 
-export type CoursePackageKind = "course" | "challenge";
+export type CoursePackageKind = "course" | "challenge" | "hole-template";
 export type PackageCompatibility = "compatible" | "migratable" | "unsupported" | "corrupt";
 
 export interface CoursePackageManifestV1 {
@@ -55,8 +56,34 @@ export interface CoursePackageV1 {
   payload: CoursePackagePayloadV1;
 }
 
+/** A portable, revisioned package for a single authored hole. It deliberately
+ * carries no estate, economy, placement, or save-state references. */
+export interface HoleTemplatePackageManifestV1 {
+  format: "coursecraft-hole-template-package";
+  version: 1;
+  kind: "hole-template";
+  contentId: string;
+  revision: number;
+  title: string;
+  description: string;
+  author: { id: string; displayName: string };
+  createdAt: string;
+  updatedAt: string;
+  requiredGameVersion: string;
+  /** Capture context only; placement never reads this value. */
+  theme: LandTheme;
+  checksum: string;
+}
+
+export interface HoleTemplatePackageV1 {
+  manifest: HoleTemplatePackageManifestV1;
+  payload: { template: HoleTemplateV1 };
+}
+
+export type ContentPackageV1 = CoursePackageV1 | HoleTemplatePackageV1;
+
 export type PackageValidationResult =
-  | { status: "compatible"; value: CoursePackageV1; warnings: string[] }
+  | { status: "compatible"; value: ContentPackageV1; warnings: string[] }
   | { status: "migratable"; value: CoursePackageV1; warnings: string[] }
   | { status: "unsupported"; errors: string[] }
   | { status: "corrupt"; errors: string[] };

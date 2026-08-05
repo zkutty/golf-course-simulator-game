@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Course, World } from "../game/models/types";
 import type { ContentLibraryEntry } from "../game/contentPackages/types";
 import { createCoursePackage } from "../game/contentPackages/packageFormat";
+import { captureHoleTemplate, createHoleTemplatePackage } from "../game/contentPackages/holeTemplatePackage";
 import { buildPackageTestRun } from "../game/scenarioAuthoring/authoring";
 import {
   deleteContentPackage,
@@ -10,9 +11,11 @@ import {
   listContentLibrary,
   publishContentPackage,
   readAuthoredPackage,
+  readAuthoredHoleTemplatePackage,
   readContentPackage,
   refreshWorkshopLibrary,
   saveAuthoredPackage,
+  saveAuthoredHoleTemplatePackage,
 } from "../game/contentPackages/library";
 import { platformServices } from "../platform";
 import { useI18n } from "../i18n/useI18n";
@@ -31,6 +34,8 @@ export function ContentLibraryPanel(props: {
   const [author, setAuthor] = useState(props.world.founderName || t("content.defaultAuthor"));
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(t("content.ready"));
+  const [kindFilter, setKindFilter] = useState<"all" | ContentLibraryEntry["kind"]>("all");
+  const [holeId, setHoleId] = useState(props.course.holes[0]?.id ?? "");
 
   const reload = async () => setEntries(await listContentLibrary());
   useEffect(() => {
@@ -75,13 +80,35 @@ export function ContentLibraryPanel(props: {
   });
 
   const importFile = () => run(async () => {
-    const selected = await platformServices.files.chooseImport([".coursecraft-course", ".json"]);
+    const selected = await platformServices.files.chooseImport([".coursecraft-course", ".coursecraft-hole-template", ".json"]);
     if (!selected) return t("content.importCanceled");
     const result = await importContentPackage(selected.text, "manual");
     if (!result.entry) throw new Error(result.validation.status === "corrupt" || result.validation.status === "unsupported"
       ? result.validation.errors.join(" ")
       : t("content.failed"));
     return t("content.imported", { title: result.entry.title });
+  });
+
+  const authorHole = () => run(async () => {
+    const hole = props.course.holes.find((candidate) => candidate.id === holeId);
+    if (!hole) throw new Error("Choose a completed hole to capture.");
+    const id = `author-${author.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 72) || "local"}`;
+    const previous = await readAuthoredHoleTemplatePackage(id, title.trim(), platformServices);
+    const template = captureHoleTemplate(props.course, hole, {
+      id: previous?.payload.template.id ?? `hole-${hole.id}`,
+      title,
+      description,
+      yardsPerTile: 5,
+      provenance: { sourceKind: "manual", sourceLabel: "Player-built hole", importedAt: new Date().toISOString(), rightsAttested: true, redistribution: "private_only", sourceAssetRetained: false },
+      confidence: { scale: 1, terrain: 1, elevation: 1, notes: ["Captured from a player-built local hole."] },
+    });
+    const value = await createHoleTemplatePackage({
+      template, title, description, author: { id, displayName: author }, requiredGameVersion: __APP_VERSION__, theme: props.course.theme,
+      ...(previous ? { contentId: previous.manifest.contentId, revision: previous.manifest.revision + 1, createdAt: new Date(previous.manifest.createdAt) } : {}),
+    });
+    const saved = await saveAuthoredHoleTemplatePackage(value);
+    if (!saved.entry) throw new Error(saved.validation.status === "corrupt" || saved.validation.status === "unsupported" ? saved.validation.errors.join(" ") : t("content.failed"));
+    return `Saved hole template: ${value.manifest.title}`;
   });
 
   const testPlay = (entry: ContentLibraryEntry) => run(async () => {
@@ -118,6 +145,11 @@ export function ContentLibraryPanel(props: {
           <label style={{ gridColumn: "1 / -1", display: "grid", gap: 4 }}>{t("content.description")}<textarea style={{ width: "100%", minHeight: 64, boxSizing: "border-box", padding: "7px 8px", resize: "vertical" }} value={description} maxLength={1000} onChange={(event) => setDescription(event.target.value)} /></label>
           <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button disabled={busy} type="submit">{t("content.saveCurrent")}</button>
+            <select aria-label="Hole to capture" value={holeId} onChange={(event) => setHoleId(event.target.value)} disabled={busy || props.course.holes.length === 0}>
+              <option value="">Choose hole</option>
+              {props.course.holes.map((hole, index) => <option key={hole.id} value={hole.id}>Hole {index + 1}</option>)}
+            </select>
+            <button disabled={busy || !holeId} type="button" onClick={() => void authorHole()}>Save hole template</button>
             <button disabled={busy} type="button" onClick={() => void importFile()}>{t("content.import")}</button>
             <button disabled={busy || !platformServices.capabilities.workshop} type="button" onClick={() => void run(async () => {
               await refreshWorkshopLibrary();
@@ -126,21 +158,26 @@ export function ContentLibraryPanel(props: {
           </div>
         </form>
         <p role="status" aria-live="polite" style={{ margin: 0 }}>{status}</p>
+        <label style={{ display: "grid", gap: 4 }}>Filter packages
+          <select value={kindFilter} onChange={(event) => setKindFilter(event.target.value as typeof kindFilter)}>
+            <option value="all">All packages</option><option value="course">Courses</option><option value="challenge">Challenges</option><option value="hole-template">Hole templates</option>
+          </select>
+        </label>
         <div style={{ display: "grid", gap: 7 }}>
-          {entries.length === 0 && <p>{t("content.empty")}</p>}
-          {entries.map((entry) => (
+          {entries.filter((entry) => kindFilter === "all" || entry.kind === kindFilter).length === 0 && <p>{t("content.empty")}</p>}
+          {entries.filter((entry) => kindFilter === "all" || entry.kind === kindFilter).map((entry) => (
             <article key={entry.contentId} style={{ border: "1px solid #b7a77f", borderRadius: 9, padding: 10, background: "#fffaf0" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                 <div><strong>{entry.title}</strong><br /><small>{t("content.entrySummary", { author: entry.author, theme: entry.theme, revision: entry.revision, source: entry.source })}</small></div>
                 <span>{entry.state}</span>
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                <button disabled={busy} onClick={() => void testPlay(entry)}>{t("content.testPlay")}</button>
+                {entry.kind !== "hole-template" && <button disabled={busy} onClick={() => void testPlay(entry)}>{t("content.testPlay")}</button>}
                 <button disabled={busy} onClick={() => void run(async () => {
                   const ok = await exportContentPackage(entry.contentId);
                   return ok ? t("content.exported") : t("content.importCanceled");
                 })}>{t("content.export")}</button>
-                <button disabled={busy || !platformServices.capabilities.workshop} onClick={() => void publish(entry)}>{t("content.publish")}</button>
+                {entry.kind !== "hole-template" && <button disabled={busy || !platformServices.capabilities.workshop} onClick={() => void publish(entry)}>{t("content.publish")}</button>}
                 <button disabled={busy} onClick={() => void run(async () => {
                   await deleteContentPackage(entry.contentId);
                   return t("content.deleted");
