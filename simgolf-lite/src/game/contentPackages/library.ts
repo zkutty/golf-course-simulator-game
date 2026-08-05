@@ -2,7 +2,7 @@ import { platformServices } from "../../platform";
 import type { PlatformServices, PlatformWorkshopItem } from "../../platform/types";
 import { packageText, validatePackageText, PACKAGE_LIMITS } from "./packageFormat";
 import { holeTemplatePackageText, validateHoleTemplatePackageText } from "./holeTemplatePackage";
-import type { ContentLibraryEntry, ContentPackageV1, CoursePackageV1, HoleTemplatePackageV1, PackageValidationResult, WorkshopPublishResult } from "./types";
+import type { ContentLibraryEntry, ContentPackageKind, ContentPackageV1, CoursePackageV1, HoleTemplatePackageV1, PackageValidationResult, WorkshopPublishResult } from "./types";
 import { isLandTheme } from "../models/biomes";
 
 const MANIFEST_KEY = "coursecraft_content_library_v1";
@@ -118,11 +118,11 @@ export async function listContentLibrary(platform = platformServices): Promise<C
 
 export async function readAuthoredPackage(authorId: string, title: string, platform = platformServices): Promise<CoursePackageV1 | null> {
   const entry = (await readManifest(platform)).find((candidate) => candidate.source === "local" && candidate.authorId === authorId && candidate.title === title);
-  return entry?.kind === "hole-template" ? null : entry ? readContentPackage(entry.contentId, platform) : null;
+  return entry && !isHoleTemplateKind(entry.kind) ? readContentPackage(entry.contentId, platform) : null;
 }
 
 export async function readAuthoredHoleTemplatePackage(authorId: string, title: string, platform = platformServices): Promise<HoleTemplatePackageV1 | null> {
-  const entry = (await readManifest(platform)).find((candidate) => candidate.source === "local" && candidate.authorId === authorId && candidate.title === title && candidate.kind === "hole-template");
+  const entry = (await readManifest(platform)).find((candidate) => candidate.source === "local" && candidate.authorId === authorId && candidate.title === title && isHoleTemplateKind(candidate.kind));
   return entry ? readHoleTemplatePackage(entry.contentId, platform) : null;
 }
 
@@ -140,7 +140,19 @@ async function validateStoredPackageText(text: string): Promise<PackageValidatio
 }
 
 function storedPackageText(value: ContentPackageV1): string {
-  return value.manifest.kind === "hole-template" ? holeTemplatePackageText(value) : packageText(value);
+  return isHoleTemplatePackage(value) ? holeTemplatePackageText(value) : packageText(value);
+}
+
+function isHoleTemplatePackage(value: ContentPackageV1): value is HoleTemplatePackageV1 {
+  return isHoleTemplateKind(value.manifest.kind);
+}
+
+function isCoursePackage(value: ContentPackageV1): value is CoursePackageV1 {
+  return !isHoleTemplatePackage(value);
+}
+
+function isHoleTemplateKind(kind: ContentPackageKind): kind is "hole-template" {
+  return kind === "hole-template";
 }
 
 export async function importContentPackage(
@@ -204,7 +216,7 @@ export async function saveAuthoredHoleTemplatePackage(value: HoleTemplatePackage
 
 export async function readContentPackage(contentId: string, platform = platformServices): Promise<CoursePackageV1 | null> {
   const entry = (await readManifest(platform)).find((item) => item.contentId === contentId);
-  if (!entry || entry.kind === "hole-template") return null;
+  if (!entry || isHoleTemplateKind(entry.kind)) return null;
   const text = await platform.files.readText(entry.packageKey);
   if (!text) {
     const entries = await readManifest(platform);
@@ -212,7 +224,7 @@ export async function readContentPackage(contentId: string, platform = platformS
     return null;
   }
   const validation = await validateStoredPackageText(text);
-  if (validation.status === "compatible" || validation.status === "migratable") return validation.value.manifest.kind === "hole-template" ? null : validation.value;
+  if ((validation.status === "compatible" || validation.status === "migratable") && isCoursePackage(validation.value)) return validation.value;
   await quarantine(platform, text);
   const quarantineReason = validation.status === "unsupported" ? "incompatible" as const : "corrupt" as const;
   const entries = await readManifest(platform);
@@ -222,7 +234,7 @@ export async function readContentPackage(contentId: string, platform = platformS
 
 export async function readHoleTemplatePackage(contentId: string, platform = platformServices): Promise<HoleTemplatePackageV1 | null> {
   const entry = (await readManifest(platform)).find((item) => item.contentId === contentId);
-  if (!entry || entry.kind !== "hole-template") return null;
+  if (!entry || !isHoleTemplateKind(entry.kind)) return null;
   const text = await platform.files.readText(entry.packageKey);
   if (!text) {
     const entries = await readManifest(platform);
@@ -230,7 +242,7 @@ export async function readHoleTemplatePackage(contentId: string, platform = plat
     return null;
   }
   const validation = await validateHoleTemplatePackageText(text);
-  if (validation.status === "compatible" && validation.value.manifest.kind === "hole-template") return validation.value;
+  if (validation.status === "compatible" && isHoleTemplatePackage(validation.value)) return validation.value;
   await quarantine(platform, text);
   const quarantineReason = validation.status === "unsupported" ? "incompatible" as const : "corrupt" as const;
   const entries = await readManifest(platform);
@@ -253,7 +265,7 @@ export async function exportContentPackage(contentId: string, platform = platfor
   const text = await platform.files.readText(entry.packageKey);
   if (!text) return false;
   const safeName = entry.title.replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "coursecraft-package";
-  const extension = entry.kind === "hole-template" ? ".coursecraft-hole-template" : ".coursecraft-course";
+  const extension = isHoleTemplateKind(entry.kind) ? ".coursecraft-hole-template" : ".coursecraft-course";
   return platform.files.chooseExport(`${safeName}${extension}`, text);
 }
 
@@ -331,11 +343,12 @@ export async function publishContentPackage(
   if (!platform.capabilities.workshop) return null;
   const entries = await readManifest(platform);
   const entry = entries.find((item) => item.contentId === contentId);
-  if (!entry || entry.kind === "hole-template") return null;
+  if (!entry || isHoleTemplateKind(entry.kind)) return null;
   const text = await platform.files.readText(entry.packageKey);
   if (!text) return null;
   const validation = await validateStoredPackageText(text);
   if (validation.status !== "compatible" && validation.status !== "migratable") return null;
+  if (!isCoursePackage(validation.value)) return null;
   const value = validation.value;
   const result = await platform.workshop.publish({
     contentId,

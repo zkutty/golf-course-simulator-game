@@ -1,6 +1,8 @@
 import type { Course, Hole, LandTheme, Point, Terrain } from "../models/types";
 import { canonicalJson } from "../../utils/canonical";
 import { validateHoleTemplateV1 } from "../holeTemplates/serialization";
+import { decorationTiles } from "../models/decorations";
+import { BIOME_KEYS } from "../models/biomes";
 import type { HoleTemplateCellV1, HoleTemplateV1 } from "../holeTemplates/types";
 import type { HoleTemplatePackageV1, PackageValidationResult } from "./types";
 
@@ -9,7 +11,7 @@ export const HOLE_TEMPLATE_PACKAGE_VERSION = 1 as const;
 export const HOLE_TEMPLATE_PACKAGE_MAX_BYTES = 16 * 1024 * 1024;
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{1,95}$/;
-const THEMES = new Set<LandTheme>(["parkland", "desert", "links", "tropical", "mountain"]);
+const THEMES = new Set<LandTheme>(BIOME_KEYS);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -136,10 +138,24 @@ export function captureHoleTemplate(course: Course, hole: Hole, input: {
 }): HoleTemplateV1 {
   if (!hole.tee || !hole.green) throw new Error("A captured hole needs tee and green markers.");
   const points = [hole.tee, hole.green, ...(hole.waypoints ?? []), ...Object.values(hole.teeBoxes ?? {}).filter((point): point is Point => point != null), ...Object.values(hole.pinPositions ?? {}).filter((point): point is Point => point != null)];
-  const minX = Math.min(...points.map((point) => point.x));
-  const maxX = Math.max(...points.map((point) => point.x));
-  const minY = Math.min(...points.map((point) => point.y));
-  const maxY = Math.max(...points.map((point) => point.y));
+  const routeMinX = Math.min(...points.map((point) => point.x));
+  const routeMaxX = Math.max(...points.map((point) => point.x));
+  const routeMinY = Math.min(...points.map((point) => point.y));
+  const routeMaxY = Math.max(...points.map((point) => point.y));
+  // Features do not carry a hole ID. Include only the immediate route
+  // envelope (plus a one-tile shoulder) so a nearby authored feature is not
+  // silently discarded, while adjacent-hole content remains out of scope.
+  const nearRoute = (point: Point) => point.x >= routeMinX - 1 && point.x <= routeMaxX + 1 && point.y >= routeMinY - 1 && point.y <= routeMaxY + 1;
+  const obstacles = course.obstacles.filter(nearRoute);
+  const decorations = (course.decorations ?? []).filter(nearRoute);
+  const featurePoints = [
+    ...obstacles,
+    ...decorations.flatMap((decoration) => decorationTiles(decoration)),
+  ];
+  const minX = Math.min(routeMinX, ...featurePoints.map((point) => point.x));
+  const maxX = Math.max(routeMaxX, ...featurePoints.map((point) => point.x));
+  const minY = Math.min(routeMinY, ...featurePoints.map((point) => point.y));
+  const maxY = Math.max(routeMaxY, ...featurePoints.map((point) => point.y));
   const bounds = { minX, minY };
   const inBounds = (point: Point) => point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY;
   const terrainAt = (point: Point): Terrain => course.tiles[point.y * course.width + point.x];
@@ -175,8 +191,8 @@ export function captureHoleTemplate(course: Course, hole: Hole, input: {
       parMode: hole.parMode,
       ...(hole.parManual !== undefined ? { parManual: hole.parManual } : {}),
     },
-    obstacles: course.obstacles.filter(inBounds).map(({ origin: _origin, ...obstacle }) => ({ ...obstacle, ...local(obstacle, bounds) })),
-    decorations: course.decorations.filter(inBounds).map(({ origin: _origin, ...decoration }) => ({ ...decoration, ...local(decoration, bounds) })),
+    obstacles: obstacles.filter(inBounds).map(({ origin: _origin, ...obstacle }) => ({ ...obstacle, ...local(obstacle, bounds) })),
+    decorations: decorations.filter(inBounds).map(({ origin: _origin, ...decoration }) => ({ ...decoration, ...local(decoration, bounds) })),
     provenance: structuredClone(input.provenance),
     confidence: structuredClone(input.confidence),
   };

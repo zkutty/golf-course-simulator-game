@@ -3,7 +3,8 @@ import type { GoalDefinition } from "../models/objectives";
 import type { BiomeCompatibilityMetadata } from "../models/biomes";
 import type { HoleTemplateV1 } from "../holeTemplates/types";
 
-export type CoursePackageKind = "course" | "challenge" | "hole-template";
+export type CoursePackageKind = "course" | "challenge";
+export type ContentPackageKind = CoursePackageKind | "hole-template";
 export type PackageCompatibility = "compatible" | "migratable" | "unsupported" | "corrupt";
 
 export interface CoursePackageManifestV1 {
@@ -91,7 +92,7 @@ export type PackageValidationResult =
 export interface ContentLibraryEntry {
   contentId: string;
   revision: number;
-  kind: CoursePackageKind;
+  kind: ContentPackageKind;
   title: string;
   author: string;
   theme: LandTheme;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Course, World } from "../game/models/types";
-import type { ContentLibraryEntry } from "../game/contentPackages/types";
+import type { ContentLibraryEntry, ContentPackageKind } from "../game/contentPackages/types";
 import { createCoursePackage } from "../game/contentPackages/packageFormat";
 import { captureHoleTemplate, createHoleTemplatePackage } from "../game/contentPackages/holeTemplatePackage";
 import { buildPackageTestRun } from "../game/scenarioAuthoring/authoring";
@@ -36,6 +36,7 @@ export function ContentLibraryPanel(props: {
   const [status, setStatus] = useState(t("content.ready"));
   const [kindFilter, setKindFilter] = useState<"all" | ContentLibraryEntry["kind"]>("all");
   const [holeId, setHoleId] = useState(props.course.holes[0]?.id ?? "");
+  const isHoleTemplate = (kind: ContentPackageKind) => kind === "hole-template";
 
   const reload = async () => setEntries(await listContentLibrary());
   useEffect(() => {
@@ -103,7 +104,7 @@ export function ContentLibraryPanel(props: {
       confidence: { scale: 1, terrain: 1, elevation: 1, notes: ["Captured from a player-built local hole."] },
     });
     const value = await createHoleTemplatePackage({
-      template, title, description, author: { id, displayName: author }, requiredGameVersion: __APP_VERSION__, theme: props.course.theme,
+      template, title, description, author: { id, displayName: author }, requiredGameVersion: __APP_VERSION__, theme: props.course.theme ?? "parkland",
       ...(previous ? { contentId: previous.manifest.contentId, revision: previous.manifest.revision + 1, createdAt: new Date(previous.manifest.createdAt) } : {}),
     });
     const saved = await saveAuthoredHoleTemplatePackage(value);
@@ -172,12 +173,12 @@ export function ContentLibraryPanel(props: {
                 <span>{entry.state}</span>
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-                {entry.kind !== "hole-template" && <button disabled={busy} onClick={() => void testPlay(entry)}>{t("content.testPlay")}</button>}
+                {!isHoleTemplate(entry.kind) && <button disabled={busy} onClick={() => void testPlay(entry)}>{t("content.testPlay")}</button>}
                 <button disabled={busy} onClick={() => void run(async () => {
                   const ok = await exportContentPackage(entry.contentId);
                   return ok ? t("content.exported") : t("content.importCanceled");
                 })}>{t("content.export")}</button>
-                {entry.kind !== "hole-template" && <button disabled={busy || !platformServices.capabilities.workshop} onClick={() => void publish(entry)}>{t("content.publish")}</button>}
+                {!isHoleTemplate(entry.kind) && <button disabled={busy || !platformServices.capabilities.workshop} onClick={() => void publish(entry)}>{t("content.publish")}</button>}
                 <button disabled={busy} onClick={() => void run(async () => {
                   await deleteContentPackage(entry.contentId);
                   return t("content.deleted");

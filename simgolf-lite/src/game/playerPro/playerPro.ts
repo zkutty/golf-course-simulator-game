@@ -103,6 +103,7 @@ import {
   confidenceDispersionMultiplier,
   createPlayerConfidence,
   normalizePlayerConfidence,
+  type PlayerConfidenceState,
 } from "./confidence";
 import { absoluteDayFor } from "../seasons/seasons";
 
@@ -927,6 +928,7 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
       skills,
       selection,
       handedness: round.handedness,
+      confidenceSnapshot: round.confidenceSnapshot,
       seed: round.rngSeed + round.rngCursor * 104729,
     })
     : null;
@@ -979,6 +981,8 @@ export function resolvePlayableShot(args: {
   skills: PlayerProSkills;
   selection: PlayerShotSelection;
   handedness?: ShotHandedness;
+  /** Frozen Player Pro confidence; omitted callers intentionally use neutral. */
+  confidenceSnapshot?: PlayerConfidenceState;
   seed: number;
 }): PlayerShotTrace {
   const club = CLUBS.find((candidate) => candidate.name === args.selection.club) ?? CLUBS[4];
@@ -1208,6 +1212,7 @@ export function commitPlayerShot(round: PlayerPlayableRound, skills: PlayerProSk
     skills,
     selection,
     handedness: round.handedness,
+    confidenceSnapshot: round.confidenceSnapshot,
     seed: round.rngSeed + round.rngCursor * 104729,
   });
   return {
