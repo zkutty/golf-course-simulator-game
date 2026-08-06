@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { InventoryItem } from "./types";
 import type { PlayerProSkills, PlayerRoundCourseSnapshot } from "../models/playerProTypes";
 import { createDefaultPlayerPro, normalizePlayerPro } from "../playerPro/playerPro";
+import { strokesByHole } from "./handicap";
 import {
   challengeGroupRoundTextState,
   challengeGroupIndividualGrossEvidence,
@@ -454,7 +455,7 @@ describe("ZK-727 policy-neutral individual authority", () => {
   it("settles ties and skins carries as result-only records and retains full rejected measurement evidence", () => {
     let round = start({
       participants: participants(1).slice(0, 2),
-      individualFormat: "net-match",
+      individualFormat: "gross-match",
       individualContests: [{ id: "skins", kind: "skins" }, { id: "long", kind: "longest-drive", holeIds: ["hole-1"] }],
     });
     const alexShot = round.golfers.find((golfer) => golfer.id === "alex")!.shots[0];
@@ -509,5 +510,255 @@ describe("ZK-727 policy-neutral individual authority", () => {
     }));
     expect(scoreChallengeNassauSegment(halved, "gross-match", 0, 8)).toMatchObject({ status: "tied", winnerIds: ["alex", "blair"] });
     expect(scoreChallengeNassauSegment([{ ...matchFirst[0], withdrawn: true }, matchFirst[1]], "gross-match", 0, 8)).toMatchObject({ status: "withdrawn", winnerIds: [] });
+  });
+});
+
+describe("ZK-758 participant-specific frozen course setups", () => {
+  function setupCourse(
+    base: PlayerRoundCourseSnapshot,
+    teeSet: "forward" | "member" | "championship",
+    pinRotation: "A" | "B" | "C",
+    options: { teeX: number; pinX: number; slope: number; ratingOffset?: number; parDelta?: number },
+  ): PlayerRoundCourseSnapshot {
+    const holes = base.holes.map((hole, index) => ({
+      ...hole,
+      par: hole.par + (index === 0 ? options.parDelta ?? 0 : 0),
+      tee: { x: options.teeX, y: hole.tee.y },
+      pin: { x: options.pinX, y: hole.pin.y },
+      teeSet,
+      pinRotation,
+    }));
+    const par = holes.reduce((sum, hole) => sum + hole.par, 0);
+    return {
+      ...base,
+      courseName: `${teeSet} frozen route`,
+      holes,
+      rating: { courseRating: par + (options.ratingOffset ?? 0), slope: options.slope },
+    };
+  }
+
+  function mixedParticipants(base: PlayerRoundCourseSnapshot, playerIndex = 0) {
+    const championship = setupCourse(base, "championship", "C", { teeX: 1, pinX: 10, slope: 113 });
+    const forward = setupCourse(base, "forward", "B", { teeX: 4, pinX: 8, slope: 113, parDelta: 1 });
+    const field = participants(playerIndex).slice(0, 2).map((participant, index) => ({
+      ...participant,
+      handicapIndex: index === 0 ? -2 : 10,
+      setup: index === 0
+        ? { course: championship, teeSet: "championship" as const, pinRotation: "C" as const }
+        : { course: forward, teeSet: "forward" as const, pinRotation: "B" as const },
+    }));
+    return { championship, forward, field };
+  }
+
+  it("freezes each participant's tee, pins, routing, par, indexes, rating, slope, and allowance", () => {
+    const shared = course();
+    const { championship, forward, field } = mixedParticipants(shared);
+    const round = start({ course: shared, participants: field, individualFormat: "net-stroke" });
+    const [alex, blair] = round.golfers;
+
+    expect(alex.setup).toMatchObject({ teeSet: "championship", pinRotation: "C", rating: { courseRating: 27, slope: 113 } });
+    expect(blair.setup).toMatchObject({ teeSet: "forward", pinRotation: "B", rating: { courseRating: 28, slope: 113 } });
+    expect(alex.scorecard[0]).toMatchObject({ par: 3, strokeIndex: 1, handicapStrokes: -1 });
+    expect(blair.scorecard[0]).toMatchObject({ par: 4, strokeIndex: 1, handicapStrokes: 2 });
+    expect(alex.handicap).toMatchObject({ courseHandicap: -2, allowance: 1, playingHandicap: -2 });
+    expect(blair.handicap).toMatchObject({ courseHandicap: 10, allowance: 1, playingHandicap: 10 });
+    expect(alex.handicap.strokesByHole.reduce((sum, value) => sum + value, 0)).toBe(-2);
+    expect(blair.handicap.strokesByHole.reduce((sum, value) => sum + value, 0)).toBe(10);
+    expect(Object.isFrozen(alex.setup.holes[0].tee)).toBe(true);
+
+    championship.holes[0].tee.x = 17;
+    championship.holes[0].pin.x = 17;
+    championship.holes[0].par = 5;
+    championship.rating!.courseRating = 80;
+    forward.holes.reverse();
+    shared.holes[0].strokeIndex = 9;
+    expect(alex.setup.holes[0]).toMatchObject({ id: "hole-1", par: 3, tee: { x: 1 }, pin: { x: 10 }, strokeIndex: 1 });
+    expect(alex.setup.rating).toEqual({ courseRating: 27, slope: 113 });
+    expect(blair.setup.holes.map((hole) => hole.id)).toEqual(Array.from({ length: 9 }, (_, index) => `hole-${index + 1}`));
+
+    const text = challengeGroupRoundTextState(round);
+    expect(text.golfers.map((golfer) => golfer.setup)).toEqual([
+      expect.objectContaining({ teeSet: "championship", pinRotation: "C", rating: { courseRating: 27, slope: 113 } }),
+      expect.objectContaining({ teeSet: "forward", pinRotation: "B", rating: { courseRating: 28, slope: 113 } }),
+    ]);
+    expect(text.golfers.map((golfer) => golfer.handicap.allowance)).toEqual([1, 1]);
+  });
+
+  it.each([9, 18])("allocates mixed-sign net-match strokes off low on a %i-hole routed card", (holeCount) => {
+    const nine = course();
+    const shared = holeCount === 9 ? nine : {
+      ...nine,
+      holes: [...nine.holes, ...nine.holes].map((hole, index) => ({ ...hole, id: `mixed-${index + 1}`, name: `Hole ${index + 1}`, strokeIndex: index + 1 })),
+    };
+    const { field } = mixedParticipants(shared);
+    const round = start({ course: shared, participants: field, individualFormat: "net-match" });
+    expect(round.golfers.map((golfer) => golfer.handicap.playingHandicap)).toEqual([0, 12]);
+    expect(round.golfers.map((golfer) => golfer.handicap.strokesByHole.length)).toEqual([holeCount, holeCount]);
+    expect(round.golfers.map((golfer) => golfer.handicap.strokesByHole.reduce((sum, value) => sum + value, 0))).toEqual([0, 12]);
+    expect(round.individualAuthority!.handicapSnapshots).toEqual(round.golfers.map((golfer) => ({
+      playerId: golfer.id,
+      playingHandicap: golfer.handicap.playingHandicap,
+      strokesByHole: golfer.handicap.strokesByHole,
+    })));
+  });
+
+  it("applies each frozen allowance to the unrounded tee-specific Course Handicap exactly once", () => {
+    const shared = course();
+    const { field } = mixedParticipants(shared);
+    const withAllowances = field.map((participant, index) => ({ ...participant, handicapAllowance: index === 0 ? .5 : .85 }));
+    const round = start({ course: shared, participants: withAllowances, individualFormat: "net-stroke" });
+    expect(round.golfers.map((golfer) => ({
+      course: golfer.handicap.courseHandicap,
+      allowance: golfer.handicap.allowance,
+      playing: golfer.handicap.playingHandicap,
+    }))).toEqual([
+      { course: -2, allowance: .5, playing: -1 },
+      { course: 10, allowance: .85, playing: 9 },
+    ]);
+    expect(challengeGroupRoundTextState(round).golfers.map((golfer) => golfer.handicap.allowance)).toEqual([.5, .85]);
+  });
+
+  it.each(["gross-stroke", "net-stroke", "gross-match", "net-match", "net-stableford"] as const)("drives %s and skins from participant-local cards", (format) => {
+    const shared = course();
+    const { field } = mixedParticipants(shared);
+    let round = start({ course: shared, participants: field, individualFormat: format, individualContests: [{ id: `skins-${format}`, kind: "skins" }] });
+    round = concedeChallengeGroupHole(round, "alex", 4);
+    expect(round.currentHoleIndex).toBe(1);
+    const cards = round.golfers.map((golfer) => golfer.scorecard[0]);
+    const values = cards.map((card) => format.startsWith("gross") ? card.gross!
+      : format === "net-stableford" ? 2 - (card.gross! - card.handicapStrokes - card.par)
+        : card.net!);
+    const target = format === "net-stableford" ? Math.max(...values) : Math.min(...values);
+    const expected = round.golfers.filter((_golfer, index) => values[index] === target).map((golfer) => golfer.id);
+    expect(round.individualAuthority!.results[0]).toMatchObject({
+      contestId: `skins-${format}`,
+      status: expected.length === 1 ? "won" : "carried",
+      winnerIds: expected.length === 1 ? expected : [],
+    });
+  });
+
+  it("uses each frozen tee and pin for shots and migrates a v1 shared-setup save deterministically", () => {
+    const shared = course();
+    const { field } = mixedParticipants(shared, 1);
+    const mixed = start({ course: shared, participants: field, individualFormat: "net-stroke" });
+    const alex = mixed.golfers[0];
+    expect(alex.shots[0].from).toEqual(alex.setup.holes[0].tee);
+    expect(previewChallengeGroupPlayerShot(mixed, "blair", {
+      ...selection(mixed),
+      aim: mixed.golfers[1].setup.holes[0].pin,
+    })).toMatchObject({ available: true });
+
+    const current = start({ participants: participants(0).slice(0, 2), individualFormat: "net-stroke" });
+    const legacy = JSON.parse(encodeChallengeGroupRound(current)) as unknown as Record<string, unknown> & { golfers: Array<Record<string, unknown>> };
+    legacy.version = 1;
+    for (const golfer of legacy.golfers) {
+      delete golfer.setup;
+      const handicap = golfer.handicap as Record<string, unknown>;
+      delete handicap.allowance;
+    }
+    const migrated = decodeChallengeGroupRound(legacy);
+    expect(migrated.ok).toBe(true);
+    if (!migrated.ok) return;
+    expect(migrated.round).toEqual(current);
+    expect(migrated.round.golfers.map((golfer) => golfer.handicap.allowance)).toEqual([1, 1]);
+    const migratedEncoded = encodeChallengeGroupRound(migrated.round);
+    const reloaded = decodeChallengeGroupRound(migratedEncoded);
+    expect(reloaded.ok && encodeChallengeGroupRound(reloaded.round)).toBe(migratedEncoded);
+
+    const explicitLegacy = JSON.parse(JSON.stringify(legacy)) as typeof legacy;
+    const explicitHandicap = explicitLegacy.golfers[0].handicap as Record<string, unknown>;
+    const explicitStrokes = strokesByHole(4, current.golfers[0].scorecard.map((score) => ({ id: score.holeId, par: score.par, strokeIndex: score.strokeIndex })));
+    explicitHandicap.playingHandicap = 4;
+    explicitHandicap.strokesByHole = explicitStrokes;
+    const explicitCards = explicitLegacy.golfers[0].scorecard as Array<Record<string, unknown>>;
+    explicitCards.forEach((score, index) => { score.handicapStrokes = explicitStrokes[index]; });
+    const explicitAuthority = explicitLegacy.individualAuthority as { handicapSnapshots: Array<Record<string, unknown>> };
+    explicitAuthority.handicapSnapshots[0].playingHandicap = 4;
+    explicitAuthority.handicapSnapshots[0].strokesByHole = explicitStrokes;
+    const migratedExplicit = decodeChallengeGroupRound(explicitLegacy);
+    expect(migratedExplicit.ok).toBe(true);
+    if (migratedExplicit.ok) expect(migratedExplicit.round.golfers[0].handicap.allowance).toBeCloseTo(4 / 5.2);
+
+    const unratedLegacy = JSON.parse(encodeChallengeGroupRound(current)) as unknown as Record<string, unknown> & { course: Record<string, unknown>; golfers: Array<Record<string, unknown>> };
+    unratedLegacy.version = 1;
+    delete unratedLegacy.course.rating;
+    for (const golfer of unratedLegacy.golfers) {
+      delete golfer.setup;
+      delete (golfer.handicap as Record<string, unknown>).allowance;
+    }
+    const migratedUnrated = decodeChallengeGroupRound(unratedLegacy);
+    expect(migratedUnrated.ok).toBe(true);
+    if (migratedUnrated.ok) expect(migratedUnrated.round.golfers.every((golfer) => golfer.setup.rating?.courseRating === 27 && golfer.setup.rating.slope === 113)).toBe(true);
+
+    const corrupted = JSON.parse(encodeChallengeGroupRound(mixed)) as ChallengeGroupRound;
+    (corrupted.golfers[0].setup.rating as { slope: number }).slope = 0;
+    expect(decodeChallengeGroupRound(corrupted)).toEqual({ ok: false, error: "ChallengeGroupRound golfer evidence is invalid." });
+
+    const missingRating = JSON.parse(encodeChallengeGroupRound(mixed)) as ChallengeGroupRound;
+    delete (missingRating.golfers[0].setup as unknown as Record<string, unknown>).rating;
+    expect(decodeChallengeGroupRound(missingRating)).toEqual({ ok: false, error: "ChallengeGroupRound golfer evidence is invalid." });
+
+    const driftedAllowance = JSON.parse(encodeChallengeGroupRound(mixed)) as ChallengeGroupRound;
+    driftedAllowance.golfers[0].handicap.allowance = .5;
+    expect(decodeChallengeGroupRound(driftedAllowance)).toEqual({ ok: false, error: "ChallengeGroupRound golfer evidence is invalid." });
+  });
+
+  it("preserves mixed setups across interruption, concessions, withdrawals, duplicate calls, and a skins carry", () => {
+    const shared = course();
+    const { field } = mixedParticipants(shared, 1);
+    const initial = start({ course: shared, participants: field, individualFormat: "gross-match", individualContests: [{ id: "skins", kind: "skins" }] });
+    const interrupted = decodeChallengeGroupRound(encodeChallengeGroupRound(initial));
+    expect(interrupted.ok).toBe(true);
+    if (!interrupted.ok) return;
+    expect(interrupted.round.golfers.map((golfer) => golfer.setup)).toEqual(initial.golfers.map((golfer) => golfer.setup));
+
+    const alexGross = interrupted.round.golfers[0].scorecard[0].gross!;
+    const alexComplete = concedeChallengeGroupHole(interrupted.round, "alex", alexGross);
+    expect(concedeChallengeGroupHole(alexComplete, "alex", alexGross)).toBe(alexComplete);
+    const holeComplete = concedeChallengeGroupHole(alexComplete, "blair", alexGross);
+    expect(holeComplete.individualAuthority!.results).toContainEqual(expect.objectContaining({ contestId: "skins", status: "carried", carryHoles: 1 }));
+
+    const withdrawn = withdrawChallengeGroupGolfer(initial, "alex", "Mixed-setup withdrawal.");
+    expect(withdrawChallengeGroupGolfer(withdrawn, "alex")).toBe(withdrawn);
+    expect(withdrawn.golfers[0]).toMatchObject({ withdrawn: true, setup: initial.golfers[0].setup });
+  });
+
+  it("retains mixed-setup evidence for both measured contests and Nassau segments", () => {
+    const shared = course();
+    const { field } = mixedParticipants(shared, 1);
+    let measured = start({
+      course: shared,
+      participants: field,
+      individualFormat: "gross-match",
+      individualContests: [{ id: "ctp", kind: "closest-to-pin", holeIds: ["hole-1"] }, { id: "long", kind: "longest-drive", holeIds: ["hole-1"] }],
+    });
+    const alex = measured.golfers[0];
+    const shot = alex.shots[0];
+    expect(shot.from).toEqual(alex.setup.holes[0].tee);
+    for (const [contestId, measurement] of [["ctp", 4], ["long", 240]] as const) {
+      measured = recordChallengeGroupMeasurement(measured, {
+        contestId, participantId: alex.id, holeId: shot.holeId, shotId: shot.id, club: shot.club,
+        start: shot.from, end: shot.rest, lie: shot.lieBefore, measurement,
+      });
+    }
+    expect(measured.individualAuthority!.measurements).toEqual([
+      expect.objectContaining({ contestId: "ctp", participantId: "alex", eligible: true, start: alex.setup.holes[0].tee }),
+      expect.objectContaining({ contestId: "long", participantId: "alex", eligible: true, start: alex.setup.holes[0].tee }),
+    ]);
+
+    const eighteen = course();
+    eighteen.holes = [...eighteen.holes, ...eighteen.holes].map((hole, index) => ({ ...hole, id: `mixed-nassau-${index + 1}`, name: `Hole ${index + 1}`, strokeIndex: index + 1 }));
+    const { field: nassauField } = mixedParticipants(eighteen);
+    const nassau = start({ course: eighteen, participants: nassauField, individualFormat: "gross-match", individualContests: [{ id: "nassau", kind: "nassau" }] });
+    const scored = nassau.golfers.map((golfer, golferIndex) => ({
+      ...golfer,
+      scorecard: golfer.scorecard.map((card, index) => {
+        const gross = golferIndex === 0 ? (index < 9 ? 3 : 4) : (index < 9 ? 4 : 3);
+        return { ...card, strokes: gross, gross, net: gross - card.handicapStrokes, status: "played" as const };
+      }),
+    }));
+    expect(scoreChallengeNassauSegment(scored, "gross-match", 0, 8)).toMatchObject({ status: "won", winnerIds: ["alex"] });
+    expect(scoreChallengeNassauSegment(scored, "gross-match", 9, 17)).toMatchObject({ status: "won", winnerIds: ["blair"] });
+    expect(scoreChallengeNassauSegment(scored, "gross-match", 0, 17)).toMatchObject({ status: "tied", winnerIds: ["alex", "blair"] });
   });
 });

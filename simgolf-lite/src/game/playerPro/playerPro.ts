@@ -80,7 +80,7 @@ import {
   postCompletedHandicapRound,
 } from "../competition/persistence";
 import { defaultPlayerProInventory, normalizePlayerProInventory } from "./inventoryPersistence";
-import { decodeChallengeGroupRound } from "../competition/challengeGroupRound";
+import { decodeChallengeGroupRound } from "../competition/challengeGroupRoundCodec";
 import {
   applyRoundConfidence,
   confidenceAtDay,

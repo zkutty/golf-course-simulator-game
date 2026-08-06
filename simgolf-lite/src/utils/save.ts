@@ -75,7 +75,7 @@ import {
   normalizeHandicapProfile,
 } from "../game/competition/persistence";
 import { normalizePeopleProfiles } from "../game/competition/characters";
-import { decodeChallengeGroupRound } from "../game/competition/challengeGroupRound";
+import { decodeChallengeGroupRound } from "../game/competition/challengeGroupRoundCodec";
 
 const KEY = "simgolf_lite_save_v1";
 export const CURRENT_SAVE_SCHEMA_VERSION = 28 as const;

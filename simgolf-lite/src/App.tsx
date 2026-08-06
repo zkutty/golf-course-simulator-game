@@ -207,7 +207,7 @@ import {
   type PlayerTrainingOption,
 } from "./game/playerPro/playerPro";
 import type { TournamentEvent } from "./game/tournaments/types";
-import { challengeGroupRoundTextState, startChallengeGroupRound } from "./game/competition/challengeGroupRound";
+import { challengeGroupRoundTextState } from "./game/competition/challengeGroupRoundText";
 import type { EquipmentLoadout } from "./game/competition/types";
 import { decodeControlledRoundSnapshotV2, type ControlledRoundSnapshotV2 } from "./game/rules/roundSnapshot";
 import type { SharedShotOutcome } from "./game/rules/contracts";
@@ -3300,7 +3300,7 @@ export default function App() {
         setPlayerShotAim(null);
       },
       setChallengeGroupRoundFixture: async () => {
-        const { startEquippedPlayableRound } = await import("./game/competition/equipmentMentor");
+        const { createZk758BrowserChallengeGroup } = await import("./game/testing/zk758BrowserFixture");
         const fixtureCourse = normalizeCourseLayouts(createRenderPerfCourse("parkland"));
         const playerPro = createDefaultPlayerPro({ seed: 726_001, name: "Casey Fairway", background: "architect" });
         const fixtureWorld: World = {
@@ -3314,64 +3314,7 @@ export default function App() {
         };
         const layout = fixtureCourse.layouts?.find((candidate) => candidate.state === "open");
         if (!layout) throw new Error("ChallengeGroupRound fixture requires an open course layout.");
-        const playable = startEquippedPlayableRound({
-          course: fixtureCourse,
-          world: fixtureWorld,
-          layoutId: layout.id,
-          teeSet: "member",
-          pinRotation: "A",
-        });
-        if (!playable.ok) throw new Error(`ChallengeGroupRound fixture could not start: ${playable.reason}`);
-        const group = startChallengeGroupRound({
-          id: "zk726-browser-group",
-          course: playable.round.course,
-          rulesSnapshot: playable.round.rulesSnapshot,
-          teeSet: playable.round.teeSet,
-          pinRotation: playable.round.pinRotation,
-          participants: [
-            {
-              id: "rival-alex",
-              name: "Alex Rivers",
-              controller: "ai",
-              teamId: "team-rivers",
-              skills: { ...playerPro.skills, power: 47 },
-              handicapIndex: 12.4,
-            },
-            {
-              id: playerPro.identity.id,
-              name: playerPro.identity.name,
-              controller: "player",
-              teamId: "team-fairway",
-              handedness: playerPro.identity.handedness,
-              skills: playerPro.skills,
-              confidenceSnapshot: playerPro.confidence,
-              handicapIndex: playerPro.handicapProfile.handicapIndex,
-              equipment: { loadout: playerPro.equipmentLoadout, items: playerPro.inventory.items },
-            },
-            {
-              id: "rival-blair",
-              name: "Blair Stone",
-              controller: "ai",
-              teamId: "team-rivers",
-              handedness: "left",
-              skills: { ...playerPro.skills, putting: 52 },
-              handicapIndex: 9.6,
-            },
-            {
-              id: "rival-devon",
-              name: "Devon Park",
-              controller: "ai",
-              teamId: "team-fairway",
-              skills: { ...playerPro.skills, irons: 50 },
-              handicapIndex: 7.8,
-            },
-          ],
-          scoringMode: "net-match",
-          sideBets: [],
-          rngSeed: 726_001,
-          startedWeek: fixtureWorld.week,
-          startedDay: 0,
-        });
+        const group = createZk758BrowserChallengeGroup(fixtureCourse, fixtureWorld, layout.id, playerPro);
         const worldWithGroup = {
           ...fixtureWorld,
           playerPro: { ...playerPro, activeRound: null, activeChallengeGroupRound: group },

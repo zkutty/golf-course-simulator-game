@@ -89,10 +89,13 @@ test("ZK-720 renders frozen group net cards with format and withdrawal evidence"
   await expect(card).toContainText("net-match");
   await expect(card).toContainText("concessions 0 · withdrawals 0");
   await card.locator("summary").first().click();
+  await expect(card).toContainText("forward tees");
+  await expect(card).toContainText("Pin B");
+  await expect(card).toContainText("100%");
   await expect(card.getByRole("table").first()).toContainText("Gross");
   await expect(card.getByRole("table").first()).toContainText("Net");
   await card.screenshot({ path: "artifacts/zk721-group-scorecard.png" });
   const state = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro);
-  expect(state.activeChallengeGroupRound.golfers[0]).toMatchObject({ handicap: expect.any(Object), scorecard: expect.any(Array), withdrawn: false });
+  expect(state.activeChallengeGroupRound.golfers[0]).toMatchObject({ handicap: expect.objectContaining({ allowance: 1 }), setup: expect.objectContaining({ teeSet: "forward", pinRotation: "B" }), scorecard: expect.any(Array), withdrawn: false });
   expect(errors).toEqual([]);
 });
