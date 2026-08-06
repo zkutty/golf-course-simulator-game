@@ -64,6 +64,19 @@ import type {
   HoleTemplatePlacementPlanV1,
   HoleTemplateTargetVersions,
 } from "../game/holeTemplates/types";
+import type { PlantId } from "../game/models/plantTypes";
+
+function applyPlantReward(state: GameState, speciesId: PlantId, x: number, y: number, installationCost: number) {
+  const career = state.world.playerPro;
+  return career && globalThis.__ccRP?.apply(career, {
+    speciesId,
+    biome: state.course.theme ?? "parkland",
+    x,
+    y,
+    week: state.world.week,
+    installationCost,
+  });
+}
 
 function holeTemplateVersions(state: GameState): HoleTemplateTargetVersions {
   return {
@@ -715,8 +728,10 @@ export function applyAction(state: GameState, action: Action): GameState {
         plantId,
         costMult,
       });
-      if (state.world.cash < quote.net) break;
-      const cash = state.world.cash - quote.net;
+      const consumed = plantId ? applyPlantReward(state, plantId, action.x, action.y, quote.net) : undefined;
+      const rewardApplied = consumed?.applied === true;
+      if (!rewardApplied && state.world.cash < quote.net) break;
+      const cash = state.world.cash - (rewardApplied ? 0 : quote.net);
       const newObstacles = [...state.course.obstacles, {
         x: action.x,
         y: action.y,
@@ -734,6 +749,7 @@ export function applyAction(state: GameState, action: Action): GameState {
           ...state.world,
           cash,
           isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash),
+          ...(rewardApplied && consumed ? { playerPro: consumed.career } : {}),
         },
       };
       obstaclesVersion++;
@@ -862,12 +878,19 @@ export function applyAction(state: GameState, action: Action): GameState {
         ? { ...action.decoration, plantId, origin: "player" as const }
         : action.decoration;
       const cost = decorationCost(decoration, state.course.theme, costMult);
-      if (state.world.cash < cost) break;
-      const cash = state.world.cash - cost;
+      const consumed = plantId ? applyPlantReward(state, plantId, decoration.x, decoration.y, cost) : undefined;
+      const rewardApplied = consumed?.applied === true;
+      if (!rewardApplied && state.world.cash < cost) break;
+      const cash = state.world.cash - (rewardApplied ? 0 : cost);
       newState = {
         ...newState,
         course: { ...state.course, decorations: [...(state.course.decorations ?? []), decoration] },
-        world: { ...state.world, cash, isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash) },
+        world: {
+          ...state.world,
+          cash,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash),
+          ...(rewardApplied && consumed ? { playerPro: consumed.career } : {}),
+        },
       };
       terrainVersion++;
       economyVersion++;

@@ -1,5 +1,15 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-08-06 — ZK-724 finite reward entitlements complete
+
+- Started from the exact isolated base `2d7432a514b5621a8c1cccdf4b1543106b239fcb` on `codex/zk724-reward-entitlements`; the original prompt above remains preserved.
+- Added authored, finite reward entitlement contracts with explicit unlock gates, transferability, quantities/remaining value, consumption history, granting-person/match provenance, and Player Pro save normalization.
+- Added deterministic authored-hook grant authority, scoped plant/service consumption, entitlement transfer, licensed casino-host capacity grounded only in an authored holding, safe failure when a hook/holding/downstream scope is unavailable, and bounded idempotency ledgers. Instructor technique IDs and tailor profile-style IDs survive save/reload; the tailor package grants both its authored garment and a non-transferable style entitlement.
+- Integrated biome-appropriate plant stock with ordinary obstacle/decoration placement: one unit waives installation exactly once while player planting provenance keeps existing care, water, seasonality, removal, and salvage economics active. If the deferred reward consumer has not loaded, placement safely follows the ordinary paid path. Added visible remaining quantities/value in Player Pro.
+- Focused validation passed: TypeScript, ZK-724 plus adjacent inventory/people/equipment/Player Pro/save/economy coverage at 7 files / 82 tests, and lint/i18n with 0 errors and the 12 existing hook warnings. Post-review full `test:ci` passed at 172 files / 1,352 passed plus one intentional skip, followed by the 5/5 audio audit.
+- Two final consecutive production builds were identical at 1,608,452 initial JavaScript bytes, 267 bytes under the unchanged 1,608,719-byte ZK-680 ceiling. Biome, exact audio manifest, service-worker/offline assets including the deferred reward chunk, M35 residency, Parkland 4x, initial-critical, surface, delivery, startup, and fixture budgets all pass. The compact Player Pro load boundary rejects truthy malformed reward entries before UI/placement consumers, and transferred finite rewards remain active for their new owner while retaining transfer history.
+- The bundled web-game client completed two Quick Start iterations. `/private/tmp/zk724-browser/shot-1.png` was visually inspected, structured state at `/private/tmp/zk724-browser/state-1.json` reports a live Parkland game, and no console/page-error artifact was produced. Match settlement/rematch integration remains intentionally outside ZK-724 for the ZK-725 authority.
+
 ## 2026-08-04 — ZK-680 initial JavaScript recovery in progress
 
 - Fresh lease `codex/zk680-zk716-budget-split` starts at `origin/develop` `5a9acc6`; no inherited worktree changes were present.

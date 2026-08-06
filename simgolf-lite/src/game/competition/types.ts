@@ -115,6 +115,7 @@ export interface InventoryItem {
   frozenInstallValueEach?: number;
   speciesId?: string;
   description?: string;
+  capabilities?: readonly "casino-host-capacity"[];
 }
 
 export interface PlayerInventory {
@@ -143,6 +144,92 @@ export interface RewardDefinition {
   profileStyleId?: string;
   techniqueId?: LearnedTechnique;
   speciesId?: string;
+  /** Data-authored gate. Settlement still requires a completed, won match. */
+  unlockConditions?: readonly RewardUnlockCondition[];
+  serviceScope?: ServiceCreditScope;
+  rewardKind?: RewardEntitlementKind;
+}
+
+export type RewardEntitlementKind =
+  | "plant-stock"
+  | "service-credit"
+  | "authored-item"
+  | "mentor-hook"
+  | "species-knowledge"
+  | "profile-unlock"
+  | "casino-host-capacity";
+
+export type ServiceCreditScope = "turf-care" | "construction" | "hospitality" | "lodging";
+export type RewardUnlockCondition =
+  | { kind: "completed-match"; outcome: "win" }
+  | { kind: "relationship-tier"; minimum: "acquaintance" | "friend" | "rival" | "clubIcon" }
+  | { kind: "authored-holding"; definitionId: string };
+
+export interface RewardProvenance {
+  rewardDefinitionId: string;
+  grantingPersonId: string;
+  grantingPersonName: string;
+  authoredPersonId: string;
+  occupation: string;
+  matchId: string;
+  grantedWeek: number;
+  grantedDay: number;
+}
+
+export interface RewardConsumption {
+  id: string;
+  week: number;
+  day: number;
+  system: "plant-installation" | ServiceCreditScope | "transfer";
+  quantity: number;
+  value: number;
+  note: string;
+}
+
+export interface RewardEntitlement {
+  version: 1;
+  id: string;
+  definitionId: string;
+  name: string;
+  kind: RewardEntitlementKind;
+  ownerId: string;
+  transferability: "transferable" | "non-transferable";
+  initialQuantity: number;
+  remainingQuantity: number;
+  initialValue: number;
+  remainingValue: number;
+  status: "active" | "consumed" | "transferred";
+  unlockConditions: readonly RewardUnlockCondition[];
+  consumption: readonly RewardConsumption[];
+  provenance: RewardProvenance;
+  saveBehavior: "player-career";
+  inventoryItemId?: string;
+  speciesId?: string;
+  biome?: string;
+  installationValueEach?: number;
+  serviceScope?: ServiceCreditScope;
+  capability?: "casino-host-capacity";
+  nonTransferableKind?: NonTransferableRewardKind;
+  techniqueId?: LearnedTechnique;
+  profileStyleId?: string;
+}
+
+export interface PlantStockBundle extends RewardEntitlement {
+  kind: "plant-stock";
+  speciesId: string;
+  biome: string;
+  installationValueEach: number;
+}
+
+export interface ServiceCredit extends RewardEntitlement {
+  kind: "service-credit";
+  serviceScope: ServiceCreditScope;
+}
+
+export interface RewardEntitlementState {
+  version: 1;
+  entitlements: readonly RewardEntitlement[];
+  settlementLedger: readonly string[];
 }
 
 export interface AppraisalBasis {

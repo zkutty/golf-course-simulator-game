@@ -309,6 +309,12 @@ export function PlayerProPanel(props: {
             {props.career.activeMentorTechniqueChallenge && <div role="status"><strong>{t("playerPro.equipmentMentor.objective", { name: mentorTechniqueDefinition(props.career.activeMentorTechniqueChallenge.techniqueId).name })}</strong><br /><small>{props.career.activeMentorTechniqueChallenge.objective}</small></div>}
             {props.career.activeRound?.performanceLoadout && <small>{t("playerPro.equipmentMentor.frozen", { count: props.career.activeRound.performanceLoadout.itemIds.length })}</small>}
           </section>
+          {props.career.rewardEntitlements.entitlements.length > 0 && <section data-testid="player-reward-entitlements" style={cardStyle}>
+            {props.career.rewardEntitlements.entitlements.slice().reverse().map((reward) => <div key={reward.id} style={{ borderTop: "1px solid rgba(60,50,30,.14)", paddingTop: 6 }}>
+                <div><strong>{reward.name}</strong> · {reward.status}</div>
+                <small>{reward.kind === "service-credit" ? formatCurrency(reward.remainingValue) : reward.remainingQuantity}</small>
+              </div>)}
+          </section>}
           <section>
             <h3 style={{ margin: "0 0 7px" }}>{t("playerPro.techniques")}</h3>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>

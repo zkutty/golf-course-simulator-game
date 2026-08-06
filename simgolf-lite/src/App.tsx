@@ -227,6 +227,9 @@ import {
   resolveM53SurfaceCarePresentationFixture,
 } from "./game/testing/m53SurfaceCareFixtures";
 
+// Preload the issue-local consumer without retaining it in the delivery-budgeted entry.
+void import("./game/competition/rewardPlacement");
+
 function textSharedOutcome(outcome: SharedShotOutcome | null | undefined) {
   if (!outcome) return null;
   return {
@@ -4473,7 +4476,7 @@ export default function App() {
           plantId,
           costMult,
         });
-        if (installation.net > world.cash) {
+        if (!(plantId && globalThis.__ccRP?.eligible(playerPro, plantId, course.theme ?? "parkland")) && installation.net > world.cash) {
           setPaintError(t("error.insufficientFunds", { amount: formatCurrency(installation.net) }));
           return;
         }
@@ -4557,7 +4560,7 @@ export default function App() {
       const validation = canPlaceDecoration(course, decoration);
       if (!validation.ok) { setPaintError(t("decor.invalid", { reason: validation.reason ?? "invalid placement" })); return; }
       const cost = decorationCost(decoration, course.theme, costMult);
-      if (world.cash < cost) { setPaintError(t("error.insufficientFunds", { amount: formatCurrency(cost) })); return; }
+      if (!(semanticPlantId && globalThis.__ccRP?.eligible(playerPro, semanticPlantId, course.theme ?? "parkland")) && world.cash < cost) { setPaintError(t("error.insufficientFunds", { amount: formatCurrency(cost) })); return; }
       dispatch({ type: "PLACE_DECORATION", decoration });
       setPaintError(null);
       void audio.playSfx("confirm");
