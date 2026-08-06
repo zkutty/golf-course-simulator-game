@@ -16,6 +16,24 @@ test("ZK-720 renders frozen handicap scorecards on compact and desktop surfaces"
   await dismissTutorial(page);
   await page.evaluate(() => window.__coursecraftTest!.setPlayerProFixture());
 
+  await page.getByTestId("speed-1x").click();
+  await page.evaluate(() => window.advanceTime?.(1_000));
+  const firstTick = await page.evaluate(() => {
+    const rendered = JSON.parse(window.render_game_to_text?.() ?? "{}");
+    const state = window.__coursecraftTest!.state();
+    return { simulation: rendered.simulation, state: { dayMinute: state.dayMinute, golferPositions: state.golferPositions, courseHash: state.courseHash, cash: state.cash, week: state.week, speed: state.speed } };
+  });
+  await page.evaluate(() => window.__coursecraftTest!.setPlayerProFixture());
+  await page.getByTestId("speed-1x").click();
+  await page.evaluate(() => window.advanceTime?.(1_000));
+  const replayedTick = await page.evaluate(() => {
+    const rendered = JSON.parse(window.render_game_to_text?.() ?? "{}");
+    const state = window.__coursecraftTest!.state();
+    return { simulation: rendered.simulation, state: { dayMinute: state.dayMinute, golferPositions: state.golferPositions, courseHash: state.courseHash, cash: state.cash, week: state.week, speed: state.speed } };
+  });
+  expect(replayedTick).toEqual(firstTick);
+  expect(firstTick.simulation.dayMinute).toBeGreaterThan(0);
+
   await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-player-pro").click();
   const panel = page.getByTestId("player-pro-panel");
@@ -73,6 +91,7 @@ test("ZK-720 renders frozen group net cards with format and withdrawal evidence"
   await card.locator("summary").first().click();
   await expect(card.getByRole("table").first()).toContainText("Gross");
   await expect(card.getByRole("table").first()).toContainText("Net");
+  await card.screenshot({ path: "artifacts/zk721-group-scorecard.png" });
   const state = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro);
   expect(state.activeChallengeGroupRound.golfers[0]).toMatchObject({ handicap: expect.any(Object), scorecard: expect.any(Array), withdrawn: false });
   expect(errors).toEqual([]);

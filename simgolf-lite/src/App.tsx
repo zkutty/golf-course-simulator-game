@@ -311,20 +311,8 @@ function textCompletedRound(round: PlayerCareerRound | null | undefined) {
 
 function textHandicapProfile(profile: PlayerProCareer["handicapProfile"]) {
   return {
-    handicapIndex: profile.handicapIndex,
-    source: profile.source,
-    confidence: profile.confidence,
-    scoreRecords: profile.scoreRecords.slice(-20).map((record) => ({
-      id: record.id,
-      roundId: record.roundId,
-      postingState: record.postingState,
-      source: record.source,
-      snapshot: record.snapshot,
-      eligibility: record.eligibility,
-      evidence: record.evidence,
-      handicapIndexAfter: record.handicapIndexAfter ?? null,
-      calculation: record.calculation ?? null,
-    })),
+    ...profile,
+    scoreRecords: profile.scoreRecords.slice(-20),
   };
 }
 import {

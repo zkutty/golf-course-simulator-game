@@ -1,5 +1,15 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-721 M66 certification — 2026-08-06
+
+- Certified the exact career handicap and scorecard acceptance against local ZK-720 commit `b8d6ee7`: individual/team formulas (plus, mixed, rounding boundaries, best-count bands, movement caps, Stableford, adjusted limits), automatic/manual stroke indexes and snapshots, 9/18 source eligibility/exclusions, hostile persistence/idempotency, and confidence/practice/feedback/concession/dispersion interactions.
+- Added the consolidated `test:cert:m66` fixture; 8 files / 106 tests pass. Full CI passes 170 files / 1,338 tests with one intentional skip plus 5/5 audio tests.
+- Repaired two directly evidenced ZK-720 release defects without changing policy: removed the unstable `playable` array from preview memo dependencies, and compacted the text-state score-record projection. TypeScript and lint/i18n pass; lint retains 12 pre-existing warnings.
+- Production build and all embedded asset/delivery audits pass. Initial JavaScript is 1,608,466 bytes, 253 bytes below budget; the production dependency audit reports zero vulnerabilities.
+- Scorecard Playwright passes 2/2 with deterministic time replay and clean console. Desktop, compact, 18-hole group, and bundled-client renderer captures were visually inspected; client text state is retained and no error artifact was produced.
+- `npm run release:audit` remains red for pre-existing rc.5/rc.4 version drift and a non-allowlisted `DeferredSurface` console call, plus its expected clean-tree requirement. See `docs/M66_CERTIFICATION.md`; do not expand ZK-721 into those release-process items.
+- No reward/escrow policy, formula, eligibility, broad UI, Linear, commit, or push changes were made.
+
 ## ZK-695 responsive Design dock — 2026-08-03
 
 - Replaced the fixed, always-expanded course overlay with a safe collapsed

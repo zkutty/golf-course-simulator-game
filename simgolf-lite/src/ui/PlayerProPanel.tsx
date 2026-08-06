@@ -228,10 +228,9 @@ export function PlayerProPanel(props: {
   const opponents = useMemo(() => eligiblePlayerOpponents(props.world), [props.world]);
   const events = tournamentCalendar(props.world).events.filter((event) => event.status === "scheduled");
   const roundPreview = useMemo(() => {
-    if (!playable.some((layout) => layout.id === layoutId)) return null;
     const started = startPlayableRound({ course: props.course, world: props.world, layoutId, teeSet, pinRotation, day: props.day });
     return started.ok ? started.round : null;
-  }, [layoutId, pinRotation, playable, props.course, props.day, props.world, teeSet]);
+  }, [layoutId, pinRotation, props.course, props.day, props.world, teeSet]);
 
   const tabs: ProTab[] = ["career", "play", "training", "matches", "tournaments"];
   return (
