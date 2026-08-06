@@ -6,6 +6,7 @@ import type {
   SideBetKind,
 } from "./types";
 import { courseHandicap, strokesByHole } from "./handicap";
+import { stablefordPoints } from "./scoring";
 import {
   captureTeamHandicapSnapshots,
   chooseDeterministicScrambleBall,
@@ -44,7 +45,56 @@ const MAX_AI_TURNS = 960;
 
 export type ChallengeGroupController = "player" | "ai";
 export type ChallengeGroupPhase = "awaiting_player" | "awaiting_ball_choice" | "complete";
-export type ChallengeGroupScoringMode = "gross-stroke" | "net-stroke" | "gross-match" | "net-match";
+export type ChallengeGroupScoringMode = "gross-stroke" | "net-stroke" | "gross-match" | "net-match" | "net-stableford";
+export type ChallengeIndividualContestKind = "skins" | "nassau" | "closest-to-pin" | "longest-drive";
+export type ChallengeIndividualResultStatus = "pending" | "won" | "tied" | "carried" | "not-awarded" | "withdrawn";
+
+/**
+ * This is deliberately an authority for results and evidence only.  It has no
+ * stake, currency, escrow, inventory, or reward fields: ZK-748 owns policy
+ * and any future settlement integration.
+ */
+export interface ChallengeIndividualContest {
+  id: string;
+  kind: ChallengeIndividualContestKind;
+  /** Empty means every hole; Nassau is always the fixed 18-hole fixture. */
+  holeIds?: readonly string[];
+}
+
+export interface ChallengeIndividualResult {
+  contestId: string;
+  segment: string;
+  holeId?: string;
+  status: ChallengeIndividualResultStatus;
+  winnerIds: readonly string[];
+  /** Number of tied prior skins represented by this result, never a value. */
+  carryHoles: number;
+  reason?: string;
+}
+
+export interface ChallengeMeasurementRecord {
+  id: string;
+  contestId: string;
+  holeId: string;
+  participantId: string;
+  shotId: string;
+  club: string;
+  start: PlayerProPoint;
+  end: PlayerProPoint;
+  lie: string;
+  measurement: number;
+  eligible: boolean;
+  rejectionReason?: string;
+}
+
+export interface ChallengeIndividualAuthority {
+  version: 1;
+  format: ChallengeGroupScoringMode;
+  handicapSnapshots: readonly { playerId: string; playingHandicap: number; strokesByHole: readonly number[] }[];
+  contests: readonly ChallengeIndividualContest[];
+  results: readonly ChallengeIndividualResult[];
+  measurements: readonly ChallengeMeasurementRecord[];
+}
 
 export interface ChallengeGroupEquipmentSnapshot {
   loadout: EquipmentLoadout;
@@ -158,6 +208,8 @@ export interface ChallengeGroupRound {
   golfers: readonly ChallengeGroupGolfer[];
   /** Present only for ZK-728's explicit, frozen 2v2 formats. */
   teamAuthority?: ChallengeTeamAuthority;
+  /** Present only for the policy-neutral individual formats in ZK-727. */
+  individualAuthority?: ChallengeIndividualAuthority;
   match: ChallengeMatchState;
   sideBets: readonly ChallengeSideBetState[];
   reactions: readonly { golferId: string; reaction: HoleReaction }[];
@@ -196,6 +248,9 @@ export interface StartChallengeGroupRoundArgs {
   teamFormat?: ChallengeTeamFormat;
   scoringMode?: ChallengeGroupScoringMode;
   sideBets?: readonly ChallengeSideBetState[];
+  /** Explicit policy-neutral formats; omitted preserves the existing friendly fixture behaviour. */
+  individualFormat?: ChallengeGroupScoringMode;
+  individualContests?: readonly ChallengeIndividualContest[];
   rngSeed: number;
   startedWeek: number;
   startedDay: number;
@@ -370,6 +425,115 @@ function buildMatch(golfers: readonly ChallengeGroupGolfer[], scoringMode: Chall
     concessions: [],
     withdrawals: [],
   };
+}
+
+function buildIndividualAuthority(
+  golfers: readonly ChallengeGroupGolfer[],
+  format: ChallengeGroupScoringMode,
+  contests: readonly ChallengeIndividualContest[],
+  course: PlayerRoundCourseSnapshot,
+): ChallengeIndividualAuthority {
+  if (format === "net-stableford" || format === "gross-stroke" || format === "net-stroke" || format === "gross-match" || format === "net-match") {
+    // exhaustive guard keeps future scoring additions intentional
+  } else throw new Error("Individual competition format is unsupported.");
+  if (new Set(contests.map((contest) => contest.id)).size !== contests.length || contests.some((contest) => !contest.id || !["skins", "nassau", "closest-to-pin", "longest-drive"].includes(contest.kind))) {
+    throw new Error("Individual contests require unique IDs and supported kinds.");
+  }
+  for (const contest of contests) {
+    if (contest.holeIds && (new Set(contest.holeIds).size !== contest.holeIds.length || contest.holeIds.some((id) => !course.holes.some((hole) => hole.id === id)))) throw new Error("Individual contest references an unknown or duplicate hole.");
+    if (contest.kind === "nassau" && (golfers.length !== 2 || course.holes.length !== 18 || contest.holeIds?.length || (format !== "gross-match" && format !== "net-match"))) throw new Error("Nassau requires exactly two golfers, a gross/net match format, and an 18-hole fixture.");
+  }
+  return freeze({
+    version: 1,
+    format,
+    handicapSnapshots: golfers.map((golfer) => ({ playerId: golfer.id, playingHandicap: golfer.handicap.playingHandicap, strokesByHole: [...golfer.handicap.strokesByHole] })),
+    contests: clone(contests),
+    results: [],
+    measurements: [],
+  });
+}
+
+function individualHoleScores(round: ChallengeGroupRound, golfers: readonly ChallengeGroupGolfer[]): { scores: Record<string, number>; winnerIds: string[] } {
+  const mode = round.individualAuthority!.format;
+  const hole = round.course.holes[round.currentHoleIndex];
+  const values = golfers.filter((golfer) => !golfer.withdrawn).flatMap((golfer) => {
+    const card = golfer.scorecard[round.currentHoleIndex];
+    if (card.gross == null || card.net == null) return [];
+    const value = mode === "gross-stroke" || mode === "gross-match" ? card.gross
+      : mode === "net-stableford" ? stablefordPoints(card.gross, hole.par, card.handicapStrokes)
+        : card.net;
+    return [{ id: golfer.id, value }];
+  });
+  const scores = Object.fromEntries(values.map((entry) => [entry.id, entry.value]));
+  if (!values.length) return { scores, winnerIds: [] };
+  const target = mode === "net-stableford" ? Math.max(...values.map((entry) => entry.value)) : Math.min(...values.map((entry) => entry.value));
+  return { scores, winnerIds: values.filter((entry) => entry.value === target).map((entry) => entry.id) };
+}
+
+function contestApplies(contest: ChallengeIndividualContest, holeId: string): boolean {
+  return !contest.holeIds?.length || contest.holeIds.includes(holeId);
+}
+
+/** Scores a fixed Nassau segment as match play, never as aggregate stroke play. */
+export function scoreChallengeNassauSegment(
+  golfers: readonly ChallengeGroupGolfer[],
+  format: "gross-match" | "net-match",
+  start: number,
+  end: number,
+): Pick<ChallengeIndividualResult, "status" | "winnerIds" | "reason"> {
+  if (golfers.length !== 2 || start < 0 || end < start) throw new Error("Nassau segment requires two golfers and a valid range.");
+  if (golfers.some((golfer) => golfer.withdrawn || golfer.scorecard.slice(start, end + 1).some((card) => card.status === "withdrawn"))) {
+    return { status: "withdrawn", winnerIds: [], reason: "A competitor withdrew before the segment was complete." };
+  }
+  const wins = new Map(golfers.map((golfer) => [golfer.id, 0]));
+  for (let index = start; index <= end; index += 1) {
+    const values = golfers.map((golfer) => ({ id: golfer.id, score: format === "gross-match" ? golfer.scorecard[index]?.gross : golfer.scorecard[index]?.net }));
+    if (values.some((entry) => entry.score == null)) return { status: "withdrawn", winnerIds: [], reason: "A competitor has no completed score for the segment." };
+    if (values[0].score! < values[1].score!) wins.set(values[0].id, wins.get(values[0].id)! + 1);
+    else if (values[1].score! < values[0].score!) wins.set(values[1].id, wins.get(values[1].id)! + 1);
+  }
+  const [first, second] = golfers;
+  const firstWins = wins.get(first.id)!;
+  const secondWins = wins.get(second.id)!;
+  if (firstWins === secondWins) return { status: "tied", winnerIds: [first.id, second.id], reason: "Match segment halved." };
+  return { status: "won", winnerIds: [firstWins > secondWins ? first.id : second.id] };
+}
+
+function settleIndividualHole(round: ChallengeGroupRound, golfers: readonly ChallengeGroupGolfer[]): ChallengeIndividualAuthority | undefined {
+  const authority = round.individualAuthority;
+  if (!authority) return undefined;
+  const hole = round.course.holes[round.currentHoleIndex];
+  const { winnerIds } = individualHoleScores(round, golfers);
+  const nextResults = [...authority.results];
+  for (const contest of authority.contests) {
+    if (!contestApplies(contest, hole.id)) continue;
+    if (contest.kind === "skins") {
+      const prior = [...nextResults].reverse().find((result) => result.contestId === contest.id && result.status === "carried")?.carryHoles ?? 0;
+      nextResults.push(winnerIds.length === 1
+        ? { contestId: contest.id, segment: hole.id, holeId: hole.id, status: "won", winnerIds, carryHoles: prior }
+        : { contestId: contest.id, segment: hole.id, holeId: hole.id, status: "carried", winnerIds: [], carryHoles: prior + 1, reason: winnerIds.length ? "Hole tied; carry remains results-only." : "No eligible completed score." });
+      continue;
+    }
+    if (contest.kind === "nassau") continue; // fixed segments are resolved at 9 and 18 below
+    const records = authority.measurements.filter((entry) => entry.contestId === contest.id && entry.holeId === hole.id && entry.eligible);
+    const withdrawn = golfers.some((golfer) => golfer.withdrawn);
+    if (!records.length) nextResults.push({ contestId: contest.id, segment: hole.id, holeId: hole.id, status: withdrawn ? "withdrawn" : "not-awarded", winnerIds: [], carryHoles: 0, reason: withdrawn ? "A competitor withdrew before this contest could be completed." : "No eligible measurement evidence." });
+    else {
+      const target = contest.kind === "closest-to-pin" ? Math.min(...records.map((entry) => entry.measurement)) : Math.max(...records.map((entry) => entry.measurement));
+      const winners = records.filter((entry) => entry.measurement === target).map((entry) => entry.participantId);
+      nextResults.push({ contestId: contest.id, segment: hole.id, holeId: hole.id, status: winners.length === 1 ? "won" : "tied", winnerIds: winners, carryHoles: 0, ...(winners.length > 1 ? { reason: "Equal eligible measurements." } : {}) });
+    }
+  }
+  for (const contest of authority.contests.filter((entry) => entry.kind === "nassau")) {
+    const segments = round.currentHoleIndex === 8 ? [{ name: "front", start: 0, end: 8 }]
+      : round.currentHoleIndex === 17 ? [{ name: "back", start: 9, end: 17 }, { name: "overall", start: 0, end: 17 }]
+        : [];
+    for (const segment of segments) {
+      const outcome = scoreChallengeNassauSegment(golfers, authority.format as "gross-match" | "net-match", segment.start, segment.end);
+      nextResults.push({ contestId: contest.id, segment: segment.name, status: outcome.status, winnerIds: outcome.winnerIds, carryHoles: 0, ...(outcome.reason ? { reason: outcome.reason } : {}) });
+    }
+  }
+  return { ...authority, results: nextResults };
 }
 
 function playableRound(round: ChallengeGroupRound, golfer: ChallengeGroupGolfer): PlayerPlayableRound {
@@ -564,6 +728,7 @@ function completeOrAdvanceHole(round: ChallengeGroupRound, golfers: readonly Cha
     return { ...round, golfers, activeGolferId: nextGolferId(round, golfers) };
   }
   const settled = settleCompletedHole(round, golfers);
+  const individualAuthority = settleIndividualHole(round, settled.golfers);
   if (round.currentHoleIndex >= round.course.holes.length - 1) {
     return freeze({
       ...round,
@@ -571,6 +736,7 @@ function completeOrAdvanceHole(round: ChallengeGroupRound, golfers: readonly Cha
       activeGolferId: null,
       golfers: settled.golfers,
       reactions: settled.reactions,
+      ...(individualAuthority ? { individualAuthority } : {}),
       match: { ...settled.match, status: "complete" },
       completedWeek: round.startedWeek,
       completedDay: round.startedDay,
@@ -595,6 +761,7 @@ function completeOrAdvanceHole(round: ChallengeGroupRound, golfers: readonly Cha
     golfers: golfersForNext,
     match: settled.match,
     reactions: settled.reactions,
+    ...(individualAuthority ? { individualAuthority } : {}),
     activeGolferId: null,
     ...(sharedTeamBall ? {
       teamAuthority: {
@@ -892,6 +1059,8 @@ export function startChallengeGroupRound(args: StartChallengeGroupRoundArgs): Ch
     const teamIds = [...new Set(args.participants.map((participant) => participant.teamId))];
     if (args.participants.length !== 4 || teamIds.length !== 2 || teamIds.some((id) => !id || args.participants.filter((participant) => participant.teamId === id).length !== 2)) throw new Error("Team formats require exactly two stable teams of two golfers.");
   }
+  if (args.teamFormat && (args.individualFormat || args.individualContests?.length)) throw new Error("Individual competition authority cannot be combined with a team format.");
+  if (args.teamFormat && args.scoringMode === "net-stableford") throw new Error("Team Stableford requires its own team authority.");
   if (args.course.holes.length !== 9 && args.course.holes.length !== 18) throw new Error("Challenge groups require an authoritative 9- or 18-hole route.");
   if (args.course.tiles.length !== args.course.width * args.course.height || args.course.elevations.length !== args.course.tiles.length) throw new Error("Challenge group course geometry is incomplete.");
   if (args.rulesSnapshot && !decodeControlledRoundSnapshotV2(args.rulesSnapshot).ok) throw new Error("Challenge group rules snapshot is invalid.");
@@ -918,6 +1087,9 @@ export function startChallengeGroupRound(args: StartChallengeGroupRoundArgs): Ch
   const teamAuthority = args.teamFormat ? buildTeamAuthority(golfers, args.teamFormat, args.scoringMode ?? "net-match", course) : undefined;
   if (teamAuthority?.format === "four-ball") golfers = applyFourBallHandicaps(golfers, teamAuthority);
   const honorsOrder = golfers.map((golfer) => golfer.id);
+  const individualAuthority = !args.teamFormat && (args.individualFormat || args.individualContests?.length || args.scoringMode === "net-stableford")
+    ? buildIndividualAuthority(golfers, args.individualFormat ?? args.scoringMode ?? "net-match", args.individualContests ?? [], course)
+    : undefined;
   const initial: ChallengeGroupRound = {
     version: 1,
     id: args.id,
@@ -932,6 +1104,7 @@ export function startChallengeGroupRound(args: StartChallengeGroupRoundArgs): Ch
     honorsOrder,
     golfers,
     ...(teamAuthority ? { teamAuthority } : {}),
+    ...(individualAuthority ? { individualAuthority } : {}),
     match: buildMatch(golfers, args.scoringMode ?? "net-match"),
     sideBets: freeze(args.sideBets ?? []),
     reactions: [],
@@ -1007,6 +1180,58 @@ export function withdrawChallengeGroupGolfer(round: ChallengeGroupRound, golferI
   return runAiUntilPlayer(next);
 }
 
+export interface ChallengeMeasurementInput {
+  contestId: string;
+  participantId: string;
+  holeId: string;
+  shotId: string;
+  club: string;
+  start: PlayerProPoint;
+  end: PlayerProPoint;
+  lie: string;
+  measurement: number;
+}
+
+/**
+ * Records contest evidence without deciding anything of value. Invalid claims
+ * are retained as rejected audit records rather than silently disappearing.
+ */
+export function recordChallengeGroupMeasurement(round: ChallengeGroupRound, input: ChallengeMeasurementInput): ChallengeGroupRound {
+  const authority = round.individualAuthority;
+  if (!authority) throw new Error("This round has no individual competition authority.");
+  const contest = authority.contests.find((entry) => entry.id === input.contestId);
+  const golfer = round.golfers.find((entry) => entry.id === input.participantId);
+  const shot = golfer?.shots.find((entry) => entry.id === input.shotId);
+  const accepted = Boolean(contest && (contest.kind === "closest-to-pin" || contest.kind === "longest-drive") && golfer && shot
+    && shot.holeId === input.holeId && contestApplies(contest, input.holeId) && point(input.start) && point(input.end)
+    && typeof input.club === "string" && input.club.length > 0 && typeof input.lie === "string" && input.lie.length > 0
+    && Number.isFinite(input.measurement) && input.measurement >= 0 && !golfer.withdrawn);
+  const rejectionReason = accepted ? undefined
+    : !contest ? "Unknown contest."
+      : contest.kind !== "closest-to-pin" && contest.kind !== "longest-drive" ? "Contest does not accept measurement evidence."
+        : !golfer ? "Unknown participant."
+          : !shot ? "Shot does not belong to the participant."
+            : shot.holeId !== input.holeId ? "Shot belongs to a different hole."
+              : !contestApplies(contest, input.holeId) ? "Contest is not active on this hole."
+                : golfer.withdrawn ? "Participant withdrew."
+                  : "Measurement evidence is malformed.";
+  const record: ChallengeMeasurementRecord = {
+    id: `measurement-${round.id}-${authority.measurements.length + 1}`,
+    contestId: input.contestId,
+    holeId: input.holeId,
+    participantId: input.participantId,
+    shotId: input.shotId,
+    club: input.club,
+    start: clone(input.start),
+    end: clone(input.end),
+    lie: input.lie,
+    measurement: input.measurement,
+    eligible: accepted,
+    ...(rejectionReason ? { rejectionReason } : {}),
+  };
+  return freeze({ ...round, individualAuthority: { ...authority, measurements: [...authority.measurements, record] } });
+}
+
 function validateShot(shot: PlayerShotTrace): boolean {
   return typeof shot.id === "string" && typeof shot.holeId === "string" && Number.isInteger(shot.shotNumber)
     && point(shot.from) && point(shot.aim) && point(shot.rest) && Number.isFinite(shot.seed)
@@ -1060,6 +1285,17 @@ function validateRound(round: ChallengeGroupRound): string | null {
   if (new Set(shotIds).size !== shotIds.length) return "ChallengeGroupRound shot IDs are not unique.";
   if (round.turnEvidence.some((turn) => !shotIds.includes(turn.shotId))) return "ChallengeGroupRound turn evidence references a missing shot.";
   if (!Array.isArray(round.sideBets) || round.sideBets.some((sideBet) => !validSideBet(sideBet)) || new Set(round.sideBets.map((sideBet) => sideBet.id)).size !== round.sideBets.length) return "ChallengeGroupRound side-bet state is invalid.";
+  if (round.individualAuthority) {
+    const authority = round.individualAuthority;
+    if (round.teamAuthority || authority.version !== 1 || !["gross-stroke", "net-stroke", "gross-match", "net-match", "net-stableford"].includes(authority.format)
+      || authority.handicapSnapshots.length !== round.golfers.length
+      || authority.handicapSnapshots.some((snapshot, index) => snapshot.playerId !== round.golfers[index].id || snapshot.playingHandicap !== round.golfers[index].handicap.playingHandicap || JSON.stringify(snapshot.strokesByHole) !== JSON.stringify(round.golfers[index].handicap.strokesByHole))) return "ChallengeGroupRound frozen individual handicaps drifted.";
+    if (new Set(authority.contests.map((contest) => contest.id)).size !== authority.contests.length
+      || authority.contests.some((contest) => !contest.id || !["skins", "nassau", "closest-to-pin", "longest-drive"].includes(contest.kind) || contest.holeIds?.some((id) => !round.course.holes.some((hole) => hole.id === id)))) return "ChallengeGroupRound individual contest authority is invalid.";
+    if (authority.contests.some((contest) => contest.kind === "nassau" && (round.golfers.length !== 2 || round.course.holes.length !== 18 || contest.holeIds?.length || (authority.format !== "gross-match" && authority.format !== "net-match")))) return "ChallengeGroupRound Nassau fixture is invalid.";
+    if (authority.measurements.some((entry, index) => entry.id !== `measurement-${round.id}-${index + 1}` || !authority.contests.some((contest) => contest.id === entry.contestId) || !round.golfers.some((golfer) => golfer.id === entry.participantId) || !round.course.holes.some((hole) => hole.id === entry.holeId) || !point(entry.start) || !point(entry.end) || !Number.isFinite(entry.measurement) || entry.measurement < 0 || typeof entry.eligible !== "boolean" || (entry.eligible && entry.rejectionReason))) return "ChallengeGroupRound measurement evidence is invalid.";
+    if (authority.results.some((result) => !authority.contests.some((contest) => contest.id === result.contestId) || !["pending", "won", "tied", "carried", "not-awarded", "withdrawn"].includes(result.status) || !Number.isInteger(result.carryHoles) || result.carryHoles < 0 || result.winnerIds.some((id) => !round.golfers.some((golfer) => golfer.id === id)))) return "ChallengeGroupRound individual results are invalid.";
+  }
   if (!round.match || !Array.isArray(round.match.teams) || !Array.isArray(round.match.holeResults) || !Array.isArray(round.match.standings)) return "ChallengeGroupRound match state is invalid.";
   if (round.match.teams.some((team) => !team.id || !team.playerIds.length || team.playerIds.some((id: string) => !round.golfers.some((golfer) => golfer.id === id)))) return "ChallengeGroupRound team membership is invalid.";
   if (round.teamAuthority) {
@@ -1162,6 +1398,7 @@ export function challengeGroupRoundTextState(round: ChallengeGroupRound) {
     })),
     match: round.match,
     teamAuthority: round.teamAuthority ?? null,
+    individualAuthority: round.individualAuthority ?? null,
     individualGrossEvidence: challengeGroupIndividualGrossEvidence(round),
     sideBets: round.sideBets,
     recentTurn,
