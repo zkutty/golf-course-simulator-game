@@ -176,6 +176,19 @@ export const PIN_ROTATIONS = ["A", "B", "C"] as const;
 export type PinRotation = (typeof PIN_ROTATIONS)[number];
 export type HoleIndexSource = "auto" | "manual" | "legacy";
 
+/**
+ * Bounded attribution retained by an installed portable hole. The source
+ * template, confidence evidence, placement plan, and source asset deliberately
+ * remain outside the save; only the identity and credit needed after install
+ * are persisted.
+ */
+export interface HoleTemplateAttribution {
+  templateId: string;
+  sourceLabel: string;
+  licenseName?: string;
+  attribution?: string;
+}
+
 export interface Hole {
   /** Stable identity used by layouts, records, events, and navigation. */
   id?: string;
@@ -197,6 +210,8 @@ export interface Hole {
   holeIndex?: number;
   /** Provenance prevents publish from silently replacing an authored index. */
   holeIndexSource?: HoleIndexSource;
+  /** Compact portable-template credit; never contains the full blueprint. */
+  templateAttribution?: HoleTemplateAttribution;
 }
 
 export type CourseOperatingState = "open" | "closed";

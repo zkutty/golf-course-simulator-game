@@ -1,6 +1,13 @@
 import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation, PlantId, SurfaceFeature, SurfaceRepairKind } from "../game/models/types";
 import type { GreenSurfaceV1 } from "../game/greens/greenSurface";
 import type { PropertyCommand } from "../game/property/property";
+import type { HoleTemplatePlacementPlanV1 } from "../game/holeTemplates/types";
+
+/** One optimistic-concurrency transaction produced by the pure placement preview. */
+export type HoleTemplateMutationAction = {
+  type: "PLACE_HOLE_TEMPLATE";
+  plan: HoleTemplatePlacementPlanV1;
+};
 
 // Actions that mutate terrain (increment terrainVersion)
 export type TerrainMutationAction =
@@ -92,5 +99,6 @@ export type Action =
   | MarkerMutationAction
   | EconomyMutationAction
   | MobilityBusinessAction
+  | HoleTemplateMutationAction
   | { type: "SET_COURSE_LAYOUTS"; course: Course }
   | UIAction;

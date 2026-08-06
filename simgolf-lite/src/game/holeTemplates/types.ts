@@ -149,7 +149,9 @@ export type HoleTemplatePlacementBlockerCode =
   | "invalid_natural_feature"
   | "invalid_decoration"
   | "duplicate_hole_id"
-  | "insufficient_funds";
+  | "insufficient_funds"
+  | "bankrupt"
+  | "active_player_round";
 
 export interface HoleTemplatePlacementBlocker {
   code: HoleTemplatePlacementBlockerCode;
@@ -193,6 +195,12 @@ export interface HoleTemplateVersionMutation {
   after: HoleTemplateTargetVersions;
 }
 
+export interface HoleTemplateLayoutMutation {
+  courseId: string;
+  beforeDraftHoleIds: string[];
+  afterDraftHoleIds: string[];
+}
+
 export interface HoleTemplatePlacementMutations {
   terrain: HoleTemplateTerrainMutation[];
   elevations: HoleTemplateElevationMutation[];
@@ -200,6 +208,7 @@ export interface HoleTemplatePlacementMutations {
   addObstacles: Obstacle[];
   addDecorations: Decoration[];
   addHole: Hole;
+  layout: HoleTemplateLayoutMutation;
   cashDelta: number;
   versions: HoleTemplateVersionMutation;
 }

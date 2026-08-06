@@ -53,6 +53,73 @@ import {
 } from "../game/conditions/surfaceCare";
 import { normalizeGreenSurfaceV1, withNormalizedGreenContract } from "../game/greens/greenSurface";
 import { fineGreenEarthworkSteps } from "../game/greens/fineGreenSculpt";
+import { normalizeCourseLayouts } from "../game/models/courseLayouts";
+import {
+  canonicalHoleTemplatePlanIdentityJson,
+  planHoleTemplatePlacement,
+} from "../game/holeTemplates/placement";
+import { sha256Hex } from "../game/holeTemplates/serialization";
+import type {
+  HoleTemplatePlacement,
+  HoleTemplatePlacementPlanV1,
+  HoleTemplateTargetVersions,
+} from "../game/holeTemplates/types";
+
+function holeTemplateVersions(state: GameState): HoleTemplateTargetVersions {
+  return {
+    terrainVersion: state.terrainVersion,
+    obstaclesVersion: state.obstaclesVersion,
+    markersVersion: state.markersVersion,
+    economyVersion: state.economyVersion,
+  };
+}
+
+function placementRequestFromPlan(plan: HoleTemplatePlacementPlanV1): HoleTemplatePlacement | null {
+  const placement = plan?.placement;
+  if (!placement || typeof placement !== "object") return null;
+  return {
+    origin: placement.origin,
+    rotation: placement.rotation,
+    mirrorX: placement.mirrorX,
+    elevationPolicy: placement.elevationPolicy,
+    ...(placement.baseElevation === null ? {} : { baseElevation: placement.baseElevation }),
+    holeId: placement.holeId,
+    ...(placement.holeName !== undefined ? { holeName: placement.holeName } : {}),
+  };
+}
+
+/**
+ * Verify an untrusted preview against both its own canonical bytes and a fresh
+ * plan over current authoritative state. Only the fresh plan is ever applied.
+ */
+function verifiedHoleTemplatePlan(state: GameState, proposed: HoleTemplatePlacementPlanV1): HoleTemplatePlacementPlanV1 | null {
+  try {
+    if (
+      !proposed || proposed.format !== "coursecraft-hole-placement-plan" || proposed.version !== 1
+      || proposed.identity?.algorithm !== "SHA-256" || !/^[a-f0-9]{64}$/.test(proposed.identity.value)
+      || proposed.canApply !== true || !Array.isArray(proposed.blockers) || proposed.blockers.length !== 0
+    ) return null;
+    const placement = placementRequestFromPlan(proposed);
+    if (!placement) return null;
+    const suppliedHash = sha256Hex(canonicalHoleTemplatePlanIdentityJson(proposed));
+    if (suppliedHash !== proposed.identity.value) return null;
+    const currentVersions = holeTemplateVersions(state);
+    if ((Object.keys(currentVersions) as Array<keyof HoleTemplateTargetVersions>).some((key) => proposed.targetVersions?.[key] !== currentVersions[key])) return null;
+    const planned = planHoleTemplatePlacement({
+      course: state.course,
+      world: state.world,
+      template: proposed.template,
+      placement,
+      targetVersions: currentVersions,
+    });
+    if (planned.status !== "planned" || !planned.plan.canApply || planned.plan.blockers.length > 0) return null;
+    return planned.plan.identity.value === proposed.identity.value ? planned.plan : null;
+  } catch {
+    // Runtime callers and imported automation can bypass TypeScript. Any
+    // malformed carrier therefore fails closed before a state object is made.
+    return null;
+  }
+}
 
 /**
  * Apply a core editor/economy action to game state. Long-running live-simulation
@@ -80,6 +147,45 @@ export function applyAction(state: GameState, action: Action): GameState {
   let economyVersion = state.economyVersion;
 
   switch (action.type) {
+    case "PLACE_HOLE_TEMPLATE": {
+      const plan = verifiedHoleTemplatePlan(state, action.plan);
+      if (!plan) return state;
+
+      const course = normalizeCourseLayouts(state.course);
+      const tiles = course.tiles.slice();
+      for (const mutation of plan.mutations.terrain) tiles[mutation.index] = mutation.after;
+      const elevations = course.elevations.slice();
+      for (const mutation of plan.mutations.elevations) elevations[mutation.index] = mutation.after;
+      const removedObstacleKeys = new Set(plan.mutations.removeObstacles.map((obstacle) => `${obstacle.x},${obstacle.y}`));
+      const holes = [...course.holes, structuredClone(plan.mutations.addHole)];
+      const layouts = course.layouts!.map((layout) => layout.id === plan.mutations.layout.courseId
+        ? { ...layout, draftHoleIds: [...plan.mutations.layout.afterDraftHoleIds] }
+        : layout);
+      const placedCourse = {
+        ...course,
+        tiles,
+        elevations,
+        obstacles: course.obstacles
+          .filter((obstacle) => !removedObstacleKeys.has(`${obstacle.x},${obstacle.y}`))
+          .concat(plan.mutations.addObstacles.map((obstacle) => ({ ...obstacle }))),
+        decorations: [...(course.decorations ?? []), ...plan.mutations.addDecorations.map((decoration) => ({ ...decoration }))],
+        holes,
+        layouts,
+      };
+      const cash = state.world.cash + plan.mutations.cashDelta;
+      newState = {
+        ...newState,
+        course: withNormalizedGreenContract(reconcileSurfaceCareAfterEdit(course, placedCourse)),
+        world: {
+          ...state.world,
+          cash,
+          isBankrupt: state.world.isBankrupt || hitsLiquidityTrap(cash),
+        },
+      };
+      ({ terrainVersion, obstaclesVersion, markersVersion, economyVersion } = plan.mutations.versions.after);
+      break;
+    }
+
     case "CONFIGURE_MOBILITY_PRODUCT": {
       const result = mutateMobilityRental(state.course, state.world, { type: "configure", buildingId: action.buildingId, mode: action.mode, enabled: action.enabled, price: action.price });
       if (!result) break;

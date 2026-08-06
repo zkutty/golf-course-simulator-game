@@ -2,6 +2,7 @@ import { canonicalJson } from "../../utils/canonical";
 import { terrainCostMult } from "../balance/difficulty";
 import { isOwnedTile } from "../estate/estate";
 import { buildingTiles } from "../models/buildings";
+import { activeCourseLayout, normalizeCourseLayouts } from "../models/courseLayouts";
 import { canPlaceDecoration, decorationCost, decorationTiles } from "../models/decorations";
 import { ELEVATION_MAX, ELEVATION_MIN } from "../models/elevation";
 import {
@@ -120,7 +121,10 @@ function validateCourse(course: Course, world: World): HoleTemplatePlacementBloc
 
 function validatePlacement(placement: HoleTemplatePlacement): HoleTemplatePlacementBlocker[] {
   const blockers: HoleTemplatePlacementBlocker[] = [];
-  if (!placement || !placement.origin || !Number.isInteger(placement.origin.x) || !Number.isInteger(placement.origin.y)) {
+  if (!placement || typeof placement !== "object") {
+    return [rejectionBlocker("invalid_placement", "Placement must be an object.", "Create a placement from a verified preview.", "placement")];
+  }
+  if (!placement.origin || !Number.isInteger(placement.origin.x) || !Number.isInteger(placement.origin.y)) {
     blockers.push(rejectionBlocker("invalid_placement", "Placement origin must contain integer tile coordinates.", "Choose a tile-aligned placement origin.", "placement.origin"));
   }
   if (placement.rotation !== 0 && placement.rotation !== 1 && placement.rotation !== 2 && placement.rotation !== 3) {
@@ -207,6 +211,12 @@ function transformHole(template: HoleTemplateV1, placement: ResolvedHoleTemplate
     ...(template.hole.parByTee ? { parByTee: structuredClone(template.hole.parByTee) } : {}),
     parMode: template.hole.parMode,
     ...(template.hole.parManual !== undefined ? { parManual: template.hole.parManual } : {}),
+    templateAttribution: {
+      templateId: template.id,
+      sourceLabel: template.provenance.sourceLabel,
+      ...(template.provenance.licenseName ? { licenseName: template.provenance.licenseName } : {}),
+      ...(template.provenance.attribution ? { attribution: template.provenance.attribution } : {}),
+    },
   };
 }
 
@@ -277,11 +287,15 @@ export function planHoleTemplatePlacement(input: PlanHoleTemplatePlacementInput)
   ];
   if (rejection.length > 0) return { status: "rejected", blockers: rejection };
 
-  const { course, world } = input;
+  const course = normalizeCourseLayouts(input.course);
+  const { world } = input;
   const template = validation.value;
   const blockers: HoleTemplatePlacementBlocker[] = [];
   const warnings: string[] = [];
   if (!template.provenance.rightsAttested) addBlocker(blockers, rejectionBlocker("rights_attestation_required", "Rights to use the blueprint source have not been attested.", "Confirm you have the right to use the source before applying this plan.", "template.provenance.rightsAttested"));
+  if (world.isBankrupt) addBlocker(blockers, rejectionBlocker("bankrupt", "Bankrupt clubs cannot begin new hole construction.", "Resolve bankruptcy before applying this plan."));
+  const activeRound = world.playerPro?.activeRound;
+  if (activeRound && activeRound.phase !== "round_complete" && activeRound.phase !== "conceded") addBlocker(blockers, rejectionBlocker("active_player_round", "Course construction is locked during an active Player Pro round.", "Finish or concede the active round before applying this plan."));
   if (Math.abs(template.yardsPerTile - course.yardsPerTile) > SCALE_TOLERANCE) addBlocker(blockers, rejectionBlocker("scale_mismatch", `Template scale is ${template.yardsPerTile} yards per tile; the course uses ${course.yardsPerTile}.`, "Re-author the blueprint at the target course scale.", "template.yardsPerTile"));
   if (course.holes.length >= MAX_HOLES) addBlocker(blockers, rejectionBlocker("hole_capacity", `The estate already contains the maximum of ${MAX_HOLES} holes.`, "Remove an unused estate hole before applying this plan."));
   if (course.holes.some((hole) => hole.id === input.placement.holeId)) addBlocker(blockers, rejectionBlocker("duplicate_hole_id", `Hole identity "${input.placement.holeId}" is already in use.`, "Choose a unique installed hole ID.", "placement.holeId"));
@@ -415,6 +429,8 @@ export function planHoleTemplatePlacement(input: PlanHoleTemplatePlacementInput)
     markersVersion: beforeVersions.markersVersion + 1,
     economyVersion: beforeVersions.economyVersion + 1,
   };
+  const activeLayout = activeCourseLayout(course);
+  const beforeDraftHoleIds = [...activeLayout.draftHoleIds];
   const withoutIdentity: Omit<HoleTemplatePlacementPlanV1, "identity" | "blockers" | "warnings" | "canApply"> = {
     format: "coursecraft-hole-placement-plan",
     version: HOLE_TEMPLATE_PLAN_VERSION,
@@ -430,6 +446,11 @@ export function planHoleTemplatePlacement(input: PlanHoleTemplatePlacementInput)
       addObstacles,
       addDecorations: addDecorations.map((decoration) => ({ ...decoration })),
       addHole,
+      layout: {
+        courseId: activeLayout.id,
+        beforeDraftHoleIds,
+        afterDraftHoleIds: [...beforeDraftHoleIds, addHole.id!],
+      },
       cashDelta: money(-quote.total),
       versions: { before: beforeVersions, after: afterVersions },
     },
