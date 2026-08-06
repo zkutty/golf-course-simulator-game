@@ -96,6 +96,7 @@ import {
   postCompletedHandicapRound,
 } from "../competition/persistence";
 import { defaultPlayerProInventory, normalizePlayerProInventory } from "./inventoryPersistence";
+import { decodeChallengeGroupRound } from "../competition/challengeGroupRound";
 import {
   applyPracticeConfidence,
   applyRoundConfidence,
@@ -315,6 +316,7 @@ export function createDefaultPlayerPro(args: {
     careerPoints: 0,
     unlockedTechniques: ["normal"],
     activeRound: null,
+    activeChallengeGroupRound: null,
     rounds: [],
     training: [],
     challenges: [],
@@ -435,6 +437,12 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
     .filter((value, index, all) => all.indexOf(value) === index);
   if (!techniques.includes("normal")) techniques.unshift("normal");
   const normalizedActiveRound = normalizeActiveRound(candidate.activeRound);
+  const decodedChallengeGroupRound = candidate.activeChallengeGroupRound == null
+    ? null
+    : decodeChallengeGroupRound(candidate.activeChallengeGroupRound);
+  const activeChallengeGroupRound = decodedChallengeGroupRound?.ok
+    ? decodedChallengeGroupRound.round
+    : null;
   const activeRound = normalizedActiveRound && !normalizedActiveRound.handicapSnapshot
     ? {
         ...normalizedActiveRound,
@@ -474,6 +482,7 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
     careerPoints: Math.max(0, Math.floor(finite(candidate.careerPoints))),
     unlockedTechniques: techniques,
     activeRound,
+    activeChallengeGroupRound,
     rounds: Array.isArray(candidate.rounds)
       ? candidate.rounds.map(normalizeCareerRound).filter((round): round is PlayerCareerRound => round != null).slice(-MAX_HISTORY)
       : [],

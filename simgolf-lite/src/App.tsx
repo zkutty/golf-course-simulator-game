@@ -210,6 +210,7 @@ import {
   type PlayerTrainingOption,
 } from "./game/playerPro/playerPro";
 import type { TournamentEvent } from "./game/tournaments/types";
+import { challengeGroupRoundTextState, startChallengeGroupRound } from "./game/competition/challengeGroupRound";
 import { decodeControlledRoundSnapshotV2, type ControlledRoundSnapshotV2 } from "./game/rules/roundSnapshot";
 import type { SharedShotOutcome } from "./game/rules/contracts";
 import { buildArchitectureReview, defaultArchitectureFilters, withGreenStrategyHeatmap } from "./game/architecture/review";
@@ -3023,6 +3024,9 @@ export default function App() {
           recentTrace: textShotTrace(lastItem(activePlayerRound.shots)),
           editingLocked: playerRoundLocksEditing,
         } : null,
+        activeChallengeGroupRound: playerPro.activeChallengeGroupRound
+          ? challengeGroupRoundTextState(playerPro.activeChallengeGroupRound)
+          : null,
       },
       editor: {
         mode: editorMode,
@@ -3231,6 +3235,87 @@ export default function App() {
         };
         dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setShowPlayerPro(false);
+        setPlayerShotAim(null);
+      },
+      setChallengeGroupRoundFixture: () => {
+        const fixtureCourse = normalizeCourseLayouts(createRenderPerfCourse("parkland"));
+        const playerPro = createDefaultPlayerPro({ seed: 726_001, name: "Casey Fairway", background: "architect" });
+        const fixtureWorld: World = {
+          ...gameSession.getState().world,
+          cash: 250_000,
+          reputation: 75,
+          runSeed: 726_001,
+          isBankrupt: false,
+          distressWeeks: 0,
+          playerPro,
+        };
+        const layout = fixtureCourse.layouts?.find((candidate) => candidate.state === "open");
+        if (!layout) throw new Error("ChallengeGroupRound fixture requires an open course layout.");
+        const playable = startPlayableRound({
+          course: fixtureCourse,
+          world: fixtureWorld,
+          layoutId: layout.id,
+          teeSet: "member",
+          pinRotation: "A",
+        });
+        if (!playable.ok) throw new Error(`ChallengeGroupRound fixture could not start: ${playable.reason}`);
+        const group = startChallengeGroupRound({
+          id: "zk726-browser-group",
+          course: playable.round.course,
+          rulesSnapshot: playable.round.rulesSnapshot,
+          teeSet: playable.round.teeSet,
+          pinRotation: playable.round.pinRotation,
+          participants: [
+            {
+              id: "rival-alex",
+              name: "Alex Rivers",
+              controller: "ai",
+              teamId: "team-rivers",
+              skills: { ...playerPro.skills, power: 47 },
+              handicapIndex: 12.4,
+            },
+            {
+              id: playerPro.identity.id,
+              name: playerPro.identity.name,
+              controller: "player",
+              teamId: "team-fairway",
+              handedness: playerPro.identity.handedness,
+              skills: playerPro.skills,
+              confidenceSnapshot: playerPro.confidence,
+              handicapIndex: playerPro.handicapProfile.handicapIndex,
+              equipment: { loadout: playerPro.equipmentLoadout, items: playerPro.inventory.items },
+            },
+            {
+              id: "rival-blair",
+              name: "Blair Stone",
+              controller: "ai",
+              teamId: "team-rivers",
+              handedness: "left",
+              skills: { ...playerPro.skills, putting: 52 },
+              handicapIndex: 9.6,
+            },
+            {
+              id: "rival-devon",
+              name: "Devon Park",
+              controller: "ai",
+              teamId: "team-fairway",
+              skills: { ...playerPro.skills, irons: 50 },
+              handicapIndex: 7.8,
+            },
+          ],
+          scoringMode: "net-match",
+          sideBets: [],
+          rngSeed: 726_001,
+          startedWeek: fixtureWorld.week,
+          startedDay: 0,
+        });
+        const worldWithGroup = {
+          ...fixtureWorld,
+          playerPro: { ...playerPro, activeRound: null, activeChallengeGroupRound: group },
+        };
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: worldWithGroup });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, worldWithGroup, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
         setShowPlayerPro(false);
         setPlayerShotAim(null);
       },

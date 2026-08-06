@@ -6,6 +6,7 @@ import type { GreenRoundSnapshotV1 } from "../greens/greenSurface";
 import type { GreenRolloutV1 } from "../greens/greenRollout";
 import type { GreenPuttingV1 } from "../greens/greenPutting";
 import type { HandicapProfile, RoundHandicapSnapshot } from "../competition/persistence";
+import type { ChallengeGroupRound } from "../competition/challengeGroupRound";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -267,6 +268,8 @@ export interface PlayerProCareer {
   careerPoints: number;
   unlockedTechniques: PlayerShotTechnique[];
   activeRound: PlayerPlayableRound | null;
+  /** Optional ZK-726 multi-golfer authority; independent of legacy solo rounds. */
+  activeChallengeGroupRound?: ChallengeGroupRound | null;
   rounds: PlayerCareerRound[];
   training: PlayerTrainingRecord[];
   challenges: PlayerChallengeRecord[];

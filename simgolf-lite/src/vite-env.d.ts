@@ -101,6 +101,7 @@ interface Window {
     setPaintCash(cash: number): void;
     setPropertyFixture(): void;
     setPlayerProFixture(): void;
+    setChallengeGroupRoundFixture(): void;
     setM39Fixture(): void;
     setM52ReferenceBookmark(
       view: import("./game/testing/biomeAuthoring").BiomeReferenceView,

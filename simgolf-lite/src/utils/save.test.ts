@@ -27,6 +27,7 @@ import {
   weatherForDay,
 } from "../game/seasons/seasons";
 import { emptyLivingClubState } from "../game/livingClub/livingClub";
+import { startChallengeGroupRound, type ChallengeGroupRound } from "../game/competition/challengeGroupRound";
 
 function file(overrides: Record<string, unknown> = {}) {
   return {
@@ -98,6 +99,38 @@ function legacyHandicapRound(phase: "awaiting_shot" | "round_complete" = "awaiti
     startedDay: 2,
     completedWeek: phase === "round_complete" ? 4 : undefined,
   };
+}
+
+function challengeGroupRound(): ChallengeGroupRound {
+  const career = createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed, name: "Casey Fairway" });
+  const snapshot = legacyHandicapRound().course;
+  return startChallengeGroupRound({
+    id: "save-group-726",
+    course: snapshot,
+    teeSet: "member",
+    pinRotation: "A",
+    participants: [
+      {
+        id: career.identity.id,
+        name: career.identity.name,
+        controller: "player",
+        skills: career.skills,
+        handicapIndex: career.handicapProfile.handicapIndex,
+        equipment: { loadout: career.equipmentLoadout, items: career.inventory.items },
+      },
+      {
+        id: "save-rival",
+        name: "Save Rival",
+        controller: "ai",
+        skills: { ...career.skills, power: 48 },
+        handicapIndex: 11.2,
+      },
+    ],
+    sideBets: [{ id: "save-skin", kind: "skins", stake: 5, carry: 0, status: "active", settlements: [], evidence: [] }],
+    rngSeed: 726_404,
+    startedWeek: DEFAULT_WORLD.week,
+    startedDay: 0,
+  });
 }
 
 function legacyLinksOverlay(seed = 25) {
@@ -258,6 +291,35 @@ describe("save validation and migrations", () => {
     expect(result.payload.course).toEqual(DEFAULT_COURSE);
     expect(result.payload.world).toEqual(file().world);
     expect(result.migratedFrom).toBeUndefined();
+  });
+
+  it("round-trips an active ChallengeGroupRound exactly and rejects corrupt save authority", () => {
+    const group = challengeGroupRound();
+    const career = {
+      ...createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed, name: DEFAULT_WORLD.founderName }),
+      activeChallengeGroupRound: group,
+    };
+    const input = file({ world: { ...DEFAULT_WORLD, playerPro: career } });
+    const persisted = payloadForPersistence(input as Parameters<typeof payloadForPersistence>[0]);
+    expect(persisted.world.playerPro?.activeChallengeGroupRound).toEqual(group);
+
+    const loaded = normalizeLoadedSaveResult(input);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.payload.world.playerPro?.activeChallengeGroupRound).toEqual(group);
+    expect(loaded.payload.world.playerPro?.activeRound).toBeNull();
+
+    const corrupt = JSON.parse(JSON.stringify(group)) as ChallengeGroupRound;
+    (corrupt as { activeGolferId: string }).activeGolferId = "unknown-golfer";
+    expect(() => payloadForPersistence({
+      ...persisted,
+      world: { ...persisted.world, playerPro: { ...career, activeChallengeGroupRound: corrupt } },
+    })).toThrow("Cannot save active ChallengeGroupRound");
+    const rejectedLoad = normalizeLoadedSaveResult(file({
+      world: { ...DEFAULT_WORLD, playerPro: { ...career, activeChallengeGroupRound: corrupt } },
+    }));
+    expect(rejectedLoad.ok).toBe(true);
+    if (rejectedLoad.ok) expect(rejectedLoad.payload.world.playerPro?.activeChallengeGroupRound).toBeNull();
   });
 
   it("round-trips inventory, equipment, appraisal identity, and rival custody without duplication", () => {

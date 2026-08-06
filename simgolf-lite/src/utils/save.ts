@@ -75,6 +75,7 @@ import {
   normalizeHandicapProfile,
 } from "../game/competition/persistence";
 import { normalizePeopleProfiles } from "../game/competition/characters";
+import { decodeChallengeGroupRound } from "../game/competition/challengeGroupRound";
 
 const KEY = "simgolf_lite_save_v1";
 export const CURRENT_SAVE_SCHEMA_VERSION = 28 as const;
@@ -252,6 +253,13 @@ function courseForPersistence(course: Course): Course {
 export function payloadForPersistence(payload: SavePayload): SavePayload {
   const handicapError = playerProHandicapError(payload.world.playerPro);
   if (handicapError) throw new Error(`Cannot save: ${handicapError}`);
+  const rawChallengeGroupRound = payload.world.playerPro?.activeChallengeGroupRound;
+  const decodedChallengeGroupRound = rawChallengeGroupRound == null
+    ? null
+    : decodeChallengeGroupRound(rawChallengeGroupRound);
+  if (decodedChallengeGroupRound && !decodedChallengeGroupRound.ok) {
+    throw new Error(`Cannot save active ChallengeGroupRound: ${decodedChallengeGroupRound.error}`);
+  }
   const course = courseForPersistence(payload.course);
   const activeRound = payload.world.playerPro?.activeRound;
   const roundTheme = normalizeBiomeKey(activeRound?.course.theme);
@@ -264,11 +272,20 @@ export function payloadForPersistence(payload: SavePayload): SavePayload {
   if (roundCompatibility && !roundCompatibility.ok) {
     throw new Error(`Cannot save active round: ${roundCompatibility.error}`);
   }
-  const world = activeRound && roundTheme
+  const worldWithChallengeGroup = decodedChallengeGroupRound?.ok
     ? {
         ...payload.world,
         playerPro: {
           ...payload.world.playerPro!,
+          activeChallengeGroupRound: decodedChallengeGroupRound.round,
+        },
+      }
+    : payload.world;
+  const world = activeRound && roundTheme
+    ? {
+        ...worldWithChallengeGroup,
+        playerPro: {
+          ...worldWithChallengeGroup.playerPro!,
           activeRound: {
             ...activeRound,
             course: {
@@ -279,7 +296,7 @@ export function payloadForPersistence(payload: SavePayload): SavePayload {
           },
         },
       }
-    : payload.world;
+    : worldWithChallengeGroup;
   return { ...payload, course, world };
 }
 
