@@ -297,6 +297,7 @@ function textCompletedRound(round: PlayerCareerRound | null | undefined) {
     penalties: round.penalties,
     scoreToPar: round.scoreToPar,
     scorecard: round.scorecard,
+    handicapSnapshot: round.handicapSnapshot ?? null,
     rulesSnapshot: textRulesSnapshot(round.rulesSnapshot),
     latestShot: textShotTrace(latestShot),
     latestSharedOutcome: textSharedOutcome(latestShot?.sharedOutcome),
@@ -305,6 +306,25 @@ function textCompletedRound(round: PlayerCareerRound | null | undefined) {
       putts: automaticPutting.reduce((total, result) => total + result.putts, 0),
       latest: automaticPutting.at(-1) ?? null,
     },
+  };
+}
+
+function textHandicapProfile(profile: PlayerProCareer["handicapProfile"]) {
+  return {
+    handicapIndex: profile.handicapIndex,
+    source: profile.source,
+    confidence: profile.confidence,
+    scoreRecords: profile.scoreRecords.slice(-20).map((record) => ({
+      id: record.id,
+      roundId: record.roundId,
+      postingState: record.postingState,
+      source: record.source,
+      snapshot: record.snapshot,
+      eligibility: record.eligibility,
+      evidence: record.evidence,
+      handicapIndexAfter: record.handicapIndexAfter ?? null,
+      calculation: record.calculation ?? null,
+    })),
   };
 }
 import {
@@ -2999,6 +3019,7 @@ export default function App() {
         careerPoints: playerPro.careerPoints,
         earnings: playerPro.earnings,
         rounds: playerPro.rounds.length,
+        handicap: textHandicapProfile(playerPro.handicapProfile),
         latestCompletedRound: textCompletedRound(lastItem(playerPro.rounds)),
         activeRound: activePlayerRound ? {
           id: activePlayerRound.id,
@@ -3019,6 +3040,7 @@ export default function App() {
             shotSlope: textCaddieGuidance.shotSlope,
           } : null,
           scorecard: activePlayerRound.scorecard,
+          handicapSnapshot: activePlayerRound.handicapSnapshot ?? null,
           rulesSnapshot: textRulesSnapshot(activePlayerRound.rulesSnapshot),
           pendingShot: textShotTrace(activePlayerRound.pendingShot),
           recentTrace: textShotTrace(lastItem(activePlayerRound.shots)),

@@ -20,6 +20,7 @@ import {
   playerTournamentEligibility,
   playerTrainingOptions,
   previewPlayableShot,
+  startPlayableRound,
   type PlayerOpponent,
   type PlayerShotSelection,
   type PlayerTrainingOption,
@@ -32,6 +33,8 @@ import { formatCurrency } from "../i18n/format";
 import type { Translator } from "../i18n/context";
 import { useI18n } from "../i18n/useI18n";
 import type { MessageKey } from "../i18n/catalog";
+import { formatHandicapIndex } from "../game/competition/persistence";
+import { courseHandicap, playingHandicapFromUnrounded, strokesByHole } from "../game/competition/handicap";
 
 type ProTab = "career" | "play" | "training" | "matches" | "tournaments";
 
@@ -137,6 +140,65 @@ function SkillGrid(props: { career: PlayerProCareer }) {
   );
 }
 
+const cardStyle = { display: "grid", gap: 6, padding: 9, borderRadius: 8, background: "rgba(255,255,255,.58)", border: "1px solid rgba(67,52,25,.14)", fontSize: 12 } as const;
+const scoreLabel = (value: number | null | undefined) => value == null ? "—" : value.toFixed(1);
+
+function HandicapSummary({ career }: { career: PlayerProCareer }) {
+  const { t } = useI18n();
+  const profile = career.handicapProfile;
+  const records = profile.scoreRecords.slice(-6).reverse();
+  const latest = records[0];
+  return <section data-testid="player-handicap-summary" aria-label={t("playerPro.handicap.title")} style={cardStyle}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><strong>{t("playerPro.handicap.title")}</strong><strong data-testid="player-handicap-index">{formatHandicapIndex(profile.handicapIndex)}</strong></div>
+    <div>{t(profile.confidence.status === "established" ? "playerPro.handicap.established" : "playerPro.handicap.provisional", { count: profile.confidence.eligibleRoundCount })}</div>
+    {latest?.calculation && <small>{t("playerPro.handicap.movement", { before: formatHandicapIndex(latest.calculation.indexBefore), after: formatHandicapIndex(latest.calculation.indexAfter), candidate: formatHandicapIndex(latest.calculation.candidateIndex), capped: latest.calculation.movementCapped ? t("playerPro.handicap.capped") : t("playerPro.handicap.uncapped") })}</small>}
+    <details>
+      <summary>{t("playerPro.handicap.history", { count: profile.scoreRecords.length })}</summary>
+      {records.length === 0 ? <small>{t("playerPro.handicap.noHistory")}</small> : <ol aria-label={t("playerPro.handicap.history", { count: profile.scoreRecords.length })} style={{ paddingLeft: 20, marginBottom: 0 }}>
+        {records.map((record) => <li key={record.id}>{record.snapshot.course.name} · {t("playerPro.handicap.record", { gross: record.evidence.grossScore, adjusted: record.evidence.adjustedGrossScore ?? "—", differential: scoreLabel(record.evidence.differential), state: record.postingState })}</li>)}
+      </ol>}
+    </details>
+  </section>;
+}
+
+function SnapshotScorecard({ round }: { round: PlayerPlayableRound }) {
+  const { t } = useI18n();
+  const snapshot = round.handicapSnapshot;
+  const course = snapshot?.course;
+  const handicap = course?.courseRating != null && course.slopeRating != null
+    ? courseHandicap(snapshot!.handicapIndex, { courseRating: course.courseRating, slopeRating: course.slopeRating, par: course.par }) : null;
+  const playing = handicap ? playingHandicapFromUnrounded(handicap.unrounded) : null;
+  const owed = playing && course && (course.holes.length === 9 || course.holes.length === 18) && course.holes.every((hole) => hole.strokeIndex != null)
+    ? strokesByHole(playing.rounded, course.holes.map((hole) => ({ id: hole.id, par: hole.par, strokeIndex: hole.strokeIndex! }))) : [];
+  return <section data-testid="player-round-scorecard" aria-label={t("playerPro.scorecard") } style={cardStyle}>
+    <strong>{t("playerPro.scorecard")}</strong>
+    {snapshot ? <>
+      <div>{t("playerPro.scorecard.setup", { tee: course!.teeSet, rating: course!.courseRating ?? "—", slope: course!.slopeRating ?? "—", par: course!.par, index: formatHandicapIndex(snapshot.handicapIndex), courseHandicap: handicap?.rounded ?? "—", playingHandicap: playing?.rounded ?? "—", allowance: "100%" })}</div>
+      <small>{snapshot.eligibility.eligible ? t("playerPro.scorecard.valid") : t("playerPro.scorecard.invalid", { reason: snapshot.eligibility.reasons.join(" ") })}</small>
+    </> : <small>{t("playerPro.scorecard.legacy")}</small>}
+    <div>{t("playerPro.scorecard.format", { format: round.kind, state: round.phase === "conceded" ? t("playerPro.scorecard.conceded") : t("playerPro.scorecard.active") })}</div>
+    <div role="table" aria-label={t("playerPro.scorecard.holes")} style={{ display: "grid", gap: 3 }}>
+      {round.scorecard.map((row, index) => <div role="row" key={row.holeId} style={{ display: "grid", gridTemplateColumns: "auto 1fr repeat(5,auto)", gap: 6 }}><span role="cell">{index + 1}</span><span role="cell">{row.name}</span><span role="cell">{t("playerPro.scorecard.par", { par: row.par })}</span><span role="cell">{t("playerPro.scorecard.index", { index: course?.holes[index]?.strokeIndex ?? "—" })}</span><span role="cell">{t("playerPro.scorecard.owed", { strokes: owed[index] ?? 0 })}</span><span role="cell">{t("playerPro.scorecard.gross", { score: row.strokes + row.penalties })}</span><span role="cell">{t("playerPro.scorecard.net", { score: row.strokes + row.penalties - (owed[index] ?? 0) })}</span></div>)}
+    </div>
+  </section>;
+}
+
+function CompetitionScorecard({ career }: { career: PlayerProCareer }) {
+  const { t } = useI18n();
+  const round = career.activeChallengeGroupRound;
+  if (!round) return null;
+  return <section data-testid="competition-scorecard" aria-label={t("playerPro.competition.title")} style={cardStyle}>
+    <strong>{t("playerPro.competition.title")}</strong>
+    <div>{t("playerPro.competition.setup", { tee: round.teeSet, rating: round.course.rating?.courseRating ?? "—", slope: round.course.rating?.slope ?? "—", par: round.course.holes.reduce((total, hole) => total + hole.par, 0), format: round.match.scoringMode })}</div>
+    <small>{t("playerPro.competition.status", { phase: round.phase, concessions: round.match.concessions.length, withdrawals: round.match.withdrawals.length })}</small>
+    {round.golfers.map((golfer) => <details key={golfer.id}><summary>{t("playerPro.competition.player", { name: golfer.name, index: formatHandicapIndex(golfer.handicap.handicapIndex), course: golfer.handicap.courseHandicap, playing: golfer.handicap.playingHandicap, withdrawn: golfer.withdrawn ? t("playerPro.competition.withdrawn") : t("playerPro.competition.playing") })}</summary>
+      <div role="table" aria-label={t("playerPro.competition.card", { name: golfer.name })} style={{ display: "grid", gap: 3, marginTop: 5 }}>
+        {golfer.scorecard.map((score, index) => <div role="row" key={score.holeId} style={{ display: "grid", gridTemplateColumns: "repeat(6,auto)", justifyContent: "space-between", gap: 5 }}><span role="cell">{index + 1}</span><span role="cell">{t("playerPro.scorecard.par", { par: score.par })}</span><span role="cell">{t("playerPro.scorecard.index", { index: score.strokeIndex })}</span><span role="cell">{t("playerPro.scorecard.owed", { strokes: score.handicapStrokes })}</span><span role="cell">{t("playerPro.scorecard.gross", { score: score.gross ?? "—" })}</span><span role="cell">{t("playerPro.scorecard.net", { score: score.net ?? "—" })}</span></div>)}
+      </div>
+    </details>)}
+  </section>;
+}
+
 export function PlayerProPanel(props: {
   career: PlayerProCareer;
   course: Course;
@@ -165,6 +227,11 @@ export function PlayerProPanel(props: {
   const options = useMemo(() => playerTrainingOptions(props.course, props.world, props.day), [props.course, props.day, props.world]);
   const opponents = useMemo(() => eligiblePlayerOpponents(props.world), [props.world]);
   const events = tournamentCalendar(props.world).events.filter((event) => event.status === "scheduled");
+  const roundPreview = useMemo(() => {
+    if (!playable.some((layout) => layout.id === layoutId)) return null;
+    const started = startPlayableRound({ course: props.course, world: props.world, layoutId, teeSet, pinRotation, day: props.day });
+    return started.ok ? started.round : null;
+  }, [layoutId, pinRotation, playable, props.course, props.day, props.world, teeSet]);
 
   const tabs: ProTab[] = ["career", "play", "training", "matches", "tournaments"];
   return (
@@ -204,6 +271,8 @@ export function PlayerProPanel(props: {
             <strong>{t("playerPro.careerPoints", { points: props.career.careerPoints })}</strong>
             <strong>{t("playerPro.earnings", { amount: formatCurrency(props.career.earnings) })}</strong>
           </div>
+          <HandicapSummary career={props.career} />
+          <CompetitionScorecard career={props.career} />
           <section>
             <h3 style={{ margin: "0 0 7px" }}>{t("playerPro.techniques")}</h3>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
@@ -221,6 +290,7 @@ export function PlayerProPanel(props: {
           <p style={{ margin: 0, fontSize: 12 }}>{t("playerPro.play.help")}</p>
           {props.career.activeRound ? <>
             <div style={{ padding: 10, borderRadius: 8, background: "#e2eedb" }}><strong>{props.career.activeRound.course.courseName}</strong><div>{t("playerPro.shot.hole", { hole: props.career.activeRound.currentHoleIndex + 1, count: props.career.activeRound.course.holes.length, name: props.career.activeRound.course.holes[props.career.activeRound.currentHoleIndex].name })}</div></div>
+            <SnapshotScorecard round={props.career.activeRound} />
             <button data-testid="resume-player-round" onClick={props.onResume}>{t("playerPro.play.resume")}</button>
           </> : <>
             <label>{t("playerPro.play.route")}<select data-testid="player-pro-route" value={layoutId} onChange={(event) => setLayoutId(event.target.value)} style={{ display: "block", width: "100%", padding: 8 }}>{layouts.map((layout) => <option key={layout.id} value={layout.id} disabled={layout.state !== "open" || layout.publishedHoleIds.length < 3}>{layout.name} · {layout.publishedHoleIds.length}</option>)}</select></label>
@@ -228,6 +298,7 @@ export function PlayerProPanel(props: {
               <label>{t("playerPro.play.tee")}<select value={teeSet} onChange={(event) => setTeeSet(event.target.value as TeeSet)} style={{ display: "block", width: "100%", padding: 8 }}><option value="forward">{t("playerPro.play.tee.forward")}</option><option value="member">{t("playerPro.play.tee.member")}</option><option value="championship">{t("playerPro.play.tee.championship")}</option></select></label>
               <label>{t("playerPro.play.pin")}<select value={pinRotation} onChange={(event) => setPinRotation(event.target.value as PinRotation)} style={{ display: "block", width: "100%", padding: 8 }}><option value="A">{t("playerPro.play.pinOption", { rotation: "A" })}</option><option value="B">{t("playerPro.play.pinOption", { rotation: "B" })}</option><option value="C">{t("playerPro.play.pinOption", { rotation: "C" })}</option></select></label>
             </div>
+            {roundPreview && <SnapshotScorecard round={roundPreview} />}
             <button data-testid="start-player-round" disabled={!playable.some((layout) => layout.id === layoutId)} onClick={() => setNotice(props.onStartRound(layoutId, teeSet, pinRotation) ?? `✓ ${t("playerPro.play.resume")}`)}>{t("playerPro.play.start")}</button>
             {playable.length === 0 && <div role="alert">{t("playerPro.play.blocked")}</div>}
           </>}
@@ -385,6 +456,7 @@ export function PlayerShotHud(props: {
       </section>}
       {props.round.phase === "hole_complete" && <button data-testid="next-player-hole" onClick={props.onAdvance} style={{ width: "100%", marginTop: 10 }}>{t("playerPro.shot.next")}</button>}
       {(props.round.phase === "round_complete" || props.round.phase === "conceded") && <div style={{ marginTop: 10, display: "grid", gap: 7 }}><strong>{t("playerPro.round.complete")}</strong><small>{t("playerPro.round.settled")}</small><button data-testid="return-to-design" onClick={props.onReturnToDesign}>{t("playerPro.shot.returnDesign")}</button></div>}
+      <SnapshotScorecard round={props.round} />
       <details style={{ marginTop: 10 }}><summary>{t("playerPro.scorecard")}</summary><ol style={{ paddingLeft: 22 }}>{props.round.scorecard.map((row) => <li key={row.holeId}>{row.name}: {row.strokes}+{row.penalties} / {row.par}{row.complete ? " ✓" : ""}</li>)}</ol><strong>{t("playerPro.scorecard.total", { strokes: props.round.strokes, penalties: props.round.penalties })}</strong></details>
       {props.round.phase !== "round_complete" && props.round.phase !== "conceded" && <div style={{ display: "flex", gap: 6, marginTop: 10 }}><button onClick={props.onAutoFinish}>{t("playerPro.shot.auto")}</button><button onClick={props.onConcede}>{t("playerPro.shot.concede")}</button></div>}
     </section>
