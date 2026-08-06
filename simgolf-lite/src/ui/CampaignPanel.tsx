@@ -35,7 +35,7 @@ const FACT_LABELS = {
 export function CampaignPanel(props: {
   course: Course;
   world: World;
-  onStartMatch: () => string | null;
+  onStartMatch: () => Promise<string | null>;
   onContinueSandbox: () => void;
   onClose: () => void;
 }) {
@@ -100,7 +100,7 @@ export function CampaignPanel(props: {
           <div style={{ marginTop: 8 }}>
             <button
               disabled={matchRecord?.status === "active" || campaignMatchComplete(state, match)}
-              onClick={() => setMatchError(props.onStartMatch())}
+              onClick={() => { void props.onStartMatch().then(setMatchError); }}
             >
               {campaignMatchComplete(state, match)
                 ? t("campaign.match.complete")

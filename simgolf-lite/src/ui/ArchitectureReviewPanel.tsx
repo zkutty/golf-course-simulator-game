@@ -16,7 +16,7 @@ export function ArchitectureReviewPanel(props: {
   review: ArchitectureReviewData;
   onFilters: (filters: ArchitectureReviewFilters) => void;
   onJump: (point: { x: number; y: number }, holeId?: string) => void;
-  onPracticeRound: (courseId: string) => string | null;
+  onPracticeRound: (courseId: string) => Promise<string | null>;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -217,8 +217,7 @@ export function ArchitectureReviewPanel(props: {
 
     <div style={{ display: "flex", gap: 7, marginTop: 12 }}>
       <button data-testid="architecture-practice-round" onClick={() => {
-        const reason = props.onPracticeRound(props.review.filters.courseId);
-        setMessage(reason ?? t("architecture.review.practiceStarted"));
+        void props.onPracticeRound(props.review.filters.courseId).then((reason) => setMessage(reason ?? t("architecture.review.practiceStarted")));
       }}>{t("architecture.review.practice")}</button>
       {message && <span role="status" style={{ fontSize: 12 }}>{message}</span>}
     </div>

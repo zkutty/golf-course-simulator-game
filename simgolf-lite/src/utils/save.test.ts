@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
-import { createDefaultPlayerPro } from "../game/playerPro/playerPro";
+import { createDefaultPlayerPro, normalizePlayerPro } from "../game/playerPro/playerPro";
 import { settlePlayerRound } from "../game/playerPro/playerProSettlement";
 import { createEstate, starterParcelOffset } from "../game/estate/estate";
 import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
@@ -29,6 +29,9 @@ import {
 } from "../game/seasons/seasons";
 import { emptyLivingClubState } from "../game/livingClub/livingClub";
 import { startChallengeGroupRound, type ChallengeGroupRound } from "../game/competition/challengeGroupRound";
+import { startEquippedPlayableRound } from "../game/competition/equipmentMentor";
+import { activeCourseLayout } from "../game/models/courseLayouts";
+import { createRenderPerfCourse } from "../game/testing/referenceCourse";
 
 function file(overrides: Record<string, unknown> = {}) {
   return {
@@ -398,6 +401,66 @@ describe("save validation and migrations", () => {
     if (!second.ok) return;
     expect(second.payload.world.playerPro?.inventory.items).toHaveLength(1);
     expect(second.payload.world.playerPro?.rivalCustody).toHaveLength(1);
+  });
+
+  it("round-trips the frozen loadout byte-identically after mutable inventory and custody diverge", () => {
+    const course = createRenderPerfCourse("parkland");
+    const playerPro = createDefaultPlayerPro({ seed: 757_001 });
+    const iron = {
+      id: "frozen-flight-iron",
+      definitionId: "workshop-flighted-iron",
+      name: "Workshop Flighted Iron",
+      category: "club" as const,
+      ownerId: playerPro.identity.id,
+      custodianId: playerPro.identity.id,
+      authoredValue: 900,
+      remainingValue: 900,
+      prestige: 55,
+      unique: true,
+      confirmationRequired: true,
+      transferable: true as const,
+      transferHistory: [],
+      modifiers: [{ channel: "carry" as const, multiplier: .94, context: "iron-low-flight" }],
+    };
+    const equipped = {
+      ...playerPro,
+      inventory: { ...playerPro.inventory, items: [iron] },
+      equipmentLoadout: { clubItemIds: [iron.id], techniqueId: "knockdown-approach" as const },
+      learnedTechniques: ["knockdown-approach" as const],
+    };
+    const world = { ...DEFAULT_WORLD, week: 4, runSeed: 757_001, playerPro: equipped };
+    const started = startEquippedPlayableRound({ course, world, layoutId: activeCourseLayout(course).id, day: 2 });
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    const frozen = JSON.stringify(started.round.performanceLoadout);
+    const payload = payloadForPersistence(file({
+      course,
+      world: {
+        ...world,
+        playerPro: {
+          ...equipped,
+          activeRound: started.round,
+          inventory: { ...equipped.inventory, items: [] },
+          equipmentLoadout: { clubItemIds: [] },
+        },
+      },
+    }) as Parameters<typeof payloadForPersistence>[0]);
+    const loaded = parseSaveText(JSON.stringify({ schemaVersion: CURRENT_SAVE_SCHEMA_VERSION, savedAt: 757, ...payload }));
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const restored = loaded.payload.world.playerPro?.activeRound?.performanceLoadout;
+    expect(JSON.stringify(restored)).toBe(frozen);
+    expect(restored?.itemIds).toEqual([iron.id]);
+    expect(Object.isFrozen(restored)).toBe(true);
+    expect(Object.isFrozen(restored?.itemIds)).toBe(true);
+    expect(Object.isFrozen(restored?.modifiers)).toBe(true);
+    expect(loaded.payload.world.playerPro?.equipmentLoadout.clubItemIds).toEqual([]);
+  });
+
+  it("drops a malformed frozen loadout instead of retaining hostile raw snapshot fields", () => {
+    const activeRound = { ...legacyHandicapRound(), performanceLoadout: { version: 1, itemIds: "not-an-array", modifiers: [] } };
+    const normalized = normalizePlayerPro({ ...createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed }), activeRound }, { seed: DEFAULT_WORLD.runSeed });
+    expect(normalized.activeRound?.performanceLoadout).toBeUndefined();
   });
 
   it("migrates deterministic regular profiles without replacing names or relationships", () => {

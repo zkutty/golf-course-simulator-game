@@ -17,7 +17,6 @@ import {
   flightProfileForTechnique,
   playerTournamentEligibility,
   previewPlayableShot,
-  startPlayableRound,
   type PlayerOpponent,
   type PlayerShotSelection,
   type PlayerTrainingOption,
@@ -33,7 +32,7 @@ import { useI18n } from "../i18n/useI18n";
 import type { MessageKey } from "../i18n/catalog";
 import { formatHandicapIndex } from "../game/competition/persistence";
 import { courseHandicap, playingHandicapFromUnrounded, strokesByHole } from "../game/competition/handicap";
-import { authoredEquipmentModifiers, mentorTechniqueDefinition, mentorTechniqueEligibility } from "../game/competition/equipmentMentor";
+import { authoredEquipmentModifiers, mentorTechniqueDefinition, mentorTechniqueEligibility, startEquippedPlayableRound } from "../game/competition/equipmentMentor";
 import type { EquipmentLoadout } from "../game/competition/types";
 
 type ProTab = "career" | "play" | "training" | "matches" | "tournaments";
@@ -205,12 +204,12 @@ export function PlayerProPanel(props: {
   world: World;
   day: number;
   onUpdateIdentity: (identity: PlayerProCareer["identity"]) => void;
-  onStartRound: (layoutId: string, teeSet: TeeSet, pinRotation: PinRotation) => string | null;
+  onStartRound: (layoutId: string, teeSet: TeeSet, pinRotation: PinRotation) => Promise<string | null>;
   onTrain: (option: PlayerTrainingOption) => Promise<string | null>;
-  onChallenge: (opponent: PlayerOpponent, kind: "friendly" | "wager", wager: number) => string | null;
+  onChallenge: (opponent: PlayerOpponent, kind: "friendly" | "wager", wager: number) => Promise<string | null>;
   onMentorChallenge: (opponent: PlayerOpponent) => Promise<string | null>;
   onLoadout: (loadout: EquipmentLoadout) => Promise<string | null>;
-  onTournament: (event: TournamentEvent) => string | null;
+  onTournament: (event: TournamentEvent) => Promise<string | null>;
   onResume: () => void;
   onClose: () => void;
 }) {
@@ -247,12 +246,13 @@ export function PlayerProPanel(props: {
     else if (item.category === "watch") next = { ...current, watchItemId: equippedItemIds.has(item.id) ? undefined : item.id };
     void props.onLoadout(next).then((message) => setNotice(message ?? `✓ ${t("playerPro.equipmentMentor.updated")}`));
   };
-  const selectedLayoutPlayable = playable.some((layout) => layout.id === layoutId);
   const roundPreview = useMemo(() => {
+    const selectedLayoutPlayable = (normalizeCourseLayouts(props.course).layouts ?? [])
+      .some((layout) => layout.id === layoutId && layout.state === "open" && layout.publishedHoleIds.length >= 3);
     if (!selectedLayoutPlayable) return null;
-    const started = startPlayableRound({ course: props.course, world: props.world, layoutId, teeSet, pinRotation, day: props.day });
+    const started = startEquippedPlayableRound({ course: props.course, world: props.world, layoutId, teeSet, pinRotation, day: props.day });
     return started.ok ? started.round : null;
-  }, [layoutId, pinRotation, props.course, props.day, props.world, selectedLayoutPlayable, teeSet]);
+  }, [layoutId, pinRotation, props.course, props.day, props.world, teeSet]);
 
   const tabs: ProTab[] = ["career", "play", "training", "matches", "tournaments"];
   return (
@@ -334,7 +334,7 @@ export function PlayerProPanel(props: {
               <label>{t("playerPro.play.pin")}<select value={pinRotation} onChange={(event) => setPinRotation(event.target.value as PinRotation)} style={{ display: "block", width: "100%", padding: 8 }}><option value="A">{t("playerPro.play.pinOption", { rotation: "A" })}</option><option value="B">{t("playerPro.play.pinOption", { rotation: "B" })}</option><option value="C">{t("playerPro.play.pinOption", { rotation: "C" })}</option></select></label>
             </div>
             {roundPreview && <SnapshotScorecard round={roundPreview} />}
-            <button data-testid="start-player-round" disabled={!playable.some((layout) => layout.id === layoutId)} onClick={() => setNotice(props.onStartRound(layoutId, teeSet, pinRotation) ?? `✓ ${t("playerPro.play.resume")}`)}>{t("playerPro.play.start")}</button>
+            <button data-testid="start-player-round" disabled={!playable.some((layout) => layout.id === layoutId)} onClick={() => { void props.onStartRound(layoutId, teeSet, pinRotation).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.play.start")}</button>
             {playable.length === 0 && <div role="alert">{t("playerPro.play.blocked")}</div>}
           </>}
         </section>}
@@ -348,7 +348,7 @@ export function PlayerProPanel(props: {
           <h3 style={{ margin: 0 }}>{t("playerPro.match.title")}</h3><p style={{ fontSize: 12 }}>{t("playerPro.match.help")}</p>
           {opponents.length === 0 ? <p>{t("playerPro.match.none")}</p> : <div style={{ display: "grid", gap: 7 }}>{opponents.map((opponent) => {
             const mentor = mentorTechniqueEligibility(props.world, opponent.id);
-            return <div key={opponent.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{opponent.name}</strong><small style={{ display: "block" }}>{t("playerPro.match.opponentMeta", { skill: Math.round(opponent.skill * 100), relationship: opponent.relationship })}</small>{mentor.techniqueId && <small data-testid={`mentor-status-${opponent.id}`} style={{ display: "block" }}>{t("playerPro.equipmentMentor.mentorStatus", { name: mentorTechniqueDefinition(mentor.techniqueId).name, matches: mentor.completedMatches, relationship: mentor.relationship, reveals: mentor.revealCount })}</small>}<div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}><button onClick={() => setNotice(props.onChallenge(opponent, "friendly", 0) ?? `✓ ${t("playerPro.play.resume")}`)}>{t("playerPro.match.friendly")}</button><button disabled={props.world.cash < 100} onClick={() => setNotice(props.onChallenge(opponent, "wager", 100) ?? `✓ ${t("playerPro.play.resume")}`)}>{t("playerPro.match.wager", { amount: formatCurrency(100) })}</button>{mentor.techniqueId && !props.career.learnedTechniques.includes(mentor.techniqueId) && <button data-testid={`start-mentor-${opponent.id}`} disabled={!mentor.eligible} title={mentor.blockers.join(" ")} onClick={() => { void props.onMentorChallenge(opponent).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.equipmentMentor.startObjective")}</button>}</div></div>;
+            return <div key={opponent.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{opponent.name}</strong><small style={{ display: "block" }}>{t("playerPro.match.opponentMeta", { skill: Math.round(opponent.skill * 100), relationship: opponent.relationship })}</small>{mentor.techniqueId && <small data-testid={`mentor-status-${opponent.id}`} style={{ display: "block" }}>{t("playerPro.equipmentMentor.mentorStatus", { name: mentorTechniqueDefinition(mentor.techniqueId).name, matches: mentor.completedMatches, relationship: mentor.relationship, reveals: mentor.revealCount })}</small>}<div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}><button onClick={() => { void props.onChallenge(opponent, "friendly", 0).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.match.friendly")}</button><button disabled={props.world.cash < 100} onClick={() => { void props.onChallenge(opponent, "wager", 100).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.match.wager", { amount: formatCurrency(100) })}</button>{mentor.techniqueId && !props.career.learnedTechniques.includes(mentor.techniqueId) && <button data-testid={`start-mentor-${opponent.id}`} disabled={!mentor.eligible} title={mentor.blockers.join(" ")} onClick={() => { void props.onMentorChallenge(opponent).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.equipmentMentor.startObjective")}</button>}</div></div>;
           })}</div>}
         </section>}
 
@@ -356,7 +356,7 @@ export function PlayerProPanel(props: {
           <h3 style={{ margin: 0 }}>{t("playerPro.tournament.title")}</h3><p style={{ fontSize: 12 }}>{t("playerPro.tournament.help")}</p>
           {events.length === 0 ? <p>{t("playerPro.tournament.none")}</p> : <div style={{ display: "grid", gap: 7 }}>{events.map((event) => {
             const eligibility = playerTournamentEligibility(props.career, event);
-            return <div key={event.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{event.name}</strong><small style={{ display: "block" }}>{t("playerPro.tournament.meta", { tier: event.tier, week: event.scheduledWeek, day: event.scheduledDay + 1 })}</small>{!eligibility.eligible && <div style={{ color: "#873324", fontSize: 11 }}>{t("playerPro.tournament.blocked", { reason: eligibility.reason ?? "" })}</div>}<button disabled={!eligibility.eligible} onClick={() => setNotice(props.onTournament(event) ?? `✓ ${t("playerPro.play.resume")}`)} style={{ marginTop: 6 }}>{t("playerPro.tournament.enter")}</button></div>;
+            return <div key={event.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{event.name}</strong><small style={{ display: "block" }}>{t("playerPro.tournament.meta", { tier: event.tier, week: event.scheduledWeek, day: event.scheduledDay + 1 })}</small>{!eligibility.eligible && <div style={{ color: "#873324", fontSize: 11 }}>{t("playerPro.tournament.blocked", { reason: eligibility.reason ?? "" })}</div>}<button disabled={!eligibility.eligible} onClick={() => { void props.onTournament(event).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }} style={{ marginTop: 6 }}>{t("playerPro.tournament.enter")}</button></div>;
           })}</div>}
         </section>}
       </div>

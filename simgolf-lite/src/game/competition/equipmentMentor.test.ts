@@ -3,7 +3,7 @@ import { DEFAULT_WORLD } from "../models/defaults";
 import type { PlayerCareerRound, PlayerPlayableRound, PlayerProCareer, PlayerShotTrace } from "../models/playerProTypes";
 import { createRenderPerfCourse } from "../testing/referenceCourse";
 import { activeCourseLayout } from "../models/courseLayouts";
-import { commitPlayerShot, createDefaultPlayerPro, normalizePlayerPro, previewPlayableShot, startPlayableRound } from "../playerPro/playerPro";
+import { commitPlayerShot, createDefaultPlayerPro, normalizePlayerPro, previewPlayableShot } from "../playerPro/playerPro";
 import { acceptStakeBundle, createStakeBundle, settleLostStake } from "./inventory";
 import type { InventoryItem, LearnedTechnique, MentorTechniqueChallenge } from "./types";
 import {
@@ -12,12 +12,15 @@ import {
   auditEquipmentMentorContent,
   capturePerformanceLoadout,
   mentorTechniqueEligibility,
-  normalizePerformanceLoadoutSnapshot,
-  resolvePerformanceModifiers,
   setEquipmentLoadout,
   settleMentorTechniqueChallenge,
+  startEquippedPlayableRound,
   startMentorTechniqueChallenge,
 } from "./equipmentMentor";
+import {
+  normalizePerformanceLoadoutSnapshot,
+  resolvePerformanceModifiers,
+} from "./equipmentRuntime";
 
 function equipment(id: string, definitionId = "workshop-flighted-iron", category: InventoryItem["category"] = "club"): InventoryItem {
   return {
@@ -41,7 +44,7 @@ function equipment(id: string, definitionId = "workshop-flighted-iron", category
 function started(career: PlayerProCareer) {
   const course = createRenderPerfCourse("parkland");
   const world = { ...DEFAULT_WORLD, runSeed: 730_001, week: 4, playerPro: career };
-  const result = startPlayableRound({ course, world, layoutId: activeCourseLayout(course).id, day: 2 });
+  const result = startEquippedPlayableRound({ course, world, layoutId: activeCourseLayout(course).id, day: 2 });
   expect(result.ok).toBe(true);
   if (!result.ok) throw new Error(result.reason);
   return result.round;

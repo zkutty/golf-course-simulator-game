@@ -1,5 +1,43 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-757 frozen Player Pro loadout delivery boundary — 2026-08-06
+
+- Began from the exact M66 candidate `90dd42c` in the isolated
+  `codex/zk757-loadout-boundary` worktree and preserved the original prompt and
+  existing M66 certification evidence.
+- Integrated the verified ZK-730 equipment/mentor commit `1138890`. The only
+  conflict was the Player Pro round preview: the resolution retains M66's
+  memoized preview (without the unstable `playable` array dependency) and
+  ZK-730 invalid-layout guard, recalculated inside the memo from stable inputs.
+- Moved the synchronous round-start transaction into the small
+  `playerProRoundStart` authority and moved authored equipment/technique capture
+  behind the already deferred equipment/mentor surface. Every player-facing
+  start imports that deferred authority first, then reads current state and
+  captures a self-contained frozen snapshot synchronously in the same start
+  transaction. Save normalization and shot resolution remain synchronous in
+  the initial runtime; play, reload, settlement, and custody never reconsult
+  mutable inventory.
+- The original six-file packet remains green and now proves 95/95 assertions:
+  its prior 93 plus explicit persistence round-trip/byte-identity and hostile
+  malformed-snapshot rejection. The final focused rerun passed after restoring
+  the exact ZK-730 normalization and resolution semantics. M66 certification is
+  106/106; full CI passed 171 files / 1,346 tests with one intentional skip and
+  5/5 audio-audit tests; TypeScript, lint/i18n, and the zero-vulnerability
+  production dependency audit pass. Lint retains the same 12 warnings.
+- Two exact repeated production builds and every embedded audit pass at
+  1,607,374 initial JavaScript bytes, 1,345 bytes below the unchanged 1,608,719
+  hard limit. Initial critical transfer is 3,800,936 bytes and all M35,
+  Parkland 4x, surface-residency, audio, service-worker, and delivery checks are
+  green.
+- The M36 browser path passed 1/1 through Player Pro start, preview, commit,
+  settlement, and return-to-design with clean console/page-error capture; both
+  full-page artifacts were inspected. The required bundled game client also
+  produced two inspected canvas captures and two deterministic text states
+  containing equipment/mentor authority, with no error artifact.
+- No M66 certification artifacts, scoring/handicap/reward policy, broad UI,
+  Linear state, commits beyond the requested integration commit, or pushes were
+  changed.
+
 ## ZK-721 M66 certification — 2026-08-06
 
 - Certified the exact career handicap and scorecard acceptance against local ZK-720 commit `b8d6ee7`: individual/team formulas (plus, mixed, rounding boundaries, best-count bands, movement caps, Stableford, adjusted limits), automatic/manual stroke indexes and snapshots, 9/18 source eligibility/exclusions, hostile persistence/idempotency, and confidence/practice/feedback/concession/dispersion interactions.

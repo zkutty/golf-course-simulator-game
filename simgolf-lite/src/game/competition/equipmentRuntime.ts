@@ -1,5 +1,5 @@
 import type { PlayerProCareer } from "../models/playerProTypes";
-import type { EquipmentLoadout, EquipmentModifier, EquipmentPerformanceChannel, FrozenPerformanceLoadout, FrozenPerformanceModifier, InventoryItem, LearnedTechnique, MentorTechniqueChallenge } from "./types";
+import type { EquipmentModifier, EquipmentPerformanceChannel, FrozenPerformanceLoadout, LearnedTechnique, MentorTechniqueChallenge } from "./types";
 
 export const PERFORMANCE_CHANNEL_MIN = .8;
 export const PERFORMANCE_CHANNEL_MAX = 1.2;
@@ -7,27 +7,8 @@ export const EQUIPMENT_SIDEGRADE_MIN = .88;
 export const EQUIPMENT_SIDEGRADE_MAX = 1.12;
 export const LEARNED_TECHNIQUES: readonly LearnedTechnique[] = ["fairway-finder", "knockdown-approach", "soft-hands", "splash-specialist", "lag-putt"];
 const CHANNELS: readonly EquipmentPerformanceChannel[] = ["carry", "dispersion", "recovery", "putting", "spin"];
-const E = (channel: EquipmentPerformanceChannel, multiplier: number, context: string): EquipmentModifier => ({ channel, multiplier, context });
-const TECHNIQUE_EFFECTS: Readonly<Record<LearnedTechnique, readonly EquipmentModifier[]>> = {
-  "fairway-finder": [E("carry", .92, "wood-from-tee"), E("dispersion", .9, "wood-from-tee")],
-  "knockdown-approach": [E("carry", .94, "iron-low-fairway"), E("dispersion", .9, "iron-low-fairway"), E("spin", 1.1, "iron-low-fairway")],
-  "soft-hands": [E("carry", .92, "greenside-rough"), E("spin", .9, "greenside-rough")],
-  "splash-specialist": [E("carry", .9, "sand-wedge-from-sand"), E("dispersion", .88, "sand-wedge-from-sand"), E("recovery", 1.08, "sand-wedge-from-sand")],
-  "lag-putt": [E("putting", 1.1, "long-green-putting"), E("carry", .92, "long-green-putting")],
-};
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const safe = (modifier: EquipmentModifier): EquipmentModifier | null => CHANNELS.includes(modifier.channel) && Number.isFinite(modifier.multiplier) ? { channel: modifier.channel, multiplier: Number(clamp(modifier.multiplier, .88, 1.12).toFixed(6)), ...(modifier.context ? { context: modifier.context.slice(0, 40) } : {}) } : null;
-
-export function capturePerformanceLoadout(args: { ownerId: string; inventoryItems: readonly InventoryItem[]; loadout: EquipmentLoadout; learnedTechniques: readonly LearnedTechnique[]; week: number; day: number }): FrozenPerformanceLoadout {
-  const ids = [...new Set([...args.loadout.clubItemIds, args.loadout.bagItemId, args.loadout.outfitItemId, args.loadout.watchItemId].filter((id): id is string => typeof id === "string"))];
-  const items = args.inventoryItems.filter((item) => ids.includes(item.id) && item.ownerId === args.ownerId && item.custodianId === args.ownerId);
-  const techniqueId = args.loadout.techniqueId && args.learnedTechniques.includes(args.loadout.techniqueId) ? args.loadout.techniqueId : undefined;
-  const modifiers: FrozenPerformanceModifier[] = [
-    ...items.flatMap((item) => (item.modifiers ?? []).flatMap((modifier) => { const normalized = safe(modifier); return normalized ? [{ ...normalized, sourceKind: "equipment" as const, sourceId: item.definitionId }] : []; })),
-    ...(techniqueId ? TECHNIQUE_EFFECTS[techniqueId].map((modifier) => ({ ...modifier, sourceKind: "technique" as const, sourceId: techniqueId })) : []),
-  ];
-  return Object.freeze({ version: 1, frozenWeek: Math.max(1, Math.floor(args.week)), frozenDay: clamp(Math.floor(args.day), 0, 6), itemIds: Object.freeze(items.map((item) => item.id)), ...(techniqueId ? { techniqueId } : {}), modifiers: Object.freeze(modifiers.map((modifier) => Object.freeze(modifier))) });
-}
 
 export function normalizePerformanceLoadoutSnapshot(raw: unknown): FrozenPerformanceLoadout | undefined {
   if (!raw || typeof raw !== "object") return undefined;

@@ -2,12 +2,11 @@ import type { World } from "../models/types";
 import type { PlayerPlayableRound, PlayerProCareer, PlayerShotTrace } from "../models/playerProTypes";
 import { normalizeLivingClub } from "../livingClub/livingClub";
 import type { EquipmentLoadout, EquipmentModifier, InventoryItem, LearnedTechnique, MentorTechniqueChallenge } from "./types";
-import {
-  EQUIPMENT_SIDEGRADE_MAX,
-  EQUIPMENT_SIDEGRADE_MIN,
-} from "./equipmentRuntime";
+import { normalizePerformanceLoadoutSnapshot } from "./equipmentRuntime";
+import { startPlayableRound, type StartPlayableRoundArgs } from "../playerPro/playerProRoundStart";
 
-export * from "./equipmentRuntime";
+const EQUIPMENT_SIDEGRADE_MIN = .88;
+const EQUIPMENT_SIDEGRADE_MAX = 1.12;
 export const MENTOR_MATCHES_REQUIRED = 2;
 export const MENTOR_RELATIONSHIP_REQUIRED = 25;
 
@@ -37,6 +36,64 @@ export const MENTOR_TECHNIQUES: readonly MentorTechniqueDefinition[] = [
   technique("lag-putt", "Lag Putt", "Automatic putting from a leave of at least 10 yards only.", "Improves putting read by 10% while reducing pace by 8%.", "long-lag-two-putt", "Take two putts or fewer from an approach leave of at least 10 yards."),
 ];
 export const mentorTechniqueDefinition = (id: LearnedTechnique) => MENTOR_TECHNIQUES.find((definition) => definition.id === id)!;
+
+/**
+ * Capture stays with the deferred authored equipment/mentor authority. The
+ * resulting value is self-contained, normalized, and synchronously handed to
+ * the round-start transaction; play and reload never consult mutable custody.
+ */
+export function capturePerformanceLoadout(args: {
+  ownerId: string;
+  inventoryItems: readonly InventoryItem[];
+  loadout: EquipmentLoadout;
+  learnedTechniques: readonly LearnedTechnique[];
+  week: number;
+  day: number;
+}) {
+  const requested = new Set([
+    ...args.loadout.clubItemIds,
+    args.loadout.bagItemId,
+    args.loadout.outfitItemId,
+    args.loadout.watchItemId,
+  ].filter((id): id is string => typeof id === "string"));
+  const items = args.inventoryItems.filter((entry) => requested.has(entry.id) && entry.ownerId === args.ownerId && entry.custodianId === args.ownerId);
+  const techniqueId = args.loadout.techniqueId && args.learnedTechniques.includes(args.loadout.techniqueId)
+    ? args.loadout.techniqueId
+    : undefined;
+  const raw = {
+    version: 1,
+    frozenWeek: args.week,
+    frozenDay: args.day,
+    itemIds: items.map((entry) => entry.id),
+    ...(techniqueId ? { techniqueId } : {}),
+    modifiers: [
+      ...items.flatMap((entry) => (entry.modifiers ?? []).map((modifier) => ({
+        ...modifier,
+        sourceKind: "equipment" as const,
+        sourceId: entry.definitionId,
+      }))),
+      ...(techniqueId ? effects(techniqueId).map((modifier) => ({
+        ...modifier,
+        sourceKind: "technique" as const,
+        sourceId: techniqueId,
+      })) : []),
+    ],
+  };
+  return normalizePerformanceLoadoutSnapshot(raw)!;
+}
+
+export function startEquippedPlayableRound(args: StartPlayableRoundArgs) {
+  const career = args.world.playerPro;
+  const performanceLoadout = career ? capturePerformanceLoadout({
+    ownerId: career.identity.id,
+    inventoryItems: career.inventory.items,
+    loadout: career.equipmentLoadout,
+    learnedTechniques: career.learnedTechniques,
+    week: args.world.week,
+    day: args.day ?? 0,
+  }) : undefined;
+  return startPlayableRound({ ...args, performanceLoadout });
+}
 
 export interface MentorEligibility { mentorId: string; techniqueId: LearnedTechnique | null; completedMatches: number; relationship: number; revealCount: number; eligible: boolean; blockers: readonly string[] }
 export function mentorTechniqueEligibility(world: World, mentorId: string): MentorEligibility {
