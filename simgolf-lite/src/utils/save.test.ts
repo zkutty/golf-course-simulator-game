@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../game/models/defaults";
-import { createDefaultPlayerPro, settlePlayerRound } from "../game/playerPro/playerPro";
+import { createDefaultPlayerPro } from "../game/playerPro/playerPro";
+import { settlePlayerRound } from "../game/playerPro/playerProSettlement";
 import { createEstate, starterParcelOffset } from "../game/estate/estate";
 import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
 import { createNewGame } from "../game/gen/newGame";

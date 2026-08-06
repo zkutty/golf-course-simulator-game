@@ -12,10 +12,10 @@ import {
   finishPlayerShot,
   previewPlayableShot,
   resolvePlayableShot,
-  settlePlayerRound,
   startPlayableRound,
   type PlayerShotSelection,
 } from "../playerPro/playerPro";
+import { settlePlayerRound } from "../playerPro/playerProSettlement";
 import { M47_MAX_OUTCOMES, type GolferCapabilities } from "../live/m47Types";
 import type { Personality } from "../live/personality";
 import { capabilitiesToPlayerSkills } from "../live/capabilities";

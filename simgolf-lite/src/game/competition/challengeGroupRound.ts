@@ -308,9 +308,9 @@ function selectedEquipment(input: ChallengeGroupParticipantInput["equipment"]): 
 }
 
 function effectiveSkills(golfer: ChallengeGroupGolfer): PlayerProSkills {
-  const multiplier = (channel: EquipmentModifier["channel"]) => golfer.equipment.modifiers
+  const multiplier = (channel: EquipmentModifier["channel"]) => clamp(golfer.equipment.modifiers
     .filter((modifier) => modifier.channel === channel)
-    .reduce((value, modifier) => value * modifier.multiplier, 1);
+    .reduce((value, modifier) => value * clamp(modifier.multiplier, .88, 1.12), 1), .8, 1.2);
   const dispersion = multiplier("dispersion");
   const adjustedAccuracy = (skill: number) => clamp((1.42 - (1.42 - skill / 180) * dispersion) * 180, 0, 100);
   const carryScale = multiplier("carry");

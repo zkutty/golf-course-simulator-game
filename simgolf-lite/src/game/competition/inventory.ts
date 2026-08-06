@@ -30,6 +30,7 @@ const CATEGORIES: readonly InventoryCategory[] = [
 const NON_TRANSFERABLE: readonly NonTransferableRewardKind[] = [
   "species-knowledge", "learned-technique", "relationship", "memory", "profile-unlock",
 ];
+const LEARNED_TECHNIQUES = new Set(["fairway-finder", "knockdown-approach", "soft-hands", "splash-specialist", "lag-putt"]);
 const record = (value: unknown): value is Record<string, unknown> => value != null && typeof value === "object" && !Array.isArray(value);
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const money = (value: unknown) => Math.max(0, Math.round(finite(value) ? value : 0));
@@ -169,6 +170,7 @@ export function settleLostStake(args: {
       bagItemId: valid(args.assets.loadout.bagItemId, "bag"),
       outfitItemId: valid(args.assets.loadout.outfitItemId, "outfit"),
       watchItemId: valid(args.assets.loadout.watchItemId, "watch"),
+      techniqueId: args.assets.loadout.techniqueId,
     },
     rivalCustody: [...args.assets.rivalCustody, ...moved.map((item) => ({
       id: `${args.challengeId}:${item.id}`,
@@ -275,6 +277,9 @@ export function normalizeInventoryState(raw: unknown, ownerId: string, fallbackL
     bagItemId: owned(requested.bagItemId, "bag") ? requested.bagItemId as string : owned(fallbackLoadout.bagItemId, "bag") ? fallbackLoadout.bagItemId : undefined,
     outfitItemId: owned(requested.outfitItemId, "outfit") ? requested.outfitItemId as string : owned(fallbackLoadout.outfitItemId, "outfit") ? fallbackLoadout.outfitItemId : undefined,
     watchItemId: owned(requested.watchItemId, "watch") ? requested.watchItemId as string : owned(fallbackLoadout.watchItemId, "watch") ? fallbackLoadout.watchItemId : undefined,
+    techniqueId: typeof requested.techniqueId === "string" && LEARNED_TECHNIQUES.has(requested.techniqueId)
+      ? requested.techniqueId as EquipmentLoadout["techniqueId"]
+      : fallbackLoadout.techniqueId,
   };
   const custodyIds = new Set<string>();
   const heldItemIds = new Set<string>();
@@ -295,7 +300,7 @@ export function normalizeInventoryState(raw: unknown, ownerId: string, fallbackL
 
 export function renderInventoryDebug(state: InventoryNormalizationResult, stakes: readonly StakeBundle[] = []): string {
   const items = state.inventory.items.map((item) => `${item.id} ${item.category} owner=${item.ownerId} custodian=${item.custodianId} value=${inventoryItemValue(item)}`).join("\n") || "(empty)";
-  const loadout = `clubs=${state.loadout.clubItemIds.join(",") || "default"} bag=${state.loadout.bagItemId ?? "default"} outfit=${state.loadout.outfitItemId ?? "default"} watch=${state.loadout.watchItemId ?? "default"}`;
+  const loadout = `clubs=${state.loadout.clubItemIds.join(",") || "default"} bag=${state.loadout.bagItemId ?? "default"} outfit=${state.loadout.outfitItemId ?? "default"} watch=${state.loadout.watchItemId ?? "default"} technique=${state.loadout.techniqueId ?? "default"}`;
   const custody = state.rivalCustody.map((entry) => `${entry.id} item=${entry.itemId} rival=${entry.rivalId} status=${entry.status}`).join("\n") || "(none)";
   const appraisal = stakes.flatMap((stake) => stake.appraisal.map((entry) => `${entry.itemId ?? "cash"} value=${entry.value} basis=${JSON.stringify(entry.basis)}`)).join("\n") || "(none)";
   return `Inventory\n${items}\nEquipment\n${loadout}\nAppraisal\n${appraisal}\nCustody\n${custody}`;

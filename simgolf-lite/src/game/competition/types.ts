@@ -78,8 +78,10 @@ export type SideBetKind = "skins" | "nassau" | "closest-to-pin" | "longest-drive
 export type InventoryCategory = "club" | "bag" | "outfit" | "watch" | "vehicle" | "trophy" | "keepsake" | "plant-stock" | "service-credit";
 export type NonTransferableRewardKind = "species-knowledge" | "learned-technique" | "relationship" | "memory" | "profile-unlock";
 
+export type EquipmentPerformanceChannel = "carry" | "dispersion" | "recovery" | "putting" | "spin";
+
 export interface EquipmentModifier {
-  channel: "carry" | "dispersion" | "recovery" | "putting" | "spin";
+  channel: EquipmentPerformanceChannel;
   multiplier: number;
   context?: string;
 }
@@ -129,6 +131,8 @@ export interface EquipmentLoadout {
   bagItemId?: string;
   outfitItemId?: string;
   watchItemId?: string;
+  /** A learned, non-transferable technique selected between rounds. */
+  techniqueId?: LearnedTechnique;
 }
 
 export interface RewardDefinition {
@@ -187,6 +191,36 @@ export interface RivalCustodyRecord {
 }
 
 export type LearnedTechnique = "fairway-finder" | "knockdown-approach" | "soft-hands" | "splash-specialist" | "lag-putt";
+
+export interface FrozenPerformanceModifier extends EquipmentModifier {
+  sourceKind: "equipment" | "technique";
+  sourceId: string;
+}
+
+/** Immutable round-start authority; it is intentionally independent of later custody changes. */
+export interface FrozenPerformanceLoadout {
+  version: 1;
+  frozenWeek: number;
+  frozenDay: number;
+  itemIds: readonly string[];
+  techniqueId?: LearnedTechnique;
+  modifiers: readonly FrozenPerformanceModifier[];
+}
+
+export interface MentorTechniqueChallenge {
+  version: 1;
+  id: string;
+  mentorId: string;
+  mentorName: string;
+  techniqueId: LearnedTechnique;
+  objectiveId: string;
+  objective: string;
+  status: "active" | "complete";
+  startedWeek: number;
+  startedDay: number;
+  attemptRoundIds: readonly string[];
+  completedRoundId?: string;
+}
 
 export interface ChallengeRivalProfile {
   version: 1;

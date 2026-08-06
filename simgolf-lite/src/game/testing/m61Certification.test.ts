@@ -17,9 +17,9 @@ import {
   createDefaultPlayerPro,
   normalizePlayerPro,
   previewPlayableShot,
-  settlePlayerRound,
   startPlayableRound,
 } from "../playerPro/playerPro";
+import { settlePlayerRound } from "../playerPro/playerProSettlement";
 import { recordPlayerRoundArchitecture } from "../livingClub/livingClub";
 import { createPlayerProReferenceCourse } from "./referenceCourse";
 import { createLiveState, stepLive } from "../live/simulation";

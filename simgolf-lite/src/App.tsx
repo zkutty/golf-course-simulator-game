@@ -195,7 +195,6 @@ import {
   caddieRecommendation,
   caddieShotGuidance,
   commitPlayerShot,
-  completePlayerTraining,
   concedePlayerRound,
   createDefaultPlayerPro,
   createPlayerChallenge,
@@ -203,7 +202,6 @@ import {
   finishPlayerShot,
   normalizePlayerPro,
   registerPlayerTournament,
-  settlePlayerRound,
   startPlayableRound,
   type PlayerOpponent,
   type PlayerShotSelection,
@@ -211,6 +209,7 @@ import {
 } from "./game/playerPro/playerPro";
 import type { TournamentEvent } from "./game/tournaments/types";
 import { challengeGroupRoundTextState, startChallengeGroupRound } from "./game/competition/challengeGroupRound";
+import type { EquipmentLoadout } from "./game/competition/types";
 import { decodeControlledRoundSnapshotV2, type ControlledRoundSnapshotV2 } from "./game/rules/roundSnapshot";
 import type { SharedShotOutcome } from "./game/rules/contracts";
 import { buildArchitectureReview, defaultArchitectureFilters, withGreenStrategyHeatmap } from "./game/architecture/review";
@@ -1373,7 +1372,8 @@ export default function App() {
     return null;
   }, [enterPlayerRoundView, gameSession, live.status.dayIndex, markDirty, t]);
 
-  const trainPlayerPro = useCallback((option: PlayerTrainingOption): string | null => {
+  const trainPlayerPro = useCallback(async (option: PlayerTrainingOption): Promise<string | null> => {
+    const { completePlayerTraining } = await import("./game/playerPro/playerProPanelAuthority");
     const current = gameSession.getState().world;
     const career = normalizePlayerPro(current.playerPro, { seed: current.runSeed, founderName: current.founderName });
     const trained = completePlayerTraining(career, current, option, live.status.dayIndex);
@@ -1428,6 +1428,41 @@ export default function App() {
     enterPlayerRoundView(next);
     return null;
   }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
+
+  const beginMentorTechniqueChallenge = useCallback(async (opponent: PlayerOpponent): Promise<string | null> => {
+    const { startMentorTechniqueChallenge } = await import("./game/competition/equipmentMentor");
+    const current = gameSession.getState();
+    const challengeId = `mentor-${opponent.id}-${current.world.week}-${live.status.dayIndex}`;
+    const initiated = startMentorTechniqueChallenge({ world: current.world, mentorId: opponent.id, challengeId, day: live.status.dayIndex });
+    if (!initiated.ok) return initiated.reasons.join(" ");
+    const career = initiated.world.playerPro!;
+    const created = createPlayerChallenge(career, opponent, "friendly", 0);
+    const started = startPlayableRound({
+      course: current.course,
+      world: initiated.world,
+      kind: "friendly",
+      layoutId: activeCourseLayout(current.course).id,
+      teeSet: "member",
+      pinRotation: current.course.activePinRotation ?? "A",
+      day: live.status.dayIndex,
+      opponent: { id: opponent.id, name: opponent.name, skill: opponent.skill, relationshipDelta: 0, wager: 0, projectedStrokes: 0 },
+    });
+    if (!started.ok) return started.reason;
+    const next = { ...activatePlayerChallenge(created.career, created.challenge.id, started.round.id), activeRound: started.round };
+    updatePlayerPro(() => next);
+    enterPlayerRoundView(next);
+    return null;
+  }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
+
+  const updatePlayerEquipmentLoadout = useCallback(async (loadout: EquipmentLoadout): Promise<string | null> => {
+    const { setEquipmentLoadout } = await import("./game/competition/equipmentMentor");
+    const current = gameSession.getState().world;
+    const career = normalizePlayerPro(current.playerPro, { seed: current.runSeed, founderName: current.founderName });
+    const result = setEquipmentLoadout(career, loadout);
+    if (!result.ok) return result.reason;
+    updatePlayerPro(() => result.career);
+    return null;
+  }, [gameSession, updatePlayerPro]);
 
   const enterPlayerTournament = useCallback((event: TournamentEvent): string | null => {
     const current = gameSession.getState();
@@ -1507,17 +1542,21 @@ export default function App() {
   useEffect(() => {
     const round = activePlayerRound;
     if (!round || round.rewardsApplied || (round.phase !== "round_complete" && round.phase !== "conceded")) return;
-    setWorld((current) => {
+    void Promise.all([
+      import("./game/competition/equipmentMentor"),
+      import("./game/playerPro/playerProSettlement"),
+    ]).then(([{ settleMentorTechniqueChallenge }, { settlePlayerRound }]) => setWorld((current) => {
       const career = normalizePlayerPro(current.playerPro, { seed: current.runSeed, founderName: current.founderName });
       const authoritative = career.activeRound;
       if (!authoritative || authoritative.id !== round.id || authoritative.rewardsApplied) return current;
       const event = currentPlayerTournament(current, authoritative.tournamentId);
       const settlement = settlePlayerRound(career, authoritative, event);
       if (!settlement.round) return current;
+      const mentorCareer = settleMentorTechniqueChallenge(settlement.career, authoritative);
       const recorded = recordPlayerRoundArchitecture(current, authoritative, settlement.round);
       const recordedCareer = {
-        ...settlement.career,
-        rounds: settlement.career.rounds.map((careerRound) =>
+        ...mentorCareer,
+        rounds: mentorCareer.rounds.map((careerRound) =>
           careerRound.id === recorded.careerRound.id ? recorded.careerRound : careerRound
         ),
       };
@@ -1534,7 +1573,7 @@ export default function App() {
           activeRound: { ...authoritative, rewardsApplied: true },
         },
       });
-    });
+    }));
   }, [activePlayerRound, gameSession, setWorld]);
 
   useEffect(() => {
@@ -3004,6 +3043,12 @@ export default function App() {
         identity: playerPro.identity,
         skills: playerPro.skills,
         techniques: playerPro.unlockedTechniques,
+        mentorTechniques: {
+          learned: playerPro.learnedTechniques,
+          selected: playerPro.equipmentLoadout.techniqueId ?? null,
+          activeChallenge: playerPro.activeMentorTechniqueChallenge,
+        },
+        equipmentLoadout: playerPro.equipmentLoadout,
         careerPoints: playerPro.careerPoints,
         earnings: playerPro.earnings,
         rounds: playerPro.rounds.length,
@@ -3029,6 +3074,7 @@ export default function App() {
           } : null,
           scorecard: activePlayerRound.scorecard,
           handicapSnapshot: activePlayerRound.handicapSnapshot ?? null,
+          performanceLoadout: activePlayerRound.performanceLoadout ?? null,
           rulesSnapshot: textRulesSnapshot(activePlayerRound.rulesSnapshot),
           pendingShot: textShotTrace(activePlayerRound.pendingShot),
           recentTrace: textShotTrace(lastItem(activePlayerRound.shots)),
@@ -5348,6 +5394,8 @@ export default function App() {
               onStartRound={beginPlayerRound}
               onTrain={trainPlayerPro}
               onChallenge={challengePlayerPro}
+              onMentorChallenge={beginMentorTechniqueChallenge}
+              onLoadout={updatePlayerEquipmentLoadout}
               onTournament={enterPlayerTournament}
               onResume={() => enterPlayerRoundView(playerPro)}
               onClose={() => setShowPlayerPro(false)}

@@ -35,9 +35,9 @@ import {
   finishPlayerShot,
   previewPlayableShot,
   resolvePlayableShot,
-  settlePlayerRound,
   startPlayableRound,
 } from "../playerPro/playerPro";
+import { settlePlayerRound } from "../playerPro/playerProSettlement";
 import { recordPlayerRoundArchitecture } from "../livingClub/livingClub";
 import { ARCHITECTURE_REVIEW_INTERACTIVE_BUDGET_MS, buildArchitectureReview, defaultArchitectureFilters, withGreenStrategyHeatmap } from "../architecture/review";
 import { buildGreenStrategyHeatmap, buildGreenStrategyHeatmapForReview, GREEN_STRATEGY_MAX_OVERLAY_ITEMS } from "../architecture/greenStrategyHeatmap";

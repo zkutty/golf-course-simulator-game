@@ -14,17 +14,15 @@ import {
 import {
   availablePlayerClubs,
   caddieShotGuidance,
-  eligiblePlayerOpponents,
   flightProfileForTechnique,
-  playerTechniqueCatalog,
   playerTournamentEligibility,
-  playerTrainingOptions,
   previewPlayableShot,
   startPlayableRound,
   type PlayerOpponent,
   type PlayerShotSelection,
   type PlayerTrainingOption,
 } from "../game/playerPro/playerPro";
+import { eligiblePlayerOpponents, playerTechniqueCatalog, playerTrainingOptions } from "../game/playerPro/playerProPanelAuthority";
 import type { ShotClearanceEvidence, ShotCollision, ShotFlightProfile, ShotRuling } from "../game/rules/contracts";
 import { normalizeCourseLayouts } from "../game/models/courseLayouts";
 import { tournamentCalendar } from "../game/tournaments/tournaments";
@@ -35,6 +33,8 @@ import { useI18n } from "../i18n/useI18n";
 import type { MessageKey } from "../i18n/catalog";
 import { formatHandicapIndex } from "../game/competition/persistence";
 import { courseHandicap, playingHandicapFromUnrounded, strokesByHole } from "../game/competition/handicap";
+import { authoredEquipmentModifiers, mentorTechniqueDefinition, mentorTechniqueEligibility } from "../game/competition/equipmentMentor";
+import type { EquipmentLoadout } from "../game/competition/types";
 
 type ProTab = "career" | "play" | "training" | "matches" | "tournaments";
 
@@ -206,8 +206,10 @@ export function PlayerProPanel(props: {
   day: number;
   onUpdateIdentity: (identity: PlayerProCareer["identity"]) => void;
   onStartRound: (layoutId: string, teeSet: TeeSet, pinRotation: PinRotation) => string | null;
-  onTrain: (option: PlayerTrainingOption) => string | null;
+  onTrain: (option: PlayerTrainingOption) => Promise<string | null>;
   onChallenge: (opponent: PlayerOpponent, kind: "friendly" | "wager", wager: number) => string | null;
+  onMentorChallenge: (opponent: PlayerOpponent) => Promise<string | null>;
+  onLoadout: (loadout: EquipmentLoadout) => Promise<string | null>;
   onTournament: (event: TournamentEvent) => string | null;
   onResume: () => void;
   onClose: () => void;
@@ -227,10 +229,30 @@ export function PlayerProPanel(props: {
   const options = useMemo(() => playerTrainingOptions(props.course, props.world, props.day), [props.course, props.day, props.world]);
   const opponents = useMemo(() => eligiblePlayerOpponents(props.world), [props.world]);
   const events = tournamentCalendar(props.world).events.filter((event) => event.status === "scheduled");
+  const functionalItems = props.career.inventory.items.filter((item) => authoredEquipmentModifiers(item).length > 0);
+  const equippedItemIds = new Set([...
+    props.career.equipmentLoadout.clubItemIds,
+    props.career.equipmentLoadout.bagItemId,
+    props.career.equipmentLoadout.outfitItemId,
+    props.career.equipmentLoadout.watchItemId,
+  ].filter((id): id is string => typeof id === "string"));
+  const toggleEquipment = (itemId: string) => {
+    const item = props.career.inventory.items.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    const current = props.career.equipmentLoadout;
+    let next: EquipmentLoadout = current;
+    if (item.category === "club") next = { ...current, clubItemIds: equippedItemIds.has(item.id) ? current.clubItemIds.filter((id) => id !== item.id) : [...current.clubItemIds, item.id] };
+    else if (item.category === "bag") next = { ...current, bagItemId: equippedItemIds.has(item.id) ? undefined : item.id };
+    else if (item.category === "outfit") next = { ...current, outfitItemId: equippedItemIds.has(item.id) ? undefined : item.id };
+    else if (item.category === "watch") next = { ...current, watchItemId: equippedItemIds.has(item.id) ? undefined : item.id };
+    void props.onLoadout(next).then((message) => setNotice(message ?? `✓ ${t("playerPro.equipmentMentor.updated")}`));
+  };
+  const selectedLayoutPlayable = playable.some((layout) => layout.id === layoutId);
   const roundPreview = useMemo(() => {
+    if (!selectedLayoutPlayable) return null;
     const started = startPlayableRound({ course: props.course, world: props.world, layoutId, teeSet, pinRotation, day: props.day });
     return started.ok ? started.round : null;
-  }, [layoutId, pinRotation, props.course, props.day, props.world, teeSet]);
+  }, [layoutId, pinRotation, props.course, props.day, props.world, selectedLayoutPlayable, teeSet]);
 
   const tabs: ProTab[] = ["career", "play", "training", "matches", "tournaments"];
   return (
@@ -272,6 +294,20 @@ export function PlayerProPanel(props: {
           </div>
           <HandicapSummary career={props.career} />
           <CompetitionScorecard career={props.career} />
+          <section data-testid="player-equipment-mentor" style={cardStyle}>
+            <strong>{t("playerPro.equipmentMentor.title")}</strong>
+            <div>{t("playerPro.equipmentMentor.loadout", { count: props.career.equipmentLoadout.clubItemIds.length + Number(Boolean(props.career.equipmentLoadout.bagItemId)) + Number(Boolean(props.career.equipmentLoadout.outfitItemId)) + Number(Boolean(props.career.equipmentLoadout.watchItemId)) })}</div>
+            <small>{props.career.equipmentLoadout.techniqueId
+              ? t("playerPro.equipmentMentor.selected", { name: mentorTechniqueDefinition(props.career.equipmentLoadout.techniqueId).name })
+              : t("playerPro.equipmentMentor.noTechnique")}</small>
+            <div>{props.career.learnedTechniques.length
+              ? props.career.learnedTechniques.map((id) => mentorTechniqueDefinition(id).name).join(" · ")
+              : t("playerPro.equipmentMentor.noneLearned")}</div>
+            {functionalItems.map((item) => <button key={item.id} type="button" aria-pressed={equippedItemIds.has(item.id)} disabled={Boolean(props.career.activeRound || props.career.activeChallengeGroupRound)} onClick={() => toggleEquipment(item.id)}>{equippedItemIds.has(item.id) ? "✓ " : ""}{item.name}</button>)}
+            <label>{t("playerPro.equipmentMentor.techniqueLabel")}<select disabled={Boolean(props.career.activeRound || props.career.activeChallengeGroupRound)} value={props.career.equipmentLoadout.techniqueId ?? ""} onChange={(event) => { void props.onLoadout({ ...props.career.equipmentLoadout, techniqueId: event.target.value ? event.target.value as EquipmentLoadout["techniqueId"] : undefined }).then((message) => setNotice(message ?? `✓ ${t("playerPro.equipmentMentor.updated")}`)); }} style={{ display: "block", width: "100%", padding: 7 }}><option value="">{t("playerPro.equipmentMentor.noTechnique")}</option>{props.career.learnedTechniques.map((id) => <option key={id} value={id}>{mentorTechniqueDefinition(id).name}</option>)}</select></label>
+            {props.career.activeMentorTechniqueChallenge && <div role="status"><strong>{t("playerPro.equipmentMentor.objective", { name: mentorTechniqueDefinition(props.career.activeMentorTechniqueChallenge.techniqueId).name })}</strong><br /><small>{props.career.activeMentorTechniqueChallenge.objective}</small></div>}
+            {props.career.activeRound?.performanceLoadout && <small>{t("playerPro.equipmentMentor.frozen", { count: props.career.activeRound.performanceLoadout.itemIds.length })}</small>}
+          </section>
           <section>
             <h3 style={{ margin: "0 0 7px" }}>{t("playerPro.techniques")}</h3>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
@@ -305,12 +341,15 @@ export function PlayerProPanel(props: {
 
         {tab === "training" && <section>
           <h3 style={{ margin: 0 }}>{t("playerPro.training.title")}</h3><p style={{ fontSize: 12 }}>{t("playerPro.training.help")}</p>
-          {options.length === 0 ? <p>{t("playerPro.training.none")}</p> : <div style={{ display: "grid", gap: 7 }}>{options.map((option) => <div key={option.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 8, padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><div><strong>{t("playerPro.training.session", { facility: option.facilityName, skill: t(labelKey(option.skill)) })}</strong><br /><small>{t("playerPro.training.meta", { minutes: option.minutes, cost: formatCurrency(option.cost) })}</small>{option.blocker && <div style={{ color: "#873324", fontSize: 11 }}>{t("playerPro.training.blocked", { reason: option.blocker })}</div>}</div><button disabled={!option.available || props.world.cash < option.cost} onClick={() => setNotice(props.onTrain(option) ?? `✓ ${t("playerPro.training.start")}`)}>{t("playerPro.training.start")}</button></div>)}</div>}
+          {options.length === 0 ? <p>{t("playerPro.training.none")}</p> : <div style={{ display: "grid", gap: 7 }}>{options.map((option) => <div key={option.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 8, padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><div><strong>{t("playerPro.training.session", { facility: option.facilityName, skill: t(labelKey(option.skill)) })}</strong><br /><small>{t("playerPro.training.meta", { minutes: option.minutes, cost: formatCurrency(option.cost) })}</small>{option.blocker && <div style={{ color: "#873324", fontSize: 11 }}>{t("playerPro.training.blocked", { reason: option.blocker })}</div>}</div><button disabled={!option.available || props.world.cash < option.cost} onClick={() => { void props.onTrain(option).then((message) => setNotice(message ?? `✓ ${t("playerPro.training.start")}`)); }}>{t("playerPro.training.start")}</button></div>)}</div>}
         </section>}
 
         {tab === "matches" && <section>
           <h3 style={{ margin: 0 }}>{t("playerPro.match.title")}</h3><p style={{ fontSize: 12 }}>{t("playerPro.match.help")}</p>
-          {opponents.length === 0 ? <p>{t("playerPro.match.none")}</p> : <div style={{ display: "grid", gap: 7 }}>{opponents.map((opponent) => <div key={opponent.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{opponent.name}</strong><small style={{ display: "block" }}>{t("playerPro.match.opponentMeta", { skill: Math.round(opponent.skill * 100), relationship: opponent.relationship })}</small><div style={{ display: "flex", gap: 6, marginTop: 6 }}><button onClick={() => setNotice(props.onChallenge(opponent, "friendly", 0) ?? `✓ ${t("playerPro.play.resume")}`)}>{t("playerPro.match.friendly")}</button><button disabled={props.world.cash < 100} onClick={() => setNotice(props.onChallenge(opponent, "wager", 100) ?? `✓ ${t("playerPro.play.resume")}`)}>{t("playerPro.match.wager", { amount: formatCurrency(100) })}</button></div></div>)}</div>}
+          {opponents.length === 0 ? <p>{t("playerPro.match.none")}</p> : <div style={{ display: "grid", gap: 7 }}>{opponents.map((opponent) => {
+            const mentor = mentorTechniqueEligibility(props.world, opponent.id);
+            return <div key={opponent.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{opponent.name}</strong><small style={{ display: "block" }}>{t("playerPro.match.opponentMeta", { skill: Math.round(opponent.skill * 100), relationship: opponent.relationship })}</small>{mentor.techniqueId && <small data-testid={`mentor-status-${opponent.id}`} style={{ display: "block" }}>{t("playerPro.equipmentMentor.mentorStatus", { name: mentorTechniqueDefinition(mentor.techniqueId).name, matches: mentor.completedMatches, relationship: mentor.relationship, reveals: mentor.revealCount })}</small>}<div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}><button onClick={() => setNotice(props.onChallenge(opponent, "friendly", 0) ?? `✓ ${t("playerPro.play.resume")}`)}>{t("playerPro.match.friendly")}</button><button disabled={props.world.cash < 100} onClick={() => setNotice(props.onChallenge(opponent, "wager", 100) ?? `✓ ${t("playerPro.play.resume")}`)}>{t("playerPro.match.wager", { amount: formatCurrency(100) })}</button>{mentor.techniqueId && !props.career.learnedTechniques.includes(mentor.techniqueId) && <button data-testid={`start-mentor-${opponent.id}`} disabled={!mentor.eligible} title={mentor.blockers.join(" ")} onClick={() => { void props.onMentorChallenge(opponent).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.equipmentMentor.startObjective")}</button>}</div></div>;
+          })}</div>}
         </section>}
 
         {tab === "tournaments" && <section>

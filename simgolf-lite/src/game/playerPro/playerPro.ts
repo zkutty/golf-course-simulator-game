@@ -24,7 +24,6 @@ import {
   type PlayerShotTrace,
   type PlayerSkillEvidence,
   type PlayerTournamentRecord,
-  type PlayerTrainingRecord,
 } from "../models/playerProTypes";
 import {
   biomeCompatibilityMetadataFor,
@@ -98,7 +97,6 @@ import {
 import { defaultPlayerProInventory, normalizePlayerProInventory } from "./inventoryPersistence";
 import { decodeChallengeGroupRound } from "../competition/challengeGroupRound";
 import {
-  applyPracticeConfidence,
   applyRoundConfidence,
   confidenceAtDay,
   confidenceDispersionMultiplier,
@@ -108,6 +106,12 @@ import {
 } from "./confidence";
 import { absoluteDayFor } from "../seasons/seasons";
 import { createInvitationCalendar, normalizeInvitationCalendar } from "./invitations";
+import {
+  capturePerformanceLoadout,
+  normalizePerformanceLoadoutSnapshot,
+  normalizedMentorCareerFields,
+  resolvePerformanceModifiers,
+} from "../competition/equipmentRuntime";
 
 const DEFAULT_SKILL = 40;
 const XP_PER_LEVEL = 12;
@@ -316,6 +320,10 @@ export function createDefaultPlayerPro(args: {
     skillXp: Object.fromEntries(PLAYER_PRO_SKILLS.map((skill) => [skill, 0])) as PlayerProSkills,
     careerPoints: 0,
     unlockedTechniques: ["normal"],
+    learnedTechniques: [],
+    activeMentorTechniqueChallenge: null,
+    mentorTechniqueChallenges: [],
+    mentorTechniqueLedger: [],
     activeRound: null,
     activeChallengeGroupRound: null,
     rounds: [],
@@ -376,6 +384,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
   const confidenceSnapshot = round.confidenceSnapshot == null
     ? undefined
     : normalizePlayerConfidence(round.confidenceSnapshot);
+  const performanceLoadout = normalizePerformanceLoadoutSnapshot(round.performanceLoadout);
   return {
     ...round,
     handedness: round.handedness === "left" ? "left" : "right",
@@ -395,6 +404,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
     shots: round.shots.slice(-MAX_SHOTS),
     ...(handicapSnapshot && !("code" in handicapSnapshot) ? { handicapSnapshot } : { handicapSnapshot: undefined }),
     ...(confidenceSnapshot ? { confidenceSnapshot } : {}),
+    ...(performanceLoadout ? { performanceLoadout } : {}),
   };
 }
 
@@ -470,6 +480,12 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
       ? { ...normalizedActiveRound, confidenceSnapshot: normalizePlayerConfidence(candidate.confidence) }
       : normalizedActiveRound;
   const identityId = typeof identity.id === "string" && identity.id ? identity.id : fallback.identity.id;
+  const mentorFields = normalizedMentorCareerFields(candidate);
+  const { learnedTechniques } = mentorFields;
+  const inventoryState = normalizePlayerProInventory(candidate, identityId);
+  const equipmentLoadout = inventoryState.equipmentLoadout.techniqueId && !learnedTechniques.includes(inventoryState.equipmentLoadout.techniqueId)
+    ? { ...inventoryState.equipmentLoadout, techniqueId: undefined }
+    : inventoryState.equipmentLoadout;
   return {
     version: 1,
     identity: {
@@ -483,6 +499,7 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
     skillXp: xp,
     careerPoints: Math.max(0, Math.floor(finite(candidate.careerPoints))),
     unlockedTechniques: techniques,
+    ...mentorFields,
     activeRound,
     activeChallengeGroupRound,
     rounds: Array.isArray(candidate.rounds)
@@ -500,7 +517,8 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
     handicapProfile: handicap.profile,
     confidence: normalizePlayerConfidence(candidate.confidence),
     invitationCalendar: normalizeInvitationCalendar(candidate.invitationCalendar),
-    ...normalizePlayerProInventory(candidate, identityId),
+    ...inventoryState,
+    equipmentLoadout,
   };
 }
 
@@ -655,6 +673,15 @@ export function startPlayableRound(args: {
     startedWeek: args.world.week,
     startedDay: args.day ?? 0,
   });
+  const career = args.world.playerPro ?? createDefaultPlayerPro({ seed: args.world.runSeed, name: args.world.founderName });
+  const performanceLoadout = capturePerformanceLoadout({
+    ownerId: career.identity.id,
+    inventoryItems: career.inventory.items,
+    loadout: career.equipmentLoadout,
+    learnedTechniques: career.learnedTechniques,
+    week: args.world.week,
+    day: args.day ?? 0,
+  });
   return {
     ok: true,
     round: {
@@ -667,6 +694,7 @@ export function startPlayableRound(args: {
       handicapSnapshot,
       confidenceSnapshot: confidence,
       rulesSnapshot,
+      performanceLoadout,
       teeSet,
       pinRotation,
       currentHoleIndex: 0,
@@ -829,14 +857,16 @@ export interface PlayerShotPreview {
 export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerProSkills, selection: PlayerShotSelection): PlayerShotPreview {
   const club = CLUBS.find((candidate) => candidate.name === selection.club);
   const flightProfile = flightProfileForTechnique(selection.technique, selection.flightProfile);
+  const clubId = shotClubIdForLabel(selection.club) ?? "pitching_wedge";
+  const performance = resolvePerformanceModifiers(round.performanceLoadout, { clubId, lie: round.lie, flightProfile });
   const calculated = calculatePlayerShotEffects({
     club: selection.club,
     lie: round.lie,
-    recoverySkill: skills.recovery,
+    recoverySkill: clamp(skills.recovery * performance.recovery, 0, 100),
     technique: selection.technique,
     flightProfile,
   });
-  const baseCarry = calculated.effects.carryYards * (0.82 + skills.power / 500) * (round.course.weather?.carryMultiplier ?? 1);
+  const baseCarry = calculated.effects.carryYards * (0.82 + skills.power / 500) * (round.course.weather?.carryMultiplier ?? 1) * performance.carry;
   if (!club) return {
     available: false,
     blocker: "unknown_club",
@@ -928,7 +958,8 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
     * (1.42 - skills[skillForClub(club.name, round.lie)] / 180)
     * (round.course.weather?.dispersionMultiplier ?? 1)
     * confidenceDispersionMultiplier(round.confidenceSnapshot)
-    * (obstructionPenalty > 0 ? 1.55 : 1);
+    * (obstructionPenalty > 0 ? 1.55 : 1)
+    * performance.dispersion;
   const resolved = evaluation.isValid
     ? resolvePlayableShot({
       snapshot: round.course,
@@ -941,18 +972,24 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
       selection,
       handedness: round.handedness,
       confidenceSnapshot: round.confidenceSnapshot,
+      performanceLoadout: round.performanceLoadout,
       seed: round.rngSeed + round.rngCursor * 104729,
     })
     : null;
   const sharedOutcome = resolved?.sharedOutcome ?? null;
   const automaticPuttingEstimate = resolved && !resolved.holed && resolved.lieAfter === "green"
-    ? estimateAutomaticPutts({
+    ? (() => {
+      const pin = round.course.holes[round.currentHoleIndex].pin;
+      const leaveDistanceYards = Math.hypot(resolved.rest.x - pin.x, resolved.rest.y - pin.y) * round.course.yardsPerTile;
+      const puttingPerformance = resolvePerformanceModifiers(round.performanceLoadout, { clubId: "putter", lie: "green", flightProfile: "standard", leaveDistanceYards });
+      return estimateAutomaticPutts({
       snapshot: round.course,
       holeId: round.course.holes[round.currentHoleIndex].id,
       rest: resolved.rest,
       rollout: resolved.greenRollout,
-      skills,
-    })
+      skills: { ...skills, putting: clamp(skills.putting * puttingPerformance.putting, 0, 100) },
+      });
+    })()
     : null;
   return {
     available: evaluation.isValid,
@@ -995,14 +1032,18 @@ export function resolvePlayableShot(args: {
   handedness?: ShotHandedness;
   /** Frozen Player Pro confidence; omitted callers intentionally use neutral. */
   confidenceSnapshot?: PlayerConfidenceState;
+  /** Frozen ZK-730 equipment and learned-technique authority. */
+  performanceLoadout?: PlayerPlayableRound["performanceLoadout"];
   seed: number;
 }): PlayerShotTrace {
   const club = CLUBS.find((candidate) => candidate.name === args.selection.club) ?? CLUBS[4];
   const flightProfile = flightProfileForTechnique(args.selection.technique, args.selection.flightProfile);
+  const clubId = shotClubIdForLabel(club.name) ?? "pitching_wedge";
+  const performance = resolvePerformanceModifiers(args.performanceLoadout, { clubId, lie: args.lie, flightProfile });
   const calculated = calculatePlayerShotEffects({
     club: club.name,
     lie: args.lie,
-    recoverySkill: args.skills.recovery,
+    recoverySkill: clamp(args.skills.recovery * performance.recovery, 0, 100),
     technique: args.selection.technique,
     flightProfile,
   });
@@ -1019,7 +1060,7 @@ export function resolvePlayableShot(args: {
   const obstructionPenalty = obstacleClose && args.selection.technique !== "punch" && club.name !== "Sand Wedge" && club.name !== "Chip";
   const weatherCarry = args.snapshot.weather?.carryMultiplier ?? 1;
   const powerScale = 0.82 + args.skills.power / 500;
-  const requestedCarryYards = calculated.effects.carryYards * powerScale * weatherCarry * power;
+  const requestedCarryYards = calculated.effects.carryYards * powerScale * weatherCarry * power * performance.carry;
   const nominalPhysicalCarryYards = requestedCarryYards * (obstructionPenalty ? 0.78 : 1);
   const shotSlope = analyzeShotSlope({
     course: args.snapshot,
@@ -1039,7 +1080,8 @@ export function resolvePlayableShot(args: {
       * (1.42 - clubSkill / 180)
       * weatherDispersion
       * confidenceDispersionMultiplier(args.confidenceSnapshot)
-      * (obstructionPenalty ? 1.55 : 1),
+      * (obstructionPenalty ? 1.55 : 1)
+      * performance.dispersion,
   );
   const rng = mulberry32(args.seed | 0);
   const lateral = gaussian(rng) * dispersion * 0.42;
@@ -1074,7 +1116,7 @@ export function resolvePlayableShot(args: {
     : { x: ux, y: uy };
   const requestedRollYards = club.name === "Putter"
     ? Math.hypot(rawLanding.x - args.from.x, rawLanding.y - args.from.y) * args.snapshot.yardsPerTile
-    : calculated.effects.rolloutYards;
+    : calculated.effects.rolloutYards * performance.spin;
   const spin: GreenRolloutSpin = args.selection.technique === "backspin"
     ? "backspin"
     : args.selection.technique === "draw"
@@ -1103,7 +1145,7 @@ export function resolvePlayableShot(args: {
     seed: args.seed,
   });
   const rawRest = greenRollout.rest;
-  const puttingSkill = args.skills.putting;
+  const puttingSkill = clamp(args.skills.putting * performance.putting, 0, 100);
   const cupRadius = club.name === "Putter" ? 0.42 + puttingSkill / 240 : 0.22;
   const physicalHoled = (hasFrozenRules || !legacyHazard) && rawRest.x >= 0 && rawRest.y >= 0
     && rawRest.x < args.snapshot.width && rawRest.y < args.snapshot.height
@@ -1176,12 +1218,14 @@ export function resolvePlayableShot(args: {
     finalPosition: { ...finalPosition },
   };
   if (!trace.holed && trace.lieAfter === "green") {
+    const leaveDistanceYards = Math.hypot(trace.rest.x - hole.pin.x, trace.rest.y - hole.pin.y) * args.snapshot.yardsPerTile;
+    const automaticPuttingPerformance = resolvePerformanceModifiers(args.performanceLoadout, { clubId: "putter", lie: "green", flightProfile: "standard", leaveDistanceYards });
     trace.greenPutting = resolveAutomaticPutts({
       snapshot: args.snapshot,
       holeId: args.holeId,
       rest: trace.rest,
       rollout: greenRollout,
-      skills: args.skills,
+      skills: { ...args.skills, putting: clamp(args.skills.putting * automaticPuttingPerformance.putting, 0, 100) },
       // A distinct deterministic stream prevents a putt result from changing
       // any already-resolved flight result when the putting model evolves.
       seed: (args.seed ^ 0x640a77) >>> 0,
@@ -1225,6 +1269,7 @@ export function commitPlayerShot(round: PlayerPlayableRound, skills: PlayerProSk
     selection,
     handedness: round.handedness,
     confidenceSnapshot: round.confidenceSnapshot,
+    performanceLoadout: round.performanceLoadout,
     seed: round.rngSeed + round.rngCursor * 104729,
   });
   return {
@@ -1528,12 +1573,7 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
         return postCompletedHandicapRound(career.handicapProfile, score);
       })()
     : career.handicapProfile;
-  return {
-    cashDelta,
-    reputationDelta,
-    round: careerRound,
-    tournamentEvent,
-    career: {
+  const settledCareer: PlayerProCareer = {
       ...career,
       skills,
       skillXp,
@@ -1549,7 +1589,13 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
       settlementLedger: [...career.settlementLedger, ledgerId].slice(-160),
       handicapProfile,
       confidence,
-    },
+  };
+  return {
+    cashDelta,
+    reputationDelta,
+    round: careerRound,
+    tournamentEvent,
+    career: settledCareer,
   };
 }
 
@@ -1565,107 +1611,11 @@ export interface PlayerTrainingOption {
   blocker: string | null;
 }
 
-const TRAINING_SKILLS: Record<string, PlayerProSkill[]> = {
-  driving_range: ["power", "driving", "irons"],
-  practice_bays: ["driving", "irons"],
-  putting_green: ["putting"],
-  short_game_area: ["shortGame", "recovery"],
-  practice_holes: ["irons", "shortGame", "putting", "recovery"],
-};
-
-export function playerTrainingOptions(course: Course, world: World, day: number, dayMinute = 600): PlayerTrainingOption[] {
-  const assets = course.property?.assets ?? [];
-  const hasCoach = (world.staffRoster ?? []).some((staff) => staff.role === "club_pro") || (world.enterprise?.professionals.length ?? 0) > 0;
-  const sessionsToday = world.playerPro?.training.filter((record) => record.week === world.week && record.day === day).length ?? 0;
-  return assets.flatMap((asset) => (TRAINING_SKILLS[asset.kind] ?? []).map((skill) => {
-    const blocker = !asset.enabled
-      ? "closed"
-      : (asset.constructionDaysRemaining ?? 0) > 0
-        ? "construction"
-        : asset.condition < 0.4
-          ? "condition"
-          : dayMinute < (asset.openHour ?? 7) * 60 || dayMinute >= (asset.closeHour ?? 20) * 60
-            ? "hours"
-            : !hasCoach
-              ? "coach"
-              : sessionsToday >= 2
-                ? "daily_cap"
-                : null;
-    return {
-      id: `${asset.id}:${skill}`,
-      facilityId: asset.id,
-      facilityName: asset.name,
-      tier: asset.tier,
-      skill,
-      cost: Math.max(25, Math.round(asset.price * 2 + asset.tier * 20)),
-      minutes: 45 + asset.tier * 5,
-      available: blocker == null,
-      blocker,
-    };
-  }));
-}
-
-export function completePlayerTraining(career: PlayerProCareer, world: World, option: PlayerTrainingOption, day: number): { career: PlayerProCareer; cost: number } {
-  if (!option.available || world.cash < option.cost) return { career, cost: 0 };
-  const id = `training-${world.week}-${day}-${career.training.filter((record) => record.week === world.week && record.day === day).length + 1}`;
-  if (career.settlementLedger.includes(id)) return { career, cost: 0 };
-  const evidence = 4;
-  const skillXp = { ...career.skillXp, [option.skill]: career.skillXp[option.skill] + evidence };
-  const beforeLevel = Math.floor(career.skillXp[option.skill] / XP_PER_LEVEL);
-  const afterLevel = Math.floor(skillXp[option.skill] / XP_PER_LEVEL);
-  const skills = { ...career.skills, [option.skill]: clamp(career.skills[option.skill] + Math.max(0, afterLevel - beforeLevel), 0, 100) };
-  const record: PlayerTrainingRecord = {
-    id,
-    week: world.week,
-    day,
-    facilityId: option.facilityId,
-    facilityName: option.facilityName,
-    skill: option.skill,
-    cost: option.cost,
-    minutes: option.minutes,
-    evidence,
-  };
-  return {
-    cost: option.cost,
-    career: {
-      ...career,
-      skills,
-      skillXp,
-      unlockedTechniques: unlockTechniques(skills),
-      confidence: applyPracticeConfidence(
-        confidenceAtDay(career.confidence, absoluteDayFor(world.week, day)),
-        option.tier,
-      ),
-      training: [...career.training, record].slice(-MAX_TRAINING),
-      settlementLedger: [...career.settlementLedger, id].slice(-160),
-    },
-  };
-}
-
 export interface PlayerOpponent {
   id: string;
   name: string;
   skill: number;
   relationship: number;
-}
-
-export function eligiblePlayerOpponents(world: World): PlayerOpponent[] {
-  const customers = (world.enterprise?.customers ?? [])
-    .filter((customer) => customer.visits >= 2 || customer.loyalty >= 40)
-    .slice(0, 12)
-    .map((customer) => ({
-      id: customer.id,
-      name: customer.name,
-      skill: clamp(customer.skill / 100, 0.2, 0.95),
-      relationship: clamp(customer.loyalty - 50, -50, 50),
-    }));
-  if (customers.length) return customers;
-  return (world.enterprise?.professionals ?? []).slice(0, 6).map((professional) => ({
-    id: professional.id,
-    name: professional.name,
-    skill: clamp(0.5 + professional.tier * 0.08, 0.4, 0.95),
-    relationship: 5,
-  }));
 }
 
 export function createPlayerChallenge(career: PlayerProCareer, opponent: PlayerOpponent, kind: "friendly" | "wager", wager = 100): { career: PlayerProCareer; challenge: PlayerChallengeRecord } {
@@ -1731,14 +1681,6 @@ export function activatePlayerTournament(career: PlayerProCareer, eventId: strin
 export function currentPlayerTournament(world: World, id?: string): TournamentEvent | undefined {
   if (!id) return undefined;
   return tournamentCalendar(world).events.find((event) => event.id === id);
-}
-
-export function playerTechniqueCatalog(skills: PlayerProSkills): Array<{ technique: PlayerShotTechnique; unlocked: boolean; requirement: string | null }> {
-  return (["normal", "draw", "fade", "punch", "flop", "backspin"] as PlayerShotTechnique[]).map((technique) => ({
-    technique,
-    unlocked: techniqueRequirement(technique, skills) == null,
-    requirement: techniqueRequirement(technique, skills),
-  }));
 }
 
 export function caddieRecommendation(round: PlayerPlayableRound, skills: PlayerProSkills): PlayerShotSelection {

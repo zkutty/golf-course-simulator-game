@@ -6,7 +6,7 @@ import type {
   RegularGolfer,
   RelationshipGatedFact,
 } from "../livingClub/types";
-import type { ChallengeRivalProfile, InventoryCategory, InventoryItem, LearnedTechnique, RewardDefinition } from "./types";
+import type { ChallengeRivalProfile, EquipmentModifier, InventoryCategory, InventoryItem, LearnedTechnique, RewardDefinition } from "./types";
 
 interface AuthoredItemDefinition {
   id: string;
@@ -19,6 +19,7 @@ interface AuthoredItemDefinition {
   remainingPlacements?: number;
   frozenInstallValueEach?: number;
   speciesId?: string;
+  modifiers?: readonly EquipmentModifier[];
 }
 
 interface OccupationPackage {
@@ -41,14 +42,14 @@ interface OccupationPackage {
 
 const ITEM_DEFINITIONS: readonly AuthoredItemDefinition[] = [
   { id: "heirloom-bloom-stock", name: "Heirloom Bloom Stock", category: "plant-stock", authoredValue: 45, remainingValue: 360, prestige: 35, unique: false, remainingPlacements: 8, frozenInstallValueEach: 45, speciesId: "flower_native" },
-  { id: "workshop-flighted-iron", name: "Workshop Flighted Iron", category: "club", authoredValue: 900, prestige: 55, unique: true },
+  { id: "workshop-flighted-iron", name: "Workshop Flighted Iron", category: "club", authoredValue: 900, prestige: 55, unique: true, modifiers: [{ channel: "carry", multiplier: .94, context: "iron-low-flight" }, { channel: "dispersion", multiplier: .9, context: "iron-low-flight" }] },
   { id: "annotated-lesson-book", name: "Annotated Lesson Book", category: "keepsake", authoredValue: 350, prestige: 60, unique: true },
   { id: "turf-treatment-credit", name: "Bounded Turf Treatment Credit", category: "service-credit", authoredValue: 600, remainingValue: 600, prestige: 30, unique: false },
   { id: "construction-credit", name: "Construction Material Credit", category: "service-credit", authoredValue: 1200, remainingValue: 1200, prestige: 40, unique: false },
   { id: "event-service-credit", name: "Event Service Credit", category: "service-credit", authoredValue: 500, remainingValue: 500, prestige: 35, unique: false },
-  { id: "heritage-outfit", name: "Hand-cut Heritage Outfit", category: "outfit", authoredValue: 850, prestige: 65, unique: true },
+  { id: "heritage-outfit", name: "Hand-cut Heritage Outfit", category: "outfit", authoredValue: 850, prestige: 65, unique: true, modifiers: [{ channel: "recovery", multiplier: 1.08, context: "difficult-recovery" }, { channel: "dispersion", multiplier: 1.05, context: "difficult-recovery" }] },
   { id: "restored-roadster", name: "Restored Roadster", category: "vehicle", authoredValue: 18000, prestige: 82, unique: true },
-  { id: "field-chronometer", name: "Field Chronometer", category: "watch", authoredValue: 4200, prestige: 78, unique: true },
+  { id: "field-chronometer", name: "Field Chronometer", category: "watch", authoredValue: 4200, prestige: 78, unique: true, modifiers: [{ channel: "putting", multiplier: 1.08, context: "green-putting" }, { channel: "carry", multiplier: .94, context: "green-putting" }] },
   { id: "midnight-coupe", name: "Midnight Coupe", category: "vehicle", authoredValue: 24000, prestige: 88, unique: true },
   { id: "tournament-stay-credit", name: "Tournament Stay Credit", category: "service-credit", authoredValue: 900, remainingValue: 900, prestige: 50, unique: false },
   { id: "course-portrait", name: "Original Course Portrait", category: "keepsake", authoredValue: 1300, prestige: 72, unique: true },

@@ -7,6 +7,7 @@ import type { GreenRolloutV1 } from "../greens/greenRollout";
 import type { GreenPuttingV1 } from "../greens/greenPutting";
 import type { HandicapProfile, RoundHandicapSnapshot } from "../competition/persistence";
 import type { ChallengeGroupRound } from "../competition/challengeGroupRound";
+import type { FrozenPerformanceLoadout, LearnedTechnique, MentorTechniqueChallenge } from "../competition/types";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -158,6 +159,8 @@ export interface PlayerPlayableRound {
   handicapSnapshot?: RoundHandicapSnapshot;
   /** Immutable M50 boundary/penalty foundation captured for save v20. */
   rulesSnapshot?: ControlledRoundSnapshotV2;
+  /** Immutable ZK-730 equipment and learned-technique authority captured at round start. */
+  performanceLoadout?: FrozenPerformanceLoadout;
   teeSet: "forward" | "member" | "championship";
   pinRotation: "A" | "B" | "C";
   currentHoleIndex: number;
@@ -267,6 +270,11 @@ export interface PlayerProCareer {
   skillXp: PlayerProSkills;
   careerPoints: number;
   unlockedTechniques: PlayerShotTechnique[];
+  /** Authored mentor techniques are non-transferable career knowledge. */
+  learnedTechniques: LearnedTechnique[];
+  activeMentorTechniqueChallenge: MentorTechniqueChallenge | null;
+  mentorTechniqueChallenges: MentorTechniqueChallenge[];
+  mentorTechniqueLedger: string[];
   activeRound: PlayerPlayableRound | null;
   /** Optional ZK-726 multi-golfer authority; independent of legacy solo rounds. */
   activeChallengeGroupRound?: ChallengeGroupRound | null;

@@ -8,20 +8,18 @@ import {
   caddieShotGuidance,
   caddieRecommendation,
   commitPlayerShot,
-  completePlayerTraining,
   createDefaultPlayerPro,
   createPlayerChallenge,
   finishPlayerShot,
   normalizePlayerPro,
-  playerTechniqueCatalog,
   playerTournamentEligibility,
-  playerTrainingOptions,
   previewPlayableShot,
   registerPlayerTournament,
   resolvePlayableShot,
-  settlePlayerRound,
   startPlayableRound,
 } from "./playerPro";
+import { settlePlayerRound } from "./playerProSettlement";
+import { completePlayerTraining, playerTechniqueCatalog, playerTrainingOptions } from "./playerProPanelAuthority";
 import { normalizeLoadedSaveResult } from "../../utils/save";
 import { starterPropertyCourse } from "../property/property";
 import { createRenderPerfCourse } from "../testing/referenceCourse";
