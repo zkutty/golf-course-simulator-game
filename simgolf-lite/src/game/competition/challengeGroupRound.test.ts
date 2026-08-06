@@ -4,6 +4,8 @@ import type { PlayerProSkills, PlayerRoundCourseSnapshot } from "../models/playe
 import { createDefaultPlayerPro, normalizePlayerPro } from "../playerPro/playerPro";
 import {
   challengeGroupRoundTextState,
+  challengeGroupIndividualGrossEvidence,
+  chooseChallengeGroupScrambleBall,
   commitChallengeGroupPlayerShot,
   concedeChallengeGroupHole,
   decodeChallengeGroupRound,
@@ -307,5 +309,121 @@ describe("ZK-726 ChallengeGroupRound", () => {
     expect(round.golfers.every((golfer) => golfer.shots.length === 9)).toBe(true);
     expect(round.activeGolferId).toBeNull();
     expect(() => encodeChallengeGroupRound(round)).not.toThrow();
+  });
+});
+
+describe("ZK-728 2v2 team round authority", () => {
+  it.each([
+    ["four-ball", "net-match", "90%-per-player"],
+    ["four-ball", "net-stroke", "85%-per-player"],
+    ["alternate-shot", "net-match", "50%-combined"],
+    ["scramble", "net-stroke", "35%-low+15%-high"],
+  ] as const)("freezes %s %s teams, handicaps, equipment and loadouts", (teamFormat, scoringMode, formula) => {
+    const round = start({ teamFormat, scoringMode, participants: participants(0) });
+    expect(round.teamAuthority).toMatchObject({
+      version: 1,
+      format: teamFormat,
+      scoring: scoringMode === "net-match" ? "match" : "stroke",
+      teams: [
+        { id: "team-a", playerIds: ["alex", "casey"] },
+        { id: "team-b", playerIds: ["blair", "devon"] },
+      ],
+      handicaps: [expect.objectContaining({ formula }), expect.objectContaining({ formula })],
+    });
+    expect(Object.isFrozen(round.teamAuthority)).toBe(true);
+    expect(Object.isFrozen(round.teamAuthority!.handicaps[0].members)).toBe(true);
+    expect(Object.isFrozen(round.golfers[0].equipment)).toBe(true);
+  });
+
+  it("keeps all four individual gross cards while four-ball selects the best team net ball", () => {
+    let round = start({ teamFormat: "four-ball", scoringMode: "net-stroke", participants: participants(0) });
+    round = concedeChallengeGroupHole(round, "blair", 4);
+    round = concedeChallengeGroupHole(round, "casey", 5);
+    round = concedeChallengeGroupHole(round, "devon", 6);
+    round = concedeChallengeGroupHole(round, "alex", 7);
+    expect(round.match.holeResults[0].teamWinnerIds).toEqual(["team-b"]);
+    expect(round.golfers.map((golfer) => golfer.scorecard[0].gross)).toEqual([7, 4, 5, 6]);
+    expect(round.golfers.every((golfer) => golfer.scorecard[0].gross != null)).toBe(true);
+    const grossEvidence = challengeGroupIndividualGrossEvidence(round);
+    expect(grossEvidence.map((entry) => ({ playerId: entry.playerId, first: entry.holeScores[0] }))).toEqual([
+      { playerId: "alex", first: { holeId: "hole-1", gross: 7, par: 3 } },
+      { playerId: "blair", first: { holeId: "hole-1", gross: 4, par: 3 } },
+      { playerId: "casey", first: { holeId: "hole-1", gross: 5, par: 3 } },
+      { playerId: "devon", first: { holeId: "hole-1", gross: 6, par: 3 } },
+    ]);
+    expect(grossEvidence.flatMap((entry) => entry.holeScores).every((score) => Number.isInteger(score.gross))).toBe(true);
+  });
+
+  it("alternates shared-ball partners after every shot and alternates the tee player by hole", () => {
+    const longCourse = course();
+    longCourse.tiles.fill("fairway");
+    longCourse.holes = longCourse.holes.map((hole) => ({ ...hole, pin: { x: 16, y: 3 } }));
+    let round = start({ course: longCourse, teamFormat: "alternate-shot", scoringMode: "net-stroke", participants: participants(0), rngSeed: 728_101 });
+    const soft = { ...selection(round), power: .1 };
+    round = commitChallengeGroupPlayerShot(round, "alex", soft);
+    const teamAShots = round.turnEvidence.filter((turn) => ["alex", "casey"].includes(turn.golferId));
+    expect(teamAShots.slice(0, 2).map((turn) => turn.golferId)).toEqual(["alex", "casey"]);
+    expect(teamAShots[1].holeId).toBe(teamAShots[0].holeId);
+    expect(round.teamAuthority!.balls.find((ball) => ball.teamId === "team-a")!.scorecard[0].countedPlayerIds.slice(0, 2)).toEqual(["alex", "casey"]);
+
+    let guard = 0;
+    while (round.currentHoleIndex === 0 && round.phase !== "complete" && guard++ < 20) {
+      expect(round.activeGolferId).toBe("alex");
+      round = commitChallengeGroupPlayerShot(round, "alex", selection(round));
+    }
+    expect(round.currentHoleIndex).toBe(1);
+    expect(round.turnEvidence.find((turn) => turn.holeId === "hole-2" && ["alex", "casey"].includes(turn.golferId))?.golferId).toBe("casey");
+  });
+
+  it("pauses for an explicit human scramble choice and records deterministic AI choices", () => {
+    let round = start({ teamFormat: "scramble", scoringMode: "net-stroke", participants: participants(0), rngSeed: 728_202 });
+    round = commitChallengeGroupPlayerShot(round, "alex", { ...selection(round), power: .2 });
+    expect(round.phase).toBe("awaiting_ball_choice");
+    expect(round.activeGolferId).toBe("alex");
+    const playerBall = round.teamAuthority!.balls.find((ball) => ball.teamId === "team-a")!;
+    expect(playerBall.candidates.map((candidate) => candidate.playerId).sort()).toEqual(["alex", "casey"]);
+    expect(() => chooseChallengeGroupScrambleBall(round, "blair")).toThrow("not one of");
+
+    const chosen = playerBall.candidates[0].playerId;
+    const continued = chooseChallengeGroupScrambleBall(round, chosen);
+    expect(continued.teamAuthority!.choices.find((choice) => choice.teamId === "team-a")).toMatchObject({
+      selectedPlayerId: chosen,
+      controller: "player",
+      reason: "explicit player selection",
+    });
+    expect(continued.teamAuthority!.choices.some((choice) => choice.teamId === "team-b" && choice.controller === "ai")).toBe(true);
+    expect(continued.teamAuthority!.balls.find((ball) => ball.teamId === "team-a")!.candidates).toEqual([]);
+  });
+
+  it("round-trips active ball candidates, partner order, handicap snapshots, choices, and text evidence exactly", () => {
+    let round = start({ teamFormat: "scramble", scoringMode: "net-match", participants: participants(0), rngSeed: 728_303 });
+    round = commitChallengeGroupPlayerShot(round, "alex", { ...selection(round), power: .2 });
+    expect(round.phase).toBe("awaiting_ball_choice");
+    const encoded = encodeChallengeGroupRound(round);
+    const decoded = decodeChallengeGroupRound(encoded);
+    expect(decoded.ok).toBe(true);
+    if (!decoded.ok) return;
+    expect(JSON.stringify(decoded.round)).toBe(encoded);
+    expect(challengeGroupRoundTextState(decoded.round)).toMatchObject({
+      controls: "choose-scramble-ball",
+      teamAuthority: {
+        format: "scramble",
+        handicaps: expect.any(Array),
+        balls: expect.arrayContaining([expect.objectContaining({ candidates: expect.any(Array) })]),
+        choices: expect.any(Array),
+      },
+    });
+    const choice = decoded.round.teamAuthority!.balls.find((ball) => ball.teamId === "team-a")!.candidates[1].playerId;
+    expect(chooseChallengeGroupScrambleBall(decoded.round, choice)).toEqual(chooseChallengeGroupScrambleBall(round, choice));
+
+    const corrupt = JSON.parse(encoded) as ChallengeGroupRound;
+    (corrupt.teamAuthority!.handicaps[0] as { playingHandicap: number }).playingHandicap += 1;
+    expect(decodeChallengeGroupRound(corrupt)).toEqual({ ok: false, error: "ChallengeGroupRound frozen team handicaps drifted." });
+  });
+
+  it("rejects malformed 2v2 membership without weakening ordinary 2–4 golfer groups", () => {
+    expect(() => start({ teamFormat: "scramble", participants: participants(0).slice(0, 3) })).toThrow("two stable teams of two");
+    expect(() => start({ teamFormat: "alternate-shot", participants: participants(0).map((participant) => ({ ...participant, teamId: "one-team" })) })).toThrow("two stable teams of two");
+    expect(start({ participants: participants(0).slice(0, 3) }).teamAuthority).toBeUndefined();
   });
 });

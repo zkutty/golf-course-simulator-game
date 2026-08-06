@@ -133,6 +133,28 @@ function challengeGroupRound(): ChallengeGroupRound {
   });
 }
 
+function teamChallengeGroupRound(): ChallengeGroupRound {
+  const career = createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed, name: "Casey Fairway" });
+  const snapshot = legacyHandicapRound().course;
+  return startChallengeGroupRound({
+    id: "save-team-728",
+    course: snapshot,
+    teeSet: "member",
+    pinRotation: "A",
+    teamFormat: "alternate-shot",
+    scoringMode: "net-match",
+    participants: [
+      { id: career.identity.id, name: career.identity.name, controller: "player", teamId: "home", skills: career.skills, handicapIndex: -2, equipment: { loadout: career.equipmentLoadout, items: career.inventory.items } },
+      { id: "away-1", name: "Away One", controller: "ai", teamId: "away", skills: career.skills, handicapIndex: 4 },
+      { id: "home-2", name: "Home Two", controller: "ai", teamId: "home", skills: career.skills, handicapIndex: 12 },
+      { id: "away-2", name: "Away Two", controller: "ai", teamId: "away", skills: career.skills, handicapIndex: 18 },
+    ],
+    rngSeed: 728_404,
+    startedWeek: DEFAULT_WORLD.week,
+    startedDay: 0,
+  });
+}
+
 function legacyLinksOverlay(seed = 25) {
   const current = createNewGame({
     mode: "sandbox",
@@ -320,6 +342,19 @@ describe("save validation and migrations", () => {
     }));
     expect(rejectedLoad.ok).toBe(true);
     if (rejectedLoad.ok) expect(rejectedLoad.payload.world.playerPro?.activeChallengeGroupRound).toBeNull();
+  });
+
+  it("round-trips frozen ZK-728 team membership, handicap snapshots, shared ball, and partner order", () => {
+    const group = teamChallengeGroupRound();
+    const career = { ...createDefaultPlayerPro({ seed: DEFAULT_WORLD.runSeed }), activeChallengeGroupRound: group };
+    const input = file({ world: { ...DEFAULT_WORLD, playerPro: career } });
+    const persisted = payloadForPersistence(input as Parameters<typeof payloadForPersistence>[0]);
+    const loaded = normalizeLoadedSaveResult(persisted);
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    expect(loaded.payload.world.playerPro?.activeChallengeGroupRound).toEqual(group);
+    expect(loaded.payload.world.playerPro?.activeChallengeGroupRound?.teamAuthority).toEqual(group.teamAuthority);
+    expect(Object.isFrozen(loaded.payload.world.playerPro?.activeChallengeGroupRound?.teamAuthority)).toBe(true);
   });
 
   it("round-trips inventory, equipment, appraisal identity, and rival custody without duplication", () => {

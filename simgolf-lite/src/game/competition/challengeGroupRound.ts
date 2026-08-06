@@ -6,6 +6,15 @@ import type {
   SideBetKind,
 } from "./types";
 import { courseHandicap, strokesByHole } from "./handicap";
+import {
+  captureTeamHandicapSnapshots,
+  chooseDeterministicScrambleBall,
+  advanceAlternateShotBall,
+  type ChallengeTeamAuthority,
+  type ChallengeTeamFormat,
+  type TeamBallCandidate,
+  type TeamBallState,
+} from "./teamAuthority";
 import type {
   PlayerPlayableRound,
   PlayerProHandedness,
@@ -34,7 +43,7 @@ const MAX_GROUP_SHOTS = 960;
 const MAX_AI_TURNS = 960;
 
 export type ChallengeGroupController = "player" | "ai";
-export type ChallengeGroupPhase = "awaiting_player" | "complete";
+export type ChallengeGroupPhase = "awaiting_player" | "awaiting_ball_choice" | "complete";
 export type ChallengeGroupScoringMode = "gross-stroke" | "net-stroke" | "gross-match" | "net-match";
 
 export interface ChallengeGroupEquipmentSnapshot {
@@ -147,6 +156,8 @@ export interface ChallengeGroupRound {
   playerGolferId: string;
   honorsOrder: readonly string[];
   golfers: readonly ChallengeGroupGolfer[];
+  /** Present only for ZK-728's explicit, frozen 2v2 formats. */
+  teamAuthority?: ChallengeTeamAuthority;
   match: ChallengeMatchState;
   sideBets: readonly ChallengeSideBetState[];
   reactions: readonly { golferId: string; reaction: HoleReaction }[];
@@ -182,6 +193,7 @@ export interface StartChallengeGroupRoundArgs {
   teeSet: "forward" | "member" | "championship";
   pinRotation: "A" | "B" | "C";
   participants: readonly ChallengeGroupParticipantInput[];
+  teamFormat?: ChallengeTeamFormat;
   scoringMode?: ChallengeGroupScoringMode;
   sideBets?: readonly ChallengeSideBetState[];
   rngSeed: number;
@@ -291,6 +303,60 @@ function scorecardFor(handicap: ChallengeGroupHandicapSnapshot, course: PlayerRo
   }));
 }
 
+function buildTeamAuthority(
+  golfers: readonly ChallengeGroupGolfer[],
+  format: ChallengeTeamFormat,
+  scoringMode: ChallengeGroupScoringMode,
+  course: PlayerRoundCourseSnapshot,
+): ChallengeTeamAuthority {
+  const grouped = [...new Set(golfers.map((golfer) => golfer.teamId))].map((id) => ({
+    id,
+    playerIds: golfers.filter((golfer) => golfer.teamId === id).map((golfer) => golfer.id),
+  }));
+  const holes = competitionHoles(course);
+  const par = holes.reduce((sum, hole) => sum + hole.par, 0);
+  const handicapCourse = course.rating
+    ? { courseRating: course.rating.courseRating, slopeRating: course.rating.slope, par }
+    : { courseRating: par, slopeRating: 113, par };
+  const scoring = scoringMode.endsWith("match") ? "match" as const : "stroke" as const;
+  const handicaps = captureTeamHandicapSnapshots(grouped, golfers.map((golfer) => ({ id: golfer.id, handicapIndex: golfer.handicap.handicapIndex })), format, scoring, handicapCourse, holes);
+  const balls = grouped.map((team) => {
+    const handicap = handicaps.find((entry) => entry.teamId === team.id)!;
+    return {
+      teamId: team.id,
+      ball: { ...course.holes[0].tee },
+      lie: "tee",
+      nextPlayerId: team.playerIds[0],
+      candidates: [],
+      scorecard: course.holes.map((hole, index) => ({
+        holeId: hole.id,
+        par: hole.par,
+        handicapStrokes: handicap.strokesByHole[index],
+        strokes: 0,
+        penalties: 0,
+        gross: null,
+        net: null,
+        status: "active" as const,
+        countedPlayerIds: [],
+      })),
+    };
+  });
+  return freeze({ version: 1, format, scoring, teams: grouped, handicaps, balls, choices: [] });
+}
+
+function applyFourBallHandicaps(golfers: readonly ChallengeGroupGolfer[], authority: ChallengeTeamAuthority): ChallengeGroupGolfer[] {
+  if (authority.format !== "four-ball") return golfers.map((golfer) => ({ ...golfer }));
+  return golfers.map((golfer) => {
+    const member = authority.handicaps.flatMap((snapshot) => snapshot.members).find((entry) => entry.playerId === golfer.id)!;
+    const handicap = { ...golfer.handicap, playingHandicap: member.strokesOffLow, strokesByHole: member.strokesByHole };
+    return {
+      ...golfer,
+      handicap,
+      scorecard: golfer.scorecard.map((score, index) => ({ ...score, handicapStrokes: member.strokesByHole[index] })),
+    };
+  });
+}
+
 function buildMatch(golfers: readonly ChallengeGroupGolfer[], scoringMode: ChallengeGroupScoringMode): ChallengeMatchState {
   const teamIds = [...new Set(golfers.map((golfer) => golfer.teamId))];
   return {
@@ -348,12 +414,49 @@ function activeOnHole(round: ChallengeGroupRound, golfer: ChallengeGroupGolfer):
 }
 
 function nextGolferId(round: ChallengeGroupRound, golfers: readonly ChallengeGroupGolfer[]): string | null {
+  if (round.teamAuthority && round.teamAuthority.format !== "four-ball") return nextTeamGolferId(round);
   const pin = round.course.holes[round.currentHoleIndex].pin;
   const rank = new Map(round.honorsOrder.map((id, index) => [id, index]));
   return golfers
     .filter((golfer) => activeOnHole(round, golfer))
     .map((golfer) => ({ golfer, distance: Math.hypot(golfer.ball.x - pin.x, golfer.ball.y - pin.y) }))
     .sort((a, b) => b.distance - a.distance || (rank.get(a.golfer.id) ?? 99) - (rank.get(b.golfer.id) ?? 99))[0]?.golfer.id ?? null;
+}
+
+function activeTeamBall(round: ChallengeGroupRound, ball: TeamBallState): boolean {
+  return ball.scorecard[round.currentHoleIndex]?.status === "active";
+}
+
+function nextTeamGolferId(round: ChallengeGroupRound): string | null {
+  const authority = round.teamAuthority;
+  if (!authority) return null;
+  const pin = round.course.holes[round.currentHoleIndex].pin;
+  const teamRank = new Map(authority.teams.map((team, index) => [team.id, index]));
+  const ball = authority.balls.filter((entry) => activeTeamBall(round, entry)).sort((a, b) => {
+    const aDistance = Math.hypot(a.ball.x - pin.x, a.ball.y - pin.y);
+    const bDistance = Math.hypot(b.ball.x - pin.x, b.ball.y - pin.y);
+    return bDistance - aDistance || (teamRank.get(a.teamId) ?? 99) - (teamRank.get(b.teamId) ?? 99);
+  })[0];
+  if (!ball) return null;
+  if (authority.format === "alternate-shot") return ball.nextPlayerId;
+  const team = authority.teams.find((entry) => entry.id === ball.teamId)!;
+  return team.playerIds.find((id) => !ball.candidates.some((candidate) => candidate.playerId === id)) ?? null;
+}
+
+function withTeamBallGolfer(round: ChallengeGroupRound, golfer: ChallengeGroupGolfer): ChallengeGroupGolfer {
+  const ball = round.teamAuthority?.balls.find((entry) => entry.teamId === golfer.teamId);
+  if (!ball || round.teamAuthority?.format === "four-ball") return golfer;
+  const teamScore = ball.scorecard[round.currentHoleIndex];
+  return {
+    ...golfer,
+    ball: { ...ball.ball },
+    lie: ball.lie,
+    scorecard: golfer.scorecard.map((score, index) => index === round.currentHoleIndex ? {
+      ...score,
+      strokes: teamScore.strokes,
+      penalties: teamScore.penalties,
+    } : score),
+  };
 }
 
 function holeReaction(golfer: ChallengeGroupGolfer, holeIndex: number): HoleReaction {
@@ -386,11 +489,14 @@ function scoreValue(score: ChallengeGroupHoleScore, mode: ChallengeGroupScoringM
 
 function settleCompletedHole(round: ChallengeGroupRound, golfers: readonly ChallengeGroupGolfer[]): { golfers: ChallengeGroupGolfer[]; match: ChallengeMatchState; reactions: ChallengeGroupRound["reactions"] } {
   const hole = round.course.holes[round.currentHoleIndex];
-  const scores = Object.fromEntries(golfers.map((golfer) => [golfer.id, scoreValue(golfer.scorecard[round.currentHoleIndex], round.match.scoringMode)]));
+  const sharedTeamBall = round.teamAuthority && round.teamAuthority.format !== "four-ball";
+  const scores = Object.fromEntries(golfers.map((golfer) => [golfer.id, sharedTeamBall ? null : scoreValue(golfer.scorecard[round.currentHoleIndex], round.match.scoringMode)]));
   const eligible = golfers.filter((golfer) => scores[golfer.id] != null && !golfer.withdrawn);
   const best = eligible.length ? Math.min(...eligible.map((golfer) => scores[golfer.id]!)) : null;
   const winnerIds = best == null ? [] : eligible.filter((golfer) => scores[golfer.id] === best).map((golfer) => golfer.id);
   const teamScores = round.match.teams.map((team) => {
+    const shared = sharedTeamBall ? round.teamAuthority!.balls.find((ball) => ball.teamId === team.id)?.scorecard[round.currentHoleIndex] : null;
+    if (shared) return { id: team.id, gross: shared.gross ?? Number.POSITIVE_INFINITY, net: shared.net ?? Number.POSITIVE_INFINITY };
     const cards = team.playerIds.map((id) => golfers.find((golfer) => golfer.id === id)?.scorecard[round.currentHoleIndex]).filter((card): card is ChallengeGroupHoleScore => card != null);
     return {
       id: team.id,
@@ -401,12 +507,14 @@ function settleCompletedHole(round: ChallengeGroupRound, golfers: readonly Chall
   const teamScore = (entry: (typeof teamScores)[number]) => round.match.scoringMode.startsWith("net") ? entry.net : entry.gross;
   const teamBest = teamScores.length ? Math.min(...teamScores.map(teamScore)) : null;
   const teamWinnerIds = teamBest == null ? [] : teamScores.filter((entry) => teamScore(entry) === teamBest).map((entry) => entry.id);
-  const statuses = golfers.map((golfer) => golfer.scorecard[round.currentHoleIndex].status);
+  const statuses = sharedTeamBall
+    ? round.teamAuthority!.balls.map((ball) => ball.scorecard[round.currentHoleIndex].status)
+    : golfers.map((golfer) => golfer.scorecard[round.currentHoleIndex].status);
   const result: ChallengeMatchHoleResult = {
     holeId: hole.id,
     winnerIds,
     teamWinnerIds,
-    status: statuses.includes("withdrawn") ? "withdrawn" : statuses.includes("conceded") ? "conceded" : winnerIds.length === 1 ? "won" : "halved",
+    status: statuses.includes("withdrawn") ? "withdrawn" : statuses.includes("conceded") ? "conceded" : (sharedTeamBall ? teamWinnerIds.length : winnerIds.length) === 1 ? "won" : "halved",
     scores,
   };
   const standings = round.match.standings.map((standing) => {
@@ -414,8 +522,8 @@ function settleCompletedHole(round: ChallengeGroupRound, golfers: readonly Chall
     const card = golfer.scorecard[round.currentHoleIndex];
     return {
       ...standing,
-      gross: standing.gross + (card.gross ?? 0),
-      net: standing.net + (card.net ?? 0),
+      gross: standing.gross + (sharedTeamBall ? 0 : card.gross ?? 0),
+      net: standing.net + (sharedTeamBall ? 0 : card.net ?? 0),
       holesWon: standing.holesWon + (winnerIds.length === 1 && winnerIds[0] === standing.id ? 1 : 0),
       withdrawn: golfer.withdrawn,
     };
@@ -448,7 +556,11 @@ function settleCompletedHole(round: ChallengeGroupRound, golfers: readonly Chall
 }
 
 function completeOrAdvanceHole(round: ChallengeGroupRound, golfers: readonly ChallengeGroupGolfer[]): ChallengeGroupRound {
-  if (golfers.some((golfer) => activeOnHole(round, golfer))) {
+  const sharedTeamBall = round.teamAuthority && round.teamAuthority.format !== "four-ball";
+  const hasActive = sharedTeamBall
+    ? round.teamAuthority!.balls.some((ball) => activeTeamBall(round, ball))
+    : golfers.some((golfer) => activeOnHole(round, golfer));
+  if (hasActive) {
     return { ...round, golfers, activeGolferId: nextGolferId(round, golfers) };
   }
   const settled = settleCompletedHole(round, golfers);
@@ -464,7 +576,7 @@ function completeOrAdvanceHole(round: ChallengeGroupRound, golfers: readonly Cha
       completedDay: round.startedDay,
     });
   }
-  const honorsOrder = [...round.honorsOrder].sort((a, b) => {
+  const honorsOrder = sharedTeamBall ? [...round.honorsOrder] : [...round.honorsOrder].sort((a, b) => {
     const aScore = settled.golfers.find((golfer) => golfer.id === a)!.scorecard[round.currentHoleIndex].gross;
     const bScore = settled.golfers.find((golfer) => golfer.id === b)!.scorecard[round.currentHoleIndex].gross;
     return (aScore ?? Number.MAX_SAFE_INTEGER) - (bScore ?? Number.MAX_SAFE_INTEGER)
@@ -484,11 +596,178 @@ function completeOrAdvanceHole(round: ChallengeGroupRound, golfers: readonly Cha
     match: settled.match,
     reactions: settled.reactions,
     activeGolferId: null,
+    ...(sharedTeamBall ? {
+      teamAuthority: {
+        ...round.teamAuthority!,
+        balls: round.teamAuthority!.balls.map((ball) => {
+          const team = round.teamAuthority!.teams.find((entry) => entry.id === ball.teamId)!;
+          const teePlayerIndex = round.teamAuthority!.format === "alternate-shot" ? nextIndex % 2 : 0;
+          return {
+            ...ball,
+            ball: { ...round.course.holes[nextIndex].tee },
+            lie: "tee",
+            nextPlayerId: team.playerIds[teePlayerIndex],
+            candidates: [],
+          };
+        }),
+      },
+    } : {}),
   };
   return { ...advanced, activeGolferId: nextGolferId(advanced, golfersForNext) };
 }
 
+function selectedScrambleBall(round: ChallengeGroupRound, teamId: string, selectedPlayerId: string, controller: "player" | "ai"): ChallengeGroupRound {
+  const authority = round.teamAuthority;
+  if (!authority || authority.format !== "scramble") throw new Error("Ball choice is available only in a two-person scramble.");
+  const ball = authority.balls.find((entry) => entry.teamId === teamId);
+  const team = authority.teams.find((entry) => entry.id === teamId);
+  const selected = ball?.candidates.find((candidate) => candidate.playerId === selectedPlayerId);
+  if (!ball || !team || ball.candidates.length !== 2 || !selected) throw new Error("The selected scramble ball is not one of the two completed partner shots.");
+  const score = ball.scorecard[round.currentHoleIndex];
+  const strokes = score.strokes + selected.strokeCost;
+  const penalties = score.penalties + selected.penaltyStrokes;
+  const complete = selected.completesHole;
+  const nextScore = {
+    ...score,
+    strokes,
+    penalties,
+    gross: complete ? strokes + penalties : null,
+    net: complete ? strokes + penalties - score.handicapStrokes : null,
+    status: complete ? "played" as const : "active" as const,
+    countedPlayerIds: [...score.countedPlayerIds, selected.playerId],
+  };
+  const nextBall: TeamBallState = {
+    ...ball,
+    ball: { ...selected.rest },
+    lie: selected.lie,
+    nextPlayerId: team.playerIds[0],
+    candidates: [],
+    scorecard: ball.scorecard.map((entry, index) => index === round.currentHoleIndex ? nextScore : entry),
+  };
+  const golfers = round.golfers.map((golfer) => golfer.teamId !== teamId ? golfer : {
+    ...golfer,
+    ball: { ...selected.rest },
+    lie: selected.lie,
+    scorecard: golfer.scorecard.map((entry, index) => index === round.currentHoleIndex && complete ? { ...entry, status: "played" as const } : entry),
+  });
+  const choice = {
+    holeId: score.holeId,
+    sequence: authority.choices.length + 1,
+    teamId,
+    selectedPlayerId,
+    candidateShotIds: ball.candidates.map((candidate) => candidate.shotId),
+    controller,
+    reason: controller === "ai" ? "completion, penalty, leave, roster order, then shot ID" : "explicit player selection",
+  };
+  return completeOrAdvanceHole({
+    ...round,
+    phase: "awaiting_player",
+    activeGolferId: null,
+    golfers,
+    teamAuthority: {
+      ...authority,
+      balls: authority.balls.map((entry) => entry.teamId === teamId ? nextBall : entry),
+      choices: [...authority.choices, choice],
+    },
+  }, golfers);
+}
+
+function commitTeamTurn(round: ChallengeGroupRound, golferId: string, selection: PlayerShotSelection): ChallengeGroupRound {
+  const authority = round.teamAuthority!;
+  if (round.phase === "complete" || round.phase === "awaiting_ball_choice" || round.activeGolferId !== golferId) return round;
+  const golfer = round.golfers.find((candidate) => candidate.id === golferId);
+  const ball = authority.balls.find((entry) => entry.teamId === golfer?.teamId);
+  if (!golfer || !ball || !activeTeamBall(round, ball)) return round;
+  const playableGolfer = withTeamBallGolfer(round, golfer);
+  const skills = effectiveSkills(golfer);
+  const preview = previewPlayableShot(playableRound(round, playableGolfer), skills, selection);
+  if (!preview.available) return round;
+  const score = ball.scorecard[round.currentHoleIndex];
+  const seed = (round.rngSeed + round.rngCursor * 104729) >>> 0;
+  const rawTrace = resolvePlayableShot({
+    snapshot: round.course,
+    rulesSnapshot: round.rulesSnapshot,
+    holeId: score.holeId,
+    shotNumber: score.strokes + 1,
+    from: ball.ball,
+    lie: ball.lie,
+    skills,
+    selection,
+    handedness: golfer.handedness,
+    confidenceSnapshot: golfer.confidenceSnapshot,
+    seed,
+  });
+  const shotId = `shot-${round.id}-${golfer.id}-${score.holeId}-${round.turnEvidence.length + 1}`;
+  const trace: PlayerShotTrace = { ...rawTrace, id: shotId, evidence: rawTrace.evidence.map((entry) => ({ ...entry, id: `${entry.id}-${golfer.id}` })) };
+  const puttingStrokes = trace.greenPutting?.putts ?? 0;
+  const strokeCost = 1 + puttingStrokes;
+  const completesHole = trace.holed || puttingStrokes > 0;
+  const candidate: TeamBallCandidate = {
+    playerId: golfer.id,
+    shotId,
+    rest: { ...trace.rest },
+    lie: trace.lieAfter,
+    penaltyStrokes: trace.penaltyStrokes,
+    strokeCost,
+    completesHole,
+    distanceToPin: Math.hypot(trace.rest.x - round.course.holes[round.currentHoleIndex].pin.x, trace.rest.y - round.course.holes[round.currentHoleIndex].pin.y),
+  };
+  const team = authority.teams.find((entry) => entry.id === golfer.teamId)!;
+  let nextBall: TeamBallState;
+  if (authority.format === "alternate-shot") {
+    nextBall = advanceAlternateShotBall(ball, round.currentHoleIndex, candidate, team.playerIds);
+  } else {
+    nextBall = { ...ball, candidates: [...ball.candidates, candidate] };
+  }
+  const golfers = round.golfers.map((entry) => entry.id !== golfer.id ? entry : {
+    ...entry,
+    ball: { ...trace.rest },
+    lie: trace.lieAfter,
+    shots: [...entry.shots, trace].slice(-MAX_GROUP_SHOTS),
+    scorecard: entry.scorecard.map((card, index) => index === round.currentHoleIndex ? {
+      ...card,
+      strokes: card.strokes + strokeCost,
+      penalties: card.penalties + trace.penaltyStrokes,
+      status: authority.format === "alternate-shot" && completesHole ? "played" as const : card.status,
+    } : card),
+  }).map((entry) => authority.format === "alternate-shot" && completesHole && entry.teamId === golfer.teamId ? {
+    ...entry,
+    scorecard: entry.scorecard.map((card, index) => index === round.currentHoleIndex ? { ...card, status: "played" as const } : card),
+  } : entry);
+  const evidence: ChallengeTurnEvidence = {
+    turn: round.turnEvidence.length + 1,
+    golferId,
+    controller: golfer.controller,
+    holeId: score.holeId,
+    shotId,
+    seed,
+    selection: clone(selection),
+    from: { ...ball.ball },
+    lieBefore: ball.lie,
+    lieAfter: trace.lieAfter,
+    rest: { ...trace.rest },
+    penaltyStrokes: trace.penaltyStrokes,
+    ruling: trace.ruling ? clone(trace.ruling) : null,
+  };
+  let next: ChallengeGroupRound = {
+    ...round,
+    golfers,
+    teamAuthority: { ...authority, balls: authority.balls.map((entry) => entry.teamId === ball.teamId ? nextBall : entry) },
+    turnEvidence: [...round.turnEvidence, evidence].slice(-MAX_GROUP_SHOTS),
+    rngCursor: round.rngCursor + 1,
+  };
+  if (authority.format === "scramble" && nextBall.candidates.length === 2) {
+    const playerTeam = team.playerIds.includes(round.playerGolferId);
+    if (playerTeam) return { ...next, phase: "awaiting_ball_choice", activeGolferId: round.playerGolferId };
+    const chosen = chooseDeterministicScrambleBall(nextBall.candidates, team.playerIds);
+    next = selectedScrambleBall(next, team.id, chosen.playerId, "ai");
+    return next;
+  }
+  return completeOrAdvanceHole(next, golfers);
+}
+
 function commitTurn(round: ChallengeGroupRound, golferId: string, selection: PlayerShotSelection): ChallengeGroupRound {
+  if (round.teamAuthority && round.teamAuthority.format !== "four-ball") return commitTeamTurn(round, golferId, selection);
   if (round.phase === "complete" || round.activeGolferId !== golferId) return round;
   const golfer = round.golfers.find((candidate) => candidate.id === golferId);
   if (!golfer || !activeOnHole(round, golfer)) return round;
@@ -562,9 +841,10 @@ function runAiUntilPlayer(round: ChallengeGroupRound): ChallengeGroupRound {
   let next = round;
   let guard = 0;
   while (next.phase !== "complete" && guard++ < MAX_AI_TURNS) {
+    if (next.phase === "awaiting_ball_choice") break;
     const golfer = next.golfers.find((candidate) => candidate.id === next.activeGolferId);
     if (!golfer || golfer.controller === "player") break;
-    const selection = caddieRecommendation(playableRound(next, golfer), effectiveSkills(golfer));
+    const selection = caddieRecommendation(playableRound(next, withTeamBallGolfer(next, golfer)), effectiveSkills(golfer));
     const advanced = commitTurn(next, golfer.id, selection);
     if (advanced !== next) {
       next = advanced;
@@ -608,11 +888,15 @@ export function startChallengeGroupRound(args: StartChallengeGroupRoundArgs): Ch
   if (args.participants.some((participant) => !participant.id.trim() || !participant.name.trim())) throw new Error("Challenge group golfers require stable IDs and names.");
   if (new Set(args.participants.map((participant) => participant.id)).size !== args.participants.length) throw new Error("Challenge group golfer IDs must be unique.");
   if (args.participants.filter((participant) => participant.controller === "player").length !== 1) throw new Error("Challenge groups require exactly one player-controlled golfer.");
+  if (args.teamFormat) {
+    const teamIds = [...new Set(args.participants.map((participant) => participant.teamId))];
+    if (args.participants.length !== 4 || teamIds.length !== 2 || teamIds.some((id) => !id || args.participants.filter((participant) => participant.teamId === id).length !== 2)) throw new Error("Team formats require exactly two stable teams of two golfers.");
+  }
   if (args.course.holes.length !== 9 && args.course.holes.length !== 18) throw new Error("Challenge groups require an authoritative 9- or 18-hole route.");
   if (args.course.tiles.length !== args.course.width * args.course.height || args.course.elevations.length !== args.course.tiles.length) throw new Error("Challenge group course geometry is incomplete.");
   if (args.rulesSnapshot && !decodeControlledRoundSnapshotV2(args.rulesSnapshot).ok) throw new Error("Challenge group rules snapshot is invalid.");
   const course = freeze(args.course);
-  const golfers: ChallengeGroupGolfer[] = args.participants.map((participant) => {
+  let golfers: ChallengeGroupGolfer[] = args.participants.map((participant) => {
     const handicap = handicapFor(participant, course);
     return {
       id: participant.id,
@@ -631,6 +915,8 @@ export function startChallengeGroupRound(args: StartChallengeGroupRoundArgs): Ch
       withdrawn: false,
     };
   });
+  const teamAuthority = args.teamFormat ? buildTeamAuthority(golfers, args.teamFormat, args.scoringMode ?? "net-match", course) : undefined;
+  if (teamAuthority?.format === "four-ball") golfers = applyFourBallHandicaps(golfers, teamAuthority);
   const honorsOrder = golfers.map((golfer) => golfer.id);
   const initial: ChallengeGroupRound = {
     version: 1,
@@ -645,6 +931,7 @@ export function startChallengeGroupRound(args: StartChallengeGroupRoundArgs): Ch
     playerGolferId: golfers.find((golfer) => golfer.controller === "player")!.id,
     honorsOrder,
     golfers,
+    ...(teamAuthority ? { teamAuthority } : {}),
     match: buildMatch(golfers, args.scoringMode ?? "net-match"),
     sideBets: freeze(args.sideBets ?? []),
     reactions: [],
@@ -661,16 +948,24 @@ export function startChallengeGroupRound(args: StartChallengeGroupRoundArgs): Ch
 }
 
 export function previewChallengeGroupPlayerShot(round: ChallengeGroupRound, golferId: string, selection: PlayerShotSelection): PlayerShotPreview | null {
-  if (round.phase === "complete" || round.activeGolferId !== golferId) return null;
+  if (round.phase !== "awaiting_player" || round.activeGolferId !== golferId) return null;
   const golfer = round.golfers.find((candidate) => candidate.id === golferId);
   if (!golfer || golfer.controller !== "player") return null;
-  return previewPlayableShot(playableRound(round, golfer), effectiveSkills(golfer), selection);
+  return previewPlayableShot(playableRound(round, withTeamBallGolfer(round, golfer)), effectiveSkills(golfer), selection);
 }
 
 export function commitChallengeGroupPlayerShot(round: ChallengeGroupRound, golferId: string, selection: PlayerShotSelection): ChallengeGroupRound {
   if (golferId !== round.playerGolferId) throw new Error("Only the player-controlled golfer accepts player shot input.");
   if (round.activeGolferId !== golferId) throw new Error("The player-controlled golfer does not own the current turn.");
   return runAiUntilPlayer(commitTurn(round, golferId, selection));
+}
+
+/** The human captain must explicitly choose either partner's completed scramble shot. */
+export function chooseChallengeGroupScrambleBall(round: ChallengeGroupRound, selectedPlayerId: string): ChallengeGroupRound {
+  if (round.phase !== "awaiting_ball_choice" || !round.teamAuthority || round.teamAuthority.format !== "scramble") throw new Error("This round is not awaiting an explicit scramble ball choice.");
+  const player = round.golfers.find((golfer) => golfer.id === round.playerGolferId)!;
+  const next = selectedScrambleBall(round, player.teamId, selectedPlayerId, "player");
+  return runAiUntilPlayer(next);
 }
 
 export function concedeChallengeGroupHole(round: ChallengeGroupRound, golferId: string, awardedGross: number, reason = "Hole conceded."): ChallengeGroupRound {
@@ -732,7 +1027,7 @@ function validSideBet(sideBet: ChallengeSideBetState): boolean {
 function validateRound(round: ChallengeGroupRound): string | null {
   if (round.version !== 1) return "Unsupported ChallengeGroupRound version.";
   if (typeof round.id !== "string" || !round.id) return "ChallengeGroupRound ID is invalid.";
-  if (round.phase !== "awaiting_player" && round.phase !== "complete") return "ChallengeGroupRound phase is invalid.";
+  if (round.phase !== "awaiting_player" && round.phase !== "awaiting_ball_choice" && round.phase !== "complete") return "ChallengeGroupRound phase is invalid.";
   if (round.golfers.length < 2 || round.golfers.length > 4) return "ChallengeGroupRound must retain 2–4 golfers.";
   if (new Set(round.golfers.map((golfer) => golfer.id)).size !== round.golfers.length) return "ChallengeGroupRound golfer IDs are not unique.";
   if (round.golfers.some((golfer) => !golfer.id || !golfer.name || (golfer.controller !== "player" && golfer.controller !== "ai") || !golfer.teamId)) return "ChallengeGroupRound golfer identity is invalid.";
@@ -767,6 +1062,38 @@ function validateRound(round: ChallengeGroupRound): string | null {
   if (!Array.isArray(round.sideBets) || round.sideBets.some((sideBet) => !validSideBet(sideBet)) || new Set(round.sideBets.map((sideBet) => sideBet.id)).size !== round.sideBets.length) return "ChallengeGroupRound side-bet state is invalid.";
   if (!round.match || !Array.isArray(round.match.teams) || !Array.isArray(round.match.holeResults) || !Array.isArray(round.match.standings)) return "ChallengeGroupRound match state is invalid.";
   if (round.match.teams.some((team) => !team.id || !team.playerIds.length || team.playerIds.some((id: string) => !round.golfers.some((golfer) => golfer.id === id)))) return "ChallengeGroupRound team membership is invalid.";
+  if (round.teamAuthority) {
+    const authority = round.teamAuthority;
+    if (authority.version !== 1 || !["four-ball", "alternate-shot", "scramble"].includes(authority.format)
+      || !["match", "stroke"].includes(authority.scoring) || authority.teams.length !== 2 || authority.handicaps.length !== 2 || authority.balls.length !== 2
+      || authority.teams.some((team) => team.playerIds.length !== 2)
+      || authority.balls.some((ball) => !authority.teams.some((team) => team.id === ball.teamId) || !point(ball.ball)
+        || ball.scorecard.length !== round.course.holes.length || ball.candidates.length > 2
+        || !authority.teams.find((team) => team.id === ball.teamId)?.playerIds.includes(ball.nextPlayerId)
+        || ball.scorecard.some((score, index) => score.holeId !== round.course.holes[index].id || score.par !== round.course.holes[index].par
+          || !Number.isInteger(score.strokes) || score.strokes < 0 || !Number.isInteger(score.penalties) || score.penalties < 0
+          || (score.gross != null && score.gross !== score.strokes + score.penalties)
+          || (score.net != null && score.net !== score.gross! - score.handicapStrokes))
+        || ball.candidates.some((candidate) => !authority.teams.find((team) => team.id === ball.teamId)?.playerIds.includes(candidate.playerId)
+          || !point(candidate.rest) || !Number.isInteger(candidate.penaltyStrokes) || candidate.penaltyStrokes < 0 || !Number.isInteger(candidate.strokeCost) || candidate.strokeCost < 1))) return "ChallengeGroupRound team authority is invalid.";
+    const holes = competitionHoles(round.course);
+    const par = holes.reduce((sum, hole) => sum + hole.par, 0);
+    const handicapCourse = round.course.rating
+      ? { courseRating: round.course.rating.courseRating, slopeRating: round.course.rating.slope, par }
+      : { courseRating: par, slopeRating: 113, par };
+    const expectedHandicaps = captureTeamHandicapSnapshots(authority.teams, round.golfers.map((golfer) => ({ id: golfer.id, handicapIndex: golfer.handicap.handicapIndex })), authority.format, authority.scoring, handicapCourse, holes);
+    if (JSON.stringify(expectedHandicaps) !== JSON.stringify(authority.handicaps)
+      || authority.scoring !== (round.match.scoringMode.endsWith("match") ? "match" : "stroke")) return "ChallengeGroupRound frozen team handicaps drifted.";
+    if (authority.balls.some((ball) => ball.candidates.some((candidate) => !shotIds.includes(candidate.shotId)))
+      || authority.choices.some((choice, index) => choice.sequence !== index + 1
+        || !authority.teams.some((team) => team.id === choice.teamId && team.playerIds.includes(choice.selectedPlayerId))
+        || choice.candidateShotIds.length !== 2 || choice.candidateShotIds.some((id) => !shotIds.includes(id)))) return "ChallengeGroupRound team choice evidence is invalid.";
+    if (round.phase === "awaiting_ball_choice") {
+      const playerTeam = round.golfers.find((golfer) => golfer.id === round.playerGolferId)?.teamId;
+      if (authority.format !== "scramble" || round.activeGolferId !== round.playerGolferId
+        || authority.balls.find((ball) => ball.teamId === playerTeam)?.candidates.length !== 2) return "ChallengeGroupRound scramble choice authority is invalid.";
+    }
+  } else if (round.phase === "awaiting_ball_choice") return "ChallengeGroupRound cannot await a team-ball choice without team authority.";
   if (round.phase === "complete" && round.match.status !== "complete") return "ChallengeGroupRound completed without final match state.";
   return null;
 }
@@ -795,6 +1122,17 @@ export function decodeChallengeGroupRound(raw: string | unknown): ChallengeGroup
   return error ? { ok: false, error } : { ok: true, round: deepFreeze(round) };
 }
 
+/** Handicap posting may consume only formats in which every member completed an individual ball. */
+export function challengeGroupIndividualGrossEvidence(round: ChallengeGroupRound) {
+  if (round.teamAuthority?.format !== "four-ball") return [];
+  return round.golfers.map((golfer) => ({
+    playerId: golfer.id,
+    holeScores: golfer.scorecard
+      .filter((score) => score.gross != null)
+      .map((score) => ({ holeId: score.holeId, gross: score.gross!, par: score.par })),
+  }));
+}
+
 /** Compact evidence intended for the existing `render_game_to_text` envelope. */
 export function challengeGroupRoundTextState(round: ChallengeGroupRound) {
   const recentTurn = round.turnEvidence.at(-1) ?? null;
@@ -806,7 +1144,7 @@ export function challengeGroupRoundTextState(round: ChallengeGroupRound) {
     holes: round.course.holes.length,
     activeGolferId: round.activeGolferId,
     playerGolferId: round.playerGolferId,
-    controls: round.phase === "complete" ? "none" : round.activeGolferId === round.playerGolferId ? "player-shot" : "ai-automatic",
+    controls: round.phase === "complete" ? "none" : round.phase === "awaiting_ball_choice" ? "choose-scramble-ball" : round.activeGolferId === round.playerGolferId ? "player-shot" : "ai-automatic",
     honorsOrder: round.honorsOrder,
     golfers: round.golfers.map((golfer) => ({
       id: golfer.id,
@@ -823,6 +1161,8 @@ export function challengeGroupRoundTextState(round: ChallengeGroupRound) {
       latestShot: golfer.shots.at(-1) ?? null,
     })),
     match: round.match,
+    teamAuthority: round.teamAuthority ?? null,
+    individualGrossEvidence: challengeGroupIndividualGrossEvidence(round),
     sideBets: round.sideBets,
     recentTurn,
     recentRulings: round.turnEvidence.slice(-4).map((turn) => ({ golferId: turn.golferId, shotId: turn.shotId, ruling: turn.ruling })),
