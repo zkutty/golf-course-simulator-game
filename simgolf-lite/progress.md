@@ -37,6 +37,12 @@ Original prompt: Update my vision HTML for the new features from the new milesto
 - No M66 certification artifacts, scoring/handicap/reward policy, broad UI,
   Linear state, commits beyond the requested integration commit, or pushes were
   changed.
+## ZK-756 Vision gallery art — 2026-08-06
+
+- Replaced only the Parkland and Desert Vision-card derivatives with the supplied original project artwork. Their immutable 1672×941 PNG sources are copied under `artifacts/zk-756/source/`; source files outside this worktree were not moved or altered.
+- Shipped cropped 1536×864 desktop JPEGs and matching 768×432 mobile JPEGs at the existing responsive paths. The focused Vision Playwright suite passes 5/5: phone, tablet, laptop, and wide-desktop source selection, all-eight-card presence, and the explicit image-failure state.
+- Refined the Parkland alt text to describe its clear stream and visible golfers. An intentional forest-and-gold branded image-failure treatment now avoids an unstyled broken-image surface while retaining the card caption.
+- Final validation passed: TypeScript; i18n extraction; lint with zero errors and 12 pre-existing Hook warnings; production build with asset/delivery audits; PWA cache-on-demand/offline smoke; and the bundled game client with clean console plus title-screen text state. Final responsive and fallback screenshots were visually inspected.
 
 ## ZK-721 M66 certification — 2026-08-06
 

@@ -44,15 +44,16 @@ mobile source below 680px.
 
 ## Provenance and review
 
-The expanded panoramas are original project assets generated in the M60
-execution with the built-in image generator. Parkland and Desert use clean
-editorial crops derived from project-owned in-game biome captures; Links uses
-the existing project-owned coastal-routing panorama and a mobile crop. No
-third-party imagery is permitted. All sources require a generic setting, no
-real-course likeness, no branding/text, and no artist imitation. Before
-release, a human reviewer must confirm golf credibility, crop quality,
-cultural/ecological appropriateness where applicable, and that no artifact or
-unintended likeness remains.
+The expanded panoramas and the Parkland/Desert editorial views are original
+project assets generated with the built-in image generator. Each of the two
+foundational views has a preserved 1672×941 PNG source in
+`artifacts/zk-756/source/`, with a 1536×864 desktop JPEG and 768×432 mobile
+JPEG shipped from `public/vision/`. Links uses the existing project-owned
+coastal-routing panorama and a mobile crop. No third-party imagery is
+permitted. All sources require a generic setting, no real-course likeness, no
+branding/text, and no artist imitation. Before release, a human reviewer must
+confirm golf credibility, crop quality, cultural/ecological appropriateness
+where applicable, and that no artifact or unintended likeness remains.
 
 ## Content rules
 

@@ -698,11 +698,42 @@
 .cc-vision-biome picture {
   position: absolute;
   inset: 0;
+  background:
+    radial-gradient(circle at 72% 18%, rgba(224, 183, 90, .36), transparent 30%),
+    linear-gradient(145deg, #315a3d, #173d2a 72%);
+}
+
+.cc-vision-biome picture::after {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  content: "";
+  color: rgba(255, 249, 236, .82);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .12em;
+  line-height: 1.5;
+  opacity: 0;
+  pointer-events: none;
+  text-align: center;
+  text-transform: uppercase;
+  transition: opacity .18s ease;
 }
 
 .cc-vision-biome img {
   object-fit: cover;
   transition: transform .45s ease;
+}
+
+.cc-vision-biome img[hidden] {
+  display: none;
+}
+
+.cc-vision-biome[data-image-state="unavailable"] picture::after {
+  content: attr(data-fallback);
+  opacity: 1;
 }
 
 .cc-vision-biome::after {

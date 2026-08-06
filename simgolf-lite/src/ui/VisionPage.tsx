@@ -232,9 +232,18 @@ export function VisionPage({ onClose }: { onClose: () => void }) {
               <div className="cc-vision-biome-grid">
                 {biomes.map((biome) => (
                   <figure className="cc-vision-biome" data-biome-id={biome.id} key={biome.id}>
-                    <picture>
+                    <picture data-fallback={t("vision.biome.imageFallback")}>
                       <source media="(max-width: 680px)" srcSet={`${VISION_IMAGE_BASE}${biome.mobileImage}.jpg`} />
-                      <img src={`${VISION_IMAGE_BASE}${biome.image}.jpg`} alt={t(biome.alt)} loading="lazy" />
+                      <img
+                        src={`${VISION_IMAGE_BASE}${biome.image}.jpg`}
+                        alt={t(biome.alt)}
+                        loading="lazy"
+                        decoding="async"
+                        onError={(event) => {
+                          event.currentTarget.hidden = true;
+                          event.currentTarget.closest<HTMLElement>(".cc-vision-biome")?.setAttribute("data-image-state", "unavailable");
+                        }}
+                      />
                     </picture>
                     <figcaption>
                       <h4>{t(biome.title)}</h4>

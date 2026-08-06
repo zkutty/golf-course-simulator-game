@@ -51,7 +51,7 @@ test("shareable vision page links from the title screen and tells the full story
   await expect(page.locator('[data-biome-id="parkland"]')).toContainText("Parkland");
   await expect(page.locator('[data-biome-id="links"]')).toContainText("Links");
   await expect(page.locator('[data-biome-id="desert"]')).toContainText("Desert");
-  await expect(page.locator('[data-biome-id="parkland"] img')).toHaveAttribute("alt", /pond, mature trees/i);
+  await expect(page.locator('[data-biome-id="parkland"] img')).toHaveAttribute("alt", /clear stream, mature trees/i);
   await expect(page.locator('[data-biome-id="links"] img')).toHaveAttribute("alt", /exposed coast with dunes/i);
   await expect(page.locator('[data-biome-id="desert"] img')).toHaveAttribute("alt", /cacti, rocky native planting/i);
   expect(await page.locator(".cc-vision-biome img").evaluateAll((images) => images.every((image) => image.complete && image.naturalWidth > 0))).toBe(true);
@@ -113,4 +113,49 @@ test("vision biome catalog stays complete and readable at a tablet breakpoint", 
   await page.locator('[data-biome-collection="expanded"]').scrollIntoViewIfNeeded();
   const tablet = await page.screenshot({ path: "artifacts/vision-page-biomes-expanded-tablet.png" });
   await testInfo.attach("vision-page-biomes-tablet", { body: tablet, contentType: "image/png" });
+});
+
+test("vision gallery serves the branded Parkland and Desert art responsively", async ({ page }, testInfo) => {
+  const viewports = [
+    { name: "phone", width: 390, height: 844, suffix: "-mobile.jpg" },
+    { name: "tablet", width: 820, height: 900, suffix: ".jpg" },
+    { name: "laptop", width: 1280, height: 800, suffix: ".jpg" },
+    { name: "wide-desktop", width: 1680, height: 1050, suffix: ".jpg" },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto("/?view=vision");
+    const gallery = page.locator("#vision-biomes");
+    await gallery.scrollIntoViewIfNeeded();
+    await expect(page.locator(".cc-vision-biome")).toHaveCount(8);
+
+    for (const biome of ["parkland", "desert"]) {
+      const image = page.locator(`[data-biome-id="${biome}"] img`);
+      await image.scrollIntoViewIfNeeded();
+      await expect(image).toHaveJSProperty("complete", true);
+      await expect(image).toHaveJSProperty("naturalWidth", viewport.name === "phone" ? 768 : 1536);
+      await expect(image).toHaveJSProperty("naturalHeight", viewport.name === "phone" ? 432 : 864);
+      expect(await image.evaluate(
+        (element, expectedPath) => element.currentSrc.endsWith(expectedPath),
+        `/vision/${biome}${viewport.suffix}`,
+      )).toBe(true);
+    }
+
+    await page.locator('[data-biome-id="parkland"]').scrollIntoViewIfNeeded();
+    const screenshot = await page.screenshot({ path: `artifacts/zk-756/vision-gallery-${viewport.name}.png` });
+    await testInfo.attach(`vision-gallery-${viewport.name}`, { body: screenshot, contentType: "image/png" });
+  }
+});
+
+test("vision gallery keeps a branded fallback when artwork is unavailable", async ({ page }, testInfo) => {
+  await page.route("**/vision/parkland.jpg", (route) => route.abort());
+  await page.goto("/?view=vision");
+  const parkland = page.locator('[data-biome-id="parkland"]');
+  await parkland.scrollIntoViewIfNeeded();
+  await expect(parkland).toHaveAttribute("data-image-state", "unavailable");
+  await expect(parkland.locator("picture")).toHaveAttribute("data-fallback", "CourseCraft landscape artwork temporarily unavailable");
+  await expect(parkland.locator("img")).toHaveAttribute("hidden", "");
+  const screenshot = await parkland.screenshot({ path: "artifacts/zk-756/vision-gallery-fallback.png" });
+  await testInfo.attach("vision-gallery-fallback", { body: screenshot, contentType: "image/png" });
 });
