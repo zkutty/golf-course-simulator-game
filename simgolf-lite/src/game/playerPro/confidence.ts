@@ -2,7 +2,7 @@ import type { PlayerProCareer, PlayerPlayableRound } from "../models/playerProTy
 
 export const CONFIDENCE_NEUTRAL = 50;
 
-export type PlayerConfidenceReason = "neutral" | "daily_decay" | "practice" | "round_feedback" | "concession";
+export type PlayerConfidenceReason = "neutral" | "daily_decay" | "practice" | "round_feedback" | "concession" | "invitation";
 export type PlayerConfidenceTrend = "rising" | "falling" | "steady";
 
 /** Persisted, deterministic Player Pro confidence. It never changes random seeds or carry. */
@@ -83,6 +83,11 @@ export function applyRoundConfidence(state: PlayerConfidenceState, args: { index
   if (args.conceded) return withDelta(state, -4, "concession");
   if (args.differential == null || !finite(args.indexBefore)) return state;
   return withDelta(state, completedRoundConfidenceDelta(args.indexBefore, args.differential), "round_feedback");
+}
+
+/** Evidence-backed social/mentor outcomes can affect confidence, never shot seeds or carry. */
+export function applyInvitationConfidence(state: PlayerConfidenceState, delta: number): PlayerConfidenceState {
+  return withDelta(state, clamp(Math.round(delta), -8, 8), "invitation");
 }
 
 /** Confidence affects dispersion only: 0 -> 1.04, 50 -> 1.00, 100 -> .96. */

@@ -107,6 +107,7 @@ import {
   type PlayerConfidenceState,
 } from "./confidence";
 import { absoluteDayFor } from "../seasons/seasons";
+import { createInvitationCalendar, normalizeInvitationCalendar } from "./invitations";
 
 const DEFAULT_SKILL = 40;
 const XP_PER_LEVEL = 12;
@@ -327,6 +328,7 @@ export function createDefaultPlayerPro(args: {
     settlementLedger: [],
     handicapProfile: createHandicapProfile(skills),
     confidence: createPlayerConfidence(),
+    invitationCalendar: createInvitationCalendar(),
     ...defaultPlayerProInventory(identityId),
   };
 }
@@ -497,6 +499,7 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
       : [],
     handicapProfile: handicap.profile,
     confidence: normalizePlayerConfidence(candidate.confidence),
+    invitationCalendar: normalizeInvitationCalendar(candidate.invitationCalendar),
     ...normalizePlayerProInventory(candidate, identityId),
   };
 }
