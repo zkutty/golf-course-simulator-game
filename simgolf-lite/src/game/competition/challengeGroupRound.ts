@@ -42,7 +42,11 @@ export const CHALLENGE_GROUP_MIN_GOLFERS = 2;
 export const CHALLENGE_GROUP_MAX_GOLFERS = 4;
 const MAX_GROUP_SHOTS = 960;
 const MAX_AI_TURNS = 960;
-const INVALID_INDIVIDUAL_AUTHORITY = "ChallengeGroupRound individual authority is invalid.";
+const groupError = (detail: string) => `ChallengeGroupRound ${detail}`;
+const SIDE_BET_KINDS = ["skins", "nassau", "closest-to-pin", "longest-drive"] as const;
+const INDIVIDUAL_FORMATS = ["gross-stroke", "net-stroke", "gross-match", "net-match", "net-stableford"] as const;
+const isNassauFormat = (format: ChallengeGroupScoringMode) => format === "gross-match" || format === "net-match";
+const INVALID_INDIVIDUAL_AUTHORITY = groupError("individual authority is invalid.");
 
 export type ChallengeGroupController = "player" | "ai";
 export type ChallengeGroupPhase = "awaiting_player" | "awaiting_ball_choice" | "complete";
@@ -434,12 +438,12 @@ function buildIndividualAuthority(
   contests: readonly ChallengeIndividualContest[],
   course: PlayerRoundCourseSnapshot,
 ): ChallengeIndividualAuthority {
-  if (new Set(contests.map((contest) => contest.id)).size !== contests.length || contests.some((contest) => !contest.id || !["skins", "nassau", "closest-to-pin", "longest-drive"].includes(contest.kind))) {
+  if (new Set(contests.map((contest) => contest.id)).size !== contests.length || contests.some((contest) => !contest.id || !SIDE_BET_KINDS.includes(contest.kind))) {
     throw new Error("Individual contests are invalid.");
   }
   for (const contest of contests) {
     if (contest.holeIds && (new Set(contest.holeIds).size !== contest.holeIds.length || contest.holeIds.some((id) => !course.holes.some((hole) => hole.id === id)))) throw new Error("Individual contest holes are invalid.");
-    if (contest.kind === "nassau" && (golfers.length !== 2 || course.holes.length !== 18 || contest.holeIds?.length || (format !== "gross-match" && format !== "net-match"))) throw new Error("Nassau requires a 2-player 18-hole gross/net match.");
+    if (contest.kind === "nassau" && (golfers.length !== 2 || course.holes.length !== 18 || contest.holeIds?.length || !isNassauFormat(format))) throw new Error("Nassau requires a 2-player 18-hole gross/net match.");
   }
   return freeze({
     version: 1,
@@ -1238,7 +1242,7 @@ function validateShot(shot: PlayerShotTrace): boolean {
 
 function validSideBet(sideBet: ChallengeSideBetState): boolean {
   return typeof sideBet.id === "string" && sideBet.id.length > 0
-    && ["skins", "nassau", "closest-to-pin", "longest-drive"].includes(sideBet.kind)
+    && SIDE_BET_KINDS.includes(sideBet.kind)
     && Number.isFinite(sideBet.stake) && sideBet.stake >= 0
     && Number.isFinite(sideBet.carry) && sideBet.carry >= 0
     && ["pending", "active", "complete", "refunded"].includes(sideBet.status)
@@ -1248,20 +1252,20 @@ function validSideBet(sideBet: ChallengeSideBetState): boolean {
 
 function validateRound(round: ChallengeGroupRound): string | null {
   if (round.version !== 1) return "Unsupported ChallengeGroupRound version.";
-  if (typeof round.id !== "string" || !round.id) return "ChallengeGroupRound ID is invalid.";
-  if (round.phase !== "awaiting_player" && round.phase !== "awaiting_ball_choice" && round.phase !== "complete") return "ChallengeGroupRound phase is invalid.";
-  if (round.golfers.length < 2 || round.golfers.length > 4) return "ChallengeGroupRound must retain 2–4 golfers.";
-  if (new Set(round.golfers.map((golfer) => golfer.id)).size !== round.golfers.length) return "ChallengeGroupRound golfer IDs are not unique.";
-  if (round.golfers.some((golfer) => !golfer.id || !golfer.name || (golfer.controller !== "player" && golfer.controller !== "ai") || !golfer.teamId)) return "ChallengeGroupRound golfer identity is invalid.";
-  if (round.golfers.filter((golfer) => golfer.controller === "player").length !== 1) return "ChallengeGroupRound must retain exactly one player golfer.";
-  if (round.playerGolferId !== round.golfers.find((golfer) => golfer.controller === "player")?.id) return "ChallengeGroupRound player identity drifted.";
-  if (round.course.holes.length !== 9 && round.course.holes.length !== 18) return "ChallengeGroupRound route is not 9 or 18 holes.";
-  if (round.course.tiles.length !== round.course.width * round.course.height || round.course.elevations.length !== round.course.tiles.length) return "ChallengeGroupRound course geometry is invalid.";
-  if (round.rulesSnapshot && !decodeControlledRoundSnapshotV2(round.rulesSnapshot).ok) return "ChallengeGroupRound rules snapshot is invalid.";
-  if (!Number.isInteger(round.currentHoleIndex) || round.currentHoleIndex < 0 || round.currentHoleIndex >= round.course.holes.length) return "ChallengeGroupRound current hole is invalid.";
-  if (new Set(round.honorsOrder).size !== round.golfers.length || round.honorsOrder.some((id) => !round.golfers.some((golfer) => golfer.id === id))) return "ChallengeGroupRound honors are invalid.";
-  if (round.phase === "complete" ? round.activeGolferId !== null : !round.golfers.some((golfer) => golfer.id === round.activeGolferId)) return "ChallengeGroupRound active turn is invalid.";
-  if (round.phase === "awaiting_player" && round.golfers.find((golfer) => golfer.id === round.activeGolferId)?.controller !== "player") return "ChallengeGroupRound persisted before its automatic AI turns completed.";
+  if (typeof round.id !== "string" || !round.id) return groupError("ID is invalid.");
+  if (round.phase !== "awaiting_player" && round.phase !== "awaiting_ball_choice" && round.phase !== "complete") return groupError("phase is invalid.");
+  if (round.golfers.length < 2 || round.golfers.length > 4) return groupError("must retain 2–4 golfers.");
+  if (new Set(round.golfers.map((golfer) => golfer.id)).size !== round.golfers.length) return groupError("golfer IDs are not unique.");
+  if (round.golfers.some((golfer) => !golfer.id || !golfer.name || (golfer.controller !== "player" && golfer.controller !== "ai") || !golfer.teamId)) return groupError("golfer identity is invalid.");
+  if (round.golfers.filter((golfer) => golfer.controller === "player").length !== 1) return groupError("must retain exactly one player golfer.");
+  if (round.playerGolferId !== round.golfers.find((golfer) => golfer.controller === "player")?.id) return groupError("player identity drifted.");
+  if (round.course.holes.length !== 9 && round.course.holes.length !== 18) return groupError("route is not 9 or 18 holes.");
+  if (round.course.tiles.length !== round.course.width * round.course.height || round.course.elevations.length !== round.course.tiles.length) return groupError("course geometry is invalid.");
+  if (round.rulesSnapshot && !decodeControlledRoundSnapshotV2(round.rulesSnapshot).ok) return groupError("rules snapshot is invalid.");
+  if (!Number.isInteger(round.currentHoleIndex) || round.currentHoleIndex < 0 || round.currentHoleIndex >= round.course.holes.length) return groupError("current hole is invalid.");
+  if (new Set(round.honorsOrder).size !== round.golfers.length || round.honorsOrder.some((id) => !round.golfers.some((golfer) => golfer.id === id))) return groupError("honors are invalid.");
+  if (round.phase === "complete" ? round.activeGolferId !== null : !round.golfers.some((golfer) => golfer.id === round.activeGolferId)) return groupError("active turn is invalid.");
+  if (round.phase === "awaiting_player" && round.golfers.find((golfer) => golfer.id === round.activeGolferId)?.controller !== "player") return groupError("persisted before its automatic AI turns completed.");
   if (round.golfers.some((golfer) => !point(golfer.ball)
     || !Object.values(golfer.skills).every((skill) => Number.isFinite(skill) && skill >= 0 && skill <= 100)
     || !Number.isFinite(golfer.handicap.handicapIndex)
@@ -1275,26 +1279,26 @@ function validateRound(round: ChallengeGroupRound): string | null {
       || (score.gross != null && score.gross !== score.strokes + score.penalties)
       || (score.net != null && score.net !== score.gross! - score.handicapStrokes))
     || golfer.equipment.modifiers.some((modifier) => !Number.isFinite(modifier.multiplier) || modifier.multiplier <= 0)
-    || golfer.shots.some((shot) => !validateShot(shot)))) return "ChallengeGroupRound golfer evidence is invalid.";
-  if (round.turnEvidence.length > MAX_GROUP_SHOTS || round.turnEvidence.some((turn, index) => turn.turn !== index + 1 || !round.golfers.some((golfer) => golfer.id === turn.golferId) || !point(turn.from) || !point(turn.rest))) return "ChallengeGroupRound turn evidence is invalid.";
-  if (!Number.isInteger(round.rngCursor) || round.rngCursor !== round.turnEvidence.length) return "ChallengeGroupRound RNG cursor does not match retained turns.";
+    || golfer.shots.some((shot) => !validateShot(shot)))) return groupError("golfer evidence is invalid.");
+  if (round.turnEvidence.length > MAX_GROUP_SHOTS || round.turnEvidence.some((turn, index) => turn.turn !== index + 1 || !round.golfers.some((golfer) => golfer.id === turn.golferId) || !point(turn.from) || !point(turn.rest))) return groupError("turn evidence is invalid.");
+  if (!Number.isInteger(round.rngCursor) || round.rngCursor !== round.turnEvidence.length) return groupError("RNG cursor does not match retained turns.");
   const shotIds = round.golfers.flatMap((golfer) => golfer.shots.map((shot) => shot.id));
-  if (new Set(shotIds).size !== shotIds.length) return "ChallengeGroupRound shot IDs are not unique.";
-  if (round.turnEvidence.some((turn) => !shotIds.includes(turn.shotId))) return "ChallengeGroupRound turn evidence references a missing shot.";
-  if (!Array.isArray(round.sideBets) || round.sideBets.some((sideBet) => !validSideBet(sideBet)) || new Set(round.sideBets.map((sideBet) => sideBet.id)).size !== round.sideBets.length) return "ChallengeGroupRound side-bet state is invalid.";
+  if (new Set(shotIds).size !== shotIds.length) return groupError("shot IDs are not unique.");
+  if (round.turnEvidence.some((turn) => !shotIds.includes(turn.shotId))) return groupError("turn evidence references a missing shot.");
+  if (!Array.isArray(round.sideBets) || round.sideBets.some((sideBet) => !validSideBet(sideBet)) || new Set(round.sideBets.map((sideBet) => sideBet.id)).size !== round.sideBets.length) return groupError("side-bet state is invalid.");
   if (round.individualAuthority) {
     const authority = round.individualAuthority;
-    if (round.teamAuthority || authority.version !== 1 || !["gross-stroke", "net-stroke", "gross-match", "net-match", "net-stableford"].includes(authority.format)
+    if (round.teamAuthority || authority.version !== 1 || !INDIVIDUAL_FORMATS.includes(authority.format)
       || authority.handicapSnapshots.length !== round.golfers.length
       || authority.handicapSnapshots.some((snapshot, index) => snapshot.playerId !== round.golfers[index].id || snapshot.playingHandicap !== round.golfers[index].handicap.playingHandicap || JSON.stringify(snapshot.strokesByHole) !== JSON.stringify(round.golfers[index].handicap.strokesByHole))) return INVALID_INDIVIDUAL_AUTHORITY;
     if (new Set(authority.contests.map((contest) => contest.id)).size !== authority.contests.length
-      || authority.contests.some((contest) => !contest.id || !["skins", "nassau", "closest-to-pin", "longest-drive"].includes(contest.kind) || contest.holeIds?.some((id) => !round.course.holes.some((hole) => hole.id === id)))) return INVALID_INDIVIDUAL_AUTHORITY;
-    if (authority.contests.some((contest) => contest.kind === "nassau" && (round.golfers.length !== 2 || round.course.holes.length !== 18 || contest.holeIds?.length || (authority.format !== "gross-match" && authority.format !== "net-match")))) return INVALID_INDIVIDUAL_AUTHORITY;
+      || authority.contests.some((contest) => !contest.id || !SIDE_BET_KINDS.includes(contest.kind) || contest.holeIds?.some((id) => !round.course.holes.some((hole) => hole.id === id)))) return INVALID_INDIVIDUAL_AUTHORITY;
+    if (authority.contests.some((contest) => contest.kind === "nassau" && (round.golfers.length !== 2 || round.course.holes.length !== 18 || contest.holeIds?.length || !isNassauFormat(authority.format)))) return INVALID_INDIVIDUAL_AUTHORITY;
     if (authority.measurements.some((entry, index) => entry.id !== `measurement-${round.id}-${index + 1}` || !authority.contests.some((contest) => contest.id === entry.contestId) || !round.golfers.some((golfer) => golfer.id === entry.participantId) || !round.course.holes.some((hole) => hole.id === entry.holeId) || !point(entry.start) || !point(entry.end) || !Number.isFinite(entry.measurement) || entry.measurement < 0 || typeof entry.eligible !== "boolean" || (entry.eligible && entry.rejectionReason))) return INVALID_INDIVIDUAL_AUTHORITY;
     if (authority.results.some((result) => !authority.contests.some((contest) => contest.id === result.contestId) || !["won", "tied", "carried", "not-awarded", "withdrawn"].includes(result.status) || !Number.isInteger(result.carryHoles) || result.carryHoles < 0 || result.winnerIds.some((id) => !round.golfers.some((golfer) => golfer.id === id)))) return INVALID_INDIVIDUAL_AUTHORITY;
   }
-  if (!round.match || !Array.isArray(round.match.teams) || !Array.isArray(round.match.holeResults) || !Array.isArray(round.match.standings)) return "ChallengeGroupRound match state is invalid.";
-  if (round.match.teams.some((team) => !team.id || !team.playerIds.length || team.playerIds.some((id: string) => !round.golfers.some((golfer) => golfer.id === id)))) return "ChallengeGroupRound team membership is invalid.";
+  if (!round.match || !Array.isArray(round.match.teams) || !Array.isArray(round.match.holeResults) || !Array.isArray(round.match.standings)) return groupError("match state is invalid.");
+  if (round.match.teams.some((team) => !team.id || !team.playerIds.length || team.playerIds.some((id: string) => !round.golfers.some((golfer) => golfer.id === id)))) return groupError("team membership is invalid.");
   if (round.teamAuthority) {
     const authority = round.teamAuthority;
     if (authority.version !== 1 || !["four-ball", "alternate-shot", "scramble"].includes(authority.format)
@@ -1308,7 +1312,7 @@ function validateRound(round: ChallengeGroupRound): string | null {
           || (score.gross != null && score.gross !== score.strokes + score.penalties)
           || (score.net != null && score.net !== score.gross! - score.handicapStrokes))
         || ball.candidates.some((candidate) => !authority.teams.find((team) => team.id === ball.teamId)?.playerIds.includes(candidate.playerId)
-          || !point(candidate.rest) || !Number.isInteger(candidate.penaltyStrokes) || candidate.penaltyStrokes < 0 || !Number.isInteger(candidate.strokeCost) || candidate.strokeCost < 1))) return "ChallengeGroupRound team authority is invalid.";
+          || !point(candidate.rest) || !Number.isInteger(candidate.penaltyStrokes) || candidate.penaltyStrokes < 0 || !Number.isInteger(candidate.strokeCost) || candidate.strokeCost < 1))) return groupError("team authority is invalid.");
     const holes = competitionHoles(round.course);
     const par = holes.reduce((sum, hole) => sum + hole.par, 0);
     const handicapCourse = round.course.rating
@@ -1316,18 +1320,18 @@ function validateRound(round: ChallengeGroupRound): string | null {
       : { courseRating: par, slopeRating: 113, par };
     const expectedHandicaps = captureTeamHandicapSnapshots(authority.teams, round.golfers.map((golfer) => ({ id: golfer.id, handicapIndex: golfer.handicap.handicapIndex })), authority.format, authority.scoring, handicapCourse, holes);
     if (JSON.stringify(expectedHandicaps) !== JSON.stringify(authority.handicaps)
-      || authority.scoring !== (round.match.scoringMode.endsWith("match") ? "match" : "stroke")) return "ChallengeGroupRound frozen team handicaps drifted.";
+      || authority.scoring !== (round.match.scoringMode.endsWith("match") ? "match" : "stroke")) return groupError("frozen team handicaps drifted.");
     if (authority.balls.some((ball) => ball.candidates.some((candidate) => !shotIds.includes(candidate.shotId)))
       || authority.choices.some((choice, index) => choice.sequence !== index + 1
         || !authority.teams.some((team) => team.id === choice.teamId && team.playerIds.includes(choice.selectedPlayerId))
-        || choice.candidateShotIds.length !== 2 || choice.candidateShotIds.some((id) => !shotIds.includes(id)))) return "ChallengeGroupRound team choice evidence is invalid.";
+        || choice.candidateShotIds.length !== 2 || choice.candidateShotIds.some((id) => !shotIds.includes(id)))) return groupError("team choice evidence is invalid.");
     if (round.phase === "awaiting_ball_choice") {
       const playerTeam = round.golfers.find((golfer) => golfer.id === round.playerGolferId)?.teamId;
       if (authority.format !== "scramble" || round.activeGolferId !== round.playerGolferId
-        || authority.balls.find((ball) => ball.teamId === playerTeam)?.candidates.length !== 2) return "ChallengeGroupRound scramble choice authority is invalid.";
+        || authority.balls.find((ball) => ball.teamId === playerTeam)?.candidates.length !== 2) return groupError("scramble choice authority is invalid.");
     }
-  } else if (round.phase === "awaiting_ball_choice") return "ChallengeGroupRound cannot await a team-ball choice without team authority.";
-  if (round.phase === "complete" && round.match.status !== "complete") return "ChallengeGroupRound completed without final match state.";
+  } else if (round.phase === "awaiting_ball_choice") return groupError("cannot await a team-ball choice without team authority.");
+  if (round.phase === "complete" && round.match.status !== "complete") return groupError("completed without final match state.");
   return null;
 }
 
@@ -1342,15 +1346,15 @@ export function decodeChallengeGroupRound(raw: string | unknown): ChallengeGroup
   try {
     value = typeof raw === "string" ? JSON.parse(raw) : clone(raw);
   } catch {
-    return { ok: false, error: "ChallengeGroupRound save is not valid JSON." };
+    return { ok: false, error: groupError("save is not valid JSON.") };
   }
-  if (!value || typeof value !== "object") return { ok: false, error: "ChallengeGroupRound save is not an object." };
+  if (!value || typeof value !== "object") return { ok: false, error: groupError("save is not an object.") };
   const round = value as ChallengeGroupRound;
   let error: string | null;
   try {
     error = validateRound(round);
   } catch {
-    error = "ChallengeGroupRound save is structurally incomplete.";
+    error = groupError("save is structurally incomplete.");
   }
   return error ? { ok: false, error } : { ok: true, round: deepFreeze(round) };
 }

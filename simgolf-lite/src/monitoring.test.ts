@@ -1,11 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   cloudflareBeaconConfiguration,
+  monitoringHasSentryDsn,
   resolveSentryEnvironment,
   sanitizeSentryEvent,
 } from "./monitoring";
 
 describe("monitoring privacy", () => {
+  it("only defers the Sentry SDK for production builds with a nonblank DSN", () => {
+    expect(monitoringHasSentryDsn(true, " configured ")).toBe(true);
+    expect(monitoringHasSentryDsn(false, "configured")).toBe(false);
+    expect(monitoringHasSentryDsn(true, "   ")).toBe(false);
+    expect(monitoringHasSentryDsn(true, undefined)).toBe(false);
+  });
+
   it("keeps only allowlisted diagnostic fields", () => {
     const sanitized = sanitizeSentryEvent({
       type: undefined,

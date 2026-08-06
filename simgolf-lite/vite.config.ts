@@ -86,8 +86,11 @@ export default defineConfig({
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
           if (id.includes("/pixi.js/") || id.includes("/@pixi/")) return "pixi";
+          // Sentry is loaded only after the production DSN gate resolves.
+          // Route it before the React rule because @sentry/react paths also
+          // contain /react/, which would otherwise make telemetry initial.
+          if (id.includes("/@sentry/")) return "telemetry";
           if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("/scheduler/")) return "react";
-          if (sentryBuildEnabled && id.includes("/@sentry/")) return "telemetry";
           return "vendor";
         },
       },
