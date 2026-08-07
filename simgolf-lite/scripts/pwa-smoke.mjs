@@ -80,15 +80,36 @@ try {
   });
   if ((await cachedVisionAssets()).length) throw new Error("Vision media was precached before the Vision page was opened");
 
+  // Reproduce the ZK-756 report: an older build cached screenshot artwork at
+  // the stable, unversioned path. The current page must request its build-
+  // revision URL instead of allowing that legacy response to win cache-first.
+  await page.evaluate(async () => {
+    const cacheKey = (await caches.keys()).find((key) => key.startsWith("coursecraft-"));
+    if (!cacheKey) throw new Error("CourseCraft cache was not created");
+    const cache = await caches.open(cacheKey);
+    const staleArtwork = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    await cache.put(new URL("vision/parkland.jpg", location.href), new Response(staleArtwork, {
+      headers: { "content-type": "image/jpeg", "x-coursecraft-fixture": "stale-vision-art" },
+    }));
+  });
+
   await page.goto(new URL("?view=vision", baseURL).href, { waitUntil: "domcontentloaded" });
   await page.getByTestId("vision-page").waitFor({ state: "visible" });
   await page.locator("#vision-biomes").scrollIntoViewIfNeeded();
   await page.waitForTimeout(400);
+  const parklandSource = await page.locator('[data-biome-id="parkland"] img').evaluate((image) => {
+    if (!(image instanceof HTMLImageElement)) throw new Error("Parkland artwork is not an image");
+    const source = new URL(image.currentSrc);
+    return { revision: source.searchParams.get("v"), width: image.naturalWidth };
+  });
+  if (!parklandSource.revision || parklandSource.width < 768) {
+    throw new Error(`Versioned Parkland artwork bypass failed: ${JSON.stringify(parklandSource)}`);
+  }
   const viewedVisionAssets = await cachedVisionAssets();
-  if (!viewedVisionAssets.some((url) => url.endsWith("/vision/coursecraft-world.jpg"))) {
+  if (!viewedVisionAssets.some((url) => new URL(url).pathname.endsWith("/vision/coursecraft-world.jpg"))) {
     throw new Error("The viewed Vision hero was not stored in the runtime cache");
   }
-  if (!viewedVisionAssets.some((url) => url.includes("/vision/parkland"))) {
+  if (!viewedVisionAssets.some((url) => new URL(url).pathname.includes("/vision/parkland") && new URL(url).searchParams.has("v"))) {
     throw new Error("A viewed core Vision gallery image was not stored in the runtime cache");
   }
 

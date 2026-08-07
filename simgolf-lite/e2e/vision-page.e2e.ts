@@ -137,7 +137,10 @@ test("vision gallery serves the branded Parkland and Desert art responsively", a
       await expect(image).toHaveJSProperty("naturalWidth", viewport.name === "phone" ? 768 : 1536);
       await expect(image).toHaveJSProperty("naturalHeight", viewport.name === "phone" ? 432 : 864);
       expect(await image.evaluate(
-        (element, expectedPath) => element.currentSrc.endsWith(expectedPath),
+        (element, expectedPath) => {
+          const source = new URL(element.currentSrc);
+          return source.pathname.endsWith(expectedPath) && source.searchParams.has("v");
+        },
         `/vision/${biome}${viewport.suffix}`,
       )).toBe(true);
     }
@@ -149,7 +152,7 @@ test("vision gallery serves the branded Parkland and Desert art responsively", a
 });
 
 test("vision gallery keeps a branded fallback when artwork is unavailable", async ({ page }, testInfo) => {
-  await page.route("**/vision/parkland.jpg", (route) => route.abort());
+  await page.route((url) => url.pathname.endsWith("/vision/parkland.jpg"), (route) => route.abort());
   await page.goto("/?view=vision");
   const parkland = page.locator('[data-biome-id="parkland"]');
   await parkland.scrollIntoViewIfNeeded();

@@ -71,10 +71,12 @@ export const VISION_BIOMES = [
   { id: "australian-sandbelt", collection: "expanded", image: "australian-sandbelt", mobileImage: "australian-sandbelt-mobile", title: "vision.biome.sandbelt.title", body: "vision.biome.sandbelt.body", alt: "vision.biome.sandbelt.alt" },
 ] as const satisfies readonly BiomePreview[];
 
-const WORLD_IMAGE = `${import.meta.env.BASE_URL}vision/coursecraft-world.jpg`;
-const CLUBHOUSE_IMAGE = `${import.meta.env.BASE_URL}vision/clubhouse-campus.jpg`;
-const COAST_IMAGE = `${import.meta.env.BASE_URL}vision/coastal-routing.jpg`;
 const VISION_IMAGE_BASE = `${import.meta.env.BASE_URL}vision/`;
+const VISION_IMAGE_REVISION = encodeURIComponent(__COMMIT_SHA__.slice(0, 12));
+const visionImage = (name: string) => `${VISION_IMAGE_BASE}${name}.jpg?v=${VISION_IMAGE_REVISION}`;
+const WORLD_IMAGE = visionImage("coursecraft-world");
+const CLUBHOUSE_IMAGE = visionImage("clubhouse-campus");
+const COAST_IMAGE = visionImage("coastal-routing");
 
 export function VisionPage({ onClose }: { onClose: () => void }) {
   const { t } = useI18n();
@@ -233,9 +235,9 @@ export function VisionPage({ onClose }: { onClose: () => void }) {
                 {biomes.map((biome) => (
                   <figure className="cc-vision-biome" data-biome-id={biome.id} key={biome.id}>
                     <picture data-fallback={t("vision.biome.imageFallback")}>
-                      <source media="(max-width: 680px)" srcSet={`${VISION_IMAGE_BASE}${biome.mobileImage}.jpg`} />
+                      <source media="(max-width: 680px)" srcSet={visionImage(biome.mobileImage)} />
                       <img
-                        src={`${VISION_IMAGE_BASE}${biome.image}.jpg`}
+                        src={visionImage(biome.image)}
                         alt={t(biome.alt)}
                         loading="lazy"
                         decoding="async"

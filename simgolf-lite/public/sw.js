@@ -1,4 +1,4 @@
-const VERSION = "coursecraft-__APP_VERSION__";
+const VERSION = "coursecraft-__CACHE_VERSION__";
 const scopeUrl = new URL("./", self.registration.scope);
 const scoped = (path = "") => new URL(path, scopeUrl).href;
 const SHELL = ["", "manifest.webmanifest", "icons/coursecraft-192.svg", "icons/coursecraft-512.svg", "atlases/biomes/manifest.json"].map(scoped);

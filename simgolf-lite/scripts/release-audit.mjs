@@ -10,6 +10,7 @@ const config = JSON.parse(readFileSync(new URL("release/rc-config.json", root), 
 const manifest = JSON.parse(readFileSync(new URL("dist/manifest.webmanifest", root), "utf8"));
 const worker = readFileSync(new URL("dist/sw.js", root), "utf8");
 const index = readFileSync(new URL("dist/index.html", root), "utf8");
+const buildRevision = (process.env.GITHUB_SHA ?? process.env.VITE_COMMIT_SHA ?? "local").trim().slice(0, 12) || "local";
 
 const git = (...args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
 const status = git("status", "--porcelain").split("\n").filter(Boolean);
@@ -41,7 +42,7 @@ try {
 
 const checks = {
   versionMatches: pkg.version === config.version,
-  immutableVersionedCache: worker.includes(`coursecraft-${pkg.version}`),
+  immutableVersionedCache: worker.includes(`coursecraft-${pkg.version}-${buildRevision}`),
   scopedPrecache: worker.includes(".map(scoped)") && worker.includes("self.registration.scope"),
   relativeManifest: manifest.id === "./" && manifest.start_url === "./" && manifest.scope === "./" && manifest.icons.every((icon) => !icon.src.startsWith("/")),
   deploymentBaseBuilt: config.deploymentBase === "/"

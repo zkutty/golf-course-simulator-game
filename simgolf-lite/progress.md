@@ -1,5 +1,12 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-756 development artwork cache repair — 2026-08-07
+
+- Reproduced the reopened report as a delivery-state defect rather than a missing source commit: `main` and `develop`, plus both live endpoints, contain byte-identical approved Parkland and Desert artwork, but the PWA cached stable `/vision/*` URLs under a package-version-only namespace.
+- Versioned every Vision artwork request by the build commit and versioned the service-worker cache namespace by package plus build revision. A newly delivered app therefore bypasses legacy screenshot responses immediately; activation of the matching worker then removes the prior release cache.
+- Extended the PWA smoke to seed a stale unversioned Parkland response and require the real 1536-class revisioned artwork to load and enter the on-demand cache. The PWA/offline gate passes; the five responsive/fallback Vision browser scenarios pass; full CI passes 177 files / 1,407 tests plus one intentional skip and the 5/5 audio audit; and lint/i18n passes with zero errors and the same 12 hook warnings.
+- The required game client and a focused browser probe loaded both revisioned 1536×864 sources. The current core/expanded gallery and fallback captures were visually inspected. ZK-756 remains In Progress pending the gated development and production release.
+
 ## ZK-757 frozen Player Pro loadout delivery boundary — 2026-08-06
 
 - Began from the exact M66 candidate `90dd42c` in the isolated
