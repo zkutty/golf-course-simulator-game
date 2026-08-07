@@ -162,7 +162,6 @@ import { PhotoModeOverlay } from "./ui/retention/PhotoModeOverlay";
 import { captureCourseCanvas, createCourseCard, downloadBlob, shareBlob } from "./utils/photoCapture";
 import { platformServices } from "./platform";
 import { usePwa } from "./hooks/usePwa";
-import { TournamentPanel } from "./ui/TournamentPanel";
 import { LandOfficePanel } from "./ui/LandOfficePanel";
 import { isOwnedTile } from "./game/estate/estate";
 import { isWaterHazard } from "./game/models/terrainRules";
@@ -361,6 +360,7 @@ const ChallengeGroupHud = lazy(() => import("./ui/PlayerProPanel").then(({ Chall
 const ArchitectureReviewPanel = lazy(() => import("./ui/ArchitectureReviewPanel").then(({ ArchitectureReviewPanel }) => ({ default: ArchitectureReviewPanel })));
 const CourseManagerPanel = lazy(() => import("./ui/CourseManagerPanel").then(({ CourseManagerPanel }) => ({ default: CourseManagerPanel })));
 const ProgressionPanel = lazy(() => import("./ui/ProgressionPanel").then(({ ProgressionPanel }) => ({ default: ProgressionPanel })));
+const TournamentPanel = lazy(() => import("./ui/TournamentPanel").then(({ TournamentPanel }) => ({ default: TournamentPanel })));
 // These management surfaces are never needed for the frame loop. Defer their
 // UI code until the player explicitly opens the corresponding workspace.
 const LiveOverview = lazy(() => import("./ui/LiveOverview").then(({ LiveOverview }) => ({ default: LiveOverview })));
@@ -1295,6 +1295,15 @@ export default function App() {
     return null;
   }, [audio, gameSession, live, setWorld, soundEnabled]);
 
+  const autosaveState = useCallback((state: GameState) => autosave({
+    course: state.course,
+    world: state.world,
+    history: historyRef.current,
+    records: recordsRef.current,
+    live: live.getSnapshot(),
+    tutorial: tutorialProgress,
+  }), [live, tutorialProgress]);
+
   const commitChallengeWorld = useCallback(async (current: GameState, nextWorld: World): Promise<boolean> => {
     const next = { ...current, world: nextWorld, economyVersion: current.economyVersion + 1 };
     let committed = false;
@@ -1305,16 +1314,9 @@ export default function App() {
     });
     if (!committed) return false;
     markDirty();
-    await autosave({
-      course: next.course,
-      world: next.world,
-      history: historyRef.current,
-      records: recordsRef.current,
-      live: live.getSnapshot(),
-      tutorial: tutorialProgress,
-    });
+    await autosaveState(next);
     return true;
-  }, [gameSession, live, markDirty, tutorialProgress]);
+  }, [autosaveState, gameSession, markDirty]);
 
   const challengePlayerPro = useCallback(async (draft: PlayerChallengeContractDraft | null): Promise<string | null> => {
     const { RETRY, tryCancel, tryStart } = await import("./game/playerPro/challengePlayerProAdapter");
@@ -1451,17 +1453,10 @@ export default function App() {
     if (!round || round.phase === "flight") return;
     const timer = window.setTimeout(() => {
       const current = gameSession.getState();
-      void autosave({
-        course: current.course,
-        world: current.world,
-        history: historyRef.current,
-        records: recordsRef.current,
-        live: live.getSnapshot(),
-        tutorial: tutorialProgress,
-      });
+      void autosaveState(current);
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [activePlayerRound, gameSession, live, tutorialProgress]);
+  }, [activePlayerRound, autosaveState, gameSession]);
 
   const returnPlayerToDesign = useCallback(() => {
     const round = gameSession.getState().world.playerPro?.activeRound;
@@ -5242,7 +5237,7 @@ export default function App() {
             </Suspense>
             {playerRoundLocksEditing && <div role="status" style={{ position: "absolute", left: "50%", top: 54, transform: "translateX(-50%)", zIndex: 112, padding: "6px 10px", borderRadius: 8, background: "rgba(54,69,48,.92)", color: "white", fontSize: 12 }}>{t("playerPro.round.editLocked")}</div>}
             {showProgression && !tutorialProgress && <Suspense fallback={null}><ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} /></Suspense>}
-            {showTournaments && !tutorialProgress && <TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
+            {showTournaments && !tutorialProgress && <Suspense fallback={null}><TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} /></Suspense>}
             {showLandOffice && !tutorialProgress && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
             {showCourseManager && !tutorialProgress && <Suspense fallback={<div aria-live="polite" style={{ padding: 16 }}>{t("courseSetup.loadingInspector")}</div>}><CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onOpenArchitectureReview={() => { setShowArchitectureReview(true); setShowCourseManager(false); }} onClose={() => setShowCourseManager(false)} /></Suspense>}
             {showArchitectureReview && !tutorialProgress && <ArchitectureReviewPanel
