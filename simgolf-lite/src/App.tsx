@@ -55,7 +55,11 @@ import { scoreCourseHoles } from "./game/sim/holes";
 import { computeCourseRatingAndSlope, computeRatingForSetup, computeRatingsByTee } from "./game/sim/courseRating";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "./game/sim/loanEligibility";
 import { legacyAwardForRun, loadLegacy, saveLegacy } from "./utils/legacy";
-import { getEffectiveBalance, terrainCostMult } from "./game/balance/difficulty";
+import {
+  economicPressureForWorld,
+  getEffectiveBalance,
+  terrainCostMult,
+} from "./game/balance/experience";
 import { GameBackground } from "./ui/gameui";
 import { useAudio } from "./audio/audioContext";
 const HoleInspector = lazy(() => import("./ui/HoleInspector").then((module) => ({ default: module.HoleInspector })));
@@ -459,9 +463,10 @@ export default function App() {
   const activeLayout = useMemo(() => activeCourseLayout(course), [course]);
   const activeOperatingCourse = useMemo(() => courseForLayout(course, activeLayout.id), [course, activeLayout.id]);
   const [selected, setSelected] = useState<Terrain>("fairway");
-  // Difficulty-resolved balance + terrain cost scaler (ZKU-165).
-  const BALANCE = getEffectiveBalance(world.difficulty);
-  const costMult = terrainCostMult(world.difficulty);
+  // Independent economy axis; the experience profile never changes balance.
+  const economicPressure = economicPressureForWorld(world);
+  const BALANCE = getEffectiveBalance(economicPressure);
+  const costMult = terrainCostMult(economicPressure);
 
   // Dispatch function for actions
   const dispatch = useCallback((action: Action) => {
@@ -1636,7 +1641,7 @@ export default function App() {
       : isM26Fixture
       ? createM26MultiCourseReferenceCourse()
       : isM25Fixture
-      ? createNewGame({ mode: "sandbox", courseName: "M25 Survey Estate", seed: m25Seed, theme: fixtureTheme, difficulty: "normal", sandboxOverrides: { startingCash: 500_000 } }).course
+      ? createNewGame({ mode: "sandbox", courseName: "M25 Survey Estate", seed: m25Seed, theme: fixtureTheme, experienceProfile: "classic", economicPressure: "balanced", sandboxOverrides: { startingCash: 500_000 } }).course
       : isM24Fixture
       ? createTournamentStandardsCourse()
       : isM23Fixture
@@ -2498,7 +2503,8 @@ export default function App() {
       founderName: world.founderName,
       seed,
       theme: course.theme ?? "parkland",
-      difficulty: world.difficulty ?? "normal",
+      experienceProfile: world.experienceProfile ?? "classic",
+      economicPressure,
       playerPro: world.playerPro ? {
         name: world.playerPro.identity.name,
         appearance: world.playerPro.identity.appearance,
@@ -2514,7 +2520,8 @@ export default function App() {
       courseName: generateCourseName(),
       seed: import.meta.env.MODE === "e2e" ? 424242 : (Date.now() % 1_000_000) | 0,
       theme: "parkland",
-      difficulty: "normal",
+      experienceProfile: "classic",
+      economicPressure: "balanced",
     };
   }
 
@@ -2609,6 +2616,10 @@ export default function App() {
       modal: flow.modal,
       paused: flow.paused,
       workspace,
+      experience: {
+        profile: world.experienceProfile ?? "classic",
+        economicPressure,
+      },
       tutorialStep: tutorialProgress?.stepIndex ?? null,
       course: {
         name: course.name,
@@ -3002,7 +3013,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -3041,7 +3052,8 @@ export default function App() {
           courseName: `ZK-626 ${theme} loading save`,
           seed: 626_000 + week * 10 + dayIndex,
           theme,
-          difficulty: "normal",
+          experienceProfile: "classic",
+          economicPressure: "balanced",
         });
         const saveWorld = {
           ...run.world,
@@ -4922,7 +4934,7 @@ export default function App() {
           open
           initialEntry={golfopediaEntry}
           theme={course.theme}
-          difficulty={world.difficulty}
+          economicPressure={economicPressure}
           onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
         /></DeferredSurface>
       )}

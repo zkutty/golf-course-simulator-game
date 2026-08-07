@@ -7,7 +7,7 @@ import { createLoan } from "../sim/loans";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../sim/loanEligibility";
 import { tickWeek } from "../sim/tickWeek";
 import { mulberry32, randInt } from "../../utils/rng";
-import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty";
+import { economicPressureForWorld, getEconomicPressure, getEffectiveBalance } from "../balance/experience";
 
 export type Archetype = "Builder" | "Optimizer" | "Chaotic";
 
@@ -56,7 +56,7 @@ function paintBrush(course: Course, world: World, x: number, y: number, t: Terra
   const idx = y * course.width + x;
   const prev = course.tiles[idx];
   if (prev === t) return { course, world };
-  const { net } = computeTerrainChangeCost(prev, t, getDifficultyProfile(world.difficulty).terrainCostMult, course.theme);
+  const { net } = computeTerrainChangeCost(prev, t, getEconomicPressure(economicPressureForWorld(world)).terrainCostMult, course.theme);
   if (net > 0 && world.cash < net) return { course, world };
   const tiles = course.tiles.slice();
   tiles[idx] = t;
@@ -98,7 +98,7 @@ function paintGreenPad(course: Course, world: World, holeIndex: number) {
 }
 
 function maybeTakeBridgeLoan(course: Course, world: World) {
-  const B = getEffectiveBalance(world.difficulty);
+  const B = getEffectiveBalance(economicPressureForWorld(world));
   if (!canTakeBridgeLoan(course, world, B)) return world;
   const loan = createLoan({
     kind: "BRIDGE",
@@ -116,7 +116,7 @@ function maybeTakeBridgeLoan(course: Course, world: World) {
 }
 
 function maybeTakeExpansionLoan(course: Course, world: World) {
-  const B = getEffectiveBalance(world.difficulty);
+  const B = getEffectiveBalance(economicPressureForWorld(world));
   if (!canTakeExpansionLoan(course, world, B)) return world;
   const loan = createLoan({
     kind: "EXPANSION",
@@ -275,7 +275,6 @@ export function runMonteCarlo(args: {
     },
   };
 }
-
 
 
 

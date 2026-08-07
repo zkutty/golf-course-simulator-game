@@ -18,7 +18,10 @@ export type { FeatureOrigin, PlantId } from "./plantTypes";
 // Run framing (ZKU-162/165/166). Kept here (not in balance/gen) so save code
 // and the sim can reference them without layering cycles.
 export type PlayMode = "sandbox" | "challenge" | "career";
+/** @deprecated Save/import compatibility only. New runs use two independent axes. */
 export type Difficulty = "easy" | "normal" | "hard";
+export type ExperienceProfile = "relaxed" | "classic" | "simulation";
+export type EconomicPressure = "friendly" | "balanced" | "tight";
 
 // Scenario rule overrides (ZKU-164), persisted denormalized on World so a
 // save stays self-contained even if scenario definitions change later.
@@ -495,8 +498,12 @@ export interface World {
   // Objective engine state (ZKU-163). null = free play (no goals). Older
   // saves migrate to null on load.
   objectives?: ObjectiveState | null;
-  // Run framing (ZKU-162/165). Older saves migrate to sandbox/normal.
+  // Run framing. Schema-v29 saves persist independent experience/economy axes.
+  // `difficulty` is accepted only while importing pre-v29 saves.
   mode?: PlayMode;
+  experienceProfile?: ExperienceProfile;
+  economicPressure?: EconomicPressure;
+  /** @deprecated Pre-v29 compatibility carrier; omitted by current persistence. */
   difficulty?: Difficulty;
   founderName?: string;
   // Career (ZKU-164): which scenario this run is, and its rule overrides.

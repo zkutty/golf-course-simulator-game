@@ -1,4 +1,4 @@
-import type { BiomeOperatingCostBreakdown, ConcessionTransaction, ConcessionType, CourseOperations, Difficulty, PaceCohort, PinRotation, Point, TeeSet } from "../models/types";
+import type { BiomeOperatingCostBreakdown, ConcessionTransaction, ConcessionType, CourseOperations, Difficulty, EconomicPressure, PaceCohort, PinRotation, Point, TeeSet } from "../models/types";
 import type { Personality } from "./personality";
 import type { LiveTournamentState } from "../tournaments/types";
 import type { DailyWeather, WeatherKind, WeatherModifiers } from "../seasons/types";
@@ -236,7 +236,9 @@ export interface LiveState {
   walkCache: Map<string, Point[] | null>;
   dayOver: boolean;
   seed: number;
-  // Run difficulty at day start (ZKU-165) — scales rolled patience/spend.
+  // Economic pressure frozen at day start — scales rolled patience/spend.
+  economicPressure?: EconomicPressure;
+  /** @deprecated Pre-v29 live-save compatibility. */
   difficulty?: Difficulty;
   tournament?: LiveTournamentState;
   groups?: TeeGroupState[];

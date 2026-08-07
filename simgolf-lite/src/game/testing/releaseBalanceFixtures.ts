@@ -1,4 +1,4 @@
-import { getDifficultyProfile } from "../balance/difficulty";
+import { getEconomicPressure, normalizeExperienceAxes } from "../balance/experience";
 import { DEFAULT_WORLD } from "../models/defaults";
 import type { Course, Difficulty, LandTheme, Terrain, World } from "../models/types";
 import { createLoan } from "../sim/loans";
@@ -92,13 +92,14 @@ export function releaseBalanceInitialWorld(
   strategy: ReleaseStrategy,
   seed: number,
 ): World {
+  const axes = normalizeExperienceAxes({ difficulty });
   const startingCash = Math.round(
-    DEFAULT_WORLD.cash * getDifficultyProfile(difficulty).startingCashMult,
+    DEFAULT_WORLD.cash * getEconomicPressure(axes.economicPressure).startingCashMult,
   );
   if (strategy !== "aggressive-expansion") {
     return {
       ...DEFAULT_WORLD,
-      difficulty,
+      ...axes,
       runSeed: seed,
       cash: strategy === "poor-management" ? Math.min(15_000, startingCash) : startingCash,
       reputation: strategy === "poor-management" ? 20 : DEFAULT_WORLD.reputation,
@@ -116,7 +117,7 @@ export function releaseBalanceInitialWorld(
   });
   return {
     ...DEFAULT_WORLD,
-    difficulty,
+    ...axes,
     runSeed: seed,
     cash: startingCash + loan.principal,
     loans: [loan],

@@ -1,7 +1,7 @@
 import type { Course, World } from "../models/types";
 import { scoreCourseHoles } from "./holes";
 import { computeCourseRatingAndSlope } from "./courseRating";
-import { getEffectiveBalance } from "../balance/difficulty";
+import { economicPressureForWorld, getEffectiveBalance } from "../balance/experience";
 import { BALANCE as BASE_BALANCE } from "../balance/balanceConfig";
 import { analyzeArchitecture, architectureDemandMultiplier } from "../architecture/architecture";
 import { buildM49DemandPlan } from "../m49/demand";
@@ -43,7 +43,7 @@ export function priceAttractiveness(course: Course): number {
 
 export function priceAttractivenessWithContext(course: Course, world: World): number {
   // Harsher elasticity above market, especially at low reputation.
-  const BALANCE = getEffectiveBalance(world.difficulty);
+  const BALANCE = getEffectiveBalance(economicPressureForWorld(world));
   const p = course.baseGreenFee;
   const market = BALANCE.pricing.marketPrice;
   const base = priceAttractiveness(course);
@@ -59,7 +59,7 @@ export function priceAttractivenessWithContext(course: Course, world: World): nu
 }
 
 export function demandBreakdown(course: Course, world: World) {
-  const BALANCE = getEffectiveBalance(world.difficulty);
+  const BALANCE = getEffectiveBalance(economicPressureForWorld(world));
   const holeSummary = scoreCourseHoles(course);
   const architecture = analyzeArchitecture(course);
   const q = clamp01((holeSummary.courseQuality / 100) * (1 - BALANCE.architecture.qualityBlend) + (architecture.total / 100) * BALANCE.architecture.qualityBlend);

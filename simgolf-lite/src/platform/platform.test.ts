@@ -64,7 +64,7 @@ describe("M42 PlatformServices", () => {
     ]);
   });
 
-  it("round-trips canonical biome evidence through the desktop atomic-file boundary", async () => {
+  it("round-trips canonical biome and experience axes through the desktop atomic-file boundary", async () => {
     const files = new Map<string, string>();
     const bridge: CourseCraftDesktopBridge = {
       version: 1,
@@ -91,7 +91,7 @@ describe("M42 PlatformServices", () => {
     const platform = createDesktopPlatform(bridge);
     const payload = payloadForPersistence({
       course: { ...DEFAULT_COURSE, theme: "desert", biomeCompatibility: undefined },
-      world: DEFAULT_WORLD,
+      world: { ...DEFAULT_WORLD, experienceProfile: "simulation", economicPressure: "friendly" },
     });
     const text = JSON.stringify({
       schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
@@ -109,6 +109,7 @@ describe("M42 PlatformServices", () => {
           theme: "desert",
           biomeCompatibility: { version: 1, biome: "desert", contentVersion: 1 },
         },
+        world: { experienceProfile: "simulation", economicPressure: "friendly" },
       },
     });
   });

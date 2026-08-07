@@ -4,7 +4,7 @@ import { computeElevationChangeCost, computeTerrainChangeCost } from "../game/mo
 import { computeTerrainBatch } from "../game/models/terrainStroke";
 import { clampElevation } from "../game/models/elevation";
 import { hitsLiquidityTrap } from "../game/sim/runState";
-import { terrainCostMult } from "../game/balance/difficulty";
+import { economicPressureForWorld, terrainCostMult } from "../game/balance/experience";
 import {
   BUILDING_SPECS,
   buildingTiles,
@@ -12,7 +12,7 @@ import {
   canPlaceBuilding,
   isConcessionType,
 } from "../game/models/buildings";
-import { getEffectiveBalance } from "../game/balance/difficulty";
+import { getEffectiveBalance } from "../game/balance/experience";
 import { createLoan } from "../game/sim/loans";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
 import {
@@ -150,7 +150,7 @@ export function applyAction(state: GameState, action: Action): GameState {
   }
 
   // Difficulty-scaled build economics (ZKU-165).
-  const costMult = terrainCostMult(state.world.difficulty);
+  const costMult = terrainCostMult(economicPressureForWorld(state.world));
 
   // Clone state for mutation
   let newState: GameState = { ...state };
@@ -929,7 +929,7 @@ export function applyAction(state: GameState, action: Action): GameState {
     }
 
     case "TAKE_LOAN": {
-      const balance = getEffectiveBalance(state.world.difficulty);
+      const balance = getEffectiveBalance(economicPressureForWorld(state.world));
       const eligible =
         action.kind === "BRIDGE"
           ? canTakeBridgeLoan(state.course, state.world, balance)

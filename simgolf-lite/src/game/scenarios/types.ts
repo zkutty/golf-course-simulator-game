@@ -1,4 +1,4 @@
-import type { Difficulty, LandTheme, ScenarioConstraints } from "../models/types";
+import type { EconomicPressure, ExperienceProfile, LandTheme, ScenarioConstraints } from "../models/types";
 import type { GoalDefinition } from "../models/objectives";
 import type { MessageKey } from "../../i18n/catalog";
 import type { BiomeCompatibilityMetadata } from "../models/biomes";
@@ -19,10 +19,11 @@ export interface ScenarioDefinition {
   seed: number;
   theme: LandTheme;
   biomeCompatibility: BiomeCompatibilityMetadata;
-  difficulty: Difficulty;
+  experienceProfile: ExperienceProfile;
+  economicPressure: EconomicPressure;
   /** Course name the run starts with (defaults to the scenario name). */
   courseName?: string;
-  /** Starting cash override (otherwise difficulty-scaled default). */
+  /** Starting cash override (otherwise economic-pressure-scaled default). */
   startingCash?: number;
   goals: GoalDefinition[];
   constraints?: ScenarioConstraints;

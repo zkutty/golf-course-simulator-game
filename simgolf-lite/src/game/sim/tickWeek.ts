@@ -6,7 +6,7 @@ import { scoreCourseHoles } from "./holes";
 import { terrainMaintenanceWeight } from "../models/terrainEconomics";
 import { isCoursePlayable } from "./isCoursePlayable";
 import { stepLoanWeek, totalWeeklyPayments } from "./loans";
-import { getEffectiveBalance } from "../balance/difficulty";
+import { economicPressureForWorld, getEconomicPressure, getEffectiveBalance } from "../balance/experience";
 import { distressExhausted, hitsLiquidityTrap } from "./runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
 import { operatingCourseViews } from "../models/courseLayouts";
@@ -17,7 +17,6 @@ import {
   quoteDailyBiomeOperatingCosts,
   scaleBiomeOperatingCosts,
 } from "../models/biomeOperatingCosts";
-import { getDifficultyProfile } from "../balance/difficulty";
 import {
   absoluteDayFor,
   biomeClimatePhenologyForDay,
@@ -158,7 +157,8 @@ function tickWeekSingle(
 ): { world: World; course: Course; result: WeekResult } {
   const rng = mulberry32(seed + world.week);
   // Difficulty-resolved balance (ZKU-165): identity for normal.
-  const BALANCE = getEffectiveBalance(world.difficulty);
+  const pressure = economicPressureForWorld(world);
+  const BALANCE = getEffectiveBalance(pressure);
 
   const playable = isCoursePlayable(course);
 
@@ -243,7 +243,7 @@ function tickWeekSingle(
     publishedForecast: world.seasonal?.forecast,
     policy: world.seasonal?.operations.waterPolicy,
     drainageLevel: world.seasonal?.operations.drainageLevel,
-    costMult: getDifficultyProfile(world.difficulty).terrainCostMult,
+    costMult: getEconomicPressure(pressure).terrainCostMult,
   });
   const dailyWaterMultiplier = surfaceCare
     ? surfaceCareWaterCostMultiplier({
@@ -457,7 +457,7 @@ export function tickWeek(
     - (primary.result.variableCosts?.total ?? 0)
     + elevatedWaterCost;
   const costs = sharedCosts + variableCosts;
-  const taxRate = getEffectiveBalance(world.difficulty).tax;
+  const taxRate = getEffectiveBalance(economicPressureForWorld(world)).tax;
   const preTax = revenue - costs;
   const tax = taxRate.enabled && preTax > 0 ? preTax * taxRate.profitTaxRate : 0;
   const profit = preTax - tax;

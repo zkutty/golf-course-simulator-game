@@ -247,7 +247,7 @@ export function SaveLoadModal(props: SaveLoadModalProps) {
                 </span>
               </div>
               <div style={{ fontSize: 12, color: "#6b7280" }}>
-                {slot.courseName} • {formatWeekLabel(slot.week, "en", "week")} • {formatCurrency(slot.cash)} • {slot.holesOpen}<T id="auto.ui.saveloadmodal.9.holes" />{slot.difficulty ? ` • ${slot.difficulty}` : ""}
+                {slot.courseName} • {formatWeekLabel(slot.week, "en", "week")} • {formatCurrency(slot.cash)} • {slot.holesOpen}<T id="auto.ui.saveloadmodal.9.holes" />{slot.experienceProfile || slot.economicPressure ? ` • ${slot.experienceProfile ?? "classic"}/${slot.economicPressure ?? "balanced"}` : slot.difficulty ? ` • ${slot.difficulty}` : ""}
                 {slot.theme ? ` • ${slot.theme}` : ""} •{" "}
                 {formatDateTime(slot.savedAt)}
               </div>

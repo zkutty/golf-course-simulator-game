@@ -1,4 +1,10 @@
-import type { Difficulty, LandTheme, PlayMode } from "./types";
+import type {
+  Difficulty,
+  EconomicPressure,
+  ExperienceProfile,
+  LandTheme,
+  PlayMode,
+} from "./types";
 import type { PlayerProAppearance, PlayerProBackground, PlayerProHandedness } from "./playerProTypes";
 
 // New-game setup (ZKU-162): the wizard's output. One typed object, one
@@ -16,7 +22,12 @@ export interface GameSetup {
   /** Land generation seed — displayed and re-enterable so players can share land. */
   seed: number;
   theme: LandTheme;
-  difficulty: Difficulty;
+  /** Independent player-facing complexity/presentation contract. */
+  experienceProfile?: ExperienceProfile;
+  /** Independent economy pressure contract. */
+  economicPressure?: EconomicPressure;
+  /** @deprecated Compatibility input for callers not yet moved to both axes. */
+  difficulty?: Difficulty;
   playerPro?: {
     name: string;
     appearance: PlayerProAppearance;

@@ -125,12 +125,12 @@ describe("architecture rules evidence", () => {
     const filters = defaultArchitectureFilters(mandatory);
     const normal = buildArchitectureReview(
       mandatory,
-      { ...world([]), difficulty: "normal" },
+      { ...world([]), economicPressure: "balanced" },
       filters,
     );
     const hard = buildArchitectureReview(
       mandatory,
-      { ...world([]), difficulty: "hard" },
+      { ...world([]), economicPressure: "tight" },
       filters,
     );
     expect(normal.recommendations.length).toBeGreaterThan(0);

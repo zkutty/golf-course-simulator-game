@@ -1,4 +1,4 @@
-import type { Course, Difficulty, LandTheme, WeekResult, World } from "../game/models/types";
+import type { Course, Difficulty, EconomicPressure, ExperienceProfile, LandTheme, WeekResult, World } from "../game/models/types";
 import type { LiveSimulationSnapshotV1 } from "../game/live/persistence";
 import {
   CURRENT_SAVE_SCHEMA_VERSION,
@@ -13,6 +13,7 @@ import type { TutorialProgress } from "../game/onboarding/tutorial";
 import { loadAppProfile, type AppProfile } from "../game/onboarding/profile";
 import type { CourseRecords } from "../game/retention/types";
 import { platformServices } from "../platform";
+import { normalizeExperienceAxes } from "../game/balance/experience";
 
 /**
  * Save repository (ZKU-174): named slots + rotating autosaves + quicksave.
@@ -42,7 +43,9 @@ export interface SaveSlotMeta {
   week: number;
   cash: number;
   holesOpen: number;
-  /** Run difficulty (ZKU-165). Absent on pre-M13 manifests. */
+  experienceProfile?: ExperienceProfile;
+  economicPressure?: EconomicPressure;
+  /** @deprecated Pre-v29 manifest compatibility. */
   difficulty?: Difficulty;
   /** Land theme (ZKU-166). Absent on pre-M13 manifests. */
   theme?: LandTheme;
@@ -289,7 +292,12 @@ async function readManifest(): Promise<SaveSlotMeta[]> {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as SaveSlotMeta[];
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? parsed.map((meta) => {
+      const axes = normalizeExperienceAxes(meta);
+      const { difficulty: _legacyDifficulty, ...current } = meta;
+      void _legacyDifficulty;
+      return { ...current, ...axes };
+    }) : [];
   } catch {
     return [];
   }
@@ -317,6 +325,7 @@ function metaFor(
   payload: SavePayload
 ): SaveSlotMeta {
   const holesOpen = payload.course.holes.filter((h) => h.tee && h.green).length;
+  const experience = normalizeExperienceAxes(payload.world);
   return {
     id,
     kind,
@@ -327,7 +336,8 @@ function metaFor(
     week: payload.world.week,
     cash: Math.round(payload.world.cash),
     holesOpen,
-    difficulty: payload.world.difficulty ?? "normal",
+    experienceProfile: experience.experienceProfile,
+    economicPressure: experience.economicPressure,
     theme: payload.course.theme ?? "parkland",
   };
 }

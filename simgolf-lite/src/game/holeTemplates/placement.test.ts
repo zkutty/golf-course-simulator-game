@@ -91,7 +91,7 @@ function buildableCourse(): Course {
 }
 
 function fundedWorld(overrides: Partial<World> = {}): World {
-  return { ...structuredClone(DEFAULT_WORLD), cash: 1_000_000, reputation: 100, difficulty: "normal", ...overrides };
+  return { ...structuredClone(DEFAULT_WORLD), cash: 1_000_000, reputation: 100, economicPressure: "balanced", ...overrides };
 }
 
 function placement(overrides: Partial<HoleTemplatePlacement> = {}): HoleTemplatePlacement {
@@ -183,7 +183,7 @@ describe("pure hole template placement planner", () => {
   it("returns exact registry-backed quotes and fully transformed proposed mutations", () => {
     const course = buildableCourse();
     course.theme = "desert";
-    const world = fundedWorld({ difficulty: "hard" });
+    const world = fundedWorld({ economicPressure: "tight" });
     const plan = planned({ course, world });
     expect(plan.canApply).toBe(true);
     expect(plan.blockers).toEqual([]);

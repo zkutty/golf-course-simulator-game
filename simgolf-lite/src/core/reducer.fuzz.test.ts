@@ -11,7 +11,7 @@ import type { Terrain } from "../game/models/types";
 import { clampElevation } from "../game/models/elevation";
 import { computeElevationChangeCost } from "../game/models/terrainEconomics";
 import { computeTerrainBatch } from "../game/models/terrainStroke";
-import { terrainCostMult } from "../game/balance/difficulty";
+import { economicPressureForWorld, terrainCostMult } from "../game/balance/experience";
 import { createNewGame } from "../game/gen/newGame";
 import { hashGameState } from "../utils/stateHash";
 import { createReferenceCourse } from "../game/testing/referenceCourse";
@@ -81,7 +81,7 @@ describe("reducer property tests", () => {
             course: before.course,
             tiles: [{ x: op.x, y: op.y, terrain: op.terrain }],
             cash: before.world.cash,
-            costMult: terrainCostMult(before.world.difficulty),
+            costMult: terrainCostMult(economicPressureForWorld(before.world)),
             reputation: before.world.reputation,
             protectedTrees: before.world.constraints?.protectedTrees,
           });
@@ -93,7 +93,7 @@ describe("reducer property tests", () => {
         if (op.kind === "sculpt") {
           const previous = before.course.elevations[idx];
           const applied = clampElevation(previous + op.delta) - previous;
-          const expected = computeElevationChangeCost(applied, terrainCostMult(before.world.difficulty)).net;
+          const expected = computeElevationChangeCost(applied, terrainCostMult(economicPressureForWorld(before.world))).net;
           expect(next.world.cash).toBeCloseTo(before.world.cash - expected, 8);
         }
         state = next;
@@ -104,7 +104,7 @@ describe("reducer property tests", () => {
 
 describe("determinism hard invariant", () => {
   it("produces identical generated and live-sim state for the same seed and inputs", () => {
-    const setup = { mode: "sandbox" as const, courseName: "Determinism", seed: 90210, theme: "links" as const, difficulty: "normal" as const };
+    const setup = { mode: "sandbox" as const, courseName: "Determinism", seed: 90210, theme: "links" as const, experienceProfile: "classic" as const, economicPressure: "balanced" as const };
     expect(hashGameState(createNewGame(setup))).toBe(hashGameState(createNewGame(setup)));
 
     const course = createReferenceCourse();

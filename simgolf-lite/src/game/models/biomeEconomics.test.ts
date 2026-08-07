@@ -70,12 +70,13 @@ function tinyCourse(theme: LandTheme = "parkland"): Course {
 }
 
 function state(course: Course, difficulty: "easy" | "normal" | "hard" = "normal"): GameState {
+  const economicPressure = difficulty === "easy" ? "friendly" : difficulty === "hard" ? "tight" : "balanced";
   return {
     course,
     world: {
       ...DEFAULT_WORLD,
       cash: 100_000,
-      difficulty,
+      economicPressure,
       constraints: undefined,
     },
     selectedTerrain: "fairway",

@@ -2,7 +2,7 @@ import type { Course, World } from "../models/types";
 import { demandIndex } from "../sim/score";
 import { scoreCourseHoles } from "../sim/holes";
 import { BALANCE } from "../balance/balanceConfig";
-import { getDifficultyProfile } from "../balance/difficulty";
+import { economicPressureForWorld, getEconomicPressure } from "../balance/experience";
 import { ARCHETYPES } from "./archetypes";
 import { LIVE } from "./liveConfig";
 import type { GolferArchetypeName } from "./types";
@@ -129,8 +129,8 @@ export function plannedGolfersForDay(course: Course, world: World): number {
   const di = demandIndex(course, world); // 0..~1.2
   const norm = clamp01(di / LIVE.volume.demandFullHouse);
   const span = LIVE.volume.maxGolfers - LIVE.volume.minGolfers;
-  // Difficulty scales the day's tee sheet (ZKU-165); identity on normal.
-  const raw = (LIVE.volume.minGolfers + norm * span) * getDifficultyProfile(world.difficulty).demandMult;
+  // Economic pressure scales the day's tee sheet; Balanced is the identity.
+  const raw = (LIVE.volume.minGolfers + norm * span) * getEconomicPressure(economicPressureForWorld(world)).demandMult;
   const planned = clamp(raw, LIVE.volume.minGolfers, LIVE.volume.maxGolfers);
   // Formal roads and parking can support a destination tee sheet; relying on
   // informal roadside/grass arrival constrains an otherwise busy course.

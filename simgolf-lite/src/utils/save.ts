@@ -1,7 +1,8 @@
 import type {
   Building,
   Course,
-  Difficulty,
+  EconomicPressure,
+  ExperienceProfile,
   PlayMode,
   WeekResult,
   World,
@@ -77,9 +78,12 @@ import {
 import { normalizePeopleProfiles } from "../game/competition/characters";
 import { decodeChallengeGroupRound } from "../game/competition/challengeGroupRoundCodec";
 import { persistedChallengeRuntimeError } from "../game/competition/challengeRuntimePersistence";
+import {
+  normalizeExperienceAxes,
+} from "../game/balance/experience";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 28 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 29 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -208,6 +212,10 @@ export interface SaveV27 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV28 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 28;
+  records?: CourseRecords;
+}
+export interface SaveV29 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -284,7 +292,7 @@ export function payloadForPersistence(payload: SavePayload): SavePayload {
         },
       }
     : payload.world;
-  const world = activeRound && roundTheme
+  const worldWithRound = activeRound && roundTheme
     ? {
         ...worldWithChallengeGroup,
         playerPro: {
@@ -300,7 +308,26 @@ export function payloadForPersistence(payload: SavePayload): SavePayload {
         },
       }
     : worldWithChallengeGroup;
-  return { ...payload, course, world };
+  const experience = normalizeExperienceAxes(worldWithRound);
+  const { difficulty: _legacyDifficulty, ...worldWithoutDifficulty } = worldWithRound;
+  void _legacyDifficulty;
+  const world: World = {
+    ...worldWithoutDifficulty,
+    experienceProfile: experience.experienceProfile,
+    economicPressure: experience.economicPressure,
+  };
+  const live = payload.live
+    ? (() => {
+        const liveExperience = normalizeExperienceAxes(payload.live!.state);
+        const { difficulty: _legacyLiveDifficulty, ...state } = payload.live!.state;
+        void _legacyLiveDifficulty;
+        return {
+          ...payload.live!,
+          state: { ...state, economicPressure: liveExperience.economicPressure },
+        } as LiveSimulationSnapshotV1;
+      })()
+    : undefined;
+  return { ...payload, course, world, live };
 }
 
 export function saveGame(payload: SavePayload) {
@@ -313,7 +340,7 @@ export function saveGame(payload: SavePayload) {
     rulesPlayerPro,
     persisted.course,
   ).playerPro as World["playerPro"];
-  const save: SaveV28 = {
+  const save: SaveV29 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: persisted.course,
@@ -816,6 +843,20 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
       },
     } : {}),
   }),
+  // V29 replaces the single difficulty bundle with independent experience
+  // and economic-pressure axes. The mapping preserves every old multiplier:
+  // Easy→Relaxed/Friendly, Normal→Classic/Balanced, Hard→Simulation/Tight.
+  28: (save) => {
+    if (!isRecord(save.world)) return { ...save, schemaVersion: 29 };
+    const axes = normalizeExperienceAxes(save.world);
+    const { difficulty: _legacyDifficulty, ...world } = save.world;
+    void _legacyDifficulty;
+    return {
+      ...save,
+      schemaVersion: 29,
+      world: { ...world, ...axes },
+    };
+  },
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -1151,12 +1192,16 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       course,
     ).playerPro;
     const rawConstraints = rawWorld.constraints;
+    const experience = normalizeExperienceAxes(rawWorld);
+    const { difficulty: _legacyDifficulty, ...rawWorldWithoutDifficulty } = rawWorld;
+    void _legacyDifficulty;
     const world: World = {
       ...DEFAULT_WORLD,
-      ...rawWorld,
+      ...rawWorldWithoutDifficulty,
       objectives: sanitizeObjectives(rawWorld.objectives),
       mode: oneOf<PlayMode>(rawWorld.mode, ["sandbox", "challenge", "career"], "sandbox"),
-      difficulty: oneOf<Difficulty>(rawWorld.difficulty, ["easy", "normal", "hard"], "normal"),
+      experienceProfile: oneOf<ExperienceProfile>(experience.experienceProfile, ["relaxed", "classic", "simulation"], "classic"),
+      economicPressure: oneOf<EconomicPressure>(experience.economicPressure, ["friendly", "balanced", "tight"], "balanced"),
       ...(typeof rawWorld.scenarioId === "string" ? { scenarioId: rawWorld.scenarioId } : {}),
       ...(rawConstraints && typeof rawConstraints === "object" && !Array.isArray(rawConstraints)
           ? { constraints: {
@@ -1208,7 +1253,14 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       if (!restored) {
         return fail("INVALID_LIVE_STATE", "The saved live simulation state is malformed.");
       }
-      live = translatedLive as LiveSimulationSnapshotV1;
+      const snapshot = translatedLive as LiveSimulationSnapshotV1;
+      const liveExperience = normalizeExperienceAxes(snapshot.state);
+      const { difficulty: _legacyLiveDifficulty, ...liveState } = snapshot.state;
+      void _legacyLiveDifficulty;
+      live = {
+        ...snapshot,
+        state: { ...liveState, economicPressure: liveExperience.economicPressure },
+      };
     }
     return {
       ok: true,

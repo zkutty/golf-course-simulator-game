@@ -1,6 +1,6 @@
 import type { ConcessionTransaction, ConcessionType, Course, World } from "../models/types";
 import { terrainMaintenanceWeight } from "../models/terrainEconomics";
-import { getDifficultyProfile, getEffectiveBalance } from "../balance/difficulty";
+import { economicPressureForWorld, getEconomicPressure, getEffectiveBalance } from "../balance/experience";
 import { hitsLiquidityTrap } from "../sim/runState";
 import { withEvaluatedObjectives } from "../objectives/evaluate";
 import type { DayResult, RoundReactions } from "./types";
@@ -78,9 +78,10 @@ export function commitDay(args: {
   });
   const hospitalityWeatherAdjustment = propertySettlement.report.revenue * (seasonalCommit.modifiers.lodgingMultiplier - 1);
   const revenue = args.revenue + propertySettlement.report.revenue + hospitalityWeatherAdjustment;
-  // Difficulty-resolved balance (ZKU-165): identity for normal.
-  const BALANCE = getEffectiveBalance(operatingWorld.difficulty);
-  const profile = getDifficultyProfile(operatingWorld.difficulty);
+  // Economic-pressure balance: Balanced is the historical identity.
+  const pressure = economicPressureForWorld(operatingWorld);
+  const BALANCE = getEffectiveBalance(pressure);
+  const profile = getEconomicPressure(pressure);
   const rounds = reactions.rounds;
   const avgSatisfaction = reactions.avgSatisfaction;
 

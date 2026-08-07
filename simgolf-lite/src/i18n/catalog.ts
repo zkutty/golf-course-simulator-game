@@ -609,7 +609,7 @@ export const en = {
   "golfer.none": "none",
   "golfer.outcomeLine": "{club} · {before} → {after} · {penalty} penalty",
   "golfer.reaction": "{outcome} · {satisfaction}/100",
-  "hud.difficultyTitle": "Difficulty: {difficulty} (fixed for this run)", "hud.buildingTierLabel": "{building} tier", "hud.buildingPriceLabel": "{building} price",
+  "hud.difficultyTitle": "Difficulty: {difficulty} (fixed for this run)", "hud.experienceTitle": "Experience: {profile} · Economic pressure: {pressure}", "hud.buildingTierLabel": "{building} tier", "hud.buildingPriceLabel": "{building} price",
   "hud.cashHelp": "Cash help", "hud.reputationHelp": "Reputation help", "hud.conditionHelp": "Condition help", "hud.openHolesHelp": "Open holes help",
   "newGame.seedTitle": "Seed {seed}", "advisor.portraitLabel": "Caddie advisor, {expression}",
   "pause.title": "Game paused",

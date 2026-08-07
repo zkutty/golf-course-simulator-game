@@ -28,7 +28,12 @@ import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetric
 import { computeCourseRatingAndSlope, computeRatingsByTee } from "../game/sim/courseRating";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
 import type { LegacyState } from "../utils/legacy";
-import { getEffectiveBalance, getDifficultyProfile } from "../game/balance/difficulty";
+import {
+  economicPressureForWorld,
+  getEconomicPressure,
+  getEffectiveBalance,
+  getExperienceProfile,
+} from "../game/balance/experience";
 import paperTex from "../assets/textures/paper.svg";
 import { IconCash, IconCondition, IconHoles, IconReputation, LogoCourseCraft } from "@/assets/icons";
 import { GameButton } from "@/ui/gameui";
@@ -202,9 +207,10 @@ export function HUD(props: {
       : tutorialTarget
         ? "Editor"
         : tab;
-  // Difficulty-resolved balance for loan terms/eligibility (ZKU-165).
-  const BALANCE = getEffectiveBalance(world.difficulty);
-  const costMult = getDifficultyProfile(world.difficulty).terrainCostMult;
+  const pressure = getEconomicPressure(economicPressureForWorld(world));
+  const experience = getExperienceProfile(world.experienceProfile);
+  const BALANCE = getEffectiveBalance(pressure.key);
+  const costMult = pressure.terrainCostMult;
   const audio = useAudio();
 
   const holeSummary = useMemo(() => scoreCourseHoles(course), [course]);
@@ -335,7 +341,7 @@ export function HUD(props: {
             <button onClick={onStartTutorial} style={{ padding: "6px 8px", borderRadius: 999, border: "1px solid #ddd", background: "#fff", fontSize: 12, fontWeight: 800 }}>
               <T id="auto.ui.hud.tutorial" /></button>
             <span
-              title={translateCurrent("hud.difficultyTitle", { difficulty: getDifficultyProfile(world.difficulty).label })}
+              title={translateCurrent("hud.experienceTitle", { profile: experience.label, pressure: pressure.label })}
               style={{
                 fontSize: 10,
                 fontWeight: 800,
@@ -344,20 +350,20 @@ export function HUD(props: {
                 borderRadius: 999,
                 border: "1px solid rgba(0,0,0,0.12)",
                 background:
-                  world.difficulty === "hard"
+                  pressure.key === "tight"
                     ? "#fde8e8"
-                    : world.difficulty === "easy"
+                    : pressure.key === "friendly"
                       ? "#e8f5e0"
                       : "rgba(255,255,255,0.7)",
                 color:
-                  world.difficulty === "hard"
+                  pressure.key === "tight"
                     ? "#b91c1c"
-                    : world.difficulty === "easy"
+                    : pressure.key === "friendly"
                       ? "#2f6b33"
                       : "#6b7280",
               }}
             >
-              {getDifficultyProfile(world.difficulty).label.toUpperCase()}
+              {experience.label.toUpperCase()} · {pressure.label.toUpperCase()}
             </span>
             {(["COZY", "ARCHITECT"] as const).map((m) => (
               <button

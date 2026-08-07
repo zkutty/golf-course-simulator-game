@@ -67,7 +67,8 @@ export function ContentLibraryPanel(props: {
       author: { id, displayName: author },
       requiredGameVersion: __APP_VERSION__,
       challenge: props.world.objectives ? {
-        difficulty: props.world.difficulty ?? "normal",
+        experienceProfile: props.world.experienceProfile ?? "classic",
+        economicPressure: props.world.economicPressure ?? "balanced",
         goals: props.world.objectives.goals,
         constraints: props.world.constraints,
         allowedEventIds: [],

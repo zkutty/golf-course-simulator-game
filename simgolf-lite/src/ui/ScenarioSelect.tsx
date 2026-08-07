@@ -4,7 +4,7 @@ import { SCENARIOS } from "../game/scenarios/scenarios";
 import type { ScenarioDefinition } from "../game/scenarios/types";
 import { isScenarioUnlocked, loadCareer } from "../utils/careerStore";
 import { getBiomeDefinition } from "../game/models/biomes";
-import { getDifficultyProfile } from "../game/balance/difficulty";
+import { getEconomicPressure, getExperienceProfile } from "../game/balance/experience";
 import { T } from "../i18n/T";
 import { useI18n } from "../i18n/useI18n";
 import { IS_DEMO, scenarioAvailableInEdition } from "../config/edition";
@@ -69,7 +69,7 @@ export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) 
                   {s.order}. {t(s.nameKey)}
                 </span>
                 <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", color: "#6b7280" }}>
-                  {getBiomeDefinition(s.theme).label.toUpperCase()} • {getDifficultyProfile(s.difficulty).label.toUpperCase()}
+                  {getBiomeDefinition(s.theme).label.toUpperCase()} • {getExperienceProfile(s.experienceProfile).label.toUpperCase()} • {getEconomicPressure(s.economicPressure).label.toUpperCase()}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>

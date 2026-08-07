@@ -1,5 +1,5 @@
 import type { Course, World } from "../models/types";
-import { getEffectiveBalance, type EffectiveBalance } from "../balance/difficulty";
+import { economicPressureForWorld, getEffectiveBalance, type EffectiveBalance } from "../balance/experience";
 import { scoreCourseHoles } from "./holes";
 import { isCoursePlayable } from "./isCoursePlayable";
 
@@ -10,7 +10,7 @@ function validHoleCount(course: Course): number {
 export function canTakeBridgeLoan(
   course: Course,
   world: World,
-  balance: EffectiveBalance = getEffectiveBalance(world.difficulty)
+  balance: EffectiveBalance = getEffectiveBalance(economicPressureForWorld(world))
 ): boolean {
   if (world.constraints?.noLoans || world.isBankrupt) return false;
   const holes = validHoleCount(course);
@@ -25,7 +25,7 @@ export function canTakeBridgeLoan(
 export function canTakeExpansionLoan(
   course: Course,
   world: World,
-  balance: EffectiveBalance = getEffectiveBalance(world.difficulty)
+  balance: EffectiveBalance = getEffectiveBalance(economicPressureForWorld(world))
 ): boolean {
   if (world.constraints?.noLoans || world.isBankrupt) return false;
   return (

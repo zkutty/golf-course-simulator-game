@@ -1,5 +1,5 @@
 import { canonicalJson } from "../../utils/canonical";
-import { terrainCostMult } from "../balance/difficulty";
+import { economicPressureForWorld, terrainCostMult } from "../balance/experience";
 import { isOwnedTile } from "../estate/estate";
 import { buildingTiles } from "../models/buildings";
 import { activeCourseLayout, normalizeCourseLayouts } from "../models/courseLayouts";
@@ -340,7 +340,7 @@ export function planHoleTemplatePlacement(input: PlanHoleTemplatePlacementInput)
     ? input.placement.baseElevation ?? automaticBase
     : null;
   const placement: ResolvedHoleTemplatePlacement = { ...provisionalPlacement, baseElevation: resolvedBase };
-  const costMult = terrainCostMult(world.difficulty);
+  const costMult = terrainCostMult(economicPressureForWorld(world));
   let terrainConstruction = 0;
   let terrainSalvageCredit = 0;
   let earthwork = 0;

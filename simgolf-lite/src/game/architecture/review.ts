@@ -20,7 +20,7 @@ import { buildStrategicRecommendations } from "./recommendations";
 import type { M48DesignComparison, M48StrategicHoleEvaluation, M48StrategicPortfolio } from "./m48Types";
 import type { M48CohortId } from "./m48Types";
 import { buildArchitectureRulesReview } from "./rulesEvidence";
-import { terrainCostMult } from "../balance/difficulty";
+import { economicPressureForWorld, terrainCostMult } from "../balance/experience";
 import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 import type { GreenStrategyHeatmap } from "./greenStrategyHeatmap";
 
@@ -331,7 +331,7 @@ export function buildArchitectureReview(
     recommendations: buildStrategicRecommendations(
       selectedCourse,
       strategic,
-      terrainCostMult(world.difficulty),
+      terrainCostMult(economicPressureForWorld(world)),
     ),
     selectedStrategicHole,
     comparison: living.architecture.comparison ?? null,

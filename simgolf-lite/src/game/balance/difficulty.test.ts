@@ -98,11 +98,11 @@ describe("sim under difficulty", () => {
     });
     const course = { ...DEFAULT_COURSE, width, height, tiles, holes, elevations: new Array(width * height).fill(0), condition: 0.8 };
 
-    const visitors = (difficulty: "easy" | "normal" | "hard") =>
-      demandBreakdown(course, { ...DEFAULT_WORLD, reputation: 60, difficulty }).segments!
+    const visitors = (economicPressure: "friendly" | "balanced" | "tight") =>
+      demandBreakdown(course, { ...DEFAULT_WORLD, reputation: 60, economicPressure }).segments!
         .totalBaseVisitors;
-    expect(visitors("easy")).toBeGreaterThan(visitors("normal"));
-    expect(visitors("hard")).toBeLessThan(visitors("normal"));
+    expect(visitors("friendly")).toBeGreaterThan(visitors("balanced"));
+    expect(visitors("tight")).toBeLessThan(visitors("balanced"));
   });
 
   it("createNewGame scales starting cash by difficulty (override still wins)", () => {
