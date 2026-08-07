@@ -85,7 +85,6 @@ import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
 import { LiveControls } from "./ui/LiveControls";
 import { GolferInspector } from "./ui/GolferInspector";
-import { ProgressionPanel } from "./ui/ProgressionPanel";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
@@ -370,6 +369,7 @@ const PlayerProPanel = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerPr
 const PlayerShotHud = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerShotHud }) => ({ default: PlayerShotHud })));
 const ArchitectureReviewPanel = lazy(() => import("./ui/ArchitectureReviewPanel").then(({ ArchitectureReviewPanel }) => ({ default: ArchitectureReviewPanel })));
 const CourseManagerPanel = lazy(() => import("./ui/CourseManagerPanel").then(({ CourseManagerPanel }) => ({ default: CourseManagerPanel })));
+const ProgressionPanel = lazy(() => import("./ui/ProgressionPanel").then(({ ProgressionPanel }) => ({ default: ProgressionPanel })));
 // These management surfaces are never needed for the frame loop. Defer their
 // UI code until the player explicitly opens the corresponding workspace.
 const LiveOverview = lazy(() => import("./ui/LiveOverview").then(({ LiveOverview }) => ({ default: LiveOverview })));
@@ -5365,7 +5365,7 @@ export default function App() {
             />}
             </Suspense>
             {playerRoundLocksEditing && <div role="status" style={{ position: "absolute", left: "50%", top: 54, transform: "translateX(-50%)", zIndex: 112, padding: "6px 10px", borderRadius: 8, background: "rgba(54,69,48,.92)", color: "white", fontSize: 12 }}>{t("playerPro.round.editLocked")}</div>}
-            {showProgression && !tutorialProgress && <ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} />}
+            {showProgression && !tutorialProgress && <Suspense fallback={null}><ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} /></Suspense>}
             {showTournaments && !tutorialProgress && <TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} />}
             {showLandOffice && !tutorialProgress && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
             {showCourseManager && !tutorialProgress && <Suspense fallback={<div aria-live="polite" style={{ padding: 16 }}>{t("courseSetup.loadingInspector")}</div>}><CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onOpenArchitectureReview={() => { setShowArchitectureReview(true); setShowCourseManager(false); }} onClose={() => setShowCourseManager(false)} /></Suspense>}
