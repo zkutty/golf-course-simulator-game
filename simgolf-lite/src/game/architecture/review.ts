@@ -23,6 +23,7 @@ import { buildArchitectureRulesReview } from "./rulesEvidence";
 import { terrainCostMult } from "../balance/difficulty";
 import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 import type { GreenStrategyHeatmap } from "./greenStrategyHeatmap";
+import type { ArchitectureReferencePlan } from "./referencePlan";
 
 export interface ArchitectureReviewFilters {
   kind: ArchitectureOverlayKind;
@@ -56,6 +57,8 @@ export interface ArchitectureReviewData {
   rules: ArchitectureRulesReview;
   mobility: ArchitectureMobilityOverlay | null;
   greenStrategy: GreenStrategyHeatmap | null;
+  referencePlans: ArchitectureReferencePlan[];
+  selectedReferencePlan: ArchitectureReferencePlan | null;
   returnToDesign: ReturnToDesignContext | null;
 }
 
@@ -338,6 +341,8 @@ export function buildArchitectureReview(
     rules,
     mobility: mobility?.mobility ?? null,
     greenStrategy: null,
+    referencePlans: [],
+    selectedReferencePlan: null,
     returnToDesign: living.architecture.returnContext?.courseId === filters.courseId
       ? living.architecture.returnContext
       : null,
@@ -353,4 +358,41 @@ export function withGreenStrategyHeatmap(
     return review.greenStrategy == null ? review : { ...review, greenStrategy: null };
   }
   return { ...review, greenStrategy, overlay: greenStrategy.overlay };
+}
+
+/** Attach the lazily imported ZK-760 reference solve only for its overlay. */
+export function withArchitectureReferencePlans(
+  review: ArchitectureReviewData,
+  plans: ArchitectureReferencePlan[] | null,
+): ArchitectureReviewData {
+  if (review.filters.kind !== "reference" || !plans) {
+    return review.referencePlans.length === 0 && review.selectedReferencePlan == null
+      ? review
+      : { ...review, referencePlans: [], selectedReferencePlan: null };
+  }
+  const selectedReferencePlan = review.filters.holeId === "all"
+    ? null
+    : plans.find((plan) => plan.holeId === review.filters.holeId) ?? null;
+  const overlay: ArchitectureOverlayRender = { kind: "reference", traces: [], cells: [], points: [] };
+  overlay.traces = bounded(plans.flatMap((plan) => plan.segments.map((segment) => ({
+    id: `${plan.id}:${segment.id}`,
+    from: segment.from,
+    to: segment.to,
+    current: true,
+    emphasized: plan.id === selectedReferencePlan?.id,
+    label: `${plan.teeSet} · shot ${segment.shot} · ${segment.playsLikeYards} yd · ${Math.round(segment.risk.total * 100)}% risk`,
+    source: "reference" as const,
+    pattern: "solid" as const,
+  }))), 320);
+  overlay.points = bounded(plans.flatMap((plan) => plan.landingZones.map((zone) => ({
+    id: zone.id,
+    x: zone.center.x,
+    y: zone.center.y,
+    value: Math.max(2, zone.radiusTiles),
+    current: true,
+    label: `Shot ${zone.shot} landing · ${Math.round(zone.playableShare * 100)}% playable · ${zone.nextShotYards} yd next`,
+    source: "reference" as const,
+    pattern: "dots" as const,
+  }))), 180);
+  return { ...review, referencePlans: plans, selectedReferencePlan, overlay };
 }

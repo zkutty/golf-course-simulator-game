@@ -9,6 +9,7 @@ export type GreenStrategyOverlayKind =
   | "green-risk";
 
 export type ArchitectureOverlayKind =
+  | "reference"
   | "traces"
   | "dispersion"
   | "heatmap"

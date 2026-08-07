@@ -4390,7 +4390,7 @@ export function PixiStage(props: PixiStageProps) {
         const to = project(trace.to);
         g.moveTo(from.x, from.y);
         g.lineTo(to.x, to.y);
-        const traceColor = trace.source === "predicted" ? 0xf0a51a : trace.emphasized ? 0xfff08a : trace.current ? 0x29d7c0 : 0x9a7bc1;
+        const traceColor = trace.source === "reference" ? 0x4b78c2 : trace.source === "predicted" ? 0xf0a51a : trace.emphasized ? 0xfff08a : trace.current ? 0x29d7c0 : 0x9a7bc1;
         g.stroke({
           width: trace.emphasized ? 5 : 2.5,
           color: traceColor,
@@ -4403,7 +4403,7 @@ export function PixiStage(props: PixiStageProps) {
       for (const point of props.architectureOverlay.points) {
         const projected = project(point);
         const radius = Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35));
-        const pointColor = point.source === "predicted" ? 0xf0a51a : point.current ? 0x36cfc9 : 0x8d77b7;
+        const pointColor = point.source === "reference" ? 0x6e96da : point.source === "predicted" ? 0xf0a51a : point.current ? 0x36cfc9 : 0x8d77b7;
         g.circle(projected.x, projected.y, radius);
         g.fill({ color: pointColor, alpha: 0.35 });
         g.stroke({ width: 2, color: point.current ? 0xeafffb : 0xf1e9ff, alpha: 0.9 });

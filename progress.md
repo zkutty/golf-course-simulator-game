@@ -1,5 +1,14 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-08-07 — ZK-760 tee-specific neutral shot maps complete
+
+- Added a dedicated neutral architecture-reference authority with documented Forward/Member/Championship carry, total-distance, approach, dispersion, and ordinary-risk profiles. Live golfer strategy remains separate.
+- The planner chooses bounded one-, two-, or three-shot sequences with straight shot chords and discrete landing zones. It evaluates carryable water, dispersion, elevation, playable landing share, obstacles/structures, out-of-bounds exposure, runout, and next-shot reachability; it never adds putting segments.
+- Auto par is full shots plus the two-putt convention. Per-tee manual par remains authoritative; an implausible manual request receives a warning while the credible route is shown. The two documented ambiguity bands expose viable adjacent pars.
+- The new Architecture Review “Reference shots” overlay consumes the planner's shot chords, landing zones, corridor, and per-shot safety/risk evidence and explains the neutral assumptions. The certified course-rating formula remains unchanged: exploratory replacement changed established qualification boundaries, so the reference plan stays advisory rather than altering rating or live-scoring outcomes.
+- Canonical ZK-760 coverage passes for carryable-water Par 3, driveable and dogleg/forced-layup Par 4, three-shot and reachable Par 5, both ambiguity bands, all three tee sets, independent pins, manual warning behavior, structures, elevation, deterministic edit invalidation, and review-overlay output. `test:ci` passes 178 files / 1,417 tests plus one intentional skip and 5/5 audio audits; lint/i18n passes with zero errors and the 12 existing hook warnings.
+- The production build passes every asset/offline/residency/delivery audit. `referencePlan` is deferred as a 10.51 kB chunk; initial JavaScript is 1,602,676 bytes, 6,043 bytes below the 1,608,719-byte ceiling. The bundled web-game client reached the seeded game with structured state and no error artifact; the dedicated responsive browser scenario passes and its inspected 390×844 capture shows the neutral plan without horizontal overflow.
+
 ## 2026-08-06 — ZK-724 finite reward entitlements complete
 
 - Started from the exact isolated base `2d7432a514b5621a8c1cccdf4b1543106b239fcb` on `codex/zk724-reward-entitlements`; the original prompt above remains preserved.

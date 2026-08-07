@@ -7,7 +7,7 @@ import { useI18n } from "../i18n/useI18n";
 import type { MessageKey } from "../i18n/catalog";
 
 const OVERLAYS: ArchitectureOverlayKind[] = [
-  "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "mobility", "congestion", "options", "advantage", "bailouts", "carries", "misses",
+  "reference", "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "mobility", "congestion", "options", "advantage", "bailouts", "carries", "misses",
   "green-preferred", "green-putts", "green-leaves", "green-misses", "green-rollout", "green-risk",
 ];
 
@@ -71,6 +71,23 @@ export function ArchitectureReviewPanel(props: {
         <span>{t("architecture.review.historicalCount", { count: props.review.historicalEvidence })}</span>
       </div>
     </section>
+
+    {props.review.filters.kind === "reference" && <section data-testid="architecture-reference-plan" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#e8eef7", border: "1px solid #8195ad" }}>
+      <strong>{t("architecture.reference.title")}</strong>
+      {props.review.selectedReferencePlan
+        ? <>
+          <p style={{ margin: "5px 0", fontSize: 12 }}>{props.review.selectedReferencePlan.explanation}</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 5, fontSize: 12 }}>
+            <span>{t("architecture.reference.effective", { yards: props.review.selectedReferencePlan.effectiveYardage })}</span>
+            <span>{t("architecture.reference.par", { selected: props.review.selectedReferencePlan.selectedPar, recommended: props.review.selectedReferencePlan.recommendedPar })}</span>
+            <span>{t("architecture.reference.shots", { shots: props.review.selectedReferencePlan.fullShots, putts: props.review.selectedReferencePlan.expectedPutts })}</span>
+            <span>{t("architecture.reference.capability", { carry: props.review.selectedReferencePlan.capability.teeCarryYards, dispersion: props.review.selectedReferencePlan.capability.dispersionTiles })}</span>
+          </div>
+          {props.review.selectedReferencePlan.warnings.length > 0 && <ul data-testid="architecture-reference-warnings" style={{ margin: "7px 0 0", paddingLeft: 18, fontSize: 12 }}>{props.review.selectedReferencePlan.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
+        </>
+        : <p style={{ margin: "5px 0", fontSize: 12 }}>{t("architecture.reference.chooseHole", { tee: props.review.filters.teeSet === "all" ? "member" : props.review.filters.teeSet, pin: props.review.filters.pinRotation === "all" ? "A" : props.review.filters.pinRotation, holes: props.review.referencePlans.filter((plan) => plan.status === "complete").length })}</p>}
+      <small style={{ display: "block", marginTop: 7 }}>{t("architecture.reference.neutral")}</small>
+    </section>}
 
     {props.review.returnToDesign && <section data-testid="architecture-return-context" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#e7edf6", border: "1px solid #8391a7" }}>
       <strong>{t("architecture.green.return.title")}</strong>
