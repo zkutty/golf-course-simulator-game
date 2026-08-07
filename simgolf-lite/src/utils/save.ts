@@ -76,6 +76,7 @@ import {
 } from "../game/competition/persistence";
 import { normalizePeopleProfiles } from "../game/competition/characters";
 import { decodeChallengeGroupRound } from "../game/competition/challengeGroupRoundCodec";
+import { persistedChallengeRuntimeError } from "../game/competition/challengeRuntimePersistence";
 
 const KEY = "simgolf_lite_save_v1";
 export const CURRENT_SAVE_SCHEMA_VERSION = 28 as const;
@@ -260,6 +261,8 @@ export function payloadForPersistence(payload: SavePayload): SavePayload {
   if (decodedChallengeGroupRound && !decodedChallengeGroupRound.ok) {
     throw new Error(`Cannot save active ChallengeGroupRound: ${decodedChallengeGroupRound.error}`);
   }
+  const challengeRuntimeError = persistedChallengeRuntimeError(payload.world.playerPro);
+  if (challengeRuntimeError) throw new Error(challengeRuntimeError);
   const course = courseForPersistence(payload.course);
   const activeRound = payload.world.playerPro?.activeRound;
   const roundTheme = normalizeBiomeKey(activeRound?.course.theme);
@@ -1138,6 +1141,8 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       migrated.migratedFrom != null && migrated.migratedFrom < 28,
     );
     if (handicapError) return fail("INVALID_WORLD", handicapError);
+    const challengeRuntimeError = persistedChallengeRuntimeError(rawWorld.playerPro);
+    if (challengeRuntimeError) return fail("INVALID_WORLD", challengeRuntimeError);
     const rulesPlayerPro = migrated.migratedFrom === 19 || migrated.migratedFrom == null
       ? migratePlayerProActiveRoundSnapshotV20(rawWorld.playerPro, course).playerPro
       : rawWorld.playerPro;

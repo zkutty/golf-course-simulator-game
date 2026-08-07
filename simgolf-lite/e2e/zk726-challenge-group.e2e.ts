@@ -22,18 +22,17 @@ test("app render_game_to_text exposes the persisted ChallengeGroupRound carrier"
   expect(state.activeChallengeGroupRound).toMatchObject({
     id: "zk726-browser-group",
     phase: "awaiting_player",
-    currentHole: 1,
+    currentHoleIndex: 0,
     activeGolferId: "player-pro-726001",
     playerGolferId: "player-pro-726001",
-    controls: "player-shot",
     honorsOrder: ["rival-alex", "player-pro-726001", "rival-blair", "rival-devon"],
     golfers: [
-      expect.objectContaining({ id: "rival-alex", controller: "ai", ball: expect.any(Object), scorecard: expect.any(Array), latestShot: expect.any(Object), setup: expect.objectContaining({ teeSet: "forward", pinRotation: "B", rating: { courseRating: expect.any(Number), slope: expect.any(Number) } }) }),
+      expect.objectContaining({ id: "rival-alex", controller: "ai", ball: expect.any(Object), scorecard: expect.any(Array), shots: expect.any(Array), setup: expect.objectContaining({ teeSet: "forward", pinRotation: "B", rating: { courseRating: expect.any(Number), slope: expect.any(Number) } }) }),
       expect.objectContaining({ id: "player-pro-726001", controller: "player", ball: expect.any(Object), handicap: expect.objectContaining({ allowance: 1 }), equipment: expect.any(Object), setup: expect.objectContaining({ teeSet: "member", pinRotation: "A" }) }),
       expect.objectContaining({ id: "rival-blair", controller: "ai", setup: expect.objectContaining({ teeSet: "championship", pinRotation: "C" }) }),
       expect.objectContaining({ id: "rival-devon", controller: "ai", setup: expect.objectContaining({ teeSet: "forward", pinRotation: "B" }) }),
     ],
-    recentTurn: expect.objectContaining({ golferId: "rival-alex", ruling: expect.any(Object) }),
+    turnEvidence: expect.arrayContaining([expect.objectContaining({ golferId: "rival-alex", ruling: expect.any(Object) })]),
     match: { status: "active" },
   });
   await page.screenshot({ path: testInfo.outputPath("zk726-challenge-group.png"), fullPage: true });

@@ -101,6 +101,9 @@ interface Window {
     setPaintCash(cash: number): void;
     setPropertyFixture(): void;
     setPlayerProFixture(): void;
+    setChallengeContractFixture(): Promise<void>;
+    forceChallengeRivalWithdrawal(): Promise<void>;
+    forceChallengeTieCompletion(): Promise<void>;
     setChallengeGroupRoundFixture(): void;
     setM39Fixture(): void;
     setM52ReferenceBookmark(

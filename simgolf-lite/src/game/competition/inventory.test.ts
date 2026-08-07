@@ -6,10 +6,10 @@ import {
   createStakeBundle,
   emptyPlayerInventory,
   normalizeInventoryState,
-  recoverRivalItem,
   renderInventoryDebug,
   settleLostStake,
 } from "./inventory";
+import { recoverRivalItem } from "./custodyRecovery";
 
 function item(overrides: Partial<InventoryItem> = {}): InventoryItem {
   return {

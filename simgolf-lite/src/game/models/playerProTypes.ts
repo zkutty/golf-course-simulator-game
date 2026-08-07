@@ -7,6 +7,8 @@ import type { GreenRolloutV1 } from "../greens/greenRollout";
 import type { GreenPuttingV1 } from "../greens/greenPutting";
 import type { HandicapProfile, RoundHandicapSnapshot } from "../competition/persistence";
 import type { ChallengeGroupRound } from "../competition/challengeGroupRound";
+import type { ChallengeRuntimeState } from "../competition/challengeRuntime";
+import type { ChallengeSettlementRecord } from "../competition/challengeSettlement";
 import type { FrozenPerformanceLoadout, LearnedTechnique, MentorTechniqueChallenge } from "../competition/types";
 
 export const PLAYER_PRO_SKILLS = [
@@ -238,6 +240,23 @@ export interface PlayerChallengeRecord {
   roundId?: string;
   result?: "won" | "lost" | "tied" | "conceded";
   settled?: boolean;
+  /** Optional ZK-725 authority retained verbatim by the bounded challenge normalizer. */
+  challengeContractId?: string;
+  challengeSettlement?: ChallengeSettlementRecord;
+  rematch?: {
+    custodyId: string;
+    sourceContractId: string;
+    sourceSettlementId: string;
+    activeContractId?: string;
+    attempts: readonly {
+      transitionId: string;
+      evidenceId: string;
+      result: "won" | "lost" | "tied";
+      week: number;
+      day: number;
+    }[];
+    recoveredSettlementId?: string;
+  };
 }
 
 export interface PlayerTournamentRecord {
@@ -278,6 +297,10 @@ export interface PlayerProCareer {
   activeRound: PlayerPlayableRound | null;
   /** Optional ZK-726 multi-golfer authority; independent of legacy solo rounds. */
   activeChallengeGroupRound?: ChallengeGroupRound | null;
+  /** Optional ZK-725 accepted/escrow runtime; settlement remains separately deferred. */
+  activeChallengeRuntime?: ChallengeRuntimeState | null;
+  /** Monotonic persisted authority for collision-resistant challenge contract IDs. */
+  challengeSequence?: number;
   rounds: PlayerCareerRound[];
   training: PlayerTrainingRecord[];
   challenges: PlayerChallengeRecord[];

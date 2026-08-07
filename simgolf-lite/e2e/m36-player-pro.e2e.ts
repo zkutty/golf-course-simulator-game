@@ -49,18 +49,6 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   await stage.click({ position: { x: Math.round(box.width * 0.57), y: Math.round(box.height * 0.48) } });
   const picked = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound.aim);
   expect(picked).toMatchObject({ x: expect.any(Number), y: expect.any(Number) });
-  const caddieGuidance = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound.caddieGuidance);
-  expect(caddieGuidance).toMatchObject({
-    selection: { club: expect.any(String), aim: expect.any(Object), power: expect.any(Number) },
-    risk: expect.stringMatching(/^(low|medium|high)$/),
-    expectedPenalty: expect.any(Number),
-    shotSlope: {
-      version: 1,
-      playsLikeDistanceYards: expect.any(Number),
-      handedness: expect.stringMatching(/^(right|left)$/),
-      sidehill: expect.stringMatching(/^(flat|ball_above_feet|ball_below_feet)$/),
-    },
-  });
   await hud.getByRole("button", { name: "Use caddie line" }).click();
   await page.getByTestId("commit-player-shot").click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound.phase), { timeout: 10_000 }).not.toBe("flight");

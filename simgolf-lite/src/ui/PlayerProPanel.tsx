@@ -34,6 +34,16 @@ import { formatHandicapIndex } from "../game/competition/persistence";
 import { courseHandicap, playingHandicapFromUnrounded, strokesByHole } from "../game/competition/handicap";
 import { authoredEquipmentModifiers, mentorTechniqueDefinition, mentorTechniqueEligibility, startEquippedPlayableRound } from "../game/competition/equipmentMentor";
 import type { EquipmentLoadout } from "../game/competition/types";
+import type { ChallengeGroupRound } from "../game/competition/challengeGroupRound";
+import {
+  applyGroupAction,
+  groupView,
+  playerChallengeContractRivals,
+  previewPlayerChallengeContract,
+  type ChallengeGroupAction,
+  type PlayerChallengeContractDraft,
+  type PlayerChallengeSideBetDraft,
+} from "../game/playerPro/challengePlayerProAdapter";
 
 type ProTab = "career" | "play" | "training" | "matches" | "tournaments";
 
@@ -199,6 +209,141 @@ function CompetitionScorecard({ career }: { career: PlayerProCareer }) {
   </section>;
 }
 
+const CHALLENGE_FORMATS = ["individual", "four-ball", "alternate-shot", "scramble"] as const;
+const CHALLENGE_SCORING = ["gross-stroke", "net-stroke", "gross-match", "net-match", "net-stableford"] as const;
+const CHALLENGE_SIDE_BETS = ["skins", "nassau", "closest-to-pin", "longest-drive"] as const;
+
+function ParticipantChallengeSetup(props: {
+  label: string;
+  testId: string;
+  value: { teeSet: TeeSet; pinRotation: PinRotation };
+  onChange: (value: { teeSet: TeeSet; pinRotation: PinRotation }) => void;
+}) {
+  const { t } = useI18n();
+  return <fieldset style={{ margin: 0, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 5 }}><legend>{props.label}</legend>
+    <label>{t("playerPro.play.tee")}<select data-testid={`${props.testId}-tee`} value={props.value.teeSet} onChange={(event) => props.onChange({ ...props.value, teeSet: event.target.value as TeeSet })} style={{ display: "block", width: "100%" }}>{(["forward", "member", "championship"] as const).map((value) => <option key={value}>{value}</option>)}</select></label>
+    <label>{t("playerPro.play.pin")}<select data-testid={`${props.testId}-pin`} value={props.value.pinRotation} onChange={(event) => props.onChange({ ...props.value, pinRotation: event.target.value as PinRotation })} style={{ display: "block", width: "100%" }}>{(["A", "B", "C"] as const).map((value) => <option key={value}>{value}</option>)}</select></label>
+  </fieldset>;
+}
+
+function ChallengeContractBuilder(props: {
+  career: PlayerProCareer;
+  course: Course;
+  world: World;
+  day: number;
+  onChallenge: (draft: PlayerChallengeContractDraft) => Promise<string | null>;
+  onCancel: () => Promise<string | null>;
+  onNotice: (notice: string) => void;
+}) {
+  const { t } = useI18n();
+  const rivals = useMemo(() => playerChallengeContractRivals(props.world), [props.world]);
+  const layouts = normalizeCourseLayouts(props.course).layouts ?? [];
+  const playable = layouts.filter((layout) => layout.state === "open" && layout.publishedHoleIds.length >= 3);
+  const [opponentId, setOpponentId] = useState(rivals[0]?.id ?? "");
+  const [layoutId, setLayoutId] = useState(playable[0]?.id ?? layouts[0]?.id ?? "");
+  const [teamFormat, setTeamFormat] = useState<PlayerChallengeContractDraft["teamFormat"]>("individual");
+  const [scoring, setScoring] = useState<PlayerChallengeContractDraft["scoring"]>("net-match");
+  const defaultSetup = { teeSet: "member" as const, pinRotation: props.course.activePinRotation ?? "A" as PinRotation };
+  const [participantSetups, setParticipantSetups] = useState<PlayerChallengeContractDraft["participantSetups"]>({
+    player: defaultSetup,
+    rival: defaultSetup,
+    playerPartner: defaultSetup,
+    rivalPartner: defaultSetup,
+  });
+  const [playerPartnerId, setPlayerPartnerId] = useState("");
+  const [rivalPartnerId, setRivalPartnerId] = useState("");
+  const [playerCash, setPlayerCash] = useState(100);
+  const [rivalCash, setRivalCash] = useState(100);
+  const [playerItemIds, setPlayerItemIds] = useState<string[]>([]);
+  const [rivalItemIds, setRivalItemIds] = useState<string[]>([]);
+  const [ownerTransfersConfirmed, setOwnerTransfersConfirmed] = useState(false);
+  const [prestigeTransfersConfirmed, setPrestigeTransfersConfirmed] = useState(false);
+  const [rivalTransfersConfirmed, setRivalTransfersConfirmed] = useState(false);
+  const [sideBets, setSideBets] = useState<PlayerChallengeSideBetDraft[]>(CHALLENGE_SIDE_BETS.map((kind) => ({ kind, stake: 25, enabled: false })));
+  const [rematchChallengeId, setRematchChallengeId] = useState("");
+  const rival = rivals.find((candidate) => candidate.id === opponentId) ?? rivals[0];
+  const draft: PlayerChallengeContractDraft = {
+    ...(rematchChallengeId ? { rematchChallengeId } : {}),
+    opponentId: rival?.id ?? opponentId,
+    layoutId,
+    teamFormat,
+    scoring,
+    participantSetups,
+    ...(playerPartnerId ? { playerPartnerId } : {}),
+    ...(rivalPartnerId ? { rivalPartnerId } : {}),
+    playerCash,
+    rivalCash,
+    playerItemIds,
+    rivalItemIds,
+    sideBets,
+    ownerTransfersConfirmed,
+    prestigeTransfersConfirmed,
+    rivalTransfersConfirmed,
+  };
+  const preview = (() => {
+    try {
+      return { value: previewPlayerChallengeContract({ course: props.course, world: props.world, day: props.day, draft }), error: null };
+    } catch (error) {
+      return { value: null, error: error instanceof Error ? error.message : "Challenge terms are invalid." };
+    }
+  })();
+  const toggleItem = (id: string, selected: readonly string[], update: (ids: string[]) => void) => update(selected.includes(id) ? selected.filter((candidate) => candidate !== id) : [...selected, id]);
+  const active = props.career.activeChallengeRuntime;
+  const history = props.career.challenges.filter((challenge) => challenge.challengeContractId || challenge.challengeSettlement).slice(-8).reverse();
+  return <section data-testid="challenge-contract-builder" style={{ ...cardStyle, gap: 9 }}>
+    <strong>{t("playerPro.match.title")}</strong>
+    {active ? <>
+      <div role="status" data-testid="challenge-contract-status">{active.phase} · {active.contract.terms.format.teamFormat} · {active.contract.terms.format.scoring}</div>
+      {active.phase === "escrowed" && <button data-testid="cancel-challenge-contract" onClick={() => void props.onCancel().then((message) => props.onNotice(message ?? `✓ ${t("challenge.cancel")}`))}>{t("challenge.cancel")}</button>}
+    </> : <>
+      {rivals.length === 0 && <div role="alert">{t("playerPro.match.none")}</div>}
+      <>
+        <label>{t("challenge.rival")}<select data-testid="challenge-rival" value={rival?.id ?? ""} onChange={(event) => { setOpponentId(event.target.value); setRivalItemIds([]); setRematchChallengeId(""); }} style={{ display: "block", width: "100%" }}>{rivals.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
+        {rematchChallengeId && <div role="status">{t("challenge.rematchReady")}</div>}
+        <label>{t("playerPro.play.route")}<select data-testid="challenge-route" value={layoutId} onChange={(event) => setLayoutId(event.target.value)} style={{ display: "block", width: "100%" }}>{layouts.map((layout) => <option key={layout.id} value={layout.id} disabled={layout.state !== "open" || layout.publishedHoleIds.length < 3}>{layout.name}</option>)}</select></label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          <label>{t("challenge.format")}<select data-testid="challenge-format" value={teamFormat} onChange={(event) => setTeamFormat(event.target.value as typeof teamFormat)} style={{ display: "block", width: "100%" }}>{CHALLENGE_FORMATS.map((value) => <option key={value}>{value}</option>)}</select></label>
+          <label>{t("challenge.scoring")}<select data-testid="challenge-scoring" value={scoring} onChange={(event) => setScoring(event.target.value as typeof scoring)} style={{ display: "block", width: "100%" }}>{CHALLENGE_SCORING.map((value) => <option key={value}>{value}</option>)}</select></label>
+        </div>
+        <ParticipantChallengeSetup label={t("challenge.setup", { name: props.career.identity.name })} testId="challenge-player" value={participantSetups.player} onChange={(value) => setParticipantSetups({ ...participantSetups, player: value })} />
+        <ParticipantChallengeSetup label={t("challenge.setup", { name: rival?.name ?? t("challenge.rival") })} testId="challenge-rival" value={participantSetups.rival} onChange={(value) => setParticipantSetups({ ...participantSetups, rival: value })} />
+        {teamFormat !== "individual" && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          <label>{t("challenge.partner", { name: props.career.identity.name })}<select data-testid="challenge-player-partner" value={playerPartnerId} onChange={(event) => setPlayerPartnerId(event.target.value)} style={{ display: "block", width: "100%" }}><option value="">{t("challenge.select")}</option>{rivals.filter((candidate) => candidate.id !== rival?.id).map((candidate) => <option key={candidate.id}>{candidate.id}</option>)}</select></label>
+          <label>{t("challenge.partner", { name: rival?.name ?? t("challenge.rival") })}<select data-testid="challenge-rival-partner" value={rivalPartnerId} onChange={(event) => setRivalPartnerId(event.target.value)} style={{ display: "block", width: "100%" }}><option value="">{t("challenge.select")}</option>{rivals.filter((candidate) => candidate.id !== rival?.id && candidate.id !== playerPartnerId).map((candidate) => <option key={candidate.id}>{candidate.id}</option>)}</select></label>
+        </div>}
+        {teamFormat !== "individual" && <>
+          <ParticipantChallengeSetup label={t("challenge.setup", { name: rivals.find((candidate) => candidate.id === playerPartnerId)?.name ?? t("challenge.select") })} testId="challenge-player-partner" value={participantSetups.playerPartner ?? participantSetups.player} onChange={(value) => setParticipantSetups({ ...participantSetups, playerPartner: value })} />
+          <ParticipantChallengeSetup label={t("challenge.setup", { name: rivals.find((candidate) => candidate.id === rivalPartnerId)?.name ?? t("challenge.select") })} testId="challenge-rival-partner" value={participantSetups.rivalPartner ?? participantSetups.rival} onChange={(value) => setParticipantSetups({ ...participantSetups, rivalPartner: value })} />
+        </>}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}><label>{t("challenge.cash", { name: props.career.identity.name })}<input data-testid="challenge-player-cash" type="number" min={0} step={25} value={playerCash} onChange={(event) => setPlayerCash(Math.max(0, Math.floor(Number(event.target.value))))} style={{ width: "100%" }} /></label><label>{t("challenge.cash", { name: rival?.name ?? t("challenge.rival") })}<input data-testid="challenge-rival-cash" type="number" min={0} step={25} value={rivalCash} onChange={(event) => setRivalCash(Math.max(0, Math.floor(Number(event.target.value))))} style={{ width: "100%" }} /></label></div>
+        <details><summary>{t("challenge.items", { name: props.career.identity.name, count: playerItemIds.length })}</summary>{props.career.inventory.items.filter((item) => item.transferable && item.ownerId === props.career.identity.id && item.custodianId === props.career.identity.id && !props.career.inventory.escrowItemIds.includes(item.id)).map((item) => <label key={item.id} style={{ display: "block" }}><input data-testid={`challenge-player-item-${item.id}`} type="checkbox" checked={playerItemIds.includes(item.id)} onChange={() => toggleItem(item.id, playerItemIds, setPlayerItemIds)} /> {item.name} · {formatCurrency(item.remainingValue)}</label>)}</details>
+        <details><summary>{t("challenge.items", { name: rival?.name ?? t("challenge.rival"), count: rivalItemIds.length })}</summary>{rival?.holdings.map((item) => <label key={item.id} style={{ display: "block" }}><input data-testid={`challenge-rival-item-${item.id}`} type="checkbox" checked={rivalItemIds.includes(item.id)} onChange={() => toggleItem(item.id, rivalItemIds, setRivalItemIds)} /> {item.name} · {formatCurrency(item.remainingValue)}</label>)}</details>
+        <details><summary>{t("challenge.sideBets")}</summary>{sideBets.map((sideBet, index) => <div key={sideBet.kind} style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: 5 }}><label><input data-testid={`challenge-sidebet-${sideBet.kind}`} type="checkbox" checked={sideBet.enabled} onChange={(event) => setSideBets(sideBets.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, enabled: event.target.checked } : candidate))} /> {sideBet.kind}</label><input aria-label={`${sideBet.kind} ${t("stat.cash")}`} type="number" min={1} step={25} value={sideBet.stake} onChange={(event) => setSideBets(sideBets.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, stake: Math.max(1, Math.floor(Number(event.target.value))) } : candidate))} /></div>)}</details>
+        <label><input data-testid="challenge-confirm-owner" type="checkbox" checked={ownerTransfersConfirmed} onChange={(event) => setOwnerTransfersConfirmed(event.target.checked)} /> {t("challenge.confirmOwner")}</label>
+        <label><input data-testid="challenge-confirm-prestige" type="checkbox" checked={prestigeTransfersConfirmed} onChange={(event) => setPrestigeTransfersConfirmed(event.target.checked)} /> {t("challenge.confirmPrestige")}</label>
+        <label><input data-testid="challenge-confirm-rival" type="checkbox" checked={rivalTransfersConfirmed} onChange={(event) => setRivalTransfersConfirmed(event.target.checked)} /> {t("challenge.confirmRival")}</label>
+        <div role="note" data-testid="challenge-stakes-warning" style={{ padding: 8, borderRadius: 7, background: "#f5e5b8" }}>{t("challenge.accept")}. {t("challenge.cancel")}. {t("challenge.warning")} {t("challenge.rematchReady")}</div>
+        {preview.value ? <div data-testid="challenge-value-preview">{t("challenge.values", { player: formatCurrency(preview.value.evaluation.valueComparison.playerValue), rival: formatCurrency(preview.value.evaluation.valueComparison.rivalValue), difference: preview.value.evaluation.valueComparison.valueDifferencePercent.toFixed(1), status: preview.value.evaluation.valueComparison.withinTolerance ? t("challenge.withinTolerance") : t("challenge.addCash", { amount: formatCurrency(preview.value.evaluation.valueComparison.cashBalancingAmount) }) })}</div> : <div role="alert">{preview.error}</div>}
+        <button data-testid="accept-challenge-contract" disabled={!preview.value?.evaluation.appraisalEligible} onClick={() => void props.onChallenge(draft).then((message) => props.onNotice(message ?? `✓ ${t("challenge.accept")}`))}>{t("challenge.accept")}</button>
+      </>
+    </>}
+    {props.career.rivalCustody.length > 0 && <details open><summary>{t("challenge.custody")}</summary>{props.career.rivalCustody.map((entry) => {
+      const rematch = props.career.challenges.find((challenge) => challenge.id === entry.rematchChallengeId && challenge.status === "offered");
+      return <div key={entry.id}>{entry.itemSnapshot.name} · {entry.status} · {entry.rivalName}{rematch && <button data-testid={`prepare-rematch-${entry.id}`} onClick={() => {
+        setRematchChallengeId(rematch.id);
+        setOpponentId(rematch.opponentId);
+        setTeamFormat("individual");
+        setPlayerCash(0);
+        setRivalCash(0);
+        setPlayerItemIds([]);
+        setRivalItemIds([]);
+        setSideBets(CHALLENGE_SIDE_BETS.map((kind) => ({ kind, stake: 25, enabled: false })));
+      }}>{t("challenge.prepareRematch")}</button>}</div>;
+    })}</details>}
+    {history.length > 0 && <details><summary>{t("challenge.history")}</summary>{history.map((entry) => <div key={entry.id}>{entry.opponentName} · {entry.status} · {entry.result ?? entry.challengeSettlement?.evidence.kind ?? "pending"}</div>)}</details>}
+  </section>;
+}
+
 export function PlayerProPanel(props: {
   career: PlayerProCareer;
   course: Course;
@@ -207,7 +352,7 @@ export function PlayerProPanel(props: {
   onUpdateIdentity: (identity: PlayerProCareer["identity"]) => void;
   onStartRound: (layoutId: string, teeSet: TeeSet, pinRotation: PinRotation) => Promise<string | null>;
   onTrain: (option: PlayerTrainingOption) => Promise<string | null>;
-  onChallenge: (opponent: PlayerOpponent, kind: "friendly" | "wager", wager: number) => Promise<string | null>;
+  onChallenge: (draft: PlayerChallengeContractDraft | null) => Promise<string | null>;
   onMentorChallenge: (opponent: PlayerOpponent) => Promise<string | null>;
   onLoadout: (loadout: EquipmentLoadout) => Promise<string | null>;
   onTournament: (event: TournamentEvent) => Promise<string | null>;
@@ -353,10 +498,11 @@ export function PlayerProPanel(props: {
 
         {tab === "matches" && <section>
           <h3 style={{ margin: 0 }}>{t("playerPro.match.title")}</h3><p style={{ fontSize: 12 }}>{t("playerPro.match.help")}</p>
-          {opponents.length === 0 ? <p>{t("playerPro.match.none")}</p> : <div style={{ display: "grid", gap: 7 }}>{opponents.map((opponent) => {
+          <ChallengeContractBuilder career={props.career} course={props.course} world={props.world} day={props.day} onChallenge={props.onChallenge} onCancel={() => props.onChallenge(null)} onNotice={setNotice} />
+          {opponents.length > 0 && <details><summary>{t("playerPro.equipmentMentor.title")}</summary><div style={{ display: "grid", gap: 7 }}>{opponents.map((opponent) => {
             const mentor = mentorTechniqueEligibility(props.world, opponent.id);
-            return <div key={opponent.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{opponent.name}</strong><small style={{ display: "block" }}>{t("playerPro.match.opponentMeta", { skill: Math.round(opponent.skill * 100), relationship: opponent.relationship })}</small>{mentor.techniqueId && <small data-testid={`mentor-status-${opponent.id}`} style={{ display: "block" }}>{t("playerPro.equipmentMentor.mentorStatus", { name: mentorTechniqueDefinition(mentor.techniqueId).name, matches: mentor.completedMatches, relationship: mentor.relationship, reveals: mentor.revealCount })}</small>}<div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}><button onClick={() => { void props.onChallenge(opponent, "friendly", 0).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.match.friendly")}</button><button disabled={props.world.cash < 100} onClick={() => { void props.onChallenge(opponent, "wager", 100).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.match.wager", { amount: formatCurrency(100) })}</button>{mentor.techniqueId && !props.career.learnedTechniques.includes(mentor.techniqueId) && <button data-testid={`start-mentor-${opponent.id}`} disabled={!mentor.eligible} title={mentor.blockers.join(" ")} onClick={() => { void props.onMentorChallenge(opponent).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.equipmentMentor.startObjective")}</button>}</div></div>;
-          })}</div>}
+            return <div key={opponent.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{opponent.name}</strong>{mentor.techniqueId && !props.career.learnedTechniques.includes(mentor.techniqueId) && <button data-testid={`start-mentor-${opponent.id}`} disabled={!mentor.eligible} title={mentor.blockers.join(" ")} onClick={() => { void props.onMentorChallenge(opponent).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.equipmentMentor.startObjective")}</button>}</div>;
+          })}</div></details>}
         </section>}
 
         {tab === "tournaments" && <section>
@@ -506,4 +652,44 @@ export function PlayerShotHud(props: {
       {props.round.phase !== "round_complete" && props.round.phase !== "conceded" && <div style={{ display: "flex", gap: 6, marginTop: 10 }}><button onClick={props.onAutoFinish}>{t("playerPro.shot.auto")}</button><button onClick={props.onConcede}>{t("playerPro.shot.concede")}</button></div>}
     </section>
   );
+}
+
+export function ChallengeScrambleChoiceHud(props: { round: ChallengeGroupRound; onChoose: (playerId: string) => void }) {
+  const { t } = useI18n();
+  const player = props.round.golfers.find((golfer) => golfer.id === props.round.playerGolferId);
+  const ball = props.round.teamAuthority?.balls.find((candidate) => candidate.teamId === player?.teamId);
+  return <section role="dialog" aria-label={t("challenge.scramble")} data-testid="challenge-scramble-choice" style={{ position: "absolute", zIndex: 215, right: 14, bottom: 78, width: "min(370px,calc(100% - 28px))", border: "2px solid #755824", borderRadius: 13, background: "linear-gradient(150deg,#fff9e7,#e9cd8c)", color: "#302819", boxShadow: "0 16px 38px rgba(0,0,0,.4)", padding: 12 }}>
+    <strong>{t("challenge.scramble")}</strong>
+    <div style={{ display: "grid", gap: 6 }}>{ball?.candidates.map((candidate) => {
+      const golfer = props.round.golfers.find((entry) => entry.id === candidate.playerId);
+      return <button key={candidate.shotId} type="button" onClick={() => props.onChoose(candidate.playerId)}>{golfer?.name ?? candidate.playerId} · {candidate.distanceToPin.toFixed(1)}</button>;
+    })}</div>
+  </section>;
+}
+
+export function ChallengeGroupHud(props: {
+  career: PlayerProCareer;
+  world: World;
+  day: number;
+  aim: PlayerProPoint;
+  onAim: (point: PlayerProPoint) => void;
+  onWorld: (source: World, next: World) => void;
+}) {
+  const group = props.career.activeChallengeGroupRound;
+  if (!group) return null;
+  const act = (action: ChallengeGroupAction) => props.onWorld(props.world, applyGroupAction(props.world, props.day, action));
+  if (group.phase === "awaiting_ball_choice") return <ChallengeScrambleChoiceHud round={group} onChoose={(playerId) => act({ kind: "choose", playerId })} />;
+  const view = groupView(props.career);
+  if (!view) return null;
+  return <PlayerShotHud
+    career={{ ...props.career, skills: view.skills }}
+    round={view.round}
+    aim={props.aim}
+    onAim={props.onAim}
+    onCommit={(selection) => act({ kind: "shot", selection })}
+    onAdvance={() => undefined}
+    onAutoFinish={() => act({ kind: "auto" })}
+    onConcede={() => act({ kind: "concede" })}
+    onReturnToDesign={() => undefined}
+  />;
 }

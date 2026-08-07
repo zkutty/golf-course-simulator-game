@@ -272,6 +272,8 @@ export interface RivalCustodyRecord {
   itemSnapshot: InventoryItem;
   acquiredWeek: number;
   acquiredDay: number;
+  settlementId?: string;
+  rematchChallengeId?: string;
   recoveredWeek?: number;
   recoveredDay?: number;
   status: "held" | "recovered";

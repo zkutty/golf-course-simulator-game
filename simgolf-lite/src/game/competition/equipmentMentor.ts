@@ -1,9 +1,15 @@
-import type { World } from "../models/types";
+import type { Course, PinRotation, TeeSet, World } from "../models/types";
 import type { PlayerPlayableRound, PlayerProCareer, PlayerShotTrace } from "../models/playerProTypes";
 import { normalizeLivingClub } from "../livingClub/livingClub";
 import type { EquipmentLoadout, EquipmentModifier, InventoryItem, LearnedTechnique, MentorTechniqueChallenge } from "./types";
 import { normalizePerformanceLoadoutSnapshot } from "./equipmentRuntime";
 import { startPlayableRound, type StartPlayableRoundArgs } from "../playerPro/playerProRoundStart";
+import { activatePlayerChallenge, activatePlayerTournament, createPlayerChallenge, normalizePlayerPro, registerPlayerTournament, type PlayerOpponent } from "../playerPro/playerPro";
+import type { TournamentEvent } from "../tournaments/types";
+import { createM48DesignTestSession } from "../architecture/comparison";
+import { activeCourseLayout } from "../models/courseLayouts";
+import { activeCampaignMatch, campaignPhaseBlockers, registerCampaignMatch } from "../campaign/campaign";
+import { createTournamentEvent, scheduleTournament } from "../tournaments/tournaments";
 
 const EQUIPMENT_SIDEGRADE_MIN = .88;
 const EQUIPMENT_SIDEGRADE_MAX = 1.12;
@@ -45,6 +51,7 @@ export const mentorTechniqueDefinition = (id: LearnedTechnique) => MENTOR_TECHNI
 export function capturePerformanceLoadout(args: {
   ownerId: string;
   inventoryItems: readonly InventoryItem[];
+  escrowItemIds?: readonly string[];
   loadout: EquipmentLoadout;
   learnedTechniques: readonly LearnedTechnique[];
   week: number;
@@ -56,7 +63,9 @@ export function capturePerformanceLoadout(args: {
     args.loadout.outfitItemId,
     args.loadout.watchItemId,
   ].filter((id): id is string => typeof id === "string"));
-  const items = args.inventoryItems.filter((entry) => requested.has(entry.id) && entry.ownerId === args.ownerId && entry.custodianId === args.ownerId);
+  const escrowed = new Set(args.escrowItemIds ?? []);
+  const items = args.inventoryItems.filter((entry) => requested.has(entry.id) && !escrowed.has(entry.id)
+    && entry.ownerId === args.ownerId && entry.custodianId === args.ownerId);
   const techniqueId = args.loadout.techniqueId && args.learnedTechniques.includes(args.loadout.techniqueId)
     ? args.loadout.techniqueId
     : undefined;
@@ -87,6 +96,7 @@ export function startEquippedPlayableRound(args: StartPlayableRoundArgs) {
   const performanceLoadout = career ? capturePerformanceLoadout({
     ownerId: career.identity.id,
     inventoryItems: career.inventory.items,
+    escrowItemIds: career.inventory.escrowItemIds,
     loadout: career.equipmentLoadout,
     learnedTechniques: career.learnedTechniques,
     week: args.world.week,
@@ -120,6 +130,155 @@ export function startMentorTechniqueChallenge(args: { world: World; mentorId: st
   return { ok: true, challenge, world: { ...args.world, playerPro: { ...career, activeMentorTechniqueChallenge: challenge, mentorTechniqueChallenges: [...career.mentorTechniqueChallenges, challenge].slice(-40) } } };
 }
 
+/** Deferred adapter for the legacy mentor round so App keeps only orchestration. */
+export function startPlayerMentorTechniqueRound(args: {
+  course: Course;
+  world: World;
+  opponent: PlayerOpponent;
+  challengeId: string;
+  layoutId: string;
+  day: number;
+}): { ok: true; career: PlayerProCareer } | { ok: false; reason: string } {
+  const initiated = startMentorTechniqueChallenge({ world: args.world, mentorId: args.opponent.id, challengeId: args.challengeId, day: args.day });
+  if (!initiated.ok) return { ok: false, reason: initiated.reasons.join(" ") };
+  const created = createPlayerChallenge(initiated.world.playerPro!, args.opponent, "friendly", 0);
+  const started = startEquippedPlayableRound({
+    course: args.course,
+    world: initiated.world,
+    kind: "friendly",
+    layoutId: args.layoutId,
+    teeSet: "member",
+    pinRotation: args.course.activePinRotation ?? "A",
+    day: args.day,
+    opponent: { id: args.opponent.id, name: args.opponent.name, skill: args.opponent.skill, relationshipDelta: 0, wager: 0, projectedStrokes: 0 },
+  });
+  if (!started.ok) return started;
+  return { ok: true, career: { ...activatePlayerChallenge(created.career, created.challenge.id, started.round.id), activeRound: started.round } };
+}
+
+export function startPlayerProCareerRound(args: StartPlayableRoundArgs): { ok: true; career: PlayerProCareer } | { ok: false; reason: string } {
+  const started = startEquippedPlayableRound(args);
+  if (!started.ok) return started;
+  const career = normalizePlayerPro(args.world.playerPro, { seed: args.world.runSeed, founderName: args.world.founderName });
+  return { ok: true, career: { ...career, activeRound: started.round } };
+}
+
+export function startPlayerProTournamentRound(args: { course: Course; world: World; event: TournamentEvent; layoutId: string; day: number }): { ok: true; career: PlayerProCareer } | { ok: false; reason: string } {
+  const career = normalizePlayerPro(args.world.playerPro, { seed: args.world.runSeed, founderName: args.world.founderName });
+  const registered = registerPlayerTournament(career, args.event);
+  if (registered === career) return { ok: false, reason: "eligibility" };
+  const started = startEquippedPlayableRound({ course: args.course, world: args.world, kind: "tournament", layoutId: args.event.courseId ?? args.layoutId, teeSet: args.event.teeSet ?? "member", pinRotation: args.event.pinRotation ?? args.course.activePinRotation ?? "A", day: args.day, tournament: { id: args.event.id, name: args.event.name } });
+  if (!started.ok) return started;
+  return { ok: true, career: { ...activatePlayerTournament(registered, args.event.id, started.round.id), activeRound: started.round } };
+}
+
+export function startArchitectureTestPlayerRound(args: {
+  course: Course;
+  world: World;
+  layoutId: string;
+  holeId: string;
+  teeSet: TeeSet;
+  pinRotation: PinRotation;
+  day: number;
+}): { ok: true; world: World; career: PlayerProCareer } | { ok: false; reason: "setup" | string } {
+  const session = createM48DesignTestSession({ course: args.course, courseId: args.layoutId, holeId: args.holeId, teeSet: args.teeSet, pinRotation: args.pinRotation, week: args.world.week, seed: args.world.runSeed ^ 0x48_0001 });
+  if (!session) return { ok: false, reason: "setup" };
+  const started = startEquippedPlayableRound({ course: args.course, world: args.world, layoutId: args.layoutId, teeSet: session.teeSet, pinRotation: session.pinRotation, kind: "exhibition", day: args.day });
+  if (!started.ok) return started;
+  const career = normalizePlayerPro(args.world.playerPro, { seed: args.world.runSeed, founderName: args.world.founderName });
+  const nextCareer = { ...career, activeRound: started.round };
+  const living = normalizeLivingClub(args.world.livingClub);
+  return { ok: true, career: nextCareer, world: { ...args.world, livingClub: { ...living, architecture: { ...living.architecture, testSession: session, comparison: null } }, playerPro: nextCareer } };
+}
+
+export function startPlayerCampaignMatch(args: {
+  course: Course;
+  world: World;
+  day: number;
+  championshipName: string;
+}): { ok: true; world: World; career: PlayerProCareer } | {
+  ok: false;
+  reason: string;
+  points?: number;
+} {
+  const match = activeCampaignMatch(args.world.campaign);
+  if (!match || !args.world.campaign) return { ok: false, reason: "unavailable" };
+  const blocked = campaignPhaseBlockers(args.course, args.world)
+    .some((reason) => !reason.startsWith("campaign.blocker.match:"));
+  if (blocked) return { ok: false, reason: "objectives" };
+  const career = normalizePlayerPro(args.world.playerPro, {
+    seed: args.world.runSeed,
+    founderName: args.world.founderName,
+  });
+  if (career.careerPoints < match.minCareerPoints) {
+    return { ok: false, reason: "points", points: match.minCareerPoints };
+  }
+  const layoutId = activeCourseLayout(args.course).id;
+
+  if (match.opponent) {
+    const opponent: PlayerOpponent = {
+      id: match.opponent.id,
+      name: match.opponent.name,
+      skill: match.opponent.skill,
+      relationship: args.world.campaign.relationships[match.opponent.characterId],
+    };
+    const created = createPlayerChallenge(career, opponent, "friendly", 0);
+    const started = startEquippedPlayableRound({
+      course: args.course,
+      world: args.world,
+      kind: "friendly",
+      layoutId,
+      teeSet: "member",
+      pinRotation: args.course.activePinRotation ?? "A",
+      day: args.day,
+      opponent: { ...opponent, relationshipDelta: 0, wager: 0, projectedStrokes: 0 },
+    });
+    if (!started.ok) return started;
+    const nextCareer = {
+      ...activatePlayerChallenge(created.career, created.challenge.id, started.round.id),
+      activeRound: started.round,
+    };
+    return {
+      ok: true,
+      career: nextCareer,
+      world: registerCampaignMatch({ ...args.world, playerPro: nextCareer }, match.id, started.round.id),
+    };
+  }
+
+  const created = createTournamentEvent({
+    course: args.course,
+    world: args.world,
+    tier: "championship",
+    currentDay: args.day,
+    daysAhead: 1,
+    courseId: layoutId,
+  });
+  if (!created.ok) return created;
+  const event = { ...created.event, name: args.championshipName };
+  const scheduledWorld = scheduleTournament(args.world, event);
+  const registered = registerPlayerTournament(career, event, { campaignQualified: true });
+  const started = startEquippedPlayableRound({
+    course: args.course,
+    world: scheduledWorld,
+    kind: "tournament",
+    layoutId: event.courseId ?? layoutId,
+    teeSet: event.teeSet ?? "championship",
+    pinRotation: event.pinRotation ?? args.course.activePinRotation ?? "A",
+    day: args.day,
+    tournament: { id: event.id, name: event.name },
+  });
+  if (!started.ok) return started;
+  const nextCareer = {
+    ...activatePlayerTournament(registered, event.id, started.round.id),
+    activeRound: started.round,
+  };
+  return {
+    ok: true,
+    career: nextCareer,
+    world: registerCampaignMatch({ ...scheduledWorld, playerPro: nextCareer }, match.id, started.round.id, event.id),
+  };
+}
+
 const objectiveSatisfied = (id: LearnedTechnique, shot: PlayerShotTrace) => {
   const safe = shot.penaltyStrokes === 0;
   const green = shot.lieAfter === "green" || shot.lieAfter === "cup";
@@ -143,6 +302,7 @@ export function settleMentorTechniqueChallenge(career: PlayerProCareer, round: P
 export function setEquipmentLoadout(career: PlayerProCareer, loadout: EquipmentLoadout): { ok: true; career: PlayerProCareer } | { ok: false; reason: string } {
   if (career.activeRound || career.activeChallengeGroupRound) return { ok: false, reason: "Equipment and mentor technique are frozen until the round settles." };
   const ids = [...loadout.clubItemIds, loadout.bagItemId, loadout.outfitItemId, loadout.watchItemId].filter((id): id is string => typeof id === "string");
+  if (ids.some((id) => career.inventory.escrowItemIds.includes(id))) return { ok: false, reason: "Escrowed challenge items cannot be newly equipped." };
   const items = new Map(career.inventory.items.map((entry) => [entry.id, entry]));
   if (ids.some((id) => items.get(id)?.ownerId !== career.identity.id || items.get(id)?.custodianId !== career.identity.id)) return { ok: false, reason: "Every equipped item must be owned and in the player's custody." };
   if (loadout.clubItemIds.some((id) => items.get(id)?.category !== "club") || (loadout.bagItemId && items.get(loadout.bagItemId)?.category !== "bag") || (loadout.outfitItemId && items.get(loadout.outfitItemId)?.category !== "outfit") || (loadout.watchItemId && items.get(loadout.watchItemId)?.category !== "watch")) return { ok: false, reason: "Equipment must be assigned to its authored loadout slot." };

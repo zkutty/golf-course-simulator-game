@@ -81,6 +81,7 @@ import {
 } from "../competition/persistence";
 import { defaultPlayerProInventory, normalizePlayerProInventory } from "./inventoryPersistence";
 import { decodeChallengeGroupRound } from "../competition/challengeGroupRoundCodec";
+import { decodePersistedChallengeRuntime } from "../competition/challengeRuntimePersistence";
 import {
   applyRoundConfidence,
   confidenceAtDay,
@@ -313,6 +314,8 @@ export function createDefaultPlayerPro(args: {
     mentorTechniqueLedger: [],
     activeRound: null,
     activeChallengeGroupRound: null,
+    activeChallengeRuntime: null,
+    challengeSequence: 0,
     rounds: [],
     training: [],
     challenges: [],
@@ -470,6 +473,11 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
   const mentorFields = normalizedMentorCareerFields(candidate);
   const { learnedTechniques } = mentorFields;
   const inventoryState = normalizePlayerProInventory(candidate, identityId);
+  const decodedChallengeRuntime = candidate.activeChallengeRuntime == null
+    ? null
+    : decodePersistedChallengeRuntime(candidate.activeChallengeRuntime, { id: identityId, inventory: inventoryState.inventory });
+  if (decodedChallengeRuntime && !decodedChallengeRuntime.ok) throw new Error(decodedChallengeRuntime.error);
+  const activeChallengeRuntime = decodedChallengeRuntime?.ok ? decodedChallengeRuntime.state : null;
   const equipmentLoadout = inventoryState.equipmentLoadout.techniqueId && !learnedTechniques.includes(inventoryState.equipmentLoadout.techniqueId)
     ? { ...inventoryState.equipmentLoadout, techniqueId: undefined }
     : inventoryState.equipmentLoadout;
@@ -489,6 +497,10 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
     ...mentorFields,
     activeRound,
     activeChallengeGroupRound,
+    activeChallengeRuntime,
+    challengeSequence: Number.isSafeInteger(candidate.challengeSequence) && Number(candidate.challengeSequence) >= 0
+      ? Math.floor(Number(candidate.challengeSequence))
+      : Array.isArray(candidate.challenges) ? candidate.challenges.length : 0,
     rounds: Array.isArray(candidate.rounds)
       ? candidate.rounds.map(normalizeCareerRound).filter((round): round is PlayerCareerRound => round != null).slice(-MAX_HISTORY)
       : [],

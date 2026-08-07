@@ -187,32 +187,27 @@ import { appendDayToLedger, createWeekLedger } from "./game/live/weeklyLedger";
 import { analyzeResidentialSafety, applyPropertyCommand, emptyPropertyEnterprise, propertySummary, settlePropertyDay, starterPropertyCourse, type PropertyCommand } from "./game/property/property";
 import type { PlayerCareerRound, PlayerProCareer, PlayerProPoint, PlayerShotTrace } from "./game/models/playerProTypes";
 import {
-  activatePlayerChallenge,
-  activatePlayerTournament,
   advancePlayerRound,
   autoFinishPlayerRound,
   caddieRecommendation,
-  caddieShotGuidance,
   commitPlayerShot,
   concedePlayerRound,
   createDefaultPlayerPro,
-  createPlayerChallenge,
   currentPlayerTournament,
   finishPlayerShot,
   normalizePlayerPro,
-  registerPlayerTournament,
   type PlayerOpponent,
   type PlayerShotSelection,
   type PlayerTrainingOption,
 } from "./game/playerPro/playerPro";
 import type { TournamentEvent } from "./game/tournaments/types";
-import { challengeGroupRoundTextState } from "./game/competition/challengeGroupRoundText";
 import type { EquipmentLoadout } from "./game/competition/types";
+import type { PlayerChallengeContractDraft } from "./game/playerPro/challengePlayerProAdapter";
 import { decodeControlledRoundSnapshotV2, type ControlledRoundSnapshotV2 } from "./game/rules/roundSnapshot";
 import type { SharedShotOutcome } from "./game/rules/contracts";
 import { buildArchitectureReview, defaultArchitectureFilters, withGreenStrategyHeatmap } from "./game/architecture/review";
 import type { GreenStrategyHeatmap } from "./game/architecture/greenStrategyHeatmap";
-import { compareM48DesignTest, createM48DesignTestSession, refreshM48DesignTestSession } from "./game/architecture/comparison";
+import { compareM48DesignTest, refreshM48DesignTestSession } from "./game/architecture/comparison";
 import { strategicGeometryVersion } from "./game/architecture/strategic";
 import {
   effectiveSurfaceTiles,
@@ -321,19 +316,14 @@ import {
   applyStaffCommand,
   normalizeLivingClub,
   recordLivingClubRound,
-  recordPlayerRoundArchitecture,
   resolveStoryChoice,
   setReturnToDesignContext,
 } from "./game/livingClub/livingClub";
 import { absoluteDayFor, advanceSeasonalDay, applySeasonCommand, createSeasonalState, seasonalState } from "./game/seasons/seasons";
 import { SEASONS, type SeasonCommand, type SeasonName } from "./game/seasons/types";
 import {
-  activeCampaignMatch,
-  advanceCampaign,
-  campaignPhaseBlockers,
   campaignScene,
   continueCampaignInSandbox,
-  registerCampaignMatch,
   resolveCampaignChoice,
 } from "./game/campaign/campaign";
 import { CAMPAIGN_CHAPTER_BY_ID } from "./game/campaign/content";
@@ -367,6 +357,7 @@ const RetentionHub = lazy(() => import("./ui/retention/RetentionHub").then(({ Re
 const GolfopediaModal = lazy(() => import("./ui/help/GolfopediaModal").then(({ GolfopediaModal }) => ({ default: GolfopediaModal })));
 const PlayerProPanel = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerProPanel }) => ({ default: PlayerProPanel })));
 const PlayerShotHud = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerShotHud }) => ({ default: PlayerShotHud })));
+const ChallengeGroupHud = lazy(() => import("./ui/PlayerProPanel").then(({ ChallengeGroupHud }) => ({ default: ChallengeGroupHud })));
 const ArchitectureReviewPanel = lazy(() => import("./ui/ArchitectureReviewPanel").then(({ ArchitectureReviewPanel }) => ({ default: ArchitectureReviewPanel })));
 const CourseManagerPanel = lazy(() => import("./ui/CourseManagerPanel").then(({ CourseManagerPanel }) => ({ default: CourseManagerPanel })));
 const ProgressionPanel = lazy(() => import("./ui/ProgressionPanel").then(({ ProgressionPanel }) => ({ default: ProgressionPanel })));
@@ -899,7 +890,7 @@ export default function App() {
     [world.founderName, world.playerPro, world.runSeed],
   );
   const activePlayerRound = playerPro.activeRound;
-  const playerRoundLocksEditing = !!activePlayerRound && activePlayerRound.phase !== "round_complete" && activePlayerRound.phase !== "conceded";
+  const playerRoundLocksEditing = (!!activePlayerRound && activePlayerRound.phase !== "round_complete" && activePlayerRound.phase !== "conceded") || Boolean(playerPro.activeChallengeGroupRound);
   const designDockVisible = workspace === "design"
     && (editorMode === "PAINT" || editorMode === "OBSTACLE" || editorMode === "DECOR")
     && holeEditMode !== "hole"
@@ -1210,11 +1201,13 @@ export default function App() {
     });
   }, [setWorld]);
 
-  const enterPlayerRoundView = useCallback((career: PlayerProCareer) => {
-    const round = career.activeRound;
-    if (!round) return;
-    const recommendation = caddieRecommendation(round, career.skills);
-    setPlayerShotAim(recommendation.aim);
+  const enterPlayerRoundView = useCallback((career: PlayerProCareer, projectedRound?: NonNullable<PlayerProCareer["activeRound"]>) => {
+    const round = career.activeRound ?? projectedRound;
+    const group = career.activeChallengeGroupRound;
+    if (!round && !group) return;
+    setPlayerShotAim(round
+      ? caddieRecommendation(round, career.skills).aim
+      : { ...group!.course.holes[group!.currentHoleIndex].pin });
     setShowPlayerPro(false);
     setShowCourseManager(false);
     setShowPropertyManagement(false);
@@ -1224,61 +1217,26 @@ export default function App() {
   }, [live]);
 
   const beginPlayerRound = useCallback(async (layoutId: string, teeSet: TeeSet, pinRotation: PinRotation): Promise<string | null> => {
-    const { startEquippedPlayableRound } = await import("./game/competition/equipmentMentor");
+    const { startPlayerProCareerRound } = await import("./game/competition/equipmentMentor");
     const current = gameSession.getState();
-    const started = startEquippedPlayableRound({
-      course: current.course,
-      world: current.world,
-      layoutId,
-      teeSet,
-      pinRotation,
-      day: live.status.dayIndex,
-    });
+    const started = startPlayerProCareerRound({ course: current.course, world: current.world, layoutId, teeSet, pinRotation, day: live.status.dayIndex });
     if (!started.ok) return started.reason;
-    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
-    const next = { ...career, activeRound: started.round };
-    updatePlayerPro(() => next);
-    enterPlayerRoundView(next);
+    updatePlayerPro(() => started.career);
+    enterPlayerRoundView(started.career);
     return null;
   }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
 
   const beginArchitectureTestRound = useCallback(async (layoutId: string): Promise<string | null> => {
-    const { startEquippedPlayableRound } = await import("./game/competition/equipmentMentor");
+    const { startArchitectureTestPlayerRound } = await import("./game/competition/equipmentMentor");
     const current = gameSession.getState();
     const holeId = architectureFilters.holeId === "all"
       ? current.course.holes.find((hole) => hole.id)?.id
       : architectureFilters.holeId;
     if (!holeId) return t("architecture.review.testNeedsHole");
-    const session = createM48DesignTestSession({
-      course: current.course,
-      courseId: layoutId,
-      holeId,
-      teeSet: architectureFilters.teeSet === "all" ? "member" : architectureFilters.teeSet,
-      pinRotation: architectureFilters.pinRotation === "all" ? "A" : architectureFilters.pinRotation,
-      week: current.world.week,
-      seed: current.world.runSeed ^ 0x48_0001,
-    });
-    if (!session) return t("architecture.review.testNeedsCompleteHole");
-    const started = startEquippedPlayableRound({
-      course: current.course,
-      world: current.world,
-      layoutId,
-      teeSet: session.teeSet,
-      pinRotation: session.pinRotation,
-      kind: "exhibition",
-      day: live.status.dayIndex,
-    });
-    if (!started.ok) return started.reason;
-    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
-    setWorld((world) => {
-      const living = normalizeLivingClub(world.livingClub);
-      return {
-        ...world,
-        livingClub: { ...living, architecture: { ...living.architecture, testSession: session, comparison: null } },
-        playerPro: { ...career, activeRound: started.round },
-      };
-    });
-    enterPlayerRoundView({ ...career, activeRound: started.round });
+    const started = startArchitectureTestPlayerRound({ course: current.course, world: current.world, layoutId, holeId, teeSet: architectureFilters.teeSet === "all" ? "member" : architectureFilters.teeSet, pinRotation: architectureFilters.pinRotation === "all" ? "A" : architectureFilters.pinRotation, day: live.status.dayIndex });
+    if (!started.ok) return started.reason === "setup" ? t("architecture.review.testNeedsCompleteHole") : started.reason;
+    setWorld(() => started.world);
+    enterPlayerRoundView(started.career);
     return null;
   }, [architectureFilters, enterPlayerRoundView, gameSession, live.status.dayIndex, setWorld, t]);
 
@@ -1298,81 +1256,17 @@ export default function App() {
   }, [course, setWorld, world.livingClub]);
 
   const startCampaignMatch = useCallback(async (): Promise<string | null> => {
-    const { startEquippedPlayableRound } = await import("./game/competition/equipmentMentor");
+    const { startPlayerCampaignMatch } = await import("./game/competition/equipmentMentor");
     const current = gameSession.getState();
-    const match = activeCampaignMatch(current.world.campaign);
-    if (!match || !current.world.campaign) return t("campaign.match.unavailable");
-    const nonMatchBlockers = campaignPhaseBlockers(current.course, current.world).filter((blocker) => !blocker.startsWith("campaign.blocker.match:"));
-    if (nonMatchBlockers.length) return t("campaign.match.objectivesFirst");
-    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
-    if (career.careerPoints < match.minCareerPoints) return t("campaign.match.pointsRequired", { points: match.minCareerPoints });
-
-    if (match.opponent) {
-      const created = createPlayerChallenge(career, {
-        id: match.opponent.id,
-        name: match.opponent.name,
-        skill: match.opponent.skill,
-        relationship: current.world.campaign.relationships[match.opponent.characterId],
-      }, "friendly", 0);
-      const started = startEquippedPlayableRound({
-        course: current.course,
-        world: current.world,
-        kind: "friendly",
-        layoutId: activeCourseLayout(current.course).id,
-        teeSet: "member",
-        pinRotation: current.course.activePinRotation ?? "A",
-        day: live.status.dayIndex,
-        opponent: {
-          id: match.opponent.id,
-          name: match.opponent.name,
-          skill: match.opponent.skill,
-          relationshipDelta: 0,
-          wager: 0,
-          projectedStrokes: 0,
-        },
-      });
-      if (!started.ok) return started.reason;
-      const nextCareer = {
-        ...activatePlayerChallenge(created.career, created.challenge.id, started.round.id),
-        activeRound: started.round,
-      };
-      const nextWorld = registerCampaignMatch({ ...current.world, playerPro: nextCareer }, match.id, started.round.id);
-      gameSession.update((latest) => latest === current ? { ...latest, world: nextWorld, economyVersion: latest.economyVersion + 1 } : latest);
-      enterPlayerRoundView(nextCareer);
-      markDirty();
-      return null;
+    const started = startPlayerCampaignMatch({ course: current.course, world: current.world, day: live.status.dayIndex, championshipName: t("campaign.match.championship.eventName") });
+    if (!started.ok) {
+      if (started.reason === "unavailable") return t("campaign.match.unavailable");
+      if (started.reason === "objectives") return t("campaign.match.objectivesFirst");
+      if (started.reason === "points") return t("campaign.match.pointsRequired", { points: started.points ?? 0 });
+      return started.reason;
     }
-
-    const created = createTournamentEvent({
-      course: current.course,
-      world: current.world,
-      tier: "championship",
-      currentDay: live.status.dayIndex,
-      daysAhead: 1,
-      courseId: activeCourseLayout(current.course).id,
-    });
-    if (!created.ok) return created.reason;
-    const event = { ...created.event, name: t("campaign.match.championship.eventName") };
-    const scheduledWorld = scheduleTournament(current.world, event);
-    const registered = registerPlayerTournament(career, event, { campaignQualified: true });
-    const started = startEquippedPlayableRound({
-      course: current.course,
-      world: scheduledWorld,
-      kind: "tournament",
-      layoutId: event.courseId ?? activeCourseLayout(current.course).id,
-      teeSet: event.teeSet ?? "championship",
-      pinRotation: event.pinRotation ?? current.course.activePinRotation ?? "A",
-      day: live.status.dayIndex,
-      tournament: { id: event.id, name: event.name },
-    });
-    if (!started.ok) return started.reason;
-    const nextCareer = {
-      ...activatePlayerTournament(registered, event.id, started.round.id),
-      activeRound: started.round,
-    };
-    const nextWorld = registerCampaignMatch({ ...scheduledWorld, playerPro: nextCareer }, match.id, started.round.id, event.id);
-    gameSession.update((latest) => latest === current ? { ...latest, world: nextWorld, economyVersion: latest.economyVersion + 1 } : latest);
-    enterPlayerRoundView(nextCareer);
+    gameSession.update((latest) => latest === current ? { ...latest, world: started.world, economyVersion: latest.economyVersion + 1 } : latest);
+    enterPlayerRoundView(started.career);
     markDirty();
     return null;
   }, [enterPlayerRoundView, gameSession, live.status.dayIndex, markDirty, t]);
@@ -1401,62 +1295,55 @@ export default function App() {
     return null;
   }, [audio, gameSession, live, setWorld, soundEnabled]);
 
-  const challengePlayerPro = useCallback(async (opponent: PlayerOpponent, kind: "friendly" | "wager", wager: number): Promise<string | null> => {
-    const { startEquippedPlayableRound } = await import("./game/competition/equipmentMentor");
-    const current = gameSession.getState();
-    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
-    if (kind === "wager" && current.world.cash < wager) return "cash";
-    const created = createPlayerChallenge(career, opponent, kind, wager);
-    const layout = activeCourseLayout(current.course);
-    const started = startEquippedPlayableRound({
-      course: current.course,
-      world: current.world,
-      kind,
-      layoutId: layout.id,
-      teeSet: "member",
-      pinRotation: current.course.activePinRotation ?? "A",
-      day: live.status.dayIndex,
-      opponent: {
-        id: opponent.id,
-        name: opponent.name,
-        skill: opponent.skill,
-        relationshipDelta: 0,
-        wager: created.challenge.wager,
-        projectedStrokes: 0,
-      },
+  const commitChallengeWorld = useCallback(async (current: GameState, nextWorld: World): Promise<boolean> => {
+    const next = { ...current, world: nextWorld, economyVersion: current.economyVersion + 1 };
+    let committed = false;
+    gameSession.update((latest) => {
+      if (latest !== current) return latest;
+      committed = true;
+      return next;
     });
-    if (!started.ok) return started.reason;
-    const next = {
-      ...activatePlayerChallenge(created.career, created.challenge.id, started.round.id),
-      activeRound: started.round,
-    };
-    updatePlayerPro(() => next);
-    enterPlayerRoundView(next);
+    if (!committed) return false;
+    markDirty();
+    await autosave({
+      course: next.course,
+      world: next.world,
+      history: historyRef.current,
+      records: recordsRef.current,
+      live: live.getSnapshot(),
+      tutorial: tutorialProgress,
+    });
+    return true;
+  }, [gameSession, live, markDirty, tutorialProgress]);
+
+  const challengePlayerPro = useCallback(async (draft: PlayerChallengeContractDraft | null): Promise<string | null> => {
+    const { RETRY, tryCancel, tryStart } = await import("./game/playerPro/challengePlayerProAdapter");
+    const current = gameSession.getState();
+    if (!draft) {
+      const result = tryCancel({ world: current.world, day: live.status.dayIndex });
+      if (!result.ok) return result.reason;
+      return await commitChallengeWorld(current, result.world) ? null : RETRY;
+    }
+    const result = tryStart({ course: current.course, world: current.world, day: live.status.dayIndex, draft });
+    if (!result.ok) return result.reason;
+    if (!await commitChallengeWorld(current, result.value.world)) return RETRY;
+    enterPlayerRoundView(result.value.career, result.value.round);
     return null;
-  }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
+  }, [commitChallengeWorld, enterPlayerRoundView, gameSession, live.status.dayIndex]);
+
+  const commitChallengeRound = useCallback(async (current: GameState, round: NonNullable<PlayerProCareer["activeRound"]>) => {
+    const { commitRound } = await import("./game/playerPro/challengePlayerProAdapter");
+    return commitChallengeWorld(current, commitRound(current.world, round, live.status.dayIndex));
+  }, [commitChallengeWorld, live.status.dayIndex]);
 
   const beginMentorTechniqueChallenge = useCallback(async (opponent: PlayerOpponent): Promise<string | null> => {
-    const { startMentorTechniqueChallenge, startEquippedPlayableRound } = await import("./game/competition/equipmentMentor");
+    const { startPlayerMentorTechniqueRound } = await import("./game/competition/equipmentMentor");
     const current = gameSession.getState();
     const challengeId = `mentor-${opponent.id}-${current.world.week}-${live.status.dayIndex}`;
-    const initiated = startMentorTechniqueChallenge({ world: current.world, mentorId: opponent.id, challengeId, day: live.status.dayIndex });
-    if (!initiated.ok) return initiated.reasons.join(" ");
-    const career = initiated.world.playerPro!;
-    const created = createPlayerChallenge(career, opponent, "friendly", 0);
-    const started = startEquippedPlayableRound({
-      course: current.course,
-      world: initiated.world,
-      kind: "friendly",
-      layoutId: activeCourseLayout(current.course).id,
-      teeSet: "member",
-      pinRotation: current.course.activePinRotation ?? "A",
-      day: live.status.dayIndex,
-      opponent: { id: opponent.id, name: opponent.name, skill: opponent.skill, relationshipDelta: 0, wager: 0, projectedStrokes: 0 },
-    });
+    const started = startPlayerMentorTechniqueRound({ course: current.course, world: current.world, opponent, challengeId, layoutId: activeCourseLayout(current.course).id, day: live.status.dayIndex });
     if (!started.ok) return started.reason;
-    const next = { ...activatePlayerChallenge(created.career, created.challenge.id, started.round.id), activeRound: started.round };
-    updatePlayerPro(() => next);
-    enterPlayerRoundView(next);
+    updatePlayerPro(() => started.career);
+    enterPlayerRoundView(started.career);
     return null;
   }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
 
@@ -1471,40 +1358,30 @@ export default function App() {
   }, [gameSession, updatePlayerPro]);
 
   const enterPlayerTournament = useCallback(async (event: TournamentEvent): Promise<string | null> => {
-    const { startEquippedPlayableRound } = await import("./game/competition/equipmentMentor");
+    const { startPlayerProTournamentRound } = await import("./game/competition/equipmentMentor");
     const current = gameSession.getState();
-    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
-    const registered = registerPlayerTournament(career, event);
-    if (registered === career) return "eligibility";
-    const started = startEquippedPlayableRound({
-      course: current.course,
-      world: current.world,
-      kind: "tournament",
-      layoutId: event.courseId ?? activeCourseLayout(current.course).id,
-      teeSet: event.teeSet ?? "member",
-      pinRotation: event.pinRotation ?? current.course.activePinRotation ?? "A",
-      day: live.status.dayIndex,
-      tournament: { id: event.id, name: event.name },
-    });
+    const started = startPlayerProTournamentRound({ course: current.course, world: current.world, event, layoutId: activeCourseLayout(current.course).id, day: live.status.dayIndex });
     if (!started.ok) return started.reason;
-    const next = {
-      ...activatePlayerTournament(registered, event.id, started.round.id),
-      activeRound: started.round,
-    };
-    updatePlayerPro(() => next);
-    enterPlayerRoundView(next);
+    updatePlayerPro(() => started.career);
+    enterPlayerRoundView(started.career);
     return null;
   }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
 
   const commitControlledShot = useCallback((selection: PlayerShotSelection) => {
-    updatePlayerPro((career) => {
-      if (!career.activeRound) return career;
-      const round = commitPlayerShot(career.activeRound, career.skills, selection);
-      if (round === career.activeRound) return career;
+    const current = gameSession.getState();
+    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
+    if (!career.activeRound) return;
+    const round = commitPlayerShot(career.activeRound, career.skills, selection);
+    if (round === career.activeRound) return;
+    if (!career.activeChallengeRuntime) {
+      updatePlayerPro(() => ({ ...career, activeRound: round }));
       if (soundEnabled) void audio.playSfx(selection.club === "Putter" ? "putt" : selection.club === "Driver" ? "driver" : "iron");
-      return { ...career, activeRound: round };
+      return;
+    }
+    void commitChallengeRound(current, round).then((committed) => {
+      if (committed && soundEnabled) void audio.playSfx(selection.club === "Putter" ? "putt" : selection.club === "Driver" ? "driver" : "iron");
     });
-  }, [audio, soundEnabled, updatePlayerPro]);
+  }, [audio, commitChallengeRound, gameSession, soundEnabled, updatePlayerPro]);
 
   const advanceControlledRound = useCallback(() => {
     updatePlayerPro((career) => {
@@ -1518,16 +1395,27 @@ export default function App() {
   }, [updatePlayerPro]);
 
   const autoFinishControlledRound = useCallback(() => {
-    updatePlayerPro((career) => career.activeRound
-      ? { ...career, activeRound: autoFinishPlayerRound(career.activeRound, career.skills) }
-      : career);
-  }, [updatePlayerPro]);
+    const current = gameSession.getState();
+    const career = normalizePlayerPro(current.world.playerPro, { seed: current.world.runSeed, founderName: current.world.founderName });
+    if (!career.activeRound) return;
+    const round = autoFinishPlayerRound(career.activeRound, career.skills);
+    if (!career.activeChallengeRuntime) {
+      updatePlayerPro(() => ({ ...career, activeRound: round }));
+      return;
+    }
+    void commitChallengeRound(current, round);
+  }, [commitChallengeRound, gameSession, updatePlayerPro]);
 
   const concedeControlledRound = useCallback(() => {
+    const runtime = gameSession.getState().world.playerPro?.activeChallengeRuntime;
+    if (runtime?.phase === "escrowed") {
+      void challengePlayerPro(null);
+      return;
+    }
     updatePlayerPro((career) => career.activeRound
       ? { ...career, activeRound: concedePlayerRound(career.activeRound) }
       : career);
-  }, [updatePlayerPro]);
+  }, [challengePlayerPro, gameSession, updatePlayerPro]);
 
   useEffect(() => {
     const round = activePlayerRound;
@@ -1548,40 +1436,15 @@ export default function App() {
 
   useEffect(() => {
     const round = activePlayerRound;
-    if (!round || round.rewardsApplied || (round.phase !== "round_complete" && round.phase !== "conceded")) return;
-    void Promise.all([
-      import("./game/competition/equipmentMentor"),
-      import("./game/playerPro/playerProSettlement"),
-    ]).then(([{ settleMentorTechniqueChallenge }, { settlePlayerRound }]) => setWorld((current) => {
-      const career = normalizePlayerPro(current.playerPro, { seed: current.runSeed, founderName: current.founderName });
-      const authoritative = career.activeRound;
-      if (!authoritative || authoritative.id !== round.id || authoritative.rewardsApplied) return current;
-      const event = currentPlayerTournament(current, authoritative.tournamentId);
-      const settlement = settlePlayerRound(career, authoritative, event);
-      if (!settlement.round) return current;
-      const mentorCareer = settleMentorTechniqueChallenge(settlement.career, authoritative);
-      const recorded = recordPlayerRoundArchitecture(current, authoritative, settlement.round);
-      const recordedCareer = {
-        ...mentorCareer,
-        rounds: mentorCareer.rounds.map((careerRound) =>
-          careerRound.id === recorded.careerRound.id ? recorded.careerRound : careerRound
-        ),
-      };
-      const events = settlement.tournamentEvent
-        ? tournamentCalendar(current).events.map((candidate) => candidate.id === settlement.tournamentEvent!.id ? settlement.tournamentEvent! : candidate)
-        : null;
-      return advanceCampaign(gameSession.getState().course, {
-        ...recorded.world,
-        cash: recorded.world.cash + settlement.cashDelta,
-        reputation: Math.max(0, Math.min(100, recorded.world.reputation + settlement.reputationDelta)),
-        tournaments: events ? { version: 2, events } : current.tournaments,
-        playerPro: {
-          ...recordedCareer,
-          activeRound: { ...authoritative, rewardsApplied: true },
-        },
-      });
-    }));
-  }, [activePlayerRound, gameSession, setWorld]);
+    if (playerPro.activeChallengeGroupRound || !round || round.rewardsApplied || (round.phase !== "round_complete" && round.phase !== "conceded")) return;
+    void import("./game/playerPro/playerProRoundLifecycle").then(async ({ settleRound }) => {
+      const currentState = gameSession.getState();
+      const nextWorld = settleRound(currentState, round, live.status.dayIndex);
+      if (!nextWorld) return;
+      await commitChallengeWorld(currentState, nextWorld);
+    });
+  }, [activePlayerRound, commitChallengeWorld, gameSession, live.status.dayIndex, playerPro.activeChallengeGroupRound]);
+
 
   useEffect(() => {
     const round = activePlayerRound;
@@ -2744,9 +2607,6 @@ export default function App() {
       seed: world.runSeed,
       reducedMotion: appProfile.accessibility.reducedMotion || !effectiveAnimations,
     });
-    const textCaddieGuidance = activePlayerRound
-      ? caddieShotGuidance(activePlayerRound, playerPro.skills)
-      : null;
     const renderText = () => JSON.stringify({
       coordinateSystem: "tile coordinates; origin top-left, +x right, +y down",
       screen,
@@ -3074,12 +2934,6 @@ export default function App() {
           aim: playerShotAim,
           strokes: activePlayerRound.strokes,
           penalties: activePlayerRound.penalties,
-          caddieGuidance: textCaddieGuidance ? {
-            selection: textCaddieGuidance.selection,
-            risk: textCaddieGuidance.preview.risk,
-            expectedPenalty: textCaddieGuidance.preview.expectedPenalty,
-            shotSlope: textCaddieGuidance.shotSlope,
-          } : null,
           scorecard: activePlayerRound.scorecard,
           handicapSnapshot: activePlayerRound.handicapSnapshot ?? null,
           performanceLoadout: activePlayerRound.performanceLoadout ?? null,
@@ -3088,9 +2942,7 @@ export default function App() {
           recentTrace: textShotTrace(lastItem(activePlayerRound.shots)),
           editingLocked: playerRoundLocksEditing,
         } : null,
-        activeChallengeGroupRound: playerPro.activeChallengeGroupRound
-          ? challengeGroupRoundTextState(playerPro.activeChallengeGroupRound)
-          : null,
+        activeChallengeGroupRound: playerPro.activeChallengeGroupRound,
       },
       editor: {
         mode: editorMode,
@@ -3301,6 +3153,29 @@ export default function App() {
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
         setShowPlayerPro(false);
         setPlayerShotAim(null);
+      },
+      setChallengeContractFixture: async () => {
+        const { createZk725BrowserFixture } = await import("./game/playerPro/challengePlayerProAdapter");
+        const fixture = createZk725BrowserFixture(gameSession.getState().world);
+        dispatch({ type: "LOAD_GAME", course: fixture.course, world: fixture.world });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixture.course, fixture.world, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setShowPlayerPro(false);
+        setPlayerShotAim(null);
+      },
+      forceChallengeRivalWithdrawal: async () => {
+        const { forceRivalWithdrawalFixture } = await import("./game/playerPro/challengePlayerProAdapter");
+        gameSession.update((current) => {
+          return { ...current, world: forceRivalWithdrawalFixture(current.world), economyVersion: current.economyVersion + 1 };
+        });
+      },
+      forceChallengeTieCompletion: async () => {
+        const { forceTieFixture } = await import("./game/playerPro/challengePlayerProAdapter");
+        gameSession.update((current) => {
+          return { ...current, world: forceTieFixture(current.world, live.status.dayIndex), economyVersion: current.economyVersion + 1 };
+        });
+        setPlayerShotAim(null);
+        setShowPlayerPro(true);
+        live.setSpeed("paused");
       },
       setChallengeGroupRoundFixture: async () => {
         const { createZk758BrowserChallengeGroup } = await import("./game/testing/zk758BrowserFixture");
@@ -5363,6 +5238,7 @@ export default function App() {
               onConcede={concedeControlledRound}
               onReturnToDesign={returnPlayerToDesign}
             />}
+            {playerPro.activeChallengeGroupRound && !showPlayerPro && !tutorialProgress && playerShotAim && <ChallengeGroupHud career={playerPro} world={world} day={live.status.dayIndex} aim={playerShotAim} onAim={setPlayerShotAim} onWorld={(source, nextWorld) => { const current = gameSession.getState(); if (current.world === source && nextWorld !== source) void commitChallengeWorld(current, nextWorld); }} />}
             </Suspense>
             {playerRoundLocksEditing && <div role="status" style={{ position: "absolute", left: "50%", top: 54, transform: "translateX(-50%)", zIndex: 112, padding: "6px 10px", borderRadius: 8, background: "rgba(54,69,48,.92)", color: "white", fontSize: 12 }}>{t("playerPro.round.editLocked")}</div>}
             {showProgression && !tutorialProgress && <Suspense fallback={null}><ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} /></Suspense>}

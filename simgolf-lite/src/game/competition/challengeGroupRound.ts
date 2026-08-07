@@ -1206,6 +1206,21 @@ export function previewChallengeGroupPlayerShot(round: ChallengeGroupRound, golf
   return previewPlayableShot(playableRound(round, withTeamBallGolfer(round, golfer)), effectiveSkills(golfer), selection);
 }
 
+/** Deferred UI projection of the authoritative group state; never persisted. */
+export function challengeGroupPlayerRound(round: ChallengeGroupRound): PlayerPlayableRound | null {
+  const golfer = round.golfers.find((candidate) => candidate.id === round.playerGolferId);
+  if (!golfer || round.phase === "awaiting_ball_choice") return null;
+  const view = playableRound(round, withTeamBallGolfer(round, golfer));
+  return round.phase === "complete" ? { ...view, phase: "round_complete" } : view;
+}
+
+/** Exact skills used by authoritative preview and resolution, including frozen equipment. */
+export function challengeGroupPlayerSkills(round: ChallengeGroupRound): PlayerProSkills {
+  const golfer = round.golfers.find((candidate) => candidate.id === round.playerGolferId);
+  if (!golfer) throw new Error("Challenge group player is missing.");
+  return effectiveSkills(golfer);
+}
+
 export function commitChallengeGroupPlayerShot(round: ChallengeGroupRound, golferId: string, selection: PlayerShotSelection): ChallengeGroupRound {
   if (golferId !== round.playerGolferId) throw new Error("Only the player-controlled golfer accepts player shot input.");
   if (round.activeGolferId !== golferId) throw new Error("The player-controlled golfer does not own the current turn.");

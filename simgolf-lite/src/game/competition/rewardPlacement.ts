@@ -24,7 +24,7 @@ declare global {
 export const applyPlantRewardPlacement: PlantRewardPlacementResolver = (career, args) => {
   const reward = career.rewardEntitlements.entitlements.find((entry) => entry.kind === "plant-stock" && entry.status === "active"
     && entry.remainingQuantity > 0 && entry.speciesId === args.speciesId && entry.biome === args.biome);
-  if (!reward) return { career, applied: false };
+  if (!reward || (reward.inventoryItemId && career.inventory.escrowItemIds.includes(reward.inventoryItemId))) return { career, applied: false };
   const consumptionId = `plant:${reward.id}:${reward.consumption.length}:${args.x}:${args.y}`;
   const remainingQuantity = reward.remainingQuantity - 1;
   const next = {
@@ -62,7 +62,8 @@ export const applyPlantRewardPlacement: PlantRewardPlacementResolver = (career, 
 
 export function hasPlantRewardPlacement(career: PlayerProCareer, speciesId: PlantId, biome: LandTheme): boolean {
   return career.rewardEntitlements.entitlements.some((entry) => entry.kind === "plant-stock" && entry.status === "active"
-    && entry.remainingQuantity > 0 && entry.speciesId === speciesId && entry.biome === biome);
+    && entry.remainingQuantity > 0 && entry.speciesId === speciesId && entry.biome === biome
+    && (!entry.inventoryItemId || !career.inventory.escrowItemIds.includes(entry.inventoryItemId)));
 }
 
 globalThis.__ccRP = { apply: applyPlantRewardPlacement, eligible: hasPlantRewardPlacement };

@@ -196,6 +196,10 @@ export function eligiblePlantStockReward(rewards: RewardEntitlementState | undef
     && entry.remainingQuantity > 0 && entry.speciesId === speciesId && entry.biome === biome);
 }
 
+function entitlementItemIsEscrowed(assets: RewardCareerAssets, entitlement: RewardEntitlement | undefined): boolean {
+  return Boolean(entitlement?.inventoryItemId && assets.inventory.escrowItemIds.includes(entitlement.inventoryItemId));
+}
+
 /** Waives installation only. The placed plant remains an ordinary player planting for care, water, seasonality, removal, and salvage. */
 export function consumePlantStock(args: {
   assets: RewardCareerAssets;
@@ -209,7 +213,7 @@ export function consumePlantStock(args: {
 }): RewardMutationResult {
   const entitlement = args.assets.rewards.entitlements.find((entry) => entry.id === args.entitlementId);
   if (!entitlement || entitlement.kind !== "plant-stock" || entitlement.status !== "active" || entitlement.remainingQuantity < 1
-    || entitlement.speciesId !== args.speciesId || entitlement.biome !== args.biome) {
+    || entitlement.speciesId !== args.speciesId || entitlement.biome !== args.biome || entitlementItemIsEscrowed(args.assets, entitlement)) {
     return { ...args.assets, ok: false, reason: "Eligible plant stock is unavailable." };
   }
   if (entitlement.consumption.some((entry) => entry.id === args.consumptionId)) return { ...args.assets, ok: true, entitlement, appliedValue: 0 };
@@ -244,7 +248,8 @@ export function consumeServiceCredit(args: {
   charge: number;
 }): RewardMutationResult {
   const entitlement = args.assets.rewards.entitlements.find((entry) => entry.id === args.entitlementId);
-  if (!entitlement || entitlement.kind !== "service-credit" || entitlement.status !== "active" || entitlement.serviceScope !== args.scope) {
+  if (!entitlement || entitlement.kind !== "service-credit" || entitlement.status !== "active" || entitlement.serviceScope !== args.scope
+    || entitlementItemIsEscrowed(args.assets, entitlement)) {
     return { ...args.assets, ok: false, reason: "Matching finite service credit is unavailable." };
   }
   if (entitlement.consumption.some((entry) => entry.id === args.consumptionId)) return { ...args.assets, ok: true, entitlement, appliedValue: 0 };
@@ -279,7 +284,7 @@ export function transferRewardEntitlement(args: {
   day: number;
 }): RewardMutationResult {
   const entitlement = args.assets.rewards.entitlements.find((entry) => entry.id === args.entitlementId);
-  if (!entitlement) return { ...args.assets, ok: false, reason: "Active reward entitlement is unavailable." };
+  if (!entitlement || entitlementItemIsEscrowed(args.assets, entitlement)) return { ...args.assets, ok: false, reason: "Active reward entitlement is unavailable." };
   if (entitlement.consumption.some((entry) => entry.id === args.transferId)) return { ...args.assets, ok: true, entitlement };
   if (entitlement.status !== "active") return { ...args.assets, ok: false, reason: "Active reward entitlement is unavailable." };
   if (entitlement.transferability !== "transferable") return { ...args.assets, ok: false, reason: "Reward entitlement is non-transferable." };
