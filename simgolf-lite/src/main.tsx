@@ -5,11 +5,10 @@ import App from './App.tsx'
 import { AudioProvider } from './audio/AudioProvider'
 import { AppErrorBoundary } from './ui/AppErrorBoundary'
 import { I18nProvider } from './i18n/I18nProvider'
-import { initializeMonitoring, reportAppError } from './monitoring'
+import { reportAppError } from './monitoring'
 import { installGlobalBugCapture } from './bug-reporting/diagnostics'
 import { BugReportLauncher } from './ui/BugReportDialog'
 
-initializeMonitoring()
 installGlobalBugCapture()
 
 if (new URLSearchParams(window.location.search).get("fixture") === "zk681-analysis-worker") {

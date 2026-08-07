@@ -2,9 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   cloudflareBeaconConfiguration,
   monitoringHasSentryDsn,
-  resolveSentryEnvironment,
-  sanitizeSentryEvent,
-} from "./monitoring";
+} from "./monitoringRuntime";
+import { resolveSentryEnvironment, sanitizeSentryEvent } from "./sentryPrivacy";
 
 describe("monitoring privacy", () => {
   it("only defers the Sentry SDK for production builds with a nonblank DSN", () => {

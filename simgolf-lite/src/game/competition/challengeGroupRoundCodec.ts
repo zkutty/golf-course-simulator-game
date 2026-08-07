@@ -19,6 +19,9 @@ const INDIVIDUAL_FORMATS = ["gross-stroke", "net-stroke", "gross-match", "net-ma
 const isNassauFormat = (format: ChallengeGroupScoringMode) => format === "gross-match" || format === "net-match";
 const INVALID_GOLFER = groupError("golfer evidence is invalid.");
 const INVALID_SAVE = groupError("save is invalid.");
+const finite = Number.isFinite;
+const integer = Number.isInteger;
+const json = JSON.stringify;
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -33,7 +36,7 @@ function deepFreeze<T>(value: T): T {
 function point(value: unknown): value is PlayerProPoint {
   if (!value || typeof value !== "object") return false;
   const candidate = value as PlayerProPoint;
-  return Number.isFinite(candidate.x) && Number.isFinite(candidate.y);
+  return finite(candidate.x) && finite(candidate.y);
 }
 
 function competitionHoles(course: Pick<PlayerRoundCourseSnapshot, "holes">) {
@@ -41,7 +44,7 @@ function competitionHoles(course: Pick<PlayerRoundCourseSnapshot, "holes">) {
 }
 
 function validRating(rating: PlayerRoundCourseSnapshot["rating"]): boolean {
-  return !!rating && Number.isFinite(rating.courseRating) && Number.isFinite(rating.slope) && rating.slope > 0;
+  return !!rating && finite(rating.courseRating) && finite(rating.slope) && rating.slope > 0;
 }
 
 function participantSetup(source: Pick<ChallengeGroupRound, "course" | "teeSet" | "pinRotation">): ChallengeParticipantSetupSnapshot {
@@ -64,20 +67,20 @@ function unroundedHandicap(handicapIndex: number, course: Pick<PlayerRoundCourse
 }
 
 function validateShot(shot: PlayerShotTrace): boolean {
-  return typeof shot.id === "string" && typeof shot.holeId === "string" && Number.isInteger(shot.shotNumber)
-    && point(shot.from) && point(shot.aim) && point(shot.rest) && Number.isFinite(shot.seed)
-    && Number.isInteger(shot.penaltyStrokes) && shot.penaltyStrokes >= 0
+  return typeof shot.id === "string" && typeof shot.holeId === "string" && integer(shot.shotNumber)
+    && point(shot.from) && point(shot.aim) && point(shot.rest) && finite(shot.seed)
+    && integer(shot.penaltyStrokes) && shot.penaltyStrokes >= 0
     && (!shot.sharedOutcome || isValidSharedShotOutcome(shot.sharedOutcome));
 }
 
 function validSideBet(sideBet: ChallengeSideBetState): boolean {
   return typeof sideBet.id === "string" && sideBet.id.length > 0
     && SIDE_BET_KINDS.includes(sideBet.kind)
-    && Number.isFinite(sideBet.stake) && sideBet.stake >= 0
-    && Number.isFinite(sideBet.carry) && sideBet.carry >= 0
+    && finite(sideBet.stake) && sideBet.stake >= 0
+    && finite(sideBet.carry) && sideBet.carry >= 0
     && ["pending", "active", "complete", "refunded"].includes(sideBet.status)
     && Array.isArray(sideBet.settlements) && Array.isArray(sideBet.evidence)
-    && sideBet.evidence.every((entry) => typeof entry.holeId === "string" && typeof entry.playerId === "string" && Number.isFinite(entry.measurement) && typeof entry.eligible === "boolean");
+    && sideBet.evidence.every((entry) => typeof entry.holeId === "string" && typeof entry.playerId === "string" && finite(entry.measurement) && typeof entry.eligible === "boolean");
 }
 
 export function validateChallengeGroupRound(round: ChallengeGroupRound): string | null {
@@ -97,13 +100,13 @@ export function validateChallengeGroupRound(round: ChallengeGroupRound): string 
   const holeIds = new Set(route.map((hole) => hole.id));
   if (course.tiles.length !== course.width * course.height || course.elevations.length !== course.tiles.length) return INVALID_SAVE;
   if (round.rulesSnapshot && !decodeControlledRoundSnapshotV2(round.rulesSnapshot).ok) return INVALID_SAVE;
-  if (!Number.isInteger(round.currentHoleIndex) || round.currentHoleIndex < 0 || round.currentHoleIndex >= route.length) return INVALID_SAVE;
+  if (!integer(round.currentHoleIndex) || round.currentHoleIndex < 0 || round.currentHoleIndex >= route.length) return INVALID_SAVE;
   if (new Set(round.honorsOrder).size !== golfers.length || round.honorsOrder.some((id) => !golferIds.has(id))) return INVALID_SAVE;
   if (round.phase === "complete" ? round.activeGolferId !== null : !round.activeGolferId || !golferIds.has(round.activeGolferId)) return INVALID_SAVE;
   if (round.phase === "awaiting_player" && round.activeGolferId !== round.playerGolferId) return INVALID_SAVE;
   if (golfers.some(({ setup }) => !setup || !["forward", "member", "championship"].includes(setup.teeSet)
     || !["A", "B", "C"].includes(setup.pinRotation) || setup.holes.length !== route.length
-    || setup.holes.some((hole, index) => hole.id !== route[index].id || !Number.isInteger(hole.par) || hole.par < 1 || !point(hole.tee) || !point(hole.pin))
+    || setup.holes.some((hole, index) => hole.id !== route[index].id || !integer(hole.par) || hole.par < 1 || !point(hole.tee) || !point(hole.pin))
     || !validRating(setup.rating))) return INVALID_GOLFER;
   const teamAuthority = round.teamAuthority;
   const individualAuthority = round.individualAuthority;
@@ -124,11 +127,11 @@ export function validateChallengeGroupRound(round: ChallengeGroupRound): string 
       : allowanceField[golferIndex].playingHandicap);
     const expectedStrokes = strokesByHole(handicap.playingHandicap, holes);
     return !point(golfer.ball)
-    || !Object.values(golfer.skills).every((skill) => Number.isFinite(skill) && skill >= 0 && skill <= 100)
-    || !Number.isFinite(handicap.handicapIndex)
+    || !Object.values(golfer.skills).every((skill) => finite(skill) && skill >= 0 && skill <= 100)
+    || !finite(handicap.handicapIndex)
     || handicap.courseHandicap !== expectedCourseHandicap
-    || !Number.isFinite(handicap.allowance) || handicap.allowance < 0
-    || !Number.isInteger(handicap.playingHandicap)
+    || !finite(handicap.allowance) || handicap.allowance < 0
+    || !integer(handicap.playingHandicap)
     || handicap.playingHandicap !== expectedPlaying
     || handicap.strokesByHole.length !== setup.holes.length
     || golfer.scorecard.length !== setup.holes.length
@@ -137,16 +140,16 @@ export function validateChallengeGroupRound(round: ChallengeGroupRound): string 
       || score.strokeIndex !== (setup.holes[index].strokeIndex ?? index + 1)
       || handicap.strokesByHole[index] !== expectedStrokes[index]
       || score.handicapStrokes !== handicap.strokesByHole[index]
-      || !Number.isInteger(score.strokes) || score.strokes < 0
-      || !Number.isInteger(score.penalties) || score.penalties < 0
+      || !integer(score.strokes) || score.strokes < 0
+      || !integer(score.penalties) || score.penalties < 0
       || (score.gross != null && score.gross !== score.strokes + score.penalties)
       || (score.net != null && score.net !== score.gross! - score.handicapStrokes))
-    || golfer.equipment.modifiers.some((modifier) => !Number.isFinite(modifier.multiplier) || modifier.multiplier <= 0)
+    || golfer.equipment.modifiers.some((modifier) => !finite(modifier.multiplier) || modifier.multiplier <= 0)
     || golfer.shots.some((shot) => !validateShot(shot));
   })) return INVALID_GOLFER;
   const turns = round.turnEvidence;
   if (turns.length > MAX_GROUP_SHOTS || turns.some((turn, index) => turn.turn !== index + 1 || !golferIds.has(turn.golferId) || !point(turn.from) || !point(turn.rest))) return INVALID_SAVE;
-  if (!Number.isInteger(round.rngCursor) || round.rngCursor !== turns.length) return INVALID_SAVE;
+  if (!integer(round.rngCursor) || round.rngCursor !== turns.length) return INVALID_SAVE;
   const shotIds = golfers.flatMap((golfer) => golfer.shots.map((shot) => shot.id));
   if (new Set(shotIds).size !== shotIds.length) return INVALID_SAVE;
   if (turns.some((turn) => !shotIds.includes(turn.shotId))) return groupError("turn evidence references a missing shot.");
@@ -157,12 +160,12 @@ export function validateChallengeGroupRound(round: ChallengeGroupRound): string 
     const contestIds = new Set(authority.contests.map((contest) => contest.id));
     if (teamAuthority || authority.version !== 1 || !INDIVIDUAL_FORMATS.includes(authority.format)
       || authority.handicapSnapshots.length !== golfers.length
-      || authority.handicapSnapshots.some((snapshot, index) => snapshot.playerId !== golfers[index].id || snapshot.playingHandicap !== golfers[index].handicap.playingHandicap || JSON.stringify(snapshot.strokesByHole) !== JSON.stringify(golfers[index].handicap.strokesByHole))) return INVALID_SAVE;
+      || authority.handicapSnapshots.some((snapshot, index) => snapshot.playerId !== golfers[index].id || snapshot.playingHandicap !== golfers[index].handicap.playingHandicap || json(snapshot.strokesByHole) !== json(golfers[index].handicap.strokesByHole))) return INVALID_SAVE;
     if (contestIds.size !== authority.contests.length
       || authority.contests.some((contest) => !contest.id || !SIDE_BET_KINDS.includes(contest.kind) || contest.holeIds?.some((id) => !holeIds.has(id)))) return INVALID_SAVE;
     if (authority.contests.some((contest) => contest.kind === "nassau" && (golfers.length !== 2 || route.length !== 18 || contest.holeIds?.length || !isNassauFormat(authority.format)))) return INVALID_SAVE;
-    if (authority.measurements.some((entry, index) => entry.id !== `measurement-${round.id}-${index + 1}` || !contestIds.has(entry.contestId) || !golferIds.has(entry.participantId) || !holeIds.has(entry.holeId) || !point(entry.start) || !point(entry.end) || !Number.isFinite(entry.measurement) || entry.measurement < 0 || typeof entry.eligible !== "boolean" || (entry.eligible && entry.rejectionReason))) return INVALID_SAVE;
-    if (authority.results.some((result) => !contestIds.has(result.contestId) || !["won", "tied", "carried", "not-awarded", "withdrawn"].includes(result.status) || !Number.isInteger(result.carryHoles) || result.carryHoles < 0 || result.winnerIds.some((id) => !golferIds.has(id)))) return INVALID_SAVE;
+    if (authority.measurements.some((entry, index) => entry.id !== `measurement-${round.id}-${index + 1}` || !contestIds.has(entry.contestId) || !golferIds.has(entry.participantId) || !holeIds.has(entry.holeId) || !point(entry.start) || !point(entry.end) || !finite(entry.measurement) || entry.measurement < 0 || typeof entry.eligible !== "boolean" || (entry.eligible && entry.rejectionReason))) return INVALID_SAVE;
+    if (authority.results.some((result) => !contestIds.has(result.contestId) || !["won", "tied", "carried", "not-awarded", "withdrawn"].includes(result.status) || !integer(result.carryHoles) || result.carryHoles < 0 || result.winnerIds.some((id) => !golferIds.has(id)))) return INVALID_SAVE;
   }
   const match = round.match;
   if (!match || !Array.isArray(match.teams) || !Array.isArray(match.holeResults) || !Array.isArray(match.standings)) return INVALID_SAVE;
@@ -176,18 +179,18 @@ export function validateChallengeGroupRound(round: ChallengeGroupRound): string 
         || ball.scorecard.length !== route.length || ball.candidates.length > 2
         || !authority.teams.find((team) => team.id === ball.teamId)?.playerIds.includes(ball.nextPlayerId)
         || ball.scorecard.some((score, index) => score.holeId !== route[index].id || score.par !== route[index].par
-          || !Number.isInteger(score.strokes) || score.strokes < 0 || !Number.isInteger(score.penalties) || score.penalties < 0
+          || !integer(score.strokes) || score.strokes < 0 || !integer(score.penalties) || score.penalties < 0
           || (score.gross != null && score.gross !== score.strokes + score.penalties)
           || (score.net != null && score.net !== score.gross! - score.handicapStrokes))
         || ball.candidates.some((candidate) => !authority.teams.find((team) => team.id === ball.teamId)?.playerIds.includes(candidate.playerId)
-          || !point(candidate.rest) || !Number.isInteger(candidate.penaltyStrokes) || candidate.penaltyStrokes < 0 || !Number.isInteger(candidate.strokeCost) || candidate.strokeCost < 1))) return INVALID_SAVE;
+          || !point(candidate.rest) || !integer(candidate.penaltyStrokes) || candidate.penaltyStrokes < 0 || !integer(candidate.strokeCost) || candidate.strokeCost < 1))) return INVALID_SAVE;
     const holes = competitionHoles(course);
     const par = holes.reduce((sum, hole) => sum + hole.par, 0);
     const handicapCourse = course.rating
       ? { courseRating: course.rating.courseRating, slopeRating: course.rating.slope, par }
       : { courseRating: par, slopeRating: 113, par };
     const expectedHandicaps = captureTeamHandicapSnapshots(authority.teams, golfers.map((golfer) => ({ id: golfer.id, handicapIndex: golfer.handicap.handicapIndex })), authority.format, authority.scoring, handicapCourse, holes);
-    if (JSON.stringify(expectedHandicaps) !== JSON.stringify(authority.handicaps)
+    if (json(expectedHandicaps) !== json(authority.handicaps)
       || authority.scoring !== (match.scoringMode.endsWith("match") ? "match" : "stroke")) return groupError("frozen team handicaps drifted.");
     if (authority.balls.some((ball) => ball.candidates.some((candidate) => !shotIds.includes(candidate.shotId)))
       || authority.choices.some((choice, index) => choice.sequence !== index + 1
