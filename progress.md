@@ -1,5 +1,13 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-08-08 — ZK-773 viable starting capital complete
+
+- Added pressure-owned fresh-run capital: Friendly $200K, Balanced $100K, and Tight $85K. The initial $70K Tight proposal failed the deterministic Desert nine-hole construction certification ($75,558 before the required correction reserve); $85K is the smallest $5K increment that clears it with $9,442 remaining.
+- New starts and sandbox defaults resolve this authority; sandbox supports up to $500K. Authored scenario overrides and existing save cash remain exact.
+- Certified a real nine-hole route across Parkland, Links, and Desert for all three legacy profiles, including two-wide corridors, clearing, earthwork, open layout, four operating weeks, and correction reserve.
+- Full `test:balance` now passes 81 runs / 8,424 weeks with no normal-path bankruptcies. Updated its canonical and legacy projection baseline hashes to the deliberate post-capital-contract values `499b7056` and `b5a5a183`.
+- Focused capital/migration tests passed 40/40; required browser client created a Classic/Balanced $100K run with no error artifact; the existing New Game browser contract passed. Generated browser artifacts were kept outside this worktree or restored before commit.
+
 ## 2026-08-07 — ZK-683 experience-profile/economic-pressure foundation complete
 
 - Added independent typed `ExperienceProfile` (Relaxed/Classic/Simulation) and `EconomicPressure` (Friendly/Balanced/Tight) axes. One centralized catalog owns descriptions, default pressure, failure policy, visible workspaces, tutorial modules, automation defaults, and every economic multiplier.

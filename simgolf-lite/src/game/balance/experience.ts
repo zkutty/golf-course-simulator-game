@@ -35,8 +35,14 @@ export interface EconomicPressureDefinition {
   key: EconomicPressure;
   label: string;
   description: string;
-  /** New-run starting cash multiplier (explicit sandbox override wins). */
+  /**
+   * @deprecated Historical tuning metadata. New runs must use
+   * `startingCapitalForAxes`; it is deliberately not derived from an ambient
+   * default-world balance.
+   */
   startingCashMult: number;
+  /** Authoritative fresh-run capital for this pressure policy. */
+  startingCapital: number;
   /** Terrain build/salvage + earthworks multiplier, applied at charge time. */
   terrainCostMult: number;
   /** Weekly demand / live tee-sheet volume multiplier. */
@@ -103,6 +109,7 @@ export const EXPERIENCE_PROFILES: Record<ExperienceProfile, ExperienceProfileDef
 
 const IDENTITY: Omit<EconomicPressureDefinition, "key" | "label" | "description"> = {
   startingCashMult: 1,
+  startingCapital: 100_000,
   terrainCostMult: 1,
   demandMult: 1,
   patienceMult: 1,
@@ -121,6 +128,7 @@ export const ECONOMIC_PRESSURES: Record<EconomicPressure, EconomicPressureDefini
     label: "Friendly",
     description: "More forgiving demand, costs, credit, wear, and reputation recovery.",
     startingCashMult: 1.4,
+    startingCapital: 200_000,
     terrainCostMult: 0.85,
     demandMult: 1.12,
     patienceMult: 1.2,
@@ -142,6 +150,10 @@ export const ECONOMIC_PRESSURES: Record<EconomicPressure, EconomicPressureDefini
     label: "Tight",
     description: "Less forgiving demand, costs, credit, wear, and reputation recovery.",
     startingCashMult: 0.7,
+    // Certified by ZK-773's deterministic nine-hole opening fixture. This
+    // keeps Simulation meaningfully tighter without making its first route
+    // depend on a loan or an unrealistic zero-maintenance opening.
+    startingCapital: 85_000,
     terrainCostMult: 1.15,
     demandMult: 0.92,
     patienceMult: 0.85,
@@ -207,6 +219,21 @@ export function getExperienceProfile(profile: ExperienceProfile | undefined): Ex
 
 export function getEconomicPressure(pressure: EconomicPressure | undefined): EconomicPressureDefinition {
   return ECONOMIC_PRESSURES[pressure ?? "balanced"];
+}
+
+/**
+ * Single source of truth for a fresh run's cash. Profile remains economically
+ * inert; the resolved pressure owns financial policy. Keeping the profile in
+ * this API makes callers resolve the two-axis contract before displaying or
+ * creating a run, while authored scenarios may still override cash exactly.
+ */
+export function startingCapitalForAxes(input: {
+  experienceProfile?: ExperienceProfile;
+  economicPressure?: EconomicPressure;
+  difficulty?: Difficulty;
+}): number {
+  const axes = normalizeExperienceAxes(input);
+  return getEconomicPressure(axes.economicPressure).startingCapital;
 }
 
 /** Terrain cost multiplier for the run — the reducer/editor charge scaler. */

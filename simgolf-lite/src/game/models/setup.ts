@@ -37,4 +37,6 @@ export interface GameSetup {
   sandboxOverrides?: SandboxOverrides;
 }
 
-export const SANDBOX_STARTING_CASH = { min: 10_000, max: 100_000, step: 5_000 } as const;
+// A sandbox must be able to reproduce every certified fresh-run amount, then
+// leave ample room for review/property fixtures without an artificial $100K cap.
+export const SANDBOX_STARTING_CASH = { min: 10_000, max: 500_000, step: 5_000 } as const;
