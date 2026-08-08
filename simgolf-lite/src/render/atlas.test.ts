@@ -20,6 +20,7 @@ import {
   loadAtlases,
   loadedBiomeBundle,
   loadedSeasonalOverlay,
+  supersedePendingAtlasLoad,
 } from "./atlas";
 
 const sheet = (name: string) => ({
@@ -250,6 +251,40 @@ describe("incremental biome atlas loading", () => {
       generation: 2,
       requestId: 2,
       latestRequestId: 2,
+    });
+  });
+
+  it("supersedes an in-flight A-to-B request when rendering returns to active A", async () => {
+    await loadAtlases("parkland", "high", "summer");
+    let resolveMedium!: (sheet: { textures: object }) => void;
+    const delayedMedium = new Promise<{ textures: object }>((resolve) => {
+      resolveMedium = resolve;
+    });
+    assetsLoad.mockImplementation(async (url: string) => {
+      if (url.includes("terrain-parkland-medium") && url.endsWith(".json")) return delayedMedium;
+      return url.endsWith(".png") ? { source: { style: {} } } : { textures: {} };
+    });
+
+    const toMedium = loadAtlases("parkland", "medium", "summer");
+    await vi.waitFor(() => {
+      expect(atlasActivationSnapshot().pending).toMatchObject({
+        bundleKey: "parkland:medium",
+        season: "summer",
+      });
+    });
+    expect(supersedePendingAtlasLoad()).toBe(true);
+    expect(atlasActivationSnapshot()).toMatchObject({
+      bundleKey: "parkland:high",
+      generation: 1,
+      pending: null,
+    });
+
+    resolveMedium({ textures: {} });
+    expect(await toMedium).toMatchObject({ status: "superseded", context: null });
+    expect(atlasActivationSnapshot()).toMatchObject({
+      bundleKey: "parkland:high",
+      generation: 1,
+      pending: null,
     });
   });
 

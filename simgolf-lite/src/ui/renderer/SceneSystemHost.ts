@@ -28,13 +28,16 @@ export class SceneSystemHost {
     }
   }
 
-  sync(snapshot: RenderSnapshot): void {
+  sync(snapshot: RenderSnapshot): readonly RenderSceneId[] {
+    const rendered: RenderSceneId[] = [];
     for (const system of this.systems) {
       const revision = snapshot.revisions[system.id];
       if (this.renderedRevisions.get(system.id) === revision) continue;
       system.render(snapshot);
       this.renderedRevisions.set(system.id, revision);
+      rendered.push(system.id);
     }
+    return rendered;
   }
 
   invalidate(scene?: RenderSceneId): void {

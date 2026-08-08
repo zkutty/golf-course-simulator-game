@@ -3062,6 +3062,52 @@ export default function App() {
         }
         setFixtureGraphicsQualityOverride(quality);
       },
+      setRendererThemeFixture: (theme) => {
+        if (!isLandTheme(theme)) throw new Error(`Unsupported renderer theme fixture: ${theme}`);
+        const current = gameSession.getState();
+        const season = seasonalState(current.world, current.course, live.status.dayIndex).calendar.season;
+        const absoluteDay = M53_SEVERE_WEATHER_FIXTURES[theme][season].absoluteDay;
+        const week = Math.floor(absoluteDay / 7) + 1;
+        const day = absoluteDay % 7;
+        dispatch({
+          type: "LOAD_GAME",
+          course: { ...current.course, theme },
+          world: {
+            ...current.world,
+            week,
+            seasonal: createSeasonalState({
+              runSeed: current.world.runSeed,
+              theme,
+              week,
+              day,
+            }),
+          },
+        });
+      },
+      setRendererSeasonFixture: (season) => {
+        if (!(["spring", "summer", "autumn", "winter"] as const).includes(season)) {
+          throw new Error(`Unsupported renderer season fixture: ${season}`);
+        }
+        const current = gameSession.getState();
+        const theme = isLandTheme(current.course.theme) ? current.course.theme : BIOME_KEYS[0];
+        const absoluteDay = M53_SEVERE_WEATHER_FIXTURES[theme][season].absoluteDay;
+        const week = Math.floor(absoluteDay / 7) + 1;
+        const day = absoluteDay % 7;
+        dispatch({
+          type: "LOAD_GAME",
+          course: current.course,
+          world: {
+            ...current.world,
+            week,
+            seasonal: createSeasonalState({
+              runSeed: current.world.runSeed,
+              theme,
+              week,
+              day,
+            }),
+          },
+        });
+      },
       state: () => {
         const current = gameSession.getState();
         const liveSnapshot = live.getSnapshot();

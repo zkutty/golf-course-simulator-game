@@ -36,6 +36,7 @@ import {
   getTerrainFrame,
   golfersAtlasReady,
   loadAtlases,
+  supersedePendingAtlasLoad,
   type AtlasRenderContext,
 } from "../render/atlas";
 import type { TerrainStrokePreview } from "../game/models/terrainStroke";
@@ -964,6 +965,12 @@ function stampedAtlasGeneration(layer: PIXI.Container): number | null {
   return (layer as AtlasStampedContainer).__coursecraftAtlasGeneration ?? null;
 }
 
+interface ActivatedRenderContext {
+  readonly atlas: AtlasRenderContext;
+  readonly seasonalVisualState: SeasonalVisualState | undefined;
+  readonly resolutionScale: number;
+}
+
 /** Fit zoom for a world-tile bbox projected to the iso plane. */
 function fitZoomForTileBounds(
   minX: number,
@@ -1097,24 +1104,39 @@ export function PixiStage(requestedProps: PixiStageProps) {
     theme: getBiomeDefinition(requestedProps.course.theme).key,
     graphicsQuality: requestedProps.graphicsQuality,
     season: requestedProps.season,
+    seasonalVisualState: requestedProps.seasonalVisualState,
   });
-  const [atlasContext, setAtlasContext] = useState<AtlasRenderContext>(() => ({
-    biome: initialRendererConfigRef.current.theme,
-    quality: initialRendererConfigRef.current.graphicsQuality,
-    season: initialRendererConfigRef.current.season ?? null,
-    bundleKey: `${initialRendererConfigRef.current.theme}:${initialRendererConfigRef.current.graphicsQuality}`,
-    overlayKey: null,
-    generation: 0,
-    requestId: 0,
-    status: "activated",
+  const [renderContext, setRenderContext] = useState<ActivatedRenderContext>(() => ({
+    atlas: {
+      biome: initialRendererConfigRef.current.theme,
+      quality: initialRendererConfigRef.current.graphicsQuality,
+      season: initialRendererConfigRef.current.season ?? null,
+      bundleKey: `${initialRendererConfigRef.current.theme}:${initialRendererConfigRef.current.graphicsQuality}`,
+      overlayKey: null,
+      generation: 0,
+      requestId: 0,
+      status: "activated",
+    },
+    seasonalVisualState: initialRendererConfigRef.current.seasonalVisualState,
+    resolutionScale: initialRendererConfigRef.current.resolutionScale,
   }));
+  const atlasContext = renderContext.atlas;
+  const renderedCourse = useMemo<Course>(() => (
+    requestedProps.course.theme === atlasContext.biome
+      ? requestedProps.course
+      : { ...requestedProps.course, theme: atlasContext.biome }
+  ), [atlasContext.biome, requestedProps.course]);
   // All scene effects consume the last completely activated atlas context.
   // Requested adaptive-quality changes stay off-screen while their bundle is
   // loading, so Pixi never combines a new fallback terrain tier with objects
   // and dressing from the previous generation.
   const props: PixiStageProps = {
     ...requestedProps,
+    course: renderedCourse,
     graphicsQuality: atlasContext.quality,
+    season: atlasContext.season ?? undefined,
+    seasonalVisualState: renderContext.seasonalVisualState,
+    resolutionScale: renderContext.resolutionScale,
   };
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
@@ -1434,6 +1456,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   // React renders no longer imply that every extracted layer must rebuild.
   const renderRevisions = renderRevisionTrackerRef.current.update({
     seasonalTerrain: [
+      atlasRevision,
       course.height,
       effectiveTiles,
       course.width,
@@ -1449,6 +1472,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       surfaceHeightAt,
     ],
     surfaceCare: [
+      atlasRevision,
       carePresentationSignature,
       course,
       props.animationsEnabled,
@@ -1949,8 +1973,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
             quality: requestedQuality,
             season: requestedProps.season ?? null,
             bundleKey: `${requestedTheme}:${requestedQuality}`,
+            resolutionScale: requestedProps.resolutionScale,
+            seasonalVisualSignature: seasonalPlantSceneSignature(requestedProps.seasonalVisualState),
           },
-          rendered: { ...atlasContext },
+          rendered: {
+            ...atlasContext,
+            resolutionScale: renderContext.resolutionScale,
+            seasonalVisualSignature: seasonalPlantsSignature,
+          },
           activation: atlasActivationSnapshot(),
           residency: atlasResidencySnapshot(),
           fallbacks: atlasFallbackDiagnostics(),
@@ -1999,6 +2029,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     requestedProps.graphicsQuality,
     requestedProps.resolutionScale,
     requestedProps.season,
+    requestedProps.seasonalVisualState,
+    renderContext.resolutionScale,
+    seasonalPlantsSignature,
     screenToTile,
     worldPointToScreen,
   ]);
@@ -2043,6 +2076,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         initialRendererConfigRef.current.graphicsQuality,
         initialRendererConfigRef.current.season,
       );
+      if (cancelled) {
+        app.destroy(true, { children: true, texture: true });
+        return;
+      }
 
       app.canvas.style.display = "block";
       app.canvas.style.position = "absolute";
@@ -2130,7 +2167,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
       appRef.current = app;
       layersRef.current = { world, surround, terrain, smoothSurfaces, seasonalTerrain, surfaceCare, estateSeam, terrainDecals, surfaceEditor, objects, fx, screenOverlay };
-      if (activation.context) setAtlasContext(activation.context);
+      if (activation.context) {
+        setRenderContext({
+          atlas: activation.context,
+          seasonalVisualState: initialRendererConfigRef.current.seasonalVisualState,
+          resolutionScale: initialRendererConfigRef.current.resolutionScale,
+        });
+      }
       setAppReady(true);
       devLog(`initialized ${width}x${height}`);
     };
@@ -2144,6 +2187,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
     return () => {
       cancelled = true;
+      supersedePendingAtlasLoad();
       setAppReady(false);
       layersRef.current = null;
       chunksRef.current = [];
@@ -2206,21 +2250,54 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
   useEffect(() => {
     if (!appReady) return;
-    const requestedTheme = getBiomeDefinition(course.theme).key;
+    const requestedTheme = getBiomeDefinition(requestedProps.course.theme).key;
     const requestedQuality = requestedProps.graphicsQuality;
     const requestedSeason = requestedProps.season ?? null;
-    if (
+    const requestedBundleKey = `${requestedTheme}:${requestedQuality}`;
+    const identityMatchesRendered = (
       atlasContext.biome === requestedTheme
       && atlasContext.quality === requestedQuality
       && atlasContext.season === requestedSeason
-    ) return;
+    );
+    const activationBefore = atlasActivationSnapshot();
+    if (
+      activationBefore.pending
+      && (
+        activationBefore.pending.bundleKey !== requestedBundleKey
+        || activationBefore.pending.season !== requestedSeason
+      )
+    ) supersedePendingAtlasLoad();
+    const activation = atlasActivationSnapshot();
+    const activeMatchesRendered = (
+      activation.bundleKey === atlasContext.bundleKey
+      && activation.overlayKey === atlasContext.overlayKey
+    );
+    if (identityMatchesRendered && activeMatchesRendered) {
+      setRenderContext((current) => (
+        current.seasonalVisualState === requestedProps.seasonalVisualState
+        && current.resolutionScale === requestedProps.resolutionScale
+          ? current
+          : {
+            ...current,
+            seasonalVisualState: requestedProps.seasonalVisualState,
+            resolutionScale: requestedProps.resolutionScale,
+          }
+      ));
+      return;
+    }
     let cancelled = false;
     void loadAtlases(
       requestedTheme,
       requestedQuality,
       requestedSeason,
     ).then((activation) => {
-      if (!cancelled && activation.context) setAtlasContext(activation.context);
+      if (!cancelled && activation.context) {
+        setRenderContext({
+          atlas: activation.context,
+          seasonalVisualState: requestedProps.seasonalVisualState,
+          resolutionScale: requestedProps.resolutionScale,
+        });
+      }
     });
     return () => {
       cancelled = true;
@@ -2228,11 +2305,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
   }, [
     appReady,
     atlasContext.biome,
+    atlasContext.bundleKey,
+    atlasContext.overlayKey,
     atlasContext.quality,
     atlasContext.season,
-    course.theme,
+    requestedProps.course.theme,
     requestedProps.graphicsQuality,
+    requestedProps.resolutionScale,
     requestedProps.season,
+    requestedProps.seasonalVisualState,
   ]);
 
   // Resize with ResizeObserver
@@ -3707,12 +3788,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
   useEffect(() => {
     if (!appReady) return;
-    sceneSystemHostRef.current?.sync(renderSnapshot);
+    const renderedScenes = sceneSystemHostRef.current?.sync(renderSnapshot) ?? [];
     const layers = layersRef.current;
     if (layers) {
-      stampAtlasGeneration(layers.seasonalTerrain, atlasRevision);
-      stampAtlasGeneration(layers.surfaceCare, atlasRevision);
-      stampAtlasGeneration(layers.objects, atlasRevision);
+      if (renderedScenes.includes("seasonalTerrain")) {
+        stampAtlasGeneration(layers.seasonalTerrain, atlasRevision);
+      }
+      if (renderedScenes.includes("surfaceCare")) {
+        stampAtlasGeneration(layers.surfaceCare, atlasRevision);
+      }
+      if (renderedScenes.includes("structuresProps")) {
+        stampAtlasGeneration(layers.objects, atlasRevision);
+      }
     }
   }, [appReady, atlasRevision, renderSnapshot]);
 

@@ -6,6 +6,26 @@ const PRIMARY_BIOMES = ["parkland", "links", "desert"] as const;
 const QUALITY_REVERSAL = ["medium", "low", "high"] as const;
 const ZOOM_THRESHOLDS = [0.33, 0.35, 0.71, 0.73] as const;
 
+interface BrowserAtlasFile {
+  readonly json: string;
+  readonly image: string;
+}
+
+interface BrowserAtlasTier {
+  readonly base: {
+    readonly buildings: BrowserAtlasFile;
+    readonly terrain: BrowserAtlasFile;
+    readonly details: BrowserAtlasFile;
+    readonly props: BrowserAtlasFile;
+    readonly fields: Record<string, { readonly image: string }>;
+  };
+  seasonal: Record<string, unknown>;
+}
+
+interface BrowserAtlasManifest {
+  readonly biomes: Record<string, Record<string, BrowserAtlasTier>>;
+}
+
 function flatBlockRatio(body: Buffer): number {
   const png = PNG.sync.read(body);
   const blockWidth = 12;
@@ -46,20 +66,28 @@ async function expectAtomicGeneration(page: Page, quality: "high" | "medium" | "
       rendered: state.rendered.quality,
       active: state.activation.bundleKey,
       generations: [...new Set(Object.values(state.layers))],
+      stampsMatch: Object.values(state.layers).every((generation) => generation === state.rendered.generation),
       terrainChunks: state.counts?.terrainChunks ?? 0,
       connectedSurfaces: state.counts?.connectedSurfaces ?? -1,
+      structuresAndProps: state.counts?.structuresAndProps ?? 0,
+      dressing: state.counts?.dressing ?? 0,
     };
   }, { timeout: 120_000 }).toMatchObject({
     requested: quality,
     rendered: quality,
     active: expect.stringMatching(new RegExp(`:${quality}$`)),
     generations: [expect.any(Number)],
+    stampsMatch: true,
     terrainChunks: expect.any(Number),
     connectedSurfaces: quality === "low" ? 0 : expect.any(Number),
+    structuresAndProps: expect.any(Number),
+    dressing: quality === "low" ? 0 : expect.any(Number),
   });
   const state = await rendererState(page);
   expect(state?.counts?.terrainChunks).toBeGreaterThan(0);
   if (quality !== "low") expect(state?.counts?.connectedSurfaces).toBeGreaterThan(0);
+  expect(state?.counts?.structuresAndProps).toBeGreaterThan(0);
+  if (quality !== "low") expect(state?.counts?.dressing).toBeGreaterThan(0);
   expect(state?.fallbacks).toEqual([]);
 }
 
@@ -97,8 +125,24 @@ for (const theme of PRIMARY_BIOMES) {
     // Make the previously unsafe partial-generation window deterministic.
     // The live scene must retain the complete prior generation while the new
     // tier's independently requested sheets and fields are still in flight.
-    await page.route(/atlases\/biomes\/.*-(?:medium|low)\./, async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 280));
+    await page.route(/atlases\/biomes\/manifest\.json/, async (route) => {
+      const response = await route.fetch();
+      const manifest = await response.json() as BrowserAtlasManifest;
+      const tier = manifest.biomes.parkland.high;
+      tier.seasonal.autumn = {
+        owner: "parkland",
+        season: "autumn",
+        materials: { fairway: tier.base.fields.fairway },
+        frames: {
+          buildings: tier.base.buildings,
+          "natural-props": tier.base.props,
+          "terrain-details": tier.base.details,
+        },
+      };
+      await route.fulfill({ response, json: manifest });
+    });
+    await page.route(/atlases\/biomes\/.*-(?:(?:medium|low)|links-high)\./, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
       await route.continue();
     });
 
@@ -122,13 +166,20 @@ for (const theme of PRIMARY_BIOMES) {
     await expect(canvas).toBeVisible({ timeout: 120_000 });
     await expectAtomicGeneration(page, "high");
 
-    // While Medium is deliberately delayed, requested and rendered tiers may
-    // differ, but every visible layer must remain on the rendered generation.
+    // A→B→A must invalidate B even if its assets finish well after the view
+    // has returned to A. The active global atlas may not drift behind React.
     await page.evaluate(() => window.__coursecraftTest!.setGraphicsQualityFixture("medium"));
-    await expect.poll(async () => (await rendererState(page))?.requested.quality).toBe("medium");
+    await expect.poll(async () => (await rendererState(page))?.requested.quality, { timeout: 120_000 }).toBe("medium");
     const pending = await rendererState(page);
     expect(pending?.rendered.quality).toBe("high");
     expect(new Set(Object.values(pending?.layers ?? {}))).toEqual(new Set([pending?.rendered.generation]));
+    await page.evaluate(() => window.__coursecraftTest!.setGraphicsQualityFixture("high"));
+    await expect.poll(async () => (await rendererState(page))?.activation.pending, { timeout: 120_000 }).toBeNull();
+    await page.waitForTimeout(1_800);
+    await expectAtomicGeneration(page, "high");
+
+    // The same now-resident B tier can activate as one complete generation.
+    await page.evaluate(() => window.__coursecraftTest!.setGraphicsQualityFixture("medium"));
     await expectAtomicGeneration(page, "medium");
 
     // Supersede two in-flight requests and finish on Low. An older completion
@@ -157,6 +208,56 @@ for (const theme of PRIMARY_BIOMES) {
       await page.evaluate((value) => window.__coursecraftTest!.setGraphicsQualityFixture(value), quality);
       await expectAtomicGeneration(page, quality);
       await captureMaterialEvidence(page, testInfo, theme, quality);
+    }
+
+    if (theme === "parkland") {
+      // Theme requests are held exactly like tiers. First prove a canceled
+      // Parkland→Links→Parkland request cannot activate late, then allow the
+      // same resident Links bundle to commit in place and return.
+      await page.evaluate(() => window.__coursecraftTest!.setRendererThemeFixture("links"));
+      await expect.poll(async () => (await rendererState(page))?.requested.biome, { timeout: 120_000 }).toBe("links");
+      expect((await rendererState(page))?.rendered.biome).toBe("parkland");
+      await page.evaluate(() => window.__coursecraftTest!.setRendererThemeFixture("parkland"));
+      await page.waitForTimeout(1_800);
+      await expect.poll(async () => {
+        const state = await rendererState(page);
+        return {
+          requested: state?.requested.biome,
+          rendered: state?.rendered.biome,
+          active: state?.activation.bundleKey,
+          pending: state?.activation.pending,
+          stampsMatch: state?.layers
+            ? Object.values(state.layers).every((generation) => generation === state.rendered.generation)
+            : false,
+        };
+      }, { timeout: 120_000 }).toEqual({ requested: "parkland", rendered: "parkland", active: "parkland:high", pending: null, stampsMatch: true });
+
+      await page.evaluate(() => window.__coursecraftTest!.setRendererThemeFixture("links"));
+      await expect.poll(async () => (await rendererState(page))?.rendered.biome, { timeout: 120_000 }).toBe("links");
+      await page.evaluate(() => window.__coursecraftTest!.setRendererThemeFixture("parkland"));
+      await expect.poll(async () => (await rendererState(page))?.rendered.biome, { timeout: 120_000 }).toBe("parkland");
+
+      // The browser manifest injects an actual authored autumn overlay route
+      // so this proves season and presentation commit with the overlay key.
+      await page.evaluate(() => window.__coursecraftTest!.setRendererSeasonFixture("autumn"));
+      await expect.poll(async () => {
+        const state = await rendererState(page);
+        return {
+          requested: state?.requested.season,
+          rendered: state?.rendered.season,
+          overlay: state?.rendered.overlayKey,
+          stampsMatch: state?.layers
+            ? Object.values(state.layers).every((generation) => generation === state.rendered.generation)
+            : false,
+        };
+      }, { timeout: 120_000 }).toEqual({
+        requested: "autumn",
+        rendered: "autumn",
+        overlay: "parkland:high:autumn",
+        stampsMatch: true,
+      });
+      await page.evaluate(() => window.__coursecraftTest!.setRendererSeasonFixture("summer"));
+      await expect.poll(async () => (await rendererState(page))?.rendered.season, { timeout: 120_000 }).toBe("summer");
     }
 
     expect(failedAssets).toEqual([]);

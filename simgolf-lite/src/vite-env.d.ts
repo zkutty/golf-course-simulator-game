@@ -42,8 +42,13 @@ interface Window {
         quality: "high" | "medium" | "low";
         season: import("./game/seasons/types").SeasonName | null;
         bundleKey: string;
+        resolutionScale: number;
+        seasonalVisualSignature: string;
       };
-      rendered: import("./render/atlas").AtlasRenderContext;
+      rendered: import("./render/atlas").AtlasRenderContext & {
+        resolutionScale: number;
+        seasonalVisualSignature: string;
+      };
       activation: import("./render/atlas").AtlasActivationSnapshot;
       residency: import("./render/atlas").AtlasResidencySnapshot;
       fallbacks: readonly import("./render/atlas").AtlasFallbackDiagnostic[];
@@ -60,6 +65,8 @@ interface Window {
   };
   __coursecraftTest?: {
     setGraphicsQualityFixture(quality: "high" | "medium" | "low"): void;
+    setRendererThemeFixture(theme: import("./game/models/types").LandTheme): void;
+    setRendererSeasonFixture(season: import("./game/seasons/types").SeasonName): void;
     state(): {
       screen: string;
       screenBase: "title" | "setup-wizard" | "loading" | "in-game";

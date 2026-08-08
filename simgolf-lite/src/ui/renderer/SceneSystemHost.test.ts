@@ -68,17 +68,17 @@ describe("SceneSystemHost", () => {
       { id: "surfaceCare", render: careRender },
     ]);
 
-    host.sync(snapshot(1, 1));
-    host.sync(snapshot(1, 1));
+    expect(host.sync(snapshot(1, 1))).toEqual(["seasonalTerrain", "surfaceCare"]);
+    expect(host.sync(snapshot(1, 1))).toEqual([]);
     expect(seasonalRender).toHaveBeenCalledTimes(1);
     expect(careRender).toHaveBeenCalledTimes(1);
 
-    host.sync(snapshot(2, 1));
+    expect(host.sync(snapshot(2, 1))).toEqual(["seasonalTerrain"]);
     expect(seasonalRender).toHaveBeenCalledTimes(2);
     expect(careRender).toHaveBeenCalledTimes(1);
 
     host.invalidate("surfaceCare");
-    host.sync(snapshot(2, 1));
+    expect(host.sync(snapshot(2, 1))).toEqual(["surfaceCare"]);
     expect(seasonalRender).toHaveBeenCalledTimes(2);
     expect(careRender).toHaveBeenCalledTimes(2);
   });

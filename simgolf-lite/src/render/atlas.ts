@@ -65,6 +65,11 @@ let activeOverlayKey: string | null = null;
 let activeLoadRequest = 0;
 let activeActivationRequest = 0;
 let activeGeneration = 0;
+let pendingLoadRequest: {
+  readonly requestId: number;
+  readonly bundleKey: string;
+  readonly season: SeasonName | null;
+} | null = null;
 let legacyLoadAttempted = false;
 const warned = new Set<string>();
 export interface AtlasFallbackDiagnostic {
@@ -102,6 +107,11 @@ export interface AtlasActivationSnapshot {
   readonly generation: number;
   readonly bundleKey: string | null;
   readonly overlayKey: string | null;
+  readonly pending: {
+    readonly requestId: number;
+    readonly bundleKey: string;
+    readonly season: SeasonName | null;
+  } | null;
 }
 
 /** Exact active generation consumed by the live renderer and browser evidence. */
@@ -112,7 +122,20 @@ export function atlasActivationSnapshot(): AtlasActivationSnapshot {
     generation: activeGeneration,
     bundleKey: activeBundleKey,
     overlayKey: activeOverlayKey,
+    pending: pendingLoadRequest ? { ...pendingLoadRequest } : null,
   };
+}
+
+/**
+ * Invalidates the current in-flight request without changing the active
+ * generation. Used when adaptive rendering returns to the already presented
+ * context before a distinct requested tier/theme/season finishes loading.
+ */
+export function supersedePendingAtlasLoad(): boolean {
+  if (!pendingLoadRequest) return false;
+  activeLoadRequest++;
+  pendingLoadRequest = null;
+  return true;
 }
 
 function recordFallback(diagnostic: AtlasFallbackDiagnostic): void {
@@ -243,11 +266,14 @@ export async function loadAtlases(
 ): Promise<AtlasLoadResult> {
   const requestId = ++activeLoadRequest;
   const bundleKey = `${theme}:${quality}`;
-  const superseded = (): AtlasLoadResult => ({
-    status: "superseded",
-    requestId,
-    context: null,
-  });
+  pendingLoadRequest = { requestId, bundleKey, season: season ?? null };
+  const completePending = () => {
+    if (pendingLoadRequest?.requestId === requestId) pendingLoadRequest = null;
+  };
+  const superseded = (): AtlasLoadResult => {
+    completePending();
+    return { status: "superseded", requestId, context: null };
+  };
   try {
     const manifest = await loadManifest();
     await loadCore(manifest);
@@ -346,6 +372,7 @@ export async function loadAtlases(
     activeBundleKey = key;
     activeOverlayKey = nextOverlayKey;
     activeActivationRequest = requestId;
+    completePending();
     const context: AtlasRenderContext = {
       biome: theme,
       quality,
@@ -374,6 +401,7 @@ export async function loadAtlases(
     activeBundleKey = null;
     activeOverlayKey = null;
     activeActivationRequest = requestId;
+    completePending();
     const context: AtlasRenderContext = {
       biome: theme,
       quality,
@@ -592,6 +620,7 @@ export function __resetAtlasForTests(): void {
   activeLoadRequest = 0;
   activeActivationRequest = 0;
   activeGeneration = 0;
+  pendingLoadRequest = null;
   legacyLoadAttempted = false;
   warned.clear();
   fallbackDiagnostics.length = 0;
