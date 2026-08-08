@@ -3,7 +3,6 @@ import { createNewGame } from "./newGame";
 import { generateNewGameLandscape, generateWildLandWithObstacles } from "./generateWildLand";
 import type { GameSetup } from "../models/setup";
 import { CHALLENGE_GOALS } from "../objectives/goals";
-import { DEFAULT_WORLD } from "../models/defaults";
 import { COURSE_HEIGHT, COURSE_WIDTH, STARTER_PARCEL_HEIGHT, STARTER_PARCEL_WIDTH } from "../models/constants";
 import { isOwnedTile, starterParcelOffset } from "../estate/estate";
 
@@ -179,7 +178,7 @@ describe("createNewGame (ZKU-162)", () => {
     );
     expect(sandbox.world.cash).toBe(80_000);
     const challenge = createNewGame(setup({ sandboxOverrides: { startingCash: 80_000 } }));
-    expect(challenge.world.cash).toBe(DEFAULT_WORLD.cash);
+    expect(challenge.world.cash).toBe(100_000);
   });
 
   it("blank course name falls back to the default", () => {

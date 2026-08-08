@@ -6,7 +6,7 @@ import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../models/constants";
 import { findClubhouseSpot } from "../models/buildings";
 import { CHALLENGE_GOALS } from "../objectives/goals";
-import { getEconomicPressure, normalizeExperienceAxes } from "../balance/experience";
+import { normalizeExperienceAxes, startingCapitalForAxes } from "../balance/experience";
 import { generateNewGameLandscape } from "./generateWildLand";
 import { createEstate } from "../estate/estate";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
@@ -93,12 +93,13 @@ export function createNewGame(
     goals !== undefined ? goals : setup.mode === "challenge" ? CHALLENGE_GOALS : null;
   const experience = normalizeExperienceAxes(setup);
 
-  // Explicit sandbox override wins; otherwise economic pressure scales the
-  // default. Balanced is the exact historical Normal identity.
+  // Explicit sandbox override wins; otherwise the resolved pressure owns the
+  // fresh-run amount. This is intentionally not derived from DEFAULT_WORLD:
+  // blank-state defaults must never silently retune a new run.
   const startingCash =
     setup.mode === "sandbox" && setup.sandboxOverrides?.startingCash != null
       ? setup.sandboxOverrides.startingCash
-      : Math.round(DEFAULT_WORLD.cash * getEconomicPressure(experience.economicPressure).startingCashMult);
+      : startingCapitalForAxes(experience);
 
   const world: World = {
     ...DEFAULT_WORLD,

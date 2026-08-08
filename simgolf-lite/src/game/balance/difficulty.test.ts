@@ -105,7 +105,7 @@ describe("sim under difficulty", () => {
     expect(visitors("tight")).toBeLessThan(visitors("balanced"));
   });
 
-  it("createNewGame scales starting cash by difficulty (override still wins)", () => {
+  it("createNewGame resolves explicit starting capital by difficulty (override still wins)", () => {
     const base: GameSetup = {
       mode: "challenge",
       courseName: "T",
@@ -113,13 +113,9 @@ describe("sim under difficulty", () => {
       theme: "parkland",
       difficulty: "easy",
     };
-    expect(createNewGame(base).world.cash).toBe(
-      Math.round(DEFAULT_WORLD.cash * DIFFICULTY_PROFILES.easy.startingCashMult)
-    );
-    expect(createNewGame({ ...base, difficulty: "hard" }).world.cash).toBe(
-      Math.round(DEFAULT_WORLD.cash * DIFFICULTY_PROFILES.hard.startingCashMult)
-    );
-    expect(createNewGame({ ...base, difficulty: "normal" }).world.cash).toBe(DEFAULT_WORLD.cash);
+    expect(createNewGame(base).world.cash).toBe(200_000);
+    expect(createNewGame({ ...base, difficulty: "hard" }).world.cash).toBe(85_000);
+    expect(createNewGame({ ...base, difficulty: "normal" }).world.cash).toBe(100_000);
     expect(
       createNewGame({
         ...base,

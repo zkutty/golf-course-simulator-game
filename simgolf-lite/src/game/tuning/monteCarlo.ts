@@ -7,7 +7,7 @@ import { createLoan } from "../sim/loans";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../sim/loanEligibility";
 import { tickWeek } from "../sim/tickWeek";
 import { mulberry32, randInt } from "../../utils/rng";
-import { economicPressureForWorld, getEconomicPressure, getEffectiveBalance } from "../balance/experience";
+import { economicPressureForWorld, getEconomicPressure, getEffectiveBalance, startingCapitalForAxes } from "../balance/experience";
 
 export type Archetype = "Builder" | "Optimizer" | "Chaotic";
 
@@ -207,7 +207,7 @@ export function simulateRun(
   let world: World = {
     ...DEFAULT_WORLD,
     difficulty,
-    cash: Math.round(DEFAULT_WORLD.cash * getDifficultyProfile(difficulty).startingCashMult),
+    cash: startingCapitalForAxes({ difficulty }),
     runSeed: seed,
     isBankrupt: false,
     distressWeeks: 0,
@@ -275,6 +275,5 @@ export function runMonteCarlo(args: {
     },
   };
 }
-
 
 

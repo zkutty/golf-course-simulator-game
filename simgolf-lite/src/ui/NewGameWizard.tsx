@@ -4,7 +4,7 @@ import type { Difficulty, LandTheme, PlayMode, Terrain } from "../game/models/ty
 import type { GameSetup } from "../game/models/setup";
 import type { PlayerProAppearance, PlayerProBackground, PlayerProHandedness } from "../game/models/playerProTypes";
 import { SANDBOX_STARTING_CASH } from "../game/models/setup";
-import { DEFAULT_WORLD } from "../game/models/defaults";
+import { startingCapitalForAxes } from "../game/balance/experience";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { generateNewGameLandscape } from "../game/gen/generateWildLand";
 import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
@@ -203,9 +203,10 @@ export function NewGameWizard(props: {
   const [proAppearance, setProAppearance] = useState<PlayerProAppearance>("classic");
   const [proHandedness, setProHandedness] = useState<PlayerProHandedness>("right");
   const [proBackground, setProBackground] = useState<PlayerProBackground>("architect");
-  const [startingCash, setStartingCash] = useState(DEFAULT_WORLD.cash);
+  const [startingCash, setStartingCash] = useState(() => startingCapitalForAxes({ difficulty: "normal" }));
 
   const seed = candidateSeeds[selectedSeedIdx] ?? candidateSeeds[0];
+  const selectedStartingCapital = startingCapitalForAxes({ difficulty });
   const stepIdx = step === "SCENARIOS" ? 1 : STEPS.indexOf(step);
   const contextualUiTheme = biomeUiTheme(theme);
 
@@ -223,7 +224,7 @@ export function NewGameWizard(props: {
       background: proBackground,
     },
     sandboxOverrides:
-      mode === "sandbox" && startingCash !== DEFAULT_WORLD.cash
+      mode === "sandbox" && startingCash !== selectedStartingCapital
         ? { startingCash }
         : undefined,
   };
@@ -422,21 +423,30 @@ export function NewGameWizard(props: {
                 icon="⛱️"
                 blurb="A relaxed build: more starting room for error, forgiving golfers, friendlier terms."
                 selected={difficulty === "easy"}
-                onSelect={() => setDifficulty("easy")}
+                onSelect={() => {
+                  setDifficulty("easy");
+                  setStartingCash(startingCapitalForAxes({ difficulty: "easy" }));
+                }}
               />
               <ChoiceCard
                 title={translateCurrent("auto.ui.newgamewizard.normal")}
                 icon="⛳"
                 blurb="The intended experience — the tuning the sim was balanced around."
                 selected={difficulty === "normal"}
-                onSelect={() => setDifficulty("normal")}
+                onSelect={() => {
+                  setDifficulty("normal");
+                  setStartingCash(startingCapitalForAxes({ difficulty: "normal" }));
+                }}
               />
               <ChoiceCard
                 title={translateCurrent("auto.ui.newgamewizard.hard")}
                 icon="🌪️"
                 blurb="Tight margins, faster wear, stricter lenders. For seasoned architects."
                 selected={difficulty === "hard"}
-                onSelect={() => setDifficulty("hard")}
+                onSelect={() => {
+                  setDifficulty("hard");
+                  setStartingCash(startingCapitalForAxes({ difficulty: "hard" }));
+                }}
               />
             </div>
           )}
@@ -451,6 +461,11 @@ export function NewGameWizard(props: {
                 background: "rgba(255,255,255,0.9)",
               }}
             >
+              {mode !== "sandbox" && (
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#3d4a3e" }}>
+                  <T id="auto.ui.newgamewizard.starting.cash" />{formatCurrency(selectedStartingCapital)}
+                </div>
+              )}
               <label style={{ fontSize: 13, fontWeight: 700, color: "#3d4a3e" }}>
                 <T id="auto.ui.newgamewizard.course.name" /><div style={{ display: "flex", gap: 8, marginTop: 6 }}>
                   <input

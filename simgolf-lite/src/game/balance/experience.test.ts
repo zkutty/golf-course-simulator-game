@@ -11,6 +11,7 @@ import {
   LEGACY_DIFFICULTY_AXES,
   getEffectiveBalance,
   normalizeExperienceAxes,
+  startingCapitalForAxes,
 } from "./experience";
 import type { Difficulty, EconomicPressure, ExperienceProfile, World } from "../models/types";
 
@@ -53,6 +54,16 @@ describe("ZK-683 independent experience axes", () => {
       repGainMult: 1,
       repLossMult: 1,
     });
+  });
+
+  it("uses explicit new-run capital for legacy pairs and every independent axis combination", () => {
+    expect(startingCapitalForAxes({ difficulty: "easy" })).toBe(200_000);
+    expect(startingCapitalForAxes({ difficulty: "normal" })).toBe(100_000);
+    expect(startingCapitalForAxes({ difficulty: "hard" })).toBe(85_000);
+    // Presentation/complexity does not silently alter the economy. Pressure
+    // is the financial axis even when a caller chooses axes independently.
+    expect(startingCapitalForAxes({ experienceProfile: "simulation", economicPressure: "balanced" })).toBe(100_000);
+    expect(startingCapitalForAxes({ experienceProfile: "relaxed", economicPressure: "tight" })).toBe(85_000);
   });
 
   it("maps every legacy difficulty losslessly and respects explicit independent axes", () => {
@@ -115,6 +126,7 @@ describe("ZK-683 independent experience axes", () => {
     if (!legacy.ok || !current.ok) return;
     expect(legacy.migratedFrom).toBe(28);
     expect(legacy.payload).toEqual(current.payload);
+    expect(legacy.payload.world.cash).toBe(68_300);
   });
 
   it("keeps same-seed actions deterministic and profiles economically inert", () => {
