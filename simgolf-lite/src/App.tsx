@@ -208,8 +208,9 @@ import type { EquipmentLoadout } from "./game/competition/types";
 import type { PlayerChallengeContractDraft } from "./game/playerPro/challengePlayerProAdapter";
 import { decodeControlledRoundSnapshotV2, type ControlledRoundSnapshotV2 } from "./game/rules/roundSnapshot";
 import type { SharedShotOutcome } from "./game/rules/contracts";
-import { buildArchitectureReview, defaultArchitectureFilters, withGreenStrategyHeatmap } from "./game/architecture/review";
+import { buildArchitectureReview, defaultArchitectureFilters, withArchitectureReferencePlans, withGreenStrategyHeatmap } from "./game/architecture/review";
 import type { GreenStrategyHeatmap } from "./game/architecture/greenStrategyHeatmap";
+import type { ArchitectureReferencePlan } from "./game/architecture/referencePlan";
 import { compareM48DesignTest, refreshM48DesignTestSession } from "./game/architecture/comparison";
 import { strategicGeometryVersion } from "./game/architecture/strategic";
 import {
@@ -785,9 +786,13 @@ export default function App() {
     [architectureFilters, course, world],
   );
   const [architectureGreenStrategy, setArchitectureGreenStrategy] = useState<GreenStrategyHeatmap | null>(null);
+  const [architectureReferencePlans, setArchitectureReferencePlans] = useState<ArchitectureReferencePlan[] | null>(null);
   const architectureReview = useMemo(
-    () => withGreenStrategyHeatmap(architectureReviewBase, architectureGreenStrategy),
-    [architectureGreenStrategy, architectureReviewBase],
+    () => withArchitectureReferencePlans(
+      withGreenStrategyHeatmap(architectureReviewBase, architectureGreenStrategy),
+      architectureReferencePlans,
+    ),
+    [architectureGreenStrategy, architectureReferencePlans, architectureReviewBase],
   );
   useEffect(() => {
     let canceled = false;
@@ -809,6 +814,25 @@ export default function App() {
     });
     return () => { canceled = true; };
   }, [architectureFilters, architectureReviewBase.currentGeometryVersion, architectureReviewBase.evidence, course]);
+  useEffect(() => {
+    let canceled = false;
+    if (architectureFilters.kind !== "reference") {
+      setArchitectureReferencePlans(null);
+      return () => { canceled = true; };
+    }
+    setArchitectureReferencePlans(null);
+    void import("./game/architecture/referencePlan").then((module) => {
+      const selected = courseForLayout(course, architectureFilters.courseId);
+      const teeSet = architectureFilters.teeSet === "all" ? "member" : architectureFilters.teeSet;
+      const pinRotation = architectureFilters.pinRotation === "all" ? "A" : architectureFilters.pinRotation;
+      const plans = module.architectureReferencePlans(selected, teeSet, pinRotation)
+        .filter((plan) => architectureFilters.holeId === "all" || plan.holeId === architectureFilters.holeId);
+      if (!canceled) setArchitectureReferencePlans(plans);
+    }).catch(() => {
+      if (!canceled) setArchitectureReferencePlans([]);
+    });
+    return () => { canceled = true; };
+  }, [architectureFilters, course]);
   useEffect(() => {
     if (normalizeCourseLayouts(course).layouts!.some((layout) => layout.id === architectureFilters.courseId)) return;
     setArchitectureFilters(defaultArchitectureFilters(course));
