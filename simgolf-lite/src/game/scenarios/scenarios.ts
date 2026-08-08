@@ -27,7 +27,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90101,
     theme: "parkland",
     biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
-    difficulty: "easy",
+    experienceProfile: "relaxed",
+    economicPressure: "friendly",
     goals: [
       {
         id: "three-holes",
@@ -51,7 +52,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90202,
     theme: "parkland",
     biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
-    difficulty: "normal",
+    experienceProfile: "classic",
+    economicPressure: "balanced",
     startingCash: 15_000,
     startingReputation: 25,
     fixture: "muni",
@@ -78,7 +80,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90333,
     theme: "parkland",
     biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
-    difficulty: "normal",
+    experienceProfile: "classic",
+    economicPressure: "balanced",
     startingCash: 30_000,
     constraints: { noLoans: true },
     goals: [
@@ -104,7 +107,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90404,
     theme: "links",
     biomeCompatibility: biomeCompatibilityMetadataFor("links"),
-    difficulty: "normal",
+    experienceProfile: "classic",
+    economicPressure: "balanced",
     constraints: { protectedTrees: true },
     goals: [
       {
@@ -129,7 +133,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90505,
     theme: "parkland",
     biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
-    difficulty: "hard",
+    experienceProfile: "simulation",
+    economicPressure: "tight",
     startingCash: 40_000,
     startingReputation: 55,
     fixture: "members",
@@ -157,7 +162,8 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90666,
     theme: "parkland",
     biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
-    difficulty: "hard",
+    experienceProfile: "simulation",
+    economicPressure: "tight",
     goals: [
       {
         id: "full-course",
@@ -201,7 +207,8 @@ export function createScenarioGame(s: ScenarioDefinition): { course: Course; wor
       courseName: s.courseName ?? s.name,
       seed: s.seed,
       theme: s.theme,
-      difficulty: s.difficulty,
+      experienceProfile: s.experienceProfile,
+      economicPressure: s.economicPressure,
     },
     initialGoals
   );

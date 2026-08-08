@@ -66,6 +66,27 @@ describe("live simulation persistence", () => {
     expect(restored!.selectedGolferId).toBe(selectedGolferId);
   });
 
+  it("freezes economic pressure in new snapshots and migrates legacy live difficulty", () => {
+    const course = playableCourse();
+    const state = createLiveState(course, {
+      ...DEFAULT_WORLD,
+      experienceProfile: "simulation",
+      economicPressure: "friendly",
+    }, 2);
+    const snapshot = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });
+    expect(snapshot.state.economicPressure).toBe("friendly");
+    expect(snapshot.state.difficulty).toBeUndefined();
+
+    const { economicPressure: _pressure, ...legacyState } = snapshot.state;
+    void _pressure;
+    const restored = restoreLiveSimulation({
+      ...snapshot,
+      state: { ...legacyState, difficulty: "hard" },
+    });
+    expect(restored?.state.economicPressure).toBe("tight");
+    expect(restored?.state.difficulty).toBeUndefined();
+  });
+
   it("retains capability-derived handedness and frozen sidehill evidence without new live save state", () => {
     const { state } = midRound();
     const golfer = state.golfers[0];

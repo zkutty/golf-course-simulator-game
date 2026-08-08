@@ -1,4 +1,4 @@
-import type { Course, Difficulty, LandTheme, ScenarioConstraints } from "../models/types";
+import type { Course, Difficulty, EconomicPressure, ExperienceProfile, LandTheme, ScenarioConstraints } from "../models/types";
 import type { GoalDefinition } from "../models/objectives";
 import type { BiomeCompatibilityMetadata } from "../models/biomes";
 import type { HoleTemplateV1 } from "../holeTemplates/types";
@@ -34,7 +34,10 @@ export interface CoursePackageManifestV1 {
 }
 
 export interface ChallengePayloadV1 {
-  difficulty: Difficulty;
+  experienceProfile?: ExperienceProfile;
+  economicPressure?: EconomicPressure;
+  /** @deprecated Imported v1 package compatibility. */
+  difficulty?: Difficulty;
   startingCash?: number;
   goals: GoalDefinition[];
   /** Optional IDs selected from the built-in, safe longevity/template catalog. */

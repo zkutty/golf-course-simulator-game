@@ -218,8 +218,11 @@ function validateChallenge(challenge: unknown, errors: string[]): challenge is C
     errors.push("challenge: payload must be an object");
     return false;
   }
-  unknownKeys(challenge, ["difficulty", "startingCash", "goals", "goalTemplateIds", "constraints", "allowedEventIds", "medalTargets"], "challenge", errors);
-  if (!["easy", "normal", "hard"].includes(challenge.difficulty as string)) errors.push("challenge: invalid difficulty");
+  unknownKeys(challenge, ["experienceProfile", "economicPressure", "difficulty", "startingCash", "goals", "goalTemplateIds", "constraints", "allowedEventIds", "medalTargets"], "challenge", errors);
+  const validLegacy = ["easy", "normal", "hard"].includes(challenge.difficulty as string);
+  const validAxes = ["relaxed", "classic", "simulation"].includes(challenge.experienceProfile as string)
+    && ["friendly", "balanced", "tight"].includes(challenge.economicPressure as string);
+  if (!validLegacy && !validAxes) errors.push("challenge: valid experienceProfile and economicPressure are required");
   if (challenge.medalTargets !== undefined && (!isRecord(challenge.medalTargets) || Object.keys(challenge.medalTargets).some((key) => key !== "silver" && key !== "gold"))) errors.push("challenge.medalTargets: unsupported shape");
   if (isRecord(challenge.medalTargets)) for (const key of ["silver", "gold"]) if (challenge.medalTargets[key] !== undefined && (typeof challenge.medalTargets[key] !== "number" || !Number.isFinite(challenge.medalTargets[key]))) errors.push(`challenge.medalTargets.${key}: must be finite`);
   const authoring = validateScenarioAuthoring(challenge as unknown as ChallengePayloadV1);

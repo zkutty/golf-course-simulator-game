@@ -55,7 +55,8 @@ describe("scenario definitions (ZKU-164)", () => {
       expect(a.world).toEqual(b.world);
       expect(a.world.mode).toBe("career");
       expect(a.world.scenarioId).toBe(s.id);
-      expect(a.world.difficulty).toBe(s.difficulty);
+      expect(a.world.experienceProfile).toBe(s.experienceProfile);
+      expect(a.world.economicPressure).toBe(s.economicPressure);
       expect(a.course.theme).toBe(s.theme);
       expect(s.biomeCompatibility.biome).toBe(s.theme);
       expect(a.course.biomeCompatibility).toEqual(s.biomeCompatibility);

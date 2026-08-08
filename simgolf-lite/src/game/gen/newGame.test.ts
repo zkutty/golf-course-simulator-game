@@ -143,14 +143,16 @@ describe("createNewGame (ZKU-162)", () => {
     })).toBe(true);
   });
 
-  it("records name, theme, mode, difficulty, founder on the run", () => {
+  it("records name, theme, mode, both experience axes, and founder on the run", () => {
     const { course, world } = createNewGame(
       setup({ theme: "desert", difficulty: "hard", founderName: "Zach K." })
     );
     expect(course.name).toBe("Willow Creek");
     expect(course.theme).toBe("desert");
     expect(world.mode).toBe("challenge");
-    expect(world.difficulty).toBe("hard");
+    expect(world.experienceProfile).toBe("simulation");
+    expect(world.economicPressure).toBe("tight");
+    expect(world.difficulty).toBeUndefined();
     expect(world.founderName).toBe("Zach K.");
     expect(world.runSeed).toBe(424242);
   });

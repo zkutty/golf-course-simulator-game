@@ -10,6 +10,7 @@ import {
   validateBiomeCompatibilityMetadata,
 } from "../game/models/biomes";
 import { withNormalizedGreenContract } from "../game/greens/greenSurface";
+import { normalizeExperienceAxes } from "../game/balance/experience";
 
 export { hashCanonicalValue } from "./canonical";
 import { hashCanonicalValue } from "./canonical";
@@ -74,10 +75,22 @@ export function hashGameState(value: {
         };
       })()
     : value.world.playerPro;
+  const experience = normalizeExperienceAxes(value.world);
+  const { difficulty: _legacyDifficulty, ...worldWithoutDifficulty } = value.world;
+  void _legacyDifficulty;
   const world = {
-    ...value.world,
+    ...worldWithoutDifficulty,
+    ...experience,
     playerPro,
     m51: normalizeM51MobilityState(value.world.m51),
   };
-  return hashCanonicalValue({ course, world, live: value.live });
+  const live = value.live
+    ? (() => {
+        const liveExperience = normalizeExperienceAxes(value.live!.state);
+        const { difficulty: _legacyLiveDifficulty, ...state } = value.live!.state;
+        void _legacyLiveDifficulty;
+        return { ...value.live!, state: { ...state, economicPressure: liveExperience.economicPressure } };
+      })()
+    : undefined;
+  return hashCanonicalValue({ course, world, live });
 }

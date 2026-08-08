@@ -4,7 +4,7 @@ import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { normalizePropertyCourse, normalizePropertyEnterprise } from "../property/property";
 import type { PropertyAsset } from "../property/types";
 import type { FacilityUpkeepPolicy } from "../property/types";
-import { terrainCostMult } from "../balance/difficulty";
+import { economicPressureForWorld, terrainCostMult } from "../balance/experience";
 import { quoteDrainageImprovement } from "../models/terrainEconomics";
 import {
   CLUB_CHARTERS,
@@ -725,7 +725,7 @@ export function previewSeasonCommand(course: Course, world: World, command: Seas
     cost = quoteDrainageImprovement(
       course.theme,
       state.operations.drainageLevel,
-      terrainCostMult(world.difficulty),
+      terrainCostMult(economicPressureForWorld(world)),
     );
     days = 7 + state.operations.drainageLevel * 3;
     riskReduction = 0.11;

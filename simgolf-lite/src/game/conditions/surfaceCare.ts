@@ -1,4 +1,4 @@
-import { terrainCostMult } from "../balance/difficulty";
+import { economicPressureForWorld, terrainCostMult } from "../balance/experience";
 import { decodeTerrainBaseline } from "../estate/estate";
 import type {
   CultivatedTerrain,
@@ -1767,7 +1767,7 @@ export function quoteSurfaceRepair(
   if (!zone) return null;
   const adjustedConstruction = TERRAIN_BUILD_COST[zone.intendedTerrain]
     * themeBuildMult(course.theme, zone.intendedTerrain)
-    * terrainCostMult(world.difficulty)
+    * terrainCostMult(economicPressureForWorld(world))
     * zone.cells.length;
   const rate = kind === "reseed" ? 0.35 as const : 0.6 as const;
   const timingHash = hashText(`${key}:${kind}`);

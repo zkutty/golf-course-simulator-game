@@ -9,6 +9,7 @@ import { normalizeM51LiveMobilityState } from "../m51/mobility";
 import { normalizeShotSlopeContext } from "../models/shotSlope";
 import { isValidGreenRollout } from "../greens/greenRollout";
 import { isValidGreenPutting } from "../greens/greenPutting";
+import { normalizeExperienceAxes } from "../balance/experience";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
@@ -235,6 +236,9 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
   if (input.selectedGolferId !== null && !Number.isInteger(input.selectedGolferId)) return null;
 
   const serializable = cloneSerializableState(state as unknown as Omit<LiveState, "walkCache">);
+  const liveExperience = normalizeExperienceAxes(serializable);
+  serializable.economicPressure = liveExperience.economicPressure;
+  delete serializable.difficulty;
   const stateSeed = finite(state.seed) ? state.seed : 0;
   serializable.golfers = serializable.golfers.map((g) => {
     const fallbackCapabilities = createGolferCapabilities({

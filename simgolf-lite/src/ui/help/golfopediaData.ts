@@ -1,11 +1,11 @@
-import type { Difficulty, LandTheme, Terrain } from "../../game/models/types";
+import type { EconomicPressure, LandTheme, Terrain } from "../../game/models/types";
 import { ARCHETYPES } from "../../game/live/archetypes";
 import {
   terrainConstructionUnitCost,
   terrainMaintenanceWeight,
   terrainSalvageUnitValue,
 } from "../../game/models/terrainEconomics";
-import { terrainCostMult } from "../../game/balance/difficulty";
+import { terrainCostMult } from "../../game/balance/experience";
 import type { Translator } from "../../i18n/context";
 import { translate } from "../../i18n/core";
 import { formatCurrency, formatNumber } from "../../i18n/format";
@@ -31,9 +31,9 @@ const golferLabelKeys = { pro: "golfer.pro", lowHandicap: "golfer.lowHandicap", 
 export function buildGolfopediaEntries(
   t: Translator,
   theme: LandTheme = "parkland",
-  difficulty: Difficulty = "normal",
+  economicPressure: EconomicPressure = "balanced",
 ): readonly GolfopediaEntry[] {
-  const costMult = terrainCostMult(difficulty);
+  const costMult = terrainCostMult(economicPressure);
   const terrainEntries = (Object.keys(terrainKeys) as Terrain[]).map((terrain) => ({
     id: `terrain-${terrain}`, section: "Terrain" as const, title: t(terrainKeys[terrain].title), summary: t(terrainKeys[terrain].summary),
     details: [t("golfopedia.terrain.balance"), t("golfopedia.terrain.maintenance", { weight: terrainMaintenanceWeight(terrain, theme).toFixed(2) })],

@@ -6,6 +6,7 @@ import { STORY_DEFINITION_BY_ID } from "../livingClub/content";
 import type { ChallengePayloadV1, CoursePackageV1 } from "../contentPackages/types";
 import { remapImportedCourseIdentity } from "../contentPackages/packageFormat";
 import { SUPPORTED_GOAL_TEMPLATE_IDS } from "./templates";
+import { normalizeExperienceAxes } from "../balance/experience";
 
 const GOAL_METRICS = new Set([
   "cash", "reputation", "courseRating", "holesBuilt", "publishedHoles", "publishedCourses",
@@ -124,12 +125,15 @@ export function buildPackageTestRun(value: CoursePackageV1, baseWorld: World, in
   if (!challenge) return { course, world: structuredClone(baseWorld) };
   const world = structuredClone(baseWorld);
   const constraints = challenge.constraints as ScenarioConstraints | undefined;
+  const experience = normalizeExperienceAxes(challenge);
   return {
     course,
     world: {
       ...world,
       mode: "challenge",
-      difficulty: challenge.difficulty,
+      experienceProfile: experience.experienceProfile,
+      economicPressure: experience.economicPressure,
+      difficulty: undefined,
       ...(challenge.startingCash == null ? {} : { cash: challenge.startingCash }),
       constraints,
       scenarioId: `package-${value.manifest.contentId}`,

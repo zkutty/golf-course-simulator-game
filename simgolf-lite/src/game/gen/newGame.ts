@@ -6,7 +6,7 @@ import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../models/constants";
 import { findClubhouseSpot } from "../models/buildings";
 import { CHALLENGE_GOALS } from "../objectives/goals";
-import { getDifficultyProfile } from "../balance/difficulty";
+import { getEconomicPressure, normalizeExperienceAxes } from "../balance/experience";
 import { generateNewGameLandscape } from "./generateWildLand";
 import { createEstate } from "../estate/estate";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
@@ -17,7 +17,7 @@ import { biomeCompatibilityMetadataFor } from "../models/biomes";
 /**
  * THE new-game path (ZKU-162): every fresh run — wizard, quick start, defeat
  * retry, save reset — builds its course/world here, deterministically from
- * the setup. Same seed + theme + difficulty ⇒ identical starting state.
+ * the setup. Same seed + theme + experience axes ⇒ identical starting state.
  *
  * `goals` overrides the mode's default goal set (used by defeat-retry to
  * keep a run's exact goals, and by scenarios in ZKU-164).
@@ -91,13 +91,14 @@ export function createNewGame(
 
   const effectiveGoals =
     goals !== undefined ? goals : setup.mode === "challenge" ? CHALLENGE_GOALS : null;
+  const experience = normalizeExperienceAxes(setup);
 
-  // Explicit sandbox override wins; otherwise difficulty scales the default
-  // (ZKU-165 — Normal is the identity, so this is today's 25k on normal).
+  // Explicit sandbox override wins; otherwise economic pressure scales the
+  // default. Balanced is the exact historical Normal identity.
   const startingCash =
     setup.mode === "sandbox" && setup.sandboxOverrides?.startingCash != null
       ? setup.sandboxOverrides.startingCash
-      : Math.round(DEFAULT_WORLD.cash * getDifficultyProfile(setup.difficulty).startingCashMult);
+      : Math.round(DEFAULT_WORLD.cash * getEconomicPressure(experience.economicPressure).startingCashMult);
 
   const world: World = {
     ...DEFAULT_WORLD,
@@ -109,7 +110,8 @@ export function createNewGame(
     lastBridgeLoanWeek: -999,
     lastWeekProfit: 0,
     mode: setup.mode,
-    difficulty: setup.difficulty,
+    experienceProfile: experience.experienceProfile,
+    economicPressure: experience.economicPressure,
     objectives: effectiveGoals && effectiveGoals.length > 0 ? createObjectiveState(effectiveGoals) : null,
     playerPro: createDefaultPlayerPro({
       seed,

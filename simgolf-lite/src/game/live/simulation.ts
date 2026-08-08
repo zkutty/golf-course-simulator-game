@@ -5,7 +5,7 @@ import { scoreCourseHoles } from "../sim/holes";
 import { ARCHETYPES, golferName } from "./archetypes";
 import { rollPersonality, solverProfileForSkill } from "./personality";
 import { createGolferCapabilities, stableGolferSeed } from "./capabilities";
-import { getDifficultyProfile } from "../balance/difficulty";
+import { economicPressureForWorld, getEconomicPressure } from "../balance/experience";
 import { buildGolferRound, entryPoint, planFromHole } from "./golfer";
 import { buildStrategicGolferRound } from "./m47Round";
 import { advanceGolfer } from "./golfer";
@@ -143,7 +143,7 @@ export function createLiveState(
     interventions: 0, pickups: 0, finishedAt: null,
   }])).values()];
   return {
-    difficulty: world.difficulty,
+    economicPressure: economicPressureForWorld(world),
     dayIndex,
     dayMinute: LIVE.day.openMinute,
     golfers: [],
@@ -256,7 +256,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
   const rng = mulberry32(state.seed + id * 131);
   // Roll this individual's personality, then plan their round from the shot
   // model their rolled skill implies (not a fixed per-archetype tier).
-  const dp = getDifficultyProfile(state.difficulty);
+  const dp = getEconomicPressure(state.economicPressure);
   const rolledPersonality = rollPersonality(arch.personality, rng, {
     patience: dp.patienceMult,
     spend: dp.spendMult,

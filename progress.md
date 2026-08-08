@@ -1,5 +1,13 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-08-07 — ZK-683 experience-profile/economic-pressure foundation complete
+
+- Added independent typed `ExperienceProfile` (Relaxed/Classic/Simulation) and `EconomicPressure` (Friendly/Balanced/Tight) axes. One centralized catalog owns descriptions, default pressure, failure policy, visible workspaces, tutorial modules, automation defaults, and every economic multiplier.
+- Preserved exact legacy mappings: Easy→Relaxed/Friendly, Normal→Classic/Balanced, Hard→Simulation/Tight. Balanced returns the original `BALANCE` object by identity; profiles do not participate in any economy resolver.
+- Added save schema v29 plus canonical browser/native persistence, slot metadata, live-day snapshot, scenario/package, current-run setup, and `render_game_to_text` carriers. Current saves omit the retired difficulty carrier; imports remain backward-compatible.
+- TypeScript, focused compatibility/regression batches, the full unit regression, production build and every delivery audit pass. Dedicated tests cover all nine axis combinations, legacy migration equivalence, Normal/Balanced identity, deterministic same-seed/profile-inert actions, pressure-only economy changes, canonical hashes, live snapshots, save slots, and desktop atomic files. Lint/i18n passes with zero errors and the 12 existing hook warnings.
+- The required bundled browser client reached a live Quick Start game. Its renderer capture was visually inspected, structured state reports `classic`/`balanced`, and no console/page-error artifact was produced. No cash targets or balance values were retuned; ZK-773 remains reserved.
+
 ## 2026-08-06 — ZK-724 finite reward entitlements complete
 
 - Started from the exact isolated base `2d7432a514b5621a8c1cccdf4b1543106b239fcb` on `codex/zk724-reward-entitlements`; the original prompt above remains preserved.
