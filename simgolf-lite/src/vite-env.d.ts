@@ -62,6 +62,7 @@ interface Window {
         dressing: number;
       } | null;
     };
+    unrelatedObjectCountProbe(): { before: number; after: number };
     setZoomForTest(zoom: number): void;
   };
   __coursecraftTest?: {

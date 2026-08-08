@@ -1172,6 +1172,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       baseAlpha: number;
     }>
   >(new Map());
+  const structureSpriteCountRef = useRef(0);
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
   const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
@@ -2002,15 +2003,21 @@ export function PixiStage(requestedProps: PixiStageProps) {
             terrainChunks: layers.terrain.children.length,
             terrainRebuilds: chunkRebuildsRef.current,
             connectedSurfaces: layers.smoothSurfaces.children.length,
-            structuresAndProps: layers.objects.children.filter((child) => (
-              child !== ambientRef.current.heron.g
-              && child.visible
-              && child.renderable
-              && child.alpha > 0
-            )).length,
+            structuresAndProps: structureSpriteCountRef.current + obstacleSpritesRef.current.size,
             dressing: layers.seasonalTerrain.children.length + layers.surfaceCare.children.length,
           } : null,
         };
+      },
+      unrelatedObjectCountProbe: () => {
+        const layers = layersRef.current;
+        const before = structureSpriteCountRef.current + obstacleSpritesRef.current.size;
+        if (!layers) return { before, after: before };
+        const unrelated = new PIXI.Container();
+        unrelated.label = "zk674-unrelated-object-probe";
+        layers.objects.addChild(unrelated);
+        const after = structureSpriteCountRef.current + obstacleSpritesRef.current.size;
+        unrelated.destroy();
+        return { before, after };
       },
       setZoomForTest: (zoom: number) => {
         const next = Math.max(minimumZoom(), Math.min(MAX_ZOOM, zoom));
@@ -2202,6 +2209,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       builtSeasonalTerrainSignatureRef.current = null;
       builtAtlasGenerationRef.current = null;
       obstacleSpritesRef.current.clear();
+      structureSpriteCountRef.current = 0;
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
       surfaceEditorGraphicsRef.current = null;
@@ -3793,7 +3801,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         layers.surfaceCare,
         (workers) => { surfaceCareWorkersRef.current = workers; },
       ),
-      createStructuresPropsSceneSystem(layers.objects),
+      createStructuresPropsSceneSystem(
+        layers.objects,
+        (count) => { structureSpriteCountRef.current = count; },
+      ),
       createPlayerShotOverlaySceneSystem(layers.fx),
       createEstateSurveySceneSystem(layers.terrainDecals),
     ]);
@@ -3865,6 +3876,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const key = `${obs.x},${obs.y}`;
       if (obstacleSpritesRef.current.has(key)) return;
       const sprite = new PIXI.Sprite(texture);
+      sprite.label = `structure-prop:natural:${key}`;
       // Ground-anchored via the shared placement helper (ZKU-140).
       const footprint = { x: obs.x, y: obs.y, w: 1, d: 1 };
       const anchor = frontCorner(footprint, rotation);

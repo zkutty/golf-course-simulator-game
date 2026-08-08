@@ -187,6 +187,11 @@ for (const theme of PRIMARY_BIOMES) {
     const canvas = page.locator(".cc-pixi-stage canvas");
     await expect(canvas).toBeVisible({ timeout: 120_000 });
     await expectAtomicGeneration(page, "high");
+    const unrelatedObjectProbe = await page.evaluate(() => (
+      window.__coursecraftPixiTest!.unrelatedObjectCountProbe()
+    ));
+    expect(unrelatedObjectProbe.before).toBeGreaterThan(0);
+    expect(unrelatedObjectProbe.after).toBe(unrelatedObjectProbe.before);
 
     // A→B→A must invalidate B even if its assets finish well after the view
     // has returned to A. The active global atlas may not drift behind React.

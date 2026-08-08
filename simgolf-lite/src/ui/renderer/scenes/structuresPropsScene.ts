@@ -7,7 +7,10 @@ import { getPropFrame, type AtlasFrame } from "../../../render/atlas";
 import type { RenderSceneSystem } from "../SceneSystemHost";
 
 /** Static authored buildings are isolated from animated props and live entities. */
-export function createStructuresPropsSceneSystem(layer: PIXI.Container): RenderSceneSystem {
+export function createStructuresPropsSceneSystem(
+  layer: PIXI.Container,
+  onContentCount: (count: number) => void = () => {},
+): RenderSceneSystem {
   let sprites: PIXI.Sprite[] = [];
   const clear = () => {
     for (const sprite of sprites) {
@@ -15,6 +18,7 @@ export function createStructuresPropsSceneSystem(layer: PIXI.Container): RenderS
       sprite.destroy();
     }
     sprites = [];
+    onContentCount(0);
   };
 
   return {
@@ -37,6 +41,7 @@ export function createStructuresPropsSceneSystem(layer: PIXI.Container): RenderS
           snapshot.rotation,
         );
         const sprite = new PIXI.Sprite(texture);
+        sprite.label = `structure-prop:building:${building.id}`;
         sprite.anchor.set(0.5, 1);
         sprite.position.set(placement.position.x, placement.position.y);
         sprite.width = spec.w * TILE_W;
@@ -45,6 +50,7 @@ export function createStructuresPropsSceneSystem(layer: PIXI.Container): RenderS
         layer.addChild(sprite);
         sprites.push(sprite);
       }
+      onContentCount(sprites.length);
     },
     dispose: clear,
   };
