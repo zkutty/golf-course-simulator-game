@@ -63,6 +63,8 @@ const loadedSeasonalOverlays = new Set<string>();
 let activeBundleKey: string | null = null;
 let activeOverlayKey: string | null = null;
 let activeLoadRequest = 0;
+let activeActivationRequest = 0;
+let activeGeneration = 0;
 let legacyLoadAttempted = false;
 const warned = new Set<string>();
 export interface AtlasFallbackDiagnostic {
@@ -72,6 +74,46 @@ export interface AtlasFallbackDiagnostic {
   reason: string;
 }
 const fallbackDiagnostics: AtlasFallbackDiagnostic[] = [];
+
+export type AtlasActivationStatus = "activated" | "fallback" | "superseded";
+
+export interface AtlasRenderContext {
+  readonly biome: LandTheme;
+  readonly quality: AtlasQuality;
+  readonly season: SeasonName | null;
+  readonly bundleKey: string;
+  readonly overlayKey: string | null;
+  readonly generation: number;
+  readonly requestId: number;
+  readonly status: Exclude<AtlasActivationStatus, "superseded">;
+}
+
+export interface AtlasLoadResult {
+  readonly status: AtlasActivationStatus;
+  readonly requestId: number;
+  readonly context: AtlasRenderContext | null;
+}
+
+export interface AtlasActivationSnapshot {
+  /** Request that produced the active generation. */
+  readonly requestId: number;
+  /** Most recently started request; differs while a transition is in flight. */
+  readonly latestRequestId: number;
+  readonly generation: number;
+  readonly bundleKey: string | null;
+  readonly overlayKey: string | null;
+}
+
+/** Exact active generation consumed by the live renderer and browser evidence. */
+export function atlasActivationSnapshot(): AtlasActivationSnapshot {
+  return {
+    requestId: activeActivationRequest,
+    latestRequestId: activeLoadRequest,
+    generation: activeGeneration,
+    bundleKey: activeBundleKey,
+    overlayKey: activeOverlayKey,
+  };
+}
 
 function recordFallback(diagnostic: AtlasFallbackDiagnostic): void {
   if (!fallbackDiagnostics.some((entry) =>
@@ -198,12 +240,18 @@ export async function loadAtlases(
   theme: LandTheme = BIOME_KEYS[0],
   quality: AtlasQuality = "high",
   season?: SeasonName | null,
-): Promise<void> {
+): Promise<AtlasLoadResult> {
   const requestId = ++activeLoadRequest;
+  const bundleKey = `${theme}:${quality}`;
+  const superseded = (): AtlasLoadResult => ({
+    status: "superseded",
+    requestId,
+    context: null,
+  });
   try {
     const manifest = await loadManifest();
     await loadCore(manifest);
-    const key = `${theme}:${quality}`;
+    const key = bundleKey;
     const content = getBiomeDefinition(theme).content;
     let promise = bundlePromises.get(key);
     if (!promise) {
@@ -251,9 +299,8 @@ export async function loadAtlases(
     // A theme/quality/season transition may have started while this base was
     // loading. Keep the completed bundle cached, but never let an older
     // request activate its base or begin downloading a now-stale overlay.
-    if (requestId !== activeLoadRequest) return;
-    activeBundleKey = key;
-    activeOverlayKey = null;
+    if (requestId !== activeLoadRequest) return superseded();
+    let nextOverlayKey: string | null = null;
 
     if (season) {
       // Seasonal ownership is stricter than base content routing: an overlay
@@ -272,7 +319,7 @@ export async function loadAtlases(
         }
         try {
           await overlayPromise;
-          if (requestId === activeLoadRequest) activeOverlayKey = overlayKey;
+          if (requestId === activeLoadRequest) nextOverlayKey = overlayKey;
         } catch (error) {
           // Optional overlays fail independently. Keep the base active and let
           // a later request retry the same seasonal identity.
@@ -295,8 +342,23 @@ export async function loadAtlases(
       ));
       if (missing.length > 0) console.warn(`[atlas] ${key} natural-props atlas is missing ${missing.length} registry frames`, missing);
     }
+    if (requestId !== activeLoadRequest) return superseded();
+    activeBundleKey = key;
+    activeOverlayKey = nextOverlayKey;
+    activeActivationRequest = requestId;
+    const context: AtlasRenderContext = {
+      biome: theme,
+      quality,
+      season: season ?? null,
+      bundleKey: key,
+      overlayKey: nextOverlayKey,
+      generation: ++activeGeneration,
+      requestId,
+      status: "activated",
+    };
+    return { status: "activated", requestId, context };
   } catch (error) {
-    if (requestId !== activeLoadRequest) return;
+    if (requestId !== activeLoadRequest) return superseded();
     recordFallback({
       requestedBiome: theme,
       quality,
@@ -306,6 +368,23 @@ export async function loadAtlases(
       console.warn("[atlas] M35 bundle manifest unavailable; loading legacy atlases", error);
     }
     await loadLegacyAtlases();
+    if (requestId !== activeLoadRequest) return superseded();
+    // Publish one explicit procedural/legacy generation rather than leaving
+    // a prior biome bundle selected behind a newly requested course context.
+    activeBundleKey = null;
+    activeOverlayKey = null;
+    activeActivationRequest = requestId;
+    const context: AtlasRenderContext = {
+      biome: theme,
+      quality,
+      season: season ?? null,
+      bundleKey,
+      overlayKey: null,
+      generation: ++activeGeneration,
+      requestId,
+      status: "fallback",
+    };
+    return { status: "fallback", requestId, context };
   }
 }
 
@@ -511,6 +590,8 @@ export function __resetAtlasForTests(): void {
   activeBundleKey = null;
   activeOverlayKey = null;
   activeLoadRequest = 0;
+  activeActivationRequest = 0;
+  activeGeneration = 0;
   legacyLoadAttempted = false;
   warned.clear();
   fallbackDiagnostics.length = 0;

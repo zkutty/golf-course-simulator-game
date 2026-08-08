@@ -9,6 +9,7 @@ vi.mock("pixi.js", () => ({
 
 import {
   __resetAtlasForTests,
+  atlasActivationSnapshot,
   atlasResidencySnapshot,
   atlasFallbackDiagnostics,
   getLandscapeMaterialField,
@@ -194,10 +195,17 @@ describe("incremental biome atlas loading", () => {
     await vi.waitFor(() => {
       expect(assetsLoad.mock.calls.some(([url]) => String(url).includes("spring-fairway"))).toBe(true);
     });
-    await loadAtlases("parkland", "high", "autumn");
+    const autumn = await loadAtlases("parkland", "high", "autumn");
     resolveSpring({ source: { style: {} }, marker: "late-spring" });
-    await springLoad;
+    const spring = await springLoad;
 
+    expect(autumn.status).toBe("activated");
+    expect(spring.status).toBe("superseded");
+    expect(atlasActivationSnapshot()).toMatchObject({
+      bundleKey: "parkland:high",
+      overlayKey: "parkland:high:autumn",
+      generation: 2,
+    });
     expect(
       (getLandscapeMaterialField("parkland", "fairway", "high") as unknown as { marker: string }).marker,
     ).toContain("autumn-fairway");
@@ -205,6 +213,44 @@ describe("incremental biome atlas loading", () => {
       "parkland:high:autumn",
       "parkland:high:spring",
     ]);
+  });
+
+  it("keeps the previous generation active until a requested tier is complete", async () => {
+    const high = await loadAtlases("parkland", "high");
+    expect(high.context).toMatchObject({ bundleKey: "parkland:high", generation: 1 });
+
+    let resolveMedium!: (sheet: { textures: object }) => void;
+    const delayedMedium = new Promise<{ textures: object }>((resolve) => {
+      resolveMedium = resolve;
+    });
+    assetsLoad.mockImplementation(async (url: string) => {
+      if (url.includes("terrain-parkland-medium") && url.endsWith(".json")) return delayedMedium;
+      return url.endsWith(".png") ? { source: { style: {} } } : { textures: {} };
+    });
+
+    const mediumLoad = loadAtlases("parkland", "medium");
+    await vi.waitFor(() => {
+      expect(assetsLoad.mock.calls.some(([url]) => String(url).includes("terrain-parkland-medium"))).toBe(true);
+    });
+    expect(atlasActivationSnapshot()).toMatchObject({
+      bundleKey: "parkland:high",
+      generation: 1,
+      requestId: 1,
+      latestRequestId: 2,
+    });
+
+    resolveMedium({ textures: {} });
+    const medium = await mediumLoad;
+    expect(medium).toMatchObject({
+      status: "activated",
+      context: { bundleKey: "parkland:medium", generation: 2 },
+    });
+    expect(atlasActivationSnapshot()).toMatchObject({
+      bundleKey: "parkland:medium",
+      generation: 2,
+      requestId: 2,
+      latestRequestId: 2,
+    });
   });
 
   it("keeps terrain, detail, and prop lookups pinned to their requested biome and tier", async () => {

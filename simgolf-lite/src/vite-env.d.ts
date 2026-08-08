@@ -36,8 +36,30 @@ interface Window {
       materials: import("./game/models/types").Terrain[];
       colors: Partial<Record<import("./game/models/types").Terrain, number>>;
     } | null;
+    rendererAtlasState(): {
+      requested: {
+        biome: import("./game/models/types").LandTheme;
+        quality: "high" | "medium" | "low";
+        season: import("./game/seasons/types").SeasonName | null;
+        bundleKey: string;
+      };
+      rendered: import("./render/atlas").AtlasRenderContext;
+      activation: import("./render/atlas").AtlasActivationSnapshot;
+      residency: import("./render/atlas").AtlasResidencySnapshot;
+      fallbacks: readonly import("./render/atlas").AtlasFallbackDiagnostic[];
+      camera: { zoom: number; targetZoom: number; groundCoverTier: 0 | 1 | 2 };
+      layers: Record<string, number | null> | null;
+      counts: {
+        terrainChunks: number;
+        connectedSurfaces: number;
+        structuresAndProps: number;
+        dressing: number;
+      } | null;
+    };
+    setZoomForTest(zoom: number): void;
   };
   __coursecraftTest?: {
+    setGraphicsQualityFixture(quality: "high" | "medium" | "low"): void;
     state(): {
       screen: string;
       screenBase: "title" | "setup-wizard" | "loading" | "in-game";

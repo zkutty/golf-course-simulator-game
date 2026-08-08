@@ -388,6 +388,7 @@ export default function App() {
       ? m53SeasonalTerrainFixture(params).quality
       : null;
   }, []);
+  const [fixtureGraphicsQualityOverride, setFixtureGraphicsQualityOverride] = useState<ResolvedGraphicsQuality | null>(null);
   const [pendingLoadingContext, setPendingLoadingContext] = useState<LoadingBiomeContext | null>(null);
   const screen = flow.base === "title" ? "menu" : flow.base === "setup-wizard" ? "setup" : flow.base === "in-game" ? "game" : "loading";
   const audioSurface = audioSurfaceFor({ screen, showVision });
@@ -730,7 +731,8 @@ export default function App() {
     adaptiveGraphicsRef.current.reset(startupGraphicsQuality);
     setAutoGraphicsQuality(startupGraphicsQuality);
   }, [appProfile.graphics.quality, fixtureGraphicsQuality, startupGraphicsQuality]);
-  const resolvedGraphicsQuality: ResolvedGraphicsQuality = fixtureGraphicsQuality
+  const resolvedGraphicsQuality: ResolvedGraphicsQuality = fixtureGraphicsQualityOverride
+    ?? fixtureGraphicsQuality
     ?? (safeMode
       ? "low"
       : appProfile.graphics.quality === "auto"
@@ -3054,6 +3056,12 @@ export default function App() {
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
     window.__coursecraftTest = {
+      setGraphicsQualityFixture: (quality) => {
+        if (quality !== "high" && quality !== "medium" && quality !== "low") {
+          throw new Error(`Unsupported renderer quality fixture: ${quality}`);
+        }
+        setFixtureGraphicsQualityOverride(quality);
+      },
       state: () => {
         const current = gameSession.getState();
         const liveSnapshot = live.getSnapshot();
