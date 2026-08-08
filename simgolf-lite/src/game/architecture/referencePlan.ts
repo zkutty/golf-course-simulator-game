@@ -119,6 +119,7 @@ const HAZARDS = new Set<Terrain>(["water", "wetland", "sand", "waste_area", "dee
 const PLAYABLE = new Set<Terrain>(["tee", "fairway", "rough", "green", "path"]);
 const cache = new WeakMap<Course, Map<string, ArchitectureReferencePlan>>();
 const geometryVersions = new WeakMap<Course, string>();
+let diagnostics = { requests: 0, cacheHits: 0, retainedHits: 0, solves: 0 };
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -420,16 +421,22 @@ function incompletePlan(course: Course, hole: Hole, teeSet: TeeSet, pinRotation:
 }
 
 export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSet: TeeSet = "member", pinRotation: PinRotation = "A"): ArchitectureReferencePlan {
+  diagnostics.requests++;
   let plans = cache.get(course);
   if (!plans) { plans = new Map(); cache.set(course, plans); }
   const cacheKey = `${hole.id ?? course.holes.indexOf(hole)}:${teeSet}:${pinRotation}`;
   const cached = plans.get(cacheKey);
-  if (cached) return cached;
+  if (cached) {
+    diagnostics.cacheHits++;
+    return cached;
+  }
   const retained = retainedArchitectureReferencePlan(course, hole, teeSet, pinRotation);
   if (retained) {
+    diagnostics.retainedHits++;
     plans.set(cacheKey, retained);
     return retained;
   }
+  diagnostics.solves++;
   const tee = getTeeBox(hole, teeSet);
   const pin = getPinPosition(hole, pinRotation);
   const capability = ARCHITECTURE_REFERENCE_CAPABILITIES[teeSet];
@@ -532,6 +539,20 @@ export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSe
   plans.set(cacheKey, result);
   retainArchitectureReferencePlan(course, hole, result);
   return result;
+}
+
+/**
+ * Bounded planner instrumentation used by release certification and profiling.
+ * It counts plan builds, not pointer events or render frames, so a consumer can
+ * prove that repeated reads stay on the selected-plan cache instead of
+ * accidentally launching full-estate solves.
+ */
+export function architectureReferencePlanDiagnostics(): Readonly<typeof diagnostics> {
+  return { ...diagnostics };
+}
+
+export function resetArchitectureReferencePlanDiagnostics(): void {
+  diagnostics = { requests: 0, cacheHits: 0, retainedHits: 0, solves: 0 };
 }
 
 export function architectureReferencePlans(course: Course, teeSet: TeeSet, pinRotation: PinRotation): ArchitectureReferencePlan[] {

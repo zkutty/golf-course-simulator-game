@@ -1,5 +1,29 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-765 M69 architectural reference-plan certification — 2026-08-08
+
+- Added one deterministic certification authority for the six canonical hole
+  classes (water-carry Par 3, dogleg/driveable/forced-layup Par 4, conventional
+  three-shot and reachable Par 5) across all three tee sets and all three pin
+  rotations, including both documented par-ambiguity bands.
+- Certified marker move/removal, authored-route add/update/removal, terrain and
+  elevation edits, selected-plan overlays, whole-snapshot undo/redo, current and
+  v28 save normalization, and byte-identical completed-round history. Geometry
+  changes invalidate the affected plan; property-only root copies retain it.
+- Added bounded planner diagnostics. A release-scale 36-hole course performs
+  exactly 36 solves; twelve repeated estate reads plus 1,000 selected-plan
+  pointer reads remain cache-only and complete inside the 5-second gate.
+- Added an explicit `test:cert:m69` command and browser evidence for every
+  tee/pin selector combination plus all 12 biome/camera-rotation visuals. The
+  complete Playwright file passes 2/2; Parkland, Links, and Desert captures were
+  inspected. Pointer stress is constrained to the canvas center so it measures
+  plan stability without intentionally invoking edge-scroll camera movement.
+- Focused validation passes 5 files / 54 tests. Full Vitest passes 184 files /
+  1,449 tests with one intentional skip. TypeScript, production build, all
+  embedded asset/delivery audits, and lint/i18n pass; lint retains the same 12
+  pre-existing Hook warnings. Initial JavaScript is 1,598,486 bytes, 10,233
+  bytes below the unchanged 1,608,719-byte budget.
+
 ## ZK-756 development artwork cache repair — 2026-08-07
 
 - Reproduced the reopened report as a delivery-state defect rather than a missing source commit: `main` and `develop`, plus both live endpoints, contain byte-identical approved Parkland and Desert artwork, but the PWA cached stable `/vision/*` URLs under a package-version-only namespace.
