@@ -8,11 +8,13 @@ import { I18nProvider } from './i18n/I18nProvider'
 import { installGlobalBugCapture } from './bug-reporting/diagnostics'
 import { BugReportLauncher } from './ui/BugReportLauncher'
 import { createDeferredReporter } from './deferredReporter'
+import { installMonitoringBootstrap } from './monitoringBootstrap'
 
 installGlobalBugCapture()
 const reportAppError = createDeferredReporter(() => import('./monitoring')
   .then((module) => module.reportAppError)
   .catch(() => undefined))
+installMonitoringBootstrap(reportAppError.load)
 
 if (new URLSearchParams(window.location.search).get("fixture") === "zk681-analysis-worker") {
   void import("./game/analysis/benchmark").then(({ installAnalysisWorkerBenchmarkFixture }) => {

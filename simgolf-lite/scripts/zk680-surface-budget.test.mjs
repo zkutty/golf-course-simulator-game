@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -9,6 +9,13 @@ import {
   DEFERRED_SURFACE_SOURCES,
   entryKeyForSource,
 } from "./zk680-surface-budget.mjs";
+
+test("bug report launcher styles stay initial while dialog styles stay deferred", () => {
+  const launcherCss = readFileSync(new URL("../src/ui/bugReportLauncher.css", import.meta.url), "utf8");
+  const dialogCss = readFileSync(new URL("../src/ui/bugReport.css", import.meta.url), "utf8");
+  assert.match(launcherCss, /\.cc-bug-report-launcher\s*\{[^}]*position:\s*fixed/s);
+  assert.doesNotMatch(dialogCss, /\.cc-bug-report-launcher/);
+});
 
 test("collectChunkFiles includes static dependencies but excludes dynamic entries", () => {
   const manifest = {

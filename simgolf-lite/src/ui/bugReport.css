@@ -1,18 +1,3 @@
-.cc-bug-report-launcher {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  z-index: 100040;
-  min-height: 36px;
-  border: 2px outset #e8cf8d;
-  border-radius: 8px;
-  background: #354d3d;
-  color: #fff6dd;
-  padding: 7px 12px;
-  box-shadow: 0 5px 18px rgba(0, 0, 0, .28);
-  font: 800 12px/1.1 var(--font-body);
-}
-
 .cc-bug-report-backdrop {
   position: fixed;
   inset: 0;
@@ -233,8 +218,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .cc-bug-report-dialog *,
-  .cc-bug-report-launcher {
+  .cc-bug-report-dialog * {
     animation: none !important;
     transition: none !important;
   }

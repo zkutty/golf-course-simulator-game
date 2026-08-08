@@ -1,11 +1,21 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
+import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
 import type { BugReportSource } from '../bug-reporting/contracts'
 import { BUG_REPORT_OPEN_EVENT } from '../bug-reporting/events'
 import { isBugReportingEnabled, resolveBugReportingEnabled } from '../bug-reporting/feature'
 import { useI18n } from '../i18n/useI18n'
+import { loadBugReportDialog } from './bugReportDialogLoader'
+import './bugReportLauncher.css'
 
-const BugReportDialog = lazy(() => import('./BugReportDialog')
-  .then((module) => ({ default: module.BugReportDialog })))
+const BugReportDialog = lazy(() => loadBugReportDialog())
+
+export class DeferredSurfaceErrorBoundary extends Component<{
+  children: ReactNode
+  fallback: ReactNode
+}, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError(_error: unknown): { failed: true } { return { failed: true } }
+  render(): ReactNode { return this.state.failed ? this.props.fallback : this.props.children }
+}
 
 export function BugReportLauncher() {
   const { t } = useI18n()
@@ -48,8 +58,13 @@ export function BugReportLauncher() {
       setSource('manual')
       setOpen(true)
     }} title={t('bugReporter.launcherTitle')} type="button">{t('bugReporter.launcher')}</button>
-    {open && <Suspense fallback={null}>
-      <BugReportDialog initialSource={source} onClose={() => setOpen(false)} open />
-    </Suspense>}
+    {open && <DeferredSurfaceErrorBoundary fallback={<div className="cc-bug-report-load-error" role="alert">
+      <span>{t('bugReporter.error.generic')}</span>
+      <button onClick={() => window.location.reload()} type="button">{t('auto.ui.apperrorboundary.reload')}</button>
+    </div>}>
+      <Suspense fallback={null}>
+        <BugReportDialog initialSource={source} onClose={() => setOpen(false)} open />
+      </Suspense>
+    </DeferredSurfaceErrorBoundary>}
   </>
 }

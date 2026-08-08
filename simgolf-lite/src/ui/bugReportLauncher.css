@@ -1,0 +1,36 @@
+.cc-bug-report-launcher {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 100040;
+  min-height: 36px;
+  border: 2px outset #e8cf8d;
+  border-radius: 8px;
+  background: #354d3d;
+  color: #fff6dd;
+  padding: 7px 12px;
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .28);
+  font: 800 12px/1.1 var(--font-body);
+}
+
+.cc-bug-report-load-error {
+  position: fixed;
+  right: 18px;
+  bottom: 64px;
+  z-index: 100041;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #a24838;
+  border-radius: 8px;
+  background: #fff0e8;
+  color: #762b21;
+  padding: 9px 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cc-bug-report-launcher {
+    animation: none !important;
+    transition: none !important;
+  }
+}
