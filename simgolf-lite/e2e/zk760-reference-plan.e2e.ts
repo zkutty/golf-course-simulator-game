@@ -20,6 +20,8 @@ test("ZK-760 neutral reference plans stay readable and deterministic on desktop 
   const reference = review.getByTestId("architecture-reference-plan");
   await expect(reference).toContainText("Effective route:", { timeout: 60_000 });
   await expect(reference).toContainText(/full shots \+ 2 expected putts/);
+  await expect(reference.getByTestId("architecture-reference-consumer-summary")).toContainText(/Architecture .*\/100 · safety .*\/100/);
+  await expect(reference.getByTestId("architecture-reference-consumer-summary")).toContainText(/Setup rating .* \/ slope .* · .* yd/);
   await expect(reference).toContainText("Reference plans use fixed neutral carry");
   await expect.poll(
     () => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview?.overlay?.kind),

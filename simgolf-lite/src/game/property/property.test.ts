@@ -15,6 +15,7 @@ import {
   type PropertyCommand,
 } from "./property";
 import { isOwnedTile } from "../estate/estate";
+import { buildArchitectureReferencePlan } from "../architecture/referencePlan";
 
 function fixture(): { course: Course; world: World } {
   return {
@@ -110,21 +111,23 @@ describe("property enterprise", () => {
 
   it("derives residential eligibility from real hole corridors and enforces sold-land tenure", () => {
     const { course: base, world: baseWorld } = fixture();
-    const homes = { id: "homes-risk", kind: "houses" as const, name: "Fairway homes", category: "community" as const, tier: 1 as const, x: 20, y: 6, width: 12, height: 8, capacity: 20, condition: 1, price: 0, units: 300, enabled: true, tenure: "sold" as const };
+    const homes = { id: "homes-risk", kind: "houses" as const, name: "Fairway homes", category: "community" as const, tier: 1 as const, x: 20, y: 6, width: 12, height: 8, capacity: 20, condition: 1, price: 0, units: 100, enabled: true, tenure: "sold" as const };
     const course: Course = {
       ...base,
-      holes: base.holes.map((hole, index) => index === 0 ? { ...hole, tee: { x: 0, y: 5 }, green: { x: 100, y: 5 } } : hole),
+      holes: base.holes.map((hole, index) => index === 0 ? { ...hole, tee: { x: 0, y: 5 }, green: { x: 45, y: 5 }, teeBoxes: { ...hole.teeBoxes, member: { x: 0, y: 5 } }, pinPositions: { ...hole.pinPositions, A: { x: 45, y: 5 } } } : hole),
       property: { ...emptyPropertyCourse(), assets: [homes] },
     };
-    const exposed = analyzeResidentialSafety(course, homes.id);
+    const selectedPlan = buildArchitectureReferencePlan(course, course.holes[0], "member", "A");
+    expect(selectedPlan.segments.length).toBeGreaterThan(0);
+    const exposed = analyzeResidentialSafety(course, homes.id, [selectedPlan]);
     expect(exposed.eligibility).toBe("blocked");
     expect(exposed.contributions[0].holeId).toBe(course.holes[0].id);
     expect(isOwnedTile(course, 21, 7)).toBe(false);
 
     const protectedCourse: Course = { ...course, property: { ...emptyPropertyCourse(), assets: [...course.property!.assets, { id: "net", kind: "netting", name: "Protective netting", category: "safety", tier: 4, x: 19, y: 6, width: 10, height: 1, capacity: 0, condition: 1, price: 0, enabled: true }] } };
-    expect(analyzeResidentialSafety(protectedCourse, homes.id).score).toBeLessThan(exposed.score);
+    expect(analyzeResidentialSafety(protectedCourse, homes.id, [selectedPlan]).score).toBeLessThan(exposed.score);
 
-    const world: World = { ...baseWorld, enterprise: { ...emptyPropertyEnterprise(), residents: [{ id: "residents-homes-risk", assetId: homes.id, units: 300, occupied: 100, satisfaction: 70, complaints: 2 }] } };
+    const world: World = { ...baseWorld, enterprise: { ...emptyPropertyEnterprise(), residents: [{ id: "residents-homes-risk", assetId: homes.id, units: 100, occupied: 100, satisfaction: 70, complaints: 2 }] } };
     const bought = applyPropertyCommand(protectedCourse, world, { type: "BUYBACK", assetId: homes.id });
     expect(bought.ok, bought.message).toBe(true);
     expect(isOwnedTile(bought.course, 21, 7)).toBe(false);

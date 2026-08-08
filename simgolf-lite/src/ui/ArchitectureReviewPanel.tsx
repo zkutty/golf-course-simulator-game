@@ -74,6 +74,10 @@ export function ArchitectureReviewPanel(props: {
 
     {props.review.filters.kind === "reference" && <section data-testid="architecture-reference-plan" style={{ marginTop: 12, padding: 10, borderRadius: 9, background: "#e8eef7", border: "1px solid #8195ad" }}>
       <strong>{t("architecture.reference.title")}</strong>
+      {props.review.referenceSummary && <div data-testid="architecture-reference-consumer-summary" style={{ display: "grid", gap: 3, marginTop: 6, fontSize: 12 }}>
+        <span>{t("architecture.reference.analysis", { architecture: props.review.referenceSummary.architectureScore, safety: props.review.referenceSummary.safetyScore })}</span>
+        <span>{t("architecture.reference.rating", { rating: props.review.referenceSummary.courseRating, slope: props.review.referenceSummary.slope, yards: props.review.referenceSummary.effectiveYardage })}</span>
+      </div>}
       {props.review.selectedReferencePlan
         ? <>
           <p style={{ margin: "5px 0", fontSize: 12 }}>{props.review.selectedReferencePlan.explanation}</p>

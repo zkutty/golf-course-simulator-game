@@ -1480,6 +1480,8 @@ export const en = {
   "architecture.reference.par": "Selected Par {selected} · Auto recommends {recommended}",
   "architecture.reference.shots": "{shots} full shots + {putts} expected putts",
   "architecture.reference.capability": "Reference carry {carry} yd · dispersion {dispersion} tiles",
+  "architecture.reference.analysis": "Architecture {architecture}/100 · safety {safety}/100",
+  "architecture.reference.rating": "Setup rating {rating} / slope {slope} · {yards} yd",
   "architecture.reference.chooseHole": "Showing {holes} complete {tee}-tee plans to pin {pin}. Choose one hole for its par, landing-zone, and risk explanation.",
   "architecture.reference.neutral": "Reference plans use fixed neutral carry, dispersion, elevation, and rollout assumptions. Live golfers remain free to choose other strategies.",
   "architecture.review.overlay.advantage": "Advantage matrix",

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Course, Hole, Point, Terrain } from "../models/types";
-import { buildArchitectureReferencePlan } from "./referencePlan";
+import { architectureReferencePlans, buildArchitectureReferencePlan } from "./referencePlan";
 import { buildArchitectureReview, defaultArchitectureFilters, withArchitectureReferencePlans } from "./review";
 import type { World } from "../models/types";
 import { createReferenceCourse } from "../testing/referenceCourse";
+import { analyzeArchitecture } from "./architecture";
+import { computeRatingForSetup } from "../sim/courseRating";
+import { buildStrategicPortfolio } from "./portfolio";
 
 function fixture(args: {
   width?: number;
@@ -218,5 +221,59 @@ describe("ZK-760 neutral architectural reference plan", () => {
     expect(review.overlay.traces).toHaveLength(recomputed.segments.length);
     expect(review.overlay.points).toHaveLength(recomputed.landingZones.length);
     expect(review.overlay.traces.every((trace) => trace.source === "reference")).toBe(true);
+  });
+
+  it("keeps selected tee/pin architecture, safety, rating, overlays, and explanations on one plan", () => {
+    const one = fixture({
+      width: 90,
+      tee: { x: 15, y: 15 },
+      pin: { x: 62, y: 15 },
+      teeBoxes: { forward: { x: 25, y: 15 }, member: { x: 15, y: 15 }, championship: { x: 5, y: 15 } },
+      pinPositions: { A: { x: 62, y: 15 }, B: { x: 64, y: 15 }, C: { x: 60, y: 15 } },
+    });
+    const holes = Array.from({ length: 9 }, (_, index) => ({ ...one.holes[0], id: `reference-${index + 1}` }));
+    const course = {
+      ...one,
+      holes,
+      layouts: [{ ...one.layouts![0], draftHoleIds: holes.map((hole) => hole.id!), publishedHoleIds: holes.map((hole) => hole.id!) }],
+    };
+    const plans = architectureReferencePlans(course, "member", "B");
+    const filters = { ...defaultArchitectureFilters(course), kind: "reference" as const, teeSet: "member" as const, pinRotation: "B" as const };
+    const review = withArchitectureReferencePlans(buildArchitectureReview(course, emptyWorld(), filters), plans, course);
+    const rating = computeRatingForSetup(course, "member", "B", plans);
+    const architecture = analyzeArchitecture(course, { teeSet: "member", pinRotation: "B" }, plans);
+
+    expect(review.referenceSummary).toEqual(expect.objectContaining({
+      teeSet: "member",
+      pinRotation: "B",
+      architectureScore: architecture.total,
+      safetyScore: architecture.components.safety.score,
+      courseRating: rating.courseRating,
+      slope: rating.slope,
+      effectiveYardage: rating.effectiveYardage,
+    }));
+    expect(review.overlay.traces.map((trace) => [trace.from, trace.to])).toEqual(
+      plans.flatMap((plan) => plan.segments.map((segment) => [segment.from, segment.to])),
+    );
+    expect(review.overlay.traces.every((trace) => trace.label?.includes("member · shot"))).toBe(true);
+    expect(rating.effectiveYardage).toBe(plans.reduce((sum, plan) => sum + plan.effectiveYardage, 0) * 2);
+  }, 30_000);
+
+  it("does not replace or mutate the live strategic choices", () => {
+    const course = fixture({
+      tee: { x: 3, y: 14 },
+      pin: { x: 48, y: 14 },
+      manualPar: 4,
+      paint: (tiles, width) => {
+        for (let y = 9; y <= 19; y++) for (let x = 18; x <= 24; x++) tiles[y * width + x] = "sand";
+      },
+    });
+    const before = structuredClone(buildStrategicPortfolio(course, { samplesPerOption: 3, seed: 764 }));
+    const reference = buildArchitectureReferencePlan(course, course.holes[0], "member", "A");
+    const after = buildStrategicPortfolio(course, { samplesPerOption: 3, seed: 764 });
+    expect(reference.segments.length).toBeGreaterThan(0);
+    expect(after).toEqual(before);
+    expect(after.evaluation.holes.flatMap((hole) => hole.options.map((option) => option.kind)))
+      .toEqual(expect.arrayContaining(["safe", "hero"]));
   });
 });

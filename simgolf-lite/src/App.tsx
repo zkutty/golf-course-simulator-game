@@ -712,6 +712,27 @@ export default function App() {
   const [showFixOverlay, setShowFixOverlay] = useState(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(() => appProfile.graphics.animations);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
+  const [flyoverReference, setFlyoverReference] = useState<{ nonce: number; plan: ArchitectureReferencePlan } | null>(null);
+  useEffect(() => {
+    let canceled = false;
+    if (flyoverNonce === 0) {
+      setFlyoverReference(null);
+      return () => { canceled = true; };
+    }
+    setFlyoverReference(null);
+    void import("./game/architecture/referencePlan").then((module) => {
+      let hole = course.holes[activeHoleIndex];
+      let plan = hole ? module.buildArchitectureReferencePlan(course, hole, selectedTeeSet, course.activePinRotation ?? "A") : null;
+      if ((!plan?.tee || !plan.pin) && activeHoleIndex > 0) {
+        hole = course.holes[activeHoleIndex - 1];
+        plan = hole ? module.buildArchitectureReferencePlan(course, hole, selectedTeeSet, course.activePinRotation ?? "A") : null;
+      }
+      if (!canceled && plan?.tee && plan.pin) setFlyoverReference({ nonce: flyoverNonce, plan });
+    }).catch(() => {
+      if (!canceled) setFlyoverReference(null);
+    });
+    return () => { canceled = true; };
+  }, [activeHoleIndex, course, flyoverNonce, selectedTeeSet]);
   const soundEnabled = !appProfile.audio.masterMuted && appProfile.audio.masterVolume > 0 && appProfile.audio.sfxVolume > 0;
   const [safeMode, setSafeMode] = useState(false);
   const effectiveAnimations = animationsEnabled && !appProfile.accessibility.reducedMotion && !safeMode;
@@ -791,8 +812,9 @@ export default function App() {
     () => withArchitectureReferencePlans(
       withGreenStrategyHeatmap(architectureReviewBase, architectureGreenStrategy),
       architectureReferencePlans,
+      courseForLayout(course, architectureFilters.courseId),
     ),
-    [architectureGreenStrategy, architectureReferencePlans, architectureReviewBase],
+    [architectureFilters.courseId, architectureGreenStrategy, architectureReferencePlans, architectureReviewBase, course],
   );
   useEffect(() => {
     let canceled = false;
@@ -825,8 +847,7 @@ export default function App() {
       const selected = courseForLayout(course, architectureFilters.courseId);
       const teeSet = architectureFilters.teeSet === "all" ? "member" : architectureFilters.teeSet;
       const pinRotation = architectureFilters.pinRotation === "all" ? "A" : architectureFilters.pinRotation;
-      const plans = module.architectureReferencePlans(selected, teeSet, pinRotation)
-        .filter((plan) => architectureFilters.holeId === "all" || plan.holeId === architectureFilters.holeId);
+      const plans = module.architectureReferencePlans(selected, teeSet, pinRotation);
       if (!canceled) setArchitectureReferencePlans(plans);
     }).catch(() => {
       if (!canceled) setArchitectureReferencePlans([]);
@@ -5083,7 +5104,8 @@ export default function App() {
                 cameraSmoothing={appProfile.gameplay.cameraSmoothing && !appProfile.accessibility.reducedMotion}
                 edgeScroll={appProfile.gameplay.edgeScroll}
                 edgeScrollSpeed={appProfile.gameplay.edgeScrollSpeed}
-                flyoverNonce={flyoverNonce}
+                flyoverNonce={flyoverReference?.nonce === flyoverNonce ? flyoverNonce : 0}
+                flyoverReferencePlan={flyoverReference?.plan ?? null}
                 showShotPlan={showShotPlan}
                 editorMode={editorMode}
                 selectedDecorationKind={decorationKind}

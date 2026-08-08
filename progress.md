@@ -25,6 +25,13 @@ Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and pus
 - Canonical ZK-760 coverage passes for carryable-water Par 3, driveable and dogleg/forced-layup Par 4, three-shot and reachable Par 5, both ambiguity bands, all three tee sets, independent pins, manual warning behavior, structures, elevation, deterministic edit invalidation, and review-overlay output. `test:ci` passes 178 files / 1,417 tests plus one intentional skip and 5/5 audio audits; lint/i18n passes with zero errors and the 12 existing hook warnings.
 - The production build passes every asset/offline/residency/delivery audit. `referencePlan` is deferred as a 10.51 kB chunk; initial JavaScript is 1,602,676 bytes, 6,043 bytes below the 1,608,719-byte ceiling. The bundled web-game client reached the seeded game with structured state and no error artifact; the dedicated responsive browser scenario passes and its inspected 390×844 capture shows the neutral plan without horizontal overflow.
 
+## 2026-08-08 — ZK-764 reference-plan consumers complete
+
+- Architecture Review now injects its exact selected tee/pin reference plans into routing, variety, safety, and advisory rating/slope analysis; its overlay chords, landing tooltips, score summary, yardage, and explanations all report from the same retained plan versions. Published qualification ratings retain their compatibility path until reference evidence is explicitly supplied.
+- Residential safety accepts the same retained per-tee shot segments for exposure, setbacks, contributions, and heat cells instead of inventing fixed-percentage landings and recovery lines. The retained plan remains separate from live safe/hero/positional/recovery choices, with a deterministic isolation regression.
+- Flyovers lazily wait for the canonical selected tee/pin plan and frame every retained landing target, while implausible legacy routes retain a bounded direct tee/pin flyover. The planner remains a deferred 10.51 kB chunk and every production delivery audit passes.
+- Focused cross-consumer, legacy architecture/rating/property, and release-scale coverage passes 32 tests plus one intentional skip; the full Vitest suite, lint/i18n with only the existing hook warnings, the responsive reference-plan Playwright scenario, TypeScript, and production build pass. The 36-hole overlay stays capped at 320 traces and 180 landing points within its 3-second cold budget.
+
 ## 2026-08-06 — ZK-724 finite reward entitlements complete
 
 - Started from the exact isolated base `2d7432a514b5621a8c1cccdf4b1543106b239fcb` on `codex/zk724-reward-entitlements`; the original prompt above remains preserved.

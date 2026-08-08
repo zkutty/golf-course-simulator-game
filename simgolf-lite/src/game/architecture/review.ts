@@ -24,6 +24,7 @@ import { economicPressureForWorld, terrainCostMult } from "../balance/experience
 import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 import type { GreenStrategyHeatmap } from "./greenStrategyHeatmap";
 import type { ArchitectureReferencePlan } from "./referencePlan";
+import { computeRatingForSetup } from "../sim/courseRating";
 
 export interface ArchitectureReviewFilters {
   kind: ArchitectureOverlayKind;
@@ -59,6 +60,16 @@ export interface ArchitectureReviewData {
   greenStrategy: GreenStrategyHeatmap | null;
   referencePlans: ArchitectureReferencePlan[];
   selectedReferencePlan: ArchitectureReferencePlan | null;
+  referenceSummary: {
+    teeSet: "forward" | "member" | "championship";
+    pinRotation: "A" | "B" | "C";
+    architectureScore: number;
+    safetyScore: number;
+    courseRating: number;
+    slope: number;
+    effectiveYardage: number;
+    setupComplete: boolean;
+  } | null;
   returnToDesign: ReturnToDesignContext | null;
 }
 
@@ -170,8 +181,8 @@ function hazardCells(course: Course): ArchitectureOverlayCell[] {
   return bounded(cells, 300);
 }
 
-function walkingTraces(course: Course): ArchitectureOverlayTrace[] {
-  return analyzeArchitecture(course).warnings.flatMap((warning) => {
+function walkingTraces(course: Course, teeSet: "forward" | "member" | "championship", pinRotation: "A" | "B" | "C"): ArchitectureOverlayTrace[] {
+  return analyzeArchitecture(course, { teeSet, pinRotation }).warnings.flatMap((warning) => {
     const points = warning.geometry ?? [];
     return points.slice(1).map((point, index) => ({
       id: `walking-${warning.id}-${index}`,
@@ -272,7 +283,7 @@ export function buildArchitectureReview(
   else if (filters.kind === "recovery") overlay.traces = traces(evidence, currentGeometryVersion, selectedTraceId, true);
   else if (filters.kind === "scoring") overlay.points = scoringPoints(selectedCourse, evidence, currentGeometryVersion);
   else if (filters.kind === "hazards") overlay.cells = hazardCells(effectiveSelectedCourse);
-  else if (filters.kind === "walking") overlay.traces = walkingTraces(selectedCourse);
+  else if (filters.kind === "walking") overlay.traces = walkingTraces(selectedCourse, selectedTee, selectedPin);
   else if (filters.kind === "congestion") overlay.points = congestionPoints(evidence, currentGeometryVersion);
 
   if (filters.kind === "options" || filters.kind === "advantage" || filters.kind === "bailouts" || filters.kind === "carries" || filters.kind === "misses") {
@@ -343,6 +354,7 @@ export function buildArchitectureReview(
     greenStrategy: null,
     referencePlans: [],
     selectedReferencePlan: null,
+    referenceSummary: null,
     returnToDesign: living.architecture.returnContext?.courseId === filters.courseId
       ? living.architecture.returnContext
       : null,
@@ -364,35 +376,55 @@ export function withGreenStrategyHeatmap(
 export function withArchitectureReferencePlans(
   review: ArchitectureReviewData,
   plans: ArchitectureReferencePlan[] | null,
+  course?: Course,
 ): ArchitectureReviewData {
   if (review.filters.kind !== "reference" || !plans) {
-    return review.referencePlans.length === 0 && review.selectedReferencePlan == null
+    return review.referencePlans.length === 0 && review.selectedReferencePlan == null && review.referenceSummary == null
       ? review
-      : { ...review, referencePlans: [], selectedReferencePlan: null };
+      : { ...review, referencePlans: [], selectedReferencePlan: null, referenceSummary: null };
   }
   const selectedReferencePlan = review.filters.holeId === "all"
     ? null
     : plans.find((plan) => plan.holeId === review.filters.holeId) ?? null;
+  const visiblePlans = selectedReferencePlan ? [selectedReferencePlan] : plans;
+  const holeNumber = (plan: ArchitectureReferencePlan, fallback: number) => {
+    const index = course?.holes.findIndex((hole) => hole.id === plan.holeId) ?? -1;
+    return (index >= 0 ? index : fallback) + 1;
+  };
   const overlay: ArchitectureOverlayRender = { kind: "reference", traces: [], cells: [], points: [] };
-  overlay.traces = bounded(plans.flatMap((plan) => plan.segments.map((segment) => ({
+  overlay.traces = bounded(visiblePlans.flatMap((plan, holeIndex) => plan.segments.map((segment) => ({
     id: `${plan.id}:${segment.id}`,
     from: segment.from,
     to: segment.to,
     current: true,
     emphasized: plan.id === selectedReferencePlan?.id,
-    label: `${plan.teeSet} · shot ${segment.shot} · ${segment.playsLikeYards} yd · ${Math.round(segment.risk.total * 100)}% risk`,
+    label: `Hole ${holeNumber(plan, holeIndex)} · ${plan.teeSet} · shot ${segment.shot} · ${segment.playsLikeYards} yd · ${Math.round(segment.risk.total * 100)}% risk`,
     source: "reference" as const,
     pattern: "solid" as const,
   }))), 320);
-  overlay.points = bounded(plans.flatMap((plan) => plan.landingZones.map((zone) => ({
+  overlay.points = bounded(visiblePlans.flatMap((plan, holeIndex) => plan.landingZones.map((zone) => ({
     id: zone.id,
     x: zone.center.x,
     y: zone.center.y,
     value: Math.max(2, zone.radiusTiles),
     current: true,
-    label: `Shot ${zone.shot} landing · ${Math.round(zone.playableShare * 100)}% playable · ${zone.nextShotYards} yd next`,
+    label: `Hole ${holeNumber(plan, holeIndex)} · shot ${zone.shot} landing · ${Math.round(zone.playableShare * 100)}% playable · ${zone.nextShotYards} yd next`,
     source: "reference" as const,
     pattern: "dots" as const,
   }))), 180);
-  return { ...review, referencePlans: plans, selectedReferencePlan, overlay };
+  const teeSet = plans[0]?.teeSet;
+  const pinRotation = plans[0]?.pinRotation;
+  const rating = course && teeSet && pinRotation ? computeRatingForSetup(course, teeSet, pinRotation, plans) : null;
+  const architecture = course && teeSet && pinRotation ? analyzeArchitecture(course, { teeSet, pinRotation }, plans) : null;
+  const referenceSummary = rating && architecture ? {
+    teeSet,
+    pinRotation,
+    architectureScore: architecture.total,
+    safetyScore: architecture.components.safety.score,
+    courseRating: rating.courseRating,
+    slope: rating.slope,
+    effectiveYardage: rating.effectiveYardage,
+    setupComplete: rating.setupComplete,
+  } : null;
+  return { ...review, referencePlans: plans, selectedReferencePlan, referenceSummary, overlay };
 }

@@ -102,7 +102,6 @@ import {
   MAX_ACTIVE_RIPPLES,
   appendBoundedEffect,
 } from "../game/render/worldEffects";
-import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import {
   decorationTiles,
   decorationVisual,
@@ -115,6 +114,7 @@ import {
   resolvedObstaclePlantId,
 } from "../game/models/plantRegistry";
 import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
+import type { ArchitectureReferencePlan } from "../game/architecture/referencePlan";
 import type { AtlasFrame } from "../render/atlas";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
 import {
@@ -640,6 +640,7 @@ export interface PixiStageProps {
   terrainPatterns: boolean;
   keybindings: Keybindings;
   flyoverNonce: number;
+  flyoverReferencePlan?: ArchitectureReferencePlan | null;
   showShotPlan: boolean;
   editorMode: "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
   selectedDecorationKind?: DecorationKind;
@@ -1706,34 +1707,40 @@ export function PixiStage(props: PixiStageProps) {
     // is still empty.
     let holeIndex = activeHoleIndex;
     let hole = holes[holeIndex];
-    if ((!hole?.tee || !hole?.green) && holeIndex > 0) {
+    const referencePlan = props.flyoverReferencePlan ?? null;
+    const retainedHoleIndex = referencePlan ? holes.findIndex((candidate) => candidate.id === referencePlan!.holeId) : -1;
+    if (retainedHoleIndex >= 0) {
+      holeIndex = retainedHoleIndex;
+      hole = holes[holeIndex];
+    }
+    if ((!referencePlan?.tee || !referencePlan.pin) && holeIndex > 0) {
       holeIndex = activeHoleIndex - 1;
       hole = holes[holeIndex];
     }
-    if (!app || !hole?.tee || !hole?.green) return;
-    const tee = hole.tee;
-    const green = hole.green;
+    if (!app || !hole || !referencePlan?.tee || !referencePlan.pin) return;
+    const tee = referencePlan.tee;
+    const green = referencePlan.pin;
     const cam = camRef.current;
-    // Frame the whole hole for the wide shots; tighten for the green.
-    const minX = Math.min(tee.x, green.x) - 5;
-    const maxX = Math.max(tee.x, green.x) + 5;
-    const minY = Math.min(tee.y, green.y) - 5;
-    const maxY = Math.max(tee.y, green.y) + 5;
+    // Frame the retained reference targets, including dogleg landing regions,
+    // rather than a tee-to-pin box that can crop the actual shot sequence.
+    const referencePoints = [tee, ...referencePlan.segments.map((segment) => segment.to)];
+    const minX = Math.min(...referencePoints.map((point) => point.x)) - 5;
+    const maxX = Math.max(...referencePoints.map((point) => point.x)) + 5;
+    const minY = Math.min(...referencePoints.map((point) => point.y)) - 5;
+    const maxY = Math.max(...referencePoints.map((point) => point.y)) + 5;
     const wide = fitZoomForTileBounds(minX, minY, maxX, maxY, app.screen.width, app.screen.height, rotation);
     const tight = Math.min(MAX_ZOOM * 0.6, Math.max(wide * 2.4, wide + 0.4));
-    const corridor = (props.activeShotPlan ?? []).map((s) => s.to);
+    const corridor = referencePlan.segments.map((segment) => segment.to);
     flyoverRef.current = {
       keys: buildFlyoverKeys(tee, green, corridor, wide, tight),
       t0: performance.now(),
       // A re-trigger mid-flyover keeps the original pre-flyover camera.
       saved: flyoverRef.current?.saved ?? { cx: cam.tcx, cy: cam.tcy, zoom: cam.tzoom },
     };
-    const distTiles = computeHoleDistanceTiles(tee, green);
-    const autoPar = computeAutoPar(distTiles);
     setFlyoverCard({
       hole: holeIndex + 1,
-      par: hole.parMode === "MANUAL" ? hole.parManual ?? autoPar : autoPar,
-      yards: Math.round(distTiles * (course.yardsPerTile ?? 10)),
+      par: referencePlan.selectedPar,
+      yards: referencePlan.effectiveYardage || Math.round(Math.hypot(green.x - tee.x, green.y - tee.y) * (course.yardsPerTile ?? 10)),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.flyoverNonce, appReady]);

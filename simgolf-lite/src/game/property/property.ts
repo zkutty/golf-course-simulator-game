@@ -1,4 +1,4 @@
-import type { ConcessionType, Course, World } from "../models/types";
+import type { ConcessionType, Course, TeeSet, World } from "../models/types";
 import type {
   ClubProfessional,
   CommunityComplaint,
@@ -37,6 +37,7 @@ import type {
 import { isOwnedTile } from "../estate/estate";
 import { buildingFootprintSet } from "../models/buildings";
 import { lastItem } from "../../utils/array";
+import type { ArchitectureReferencePlan } from "../architecture/referencePlan";
 
 export interface PropertyAssetSpec {
   kind: PropertyAssetKind;
@@ -1515,7 +1516,7 @@ function rotatePracticeGeometry(asset: PropertyAsset): PropertyAsset {
   };
 }
 
-export function analyzeResidentialSafety(course: Course, assetId?: string): ResidentialSafetyReport {
+export function analyzeResidentialSafety(course: Course, assetId?: string, referencePlans?: readonly ArchitectureReferencePlan[]): ResidentialSafetyReport {
   const property = normalizePropertyCourse(course.property);
   const assets = property.assets;
   const residential = assets.filter((asset) => (asset.kind === "houses" || asset.kind === "condos") && (!assetId || asset.id === assetId));
@@ -1527,6 +1528,20 @@ export function analyzeResidentialSafety(course: Course, assetId?: string): Resi
   let outlierExposure = 0;
   let mitigation = 0;
   let measuredSetback = Number.POSITIVE_INFINITY;
+  const pinRotation = course.activePinRotation ?? "A";
+  const retainedPlans = new Map(referencePlans?.filter((plan) => plan.pinRotation === pinRotation).map((plan) => [`${plan.holeId}:${plan.teeSet}`, plan]) ?? []);
+  const safetyPlans = new Map(course.holes.map((hole, index) => {
+    const holeId = hole.id ?? `hole-${index + 1}`;
+    const configured = (Object.entries(hole.teeBoxes ?? {}) as Array<[TeeSet, { x: number; y: number } | undefined]>)
+      .filter(([teeSet, tee]) => !!tee && !property.safetyPolicy.restrictedTeeSets.includes(teeSet));
+    const teeSets = configured.length > 0 ? configured.map(([teeSet]) => teeSet) : ["member" as const];
+    return [holeId, teeSets.map((teeSet) => retainedPlans.get(`${holeId}:${teeSet}`) ?? {
+      teeSet,
+      tee: hole.teeBoxes?.[teeSet] ?? (teeSet === "member" ? hole.tee : null) ?? null,
+      pin: hole.pinPositions?.[pinRotation] ?? (pinRotation === "A" ? hole.green : null) ?? null,
+      segments: [],
+    })] as const;
+  }));
   for (const homes of residential) {
     const target = { x: homes.x + homes.width / 2, y: homes.y + homes.height / 2 };
     const unitFactor = Math.sqrt(Math.max(1, homes.units ?? 1)) / 4;
@@ -1534,31 +1549,21 @@ export function analyzeResidentialSafety(course: Course, assetId?: string): Resi
       if (!hole.tee || !hole.green) continue;
       const key = hole.id ?? `hole-${index + 1}`;
       if (property.safetyPolicy.closedHoleIds.includes(key)) continue;
-      const teeEntries = Object.entries(hole.teeBoxes ?? {}).filter(([teeSet, tee]) => !!tee && !property.safetyPolicy.restrictedTeeSets.includes(teeSet as "championship" | "member" | "forward"));
-      if (teeEntries.length === 0) teeEntries.push(["member", hole.tee]);
+      const plans = safetyPlans.get(key) ?? [];
       let holeDistance = Number.POSITIVE_INFINITY;
       let holeExpected = 0;
       let holeOutlier = 0;
-      for (const [teeSet, rawTee] of teeEntries) {
-        const tee = rawTee ?? hole.tee;
-        const dx = hole.green.x - tee.x;
-        const dy = hole.green.y - tee.y;
-        const length = Math.max(1, Math.hypot(dx, dy));
-        const normal = { x: -dy / length, y: dx / length };
-        const firstLanding = { x: tee.x + dx * 0.58, y: tee.y + dy * 0.58 };
-        const recovery = { x: firstLanding.x + normal.x * 3, y: firstLanding.y + normal.y * 3 };
-        const segments = [
-          [tee, firstLanding, 1],
-          [firstLanding, hole.green, 0.82],
-          [recovery, hole.green, 0.48],
-        ] as const;
-        const teeWidth = teeSet === "championship" ? 1.12 : teeSet === "forward" ? 0.88 : 1;
-        for (const [from, to, segmentWeight] of segments) {
+      for (const plan of plans) {
+        const teeWidth = plan.teeSet === "championship" ? 1.12 : plan.teeSet === "forward" ? 0.88 : 1;
+        const segments = plan.segments.length > 0 ? plan.segments : plan.tee && plan.pin ? [{ shot: 1, from: plan.tee, to: plan.pin, risk: { total: 0 } }] : [];
+        for (const segment of segments) {
+          const segmentWeight = (segment.shot === 1 ? 1 : .82) * (1 + segment.risk.total * .18);
+          const { from, to } = segment;
           const distance = pointSegmentDistance(target, from, to);
           holeDistance = Math.min(holeDistance, distance);
           measuredSetback = Math.min(measuredSetback, distance);
-          const expected = (distance < 4 ? 38 : distance < 8 ? 23 : distance < 14 ? 9 : distance < 22 ? 2.5 : 0) * teeWidth * segmentWeight / teeEntries.length;
-          const outlier = (distance < 10 ? 17 : distance < 18 ? 9 : distance < 30 ? 3.5 : 0) * teeWidth * segmentWeight / teeEntries.length;
+          const expected = (distance < 4 ? 38 : distance < 8 ? 23 : distance < 14 ? 9 : distance < 22 ? 2.5 : 0) * teeWidth * segmentWeight / Math.max(1, plans.length);
+          const outlier = (distance < 10 ? 17 : distance < 18 ? 9 : distance < 30 ? 3.5 : 0) * teeWidth * segmentWeight / Math.max(1, plans.length);
           holeExpected += expected;
           holeOutlier += outlier;
         }
@@ -1598,9 +1603,12 @@ export function analyzeResidentialSafety(course: Course, assetId?: string): Resi
         if (!hole.tee || !hole.green) continue;
         const holeId = hole.id ?? `hole-${index + 1}`;
         if (property.safetyPolicy.closedHoleIds.includes(holeId)) continue;
-        const distance = pointSegmentDistance(point, hole.tee, hole.green);
-        if (distance < 26) {
-          rawRisk += distance < 5 ? 25 : distance < 10 ? 14 : distance < 18 ? 6 : 2;
+        const plans = safetyPlans.get(holeId) ?? [];
+        const distance = Math.min(Number.POSITIVE_INFINITY, ...plans.flatMap((plan) => plan.segments.length > 0
+          ? plan.segments.map((segment) => pointSegmentDistance(point, segment.from, segment.to))
+          : plan.tee && plan.pin ? [pointSegmentDistance(point, plan.tee, plan.pin)] : []));
+        if (distance < 26 && plans.some((plan) => plan.segments.length > 0 || !!(plan.tee && plan.pin))) {
+          rawRisk += (distance < 5 ? 25 : distance < 10 ? 14 : distance < 18 ? 6 : 2);
           contributingHoleIds.push(holeId);
         }
       }

@@ -5,6 +5,7 @@ import { BALANCE } from "../balance/balanceConfig";
 import { courseForCourseSetup, getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../models/courseSetup";
 import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
 import { analyzePinFairness } from "../greens/pinFairness";
+import type { ArchitectureReferencePlan } from "../architecture/referencePlan";
 
 export interface RatingSummary {
   holesUsed: number; // 9 or 18
@@ -89,27 +90,34 @@ function computeExpectedScoreForHole(
   course: Course,
   holeIndex: number,
   profile: GolferProfile,
-  summary: ReturnType<typeof scoreCourseHoles>,
+  plan: ArchitectureReferencePlan | undefined,
+  fallback: ReturnType<typeof scoreCourseHoles>["holes"][number] | undefined,
   expectedPutts = 2,
 ) {
-  const h = summary.holes[holeIndex];
-  if (!h || !h.isComplete || !h.isValid) {
+  if (!course.holes[holeIndex] || (!plan?.segments.length && (!fallback?.isComplete || !fallback.isValid))) {
     // Treat invalid holes as very punishing (forces redesign); bogey punished more.
     return profile.name === "BOGEY" ? 9 : 7;
   }
 
   const yardsPerTile = course.yardsPerTile ?? 10;
-  const distanceYards = h.effectiveDistance * yardsPerTile;
+  const usesReference = !!plan?.segments.length;
+  const distanceYards = usesReference ? plan!.effectiveYardage : fallback!.effectiveDistance * yardsPerTile;
 
-  const s = h.corridor.samples || 1;
-  const waterFrac = (h.corridor.water + h.corridor.wetland) / s;
-  const sandFrac = h.corridor.sand / s;
-  const wasteFrac = h.corridor.waste_area / s;
-  const roughFrac = h.corridor.rough / s;
-  const deepRoughFrac = h.corridor.deep_rough / s;
+  const corridor = usesReference ? plan!.corridor : fallback!.corridor;
+  const s = corridor.samples || 1;
+  const waterFrac = (corridor.water + corridor.wetland) / s;
+  const sandFrac = corridor.sand / s;
+  const wasteFrac = corridor.waste_area / s;
+  const roughFrac = corridor.rough / s;
+  const deepRoughFrac = corridor.deep_rough / s;
 
-  // Obstacle proxy: difficulty above baseline indicates more forced shots.
-  const obstaclePenalty = clamp((h.difficultyScore - 45) / 100, 0, 1);
+  // The reference planner already evaluates blockers, landing width, carries,
+  // runout, and next-shot quality. Rating consumes that retained evidence
+  // instead of reconstructing another fairway-following difficulty proxy.
+  const obstaclePenalty = usesReference
+    ? plan!.segments.reduce((sum, segment) => sum + segment.risk.blockers * .45 + segment.risk.landing * .25
+      + segment.risk.carry * .2 + segment.risk.runout * .1, 0) / plan!.segments.length
+    : clamp((fallback!.difficultyScore - 45) / 100, 0, 1);
 
   const baseShots = estimateShotsToReachGreen(distanceYards, profile);
   const penalty = hazardPenaltyStrokes({
@@ -238,10 +246,11 @@ function ratingGeometry(course: Course): RatingGeometryCache {
   return created;
 }
 
-export function computeRatingForSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation): SetupRatingSummary {
+export function computeRatingForSetup(course: Course, teeSet: TeeSet, pinRotation: PinRotation, referencePlans?: readonly ArchitectureReferencePlan[]): SetupRatingSummary {
   course = courseWithEffectiveSurfaces(course);
   const setups = ratingGeometry(course).setups;
-  const cacheKey = `${teeSet}:${pinRotation}`;
+  const planKey = referencePlans?.map((plan) => plan.version).join("|") ?? "legacy";
+  const cacheKey = `${teeSet}:${pinRotation}:${planKey}`;
   const cached = setups.get(cacheKey);
   if (cached) return cached;
   const setupCourse = courseForSetup(course, teeSet, pinRotation);
@@ -255,12 +264,14 @@ export function computeRatingForSetup(course: Course, teeSet: TeeSet, pinRotatio
   let pinDelta = 0;
   let validHoles = 0;
   let setupComplete = true;
+  const plansByHole = new Map(referencePlans?.map((plan) => [plan.holeId, plan]) ?? []);
   for (let i = 0; i < Math.min(holesUsed, course.holes.length); i++) {
     const original = course.holes[i];
     const tee = getTeeBox(original, teeSet);
     const pin = getPinPosition(original, pinRotation);
     if (!tee || !pin) setupComplete = false;
     const fairness = analyzePinFairness(setupCourse, original, pin, pinRotation);
+    const referencePlan = plansByHole.get(original.id ?? "");
     const coarsePenalty = coarsePinDifficultyPenalty(setupCourse, pin);
     // Retain the published coarse-rating baseline while the authoritative fine
     // surface and automatic-putt model add only their newly observed excess.
@@ -270,12 +281,12 @@ export function computeRatingForSetup(course: Course, teeSet: TeeSet, pinRotatio
       + Math.max(0, fairness.cohorts.bogey.scoreDelta - fairness.cohorts.scratch.scoreDelta) * .12;
     const bogeyPutting = 2 + coarsePenalty * BALANCE.courseSetup.pinDifficulty.bogeySensitivity + bogeyAutomaticDelta;
     const info = holeSummary.holes[i];
-    scratchTotal += computeExpectedScoreForHole(setupCourse, i, scratch, holeSummary, scratchPutting);
-    bogeyTotal += computeExpectedScoreForHole(setupCourse, i, bogey, holeSummary, bogeyPutting);
+    scratchTotal += computeExpectedScoreForHole(setupCourse, i, scratch, referencePlan, info, scratchPutting);
+    bogeyTotal += computeExpectedScoreForHole(setupCourse, i, bogey, referencePlan, info, bogeyPutting);
     if (!fairness.legal) setupComplete = false;
-    if (info?.isComplete && info.isValid && tee && pin && fairness.legal) {
+    if (info?.isComplete && ((referencePlan?.segments.length ?? 0) > 0 || info.isValid) && tee && pin && fairness.legal) {
       validHoles++;
-      effectiveYardage += info.effectiveDistance * setupCourse.yardsPerTile;
+      effectiveYardage += referencePlan?.segments.length ? referencePlan.effectiveYardage : info.effectiveDistance * setupCourse.yardsPerTile;
       pinDelta += coarsePenalty + (fairness.cohorts.scratch.scoreDelta + fairness.cohorts.bogey.scoreDelta) / 2;
     }
   }

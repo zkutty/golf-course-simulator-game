@@ -1,13 +1,14 @@
-import type { Course, Hole, Point, Terrain } from "../models/types";
+import type { Course, Hole, PinRotation, Point, TeeSet, Terrain } from "../models/types";
 import { BALANCE } from "../balance/balanceConfig";
 import { decodeElevationBaseline, decodeTerrainBaseline } from "../estate/estate";
-import { getPinPosition, getTeeBox } from "../models/courseSetup";
 import { computeAutoPar, computePathDistanceTiles } from "../sim/holeMetrics";
 import { findWalkPath } from "../live/walkPath";
 import { lastItem } from "../../utils/array";
 import { buildStrategicPortfolio } from "./portfolio";
 import type { M48StrategicPortfolio } from "./m48Types";
 import { courseWithEffectiveSurfaces } from "../conditions/surfaceCare";
+import type { ArchitectureReferencePlan } from "./referencePlan";
+import { getPinPosition, getTeeBox } from "../models/courseSetup";
 
 export type ArchitectureComponentId = "routing" | "naturalFit" | "variety" | "safety" | "walkability";
 export type ArchitectureWarningKind = "transfer" | "clubhouse" | "repetition" | "crossing" | "parallel" | "earthwork" | "terrain";
@@ -49,17 +50,30 @@ const WEIGHTS: Record<ArchitectureComponentId, number> = {
   walkability: .15,
 };
 
-const cache = new WeakMap<Course, ArchitectureReport>();
+const cache = new WeakMap<Course, Map<string, ArchitectureReport>>();
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value));
 const round = (value: number, digits = 1) => Number(value.toFixed(digits));
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const midpoint = (a: Point, b: Point): Point => ({ x: round((a.x + b.x) / 2), y: round((a.y + b.y) / 2) });
 
-function tee(hole: Hole): Point | null { return getTeeBox(hole, "member"); }
-function green(hole: Hole): Point | null { return getPinPosition(hole, "A"); }
-function route(hole: Hole): Point[] {
-  const start = tee(hole);
-  const end = green(hole);
+export interface ArchitectureAnalysisSetup {
+  teeSet?: TeeSet;
+  pinRotation?: PinRotation;
+}
+
+function referencePath(plan: ArchitectureReferencePlan | undefined): Point[] {
+  if (!plan?.tee || !plan.pin) return [];
+  // Incomplete/oversized legacy layouts may not have a plausible three-shot
+  // neutral solve yet. Their bounded fallback is the selected tee-to-pin
+  // chord, never the old paint-derived fairway snake.
+  return plan.segments.length > 0 ? [plan.tee, ...plan.segments.map((segment) => segment.to)] : [plan.tee, plan.pin];
+}
+
+function analysisPath(hole: Hole, paths: Map<string, Point[]>, teeSet: TeeSet, pinRotation: PinRotation): Point[] {
+  const retained = paths.get(hole.id ?? "");
+  if (retained) return retained;
+  const start = getTeeBox(hole, teeSet);
+  const end = getPinPosition(hole, pinRotation);
   return start && end ? [start, ...(hole.waypoints ?? []), end] : [];
 }
 function clubhouse(course: Course): Point | null {
@@ -87,8 +101,7 @@ function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
 function component(id: ArchitectureComponentId, label: string, score: number, explanation: string, raw: Record<string, number>): ArchitectureComponent {
   return { id, label, score: round(clamp(score)), weight: WEIGHTS[id], explanation, raw };
 }
-function routeSegments(hole: Hole): Array<[Point, Point]> {
-  const points = route(hole);
+function routeSegments(points: Point[]): Array<[Point, Point]> {
   return points.slice(1).map((point, index) => [points[index], point]);
 }
 
@@ -123,8 +136,8 @@ function analyzeNaturalFit(course: Course, warnings: ArchitectureWarning[]): Arc
   return component("naturalFit", "Natural fit", score, `${round(retainedPercent)}% of surveyed terrain remains; earthwork averages ${round(earthworkPer100)} steps per 100 tiles.`, { retainedTerrainPercent: round(retainedPercent), changedTiles: changed, earthworkSteps: earthwork, earthworkStepsPer100Tiles: round(earthworkPer100) });
 }
 
-function analyzeVariety(course: Course): ArchitectureComponent {
-  const holes = course.holes.filter((hole) => route(hole).length >= 2);
+function analyzeVariety(course: Course, paths: Map<string, Point[]>, teeSet: TeeSet, pinRotation: PinRotation): ArchitectureComponent {
+  const holes = course.holes.filter((hole) => analysisPath(hole, paths, teeSet, pinRotation).length >= 2);
   const pars = new Set<number>();
   const lengthBands = new Set<number>();
   const directions = new Set<number>();
@@ -132,14 +145,14 @@ function analyzeVariety(course: Course): ArchitectureComponent {
   const hazardMix = new Set<Terrain>();
   const sceneryMix = new Set<Terrain>();
   for (const hole of holes) {
-    const points = route(hole);
+    const points = analysisPath(hole, paths, teeSet, pinRotation);
     const length = computePathDistanceTiles(points);
     pars.add(hole.parMode === "MANUAL" && hole.parManual ? hole.parManual : computeAutoPar(length));
     lengthBands.add(length < 16 ? 0 : length < 28 ? 1 : length < 40 ? 2 : 3);
     directions.add(Math.floor(angle(points[0], points[points.length - 1]) / 45) % 8);
     const direct = distance(points[0], points[points.length - 1]);
     shapes.add(points.length > 2 && length > direct * 1.12 ? "dogleg" : "straight");
-    for (const [a, b] of routeSegments(hole)) {
+    for (const [a, b] of routeSegments(points)) {
       const steps = Math.max(1, Math.ceil(distance(a, b)));
       for (let step = 0; step <= steps; step++) {
         const x = Math.max(0, Math.min(course.width - 1, Math.round(a.x + (b.x - a.x) * step / steps)));
@@ -155,23 +168,26 @@ function analyzeVariety(course: Course): ArchitectureComponent {
   return component("variety", "Variety", score, `${pars.size} par types, ${lengthBands.size} length bands, ${directions.size} directions, and ${shapes.size} routing shapes create the playing mix.`, { parTypes: pars.size, lengthBands: lengthBands.size, directionBuckets: directions.size, shapeTypes: shapes.size, hazardTypes: hazardMix.size, sceneryTypes: sceneryMix.size });
 }
 
-function analyzeFlow(course: Course, warnings: ArchitectureWarning[]): { routing: ArchitectureComponent; walkability: ArchitectureComponent } {
-  const holes = course.holes.filter((hole) => route(hole).length >= 2);
+function analyzeFlow(course: Course, paths: Map<string, Point[]>, teeSet: TeeSet, pinRotation: PinRotation, warnings: ArchitectureWarning[]): { routing: ArchitectureComponent; walkability: ArchitectureComponent } {
+  const holes = course.holes.filter((hole) => analysisPath(hole, paths, teeSet, pinRotation).length >= 2);
   const home = clubhouse(course);
   const transfers: number[] = [];
   let routedTransfers = 0;
   for (let index = 0; index < holes.length - 1; index++) {
-    const from = green(holes[index])!;
-    const to = tee(holes[index + 1])!;
+    const from = lastItem(analysisPath(holes[index], paths, teeSet, pinRotation))!;
+    const to = analysisPath(holes[index + 1], paths, teeSet, pinRotation)[0]!;
     const transfer = routedTransfer(course, from, to);
     const length = transfer.length;
     if (transfer.path) routedTransfers++;
     transfers.push(length);
     if (length > 18) warnings.push({ id: `transfer-${holes[index].id}-${holes[index + 1].id}`, kind: "transfer", severity: length > 30 ? "warning" : "info", message: `The transfer from ${holes[index].name ?? `hole ${index + 1}`} to ${holes[index + 1].name ?? `hole ${index + 2}`} is long.`, holeIds: [holes[index].id!, holes[index + 1].id!], location: midpoint(from, to), geometry: transfer.path ?? [from, to], measurement: `${round(length)} routed tiles` });
   }
-  const firstDistance = home && holes.length ? routedTransfer(course, home, tee(holes[0])!).length : 0;
-  const finalDistance = home && holes.length ? routedTransfer(course, green(holes[holes.length - 1])!, home).length : 0;
-  const ninthDistance = home && holes.length >= 9 ? routedTransfer(course, green(holes[8])!, home).length : 0;
+  const firstTee = holes.length ? analysisPath(holes[0], paths, teeSet, pinRotation)[0]! : null;
+  const finalGreen = holes.length ? lastItem(analysisPath(holes[holes.length - 1], paths, teeSet, pinRotation))! : null;
+  const ninthGreen = holes.length >= 9 ? lastItem(analysisPath(holes[8], paths, teeSet, pinRotation))! : null;
+  const firstDistance = home && firstTee ? routedTransfer(course, home, firstTee).length : 0;
+  const finalDistance = home && finalGreen ? routedTransfer(course, finalGreen, home).length : 0;
+  const ninthDistance = home && ninthGreen ? routedTransfer(course, ninthGreen, home).length : 0;
   const averageTransfer = transfers.length ? transfers.reduce((sum, value) => sum + value, 0) / transfers.length : 0;
   const totalWalk = transfers.reduce((sum, value) => sum + value, 0) + firstDistance + finalDistance;
   const transferScore = clamp(100 - Math.max(0, averageTransfer - 6) * 3.2);
@@ -179,22 +195,22 @@ function analyzeFlow(course: Course, warnings: ArchitectureWarning[]): { routing
   const compactScore = holes.length ? clamp(100 - totalWalk / holes.length * 2.1) : 0;
   const routingScore = transferScore * .42 + homeScore * .38 + compactScore * .20;
   const walkabilityScore = transferScore * .58 + compactScore * .27 + (routedTransfers / Math.max(1, transfers.length) * 100) * .15;
-  if (home && firstDistance > 18) warnings.push({ id: "clubhouse-first", kind: "clubhouse", severity: "warning", message: "The first tee sits far from the shared clubhouse.", holeIds: holes[0]?.id ? [holes[0].id] : [], location: tee(holes[0])!, geometry: [home, tee(holes[0])!], measurement: `${round(firstDistance)} routed tiles` });
-  if (home && finalDistance > 18) warnings.push({ id: "clubhouse-final", kind: "clubhouse", severity: "warning", message: "The final green finishes far from the shared clubhouse.", holeIds: lastItem(holes)?.id ? [lastItem(holes)!.id!] : [], location: green(lastItem(holes)!)!, geometry: [green(lastItem(holes)!)!, home], measurement: `${round(finalDistance)} routed tiles` });
+  if (home && firstTee && firstDistance > 18) warnings.push({ id: "clubhouse-first", kind: "clubhouse", severity: "warning", message: "The first tee sits far from the shared clubhouse.", holeIds: holes[0]?.id ? [holes[0].id] : [], location: firstTee, geometry: [home, firstTee], measurement: `${round(firstDistance)} routed tiles` });
+  if (home && finalGreen && finalDistance > 18) warnings.push({ id: "clubhouse-final", kind: "clubhouse", severity: "warning", message: "The final green finishes far from the shared clubhouse.", holeIds: lastItem(holes)?.id ? [lastItem(holes)!.id!] : [], location: finalGreen, geometry: [finalGreen, home], measurement: `${round(finalDistance)} routed tiles` });
   return {
     routing: component("routing", "Routing", routingScore, `Published order averages ${round(averageTransfer)} tiles between holes; first/final clubhouse access totals ${round(firstDistance + finalDistance)} tiles.`, { averageTransferTiles: round(averageTransfer), firstTeeClubhouseTiles: round(firstDistance), finalGreenClubhouseTiles: round(finalDistance), ninthGreenClubhouseTiles: round(ninthDistance), totalTransferTiles: round(totalWalk), compactnessScore: round(compactScore) }),
     walkability: component("walkability", "Walkability", walkabilityScore, `${routedTransfers} of ${transfers.length} green-to-tee transfers use playable routed paths; total off-hole walking is ${round(totalWalk)} tiles.`, { routedTransfers, transferCount: transfers.length, averageTransferTiles: round(averageTransfer), totalWalkingTiles: round(totalWalk) }),
   };
 }
 
-function analyzeSafety(course: Course, warnings: ArchitectureWarning[]): ArchitectureComponent {
-  const holes = course.holes.filter((hole) => route(hole).length >= 2);
+function analyzeSafety(course: Course, paths: Map<string, Point[]>, teeSet: TeeSet, pinRotation: PinRotation, warnings: ArchitectureWarning[]): ArchitectureComponent {
+  const holes = course.holes.filter((hole) => analysisPath(hole, paths, teeSet, pinRotation).length >= 2);
   let crossings = 0;
   let parallels = 0;
   let repetitions = 0;
   for (let index = 1; index < holes.length; index++) {
-    const previous = route(holes[index - 1]);
-    const current = route(holes[index]);
+    const previous = analysisPath(holes[index - 1], paths, teeSet, pinRotation);
+    const current = analysisPath(holes[index], paths, teeSet, pinRotation);
     const directionDelta = angleDifference(angle(previous[0], lastItem(previous)!), angle(current[0], lastItem(current)!));
     const lengthDelta = Math.abs(computePathDistanceTiles(previous) - computePathDistanceTiles(current));
     if (directionDelta < 18 && lengthDelta < 5) {
@@ -203,7 +219,7 @@ function analyzeSafety(course: Course, warnings: ArchitectureWarning[]): Archite
     }
   }
   for (let a = 0; a < holes.length; a++) for (let b = a + 1; b < holes.length; b++) {
-    for (const [a0, a1] of routeSegments(holes[a])) for (const [b0, b1] of routeSegments(holes[b])) {
+    for (const [a0, a1] of routeSegments(analysisPath(holes[a], paths, teeSet, pinRotation))) for (const [b0, b1] of routeSegments(analysisPath(holes[b], paths, teeSet, pinRotation))) {
       if (segmentsCross(a0, a1, b0, b1)) {
         crossings++;
         const location = midpoint(midpoint(a0, a1), midpoint(b0, b1));
@@ -222,12 +238,19 @@ function analyzeSafety(course: Course, warnings: ArchitectureWarning[]): Archite
   return component("safety", "Safety", score, `${crossings} corridor crossings, ${parallels} close parallel relationships, and ${repetitions} repetitive transitions were found.`, { crossings, parallelDangerZones: parallels, repetitions });
 }
 
-export function analyzeArchitecture(course: Course): ArchitectureReport {
+export function analyzeArchitecture(course: Course, setup: ArchitectureAnalysisSetup = {}, referencePlans?: readonly ArchitectureReferencePlan[]): ArchitectureReport {
   const sourceCourse = course;
-  const cached = cache.get(sourceCourse);
+  const teeSet = setup.teeSet ?? "member";
+  const pinRotation = setup.pinRotation ?? "A";
+  let reports = cache.get(sourceCourse);
+  if (!reports) { reports = new Map(); cache.set(sourceCourse, reports); }
+  const referenceKey = referencePlans?.map((plan) => plan.version).join("|") ?? "legacy";
+  const setupKey = `${teeSet}:${pinRotation}:${referenceKey}`;
+  const cached = reports.get(setupKey);
   if (cached) return cached;
   course = courseWithEffectiveSurfaces(course);
-  const completeCount = course.holes.filter((hole) => route(hole).length >= 2).length;
+  const paths = new Map(referencePlans?.map((plan) => [plan.holeId, referencePath(plan)]) ?? []);
+  const completeCount = course.holes.filter((hole) => analysisPath(hole, paths, teeSet, pinRotation).length >= 2).length;
   // Architecture is a published-course judgment. Keeping incomplete editor
   // states lightweight avoids surveying 30,800 tiles on every brush stroke.
   if (completeCount < 9) {
@@ -243,14 +266,14 @@ export function analyzeArchitecture(course: Course): ArchitectureReport {
       warnings: [],
       generatedFor: { courseId: course.activeCourseId, holeIds: course.holes.map((hole) => hole.id!).filter(Boolean) },
     };
-    cache.set(sourceCourse, pending);
+    reports.set(setupKey, pending);
     return pending;
   }
   const warnings: ArchitectureWarning[] = [];
-  const flow = analyzeFlow(course, warnings);
+  const flow = analyzeFlow(course, paths, teeSet, pinRotation, warnings);
   const naturalFit = analyzeNaturalFit(course, warnings);
-  const variety = analyzeVariety(course);
-  const safety = analyzeSafety(course, warnings);
+  const variety = analyzeVariety(course, paths, teeSet, pinRotation);
+  const safety = analyzeSafety(course, paths, teeSet, pinRotation, warnings);
   const components: ArchitectureReport["components"] = { routing: flow.routing, naturalFit, variety, safety, walkability: flow.walkability };
   const baseTotal = round(Object.values(components).reduce((sum, item) => sum + item.score * item.weight, 0));
   const strategic = buildStrategicPortfolio(course);
@@ -259,7 +282,7 @@ export function analyzeArchitecture(course: Course): ArchitectureReport {
   // and explainable, while `strategic` exposes the cohort facts to newer UI.
   const total = round(strategic.evaluation.holes.length ? baseTotal * .58 + strategic.summary.total * .42 : baseTotal);
   const report = { total, components, strategic, warnings: warnings.sort((a, b) => Number(b.severity === "warning") - Number(a.severity === "warning") || a.id.localeCompare(b.id)), generatedFor: { courseId: course.activeCourseId, holeIds: course.holes.map((hole) => hole.id!).filter(Boolean) } } satisfies ArchitectureReport;
-  cache.set(sourceCourse, report);
+  reports.set(setupKey, report);
   return report;
 }
 
