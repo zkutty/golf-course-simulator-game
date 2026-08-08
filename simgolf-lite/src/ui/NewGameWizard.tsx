@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { formatCurrency } from "../i18n/format";
-import type { Difficulty, LandTheme, PlayMode, Terrain } from "../game/models/types";
+import type { EconomicPressure, ExperienceProfile, LandTheme, PlayMode, Terrain } from "../game/models/types";
 import type { GameSetup } from "../game/models/setup";
 import type { PlayerProAppearance, PlayerProBackground, PlayerProHandedness } from "../game/models/playerProTypes";
 import { SANDBOX_STARTING_CASH } from "../game/models/setup";
-import { startingCapitalForAxes } from "../game/balance/experience";
+import { EXPERIENCE_PROFILES, startingCapitalForAxes } from "../game/balance/experience";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../game/models/constants";
 import { generateNewGameLandscape } from "../game/gen/generateWildLand";
 import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
@@ -13,27 +13,62 @@ import { StartMenuBackground } from "./StartMenuBackground";
 import { ScenarioSelect } from "./ScenarioSelect";
 import type { ScenarioDefinition } from "../game/scenarios/types";
 import { T } from "../i18n/T";
-import { translateCurrent } from "../i18n/core";
+import { pseudoLocalize, translate, translateCurrent } from "../i18n/core";
 import type { MessageKey } from "../i18n/catalog";
 import { IS_DEMO } from "../config/edition";
 import { biomeContextAttributes, biomeUiStyle, biomeUiTheme } from "./biomeUiTheme";
+import { useI18n } from "../i18n/useI18n";
 
-// New-game setup wizard (ZKU-162): Mode → Land → Difficulty → Details.
+// New-game setup wizard (ZKU-162): Mode → Land → Experience → Details.
 // Output is a typed GameSetup consumed by the single createNewGame path.
 
-type Step = "MODE" | "SCENARIOS" | "LAND" | "DIFFICULTY" | "DETAILS";
-const STEPS: Step[] = ["MODE", "LAND", "DIFFICULTY", "DETAILS"];
-const STEP_TITLE: Record<Step, string> = {
-  MODE: "Choose your game",
-  SCENARIOS: "Pick a scenario",
-  LAND: "Pick your land",
-  DIFFICULTY: "How hard should it be?",
-  DETAILS: "Name your course",
+type Step = "MODE" | "SCENARIOS" | "LAND" | "EXPERIENCE" | "DETAILS";
+const STEPS: Step[] = ["MODE", "LAND", "EXPERIENCE", "DETAILS"];
+const STEP_TITLE: Record<Step, MessageKey> = {
+  MODE: "newGame.step.mode",
+  SCENARIOS: "newGame.step.scenarios",
+  LAND: "newGame.step.land",
+  EXPERIENCE: "newGame.experience.heading",
+  DETAILS: "newGame.step.details",
 };
 const BIOME_TITLE_KEYS: Record<LandTheme, MessageKey> = {
   parkland: "auto.ui.newgamewizard.parkland",
   links: "auto.ui.newgamewizard.links",
   desert: "auto.ui.newgamewizard.desert",
+};
+const PROFILE_COPY: Record<ExperienceProfile, {
+  label: MessageKey;
+  promise: MessageKey;
+  youManage: MessageKey;
+  teamManages: MessageKey;
+  icon: string;
+}> = {
+  relaxed: {
+    label: "newGame.experience.profile.relaxed.label",
+    promise: "newGame.experience.profile.relaxed.promise",
+    youManage: "newGame.experience.profile.relaxed.youManage",
+    teamManages: "newGame.experience.profile.relaxed.teamManages",
+    icon: "🌤️",
+  },
+  classic: {
+    label: "newGame.experience.profile.classic.label",
+    promise: "newGame.experience.profile.classic.promise",
+    youManage: "newGame.experience.profile.classic.youManage",
+    teamManages: "newGame.experience.profile.classic.teamManages",
+    icon: "⛳",
+  },
+  simulation: {
+    label: "newGame.experience.profile.simulation.label",
+    promise: "newGame.experience.profile.simulation.promise",
+    youManage: "newGame.experience.profile.simulation.youManage",
+    teamManages: "newGame.experience.profile.simulation.teamManages",
+    icon: "🧭",
+  },
+};
+const PRESSURE_COPY: Record<EconomicPressure, { label: MessageKey; description: MessageKey }> = {
+  friendly: { label: "newGame.pressure.friendly.label", description: "newGame.pressure.friendly.description" },
+  balanced: { label: "newGame.pressure.balanced.label", description: "newGame.pressure.balanced.description" },
+  tight: { label: "newGame.pressure.tight.label", description: "newGame.pressure.tight.description" },
 };
 
 function randomSeed(): number {
@@ -134,16 +169,19 @@ function LandPreview(props: {
 function ChoiceCard(props: {
   title: string;
   icon: string;
-  blurb: string;
+  blurb: ReactNode;
   selected?: boolean;
   disabled?: boolean;
   badge?: string;
+  testId?: string;
   onSelect: () => void;
 }) {
   return (
     <button
       onClick={props.onSelect}
       disabled={props.disabled}
+      aria-pressed={props.selected}
+      data-testid={props.testId}
       style={{
         textAlign: "left",
         padding: 16,
@@ -179,7 +217,7 @@ function ChoiceCard(props: {
           </span>
         )}
       </div>
-      <div style={{ fontSize: 12.5, color: "#4b5563", lineHeight: 1.45 }}>{props.blurb}</div>
+      <div style={{ fontSize: 12.5, color: "#4b5563", lineHeight: 1.45, overflowWrap: "anywhere" }}>{props.blurb}</div>
     </button>
   );
 }
@@ -189,10 +227,13 @@ export function NewGameWizard(props: {
   onStart: (setup: GameSetup) => void;
   onStartScenario: (scenario: ScenarioDefinition) => void;
 }) {
+  const { locale } = useI18n();
   const [step, setStep] = useState<Step>(IS_DEMO ? "SCENARIOS" : "MODE");
   const [mode, setMode] = useState<PlayMode>("challenge");
   const [theme, setTheme] = useState<LandTheme>(BIOME_KEYS[0]);
-  const [difficulty, setDifficulty] = useState<Difficulty>("normal");
+  const [experienceProfile, setExperienceProfile] = useState<ExperienceProfile>("classic");
+  const [economicPressure, setEconomicPressure] = useState<EconomicPressure>("balanced");
+  const [pressureIsExplicit, setPressureIsExplicit] = useState(false);
   const [candidateSeeds, setCandidateSeeds] = useState<number[]>(() =>
     Array.from({ length: 4 }, randomSeed)
   );
@@ -203,10 +244,10 @@ export function NewGameWizard(props: {
   const [proAppearance, setProAppearance] = useState<PlayerProAppearance>("classic");
   const [proHandedness, setProHandedness] = useState<PlayerProHandedness>("right");
   const [proBackground, setProBackground] = useState<PlayerProBackground>("architect");
-  const [startingCash, setStartingCash] = useState(() => startingCapitalForAxes({ difficulty: "normal" }));
+  const [startingCash, setStartingCash] = useState(() => startingCapitalForAxes({ experienceProfile: "classic", economicPressure: "balanced" }));
 
   const seed = candidateSeeds[selectedSeedIdx] ?? candidateSeeds[0];
-  const selectedStartingCapital = startingCapitalForAxes({ difficulty });
+  const selectedStartingCapital = startingCapitalForAxes({ experienceProfile, economicPressure });
   const stepIdx = step === "SCENARIOS" ? 1 : STEPS.indexOf(step);
   const contextualUiTheme = biomeUiTheme(theme);
 
@@ -216,7 +257,8 @@ export function NewGameWizard(props: {
     founderName: founderName.trim() || undefined,
     seed,
     theme,
-    difficulty,
+    experienceProfile,
+    economicPressure,
     playerPro: {
       name: proName.trim() || founderName.trim() || translateCurrent("playerPro.defaultName"),
       appearance: proAppearance,
@@ -242,6 +284,42 @@ export function NewGameWizard(props: {
     else setStep(STEPS[stepIdx - 1]);
   };
 
+  const selectExperienceProfile = (profile: ExperienceProfile) => {
+    const nextPressure = pressureIsExplicit
+      ? economicPressure
+      : EXPERIENCE_PROFILES[profile].defaultEconomicPressure;
+    setExperienceProfile(profile);
+    if (!pressureIsExplicit) setEconomicPressure(nextPressure);
+    setStartingCash(startingCapitalForAxes({ experienceProfile: profile, economicPressure: nextPressure }));
+  };
+
+  const selectEconomicPressure = (pressure: EconomicPressure) => {
+    setEconomicPressure(pressure);
+    setPressureIsExplicit(true);
+    setStartingCash(startingCapitalForAxes({ experienceProfile, economicPressure: pressure }));
+  };
+
+  const setupReview = () => {
+    const params = {
+      mode: mode === "challenge" ? "auto.ui.newgamewizard.challenge" : "auto.ui.newgamewizard.sandbox",
+      theme: BIOME_TITLE_KEYS[theme],
+      profile: PROFILE_COPY[experienceProfile].label,
+      pressure: PRESSURE_COPY[economicPressure].label,
+      seed,
+    } as const;
+    // Localize the full review at once. Interpolating already pseudo-localized
+    // fragments makes the outer review begin with a bracketed fragment and
+    // prevents its template (including the seed label) from being expanded.
+    const englishReview = translate("en", "newGame.review", {
+      mode: translate("en", params.mode),
+      theme: translate("en", params.theme),
+      profile: translate("en", params.profile),
+      pressure: translate("en", params.pressure),
+      seed,
+    });
+    return locale === "pseudo" ? pseudoLocalize(englishReview) : englishReview;
+  };
+
   const navButton = (label: string, onClick: () => void, primary = false) => (
     <button
       onClick={onClick}
@@ -264,14 +342,14 @@ export function NewGameWizard(props: {
     <div
       className="cc-biome-wizard"
       {...biomeContextAttributes(contextualUiTheme, "new-game-preview")}
-      style={{ position: "relative", width: "100vw", height: "100vh", overflow: "hidden", ...biomeUiStyle(contextualUiTheme) } as CSSProperties}
+      style={{ position: "relative", width: "100vw", height: "100vh", overflowX: "hidden", overflowY: "auto", ...biomeUiStyle(contextualUiTheme) } as CSSProperties}
     >
       <StartMenuBackground />
       <div
         style={{
           position: "relative",
           zIndex: 10,
-          height: "100%",
+          minHeight: "100vh",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -290,7 +368,7 @@ export function NewGameWizard(props: {
                 textShadow: "0 3px 10px rgba(61, 74, 62, 0.5)",
               }}
             >
-              {STEP_TITLE[step]}
+              {translateCurrent(STEP_TITLE[step])}
             </div>
             <div style={{ display: "flex", justifyContent: "center", gap: 8, marginTop: 10 }}>
               {STEPS.map((s, i) => (
@@ -416,38 +494,50 @@ export function NewGameWizard(props: {
             </div>
           )}
 
-          {step === "DIFFICULTY" && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-              <ChoiceCard
-                title={translateCurrent("auto.ui.newgamewizard.easy")}
-                icon="⛱️"
-                blurb="A relaxed build: more starting room for error, forgiving golfers, friendlier terms."
-                selected={difficulty === "easy"}
-                onSelect={() => {
-                  setDifficulty("easy");
-                  setStartingCash(startingCapitalForAxes({ difficulty: "easy" }));
-                }}
-              />
-              <ChoiceCard
-                title={translateCurrent("auto.ui.newgamewizard.normal")}
-                icon="⛳"
-                blurb="The intended experience — the tuning the sim was balanced around."
-                selected={difficulty === "normal"}
-                onSelect={() => {
-                  setDifficulty("normal");
-                  setStartingCash(startingCapitalForAxes({ difficulty: "normal" }));
-                }}
-              />
-              <ChoiceCard
-                title={translateCurrent("auto.ui.newgamewizard.hard")}
-                icon="🌪️"
-                blurb="Tight margins, faster wear, stricter lenders. For seasoned architects."
-                selected={difficulty === "hard"}
-                onSelect={() => {
-                  setDifficulty("hard");
-                  setStartingCash(startingCapitalForAxes({ difficulty: "hard" }));
-                }}
-              />
+          {step === "EXPERIENCE" && (
+            <div style={{ display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 12 }}>
+                {(Object.keys(PROFILE_COPY) as ExperienceProfile[]).map((profile) => {
+                  const copy = PROFILE_COPY[profile];
+                  return (
+                    <ChoiceCard
+                      key={profile}
+                      title={translateCurrent(copy.label)}
+                      icon={copy.icon}
+                      testId={`experience-profile-${profile}`}
+                      selected={experienceProfile === profile}
+                      onSelect={() => selectExperienceProfile(profile)}
+                      blurb={
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div>{translateCurrent(copy.promise)}</div>
+                          <div><strong>{translateCurrent("newGame.experience.youManage")}:</strong> {translateCurrent(copy.youManage)}</div>
+                          <div><strong>{translateCurrent("newGame.experience.teamManages")}:</strong> {translateCurrent(copy.teamManages)}</div>
+                        </div>
+                      }
+                    />
+                  );
+                })}
+              </div>
+              <details data-testid="economic-pressure-advanced" style={{ borderRadius: 12, background: "rgba(255,255,255,0.9)", padding: "10px 12px" }}>
+                <summary style={{ cursor: "pointer", fontWeight: 800, color: "#3d4a3e" }}>{translateCurrent("newGame.pressure.advanced")}</summary>
+                <fieldset style={{ border: 0, padding: "12px 0 0", margin: 0 }}>
+                  <legend className="sr-only">{translateCurrent("newGame.pressure.advanced")}</legend>
+                  <p style={{ margin: "0 0 10px", fontSize: 12, color: "#4b5563", lineHeight: 1.45 }}>{translateCurrent("newGame.pressure.description")}</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+                    {(Object.keys(PRESSURE_COPY) as EconomicPressure[]).map((pressure) => (
+                      <ChoiceCard
+                        key={pressure}
+                        title={translateCurrent(PRESSURE_COPY[pressure].label)}
+                        icon={pressure === "friendly" ? "🤝" : pressure === "balanced" ? "⚖️" : "🎯"}
+                        testId={`economic-pressure-${pressure}`}
+                        selected={economicPressure === pressure}
+                        onSelect={() => selectEconomicPressure(pressure)}
+                        blurb={translateCurrent(PRESSURE_COPY[pressure].description)}
+                      />
+                    ))}
+                  </div>
+                </fieldset>
+              </details>
             </div>
           )}
 
@@ -576,6 +666,7 @@ export function NewGameWizard(props: {
               )}
 
               <div
+                data-testid="setup-review"
                 style={{
                   fontSize: 12,
                   color: "#4b5563",
@@ -584,8 +675,7 @@ export function NewGameWizard(props: {
                   background: "rgba(0,0,0,0.05)",
                 }}
               >
-                {mode === "challenge" ? "🎯 Challenge" : "🌿 Sandbox"} • {translateCurrent(BIOME_TITLE_KEYS[theme])} • {difficulty} <T id="auto.ui.newgamewizard.seed.3" />{" "}
-                {seed}
+                {setupReview()}
               </div>
             </div>
           )}

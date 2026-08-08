@@ -2541,8 +2541,8 @@ export default function App() {
       courseName: generateCourseName(),
       seed: import.meta.env.MODE === "e2e" ? 424242 : (Date.now() % 1_000_000) | 0,
       theme: "parkland",
-      experienceProfile: "classic",
-      economicPressure: "balanced",
+      experienceProfile: "relaxed",
+      economicPressure: "friendly",
     };
   }
 
