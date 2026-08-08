@@ -6,14 +6,13 @@ import { AudioProvider } from './audio/AudioProvider'
 import { AppErrorBoundary } from './ui/AppErrorBoundary'
 import { I18nProvider } from './i18n/I18nProvider'
 import { installGlobalBugCapture } from './bug-reporting/diagnostics'
-import { BugReportLauncher } from './ui/BugReportDialog'
+import { BugReportLauncher } from './ui/BugReportLauncher'
+import { createDeferredReporter } from './deferredReporter'
 
 installGlobalBugCapture()
-const monitoring = import('./monitoring').catch(() => undefined)
-
-function reportAppError(error: Error, info: import('react').ErrorInfo): undefined {
-  void monitoring.then((module) => module?.reportAppError(error, info))
-}
+const reportAppError = createDeferredReporter(() => import('./monitoring')
+  .then((module) => module.reportAppError)
+  .catch(() => undefined))
 
 if (new URLSearchParams(window.location.search).get("fixture") === "zk681-analysis-worker") {
   void import("./game/analysis/benchmark").then(({ installAnalysisWorkerBenchmarkFixture }) => {

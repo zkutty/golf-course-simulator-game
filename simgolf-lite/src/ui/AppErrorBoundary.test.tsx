@@ -1,6 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createBugDiagnostics, resetBugDiagnostics } from "../bug-reporting/diagnostics";
+import { createDeferredReporter } from "../deferredReporter";
 import { AppErrorBoundary, resetSaveAndReload } from "./AppErrorBoundary";
+
+afterEach(() => {
+  resetBugDiagnostics();
+  vi.restoreAllMocks();
+});
 
 describe("AppErrorBoundary", () => {
   it("renders a useful recovery screen after a child error", () => {
@@ -38,6 +45,33 @@ describe("AppErrorBoundary", () => {
       info.componentStack
     );
     expect(onError).toHaveBeenCalledWith(error, info);
-    errorSpy.mockRestore();
+  });
+
+  it("retains a loaded monitoring event ID in the local diagnostic capsule", async () => {
+    let loadReporter!: (reporter: (error: Error) => string) => void;
+    const loading = new Promise<((error: Error) => string)>((resolve) => { loadReporter = resolve; });
+    const reporter = vi.fn(() => "1234567890abcdef1234567890abcdef");
+    const load = vi.fn(() => loading);
+    const onError = createDeferredReporter(load);
+    const queuedError = new Error("before monitoring loaded");
+
+    expect(load).not.toHaveBeenCalled();
+    expect(onError(queuedError)).toBeUndefined();
+    expect(load).toHaveBeenCalledOnce();
+    loadReporter(reporter);
+    await loading;
+    await Promise.resolve();
+    expect(reporter).toHaveBeenCalledOnce();
+
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const boundary = new AppErrorBoundary({ children: null, onError });
+    boundary.componentDidCatch(new Error("after monitoring loaded"), {
+      componentStack: "\n at LoadedWidget",
+    });
+
+    expect(createBugDiagnostics().error).toEqual(expect.objectContaining({
+      message: "after monitoring loaded",
+      sentryEventId: "1234567890abcdef1234567890abcdef",
+    }));
   });
 });

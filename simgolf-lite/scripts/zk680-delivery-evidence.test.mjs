@@ -1,6 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DELIVERY_BUDGETS, evaluateDeliveryBudgets } from "./zk680-delivery-evidence.mjs";
+import {
+  assertNoUnexpectedEagerEntryImports,
+  DELIVERY_BUDGETS,
+  eagerEntryDynamicImports,
+  evaluateDeliveryBudgets,
+} from "./zk680-delivery-evidence.mjs";
+
+test("entry audit rejects dynamic chunks requested during module evaluation", () => {
+  assert.deepEqual(
+    eagerEntryDynamicImports("const load = () => import('./lazy'); import('./eager')"),
+    ["./eager"],
+  );
+  assert.throws(
+    () => assertNoUnexpectedEagerEntryImports("import('./monitoring')"),
+    /requests dynamic code during startup.*monitoring/,
+  );
+  assert.doesNotThrow(
+    () => assertNoUnexpectedEagerEntryImports("const load = () => import('./monitoring')"),
+  );
+});
 
 test("delivery report records before/after deltas and accepts values within the pinned budgets", () => {
   const baseline = {

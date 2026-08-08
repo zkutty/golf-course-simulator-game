@@ -15,6 +15,7 @@ export const DEFERRED_SURFACE_SOURCES = [
   "src/ui/SettingsModal.tsx",
   "src/ui/retention/RetentionHub.tsx",
   "src/ui/help/GolfopediaModal.tsx",
+  "src/ui/BugReportDialog.tsx",
 ];
 
 // Initial residency includes every file imported by the browser entry graph.

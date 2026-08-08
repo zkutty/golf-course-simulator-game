@@ -1,11 +1,14 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import typescriptEslint from "typescript-eslint";
 import { collectDesktopPackageEvidence } from "./desktop-package-evidence.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const baselinePath = join(root, "artifacts/zk-680/pre-split-baseline.json");
 const performancePath = join(root, "artifacts/zk-680/current-performance.json");
+const entrySourcePath = join(root, "src/main.tsx");
+const allowedEagerEntryImports = new Set(["./game/analysis/benchmark"]);
 
 export const DELIVERY_BUDGETS = {
   // The initial game graph may never exceed the pre-split bundle.
@@ -38,6 +41,44 @@ function applicationEntry(manifest) {
   return Object.entries(manifest).find(([, entry]) => entry.isEntry)?.[0] ?? null;
 }
 
+const functionNodes = new Set([
+  "ArrowFunctionExpression",
+  "FunctionDeclaration",
+  "FunctionExpression",
+]);
+
+/** Direct entry imports execute during startup even when Vite emits a dynamic chunk. */
+export function eagerEntryDynamicImports(source) {
+  const { ast } = typescriptEslint.parser.parseForESLint(source, {
+    ecmaVersion: "latest",
+    jsx: true,
+    sourceType: "module",
+  });
+  const imports = new Set();
+  const visit = (node) => {
+    if (!node || typeof node !== "object" || functionNodes.has(node.type)) return;
+    if (node.type === "ImportExpression" && typeof node.source?.value === "string") {
+      imports.add(node.source.value);
+      return;
+    }
+    for (const [key, value] of Object.entries(node)) {
+      if (["loc", "parent", "range", "tokens", "comments"].includes(key)) continue;
+      if (Array.isArray(value)) value.forEach(visit);
+      else visit(value);
+    }
+  };
+  visit(ast);
+  return [...imports].sort();
+}
+
+export function assertNoUnexpectedEagerEntryImports(source) {
+  const unexpected = eagerEntryDynamicImports(source)
+    .filter((specifier) => !allowedEagerEntryImports.has(specifier));
+  if (unexpected.length) {
+    throw new Error(`Entry requests dynamic code during startup: ${unexpected.join(", ")}`);
+  }
+}
+
 function routeJavascriptBytes(manifest, directory, source) {
   const entry = Object.values(manifest).find((value) => value.src === source);
   if (!entry?.file?.endsWith(".js")) {
@@ -68,6 +109,7 @@ export function collectWebDeliveryEvidence(distDirectory = join(root, "dist")) {
   const auditPath = join(root, "artifacts/m35/asset-audit.json");
   if (!existsSync(manifestPath)) throw new Error(`Missing ${manifestPath}; run the production build first.`);
   if (!existsSync(auditPath)) throw new Error(`Missing ${auditPath}; run the M35 asset audit first.`);
+  assertNoUnexpectedEagerEntryImports(readFileSync(entrySourcePath, "utf8"));
 
   const manifest = readJson(manifestPath);
   const entry = applicationEntry(manifest);
