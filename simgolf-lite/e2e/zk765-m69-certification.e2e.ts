@@ -27,6 +27,17 @@ function changedPixels(a: PNG, b: PNG, center: { x: number; y: number }, radius:
   return changed;
 }
 
+async function showReferenceLayer(page: import("@playwright/test").Page, layer: "all" | "traces" | "points" | "none") {
+  await page.evaluate(async (nextLayer) => {
+    const setLayer = (window as unknown as {
+      __ccSetArchitectureOverlayTestLayer?: (value: "all" | "traces" | "points" | "none") => void;
+    }).__ccSetArchitectureOverlayTestLayer;
+    if (!setLayer) throw new Error("Reference-overlay test layer control is unavailable");
+    setLayer(nextLayer);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  }, layer);
+}
+
 async function openReferenceReview(page: import("@playwright/test").Page) {
   await page.getByTestId("open-architecture-review").click();
   const review = page.getByTestId("architecture-review");
@@ -109,26 +120,37 @@ test("ZK-765 reference overlays remain populated across every biome and camera r
     expect(projection.points).toHaveLength(architecture.overlay.points);
 
     const overlayPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-reference.png`);
-    const overlayShot = await canvas.screenshot({ path: overlayPath });
-    await review.getByTestId("architecture-overlay-traces").click();
-    await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview?.overlay))
-      .toMatchObject({ kind: "traces", traces: 0, points: 0 });
+    await canvas.screenshot({ path: overlayPath });
+    await showReferenceLayer(page, "traces");
+    const routesPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-routes-only.png`);
+    const routesShot = await canvas.screenshot({ path: routesPath });
+    await showReferenceLayer(page, "points");
+    const landingsPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-landings-only.png`);
+    const landingsShot = await canvas.screenshot({ path: landingsPath });
+    await showReferenceLayer(page, "none");
     const baselinePath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-baseline.png`);
     const baselineShot = await canvas.screenshot({ path: baselinePath });
-    const overlayPng = PNG.sync.read(overlayShot);
+    const routesPng = PNG.sync.read(routesShot);
+    const landingsPng = PNG.sync.read(landingsShot);
     const baselinePng = PNG.sync.read(baselineShot);
-    expect(overlayPng.width).toBe(baselinePng.width);
-    expect(overlayPng.height).toBe(baselinePng.height);
+    expect(routesPng.width).toBe(baselinePng.width);
+    expect(routesPng.height).toBe(baselinePng.height);
+    expect(landingsPng.width).toBe(baselinePng.width);
+    expect(landingsPng.height).toBe(baselinePng.height);
+    // Each assertion compares an isolated renderer layer with the same empty
+    // canvas. A route endpoint therefore cannot satisfy the landing proof.
     const routeChanges = projection.traces.reduce((sum, trace) => sum + [0.25, 0.5, 0.75].reduce((traceSum, ratio) =>
-      traceSum + changedPixels(overlayPng, baselinePng, {
+      traceSum + changedPixels(routesPng, baselinePng, {
         x: trace.from.x + (trace.to.x - trace.from.x) * ratio,
         y: trace.from.y + (trace.to.y - trace.from.y) * ratio,
       }, 7), 0), 0);
     const landingChanges = projection.points.reduce((sum, point) =>
-      sum + changedPixels(overlayPng, baselinePng, point.center, point.radius + 3), 0);
+      sum + changedPixels(landingsPng, baselinePng, point.center, point.radius + 3), 0);
     expect(routeChanges, `${fixture.id}:reference-route-pixels`).toBeGreaterThanOrEqual(20);
     expect(landingChanges, `${fixture.id}:reference-landing-pixels`).toBeGreaterThanOrEqual(12);
     await testInfo.attach(`zk765-${fixture.biome}-rotation-${fixture.rotation}-reference`, { path: overlayPath, contentType: "image/png" });
+    await testInfo.attach(`zk765-${fixture.biome}-rotation-${fixture.rotation}-routes-only`, { path: routesPath, contentType: "image/png" });
+    await testInfo.attach(`zk765-${fixture.biome}-rotation-${fixture.rotation}-landings-only`, { path: landingsPath, contentType: "image/png" });
     await testInfo.attach(`zk765-${fixture.biome}-rotation-${fixture.rotation}-baseline`, { path: baselinePath, contentType: "image/png" });
   }
 

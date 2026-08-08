@@ -22,8 +22,10 @@ Original prompt: Update my vision HTML for the new features from the new milesto
 - Added an explicit `test:cert:m69` command and browser evidence for every
   tee/pin selector combination plus all 12 biome/camera-rotation visuals. The
   browser assertion requires both traces and landing points, sends 250 trusted
-  pointer steps without a new request/solve, and proves each rendered category
-  disappears in isolated projected regions when its overlay is removed.
+  pointer steps without a new request/solve. DEV-only renderer controls capture
+  route-only, landing-only, and empty layers independently, so route endpoints
+  cannot satisfy landing pixels and deleting either drawing loop fails its own
+  projected-region proof.
 - Every archetype/tee/pin combination has explicit semantic assertions plus a
   pinned canonical matrix hash. The repaired focused authority suite passes
   55/55, the dedicated certification/performance pair passes 7/7, TypeScript

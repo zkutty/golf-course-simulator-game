@@ -4594,8 +4594,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
     }
 
     if (props.architectureOverlay) {
-      const g = new PIXI.Graphics();
-      const patternMark = (x: number, y: number, pattern: "solid" | "dots" | "cross" | "diagonal" | undefined, radius: number, color = 0xffffff) => {
+      const isolateReferenceLayers = import.meta.env.DEV && props.architectureOverlay.kind === "reference";
+      const cellGraphics = new PIXI.Graphics();
+      const traceGraphics = isolateReferenceLayers ? new PIXI.Graphics() : cellGraphics;
+      const pointGraphics = isolateReferenceLayers ? new PIXI.Graphics() : cellGraphics;
+      const patternMark = (g: PIXI.Graphics, x: number, y: number, pattern: "solid" | "dots" | "cross" | "diagonal" | undefined, radius: number, color = 0xffffff) => {
         if (pattern === "dots") {
           g.circle(x - radius * .32, y, Math.max(1.2, radius * .11));
           g.circle(x + radius * .32, y, Math.max(1.2, radius * .11));
@@ -4626,53 +4629,58 @@ export function PixiStage(requestedProps: PixiStageProps) {
           rotation,
         );
         const intensity = Math.min(1, 0.22 + Math.log2(cell.value + 1) * 0.16);
-        g.poly([
+        cellGraphics.poly([
           top.x, top.y,
           top.x + TILE_W / 2, top.y + TILE_H / 2,
           top.x, top.y + TILE_H,
           top.x - TILE_W / 2, top.y + TILE_H / 2,
         ]);
         const cellColor = cell.source === "predicted" ? 0xf0a51a : cell.current ? 0x28a69a : 0x7b6aa8;
-        g.fill({
+        cellGraphics.fill({
           color: cellColor,
           alpha: cell.current ? intensity : Math.min(0.48, intensity),
         });
-        if (!cell.current) g.stroke({ width: 1, color: 0xf6e8ff, alpha: 0.75 });
-        patternMark(top.x, top.y + TILE_H / 2, cell.pattern, Math.max(7, TILE_H * .35));
+        if (!cell.current) cellGraphics.stroke({ width: 1, color: 0xf6e8ff, alpha: 0.75 });
+        patternMark(cellGraphics, top.x, top.y + TILE_H / 2, cell.pattern, Math.max(7, TILE_H * .35));
       }
       for (const trace of props.architectureOverlay.traces) {
         const from = project(trace.from);
         const to = project(trace.to);
-        g.moveTo(from.x, from.y);
-        g.lineTo(to.x, to.y);
+        traceGraphics.moveTo(from.x, from.y);
+        traceGraphics.lineTo(to.x, to.y);
         const traceColor = trace.source === "reference" ? 0x4b78c2 : trace.source === "predicted" ? 0xf0a51a : trace.emphasized ? 0xfff08a : trace.current ? 0x29d7c0 : 0x9a7bc1;
-        g.stroke({
+        traceGraphics.stroke({
           width: trace.emphasized ? 5 : 2.5,
           color: traceColor,
           alpha: trace.current ? 0.9 : 0.6,
         });
-        g.circle(to.x, to.y, trace.emphasized ? 6 : 3);
-        g.fill({ color: traceColor, alpha: 0.9 });
-        patternMark((from.x + to.x) / 2, (from.y + to.y) / 2, trace.pattern, trace.emphasized ? 8 : 6);
+        traceGraphics.circle(to.x, to.y, trace.emphasized ? 6 : 3);
+        traceGraphics.fill({ color: traceColor, alpha: 0.9 });
+        patternMark(traceGraphics, (from.x + to.x) / 2, (from.y + to.y) / 2, trace.pattern, trace.emphasized ? 8 : 6);
       }
       for (const point of props.architectureOverlay.points) {
         const projected = project(point);
         const radius = Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35));
         const pointColor = point.source === "reference" ? 0x6e96da : point.source === "predicted" ? 0xf0a51a : point.current ? 0x36cfc9 : 0x8d77b7;
-        g.circle(projected.x, projected.y, radius);
-        g.fill({ color: pointColor, alpha: 0.35 });
-        g.stroke({ width: 2, color: point.current ? 0xeafffb : 0xf1e9ff, alpha: 0.9 });
-        patternMark(projected.x, projected.y, point.pattern, radius);
+        pointGraphics.circle(projected.x, projected.y, radius);
+        pointGraphics.fill({ color: pointColor, alpha: 0.35 });
+        pointGraphics.stroke({ width: 2, color: point.current ? 0xeafffb : 0xf1e9ff, alpha: 0.9 });
+        patternMark(pointGraphics, projected.x, projected.y, point.pattern, radius);
       }
-      g.label = ROUTE_LABEL;
-      layers.terrainDecals.addChild(g);
+      const overlayGraphics = isolateReferenceLayers ? [cellGraphics, traceGraphics, pointGraphics] : [cellGraphics];
+      for (const g of overlayGraphics) g.label = ROUTE_LABEL;
+      layers.terrainDecals.addChild(...overlayGraphics);
       if (import.meta.env.DEV && props.architectureOverlay.kind === "reference" && typeof window !== "undefined") {
         const screenPoint = (point: Point) => {
           const local = project(point);
-          const global = g.toGlobal(local);
+          const global = traceGraphics.toGlobal(local);
           return { x: global.x, y: global.y };
         };
-        (window as unknown as { __ccArchitectureOverlayProjection?: object }).__ccArchitectureOverlayProjection = {
+        const testWindow = window as unknown as {
+          __ccArchitectureOverlayProjection?: object;
+          __ccSetArchitectureOverlayTestLayer?: (layer: "all" | "traces" | "points" | "none") => void;
+        };
+        testWindow.__ccArchitectureOverlayProjection = {
           traces: props.architectureOverlay.traces.map((trace) => ({
             id: trace.id,
             from: screenPoint(trace.from),
@@ -4683,6 +4691,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
             center: screenPoint(point),
             radius: Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35)),
           })),
+        };
+        testWindow.__ccSetArchitectureOverlayTestLayer = (layer) => {
+          for (const child of layers.terrainDecals.children) {
+            if (child.label === ROUTE_LABEL) child.visible = layer === "all";
+          }
+          cellGraphics.visible = layer === "all";
+          traceGraphics.visible = layer === "all" || layer === "traces";
+          pointGraphics.visible = layer === "all" || layer === "points";
+          appRef.current?.render();
         };
       }
     }
