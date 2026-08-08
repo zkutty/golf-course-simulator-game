@@ -9,6 +9,7 @@ import {
   type BugReportSource,
   type BugScalar,
 } from './contracts'
+import { normalizeUnhandledRejection } from '../rejectionDiagnostics'
 
 interface CapturedError {
   componentStack?: string
@@ -174,7 +175,11 @@ export function captureBugError(
   value: unknown,
   options: { componentStack?: string | null; sentryEventId?: string } = {},
 ): void {
-  const error = errorFromUnknown(value)
+  // Rejection reasons are unconstrained values.  Keep the local draft safe as
+  // well as Sentry: a player may later choose to submit this diagnostic.
+  const error = source === 'unhandled-rejection'
+    ? normalizeUnhandledRejection(value).error
+    : errorFromUnknown(value)
   capturedError = {
     message: (error.message || error.name || 'Unknown error').slice(
       0,

@@ -117,14 +117,14 @@ describe('bug diagnostics', () => {
     uninstall()
   })
 
-  it('captures controlled unhandled rejections as bounded local errors', () => {
+  it('normalizes controlled unhandled rejections without retaining their values', () => {
     const target = new EventTarget()
     Object.defineProperty(target, 'location', { value: { pathname: '/test' } })
     vi.stubGlobal('window', target)
     const uninstall = installGlobalBugCapture()
     const event = new Event('unhandledrejection')
     Object.defineProperty(event, 'reason', {
-      value: { privatePayload: 'must-not-be-retained' },
+      value: 'secret=must-not-be-retained',
     })
 
     target.dispatchEvent(event)
@@ -132,7 +132,8 @@ describe('bug diagnostics', () => {
     expect(latestBugSource()).toBe('unhandled-rejection')
     expect(createBugDiagnostics().error).toEqual(
       expect.objectContaining({
-        message: 'Unhandled non-Error rejection',
+        name: 'UnhandledPromiseRejection',
+        message: 'Unhandled promise rejection [string]',
       }),
     )
     expect(JSON.stringify(createBugDiagnostics())).not.toContain(

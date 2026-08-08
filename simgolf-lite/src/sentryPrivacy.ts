@@ -23,7 +23,20 @@ function sanitizeContexts(contexts: SentryErrorEvent["contexts"]): SentryErrorEv
 
 function sanitizeTags(tags: SentryErrorEvent["tags"]): SentryErrorEvent["tags"] {
   if (!tags) return undefined;
-  const sanitized = Object.fromEntries(["app_version", "commit_sha"].filter((key) => tags[key] !== undefined).map((key) => [key, tags[key]]));
+  const safeRejectionShapes = new Set(["error", "string", "primitive", "null", "object"]);
+  const sanitized = Object.fromEntries([
+    "app_version",
+    "commit_sha",
+  ].filter((key) => tags[key] !== undefined).map((key) => [key, tags[key]]));
+  // These tags are written only by the first-party rejection bridge below.
+  // Validate their literal values anyway so arbitrary SDK tags cannot widen
+  // the allowlist.
+  if (tags.error_origin === "window-unhandledrejection") {
+    sanitized.error_origin = tags.error_origin;
+  }
+  if (typeof tags.rejection_shape === "string" && safeRejectionShapes.has(tags.rejection_shape)) {
+    sanitized.rejection_shape = tags.rejection_shape;
+  }
   return Object.keys(sanitized).length ? sanitized : undefined;
 }
 
