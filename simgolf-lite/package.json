@@ -61,6 +61,7 @@
     "art:pixellab:validate": "node scripts/pixellab-pilot.mjs validate",
     "art:pixellab:certify": "node scripts/pixellab-pilot.mjs certify",
     "test:perf": "node scripts/perf-smoke.mjs",
+    "test:zk764:perf": "ZK764_ISOLATED_BENCHMARK=1 vitest run src/game/architecture/reviewPerformance.test.ts --maxWorkers=1",
     "test:pwa": "node scripts/pwa-smoke.mjs",
     "test:worker": "npm run test:worker:unit && npm run test:worker:runtime",
     "test:worker:unit": "vitest run worker",

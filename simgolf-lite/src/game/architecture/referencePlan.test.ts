@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Course, Hole, Point, Terrain } from "../models/types";
-import { architectureReferencePlans, buildArchitectureReferencePlan } from "./referencePlan";
-import { buildArchitectureReview, defaultArchitectureFilters, withArchitectureReferencePlans } from "./review";
+import { architectureReferencePlans, architectureReferenceReview, buildArchitectureReferencePlan, withArchitectureReferencePlans } from "./referencePlan";
+import { buildArchitectureReview, defaultArchitectureFilters } from "./review";
 import type { World } from "../models/types";
 import { createReferenceCourse } from "../testing/referenceCourse";
 import { analyzeArchitecture } from "./architecture";
@@ -237,7 +237,7 @@ describe("ZK-760 neutral architectural reference plan", () => {
       holes,
       layouts: [{ ...one.layouts![0], draftHoleIds: holes.map((hole) => hole.id!), publishedHoleIds: holes.map((hole) => hole.id!) }],
     };
-    const plans = architectureReferencePlans(course, "member", "B");
+    const plans = architectureReferenceReview(course, "member", "B");
     const filters = { ...defaultArchitectureFilters(course), kind: "reference" as const, teeSet: "member" as const, pinRotation: "B" as const };
     const review = withArchitectureReferencePlans(buildArchitectureReview(course, emptyWorld(), filters), plans, course);
     const rating = computeRatingForSetup(course, "member", "B", plans);
@@ -257,6 +257,18 @@ describe("ZK-760 neutral architectural reference plan", () => {
     );
     expect(review.overlay.traces.every((trace) => trace.label?.includes("member · shot"))).toBe(true);
     expect(rating.effectiveYardage).toBe(plans.reduce((sum, plan) => sum + plan.effectiveYardage, 0) * 2);
+  }, 30_000);
+
+  it("keeps an implausible zero-segment rating on the shared tee-to-pin fallback", () => {
+    const one = fixture({ width: 100, tee: { x: 2, y: 15 }, pin: { x: 95, y: 15 } });
+    const holes = Array.from({ length: 9 }, (_, index) => ({ ...one.holes[0], id: `oversized-${index + 1}` }));
+    const course = { ...one, holes };
+    const plans = architectureReferencePlans(course, "member", "A");
+    expect(plans.every((plan) => plan.segments.length === 0 && plan.status === "implausible")).toBe(true);
+    const rating = computeRatingForSetup(course, "member", "A", plans);
+    expect(rating.validHoles).toBe(9);
+    expect(rating.effectiveYardage).toBe(plans.reduce((sum, plan) => sum + plan.effectiveYardage, 0) * 2);
+    expect(rating.effectiveYardage).toBeGreaterThan(0);
   }, 30_000);
 
   it("does not replace or mutate the live strategic choices", () => {

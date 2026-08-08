@@ -4,6 +4,11 @@ import type { ClubSpec, GolferProfile } from "../sim/golferProfiles";
 import { evalShotExpectedCost } from "../sim/shots/evalShotExpectedCost";
 import { buildingFootprintSet } from "../models/buildings";
 import { hashCanonicalValue } from "../../utils/stateHash";
+import { analyzeArchitecture } from "./architecture";
+import { computeRatingForSetup } from "../sim/courseRating";
+import { retainArchitectureReferencePlan } from "./referencePlanEvidence";
+import type { ArchitectureReviewData } from "./review";
+import type { ArchitectureOverlayRender } from "./reviewTypes";
 
 /**
  * The architecture reference is deliberately separate from live golfers.
@@ -85,6 +90,18 @@ export interface ArchitectureReferencePlan {
   explanation: string;
   corridor: Record<Terrain, number> & { samples: number };
 }
+
+export interface ReferenceConsumerSummary {
+  teeSet: TeeSet;
+  pinRotation: PinRotation;
+  architectureScore: number;
+  safetyScore: number;
+  courseRating: number;
+  slope: number;
+  effectiveYardage: number;
+}
+
+export type ArchitectureReferencePlanSet = ArchitectureReferencePlan[] & { referenceSummary?: ReferenceConsumerSummary };
 
 interface Candidate {
   point: Point;
@@ -355,9 +372,10 @@ function planForShots(course: Course, hole: Hole, tee: Point, pin: Point, shots:
   return states.get(key(pin))?.segments ?? null;
 }
 
-function corridor(course: Course, segments: ArchitectureReferenceSegment[]): ArchitectureReferencePlan["corridor"] {
+function corridor(course: Course, segments: ArchitectureReferenceSegment[], tee?: Point | null, pin?: Point | null): ArchitectureReferencePlan["corridor"] {
   const result = { samples: 0, fairway: 0, rough: 0, deep_rough: 0, sand: 0, waste_area: 0, water: 0, wetland: 0, green: 0, tee: 0, path: 0 };
-  for (const segment of segments) for (const point of bresenham(segment.from, segment.to)) {
+  const paths: Array<Pick<ArchitectureReferenceSegment, "from" | "to">> = segments.length ? segments : tee && pin ? [{ from: tee, to: pin }] : [];
+  for (const segment of paths) for (const point of bresenham(segment.from, segment.to)) {
     result[terrainAt(course, point)]++;
     result.samples++;
   }
@@ -410,6 +428,7 @@ export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSe
   if (!tee || !pin || !inBounds(course, tee) || !inBounds(course, pin)) {
     const result = incompletePlan(course, hole, teeSet, pinRotation, tee, pin, capability);
     plans.set(cacheKey, result);
+    retainArchitectureReferencePlan(hole, result);
     return result;
   }
   const viable = new Map<number, ArchitectureReferenceSegment[]>();
@@ -436,8 +455,8 @@ export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSe
   }
   const selectedSegments = viable.get(requestedShots);
   const segments = selectedSegments ?? viable.get(recommendedShots) ?? [];
-  const planPar = (segments.length + 2) as 3 | 4 | 5;
-  const effectiveYardage = Math.round(segments.reduce((sum, segment) => sum + segment.playsLikeYards, 0));
+  const planPar = segments.length ? (segments.length + 2) as 3 | 4 | 5 : recommendedPar;
+  const effectiveYardage = Math.round(segments.length ? segments.reduce((sum, segment) => sum + segment.playsLikeYards, 0) : directYards);
   const warnings: string[] = [];
   if (setting.mode === "MANUAL" && !selectedSegments) warnings.push(`Manual Par ${selectedPar} is preserved for ${teeSet}, but the neutral reference cannot produce ${requestedShots} plausible full ${requestedShots === 1 ? "shot" : "shots"}; showing the recommended Par ${recommendedPar} route.`);
   const maxRisk = Math.max(0, ...segments.map((segment) => segment.risk.total));
@@ -494,12 +513,75 @@ export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSe
     explanation: segments.length
       ? `${teeSet} reference: ${segments.length} full ${segments.length === 1 ? "shot" : "shots"} to pin ${pinRotation}, then the two-putt convention (recommended Par ${recommendedPar}${alternativePar ? `; credible Par ${alternativePar} alternative` : ""}).`
       : `No plausible neutral reference route reaches pin ${pinRotation} from the ${teeSet} tee in three full shots.`,
-    corridor: corridor(course, segments),
+    corridor: corridor(course, segments, tee, pin),
   };
   plans.set(cacheKey, result);
+  retainArchitectureReferencePlan(hole, result);
   return result;
 }
 
 export function architectureReferencePlans(course: Course, teeSet: TeeSet, pinRotation: PinRotation): ArchitectureReferencePlan[] {
   return course.holes.map((hole) => buildArchitectureReferencePlan(course, hole, teeSet, pinRotation));
+}
+
+/** Deferred review solve: retain one set for every downstream reference consumer. */
+export function architectureReferenceReview(course: Course, teeSet: TeeSet, pinRotation: PinRotation): ArchitectureReferencePlanSet {
+  const plans = architectureReferencePlans(course, teeSet, pinRotation) as ArchitectureReferencePlanSet;
+  const architecture = analyzeArchitecture(course, { teeSet, pinRotation }, plans);
+  const rating = computeRatingForSetup(course, teeSet, pinRotation, plans);
+  plans.referenceSummary = {
+    teeSet,
+    pinRotation,
+    architectureScore: architecture.total,
+    safetyScore: architecture.components.safety.score,
+    courseRating: rating.courseRating,
+    slope: rating.slope,
+    effectiveYardage: rating.effectiveYardage,
+  };
+  return plans;
+}
+
+const bounded = <T>(values: T[], max: number) => values.length <= max ? values : Array.from({ length: max }, (_, index) => values[Math.floor(index * values.length / max)]);
+
+/** Build the deferred overlay, explanations, and setup summary from that same plan set. */
+export function withArchitectureReferencePlans(review: ArchitectureReviewData, plans: ArchitectureReferencePlan[] | null, course?: Course): ArchitectureReviewData {
+  if (review.filters.kind !== "reference" || !plans) return review.referencePlans.length === 0 ? review : { ...review, referencePlans: [], selectedReferencePlan: null, referenceSummary: null };
+  const selectedReferencePlan = review.filters.holeId === "all" ? null : plans.find((plan) => plan.holeId === review.filters.holeId) ?? null;
+  const visiblePlans = selectedReferencePlan ? [selectedReferencePlan] : plans;
+  const holeNumber = (plan: ArchitectureReferencePlan, fallback: number) => {
+    const index = course?.holes.findIndex((hole) => hole.id === plan.holeId) ?? -1;
+    return (index >= 0 ? index : fallback) + 1;
+  };
+  const overlay: ArchitectureOverlayRender = { kind: "reference", traces: [], cells: [], points: [] };
+  overlay.traces = bounded(visiblePlans.flatMap((plan, holeIndex) => plan.segments.map((segment) => ({
+    id: `${plan.id}:${segment.id}`,
+    from: segment.from,
+    to: segment.to,
+    current: true,
+    emphasized: plan.id === selectedReferencePlan?.id,
+    label: `Hole ${holeNumber(plan, holeIndex)} · ${plan.teeSet} · shot ${segment.shot} · ${segment.playsLikeYards} yd · ${Math.round(segment.risk.total * 100)}% risk`,
+    source: "reference" as const,
+    pattern: "solid" as const,
+  }))), 320);
+  overlay.points = bounded(visiblePlans.flatMap((plan, holeIndex) => plan.landingZones.map((zone) => ({
+    id: zone.id,
+    x: zone.center.x,
+    y: zone.center.y,
+    value: Math.max(2, zone.radiusTiles),
+    current: true,
+    label: `Hole ${holeNumber(plan, holeIndex)} · shot ${zone.shot} landing · ${Math.round(zone.playableShare * 100)}% playable · ${zone.nextShotYards} yd next`,
+    source: "reference" as const,
+    pattern: "dots" as const,
+  }))), 180);
+  return { ...review, referencePlans: plans, selectedReferencePlan, referenceSummary: (plans as ArchitectureReferencePlanSet).referenceSummary ?? null, overlay };
+}
+
+export function flyoverReferencePlan(course: Course, activeHoleIndex: number, teeSet: TeeSet): ArchitectureReferencePlan | null {
+  let hole = course.holes[activeHoleIndex];
+  let plan = hole ? buildArchitectureReferencePlan(course, hole, teeSet, course.activePinRotation ?? "A") : null;
+  if ((!plan?.tee || !plan.pin) && activeHoleIndex > 0) {
+    hole = course.holes[activeHoleIndex - 1];
+    plan = hole ? buildArchitectureReferencePlan(course, hole, teeSet, course.activePinRotation ?? "A") : null;
+  }
+  return plan;
 }

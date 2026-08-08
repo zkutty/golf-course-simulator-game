@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatCurrency, formatNumber } from "../i18n/format";
-import type { Course, World } from "../game/models/types";
+import { TEE_SETS, type Course, type World } from "../game/models/types";
 import {
   FACILITY_MODULE_SPECS,
   PROPERTY_ASSET_SPECS,
@@ -42,12 +42,29 @@ export function PropertyManagementPanel(props: {
 }) {
   const [tab, setTab] = useState<Tab>("campus");
   const [notice, setNotice] = useState<{ ok: boolean; message: string } | null>(null);
-  const summary = useMemo(() => propertySummary(props.course, props.world), [props.course, props.world]);
+  const [referenceReady, setReferenceReady] = useState(false);
+  useEffect(() => {
+    let canceled = false;
+    setReferenceReady(false);
+    void import("../game/architecture/referencePlan").then(({ architectureReferencePlans }) => {
+      for (const teeSet of TEE_SETS) architectureReferencePlans(props.course, teeSet, props.course.activePinRotation ?? "A");
+      if (!canceled) setReferenceReady(true);
+    }).catch(() => { if (!canceled) setReferenceReady(true); });
+    return () => { canceled = true; };
+    // Property-only root updates retain the same geometry and reference plans.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.course.activePinRotation, props.course.buildings, props.course.elevations, props.course.holes, props.course.obstacles, props.course.tiles, props.course.yardsPerTile]);
+  const summary = useMemo(() => {
+    void referenceReady;
+    return propertySummary(props.course, props.world);
+  }, [props.course, props.world, referenceReady]);
   const run = (command: PropertyCommand) => {
     const result = props.onCommand(command);
     setNotice({ ok: result.ok, message: result.message });
   };
   const tabInfo = TAB_COPY[tab];
+
+  if (!referenceReady) return <section role="dialog" aria-label={translateCurrent("property.aria")} data-testid="property-management-panel" aria-busy="true" className="cc-tycoon-panel"><button aria-label={translateCurrent("property.close")} onClick={props.onClose} style={closeButton}>✕</button>{translateCurrent("deferredSurface.loading", { surface: translateCurrent("property.aria") })}</section>;
 
   return (
     <section

@@ -208,9 +208,8 @@ import type { EquipmentLoadout } from "./game/competition/types";
 import type { PlayerChallengeContractDraft } from "./game/playerPro/challengePlayerProAdapter";
 import { decodeControlledRoundSnapshotV2, type ControlledRoundSnapshotV2 } from "./game/rules/roundSnapshot";
 import type { SharedShotOutcome } from "./game/rules/contracts";
-import { buildArchitectureReview, defaultArchitectureFilters, withArchitectureReferencePlans, withGreenStrategyHeatmap } from "./game/architecture/review";
+import { buildArchitectureReview, defaultArchitectureFilters, withGreenStrategyHeatmap, type ArchitectureReviewData } from "./game/architecture/review";
 import type { GreenStrategyHeatmap } from "./game/architecture/greenStrategyHeatmap";
-import type { ArchitectureReferencePlan } from "./game/architecture/referencePlan";
 import { compareM48DesignTest, refreshM48DesignTestSession } from "./game/architecture/comparison";
 import { strategicGeometryVersion } from "./game/architecture/strategic";
 import {
@@ -712,27 +711,6 @@ export default function App() {
   const [showFixOverlay, setShowFixOverlay] = useState(false);
   const [animationsEnabled, setAnimationsEnabled] = useState(() => appProfile.graphics.animations);
   const [flyoverNonce, setFlyoverNonce] = useState(0);
-  const [flyoverReference, setFlyoverReference] = useState<{ nonce: number; plan: ArchitectureReferencePlan } | null>(null);
-  useEffect(() => {
-    let canceled = false;
-    if (flyoverNonce === 0) {
-      setFlyoverReference(null);
-      return () => { canceled = true; };
-    }
-    setFlyoverReference(null);
-    void import("./game/architecture/referencePlan").then((module) => {
-      let hole = course.holes[activeHoleIndex];
-      let plan = hole ? module.buildArchitectureReferencePlan(course, hole, selectedTeeSet, course.activePinRotation ?? "A") : null;
-      if ((!plan?.tee || !plan.pin) && activeHoleIndex > 0) {
-        hole = course.holes[activeHoleIndex - 1];
-        plan = hole ? module.buildArchitectureReferencePlan(course, hole, selectedTeeSet, course.activePinRotation ?? "A") : null;
-      }
-      if (!canceled && plan?.tee && plan.pin) setFlyoverReference({ nonce: flyoverNonce, plan });
-    }).catch(() => {
-      if (!canceled) setFlyoverReference(null);
-    });
-    return () => { canceled = true; };
-  }, [activeHoleIndex, course, flyoverNonce, selectedTeeSet]);
   const soundEnabled = !appProfile.audio.masterMuted && appProfile.audio.masterVolume > 0 && appProfile.audio.sfxVolume > 0;
   const [safeMode, setSafeMode] = useState(false);
   const effectiveAnimations = animationsEnabled && !appProfile.accessibility.reducedMotion && !safeMode;
@@ -798,7 +776,23 @@ export default function App() {
   const [showCourseManager, setShowCourseManager] = useState(false);
   const [showPropertyManagement, setShowPropertyManagement] = useState(false);
   const [showContextualInspector, setShowContextualInspector] = useState(false);
-  const inspectorPropertySummary = useMemo(() => propertySummary(course, world), [course, world]);
+  const [propertyReferenceRevision, setPropertyReferenceRevision] = useState(0);
+  const hasResidentialProperty = course.property?.assets.some((asset) => asset.kind === "houses" || asset.kind === "condos") ?? false;
+  useEffect(() => {
+    let canceled = false;
+    if (!hasResidentialProperty) return;
+    void import("./game/architecture/referencePlan").then(({ architectureReferencePlans }) => {
+      for (const teeSet of TEE_SETS) architectureReferencePlans(course, teeSet, course.activePinRotation ?? "A");
+      if (!canceled) setPropertyReferenceRevision((value) => value + 1);
+    }).catch(() => undefined);
+    return () => { canceled = true; };
+    // Property-only root updates retain the same geometry and reference plans.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course.activePinRotation, course.buildings, course.elevations, course.holes, course.obstacles, course.tiles, course.yardsPerTile, hasResidentialProperty]);
+  const inspectorPropertySummary = useMemo(() => {
+    void propertyReferenceRevision;
+    return propertySummary(course, world);
+  }, [course, propertyReferenceRevision, world]);
   const architectureReport = useMemo(() => showCourseManager ? analyzeArchitecture(activeOperatingCourse) : null, [activeOperatingCourse, showCourseManager]);
   const [showArchitectureReview, setShowArchitectureReview] = useState(false);
   const [architectureFilters, setArchitectureFilters] = useState(() => defaultArchitectureFilters(course));
@@ -807,14 +801,10 @@ export default function App() {
     [architectureFilters, course, world],
   );
   const [architectureGreenStrategy, setArchitectureGreenStrategy] = useState<GreenStrategyHeatmap | null>(null);
-  const [architectureReferencePlans, setArchitectureReferencePlans] = useState<ArchitectureReferencePlan[] | null>(null);
+  const [architectureReferenceReview, setArchitectureReferenceReview] = useState<{ base: ArchitectureReviewData; review: ArchitectureReviewData } | null>(null);
   const architectureReview = useMemo(
-    () => withArchitectureReferencePlans(
-      withGreenStrategyHeatmap(architectureReviewBase, architectureGreenStrategy),
-      architectureReferencePlans,
-      courseForLayout(course, architectureFilters.courseId),
-    ),
-    [architectureFilters.courseId, architectureGreenStrategy, architectureReferencePlans, architectureReviewBase, course],
+    () => withGreenStrategyHeatmap(architectureReferenceReview?.base === architectureReviewBase ? architectureReferenceReview.review : architectureReviewBase, architectureGreenStrategy),
+    [architectureGreenStrategy, architectureReferenceReview, architectureReviewBase],
   );
   useEffect(() => {
     let canceled = false;
@@ -839,21 +829,22 @@ export default function App() {
   useEffect(() => {
     let canceled = false;
     if (architectureFilters.kind !== "reference") {
-      setArchitectureReferencePlans(null);
+      setArchitectureReferenceReview(null);
       return () => { canceled = true; };
     }
-    setArchitectureReferencePlans(null);
+    setArchitectureReferenceReview(null);
     void import("./game/architecture/referencePlan").then((module) => {
       const selected = courseForLayout(course, architectureFilters.courseId);
       const teeSet = architectureFilters.teeSet === "all" ? "member" : architectureFilters.teeSet;
       const pinRotation = architectureFilters.pinRotation === "all" ? "A" : architectureFilters.pinRotation;
-      const plans = module.architectureReferencePlans(selected, teeSet, pinRotation);
-      if (!canceled) setArchitectureReferencePlans(plans);
+      const plans = module.architectureReferenceReview(selected, teeSet, pinRotation);
+      const review = module.withArchitectureReferencePlans(architectureReviewBase, plans, selected);
+      if (!canceled) setArchitectureReferenceReview({ base: architectureReviewBase, review });
     }).catch(() => {
-      if (!canceled) setArchitectureReferencePlans([]);
+      if (!canceled) setArchitectureReferenceReview(null);
     });
     return () => { canceled = true; };
-  }, [architectureFilters, course]);
+  }, [architectureFilters, architectureReviewBase, course]);
   useEffect(() => {
     if (normalizeCourseLayouts(course).layouts!.some((layout) => layout.id === architectureFilters.courseId)) return;
     setArchitectureFilters(defaultArchitectureFilters(course));
@@ -5104,8 +5095,7 @@ export default function App() {
                 cameraSmoothing={appProfile.gameplay.cameraSmoothing && !appProfile.accessibility.reducedMotion}
                 edgeScroll={appProfile.gameplay.edgeScroll}
                 edgeScrollSpeed={appProfile.gameplay.edgeScrollSpeed}
-                flyoverNonce={flyoverReference?.nonce === flyoverNonce ? flyoverNonce : 0}
-                flyoverReferencePlan={flyoverReference?.plan ?? null}
+                flyoverNonce={flyoverNonce}
                 showShotPlan={showShotPlan}
                 editorMode={editorMode}
                 selectedDecorationKind={decorationKind}

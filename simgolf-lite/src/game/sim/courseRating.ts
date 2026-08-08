@@ -94,16 +94,16 @@ function computeExpectedScoreForHole(
   fallback: ReturnType<typeof scoreCourseHoles>["holes"][number] | undefined,
   expectedPutts = 2,
 ) {
-  if (!course.holes[holeIndex] || (!plan?.segments.length && (!fallback?.isComplete || !fallback.isValid))) {
+  if (!course.holes[holeIndex] || (plan ? !plan.tee || !plan.pin : !fallback?.isComplete || !fallback.isValid)) {
     // Treat invalid holes as very punishing (forces redesign); bogey punished more.
     return profile.name === "BOGEY" ? 9 : 7;
   }
 
   const yardsPerTile = course.yardsPerTile ?? 10;
-  const usesReference = !!plan?.segments.length;
-  const distanceYards = usesReference ? plan!.effectiveYardage : fallback!.effectiveDistance * yardsPerTile;
+  const usesReference = !!plan;
+  const distanceYards = usesReference ? plan.effectiveYardage : fallback!.effectiveDistance * yardsPerTile;
 
-  const corridor = usesReference ? plan!.corridor : fallback!.corridor;
+  const corridor = usesReference ? plan.corridor : fallback!.corridor;
   const s = corridor.samples || 1;
   const waterFrac = (corridor.water + corridor.wetland) / s;
   const sandFrac = corridor.sand / s;
@@ -114,9 +114,11 @@ function computeExpectedScoreForHole(
   // The reference planner already evaluates blockers, landing width, carries,
   // runout, and next-shot quality. Rating consumes that retained evidence
   // instead of reconstructing another fairway-following difficulty proxy.
-  const obstaclePenalty = usesReference
-    ? plan!.segments.reduce((sum, segment) => sum + segment.risk.blockers * .45 + segment.risk.landing * .25
-      + segment.risk.carry * .2 + segment.risk.runout * .1, 0) / plan!.segments.length
+  const obstaclePenalty = usesReference && plan.segments.length
+    ? plan.segments.reduce((sum, segment) => sum + segment.risk.blockers * .45 + segment.risk.landing * .25
+      + segment.risk.carry * .2 + segment.risk.runout * .1, 0) / plan.segments.length
+    : usesReference
+      ? 0
     : clamp((fallback!.difficultyScore - 45) / 100, 0, 1);
 
   const baseShots = estimateShotsToReachGreen(distanceYards, profile);
@@ -284,9 +286,10 @@ export function computeRatingForSetup(course: Course, teeSet: TeeSet, pinRotatio
     scratchTotal += computeExpectedScoreForHole(setupCourse, i, scratch, referencePlan, info, scratchPutting);
     bogeyTotal += computeExpectedScoreForHole(setupCourse, i, bogey, referencePlan, info, bogeyPutting);
     if (!fairness.legal) setupComplete = false;
-    if (info?.isComplete && ((referencePlan?.segments.length ?? 0) > 0 || info.isValid) && tee && pin && fairness.legal) {
+    const referenceComplete = referencePlan ? !!referencePlan.tee && !!referencePlan.pin : !!info?.isComplete && info.isValid;
+    if (referenceComplete && tee && pin && fairness.legal) {
       validHoles++;
-      effectiveYardage += referencePlan?.segments.length ? referencePlan.effectiveYardage : info.effectiveDistance * setupCourse.yardsPerTile;
+      effectiveYardage += referencePlan ? referencePlan.effectiveYardage : info!.effectiveDistance * setupCourse.yardsPerTile;
       pinDelta += coarsePenalty + (fairness.cohorts.scratch.scoreDelta + fairness.cohorts.bogey.scoreDelta) / 2;
     }
   }

@@ -119,13 +119,13 @@ describe("property enterprise", () => {
     };
     const selectedPlan = buildArchitectureReferencePlan(course, course.holes[0], "member", "A");
     expect(selectedPlan.segments.length).toBeGreaterThan(0);
-    const exposed = analyzeResidentialSafety(course, homes.id, [selectedPlan]);
+    const exposed = analyzeResidentialSafety(course, homes.id);
     expect(exposed.eligibility).toBe("blocked");
     expect(exposed.contributions[0].holeId).toBe(course.holes[0].id);
     expect(isOwnedTile(course, 21, 7)).toBe(false);
 
     const protectedCourse: Course = { ...course, property: { ...emptyPropertyCourse(), assets: [...course.property!.assets, { id: "net", kind: "netting", name: "Protective netting", category: "safety", tier: 4, x: 19, y: 6, width: 10, height: 1, capacity: 0, condition: 1, price: 0, enabled: true }] } };
-    expect(analyzeResidentialSafety(protectedCourse, homes.id, [selectedPlan]).score).toBeLessThan(exposed.score);
+    expect(analyzeResidentialSafety(protectedCourse, homes.id).score).toBeLessThan(exposed.score);
 
     const world: World = { ...baseWorld, enterprise: { ...emptyPropertyEnterprise(), residents: [{ id: "residents-homes-risk", assetId: homes.id, units: 100, occupied: 100, satisfaction: 70, complaints: 2 }] } };
     const bought = applyPropertyCommand(protectedCourse, world, { type: "BUYBACK", assetId: homes.id });

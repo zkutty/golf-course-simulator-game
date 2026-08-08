@@ -38,6 +38,7 @@ import { isOwnedTile } from "../estate/estate";
 import { buildingFootprintSet } from "../models/buildings";
 import { lastItem } from "../../utils/array";
 import type { ArchitectureReferencePlan } from "../architecture/referencePlan";
+import { retainedArchitectureReferencePlan } from "../architecture/referencePlanEvidence";
 
 export interface PropertyAssetSpec {
   kind: PropertyAssetKind;
@@ -1535,7 +1536,7 @@ export function analyzeResidentialSafety(course: Course, assetId?: string, refer
     const configured = (Object.entries(hole.teeBoxes ?? {}) as Array<[TeeSet, { x: number; y: number } | undefined]>)
       .filter(([teeSet, tee]) => !!tee && !property.safetyPolicy.restrictedTeeSets.includes(teeSet));
     const teeSets = configured.length > 0 ? configured.map(([teeSet]) => teeSet) : ["member" as const];
-    return [holeId, teeSets.map((teeSet) => retainedPlans.get(`${holeId}:${teeSet}`) ?? {
+    return [holeId, teeSets.map((teeSet) => retainedPlans.get(`${holeId}:${teeSet}`) ?? retainedArchitectureReferencePlan(hole, teeSet, pinRotation) ?? {
       teeSet,
       tee: hole.teeBoxes?.[teeSet] ?? (teeSet === "member" ? hole.tee : null) ?? null,
       pin: hole.pinPositions?.[pinRotation] ?? (pinRotation === "A" ? hole.green : null) ?? null,
