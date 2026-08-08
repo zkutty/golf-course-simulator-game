@@ -1535,7 +1535,7 @@ export function analyzeResidentialSafety(course: Course, assetId?: string, refer
     const holeId = hole.id ?? `hole-${index + 1}`;
     const configured = (Object.entries(hole.teeBoxes ?? {}) as Array<[TeeSet, { x: number; y: number } | undefined]>)
       .filter(([teeSet, tee]) => !!tee && !property.safetyPolicy.restrictedTeeSets.includes(teeSet));
-    const teeSets = configured.length > 0 ? configured.map(([teeSet]) => teeSet) : ["member" as const];
+    const teeSets = configured.length ? configured.map(([teeSet]) => teeSet) : ["member" as const];
     return [holeId, teeSets.map((teeSet) => retainedPlans.get(`${holeId}:${teeSet}`) ?? retainedArchitectureReferencePlan(course, hole, teeSet, pinRotation) ?? {
       teeSet,
       tee: hole.teeBoxes?.[teeSet] ?? (teeSet === "member" ? hole.tee : null) ?? null,
@@ -1556,7 +1556,7 @@ export function analyzeResidentialSafety(course: Course, assetId?: string, refer
       let holeOutlier = 0;
       for (const plan of plans) {
         const teeWidth = plan.teeSet === "championship" ? 1.12 : plan.teeSet === "forward" ? 0.88 : 1;
-        const segments = plan.segments.length > 0 ? plan.segments : plan.tee && plan.pin ? [{ shot: 1, from: plan.tee, to: plan.pin, risk: { total: 0 } }] : [];
+        const segments = plan.segments.length ? plan.segments : plan.tee && plan.pin ? [{ shot: 1, from: plan.tee, to: plan.pin, risk: { total: 0 } }] : [];
         for (const segment of segments) {
           const segmentWeight = (segment.shot === 1 ? 1 : .82) * (1 + segment.risk.total * .18);
           const { from, to } = segment;
@@ -1605,10 +1605,10 @@ export function analyzeResidentialSafety(course: Course, assetId?: string, refer
         const holeId = hole.id ?? `hole-${index + 1}`;
         if (property.safetyPolicy.closedHoleIds.includes(holeId)) continue;
         const plans = safetyPlans.get(holeId) ?? [];
-        const distance = Math.min(Number.POSITIVE_INFINITY, ...plans.flatMap((plan) => plan.segments.length > 0
+        const distance = Math.min(Infinity, ...plans.flatMap((plan) => plan.segments.length
           ? plan.segments.map((segment) => pointSegmentDistance(point, segment.from, segment.to))
           : plan.tee && plan.pin ? [pointSegmentDistance(point, plan.tee, plan.pin)] : []));
-        if (distance < 26 && plans.some((plan) => plan.segments.length > 0 || !!(plan.tee && plan.pin))) {
+        if (distance < 26 && plans.some((plan) => plan.segments.length || !!(plan.tee && plan.pin))) {
           rawRisk += (distance < 5 ? 25 : distance < 10 ? 14 : distance < 18 ? 6 : 2);
           contributingHoleIds.push(holeId);
         }

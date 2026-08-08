@@ -66,7 +66,7 @@ function referencePath(plan: ArchitectureReferencePlan | undefined): Point[] {
   // Incomplete/oversized legacy layouts may not have a plausible three-shot
   // neutral solve yet. Their bounded fallback is the selected tee-to-pin
   // chord, never the old paint-derived fairway snake.
-  return plan.segments.length > 0 ? [plan.tee, ...plan.segments.map((segment) => segment.to)] : [plan.tee, plan.pin];
+  return plan.segments.length ? [plan.tee, ...plan.segments.map((segment) => segment.to)] : [plan.tee, plan.pin];
 }
 
 function analysisPath(hole: Hole, paths: Map<string, Point[]>, teeSet: TeeSet, pinRotation: PinRotation): Point[] {
@@ -244,7 +244,7 @@ export function analyzeArchitecture(course: Course, setup: ArchitectureAnalysisS
   const pinRotation = setup.pinRotation ?? "A";
   let reports = cache.get(sourceCourse);
   if (!reports) { reports = new Map(); cache.set(sourceCourse, reports); }
-  const referenceKey = referencePlans?.map((plan) => plan.version).join("|") ?? "legacy";
+  const referenceKey = referencePlans?.map((plan) => plan.version).join("|") ?? "";
   const setupKey = `${teeSet}:${pinRotation}:${referenceKey}`;
   const cached = reports.get(setupKey);
   if (cached) return cached;

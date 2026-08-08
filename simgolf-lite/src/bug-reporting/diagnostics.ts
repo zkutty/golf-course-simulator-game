@@ -9,7 +9,6 @@ import {
   type BugReportSource,
   type BugScalar,
 } from './contracts'
-import { normalizeUnhandledRejection } from '../rejectionDiagnostics'
 
 interface CapturedError {
   componentStack?: string
@@ -93,7 +92,7 @@ function runtimeEnvironment(): BugReportEnvironment {
 function errorFromUnknown(value: unknown): Error {
   if (value instanceof Error) return value
   if (typeof value === 'string' && value.trim()) return new Error(value.trim())
-  return new Error('Unhandled non-Error rejection')
+  return new Error('Unhandled rejection')
 }
 
 function safeGameContext(value: BugGameContext): BugGameContext {
@@ -175,11 +174,7 @@ export function captureBugError(
   value: unknown,
   options: { componentStack?: string | null; sentryEventId?: string } = {},
 ): void {
-  // Rejection reasons are unconstrained values.  Keep the local draft safe as
-  // well as Sentry: a player may later choose to submit this diagnostic.
-  const error = source === 'unhandled-rejection'
-    ? normalizeUnhandledRejection(value).error
-    : errorFromUnknown(value)
+  const error = errorFromUnknown(source === 'unhandled-rejection' ? undefined : value)
   capturedError = {
     message: (error.message || error.name || 'Unknown error').slice(
       0,
@@ -206,8 +201,10 @@ export function installGlobalBugCapture(): () => void {
   const onError = (event: ErrorEvent): void => {
     captureBugError('window-error', event.error ?? event.message)
   }
-  const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
-    captureBugError('unhandled-rejection', event.reason)
+  const onUnhandledRejection = (): void => {
+    // A rejected value can itself be hostile or contain private game state.
+    // The local draft needs only the fixed source and fallback error marker.
+    captureBugError('unhandled-rejection', undefined)
   }
   window.addEventListener('error', onError)
   window.addEventListener('unhandledrejection', onUnhandledRejection)

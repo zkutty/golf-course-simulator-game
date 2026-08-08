@@ -132,8 +132,8 @@ describe('bug diagnostics', () => {
     expect(latestBugSource()).toBe('unhandled-rejection')
     expect(createBugDiagnostics().error).toEqual(
       expect.objectContaining({
-        name: 'UnhandledPromiseRejection',
-        message: 'Unhandled promise rejection [string]',
+        name: 'Error',
+        message: 'Unhandled rejection',
       }),
     )
     expect(JSON.stringify(createBugDiagnostics())).not.toContain(
