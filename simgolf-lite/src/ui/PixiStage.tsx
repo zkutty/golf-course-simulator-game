@@ -302,6 +302,14 @@ const EDGE_DARKEN = 0.88;
 
 const MARKER_LABEL = "hole-marker";
 const ROUTE_LABEL = "route-overlay";
+type ArchitectureOverlayTestLayer = "all" | "traces" | "points" | "none";
+interface ArchitectureOverlayTestState {
+  layer: ArchitectureOverlayTestLayer;
+  visibleRouteLayers: number;
+  cellsVisible: boolean;
+  tracesVisible: boolean;
+  pointsVisible: boolean;
+}
 
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 8;
@@ -1141,6 +1149,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const layersRef = useRef<Layers | null>(null);
+  const architectureOverlayTestLayerRef = useRef<ArchitectureOverlayTestLayer>("all");
   const sceneSystemHostRef = useRef<SceneSystemHost | null>(null);
   const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
@@ -4556,6 +4565,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       c.destroy();
     });
     if (props.showMarkers === false) return;
+    let referenceLayerGraphics: { cells: PIXI.Graphics; traces: PIXI.Graphics; points: PIXI.Graphics } | null = null;
 
     // Architect Report overlay: warnings remain advisory and use both shape
     // and color so crossings/transfers stay legible in color-vision modes.
@@ -4670,6 +4680,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const overlayGraphics = isolateReferenceLayers ? [cellGraphics, traceGraphics, pointGraphics] : [cellGraphics];
       for (const g of overlayGraphics) g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(...overlayGraphics);
+      if (isolateReferenceLayers) referenceLayerGraphics = { cells: cellGraphics, traces: traceGraphics, points: pointGraphics };
       if (import.meta.env.DEV && props.architectureOverlay.kind === "reference" && typeof window !== "undefined") {
         const screenPoint = (point: Point) => {
           const local = project(point);
@@ -4678,7 +4689,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
         };
         const testWindow = window as unknown as {
           __ccArchitectureOverlayProjection?: object;
-          __ccSetArchitectureOverlayTestLayer?: (layer: "all" | "traces" | "points" | "none") => void;
         };
         testWindow.__ccArchitectureOverlayProjection = {
           traces: props.architectureOverlay.traces.map((trace) => ({
@@ -4691,15 +4701,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
             center: screenPoint(point),
             radius: Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35)),
           })),
-        };
-        testWindow.__ccSetArchitectureOverlayTestLayer = (layer) => {
-          for (const child of layers.terrainDecals.children) {
-            if (child.label === ROUTE_LABEL) child.visible = layer === "all";
-          }
-          cellGraphics.visible = layer === "all";
-          traceGraphics.visible = layer === "all" || layer === "traces";
-          pointGraphics.visible = layer === "all" || layer === "points";
-          appRef.current?.render();
         };
       }
     }
@@ -4771,6 +4772,36 @@ export function PixiStage(requestedProps: PixiStageProps) {
       g.stroke({ width: 2, color: 0xffffff, alpha: 0.75 });
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
+    }
+
+    if (import.meta.env.DEV && referenceLayerGraphics && typeof window !== "undefined") {
+      const testWindow = window as unknown as {
+        __ccArchitectureOverlayTestLayer?: ArchitectureOverlayTestLayer;
+        __ccArchitectureOverlayTestState?: ArchitectureOverlayTestState;
+        __ccSetArchitectureOverlayTestLayer?: (layer: ArchitectureOverlayTestLayer) => ArchitectureOverlayTestState;
+      };
+      const applyTestLayer = (layer: ArchitectureOverlayTestLayer): ArchitectureOverlayTestState => {
+        architectureOverlayTestLayerRef.current = layer;
+        testWindow.__ccArchitectureOverlayTestLayer = layer;
+        for (const child of layers.terrainDecals.children) {
+          if (child.label === ROUTE_LABEL) child.visible = layer === "all";
+        }
+        referenceLayerGraphics.cells.visible = layer === "all";
+        referenceLayerGraphics.traces.visible = layer === "all" || layer === "traces";
+        referenceLayerGraphics.points.visible = layer === "all" || layer === "points";
+        const state = {
+          layer,
+          visibleRouteLayers: layers.terrainDecals.children.filter((child) => child.label === ROUTE_LABEL && child.visible).length,
+          cellsVisible: referenceLayerGraphics.cells.visible,
+          tracesVisible: referenceLayerGraphics.traces.visible,
+          pointsVisible: referenceLayerGraphics.points.visible,
+        };
+        testWindow.__ccArchitectureOverlayTestState = state;
+        appRef.current?.render();
+        return state;
+      };
+      testWindow.__ccSetArchitectureOverlayTestLayer = applyTestLayer;
+      applyTestLayer(architectureOverlayTestLayerRef.current);
     }
   }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, holes, rotation, props.showMarkers, props.architectureWarnings, props.architectureOverlay, props.paceBottlenecks, surfaceHeightAt]);
 

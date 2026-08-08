@@ -10,6 +10,14 @@ interface OverlayProjection {
   points: Array<{ id: string; center: { x: number; y: number }; radius: number }>;
 }
 
+interface OverlayLayerState {
+  layer: "all" | "traces" | "points" | "none";
+  visibleRouteLayers: number;
+  cellsVisible: boolean;
+  tracesVisible: boolean;
+  pointsVisible: boolean;
+}
+
 function changedPixels(a: PNG, b: PNG, center: { x: number; y: number }, radius: number): number {
   let changed = 0;
   const minX = Math.max(0, Math.floor(center.x - radius));
@@ -28,13 +36,12 @@ function changedPixels(a: PNG, b: PNG, center: { x: number; y: number }, radius:
 }
 
 async function showReferenceLayer(page: import("@playwright/test").Page, layer: "all" | "traces" | "points" | "none") {
-  await page.evaluate(async (nextLayer) => {
+  return page.evaluate((nextLayer): OverlayLayerState => {
     const setLayer = (window as unknown as {
-      __ccSetArchitectureOverlayTestLayer?: (value: "all" | "traces" | "points" | "none") => void;
+      __ccSetArchitectureOverlayTestLayer?: (value: "all" | "traces" | "points" | "none") => OverlayLayerState;
     }).__ccSetArchitectureOverlayTestLayer;
     if (!setLayer) throw new Error("Reference-overlay test layer control is unavailable");
-    setLayer(nextLayer);
-    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    return setLayer(nextLayer);
   }, layer);
 }
 
@@ -121,13 +128,16 @@ test("ZK-765 reference overlays remain populated across every biome and camera r
 
     const overlayPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-reference.png`);
     await canvas.screenshot({ path: overlayPath });
-    await showReferenceLayer(page, "traces");
+    const routesState = await showReferenceLayer(page, "traces");
+    expect(routesState).toEqual({ layer: "traces", visibleRouteLayers: 1, cellsVisible: false, tracesVisible: true, pointsVisible: false });
     const routesPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-routes-only.png`);
     const routesShot = await canvas.screenshot({ path: routesPath });
-    await showReferenceLayer(page, "points");
+    const landingsState = await showReferenceLayer(page, "points");
+    expect(landingsState).toEqual({ layer: "points", visibleRouteLayers: 1, cellsVisible: false, tracesVisible: false, pointsVisible: true });
     const landingsPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-landings-only.png`);
     const landingsShot = await canvas.screenshot({ path: landingsPath });
-    await showReferenceLayer(page, "none");
+    const baselineState = await showReferenceLayer(page, "none");
+    expect(baselineState).toEqual({ layer: "none", visibleRouteLayers: 0, cellsVisible: false, tracesVisible: false, pointsVisible: false });
     const baselinePath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-baseline.png`);
     const baselineShot = await canvas.screenshot({ path: baselinePath });
     const routesPng = PNG.sync.read(routesShot);

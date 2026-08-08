@@ -26,6 +26,13 @@ Original prompt: Update my vision HTML for the new features from the new milesto
   route-only, landing-only, and empty layers independently, so route endpoints
   cannot satisfy landing pixels and deleting either drawing loop fails its own
   projected-region proof.
+- On the combined ZK-674/ZK-765 branch, the route-scene effect could replace
+  the Graphics captured by the test control before the screenshot. The
+  selected test layer now lives in a persistent PixiStage ref and is reapplied
+  after every complete route-scene rebuild; exact visible-layer state is
+  asserted without timing sleeps. Parkland route-only, landing-only, and empty
+  captures are visibly distinct, and the focused browser slice plus TypeScript
+  pass on the combined branch.
 - Every archetype/tee/pin combination has explicit semantic assertions plus a
   pinned canonical matrix hash. The repaired focused authority suite passes
   55/55, the dedicated certification/performance pair passes 7/7, TypeScript
