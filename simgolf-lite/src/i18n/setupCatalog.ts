@@ -1,0 +1,61 @@
+import { registerMessages } from "./core";
+
+// Setup copy travels with the already-deferred New Game wizard. Keeping this
+// object separate preserves the global MessageKey union without making these
+// strings part of the initial application graph.
+export const setupEn = {
+  "newGame.step.mode": "Choose your game",
+  "newGame.step.scenarios": "Pick a scenario",
+  "newGame.step.land": "Pick your land",
+  "newGame.experience.heading": "How hands-on do you want to be?",
+  "newGame.step.details": "Name your course",
+  "newGame.experience.profile.relaxed.label": "Relaxed",
+  "newGame.experience.profile.relaxed.promise": "A guided, low-friction way to shape your first club.",
+  "newGame.experience.profile.relaxed.youManage": "Land, routing, and the essentials.",
+  "newGame.experience.profile.relaxed.teamManages": "Routine operations and recovery help.",
+  "newGame.experience.profile.classic.label": "Classic",
+  "newGame.experience.profile.classic.promise": "The complete course-building loop with a balanced hand.",
+  "newGame.experience.profile.classic.youManage": "Design, operations, and club decisions.",
+  "newGame.experience.profile.classic.teamManages": "Routine work with balanced assistance.",
+  "newGame.experience.profile.simulation.label": "Simulation",
+  "newGame.experience.profile.simulation.promise": "A full-detail club simulation where every decision stays yours.",
+  "newGame.experience.profile.simulation.youManage": "All systems, advanced operations, and consequences.",
+  "newGame.experience.profile.simulation.teamManages": "Only the work you explicitly automate.",
+  "newGame.experience.youManage": "You manage",
+  "newGame.experience.teamManages": "Your team manages",
+  "newGame.pressure.advanced": "Advanced · Economic pressure",
+  "newGame.pressure.description": "Economic pressure changes only the financial climate. It never changes your profile, available workspaces, or automation intent.",
+  "newGame.pressure.friendly.label": "Friendly",
+  "newGame.pressure.friendly.description": "More room to experiment with costs, demand, and recovery.",
+  "newGame.pressure.balanced.label": "Balanced",
+  "newGame.pressure.balanced.description": "The established economy with neutral terms.",
+  "newGame.pressure.tight.label": "Tight",
+  "newGame.pressure.tight.description": "Closer margins for costs, demand, credit, and wear.",
+  "newGame.review": "{mode} · {theme} · {profile} · {pressure} · seed {seed}",
+  "newGame.seedTitle": "Seed {seed}",
+  "auto.ui.newgamewizard.career": "Career",
+  "auto.ui.newgamewizard.challenge": "Challenge",
+  "auto.ui.newgamewizard.course.name": "Course name",
+  "auto.ui.newgamewizard.desert": "Desert",
+  "auto.ui.newgamewizard.easy": "Easy",
+  "auto.ui.newgamewizard.founder.name": "Founder name",
+  "auto.ui.newgamewizard.hard": "Hard",
+  "auto.ui.newgamewizard.links": "Links",
+  "auto.ui.newgamewizard.normal": "Normal",
+  "auto.ui.newgamewizard.optional": "(optional)",
+  "auto.ui.newgamewizard.parkland": "Parkland",
+  "auto.ui.newgamewizard.random.name": "Random name",
+  "auto.ui.newgamewizard.reroll.land": "🎲 Reroll land",
+  "auto.ui.newgamewizard.sandbox": "Sandbox",
+  "auto.ui.newgamewizard.sandbox.override.challenge.runs.use.the.balanced.defau": "Sandbox override — challenge runs use the balanced default.",
+  "auto.ui.newgamewizard.seed": "Seed ",
+  "auto.ui.newgamewizard.seed.2": "Seed",
+  "auto.ui.newgamewizard.seed.3": " • seed",
+  "auto.ui.newgamewizard.starting.cash": "Starting cash —",
+  "auto.ui.newgamewizard.your.name.on.the.clubhouse.plaque": "Your name on the clubhouse plaque",
+  "auto.ui.scenarioselect.completed": "Completed",
+} as const;
+
+export function registerSetupCatalog(): () => void {
+  return registerMessages(setupEn);
+}

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { loadLocale, translate } from "./core";
 import { formatCurrency, formatDayLabel, formatNumber, formatWeekLabel } from "./format";
+import { registerSetupCatalog } from "./setupCatalog";
+import { registerVisionIntroCatalog } from "./visionIntroCatalog";
 
 describe("i18n", () => {
   it("interpolates typed parameters and ICU-style plurals", () => {
@@ -11,6 +13,24 @@ describe("i18n", () => {
 
   it("brackets and expands the pseudo locale", () => {
     expect(translate("pseudo", "common.done")).toMatch(/^⟦Dôñë .+⟧$/);
+  });
+
+  it("fails safely before setup copy registers, then translates it in both locales", () => {
+    expect(translate("en", "newGame.step.mode")).toBe("newGame.step.mode");
+
+    const unregister = registerSetupCatalog();
+    expect(translate("en", "newGame.step.mode")).toBe("Choose your game");
+    expect(translate("pseudo", "newGame.step.mode")).toMatch(/^⟦Çhôôsë ÿôür gámë .+⟧$/);
+
+    unregister();
+    expect(translate("en", "newGame.step.mode")).toBe("newGame.step.mode");
+  });
+
+  it("registers copy for an independently deferred route", () => {
+    expect(translate("en", "vision.hero.title")).toBe("vision.hero.title");
+    const unregister = registerVisionIntroCatalog();
+    expect(translate("en", "vision.hero.title")).toBe("Build the course. Shape the world.");
+    unregister();
   });
 
   it("loads only supported persisted locale values", () => {

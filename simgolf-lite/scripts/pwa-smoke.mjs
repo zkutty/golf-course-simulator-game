@@ -182,7 +182,10 @@ try {
   if (offlineBundleResponses.some((ok) => !ok)) {
     throw new Error("Previously loaded biome assets were not available offline");
   }
-  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, Vision cache-on-demand, selected-biome cache isolation, scoped install, offline reload, and local save persistence`);
+  await page.getByRole("button", { name: "New Game" }).click();
+  await page.getByRole("heading", { name: "Choose your game" }).waitFor({ state: "visible" });
+  if (pageErrors.length) throw new Error(`Offline New Game emitted page errors: ${pageErrors.join(" | ")}`);
+  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, Vision cache-on-demand, selected-biome cache isolation, scoped install, offline reload, deferred New Game, and local save persistence`);
 } finally {
   await browser.close();
   preview?.close?.();

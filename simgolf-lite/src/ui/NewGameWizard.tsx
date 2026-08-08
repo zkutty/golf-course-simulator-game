@@ -18,6 +18,9 @@ import type { MessageKey } from "../i18n/catalog";
 import { IS_DEMO } from "../config/edition";
 import { biomeContextAttributes, biomeUiStyle, biomeUiTheme } from "./biomeUiTheme";
 import { useI18n } from "../i18n/useI18n";
+import { registerSetupCatalog } from "../i18n/setupCatalog";
+
+registerSetupCatalog();
 
 // New-game setup wizard (ZKU-162): Mode → Land → Experience → Details.
 // Output is a typed GameSetup consumed by the single createNewGame path.

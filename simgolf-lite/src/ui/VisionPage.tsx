@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import type { MessageKey } from "../i18n/catalog";
 import { useI18n } from "../i18n/useI18n";
 import { AdvisorPortrait } from "./onboarding/AdvisorPresenter";
+import { registerVisionIntroCatalog } from "../i18n/visionIntroCatalog";
 import "./VisionPage.css";
+
+registerVisionIntroCatalog();
 
 type Feature = {
   icon: string;

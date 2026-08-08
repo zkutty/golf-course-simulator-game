@@ -10,6 +10,21 @@ const ACCENTS: Record<string, string> = {
   a: "á", A: "Á", e: "ë", E: "Ë", i: "ï", I: "Ï", o: "ô", O: "Ô", u: "ü", U: "Ü",
   c: "ç", C: "Ç", n: "ñ", N: "Ñ", y: "ÿ", Y: "Ÿ",
 };
+const registeredEn: Partial<Record<MessageKey, string>> = {};
+
+export function registerMessages(messages: Partial<Record<MessageKey, string>>): () => void {
+  const previous = new Map<MessageKey, string | undefined>();
+  for (const key of Object.keys(messages) as MessageKey[]) {
+    previous.set(key, registeredEn[key]);
+    registeredEn[key] = messages[key];
+  }
+  return () => {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete registeredEn[key];
+      else registeredEn[key] = value;
+    }
+  };
+}
 
 export function pseudoLocalize(value: string): string {
   if (!value.trim() || value.startsWith("⟦")) return value;
@@ -18,7 +33,8 @@ export function pseudoLocalize(value: string): string {
 }
 
 export function translate(locale: Locale, key: MessageKey, params: MessageParams = {}): string {
-  let message: string = en[key];
+  let message: string | undefined = (en as Partial<Record<MessageKey, string>>)[key] ?? registeredEn[key];
+  if (message === undefined) return key;
   message = message.replace(PLURAL, (_match, name: string, one: string, other: string) => {
     const count = Number(params[name] ?? 0);
     return (count === 1 ? one : other).replaceAll("#", String(count));

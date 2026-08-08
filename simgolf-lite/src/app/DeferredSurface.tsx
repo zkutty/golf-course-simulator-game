@@ -16,7 +16,7 @@ type DeferredSurfaceErrorBoundaryState = {
  * deferred import should never replace a running course with the global crash
  * screen, and the fallback remains useful when a browser is offline.
  */
-class DeferredSurfaceErrorBoundary extends Component<DeferredSurfaceProps, DeferredSurfaceErrorBoundaryState> {
+export class DeferredSurfaceErrorBoundary extends Component<DeferredSurfaceProps, DeferredSurfaceErrorBoundaryState> {
   state: DeferredSurfaceErrorBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: Error): DeferredSurfaceErrorBoundaryState {
@@ -34,7 +34,7 @@ class DeferredSurfaceErrorBoundary extends Component<DeferredSurfaceProps, Defer
   }
 }
 
-function DeferredSurfaceError({ label }: Pick<DeferredSurfaceProps, "label">) {
+export function DeferredSurfaceError({ label }: Pick<DeferredSurfaceProps, "label">) {
   const { t } = useI18n();
   return (
     <main role="alert" aria-live="assertive" aria-atomic="true" style={shellStyle}>
@@ -49,7 +49,7 @@ function DeferredSurfaceError({ label }: Pick<DeferredSurfaceProps, "label">) {
   );
 }
 
-function DeferredSurfaceLoading({ label }: Pick<DeferredSurfaceProps, "label">) {
+export function DeferredSurfaceLoading({ label }: Pick<DeferredSurfaceProps, "label">) {
   const { t } = useI18n();
   return (
     <main role="status" aria-live="polite" aria-atomic="true" aria-label={t("deferredSurface.loading", { surface: label })} style={shellStyle}>
