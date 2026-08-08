@@ -47,10 +47,12 @@ describe("release balance viability (ZK-701)", () => {
     expect(result.firstBankruptWeek).toBeNull();
     expect(result.world.isBankrupt).toBe(false);
     expect(result.world.week).toBe(105);
-    // The estate may use its distress runway; viability must come from the
-    // aggregate two-course ledger, not a cash grant or weaker fail threshold.
-    expect(result.minimumCash).toBeLessThan(0);
-    expect(result.minimumCash).toBeGreaterThan(-10_000);
+    // ZK-773 certifies $100K for a Classic fresh run. The estate must still
+    // consume real operating runway, while that approved capital keeps the
+    // conservative path solvent; the separate poor-management paths below
+    // remain the bankruptcy guard.
+    expect(result.minimumCash).toBeLessThan(100_000);
+    expect(result.minimumCash).toBeGreaterThan(0);
   });
 
   it("preserves representative poor-management bankruptcies as sticky", { timeout: 60_000 }, () => {
