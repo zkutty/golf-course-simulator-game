@@ -56,6 +56,7 @@ interface Window {
       layers: Record<string, number | null> | null;
       counts: {
         terrainChunks: number;
+        terrainRebuilds: number;
         connectedSurfaces: number;
         structuresAndProps: number;
         dressing: number;

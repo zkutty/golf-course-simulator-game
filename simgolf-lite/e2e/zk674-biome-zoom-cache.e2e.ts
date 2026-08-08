@@ -112,6 +112,14 @@ for (const theme of PRIMARY_BIOMES) {
   test(`ZK-674 keeps ${theme} atlas generations atomic through tier and zoom reversals`, async ({ page }, testInfo) => {
     const errors: string[] = [];
     const failedAssets: string[] = [];
+    let releaseAutumnOverlay = () => {};
+    const autumnOverlayGate = new Promise<void>((resolve) => {
+      releaseAutumnOverlay = resolve;
+    });
+    let markAutumnOverlayRequested = () => {};
+    const autumnOverlayRequested = new Promise<void>((resolve) => {
+      markAutumnOverlayRequested = resolve;
+    });
     page.on("console", (message) => {
       if (message.type() === "error") errors.push(message.text());
     });
@@ -129,20 +137,34 @@ for (const theme of PRIMARY_BIOMES) {
       const response = await route.fetch();
       const manifest = await response.json() as BrowserAtlasManifest;
       const tier = manifest.biomes.parkland.high;
+      const uniqueFrame = (file: BrowserAtlasFile, family: string): BrowserAtlasFile => ({
+        ...file,
+        json: `${file.json}?zk674-autumn-overlay=${family}`,
+        image: `${file.image}?zk674-autumn-overlay=${family}`,
+      });
       tier.seasonal.autumn = {
         owner: "parkland",
         season: "autumn",
-        materials: { fairway: tier.base.fields.fairway },
+        materials: {
+          fairway: {
+            image: `${tier.base.fields.fairway.image}?zk674-autumn-overlay=fairway`,
+          },
+        },
         frames: {
-          buildings: tier.base.buildings,
-          "natural-props": tier.base.props,
-          "terrain-details": tier.base.details,
+          buildings: uniqueFrame(tier.base.buildings, "buildings"),
+          "natural-props": uniqueFrame(tier.base.props, "natural-props"),
+          "terrain-details": uniqueFrame(tier.base.details, "terrain-details"),
         },
       };
       await route.fulfill({ response, json: manifest });
     });
     await page.route(/atlases\/biomes\/.*-(?:(?:medium|low)|links-high)\./, async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 1_500));
+      await route.continue();
+    });
+    await page.route(/zk674-autumn-overlay=/, async (route) => {
+      markAutumnOverlayRequested();
+      await autumnOverlayGate;
       await route.continue();
     });
 
@@ -238,8 +260,18 @@ for (const theme of PRIMARY_BIOMES) {
       await expect.poll(async () => (await rendererState(page))?.rendered.biome, { timeout: 120_000 }).toBe("parkland");
 
       // The browser manifest injects an actual authored autumn overlay route
-      // so this proves season and presentation commit with the overlay key.
+      // with unique gated URLs, proving the presentation remains held until
+      // every overlay asset can commit as one generation.
+      const summerState = await rendererState(page);
       await page.evaluate(() => window.__coursecraftTest!.setRendererSeasonFixture("autumn"));
+      await expect.poll(async () => (await rendererState(page))?.requested.season, { timeout: 120_000 }).toBe("autumn");
+      await autumnOverlayRequested;
+      const heldAutumn = await rendererState(page);
+      expect(heldAutumn?.rendered.season).toBe("summer");
+      expect(heldAutumn?.rendered.generation).toBe(summerState?.rendered.generation);
+      expect(heldAutumn?.rendered.seasonalVisualSignature).toBe(summerState?.rendered.seasonalVisualSignature);
+      expect(heldAutumn?.layers).toEqual(summerState?.layers);
+      releaseAutumnOverlay();
       await expect.poll(async () => {
         const state = await rendererState(page);
         return {
@@ -264,3 +296,42 @@ for (const theme of PRIMARY_BIOMES) {
     expect(errors).toEqual([]);
   });
 }
+
+test("ZK-674 publishes one stable UI fallback generation after a failed bundle load", async ({ page }) => {
+  const fixture = M53_SEASONAL_TERRAIN_FIXTURES.find((candidate) => (
+    candidate.biome === "parkland"
+    && candidate.season === "summer"
+    && candidate.quality === "high"
+    && candidate.rotation === 0
+  ));
+  expect(fixture).toBeDefined();
+  let failedBundleRequests = 0;
+  await page.route(/terrain-parkland-high\..*\.json/, async (route) => {
+    failedBundleRequests++;
+    await route.abort("failed");
+  });
+  await page.goto(fixture!.query);
+  await expect.poll(async () => {
+    const state = await rendererState(page);
+    return {
+      status: state?.rendered.status,
+      pending: state?.activation.pending,
+      terrainChunks: state?.counts?.terrainChunks ?? 0,
+    };
+  }, { timeout: 120_000 }).toMatchObject({
+    status: "fallback",
+    pending: null,
+    terrainChunks: expect.any(Number),
+  });
+  const settled = await rendererState(page);
+  expect(settled?.counts?.terrainChunks).toBeGreaterThan(0);
+  expect(settled?.fallbacks).toHaveLength(1);
+  await page.waitForTimeout(2_000);
+  const stable = await rendererState(page);
+  expect(failedBundleRequests).toBe(1);
+  expect(stable?.rendered.status).toBe("fallback");
+  expect(stable?.rendered.requestId).toBe(settled?.rendered.requestId);
+  expect(stable?.rendered.generation).toBe(settled?.rendered.generation);
+  expect(stable?.counts?.terrainRebuilds).toBe(settled?.counts?.terrainRebuilds);
+  expect(stable?.activation.pending).toBeNull();
+});

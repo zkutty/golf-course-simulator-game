@@ -1958,14 +1958,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const world = layers?.world;
         const requestedTheme = getBiomeDefinition(requestedProps.course.theme).key;
         const requestedQuality = requestedProps.graphicsQuality;
-        const requestedTier = visibleGroundCoverTier(
+        const renderedTier = visibleGroundCoverTier(
           world?.scale.x ?? camRef.current.zoom,
-          requestedProps.resolutionScale,
+          renderContext.resolutionScale,
         );
         const coverTier = atlasContext.quality === "high"
-          ? requestedTier
+          ? renderedTier
           : atlasContext.quality === "medium"
-            ? Math.min(1, requestedTier) as 0 | 1
+            ? Math.min(1, renderedTier) as 0 | 1
             : 0;
         return {
           requested: {
@@ -2000,8 +2000,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
           } : null,
           counts: layers ? {
             terrainChunks: layers.terrain.children.length,
+            terrainRebuilds: chunkRebuildsRef.current,
             connectedSurfaces: layers.smoothSurfaces.children.length,
-            structuresAndProps: layers.objects.children.length,
+            structuresAndProps: layers.objects.children.filter((child) => (
+              child !== ambientRef.current.heron.g
+              && child.visible
+              && child.renderable
+              && child.alpha > 0
+            )).length,
             dressing: layers.seasonalTerrain.children.length + layers.surfaceCare.children.length,
           } : null,
         };
@@ -2254,6 +2260,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const requestedQuality = requestedProps.graphicsQuality;
     const requestedSeason = requestedProps.season ?? null;
     const requestedBundleKey = `${requestedTheme}:${requestedQuality}`;
+    const requestedSeasonalVisualSignature = seasonalPlantSceneSignature(
+      requestedProps.seasonalVisualState,
+    );
     const identityMatchesRendered = (
       atlasContext.biome === requestedTheme
       && atlasContext.quality === requestedQuality
@@ -2269,12 +2278,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
     ) supersedePendingAtlasLoad();
     const activation = atlasActivationSnapshot();
     const activeMatchesRendered = (
-      activation.bundleKey === atlasContext.bundleKey
-      && activation.overlayKey === atlasContext.overlayKey
+      activation.requestId === atlasContext.requestId
+      && activation.generation === atlasContext.generation
+      && (
+        atlasContext.status === "fallback"
+          ? activation.bundleKey === null && activation.overlayKey === null
+          : activation.bundleKey === atlasContext.bundleKey
+            && activation.overlayKey === atlasContext.overlayKey
+      )
     );
     if (identityMatchesRendered && activeMatchesRendered) {
       setRenderContext((current) => (
-        current.seasonalVisualState === requestedProps.seasonalVisualState
+        seasonalPlantSceneSignature(current.seasonalVisualState) === requestedSeasonalVisualSignature
         && current.resolutionScale === requestedProps.resolutionScale
           ? current
           : {
@@ -2306,9 +2321,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
     appReady,
     atlasContext.biome,
     atlasContext.bundleKey,
+    atlasContext.generation,
     atlasContext.overlayKey,
     atlasContext.quality,
+    atlasContext.requestId,
     atlasContext.season,
+    atlasContext.status,
     requestedProps.course.theme,
     requestedProps.graphicsQuality,
     requestedProps.resolutionScale,
