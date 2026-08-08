@@ -58,6 +58,14 @@ const browser = await chromium.launch({
   ...(execCandidate ? { executablePath: execCandidate } : {}),
 });
 const context = await browser.newContext();
+// Keep this fresh smoke profile deterministic without deleting storage later:
+// no tutorial completion autosave and no time-based autosave during the run.
+await context.addInitScript(() => localStorage.setItem("coursecraft_app_profile_v5", JSON.stringify({
+  version: 5,
+  tutorialOffered: true,
+  tutorialCompleted: true,
+  gameplay: { autosaveCadence: "off" },
+})));
 const page = await context.newPage();
 const pageErrors = [];
 page.on("pageerror", (error) => pageErrors.push(error.message));
@@ -137,6 +145,10 @@ try {
   }
   if (colors.size < 16) throw new Error(`Course canvas did not contain a rendered scene (${colors.size} sampled colors)`);
   if (pageErrors.length) throw new Error(`Gameplay emitted page errors: ${pageErrors.join(" | ")}`);
+  const hudChunkUrls = await page.evaluate(() => performance.getEntriesByType("resource")
+    .map((entry) => entry.name)
+    .filter((url) => /\/assets\/HUD-[^/]+\.js(?:\?|$)/.test(url)));
+  if (hudChunkUrls.length !== 1) throw new Error(`Expected one deferred HUD chunk, saw ${JSON.stringify(hudChunkUrls)}`);
   const loadedBiomeAssets = await page.evaluate(() => performance.getEntriesByType("resource")
     .map((entry) => entry.name)
     .filter((url) => url.includes("/atlases/biomes/")));
@@ -162,6 +174,10 @@ try {
       throw new Error(`Loaded biome asset was not isolated in the runtime cache: ${loaded}`);
     }
   }
+  await page.waitForFunction(async (urls) => {
+    const matches = await Promise.all(urls.map((url) => caches.match(url, { ignoreVary: true })));
+    return matches.every(Boolean);
+  }, hudChunkUrls, { timeout: 15_000 });
 
   await page.evaluate(() => localStorage.setItem("coursecraft_pwa_probe", "offline-save"));
   await context.setOffline(true);
@@ -169,6 +185,14 @@ try {
   if (!(await page.title()).startsWith("CourseCraft")) throw new Error("Offline shell did not load");
   const saved = await page.evaluate(() => localStorage.getItem("coursecraft_pwa_probe"));
   if (saved !== "offline-save") throw new Error("Offline local save probe was lost");
+  await page.getByRole("button", { name: "New Game" }).click();
+  try {
+    await page.getByText("Choose your game", { exact: true }).waitFor({ state: "visible" });
+  } catch (error) {
+    const body = (await page.locator("body").innerText()).slice(0, 1_000);
+    throw new Error(`Offline New Game did not open: ${String(error)}; page errors: ${pageErrors.join(" | ") || "none"}; body: ${body}`);
+  }
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
   const offlineBundleResponses = await page.evaluate(async (urls) => Promise.all(
     urls.map(async (url) => {
       try {
@@ -182,10 +206,47 @@ try {
   if (offlineBundleResponses.some((ok) => !ok)) {
     throw new Error("Previously loaded biome assets were not available offline");
   }
-  await page.getByRole("button", { name: "New Game" }).click();
-  await page.getByRole("heading", { name: "Choose your game" }).waitFor({ state: "visible" });
+  const offlineHudResponses = await page.evaluate(async (urls) => Promise.all(urls.map(async (url) => {
+    const cached = await caches.match(url, { ignoreVary: true });
+    try {
+      return { url, cached: Boolean(cached), responseOk: (await fetch(url)).ok };
+    } catch {
+      return { url, cached: Boolean(cached), responseOk: false };
+    }
+  })), hudChunkUrls);
+  if (offlineHudResponses.some(({ responseOk }) => !responseOk)) {
+    const cacheSnapshot = await page.evaluate(async () => Promise.all((await caches.keys()).map(async (key) => {
+      const urls = (await (await caches.open(key)).keys()).map((request) => request.url);
+      return { key, count: urls.length, hud: urls.filter((url) => url.includes("/assets/HUD-")) };
+    })));
+    throw new Error(`Deferred HUD chunk was not available after an offline reload: ${JSON.stringify({ offlineHudResponses, cacheSnapshot })}`);
+  }
+  const offlineHud = page.locator(".cc-hud");
+  if (!(await offlineHud.isVisible())) {
+    const offlineQuickStart = page.getByRole("button", { name: "Quick Start" });
+    try {
+      await Promise.any([
+        offlineHud.waitFor({ state: "visible", timeout: 15_000 }),
+        offlineQuickStart.waitFor({ state: "visible", timeout: 15_000 }),
+      ]);
+    } catch (error) {
+      const body = (await page.locator("body").innerText()).slice(0, 1_000);
+      throw new Error(`Offline reload reached neither title nor HUD: ${String(error)}; page errors: ${pageErrors.join(" | ") || "none"}; body: ${body}`);
+    }
+    if (await offlineQuickStart.isVisible()) {
+      await offlineQuickStart.click();
+      const offlineTutorial = page.getByRole("dialog", { name: "First-launch tutorial" });
+      if (await offlineTutorial.count()) await offlineTutorial.getByRole("button", { name: "Skip tutorial" }).click();
+    }
+  }
+  try {
+    await offlineHud.waitFor({ state: "visible", timeout: 15_000 });
+  } catch (error) {
+    const body = (await page.locator("body").innerText()).slice(0, 1_000);
+    throw new Error(`Deferred HUD did not mount during offline Quick Start: ${String(error)}; page errors: ${pageErrors.join(" | ") || "none"}; body: ${body}`);
+  }
   if (pageErrors.length) throw new Error(`Offline New Game emitted page errors: ${pageErrors.join(" | ")}`);
-  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, Vision cache-on-demand, selected-biome cache isolation, scoped install, offline reload, deferred New Game, and local save persistence`);
+  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, Vision cache-on-demand, selected-biome cache isolation, scoped install, offline reload, deferred HUD/New Game, and local save persistence`);
 } finally {
   await browser.close();
   preview?.close?.();

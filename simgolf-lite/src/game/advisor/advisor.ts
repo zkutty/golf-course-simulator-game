@@ -9,6 +9,7 @@ import type { TournamentRequirementId } from "../tournaments/types";
 import type { MessageKey } from "../../i18n/catalog";
 import { analyzeArchitecture } from "../architecture/architecture";
 import { courseLayouts } from "../models/courseLayouts";
+import { systemControlEnvelope } from "../experience/systemControl";
 
 export type AdvisorExpression = "neutral" | "pleased" | "worried" | "excited";
 export type AdvisorPriority = "hint" | "info" | "celebration" | "warning";
@@ -20,6 +21,12 @@ export interface AdvisorMessage {
   expression: AdvisorExpression;
   priority: AdvisorPriority;
   holeIndex?: number;
+  systemControl?: {
+    profile: string;
+    automated: number;
+    manual: number;
+    overrides: number;
+  };
 }
 const priorityRank: Record<AdvisorPriority, number> = { hint: 0, info: 1, celebration: 2, warning: 3 };
 
@@ -130,7 +137,16 @@ export function advisorMessages(
       priority: "hint",
     });
   }
-  return messages.sort((a, b) => priorityRank[b.priority] - priorityRank[a.priority]);
+  const control = systemControlEnvelope(world);
+  const context = {
+    profile: control.profile,
+    automated: control.systems.filter((system) => system.mode === "automated").length,
+    manual: control.systems.filter((system) => system.mode === "manual").length,
+    overrides: control.systems.filter((system) => system.override).length,
+  };
+  return messages
+    .sort((a, b) => priorityRank[b.priority] - priorityRank[a.priority])
+    .map((message) => ({ ...message, systemControl: context }));
 }
 
 export function allowsMessage(frequency: AdvisorFrequency, message: AdvisorMessage): boolean {

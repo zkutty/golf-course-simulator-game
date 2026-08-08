@@ -2,8 +2,15 @@ import type { Course, CourseLayout, LandTheme, World } from "../models/types";
 import { climateStateFor } from "../models/biomes";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { normalizePropertyCourse, normalizePropertyEnterprise } from "../property/property";
-import type { PropertyAsset } from "../property/types";
 import type { FacilityUpkeepPolicy } from "../property/types";
+import { applyOperationsCommand } from "../operations/commands";
+import {
+  ADVANCED_SYSTEM_IDS,
+  advancedSystemForLegacyAutomation,
+  applySystemControlCommand,
+  reconcileSystemControlWorld,
+  resolveSystemControlPolicy,
+} from "../experience/systemControl";
 import { economicPressureForWorld, terrainCostMult } from "../balance/experience";
 import { quoteDrainageImprovement } from "../models/terrainEconomics";
 import {
@@ -40,6 +47,7 @@ const finite = (value: unknown, fallback = 0) =>
 const integer = (value: unknown, fallback = 0) => Math.floor(finite(value, fallback));
 const strings = (value: unknown, max: number) =>
   Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string"))].slice(-max) : [];
+const AUTOMATION_SYSTEM_SET = new Set(["hours", "upkeep", "pricing", "staffing", "parking", "lodging", "community", "safety"]);
 
 function hash32(...values: number[]): number {
   let hash = 0x811c9dc5;
@@ -411,7 +419,8 @@ export function normalizeSeasonalState(
     automation: {
       preset: automationPresets.has(candidate.automation?.preset as AutomationPreset) ? candidate.automation!.preset : fallback.automation.preset,
       advancedOperations: candidate.automation?.advancedOperations === true,
-      overrides: strings(candidate.automation?.overrides, 8) as SeasonalState["automation"]["overrides"],
+      overrides: strings(candidate.automation?.overrides, 8)
+        .filter((value) => AUTOMATION_SYSTEM_SET.has(value)) as SeasonalState["automation"]["overrides"],
       lastAppliedAbsoluteDay: integer(candidate.automation?.lastAppliedAbsoluteDay, -1),
       decisions: strings(candidate.automation?.decisions, 16),
       baselineMaintenanceBudget: Math.max(0, finite(candidate.automation?.baselineMaintenanceBudget)),
@@ -483,26 +492,13 @@ function automationPolicy(preset: AutomationPreset, weather: DailyWeather, chart
   };
 }
 
-function automatedAsset(asset: PropertyAsset, baselinePrice: number, policy: ReturnType<typeof automationPolicy>, overrides: Set<string>): PropertyAsset {
-  return {
-    ...asset,
-    ...(!overrides.has("hours") && ["practice", "clubhouse", "resort"].includes(asset.category)
-      ? { openHour: policy.openHour, closeHour: policy.closeHour }
-      : {}),
-    ...(!overrides.has("upkeep") && !["access", "community", "safety"].includes(asset.category)
-      ? { upkeepPolicy: policy.upkeep }
-      : {}),
-    ...(!overrides.has("pricing") && baselinePrice > 0
-      ? { price: Math.max(1, Math.round(baselinePrice * policy.priceMultiplier)) }
-      : {}),
-  };
-}
-
 function applyAutomation(course: Course, world: World, state: SeasonalState, weather: DailyWeather): { course: Course; world: World; state: SeasonalState } {
-  if (state.automation.advancedOperations || state.automation.lastAppliedAbsoluteDay === state.calendar.absoluteDay) {
+  if (state.automation.lastAppliedAbsoluteDay === state.calendar.absoluteDay) {
     return { course, world, state };
   }
-  const overrides = new Set<string>(state.automation.overrides);
+  world = reconcileSystemControlWorld(world);
+  const systemPolicy = resolveSystemControlPolicy(world);
+  const automated = new Set(systemPolicy.systems.filter((entry) => entry.mode === "automated").map((entry) => entry.id));
   const policy = automationPolicy(state.automation.preset, weather, state.charter);
   const normalized = normalizeCourseLayouts(course);
   const baselineGreenFees = {
@@ -514,23 +510,64 @@ function applyAutomation(course: Course, world: World, state: SeasonalState, wea
     ...Object.fromEntries(property.assets.map((asset) => [asset.id, asset.price])),
     ...state.automation.baselineAssetPrices,
   };
-  const layouts = normalized.layouts!.map((layout) => !overrides.has("pricing")
-    ? { ...layout, greenFee: Math.max(10, Math.round((baselineGreenFees[layout.id] ?? layout.greenFee) * policy.priceMultiplier)) }
-    : layout);
-  const nextCourse: Course = {
-    ...normalized,
-    layouts,
-    baseGreenFee: layouts.find((layout) => layout.id === normalized.activeCourseId)?.greenFee ?? normalized.baseGreenFee,
-    property: { ...property, assets: property.assets.map((asset) => automatedAsset(asset, baselineAssetPrices[asset.id] ?? asset.price, policy, overrides)) },
-  };
+  let nextCourse: Course = { ...normalized, property };
+  let nextWorld = world;
+  if (automated.has("property")) {
+    for (const layout of normalized.layouts!) {
+      const result = applyOperationsCommand(nextCourse, nextWorld, {
+        type: "SET_COURSE_GREEN_FEE",
+        courseId: layout.id,
+        greenFee: Math.max(10, Math.round((baselineGreenFees[layout.id] ?? layout.greenFee) * policy.priceMultiplier)),
+      });
+      if (result.ok) ({ course: nextCourse, world: nextWorld } = result);
+    }
+  }
+  for (const asset of property.assets) {
+    const operatingDomain = asset.category === "resort" ? "resort" : "property";
+    if (automated.has(operatingDomain) && ["practice", "clubhouse", "resort"].includes(asset.category)) {
+      const result = applyOperationsCommand(nextCourse, nextWorld, {
+        type: "PROPERTY_COMMAND",
+        command: { type: "SET_HOURS", assetId: asset.id, openHour: policy.openHour, closeHour: policy.closeHour },
+      });
+      if (result.ok) ({ course: nextCourse, world: nextWorld } = result);
+    }
+    if (automated.has("maintenance") && !["access", "community", "safety"].includes(asset.category)) {
+      const result = applyOperationsCommand(nextCourse, nextWorld, {
+        type: "PROPERTY_COMMAND",
+        command: { type: "SET_UPKEEP", assetId: asset.id, policy: policy.upkeep },
+      });
+      if (result.ok) ({ course: nextCourse, world: nextWorld } = result);
+    }
+    if (automated.has(operatingDomain) && (baselineAssetPrices[asset.id] ?? asset.price) > 0) {
+      const result = applyOperationsCommand(nextCourse, nextWorld, {
+        type: "PROPERTY_COMMAND",
+        command: {
+          type: "SET_PRICE",
+          assetId: asset.id,
+          price: Math.max(1, Math.round((baselineAssetPrices[asset.id] ?? asset.price) * policy.priceMultiplier)),
+        },
+      });
+      if (result.ok) ({ course: nextCourse, world: nextWorld } = result);
+    }
+  }
   const baseMaintenance = Math.max(350, state.automation.baselineMaintenanceBudget || world.maintenanceBudget);
-  const nextWorld = overrides.has("upkeep")
-    ? world
-    : { ...world, maintenanceBudget: Math.round(baseMaintenance * policy.maintenanceMultiplier) };
+  if (automated.has("maintenance")) {
+    const result = applyOperationsCommand(nextCourse, nextWorld, {
+      type: "SET_MAINTENANCE_BUDGET",
+      amount: Math.round(baseMaintenance * policy.maintenanceMultiplier),
+    });
+    if (result.ok) ({ course: nextCourse, world: nextWorld } = result);
+  }
+  const commandAdapters = systemPolicy.systems.filter((entry) => entry.mode === "automated" && entry.automationAdapter === "seasonal-operations");
+  const retainedNoops = systemPolicy.systems.filter((entry) => entry.mode === "automated" && entry.automationAdapter === "authoritative-noop");
   const decisions = [
-    `${state.automation.preset} hours ${policy.openHour}:00–${policy.closeHour}:00`,
-    `${policy.upkeep} upkeep`,
-    `weather reserve ${Math.round((policy.maintenanceMultiplier - 1) * 100)}%`,
+    ...(commandAdapters.length > 0 ? [
+      `system-control|commands|${state.automation.preset}|${commandAdapters.map((entry) => entry.id).join(",")}`,
+      `system-control|operations|${policy.openHour}|${policy.closeHour}|${policy.upkeep}|${Math.round((policy.maintenanceMultiplier - 1) * 100)}`,
+    ] : ["system-control|manual"]),
+    ...(retainedNoops.length > 0
+      ? [`system-control|noop|${retainedNoops.length}`]
+      : []),
   ];
   return {
     course: nextCourse,
@@ -642,6 +679,7 @@ function closeYear(course: Course, world: World, state: SeasonalState, absoluteD
 }
 
 export function advanceSeasonalDay(course: Course, world: World, dayIndex: number): { course: Course; world: World; weather: DailyWeather; modifiers: WeatherModifiers } {
+  world = reconcileSystemControlWorld(world);
   const absoluteDay = absoluteDayFor(world.week, dayIndex);
   let state = normalizeSeasonalState(world.seasonal, {
     runSeed: world.runSeed,
@@ -789,6 +827,10 @@ function rescheduleForClosure(world: World, courseId: string, offset = 7): World
 export function applySeasonCommand(course: Course, world: World, command: SeasonCommand): { ok: boolean; course: Course; world: World; message: string; preview: SeasonCommandPreview } {
   const preview = previewSeasonCommand(course, world, command);
   if (!preview.ok) return { ok: false, course, world, message: preview.blockers.join(" "), preview };
+  if (command.type === "TAKE_SYSTEM_CONTROL" || command.type === "RETURN_SYSTEM_TO_PROFILE" || command.type === "GRADUATE_EXPERIENCE_PROFILE") {
+    const result = applySystemControlCommand(world, command);
+    return { ...result, course, preview };
+  }
   const day = "currentDay" in command ? command.currentDay : 0;
   const absoluteDay = absoluteDayFor(world.week, day);
   let state = currentState(course, world, day);
@@ -817,11 +859,20 @@ export function applySeasonCommand(course: Course, world: World, command: Season
   if (command.type === "SET_AUTOMATION") {
     state = { ...state, automation: { ...state.automation, preset: command.preset, lastAppliedAbsoluteDay: -1 } };
   } else if (command.type === "SET_ADVANCED_OPERATIONS") {
-    state = { ...state, automation: { ...state.automation, advancedOperations: command.enabled, lastAppliedAbsoluteDay: -1 } };
+    for (const system of ADVANCED_SYSTEM_IDS) {
+      const result = applySystemControlCommand(world, command.enabled
+        ? { type: "TAKE_SYSTEM_CONTROL", system }
+        : { type: "RETURN_SYSTEM_TO_PROFILE", system });
+      if (result.ok) world = result.world;
+    }
+    state = currentState(course, world, day);
+    state = { ...state, automation: { ...state.automation, lastAppliedAbsoluteDay: -1 } };
   } else if (command.type === "SET_AUTOMATION_OVERRIDE") {
-    const overrides = new Set(state.automation.overrides);
-    if (command.manual) overrides.add(command.system); else overrides.delete(command.system);
-    state = { ...state, automation: { ...state.automation, overrides: [...overrides], lastAppliedAbsoluteDay: -1 } };
+    const result = applySystemControlCommand(world, command.manual
+      ? { type: "TAKE_SYSTEM_CONTROL", system: advancedSystemForLegacyAutomation(command.system) }
+      : { type: "RETURN_SYSTEM_TO_PROFILE", system: advancedSystemForLegacyAutomation(command.system) });
+    if (result.ok) world = result.world;
+    state = currentState(course, world, day);
   } else if (command.type === "SET_TURF_PRIORITY") {
     state = response({ ...state, operations: { ...state.operations, turfPriority: command.priority } }, absoluteDay, `Turf priority: ${command.priority}`, 0, 0, command.priority === "recovery" ? 0.08 : 0.03);
   } else if (command.type === "SET_WATER_POLICY") {

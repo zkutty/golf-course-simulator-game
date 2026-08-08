@@ -5,6 +5,7 @@ import type {
   ClimateMoistureRegime,
   ClimatePhenologyRegime,
 } from "../models/biomes";
+import type { SystemControlCommand } from "../experience/systemControl";
 
 export const SEASONS = ["spring", "summer", "autumn", "winter"] as const;
 export type SeasonName = (typeof SEASONS)[number];
@@ -276,4 +277,5 @@ export type SeasonCommand =
   | { type: "SET_COURSE_CLOSED"; courseId: string; closed: boolean; currentDay: number }
   | { type: "SET_HOLES_CLOSED"; holeIds: string[]; currentDay: number }
   | { type: "RESCHEDULE_TOURNAMENT"; eventId: string; days: number; currentDay: number }
-  | { type: "ACKNOWLEDGE_YEARBOOK"; yearbookId: string };
+  | { type: "ACKNOWLEDGE_YEARBOOK"; yearbookId: string }
+  | SystemControlCommand;

@@ -12,6 +12,7 @@ import {
   createGreenProgram,
   createHealthyGreenLocalState,
 } from "../greens/greenSurface";
+import { createSystemControlState } from "../experience/systemControl";
 
 export const DEFAULT_COURSE: Course = {
   name: "West Village Municipal",
@@ -77,6 +78,7 @@ export const DEFAULT_WORLD: World = {
   mode: "sandbox",
   experienceProfile: "classic",
   economicPressure: "balanced",
+  systemControl: createSystemControlState("classic"),
   tournaments: { version: 2, events: [] },
   enterprise: emptyPropertyEnterprise(),
   livingClub: emptyLivingClubState(),

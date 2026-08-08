@@ -14,6 +14,7 @@ import { loadAppProfile, type AppProfile } from "../game/onboarding/profile";
 import type { CourseRecords } from "../game/retention/types";
 import { platformServices } from "../platform";
 import { normalizeExperienceAxes } from "../game/balance/experience";
+import { systemControlEnvelope } from "../game/experience/systemControl";
 
 /**
  * Save repository (ZKU-174): named slots + rotating autosaves + quicksave.
@@ -45,6 +46,13 @@ export interface SaveSlotMeta {
   holesOpen: number;
   experienceProfile?: ExperienceProfile;
   economicPressure?: EconomicPressure;
+  /** Concise policy metadata; full sparse overrides remain in the payload. */
+  systemControl?: {
+    profile: ExperienceProfile;
+    automated: number;
+    manual: number;
+    overrides: number;
+  };
   /** @deprecated Pre-v29 manifest compatibility. */
   difficulty?: Difficulty;
   /** Land theme (ZKU-166). Absent on pre-M13 manifests. */
@@ -326,6 +334,7 @@ function metaFor(
 ): SaveSlotMeta {
   const holesOpen = payload.course.holes.filter((h) => h.tee && h.green).length;
   const experience = normalizeExperienceAxes(payload.world);
+  const control = systemControlEnvelope(payload.world);
   return {
     id,
     kind,
@@ -338,6 +347,12 @@ function metaFor(
     holesOpen,
     experienceProfile: experience.experienceProfile,
     economicPressure: experience.economicPressure,
+    systemControl: {
+      profile: control.profile,
+      automated: control.systems.filter((system) => system.mode === "automated").length,
+      manual: control.systems.filter((system) => system.mode === "manual").length,
+      overrides: control.systems.filter((system) => system.override).length,
+    },
     theme: payload.course.theme ?? "parkland",
   };
 }

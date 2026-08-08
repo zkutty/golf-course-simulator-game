@@ -13,6 +13,7 @@ import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { createDefaultPlayerPro } from "../playerPro/playerPro";
 import { createSeasonalState } from "../seasons/seasons";
 import { biomeCompatibilityMetadataFor } from "../models/biomes";
+import { createSystemControlState, reconcileSystemControlWorld } from "../experience/systemControl";
 
 /**
  * THE new-game path (ZKU-162): every fresh run — wizard, quick start, defeat
@@ -113,6 +114,7 @@ export function createNewGame(
     mode: setup.mode,
     experienceProfile: experience.experienceProfile,
     economicPressure: experience.economicPressure,
+    systemControl: createSystemControlState(experience.experienceProfile),
     objectives: effectiveGoals && effectiveGoals.length > 0 ? createObjectiveState(effectiveGoals) : null,
     playerPro: createDefaultPlayerPro({
       seed,
@@ -125,5 +127,5 @@ export function createNewGame(
   };
   if (setup.founderName?.trim()) world.founderName = setup.founderName.trim();
 
-  return { course: normalizeCourseLayouts(course), world };
+  return { course: normalizeCourseLayouts(course), world: reconcileSystemControlWorld(world) };
 }

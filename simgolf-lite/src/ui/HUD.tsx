@@ -51,6 +51,8 @@ import {
   biomeContextAttributes,
   type BiomeUiTheme,
 } from "./biomeUiTheme";
+import { systemControlEnvelope } from "../game/experience/systemControl";
+import { systemControlProfileLabel } from "./systemControlPresentation";
 
 type Tab = "Editor" | "Metrics" | "Results" | "Upgrades";
 
@@ -209,6 +211,7 @@ export function HUD(props: {
         : tab;
   const pressure = getEconomicPressure(economicPressureForWorld(world));
   const experience = getExperienceProfile(world.experienceProfile);
+  const systemControl = useMemo(() => systemControlEnvelope(world), [world]);
   const BALANCE = getEffectiveBalance(pressure.key);
   const costMult = pressure.terrainCostMult;
   const audio = useAudio();
@@ -1500,6 +1503,9 @@ export function HUD(props: {
         {activeTab === "Upgrades" && (
           <>
             <Section title={translateCurrent("auto.ui.hud.business")}>
+              <div data-testid="hud-system-control" style={{ marginBottom: 8, fontSize: 11, color: "#59645b" }}>
+                {translateCurrent("season.automation.policySummary", { profile: systemControlProfileLabel(systemControl.profile), automated: systemControl.systems.filter((system) => system.mode === "automated").length, manual: systemControl.systems.filter((system) => system.mode === "manual").length })}
+              </div>
               <label data-tutorial-target="green-fee" style={{ display: "block", marginBottom: 12 }}>
                 <T id="auto.ui.hud.green.fee" />{course.baseGreenFee})
                 {world.constraints?.fixedGreenFee != null && (

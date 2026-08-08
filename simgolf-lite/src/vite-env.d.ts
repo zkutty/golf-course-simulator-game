@@ -137,6 +137,11 @@ interface Window {
     forceChallengeTieCompletion(): Promise<void>;
     setChallengeGroupRoundFixture(): void;
     setM39Fixture(): void;
+    advanceSystemControlDay(): {
+      greenFee: number;
+      propertyMode: string;
+      propertySource: string;
+    };
     setM52ReferenceBookmark(
       view: import("./game/testing/biomeAuthoring").BiomeReferenceView,
       rotation: import("./game/testing/biomeAuthoring").BiomeReferenceRotation,

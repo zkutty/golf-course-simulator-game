@@ -11,6 +11,7 @@ import type { BiomeCompatibilityMetadata, LandTheme } from "./biomes";
 import type { FeatureOrigin, PlantId } from "./plantTypes";
 import type { GreenLocalStateV1, GreenProgram, GreenSurfaceV1 } from "../greens/greenSurface";
 import type { GreenKeepingReport } from "../greens/greenMaintenance";
+import type { SystemControlStateV1 } from "../experience/systemControl";
 
 export type { LandTheme } from "./biomes";
 export type { FeatureOrigin, PlantId } from "./plantTypes";
@@ -503,6 +504,8 @@ export interface World {
   mode?: PlayMode;
   experienceProfile?: ExperienceProfile;
   economicPressure?: EconomicPressure;
+  /** ZK-685 explicit per-system choices and monotonic profile graduation. */
+  systemControl?: SystemControlStateV1;
   /** @deprecated Pre-v29 compatibility carrier; omitted by current persistence. */
   difficulty?: Difficulty;
   founderName?: string;

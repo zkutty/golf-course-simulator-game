@@ -16,6 +16,7 @@ export const DEFERRED_SURFACE_SOURCES = [
   "src/ui/retention/RetentionHub.tsx",
   "src/ui/help/GolfopediaModal.tsx",
   "src/ui/BugReportDialog.tsx",
+  "src/ui/HUD.tsx",
 ];
 
 // Initial residency includes every file imported by the browser entry graph.
@@ -74,8 +75,21 @@ function sorted(values) {
   return [...values].sort();
 }
 
-export function analyzeSurfaceResidency(manifest, rootDirectory, serviceWorkerSource = "") {
+export function auditImmutableAssetCachePolicy(serviceWorkerSource) {
+  const scopedOptions = 'const matchOptions = relativePath.startsWith("assets/") ? { ignoreVary: true } : undefined;';
+  const scopedMatch = "caches.match(event.request, matchOptions)";
   const errors = [];
+  if (!serviceWorkerSource.includes(scopedOptions) || !serviceWorkerSource.includes(scopedMatch)) {
+    errors.push("Service worker must ignore Vary only when matching immutable content-hashed assets");
+  }
+  if (serviceWorkerSource.includes("caches.match(event.request, { ignoreVary: true })")) {
+    errors.push("Service worker must preserve Vary-sensitive matching outside immutable assets");
+  }
+  return errors;
+}
+
+export function analyzeSurfaceResidency(manifest, rootDirectory, serviceWorkerSource = "") {
+  const errors = auditImmutableAssetCachePolicy(serviceWorkerSource);
   const initialEntry = manifestEntry(manifest);
   if (!initialEntry) errors.push("Vite manifest has no application entry");
   const initialFiles = collectChunkFiles(manifest, initialEntry);

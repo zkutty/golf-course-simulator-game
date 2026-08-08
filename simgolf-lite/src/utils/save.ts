@@ -81,9 +81,10 @@ import { persistedChallengeRuntimeError } from "../game/competition/challengeRun
 import {
   normalizeExperienceAxes,
 } from "../game/balance/experience";
+import { migrateLegacySystemControl, reconcileSystemControlWorld } from "../game/experience/systemControl";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 29 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 30 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -216,6 +217,10 @@ export interface SaveV28 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV29 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 29;
+  records?: CourseRecords;
+}
+export interface SaveV30 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -311,11 +316,11 @@ export function payloadForPersistence(payload: SavePayload): SavePayload {
   const experience = normalizeExperienceAxes(worldWithRound);
   const { difficulty: _legacyDifficulty, ...worldWithoutDifficulty } = worldWithRound;
   void _legacyDifficulty;
-  const world: World = {
+  const world: World = reconcileSystemControlWorld({
     ...worldWithoutDifficulty,
     experienceProfile: experience.experienceProfile,
     economicPressure: experience.economicPressure,
-  };
+  });
   const live = payload.live
     ? (() => {
         const liveExperience = normalizeExperienceAxes(payload.live!.state);
@@ -340,7 +345,7 @@ export function saveGame(payload: SavePayload) {
     rulesPlayerPro,
     persisted.course,
   ).playerPro as World["playerPro"];
-  const save: SaveV29 = {
+  const save: SaveV30 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: persisted.course,
@@ -857,6 +862,17 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
       world: { ...world, ...axes },
     };
   },
+  // V30 adds the sparse 13-domain control carrier. Preserve the old global
+  // manual switch exactly, but never mistake its eight strings for the new
+  // complete registry.
+  29: (save) => {
+    if (!isRecord(save.world)) return { ...save, schemaVersion: 30 };
+    return {
+      ...save,
+      schemaVersion: 30,
+      world: migrateLegacySystemControl(save.world as unknown as World),
+    };
+  },
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -1195,7 +1211,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     const experience = normalizeExperienceAxes(rawWorld);
     const { difficulty: _legacyDifficulty, ...rawWorldWithoutDifficulty } = rawWorld;
     void _legacyDifficulty;
-    const world: World = {
+    let world: World = {
       ...DEFAULT_WORLD,
       ...rawWorldWithoutDifficulty,
       objectives: sanitizeObjectives(rawWorld.objectives),
@@ -1243,6 +1259,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       course = upgradeUntouchedLegacyLinksEstate(course, world);
     }
     world.staffRoster = normalizedStaff(world, course);
+    world = reconcileSystemControlWorld(world);
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
     const records = normalizeRecords(parsed.records, history, world, course);
     const tutorial = normalizeTutorialProgress(parsed.tutorial);

@@ -6,7 +6,6 @@ import { lastItem } from "./utils/array";
 import "./ui/cozyLayout.css";
 import "./App.css";
 import { PixiStage } from "./ui/PixiStage";
-import { HUD } from "./ui/HUD";
 import { DesignDock } from "./ui/DesignDock";
 import {
   buildDesignCatalog,
@@ -63,6 +62,7 @@ import {
 import { GameBackground } from "./ui/gameui";
 import { useAudio } from "./audio/audioContext";
 const HoleInspector = lazy(() => import("./ui/HoleInspector").then((module) => ({ default: module.HoleInspector })));
+const HUD = lazy(() => import("./ui/HUD").then((module) => ({ default: module.HUD })));
 import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState, IsoCameraSnapshot } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
@@ -189,7 +189,7 @@ import { createTournamentEvent, prepareTournamentDay, revalidateScheduledTournam
 import { evaluateTournamentCourseQualification } from "./game/tournaments/eligibility";
 import type { TournamentTier } from "./game/tournaments/types";
 import { debugLog } from "./utils/debugLog";
-import { activeCourseLayout, courseForLayout, courseLayouts, normalizeCourseLayouts, selectLayout, updateLayout } from "./game/models/courseLayouts";
+import { activeCourseLayout, courseForLayout, courseLayouts, normalizeCourseLayouts, selectLayout } from "./game/models/courseLayouts";
 import { analyzeArchitecture } from "./game/architecture/architecture";
 import { emptyPaceDayMetrics, ensureCoursePaceMetrics, normalizedStaff, staffFromLevel } from "./game/live/pace";
 import { recordPaceDay } from "./game/live/paceHistory";
@@ -331,6 +331,7 @@ import {
 } from "./game/livingClub/livingClub";
 import { absoluteDayFor, advanceSeasonalDay, applySeasonCommand, createSeasonalState, seasonalState } from "./game/seasons/seasons";
 import { SEASONS, type SeasonCommand, type SeasonName } from "./game/seasons/types";
+import { systemControlEnvelope } from "./game/experience/systemControl";
 import {
   campaignScene,
   continueCampaignInSandbox,
@@ -342,6 +343,8 @@ import { CampaignPanel } from "./ui/CampaignPanel";
 import { WorkspaceNav, type WorkspaceActionId, type WorkspaceId } from "./ui/WorkspaceNav";
 import { ContextualInspectorPanel } from "./ui/ContextualInspectorPanel";
 import { DeferredSurface } from "./app/DeferredSurface";
+import { DeferredHudSurface } from "./app/DeferredHudSurface";
+import { applyManualOperationsCommand } from "./game/operations/commands";
 import { ContentLibraryPanel } from "./ui/ContentLibraryPanel";
 import { IS_DEMO, saveAvailableInEdition } from "./config/edition";
 import {
@@ -933,9 +936,10 @@ export default function App() {
 
   const runPropertyCommand = useCallback((command: PropertyCommand) => {
     const current = gameSession.getState();
-    const result = applyPropertyCommand(current.course, current.world, command);
+    const operation = { type: "PROPERTY_COMMAND" as const, command };
+    const result = applyManualOperationsCommand(current.course, current.world, operation);
     if (result.ok) {
-      dispatch({ type: "PROPERTY_COMMAND", command });
+      dispatch({ type: "MANUAL_OPERATIONS_COMMAND", operation });
     }
     return result;
   }, [dispatch, gameSession]);
@@ -2836,6 +2840,7 @@ export default function App() {
           },
         };
       })(),
+      systemControl: systemControlEnvelope(world),
       economy: { cash: world.cash, reputation: world.reputation, condition: world.isBankrupt ? "bankrupt" : course.condition },
       architectureReview: {
         panelOpen: showArchitectureReview,
@@ -3301,6 +3306,18 @@ export default function App() {
         dispatch({ type: "LOAD_GAME", course: fixture.course, world: fixture.world });
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixture.course, fixture.world, 6), pendingCash: 0, speed: "paused", selectedGolferId: null }));
         setShowSeasonsLegacy(true);
+      },
+      advanceSystemControlDay: () => {
+        const current = gameSession.getState();
+        const next = advanceSeasonalDay(current.course, { ...current.world, week: current.world.week + 1 }, 0);
+        dispatch({ type: "LOAD_GAME", course: next.course, world: next.world });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(next.course, next.world, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        const property = systemControlEnvelope(next.world).systems.find((system) => system.id === "property");
+        return {
+          greenFee: activeCourseLayout(next.course).greenFee,
+          propertyMode: property?.mode ?? "missing",
+          propertySource: property?.source ?? "missing",
+        };
       },
       setM53SeasonalFixture: (season: SeasonName) => {
         if (!SEASONS.includes(season)) throw new Error(`Unknown M53 season "${season}"`);
@@ -5583,6 +5600,7 @@ export default function App() {
               </div>
             </div>
           ) : (
+            <DeferredHudSurface>
             <HUD
         course={course}
         world={world}
@@ -5593,11 +5611,11 @@ export default function App() {
         onUndoTerrain={undoTerrainEdit}
         onRedoTerrain={redoTerrainEdit}
         setGreenFee={(n) => {
-          // Scenario constraint (ZKU-164): committee sets the fee, not you.
-          if (world.constraints?.fixedGreenFee != null) return;
-          setCourse((c) => updateLayout(c, activeCourseLayout(c).id, { greenFee: n }));
+          dispatch({ type: "MANUAL_OPERATIONS_COMMAND", operation: { type: "SET_COURSE_GREEN_FEE", courseId: activeCourseLayout(gameSession.getState().course).id, greenFee: n } });
         }}
-        setMaintenance={(n) => setWorld((w) => ({ ...w, maintenanceBudget: n }))}
+        setMaintenance={(n) => {
+          dispatch({ type: "MANUAL_OPERATIONS_COMMAND", operation: { type: "SET_MAINTENANCE_BUDGET", amount: n } });
+        }}
         setGreenProgram={(program) => setCourse((current) => ({
           ...current,
           greenProgram: normalizeGreenProgram(program),
@@ -5697,6 +5715,7 @@ export default function App() {
         tutorialTarget={tutorialProgress ? TUTORIAL_STEPS[tutorialProgress.stepIndex].target : undefined}
         biomeContext={contextualUiTheme}
       />
+            </DeferredHudSurface>
           )}
         </div>
         </div>

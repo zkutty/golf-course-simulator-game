@@ -11,6 +11,7 @@ import {
 } from "../game/models/biomes";
 import { withNormalizedGreenContract } from "../game/greens/greenSurface";
 import { normalizeExperienceAxes } from "../game/balance/experience";
+import { reconcileSystemControlWorld } from "../game/experience/systemControl";
 
 export { hashCanonicalValue } from "./canonical";
 import { hashCanonicalValue } from "./canonical";
@@ -78,12 +79,12 @@ export function hashGameState(value: {
   const experience = normalizeExperienceAxes(value.world);
   const { difficulty: _legacyDifficulty, ...worldWithoutDifficulty } = value.world;
   void _legacyDifficulty;
-  const world = {
+  const world = reconcileSystemControlWorld({
     ...worldWithoutDifficulty,
     ...experience,
     playerPro,
     m51: normalizeM51MobilityState(value.world.m51),
-  };
+  });
   const live = value.live
     ? (() => {
         const liveExperience = normalizeExperienceAxes(value.live!.state);

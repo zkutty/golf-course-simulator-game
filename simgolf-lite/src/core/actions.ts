@@ -1,7 +1,8 @@
 import type { BuildingTier, BuildingType, Decoration, Point, Terrain, ObstacleType, Course, World, TeeSet, PinRotation, PlantId, SurfaceFeature, SurfaceRepairKind } from "../game/models/types";
 import type { GreenSurfaceV1 } from "../game/greens/greenSurface";
-import type { PropertyCommand } from "../game/property/property";
 import type { HoleTemplatePlacementPlanV1 } from "../game/holeTemplates/types";
+import type { SystemControlCommand } from "../game/experience/systemControl";
+import type { OperationsCommand } from "../game/operations/commands";
 
 /** One optimistic-concurrency transaction produced by the pure placement preview. */
 export type HoleTemplateMutationAction = {
@@ -80,7 +81,7 @@ export type EconomyMutationAction =
   | { type: "REMOVE_DECORATION"; x: number; y: number }
   | { type: "TAKE_LOAN"; kind: "BRIDGE" | "EXPANSION" }
   | { type: "PURCHASE_PARCEL"; parcelId: string }
-  | { type: "PROPERTY_COMMAND"; command: PropertyCommand }
+  | { type: "MANUAL_OPERATIONS_COMMAND"; operation: OperationsCommand }
   | { type: "START_SURFACE_REPAIR"; key: string; kind: SurfaceRepairKind; absoluteDay: number }
   | { type: "SIMULATE_WEEK"; course: Course; world: World };
 
@@ -100,5 +101,6 @@ export type Action =
   | EconomyMutationAction
   | MobilityBusinessAction
   | HoleTemplateMutationAction
+  | { type: "SYSTEM_CONTROL_COMMAND"; command: SystemControlCommand }
   | { type: "SET_COURSE_LAYOUTS"; course: Course }
   | UIAction;

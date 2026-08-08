@@ -24,9 +24,12 @@ self.addEventListener("fetch", (event) => {
   // Content-hashed base and seasonal atlas files are cached only after the
   // selected biome/tier/season requests them; no other biome is prefetched.
   // Vision artwork follows the same rule, so installation remains media-light.
-  const cacheFirst = relativePath.startsWith("audio/") || relativePath.startsWith("atlases/") || relativePath.startsWith("icons/") || relativePath.startsWith("vision/") || url.origin !== location.origin;
+  // Vite assets are content-hashed and precached. Resolve them cache-first so
+  // an offline reload never asks the network before mounting a deferred HUD.
+  const cacheFirst = relativePath.startsWith("assets/") || relativePath.startsWith("audio/") || relativePath.startsWith("atlases/") || relativePath.startsWith("icons/") || relativePath.startsWith("vision/") || url.origin !== location.origin;
   if (cacheFirst) {
-    event.respondWith(caches.match(event.request).then(async (cached) => {
+    const matchOptions = relativePath.startsWith("assets/") ? { ignoreVary: true } : undefined;
+    event.respondWith(caches.match(event.request, matchOptions).then(async (cached) => {
       if (cached) return cached;
       const response = await fetch(event.request);
       if (response.ok || response.type === "opaque") {

@@ -32,7 +32,6 @@ import {
 } from "../game/models/courseSetup";
 import { revalidateScheduledTournaments } from "../game/tournaments/tournaments";
 import { canPurchaseParcel, isOwnedTile } from "../game/estate/estate";
-import { applyPropertyCommand } from "../game/property/property";
 import {
   appendSurfaceFeature,
   rasterizeSurfaceFeatureDetailed,
@@ -65,6 +64,8 @@ import type {
   HoleTemplateTargetVersions,
 } from "../game/holeTemplates/types";
 import type { PlantId } from "../game/models/plantTypes";
+import { applyManualOperationsCommand } from "../game/operations/commands";
+import { applySystemControlCommand, reconcileSystemControlWorld } from "../game/experience/systemControl";
 
 function applyPlantReward(state: GameState, speciesId: PlantId, x: number, y: number, installationCost: number) {
   const career = state.world.playerPro;
@@ -160,6 +161,21 @@ export function applyAction(state: GameState, action: Action): GameState {
   let economyVersion = state.economyVersion;
 
   switch (action.type) {
+    case "SYSTEM_CONTROL_COMMAND": {
+      const result = applySystemControlCommand(state.world, action.command);
+      if (!result.ok || result.world === state.world) break;
+      newState = { ...newState, world: result.world };
+      economyVersion++;
+      break;
+    }
+    case "MANUAL_OPERATIONS_COMMAND": {
+      const result = applyManualOperationsCommand(state.course, state.world, action.operation);
+      if (!result.ok || (result.course === state.course && result.world === state.world)) break;
+      newState = { ...newState, course: result.course, world: result.world };
+      if (action.operation.type === "PROPERTY_COMMAND") terrainVersion++;
+      economyVersion++;
+      break;
+    }
     case "PLACE_HOLE_TEMPLATE": {
       const plan = verifiedHoleTemplatePlan(state, action.plan);
       if (!plan) return state;
@@ -860,15 +876,6 @@ export function applyAction(state: GameState, action: Action): GameState {
       break;
     }
 
-    case "PROPERTY_COMMAND": {
-      const result = applyPropertyCommand(state.course, state.world, action.command);
-      if (!result.ok) break;
-      newState = { ...newState, course: result.course, world: result.world };
-      terrainVersion++;
-      economyVersion++;
-      break;
-    }
-
     case "PLACE_DECORATION": {
       if (decorationTiles(action.decoration).some((tile) => !isOwnedTile(state.course, tile.x, tile.y))) break;
       const validation = canPlaceDecoration(state.course, action.decoration);
@@ -1049,7 +1056,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       newState = {
         ...newState,
         course: action.course,
-        world: action.world,
+        world: reconcileSystemControlWorld(action.world),
       };
       terrainVersion++;
       obstaclesVersion++;
@@ -1062,7 +1069,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       newState = {
         ...newState,
         course: action.course,
-        world: action.world,
+        world: reconcileSystemControlWorld(action.world),
       };
       terrainVersion++; // tickWeek can modify course.condition
       economyVersion++; // tickWeek modifies world economy

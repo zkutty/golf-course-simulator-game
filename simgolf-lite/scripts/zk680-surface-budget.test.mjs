@@ -5,10 +5,27 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   analyzeSurfaceResidency,
+  auditImmutableAssetCachePolicy,
   collectChunkFiles,
   DEFERRED_SURFACE_SOURCES,
   entryKeyForSource,
 } from "./zk680-surface-budget.mjs";
+
+const immutableAssetCachePolicy = [
+  'const matchOptions = relativePath.startsWith("assets/") ? { ignoreVary: true } : undefined;',
+  "caches.match(event.request, matchOptions)",
+].join("\n");
+
+test("service worker ignores Vary only for immutable content-hashed assets", () => {
+  const source = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
+  assert.deepEqual(auditImmutableAssetCachePolicy(source), []);
+  assert.deepEqual(auditImmutableAssetCachePolicy(source.replace(immutableAssetCachePolicy.split("\n")[0], "const matchOptions = { ignoreVary: true };")), [
+    "Service worker must ignore Vary only when matching immutable content-hashed assets",
+  ]);
+  assert.deepEqual(auditImmutableAssetCachePolicy(`${source}\ncaches.match(event.request, { ignoreVary: true });`), [
+    "Service worker must preserve Vary-sensitive matching outside immutable assets",
+  ]);
+});
 
 test("bug report launcher styles stay initial while dialog styles stay deferred", () => {
   const launcherCss = readFileSync(new URL("../src/ui/bugReportLauncher.css", import.meta.url), "utf8");
@@ -58,16 +75,19 @@ test("surface residency requires every lazy entry to stay out of initial files a
       const path = join(directory, file);
       writeFileSync(path, "export default 1;");
     }
+    const serviceWorkerSource = `${precached.map((file) => JSON.stringify(file)).join("\n")}\n${immutableAssetCachePolicy}`;
     const report = analyzeSurfaceResidency(
       manifest,
       directory,
-      precached.map((file) => JSON.stringify(file)).join("\n"),
+      serviceWorkerSource,
     );
     assert.equal(report.ok, true);
     assert.equal(report.deferred.files.length, DEFERRED_SURFACE_SOURCES.length);
+    assert.equal(report.surfaces["src/ui/HUD.tsx"].offlineCodeCached, true);
+    assert.equal(report.surfaces["src/ui/HUD.tsx"].files.length, 1);
 
     manifest[DEFERRED_SURFACE_SOURCES[0]].isDynamicEntry = false;
-    const broken = analyzeSurfaceResidency(manifest, directory, precached.map((file) => JSON.stringify(file)).join("\n"));
+    const broken = analyzeSurfaceResidency(manifest, directory, serviceWorkerSource);
     assert.match(broken.errors.join("\n"), /not a dynamic Vite entry/);
   } finally {
     rmSync(directory, { recursive: true, force: true });

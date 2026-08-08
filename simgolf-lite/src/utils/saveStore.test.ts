@@ -151,13 +151,21 @@ describe("saveStore", () => {
     expect(meta.week).toBe(7);
     expect(meta.cash).toBe(31_500);
     expect(meta.courseName).toBe("Test Links");
-    expect(meta).toMatchObject({ experienceProfile: "classic", economicPressure: "balanced" });
+    expect(meta).toMatchObject({
+      experienceProfile: "classic",
+      economicPressure: "balanced",
+      systemControl: { profile: "classic", automated: 13, manual: 0, overrides: 0 },
+    });
     expect(meta.difficulty).toBeUndefined();
 
     const slots = await listSlots();
     expect(slots).toHaveLength(1);
     expect(slots[0].name).toBe("My course");
-    expect(slots[0]).toMatchObject({ experienceProfile: "classic", economicPressure: "balanced" });
+    expect(slots[0]).toMatchObject({
+      experienceProfile: "classic",
+      economicPressure: "balanced",
+      systemControl: { profile: "classic", automated: 13, manual: 0, overrides: 0 },
+    });
 
     const loaded = await loadSlot(meta.id);
     expect(loaded).not.toBeNull();

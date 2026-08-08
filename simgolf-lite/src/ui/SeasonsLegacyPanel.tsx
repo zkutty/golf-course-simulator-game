@@ -12,12 +12,18 @@ import {
 import {
   CLUB_CHARTERS,
   type AutomationPreset,
-  type AutomationSystem,
   type ClubCharter,
   type SeasonCommand,
   type TurfPriority,
   type WaterPolicy,
 } from "../game/seasons/types";
+import { systemControlEnvelope } from "../game/experience/systemControl";
+import {
+  systemControlCommandMessage,
+  systemControlDecisionLabel,
+  systemControlProfileLabel,
+  systemControlStatusLabel,
+} from "./systemControlPresentation";
 import { formatCurrency } from "../i18n/format";
 import { translateCurrent } from "../i18n/core";
 import {
@@ -34,7 +40,6 @@ import {
   type BiomeUiTheme,
 } from "./biomeUiTheme";
 
-const AUTOMATION_SYSTEMS: AutomationSystem[] = ["hours", "upkeep", "pricing", "staffing", "parking", "lodging", "community", "safety"];
 const TURF_PRIORITIES: TurfPriority[] = ["playability", "recovery", "presentation"];
 const WATER_POLICIES: WaterPolicy[] = ["conserve", "balanced", "irrigate"];
 
@@ -76,6 +81,7 @@ export function SeasonsLegacyPanel(props: {
   const [tab, setTab] = useState<"season" | "identity" | "legacy">("season");
   const [message, setMessage] = useState<string | null>(null);
   const state = useMemo(() => seasonalState(props.world, props.course, props.day), [props.course, props.day, props.world]);
+  const control = useMemo(() => systemControlEnvelope(props.world), [props.world]);
   const weather = activeWeather(props.world, props.course, props.day);
   const modifiers = weatherModifiers(weather, state.operations.drainageLevel);
   const careEvidence = useMemo(
@@ -92,7 +98,7 @@ export function SeasonsLegacyPanel(props: {
   );
   const run = (command: SeasonCommand) => {
     const result = props.onCommand(command);
-    setMessage(result.message);
+    setMessage(systemControlCommandMessage(result.message));
   };
   const charterCost = (charter: ClubCharter) => previewSeasonCommand(props.course, props.world, {
     type: "SELECT_CHARTER",
@@ -295,10 +301,24 @@ export function SeasonsLegacyPanel(props: {
         </section>
         <section style={card}>
           <h3 style={{ margin: "0 0 8px" }}>{translateCurrent("season.automation.title")}</h3>
-          <label>{translateCurrent("season.automation.preset")}<select data-testid="automation-preset" value={state.automation.preset} onChange={(event) => run({ type: "SET_AUTOMATION", preset: event.target.value as AutomationPreset })}>{(["stewardship", "balanced", "growth"] as AutomationPreset[]).map((preset) => <option key={preset}>{preset}</option>)}</select></label>
-          <label style={{ display: "block", marginTop: 7 }}><input type="checkbox" checked={state.automation.advancedOperations} onChange={(event) => run({ type: "SET_ADVANCED_OPERATIONS", enabled: event.target.checked })} /> {translateCurrent("season.automation.advanced")}</label>
-          <div style={{ marginTop: 7 }}>{state.automation.decisions.map((decision) => <div key={decision}>• {decision}</div>)}</div>
-          {state.automation.advancedOperations && <details style={{ marginTop: 8 }}><summary>{translateCurrent("season.automation.overrides")}</summary>{AUTOMATION_SYSTEMS.map((system) => <label key={system} style={{ display: "block" }}><input type="checkbox" checked={state.automation.overrides.includes(system)} onChange={(event) => run({ type: "SET_AUTOMATION_OVERRIDE", system, manual: event.target.checked })} /> {system}</label>)}</details>}
+          <label>{translateCurrent("season.automation.preset")}<select data-testid="automation-preset" value={state.automation.preset} onChange={(event) => run({ type: "SET_AUTOMATION", preset: event.target.value as AutomationPreset })}>{(["stewardship", "balanced", "growth"] as AutomationPreset[]).map((preset) => <option key={preset} value={preset}>{translateCurrent(`season.automation.presetValue.${preset}`)}</option>)}</select></label>
+          <div data-testid="system-control-summary" style={{ marginTop: 7 }}>
+            {translateCurrent("season.automation.policySummary", { profile: systemControlProfileLabel(control.profile), automated: control.systems.filter((system) => system.mode === "automated").length, manual: control.systems.filter((system) => system.mode === "manual").length })}
+          </div>
+          <div style={{ marginTop: 7 }}>{state.automation.decisions.map((decision) => <div key={decision}>• {systemControlDecisionLabel(decision)}</div>)}</div>
+          <details style={{ marginTop: 8 }} open={control.profile === "simulation"}>
+            <summary>{translateCurrent("season.automation.overrides")}</summary>
+            {control.systems.filter((system) => system.visibility !== "hidden").map((system) => <div key={system.id} data-testid={`system-policy-${system.id}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 5 }}>
+              <span>{systemControlStatusLabel(system)}</span>
+              <button type="button" disabled={!system.override && system.mode === "manual"} style={{ ...button, padding: "3px 6px", ...(!system.override && system.mode === "manual" ? { cursor: "default", opacity: .65 } : {}) }} onClick={() => run(system.override ? { type: "RETURN_SYSTEM_TO_PROFILE", system: system.id } : { type: "TAKE_SYSTEM_CONTROL", system: system.id })}>
+                {translateCurrent(system.override ? "season.automation.return" : system.mode === "manual" ? "season.automation.profileDefault" : "season.automation.takeControl")}
+              </button>
+            </div>)}
+            {control.systems.some((system) => system.visibility === "hidden") && <small>{translateCurrent("season.automation.hidden", { count: control.systems.filter((system) => system.visibility === "hidden").length })}</small>}
+          </details>
+          {control.canGraduateTo && <button data-testid="graduate-experience-profile" type="button" style={{ ...button, marginTop: 8 }} onClick={() => run({ type: "GRADUATE_EXPERIENCE_PROFILE", target: control.canGraduateTo! })}>
+            {translateCurrent("season.automation.graduate", { profile: systemControlProfileLabel(control.canGraduateTo) })}
+          </button>}
         </section>
       </div>}
 
