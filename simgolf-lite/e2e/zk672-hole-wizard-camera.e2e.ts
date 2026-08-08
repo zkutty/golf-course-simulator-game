@@ -9,7 +9,7 @@ test("ZK-672 explicit inspector Flyover control still starts the cinematic", asy
   await expect(page.getByText("click or Esc to skip")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByText("click or Esc to skip")).toHaveCount(0);
-  await page.getByRole("combobox", { name: "Active daily pin rotation" }).selectOption("B");
+  await page.getByRole("region", { name: "Tee and pin setup" }).getByRole("combobox", { name: "Active daily pin rotation" }).selectOption("B");
   await page.waitForTimeout(750);
   await expect(page.getByText("click or Esc to skip")).toHaveCount(0);
 });

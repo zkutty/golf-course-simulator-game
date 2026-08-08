@@ -190,6 +190,7 @@ describe("ZK-760 neutral architectural reference plan", () => {
     expect(championship.tee).toEqual({ x: 5, y: 15 });
     const dailyChanged = { ...course, condition: .15, activePinRotation: "C" as const };
     const stable = buildArchitectureReferencePlan(dailyChanged, dailyChanged.holes[0], "member", "B");
+    expect(stable).toBe(member);
     expect(stable.segments).toEqual(member.segments);
     expect(stable.recommendedPar).toBe(member.recommendedPar);
   });

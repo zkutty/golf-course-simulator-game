@@ -6,7 +6,7 @@ import { buildingFootprintSet } from "../models/buildings";
 import { hashCanonicalValue } from "../../utils/stateHash";
 import { analyzeArchitecture } from "./architecture";
 import { computeRatingForSetup } from "../sim/courseRating";
-import { retainArchitectureReferencePlan } from "./referencePlanEvidence";
+import { retainArchitectureReferencePlan, retainedArchitectureReferencePlan } from "./referencePlanEvidence";
 import type { ArchitectureReviewData } from "./review";
 import type { ArchitectureOverlayRender } from "./reviewTypes";
 
@@ -253,7 +253,7 @@ function runoutRisk(course: Course, from: Point, target: Point, runoutTiles: num
   return clamp(risk / Math.max(1, Math.ceil(runoutTiles)));
 }
 
-function blockerRisk(course: Course, from: Point, to: Point, buildings: Set<number>): { risk: number; impossible: boolean; explanation: string[] } {
+function blockerRisk(course: Course, from: Point, to: Point, buildings: Set<number>, obstacles: Course["obstacles"]): { risk: number; impossible: boolean; explanation: string[] } {
   const line = bresenham(from, to);
   const explanations: string[] = [];
   let risk = 0;
@@ -261,7 +261,10 @@ function blockerRisk(course: Course, from: Point, to: Point, buildings: Set<numb
     const point = line[index];
     if (buildings.has(point.y * course.width + point.x)) return { risk: 1, impossible: true, explanation: ["A structure blocks the flight corridor."] };
   }
-  for (const obstacle of course.obstacles ?? []) {
+  const minX = Math.min(from.x, to.x) - 1, maxX = Math.max(from.x, to.x) + 1;
+  const minY = Math.min(from.y, to.y) - 1, maxY = Math.max(from.y, to.y) + 1;
+  for (const obstacle of obstacles) {
+    if (obstacle.x < minX || obstacle.x > maxX || obstacle.y < minY || obstacle.y > maxY) continue;
     const proximity = segmentDistance(obstacle, from, to);
     if (proximity > (obstacle.type === "tree" ? .82 : .55)) continue;
     const fromDistance = distance(from, obstacle);
@@ -288,9 +291,10 @@ function bestTransition(args: {
   capability: ArchitectureReferenceCapability;
   golfer: GolferProfile;
   buildings: Set<number>;
+  obstacles: Course["obstacles"];
 }): Transition | null {
-  const { course, from, to, pin, shot, shots, capability, golfer, buildings } = args;
-  const blocker = blockerRisk(course, from, to.point, buildings);
+  const { course, from, to, pin, shot, shots, capability, golfer, buildings, obstacles } = args;
+  const blocker = blockerRisk(course, from, to.point, buildings, obstacles);
   if (blocker.impossible) return null;
   let best: Transition | null = null;
   for (const club of golfer.clubs) {
@@ -346,9 +350,8 @@ function bestTransition(args: {
   return best;
 }
 
-function planForShots(course: Course, hole: Hole, tee: Point, pin: Point, shots: number, capability: ArchitectureReferenceCapability): ArchitectureReferenceSegment[] | null {
+function planForShots(course: Course, hole: Hole, tee: Point, pin: Point, shots: number, capability: ArchitectureReferenceCapability, buildings: Set<number>, obstacles: Course["obstacles"]): ArchitectureReferenceSegment[] | null {
   const golfer = referenceGolfer(course, capability);
-  const buildings = buildingFootprintSet(course);
   const guide = guidePoints(hole, tee, pin);
   const layers: Candidate[][] = [
     [{ point: tee, guideDistance: 0, lie: terrainAt(course, tee), landing: landingFacts(course, tee, capability.dispersionTiles) }],
@@ -360,7 +363,7 @@ function planForShots(course: Course, hole: Hole, tee: Point, pin: Point, shots:
   for (let shot = 1; shot <= shots; shot++) {
     const next = new Map<string, { score: number; segments: ArchitectureReferenceSegment[]; point: Point }>();
     for (const state of states.values()) for (const candidate of layers[shot]) {
-      const transition = bestTransition({ course, from: state.point, to: candidate, pin, shot, shots, capability, golfer, buildings });
+      const transition = bestTransition({ course, from: state.point, to: candidate, pin, shot, shots, capability, golfer, buildings, obstacles });
       if (!transition) continue;
       const score = state.score + transition.score;
       const prior = next.get(key(candidate.point));
@@ -422,19 +425,30 @@ export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSe
   const cacheKey = `${hole.id ?? course.holes.indexOf(hole)}:${teeSet}:${pinRotation}`;
   const cached = plans.get(cacheKey);
   if (cached) return cached;
+  const retained = retainedArchitectureReferencePlan(course, hole, teeSet, pinRotation);
+  if (retained) {
+    plans.set(cacheKey, retained);
+    return retained;
+  }
   const tee = getTeeBox(hole, teeSet);
   const pin = getPinPosition(hole, pinRotation);
   const capability = ARCHITECTURE_REFERENCE_CAPABILITIES[teeSet];
   if (!tee || !pin || !inBounds(course, tee) || !inBounds(course, pin)) {
     const result = incompletePlan(course, hole, teeSet, pinRotation, tee, pin, capability);
     plans.set(cacheKey, result);
-    retainArchitectureReferencePlan(hole, result);
+    retainArchitectureReferencePlan(course, hole, result);
     return result;
   }
+  const buildings = buildingFootprintSet(course);
+  const guide = guidePoints(hole, tee, pin);
+  const margin = Math.max(7, Math.ceil(capability.dispersionTiles) + 4);
+  const minX = Math.min(...guide.map((point) => point.x)) - margin, maxX = Math.max(...guide.map((point) => point.x)) + margin;
+  const minY = Math.min(...guide.map((point) => point.y)) - margin, maxY = Math.max(...guide.map((point) => point.y)) + margin;
+  const obstacles = course.obstacles.filter((obstacle) => obstacle.x >= minX && obstacle.x <= maxX && obstacle.y >= minY && obstacle.y <= maxY);
   const viable = new Map<number, ArchitectureReferenceSegment[]>();
   let recommendedShots: 1 | 2 | 3 = 3;
   for (const shots of [1, 2, 3] as const) {
-    const segments = planForShots(course, hole, tee, pin, shots, capability);
+    const segments = planForShots(course, hole, tee, pin, shots, capability, buildings, obstacles);
     if (!segments?.length) continue;
     viable.set(shots, segments);
     recommendedShots = shots;
@@ -450,7 +464,7 @@ export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSe
       : null;
   for (const shots of new Set([requestedShots, ambiguityShots].filter((value): value is number => value != null))) {
     if (shots < 1 || shots > 3 || viable.has(shots)) continue;
-    const candidate = planForShots(course, hole, tee, pin, shots, capability);
+    const candidate = planForShots(course, hole, tee, pin, shots, capability, buildings, obstacles);
     if (candidate?.length === shots) viable.set(shots, candidate);
   }
   const selectedSegments = viable.get(requestedShots);
@@ -516,7 +530,7 @@ export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSe
     corridor: corridor(course, segments, tee, pin),
   };
   plans.set(cacheKey, result);
-  retainArchitectureReferencePlan(hole, result);
+  retainArchitectureReferencePlan(course, hole, result);
   return result;
 }
 
