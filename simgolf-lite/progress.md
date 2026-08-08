@@ -33,6 +33,12 @@ Original prompt: Update my vision HTML for the new features from the new milesto
   asserted without timing sleeps. Parkland route-only, landing-only, and empty
   captures are visibly distinct, and the focused browser slice plus TypeScript
   pass on the combined branch.
+- The 12-scene browser matrix now registers one Playwright test per fixture,
+  giving every biome/rotation its own timeout, output, and failure boundary
+  instead of sharing a single 10-minute clock. `ZK765_VISUAL_IDS` supports
+  exact bounded smoke selections. Parkland r0 (including the 250-pointer
+  diagnostic) and the former Links r2 timeout point pass independently in a
+  two-fixture smoke; the coordinator will run the remaining scenes.
 - Every archetype/tee/pin combination has explicit semantic assertions plus a
   pinned canonical matrix hash. The repaired focused authority suite passes
   55/55, the dedicated certification/performance pair passes 7/7, TypeScript

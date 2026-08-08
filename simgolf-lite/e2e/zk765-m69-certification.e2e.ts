@@ -4,6 +4,18 @@ import { M53_SEASONAL_TERRAIN_FIXTURES } from "../src/game/testing/m53SeasonalTe
 
 const TEE_SETS = ["forward", "member", "championship"] as const;
 const PIN_ROTATIONS = ["A", "B", "C"] as const;
+const ALL_VISUAL_FIXTURES = M53_SEASONAL_TERRAIN_FIXTURES.filter((fixture) => fixture.season === "summer" && fixture.quality === "high");
+const requestedVisualIds = new Set((process.env.ZK765_VISUAL_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean));
+const visualBiome = process.env.ZK765_VISUAL_BIOME;
+const VISUAL_FIXTURES = requestedVisualIds.size
+  ? ALL_VISUAL_FIXTURES.filter((fixture) => requestedVisualIds.has(fixture.id))
+  : process.env.ZK765_VISUAL_SLICE === "1"
+    ? ALL_VISUAL_FIXTURES.filter((fixture) => fixture.rotation === 0 && (!visualBiome || fixture.biome === visualBiome))
+    : ALL_VISUAL_FIXTURES;
+
+if (VISUAL_FIXTURES.length === 0 || (requestedVisualIds.size && VISUAL_FIXTURES.length !== requestedVisualIds.size)) {
+  throw new Error(`ZK-765 visual fixture selection did not resolve exactly: ${[...requestedVisualIds].join(",")}`);
+}
 
 interface OverlayProjection {
   traces: Array<{ id: string; from: { x: number; y: number }; to: { x: number; y: number } }>;
@@ -75,7 +87,8 @@ test("ZK-765 every authored tee and pin setup is selectable in the browser revie
   expect(errors).toEqual([]);
 });
 
-test("ZK-765 reference overlays remain populated across every biome and camera rotation", async ({ page }, testInfo) => {
+for (const fixture of VISUAL_FIXTURES) {
+  test(`ZK-765 reference overlays remain populated: ${fixture.id}`, async ({ page }, testInfo) => {
   const errors: string[] = [];
   const failedAssets: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -84,14 +97,8 @@ test("ZK-765 reference overlays remain populated across every biome and camera r
     if (response.status() >= 400 && /atlases\/biomes/.test(response.url())) failedAssets.push(`${response.status()} ${response.url()}`);
   });
   await page.setViewportSize({ width: 1440, height: 960 });
-  const allFixtures = M53_SEASONAL_TERRAIN_FIXTURES.filter((fixture) => fixture.season === "summer" && fixture.quality === "high");
-  expect(allFixtures).toHaveLength(12);
-  const visualBiome = process.env.ZK765_VISUAL_BIOME;
-  const fixtures = process.env.ZK765_VISUAL_SLICE === "1"
-    ? allFixtures.filter((fixture) => fixture.rotation === 0 && (!visualBiome || fixture.biome === visualBiome))
-    : allFixtures;
-  for (const fixture of fixtures) {
-    await page.goto(fixture.query);
+  expect(ALL_VISUAL_FIXTURES).toHaveLength(12);
+  await page.goto(fixture.query);
     await expect.poll(async () => {
       const state = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}"));
       return { screen: state.screen, theme: state.course?.theme, rotation: state.camera?.rotation };
@@ -162,8 +169,8 @@ test("ZK-765 reference overlays remain populated across every biome and camera r
     await testInfo.attach(`zk765-${fixture.biome}-rotation-${fixture.rotation}-routes-only`, { path: routesPath, contentType: "image/png" });
     await testInfo.attach(`zk765-${fixture.biome}-rotation-${fixture.rotation}-landings-only`, { path: landingsPath, contentType: "image/png" });
     await testInfo.attach(`zk765-${fixture.biome}-rotation-${fixture.rotation}-baseline`, { path: baselinePath, contentType: "image/png" });
-  }
 
   expect(failedAssets).toEqual([]);
   expect(errors).toEqual([]);
-});
+  });
+}
