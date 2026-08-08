@@ -6,23 +6,30 @@ Original prompt: Update my vision HTML for the new features from the new milesto
   classes (water-carry Par 3, dogleg/driveable/forced-layup Par 4, conventional
   three-shot and reachable Par 5) across all three tee sets and all three pin
   rotations, including both documented par-ambiguity bands.
-- Certified marker move/removal, authored-route add/update/removal, terrain and
-  elevation edits, selected-plan overlays, whole-snapshot undo/redo, current and
-  v28 save normalization, and byte-identical completed-round history. Geometry
-  changes invalidate the affected plan; property-only root copies retain it.
-- Added bounded planner diagnostics. A release-scale 36-hole course performs
-  exactly 36 solves; twelve repeated estate reads plus 1,000 selected-plan
-  pointer reads remain cache-only and complete inside the 5-second gate.
+- Certified authoritative tee and pin placement/move/removal, active-pin
+  selection, authored-route add/update/removal, terrain/elevation edits, and
+  real bounded editor undo/redo. A seven-step undo restores byte-identical
+  course/world state and the matching seven-step redo restores the final state.
+- Current/v28 saves now traverse real JSON serialization and parsing while
+  preserving completed-round history byte-for-byte. A serialized legacy v6
+  course traverses the real migration chain and promotes its tee/green markers
+  to Member/A before the planner consumes them.
+- Added test/DEV-only planner diagnostics. An actual edit on a 36-hole course
+  produces exactly one solve and 35 retained hits; 1,000 selected-plan reads
+  remain cache-only. Fourteen deterministic candidates plus a conservative
+  unreachable-club precheck keep canonical output unchanged while three cold
+  36-hole processes complete in 174–269 ms under the existing 750 ms budget.
 - Added an explicit `test:cert:m69` command and browser evidence for every
   tee/pin selector combination plus all 12 biome/camera-rotation visuals. The
-  complete Playwright file passes 2/2; Parkland, Links, and Desert captures were
-  inspected. Pointer stress is constrained to the canvas center so it measures
-  plan stability without intentionally invoking edge-scroll camera movement.
-- Focused validation passes 5 files / 54 tests. Full Vitest passes 184 files /
-  1,449 tests with one intentional skip. TypeScript, production build, all
-  embedded asset/delivery audits, and lint/i18n pass; lint retains the same 12
-  pre-existing Hook warnings. Initial JavaScript is 1,598,486 bytes, 10,233
-  bytes below the unchanged 1,608,719-byte budget.
+  browser assertion requires both traces and landing points, sends 250 trusted
+  pointer steps without a new request/solve, and proves each rendered category
+  disappears in isolated projected regions when its overlay is removed.
+- Every archetype/tee/pin combination has explicit semantic assertions plus a
+  pinned canonical matrix hash. The repaired focused authority suite passes
+  55/55, the dedicated certification/performance pair passes 7/7, TypeScript
+  passes, and the targeted Parkland visual and all tee/pin browser checks pass.
+  The initial full regression/build/lint evidence above remains recorded for
+  the coordinator's final integration rerun.
 
 ## ZK-756 development artwork cache repair — 2026-08-07
 

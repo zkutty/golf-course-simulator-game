@@ -4666,6 +4666,25 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
+      if (import.meta.env.DEV && props.architectureOverlay.kind === "reference" && typeof window !== "undefined") {
+        const screenPoint = (point: Point) => {
+          const local = project(point);
+          const global = g.toGlobal(local);
+          return { x: global.x, y: global.y };
+        };
+        (window as unknown as { __ccArchitectureOverlayProjection?: object }).__ccArchitectureOverlayProjection = {
+          traces: props.architectureOverlay.traces.map((trace) => ({
+            id: trace.id,
+            from: screenPoint(trace.from),
+            to: screenPoint(trace.to),
+          })),
+          points: props.architectureOverlay.points.map((point) => ({
+            id: point.id,
+            center: screenPoint(point),
+            radius: Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35)),
+          })),
+        };
+      }
     }
 
     if (props.paceBottlenecks?.length) {

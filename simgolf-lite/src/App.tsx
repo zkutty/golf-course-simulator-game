@@ -85,6 +85,13 @@ import {
 } from "./ui/loadingBiomeContext";
 import { generateCourseName } from "./utils/courseNames";
 import type { Action } from "./core/actions";
+import {
+  emptyEditorEditHistory,
+  recordEditorEdit,
+  redoEditorEdit,
+  undoEditorEdit,
+  type EditorCapitalSnapshot,
+} from "./game/editor/editorHistory";
 import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
 import { LiveControls } from "./ui/LiveControls";
@@ -437,17 +444,8 @@ export default function App() {
     window.history.replaceState({}, "", url);
     setShowVision(false);
   }, []);
-  type TerrainEditSnapshot = Pick<GameState, "course" | "world"> & {
-    capital: {
-      spent: number;
-      refunded: number;
-      byTerrainSpent: Partial<Record<Terrain, number>>;
-      byTerrainTiles: Partial<Record<Terrain, number>>;
-    };
-  };
-  const terrainUndoRef = useRef<TerrainEditSnapshot[]>([]);
-  const terrainRedoRef = useRef<TerrainEditSnapshot[]>([]);
-  const [capital, setCapital] = useState<TerrainEditSnapshot["capital"]>(() => ({
+  const editorHistoryRef = useRef(emptyEditorEditHistory());
+  const [capital, setCapital] = useState<EditorCapitalSnapshot>(() => ({
     spent: 0,
     refunded: 0,
     byTerrainSpent: {},
@@ -488,17 +486,8 @@ export default function App() {
     ]).has(action.type);
     if (editingLocked && physicalEdit) return;
     const next = gameSession.dispatch(action);
-    if ((action.type === "PAINT_TILES" || action.type === "EDIT_SURFACE_FEATURE" || action.type === "SCULPT_TILES" || action.type === "SCULPT_GREEN") && next !== previous) {
-      terrainUndoRef.current = [...terrainUndoRef.current.slice(-19), {
-        course: previous.course,
-        world: previous.world,
-        capital: capitalRef.current,
-      }];
-      terrainRedoRef.current = [];
-    } else if (action.type === "NEW_GAME" || action.type === "LOAD_GAME") {
-      terrainUndoRef.current = [];
-      terrainRedoRef.current = [];
-    }
+    if (action.type === "NEW_GAME" || action.type === "LOAD_GAME") editorHistoryRef.current = emptyEditorEditHistory();
+    else editorHistoryRef.current = recordEditorEdit(editorHistoryRef.current, previous, next, capitalRef.current, action);
     if (action.type !== "NEW_GAME" && action.type !== "LOAD_GAME" && !action.type.startsWith("SET_")) markDirty();
   }, [gameSession, markDirty]);
 
@@ -640,45 +629,39 @@ export default function App() {
 
   const [paintError, setPaintError] = useState<string | null>(null);
   const undoTerrainEdit = useCallback(() => {
-    const snapshot = terrainUndoRef.current.pop();
-    if (!snapshot) return;
     const current = gameSession.getState();
-    terrainRedoRef.current = [...terrainRedoRef.current.slice(-19), {
-      course: current.course,
-      world: current.world,
-      capital,
-    }];
+    const result = undoEditorEdit(editorHistoryRef.current, current, capital);
+    if (!result) return;
+    editorHistoryRef.current = result.history;
     gameSession.update((state) => ({
       ...state,
-      course: snapshot.course,
-      world: snapshot.world,
+      course: result.snapshot.course,
+      world: result.snapshot.world,
       terrainVersion: state.terrainVersion + 1,
       obstaclesVersion: state.obstaclesVersion + 1,
+      markersVersion: state.markersVersion + 1,
       economyVersion: state.economyVersion + 1,
     }));
-    setCapital(snapshot.capital);
+    setCapital(result.snapshot.capital);
     setPaintError(t("terrainEdit.undone"));
     markDirty();
   }, [capital, gameSession, markDirty, t]);
 
   const redoTerrainEdit = useCallback(() => {
-    const snapshot = terrainRedoRef.current.pop();
-    if (!snapshot) return;
     const current = gameSession.getState();
-    terrainUndoRef.current = [...terrainUndoRef.current.slice(-19), {
-      course: current.course,
-      world: current.world,
-      capital,
-    }];
+    const result = redoEditorEdit(editorHistoryRef.current, current, capital);
+    if (!result) return;
+    editorHistoryRef.current = result.history;
     gameSession.update((state) => ({
       ...state,
-      course: snapshot.course,
-      world: snapshot.world,
+      course: result.snapshot.course,
+      world: result.snapshot.world,
       terrainVersion: state.terrainVersion + 1,
       obstaclesVersion: state.obstaclesVersion + 1,
+      markersVersion: state.markersVersion + 1,
       economyVersion: state.economyVersion + 1,
     }));
-    setCapital(snapshot.capital);
+    setCapital(result.snapshot.capital);
     setPaintError(t("terrainEdit.redone"));
     markDirty();
   }, [capital, gameSession, markDirty, t]);
@@ -2583,8 +2566,7 @@ export default function App() {
       return false;
     }
     recordBugAction({ type: "LOAD_GAME", course: loaded.course, world: loaded.world });
-    terrainUndoRef.current = [];
-    terrainRedoRef.current = [];
+    editorHistoryRef.current = emptyEditorEditHistory();
     gameSession.restore(loaded);
     live.restoreSnapshot(loaded.live);
     setHistory(loaded.history ?? []);

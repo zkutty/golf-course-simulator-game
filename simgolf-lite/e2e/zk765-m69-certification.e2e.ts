@@ -5,6 +5,28 @@ import { M53_SEASONAL_TERRAIN_FIXTURES } from "../src/game/testing/m53SeasonalTe
 const TEE_SETS = ["forward", "member", "championship"] as const;
 const PIN_ROTATIONS = ["A", "B", "C"] as const;
 
+interface OverlayProjection {
+  traces: Array<{ id: string; from: { x: number; y: number }; to: { x: number; y: number } }>;
+  points: Array<{ id: string; center: { x: number; y: number }; radius: number }>;
+}
+
+function changedPixels(a: PNG, b: PNG, center: { x: number; y: number }, radius: number): number {
+  let changed = 0;
+  const minX = Math.max(0, Math.floor(center.x - radius));
+  const maxX = Math.min(a.width - 1, Math.ceil(center.x + radius));
+  const minY = Math.max(0, Math.floor(center.y - radius));
+  const maxY = Math.min(a.height - 1, Math.ceil(center.y + radius));
+  for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+    if (Math.hypot(x - center.x, y - center.y) > radius) continue;
+    const offset = (y * a.width + x) * 4;
+    const delta = Math.abs(a.data[offset] - b.data[offset])
+      + Math.abs(a.data[offset + 1] - b.data[offset + 1])
+      + Math.abs(a.data[offset + 2] - b.data[offset + 2]);
+    if (delta >= 30) changed++;
+  }
+  return changed;
+}
+
 async function openReferenceReview(page: import("@playwright/test").Page) {
   await page.getByTestId("open-architecture-review").click();
   const review = page.getByTestId("architecture-review");
@@ -50,8 +72,6 @@ test("ZK-765 reference overlays remain populated across every biome and camera r
   const fixtures = process.env.ZK765_VISUAL_SLICE === "1"
     ? allFixtures.filter((fixture) => fixture.rotation === 0 && (!visualBiome || fixture.biome === visualBiome))
     : allFixtures;
-  const pixelHashes = new Set<string>();
-
   for (const fixture of fixtures) {
     await page.goto(fixture.query);
     await expect.poll(async () => {
@@ -65,33 +85,53 @@ test("ZK-765 reference overlays remain populated across every biome and camera r
     }), { timeout: 120_000 }).toMatchObject({ kind: "reference", traces: expect.any(Number), points: expect.any(Number) });
     const architecture = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview);
     expect(architecture.overlay.traces).toBeGreaterThan(0);
+    expect(architecture.overlay.points).toBeGreaterThan(0);
 
     const canvas = page.locator(".cc-pixi-stage canvas");
     await expect(canvas).toBeVisible();
     const box = await canvas.boundingBox();
     expect(box).not.toBeNull();
     if (fixture.biome === "parkland" && fixture.rotation === 0 && box) {
-      for (let sample = 0; sample < 250; sample++) {
-        await page.mouse.move(
-          box.x + box.width * .25 + (sample * 37 % Math.max(1, Math.floor(box.width * .5))),
-          box.y + box.height * .25 + (sample * 53 % Math.max(1, Math.floor(box.height * .5))),
-        );
-      }
+      const before = await page.evaluate(() => (window as unknown as { __ccReferencePlanDiagnostics?: { requests: number; solves: number } }).__ccReferencePlanDiagnostics);
+      expect(before).toBeDefined();
+      await page.mouse.move(box.x + box.width * .25, box.y + box.height * .25);
+      await page.mouse.move(box.x + box.width * .75, box.y + box.height * .75, { steps: 250 });
       await expect(review.getByTestId("architecture-reference-plan")).toContainText(/full shots \+ 2 expected putts/);
+      const after = await page.evaluate(() => (window as unknown as { __ccReferencePlanDiagnostics?: { requests: number; solves: number } }).__ccReferencePlanDiagnostics);
+      expect(after).toEqual(before);
     }
-    const screenshotPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}.png`);
-    const shot = await canvas.screenshot({ path: screenshotPath });
-    const png = PNG.sync.read(shot);
-    let checksum = 0x811c9dc5;
-    for (let offset = 0; offset < png.data.length; offset += 4) {
-      checksum ^= png.data[offset] | (png.data[offset + 1] << 8) | (png.data[offset + 2] << 16);
-      checksum = Math.imul(checksum, 0x01000193);
-    }
-    pixelHashes.add((checksum >>> 0).toString(16));
-    await testInfo.attach(`zk765-${fixture.biome}-rotation-${fixture.rotation}`, { path: screenshotPath, contentType: "image/png" });
+    const projection = await expect.poll(() => page.evaluate(() =>
+      (window as unknown as { __ccArchitectureOverlayProjection?: OverlayProjection }).__ccArchitectureOverlayProjection,
+    ), { timeout: 30_000 }).toMatchObject({ traces: expect.any(Array), points: expect.any(Array) }).then(() => page.evaluate(() =>
+      (window as unknown as { __ccArchitectureOverlayProjection: OverlayProjection }).__ccArchitectureOverlayProjection,
+    ));
+    expect(projection.traces).toHaveLength(architecture.overlay.traces);
+    expect(projection.points).toHaveLength(architecture.overlay.points);
+
+    const overlayPath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-reference.png`);
+    const overlayShot = await canvas.screenshot({ path: overlayPath });
+    await review.getByTestId("architecture-overlay-traces").click();
+    await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview?.overlay))
+      .toMatchObject({ kind: "traces", traces: 0, points: 0 });
+    const baselinePath = testInfo.outputPath(`zk765-${fixture.biome}-rotation-${fixture.rotation}-baseline.png`);
+    const baselineShot = await canvas.screenshot({ path: baselinePath });
+    const overlayPng = PNG.sync.read(overlayShot);
+    const baselinePng = PNG.sync.read(baselineShot);
+    expect(overlayPng.width).toBe(baselinePng.width);
+    expect(overlayPng.height).toBe(baselinePng.height);
+    const routeChanges = projection.traces.reduce((sum, trace) => sum + [0.25, 0.5, 0.75].reduce((traceSum, ratio) =>
+      traceSum + changedPixels(overlayPng, baselinePng, {
+        x: trace.from.x + (trace.to.x - trace.from.x) * ratio,
+        y: trace.from.y + (trace.to.y - trace.from.y) * ratio,
+      }, 7), 0), 0);
+    const landingChanges = projection.points.reduce((sum, point) =>
+      sum + changedPixels(overlayPng, baselinePng, point.center, point.radius + 3), 0);
+    expect(routeChanges, `${fixture.id}:reference-route-pixels`).toBeGreaterThanOrEqual(20);
+    expect(landingChanges, `${fixture.id}:reference-landing-pixels`).toBeGreaterThanOrEqual(12);
+    await testInfo.attach(`zk765-${fixture.biome}-rotation-${fixture.rotation}-reference`, { path: overlayPath, contentType: "image/png" });
+    await testInfo.attach(`zk765-${fixture.biome}-rotation-${fixture.rotation}-baseline`, { path: baselinePath, contentType: "image/png" });
   }
 
-  expect(pixelHashes.size).toBeGreaterThanOrEqual(process.env.ZK765_VISUAL_SLICE === "1" ? fixtures.length : 10);
   expect(failedAssets).toEqual([]);
   expect(errors).toEqual([]);
 });

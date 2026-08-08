@@ -120,12 +120,21 @@ const PLAYABLE = new Set<Terrain>(["tee", "fairway", "rough", "green", "path"]);
 const cache = new WeakMap<Course, Map<string, ArchitectureReferencePlan>>();
 const geometryVersions = new WeakMap<Course, string>();
 let diagnostics = { requests: 0, cacheHits: 0, retainedHits: 0, solves: 0 };
+const diagnosticsEnabled = import.meta.env.DEV || import.meta.env.MODE === "test";
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const round = (value: number, digits = 2) => Number(value.toFixed(digits));
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const key = (point: Point) => `${point.x}:${point.y}`;
 const inBounds = (course: Course, point: Point) => point.x >= 0 && point.y >= 0 && point.x < course.width && point.y < course.height;
 const terrainAt = (course: Course, point: Point): Terrain => inBounds(course, point) ? course.tiles[point.y * course.width + point.x] : "water";
+
+function recordDiagnostic(metric: keyof typeof diagnostics): void {
+  if (!diagnosticsEnabled) return;
+  diagnostics[metric]++;
+  if (typeof window !== "undefined") {
+    (window as unknown as { __ccReferencePlanDiagnostics?: typeof diagnostics }).__ccReferencePlanDiagnostics = { ...diagnostics };
+  }
+}
 
 function referenceGolfer(course: Course, capability: ArchitectureReferenceCapability): GolferProfile {
   const runout = capability.teeTotalYards - capability.teeCarryYards;
@@ -236,7 +245,10 @@ function candidatesForStage(course: Course, guide: Point[], stage: number, shots
   }
   return [...result.values()]
     .sort((a, b) => (b.landing.playableShare - b.landing.hazardShare) - (a.landing.playableShare - a.landing.hazardShare) || a.guideDistance - b.guideDistance || key(a.point).localeCompare(key(b.point)))
-    .slice(0, 24);
+    // Fourteen deterministic landing candidates keep the two-layer dynamic
+    // program inside the 750 ms editor budget on a 36-hole estate. Candidate
+    // ordering still preserves the best playable, low-risk guide points.
+    .slice(0, 14);
 }
 
 function runoutRisk(course: Course, from: Point, target: Point, runoutTiles: number, buildings: Set<number>): number {
@@ -299,10 +311,16 @@ function bestTransition(args: {
   if (blocker.impossible) return null;
   let best: Transition | null = null;
   for (const club of golfer.clubs) {
-    const evaluation = evalShotExpectedCost({ course, from, to: to.point, golfer, club });
     const driverRunout = capability.teeTotalYards - capability.teeCarryYards;
     const runoutYards = club === golfer.clubs[0] ? driverRunout : Math.max(3, driverRunout * club.carryYards / capability.teeCarryYards * .42);
     const maxTotal = club.carryYards + runoutYards;
+    const flatYards = distance(from, to.point) * course.yardsPerTile;
+    // A conservative flat-distance rejection avoids the expensive slope,
+    // carry-line, and landing evaluation for clubs that cannot reach even
+    // with a generous downhill allowance. The authoritative plays-like check
+    // below remains unchanged for every remotely viable club.
+    if (flatYards > maxTotal * 1.2) continue;
+    const evaluation = evalShotExpectedCost({ course, from, to: to.point, golfer, club });
     if (!evaluation.isValid || !Number.isFinite(evaluation.expectedShotCost)) continue;
     // A drive or running approach may finish on the green beyond its airborne
     // carry. Cross-hazard validity still uses the club's true carry through
@@ -421,22 +439,22 @@ function incompletePlan(course: Course, hole: Hole, teeSet: TeeSet, pinRotation:
 }
 
 export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSet: TeeSet = "member", pinRotation: PinRotation = "A"): ArchitectureReferencePlan {
-  diagnostics.requests++;
+  recordDiagnostic("requests");
   let plans = cache.get(course);
   if (!plans) { plans = new Map(); cache.set(course, plans); }
   const cacheKey = `${hole.id ?? course.holes.indexOf(hole)}:${teeSet}:${pinRotation}`;
   const cached = plans.get(cacheKey);
   if (cached) {
-    diagnostics.cacheHits++;
+    recordDiagnostic("cacheHits");
     return cached;
   }
   const retained = retainedArchitectureReferencePlan(course, hole, teeSet, pinRotation);
   if (retained) {
-    diagnostics.retainedHits++;
+    recordDiagnostic("retainedHits");
     plans.set(cacheKey, retained);
     return retained;
   }
-  diagnostics.solves++;
+  recordDiagnostic("solves");
   const tee = getTeeBox(hole, teeSet);
   const pin = getPinPosition(hole, pinRotation);
   const capability = ARCHITECTURE_REFERENCE_CAPABILITIES[teeSet];
@@ -447,6 +465,10 @@ export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSe
     return result;
   }
   const buildings = buildingFootprintSet(course);
+  // Reference planning is neutral architecture, not a daily turf forecast.
+  // Supplying the authored terrain directly also prevents every candidate
+  // club evaluation from rebuilding an effective-surface course wrapper.
+  const planningCourse = course.surfaceCare == null ? course : { ...course, surfaceCare: undefined };
   const guide = guidePoints(hole, tee, pin);
   const margin = Math.max(7, Math.ceil(capability.dispersionTiles) + 4);
   const minX = Math.min(...guide.map((point) => point.x)) - margin, maxX = Math.max(...guide.map((point) => point.x)) + margin;
@@ -455,7 +477,7 @@ export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSe
   const viable = new Map<number, ArchitectureReferenceSegment[]>();
   let recommendedShots: 1 | 2 | 3 = 3;
   for (const shots of [1, 2, 3] as const) {
-    const segments = planForShots(course, hole, tee, pin, shots, capability, buildings, obstacles);
+    const segments = planForShots(planningCourse, hole, tee, pin, shots, capability, buildings, obstacles);
     if (!segments?.length) continue;
     viable.set(shots, segments);
     recommendedShots = shots;
@@ -471,7 +493,7 @@ export function buildArchitectureReferencePlan(course: Course, hole: Hole, teeSe
       : null;
   for (const shots of new Set([requestedShots, ambiguityShots].filter((value): value is number => value != null))) {
     if (shots < 1 || shots > 3 || viable.has(shots)) continue;
-    const candidate = planForShots(course, hole, tee, pin, shots, capability, buildings, obstacles);
+    const candidate = planForShots(planningCourse, hole, tee, pin, shots, capability, buildings, obstacles);
     if (candidate?.length === shots) viable.set(shots, candidate);
   }
   const selectedSegments = viable.get(requestedShots);
@@ -553,6 +575,9 @@ export function architectureReferencePlanDiagnostics(): Readonly<typeof diagnost
 
 export function resetArchitectureReferencePlanDiagnostics(): void {
   diagnostics = { requests: 0, cacheHits: 0, retainedHits: 0, solves: 0 };
+  if (diagnosticsEnabled && typeof window !== "undefined") {
+    (window as unknown as { __ccReferencePlanDiagnostics?: typeof diagnostics }).__ccReferencePlanDiagnostics = { ...diagnostics };
+  }
 }
 
 export function architectureReferencePlans(course: Course, teeSet: TeeSet, pinRotation: PinRotation): ArchitectureReferencePlan[] {
