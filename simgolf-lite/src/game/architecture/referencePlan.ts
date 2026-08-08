@@ -538,10 +538,29 @@ export function architectureReferencePlans(course: Course, teeSet: TeeSet, pinRo
   return course.holes.map((hole) => buildArchitectureReferencePlan(course, hole, teeSet, pinRotation));
 }
 
+export function analyzeReferencePlanArchitecture(
+  course: Course,
+  teeSet: TeeSet,
+  pinRotation: PinRotation,
+  plans: readonly ArchitectureReferencePlan[],
+) {
+  const byHole = new Map(plans.map((plan) => [plan.holeId, plan]));
+  return analyzeArchitecture({
+    ...course,
+    holes: course.holes.map((hole) => {
+      const plan = byHole.get(hole.id ?? "");
+      return plan ? {
+        ...hole,
+        waypoints: plan.segments.slice(0, -1).map((segment) => segment.to),
+      } : hole;
+    }),
+  }, { teeSet, pinRotation });
+}
+
 /** Deferred review solve: retain one set for every downstream reference consumer. */
 export function architectureReferenceReview(course: Course, teeSet: TeeSet, pinRotation: PinRotation): ArchitectureReferencePlanSet {
   const plans = architectureReferencePlans(course, teeSet, pinRotation) as ArchitectureReferencePlanSet;
-  const architecture = analyzeArchitecture(course, { teeSet, pinRotation }, plans);
+  const architecture = analyzeReferencePlanArchitecture(course, teeSet, pinRotation, plans);
   const rating = computeRatingForSetup(course, teeSet, pinRotation, plans);
   plans.referenceSummary = {
     teeSet,

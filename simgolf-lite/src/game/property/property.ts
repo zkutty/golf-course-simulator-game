@@ -37,8 +37,7 @@ import type {
 import { isOwnedTile } from "../estate/estate";
 import { buildingFootprintSet } from "../models/buildings";
 import { lastItem } from "../../utils/array";
-import type { ArchitectureReferencePlan } from "../architecture/referencePlan";
-import { retainedArchitectureReferencePlan } from "../architecture/referencePlanEvidence";
+import { retainedArchitectureReferencePlans } from "../architecture/referencePlanEvidenceStore";
 
 export interface PropertyAssetSpec {
   kind: PropertyAssetKind;
@@ -1517,30 +1516,32 @@ function rotatePracticeGeometry(asset: PropertyAsset): PropertyAsset {
   };
 }
 
-export function analyzeResidentialSafety(course: Course, assetId?: string, referencePlans?: readonly ArchitectureReferencePlan[]): ResidentialSafetyReport {
+export function analyzeResidentialSafety(course: Course, assetId?: string): ResidentialSafetyReport {
   const property = normalizePropertyCourse(course.property);
   const assets = property.assets;
   const residential = assets.filter((asset) => (asset.kind === "houses" || asset.kind === "condos") && (!assetId || asset.id === assetId));
-  if (residential.length === 0) return { score: 0, eligibility: "safe", expectedExposure: 0, outlierExposure: 0, mitigation: 0, contributions: [], heatmap: [], measuredSetback: Number.POSITIVE_INFINITY, blockingReasons: [] };
+  if (residential.length === 0) return { score: 0, eligibility: "safe", expectedExposure: 0, outlierExposure: 0, mitigation: 0, contributions: [], heatmap: [], measuredSetback: Infinity, blockingReasons: [] };
   const safetyAssets = assets.filter((asset) => asset.enabled && asset.category === "safety");
   const contributionMap = new Map<string, { holeId: string; holeName: string; distanceTiles: number; expectedRisk: number; outlierRisk: number }>();
   const heatmap: ResidentialSafetyReport["heatmap"] = [];
   let expectedExposure = 0;
   let outlierExposure = 0;
   let mitigation = 0;
-  let measuredSetback = Number.POSITIVE_INFINITY;
+  let measuredSetback = Infinity;
   const pinRotation = course.activePinRotation ?? "A";
-  const retainedPlans = new Map(referencePlans?.filter((plan) => plan.pinRotation === pinRotation).map((plan) => [`${plan.holeId}:${plan.teeSet}`, plan]) ?? []);
   const safetyPlans = new Map(course.holes.map((hole, index) => {
     const holeId = hole.id ?? `hole-${index + 1}`;
     const configured = (Object.entries(hole.teeBoxes ?? {}) as Array<[TeeSet, { x: number; y: number } | undefined]>)
       .filter(([teeSet, tee]) => !!tee && !property.safetyPolicy.restrictedTeeSets.includes(teeSet));
     const teeSets = configured.length ? configured.map(([teeSet]) => teeSet) : ["member" as const];
-    return [holeId, teeSets.map((teeSet) => retainedPlans.get(`${holeId}:${teeSet}`) ?? retainedArchitectureReferencePlan(course, hole, teeSet, pinRotation) ?? {
+    return [holeId, teeSets.map((teeSet) => {
+      const retained = retainedArchitectureReferencePlans.get(hole)?.get(`${teeSet}:${pinRotation}`);
+      return (retained?.matches(course) ? retained.plan : undefined) ?? {
       teeSet,
       tee: hole.teeBoxes?.[teeSet] ?? (teeSet === "member" ? hole.tee : null) ?? null,
       pin: hole.pinPositions?.[pinRotation] ?? (pinRotation === "A" ? hole.green : null) ?? null,
       segments: [],
+      };
     })] as const;
   }));
   for (const homes of residential) {
@@ -1551,7 +1552,7 @@ export function analyzeResidentialSafety(course: Course, assetId?: string, refer
       const key = hole.id ?? `hole-${index + 1}`;
       if (property.safetyPolicy.closedHoleIds.includes(key)) continue;
       const plans = safetyPlans.get(key) ?? [];
-      let holeDistance = Number.POSITIVE_INFINITY;
+      let holeDistance = Infinity;
       let holeExpected = 0;
       let holeOutlier = 0;
       for (const plan of plans) {
@@ -1563,8 +1564,8 @@ export function analyzeResidentialSafety(course: Course, assetId?: string, refer
           const distance = pointSegmentDistance(target, from, to);
           holeDistance = Math.min(holeDistance, distance);
           measuredSetback = Math.min(measuredSetback, distance);
-          const expected = (distance < 4 ? 38 : distance < 8 ? 23 : distance < 14 ? 9 : distance < 22 ? 2.5 : 0) * teeWidth * segmentWeight / Math.max(1, plans.length);
-          const outlier = (distance < 10 ? 17 : distance < 18 ? 9 : distance < 30 ? 3.5 : 0) * teeWidth * segmentWeight / Math.max(1, plans.length);
+          const expected = (distance < 4 ? 38 : distance < 8 ? 23 : distance < 14 ? 9 : distance < 22 ? 2.5 : 0) * teeWidth * segmentWeight / plans.length;
+          const outlier = (distance < 10 ? 17 : distance < 18 ? 9 : distance < 30 ? 3.5 : 0) * teeWidth * segmentWeight / plans.length;
           holeExpected += expected;
           holeOutlier += outlier;
         }
@@ -1605,10 +1606,10 @@ export function analyzeResidentialSafety(course: Course, assetId?: string, refer
         const holeId = hole.id ?? `hole-${index + 1}`;
         if (property.safetyPolicy.closedHoleIds.includes(holeId)) continue;
         const plans = safetyPlans.get(holeId) ?? [];
-        const distance = Math.min(Infinity, ...plans.flatMap((plan) => plan.segments.length
+        const distance = Math.min(...plans.flatMap((plan) => plan.segments.length
           ? plan.segments.map((segment) => pointSegmentDistance(point, segment.from, segment.to))
           : plan.tee && plan.pin ? [pointSegmentDistance(point, plan.tee, plan.pin)] : []));
-        if (distance < 26 && plans.some((plan) => plan.segments.length || !!(plan.tee && plan.pin))) {
+        if (distance < 26) {
           rawRisk += (distance < 5 ? 25 : distance < 10 ? 14 : distance < 18 ? 6 : 2);
           contributingHoleIds.push(holeId);
         }

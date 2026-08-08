@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Course, Hole, Point, Terrain } from "../models/types";
-import { architectureReferencePlans, architectureReferenceReview, buildArchitectureReferencePlan, withArchitectureReferencePlans } from "./referencePlan";
+import { analyzeReferencePlanArchitecture, architectureReferencePlans, architectureReferenceReview, buildArchitectureReferencePlan, withArchitectureReferencePlans } from "./referencePlan";
 import { buildArchitectureReview, defaultArchitectureFilters } from "./review";
 import type { World } from "../models/types";
 import { createReferenceCourse } from "../testing/referenceCourse";
-import { analyzeArchitecture } from "./architecture";
 import { computeRatingForSetup } from "../sim/courseRating";
 import { buildStrategicPortfolio } from "./portfolio";
 
@@ -242,7 +241,7 @@ describe("ZK-760 neutral architectural reference plan", () => {
     const filters = { ...defaultArchitectureFilters(course), kind: "reference" as const, teeSet: "member" as const, pinRotation: "B" as const };
     const review = withArchitectureReferencePlans(buildArchitectureReview(course, emptyWorld(), filters), plans, course);
     const rating = computeRatingForSetup(course, "member", "B", plans);
-    const architecture = analyzeArchitecture(course, { teeSet: "member", pinRotation: "B" }, plans);
+    const architecture = analyzeReferencePlanArchitecture(course, "member", "B", plans);
 
     expect(review.referenceSummary).toEqual(expect.objectContaining({
       teeSet: "member",
