@@ -219,5 +219,7 @@ describe("ZK-689 Simulation operational responsibility", () => {
     expect(uninterrupted.world.m51?.history.weeklyReports).toHaveLength(2);
     expect(mobilityRentalPreview(uninterrupted.course, courseId, "riding_cart")).toMatchObject({ enabled: true, price: 42, owned: 8 });
     expect(uninterrupted.world.systemControl?.overrides).toEqual({});
-  }, 60_000);
+  // This certification executes 28 multi-course live days across the uninterrupted
+  // and save/resume paths; slower single-worker CI hosts need additional headroom.
+  }, 120_000);
 });
