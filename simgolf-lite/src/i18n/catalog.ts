@@ -535,12 +535,12 @@ export const en = {
   "stat.cash": "Cash", "stat.reputation": "Reputation", "stat.reputationShort": "Rep", "stat.condition": "Condition", "stat.courseRating": "Course rating",
   "live.onCourse": "On course", "live.roundsToday": "Rounds today", "live.feesToday": "Fees today", "live.shopsToday": "Shops today", "live.yesterdayProfitLoss": "Yesterday P&L",
   "live.overview": "Live overview", "live.openOverview": "Open live overview", "live.closeOverview": "Close live overview", "live.overviewTabs": "Live overview sections",
-  "live.tab.golfers": "Golfers", "live.tab.leaderboard": "Leaderboard", "live.tab.staff": "Staff", "live.tab.pace": "Pace",
+  "live.tab.golfers": "Golfers", "live.tab.leaderboard": "Leaderboard", "live.tab.staff": "Staff", "live.tab.pace": "Pace", "live.tab.mobility": "Mobility",
   "live.arrivals": "{count, plural, one {# arrival remaining} other {# arrivals remaining}}", "live.nextArrival": "Next group {time}", "live.noGolfers": "No golfers are on the course yet.",
-  "live.hole": "Hole {hole}", "live.clubhouse": "Clubhouse", "live.mood": "Golfer mood", "live.staffCoverage": "{active} of {available} unlocked roles staffed", "live.staffHint": "Staff coverage improves demand, course care, and pace.", "live.onDuty": "on duty", "live.available": "available",
+  "live.hole": "Hole {hole}", "live.clubhouse": "Clubhouse", "live.mood": "Golfer mood", "live.staffCoverage": "{active} of {available} unlocked roles staffed", "live.staffHint": "Staff coverage improves demand, course care, and pace.", "live.staffShift": "Shift {start}–{end}", "live.staffShiftReadOnly": "Shift schedules are authoritative and read-only here.", "live.onDuty": "on duty", "live.available": "available",
   "live.weeklyWage": "${wage}/wk", "live.assignStaff": "Assign {name}",
   "live.pace.teeInterval": "Tee interval", "live.pace.teeIntervalAria": "Tee interval minutes", "live.pace.beverageService": "Beverage service", "live.pace.refreshments": "Refreshments", "live.pace.beerWine": "Beer & wine",
-  "live.pace.minutes": "{minutes} min", "live.pace.maximumGroup": "Maximum group", "live.pace.groupsBlocked": "Groups / blocked", "live.pace.averageWait": "Average wait", "live.pace.marshalCoverage": "Marshal coverage", "live.pace.interventionsPickups": "Interventions / pickups", "live.pace.beverageCoverage": "Beverage coverage", "live.pace.beverageRevenue": "Beverage revenue", "live.pace.alcoholIncidents": "Alcohol / incidents", "live.pace.policyHint": "Policy changes apply to the next tee sheet. Blocked groups are never penalized by marshals.",
+  "live.pace.minutes": "{minutes} min", "live.pace.currentPolicy": "Current policy", "live.pace.groupsOnCourse": "Groups on course", "live.pace.maximumGroup": "Maximum group", "live.pace.groupsBlocked": "Groups / blocked", "live.pace.averageWait": "Average wait", "live.pace.marshalCoverage": "Marshal coverage", "live.pace.interventionsPickups": "Interventions / pickups", "live.pace.beverageCoverage": "Beverage coverage", "live.pace.beverageRevenue": "Beverage revenue", "live.pace.alcoholIncidents": "Alcohol / incidents", "live.pace.policyHint": "Policy changes apply to the next tee sheet. Blocked groups are never penalized by marshals.",
   "live.pace.lastTee": "Last tee minute", "live.pace.daylight": "Daylight policy", "live.pace.finishStarted": "Let started groups finish", "live.pace.strictSunset": "Stop at sunset", "live.pace.compensation": "Guest recovery", "live.pace.refund": "Cash refund", "live.pace.credit": "Club credit", "live.pace.goodwill": "Goodwill voucher",
   "live.pace.identity": "Rolling pace identity", "live.pace.identityDetail": "{days} operating days · skilled/impatient {skilled}% · novice/social {novice}%", "live.pace.bottlenecks": "Measured hole bottlenecks", "live.pace.noBottlenecks": "No sustained local bottleneck has enough evidence yet.", "live.pace.action": "Action",
   "live.pace.reportCourse": "Report course", "live.pace.period": "Period", "live.pace.sevenDays": "7 days", "live.pace.twentyEightDays": "28 days", "live.pace.noHistory": "No settled pace history yet.", "live.pace.sparse": "Early sample — use this directionally until more groups finish.", "live.pace.roundsComplete": "Completed / incomplete", "live.pace.durationP90": "Average / p90 duration", "live.pace.durationPair": "{average} / {p90} min", "live.pace.waitPickups": "Wait / pickups", "live.pace.waitPickupValue": "{wait} min / {pickups}", "live.pace.teeHourRevenue": "Gross / net per tee hour", "live.pace.overtimeComp": "Overtime / recovery", "live.pace.beverageNet": "Beverage / net revenue",
@@ -1654,6 +1654,9 @@ export const en = {
   "season.automation.return": "Return",
   "season.automation.profileDefault": "Profile default",
   "season.automation.hidden": "{count} systems remain active but hidden by this profile.",
+  "season.automation.backOffice": "Back-office systems",
+  "season.automation.backOfficeHelp": "These systems remain automated and inspectable. Take control to reveal their direct tools.",
+  "advisor.action.review": "Review plan",
   "season.automation.graduate": "Graduate save to {profile}",
   "season.automation.system.maintenance": "Maintenance",
   "season.automation.system.localized-turf": "Localized turf",
@@ -1917,6 +1920,7 @@ export const en = {
   "greenKeeping.weekEffect": "Average round effect",
   "greenKeeping.conditionValue": "{speed} ft · {firmness}%",
   "greenKeeping.healthValue": "{health}% health · {wear}% wear",
+  "property.community.previewValueClassic": "{low}–{high} projected value",
 } as const;
 
 export type MessageKey = keyof typeof en | keyof typeof setupEn | keyof typeof visionIntroEn;

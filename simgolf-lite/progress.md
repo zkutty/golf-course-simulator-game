@@ -1876,3 +1876,124 @@ classic course-builder references.
 - Hardened the released system-control browser fixture against its asynchronous
   first-launch tutorial: the helper now waits briefly for the optional dialog
   before continuing, preventing the tutorial from obscuring the reload control.
+
+## ZK-688 Classic management presentation — 2026-08-09
+
+- Kept the existing 13-domain system-control authority, sparse overrides,
+  deterministic automation, and Balanced economy unchanged. Classic now shows
+  course-level maintenance, staffing, financing, memberships, tournaments,
+  property, and resort summaries by default while localized turf, irrigation,
+  drainage, detailed pace, mobility/fleet, and community risk remain automated
+  in an inspectable back office.
+- An existing `TAKE_SYSTEM_CONTROL` command immediately reveals a hidden
+  domain's direct tools; `RETURN_SYSTEM_TO_PROFILE` deletes the override and
+  restores the Classic hidden baseline without a restart. Course design,
+  golfer feedback, staff, fees, global maintenance and green-program presets,
+  weekly totals, loans, progression, Player Pro, tournaments, amenities,
+  memberships, outings, resort packages, and residential strategy stay in the
+  ordinary Classic loop. Detailed biome costs and repairs, pace enforcement,
+  fleet evidence, property hours/upkeep/ledger, resort service and folios, and
+  community exposure/claims are claim-gated presentation only.
+- Advisor warnings now route to existing authoritative pricing, maintenance,
+  property, tournament, or land surfaces. No shadow management carrier or save
+  schema was added; render text continues to expose the derived system-control
+  envelope and existing authoritative game state.
+- Verification passes: TypeScript; lint/i18n with zero errors and the unchanged
+  12 Hook warnings; full Vitest at 193 files / 1,520 passed / one intentional
+  skip; focused Classic policy, recovery, presentation, and advisor coverage;
+  six targeted compatibility/browser cases plus the dedicated reversible
+  Classic acceptance; all 12 golden browser cases; and the strict-CSP,
+  offline, cache-isolation, deferred-HUD, and local-save PWA smoke.
+- Two consecutive production builds and every embedded asset/audio/service
+  worker/atlas/residency/delivery audit passed with identical
+  `index-D1FIzlR9.js` output (1,577,110 bytes, SHA-256
+  `acfa627a1d69a22504511f916c5f95e30db7c97ce33f9a882b97365b08c3187b`).
+  The bundled gameplay client reached Classic twice with the exact six hidden
+  and seven summary domains and no error artifact; its WebGL capture and the
+  focused Classic browser failure capture used to correct a text locator were
+  visually inspected.
+
+### ZK-688 independent-review repairs — 2026-08-09
+
+- Decoupled the Live Overview presentation authority: Relaxed retains a
+  read-only Pace summary, Classic hides detailed Pace and Mobility by default,
+  and individual Pace or Mobility takeover now exposes only its own reachable
+  tab. Detailed pace policy controls/history remain full-only, preserving the
+  existing M29 claimed path.
+- Staffing takeover now reveals the authoritative `StaffMember.shiftStart` and
+  `shiftEnd` values in the ordinary roster. The schedule is explicitly
+  read-only because no existing shift-edit command exists; roster assignment
+  remains the unchanged authoritative edit path. Returning staffing to Classic
+  removes the fine-grained shift evidence.
+- Pricing and maintenance advice now routes to and keyboard-focuses the real
+  HUD range input, scrolls it into view, and consumes its pending nonce only
+  after focus succeeds. The selected Upgrades tab persists after consumption,
+  and later explicit HUD navigation is not overridden.
+- The parent independently reran the exact M14 `Classic completes three-hole
+  public operations through weekly results and graduation` acceptance after
+  the prior HUD edits: 1/1 passed in 5.0 minutes. This removes the earlier
+  contrary rerun gap. The same test is now extended after graduation to author
+  holes 4–9 through the real canvas helper and require `[3, 6, 9]` milestone
+  receipts, so one browser trace covers design, invited observation, default
+  pricing/staffing/maintenance management, weekly results, and actual 3→9
+  expansion. Final rerun evidence remains to be recorded below.
+- Focused authority/presentation/advisor tests pass 4 files / 25 tests;
+  TypeScript passes; lint/i18n passes with zero errors and the unchanged 12
+  Hook warnings. The expanded dedicated browser file passes 5/5 in 5.6m:
+  Relaxed summary access, reversible independent Pace/Mobility claims,
+  reversible staffing shift evidence, and nonce-consumed keyboard focus for
+  both pricing and maintenance advice. The Classic overview and claimed staff
+  shift screenshots were visually inspected; both show a healthy WebGL course
+  and readable management UI, with the authoritative 12:00 AM–2:00 PM shift
+  visible only in the claimed capture.
+- Compatibility browser evidence passes M29 1/1, M51 1/1, and ZK-685 3/3.
+  M51 now takes Mobility authority explicitly before opening its independent
+  tab, matching M29's existing explicit Pace claim.
+- The extended real M14 Classic trace passes 1/1 in 6.2m. It retains the
+  first-hole design, invited observation, three-hole public operation,
+  default-visible pricing/staffing/maintenance changes, weekly result, and
+  graduation, then freezes only the test clock and authors holes 4–9 through
+  the real canvas and Hole Wizard. It requires `[3, 6, 9]` receipts and nine
+  authoritative valid holes. The helper now selects tee/green sites with the
+  product's exact 3×3 max-slope ≤1 rule and stabilizes legitimate week-close,
+  Living Club, advisor, and tee-setup layers before each expansion action.
+  The final `03-classic-nine-hole-management-cycle.png` capture was visually
+  inspected and shows a healthy course, the nine-valid-holes milestone, Front
+  Nine achievement, and Hole 9 detail.
+- Final post-repair gates pass on the completed source tree: full Vitest at
+  194 files / 1,523 passed / one intentional skip; TypeScript; lint/i18n with
+  zero errors and the unchanged 12 Hook warnings. Two consecutive production
+  builds and every embedded biome, audio, service-worker, M35, Parkland,
+  surface, residency, and delivery audit pass with identical
+  `index-BC9r8j_j.js` output (1,577,459 bytes, SHA-256
+  `c8be38ebf23b56e08f5c40f20c542c143d086d43571034917796804cbacfb479`),
+  leaving 31,260 bytes below the fixed initial-JavaScript budget.
+- The required bundled gameplay client reached the final Classic operate
+  fixture at 4× speed without an error artifact. Its WebGL capture was
+  visually inspected and shows the complete Parkland course with structures,
+  golfers, trees, sand, and water rendered coherently.
+
+### ZK-688 repeat-focus lifecycle repair — 2026-08-09
+
+- Advisor pricing and maintenance focus requests now receive a mount-lifetime
+  monotonic identity owned by App rather than deriving the next nonce from the
+  nullable pending request. Successful consumption, explicit HUD navigation,
+  target replacement, or node cancellation therefore cannot cause a later
+  request to reuse a HUD guard identity.
+- Same-page browser instrumentation records the nonce from the real `focusin`
+  event. Pricing nonce 1 and maintenance nonce 2 both focus and consume in
+  sequence. A pricing request cancelled by explicit Editor navigation before
+  its animation-frame focus produces no management focus event, clears the
+  forced Upgrades presentation and pending marker, and a maintenance retry
+  focuses and consumes normally at nonce 2.
+- The dedicated advisor slice passes 4/4 in 2.4m, including both original
+  single-target cases. The complete ZK-688 browser file passes 7/7 in 7.5m.
+  Focused authority/presentation/advisor tests remain green at 4 files / 25
+  tests; TypeScript passes; lint/i18n has zero errors and the unchanged 12 Hook
+  warnings.
+- Two consecutive production builds and all embedded audits pass with exact
+  identical `index-9hRmZG4l.js` output (1,577,478 bytes, SHA-256
+  `afde6f27e36e0ad8d28e65e1762aecbd68a7b57370848d6c1dca61e8ebb73521`),
+  leaving 31,241 bytes below the fixed initial-JavaScript budget. The required
+  bundled client reached the Classic operate fixture without an error artifact;
+  its final 18-hole Parkland WebGL capture was visually inspected and coherent.

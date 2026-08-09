@@ -82,6 +82,10 @@ export function SeasonsLegacyPanel(props: {
   const [message, setMessage] = useState<string | null>(null);
   const state = useMemo(() => seasonalState(props.world, props.course, props.day), [props.course, props.day, props.world]);
   const control = useMemo(() => systemControlEnvelope(props.world), [props.world]);
+  const full = (id: "localized-turf" | "irrigation" | "drainage") => control.systems.find((system) => system.id === id)?.visibility === "full";
+  const turfDetail = full("localized-turf");
+  const irrigationDetail = full("irrigation");
+  const drainageDetail = full("drainage");
   const weather = activeWeather(props.world, props.course, props.day);
   const modifiers = weatherModifiers(weather, state.operations.drainageLevel);
   const careEvidence = useMemo(
@@ -163,7 +167,7 @@ export function SeasonsLegacyPanel(props: {
             wear: percent(modifiers.turfWearMultiplier),
           })}</div>
         </section>
-        {careEvidence.length > 0 && <section
+        {turfDetail && careEvidence.length > 0 && <section
           style={card}
           data-testid="surface-care-operations"
           {...contextAttributes(
@@ -255,9 +259,9 @@ export function SeasonsLegacyPanel(props: {
         <section style={card}>
           <h3 style={{ margin: "0 0 7px" }}>{translateCurrent("season.response.title")}</h3>
           <div style={{ display: "grid", gap: 8 }}>
-            <label>{translateCurrent("season.response.turf")}<select data-testid="turf-priority" value={state.operations.turfPriority} onChange={(event) => run({ type: "SET_TURF_PRIORITY", priority: event.target.value as TurfPriority })}>{TURF_PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}</select></label>
-            <label>{translateCurrent("season.response.water")}<select data-testid="water-policy" value={state.operations.waterPolicy} onChange={(event) => run({ type: "SET_WATER_POLICY", policy: event.target.value as WaterPolicy })}>{WATER_POLICIES.map((policy) => <option key={policy}>{policy}</option>)}</select></label>
-            {(() => {
+            {turfDetail && <label>{translateCurrent("season.response.turf")}<select data-testid="turf-priority" value={state.operations.turfPriority} onChange={(event) => run({ type: "SET_TURF_PRIORITY", priority: event.target.value as TurfPriority })}>{TURF_PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}</select></label>}
+            {irrigationDetail && <label>{translateCurrent("season.response.water")}<select data-testid="water-policy" value={state.operations.waterPolicy} onChange={(event) => run({ type: "SET_WATER_POLICY", policy: event.target.value as WaterPolicy })}>{WATER_POLICIES.map((policy) => <option key={policy}>{policy}</option>)}</select></label>}
+            {drainageDetail && (() => {
               const preview = previewSeasonCommand(props.course, props.world, { type: "IMPROVE_DRAINAGE" });
               return <div>
                 <strong>{translateCurrent("season.response.drainage", { level: state.operations.drainageLevel })}</strong>
@@ -329,6 +333,16 @@ export function SeasonsLegacyPanel(props: {
             </div>)}
             {control.systems.some((system) => system.visibility === "hidden") && <small>{translateCurrent("season.automation.hidden", { count: control.systems.filter((system) => system.visibility === "hidden").length })}</small>}
           </details>
+          {control.systems.some((system) => system.visibility === "hidden") && <details data-testid="classic-back-office-systems" style={{ marginTop: 8 }}>
+            <summary>{translateCurrent("season.automation.backOffice")}</summary>
+            <small>{translateCurrent("season.automation.backOfficeHelp")}</small>
+            {control.systems.filter((system) => system.visibility === "hidden").map((system) => <div key={system.id} data-testid={`back-office-policy-${system.id}`} style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 5 }}>
+              <span>{systemControlStatusLabel(system)}</span>
+              <button type="button" style={{ ...button, padding: "3px 6px" }} onClick={() => run({ type: "TAKE_SYSTEM_CONTROL", system: system.id })}>
+                {translateCurrent("season.automation.takeControl")}
+              </button>
+            </div>)}
+          </details>}
           {control.canGraduateTo && <button data-testid="graduate-experience-profile" type="button" style={{ ...button, marginTop: 8 }} onClick={() => run({ type: "GRADUATE_EXPERIENCE_PROFILE", target: control.canGraduateTo! })}>
             {translateCurrent("season.automation.graduate", { profile: systemControlProfileLabel(control.canGraduateTo) })}
           </button>}

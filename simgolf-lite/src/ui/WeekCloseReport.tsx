@@ -2,6 +2,7 @@ import type { Course, WeekResult, World } from "../game/models/types";
 import { buildM49CourseReport } from "../game/m49/report";
 import { formatCurrency, formatNumber } from "../i18n/format";
 import { translateCurrent } from "../i18n/core";
+import { systemControlEnvelope, type AdvancedSystemId } from "../game/experience/systemControl";
 import {
   biomeContextAttributes,
   type BiomeUiTheme,
@@ -12,17 +13,20 @@ export function WeekCloseReport(props: { week: number; result: WeekResult; resum
   const management = props.course && props.world
     ? buildM49CourseReport({ course: props.course, world: props.world, result, generatedAtWeek: props.week })
     : undefined;
+  const control = props.world ? systemControlEnvelope(props.world) : undefined;
+  const full = (id: AdvancedSystemId) => !control || control.systems.find((system) => system.id === id)?.visibility === "full";
+  const biomeRows = result.biomeEconomy ? [
+    ...(full("irrigation") ? [[translateCurrent("weekClose.biomeWater"), formatCurrency(result.biomeEconomy.waterCost)]] : []),
+    ...(full("localized-turf") ? [[translateCurrent("weekClose.plantCare"), formatCurrency(result.biomeEconomy.plantCareCost)]] : []),
+    ...(full("drainage") ? [[translateCurrent("weekClose.drainageCare"), formatCurrency(result.biomeEconomy.drainageCareCost)]] : []),
+  ] : [];
   const rows = [
     [translateCurrent("weekClose.rounds"), formatNumber(result.visitors)],
     [translateCurrent("weekClose.revenue"), formatCurrency(result.revenue)],
     ...(result.revenueBreakdown?.property ? [[translateCurrent("property.report.revenue"), formatCurrency(result.revenueBreakdown.property)]] : []),
     ...(result.revenueBreakdown?.propertyVisitors ? [[translateCurrent("property.report.guests"), formatNumber(result.revenueBreakdown.propertyVisitors)]] : []),
     [translateCurrent("weekClose.costs"), formatCurrency(result.costs)],
-    ...(result.biomeEconomy ? [
-      [translateCurrent("weekClose.biomeWater"), formatCurrency(result.biomeEconomy.waterCost)],
-      [translateCurrent("weekClose.plantCare"), formatCurrency(result.biomeEconomy.plantCareCost)],
-      [translateCurrent("weekClose.drainageCare"), formatCurrency(result.biomeEconomy.drainageCareCost)],
-    ] : []),
+    ...biomeRows,
     [translateCurrent("weekClose.satisfaction"), `${Math.round(result.avgSatisfaction)}%`],
     ...(result.weatherSummary ? [[
       translateCurrent("season.report.weather"),

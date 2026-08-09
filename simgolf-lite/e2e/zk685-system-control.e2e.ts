@@ -40,7 +40,9 @@ test("ZK-685 profile policy, takeover, return, and graduation stay visible and a
 
   await panel.getByTestId("graduate-experience-profile").click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").systemControl.profile)).toBe("classic");
-  await expect(panel.getByTestId("system-policy-drainage")).toHaveCount(1);
+  await expect(panel.getByTestId("system-policy-drainage")).toHaveCount(0);
+  await panel.getByText("Back-office systems", { exact: true }).click();
+  await expect(panel.getByTestId("back-office-policy-drainage")).toBeVisible();
   await panel.getByTestId("graduate-experience-profile").click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").systemControl.profile)).toBe("simulation");
   await expect(panel.locator("[data-testid^=system-policy-]")).toHaveCount(13);

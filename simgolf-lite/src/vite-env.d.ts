@@ -138,6 +138,10 @@ interface Window {
     forceChallengeTieCompletion(): Promise<void>;
     setChallengeGroupRoundFixture(): void;
     setM39Fixture(): void;
+    setZk688ClassicFixture(): void;
+    showZk688AdvisorMessage(target: "pricing" | "maintenance"): void;
+    pauseLiveSimulation(): void;
+    takeSystemControl(system: import("./game/experience/systemControl").AdvancedSystemId): void;
     setZk687RecoveryFixture(): Promise<void>;
     advanceSystemControlDay(): {
       greenFee: number;

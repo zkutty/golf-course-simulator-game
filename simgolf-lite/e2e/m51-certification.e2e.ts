@@ -12,9 +12,10 @@ test("M51 mobility surfaces are reachable, localized, and machine-accessible", a
     { timeout: 45_000 },
   ).toBe("M26 Twin Courses Estate");
 
+  await page.evaluate(() => window.__coursecraftTest!.takeSystemControl("mobility"));
   await page.getByRole("button", { name: "Open live overview" }).click();
   const overview = page.getByTestId("live-overview");
-  await overview.getByRole("tab", { name: "Pace" }).click();
+  await overview.getByRole("tab", { name: "Mobility" }).click();
   await expect(overview.getByTestId("mobility-operations")).toBeVisible();
   await expect(overview.getByTestId("mobility-current-day")).toContainText("Current day");
   await expect(overview.getByTestId("mobility-demand-state")).toContainText("Demand:");

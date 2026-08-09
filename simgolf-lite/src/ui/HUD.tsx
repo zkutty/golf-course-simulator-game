@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { formatCurrency, formatNumber, formatWeekLabel } from "../i18n/format";
 import type { TutorialTarget } from "../game/onboarding/tutorial";
 import type { SculptBrush, SculptRadius } from "../game/models/sculpt";
@@ -141,6 +141,8 @@ export function HUD(props: {
   onOpenGolfopedia: (entry?: string) => void;
   onStartTutorial: () => void;
   tutorialTarget?: TutorialTarget;
+  managementFocus?: { target: "pricing" | "maintenance"; nonce: number };
+  onManagementFocusHandled?: (nonce: number) => void;
   biomeContext?: BiomeUiTheme;
 }) {
   const {
@@ -202,16 +204,54 @@ export function HUD(props: {
 
   const [tab, setTab] = useState<Tab>("Editor");
   const [objectivesOpen, setObjectivesOpen] = useState(false);
+  const scheduledManagementFocusNonceRef = useRef<number | null>(null);
+  const cancelledManagementFocusNonceRef = useRef<number | null>(null);
+  const managementTargetRef = (target: "pricing" | "maintenance") => (node: HTMLInputElement | null) => {
+    const request = props.managementFocus;
+    if (!node || request?.target !== target || scheduledManagementFocusNonceRef.current === request.nonce) return;
+    const nonce = request.nonce;
+    scheduledManagementFocusNonceRef.current = nonce;
+    window.requestAnimationFrame(() => {
+      const hud = node.closest<HTMLElement>(".cc-hud");
+      if (!node.isConnected || cancelledManagementFocusNonceRef.current === nonce || hud?.dataset.managementFocusNonce !== String(nonce)) {
+        if (scheduledManagementFocusNonceRef.current === nonce) scheduledManagementFocusNonceRef.current = null;
+        return;
+      }
+      setTab("Upgrades");
+      node.scrollIntoView({
+        block: "center",
+        behavior: document.documentElement.dataset.reducedMotion === "true" ? "auto" : "smooth",
+      });
+      node.focus({ preventScroll: true });
+      if (document.activeElement !== node) {
+        scheduledManagementFocusNonceRef.current = null;
+        return;
+      }
+      props.onManagementFocusHandled?.(nonce);
+    });
+  };
+  const cancelManagementFocus = () => {
+    const nonce = props.managementFocus?.nonce;
+    if (nonce == null) return;
+    cancelledManagementFocusNonceRef.current = nonce;
+    props.onManagementFocusHandled?.(nonce);
+  };
   const activeTab: Tab = tutorialTarget === "weekly-report"
     ? "Results"
     : tutorialTarget === "green-fee" || tutorialTarget === "maintenance" || tutorialTarget === "staff"
       ? "Upgrades"
       : tutorialTarget
         ? "Editor"
-        : tab;
+        : props.managementFocus
+          ? "Upgrades"
+          : tab;
   const pressure = getEconomicPressure(economicPressureForWorld(world));
   const experience = getExperienceProfile(world.experienceProfile);
   const systemControl = useMemo(() => systemControlEnvelope(world), [world]);
+  const full = (id: "localized-turf" | "irrigation" | "drainage") => systemControl.systems.find((system) => system.id === id)?.visibility === "full";
+  const turfDetail = full("localized-turf");
+  const irrigationDetail = full("irrigation");
+  const drainageDetail = full("drainage");
   const BALANCE = getEffectiveBalance(pressure.key);
   const costMult = pressure.terrainCostMult;
   const audio = useAudio();
@@ -293,6 +333,8 @@ export function HUD(props: {
   return (
     <div
       className="cc-hud cc-tycoon-panel"
+      data-management-focus={props.managementFocus?.target}
+      data-management-focus-nonce={props.managementFocus?.nonce}
       style={{
         width: "100%",
         height: "100%",
@@ -562,6 +604,7 @@ export function HUD(props: {
               onClick={() => {
                 void audio.unlock();
                 setTab(t);
+                cancelManagementFocus();
               }}
               style={{
                 flex: 1,
@@ -1231,20 +1274,20 @@ export function HUD(props: {
                   </div>
                 )}
                 <div data-tooltip="All variable costs, fixed overhead, maintenance, staffing, marketing, and debt costs this week."><T id="auto.ui.hud.costs" />{formatCurrency(last.costs)}</div>
-                {last.biomeEconomy && (
+                {last.biomeEconomy && (turfDetail || irrigationDetail || drainageDetail) && (
                   <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #eee", fontSize: 12, color: "#444" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    {irrigationDetail && <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>{translateCurrent("weekClose.biomeWater")}</span>
                       <b>{formatCurrency(last.biomeEconomy.waterCost)}</b>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    </div>}
+                    {turfDetail && <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>{translateCurrent("weekClose.plantCare")}</span>
                       <span>{formatCurrency(last.biomeEconomy.plantCareCost)}</span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    </div>}
+                    {drainageDetail && <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span>{translateCurrent("weekClose.drainageCare")}</span>
                       <span>{formatCurrency(last.biomeEconomy.drainageCareCost)}</span>
-                    </div>
+                    </div>}
                   </div>
                 )}
                 {last.variableCosts && (
@@ -1330,18 +1373,18 @@ export function HUD(props: {
                       <span><T id="greenKeeping.weekCondition" /></span>
                       <b><T id="greenKeeping.conditionValue" params={{ speed: last.greenKeeping.realizedSpeedFeet.toFixed(1), firmness: Math.round(last.greenKeeping.realizedFirmness * 100) }} /></b>
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    {turfDetail && <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span><T id="greenKeeping.weekHealth" /></span>
                       <span><T id="greenKeeping.healthValue" params={{ health: Math.round(last.greenKeeping.averageHealth * 100), wear: Math.round(last.greenKeeping.averageWear * 100) }} /></span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    </div>}
+                    {turfDetail && <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span><T id="greenKeeping.weekDelivery" /></span>
                       <span><T id="greenKeeping.deliveryValue" params={{ budget: Math.round(Math.min(1, last.greenKeeping.allocatedDailyBudget / Math.max(1, last.greenKeeping.requiredDailyBudget)) * 100), staff: Math.round(last.greenKeeping.staffCoverage * 100) }} /></span>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    </div>}
+                    {turfDetail && <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span><T id="greenKeeping.weekEffect" /></span>
                       <span><T id="greenKeeping.tradeoffValue" params={{ pace: last.greenKeeping.averagePaceMinutesDelta > 0 ? `+${last.greenKeeping.averagePaceMinutesDelta.toFixed(1)}` : last.greenKeeping.averagePaceMinutesDelta.toFixed(1), satisfaction: last.greenKeeping.averageSatisfactionDelta > 0 ? `+${last.greenKeeping.averageSatisfactionDelta.toFixed(1)}` : last.greenKeeping.averageSatisfactionDelta.toFixed(1) }} /></span>
-                    </div>
+                    </div>}
                   </div>
                 )}
                 <div data-tooltip="Revenue minus operating costs before any displayed profit tax.">
@@ -1489,7 +1532,7 @@ export function HUD(props: {
               </Section>
             )}
 
-            {last?.maintenancePressure && (
+            {turfDetail && last?.maintenancePressure && (
               <Section title={translateCurrent("auto.ui.hud.maintenance.pressure")}>
                 <div>
                   <T id="auto.ui.hud.avg.terrain.weight" /><b>{last.maintenancePressure.avgWeight.toFixed(2)}</b> <T id="auto.ui.hud.wear.this.week" /><b>{Math.round(last.maintenancePressure.wear * 100)}%</b>
@@ -1516,6 +1559,8 @@ export function HUD(props: {
                     <T id="auto.ui.hud.set.by.the.scenario" /></span>
                 )}
                 <input
+                  ref={managementTargetRef("pricing")}
+                  data-testid="management-pricing-target"
                   type="range"
                   min={20}
                   max={150}
@@ -1528,6 +1573,8 @@ export function HUD(props: {
 
               <label data-tutorial-target="maintenance" style={{ display: "block" }}>
                 <T id="auto.ui.hud.maintenance.budget" />{world.maintenanceBudget}<T id="auto.ui.hud.wk" /><input
+                  ref={managementTargetRef("maintenance")}
+                  data-testid="management-maintenance-target"
                   type="range"
                   min={0}
                   max={5000}
@@ -1570,7 +1617,7 @@ export function HUD(props: {
                   </button>
                 ))}
               </div>
-              <div style={{ marginTop: 9, padding: 8, border: "1px solid #d8dfd8", borderRadius: 9, background: "rgba(255,255,255,.62)", display: "grid", gap: 7 }}>
+              {(turfDetail || irrigationDetail) && <div style={{ marginTop: 9, padding: 8, border: "1px solid #d8dfd8", borderRadius: 9, background: "rgba(255,255,255,.62)", display: "grid", gap: 7 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, display: "flex", justifyContent: "space-between" }}>
                   <span><T id="greenKeeping.advanced" /></span>
                   <span>{greenProgram.preset === "custom" ? <T id="greenKeeping.custom" /> : <T id="greenKeeping.followsPreset" />}</span>
@@ -1581,7 +1628,7 @@ export function HUD(props: {
                   ["mowingHeightMillimeters", "greenKeeping.mowing", 2, 6, 0.1, greenProgram.mowingHeightMillimeters, " mm"],
                   ["rollingPasses", "greenKeeping.rolling", 0, 2, 1, greenProgram.rollingPasses, ""],
                   ["irrigationTarget", "greenKeeping.irrigation", 0.2, 0.9, 0.01, greenProgram.irrigationTarget, "%"],
-                ] as const).map(([field, label, min, max, step, value, suffix]) => (
+                ] as const).filter(([field]) => field === "irrigationTarget" ? irrigationDetail : turfDetail).map(([field, label, min, max, step, value, suffix]) => (
                   <label key={field} style={{ display: "grid", gap: 2, fontSize: 11 }}>
                     <span style={{ display: "flex", justifyContent: "space-between" }}>
                       <T id={label} />
@@ -1602,8 +1649,8 @@ export function HUD(props: {
                     />
                   </label>
                 ))}
-              </div>
-              <div data-testid="green-keeping-realized" style={{ marginTop: 9, display: "grid", gap: 4, fontSize: 11, color: "#49554b" }}>
+              </div>}
+              {turfDetail && <div data-testid="green-keeping-realized" style={{ marginTop: 9, display: "grid", gap: 4, fontSize: 11, color: "#49554b" }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span><T id="greenKeeping.budget" /></span>
                   <b>{formatCurrency(greenKeeping.requiredWeeklyBudget)} / <T id="greenKeeping.week" /></b>
@@ -1616,8 +1663,8 @@ export function HUD(props: {
                   <span><T id="greenKeeping.tradeoffs" /></span>
                   <b><T id="greenKeeping.tradeoffValue" params={{ pace: greenKeeping.paceMinutesDelta > 0 ? `+${greenKeeping.paceMinutesDelta}` : greenKeeping.paceMinutesDelta, satisfaction: greenKeeping.satisfactionDelta > 0 ? `+${greenKeeping.satisfactionDelta}` : greenKeeping.satisfactionDelta }} /></b>
                 </div>
-              </div>
-              <div style={{ marginTop: 7, fontSize: 10, color: "#68736a" }}><T id="greenKeeping.automationNote" /></div>
+              </div>}
+              {(turfDetail || irrigationDetail) && <div style={{ marginTop: 7, fontSize: 10, color: "#68736a" }}><T id="greenKeeping.automationNote" /></div>}
             </Section>
 
             <Section title={translateCurrent("auto.ui.hud.financing")}>

@@ -31,6 +31,8 @@ test("M39 forecasts, strategic responses, charters, automation, and annual legac
   await expect(panel.getByTestId("charter-destination-retreat")).toContainText("Current charter");
   await panel.getByTestId("automation-preset").selectOption("stewardship");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").seasons.automation.preset)).toBe("stewardship");
+  await panel.getByText("Back-office systems", { exact: true }).click();
+  await panel.getByTestId("back-office-policy-drainage").getByRole("button", { name: "Take control" }).click();
   const identityShot = await page.screenshot({ path: "artifacts/m39-charter-automation.png", fullPage: true });
   await testInfo.attach("m39-charter-automation", { body: identityShot, contentType: "image/png" });
 

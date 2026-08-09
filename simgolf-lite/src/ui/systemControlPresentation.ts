@@ -1,5 +1,6 @@
 import type {
   AdvancedSystemId,
+  EffectiveSystemPolicy,
   SystemControlMode,
   SystemControlSource,
 } from "../game/experience/systemControl";
@@ -59,6 +60,14 @@ const MODES = new Set(Object.keys(MODE_KEYS));
 
 export function systemControlLabel(id: AdvancedSystemId): string {
   return translateCurrent(SYSTEM_KEYS[id]);
+}
+
+/** A presentation-only partition; authority remains in the system-control registry. */
+export function groupSystemControlSurfaces(systems: readonly EffectiveSystemPolicy[]) {
+  return {
+    defaultSystems: systems.filter((system) => system.visibility !== "hidden"),
+    backOfficeSystems: systems.filter((system) => system.visibility === "hidden"),
+  };
 }
 
 export function systemControlProfileLabel(profile: ExperienceProfile): string {

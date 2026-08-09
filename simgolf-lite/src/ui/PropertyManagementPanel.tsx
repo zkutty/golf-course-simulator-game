@@ -15,6 +15,7 @@ import {
 } from "../game/property/property";
 import type { FacilityModuleKind, LodgingReservation, OutingBooking, PropertyAsset, PropertyAssetCategory, PropertyAssetKind, ResidentialStrategy } from "../game/property/types";
 import { translateCurrent } from "../i18n/core";
+import { systemControlEnvelope } from "../game/experience/systemControl";
 
 type Tab = "campus" | "resort" | "community" | "ledger";
 
@@ -58,11 +59,18 @@ export function PropertyManagementPanel(props: {
     void referenceReady;
     return propertySummary(props.course, props.world);
   }, [props.course, props.world, referenceReady]);
+  const control = useMemo(() => systemControlEnvelope(props.world), [props.world]);
+  const full = (id: "property" | "resort" | "community") => control.systems.find((system) => system.id === id)?.visibility === "full";
+  const propertyDetail = full("property");
+  const resortDetail = full("resort");
+  const communityDetail = full("community");
+  const availableTabs = (Object.keys(TAB_COPY) as Tab[]).filter((candidate) => candidate !== "ledger" || propertyDetail);
+  const activeTab = availableTabs.includes(tab) ? tab : "campus";
   const run = (command: PropertyCommand) => {
     const result = props.onCommand(command);
     setNotice({ ok: result.ok, message: result.message });
   };
-  const tabInfo = TAB_COPY[tab];
+  const tabInfo = TAB_COPY[activeTab];
 
   if (!referenceReady) return <section role="dialog" aria-label={translateCurrent("property.aria")} data-testid="property-management-panel" aria-busy="true" className="cc-tycoon-panel"><button aria-label={translateCurrent("property.close")} onClick={props.onClose} style={closeButton}>✕</button>{translateCurrent("deferredSurface.loading", { surface: translateCurrent("property.aria") })}</section>;
 
@@ -94,35 +102,37 @@ export function PropertyManagementPanel(props: {
         </div>
       </header>
 
-      <nav aria-label={translateCurrent("property.sections")} style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 5, padding: 8, background: "#f7f3e8", borderBottom: "1px solid #d7cfbd" }}>
-        {(Object.keys(TAB_COPY) as Tab[]).map((key) => <button key={key} data-testid={`property-tab-${key}`} aria-pressed={tab === key} onClick={() => setTab(key)} style={{ ...tabButton, ...(tab === key ? activeTabButton : {}) }}>{TAB_COPY[key].icon} {TAB_COPY[key].label}</button>)}
+      <nav aria-label={translateCurrent("property.sections")} style={{ display: "grid", gridTemplateColumns: `repeat(${availableTabs.length},1fr)`, gap: 5, padding: 8, background: "#f7f3e8", borderBottom: "1px solid #d7cfbd" }}>
+        {availableTabs.map((key) => <button key={key} data-testid={`property-tab-${key}`} aria-pressed={activeTab === key} onClick={() => setTab(key)} style={{ ...tabButton, ...(activeTab === key ? activeTabButton : {}) }}>{TAB_COPY[key].icon} {TAB_COPY[key].label}</button>)}
       </nav>
 
       {notice && <div role="status" data-testid="property-notice" style={{ padding: "8px 13px", fontSize: 12, fontWeight: 800, color: notice.ok ? "#245c34" : "#8a332b", background: notice.ok ? "#e7f3e7" : "#fbe9e5", borderBottom: "1px solid rgba(50,50,50,.12)" }}>{notice.message}</div>}
 
       <div style={{ overflowY: "auto", padding: 12, background: "rgba(255,252,243,.96)" }}>
-        {tab !== "ledger" && <PropertyMap course={props.course} summary={summary} />}
-        {tab === "ledger" ? <LedgerView summary={summary} world={props.world} /> : tabInfo.categories.map((category) => {
+        {activeTab !== "ledger" && <PropertyMap course={props.course} summary={summary} />}
+        {activeTab === "ledger" ? <LedgerView summary={summary} world={props.world} /> : tabInfo.categories.map((category) => {
           const copy = CATEGORY_COPY[category]!;
-          const kinds = (Object.keys(PROPERTY_ASSET_SPECS) as PropertyAssetKind[]).filter((kind) => PROPERTY_ASSET_SPECS[kind].category === category && !(tab === "community" && (kind === "houses" || kind === "condos")));
+          const kinds = (Object.keys(PROPERTY_ASSET_SPECS) as PropertyAssetKind[]).filter((kind) => PROPERTY_ASSET_SPECS[kind].category === category && !(activeTab === "community" && (kind === "houses" || kind === "condos")));
+          const detailed = category === "resort" ? resortDetail : category === "community" || category === "safety" ? communityDetail : propertyDetail;
           return <section key={category} style={{ marginTop: 14 }}>
             <div style={{ marginBottom: 7 }}>
               <h3 style={{ margin: 0, fontSize: 15, color: "#3e4c40" }}>{copy.title}</h3>
               <div data-tooltip={copy.help} style={{ fontSize: 11, color: "#677267", cursor: "help" }}>{copy.help}</div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 8 }}>
-              {kinds.map((kind) => <AssetCard key={kind} course={props.course} kind={kind} asset={summary.assets.find((candidate) => candidate.kind === kind)} onCommand={run} />)}
+              {kinds.map((kind) => <AssetCard key={kind} course={props.course} kind={kind} asset={summary.assets.find((candidate) => candidate.kind === kind)} detailed={detailed} onCommand={run} />)}
             </div>
           </section>;
         })}
 
-        {tab === "campus" && <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        {activeTab === "campus" && <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <ActionCard icon="🧑‍🏫" title={translateCurrent("property.professionals")} detail={`${summary.enterprise.professionals.length} hired · lessons improve customer skill and generate academy income.`} button="Hire professional · $4,000" onClick={() => run({ type: "HIRE_PRO" })} />
           <ActionCard icon="🎟️" title={translateCurrent("property.memberships")} detail={summary.enterprise.membership.active ? `Tier ${summary.enterprise.membership.tier} · ${summary.enterprise.membership.memberCount} members · ${formatCurrency(summary.enterprise.membership.monthlyFee)}/month` : "Recurring dues, repeat play, practice access, and clubhouse demand."} button={summary.enterprise.membership.active ? "Upgrade program" : "Launch · $2,500"} onClick={() => run({ type: summary.enterprise.membership.active ? "UPGRADE_MEMBERSHIP" : "LAUNCH_MEMBERSHIP" })} />
         </section>}
-        {tab === "campus" && <ShellModules assets={summary.assets} onCommand={run} />}
-        {tab === "campus" && <OutingPlanner course={props.course} world={props.world} outings={summary.enterprise.outings} onCommand={run} />}
-        {tab === "resort" && <section style={{ marginTop: 14 }}>
+        {activeTab === "campus" && <ShellModules assets={summary.assets} onCommand={run} />}
+        {activeTab === "campus" && <OutingPlanner course={props.course} world={props.world} outings={summary.enterprise.outings} onCommand={run} />}
+        {activeTab === "resort" && <section style={{ marginTop: 14 }}>
+          {resortDetail && <>
           <h3 style={{ marginBottom: 5 }}>{translateCurrent("property.resort.operations")}</h3>
           <div style={{ fontSize: 11, color: "#687168", marginBottom: 8 }}>{translateCurrent("property.resort.help")}</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6 }}>
@@ -134,21 +144,22 @@ export function PropertyManagementPanel(props: {
             <ActionCard testId="resort-staff-food" icon="🍽️" title={translateCurrent("property.resort.food")} detail={`${summary.enterprise.resort.foodService} staffed`} button="Hire · $2,500" onClick={() => run({ type: "HIRE_SERVICE", role: "foodService" })} />
             <ActionCard icon="🧰" title={translateCurrent("property.resort.recovery")} detail={`${summary.enterprise.resort.serviceQueue} guests waiting for recovery`} button="Clear rooms and queues" onClick={() => run({ type: "RECOVER_SERVICE" })} />
           </div>
-          <ResortDashboard course={props.course} world={props.world} summary={summary} onCommand={run} />
+          </>}
+          <ResortDashboard course={props.course} world={props.world} summary={summary} detailed={resortDetail} onCommand={run} />
         </section>}
-        {tab === "community" && <section style={{ marginTop: 14, border: "1px solid #d4c6ae", borderRadius: 8, padding: 10, background: "#fffaf0" }}>
+        {activeTab === "community" && communityDetail && <section style={{ marginTop: 14, border: "1px solid #d4c6ae", borderRadius: 8, padding: 10, background: "#fffaf0" }}>
           <h3 style={{ margin: "0 0 5px" }}>{translateCurrent("property.safety.title")}</h3>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6 }}><Metric label={translateCurrent("property.safety.risk")} value={`${Math.round(summary.safety.score)}/100`} warning={summary.safety.eligibility !== "safe"} /><Metric label={translateCurrent("property.safety.eligibility")} value={summary.safety.eligibility} warning={summary.safety.eligibility === "blocked"} /><Metric label={translateCurrent("property.safety.expected")} value={summary.safety.expectedExposure.toFixed(1)} /><Metric label={translateCurrent("property.safety.mitigation")} value={summary.safety.mitigation.toFixed(1)} /></div>
           <div style={{ marginTop: 7, fontSize: 11 }}><strong>{translateCurrent("property.safety.value")}</strong> {formatCurrency(summary.residentialValue)} {translateCurrent("property.safety.valueHelp")}</div>
           {summary.safety.contributions.slice(0, 4).map((item) => <div key={item.holeId} style={{ fontSize: 10, marginTop: 4 }}>{item.holeName}: {translateCurrent("property.safety.hole", { distance: item.distanceTiles.toFixed(1), expected: item.expectedRisk.toFixed(1), outlier: item.outlierRisk.toFixed(1) })}</div>)}
         </section>}
-        {tab === "community" && <CommunityDashboard course={props.course} world={props.world} summary={summary} onCommand={run} />}
+        {activeTab === "community" && <CommunityDashboard course={props.course} world={props.world} summary={summary} detailed={communityDetail} onCommand={run} />}
       </div>
     </section>
   );
 }
 
-function AssetCard(props: { course: Course; kind: PropertyAssetKind; asset?: PropertyAsset; onCommand: (command: PropertyCommand) => void }) {
+function AssetCard(props: { course: Course; kind: PropertyAssetKind; asset?: PropertyAsset; detailed: boolean; onCommand: (command: PropertyCommand) => void }) {
   const { asset } = props;
   const spec = PROPERTY_ASSET_SPECS[props.kind];
   const preview = asset ? propertyUpgradePreview(props.course, asset.id) : null;
@@ -177,11 +188,11 @@ function AssetCard(props: { course: Course; kind: PropertyAssetKind; asset?: Pro
           if (event.target.value.trim() !== asset.name) props.onCommand({ type: "RENAME", assetId: asset.id, name: event.target.value });
         }} style={{ width: 92, padding: 3, fontSize: 10, borderRadius: 5, border: "1px solid #b8b09f" }} />
         {asset.price > 0 && <label style={{ fontSize: 10, display: "flex", alignItems: "center", gap: 3 }}>{translateCurrent("property.asset.price", { value: "" })} <input aria-label={translateCurrent("property.asset.priceLabel", { name: spec.label })} type="number" min={0} value={asset.price} onChange={(event) => props.onCommand({ type: "SET_PRICE", assetId: asset.id, price: Number(event.target.value) })} style={{ width: 52, padding: 3, borderRadius: 5, border: "1px solid #b8b09f" }} /></label>}
-        <label style={compactLabel}>{translateCurrent("property.asset.hours")} <select aria-label={translateCurrent("property.asset.hoursLabel", { name: spec.label })} value={`${asset.openHour ?? 7}-${asset.closeHour ?? 20}`} onChange={(event) => {
+        {props.detailed && <label style={compactLabel}>{translateCurrent("property.asset.hours")} <select aria-label={translateCurrent("property.asset.hoursLabel", { name: spec.label })} value={`${asset.openHour ?? 7}-${asset.closeHour ?? 20}`} onChange={(event) => {
           const [openHour, closeHour] = event.target.value.split("-").map(Number);
           props.onCommand({ type: "SET_HOURS", assetId: asset.id, openHour, closeHour });
-        }}><option value="7-16">7–16</option><option value="7-20">7–20</option><option value="8-20">8–20</option><option value="9-23">9–23</option></select></label>
-        <label style={compactLabel}>{translateCurrent("property.asset.upkeep")} <select aria-label={translateCurrent("property.asset.upkeepLabel", { name: spec.label })} value={asset.upkeepPolicy ?? "standard"} onChange={(event) => props.onCommand({ type: "SET_UPKEEP", assetId: asset.id, policy: event.target.value as "lean" | "standard" | "premium" })}><option value="lean">{translateCurrent("property.asset.lean")}</option><option value="standard">{translateCurrent("property.asset.standard")}</option><option value="premium">{translateCurrent("property.asset.premium")}</option></select></label>
+        }}><option value="7-16">7–16</option><option value="7-20">7–20</option><option value="8-20">8–20</option><option value="9-23">9–23</option></select></label>}
+        {props.detailed && <label style={compactLabel}>{translateCurrent("property.asset.upkeep")} <select aria-label={translateCurrent("property.asset.upkeepLabel", { name: spec.label })} value={asset.upkeepPolicy ?? "standard"} onChange={(event) => props.onCommand({ type: "SET_UPKEEP", assetId: asset.id, policy: event.target.value as "lean" | "standard" | "premium" })}><option value="lean">{translateCurrent("property.asset.lean")}</option><option value="standard">{translateCurrent("property.asset.standard")}</option><option value="premium">{translateCurrent("property.asset.premium")}</option></select></label>}
       </div>
     </> : <button data-testid={`build-${props.kind}`} onClick={() => props.onCommand({ type: "BUILD", kind: props.kind })} style={{ ...smallButton, background: "#3f6c43", color: "white", borderColor: "#315b35" }}>{translateCurrent("property.asset.build", { amount: formatCurrency(spec.buildCost) })}</button>}
   </article>;
@@ -228,12 +239,12 @@ function OutingPlanner(props: { course: Course; world: World; outings: OutingBoo
   </section>;
 }
 
-function ResortDashboard(props: { course: Course; world: World; summary: ReturnType<typeof propertySummary>; onCommand: (command: PropertyCommand) => void }) {
+function ResortDashboard(props: { course: Course; world: World; summary: ReturnType<typeof propertySummary>; detailed: boolean; onCommand: (command: PropertyCommand) => void }) {
   const packages: LodgingReservation["package"][] = ["room_only", "stay_and_play", "academy", "event"];
   const metrics = props.summary.resortMetrics;
   const reservations = [...props.summary.enterprise.reservations].reverse().slice(0, 12);
   return <section data-testid="resort-dashboard" style={{ marginTop: 14 }}>
-    <h3 style={{ margin: "0 0 6px" }}>{translateCurrent("property.resort.performance")}</h3>
+    {props.detailed && <><h3 style={{ margin: "0 0 6px" }}>{translateCurrent("property.resort.performance")}</h3>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(4,minmax(0,1fr))", gap: 6 }}>
       <Metric label={translateCurrent("property.resort.occupancy")} value={`${Math.round(metrics.occupancyRate * 100)}% · ${metrics.occupiedRooms}/${metrics.totalRooms}`} />
       <Metric label={translateCurrent("property.resort.adr")} value={formatCurrency(metrics.averageDailyRate)} />
@@ -246,7 +257,7 @@ function ResortDashboard(props: { course: Course; world: World; summary: ReturnT
     </div>
     <div data-testid="resort-capacity" style={{ marginTop: 7, padding: 7, borderRadius: 7, background: "#eef3e8", fontSize: 10 }}>
       <strong>{translateCurrent("property.resort.capacity", metrics.capacity)}</strong>
-    </div>
+    </div></>}
     <h3 style={{ marginBottom: 5 }}>{translateCurrent("property.resort.packages")}</h3>
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 6 }}>
       {packages.map((kind) => {
@@ -260,7 +271,7 @@ function ResortDashboard(props: { course: Course; world: World; summary: ReturnT
         </article>;
       })}
     </div>
-    <h3 style={{ marginBottom: 5 }}>{translateCurrent("property.resort.reservations")}</h3>
+    {props.detailed && <><h3 style={{ marginBottom: 5 }}>{translateCurrent("property.resort.reservations")}</h3>
     {reservations.length === 0 ? <p style={{ fontSize: 11, color: "#687168" }}>{translateCurrent("property.resort.noReservations")}</p> : <div style={{ display: "grid", gap: 5 }}>
       {reservations.map((reservation) => {
         const fulfilled = reservation.entitlements?.filter((entitlement) => entitlement.status === "fulfilled" || entitlement.redeemed).length ?? 0;
@@ -272,11 +283,11 @@ function ResortDashboard(props: { course: Course; world: World; summary: ReturnT
           {(reservation.refund ?? 0) > 0 && <div style={{ color: "#8a332b" }}>{translateCurrent("property.resort.refunded", { amount: formatCurrency(reservation.refund ?? 0), status: reservation.revalidation ?? "substituted" })}</div>}
         </div>;
       })}
-    </div>}
+    </div>}</>}
   </section>;
 }
 
-function CommunityDashboard(props: { course: Course; world: World; summary: ReturnType<typeof propertySummary>; onCommand: (command: PropertyCommand) => void }) {
+function CommunityDashboard(props: { course: Course; world: World; summary: ReturnType<typeof propertySummary>; detailed: boolean; onCommand: (command: PropertyCommand) => void }) {
   const strategies: Array<{ id: ResidentialStrategy; label: string; detail: string }> = [
     { id: "sell", label: translateCurrent("property.community.strategy.sell"), detail: translateCurrent("property.community.strategy.sellDetail") },
     { id: "retain", label: translateCurrent("property.community.strategy.retain"), detail: translateCurrent("property.community.strategy.retainDetail") },
@@ -315,7 +326,9 @@ function CommunityDashboard(props: { course: Course; world: World; summary: Retu
           return <article key={`${kind}-${strategy.id}`} data-testid={`development-preview-${kind}-${strategy.id}`} style={{ border: "1px solid #d4cab4", borderRadius: 7, padding: 7, background: preview.blockers.length ? "#fbf1e8" : "#f3f8ee", fontSize: 10 }}>
             <strong>{translateCurrent("property.community.previewTitle", { property: translateCurrent(kind === "houses" ? "property.community.preview.houses" : "property.community.preview.condos"), strategy: strategy.label })}</strong>
             <div>{translateCurrent("property.community.previewMeta", { units: preview.units, capital: formatCurrency(preview.playerCapital), days: preview.constructionDays + preview.releaseDays })}</div>
-            <div>{translateCurrent("property.community.previewValue", { low: formatCurrency(preview.projectedValueLow), high: formatCurrency(preview.projectedValueHigh), risk: Math.round(preview.safety.score) })}</div>
+            <div>{props.detailed
+              ? translateCurrent("property.community.previewValue", { low: formatCurrency(preview.projectedValueLow), high: formatCurrency(preview.projectedValueHigh), risk: Math.round(preview.safety.score) })
+              : translateCurrent("property.community.previewValueClassic", { low: formatCurrency(preview.projectedValueLow), high: formatCurrency(preview.projectedValueHigh) })}</div>
             <div style={{ marginTop: 3, color: "#687168" }}>{strategy.detail}</div>
             {preview.blockers.length > 0 && <div style={{ marginTop: 4, color: "#8a332b" }}>{preview.blockers.join(" ")}</div>}
             <button disabled={preview.blockers.length > 0} onClick={() => approve(kind, strategy.id)} style={{ ...smallButton, marginTop: 5 }}>{translateCurrent("property.community.review")}</button>
@@ -335,7 +348,7 @@ function CommunityDashboard(props: { course: Course; world: World; summary: Retu
       </div>}
     </section>
 
-    <section style={{ marginTop: 14, border: "1px solid #d4c6ae", borderRadius: 8, padding: 9, background: "#f8fbf3" }}>
+    {props.detailed && <><section style={{ marginTop: 14, border: "1px solid #d4c6ae", borderRadius: 8, padding: 9, background: "#f8fbf3" }}>
       <h3 style={{ margin: "0 0 5px" }}>{translateCurrent("property.community.exposure")}</h3>
       <SafetyHeatmap course={props.course} summary={props.summary} />
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
@@ -384,7 +397,7 @@ function CommunityDashboard(props: { course: Course; world: World; summary: Retu
         <button onClick={() => props.onCommand({ type: claim.status === "open" ? "FILE_CLAIM" : "SETTLE_CLAIM", claimId: claim.id })} style={{ ...smallButton, marginTop: 4 }}>{translateCurrent(claim.status === "open" ? "property.community.fileClaim" : "property.community.settleClaim")}</button>
       </article>)}
       {openClaims.length === 0 && <div style={{ fontSize: 11, color: "#687168" }}>{translateCurrent("property.community.claimEmpty")}</div>}
-    </section>
+    </section></>}
   </div>;
 }
 

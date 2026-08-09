@@ -40,13 +40,17 @@ describe("ZK-685 advanced-system registry and profile matrix", () => {
     const relaxed = resolveSystemControlPolicy(world("relaxed"));
     const classic = resolveSystemControlPolicy(world("classic"));
     const simulation = resolveSystemControlPolicy(world("simulation"));
-    const hidden = ["localized-turf", "irrigation", "drainage", "resort", "mobility"];
-    const summary = ADVANCED_SYSTEM_IDS.filter((id) => !hidden.includes(id));
+    const relaxedHidden = ["localized-turf", "irrigation", "drainage", "resort", "mobility"];
+    const relaxedSummary = ADVANCED_SYSTEM_IDS.filter((id) => !relaxedHidden.includes(id));
+    const classicHidden = ["localized-turf", "irrigation", "drainage", "pace", "mobility", "community"];
+    const classicSummary = ADVANCED_SYSTEM_IDS.filter((id) => !classicHidden.includes(id));
 
-    expect(relaxed.systems.filter((system) => system.visibility === "hidden").map((system) => system.id)).toEqual(hidden);
-    expect(relaxed.systems.filter((system) => system.visibility === "summary").map((system) => system.id)).toEqual(summary);
+    expect(relaxed.systems.filter((system) => system.visibility === "hidden").map((system) => system.id)).toEqual(relaxedHidden);
+    expect(relaxed.systems.filter((system) => system.visibility === "summary").map((system) => system.id)).toEqual(relaxedSummary);
     expect(relaxed.systems.filter((system) => system.visibility === "full")).toEqual([]);
-    expect(classic.systems.map((system) => system.visibility)).toEqual(Array(13).fill("summary"));
+    expect(classic.systems.filter((system) => system.visibility === "hidden").map((system) => system.id)).toEqual(classicHidden);
+    expect(classic.systems.filter((system) => system.visibility === "summary").map((system) => system.id)).toEqual(classicSummary);
+    expect(classic.systems.filter((system) => system.visibility === "full")).toEqual([]);
     expect(simulation.systems.map((system) => system.visibility)).toEqual(Array(13).fill("full"));
     expect(relaxed.systems.map((system) => system.mode)).toEqual(Array(13).fill("automated"));
     expect(classic.systems.map((system) => system.mode)).toEqual(Array(13).fill("automated"));
@@ -64,12 +68,12 @@ describe("ZK-685 advanced-system registry and profile matrix", () => {
     expect(taken.ok).toBe(true);
     expect(taken.world.systemControl?.overrides).toEqual({ drainage: "manual" });
     expect(resolveSystemControlPolicy(taken.world).systems.find((system) => system.id === "drainage"))
-      .toMatchObject({ mode: "manual", source: "save-override", directControl: true });
+      .toMatchObject({ visibility: "full", mode: "manual", source: "save-override", directControl: true });
 
     const returned = applySystemControlCommand(taken.world, { type: "RETURN_SYSTEM_TO_PROFILE", system: "drainage" });
     expect(returned.world.systemControl?.overrides).toEqual({});
     expect(resolveSystemControlPolicy(returned.world).systems.find((system) => system.id === "drainage"))
-      .toMatchObject({ mode: "automated", source: "profile-default", directControl: false });
+      .toMatchObject({ visibility: "hidden", mode: "automated", source: "profile-default", directControl: false });
   });
 
   it("graduates atomically one way, preserves state/overrides, and rejects skips or downgrades", () => {
@@ -327,6 +331,8 @@ describe("ZK-685 persistence and hash certification", () => {
     expect(loaded.ok).toBe(true);
     if (!loaded.ok) return;
     expect(loaded.payload.world.systemControl?.overrides).toEqual({ pace: "manual" });
+    expect(resolveSystemControlPolicy(loaded.payload.world).systems.find((system) => system.id === "pace"))
+      .toMatchObject({ visibility: "full", mode: "manual", source: "save-override" });
     expect(hashGameState(loaded.payload)).toBe(hashGameState(persisted));
 
     const returned = applySystemControlCommand(taken, { type: "RETURN_SYSTEM_TO_PROFILE", system: "pace" }).world;

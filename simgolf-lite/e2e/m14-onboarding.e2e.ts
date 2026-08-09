@@ -29,13 +29,21 @@ async function canvas(page: Page) {
 }
 
 function candidateRoute(surface: Surface) {
-  const { width, height, owned } = surface;
+  const { width, height, owned, elevations } = surface;
   const occupied = surface.holes.flatMap((hole) => [hole.tee, hole.green].filter(Boolean));
+  const flatMarkerSite = (point: { x: number; y: number }) => {
+    const footprint = [];
+    for (let y = point.y - 1; y <= point.y + 1; y++) {
+      for (let x = point.x - 1; x <= point.x + 1; x++) footprint.push(elevations[y * width + x] ?? 0);
+    }
+    return Math.max(...footprint) - Math.min(...footprint) <= 1;
+  };
   for (let y = 4; y < height - 4; y += 2) {
     for (let x = 4; x + 12 < width - 4; x++) {
       const start = { x, y };
       const end = { x: x + 10, y };
       if (!Array.from({ length: 11 }, (_, offset) => owned[y * width + x + offset]).every(Boolean)) continue;
+      if (!flatMarkerSite(start) || !flatMarkerSite(end)) continue;
       if ([start, end].some((point) => occupied.some((known) => known && Math.hypot(known.x - point.x, known.y - point.y) < 3))) continue;
       return [start, end] as const;
     }
@@ -72,6 +80,46 @@ async function dismissAchievementToasts(page: Page) {
     await toast.first().evaluate((element: HTMLElement) => element.click()).catch(() => undefined);
   }
   await expect(toast).toHaveCount(0);
+}
+
+async function dismissPostOperationOverlays(page: Page, freezeLive = false) {
+  const pause = async () => {
+    if (!freezeLive) return;
+    await page.evaluate(() => window.__coursecraftTest!.pauseLiveSimulation());
+    await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text!()).simulation.speed)).toBe("paused");
+  };
+  await pause();
+  let consecutiveClearPasses = 0;
+  for (let pass = 0; pass < 12 && consecutiveClearPasses < 2; pass++) {
+    let closedLayer = false;
+    const weekClose = page.getByTestId("week-close-report");
+    if (await weekClose.isVisible().catch(() => false)) {
+      await page.getByTestId("week-close-continue").click();
+      closedLayer = true;
+      await pause();
+    }
+    const livingClub = page.getByTestId("living-club-panel");
+    if (await livingClub.isVisible().catch(() => false)) {
+      await livingClub.getByRole("button", { name: "Close", exact: true }).click();
+      closedLayer = true;
+      await pause();
+    }
+    const teeSetupOffer = page.getByTestId("tee-setup-offer");
+    if (await teeSetupOffer.isVisible().catch(() => false)) {
+      await teeSetupOffer.getByRole("button", { name: "Not now", exact: true }).click();
+      closedLayer = true;
+      await pause();
+    }
+    const advisor = page.getByTestId("advisor-card");
+    if (await advisor.isVisible().catch(() => false)) {
+      await advisor.getByRole("button", { name: "Got it", exact: true }).click();
+      closedLayer = true;
+      await pause();
+    }
+    consecutiveClearPasses = closedLayer ? 0 : consecutiveClearPasses + 1;
+    await page.evaluate(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve()))));
+  }
+  expect(consecutiveClearPasses, "post-operation overlays did not stabilize").toBe(2);
 }
 
 async function setInGameLocale(page: Page, locale: "en" | "pseudo") {
@@ -166,7 +214,8 @@ async function buildFirstHole(page: Page) {
   await expectStep(page, "invite-group");
 }
 
-async function buildAdditionalHole(page: Page) {
+async function buildAdditionalHole(page: Page, freezeLive = false) {
+  await dismissPostOperationOverlays(page, freezeLive);
   await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
   const surface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
   const [start, end] = candidateRoute(surface);
@@ -321,6 +370,7 @@ test("keyboard, modal, responsive, tooltip, restart, and Simulation JIT paths re
 });
 
 test("Classic completes three-hole public operations through weekly results and graduation", async ({ page }) => {
+  test.setTimeout(1_500_000);
   await beginClassic(page);
   await buildFirstHole(page);
   await page.getByRole("button", { name: "Invite group" }).click();
@@ -378,4 +428,21 @@ test("Classic completes three-hole public operations through weekly results and 
     completion: "full",
   });
   await expect(page.getByRole("button", { name: /Help/ })).toBeEnabled();
+
+  // Continue the same authoritative Classic run from its public three-hole
+  // operation to a real nine-hole course. This preserves one browser trace
+  // across design -> observe -> manage -> improve -> expand instead of using
+  // a fixture whose round length merely says nine.
+  await dismissAchievementToasts(page);
+  await dismissPostOperationOverlays(page, true);
+  for (let expectedHoles = 4; expectedHoles <= 9; expectedHoles++) {
+    await buildAdditionalHole(page, true);
+    await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState().holes.filter((hole) => hole.valid).length)).toBe(expectedHoles);
+  }
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text!()).onboarding.milestones)).toEqual([3, 6, 9]);
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text!()).onboarding.publicOperation)).toMatchObject({
+    unlocked: true,
+    validHoles: 9,
+  });
+  await page.screenshot({ path: path.join(evidenceDir, "03-classic-nine-hole-management-cycle.png"), fullPage: true });
 });

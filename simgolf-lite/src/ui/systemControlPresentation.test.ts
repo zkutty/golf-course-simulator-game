@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { ADVANCED_SYSTEM_IDS } from "../game/experience/systemControl";
+import { ADVANCED_SYSTEM_IDS, createSystemControlState, resolveSystemControlPolicy } from "../game/experience/systemControl";
 import { setActiveLocale } from "../i18n/core";
 import {
   systemControlCommandMessage,
   systemControlDecisionLabel,
+  groupSystemControlSurfaces,
   systemControlProfileLabel,
   systemControlStatusLabel,
 } from "./systemControlPresentation";
@@ -21,6 +22,20 @@ describe("system-control presentation", () => {
     expect(labels[0]).toBe("Maintenance · manual (save override)");
     expect(labels[1]).toBe("Localized turf · manual (save override)");
     expect(systemControlProfileLabel("simulation")).toBe("Simulation");
+  });
+
+  it("partitions Classic strategic summaries from opt-in back-office systems", () => {
+    const policy = resolveSystemControlPolicy({
+      experienceProfile: "classic",
+      systemControl: createSystemControlState("classic"),
+    });
+    const grouped = groupSystemControlSurfaces(policy.systems);
+    expect(grouped.defaultSystems.map((system) => system.id)).toEqual([
+      "maintenance", "staffing", "financing", "memberships", "tournaments", "property", "resort",
+    ]);
+    expect(grouped.backOfficeSystems.map((system) => system.id)).toEqual([
+      "localized-turf", "irrigation", "drainage", "pace", "mobility", "community",
+    ]);
   });
 
   it("localizes command statuses and compact automation decision evidence", () => {

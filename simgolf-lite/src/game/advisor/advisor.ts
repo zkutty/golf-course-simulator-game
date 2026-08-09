@@ -13,6 +13,7 @@ import { systemControlEnvelope, type AdvancedSystemId } from "../experience/syst
 
 export type AdvisorExpression = "neutral" | "pleased" | "worried" | "excited";
 export type AdvisorPriority = "hint" | "info" | "celebration" | "warning";
+export type AdvisorManagementTarget = "pricing" | "maintenance" | "property" | "tournaments" | "land";
 
 export interface AdvisorMessage {
   id: string;
@@ -21,6 +22,8 @@ export interface AdvisorMessage {
   expression: AdvisorExpression;
   priority: AdvisorPriority;
   holeIndex?: number;
+  /** Routes advice to an existing authoritative management surface. */
+  managementTarget?: AdvisorManagementTarget;
   /** Present only when an actual recovery receipt supports an offered takeover. */
   takeControlSystem?: AdvancedSystemId;
   systemControl?: {
@@ -95,7 +98,7 @@ export function advisorMessages(
     });
   }
   if (course.estate && course.estate.ownedParcelIds.length < course.estate.parcels.length && valid.length >= 9 && courseLayouts(course).length === 1 && world.reputation >= 50 && world.cash >= 45_000) {
-    messages.push({ id: "expansion-ready", title: t("advisor.expansion.title"), body: t("advisor.expansion.body"), expression: "pleased", priority: "info" });
+    messages.push({ id: "expansion-ready", title: t("advisor.expansion.title"), body: t("advisor.expansion.body"), expression: "pleased", priority: "info", managementTarget: "land" });
   }
 
   if (invalidEvent) {
@@ -110,6 +113,7 @@ export function advisorMessages(
       body: t("advisor.tournament.body", { event: invalidEvent.name, warning: localizedWarning }),
       expression: "worried",
       priority: "warning",
+      managementTarget: "tournaments",
     });
   }
 
@@ -119,6 +123,7 @@ export function advisorMessages(
       title: t("advisor.cash.title"), body: t("advisor.cash.body"),
       expression: "worried",
       priority: "warning",
+      managementTarget: "pricing",
     });
   }
   if (course.condition < 0.55) {
@@ -127,6 +132,7 @@ export function advisorMessages(
       title: t("advisor.condition.title"), body: t("advisor.condition.body"),
       expression: "worried",
       priority: "warning",
+      managementTarget: "maintenance",
     });
   }
   if ((last?.profit ?? 0) > 0 && (previous?.profit ?? 0) <= 0) {
@@ -143,6 +149,7 @@ export function advisorMessages(
       title: t("advisor.turnaways.title"), body: t("advisor.turnaways.body", { count: formatNumber(last!.turnaways!) }),
       expression: "pleased",
       priority: "info",
+      managementTarget: "property",
     });
   }
   const worst = valid.slice().sort((a, b) => a.overallHoleScore - b.overallHoleScore)[0];

@@ -93,6 +93,8 @@ interface RegistryEntry {
  */
 const COMMAND_ADAPTER_IDS = new Set<AdvancedSystemId>(["maintenance", "localized-turf", "irrigation", "property", "resort"]);
 const RELAXED_HIDDEN_IDS = new Set<AdvancedSystemId>(["localized-turf", "irrigation", "drainage", "resort", "mobility"]);
+/** Classic keeps strategic course management visible while back-office detail stays opt-in. */
+const CLASSIC_HIDDEN_IDS = new Set<AdvancedSystemId>(["localized-turf", "irrigation", "drainage", "pace", "mobility", "community"]);
 export const SYSTEM_CONTROL_REGISTRY = Object.fromEntries(ADVANCED_SYSTEM_IDS.map((id) => [id, {
   automationAdapter: COMMAND_ADAPTER_IDS.has(id) ? "seasonal-operations" : "authoritative-noop",
 }])) as Record<AdvancedSystemId, RegistryEntry>;
@@ -283,8 +285,16 @@ export function effectiveSystemPolicy(
   const definition = SYSTEM_CONTROL_REGISTRY[id];
   const override = state.overrides[id];
   const defaultMode = profile === "simulation" ? "manual" : "automated";
-  const visibility = profile === "simulation" ? "full" : profile === "relaxed" && RELAXED_HIDDEN_IDS.has(id) ? "hidden" : "summary";
   const mode = override ?? defaultMode;
+  const visibility = mode === "manual"
+    ? "full"
+    : profile === "relaxed" && RELAXED_HIDDEN_IDS.has(id)
+      ? "hidden"
+      : profile === "classic" && CLASSIC_HIDDEN_IDS.has(id)
+        ? "hidden"
+        : profile === "simulation"
+          ? "full"
+          : "summary";
   return {
     id,
     visibility,

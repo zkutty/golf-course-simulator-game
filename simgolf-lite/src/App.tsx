@@ -472,6 +472,7 @@ export default function App() {
   const recordsRef = useRef(records);
   const sculptedRef = useRef(false);
   const { course, world } = gameState;
+  const systemControlPolicy = useMemo(() => systemControlEnvelope(world), [world]);
   const activeLayout = useMemo(() => activeCourseLayout(course), [course]);
   const activeOperatingCourse = useMemo(() => courseForLayout(course, activeLayout.id), [course, activeLayout.id]);
   const [selected, setSelected] = useState<Terrain>("fairway");
@@ -869,6 +870,8 @@ export default function App() {
   const campaignResumeSpeedRef = useRef<SpeedName>("1x");
   const campaignPausedRef = useRef(false);
   const [showLiveOverview, setShowLiveOverview] = useState(false);
+  const hudManagementFocusNonceRef = useRef(0);
+  const [hudManagementFocus, setHudManagementFocus] = useState<{ target: "pricing" | "maintenance"; nonce: number } | undefined>();
   const [followSelected, setFollowSelected] = useState(false);
   const [achievementQueue, setAchievementQueue] = useState<AchievementDefinition[]>([]);
   const [photoMode, setPhotoMode] = useState(false);
@@ -3378,6 +3381,48 @@ export default function App() {
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixture.course, fixture.world, 6), pendingCash: 0, speed: "paused", selectedGolferId: null }));
         setShowSeasonsLegacy(true);
       },
+      setZk688ClassicFixture: () => {
+        const fixtureCourse = createPlayerProReferenceCourse();
+        const fixtureWorld: World = {
+          ...gameSession.getState().world,
+          week: 9,
+          cash: 750_000,
+          reputation: 84,
+          runSeed: 688009,
+          experienceProfile: "classic",
+          economicPressure: "balanced",
+          systemControl: createSystemControlState("classic"),
+          objectives: null,
+          isBankrupt: false,
+          distressWeeks: 0,
+          seasonal: createSeasonalState({ runSeed: 688009, theme: fixtureCourse.theme, week: 9, day: 0 }),
+        };
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setShowSeasonsLegacy(true);
+      },
+      showZk688AdvisorMessage: (target) => {
+        const current = gameSession.getState();
+        const fixtureCourse = target === "maintenance"
+          ? { ...current.course, condition: 0.4 }
+          : current.course;
+        const fixtureWorld = target === "pricing"
+          ? { ...current.world, cash: 0 }
+          : current.world;
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        const message = advisorMessages(fixtureCourse, fixtureWorld, undefined, undefined, t)
+          .find((candidate) => candidate.managementTarget === target);
+        if (!message) throw new Error(`No ${target} advisor message was derived from the fixture`);
+        advisorCooldownUntilRef.current = 0;
+        setHudManagementFocus(undefined);
+        setShowSeasonsLegacy(false);
+        setAdvisorMessage(message);
+      },
+      pauseLiveSimulation: () => live.setSpeed("paused"),
+      takeSystemControl: (system) => {
+        const result = runSeasonCommand({ type: "TAKE_SYSTEM_CONTROL", system });
+        if (!result.ok) throw new Error(result.message);
+      },
       setZk687RecoveryFixture: async () => {
         const fixtureCourse = createPlayerProReferenceCourse();
         const baseWorld: World = {
@@ -3740,7 +3785,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, gameSession, live, pendingLoadingContext, pendingWeekReport, screen, setWorld, t, tutorialProgress]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, gameSession, live, pendingLoadingContext, pendingWeekReport, runSeasonCommand, screen, setWorld, t, tutorialProgress]);
 
   function newGameFromMenu() {
     void audio.unlock();
@@ -5184,6 +5229,26 @@ export default function App() {
             enterHoleEditMode(estateIndex >= 0 ? estateIndex : holeIndex);
             dismissAdvisor();
           }}
+          onOpenManagement={advisorMessage.managementTarget ? () => {
+            const target = advisorMessage.managementTarget!;
+            if (target === "pricing" || target === "maintenance") {
+              selectWorkspace("operate");
+              setHoleEditMode("global");
+              hudManagementFocusNonceRef.current += 1;
+              setHudManagementFocus({ target, nonce: hudManagementFocusNonceRef.current });
+            } else if (target === "property") {
+              selectWorkspace("operate");
+              setShowPropertyManagement(true);
+            } else if (target === "tournaments") {
+              selectWorkspace("operate");
+              setShowTournaments(true);
+            } else {
+              selectWorkspace("design");
+              setShowLandOffice(true);
+              setSelectedParcelId((current) => current ?? course.estate?.starterParcelId ?? null);
+            }
+            dismissAdvisor();
+          } : undefined}
         />
       )}
       <div className="cc-main">
@@ -5532,7 +5597,7 @@ export default function App() {
               onChoose={chooseCampaign}
             />}
             {showPropertyManagement && !activeTutorial && <DeferredSurface label={t("property.aria")}><PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} /></DeferredSurface>}
-            {showLiveOverview && !activeTutorial && <DeferredSurface label={t("live.overview")}><LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} /></DeferredSurface>}
+            {showLiveOverview && !activeTutorial && <DeferredSurface label={t("live.overview")}><LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} paceVisibility={systemControlPolicy.systems.find((system) => system.id === "pace")?.visibility ?? "hidden"} mobilityVisibility={systemControlPolicy.systems.find((system) => system.id === "mobility")?.visibility ?? "hidden"} staffingVisibility={systemControlPolicy.systems.find((system) => system.id === "staffing")?.visibility ?? "hidden"} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} /></DeferredSurface>}
             {teeSetupPrompt && !activeTutorial && (
               <div data-testid="tee-setup-offer" role="dialog" aria-label={t("courseSetup.offerAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 145, top: 64, right: 16, width: 280, padding: 14 }}>
                 <strong>{t("courseSetup.offerTitle")}</strong>
@@ -5838,6 +5903,8 @@ export default function App() {
         }}
         onStartTutorial={() => beginTutorial()}
         tutorialTarget={activeTutorial ? tutorialStep(activeTutorial).target : undefined}
+        managementFocus={hudManagementFocus}
+        onManagementFocusHandled={(nonce) => setHudManagementFocus((current) => current?.nonce === nonce ? undefined : current)}
         biomeContext={contextualUiTheme}
       />
             </DeferredHudSurface>

@@ -5,6 +5,7 @@ test("pace operations presets, hospitality, and staff assignments are visible an
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   await page.goto("/?perfFixture=1");
   await expect(page.getByLabel("Open live overview")).toBeVisible();
+  await page.evaluate(() => window.__coursecraftTest!.takeSystemControl("pace"));
   await page.getByLabel("Open live overview").click();
   await page.getByRole("tab", { name: "Pace" }).click();
   await expect(page.getByTestId("pace-operations")).toBeVisible();
