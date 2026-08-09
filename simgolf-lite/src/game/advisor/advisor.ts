@@ -9,7 +9,7 @@ import type { TournamentRequirementId } from "../tournaments/types";
 import type { MessageKey } from "../../i18n/catalog";
 import { analyzeArchitecture } from "../architecture/architecture";
 import { courseLayouts } from "../models/courseLayouts";
-import { systemControlEnvelope } from "../experience/systemControl";
+import { systemControlEnvelope, type AdvancedSystemId } from "../experience/systemControl";
 
 export type AdvisorExpression = "neutral" | "pleased" | "worried" | "excited";
 export type AdvisorPriority = "hint" | "info" | "celebration" | "warning";
@@ -21,6 +21,8 @@ export interface AdvisorMessage {
   expression: AdvisorExpression;
   priority: AdvisorPriority;
   holeIndex?: number;
+  /** Present only when an actual recovery receipt supports an offered takeover. */
+  takeControlSystem?: AdvancedSystemId;
   systemControl?: {
     profile: string;
     automated: number;
@@ -43,6 +45,31 @@ export function advisorMessages(
   const weeklyExpenses = Math.max(1, last?.costs ?? world.maintenanceBudget + world.staffLevel * 500);
   const invalidEvent = tournamentCalendar(world).events.find((event) => event.status === "scheduled" && event.warning);
   const architecture = course.estate && valid.length >= 9 ? analyzeArchitecture(course) : null;
+  const control = systemControlEnvelope(world);
+  const latestRecovery = control.recovery?.latest;
+  if (latestRecovery) {
+    const preferredSystem: AdvancedSystemId | undefined = latestRecovery.reasons.includes("poor-turf")
+      ? "maintenance"
+      : latestRecovery.reasons.includes("cash-deficit")
+        ? "property"
+        : undefined;
+    const offeredSystem = preferredSystem
+      && latestRecovery.automatedDomains.includes(preferredSystem)
+      && control.systems.find((system) => system.id === preferredSystem)?.mode === "automated"
+      ? preferredSystem
+      : undefined;
+    messages.push({
+      id: `relaxed-recovery-${latestRecovery.id}`,
+      title: t("advisor.recovery.title"),
+      body: t("advisor.recovery.body", {
+        relief: formatCurrency(latestRecovery.relief),
+        outstanding: formatCurrency(latestRecovery.outstandingAdvance),
+      }),
+      expression: "pleased",
+      priority: "info",
+      ...(offeredSystem ? { takeControlSystem: offeredSystem } : {}),
+    });
+  }
 
   if (architecture && architecture.total < 55 && architecture.warnings.length) {
     messages.push({
@@ -137,7 +164,6 @@ export function advisorMessages(
       priority: "hint",
     });
   }
-  const control = systemControlEnvelope(world);
   const context = {
     profile: control.profile,
     automated: control.systems.filter((system) => system.mode === "automated").length,

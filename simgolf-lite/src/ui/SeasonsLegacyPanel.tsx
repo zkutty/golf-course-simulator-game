@@ -305,6 +305,19 @@ export function SeasonsLegacyPanel(props: {
           <div data-testid="system-control-summary" style={{ marginTop: 7 }}>
             {translateCurrent("season.automation.policySummary", { profile: systemControlProfileLabel(control.profile), automated: control.systems.filter((system) => system.mode === "automated").length, manual: control.systems.filter((system) => system.mode === "manual").length })}
           </div>
+          {control.recovery && <details data-testid="relaxed-recovery-audit" style={{ marginTop: 8 }}>
+            <summary>{translateCurrent("season.recovery.summary", { actions: control.recovery.actions, outstanding: formatCurrency(control.recovery.outstandingAdvance) })}</summary>
+            {[...props.world.systemControl!.recovery!.receipts].reverse().slice(0, 8).map((receipt) => <div key={receipt.id} data-testid={`recovery-receipt-${receipt.id}`} style={{ borderTop: "1px solid #d6c99f", marginTop: 5, paddingTop: 5, fontSize: 12 }}>
+              {translateCurrent("season.recovery.receipt", {
+                period: receipt.day == null ? `W${receipt.week}` : `W${receipt.week} D${receipt.day + 1}`,
+                relief: formatCurrency(receipt.relief),
+                repayment: formatCurrency(receipt.repayment),
+                outstanding: formatCurrency(receipt.outstandingAdvance),
+                pressure: receipt.economicPressure,
+              })}
+              <div>{receipt.reasons.join(" · ")}</div>
+            </div>)}
+          </details>}
           <div style={{ marginTop: 7 }}>{state.automation.decisions.map((decision) => <div key={decision}>• {systemControlDecisionLabel(decision)}</div>)}</div>
           <details style={{ marginTop: 8 }} open={control.profile === "simulation"}>
             <summary>{translateCurrent("season.automation.overrides")}</summary>

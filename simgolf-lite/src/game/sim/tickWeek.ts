@@ -35,6 +35,23 @@ import {
   type GreenKeepingReport,
 } from "../greens/greenMaintenance";
 import { createGreenProgram } from "../greens/greenSurface";
+import {
+  applyRelaxedRecoverySettlement,
+  preflightRelaxedRecoveryPeriod,
+  type RelaxedRecoveryDisposition,
+} from "../operations/commands";
+
+function uncommittedWeekResult(): WeekResult {
+  return {
+    visitors: 0,
+    revenue: 0,
+    costs: 0,
+    profit: 0,
+    avgSatisfaction: 0,
+    reputationDelta: 0,
+    visitorNoise: 0,
+  };
+}
 
 function advanceSurfaceCareWeek(
   course: Course,
@@ -154,7 +171,8 @@ function tickWeekSingle(
   seed = 1234,
   concessionTransactions: ConcessionTransaction[] = [],
   advanceCare = true,
-): { world: World; course: Course; result: WeekResult } {
+  finalizeCommit = true,
+): { world: World; course: Course; result: WeekResult; recoveryDisposition: RelaxedRecoveryDisposition } {
   const rng = mulberry32(seed + world.week);
   // Difficulty-resolved balance (ZKU-165): identity for normal.
   const pressure = economicPressureForWorld(world);
@@ -366,19 +384,28 @@ function tickWeekSingle(
     lastWeekProfit: profit,
     loans,
   };
-  // Objective evaluation happens at the sim commit point (ZKU-163); the
-  // week that just finished is the pre-increment week number.
-  const objectiveWorld = withEvaluatedObjectives(nextCourse, nextWorldBase, {
+  const weeklyWeatherSeverity = Math.max(...Array.from({ length: 7 }, (_, day) =>
+    weatherForDay(world.runSeed, nextCourse.theme ?? "parkland", absoluteDayFor(world.week, day)).severity));
+  const recoveryCommit = finalizeCommit ? applyRelaxedRecoverySettlement(nextCourse, world, nextWorldBase, {
+    source: "weekly",
+    weatherSeverity: weeklyWeatherSeverity,
+    condition: nextCourse.condition,
+  }) : undefined;
+  const settledWorld = recoveryCommit ? recoveryCommit.world : nextWorldBase;
+  // Objective/campaign authority runs only after any same-commit Relaxed
+  // liquidity recovery. Multi-course aggregation finalizes once below.
+  const objectiveWorld = finalizeCommit ? withEvaluatedObjectives(nextCourse, settledWorld, {
     rounds: visitors,
     profit,
     weekCompleted: world.week,
     holeSummary: holeSummary0,
-  });
-  const nextWorld = advanceCampaign(nextCourse, objectiveWorld);
+  }) : settledWorld;
+  const nextWorld = finalizeCommit ? advanceCampaign(nextCourse, objectiveWorld) : objectiveWorld;
 
   return {
     course: nextCourse,
     world: nextWorld,
+    recoveryDisposition: recoveryCommit?.disposition ?? "noop",
     result: {
       visitors,
       capacity: playable ? capacity : undefined,
@@ -422,7 +449,16 @@ export function tickWeek(
   world: World,
   seed = 1234,
   concessionTransactions: ConcessionTransaction[] = []
-): { world: World; course: Course; result: WeekResult } {
+): { world: World; course: Course; result: WeekResult; recoveryDisposition: RelaxedRecoveryDisposition } {
+  const recoveryPreflight = preflightRelaxedRecoveryPeriod(world, { source: "weekly" });
+  if (recoveryPreflight.disposition !== "ready") {
+    return {
+      course,
+      world,
+      result: uncommittedWeekResult(),
+      recoveryDisposition: recoveryPreflight.disposition,
+    };
+  }
   const views = operatingCourseViews(course);
   if (views.length <= 1) return tickWeekSingle(views[0]?.course ?? course, world, seed, concessionTransactions);
 
@@ -433,6 +469,7 @@ export function tickWeek(
       world,
       seed + index * 104729,
       index === 0 ? concessionTransactions : [],
+      false,
       false,
     ),
   }));
@@ -484,14 +521,43 @@ export function tickWeek(
   });
   // Put aggregate tax on the final course so per-course profit reconciles.
   if (perCourse.length) perCourse[perCourse.length - 1].profit -= tax;
+  const aggregateCourse = {
+    ...greenKeeping.course,
+    condition: surfaceCare.summary.zones
+      ? surfaceCareConditionSummary(surfaceCare.course).overallCondition
+      : primary.course.condition,
+  };
+  const aggregateCash = world.cash + profit;
+  const BALANCE = getEffectiveBalance(economicPressureForWorld(world));
+  const aggregateDistress = aggregateCash < 0
+    ? Math.min(BALANCE.distress.weeksToBankrupt, Math.max((world.distressWeeks ?? 0) + 1, primary.world.distressWeeks))
+    : 0;
+  const aggregateWorldBase: World = {
+    ...primary.world,
+    cash: aggregateCash,
+    lastWeekProfit: profit,
+    distressWeeks: aggregateDistress,
+    isBankrupt: world.isBankrupt || hitsLiquidityTrap(aggregateCash) || distressExhausted(aggregateDistress),
+  };
+  const weeklyWeatherSeverity = Math.max(...Array.from({ length: 7 }, (_, day) =>
+    weatherForDay(world.runSeed, aggregateCourse.theme ?? "parkland", absoluteDayFor(world.week, day)).severity));
+  const recoveryCommit = applyRelaxedRecoverySettlement(aggregateCourse, world, aggregateWorldBase, {
+    source: "weekly",
+    weatherSeverity: weeklyWeatherSeverity,
+    condition: aggregateCourse.condition,
+  });
+  const settledWorld = recoveryCommit.world;
+  const objectiveWorld = withEvaluatedObjectives(aggregateCourse, settledWorld, {
+    rounds: visitors,
+    profit,
+    weekCompleted: world.week,
+    holeSummary: scoreCourseHoles(aggregateCourse),
+  });
+  const aggregateWorld = advanceCampaign(aggregateCourse, objectiveWorld);
   return {
-    course: {
-      ...greenKeeping.course,
-      condition: surfaceCare.summary.zones
-        ? surfaceCareConditionSummary(surfaceCare.course).overallCondition
-        : primary.course.condition,
-    },
-    world: { ...primary.world, cash: world.cash + profit, lastWeekProfit: profit },
+    course: aggregateCourse,
+    world: aggregateWorld,
+    recoveryDisposition: recoveryCommit.disposition,
     result: {
       ...primary.result,
       visitors,

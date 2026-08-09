@@ -1,4 +1,4 @@
-import type { ExperienceProfile, World } from "../models/types";
+import type { EconomicPressure, ExperienceProfile, World } from "../models/types";
 import type { AutomationSystem } from "../seasons/types";
 
 /** Stable save/API identifiers. Never derive this contract from the legacy M39 list. */
@@ -24,6 +24,39 @@ export type SystemControlVisibility = "hidden" | "summary" | "full";
 export type SystemControlSource = "profile-default" | "save-override";
 export type SystemAutomationAdapter = "seasonal-operations" | "authoritative-noop";
 
+export type RelaxedRecoverySource = "live-day" | "weekly";
+export type RelaxedRecoveryReason = "cash-deficit" | "poor-turf" | "severe-weather" | "expansion-stress";
+
+export interface RelaxedRecoveryReceiptV1 {
+  id: string;
+  source: RelaxedRecoverySource;
+  week: number;
+  day?: number;
+  economicPressure: EconomicPressure;
+  cashBefore: number;
+  cashAfterSettlement: number;
+  relief: number;
+  repayment: number;
+  cashAfter: number;
+  outstandingAdvance: number;
+  reasons: RelaxedRecoveryReason[];
+  automatedDomains: AdvancedSystemId[];
+}
+
+export interface RelaxedRecoveryStateV1 {
+  version: 1;
+  /** Recoverable reserve advances are liabilities, never profit or prizes. */
+  outstandingAdvance: number;
+  totalRelief: number;
+  totalRepaid: number;
+  receipts: RelaxedRecoveryReceiptV1[];
+  /** Monotonic exact-once guards survive receipt compaction. */
+  lastSettled: {
+    liveAbsoluteDay: number;
+    weeklyWeek: number;
+  };
+}
+
 export interface SystemControlStateV1 {
   version: 1;
   /** Sparse by design: effective profile defaults are never copied into a save. */
@@ -35,6 +68,8 @@ export interface SystemControlStateV1 {
     to: ExperienceProfile;
     week: number;
   }>;
+  /** Sparse audit/liability carrier; omitted until guided recovery is used. */
+  recovery?: RelaxedRecoveryStateV1;
 }
 
 export interface EffectiveSystemPolicy {
@@ -56,7 +91,7 @@ interface RegistryEntry {
  * `authoritative-noop` means the system continues its normal deterministic
  * simulation, but no safe automatic command currently exists for it.
  */
-const COMMAND_ADAPTER_IDS = new Set<AdvancedSystemId>(["maintenance", "property", "resort"]);
+const COMMAND_ADAPTER_IDS = new Set<AdvancedSystemId>(["maintenance", "localized-turf", "irrigation", "property", "resort"]);
 const RELAXED_HIDDEN_IDS = new Set<AdvancedSystemId>(["localized-turf", "irrigation", "drainage", "resort", "mobility"]);
 export const SYSTEM_CONTROL_REGISTRY = Object.fromEntries(ADVANCED_SYSTEM_IDS.map((id) => [id, {
   automationAdapter: COMMAND_ADAPTER_IDS.has(id) ? "seasonal-operations" : "authoritative-noop",
@@ -64,6 +99,10 @@ export const SYSTEM_CONTROL_REGISTRY = Object.fromEntries(ADVANCED_SYSTEM_IDS.ma
 
 const PROFILE_ORDER: readonly ExperienceProfile[] = ["relaxed", "classic", "simulation"];
 const ID_SET = new Set<string>(ADVANCED_SYSTEM_IDS);
+const RECOVERY_SOURCES = new Set<RelaxedRecoverySource>(["live-day", "weekly"]);
+const RECOVERY_REASONS = new Set<RelaxedRecoveryReason>(["cash-deficit", "poor-turf", "severe-weather", "expansion-stress"]);
+const PRESSURES = new Set<EconomicPressure>(["friendly", "balanced", "tight"]);
+const MAX_RECOVERY_RECEIPTS = 32;
 
 function isProfile(value: unknown): value is ExperienceProfile {
   return value === "relaxed" || value === "classic" || value === "simulation";
@@ -89,12 +128,108 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
+function finiteNonNegative(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER;
+}
+
+function finiteCash(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= Number.MAX_SAFE_INTEGER;
+}
+
+function cents(value: number): number {
+  return Math.round(value * 100);
+}
+
+function normalizeRecoveryReceipt(input: unknown): RelaxedRecoveryReceiptV1 | null {
+  if (!isPlainRecord(input) || typeof input.id !== "string" || input.id.length < 1 || input.id.length > 160) return null;
+  if (!RECOVERY_SOURCES.has(input.source as RelaxedRecoverySource)) return null;
+  if (!Number.isInteger(input.week) || (input.week as number) < 0) return null;
+  if (input.day != null && (!Number.isInteger(input.day) || (input.day as number) < 0 || (input.day as number) > 6)) return null;
+  if (!PRESSURES.has(input.economicPressure as EconomicPressure)) return null;
+  if (!finiteCash(input.cashBefore) || !finiteCash(input.cashAfterSettlement) || !finiteCash(input.cashAfter)) return null;
+  if (!finiteNonNegative(input.relief) || !finiteNonNegative(input.repayment) || !finiteNonNegative(input.outstandingAdvance)) return null;
+  if ((input.relief as number) > 0 && (input.repayment as number) > 0) return null;
+  if ((input.relief as number) === 0 && (input.repayment as number) === 0) return null;
+  if (input.source === "weekly" && input.day != null) return null;
+  if (input.source === "live-day" && input.day == null) return null;
+  if (cents(input.cashAfter as number) !== cents((input.cashAfterSettlement as number) + (input.relief as number) - (input.repayment as number))) return null;
+  if ((input.relief as number) > 0 && cents(input.cashAfter as number) !== 0) return null;
+  if ((input.repayment as number) > 0 && (input.repayment as number) > (input.cashAfterSettlement as number)) return null;
+  const reasons = Array.isArray(input.reasons)
+    ? [...new Set(input.reasons.filter((reason): reason is RelaxedRecoveryReason => RECOVERY_REASONS.has(reason as RelaxedRecoveryReason)))].slice(0, RECOVERY_REASONS.size)
+    : [];
+  const automatedDomains = Array.isArray(input.automatedDomains)
+    ? [...new Set(input.automatedDomains.filter((id): id is AdvancedSystemId => ID_SET.has(String(id))))].slice(0, ADVANCED_SYSTEM_IDS.length)
+    : [];
+  return {
+    id: input.id,
+    source: input.source as RelaxedRecoverySource,
+    week: input.week as number,
+    ...(input.day == null ? {} : { day: input.day as number }),
+    economicPressure: input.economicPressure as EconomicPressure,
+    cashBefore: input.cashBefore,
+    cashAfterSettlement: input.cashAfterSettlement,
+    relief: input.relief,
+    repayment: input.repayment,
+    cashAfter: input.cashAfter,
+    outstandingAdvance: input.outstandingAdvance,
+    reasons,
+    automatedDomains,
+  };
+}
+
+export function normalizeRelaxedRecoveryState(input: unknown): RelaxedRecoveryStateV1 | undefined {
+  if (!isPlainRecord(input) || input.version !== 1) return undefined;
+  if (!Array.isArray(input.receipts)) return undefined;
+  if (!isPlainRecord(input.lastSettled)
+    || !Number.isInteger(input.lastSettled.liveAbsoluteDay)
+    || !Number.isInteger(input.lastSettled.weeklyWeek)
+    || (input.lastSettled.liveAbsoluteDay as number) < -1
+    || (input.lastSettled.weeklyWeek as number) < -1) return undefined;
+  if ((input.lastSettled.weeklyWeek as number) >= 0
+    && (input.lastSettled.liveAbsoluteDay as number) < (input.lastSettled.weeklyWeek as number) * 7 + 6) return undefined;
+  if (!finiteNonNegative(input.outstandingAdvance) || !finiteNonNegative(input.totalRelief) || !finiteNonNegative(input.totalRepaid)) return undefined;
+  if ((input.totalRepaid as number) > (input.totalRelief as number)
+    || cents(input.outstandingAdvance as number) !== cents((input.totalRelief as number) - (input.totalRepaid as number))) return undefined;
+  const receipts: RelaxedRecoveryReceiptV1[] = [];
+  for (const raw of input.receipts.slice(-MAX_RECOVERY_RECEIPTS)) {
+    const receipt = normalizeRecoveryReceipt(raw);
+    if (!receipt || receipts.some((known) => known.id === receipt.id)) continue;
+    receipts.push(receipt);
+  }
+  if (receipts.length > 0 && cents(receipts[receipts.length - 1].outstandingAdvance) !== cents(input.outstandingAdvance as number)) return undefined;
+  if (receipts.some((receipt) => receipt.source === "weekly"
+    ? receipt.week > (input.lastSettled as Record<string, number>).weeklyWeek
+    : receipt.week * 7 + receipt.day! > (input.lastSettled as Record<string, number>).liveAbsoluteDay)) return undefined;
+  return {
+    version: 1,
+    outstandingAdvance: input.outstandingAdvance,
+    totalRelief: input.totalRelief,
+    totalRepaid: input.totalRepaid,
+    receipts,
+    lastSettled: {
+      liveAbsoluteDay: input.lastSettled.liveAbsoluteDay as number,
+      weeklyWeek: input.lastSettled.weeklyWeek as number,
+    },
+  };
+}
+
+export function isValidRelaxedRecoveryStateV1(input: unknown): input is RelaxedRecoveryStateV1 {
+  if (!isPlainRecord(input) || input.version !== 1 || !Array.isArray(input.receipts) || input.receipts.length > MAX_RECOVERY_RECEIPTS) return false;
+  if (!finiteNonNegative(input.outstandingAdvance) || !finiteNonNegative(input.totalRelief) || !finiteNonNegative(input.totalRepaid)) return false;
+  const receipts = input.receipts.map(normalizeRecoveryReceipt);
+  return receipts.every((receipt) => receipt != null)
+    && new Set(receipts.map((receipt) => receipt!.id)).size === receipts.length
+    && normalizeRelaxedRecoveryState(input) != null;
+}
+
 /** Strict migration gate: legacy fallback wins unless the entire v1 carrier is valid. */
 export function isValidSystemControlStateV1(input: unknown): input is SystemControlStateV1 {
   if (!isPlainRecord(input) || input.version !== 1) return false;
   const highestProfile = input.highestProfile;
   if (!isProfile(highestProfile)) return false;
   if (!isPlainRecord(input.overrides) || !Array.isArray(input.graduations) || input.graduations.length > 2) return false;
+  if (input.recovery != null && !isValidRelaxedRecoveryStateV1(input.recovery)) return false;
   if (Object.entries(input.overrides).some(([id, mode]) => !ID_SET.has(id) || !validMode(mode))) return false;
   return input.graduations.every((entry) => {
     if (!isPlainRecord(entry) || !isProfile(entry.from) || !isProfile(entry.to)) return false;
@@ -136,7 +271,8 @@ export function normalizeSystemControlState(input: unknown, currentProfile: Expe
           && value.week >= 0;
       }).slice(0, 2)
     : [];
-  return { version: 1, overrides, highestProfile, graduations };
+  const recovery = normalizeRelaxedRecoveryState(candidate.recovery);
+  return { version: 1, overrides, highestProfile, graduations, ...(recovery ? { recovery } : {}) };
 }
 
 export function effectiveSystemPolicy(
@@ -298,6 +434,8 @@ export function applySystemControlCommand(world: World, command: SystemControlCo
 /** Compact UI/advisor/text envelope; intentionally omits histories and defaults tables. */
 export function systemControlEnvelope(world: Pick<World, "experienceProfile" | "systemControl">) {
   const policy = resolveSystemControlPolicy(world);
+  const state = normalizeSystemControlState(world.systemControl, policy.profile);
+  const recovery = state.recovery;
   return {
     version: policy.version,
     profile: policy.profile,
@@ -310,5 +448,13 @@ export function systemControlEnvelope(world: Pick<World, "experienceProfile" | "
       override: overridden,
       automation: automationAdapter,
     })),
+    recovery: recovery && (recovery.receipts.length > 0 || recovery.outstandingAdvance > 0) ? {
+      version: recovery.version,
+      outstandingAdvance: recovery.outstandingAdvance,
+      totalRelief: recovery.totalRelief,
+      totalRepaid: recovery.totalRepaid,
+      actions: recovery.receipts.length,
+      latest: recovery.receipts[recovery.receipts.length - 1] ?? null,
+    } : null,
   };
 }

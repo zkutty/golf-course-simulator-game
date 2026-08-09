@@ -499,13 +499,36 @@ function applyAutomation(course: Course, world: World, state: SeasonalState, wea
   world = reconcileSystemControlWorld(world);
   const systemPolicy = resolveSystemControlPolicy(world);
   const automated = new Set(systemPolicy.systems.filter((entry) => entry.mode === "automated").map((entry) => entry.id));
-  const policy = automationPolicy(state.automation.preset, weather, state.charter);
   const normalized = normalizeCourseLayouts(course);
   const baselineGreenFees = {
     ...Object.fromEntries(normalized.layouts!.map((layout) => [layout.id, layout.greenFee])),
     ...state.automation.baselineGreenFees,
   };
   const property = normalizePropertyCourse(normalized.property);
+  const cashStress = world.cash < Math.max(1_000, world.maintenanceBudget);
+  const poorTurf = normalized.condition < 0.66;
+  const severeWeather = weather.severity >= 0.55;
+  const expansionStress = property.assets.some((asset) => (asset.constructionDaysRemaining ?? 0) > 0)
+    || world.loans.some((loan) => loan.kind === "EXPANSION" && loan.status === "ACTIVE");
+  const relaxedRecoveryReasons = systemPolicy.profile === "relaxed"
+    ? [
+      ...(cashStress ? ["low-cash"] : []),
+      ...(poorTurf ? ["poor-turf"] : []),
+      ...(severeWeather ? ["severe-weather"] : []),
+      ...(expansionStress ? ["expansion-stress"] : []),
+    ]
+    : [];
+  const guidedRecovery = relaxedRecoveryReasons.length > 0;
+  const basePolicy = automationPolicy(state.automation.preset, weather, state.charter);
+  const policy = guidedRecovery ? {
+    ...basePolicy,
+    upkeep: cashStress || expansionStress ? "lean" as const : "premium" as const,
+    openHour: cashStress || expansionStress || severeWeather ? 9 : basePolicy.openHour,
+    closeHour: cashStress || expansionStress || severeWeather ? 17 : basePolicy.closeHour,
+    maintenanceMultiplier: cashStress || expansionStress
+      ? Math.min(basePolicy.maintenanceMultiplier, poorTurf ? 1 : 0.9)
+      : Math.max(basePolicy.maintenanceMultiplier, 1.15),
+  } : basePolicy;
   const baselineAssetPrices = {
     ...Object.fromEntries(property.assets.map((asset) => [asset.id, asset.price])),
     ...state.automation.baselineAssetPrices,
@@ -558,6 +581,29 @@ function applyAutomation(course: Course, world: World, state: SeasonalState, wea
     });
     if (result.ok) ({ course: nextCourse, world: nextWorld } = result);
   }
+  if (guidedRecovery && automated.has("localized-turf")) {
+    const result = applySeasonCommand(nextCourse, { ...nextWorld, seasonal: state }, {
+      type: "SET_TURF_PRIORITY",
+      priority: poorTurf || severeWeather ? "recovery" : "playability",
+    });
+    if (result.ok) {
+      nextCourse = result.course;
+      nextWorld = result.world;
+      state = result.world.seasonal!;
+    }
+  }
+  if (guidedRecovery && automated.has("irrigation")) {
+    const wet = weather.kind === "rain" || weather.kind === "heavy_rain" || weather.kind === "storm";
+    const result = applySeasonCommand(nextCourse, { ...nextWorld, seasonal: state }, {
+      type: "SET_WATER_POLICY",
+      policy: wet ? "conserve" : weather.kind === "heat" || weather.kind === "drought" ? "irrigate" : "balanced",
+    });
+    if (result.ok) {
+      nextCourse = result.course;
+      nextWorld = result.world;
+      state = result.world.seasonal!;
+    }
+  }
   const commandAdapters = systemPolicy.systems.filter((entry) => entry.mode === "automated" && entry.automationAdapter === "seasonal-operations");
   const retainedNoops = systemPolicy.systems.filter((entry) => entry.mode === "automated" && entry.automationAdapter === "authoritative-noop");
   const decisions = [
@@ -567,6 +613,9 @@ function applyAutomation(course: Course, world: World, state: SeasonalState, wea
     ] : ["system-control|manual"]),
     ...(retainedNoops.length > 0
       ? [`system-control|noop|${retainedNoops.length}`]
+      : []),
+    ...(guidedRecovery
+      ? [`system-control|recovery-policy|${relaxedRecoveryReasons.join(",")}|${commandAdapters.map((entry) => entry.id).join(",")}`]
       : []),
   ];
   return {

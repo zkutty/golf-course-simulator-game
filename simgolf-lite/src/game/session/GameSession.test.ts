@@ -99,7 +99,7 @@ describe("GameSession application boundary", () => {
     session.restore(loaded!);
     expect(session.getState().course).toBe(loaded!.course);
     expect(session.createSavePayload()).toMatchObject({ course: loaded!.course, world: loaded!.world });
-    expect(CURRENT_SAVE_SCHEMA_VERSION).toBe(30);
+    expect(CURRENT_SAVE_SCHEMA_VERSION).toBe(31);
   });
 
   it("does not mark changes made during an asynchronous save as clean", async () => {

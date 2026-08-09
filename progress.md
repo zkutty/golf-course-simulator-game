@@ -1394,3 +1394,57 @@ Current request: “Now please implement rest”
 - Final automated evidence passes: TypeScript and project-build TypeScript; focused onboarding authority at 2 files / 33 tests; full `test:ci` at 191 files / 1,501 passed with one intentional skip plus 5/5 audio-audit tests; reducer fuzz 3/3; and ESLint/i18n with zero errors and 13 Hook warnings. The final exact real-browser suite passes 3/3 in 8.4 minutes: Relaxed save-safe exact-once reward in 1.5 minutes; pseudo-localized dialog naming/content, natural focus, Tab/Shift+Tab wrapping, Enter progression, Escape isolation, reload/restart focus, focus restoration, responsive overlay, and Simulation JIT in 2.8 minutes; and Classic three-hole public admission, real golfer activity, real price/staff/maintenance changes, actual live week close, report, and graduation without fixture injection in 4.0 minutes. The exact inherited keyboard, resize, reduced-motion, 130% text, pseudo-locale, and setup-scroll coverage passes 9/9 in 38.2 seconds.
 - Two inspected screenshots are retained under `simgolf-lite/artifacts/zk-686/playwright`: immediately before the private invite and immediately after the evidence-backed reward. Both show the selected Hole 1 route and unobstructed tutorial action; the reward frame shows the full tee-to-green waypoint line. The bundled live browser client also completed successfully with onboarding active and no error artifact. Consecutive production builds emitted identical `index-D3gb_wUK.js` at 1,564,789 bytes and `HUD-D26OFYmu.js` at 70,726 bytes; initial JavaScript remains 43,930 bytes below the fixed cap. SHA-256 hashes also matched across the two builds: manifest `3dbb745db92a…`, index `be86a9668ee7…`, and service worker `2ebcb9fc1290…`. All asset/delivery audits pass; performance smoke reports 0.38ms tick work, 1.085s cold start, and 2.661s 36-hole fixture load; and the production PWA smoke on port 4175 passes.
 - No commit, push, deploy, Linear mutation, generated audit artifact, budget change, or user-worktree change is included in this delegated slice.
+
+## 2026-08-09 — ZK-687 Relaxed automation and recovery implementation
+
+- Extended the 13-domain System Control registry only where an existing safe
+  command authority exists: localized turf and irrigation now join the shared
+  maintenance/property/resort operation adapters; the remaining eight domains
+  retain explicit authoritative no-ops.
+- Added a versioned, bounded Relaxed recovery audit/liability carrier. A trusted
+  previous-to-settled transition outside the player `OperationsCommand` union
+  advances exactly enough reserve cash to reach zero, records raw profit
+  unchanged, clears only same-commit distress, and recovers the advance from
+  later positive cash before leaving profit in the till. Exact period IDs,
+  monotonic live/weekly watermarks, a 32-receipt cap, strict ledger validation,
+  and explicit applied/no-op/duplicate/rejected dispositions make the path
+  deterministic, idempotent, and non-profitable. Runtime-invalid sources and
+  malformed liabilities reject fail-closed without erasing debt.
+- Live-day, single-course weekly, and multi-course weekly settlement now invoke
+  that same authority once before objective/campaign evaluation. Existing
+  bankrupt/LOST runs remain terminal, while a new Relaxed liquidity failure no
+  longer fabricates a LOST outcome. Classic/Simulation economics and all three
+  Friendly/Balanced/Tight pressure calculations remain independent. Trusted
+  commit preflight rejects repeated live and live-to-weekly overlap before any
+  course, report, objective, or campaign work; valid no-relief and subsequent
+  periods continue normally.
+- Relaxed stress automation derives inspectable cash, condition, weather, and
+  construction evidence, then routes fee/budget/property changes through
+  operations commands and turf/water changes through season commands. Scenario
+  fee constraints and manual takeovers remain authoritative; staffing,
+  financing, tournament, competition, career, mastery, medal, choice, and
+  construction authorities are not synthesized.
+- Bumped save schema to v31 with a no-invention v30 migration. Recovery receipts,
+  outstanding liability, takeover state, and canonical hashes survive reload;
+  inconsistent or forged ledger evidence is rejected fail-closed. HUD and
+  Seasons surfaces show a compact summary plus recent receipt detail. The
+  advisor offers an optional real Take Control command only when the latest
+  retained receipt and current automated domain support it.
+- Focused unit/integration evidence passes 5 files / 67 tests,
+  including pressure matrix, bounded soak, exact-once/repayment, terminal-state
+  preservation with advancing time, whole-commit duplicate/cross-path rejection,
+  runtime-hostile sources, multi-course exact-once accounting, live/weekly
+  parity, automation/manual constraints, v30/current reload/hash, hostile
+  evidence, and advisor gating. Full `test:ci` passes 192 files / 1,517 tests
+  with one intentional skip plus 5/5 audio-audit tests. TypeScript passes;
+  lint/i18n has zero errors and exactly 12 inherited Hook warnings. The dedicated
+  real-settlement Playwright flow passes 1/1 with no console/page errors; its
+  inspected full-page capture shows the recovery audit and real takeover. Two
+  production builds and all asset/delivery audits pass with identical aggregate
+  dist SHA-256 `223f3b66e3ec031f546b264a4fb1c7d5c5f6bb7f21459476ce6be0a3e3b64a8b`;
+  initial JavaScript is 1,575,728 bytes, 32,991 below the unchanged 1,608,719-byte
+  limit. The production PWA/offline smoke passes. The required bundled browser
+  client emitted two coherent live structured states, no error artifact, and a
+  visually inspected course-renderer capture. `git diff --check` passes.
+- No commit, push, deploy, merge, Linear mutation, or user-worktree change is
+  included in this delegated slice.

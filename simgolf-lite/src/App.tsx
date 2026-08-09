@@ -341,7 +341,7 @@ import {
 } from "./game/livingClub/livingClub";
 import { absoluteDayFor, advanceSeasonalDay, applySeasonCommand, createSeasonalState, seasonalState } from "./game/seasons/seasons";
 import { SEASONS, type SeasonCommand, type SeasonName } from "./game/seasons/types";
-import { systemControlEnvelope } from "./game/experience/systemControl";
+import { createSystemControlState, systemControlEnvelope } from "./game/experience/systemControl";
 import {
   campaignScene,
   continueCampaignInSandbox,
@@ -3378,6 +3378,31 @@ export default function App() {
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixture.course, fixture.world, 6), pendingCash: 0, speed: "paused", selectedGolferId: null }));
         setShowSeasonsLegacy(true);
       },
+      setZk687RecoveryFixture: async () => {
+        const fixtureCourse = createPlayerProReferenceCourse();
+        const baseWorld: World = {
+          ...gameSession.getState().world,
+          week: 12,
+          cash: -9_900,
+          reputation: 68,
+          runSeed: 687012,
+          experienceProfile: "relaxed",
+          economicPressure: "tight",
+          systemControl: createSystemControlState("relaxed"),
+          objectives: null,
+          isBankrupt: false,
+          distressWeeks: 1,
+          maintenanceBudget: 200_000,
+          seasonal: createSeasonalState({ runSeed: 687012, theme: fixtureCourse.theme, week: 12, day: 0 }),
+        };
+        const { tickWeek } = await import("./game/sim/tickWeek");
+        const recovered = tickWeek(fixtureCourse, baseWorld, 687);
+        dispatch({ type: "LOAD_GAME", course: recovered.course, world: recovered.world });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(recovered.course, recovered.world, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setShowSeasonsLegacy(true);
+        setAdvisorMessage(advisorMessages(recovered.course, recovered.world, undefined, undefined, t)
+          .find((message) => message.id.startsWith("relaxed-recovery-")) ?? null);
+      },
       advanceSystemControlDay: () => {
         const current = gameSession.getState();
         const next = advanceSeasonalDay(current.course, { ...current.world, week: current.world.week + 1 }, 0);
@@ -5149,6 +5174,10 @@ export default function App() {
           message={advisorMessage}
           biomeContext={contextualUiTheme}
           onDismiss={dismissAdvisor}
+          onTakeControl={advisorMessage.takeControlSystem ? () => {
+            runSeasonCommand({ type: "TAKE_SYSTEM_CONTROL", system: advisorMessage.takeControlSystem! });
+            dismissAdvisor();
+          } : undefined}
           onShowHole={(holeIndex) => {
             const holeId = activeOperatingCourse.holes[holeIndex]?.id;
             const estateIndex = holeId ? course.holes.findIndex((hole) => hole.id === holeId) : holeIndex;

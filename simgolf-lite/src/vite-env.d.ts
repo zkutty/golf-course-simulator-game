@@ -138,6 +138,7 @@ interface Window {
     forceChallengeTieCompletion(): Promise<void>;
     setChallengeGroupRoundFixture(): void;
     setM39Fixture(): void;
+    setZk687RecoveryFixture(): Promise<void>;
     advanceSystemControlDay(): {
       greenFee: number;
       propertyMode: string;

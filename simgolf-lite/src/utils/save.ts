@@ -81,7 +81,7 @@ import { persistedChallengeRuntimeError } from "../game/competition/challengeRun
 import {
   normalizeExperienceAxes,
 } from "../game/balance/experience";
-import { migrateLegacySystemControl, reconcileSystemControlWorld } from "../game/experience/systemControl";
+import { isValidRelaxedRecoveryStateV1, migrateLegacySystemControl, reconcileSystemControlWorld } from "../game/experience/systemControl";
 import {
   INVITED_PREVIEW_REWARD_CASH,
   INVITED_PREVIEW_REWARD_ID,
@@ -89,7 +89,7 @@ import {
 } from "../game/onboarding/invitedPreview";
 
 const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 30 as const;
+export const CURRENT_SAVE_SCHEMA_VERSION = 31 as const;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",
@@ -245,6 +245,10 @@ export interface SaveV29 extends Omit<SaveV1, "schemaVersion"> {
   records?: CourseRecords;
 }
 export interface SaveV30 extends Omit<SaveV1, "schemaVersion"> {
+  schemaVersion: 30;
+  records?: CourseRecords;
+}
+export interface SaveV31 extends Omit<SaveV1, "schemaVersion"> {
   schemaVersion: typeof CURRENT_SAVE_SCHEMA_VERSION;
   records?: CourseRecords;
 }
@@ -338,6 +342,10 @@ export function payloadForPersistence(payload: SavePayload): SavePayload {
       }
     : worldWithChallengeGroup;
   const experience = normalizeExperienceAxes(worldWithRound);
+  if (worldWithRound.systemControl?.recovery != null
+    && !isValidRelaxedRecoveryStateV1(worldWithRound.systemControl.recovery)) {
+    throw new Error("Cannot save: the Relaxed recovery liability ledger is malformed.");
+  }
   const { difficulty: _legacyDifficulty, ...worldWithoutDifficulty } = worldWithRound;
   void _legacyDifficulty;
   const world: World = reconcileSystemControlWorld({
@@ -369,7 +377,7 @@ export function saveGame(payload: SavePayload) {
     rulesPlayerPro,
     persisted.course,
   ).playerPro as World["playerPro"];
-  const save: SaveV30 = {
+  const save: SaveV31 = {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
     savedAt: Date.now(),
     course: persisted.course,
@@ -897,6 +905,12 @@ const SAVE_MIGRATIONS: Record<number, SaveMigration> = {
       world: migrateLegacySystemControl(save.world as unknown as World),
     };
   },
+  // V31 admits the bounded Relaxed recovery liability/audit carrier nested in
+  // System Control. No balance or progress is invented during migration.
+  30: (save) => ({
+    ...save,
+    schemaVersion: 31,
+  }),
 };
 
 function normalizeRecords(raw: unknown, history: WeekResult[] | undefined, world: World, course?: Course): CourseRecords {
@@ -1124,6 +1138,10 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     if (worldError) return { ok: false, error: worldError };
     const rawCourse = parsed.course as unknown as Course;
     const rawWorld = parsed.world as unknown as World;
+    if (rawWorld.systemControl?.recovery != null
+      && !isValidRelaxedRecoveryStateV1(rawWorld.systemControl.recovery)) {
+      return fail("INVALID_WORLD", "The Relaxed recovery liability ledger is malformed; the save was not changed.");
+    }
     const rawLiveDay =
       typeof (parsed.live as { state?: { dayIndex?: unknown } } | undefined)
         ?.state?.dayIndex === "number"

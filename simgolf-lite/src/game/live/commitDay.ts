@@ -11,6 +11,7 @@ import { recordCoreCommerce, settlePropertyDay } from "../property/property";
 import type { PropertyShotTrace } from "../property/types";
 import { advanceLivingClubDay } from "../livingClub/livingClub";
 import {
+  absoluteDayFor,
   advanceSeasonalDay,
   biomeClimatePhenologyForDay,
   charterDefinition,
@@ -29,6 +30,11 @@ import {
 } from "../conditions/surfaceCare";
 import { advanceGreenKeepingDay } from "../greens/greenMaintenance";
 import { advancePlayerProConfidence } from "../playerPro/confidence";
+import {
+  applyRelaxedRecoverySettlement,
+  preflightRelaxedRecoveryPeriod,
+  type RelaxedRecoveryDisposition,
+} from "../operations/commands";
 
 function clamp(x: number, a: number, b: number) {
   return Math.max(a, Math.min(b, x));
@@ -38,6 +44,23 @@ function clamp01(x: number) {
 }
 
 const DAYS_PER_WEEK = 7;
+
+function uncommittedDayResult(dayIndex: number): DayResult {
+  return {
+    dayIndex: Number.isInteger(dayIndex) && dayIndex >= 0 && dayIndex < DAYS_PER_WEEK ? dayIndex : 0,
+    rounds: 0,
+    revenue: 0,
+    revenueBreakdown: { greenFees: 0, concessions: 0, byConcession: {}, transactions: [] },
+    costs: 0,
+    profit: 0,
+    avgSatisfaction: 0,
+    reputationDelta: 0,
+    conditionDelta: 0,
+    promoters: 0,
+    detractors: 0,
+    willReturnRate: 0,
+  };
+}
 
 // Commit a finished live day into the economy + reputation model.
 //
@@ -63,8 +86,43 @@ export function commitDay(args: {
   observations?: RoundReactions["observations"];
   /** M51 live state settles only here; it does not create a second cash path. */
   mobility?: M51LiveMobilityState;
-}): { world: World; course: Course; result: DayResult } {
+}): { world: World; course: Course; result: DayResult; recoveryDisposition: RelaxedRecoveryDisposition } {
   const { course, world, reactions, dayIndex } = args;
+  const authoritativeDay = dayIndex ?? 0;
+  const requestedAbsoluteDay = Number.isInteger(authoritativeDay) && authoritativeDay >= 0 && authoritativeDay < DAYS_PER_WEEK
+    ? absoluteDayFor(world.week, authoritativeDay)
+    : undefined;
+  const lastCommittedAbsoluteDay = world.seasonal?.lastCommittedAbsoluteDay;
+  if (requestedAbsoluteDay != null && lastCommittedAbsoluteDay != null && lastCommittedAbsoluteDay >= 0
+    && requestedAbsoluteDay <= lastCommittedAbsoluteDay) {
+    return {
+      course,
+      world,
+      result: uncommittedDayResult(authoritativeDay),
+      recoveryDisposition: "duplicate",
+    };
+  }
+  if (requestedAbsoluteDay != null && lastCommittedAbsoluteDay != null && lastCommittedAbsoluteDay >= 0
+    && requestedAbsoluteDay !== lastCommittedAbsoluteDay + 1) {
+    return {
+      course,
+      world,
+      result: uncommittedDayResult(authoritativeDay),
+      recoveryDisposition: "rejected",
+    };
+  }
+  const recoveryPreflight = preflightRelaxedRecoveryPeriod(world, {
+    source: "live-day",
+    day: authoritativeDay,
+  });
+  if (recoveryPreflight.disposition !== "ready") {
+    return {
+      course,
+      world,
+      result: uncommittedDayResult(authoritativeDay),
+      recoveryDisposition: recoveryPreflight.disposition,
+    };
+  }
   const seasonalCommit = advanceSeasonalDay(course, world, dayIndex ?? 0);
   const season = seasonalState(seasonalCommit.world, seasonalCommit.course, dayIndex ?? 0);
   const charter = charterDefinition(season.charter).benefits;
@@ -235,10 +293,17 @@ export function commitDay(args: {
     lastWeekProfit: operatingWorld.lastWeekProfit,
     isBankrupt: operatingWorld.isBankrupt || bankrupt,
   };
+  const recoveryCommit = applyRelaxedRecoverySettlement(conditionCourse, operatingWorld, nextWorldBase, {
+    source: "live-day",
+    day: dayIndex ?? 0,
+    weatherSeverity: seasonalCommit.weather.severity,
+    condition: conditionCourse.condition,
+  });
+  const settledWorld = recoveryCommit.world;
   // Objective evaluation at the sim commit point (ZKU-163). The last day of
   // the week closes it, which is when streaks advance and deadlines can fire.
   const closesWeek = dayIndex != null && dayIndex + 1 >= DAYS_PER_WEEK;
-  const historyWorld = recordPaceDay(nextWorldBase, conditionCourse, dayIndex ?? 0, args.pace);
+  const historyWorld = recordPaceDay(settledWorld, conditionCourse, dayIndex ?? 0, args.pace);
   const objectiveWorld = withEvaluatedObjectives(conditionCourse, historyWorld, {
     rounds,
     profit,
@@ -293,6 +358,7 @@ export function commitDay(args: {
   return {
     course: nextCourse,
     world: confidenceWorld,
+    recoveryDisposition: recoveryCommit.disposition,
     result: {
       dayIndex: dayIndex ?? 0,
       rounds,

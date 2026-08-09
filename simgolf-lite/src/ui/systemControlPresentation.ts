@@ -120,5 +120,11 @@ export function systemControlDecisionLabel(decision: string): string {
       reserve: Number(fourth) || 0,
     });
   }
+  if (kind === "recovery-policy") {
+    return translateCurrent("season.automation.decision.recovery", {
+      reasons: (first ?? "").split(",").filter(Boolean).join(", "),
+      systems: (second ?? "").split(",").filter((id) => SYSTEM_IDS.has(id)).map((id) => systemControlLabel(id as AdvancedSystemId)).join(", "),
+    });
+  }
   return decision;
 }

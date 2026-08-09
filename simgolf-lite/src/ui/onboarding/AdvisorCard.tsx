@@ -7,7 +7,7 @@ import {
   type BiomeUiTheme,
 } from "../biomeUiTheme";
 
-export function AdvisorCard(props: { message: AdvisorMessage; onDismiss: () => void; onShowHole?: (holeIndex: number) => void; biomeContext?: BiomeUiTheme }) {
+export function AdvisorCard(props: { message: AdvisorMessage; onDismiss: () => void; onShowHole?: (holeIndex: number) => void; onTakeControl?: () => void; biomeContext?: BiomeUiTheme }) {
   return (
     <div
       data-testid="advisor-card"
@@ -35,6 +35,9 @@ export function AdvisorCard(props: { message: AdvisorMessage; onDismiss: () => v
           <>
             {props.message.holeIndex != null && props.onShowHole && (
               <button style={presenterButtonStyle} onClick={() => props.onShowHole?.(props.message.holeIndex!)}><T id="auto.ui.onboarding.advisorcard.show.me" /></button>
+            )}
+            {props.message.takeControlSystem && props.onTakeControl && (
+              <button data-testid="advisor-take-control" style={presenterButtonStyle} onClick={props.onTakeControl}><T id="season.automation.takeControl" /></button>
             )}
             <button style={{ ...presenterButtonStyle, background: "transparent", color: "#465349" }} onClick={props.onDismiss}><T id="auto.ui.onboarding.advisorcard.got.it" /></button>
           </>

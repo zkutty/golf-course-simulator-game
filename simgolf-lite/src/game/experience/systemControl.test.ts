@@ -211,7 +211,7 @@ describe("ZK-685 command authority, constraints, and deterministic automation", 
   it("keeps no-command domains authoritative and preserves a manual property decision", () => {
     const currentWorld = world("classic");
     const first = advanceSeasonalDay(DEFAULT_COURSE, currentWorld, 0);
-    expect(first.world.seasonal?.automation.decisions).toContain("system-control|noop|10");
+    expect(first.world.seasonal?.automation.decisions).toContain("system-control|noop|8");
     expect(systemControlEnvelope(first.world).systems.find((system) => system.id === "pace"))
       .toMatchObject({ automation: "authoritative-noop", mode: "automated" });
 

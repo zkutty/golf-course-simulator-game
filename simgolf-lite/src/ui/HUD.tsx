@@ -1505,6 +1505,9 @@ export function HUD(props: {
             <Section title={translateCurrent("auto.ui.hud.business")}>
               <div data-testid="hud-system-control" style={{ marginBottom: 8, fontSize: 11, color: "#59645b" }}>
                 {translateCurrent("season.automation.policySummary", { profile: systemControlProfileLabel(systemControl.profile), automated: systemControl.systems.filter((system) => system.mode === "automated").length, manual: systemControl.systems.filter((system) => system.mode === "manual").length })}
+                {systemControl.recovery && <div data-testid="hud-relaxed-recovery" style={{ marginTop: 3 }}>
+                  {translateCurrent("season.recovery.summary", { actions: systemControl.recovery.actions, outstanding: formatCurrency(systemControl.recovery.outstandingAdvance) })}
+                </div>}
               </div>
               <label data-tutorial-target="green-fee" style={{ display: "block", marginBottom: 12 }}>
                 <T id="auto.ui.hud.green.fee" />{course.baseGreenFee})
