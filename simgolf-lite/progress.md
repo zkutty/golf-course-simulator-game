@@ -1846,3 +1846,33 @@ classic course-builder references.
 - Reviewer hardening now holds the complete committed theme, tier, season, seasonal presentation, and resolution scale; explicitly invalidates an in-flight B request when the view returns to resident A; and rechecks cancellation after initial loading before Pixi initialization. Scene stamps advance only after the corresponding system renders, with atlas activation included in seasonal-system revision authority. The additive A→B→A unit and focused Parkland browser path pass delayed quality and theme cancellation beyond asset completion, real in-place biome commits, an injected authored autumn overlay, all zoom thresholds, and generation/count/fallback assertions. TypeScript and 14/14 focused atlas/scene-host tests pass; lint/i18n remains at zero errors with the unchanged 12 Hook warnings.
 - Final fallback and evidence hardening treats the published request ID and generation as the active authority while applying status-aware bundle-key checks, so a legitimate legacy/procedural fallback settles once without weakening stale-generation detection. Browser coverage proves a failed required bundle produces exactly one stable fallback request/generation and no repeated terrain rebuild after settlement. The seasonal case now gates unique overlay URLs and observes requested Autumn while the rendered Summer generation and presentation signature remain unchanged, then releases an atomic Autumn commit. Diagnostics derive ground-cover tier from the held resolution scale and count only visible/renderable structures and props, excluding the always-created heron container. The two targeted browser cases pass in 3.0 minutes; TypeScript, 14/14 focused tests, and lint/i18n are green with the same 12 warnings.
 - Structure/prop evidence now comes from ownership rather than the shared objects-layer child list: the extracted structures system reports labeled building sprites and the natural-prop renderer tracks labeled obstacle sprites in its dedicated registry. Flags, golfers, balls, mobility units, the heron, property graphics, and arbitrary objects-layer children cannot satisfy the metric. The focused Parkland browser case requires nonzero owned content at every quality tier and proves an injected unrelated child leaves the count unchanged; it passes in 2.4 minutes alongside TypeScript and the 14/14 focused unit slice.
+## ZK-679 atmosphere scene-system packet — 2026-08-08
+
+- Consolidated the hosted Pixi `RenderSnapshot` and monotonic revision tracker
+  into the canonical game-render authority. The prior UI import path is now a
+  compatibility re-export; the coarse released GameSession helper remains a
+  deliberately named `RenderSubsystemSnapshot` rather than a competing typed
+  renderer payload.
+- Added an explicit lifecycle atmosphere owner that composes the existing
+  seasonal terrain decal renderer and owns time-of-day tint, cloud shadows,
+  shimmer, birds, and the shoreline heron. PixiStage retains the one app,
+  layers, projection, adaptive quality, live clock feed, and landing event,
+  but no longer creates, updates, or tears down those display objects itself.
+- Reconciled and revalidated the exact combined tree rebased directly on
+  released production `2e9b41ce60b9a8df5103c4daffde76d9b9f76594`. The combined evidence passes
+  70 focused snapshot/revision, scene-host, atmosphere, ambient, seasonal,
+  system-control, and deferred-HUD tests across 12 files; TypeScript; full
+  lint/i18n with zero errors and the unchanged 12 Hook warnings; the seasonal
+  atlas Playwright regression; all 3 system-control browser cases; all 12
+  golden browser cases; and the strict-CSP/offline/save/deferred-HUD PWA smoke.
+- Two consecutive production builds produced the identical initial entry
+  `index-BGkWt3gJ.js`: 1,541,433 bytes with SHA-256
+  `56a4a2e3f2ea26975b22ecaed560f3eb96eed44209574af21a2f7c48387258c1`,
+  leaving 67,286 bytes below the fixed 1,608,719-byte delivery budget. Every
+  embedded asset, audio, service-worker, atlas, residency, surface-budget, and
+  delivery audit passed. The bundled gameplay client reached the authoritative
+  spring/clear Parkland Pixi scene twice without an error artifact, and both
+  resulting WebGL captures were visually inspected.
+- Hardened the released system-control browser fixture against its asynchronous
+  first-launch tutorial: the helper now waits briefly for the optional dialog
+  before continuing, preventing the tutorial from obscuring the reload control.

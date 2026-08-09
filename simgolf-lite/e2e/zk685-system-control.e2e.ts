@@ -1,4 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function skipTutorialIfOffered(page: Page): Promise<void> {
+  const tutorialOffer = page.getByRole("dialog", { name: "First-launch tutorial" });
+  const offered = await tutorialOffer.waitFor({ state: "visible", timeout: 5_000 })
+    .then(() => true, () => false);
+  if (offered) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
+}
 
 test("ZK-685 profile policy, takeover, return, and graduation stay visible and atomic", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -8,8 +15,7 @@ test("ZK-685 profile policy, takeover, return, and graduation stay visible and a
   await page.goto("/");
   await page.getByRole("button", { name: "Quick Start" }).click();
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
-  const tutorialOffer = page.getByRole("dialog", { name: "First-launch tutorial" });
-  if (await tutorialOffer.count()) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
+  await skipTutorialIfOffered(page);
   await page.evaluate(() => window.__coursecraftTest!.setM39Fixture());
 
   const panel = page.getByTestId("seasons-legacy-panel");
@@ -54,8 +60,7 @@ test("ZK-685 manual pricing takes authority atomically and survives the next aut
   await page.goto("/");
   await page.getByRole("button", { name: "Quick Start" }).click();
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
-  const tutorialOffer = page.getByRole("dialog", { name: "First-launch tutorial" });
-  if (await tutorialOffer.count()) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
+  await skipTutorialIfOffered(page);
   await page.evaluate(() => window.__coursecraftTest!.setM39Fixture());
   await page.getByTestId("seasons-legacy-panel").getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("button", { name: "Architect", exact: true }).click();
@@ -77,8 +82,7 @@ test("ZK-685 rejected HUD chunk stays local and reload recovers without a reset-
   await page.route("**/src/ui/HUD.tsx*", (route) => route.abort("failed"));
   await page.goto("/");
   await page.getByRole("button", { name: "Quick Start" }).click();
-  const tutorialOffer = page.getByRole("dialog", { name: "First-launch tutorial" });
-  if (await tutorialOffer.count()) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
+  await skipTutorialIfOffered(page);
   await expect(page.getByTestId("hud-load-error")).toBeVisible();
   await expect(page.getByText("Course controls are temporarily unavailable")).toBeVisible();
   await expect(page.locator(".cc-pixi-stage canvas")).toBeVisible();

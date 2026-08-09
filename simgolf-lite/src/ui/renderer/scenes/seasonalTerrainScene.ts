@@ -8,7 +8,8 @@ export function createSeasonalTerrainSceneSystem(
   layer: PIXI.Container,
 ): RenderSceneSystem {
   return {
-    id: "seasonalTerrain",
+    // Compatibility helper now composed by the atmosphere owner.
+    id: "atmosphere",
     render(snapshot) {
       layer.removeChildren().forEach((child) => child.destroy({ children: true }));
       const state = snapshot.seasonalVisualState;

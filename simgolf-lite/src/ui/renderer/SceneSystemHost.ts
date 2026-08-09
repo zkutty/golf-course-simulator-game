@@ -5,7 +5,12 @@ import type {
 
 export interface RenderSceneSystem {
   readonly id: RenderSceneId;
-  render(snapshot: RenderSnapshot): void;
+  /** Explicit lifecycle for systems that own Pixi display objects. */
+  create?(snapshot: RenderSnapshot): void;
+  update?(snapshot: RenderSnapshot): void;
+  destroy?(): void;
+  /** Compatibility lifecycle for the already-extracted stateless rebuilders. */
+  render?(snapshot: RenderSnapshot): void;
   dispose?(): void;
 }
 
@@ -15,6 +20,7 @@ export interface RenderSceneSystem {
  */
 export class SceneSystemHost {
   private readonly renderedRevisions = new Map<RenderSceneId, number>();
+  private readonly activeSystems = new Set<RenderSceneId>();
   private readonly systems: readonly RenderSceneSystem[];
 
   constructor(systems: readonly RenderSceneSystem[]) {
@@ -33,7 +39,12 @@ export class SceneSystemHost {
     for (const system of this.systems) {
       const revision = snapshot.revisions[system.id];
       if (this.renderedRevisions.get(system.id) === revision) continue;
-      system.render(snapshot);
+      const alreadyCreated = this.activeSystems.has(system.id);
+      if (!alreadyCreated && system.create) system.create(snapshot);
+      else if (alreadyCreated && system.update) system.update(snapshot);
+      else if (system.render) system.render(snapshot);
+      else throw new Error(`Render scene system has no ${alreadyCreated ? "update" : "create"} lifecycle: ${system.id}`);
+      this.activeSystems.add(system.id);
       this.renderedRevisions.set(system.id, revision);
       rendered.push(system.id);
     }
@@ -46,7 +57,12 @@ export class SceneSystemHost {
   }
 
   dispose(): void {
-    for (const system of this.systems) system.dispose?.();
+    for (const system of this.systems) {
+      if (!this.activeSystems.has(system.id)) continue;
+      if (system.destroy) system.destroy();
+      else system.dispose?.();
+    }
     this.renderedRevisions.clear();
+    this.activeSystems.clear();
   }
 }

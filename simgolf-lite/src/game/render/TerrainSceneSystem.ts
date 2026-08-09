@@ -1,4 +1,4 @@
-import type { RenderSnapshot } from "./renderSnapshot";
+import type { RenderSubsystemSnapshot } from "./renderSnapshot";
 
 /**
  * The narrow terrain/water lifecycle seam used while PixiStage is split into
@@ -6,25 +6,25 @@ import type { RenderSnapshot } from "./renderSnapshot";
  * teardown decisions so unrelated application state cannot rebuild terrain.
  */
 export class TerrainSceneSystem<Context> {
-  private snapshot: RenderSnapshot | null = null;
-  private course: RenderSnapshot["course"] | null = null;
+  private snapshot: RenderSubsystemSnapshot | null = null;
+  private course: RenderSubsystemSnapshot["course"] | null = null;
   private active = false;
 
   private readonly lifecycle: {
-    create(context: Context, snapshot: RenderSnapshot): void;
-    update(context: Context, snapshot: RenderSnapshot): void;
+    create(context: Context, snapshot: RenderSubsystemSnapshot): void;
+    update(context: Context, snapshot: RenderSubsystemSnapshot): void;
     destroy(context: Context): void;
   };
 
   constructor(lifecycle: {
-    create(context: Context, snapshot: RenderSnapshot): void;
-    update(context: Context, snapshot: RenderSnapshot): void;
+    create(context: Context, snapshot: RenderSubsystemSnapshot): void;
+    update(context: Context, snapshot: RenderSubsystemSnapshot): void;
     destroy(context: Context): void;
   }) {
     this.lifecycle = lifecycle;
   }
 
-  sync(context: Context, next: RenderSnapshot): "created" | "updated" | "unchanged" {
+  sync(context: Context, next: RenderSubsystemSnapshot): "created" | "updated" | "unchanged" {
     if (!this.active) {
       this.lifecycle.create(context, next);
       this.active = true;
