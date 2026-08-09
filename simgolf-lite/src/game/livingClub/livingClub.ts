@@ -1038,6 +1038,7 @@ export type StaffCommand =
   | { type: "hire"; role: StaffRole; courseId?: string }
   | { type: "train"; staffId: string; focus?: string }
   | { type: "reassign"; staffId: string; courseId: string }
+  | { type: "schedule"; staffId: string; shiftStart: number; shiftEnd: number }
   | { type: "compensate"; staffId: string; raise: number }
   | { type: "dismiss"; staffId: string };
 
@@ -1074,6 +1075,18 @@ export function applyStaffCommand(world: World, command: StaffCommand): { ok: bo
     return { ok: true, world: { ...world, staffLevel: clamp(roster.length, 0, 5), staffRoster: roster } };
   }
   const staff = roster[index];
+  if (command.type === "schedule") {
+    if (!Number.isInteger(command.shiftStart) || !Number.isInteger(command.shiftEnd)
+      || command.shiftStart < 0 || command.shiftEnd > 1_439
+      || command.shiftEnd - command.shiftStart < 60) {
+      return { ok: false, world, reason: "shift" };
+    }
+    if (staff.shiftStart === command.shiftStart && staff.shiftEnd === command.shiftEnd) {
+      return { ok: true, world };
+    }
+    roster[index] = { ...staff, shiftStart: command.shiftStart, shiftEnd: command.shiftEnd };
+    return { ok: true, world: { ...world, staffRoster: roster } };
+  }
   if (command.type === "train") {
     const cost = 650;
     if (world.cash < cost) return { ok: false, world, reason: "cash" };

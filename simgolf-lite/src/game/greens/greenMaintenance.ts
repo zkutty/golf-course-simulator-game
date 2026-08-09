@@ -1,7 +1,8 @@
 import type { PropertyShotTrace } from "../property/types";
 import type { Course, World } from "../models/types";
 import type { DailyWeather, WaterPolicy } from "../seasons/types";
-import { normalizedStaff } from "../live/pace";
+import { normalizedStaff, staffDutyFraction } from "../live/pace";
+import { LIVE } from "../live/liveConfig";
 import {
   normalizeGreenLocalState,
   normalizeGreenProgram,
@@ -87,8 +88,11 @@ export function requiredGreenKeepingBudget(course: Course, programValue: unknown
 }
 
 function groundskeeperCoverage(world: World, course: Course): { count: number; coverage: number } {
-  const staff = normalizedStaff(world, course).filter((member) => member.role === "groundskeeper");
-  const proficiency = staff.reduce((sum, member) => sum + clamp(member.proficiency ?? 0.58), 0);
+  const staff = normalizedStaff(world, course)
+    .filter((member) => member.role === "groundskeeper")
+    .map((member) => ({ member, duty: staffDutyFraction(member, LIVE.day.openMinute, LIVE.day.closeMinute) }))
+    .filter(({ duty }) => duty > 0);
+  const proficiency = staff.reduce((sum, { member, duty }) => sum + clamp(member.proficiency ?? 0.58) * duty, 0);
   const equivalent = staff.length ? proficiency / 0.58 : 0;
   const needed = Math.max(1, Math.ceil(greenCount(course) / 9));
   return { count: staff.length, coverage: clamp(equivalent / needed, 0, 1.2) };

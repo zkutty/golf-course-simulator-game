@@ -58,8 +58,50 @@ const SYSTEM_IDS = new Set(Object.keys(SYSTEM_KEYS));
 const PROFILES = new Set(Object.keys(PROFILE_KEYS));
 const MODES = new Set(Object.keys(MODE_KEYS));
 
+export type OperationsEvidenceKind = "forecast" | "current" | "settled";
+export type OperationsSurface = "management" | "seasons" | "staff" | "live" | "tournaments" | "property";
+
+export interface SystemOperationsPresentation {
+  surface: OperationsSurface;
+  evidence: readonly OperationsEvidenceKind[];
+  effectKey: MessageKey;
+}
+
+/**
+ * Presentation/navigation metadata only. Commands and state continue to live
+ * in their specialist authorities; this catalog must never become a second
+ * operations registry.
+ */
+export const SYSTEM_OPERATIONS_PRESENTATION: Record<AdvancedSystemId, SystemOperationsPresentation> = {
+  maintenance: { surface: "management", evidence: ["forecast", "current", "settled"], effectKey: "season.operations.effect.maintenance" },
+  "localized-turf": { surface: "seasons", evidence: ["forecast", "current", "settled"], effectKey: "season.operations.effect.localized-turf" },
+  irrigation: { surface: "seasons", evidence: ["forecast", "current", "settled"], effectKey: "season.operations.effect.irrigation" },
+  drainage: { surface: "seasons", evidence: ["forecast", "current"], effectKey: "season.operations.effect.drainage" },
+  staffing: { surface: "staff", evidence: ["forecast", "current"], effectKey: "season.operations.effect.staffing" },
+  pace: { surface: "live", evidence: ["current", "settled"], effectKey: "season.operations.effect.pace" },
+  financing: { surface: "management", evidence: ["forecast", "current", "settled"], effectKey: "season.operations.effect.financing" },
+  memberships: { surface: "property", evidence: ["forecast", "current", "settled"], effectKey: "season.operations.effect.memberships" },
+  tournaments: { surface: "tournaments", evidence: ["forecast", "current", "settled"], effectKey: "season.operations.effect.tournaments" },
+  property: { surface: "property", evidence: ["forecast", "current", "settled"], effectKey: "season.operations.effect.property" },
+  resort: { surface: "property", evidence: ["forecast", "current", "settled"], effectKey: "season.operations.effect.resort" },
+  mobility: { surface: "live", evidence: ["forecast", "current", "settled"], effectKey: "season.operations.effect.mobility" },
+  community: { surface: "property", evidence: ["forecast", "current", "settled"], effectKey: "season.operations.effect.community" },
+};
+
 export function systemControlLabel(id: AdvancedSystemId): string {
   return translateCurrent(SYSTEM_KEYS[id]);
+}
+
+export function systemOperationsEffect(id: AdvancedSystemId): string {
+  return translateCurrent(SYSTEM_OPERATIONS_PRESENTATION[id].effectKey);
+}
+
+export function operationsEvidenceLabel(kind: OperationsEvidenceKind): string {
+  return translateCurrent(`season.operations.evidence.${kind}` as MessageKey);
+}
+
+export function operationsSurfaceLabel(surface: OperationsSurface): string {
+  return translateCurrent(`season.operations.surface.${surface}` as MessageKey);
 }
 
 /** A presentation-only partition; authority remains in the system-control registry. */

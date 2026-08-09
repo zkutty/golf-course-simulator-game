@@ -775,6 +775,50 @@ export interface PropertyCommandResult {
   message: string;
 }
 
+export interface MembershipProgramPreview {
+  command: Extract<PropertyCommand, { type: "LAUNCH_MEMBERSHIP" | "UPGRADE_MEMBERSHIP" }>;
+  cost: number;
+  nextTier: PropertyTier;
+  nextCapacity: number;
+  nextMemberCount: number;
+  nextMonthlyFee: number;
+  facilityReady: boolean;
+  shortfall: number;
+  blocker?: string;
+}
+
+/** The same deterministic membership transition presented by the UI and
+ * enforced by applyPropertyCommand. A top-tier program has no next plan. */
+export function membershipProgramPreview(course: Course, world: World): MembershipProgramPreview {
+  const enterprise = normalizePropertyEnterprise(world.enterprise);
+  const membership = enterprise.membership;
+  const facilityReady = Boolean(assetOf(course, "clubhouse") && normalizePropertyCourse(course.property).assets.some((asset) => asset.category === "practice"));
+  if (!membership.active) {
+    const cost = 2_500;
+    return {
+      command: { type: "LAUNCH_MEMBERSHIP" }, cost, nextTier: membership.tier,
+      nextCapacity: membership.capacity, nextMemberCount: 24, nextMonthlyFee: membership.monthlyFee,
+      facilityReady, shortfall: Math.max(0, cost - world.cash),
+    };
+  }
+  if (membership.tier >= 4) {
+    return {
+      command: { type: "UPGRADE_MEMBERSHIP" }, cost: 0, nextTier: 4,
+      nextCapacity: membership.capacity, nextMemberCount: membership.memberCount, nextMonthlyFee: membership.monthlyFee,
+      facilityReady, shortfall: 0, blocker: "Membership program is already at the top tier.",
+    };
+  }
+  const nextTier = (membership.tier + 1) as PropertyTier;
+  const cost = 3_500 * nextTier;
+  const nextCapacity = membership.capacity + 35;
+  return {
+    command: { type: "UPGRADE_MEMBERSHIP" }, cost, nextTier, nextCapacity,
+    nextMemberCount: Math.min(nextCapacity, membership.memberCount + 18),
+    nextMonthlyFee: membership.monthlyFee + 35, facilityReady,
+    shortfall: Math.max(0, cost - world.cash),
+  };
+}
+
 export interface OutingPreview {
   package: OutingBooking["package"];
   guests: number;
@@ -1146,21 +1190,22 @@ export function applyPropertyCommand(course: Course, world: World, command: Prop
   }
 
   if (command.type === "LAUNCH_MEMBERSHIP") {
+    const preview = membershipProgramPreview(course, world);
     if (enterprise.membership.active) return outcome(false, course, world, "Memberships are already active.");
-    if (!assetOf(course, "clubhouse") || !property.assets.some((asset) => asset.category === "practice")) return outcome(false, course, world, "Memberships require a clubhouse and at least one practice amenity.");
-    if (world.cash < 2_500) return outcome(false, course, world, "Need $2,500 to launch the membership program.");
+    if (!preview.facilityReady) return outcome(false, course, world, "Memberships require a clubhouse and at least one practice amenity.");
+    if (preview.shortfall > 0) return outcome(false, course, world, "Need $2,500 to launch the membership program.");
     enterprise = { ...enterprise, membership: { ...enterprise.membership, active: true, memberCount: 24 }, customers: enterprise.customers.map((customer, index) => index < 4 ? { ...customer, member: true, segment: "member" } : customer) };
-    return outcome(true, course, { ...world, cash: world.cash - 2_500, enterprise }, "Founding memberships launched with 24 members.");
+    return outcome(true, course, { ...world, cash: world.cash - preview.cost, enterprise }, "Founding memberships launched with 24 members.");
   }
 
   if (command.type === "UPGRADE_MEMBERSHIP") {
     const membership = enterprise.membership;
+    const preview = membershipProgramPreview(course, world);
     if (!membership.active) return outcome(false, course, world, "Launch memberships first.");
-    if (membership.tier >= 4) return outcome(false, course, world, "Membership program is already at the top tier.");
-    const cost = 3_500 * (membership.tier + 1);
-    if (world.cash < cost) return outcome(false, course, world, `Need $${cost.toLocaleString()} for the membership upgrade.`);
-    enterprise = { ...enterprise, membership: { ...membership, tier: (membership.tier + 1) as PropertyTier, monthlyFee: membership.monthlyFee + 35, capacity: membership.capacity + 35, memberCount: Math.min(membership.capacity + 35, membership.memberCount + 18) } };
-    return outcome(true, course, { ...world, cash: world.cash - cost, enterprise }, "Membership benefits and capacity upgraded.");
+    if (preview.blocker) return outcome(false, course, world, preview.blocker);
+    if (preview.shortfall > 0) return outcome(false, course, world, `Need $${preview.cost.toLocaleString()} for the membership upgrade.`);
+    enterprise = { ...enterprise, membership: { ...membership, tier: preview.nextTier, monthlyFee: preview.nextMonthlyFee, capacity: preview.nextCapacity, memberCount: preview.nextMemberCount } };
+    return outcome(true, course, { ...world, cash: world.cash - preview.cost, enterprise }, "Membership benefits and capacity upgraded.");
   }
 
   if (command.type === "HIRE_SERVICE") {

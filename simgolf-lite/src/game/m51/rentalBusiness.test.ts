@@ -4,7 +4,7 @@ import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import type { GameState } from "../gameState";
 import { createLiveState } from "../live/simulation";
 import { normalizeLoadedSaveResult } from "../../utils/save";
-import { MOBILITY_BUSINESS, mobilityRentalPreview } from "./rentalBusiness";
+import { MOBILITY_BUSINESS, mobilityRentalPreview, reservedMobilityFleetUnitIds } from "./rentalBusiness";
 
 function state(cash = 30_000): GameState {
   return {
@@ -29,17 +29,27 @@ describe("M51 Cart Rental operating business", () => {
     expect(current).toMatchObject({ world: { cash: full.world.cash }, economyVersion: 8 }); expect(Object.keys(full.course.m51!.fleet)).toHaveLength(8); expect(full.economyVersion).toBe(8);
   });
 
-  it("requires paid tier expansion, honors capacity, and never salvages in-use fleet", () => {
+  it("requires paid tier expansion, honors capacity, and never salvages active live reservations", () => {
     let current = state(30_000);
     const blockedFreeTier = applyAction(current, { type: "CONFIGURE_BUILDING", x: 3, y: 3, tier: 2 }); expect(blockedFreeTier).toMatchObject({ world: { cash: 30_000 }, economyVersion: 0 });
     current = applyAction(current, { type: "UPGRADE_MOBILITY_RENTAL_TIER", buildingId: "rental" });
     expect(current.course.buildings[0].tier).toBe(2); expect(current.world.cash).toBe(26_000);
     current = applyAction(current, { type: "PURCHASE_MOBILITY_FLEET", buildingId: "rental", mode: "riding_cart", quantity: 2 });
-    const activeId = Object.keys(current.course.m51!.fleet)[0]; current = { ...current, course: { ...current.course, m51: { ...current.course.m51!, fleet: { ...current.course.m51!.fleet, [activeId]: { ...current.course.m51!.fleet[activeId], state: "in_use" } } } } };
-    const blocked = applyAction(current, { type: "SALVAGE_MOBILITY_FLEET", buildingId: "rental", mode: "riding_cart", quantity: 2 });
-    expect(blocked).toMatchObject({ world: { cash: current.world.cash }, economyVersion: current.economyVersion });
-    const salvaged = applyAction(current, { type: "SALVAGE_MOBILITY_FLEET", buildingId: "rental", mode: "riding_cart", quantity: 1 });
+    const activeId = Object.keys(current.course.m51!.fleet)[0];
+    const live = createLiveState(current.course, current.world, 0);
+    live.m51!.assignments.push({ id: "active-rental", groupId: "group", courseId: "course-primary", selectionId: "selection", mode: "riding_cart", buildingId: "rental", productId: "rental:riding_cart", fleetUnitIds: [activeId], riders: [], status: "active", routeCacheKey: "route", serviceDelayMinutes: 0, availableUnitsAtSelection: 2, actualTravelMinutes: 0, walkingFallbackMinutes: 0, offPathTiles: 0, seed: 51, decisionOrder: 1 });
+    const liveBefore = structuredClone(live);
+    const reserved = reservedMobilityFleetUnitIds(live.m51);
+    expect(mobilityRentalPreview(current.course, "rental", "riding_cart", reserved)).toMatchObject({ owned: 2, reserved: 1, salvageable: 1 });
+    const blocked = applyAction(current, { type: "SALVAGE_MOBILITY_FLEET", buildingId: "rental", mode: "riding_cart", quantity: 2, reservedFleetUnitIds: reserved });
+    expect(blocked).toEqual(current);
+    expect(blocked.course).toBe(current.course);
+    expect(blocked.world).toBe(current.world);
+    expect(live).toEqual(liveBefore);
+    const salvaged = applyAction(current, { type: "SALVAGE_MOBILITY_FLEET", buildingId: "rental", mode: "riding_cart", quantity: 1, reservedFleetUnitIds: reserved });
     expect(Object.keys(salvaged.course.m51!.fleet)).toHaveLength(1);
+    expect(salvaged.course.m51!.fleet[activeId]).toBeDefined();
+    expect(live.m51!.assignments[0].fleetUnitIds).toEqual([activeId]);
   });
 
   it("is replay-safe, leaves an active mid-day snapshot untouched, and migrates legacy rental defaults without a charge", () => {

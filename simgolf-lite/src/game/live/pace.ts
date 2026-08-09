@@ -39,8 +39,22 @@ export function normalizedStaff(world: World, course?: Course): StaffMember[] {
   return world.staffRoster.map((member, index) => normalizeStaffCharacter(member, index, world.week));
 }
 
+export function isStaffOnDuty(staff: Pick<StaffMember, "shiftStart" | "shiftEnd">, minute: number): boolean {
+  return minute >= staff.shiftStart && minute <= staff.shiftEnd;
+}
+
+export function staffDutyFraction(
+  staff: Pick<StaffMember, "shiftStart" | "shiftEnd">,
+  startMinute: number,
+  endMinute: number,
+): number {
+  const duration = Math.max(1, endMinute - startMinute);
+  const overlap = Math.max(0, Math.min(endMinute, staff.shiftEnd) - Math.max(startMinute, staff.shiftStart));
+  return Math.max(0, Math.min(1, overlap / duration));
+}
+
 export function hasOnDutyStaff(world: World, role: StaffRole, courseId: string, minute: number, course?: Course): boolean {
-  return normalizedStaff(world, course).some((staff) => staff.role === role && (!staff.courseId || staff.courseId === courseId) && minute >= staff.shiftStart && minute <= staff.shiftEnd);
+  return normalizedStaff(world, course).some((staff) => staff.role === role && (!staff.courseId || staff.courseId === courseId) && isStaffOnDuty(staff, minute));
 }
 
 export function groupTimeParMinutes(holeCount: number, groupSize: number, operations: CourseOperations): number {

@@ -10,7 +10,8 @@ import type {
   World,
 } from "../models/types";
 import type { CoursePaceDayMetrics, PaceDayMetrics } from "./types";
-import { courseOperations, normalizedStaff } from "./pace";
+import { courseOperations, normalizedStaff, staffDutyFraction } from "./pace";
+import { LIVE } from "./liveConfig";
 
 const COHORTS: PaceCohort[] = ["skilled_impatient", "novice_social", "general"];
 
@@ -151,9 +152,12 @@ function staffSignature(world: World, course: Course, courseId: string): string 
   const counts = new Map<string, number>();
   for (const staff of normalizedStaff(world, course)) {
     if (staff.courseId && staff.courseId !== courseId) continue;
-    counts.set(staff.role, (counts.get(staff.role) ?? 0) + 1);
+    const duty = staffDutyFraction(staff, LIVE.day.openMinute, LIVE.day.closeMinute);
+    if (duty <= 0) continue;
+    const key = `${staff.role}@${staff.shiftStart}-${staff.shiftEnd}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([role, count]) => `${role}:${count}`).join("|") || "none";
+  return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([schedule, count]) => `${schedule}:${count}`).join("|") || "none";
 }
 
 function sampleFromMetrics(

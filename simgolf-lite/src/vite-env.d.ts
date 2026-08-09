@@ -139,6 +139,7 @@ interface Window {
     setChallengeGroupRoundFixture(): void;
     setM39Fixture(): void;
     setZk688ClassicFixture(): void;
+    setZk689SimulationFixture(): void;
     showZk688AdvisorMessage(target: "pricing" | "maintenance"): void;
     pauseLiveSimulation(): void;
     takeSystemControl(system: import("./game/experience/systemControl").AdvancedSystemId): void;

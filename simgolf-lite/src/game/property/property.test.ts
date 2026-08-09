@@ -7,6 +7,7 @@ import {
   analyzeResidentialSafety,
   emptyPropertyCourse,
   emptyPropertyEnterprise,
+  membershipProgramPreview,
   propertyAccessCapacity,
   propertyOutingPreview,
   propertySummary,
@@ -31,6 +32,30 @@ function run(course: Course, world: World, command: PropertyCommand): { course: 
 }
 
 describe("property enterprise", () => {
+  it("uses one authoritative membership preview and exposes no fabricated tier-five plan", () => {
+    const { course, world } = fixture();
+    const tierThree = {
+      ...world,
+      enterprise: { ...emptyPropertyEnterprise(), membership: { active: true, tier: 3 as const, monthlyFee: 165, memberCount: 70, capacity: 110 } },
+    };
+    expect(membershipProgramPreview(course, tierThree)).toMatchObject({
+      command: { type: "UPGRADE_MEMBERSHIP" }, cost: 14_000, nextTier: 4,
+      nextCapacity: 145, nextMemberCount: 88, nextMonthlyFee: 200, shortfall: 0,
+    });
+    const tierFour = {
+      ...tierThree,
+      enterprise: { ...tierThree.enterprise, membership: { active: true, tier: 4 as const, monthlyFee: 200, memberCount: 88, capacity: 145 } },
+    };
+    expect(membershipProgramPreview(course, tierFour)).toMatchObject({
+      cost: 0, nextTier: 4, nextCapacity: 145, nextMemberCount: 88,
+      blocker: "Membership program is already at the top tier.",
+    });
+    const rejected = applyPropertyCommand(course, tierFour, { type: "UPGRADE_MEMBERSHIP" });
+    expect(rejected).toMatchObject({ ok: false, message: "Membership program is already at the top tier." });
+    expect(rejected.course).toBe(course);
+    expect(rejected.world).toBe(tierFour);
+  });
+
   it("requires access, then improves shared arrival capacity through surface tiers", () => {
     let { course, world } = fixture();
     const blocked = applyPropertyCommand(course, world, { type: "BUILD", kind: "driving_range" });

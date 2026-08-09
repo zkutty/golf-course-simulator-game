@@ -1448,3 +1448,71 @@ Current request: “Now please implement rest”
   visually inspected course-renderer capture. `git diff --check` passes.
 - No commit, push, deploy, merge, Linear mutation, or user-worktree change is
   included in this delegated slice.
+## 2026-08-09 — ZK-689 Simulation operational responsibility (isolated worktree)
+
+- Exact released base: `c24041178ad6aab657a2398c908599cfb95294d1` on `codex/zk689-simulation-responsibility` in `/private/tmp/golf-sim-zk689-simulation-responsibility`.
+- Scope is ZK-689 only. No Linear mutation, commit, push, deployment, main-worktree switch, campaign work, ZK-690, or ZK-691.
+- Completed the required pre-edit 13-domain audit. Every domain has an existing authoritative state/command and downstream simulation path. Two narrow reachability gaps remain: stored/consumed staff shifts are read-only, and existing M51 mobility rental/fleet reducer commands are not exposed in Live Overview. Classification: L, not XL; the more-than-three-domain stop condition is not met.
+- Planned smallest implementation: a traceable 13-domain Simulation operations navigator that opens existing specialist surfaces; one narrow deterministic staff-shift command; UI wiring to existing mobility reducer commands/previews; explicit Forecast/Current/Settled evidence labels and confirmation at touched consequential commits. Preserve the registry, sparse overrides, schema, pressure/profile separation, and existing panels.
+
+### 13-domain audit
+
+1. Maintenance: HUD budget -> `MANUAL_OPERATIONS_COMMAND/SET_MAINTENANCE_BUDGET` -> weekly cost, condition, surface care; forecast requirements/shortfall plus current and settled weekly evidence.
+2. Localized turf: HUD green program + Seasons priority/repairs -> authoritative course/season/surface-repair commands -> delivery, wear, repair cash/downtime and turf condition; observed zones, weather forecast, quote.
+3. Irrigation: HUD target + Seasons water policy -> course program/`SET_WATER_POLICY` -> water scarcity/cost and turf response; forecast/current evidence.
+4. Drainage: Seasons preview + `IMPROVE_DRAINAGE` -> cash, work days, flood-risk reduction; forecast evidence.
+5. Staffing: Living Club commands/Live assignment -> `applyStaffCommand`/`world.staffRoster` -> wages and service/pace/turf coverage; current evidence. Gap: shift fields consumed by live authority but read-only.
+6. Pace: Live Pace controls -> persisted layout `operations` -> arrivals, group spacing, daylight/compensation/beverage effects; current live evidence.
+7. Financing: HUD eligibility/terms -> reducer `TAKE_LOAN` -> cash, amortization, APR and weekly costs; requirements/current/history evidence.
+8. Memberships: Property Campus -> `LAUNCH_MEMBERSHIP`/`UPGRADE_MEMBERSHIP` -> cash, dues, capacity/churn/service demand; current plus known cost/downstream.
+9. Tournaments: Tournament panel -> event create/schedule authority -> deposit, calendar, qualification, revenue/reputation; forecast requirements and settled results.
+10. Property: Property panel -> manual `PROPERTY_COMMAND` -> cash, construction, throughput and ledger; preview/current/settled evidence.
+11. Resort: Property Destination -> property authority -> staffing/packages/capacity/transport/service economics; current metrics and package forecast.
+12. Mobility: existing reducer commands `CONFIGURE_MOBILITY_PRODUCT`, `PURCHASE_MOBILITY_FLEET`, `SALVAGE_MOBILITY_FLEET` -> price, capital, capacity, revenue/cost/pace; current/settled reports and deterministic preview. Gap: reports only, no UI dispatch.
+13. Community: Property Community/Safety -> development/safety/complaint/claim property commands -> capital, resident spend/satisfaction, exposure/claims; forecast/current/settled evidence.
+
+### TODO
+
+- Implement the two gaps and traceable navigation with focused tests.
+- Run the bundled web-game client after each meaningful change, inspect screenshots and structured text/errors, and record exact evidence.
+- Run required compatibility, full CI/typecheck/lint, two byte-identical builds/audits, budget, PWA, and performance checks as affected.
+
+### First implementation slice
+
+- Added a presentation-only 13-row Simulation operations navigator. It reports the existing system status, downstream responsibility, evidence classes, and specialist surface without creating command/state carriers. Local turf/irrigation/drainage routes stay in Seasons; other rows route through App to HUD, Live, Tournament, or Property surfaces.
+- Added narrow `StaffCommand` schedule authority. It accepts one same-day shift of at least 60 minutes, rejects invalid input without mutation, preserves identity on no-op, and feeds the existing `hasOnDutyStaff` pace/service/turf authority.
+- Exposed existing M51 configure/purchase/salvage commands in Live Overview. Current state, deterministic forecast, capital shortfall, operating cost, break-even uses, and settled reports are labeled separately; product changes require explicit standing-policy apply and fleet purchase/salvage uses confirmation.
+- Focused validation: 4 test files / 24 tests passed (`systemControlPresentation`, `LiveOverview`, M38 Living Club, M51 rental business). The worktree first required `npm ci`; lockfile content was not changed.
+
+### Browser acceptance checkpoint
+
+- Completed presentation/command wiring through the existing HUD, Seasons, Live, Tournament, and Property surfaces. Consequential Simulation financing, membership, tournament, and mobility actions now disclose the available forecast/shortfall/downstream evidence and require confirmation or an explicit standing-policy apply. Classic behavior remains unchanged.
+- Dedicated `e2e/zk689-simulation-operations.e2e.ts` passes as one combined file: 2/2 in 4.9 minutes. It covers all 13 navigator rows, exact full/manual state, Forecast/Current observation/Settled history labels, keyboard activation and focus, staff shift scheduling, accepted and canceled mobility purchases, standing-policy pricing, canceled financing, first manual save, reload, and persisted authoritative state with a clean console/page-error capture.
+- Visually inspected the combined-run full-page screenshots. The operations navigator shows the lower specialist rows, downstream descriptions, evidence chips, direct/manual summary, and profile-default controls without duplicate panels. The reload screenshot shows Mobility current observation, settled history, deterministic product forecast, 1/36 fleet state, $37 standing price, and buy/salvage controls within the existing Live Overview.
+- Ran the required bundled web-game client for 2 iterations against the DEV-only `?zk689Fixture=1` route. Both rendered states report Simulation/Balanced, exactly 13 full/manual systems, Seasons open, $750,000 cash, 84 reputation, and deterministic seasonal weather. Both canvas captures are byte-identical (`5f6bff0f12af9116b14e8a50edfb296ef352a2d9dc97a87b9b90cad4f5703795`); no `errors-*.json` was emitted. The stable isometric 18-hole render was visually inspected.
+- Current focused validation is 6 files / 44 tests, and `npx tsc -b --pretty false` passes. Broader compatibility/full gates remain pending.
+
+### Reviewer repair checkpoint
+
+- Staff schedules now use the live-day 06:00–20:00 clock and are authoritative downstream. Production Live recomputes marshal, beverage/service, and overtime coverage from on-duty staff each step; greenkeeping delivery weights groundskeeper proficiency by scheduled overlap; pace history records the exact role/start/end configuration. Headless live runs use the same World-aware step path.
+- Mobility salvage now carries exact active/reserved live assignment unit IDs into the reducer precondition. Preview and UI expose reserved vs salvageable counts, disable impossible salvage, and confirmation states that active/reserved units cannot be removed. Focused evidence rejects a two-unit salvage around one active unit without changing course, World/cash, or the live assignment, then removes only the free unit.
+- Memberships use one authoritative preview for the panel and command. Tier 4 exposes no Tier 5 forecast or cost, labels the top-tier blocker, disables commitment, and authority rejects without mutation. Tournament booking now rejects failed eligibility before opening any Simulation confirmation.
+- Successful Live specialist routing consumes the focus nonce; close, golfer, and hole exits also clear it. A same-page manual reopen returns to Golfers instead of replaying stale Staff focus.
+- Focused repair validation passes `npx tsc -b` and 9 files / 79 tests. The new 14-day headless evidence runs both M26 courses through two weekly closes with mutated shifts and an 8-unit/$42 mobility product, varying weather, daily/weekly M51 history, scheduled pace signatures, and a week-one save/reload that finishes byte-identically to uninterrupted play.
+- Repaired dedicated browser acceptance passes 2/2 serially in 4.2 minutes. Case 1 directly routes all 13 domains (including localized turf and irrigation), verifies stale-focus consumption, disabled tier-4/no-dialog/no-cash-change, blocked championship/no-dialog/no-cash-or-calendar-change, keyboard/focus, advisor navigation-only, and clean errors. Case 2 proves accepted/cancelled mobility, applied staff schedule, standing policy, cancelled finance, save/reload, and persisted authority.
+- Visually inspected the repaired navigator capture (`704f5afe…`): all lower specialist rows, downstream descriptions, Forecast/Current observation/Settled history chips, and direct/manual status are readable without a duplicate panel. Inspected the mobility reload capture (`b72f85b…`): 1 owned/1 available/0 in-use, zero current reservations, $37 policy, forecast, settled-history label, and existing Live controls are coherent. The bundled web-game client reran for two iterations with no error artifact; structured state reports Simulation/Balanced and exactly 13 full/manual profile-default systems. Its repaired course capture was visually inspected.
+
+### Remaining verification
+
+- Run affected compatibility suites, then full CI, lint, production/PWA/performance gates, and two byte-identical build/audit passes with budget/headroom.
+- Restore only generated tracked screenshots changed by compatibility tests; retain scoped ZK-689 evidence artifacts.
+
+### Final local verification and handoff
+
+- Final complete dedicated browser file passes 2/2 in 4.8 minutes (expanded 13-domain/repeat-focus case 2.9m; command/confirmation/reload case 1.9m) with clean console/page-error arrays. The repeat sequence opens ordinary Golfers, routes to Pace and Mobility while Live remains mounted, verifies focus within each target, closes, and reopens ordinary Golfers without stale focus.
+- Compatibility classification: isolated ZK-688 prior failures pass in 1.7m and 2.4m; golden keyboard passes in 23.8s; M39 passes in 49.4s; M6 passes in 1.6m. M24 independently reproduces 10 readiness requirements vs a test expectation of 9 in 20.4s, while the released c240 eligibility, reference-course, and E2E blob hashes exactly match current. M31 independently reaches its 10.2m hard timeout waiting for resort staffing that the released c240 `resortDetail` visibility guard hides. These inherited gaps are tracked upstream as ZK-811 and ZK-812; ZK-689 does not change their expectations.
+- `npm run test:ci` passes 195 files / 1,533 tests with one intentional skip, plus 5/5 audio-audit tests. `npm run lint` passes with zero errors and exactly 12 inherited Hook warnings; both i18n guards pass. `npx tsc -b` passes.
+- Two consecutive `npm run build` passes and every bundled audit pass byte-identically. Full-dist aggregate SHA-256 is `18119f07a88d2a5e4fe31d68dc1abe59b798b222d02ce3d6326c685aeb085642` both times. Stable hashes: manifest `f377cdc7ed5a…`, index HTML `1fd4bce3d5fc…`, service worker `2924fc82e60a…`, main JS `e91d4ebe1e83…`, Live Overview `6ff82e26b2e6…`. Initial JavaScript is 1,586,513 bytes against 1,608,719 (22,206-byte headroom); dist is 116,403,272 against 116,976,011 (572,739-byte headroom).
+- `npm run test:perf` passes at 0.31ms tick work, 1,011ms cold startup, and 2,878ms 36-hole fixture load. `npm run test:pwa` passes strict-CSP gameplay, cache-on-demand/isolation, scoped install, offline reload, deferred HUD/New Game, and local-save persistence.
+- All tracked compatibility/perf/audit screenshots and JSON were restored. Ignored web-client, Playwright, and build output was removed. `git diff --check` passes. Remaining untracked files are only the scoped ZK-689 unit and E2E source tests.
+- Integration-readiness: locally implementation-ready for review/rebase, with no commit/push/deploy/Linear mutation from this worktree. Do not claim ZK-689 Done from local evidence alone.

@@ -500,7 +500,7 @@ export function useLiveSimulation(args: {
     if (clock.steps === 0) return;
     const previousRender = golfersRef.current;
     for (let step = 0; step < clock.steps && !live.dayOver; step++) {
-      const ev = stepLive(live, courseRef.current, FIXED_GAME_STEP_MINUTES);
+      const ev = stepLive(live, courseRef.current, FIXED_GAME_STEP_MINUTES, worldRef.current);
       for (const round of ev.completedRounds) {
         const recordedWorld = recordLivingClubRound(worldRef.current, courseRef.current, round, live.dayIndex);
         worldRef.current = recordedWorld;

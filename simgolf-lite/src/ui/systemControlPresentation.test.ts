@@ -5,8 +5,12 @@ import {
   systemControlCommandMessage,
   systemControlDecisionLabel,
   groupSystemControlSurfaces,
+  operationsEvidenceLabel,
+  operationsSurfaceLabel,
+  SYSTEM_OPERATIONS_PRESENTATION,
   systemControlProfileLabel,
   systemControlStatusLabel,
+  systemOperationsEffect,
 } from "./systemControlPresentation";
 
 afterEach(() => setActiveLocale("en"));
@@ -36,6 +40,16 @@ describe("system-control presentation", () => {
     expect(grouped.backOfficeSystems.map((system) => system.id)).toEqual([
       "localized-turf", "irrigation", "drainage", "pace", "mobility", "community",
     ]);
+  });
+
+  it("maps all thirteen domains to one existing specialist surface and truthful evidence classes", () => {
+    expect(Object.keys(SYSTEM_OPERATIONS_PRESENTATION)).toEqual([...ADVANCED_SYSTEM_IDS]);
+    expect(Object.values(SYSTEM_OPERATIONS_PRESENTATION).every((entry) => entry.evidence.length > 0)).toBe(true);
+    expect(SYSTEM_OPERATIONS_PRESENTATION.staffing).toMatchObject({ surface: "staff", evidence: ["forecast", "current"] });
+    expect(SYSTEM_OPERATIONS_PRESENTATION.mobility).toMatchObject({ surface: "live", evidence: ["forecast", "current", "settled"] });
+    expect(systemOperationsEffect("financing")).toContain("cash");
+    expect(operationsEvidenceLabel("forecast")).toBe("Forecast");
+    expect(operationsSurfaceLabel("property")).toBe("Property management");
   });
 
   it("localizes command statuses and compact automation decision evidence", () => {

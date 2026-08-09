@@ -6,6 +6,7 @@ import { createDefaultPlayerPro, autoFinishPlayerRound, startPlayableRound } fro
 import { settlePlayerRound } from "../playerPro/playerProSettlement";
 import type { CompletedRound } from "../retention/types";
 import { createPlayerProReferenceCourse } from "../testing/referenceCourse";
+import { hasOnDutyStaff } from "../live/pace";
 import { normalizeLoadedSaveResult } from "../../utils/save";
 import { STORY_DEFINITION_BY_ID, SYSTEMIC_EVENT_DEFINITIONS, validateStoryDefinitions } from "./content";
 import {
@@ -190,6 +191,24 @@ describe("M38 living club and architecture certification", () => {
     const trained = applyStaffCommand(hired.world, { type: "train", staffId: marshal.id });
     expect(trained.ok).toBe(true);
     expect(trained.world.staffRoster!.find((member) => member.id === marshal.id)!.proficiency).toBeGreaterThan(marshal.proficiency!);
+  });
+
+  it("commits a valid same-day shift once and rejects invalid coverage without mutation", () => {
+    const course = createPlayerProReferenceCourse();
+    const member = DEFAULT_WORLD.staffRoster![0];
+    const base = { ...DEFAULT_WORLD, staffRoster: [{ ...member }] };
+    const invalid = applyStaffCommand(base, { type: "schedule", staffId: member.id, shiftStart: 600, shiftEnd: 630 });
+    expect(invalid).toMatchObject({ ok: false, reason: "shift", world: base });
+    expect(invalid.world).toBe(base);
+
+    const scheduled = applyStaffCommand(base, { type: "schedule", staffId: member.id, shiftStart: 150, shiftEnd: 660 });
+    expect(scheduled.ok).toBe(true);
+    expect(scheduled.world.staffRoster![0]).toMatchObject({ shiftStart: 150, shiftEnd: 660 });
+    expect(scheduled.world.cash).toBe(base.cash);
+    expect(hasOnDutyStaff(scheduled.world, member.role, member.courseId!, 149, course)).toBe(false);
+    expect(hasOnDutyStaff(scheduled.world, member.role, member.courseId!, 150, course)).toBe(true);
+    expect(hasOnDutyStaff(scheduled.world, member.role, member.courseId!, 661, course)).toBe(false);
+    expect(applyStaffCommand(scheduled.world, { type: "schedule", staffId: member.id, shiftStart: 150, shiftEnd: 660 }).world).toBe(scheduled.world);
   });
 
   it("migrates schema 14 and keeps ten simulated years bounded and duplicate-free", () => {

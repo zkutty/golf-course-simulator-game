@@ -226,7 +226,7 @@ export function applyAction(state: GameState, action: Action): GameState {
       newState = { ...newState, course: result.course, world: result.world }; economyVersion++; break;
     }
     case "SALVAGE_MOBILITY_FLEET": {
-      const result = mutateMobilityRental(state.course, state.world, { type: "salvage", buildingId: action.buildingId, mode: action.mode, quantity: action.quantity });
+      const result = mutateMobilityRental(state.course, state.world, { type: "salvage", buildingId: action.buildingId, mode: action.mode, quantity: action.quantity, reservedFleetUnitIds: action.reservedFleetUnitIds });
       if (!result) break;
       newState = { ...newState, course: result.course, world: result.world }; economyVersion++; break;
     }

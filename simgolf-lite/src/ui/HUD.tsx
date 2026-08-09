@@ -27,6 +27,7 @@ import { scoreCourseHoles } from "../game/sim/holes";
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { computeCourseRatingAndSlope, computeRatingsByTee } from "../game/sim/courseRating";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
+import { computeWeeklyPayment } from "../game/sim/loans";
 import type { LegacyState } from "../utils/legacy";
 import {
   economicPressureForWorld,
@@ -141,7 +142,7 @@ export function HUD(props: {
   onOpenGolfopedia: (entry?: string) => void;
   onStartTutorial: () => void;
   tutorialTarget?: TutorialTarget;
-  managementFocus?: { target: "pricing" | "maintenance"; nonce: number };
+  managementFocus?: { target: "pricing" | "maintenance" | "financing"; nonce: number };
   onManagementFocusHandled?: (nonce: number) => void;
   biomeContext?: BiomeUiTheme;
 }) {
@@ -206,7 +207,7 @@ export function HUD(props: {
   const [objectivesOpen, setObjectivesOpen] = useState(false);
   const scheduledManagementFocusNonceRef = useRef<number | null>(null);
   const cancelledManagementFocusNonceRef = useRef<number | null>(null);
-  const managementTargetRef = (target: "pricing" | "maintenance") => (node: HTMLInputElement | null) => {
+  const managementTargetRef = (target: "pricing" | "maintenance" | "financing") => (node: HTMLElement | null) => {
     const request = props.managementFocus;
     if (!node || request?.target !== target || scheduledManagementFocusNonceRef.current === request.nonce) return;
     const nonce = request.nonce;
@@ -329,6 +330,16 @@ export function HUD(props: {
   const loansBarred = world.constraints?.noLoans === true;
   const bridgeEligible = canTakeBridgeLoan(course, world, BALANCE);
   const expansionEligible = canTakeExpansionLoan(course, world, BALANCE);
+  const requestLoan = (kind: "bridge" | "expansion") => {
+    const terms = BALANCE.loans[kind];
+    const commit = kind === "bridge" ? onTakeBridgeLoan : onTakeExpansionLoan;
+    if (systemControl.profile !== "simulation" || window.confirm(translateCurrent("finance.confirm", {
+      principal: formatCurrency(terms.maxPrincipal),
+      weekly: formatCurrency(computeWeeklyPayment(terms.maxPrincipal, terms.apr, terms.termWeeks)),
+      apr: Math.round(terms.apr * 100),
+      weeks: terms.termWeeks,
+    }))) commit();
+  };
 
   return (
     <div
@@ -1667,6 +1678,7 @@ export function HUD(props: {
               {(turfDetail || irrigationDetail) && <div style={{ marginTop: 7, fontSize: 10, color: "#68736a" }}><T id="greenKeeping.automationNote" /></div>}
             </Section>
 
+            <div ref={managementTargetRef("financing")} tabIndex={-1} data-testid="management-financing-target">
             <Section title={translateCurrent("auto.ui.hud.financing")}>
               <div style={{ fontSize: 12, color: "#555", marginBottom: 8 }}>
                 {loansBarred
@@ -1676,7 +1688,7 @@ export function HUD(props: {
 
               <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
                 <button
-                  onClick={onTakeBridgeLoan}
+                  onClick={() => requestLoan("bridge")}
                   disabled={!bridgeEligible}
                   style={{
                     width: "100%",
@@ -1698,7 +1710,7 @@ export function HUD(props: {
                 </button>
 
                 <button
-                  onClick={onTakeExpansionLoan}
+                  onClick={() => requestLoan("expansion")}
                   disabled={!expansionEligible}
                   style={{
                     width: "100%",
@@ -1738,6 +1750,7 @@ export function HUD(props: {
                 </div>
               )}
             </Section>
+            </div>
 
             <Section title={translateCurrent("auto.ui.hud.unlocks.cosmetic")}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 12 }}>

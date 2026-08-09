@@ -3,6 +3,7 @@ import { formatCurrency, formatNumber } from "../i18n/format";
 import { TEE_SETS, type Course, type World } from "../game/models/types";
 import {
   FACILITY_MODULE_SPECS,
+  membershipProgramPreview,
   PROPERTY_ASSET_SPECS,
   propertyOutingPreview,
   propertyPackagePreview,
@@ -38,6 +39,7 @@ const CATEGORY_COPY: Partial<Record<PropertyAssetCategory, { title: string; help
 export function PropertyManagementPanel(props: {
   course: Course;
   world: World;
+  operationsFocus?: { system: "memberships" | "property" | "resort" | "community"; nonce: number };
   onCommand: (command: PropertyCommand) => PropertyCommandResult;
   onClose: () => void;
 }) {
@@ -64,11 +66,36 @@ export function PropertyManagementPanel(props: {
   const propertyDetail = full("property");
   const resortDetail = full("resort");
   const communityDetail = full("community");
+  const membershipPreview = useMemo(() => membershipProgramPreview(props.course, props.world), [props.course, props.world]);
   const availableTabs = (Object.keys(TAB_COPY) as Tab[]).filter((candidate) => candidate !== "ledger" || propertyDetail);
   const activeTab = availableTabs.includes(tab) ? tab : "campus";
+  useEffect(() => {
+    const focus = props.operationsFocus;
+    if (!focus || !referenceReady) return;
+    const nextTab = focus.system === "resort" ? "resort" : focus.system === "community" ? "community" : "campus";
+    setTab(nextTab);
+    const frame = window.requestAnimationFrame(() => {
+      const selector = focus.system === "memberships" ? "[data-testid=membership-operations]" : `[data-testid=property-tab-${nextTab}]`;
+      const target = document.querySelector<HTMLElement>(selector);
+      target?.scrollIntoView({ block: "center", behavior: document.documentElement.dataset.reducedMotion === "true" ? "auto" : "smooth" });
+      (target?.querySelector<HTMLElement>("button,input,select") ?? target)?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [props.operationsFocus, referenceReady]);
   const run = (command: PropertyCommand) => {
     const result = props.onCommand(command);
     setNotice({ ok: result.ok, message: result.message });
+  };
+  const runMembership = () => {
+    if (membershipPreview.blocker) return;
+    const confirmed = control.profile !== "simulation" || window.confirm(translateCurrent("property.membership.confirm", {
+      cost: formatCurrency(membershipPreview.cost),
+      members: membershipPreview.nextMemberCount,
+      capacity: membershipPreview.nextCapacity,
+      fee: formatCurrency(membershipPreview.nextMonthlyFee),
+      shortfall: formatCurrency(membershipPreview.shortfall),
+    }));
+    if (confirmed) run(membershipPreview.command);
   };
   const tabInfo = TAB_COPY[activeTab];
 
@@ -127,7 +154,7 @@ export function PropertyManagementPanel(props: {
 
         {activeTab === "campus" && <section style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <ActionCard icon="🧑‍🏫" title={translateCurrent("property.professionals")} detail={`${summary.enterprise.professionals.length} hired · lessons improve customer skill and generate academy income.`} button="Hire professional · $4,000" onClick={() => run({ type: "HIRE_PRO" })} />
-          <ActionCard icon="🎟️" title={translateCurrent("property.memberships")} detail={summary.enterprise.membership.active ? `Tier ${summary.enterprise.membership.tier} · ${summary.enterprise.membership.memberCount} members · ${formatCurrency(summary.enterprise.membership.monthlyFee)}/month` : "Recurring dues, repeat play, practice access, and clubhouse demand."} button={summary.enterprise.membership.active ? "Upgrade program" : "Launch · $2,500"} onClick={() => run({ type: summary.enterprise.membership.active ? "UPGRADE_MEMBERSHIP" : "LAUNCH_MEMBERSHIP" })} />
+          <ActionCard testId="membership-operations" icon="🎟️" title={translateCurrent("property.memberships")} detail={membershipPreview.blocker ? `Current observation: Tier ${summary.enterprise.membership.tier} · ${summary.enterprise.membership.memberCount}/${summary.enterprise.membership.capacity} members · ${formatCurrency(summary.enterprise.membership.monthlyFee)}/month. ${membershipPreview.blocker}` : summary.enterprise.membership.active ? `Current observation: Tier ${summary.enterprise.membership.tier} · ${summary.enterprise.membership.memberCount}/${summary.enterprise.membership.capacity} members · ${formatCurrency(summary.enterprise.membership.monthlyFee)}/month. Forecast: Tier ${membershipPreview.nextTier}, ${membershipPreview.nextMemberCount}/${membershipPreview.nextCapacity} at ${formatCurrency(membershipPreview.nextMonthlyFee)}/month; ${formatCurrency(membershipPreview.shortfall)} current cash shortfall.` : `Forecast: requires a clubhouse and practice amenity; ${formatCurrency(membershipPreview.cost)} launch cost (${formatCurrency(membershipPreview.shortfall)} current cash shortfall), 24 founding members, and weekly dues.`} button={membershipPreview.blocker ? "Top tier reached" : summary.enterprise.membership.active ? "Review upgrade" : "Review launch"} disabled={!!membershipPreview.blocker} onClick={runMembership} />
         </section>}
         {activeTab === "campus" && <ShellModules assets={summary.assets} onCommand={run} />}
         {activeTab === "campus" && <OutingPlanner course={props.course} world={props.world} outings={summary.enterprise.outings} onCommand={run} />}
@@ -415,8 +442,8 @@ function signed(value: number): string {
   return `${value >= 0 ? "+" : ""}${Math.round(value * 100)}%`;
 }
 
-function ActionCard(props: { testId?: string; icon: string; title: string; detail: string; button: string; onClick: () => void }) {
-  return <article data-testid={props.testId} style={{ border: "1px solid #d3cab6", borderRadius: 9, padding: 10, background: "#fffdf8" }}><strong>{props.icon} {props.title}</strong><p style={{ fontSize: 11, color: "#697269", minHeight: 28 }}>{props.detail}</p><button onClick={props.onClick} style={smallButton}>{props.button}</button></article>;
+function ActionCard(props: { testId?: string; icon: string; title: string; detail: string; button: string; disabled?: boolean; onClick: () => void }) {
+  return <article data-testid={props.testId} style={{ border: "1px solid #d3cab6", borderRadius: 9, padding: 10, background: "#fffdf8" }}><strong>{props.icon} {props.title}</strong><p style={{ fontSize: 11, color: "#697269", minHeight: 28 }}>{props.detail}</p><button disabled={props.disabled} onClick={props.onClick} style={smallButton}>{props.button}</button></article>;
 }
 
 function PropertyMap(props: { course: Course; summary: ReturnType<typeof propertySummary> }) {

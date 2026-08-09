@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Course, World } from "../game/models/types";
 import {
   CHARTER_DEFINITIONS,
@@ -17,12 +17,17 @@ import {
   type TurfPriority,
   type WaterPolicy,
 } from "../game/seasons/types";
-import { systemControlEnvelope } from "../game/experience/systemControl";
+import { systemControlEnvelope, type AdvancedSystemId } from "../game/experience/systemControl";
 import {
+  operationsEvidenceLabel,
+  operationsSurfaceLabel,
+  SYSTEM_OPERATIONS_PRESENTATION,
   systemControlCommandMessage,
   systemControlDecisionLabel,
   systemControlProfileLabel,
+  systemControlLabel,
   systemControlStatusLabel,
+  systemOperationsEffect,
 } from "./systemControlPresentation";
 import { formatCurrency } from "../i18n/format";
 import { translateCurrent } from "../i18n/core";
@@ -75,11 +80,13 @@ export function SeasonsLegacyPanel(props: {
     kind: SurfaceRepairKind,
     absoluteDay: number,
   ) => void;
+  onNavigateSystem?: (system: AdvancedSystemId) => void;
   onClose: () => void;
   biomeContext?: BiomeUiTheme;
 }) {
   const [tab, setTab] = useState<"season" | "identity" | "legacy">("season");
   const [message, setMessage] = useState<string | null>(null);
+  const [focusSystem, setFocusSystem] = useState<Extract<AdvancedSystemId, "localized-turf" | "irrigation" | "drainage"> | null>(null);
   const state = useMemo(() => seasonalState(props.world, props.course, props.day), [props.course, props.day, props.world]);
   const control = useMemo(() => systemControlEnvelope(props.world), [props.world]);
   const full = (id: "localized-turf" | "irrigation" | "drainage") => control.systems.find((system) => system.id === id)?.visibility === "full";
@@ -100,6 +107,24 @@ export function SeasonsLegacyPanel(props: {
     () => surfaceCareConditionSummary(props.course),
     [props.course],
   );
+  useEffect(() => {
+    if (tab !== "season" || !focusSystem) return;
+    const frame = window.requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(`[data-operation-system="${focusSystem}"]`);
+      target?.scrollIntoView({ block: "center", behavior: document.documentElement.dataset.reducedMotion === "true" ? "auto" : "smooth" });
+      target?.focus({ preventScroll: true });
+      setFocusSystem(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusSystem, tab]);
+  const navigateSystem = (system: AdvancedSystemId) => {
+    if (system === "localized-turf" || system === "irrigation" || system === "drainage") {
+      setFocusSystem(system);
+      setTab("season");
+      return;
+    }
+    props.onNavigateSystem?.(system);
+  };
   const run = (command: SeasonCommand) => {
     const result = props.onCommand(command);
     setMessage(systemControlCommandMessage(result.message));
@@ -259,11 +284,11 @@ export function SeasonsLegacyPanel(props: {
         <section style={card}>
           <h3 style={{ margin: "0 0 7px" }}>{translateCurrent("season.response.title")}</h3>
           <div style={{ display: "grid", gap: 8 }}>
-            {turfDetail && <label>{translateCurrent("season.response.turf")}<select data-testid="turf-priority" value={state.operations.turfPriority} onChange={(event) => run({ type: "SET_TURF_PRIORITY", priority: event.target.value as TurfPriority })}>{TURF_PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}</select></label>}
-            {irrigationDetail && <label>{translateCurrent("season.response.water")}<select data-testid="water-policy" value={state.operations.waterPolicy} onChange={(event) => run({ type: "SET_WATER_POLICY", policy: event.target.value as WaterPolicy })}>{WATER_POLICIES.map((policy) => <option key={policy}>{policy}</option>)}</select></label>}
+            {turfDetail && <label tabIndex={-1} data-operation-system="localized-turf">{translateCurrent("season.response.turf")}<select data-testid="turf-priority" value={state.operations.turfPriority} onChange={(event) => run({ type: "SET_TURF_PRIORITY", priority: event.target.value as TurfPriority })}>{TURF_PRIORITIES.map((priority) => <option key={priority}>{priority}</option>)}</select></label>}
+            {irrigationDetail && <label tabIndex={-1} data-operation-system="irrigation">{translateCurrent("season.response.water")}<select data-testid="water-policy" value={state.operations.waterPolicy} onChange={(event) => run({ type: "SET_WATER_POLICY", policy: event.target.value as WaterPolicy })}>{WATER_POLICIES.map((policy) => <option key={policy}>{policy}</option>)}</select></label>}
             {drainageDetail && (() => {
               const preview = previewSeasonCommand(props.course, props.world, { type: "IMPROVE_DRAINAGE" });
-              return <div>
+              return <div tabIndex={-1} data-operation-system="drainage">
                 <strong>{translateCurrent("season.response.drainage", { level: state.operations.drainageLevel })}</strong>
                 <div>{translateCurrent("season.response.preview", { cost: formatCurrency(preview.cost), days: preview.days, risk: Math.round(preview.riskReduction * 100) })}</div>
                 <button data-testid="improve-drainage" disabled={!preview.ok} onClick={() => run({ type: "IMPROVE_DRAINAGE" })} style={button}>{translateCurrent("season.response.improve")}</button>
@@ -309,6 +334,27 @@ export function SeasonsLegacyPanel(props: {
           <div data-testid="system-control-summary" style={{ marginTop: 7 }}>
             {translateCurrent("season.automation.policySummary", { profile: systemControlProfileLabel(control.profile), automated: control.systems.filter((system) => system.mode === "automated").length, manual: control.systems.filter((system) => system.mode === "manual").length })}
           </div>
+          {control.profile === "simulation" && <section data-testid="simulation-operations" style={{ ...card, marginTop: 10, background: "#f4f8eb" }}>
+            <h4 style={{ margin: "0 0 4px" }}>{translateCurrent("season.operations.title")}</h4>
+            <p style={{ margin: "0 0 8px", fontSize: 11 }}>{translateCurrent("season.operations.help")}</p>
+            <div style={{ display: "grid", gap: 6 }}>
+              {control.systems.map((system) => {
+                const presentation = SYSTEM_OPERATIONS_PRESENTATION[system.id];
+                return <article key={system.id} data-testid={`simulation-operation-${system.id}`} style={{ borderTop: "1px solid #d6c99f", paddingTop: 6, display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 8, alignItems: "center" }}>
+                  <div>
+                    <strong>{systemControlStatusLabel(system)}</strong>
+                    <div style={{ fontSize: 11 }}>{systemOperationsEffect(system.id)}</div>
+                    <div aria-label={translateCurrent("season.operations.evidenceLabel", { system: systemControlLabel(system.id) })} style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                      {presentation.evidence.map((kind) => <span key={kind} data-evidence-kind={kind} style={{ border: "1px solid #a9b594", borderRadius: 10, padding: "1px 5px", fontSize: 9, textTransform: "uppercase" }}>{operationsEvidenceLabel(kind)}</span>)}
+                    </div>
+                  </div>
+                  <button type="button" data-testid={`system-operation-open-${system.id}`} onClick={() => navigateSystem(system.id)} style={{ ...button, padding: "5px 7px" }}>
+                    {translateCurrent("season.operations.open", { surface: operationsSurfaceLabel(presentation.surface) })}
+                  </button>
+                </article>;
+              })}
+            </div>
+          </section>}
           {control.recovery && <details data-testid="relaxed-recovery-audit" style={{ marginTop: 8 }}>
             <summary>{translateCurrent("season.recovery.summary", { actions: control.recovery.actions, outstanding: formatCurrency(control.recovery.outstandingAdvance) })}</summary>
             {[...props.world.systemControl!.recovery!.receipts].reverse().slice(0, 8).map((receipt) => <div key={receipt.id} data-testid={`recovery-receipt-${receipt.id}`} style={{ borderTop: "1px solid #d6c99f", marginTop: 5, paddingTop: 5, fontSize: 12 }}>

@@ -111,6 +111,7 @@ import {
 } from "./game/testing/biomeAuthoring";
 import { createM47CertificationCourse } from "./game/testing/m47Certification";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
+import { reservedMobilityFleetUnitIds } from "./game/m51/rentalBusiness";
 import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
 import { hashGameState } from "./utils/stateHash";
@@ -341,7 +342,7 @@ import {
 } from "./game/livingClub/livingClub";
 import { absoluteDayFor, advanceSeasonalDay, applySeasonCommand, createSeasonalState, seasonalState } from "./game/seasons/seasons";
 import { SEASONS, type SeasonCommand, type SeasonName } from "./game/seasons/types";
-import { createSystemControlState, systemControlEnvelope } from "./game/experience/systemControl";
+import { createSystemControlState, systemControlEnvelope, type AdvancedSystemId } from "./game/experience/systemControl";
 import {
   campaignScene,
   continueCampaignInSandbox,
@@ -871,7 +872,10 @@ export default function App() {
   const campaignPausedRef = useRef(false);
   const [showLiveOverview, setShowLiveOverview] = useState(false);
   const hudManagementFocusNonceRef = useRef(0);
-  const [hudManagementFocus, setHudManagementFocus] = useState<{ target: "pricing" | "maintenance"; nonce: number } | undefined>();
+  const [hudManagementFocus, setHudManagementFocus] = useState<{ target: "pricing" | "maintenance" | "financing"; nonce: number } | undefined>();
+  const operationsFocusNonceRef = useRef(0);
+  const liveOverviewInstanceRef = useRef(0);
+  const [operationsFocus, setOperationsFocus] = useState<{ system: AdvancedSystemId; nonce: number } | undefined>();
   const [followSelected, setFollowSelected] = useState(false);
   const [achievementQueue, setAchievementQueue] = useState<AchievementDefinition[]>([]);
   const [photoMode, setPhotoMode] = useState(false);
@@ -903,6 +907,29 @@ export default function App() {
     if (action === "content") setShowContentLibrary((open) => !open);
     if (action === "photo") enterPhotoMode(false);
   };
+
+  const navigateSimulationSystem = useCallback((system: AdvancedSystemId) => {
+    operationsFocusNonceRef.current += 1;
+    setOperationsFocus({ system, nonce: operationsFocusNonceRef.current });
+    setShowSeasonsLegacy(false);
+    selectWorkspace("operate");
+    if (system === "maintenance" || system === "financing") {
+      setHoleEditMode("global");
+      hudManagementFocusNonceRef.current += 1;
+      setHudManagementFocus({ target: system, nonce: hudManagementFocusNonceRef.current });
+      return;
+    }
+    if (system === "staffing" || system === "pace" || system === "mobility") {
+      liveOverviewInstanceRef.current = operationsFocusNonceRef.current;
+      setShowLiveOverview(true);
+      return;
+    }
+    if (system === "tournaments") {
+      setShowTournaments(true);
+      return;
+    }
+    setShowPropertyManagement(true);
+  }, [selectWorkspace]);
 
   const startContentTestPlay = useCallback((testRun: { course: Course; world: World }) => {
     gameSession.update((current) => {
@@ -1645,6 +1672,7 @@ export default function App() {
     const isM47Fixture = fixtureParams.get("m47Fixture") === "1";
     const isM52Fixture = fixtureParams.get("m52Fixture") === "1";
     const isM53Fixture = fixtureParams.get("m53Fixture") === "1";
+    const isZk689Fixture = fixtureParams.get("zk689Fixture") === "1";
     const m53Fixture = isM53Fixture ? m53SeasonalTerrainFixture(fixtureParams) : null;
     const requestedM52View = fixtureParams.get("m52View");
     const m52View: BiomeReferenceView = BIOME_REFERENCE_VIEWS.includes(requestedM52View as BiomeReferenceView)
@@ -1656,7 +1684,7 @@ export default function App() {
       : 0;
     const isPropertyFixture = fixtureParams.get("propertyFixture") === "1";
     const isPerfMeasurement = fixtureParams.get("perfMeasure") === "1";
-    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isM53Fixture && !isPropertyFixture) return;
+    if (!isPerfFixture && !isM19Fixture && !isM20Fixture && !isM21Fixture && !isM22Fixture && !isM23Fixture && !isM24Fixture && !isM25Fixture && !isM26Fixture && !isM27Fixture && !isM30Fixture && !isM38Fixture && !isM47Fixture && !isM52Fixture && !isM53Fixture && !isZk689Fixture && !isPropertyFixture) return;
     perfFixtureLoadedRef.current = true;
     const m25SeedParam = fixtureParams.get("m25Seed");
     const parsedM25Seed = m25SeedParam == null ? Number.NaN : Number(m25SeedParam);
@@ -1734,6 +1762,20 @@ export default function App() {
       ...(isPerfFixture ? {
         staffLevel: 5,
         staffRoster: staffFromLevel(5, activeCourseLayout(fixtureCourse).id),
+      } : {}),
+      ...(isZk689Fixture ? {
+        week: 9,
+        cash: 750_000,
+        maintenanceBudget: 2_500,
+        reputation: 84,
+        runSeed: 689009,
+        experienceProfile: "simulation" as const,
+        economicPressure: "balanced" as const,
+        systemControl: createSystemControlState("simulation"),
+        staffLevel: 5,
+        staffRoster: staffFromLevel(5, activeCourseLayout(fixtureCourse).id),
+        objectives: null,
+        seasonal: createSeasonalState({ runSeed: 689009, theme: fixtureCourse.theme, week: 9, day: 0 }),
       } : {}),
       ...(isPropertyFixture ? { enterprise: emptyPropertyEnterprise() } : {}),
     };
@@ -1896,7 +1938,7 @@ export default function App() {
         speed: isPerfMeasurement ? "paused" : "4x",
         selectedGolferId: null,
       }));
-    } else if (isM38Fixture || isM30Fixture || isM47Fixture) {
+    } else if (isM38Fixture || isM30Fixture || isM47Fixture || isZk689Fixture) {
       live.restoreSnapshot(snapshotLiveSimulation({
         state: createLiveState(fixtureCourse, fixtureWorld, isM38Fixture ? 5 : 0),
         pendingCash: 0,
@@ -1917,6 +1959,10 @@ export default function App() {
       setActiveHoleIndex(0);
     }
     if (isM27Fixture && !isPerfMeasurement) setShowCourseManager(true);
+    if (isZk689Fixture) {
+      setWorkspaceState("legacy");
+      setShowSeasonsLegacy(true);
+    }
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.restoreCourse") });
     setPendingLoadingContext(null);
     flowDispatch({ type: "ENTER_GAME" });
@@ -3399,6 +3445,37 @@ export default function App() {
         };
         dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
         live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setShowSeasonsLegacy(true);
+      },
+      setZk689SimulationFixture: () => {
+        const fixtureCourse = normalizeCourseLayouts(createRenderPerfCourse("parkland"));
+        const fixtureWorld: World = {
+          ...gameSession.getState().world,
+          week: 9,
+          cash: 750_000,
+          maintenanceBudget: 2_500,
+          reputation: 84,
+          runSeed: 689009,
+          experienceProfile: "simulation",
+          economicPressure: "balanced",
+          systemControl: createSystemControlState("simulation"),
+          staffLevel: 5,
+          staffRoster: staffFromLevel(5, fixtureCourse.activeCourseId),
+          enterprise: {
+            ...emptyPropertyEnterprise(),
+            membership: { active: true, tier: 4, monthlyFee: 200, memberCount: 88, capacity: 145 },
+          },
+          objectives: null,
+          isBankrupt: false,
+          distressWeeks: 0,
+          seasonal: createSeasonalState({ runSeed: 689009, theme: fixtureCourse.theme, week: 9, day: 0 }),
+        };
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setOperationsFocus(undefined);
+        setShowLiveOverview(false);
+        setShowPropertyManagement(false);
+        setShowTournaments(false);
         setShowSeasonsLegacy(true);
       },
       showZk688AdvisorMessage: (target) => {
@@ -5528,7 +5605,7 @@ export default function App() {
             </Suspense>
             {playerRoundLocksEditing && <div role="status" style={{ position: "absolute", left: "50%", top: 54, transform: "translateX(-50%)", zIndex: 112, padding: "6px 10px", borderRadius: 8, background: "rgba(54,69,48,.92)", color: "white", fontSize: 12 }}>{t("playerPro.round.editLocked")}</div>}
             {showProgression && !activeTutorial && <Suspense fallback={null}><ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} /></Suspense>}
-            {showTournaments && !activeTutorial && <Suspense fallback={null}><TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} /></Suspense>}
+            {showTournaments && !activeTutorial && <Suspense fallback={null}><TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} operationsFocus={operationsFocus?.system === "tournaments" ? operationsFocus as { system: "tournaments"; nonce: number } : undefined} onSchedule={bookTournament} onClose={() => { setShowTournaments(false); setOperationsFocus(undefined); }} /></Suspense>}
             {showLandOffice && !activeTutorial && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
             {showCourseManager && !activeTutorial && <Suspense fallback={<div aria-live="polite" style={{ padding: 16 }}>{t("courseSetup.loadingInspector")}</div>}><CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onOpenArchitectureReview={() => { setShowArchitectureReview(true); setShowCourseManager(false); }} onClose={() => setShowCourseManager(false)} /></Suspense>}
             {showArchitectureReview && !activeTutorial && <ArchitectureReviewPanel
@@ -5579,6 +5656,7 @@ export default function App() {
                 kind,
                 absoluteDay,
               })}
+              onNavigateSystem={navigateSimulationSystem}
               onClose={() => setShowSeasonsLegacy(false)}
               biomeContext={contextualUiTheme}
             /></DeferredSurface>}
@@ -5596,8 +5674,8 @@ export default function App() {
               world={world}
               onChoose={chooseCampaign}
             />}
-            {showPropertyManagement && !activeTutorial && <DeferredSurface label={t("property.aria")}><PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} /></DeferredSurface>}
-            {showLiveOverview && !activeTutorial && <DeferredSurface label={t("live.overview")}><LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} paceVisibility={systemControlPolicy.systems.find((system) => system.id === "pace")?.visibility ?? "hidden"} mobilityVisibility={systemControlPolicy.systems.find((system) => system.id === "mobility")?.visibility ?? "hidden"} staffingVisibility={systemControlPolicy.systems.find((system) => system.id === "staffing")?.visibility ?? "hidden"} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} /></DeferredSurface>}
+            {showPropertyManagement && !activeTutorial && <DeferredSurface label={t("property.aria")}><PropertyManagementPanel course={course} world={world} operationsFocus={operationsFocus && ["memberships", "property", "resort", "community"].includes(operationsFocus.system) ? operationsFocus as { system: "memberships" | "property" | "resort" | "community"; nonce: number } : undefined} onCommand={runPropertyCommand} onClose={() => { setShowPropertyManagement(false); setOperationsFocus(undefined); }} /></DeferredSurface>}
+            {showLiveOverview && !activeTutorial && <DeferredSurface label={t("live.overview")}><LiveOverview key={`live-overview-${liveOverviewInstanceRef.current}`} course={course} cash={world.cash} reservedMobilityFleetUnitIds={reservedMobilityFleetUnitIds(live.getSnapshot()?.state.m51)} operationsFocus={operationsFocus && ["staffing", "pace", "mobility"].includes(operationsFocus.system) ? operationsFocus as { system: "staffing" | "pace" | "mobility"; nonce: number } : undefined} status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} paceVisibility={systemControlPolicy.systems.find((system) => system.id === "pace")?.visibility ?? "hidden"} mobilityVisibility={systemControlPolicy.systems.find((system) => system.id === "mobility")?.visibility ?? "hidden"} staffingVisibility={systemControlPolicy.systems.find((system) => system.id === "staffing")?.visibility ?? "hidden"} onOperationsFocusHandled={(nonce) => setOperationsFocus((current) => current?.nonce === nonce ? undefined : current)} onAssignStaff={(staffId, courseId) => { runStaffCommand({ type: "reassign", staffId, courseId }); }} onScheduleStaff={(staffId, shiftStart, shiftEnd) => { runStaffCommand({ type: "schedule", staffId, shiftStart, shiftEnd }); }} onConfigureMobility={(buildingId, mode, policy) => dispatch({ type: "CONFIGURE_MOBILITY_PRODUCT", buildingId, mode, ...policy })} onPurchaseMobility={(buildingId, mode, quantity) => dispatch({ type: "PURCHASE_MOBILITY_FLEET", buildingId, mode, quantity })} onSalvageMobility={(buildingId, mode, quantity) => dispatch({ type: "SALVAGE_MOBILITY_FLEET", buildingId, mode, quantity, reservedFleetUnitIds: reservedMobilityFleetUnitIds(live.getSnapshot()?.state.m51) })} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); setOperationsFocus(undefined); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); setOperationsFocus(undefined); }} onClose={() => { setShowLiveOverview(false); setOperationsFocus(undefined); }} /></DeferredSurface>}
             {teeSetupPrompt && !activeTutorial && (
               <div data-testid="tee-setup-offer" role="dialog" aria-label={t("courseSetup.offerAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 145, top: 64, right: 16, width: 280, padding: 14 }}>
                 <strong>{t("courseSetup.offerTitle")}</strong>

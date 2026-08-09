@@ -36,7 +36,7 @@ export type BuildingMutationAction =
 export type MobilityBusinessAction =
   | { type: "CONFIGURE_MOBILITY_PRODUCT"; buildingId: string; mode: "pushcart" | "riding_cart"; enabled?: boolean; price?: number }
   | { type: "PURCHASE_MOBILITY_FLEET"; buildingId: string; mode: "pushcart" | "riding_cart"; quantity: number }
-  | { type: "SALVAGE_MOBILITY_FLEET"; buildingId: string; mode: "pushcart" | "riding_cart"; quantity: number }
+  | { type: "SALVAGE_MOBILITY_FLEET"; buildingId: string; mode: "pushcart" | "riding_cart"; quantity: number; reservedFleetUnitIds: string[] }
   | { type: "UPGRADE_MOBILITY_RENTAL_TIER"; buildingId: string };
 
 export type DecorationMutationAction =

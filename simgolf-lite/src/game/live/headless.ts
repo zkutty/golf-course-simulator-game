@@ -32,7 +32,7 @@ export function runLiveDaysHeadless(args: {
     live = createLiveState(course, world, dayIndex);
     let guard = 0;
     while (!live.dayOver) {
-      stepLive(live, course, args.stepMinutes ?? 2);
+      stepLive(live, course, args.stepMinutes ?? 2, world);
       if (++guard > 100_000) throw new Error(`Live day ${day + 1} did not terminate`);
     }
     rounds += live.roundsFinished;

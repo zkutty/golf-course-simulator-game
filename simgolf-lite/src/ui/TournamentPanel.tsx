@@ -32,6 +32,7 @@ export function TournamentPanel(props: {
   world: World;
   currentDay: number;
   liveTournament: LiveStatus["tournament"];
+  operationsFocus?: { system: "tournaments"; nonce: number };
   onSchedule: (tier: TournamentTier, daysAhead: number) => string | null;
   onClose: () => void;
 }) {
@@ -53,12 +54,30 @@ export function TournamentPanel(props: {
     const unmet = event.currentQualification?.requirements.find((item) => !item.passed);
     return unmet ? `${t(requirementKey(unmet.id))}: ${t("tournament.currentRequired", { current: unmet.current, required: unmet.required })}` : event.warning ?? event.cancellationReason ?? "";
   };
+  const scheduleSelectedTournament = () => {
+    if (!eligibility.eligible) {
+      setNotice(t("tournament.notEligible", { reason: eligibility.blockingReasons[0] ?? t("tournament.requirements") }));
+      return;
+    }
+    const failed = eligibility.requirements.filter((requirement) => !requirement.passed).length;
+    const confirmed = props.world.experienceProfile !== "simulation" || window.confirm(t("tournament.confirm", {
+      deposit: formatCurrency(spec.bookingCost),
+      failed,
+      revenue: formatCurrency(spec.revenueAward),
+      reputation: spec.reputationAward,
+    }));
+    if (confirmed) setNotice(props.onSchedule(tier, daysAhead) ?? t("tournament.booked"));
+  };
   useEffect(() => {
     if (cancelled[0]) panelRef.current?.scrollTo({ top: 0, behavior: "auto" });
   }, [cancelled]);
+  useEffect(() => {
+    if (!props.operationsFocus) return;
+    panelRef.current?.focus({ preventScroll: true });
+  }, [props.operationsFocus]);
 
   return (
-    <section ref={panelRef} role="dialog" aria-modal="false" aria-labelledby="tournament-title" data-testid="tournament-panel" style={{ position: "absolute", top: 54, left: 10, zIndex: 180, width: "min(420px, calc(100% - 20px))", maxHeight: "calc(100% - 126px)", overflow: "auto", borderRadius: 14, border: "2px solid #8a6826", background: "#fbf4df", color: "#253126", boxShadow: "0 14px 38px rgba(0,0,0,.36)" }}>
+    <section ref={panelRef} tabIndex={-1} role="dialog" aria-modal="false" aria-labelledby="tournament-title" data-testid="tournament-panel" data-operation-system="tournaments" style={{ position: "absolute", top: 54, left: 10, zIndex: 180, width: "min(420px, calc(100% - 20px))", maxHeight: "calc(100% - 126px)", overflow: "auto", borderRadius: 14, border: "2px solid #8a6826", background: "#fbf4df", color: "#253126", boxShadow: "0 14px 38px rgba(0,0,0,.36)" }}>
       <header style={{ position: "sticky", top: 0, zIndex: 1, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", padding: "12px 14px", background: "#334f38", color: "#fff8dc", borderBottom: "2px solid #c39a43" }}>
         <div><small style={{ opacity: .72 }}>{t("tournament.eyebrow")}</small><h2 id="tournament-title" style={{ margin: 0, fontSize: 20 }}>{t("tournament.title")}</h2></div>
         <button aria-label={t("tournament.close")} onClick={props.onClose} style={{ border: "1px solid rgba(255,255,255,.35)", borderRadius: 7, background: "rgba(255,255,255,.1)", color: "white", padding: "6px 9px", cursor: "pointer" }}>✕</button>
@@ -95,7 +114,7 @@ export function TournamentPanel(props: {
                 {eligibility.requirements.map((item) => <li key={item.id} data-requirement={item.id} style={{ borderTop: "1px solid rgba(80,70,45,.13)", paddingTop: 5 }}><div><span aria-hidden="true">{item.passed ? "✓" : "✕"}</span> <strong>{t(requirementKey(item.id))}</strong></div><small>{t("tournament.currentRequired", { current: item.current, required: item.required })}</small>{!item.passed && <div style={{ color: "#8a2e20", fontSize: 11 }}>{t("tournament.fix", { guidance: t(guidanceKey(item.id)) })}</div>}</li>)}
               </ul>
             </section>
-            <button data-testid="schedule-tournament" onClick={() => setNotice(props.onSchedule(tier, daysAhead) ?? t("tournament.booked"))} style={{ border: "1px solid #426143", borderRadius: 8, background: "#426143", color: "white", padding: "10px 12px", fontWeight: 900, cursor: "pointer" }}>{t("tournament.book")}</button>
+            <button data-testid="schedule-tournament" onClick={scheduleSelectedTournament} style={{ border: "1px solid #426143", borderRadius: 8, background: "#426143", color: "white", padding: "10px 12px", fontWeight: 900, cursor: "pointer" }}>{t("tournament.book")}</button>
             {notice && <div role="status" style={{ padding: 8, borderRadius: 7, background: notice === t("tournament.booked") ? "#e2f2df" : "#f8e2dc", color: "#432" }}>{notice}</div>}
           </section>
         )}

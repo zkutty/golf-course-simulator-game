@@ -25,6 +25,7 @@ import {
   emptyPaceDayMetrics,
   ensureCoursePaceMetrics,
   groupTimeParMinutes,
+  isStaffOnDuty,
   normalizedStaff,
 } from "./pace";
 import { activeWeather, seasonalState, weatherModifiers } from "../seasons/seasons";
@@ -52,6 +53,27 @@ function makeRouter(course: Course, cache: Map<string, Point[] | null>) {
 export interface PublicOperationPolicy {
   /** A completed private preview permits public play on a valid three-hole layout. */
   tutorialThreeHolePreview?: boolean;
+}
+
+function staffCoverageAtMinute(
+  world: World,
+  course: Course,
+  courseViews: ReturnType<typeof operatingCourseViews>,
+  minute: number,
+) {
+  const marshalCoverageByCourse: Record<string, number> = {};
+  const beverageCoverageByCourse: Record<string, number> = {};
+  const overtimeRateByCourse: Record<string, number> = {};
+  for (const member of normalizedStaff(world, course)) {
+    if (!isStaffOnDuty(member, minute)) continue;
+    const courseId = member.courseId ?? courseViews[0]?.layout.id;
+    if (!courseId) continue;
+    if (member.role === "marshal") marshalCoverageByCourse[courseId] = (marshalCoverageByCourse[courseId] ?? 0) + 1;
+    if (member.role === "cart_attendant") beverageCoverageByCourse[courseId] = (beverageCoverageByCourse[courseId] ?? 0) + 1;
+    overtimeRateByCourse[courseId] = (overtimeRateByCourse[courseId] ?? 0)
+      + member.weeklyWage / BALANCE.paceOperations.staffHoursPerWeek * BALANCE.paceOperations.overtimePremium;
+  }
+  return { marshalCoverageByCourse, beverageCoverageByCourse, overtimeRateByCourse };
 }
 
 function eligibleArrivalViews(course: Course, policy?: PublicOperationPolicy) {
@@ -134,18 +156,7 @@ export function createLiveState(
     detractors: 0,
     willReturnCount: 0,
   }]));
-  const staff = normalizedStaff(world, course);
-  const marshalCoverageByCourse: Record<string, number> = {};
-  const beverageCoverageByCourse: Record<string, number> = {};
-  const overtimeRateByCourse: Record<string, number> = {};
-  for (const member of staff) {
-    const courseId = member.courseId ?? courseViews[0]?.layout.id;
-    if (!courseId) continue;
-    if (member.role === "marshal") marshalCoverageByCourse[courseId] = (marshalCoverageByCourse[courseId] ?? 0) + 1;
-    if (member.role === "cart_attendant") beverageCoverageByCourse[courseId] = (beverageCoverageByCourse[courseId] ?? 0) + 1;
-    overtimeRateByCourse[courseId] = (overtimeRateByCourse[courseId] ?? 0)
-      + member.weeklyWage / BALANCE.paceOperations.staffHoursPerWeek * BALANCE.paceOperations.overtimePremium;
-  }
+  const { marshalCoverageByCourse, beverageCoverageByCourse, overtimeRateByCourse } = staffCoverageAtMinute(world, course, courseViews, LIVE.day.openMinute);
   const groups = [...new Map(arrivals.map((arrival) => [arrival.groupId!, {
     id: arrival.groupId!, courseId: arrival.courseId ?? courseViews[0]?.layout.id ?? "course-primary",
     bookedAt: arrival.atMinute, startedAt: null, golferIds: [], waitMinutes: 0, blocked: false,
@@ -447,11 +458,18 @@ export interface StepEvents {
 export function stepLive(
   state: LiveState,
   course: Course,
-  dtMin: number
+  dtMin: number,
+  world?: World,
 ): StepEvents {
   if (state.dayOver || dtMin <= 0) return { cashDelta: 0, finishedThisStep: 0, completedRounds: [] };
 
   state.dayMinute += dtMin;
+  if (world) {
+    const coverage = staffCoverageAtMinute(world, course, operatingCourseViews(course), state.dayMinute);
+    state.marshalCoverageByCourse = coverage.marshalCoverageByCourse;
+    state.beverageCoverageByCourse = coverage.beverageCoverageByCourse;
+    state.overtimeRateByCourse = coverage.overtimeRateByCourse;
+  }
   let cashDelta = 0;
   let finishedThisStep = 0;
   const completedRounds: CompletedRound[] = [];
