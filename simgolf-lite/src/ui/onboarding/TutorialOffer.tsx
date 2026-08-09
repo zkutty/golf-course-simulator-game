@@ -3,8 +3,9 @@ import { AdvisorPresenter } from "./AdvisorPresenter";
 import { presenterButtonStyle } from "./presenterStyles";
 import { T } from "../../i18n/T";
 import { translateCurrent } from "../../i18n/core";
+import type { ExperienceProfile } from "../../game/models/types";
 
-export function TutorialOffer(props: { onAccept: () => void; onSkip: () => void }) {
+export function TutorialOffer(props: { profile: ExperienceProfile; onAccept: () => void; onSkip: () => void }) {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -27,7 +28,7 @@ export function TutorialOffer(props: { onAccept: () => void; onSkip: () => void 
       <AdvisorPresenter
         eyebrow={translateCurrent("tutorial.offer.eyebrow")}
         title={translateCurrent("tutorial.offer.title")}
-        body={translateCurrent("tutorial.offer.body")}
+        body={translateCurrent(props.profile === "relaxed" ? "tutorial.offer.bodyRelaxed" : props.profile === "simulation" ? "tutorial.offer.bodySimulation" : "tutorial.offer.bodyClassic")}
         expression="pleased"
         actions={
           <>

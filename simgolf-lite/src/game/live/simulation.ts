@@ -49,15 +49,23 @@ function makeRouter(course: Course, cache: Map<string, Point[] | null>) {
   };
 }
 
-function eligibleArrivalViews(course: Course) {
+export interface PublicOperationPolicy {
+  /** A completed private preview permits public play on a valid three-hole layout. */
+  tutorialThreeHolePreview?: boolean;
+}
+
+function eligibleArrivalViews(course: Course, policy?: PublicOperationPolicy) {
   return operatingCourseViews(course).filter(({ layout, course: view }) =>
-    layout.legacyPartial === true || isCoursePlayable(view)
+    layout.legacyPartial === true
+    || isCoursePlayable(view)
+    || (policy?.tutorialThreeHolePreview === true
+      && scoreCourseHoles(view).holes.filter((hole) => hole.isComplete && hole.isValid).length >= 3)
   );
 }
 
 /** True when at least one operating layout may receive a real tee sheet. */
-export function courseCanReceiveLiveArrivals(course: Course): boolean {
-  return eligibleArrivalViews(course).length > 0;
+export function courseCanReceiveLiveArrivals(course: Course, policy?: PublicOperationPolicy): boolean {
+  return eligibleArrivalViews(course, policy).length > 0;
 }
 
 export function shouldHoldUnopenedLiveDay(
@@ -79,14 +87,15 @@ export function shouldHoldUnopenedLiveDay(
 export function createLiveState(
   course: Course,
   world: World,
-  dayIndex: number
+  dayIndex: number,
+  policy?: PublicOperationPolicy,
 ): LiveState {
   const seed = (world.runSeed | 0) + dayIndex * 7919;
   const courseViews = operatingCourseViews(course);
   // Legacy one-hole fixtures/saves explicitly opt into partial operation. A
   // normal authored layout must pass the same playability gate used by the
   // economy and tutorial before it can receive a tee sheet.
-  const arrivalViews = eligibleArrivalViews(course);
+  const arrivalViews = eligibleArrivalViews(course, policy);
   const tournamentEvent = tournamentForDate(world, dayIndex, course);
   const tournamentCourse = tournamentEvent
     ? tournamentEvent.courseId
@@ -197,6 +206,7 @@ export function ensureOpeningDayArrivals(
   state: LiveState,
   course: Course,
   world: World,
+  policy?: PublicOperationPolicy,
 ): boolean {
   const pristineOpeningDay =
     !state.dayOver
@@ -210,7 +220,7 @@ export function ensureOpeningDayArrivals(
     && state.dayMinute <= LIVE.day.lastArrivalMinute;
   if (!pristineOpeningDay) return false;
 
-  const planned = createLiveState(course, world, state.dayIndex);
+  const planned = createLiveState(course, world, state.dayIndex, policy);
   if (planned.arrivals.length === 0) return false;
 
   const currentMinute = state.dayMinute;

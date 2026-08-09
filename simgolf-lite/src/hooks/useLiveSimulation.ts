@@ -229,8 +229,9 @@ export function useLiveSimulation(args: {
   onCashTick?: () => void;
   onAudioEvent?: (event: LiveAudioEvent) => void;
   onRoundCompleted?: (round: CompletedRound, dayIndex: number) => void;
+  publicThreeHoleOperation?: boolean;
 }) {
-  const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick, onAudioEvent, onRoundCompleted } = args;
+  const { enabled, course, world, setWorld, setCourse, onDayCommitted, onCashTick, onAudioEvent, onRoundCompleted, publicThreeHoleOperation = false } = args;
 
   const [speed, setSpeedState] = useState<SpeedName>("paused");
   const [status, setStatus] = useState<LiveStatus>({
@@ -287,7 +288,8 @@ export function useLiveSimulation(args: {
   const onAudioRef = useRef(onAudioEvent);
   const onRoundRef = useRef(onRoundCompleted);
   const skipNextReconcileRef = useRef(false);
-  const courseCanReceiveArrivalsRef = useRef(courseCanReceiveLiveArrivals(course));
+  const operationPolicyRef = useRef({ tutorialThreeHolePreview: publicThreeHoleOperation });
+  const courseCanReceiveArrivalsRef = useRef(courseCanReceiveLiveArrivals(course, { tutorialThreeHolePreview: publicThreeHoleOperation }));
 
   const buildRenderData = useCallback((live: LiveState) => {
     renderBufferIndexRef.current = renderBufferIndexRef.current === 0 ? 1 : 0;
@@ -301,6 +303,7 @@ export function useLiveSimulation(args: {
     onCashRef.current = onCashTick;
     onAudioRef.current = onAudioEvent;
     onRoundRef.current = onRoundCompleted;
+    operationPolicyRef.current = { tutorialThreeHolePreview: publicThreeHoleOperation };
   });
 
   // Detect course *geometry* edits (terrain/holes/obstacles) and re-plan any
@@ -316,8 +319,8 @@ export function useLiveSimulation(args: {
       prev.obstacles !== course.obstacles ||
       prev.buildings !== course.buildings;
     const live = liveRef.current;
-    courseCanReceiveArrivalsRef.current = courseCanReceiveLiveArrivals(course);
-    if (enabled && live) ensureOpeningDayArrivals(live, course, worldRef.current);
+    courseCanReceiveArrivalsRef.current = courseCanReceiveLiveArrivals(course, operationPolicyRef.current);
+    if (enabled && live) ensureOpeningDayArrivals(live, course, worldRef.current, operationPolicyRef.current);
     if (!changed) return;
     geomRef.current = { tiles: course.tiles, holes: course.holes, obstacles: course.obstacles, buildings: course.buildings };
     const skipGolferReconcile = skipNextReconcileRef.current;
@@ -327,7 +330,7 @@ export function useLiveSimulation(args: {
       reconcileGolfers(live, course);
       golfersRef.current = buildRenderData(live);
     }
-  }, [buildRenderData, enabled, course]);
+  }, [buildRenderData, enabled, course, publicThreeHoleOperation]);
 
   const flushCash = useCallback(() => {
     const d = pendingCashRef.current;
@@ -439,7 +442,7 @@ export function useLiveSimulation(args: {
     worldRef.current = preparedNext.world;
     setWorld(() => preparedNext.world);
     if (closesWeek) weekLedgerRef.current = createWeekLedger(preparedNext.world.week);
-    const next = createLiveState(nextCourse, preparedNext.world, nextDayIndex);
+    const next = createLiveState(nextCourse, preparedNext.world, nextDayIndex, operationPolicyRef.current);
     liveRef.current = next;
     golfersRef.current = [];
     selectedIdRef.current = null;
@@ -526,7 +529,7 @@ export function useLiveSimulation(args: {
         worldRef.current = prepared.world;
         setWorld(() => prepared.world);
       }
-      liveRef.current = createLiveState(courseRef.current, prepared.world, 0);
+      liveRef.current = createLiveState(courseRef.current, prepared.world, 0, operationPolicyRef.current);
     }
 
     const tick = (ts: number) => {
@@ -640,7 +643,7 @@ export function useLiveSimulation(args: {
 
   const advanceTime = useCallback((ms: number) => {
     if (!enabled || !Number.isFinite(ms) || ms <= 0) return;
-    const live = liveRef.current ?? createLiveState(courseRef.current, worldRef.current, 0);
+    const live = liveRef.current ?? createLiveState(courseRef.current, worldRef.current, 0, operationPolicyRef.current);
     liveRef.current = live;
     advanceSimulation(live, Math.min(2_000, ms));
     flushCash();

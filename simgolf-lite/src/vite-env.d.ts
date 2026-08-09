@@ -36,6 +36,7 @@ interface Window {
       materials: import("./game/models/types").Terrain[];
       colors: Partial<Record<import("./game/models/types").Terrain, number>>;
     } | null;
+    routeOverlay(): { points: number; visibleLayers: number };
     rendererAtlasState(): {
       requested: {
         biome: import("./game/models/types").LandTheme;

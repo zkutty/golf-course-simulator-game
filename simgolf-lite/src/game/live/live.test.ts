@@ -94,6 +94,17 @@ function makeTutorialNine(playable = true): Course {
   };
 }
 
+function makePreviewThree(): Course {
+  const course = makeTutorialNine(true);
+  const holes = course.holes.slice(0, 3);
+  const holeIds = holes.map((hole) => hole.id!);
+  return {
+    ...course,
+    holes,
+    layouts: [{ ...course.layouts![0], draftHoleIds: holeIds, publishedHoleIds: holeIds }],
+  };
+}
+
 function freshGolfer(course: Course): Golfer {
   const round = buildGolferRound({
     course,
@@ -336,6 +347,17 @@ describe("planDay + volume", () => {
 });
 
 describe("opening-day arrival handoff", () => {
+  it("requires the explicit completed-preview policy for a valid three-hole public tee sheet", () => {
+    const world: World = { ...DEFAULT_WORLD, runSeed: 686 };
+    const course = makePreviewThree();
+    expect(courseCanReceiveLiveArrivals(course)).toBe(false);
+    expect(createLiveState(course, world, 0).arrivals).toEqual([]);
+    const policy = { tutorialThreeHolePreview: true } as const;
+    expect(courseCanReceiveLiveArrivals(course, policy)).toBe(true);
+    expect(createLiveState(course, world, 0, policy).arrivals.length).toBeGreaterThan(0);
+    expect(course.layouts?.[0].legacyPartial).not.toBe(true);
+  });
+
   it("plans a deterministic first group when a real nine-hole course becomes playable", () => {
     const world: World = { ...DEFAULT_WORLD, runSeed: 702 };
     const invalid = makeTutorialNine(false);

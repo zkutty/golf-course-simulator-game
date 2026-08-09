@@ -373,7 +373,7 @@ test("tutorial started from another workspace restores a usable fairway lesson",
 
   await page.getByRole("button", { name: "Tutorial", exact: true }).click();
   await expect(page.getByTestId("tutorial-overlay"))
-    .toHaveAttribute("data-step-id", "meet-land");
+    .toHaveAttribute("data-step-id", "welcome");
   await expect.poll(() => page.evaluate(() => {
     const state = JSON.parse(window.render_game_to_text!());
     return {
@@ -396,9 +396,9 @@ test("tutorial started from another workspace restores a usable fairway lesson",
   await expect(dock).toBeVisible();
   await expect(dock).toHaveAttribute("data-tutorial-target", "terrain-palette");
 
-  await page.getByRole("button", { name: "Show me the tools" }).click();
+  await page.getByRole("button", { name: "Start designing" }).click();
   await expect(page.getByTestId("tutorial-overlay"))
-    .toHaveAttribute("data-step-id", "paint-corridor");
+    .toHaveAttribute("data-step-id", "paint-fairway");
   await expect(page.getByTestId("design-card-terrain-fairway"))
     .toHaveAttribute("aria-selected", "true");
   const fairwayBefore = await page.evaluate(

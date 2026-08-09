@@ -204,7 +204,7 @@ export function HUD(props: {
   const [objectivesOpen, setObjectivesOpen] = useState(false);
   const activeTab: Tab = tutorialTarget === "weekly-report"
     ? "Results"
-    : tutorialTarget === "green-fee" || tutorialTarget === "maintenance"
+    : tutorialTarget === "green-fee" || tutorialTarget === "maintenance" || tutorialTarget === "staff"
       ? "Upgrades"
       : tutorialTarget
         ? "Editor"
@@ -341,7 +341,7 @@ export function HUD(props: {
               <button onClick={() => onOpenGolfopedia()} style={{ padding: "6px 8px", borderRadius: 999, border: "1px solid #ddd", background: "#fff", fontSize: 12, fontWeight: 800 }}>
                 <T id="auto.ui.hud.help" /></button>
             </Tooltip>
-            <button onClick={onStartTutorial} style={{ padding: "6px 8px", borderRadius: 999, border: "1px solid #ddd", background: "#fff", fontSize: 12, fontWeight: 800 }}>
+            <button data-testid="tutorial-launcher" onClick={onStartTutorial} style={{ padding: "6px 8px", borderRadius: 999, border: "1px solid #ddd", background: "#fff", fontSize: 12, fontWeight: 800 }}>
               <T id="auto.ui.hud.tutorial" /></button>
             <span
               title={translateCurrent("hud.experienceTitle", { profile: experience.label, pressure: pressure.label })}
@@ -1765,6 +1765,7 @@ export function HUD(props: {
             <Section title={translateCurrent("auto.ui.hud.upgrades")}>
               <div style={{ display: "grid", gap: 8 }}>
                 <button
+                  data-tutorial-target="staff"
                   onClick={onUpgradeStaff}
                   disabled={!canUpgradeStaff}
                   style={{

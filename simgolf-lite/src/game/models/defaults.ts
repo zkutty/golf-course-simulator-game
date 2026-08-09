@@ -79,6 +79,7 @@ export const DEFAULT_WORLD: World = {
   experienceProfile: "classic",
   economicPressure: "balanced",
   systemControl: createSystemControlState("classic"),
+  onboardingRewards: { version: 1, receipts: [] },
   tournaments: { version: 2, events: [] },
   enterprise: emptyPropertyEnterprise(),
   livingClub: emptyLivingClubState(),

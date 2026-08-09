@@ -1893,6 +1893,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
           colors: { ...terrainPreviewRenderRef.current.colors },
         }
         : null,
+      routeOverlay: () => ({
+        points: activePath?.length ?? 0,
+        visibleLayers: layersRef.current?.terrainDecals.children.filter((child) => child.label === ROUTE_LABEL && child.visible).length ?? 0,
+      }),
       rendererAtlasState: () => {
         const layers = layersRef.current;
         const world = layers?.world;
@@ -1971,6 +1975,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (window.__coursecraftPixiTest === api) delete window.__coursecraftPixiTest;
     };
   }, [
+    activePath,
     appReady,
     applyCamera,
     atlasContext,
@@ -4657,7 +4662,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const p = pathPoint(activePath[i]);
         g.lineTo(p.x, p.y);
       }
-      g.stroke({ width: 2, color: 0xffffff, alpha: 0.75 });
+      g.stroke({ width: 6, color: 0x173f31, alpha: 0.9 });
+      g.moveTo(first.x, first.y);
+      for (let i = 1; i < activePath.length; i++) {
+        const p = pathPoint(activePath[i]);
+        g.lineTo(p.x, p.y);
+      }
+      g.stroke({ width: 3, color: 0xf7cf62, alpha: 1 });
+      for (const point of activePath) {
+        const p = pathPoint(point);
+        g.circle(p.x, p.y, 4);
+        g.fill({ color: 0xfff4ba, alpha: 1 });
+        g.stroke({ width: 2, color: 0x173f31, alpha: 1 });
+      }
       g.label = ROUTE_LABEL;
       layers.terrainDecals.addChild(g);
     }

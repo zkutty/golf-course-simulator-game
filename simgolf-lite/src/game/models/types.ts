@@ -506,6 +506,16 @@ export interface World {
   economicPressure?: EconomicPressure;
   /** ZK-685 explicit per-system choices and monotonic profile graduation. */
   systemControl?: SystemControlStateV1;
+  /** Save-authoritative, idempotent benefits granted by onboarding previews. */
+  onboardingRewards?: {
+    version: 1;
+    receipts: Array<{
+      id: string;
+      previewId: string;
+      cash: number;
+      reputation: number;
+    }>;
+  };
   /** @deprecated Pre-v29 compatibility carrier; omitted by current persistence. */
   difficulty?: Difficulty;
   founderName?: string;

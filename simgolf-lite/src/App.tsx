@@ -146,13 +146,23 @@ import { AdvisorCard } from "./ui/onboarding/AdvisorCard";
 import { TutorialOverlay } from "./ui/onboarding/TutorialOverlay";
 import { TutorialOffer } from "./ui/onboarding/TutorialOffer";
 import {
-  TUTORIAL_STEPS,
-  createTutorialProgress,
+  advanceTutorialProgress,
+  claimTutorialPreviewReward,
   loadTutorialProgress,
   reconcileTutorialSession,
+  reconcileTutorialRewardTransaction,
+  restartTutorialProgress,
+  resumeTutorialProgress,
   saveTutorialProgress,
+  skipTutorial,
+  skipTutorialModule,
+  tutorialCanAdvance,
+  tutorialPublicThreeHoleOperation,
+  tutorialStep,
+  tutorialStepIndex,
   type TutorialProgress,
 } from "./game/onboarding/tutorial";
+import { validHoleCount } from "./game/onboarding/invitedPreview";
 import { loadAppProfile, saveAppProfile, updateAppProfile, type AppProfile } from "./game/onboarding/profile";
 import { advisorMessages, allowsMessage, type AdvisorMessage } from "./game/advisor/advisor";
 import { INITIAL_SCREEN_FLOW, reduceScreenFlow } from "./app/screenFlow";
@@ -748,7 +758,9 @@ export default function App() {
   const scenarioRecordedRef = useRef(false);
   const [golfopediaEntry, setGolfopediaEntry] = useState<string | null | undefined>(undefined);
   const [tutorialProgress, setTutorialProgress] = useState<TutorialProgress | null>(() => loadTutorialProgress());
+  const activeTutorial = tutorialProgress?.active === true ? tutorialProgress : null;
   const [tutorialSaveStatus, setTutorialSaveStatus] = useState<"saving" | "saved">("saving");
+  const [tutorialMilestoneQueue, setTutorialMilestoneQueue] = useState<Array<3 | 6 | 9>>([]);
   const tutorialSaveSequenceRef = useRef(0);
   const [showTutorialOffer, setShowTutorialOffer] = useState(false);
   const [advisorMessage, setAdvisorMessage] = useState<AdvisorMessage | null>(null);
@@ -1014,6 +1026,7 @@ export default function App() {
     world,
     setWorld,
     setCourse,
+    publicThreeHoleOperation: tutorialPublicThreeHoleOperation(tutorialProgress, appProfile.tutorialCompleted, world),
     onDayCommitted: (result, liveSnapshot, completedWeek) => {
       if (completedWeek) {
         const report: WeekResult = {
@@ -1965,7 +1978,7 @@ export default function App() {
         if (flow.modal) {
           event.preventDefault();
           flowDispatch({ type: "CLOSE_TOP_LAYER" });
-        } else if (tutorialProgress) {
+        } else if (activeTutorial) {
           // The tutorial owns the top layer. Opening the pause menu here would
           // stack two competing dialogs and obscure the highlighted control.
           event.preventDefault();
@@ -1999,7 +2012,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activateObstacleEditing, activateTerrainEditing, appProfile.accessibility.keybindings, flow.base, flow.modal, flow.paused, live, openPauseMenu, quickSave, resumeFromPause, toggleClock, tutorialProgress]);
+  }, [activateObstacleEditing, activateTerrainEditing, appProfile.accessibility.keybindings, flow.base, flow.modal, flow.paused, live, openPauseMenu, quickSave, resumeFromPause, toggleClock, activeTutorial]);
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -2267,7 +2280,7 @@ export default function App() {
   }, [audio]);
 
   useEffect(() => {
-    if (screen !== "game" || tutorialProgress || showTutorialOffer || advisorMessage || flow.modal || flow.paused || showVictory || showBridgePrompt) return;
+    if (screen !== "game" || activeTutorial || showTutorialOffer || advisorMessage || flow.modal || flow.paused || showVictory || showBridgePrompt) return;
     if (Date.now() < advisorCooldownUntilRef.current) return;
     const frequency = loadAppProfile().advisorFrequency;
     const previous = history.length >= 2 ? history[history.length - 2] : undefined;
@@ -2278,7 +2291,7 @@ export default function App() {
       setAdvisorMessage(next);
       setA11yMessage(`${next.title}. ${next.body}`);
     }
-  }, [screen, tutorialProgress, showTutorialOffer, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, activeOperatingCourse, world, last, history, advisorWake, t]);
+  }, [screen, activeTutorial, showTutorialOffer, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, activeOperatingCourse, world, last, history, advisorWake, t]);
 
   function dismissAdvisor() {
     if (advisorMessage) {
@@ -2388,7 +2401,7 @@ export default function App() {
     const observedCompletedRounds = live.getSnapshot()?.state.observedRounds?.filter((round) =>
       round.completed && round.holesTotal > 0 && round.holesPlayed >= round.holesTotal
     ).length ?? 0;
-    const progress = createTutorialProgress(tutorialCourse, tutorialWorld, observedCompletedRounds);
+    const progress = resumeTutorialProgress(tutorialProgress, tutorialCourse, tutorialWorld, observedCompletedRounds);
     prepareTutorialPaintCorridor();
     setTutorialProgress(progress);
     saveTutorialProgress(progress);
@@ -2398,13 +2411,24 @@ export default function App() {
     setShowTutorialOffer(false);
   }
 
-  function finishTutorial(completed: boolean) {
-    setTutorialProgress(null);
+  function restartTutorial() {
+    const observedCompletedRounds = live.getSnapshot()?.state.observedRounds?.filter((round) =>
+      round.completed && round.holesTotal > 0 && round.holesPlayed >= round.holesTotal
+    ).length ?? 0;
+    const progress = restartTutorialProgress(tutorialProgress, course, world, observedCompletedRounds);
+    prepareTutorialPaintCorridor();
+    setTutorialProgress(progress);
+    saveTutorialProgress(progress);
+  }
+
+  function finishTutorial(progress: TutorialProgress) {
+    setTutorialProgress(progress);
     setTeeSetupPrompt(null);
-    saveTutorialProgress(null);
+    saveTutorialProgress(progress);
+    const completed = progress.completion === "creative" || progress.completion === "full";
     updateAppProfile({ tutorialOffered: true, tutorialCompleted: completed || loadAppProfile().tutorialCompleted });
     setShowTutorialOffer(false);
-    void autosave({ course, world, history, records, live: live.getSnapshot(), tutorial: null });
+    void autosave({ course, world: gameSession.getState().world, history, records, live: live.getSnapshot(), tutorial: progress });
     checkAchievements(records);
   }
 
@@ -2422,6 +2446,8 @@ export default function App() {
     setRecords(freshRecords);
     setLast(undefined);
     setPendingWeekReport(null);
+    setTutorialProgress(null);
+    saveTutorialProgress(null);
     activateTerrainEditing("curve", "fairway");
     setActiveHoleIndex(0);
     setWizardStep("TEE");
@@ -2469,30 +2495,49 @@ export default function App() {
   }, [screen, course, gameSession, tutorialProgress, getLiveSnapshot]);
 
   // Milestones and resumed saves reconcile from authoritative course state,
-  // rather than relying on a one-shot ninth-hole event that may already have
-  // fired. The pure reconciler advances only the open-course lesson once.
+  // rather than relying on one-shot hole-completion events that may already
+  // have fired. The pure reconciler records each 3/6/9 receipt once.
   useEffect(() => {
     if (screen !== "game" || !tutorialProgress) return;
     const reconciled = reconcileTutorialSession(tutorialProgress, course, viewMode);
     if (reconciled.progress === tutorialProgress) return;
+    const priorMilestones = new Set(tutorialProgress.receipts.milestones.map((receipt) => receipt.holes));
+    const milestones = reconciled.progress.receipts.milestones.filter((receipt) => !priorMilestones.has(receipt.holes)).map((receipt) => receipt.holes);
+    if (milestones.length) setTutorialMilestoneQueue((queue) => [...queue, ...milestones]);
     setTutorialProgress(reconciled.progress);
     saveTutorialProgress(reconciled.progress);
-    const nextStep = TUTORIAL_STEPS[reconciled.progress.stepIndex];
-    setA11yMessage(`${t(nextStep.titleKey)}. ${t(nextStep.bodyKey)}`);
+    const nextStep = tutorialStep(reconciled.progress);
+    if (reconciled.progress.active) setA11yMessage(`${t(nextStep.titleKey)}. ${t(nextStep.bodyKey)}`);
   }, [course, screen, t, tutorialProgress, viewMode]);
+
+  useEffect(() => {
+    if (tutorialMilestoneQueue.length === 0) return;
+    const timer = window.setTimeout(() => setTutorialMilestoneQueue((queue) => queue.slice(1)), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [tutorialMilestoneQueue]);
+
+  useEffect(() => {
+    if (screen !== "game" || !tutorialProgress?.receipts.preview.rewardReceipt) return;
+    const transaction = reconcileTutorialRewardTransaction(tutorialProgress, course, world);
+    if (transaction.world !== world) setWorld(() => transaction.world);
+    if (transaction.progress !== tutorialProgress) {
+      setTutorialProgress(transaction.progress);
+      saveTutorialProgress(transaction.progress);
+    }
+  }, [course, screen, setWorld, tutorialProgress, world]);
 
   useEffect(() => {
     if (
       screen !== "game"
-      || !tutorialProgress
-      || TUTORIAL_STEPS[tutorialProgress.stepIndex]?.id !== "paint-corridor"
+      || !activeTutorial
+      || activeTutorial.stage !== "paint-fairway"
     ) return;
     prepareTutorialPaintCorridor();
     // The lesson transition or loaded step is the only trigger. Keeping these
     // controls authoritative prevents an older selection from making the
     // fairway-painting lesson impossible.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, tutorialProgress?.stepIndex]);
+  }, [screen, activeTutorial?.stage]);
 
   // `goals` overrides the mode's default goal set (defeat-retry keeps a
   // run's exact goals).
@@ -2595,7 +2640,7 @@ export default function App() {
       playerRoundResumeSpeedRef.current = loaded.live?.speed === "paused" ? "1x" : loaded.live?.speed ?? "1x";
       live.setSpeed("paused");
     }
-    if (loaded.tutorial && TUTORIAL_STEPS[loaded.tutorial.stepIndex]?.id === "open-course") {
+    if (loaded.tutorial?.active && (loaded.tutorial.stage === "place-hole" || loaded.tutorial.stage === "public-three")) {
       const nextIncompleteHole = loaded.course.holes.findIndex((hole) => !hole.tee || !hole.green);
       if (nextIncompleteHole >= 0) {
         setActiveHoleIndex(nextIncompleteHole);
@@ -2644,7 +2689,33 @@ export default function App() {
         profile: world.experienceProfile ?? "classic",
         economicPressure,
       },
-      tutorialStep: tutorialProgress?.stepIndex ?? null,
+      tutorialStep: activeTutorial ? tutorialStepIndex(activeTutorial) : null,
+      onboarding: {
+        carrierVersion: tutorialProgress?.version ?? null,
+        active: tutorialProgress?.active ?? false,
+        stage: tutorialProgress?.stage ?? null,
+        profile: tutorialProgress?.profile ?? null,
+        completion: tutorialProgress?.completion ?? null,
+        preview: tutorialProgress?.receipts.preview.evidence ? {
+          id: tutorialProgress.receipts.preview.evidence.id,
+          holeId: tutorialProgress.receipts.preview.evidence.holeId,
+          group: tutorialProgress.receipts.preview.evidence.group.map((golfer) => ({
+            name: golfer.name,
+            strokes: golfer.strokes,
+            par: golfer.par,
+            reaction: golfer.reaction,
+            thought: golfer.thought,
+            shots: golfer.shots.length,
+          })),
+        } : null,
+        reward: tutorialProgress?.receipts.preview.rewardReceipt ?? null,
+        milestones: tutorialProgress?.receipts.milestones.map((receipt) => receipt.holes) ?? [],
+        jitQueue: tutorialProgress?.jitQueue ?? [],
+        publicOperation: {
+          unlocked: tutorialPublicThreeHoleOperation(tutorialProgress, appProfile.tutorialCompleted, world),
+          validHoles: validHoleCount(course),
+        },
+      },
       course: {
         name: course.name,
         theme: course.theme ?? "parkland",
@@ -3038,7 +3109,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress?.stepIndex, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -4235,9 +4306,19 @@ export default function App() {
     dispatch({ type: "PLACE_GREEN", holeIndex: activeHoleIndex, position: green });
     void audio.playSfx("confirm");
 
-    if (!tutorialProgress) setTeeSetupPrompt({ holeIndex: activeHoleIndex });
+    if (!activeTutorial) setTeeSetupPrompt({ holeIndex: activeHoleIndex });
     setSelectedTeeSet("member");
-    setActiveHoleIndex((i) => Math.min(8, i + 1));
+    if (activeTutorial?.stage === "place-hole") {
+      // Keep the completed invited route authoritative and visible through
+      // readability, validation, preview, and reward. The public-three handoff
+      // deliberately selects the next incomplete hole in advanceTutorial().
+      setMinimapJump((current) => ({
+        center: { x: (tee.x + green.x) / 2, y: (tee.y + green.y) / 2 },
+        nonce: (current?.nonce ?? 0) + 1,
+      }));
+    } else {
+      setActiveHoleIndex((i) => Math.min(8, i + 1));
+    }
     setWizardStep("TEE");
     setDraftTee(null);
     setDraftGreen(null);
@@ -4835,29 +4916,38 @@ export default function App() {
   ) : null;
 
   function advanceTutorial() {
-    if (!tutorialProgress) return;
-    const step = TUTORIAL_STEPS[tutorialProgress.stepIndex];
+    if (!activeTutorial) return;
     const context = { course, world, last, onCourse: live.status.onCourse };
-    if (!step.canAdvance(context, tutorialProgress.baseline)) return;
-    if (tutorialProgress.stepIndex >= TUTORIAL_STEPS.length - 1) {
-      finishTutorial(true);
+    if (!tutorialCanAdvance(activeTutorial, context)) return;
+    let next: TutorialProgress;
+    if (activeTutorial.stage === "review-reaction") {
+      const transaction = claimTutorialPreviewReward(activeTutorial, course, world);
+      next = transaction.progress;
+      if (transaction.world !== world) setWorld(() => transaction.world);
+    } else {
+      next = advanceTutorialProgress(activeTutorial, context);
+    }
+    if (next === activeTutorial) return;
+    if (!next.active) {
+      // Creative completion must return Relaxed/Simulation players to the
+      // global workspace; otherwise the guided route leaves the hole setup
+      // dock open and hides normal HUD affordances such as Help.
+      exitHoleEditMode();
+      finishTutorial(next);
       return;
     }
-    const next = { ...tutorialProgress, stepIndex: tutorialProgress.stepIndex + 1 };
-    const nextStep = TUTORIAL_STEPS[next.stepIndex];
-    if (nextStep.id === "paint-corridor") prepareTutorialPaintCorridor();
-    if (["shot-plan", "weekly-report", "green-fee", "maintenance", "first-profit"].includes(nextStep.id)) {
+    if (["route-readability", "validate-hole", "public-three", "course-pricing", "staffing", "maintenance", "weekly-results"].includes(next.stage)) {
       setViewMode("ARCHITECT");
     }
-    if (nextStep.id === "shot-plan") {
-      setActiveHoleIndex(Math.max(0, activeHoleIndex - 1));
-      activateTerrainEditing();
+    if (next.stage === "route-readability") {
+      setShowShotPlan(true);
+      enterHoleEditMode(activeHoleIndex);
     }
-    if (nextStep.id === "fix-corridor") enterHoleEditMode(activeHoleIndex);
-    if (step.id === "fix-corridor") {
-      exitHoleEditMode();
-      const nextHole = course.holes.findIndex((hole) => !hole.tee || !hole.green);
-      setActiveHoleIndex(nextHole >= 0 ? nextHole : 0);
+    if (next.stage === "public-three") exitHoleEditMode();
+    if (next.stage === "paint-fairway") prepareTutorialPaintCorridor();
+    if (next.stage === "place-hole" || next.stage === "public-three") {
+      const incompleteHole = course.holes.findIndex((hole) => !hole.tee || !hole.green);
+      setActiveHoleIndex(incompleteHole >= 0 ? incompleteHole : 0);
       setEditorMode("HOLE_WIZARD");
       setWizardStep("TEE");
       setDraftTee(null);
@@ -5015,6 +5105,11 @@ export default function App() {
         {saveLoadModal}
       {showRetention && <DeferredSurface label={t("deferredSurface.achievements")}><RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} /></DeferredSurface>}
       {!photoMode && <AchievementToasts queue={achievementQueue} biomeContext={contextualUiTheme} onDismiss={() => setAchievementQueue((queue) => queue.slice(1))} />}
+      {tutorialMilestoneQueue[0] != null && (
+        <div role="status" data-testid="tutorial-milestone-toast" style={{ position: "fixed", top: 18, left: "50%", transform: "translateX(-50%)", zIndex: 100020, padding: "10px 16px", borderRadius: 999, background: "#fff5c7", border: "2px solid #8a6d1a", color: "#3b3215", fontWeight: 800, boxShadow: "0 8px 24px rgba(0,0,0,.22)" }}>
+          {t("tutorial.preview.milestone", { holes: tutorialMilestoneQueue[0] })}
+        </div>
+      )}
       {photoMode && <PhotoModeOverlay showGolfers={photoGolfers} showMarkers={photoMarkers} onToggleGolfers={() => setPhotoGolfers((value) => !value)} onToggleMarkers={() => setPhotoMarkers((value) => !value)} onCapture={() => void capturePhoto()} onCard={() => void captureCard()} onShare={() => void shareCard()} onExit={exitPhotoMode} />}
       {pwa.updateAvailable && <PwaUpdateToast onReload={() => { void gameSession.save(autosave, { history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress }).finally(pwa.applyUpdate); }} />}
       {flow.modal === "save-load" && pwa.storagePersistent === false && <div role="status" className="cc-storage-warning">{t("pwa.storageWarning")}</div>}
@@ -5027,20 +5122,21 @@ export default function App() {
           onClose={() => flowDispatch({ type: "CLOSE_TOP_LAYER" })}
         /></DeferredSurface>
       )}
-      {tutorialProgress && (
+      {activeTutorial && (
         <TutorialOverlay
-          step={TUTORIAL_STEPS[tutorialProgress.stepIndex]}
-          canAdvance={TUTORIAL_STEPS[tutorialProgress.stepIndex].canAdvance(
-            { course, world, last, onCourse: live.status.onCourse },
-            tutorialProgress.baseline
-          )}
+          step={tutorialStep(activeTutorial)}
+          progress={activeTutorial}
+          canAdvance={tutorialCanAdvance(activeTutorial, { course, world, last, onCourse: live.status.onCourse })}
           onAdvance={advanceTutorial}
-          onSkip={() => finishTutorial(false)}
+          onSkip={() => finishTutorial(skipTutorial(activeTutorial))}
+          onSkipModule={() => finishTutorial(skipTutorialModule(activeTutorial))}
+          onRestart={restartTutorial}
           saveStatus={tutorialSaveStatus}
         />
       )}
       {showTutorialOffer && !flow.paused && (
         <TutorialOffer
+          profile={world.experienceProfile ?? "classic"}
           onAccept={() => beginTutorial()}
           onSkip={() => {
             updateAppProfile({ tutorialOffered: true });
@@ -5048,7 +5144,7 @@ export default function App() {
           }}
         />
       )}
-      {!tutorialProgress && !showTutorialOffer && !flow.modal && !flow.paused && !showVictory && !showBridgePrompt && advisorMessage && (
+      {!activeTutorial && !showTutorialOffer && !flow.modal && !flow.paused && !showVictory && !showBridgePrompt && advisorMessage && (
         <AdvisorCard
           message={advisorMessage}
           biomeContext={contextualUiTheme}
@@ -5205,7 +5301,7 @@ export default function App() {
                 cameraJump={minimapJump}
                 referenceCamera={m52ReferenceCamera}
             />
-            {!tutorialProgress && (
+            {!activeTutorial && (
               <WorkspaceNav
                 workspace={workspace}
                 onWorkspace={selectWorkspace}
@@ -5267,7 +5363,7 @@ export default function App() {
                   biomeContext={contextualUiTheme}
                 />
               )}
-            {showContextualInspector && !tutorialProgress && (
+            {showContextualInspector && !activeTutorial && (
               <ContextualInspectorPanel
                 courseName={course.name}
                 selectedTerrain={selected}
@@ -5290,7 +5386,7 @@ export default function App() {
                 biomeContext={contextualUiTheme}
               />
             )}
-            {contentTestSnapshotRef.current && !tutorialProgress && (
+            {contentTestSnapshotRef.current && !activeTutorial && (
               <button
                 data-testid="exit-content-test"
                 onClick={exitContentTestPlay}
@@ -5299,7 +5395,7 @@ export default function App() {
                 {t("content.exitTest")}
               </button>
             )}
-            {showContentLibrary && !tutorialProgress && (
+            {showContentLibrary && !activeTutorial && (
               <ContentLibraryPanel
                 course={course}
                 world={world}
@@ -5308,7 +5404,7 @@ export default function App() {
               />
             )}
             <Suspense fallback={null}>
-            {showPlayerPro && !tutorialProgress && <PlayerProPanel
+            {showPlayerPro && !activeTutorial && <PlayerProPanel
               career={playerPro}
               course={course}
               world={world}
@@ -5323,7 +5419,7 @@ export default function App() {
               onResume={() => enterPlayerRoundView(playerPro)}
               onClose={() => setShowPlayerPro(false)}
             />}
-            {activePlayerRound && !showPlayerPro && !tutorialProgress && playerShotAim && <PlayerShotHud
+            {activePlayerRound && !showPlayerPro && !activeTutorial && playerShotAim && <PlayerShotHud
               career={playerPro}
               round={activePlayerRound}
               aim={playerShotAim}
@@ -5334,14 +5430,14 @@ export default function App() {
               onConcede={concedeControlledRound}
               onReturnToDesign={returnPlayerToDesign}
             />}
-            {playerPro.activeChallengeGroupRound && !showPlayerPro && !tutorialProgress && playerShotAim && <ChallengeGroupHud career={playerPro} world={world} day={live.status.dayIndex} aim={playerShotAim} onAim={setPlayerShotAim} onWorld={(source, nextWorld) => { const current = gameSession.getState(); if (current.world === source && nextWorld !== source) void commitChallengeWorld(current, nextWorld); }} />}
+            {playerPro.activeChallengeGroupRound && !showPlayerPro && !activeTutorial && playerShotAim && <ChallengeGroupHud career={playerPro} world={world} day={live.status.dayIndex} aim={playerShotAim} onAim={setPlayerShotAim} onWorld={(source, nextWorld) => { const current = gameSession.getState(); if (current.world === source && nextWorld !== source) void commitChallengeWorld(current, nextWorld); }} />}
             </Suspense>
             {playerRoundLocksEditing && <div role="status" style={{ position: "absolute", left: "50%", top: 54, transform: "translateX(-50%)", zIndex: 112, padding: "6px 10px", borderRadius: 8, background: "rgba(54,69,48,.92)", color: "white", fontSize: 12 }}>{t("playerPro.round.editLocked")}</div>}
-            {showProgression && !tutorialProgress && <Suspense fallback={null}><ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} /></Suspense>}
-            {showTournaments && !tutorialProgress && <Suspense fallback={null}><TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} /></Suspense>}
-            {showLandOffice && !tutorialProgress && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
-            {showCourseManager && !tutorialProgress && <Suspense fallback={<div aria-live="polite" style={{ padding: 16 }}>{t("courseSetup.loadingInspector")}</div>}><CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onOpenArchitectureReview={() => { setShowArchitectureReview(true); setShowCourseManager(false); }} onClose={() => setShowCourseManager(false)} /></Suspense>}
-            {showArchitectureReview && !tutorialProgress && <ArchitectureReviewPanel
+            {showProgression && !activeTutorial && <Suspense fallback={null}><ProgressionPanel reputation={world.reputation} onClose={() => setShowProgression(false)} /></Suspense>}
+            {showTournaments && !activeTutorial && <Suspense fallback={null}><TournamentPanel course={activeOperatingCourse} world={world} currentDay={live.status.dayIndex} liveTournament={live.status.tournament} onSchedule={bookTournament} onClose={() => setShowTournaments(false)} /></Suspense>}
+            {showLandOffice && !activeTutorial && <LandOfficePanel course={course} world={world} selectedParcelId={selectedParcelId} onSelect={(parcelId) => setSelectedParcelId(parcelId)} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onPurchase={purchaseParcel} onClose={() => setShowLandOffice(false)} />}
+            {showCourseManager && !activeTutorial && <Suspense fallback={<div aria-live="polite" style={{ padding: 16 }}>{t("courseSetup.loadingInspector")}</div>}><CourseManagerPanel course={normalizeCourseLayouts(course)} world={world} onChange={(next) => { setCourse(() => next); setWorld((current) => revalidateScheduledTournaments(next, current)); }} onSelectHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); if (index >= 0) { setActiveHoleIndex(index); setHoleEditMode("hole"); } }} onCenter={(center) => setMinimapJump((current) => ({ center, nonce: (current?.nonce ?? 0) + 1 }))} onOpenGolfopedia={(entry) => { setGolfopediaEntry(entry); flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" }); }} onOpenArchitectureReview={() => { setShowArchitectureReview(true); setShowCourseManager(false); }} onClose={() => setShowCourseManager(false)} /></Suspense>}
+            {showArchitectureReview && !activeTutorial && <ArchitectureReviewPanel
               course={course}
               review={architectureReview}
               onFilters={setArchitectureFilters}
@@ -5362,7 +5458,7 @@ export default function App() {
               }}
               onClose={() => setShowArchitectureReview(false)}
             />}
-            {showLivingClub && !tutorialProgress && <DeferredSurface label={t("livingClub.title")}><LivingClubPanel
+            {showLivingClub && !activeTutorial && <DeferredSurface label={t("livingClub.title")}><LivingClubPanel
               course={course}
               world={world}
               profile={appProfile}
@@ -5378,7 +5474,7 @@ export default function App() {
               onDeferStory={deferStory}
               onClose={closeLivingClub}
             /></DeferredSurface>}
-            {showSeasonsLegacy && !tutorialProgress && <DeferredSurface label={t("season.open")}><SeasonsLegacyPanel
+            {showSeasonsLegacy && !activeTutorial && <DeferredSurface label={t("season.open")}><SeasonsLegacyPanel
               course={course}
               world={world}
               day={live.status.dayIndex}
@@ -5392,23 +5488,23 @@ export default function App() {
               onClose={() => setShowSeasonsLegacy(false)}
               biomeContext={contextualUiTheme}
             /></DeferredSurface>}
-            {showCampaign && world.campaign && !tutorialProgress && <CampaignPanel
+            {showCampaign && world.campaign && !activeTutorial && <CampaignPanel
               course={course}
               world={world}
               onStartMatch={startCampaignMatch}
               onContinueSandbox={continueCampaign}
               onClose={() => setShowCampaign(false)}
             />}
-            {activeCampaignScene && world.campaign && !tutorialProgress && <CampaignSceneModal
+            {activeCampaignScene && world.campaign && !activeTutorial && <CampaignSceneModal
               campaign={world.campaign}
               scene={activeCampaignScene}
               course={course}
               world={world}
               onChoose={chooseCampaign}
             />}
-            {showPropertyManagement && !tutorialProgress && <DeferredSurface label={t("property.aria")}><PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} /></DeferredSurface>}
-            {showLiveOverview && !tutorialProgress && <DeferredSurface label={t("live.overview")}><LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} /></DeferredSurface>}
-            {teeSetupPrompt && !tutorialProgress && (
+            {showPropertyManagement && !activeTutorial && <DeferredSurface label={t("property.aria")}><PropertyManagementPanel course={course} world={world} onCommand={runPropertyCommand} onClose={() => setShowPropertyManagement(false)} /></DeferredSurface>}
+            {showLiveOverview && !activeTutorial && <DeferredSurface label={t("live.overview")}><LiveOverview status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} onAssignStaff={(staffId, courseId) => setWorld((current) => ({ ...current, staffRoster: normalizedStaff(current, course).map((member) => member.id === staffId ? { ...member, courseId } : member) }))} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); }} onClose={() => setShowLiveOverview(false)} /></DeferredSurface>}
+            {teeSetupPrompt && !activeTutorial && (
               <div data-testid="tee-setup-offer" role="dialog" aria-label={t("courseSetup.offerAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 145, top: 64, right: 16, width: 280, padding: 14 }}>
                 <strong>{t("courseSetup.offerTitle")}</strong>
                 <p style={{ margin: "6px 0 10px", fontSize: 12 }}>{t("courseSetup.offerHelp")}</p>
@@ -5431,7 +5527,7 @@ export default function App() {
                 </div>
               </div>
             )}
-            {setupPlacement && !pendingTeePlacement && !tutorialProgress && (() => {
+            {setupPlacement && !pendingTeePlacement && !activeTutorial && (() => {
               const hole = course.holes[activeHoleIndex];
               const existing = setupPlacement.kind === "tee"
                 ? getTeeBox(hole, setupPlacement.key)
@@ -5449,7 +5545,7 @@ export default function App() {
                 </div>
               );
             })()}
-            {pendingTeePlacement && !tutorialProgress && (
+            {pendingTeePlacement && !activeTutorial && (
               <div data-testid="tee-placement-confirm" role="dialog" aria-label={t("courseSetup.confirmAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 150, bottom: 88, left: "50%", transform: "translateX(-50%)", width: 300, padding: 14 }}>
                 <strong>{t("courseSetup.confirmTitle", { action: t(getTeeBox(course.holes[pendingTeePlacement.holeIndex], pendingTeePlacement.teeSet) ? "courseSetup.actionMove" : "courseSetup.actionErect"), tee: pendingTeePlacement.teeSet })}</strong>
                 <div style={{ margin: "7px 0", fontSize: 12 }}>{pendingTeePlacement.netCost >= 0 ? t("courseSetup.placementCost", { cost: formatCurrency(pendingTeePlacement.netCost) }) : t("courseSetup.placementSalvage", { value: formatCurrency(-pendingTeePlacement.netCost) })}</div>
@@ -5462,7 +5558,7 @@ export default function App() {
               </div>
             )}
             {/* HoverTooltip now rendered on canvas to avoid React re-renders */}
-            {!tutorialProgress && <HoleMinimap
+            {!activeTutorial && <HoleMinimap
               course={activeOperatingCourse}
               view={minimapView}
               golfersRef={live.golfersRef}
@@ -5712,14 +5808,14 @@ export default function App() {
           flowDispatch({ type: "OPEN_MODAL", modal: "golfopedia" });
         }}
         onStartTutorial={() => beginTutorial()}
-        tutorialTarget={tutorialProgress ? TUTORIAL_STEPS[tutorialProgress.stepIndex].target : undefined}
+        tutorialTarget={activeTutorial ? tutorialStep(activeTutorial).target : undefined}
         biomeContext={contextualUiTheme}
       />
             </DeferredHudSurface>
           )}
         </div>
         </div>
-        <NewsTicker visible={!tutorialProgress && !photoMode && appProfile.gameplay.tickerVisible} onJump={jumpToEvent} onHide={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: false } })} />
+        <NewsTicker visible={!activeTutorial && !photoMode && appProfile.gameplay.tickerVisible} onJump={jumpToEvent} onHide={() => handleProfileChange({ ...appProfile, gameplay: { ...appProfile.gameplay, tickerVisible: false } })} />
         {pendingWeekReport && <DeferredSurface label={t("weekClose.title")}><WeekCloseReport week={pendingWeekReport.week} result={pendingWeekReport.result} course={course} world={world} biomeContext={contextualUiTheme} resumeSpeed={pendingWeekReport.resumeSpeed} onContinue={() => {
           const resumeSpeed = pendingWeekReport.resumeSpeed;
           setPendingWeekReport(null);

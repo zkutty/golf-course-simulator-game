@@ -34,6 +34,7 @@ export function AdvisorPresenter(props: {
   title: string;
   body: string;
   expression: AdvisorExpression;
+  details?: ReactNode;
   actions?: ReactNode;
   compact?: boolean;
 }) {
@@ -70,6 +71,7 @@ export function AdvisorPresenter(props: {
           {props.title}
         </div>
         <div style={{ fontSize: 13, lineHeight: 1.45, color: "#465349" }}>{props.body}</div>
+        {props.details && <div style={{ marginTop: 10 }}>{props.details}</div>}
         {props.actions && <div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>{props.actions}</div>}
       </div>
     </section>

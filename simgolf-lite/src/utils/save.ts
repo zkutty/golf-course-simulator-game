@@ -82,6 +82,11 @@ import {
   normalizeExperienceAxes,
 } from "../game/balance/experience";
 import { migrateLegacySystemControl, reconcileSystemControlWorld } from "../game/experience/systemControl";
+import {
+  INVITED_PREVIEW_REWARD_CASH,
+  INVITED_PREVIEW_REWARD_ID,
+  INVITED_PREVIEW_REWARD_REPUTATION,
+} from "../game/onboarding/invitedPreview";
 
 const KEY = "simgolf_lite_save_v1";
 export const CURRENT_SAVE_SCHEMA_VERSION = 30 as const;
@@ -98,6 +103,25 @@ const TERRAIN_VALUES = [
   "tee",
   "path",
 ] as const;
+
+function normalizeOnboardingRewards(value: unknown, expectedRunSeed: number): NonNullable<World["onboardingRewards"]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { version: 1, receipts: [] };
+  const candidate = value as Record<string, unknown>;
+  if (candidate.version !== 1 || !Array.isArray(candidate.receipts)) return { version: 1, receipts: [] };
+  const receipts: NonNullable<World["onboardingRewards"]>["receipts"] = [];
+  for (const valueReceipt of candidate.receipts.slice(0, 16)) {
+    if (!valueReceipt || typeof valueReceipt !== "object" || Array.isArray(valueReceipt)) continue;
+    const receipt = valueReceipt as Record<string, unknown>;
+    if (receipt.id !== INVITED_PREVIEW_REWARD_ID || typeof receipt.previewId !== "string" || !new RegExp(`^invited-preview:${expectedRunSeed >>> 0}:[0-9a-f]{8}$`).test(receipt.previewId) || receipts.some((known) => known.id === receipt.id)) continue;
+    receipts.push({
+      id: INVITED_PREVIEW_REWARD_ID,
+      previewId: receipt.previewId,
+      cash: INVITED_PREVIEW_REWARD_CASH,
+      reputation: INVITED_PREVIEW_REWARD_REPUTATION,
+    });
+  }
+  return { version: 1, receipts };
+}
 
 export interface SaveV1 {
   schemaVersion: 1;
@@ -1211,6 +1235,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     const experience = normalizeExperienceAxes(rawWorld);
     const { difficulty: _legacyDifficulty, ...rawWorldWithoutDifficulty } = rawWorld;
     void _legacyDifficulty;
+    const onboardingRunSeed = (typeof rawWorld.runSeed === "number" ? rawWorld.runSeed : DEFAULT_WORLD.runSeed) >>> 0;
     let world: World = {
       ...DEFAULT_WORLD,
       ...rawWorldWithoutDifficulty,
@@ -1254,6 +1279,7 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       ),
       paceOperations: normalizePaceOperationsState(rawWorld.paceOperations),
       m51: normalizeM51MobilityState(rawWorld.m51),
+      onboardingRewards: normalizeOnboardingRewards(rawWorld.onboardingRewards, onboardingRunSeed),
     };
     if (migrated.migratedFrom != null && migrated.migratedFrom <= 18) {
       course = upgradeUntouchedLegacyLinksEstate(course, world);
