@@ -1973,6 +1973,57 @@ classic course-builder references.
   visually inspected and shows the complete Parkland course with structures,
   golfers, trees, sand, and water rendered coherently.
 
+## 2026-08-10 — M65 / ZK-813 AI-only certification integration
+
+- Integrated the exact released-base headless and browser certification
+  packets plus the ZK-811 M24 and ZK-812 M31 compatibility assertions. No
+  production runtime, UI, hook, save schema, or production configuration changed.
+- Added the deterministic schema-v2 M65 expectations manifest, observed-result
+  runner, report generator, and package script. The runner executes and consumes
+  structured Vitest and five-case Playwright results, verifies allowlisted source
+  SHA-256 bindings, compares every claim-bearing manifest value with a code-owned
+  exact contract, forces zero Playwright retries, records attempt counts/outcomes,
+  derives evidence status, and fails on fabricated/malformed observations,
+  retry-then-pass results, false physical/human/release claims, source tamper,
+  report byte drift, or docs digest drift. Its exact disposition is
+  `machine-pass/HOLD_FOR_HUMAN_VALIDATION`; report digest is
+  `51f2579b9cd43e5ed45b44a08c66f7025d5b3b5f831c62a5db86beca16b8c79a`.
+  Structural, headless, browser, and native-shaped save evidence remain
+  separate, and ZK-255, ZK-374, ZK-403, and ZK-404 remain required human gates.
+- Focused post-review evidence passes: M65 headless 1/1 in 17.99s under the fixed
+  120s ceiling, fail-closed contract 4/4, TypeScript, and scoped lint with zero
+  findings. The full package `--check` reruns headless plus the ZK-813 browser
+  file, passes 5/5 in 5.2m, and reproduces exact report bytes. The pre-review
+  compatibility runs remain M24 3/3 in 110.17s and M31 1/1 in 91.81s, both
+  serially on one persistent server.
+- CI runs the same M65 package entrypoint after Chromium installation and uploads
+  the verified report. Release-candidate work is split into a parallel 60-minute
+  M65 job: five evidence-bound Chromium cases plus ten Firefox/WebKit cases, so
+  each ZK-813 case runs once per engine. The existing full and cross-engine steps
+  exclude ZK-813, bounding RC work at 15 executions without raising the timeout
+  or weakening any assertion, case timeout, or runtime budget.
+- Repaired only the nine-axis test lifecycle for Firefox/WebKit portability.
+  Each deliberate reset waits for the new title document to settle before
+  closing the prior iteration's teardown-error boundary; no message regex or
+  broad ignore exists. Every profile/pressure setup/run then asserts its own
+  clean console/page-error array. The formerly failing structural cases pass
+  Firefox+WebKit 2/2 in 1.1m, and the full cross-engine file passes Chromium
+  5/5, Firefox 5/5, and WebKit 5/5 with zero retries. The inspected WebKit
+  desktop first-hole and 390×640 pseudo-locale captures are coherent, readable,
+  and contained.
+- The bundled client completed two live Classic/Balanced fixture iterations
+  with no error artifact. Its fairway/tee/pin canvas captures and the final
+  desktop and 390×640 pseudo-localized first-hole captures were visually
+  inspected and coherent/readable.
+- The final closure client rerun completed two Relaxed/Friendly gameplay
+  iterations with matching active-game/editor text state, no error artifact,
+  and an inspected coherent Parkland course canvas.
+- The final production build passes in 19.77s. Its 246-file dist and exact-base
+  dist share SHA-256
+  `df3a9b4a6669ff0b7628205d432b56d880631201403528daf5854a14ba8dab22`;
+  initial JavaScript remains 1,606,881 bytes, for zero growth. Human validation,
+  release CI, promotion, deployment, and release completion remain unclaimed.
+
 ### ZK-688 repeat-focus lifecycle repair — 2026-08-09
 
 - Advisor pricing and maintenance focus requests now receive a mount-lifetime

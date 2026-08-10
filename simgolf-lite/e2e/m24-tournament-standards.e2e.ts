@@ -10,9 +10,27 @@ test("M24 explains readiness, books a prescribed setup, and runs it", async ({ p
   await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-tournaments").click();
   const panel = page.getByTestId("tournament-panel");
+  await expect(panel).toBeVisible({ timeout: 45_000 });
   await expect(panel.getByTestId("tournament-readiness")).toBeVisible();
   await expect(panel.getByTestId("tournament-readiness").getByText("Prescribed setup")).toBeVisible();
-  await expect(panel.locator("[data-requirement]")).toHaveCount(9);
+  const readiness = panel.getByTestId("tournament-readiness");
+  const requirements = readiness.locator("[data-requirement]");
+  await expect(requirements).toHaveCount(10);
+  await expect(requirements.evaluateAll((items) => items.map((item) => ({
+    id: item.getAttribute("data-requirement"),
+    passed: item.querySelector("span[aria-hidden=true]")?.textContent,
+  })))).resolves.toEqual([
+    { id: "reputation", passed: "✓" },
+    { id: "deposit", passed: "✓" },
+    { id: "date", passed: "✓" },
+    { id: "calendar", passed: "✓" },
+    { id: "holes", passed: "✓" },
+    { id: "rotations", passed: "✓" },
+    { id: "route", passed: "✓" },
+    { id: "rating", passed: "✓" },
+    { id: "slope", passed: "✓" },
+    { id: "pin-fairness", passed: "✓" },
+  ]);
   const readinessShot = await page.screenshot({ path: "artifacts/m24-readiness.png", fullPage: true });
   await testInfo.attach("m24-readiness", { body: readinessShot, contentType: "image/png" });
   await panel.getByTestId("schedule-tournament").click();
@@ -42,9 +60,11 @@ test("M24 warns and cancels after a prescribed setup is invalidated", async ({ p
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course?.name), { timeout: 45_000 }).toBe("M24 Tournament Standards Club");
   await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-tournaments").click();
-  await page.getByTestId("tournament-tier").selectOption("regional");
-  await page.getByTestId("schedule-tournament").click();
-  await expect(page.getByTestId("tournament-panel").getByText("Tournament booked.")).toBeVisible();
+  const panel = page.getByTestId("tournament-panel");
+  await expect(panel).toBeVisible({ timeout: 45_000 });
+  await panel.getByTestId("tournament-tier").selectOption("regional");
+  await panel.getByTestId("schedule-tournament").click();
+  await expect(panel.getByText("Tournament booked.")).toBeVisible();
   await page.evaluate(() => window.__coursecraftTest!.invalidateAndCancelTournamentFixture());
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.cancelled)).toBe(1);
   const cancellation = page.getByTestId("tournament-cancellation");
@@ -70,7 +90,7 @@ test("M24 readiness remains usable at 130% text and in pseudo locale", async ({ 
   await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-tournaments").click();
   const panel = page.getByTestId("tournament-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: 45_000 });
   await expect(panel.getByTestId("tournament-readiness")).toContainText("⟦");
   const bounds = await panel.boundingBox();
   expect(bounds).not.toBeNull();

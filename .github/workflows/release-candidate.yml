@@ -27,9 +27,9 @@ jobs:
       - name: Reducer fuzz
         run: npm run test:fuzz
       - name: Full browser regression
-        run: npm run test:e2e
+        run: npm run test:e2e -- --grep-invert "ZK-813"
       - name: Cross-engine clean-profile path
-        run: npm run test:release:browsers
+        run: npm run test:release:browsers -- --grep-invert "ZK-813"
       - name: Long-form balance matrix
         run: npm run test:balance
       - name: Deterministic simulation soak
@@ -54,3 +54,28 @@ jobs:
             simgolf-lite/test-results
           if-no-files-found: ignore
           retention-days: 90
+
+  m65-certify:
+    name: M65 evidence and cross-engine certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - name: M65 evidence-bound Chromium certification
+        run: npm run test:cert:m65
+      - name: Upload verified M65 report
+        uses: actions/upload-artifact@v4
+        with:
+          name: m65-machine-certification
+          path: simgolf-lite/artifacts/m65/certification-report.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: ZK-813 Firefox and WebKit certification
+        run: npm run test:release:browsers -- --grep "ZK-813" --project=firefox --project=webkit-safari-proxy

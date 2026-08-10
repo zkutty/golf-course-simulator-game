@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 2,
+  "certificationId": "m65-zk813-profile-certification-v2",
+  "milestone": "M65",
+  "issue": "ZK-813",
+  "releasedBase": "946838ef070b4cb300bf55328a3b81fd68a5080e",
+  "evidenceExpectations": [
+    {
+      "id": "structural-profile-pressure-matrix",
+      "class": "structural",
+      "sources": [
+        {
+          "path": "e2e/zk813-profile-certification.e2e.ts",
+          "sha256": "1bddd877eeca74b03664b109a46865384fa606fef2eb5fdab4b679194735a561"
+        }
+      ],
+      "expected": {
+        "axes": 9,
+        "caseTitle": "ZK-813 structural start matrix keeps all nine selected profile and pressure pairs visible through run creation"
+      },
+      "scope": "All nine experience-profile/economic-pressure pairs are launched through keyboard-operated setup controls and preserved in created-run text state."
+    },
+    {
+      "id": "headless-deterministic-certification",
+      "class": "headless",
+      "sources": [
+        {
+          "path": "src/game/testing/zk813ProfileCertification.ts",
+          "sha256": "d4d395da2e6f44abe6db4dac5f846f527a96dd8c0e13b95ad68a04fd0868deb7"
+        },
+        {
+          "path": "src/game/testing/zk813ProfileCertification.test.ts",
+          "sha256": "413f1b103492f768d12462d4cfdc0c66e2b003d1de943e1a7053eb9dfe17a84e"
+        }
+      ],
+      "expected": {
+        "tests": 1,
+        "checks": 7,
+        "rows": 9,
+        "determinismHash": "c8da3467"
+      },
+      "scope": "Observed semantic assertions cover exact legacy axes and policies, exact monotonic graduation edges, exact campaign receipts, canonical save-carrier hashes, and multi-week replay."
+    },
+    {
+      "id": "browser-interaction-certification",
+      "class": "browser",
+      "sources": [
+        {
+          "path": "e2e/zk813-profile-certification.e2e.ts",
+          "sha256": "1bddd877eeca74b03664b109a46865384fa606fef2eb5fdab4b679194735a561"
+        }
+      ],
+      "expected": {
+        "cases": 5,
+        "attemptsPerCase": 1,
+        "caseTitles": [
+          "ZK-813 structural start matrix keeps all nine selected profile and pressure pairs visible through run creation",
+          "ZK-813 campaign fixtures expose Relaxed and Classic authored assignments without treating fixture state as gameplay proof",
+          "ZK-813 campaign fixtures expose late Classic and Simulation authored assignments without treating fixture state as gameplay proof",
+          "ZK-813 Classic control takeover remains authoritative and save-safe",
+          "ZK-813 keyboard launch and pointer first-hole workflow stay localized and contained"
+        ]
+      },
+      "scope": "Observed Chromium cases cover the nine-axis matrix, six campaign assignments, Classic takeover save/reload, keyboard tutorial launch, pointer first-hole authoring, pseudo-localized content, and 390×640 overlay containment."
+    },
+    {
+      "id": "native-save-carrier-normalization",
+      "class": "native-save",
+      "sources": [
+        {
+          "path": "src/game/testing/zk813ProfileCertification.ts",
+          "sha256": "d4d395da2e6f44abe6db4dac5f846f527a96dd8c0e13b95ad68a04fd0868deb7"
+        },
+        {
+          "path": "src/game/testing/zk813ProfileCertification.test.ts",
+          "sha256": "413f1b103492f768d12462d4cfdc0c66e2b003d1de943e1a7053eb9dfe17a84e"
+        }
+      ],
+      "expected": {
+        "carriers": [
+          "current-schema-canonical-hash",
+          "browser-json-canonical-hash",
+          "native-shaped-in-memory-canonical-hash",
+          "legacy-schema-policy"
+        ]
+      },
+      "scope": "Observed canonical-hash equality for current-schema, browser JSON, and native-shaped in-memory carriers plus explicit legacy policy normalization; no physical native filesystem is exercised."
+    }
+  ],
+  "humanValidation": [
+    {
+      "issue": "ZK-255",
+      "url": "https://linear.app/zkutty/issue/ZK-255",
+      "machineClaim": false
+    },
+    {
+      "issue": "ZK-374",
+      "url": "https://linear.app/zkutty/issue/ZK-374",
+      "machineClaim": false
+    },
+    {
+      "issue": "ZK-403",
+      "url": "https://linear.app/zkutty/issue/ZK-403",
+      "machineClaim": false
+    },
+    {
+      "issue": "ZK-404",
+      "url": "https://linear.app/zkutty/issue/ZK-404",
+      "machineClaim": false
+    }
+  ],
+  "limitations": [
+    "No moderated player study, subjective golf-authenticity judgment, accessibility review by a human, physical-device test, physical-GPU test, or release-owner sign-off is represented as machine evidence.",
+    "Campaign fixture assignments and receipt persistence are structural evidence; they are not fabricated proof of real phase mastery, finale completion, or a 12–18 hour player journey.",
+    "Browser automation and native-shaped in-memory canonical-hash equality do not replace packaged-desktop or real filesystem validation."
+  ],
+  "documentation": {
+    "path": "docs/M65_CERTIFICATION.md"
+  }
+}

@@ -40,6 +40,17 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: M65 machine certification
+        run: npm run test:cert:m65
+
+      - name: Upload verified M65 report
+        uses: actions/upload-artifact@v4
+        with:
+          name: m65-machine-certification
+          path: simgolf-lite/artifacts/m65/certification-report.json
+          if-no-files-found: error
+          retention-days: 90
+
       - name: Golden-path E2E
         run: npm run test:e2e:golden
 

@@ -7,10 +7,20 @@ test("M31-M33 property enterprise builds access, campus, resort, and community",
   await page.goto("/?propertyFixture=1");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), { timeout: 30_000 }).toBe("game");
 
+  await page.getByTestId("workspace-legacy").click();
+  await page.getByTestId("open-seasons-legacy").click();
+  const seasons = page.getByTestId("seasons-legacy-panel");
+  await expect(seasons).toBeVisible({ timeout: 45_000 });
+  await seasons.getByRole("button", { name: "Club identity", exact: true }).click();
+  await seasons.getByText("Manual system overrides", { exact: true }).click();
+  await seasons.getByTestId("system-policy-resort").getByRole("button", { name: "Take control", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").systemControl.systems.find((system: { id: string }) => system.id === "resort"))).toMatchObject({ visibility: "full", mode: "manual", source: "save-override" });
+  await seasons.getByRole("button", { name: "Close", exact: true }).click();
+
   await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-property-management").click();
   const panel = page.getByTestId("property-management-panel");
-  await expect(panel).toBeVisible();
+  await expect(panel).toBeVisible({ timeout: 45_000 });
   await expect(page.getByTestId("property-asset-road")).toContainText("gravel");
   await page.getByTestId("upgrade-road").click();
   await page.getByTestId("upgrade-parking").click();
