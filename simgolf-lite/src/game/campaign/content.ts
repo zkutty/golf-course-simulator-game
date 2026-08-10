@@ -12,6 +12,8 @@ import type {
   CampaignPredicate,
   CampaignSceneDefinition,
 } from "./types";
+import { campaignCurriculum } from "./profileContract";
+import { ADVANCED_SYSTEM_IDS } from "../experience/systemControl";
 
 const text = (key: Parameters<typeof translate>[1]) => translate("en", key);
 
@@ -44,6 +46,10 @@ const phase = (
   ...phaseContract(id),
   introSceneId: `${id}-intro`,
   completionSceneId: `${id}-complete`,
+  curriculumSystems: campaignCurriculum(
+    id.startsWith("championship-") ? "championship-dream" : "",
+    id === "championship-qualify" ? 0 : id === "championship-stage" ? 1 : 2,
+  ),
 });
 
 const option = (
@@ -477,9 +483,18 @@ export function validateCampaignContent(chapters: readonly CampaignChapterDefini
       phaseIds.add(item.id);
       if (!item.introSceneId || !item.goals.every((entry) => entry.conditions.length > 0)) errors.push(`phase-content:${chapter.id}:${item.id}`);
       if (!item.recoveryKey || item.estimatedMinutes < 20 || item.estimatedMinutes > 90) errors.push(`phase-recovery:${chapter.id}:${item.id}`);
+      if (item.curriculumSystems.some((system) => !ADVANCED_SYSTEM_IDS.includes(system))) errors.push(`phase-curriculum-system:${chapter.id}:${item.id}`);
       if (item.match && (!item.match.id || item.match.minCareerPoints < 0 || (item.match.kind === "championship") !== Boolean(item.match.tournamentTier))) {
         errors.push(`phase-match:${chapter.id}:${item.id}`);
       }
+    }
+    const expectedCurriculumLengths = chapter.id === "championship-dream" ? [5, 10, 13] : [0, 0, 0];
+    if (chapter.phases.some((item, index) => item.curriculumSystems.length !== expectedCurriculumLengths[index])) {
+      errors.push(`phase-curriculum:${chapter.id}`);
+    }
+    if (chapter.id === "championship-dream" && chapter.phases.some((item, index) =>
+      item.curriculumSystems.some((system) => !chapter.phases[Math.min(2, index + 1)].curriculumSystems.includes(system)))) {
+      errors.push(`phase-curriculum-cumulative:${chapter.id}`);
     }
     const sceneIds = new Set(chapter.scenes.map((item) => item.id));
     for (const item of chapter.scenes) {

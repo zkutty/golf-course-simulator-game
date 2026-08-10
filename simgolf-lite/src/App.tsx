@@ -98,7 +98,7 @@ import { LiveControls } from "./ui/LiveControls";
 import { GolferInspector } from "./ui/GolferInspector";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
-import type { GoalDefinition, RunOutcome } from "./game/models/objectives";
+import { createObjectiveState, type GoalDefinition, type RunOutcome } from "./game/models/objectives";
 import { createM20TerrainReferenceCourse, createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createM23CourseSetupReferenceCourse, createM26MultiCourseReferenceCourse, createM27ReleaseReferenceCourse, createParklandVisualReferenceCourse, createPlayerProReferenceCourse, createReferenceCourse, createRenderPerfCourse, createTournamentStandardsCourse } from "./game/testing/referenceCourse";
 import {
   BIOME_REFERENCE_ROTATIONS,
@@ -344,6 +344,8 @@ import { absoluteDayFor, advanceSeasonalDay, applySeasonCommand, createSeasonalS
 import { SEASONS, type SeasonCommand, type SeasonName } from "./game/seasons/types";
 import { createSystemControlState, systemControlEnvelope, type AdvancedSystemId } from "./game/experience/systemControl";
 import {
+  acknowledgeLegacyCampaignPhaseRecovery,
+  advanceCampaign,
   campaignScene,
   continueCampaignInSandbox,
   resolveCampaignChoice,
@@ -875,7 +877,11 @@ export default function App() {
   const [hudManagementFocus, setHudManagementFocus] = useState<{ target: "pricing" | "maintenance" | "financing"; nonce: number } | undefined>();
   const operationsFocusNonceRef = useRef(0);
   const liveOverviewInstanceRef = useRef(0);
+  const seasonsLegacyInstanceRef = useRef(0);
   const [operationsFocus, setOperationsFocus] = useState<{ system: AdvancedSystemId; nonce: number } | undefined>();
+  const consumeOperationsFocus = useCallback((nonce: number) => {
+    setOperationsFocus((current) => current?.nonce === nonce ? undefined : current);
+  }, []);
   const [followSelected, setFollowSelected] = useState(false);
   const [achievementQueue, setAchievementQueue] = useState<AchievementDefinition[]>([]);
   const [photoMode, setPhotoMode] = useState(false);
@@ -911,8 +917,13 @@ export default function App() {
   const navigateSimulationSystem = useCallback((system: AdvancedSystemId) => {
     operationsFocusNonceRef.current += 1;
     setOperationsFocus({ system, nonce: operationsFocusNonceRef.current });
-    setShowSeasonsLegacy(false);
     selectWorkspace("operate");
+    if (system === "localized-turf" || system === "irrigation" || system === "drainage") {
+      seasonsLegacyInstanceRef.current = operationsFocusNonceRef.current;
+      setShowSeasonsLegacy(true);
+      return;
+    }
+    setShowSeasonsLegacy(false);
     if (system === "maintenance" || system === "financing") {
       setHoleEditMode("global");
       hudManagementFocusNonceRef.current += 1;
@@ -1607,6 +1618,19 @@ export default function App() {
         course: result.course,
         world: result.world,
         terrainVersion: current.terrainVersion + (result.course === current.course ? 0 : 1),
+        economyVersion: current.economyVersion + 1,
+      };
+    });
+    markDirty();
+  }, [gameSession, markDirty]);
+
+  const acknowledgeCampaignLegacyRecovery = useCallback(() => {
+    gameSession.update((current) => {
+      const result = acknowledgeLegacyCampaignPhaseRecovery(current.course, current.world);
+      if (!result.ok) return current;
+      return {
+        ...current,
+        world: result.world,
         economyVersion: current.economyVersion + 1,
       };
     });
@@ -2734,6 +2758,7 @@ export default function App() {
       modal: flow.modal,
       paused: flow.paused,
       workspace,
+      mode: world.mode,
       experience: {
         profile: world.experienceProfile ?? "classic",
         economicPressure,
@@ -3053,9 +3078,12 @@ export default function App() {
         matches: world.campaign.matches,
         pendingCallbacks: world.campaign.scheduledScenes.length,
         completed: world.campaign.completed,
+        continuedInSandbox: world.campaign.continuedInSandbox,
         medal: world.campaign.medal ?? null,
         outcome: world.campaign.outcome ?? null,
         epilogueFacts: world.campaign.epilogueFacts,
+        participation: world.campaign.participation,
+        curriculumSystems: CAMPAIGN_CHAPTER_BY_ID.get(world.campaign.chapterId)?.phases[world.campaign.phaseIndex].curriculumSystems ?? [],
       } : null,
       playerPro: {
         panelOpen: showPlayerPro,
@@ -3477,6 +3505,145 @@ export default function App() {
         setShowPropertyManagement(false);
         setShowTournaments(false);
         setShowSeasonsLegacy(true);
+      },
+      setZk690CampaignFixture: (chapterId, phaseIndex = 0) => {
+        const scenario = getScenario(chapterId);
+        const chapter = CAMPAIGN_CHAPTER_BY_ID.get(chapterId);
+        if (!scenario || !chapter || !Number.isInteger(phaseIndex) || phaseIndex < 0 || phaseIndex > 2) {
+          throw new Error(`Invalid ZK-690 campaign fixture: ${chapterId}:${phaseIndex}`);
+        }
+        const fixture = createScenarioGame(scenario);
+        const fixtureCourse = normalizeCourseLayouts(fixture.course);
+        let fixtureWorld = fixture.world;
+        for (let index = 0; index < phaseIndex; index++) {
+          const phase = chapter.phases[index];
+          const intro = chapter.scenes.find((scene) => scene.id === phase.introSceneId)!;
+          fixtureWorld = {
+            ...fixtureWorld,
+            campaign: {
+              ...fixtureWorld.campaign!,
+              phaseIndex: index as 0 | 1 | 2,
+              pendingSceneIds: [intro.id],
+            },
+          };
+          const chosen = resolveCampaignChoice(fixtureCourse, fixtureWorld, intro.id, intro.defaultChoiceId);
+          if (!chosen.ok) throw new Error(`Could not prepare ZK-690 phase ${index + 1}`);
+          fixtureWorld = chosen.world;
+        }
+        const phase = chapter.phases[phaseIndex];
+        const { medal: _medal, outcome: _outcome, ...campaign } = fixtureWorld.campaign!;
+        void _medal;
+        void _outcome;
+        fixtureWorld = {
+          ...fixtureWorld,
+          objectives: createObjectiveState(phase.goals),
+          campaign: {
+            ...campaign,
+            phaseIndex: phaseIndex as 0 | 1 | 2,
+            completedPhaseIds: chapter.phases.slice(0, phaseIndex).map((candidate) => candidate.id),
+            pendingSceneIds: [phase.introSceneId],
+            completed: false,
+          },
+        };
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setOperationsFocus(undefined);
+        setShowCampaign(true);
+        setShowLiveOverview(false);
+        setShowPropertyManagement(false);
+        setShowTournaments(false);
+        setShowSeasonsLegacy(false);
+        setWorkspaceState("legacy");
+      },
+      setZk690LegacyRecoveryFixture: () => {
+        const scenario = getScenario("championship-dream")!;
+        const chapter = CAMPAIGN_CHAPTER_BY_ID.get(scenario.id)!;
+        const fixture = createScenarioGame(scenario);
+        const fixtureCourse = normalizeCourseLayouts(fixture.course);
+        const intro = chapter.phases[0].introSceneId;
+        const fixtureWorld: World = {
+          ...fixture.world,
+          playerPro: { ...fixture.world.playerPro!, careerPoints: 20 },
+          objectives: { ...fixture.world.objectives!, outcome: "WON", wonWeek: fixture.world.week },
+          campaign: {
+            ...fixture.world.campaign!,
+            pendingSceneIds: [],
+            resolvedSceneIds: [intro],
+            choices: [],
+            participation: { version: 1, receipts: [], legacyEligiblePhaseIds: [chapter.phases[0].id] },
+          },
+        };
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setOperationsFocus(undefined);
+        setShowCampaign(true);
+        setShowSeasonsLegacy(false);
+        setWorkspaceState("legacy");
+      },
+      setZk690LegacyFinaleFixture: () => {
+        const scenario = getScenario("back-nine")!;
+        const chapter = CAMPAIGN_CHAPTER_BY_ID.get(scenario.id)!;
+        const fixture = createScenarioGame(scenario);
+        const fixtureCourse = normalizeCourseLayouts(fixture.course);
+        const choices = chapter.phases.map((phase) => {
+          const scene = chapter.scenes.find((candidate) => candidate.id === phase.introSceneId)!;
+          return {
+            chapterId: chapter.id,
+            sceneId: scene.id,
+            choiceId: scene.defaultChoiceId,
+            week: fixture.world.week,
+            facts: {},
+          };
+        });
+        const finalPhase = chapter.phases[2];
+        const fixtureWorld: World = {
+          ...fixture.world,
+          cash: 100_000,
+          objectives: { ...fixture.world.objectives!, outcome: "WON", wonWeek: fixture.world.week },
+          campaign: {
+            ...fixture.world.campaign!,
+            phaseIndex: 2,
+            completedPhaseIds: chapter.phases.slice(0, 2).map((phase) => phase.id),
+            pendingSceneIds: [],
+            resolvedSceneIds: chapter.phases.map((phase) => phase.introSceneId),
+            choices,
+            participation: { version: 1, receipts: [], legacyEligiblePhaseIds: chapter.phases.map((phase) => phase.id) },
+            matches: [{
+              definitionId: finalPhase.match!.id,
+              roundId: "zk690-legacy-finale",
+              status: "complete",
+              result: "won",
+            }],
+          },
+        };
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixtureCourse, fixtureWorld, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setOperationsFocus(undefined);
+        setShowCampaign(true);
+        setShowSeasonsLegacy(false);
+        setWorkspaceState("legacy");
+      },
+      setCampaignObjectiveWonFixture: () => {
+        gameSession.update((current) => current.world.campaign && current.world.objectives
+          ? {
+            ...current,
+            world: {
+              ...current.world,
+              objectives: { ...current.world.objectives, outcome: "WON", wonWeek: current.world.week },
+            },
+            economyVersion: current.economyVersion + 1,
+          }
+          : current);
+      },
+      advanceCampaignFixture: () => {
+        gameSession.update((current) => {
+          const world = advanceCampaign(current.course, current.world);
+          return world === current.world ? current : {
+            ...current,
+            world,
+            economyVersion: current.economyVersion + 1,
+          };
+        });
       },
       showZk688AdvisorMessage: (target) => {
         const current = gameSession.getState();
@@ -5646,9 +5813,14 @@ export default function App() {
               onClose={closeLivingClub}
             /></DeferredSurface>}
             {showSeasonsLegacy && !activeTutorial && <DeferredSurface label={t("season.open")}><SeasonsLegacyPanel
+              key={`seasons-legacy-${seasonsLegacyInstanceRef.current}`}
               course={course}
               world={world}
               day={live.status.dayIndex}
+              operationsFocus={operationsFocus && ["localized-turf", "irrigation", "drainage"].includes(operationsFocus.system)
+                ? operationsFocus as { system: "localized-turf" | "irrigation" | "drainage"; nonce: number }
+                : undefined}
+              onOperationsFocusHandled={consumeOperationsFocus}
               onCommand={runSeasonCommand}
               onSurfaceRepair={(key, kind, absoluteDay) => dispatch({
                 type: "START_SURFACE_REPAIR",
@@ -5657,7 +5829,7 @@ export default function App() {
                 absoluteDay,
               })}
               onNavigateSystem={navigateSimulationSystem}
-              onClose={() => setShowSeasonsLegacy(false)}
+              onClose={() => { setShowSeasonsLegacy(false); setOperationsFocus(undefined); }}
               biomeContext={contextualUiTheme}
             /></DeferredSurface>}
             {showCampaign && world.campaign && !activeTutorial && <CampaignPanel
@@ -5665,6 +5837,8 @@ export default function App() {
               world={world}
               onStartMatch={startCampaignMatch}
               onContinueSandbox={continueCampaign}
+              onNavigateSystem={(system) => { setShowCampaign(false); navigateSimulationSystem(system); }}
+              onAcknowledgeLegacyRecovery={acknowledgeCampaignLegacyRecovery}
               onClose={() => setShowCampaign(false)}
             />}
             {activeCampaignScene && world.campaign && !activeTutorial && <CampaignSceneModal
@@ -5675,7 +5849,7 @@ export default function App() {
               onChoose={chooseCampaign}
             />}
             {showPropertyManagement && !activeTutorial && <DeferredSurface label={t("property.aria")}><PropertyManagementPanel course={course} world={world} operationsFocus={operationsFocus && ["memberships", "property", "resort", "community"].includes(operationsFocus.system) ? operationsFocus as { system: "memberships" | "property" | "resort" | "community"; nonce: number } : undefined} onCommand={runPropertyCommand} onClose={() => { setShowPropertyManagement(false); setOperationsFocus(undefined); }} /></DeferredSurface>}
-            {showLiveOverview && !activeTutorial && <DeferredSurface label={t("live.overview")}><LiveOverview key={`live-overview-${liveOverviewInstanceRef.current}`} course={course} cash={world.cash} reservedMobilityFleetUnitIds={reservedMobilityFleetUnitIds(live.getSnapshot()?.state.m51)} operationsFocus={operationsFocus && ["staffing", "pace", "mobility"].includes(operationsFocus.system) ? operationsFocus as { system: "staffing" | "pace" | "mobility"; nonce: number } : undefined} status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} paceVisibility={systemControlPolicy.systems.find((system) => system.id === "pace")?.visibility ?? "hidden"} mobilityVisibility={systemControlPolicy.systems.find((system) => system.id === "mobility")?.visibility ?? "hidden"} staffingVisibility={systemControlPolicy.systems.find((system) => system.id === "staffing")?.visibility ?? "hidden"} onOperationsFocusHandled={(nonce) => setOperationsFocus((current) => current?.nonce === nonce ? undefined : current)} onAssignStaff={(staffId, courseId) => { runStaffCommand({ type: "reassign", staffId, courseId }); }} onScheduleStaff={(staffId, shiftStart, shiftEnd) => { runStaffCommand({ type: "schedule", staffId, shiftStart, shiftEnd }); }} onConfigureMobility={(buildingId, mode, policy) => dispatch({ type: "CONFIGURE_MOBILITY_PRODUCT", buildingId, mode, ...policy })} onPurchaseMobility={(buildingId, mode, quantity) => dispatch({ type: "PURCHASE_MOBILITY_FLEET", buildingId, mode, quantity })} onSalvageMobility={(buildingId, mode, quantity) => dispatch({ type: "SALVAGE_MOBILITY_FLEET", buildingId, mode, quantity, reservedFleetUnitIds: reservedMobilityFleetUnitIds(live.getSnapshot()?.state.m51) })} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); setOperationsFocus(undefined); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); setOperationsFocus(undefined); }} onClose={() => { setShowLiveOverview(false); setOperationsFocus(undefined); }} /></DeferredSurface>}
+            {showLiveOverview && !activeTutorial && <DeferredSurface label={t("live.overview")}><LiveOverview key={`live-overview-${liveOverviewInstanceRef.current}`} course={course} cash={world.cash} reservedMobilityFleetUnitIds={reservedMobilityFleetUnitIds(live.getSnapshot()?.state.m51)} operationsFocus={operationsFocus && ["staffing", "pace", "mobility"].includes(operationsFocus.system) ? operationsFocus as { system: "staffing" | "pace" | "mobility"; nonce: number } : undefined} status={live.status} reputation={world.reputation} staffLevel={world.staffLevel} staffRoster={normalizedStaff(world, course)} courses={normalizeCourseLayouts(course).layouts!.map((layout) => ({ id: layout.id, name: layout.name }))} paceVisibility={systemControlPolicy.systems.find((system) => system.id === "pace")?.visibility ?? "hidden"} mobilityVisibility={systemControlPolicy.systems.find((system) => system.id === "mobility")?.visibility ?? "hidden"} staffingVisibility={systemControlPolicy.systems.find((system) => system.id === "staffing")?.visibility ?? "hidden"} onOperationsFocusHandled={consumeOperationsFocus} onAssignStaff={(staffId, courseId) => { runStaffCommand({ type: "reassign", staffId, courseId }); }} onScheduleStaff={(staffId, shiftStart, shiftEnd) => { runStaffCommand({ type: "schedule", staffId, shiftStart, shiftEnd }); }} onConfigureMobility={(buildingId, mode, policy) => dispatch({ type: "CONFIGURE_MOBILITY_PRODUCT", buildingId, mode, ...policy })} onPurchaseMobility={(buildingId, mode, quantity) => dispatch({ type: "PURCHASE_MOBILITY_FLEET", buildingId, mode, quantity })} onSalvageMobility={(buildingId, mode, quantity) => dispatch({ type: "SALVAGE_MOBILITY_FLEET", buildingId, mode, quantity, reservedFleetUnitIds: reservedMobilityFleetUnitIds(live.getSnapshot()?.state.m51) })} onSetPacePreset={live.setPacePreset} onUpdatePaceOperations={live.updatePaceOperations} onFocusHole={(holeId) => { const index = course.holes.findIndex((hole) => hole.id === holeId); const point = course.holes[index]?.green ?? course.holes[index]?.tee; if (index >= 0) setActiveHoleIndex(index); if (point) setMinimapJump((current) => ({ center: point, nonce: (current?.nonce ?? 0) + 1 })); setShowLiveOverview(false); setOperationsFocus(undefined); }} onSelectGolfer={(id) => { live.selectGolfer(id); setFollowSelected(true); setShowLiveOverview(false); setOperationsFocus(undefined); }} onClose={() => { setShowLiveOverview(false); setOperationsFocus(undefined); }} /></DeferredSurface>}
             {teeSetupPrompt && !activeTutorial && (
               <div data-testid="tee-setup-offer" role="dialog" aria-label={t("courseSetup.offerAria")} className="cc-tycoon-panel" style={{ position: "absolute", zIndex: 145, top: 64, right: 16, width: 280, padding: 14 }}>
                 <strong>{t("courseSetup.offerTitle")}</strong>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import type { Course, World } from "../game/models/types";
 import {
   CHARTER_DEFINITIONS,
@@ -81,12 +81,22 @@ export function SeasonsLegacyPanel(props: {
     absoluteDay: number,
   ) => void;
   onNavigateSystem?: (system: AdvancedSystemId) => void;
+  operationsFocus?: {
+    system: Extract<AdvancedSystemId, "localized-turf" | "irrigation" | "drainage">;
+    nonce: number;
+  };
+  onOperationsFocusHandled?: (nonce: number) => void;
   onClose: () => void;
   biomeContext?: BiomeUiTheme;
 }) {
   const [tab, setTab] = useState<"season" | "identity" | "legacy">("season");
   const [message, setMessage] = useState<string | null>(null);
-  const [focusSystem, setFocusSystem] = useState<Extract<AdvancedSystemId, "localized-turf" | "irrigation" | "drainage"> | null>(null);
+  const [focusSystem, setFocusSystem] = useState<Extract<AdvancedSystemId, "localized-turf" | "irrigation" | "drainage"> | null>(
+    () => props.operationsFocus?.system ?? null,
+  );
+  const operationsFocus = props.operationsFocus;
+  const onOperationsFocusHandled = props.onOperationsFocusHandled;
+  const requestedFocusSystem = operationsFocus?.system ?? focusSystem;
   const state = useMemo(() => seasonalState(props.world, props.course, props.day), [props.course, props.day, props.world]);
   const control = useMemo(() => systemControlEnvelope(props.world), [props.world]);
   const full = (id: "localized-turf" | "irrigation" | "drainage") => control.systems.find((system) => system.id === id)?.visibility === "full";
@@ -107,16 +117,18 @@ export function SeasonsLegacyPanel(props: {
     () => surfaceCareConditionSummary(props.course),
     [props.course],
   );
-  useEffect(() => {
-    if (tab !== "season" || !focusSystem) return;
-    const frame = window.requestAnimationFrame(() => {
-      const target = document.querySelector<HTMLElement>(`[data-operation-system="${focusSystem}"]`);
-      target?.scrollIntoView({ block: "center", behavior: document.documentElement.dataset.reducedMotion === "true" ? "auto" : "smooth" });
-      target?.focus({ preventScroll: true });
+  useLayoutEffect(() => {
+    if (tab !== "season" || !requestedFocusSystem) return;
+    const target = document.querySelector<HTMLElement>(`[data-operation-system="${requestedFocusSystem}"]`);
+    if (!target) return;
+    target.scrollIntoView({ block: "center", behavior: document.documentElement.dataset.reducedMotion === "true" ? "auto" : "smooth" });
+    target.focus({ preventScroll: true });
+    const settleFrame = window.requestAnimationFrame(() => {
+      if (operationsFocus) onOperationsFocusHandled?.(operationsFocus.nonce);
       setFocusSystem(null);
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [focusSystem, tab]);
+    return () => window.cancelAnimationFrame(settleFrame);
+  }, [onOperationsFocusHandled, operationsFocus, requestedFocusSystem, tab]);
   const navigateSystem = (system: AdvancedSystemId) => {
     if (system === "localized-turf" || system === "irrigation" || system === "drainage") {
       setFocusSystem(system);

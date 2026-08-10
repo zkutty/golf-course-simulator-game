@@ -3,6 +3,8 @@ import { campaignFacts } from "../game/campaign/campaign";
 import type { Course, World } from "../game/models/types";
 import type { CampaignRunState, CampaignSceneDefinition } from "../game/campaign/types";
 import { useI18n } from "../i18n/useI18n";
+import { systemControlLabel } from "./systemControlPresentation";
+import type { MessageKey } from "../i18n/catalog";
 
 export function CampaignSceneModal(props: {
   campaign: CampaignRunState;
@@ -14,8 +16,14 @@ export function CampaignSceneModal(props: {
   const { t } = useI18n();
   const character = CAMPAIGN_CHARACTER_BY_ID.get(props.scene.speaker);
   const chapter = CAMPAIGN_CHAPTER_BY_ID.get(props.campaign.chapterId);
-  const phase = chapter?.phases[props.campaign.phaseIndex];
+  const owningPhaseIndex = chapter?.phases.findIndex((candidate) =>
+    candidate.introSceneId === props.scene.id || candidate.completionSceneId === props.scene.id) ?? -1;
+  const displayPhaseIndex = owningPhaseIndex >= 0 ? owningPhaseIndex : props.campaign.phaseIndex;
+  const phase = chapter?.phases[displayPhaseIndex];
+  const showCurriculum = phase?.introSceneId === props.scene.id;
   const facts = campaignFacts(props.course, props.world);
+  const experienceProfile = props.world.experienceProfile ?? "classic";
+  const economicPressure = props.world.economicPressure ?? "balanced";
   return (
     <div
       role="dialog"
@@ -73,12 +81,23 @@ export function CampaignSceneModal(props: {
             </h2>
             {phase && (
               <small style={{ color: "#6e624f" }}>
-                {t("campaign.scene.phase", { current: props.campaign.phaseIndex + 1, total: 3, phase: t(phase.titleKey) })}
+                {t("campaign.scene.phase", { current: displayPhaseIndex + 1, total: 3, phase: t(phase.titleKey) })}
               </small>
             )}
+            <small data-testid="campaign-scene-axes" style={{ display: "block", color: "#6e624f" }}>
+              {t("campaign.axes.active", {
+                profile: t(`newGame.experience.profile.${experienceProfile}.label` as MessageKey),
+                pressure: t(`newGame.pressure.${economicPressure}.label` as MessageKey),
+              })}
+            </small>
           </div>
         </header>
         <p style={{ fontSize: 15, lineHeight: 1.55, margin: "18px 0" }}>{t(props.scene.bodyKey)}</p>
+        {phase && showCurriculum && phase.curriculumSystems.length > 0 && (
+          <p data-testid="campaign-scene-curriculum" style={{ fontSize: 13, margin: "-8px 0 16px", fontWeight: 800 }}>
+            {t("campaign.curriculum.scene", { systems: phase.curriculumSystems.map(systemControlLabel).join(", ") })}
+          </p>
+        )}
         <div data-testid="campaign-scene-facts" aria-label={t("campaign.scene.currentFacts")} style={{ display: "flex", flexWrap: "wrap", gap: 7, margin: "0 0 16px" }}>
           <span style={{ padding: "5px 8px", borderRadius: 8, background: "#dde5d7", fontSize: 12, fontWeight: 800 }}>
             {t("campaign.fact.charter")}: {props.world.seasonal?.charter ?? props.campaign.charter}

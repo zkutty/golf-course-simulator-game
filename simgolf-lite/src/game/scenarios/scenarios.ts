@@ -8,6 +8,7 @@ import { loadCareer } from "../../utils/careerStore";
 import { CAMPAIGN_CHAPTER_BY_ID } from "../campaign/content";
 import { createCampaignRun } from "../campaign/campaign";
 import { biomeCompatibilityMetadataFor } from "../models/biomes";
+import { CAMPAIGN_CHAPTER_AXES } from "../campaign/profileContract";
 
 const text = (key: Parameters<typeof translate>[1]) => translate("en", key);
 
@@ -52,8 +53,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90202,
     theme: "parkland",
     biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
-    experienceProfile: "classic",
-    economicPressure: "balanced",
+    ...CAMPAIGN_CHAPTER_AXES["muni-rescue"],
     startingCash: 15_000,
     startingReputation: 25,
     fixture: "muni",
@@ -80,8 +80,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90333,
     theme: "parkland",
     biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
-    experienceProfile: "classic",
-    economicPressure: "balanced",
+    ...CAMPAIGN_CHAPTER_AXES["swamp-deal"],
     startingCash: 30_000,
     constraints: { noLoans: true },
     goals: [
@@ -107,8 +106,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90404,
     theme: "links",
     biomeCompatibility: biomeCompatibilityMetadataFor("links"),
-    experienceProfile: "classic",
-    economicPressure: "balanced",
+    ...CAMPAIGN_CHAPTER_AXES["links-by-the-sea"],
     constraints: { protectedTrees: true },
     goals: [
       {
@@ -133,8 +131,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90505,
     theme: "parkland",
     biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
-    experienceProfile: "simulation",
-    economicPressure: "tight",
+    ...CAMPAIGN_CHAPTER_AXES["members-club"],
     startingCash: 40_000,
     startingReputation: 55,
     fixture: "members",
@@ -162,8 +159,7 @@ export const SCENARIOS: ScenarioDefinition[] = [
     seed: 90666,
     theme: "parkland",
     biomeCompatibility: biomeCompatibilityMetadataFor("parkland"),
-    experienceProfile: "simulation",
-    economicPressure: "tight",
+    ...CAMPAIGN_CHAPTER_AXES["championship-dream"],
     goals: [
       {
         id: "full-course",

@@ -4,10 +4,10 @@ import { SCENARIOS } from "../game/scenarios/scenarios";
 import type { ScenarioDefinition } from "../game/scenarios/types";
 import { isScenarioUnlocked, loadCareer } from "../utils/careerStore";
 import { getBiomeDefinition } from "../game/models/biomes";
-import { getEconomicPressure, getExperienceProfile } from "../game/balance/experience";
 import { T } from "../i18n/T";
 import { useI18n } from "../i18n/useI18n";
 import { IS_DEMO, scenarioAvailableInEdition } from "../config/edition";
+import type { MessageKey } from "../i18n/catalog";
 
 // Career scenario ladder (ZKU-164): card list with medal states —
 // locked / unlocked / completed (+ best-result stats), sequential unlock.
@@ -33,10 +33,15 @@ export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) 
             : rec?.bestMedal === "bronze"
               ? t("campaign.medal.bronze")
               : null;
+        const profileLabel = t(`newGame.experience.profile.${s.experienceProfile}.label` as MessageKey);
+        const pressureLabel = t(`newGame.pressure.${s.economicPressure}.label` as MessageKey);
+        const responsibility = t(`campaign.responsibility.${s.experienceProfile}` as MessageKey);
         return (
           <button
             key={s.id}
+            data-testid={`campaign-card-${s.id}`}
             disabled={!unlocked}
+            aria-describedby={`campaign-card-responsibility-${s.id}`}
             onClick={() => props.onStart(s)}
             style={{
               textAlign: "left",
@@ -69,11 +74,14 @@ export function ScenarioSelect(props: { onStart: (scenario: ScenarioDefinition) 
                   {s.order}. {t(s.nameKey)}
                 </span>
                 <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.05em", color: "#6b7280" }}>
-                  {getBiomeDefinition(s.theme).label.toUpperCase()} • {getExperienceProfile(s.experienceProfile).label.toUpperCase()} • {getEconomicPressure(s.economicPressure).label.toUpperCase()}
+                  {getBiomeDefinition(s.theme).label.toUpperCase()} • {t("campaign.card.axes", { profile: profileLabel, pressure: pressureLabel }).toUpperCase()}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: "#4b5563", marginTop: 2 }}>
                 {unlocked ? t(s.blurbKey) : t("scenario.locked")}
+              </div>
+              <div id={`campaign-card-responsibility-${s.id}`} data-testid={`campaign-card-responsibility-${s.id}`} style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>
+                {t("campaign.card.responsibility", { responsibility })}
               </div>
               {completed && (
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#8a6d1a", marginTop: 4 }}>

@@ -140,6 +140,11 @@ interface Window {
     setM39Fixture(): void;
     setZk688ClassicFixture(): void;
     setZk689SimulationFixture(): void;
+    setZk690CampaignFixture(chapterId: string, phaseIndex?: number): void;
+    setZk690LegacyRecoveryFixture(): void;
+    setZk690LegacyFinaleFixture(): void;
+    setCampaignObjectiveWonFixture(): void;
+    advanceCampaignFixture(): void;
     showZk688AdvisorMessage(target: "pricing" | "maintenance"): void;
     pauseLiveSimulation(): void;
     takeSystemControl(system: import("./game/experience/systemControl").AdvancedSystemId): void;

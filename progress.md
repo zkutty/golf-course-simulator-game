@@ -1516,3 +1516,256 @@ Current request: “Now please implement rest”
 - `npm run test:perf` passes at 0.31ms tick work, 1,011ms cold startup, and 2,878ms 36-hole fixture load. `npm run test:pwa` passes strict-CSP gameplay, cache-on-demand/isolation, scoped install, offline reload, deferred HUD/New Game, and local-save persistence.
 - All tracked compatibility/perf/audit screenshots and JSON were restored. Ignored web-client, Playwright, and build output was removed. `git diff --check` passes. Remaining untracked files are only the scoped ZK-689 unit and E2E source tests.
 - Integration-readiness: locally implementation-ready for review/rebase, with no commit/push/deploy/Linear mutation from this worktree. Do not claim ZK-689 Done from local evidence alone.
+
+## 2026-08-10 — ZK-690 campaign/profile preflight (no production edits)
+
+- Fresh isolated worktree `/private/tmp/golf-sim-zk690-campaign-preflight` on
+  `codex/zk690-campaign-preflight` starts exactly at released
+  `bfc501e4d72a08cf16414fbb77489c7ad36fa15e`.
+- The M40 authority remains six independently started campaign chapters, each
+  with three static phases, two complications, one playable match, generic
+  recovery copy, and one shared bronze/silver/gold predicate set. The scenario
+  ladder hardcodes legacy-derived axes: Back Nine Relaxed/Friendly; Muni,
+  Swamp, and Links Classic/Balanced; Members and Championship Simulation/Tight.
+  Authored cash overrides remain exact for Muni ($15K), Swamp ($30K), and
+  Members ($40K); the other chapters inherit current pressure capital ($200K,
+  $100K, and $85K respectively).
+- Career bypasses the Experience step. `ScenarioSelect` starts the authored
+  definition directly, and retry calls the same fixed definition. There is no
+  UI/API selection of another profile for the same chapter. Save/load preserves
+  the current World axes, and in-run System Control graduation can change the
+  profile one way, but a scenario retry resets it to the authored profile.
+- Campaign content/run/evaluation is profile-blind. Goals, extra requirements,
+  deadlines, matches, choices, medal predicates, rewards, and epilogue facts
+  never read Experience Profile. The existing System Control authority already
+  supplies the real behavior boundary: Relaxed/Classic default all 13 systems
+  automated (five command adapters and eight explicit authoritative no-ops),
+  Simulation defaults all 13 manual, and only Relaxed receives guided recovery.
+  Every fresh seasonal state still uses the `balanced` automation preset; the
+  profile catalog's `automationDefaults` preset/enabled fields are otherwise
+  unused. Automation can indirectly satisfy outcome-only condition,
+  reputation, profit, and cash goals because objectives retain no player-action
+  provenance.
+- Current save schema v31 already persists World profile/pressure, sparse
+  System Control, campaign v2, and objective state. V29 maps legacy difficulty
+  to the same axes. Campaign v2 stores no profile snapshot; career profile v2
+  keys attempts/completion/best medal/rewards only by chapter ID. A shared
+  goal/medal contract can therefore use existing persistence, but per-profile
+  records or retuned objectives would require an explicit career/save migration
+  and a policy for already-started phases.
+- Existing unit coverage validates content shape, one-path phase advancement,
+  hostile normalization, matches, epilogues, and the fixed scenario axes. The
+  M40 browser file opens only Back Nine, records one choice, and opens the panel;
+  it does not assert profile/pressure/system policy, alternate profiles, retry,
+  save/reload, graduation, phase completion, medals, or later chapters. The
+  campaign certification's `proBuilds: 3` and `designStyles: 3` are constants,
+  not three-profile execution evidence.
+- Scope does not need splitting if ZK-690 keeps one shared chapter/goal/medal
+  authority and adds only profile selection, profile-aware guidance, retry
+  preservation, and matrix tests over existing System Control behavior. Split
+  profile-specific goal/medal retuning, player-action provenance, or full
+  18-path balance/playtime certification into separate work; those expand the
+  authority and migration surface materially and overlap the later
+  certification boundary.
+- Await the scoped implementation prompt before changing production code.
+
+## 2026-08-10 — ZK-690 binding pre-edit contract
+
+No product file has been edited before this checkpoint. The implementation
+contract is the following exact shared six-row ladder; profile controls
+responsibility and pressure controls economics:
+
+1. Back Nine — Relaxed / Friendly; inherited fresh capital $200K.
+2. Muni Rescue — Relaxed / Friendly; authored cash remains exactly $15K.
+3. Swamp Deal — Classic / Balanced; authored cash remains exactly $30K and
+   `noLoans` remains authoritative.
+4. Links by the Sea — Classic / Balanced; inherited fresh capital $100K and
+   protected trees remain authoritative.
+5. Members Club — Classic / Balanced; authored cash remains exactly $40K,
+   reputation 55, and the fixed $110 fee remains authoritative.
+6. Championship Dream — Simulation / Balanced; inherited fresh capital $100K.
+   Tight remains an optional pressure elsewhere and is not forced here.
+
+The one shared 18-phase objective/requirement contract stays exact:
+
+- Back Nine: one hole by W8; three holes plus one phase round by W18 with one
+  Player Pro round and one architecture-evidence record; one profitable week
+  by W28 plus the opening match.
+- Muni: condition 55 by W12; reputation 40 by W24 plus staff level 1;
+  five phase rounds and reputation 55 by W36 plus the local match.
+- Swamp: three holes by W14; six holes/rating 63 by W28 with the existing
+  drainage requirement; nine holes/rating 67 by W42 plus the rival match.
+- Links: three holes by W14; six holes/rating 66 by W28 plus one Player Pro
+  round; nine holes/rating 70 by W42 plus the rival match.
+- Members: reputation 65 by W14; one profitable week by W28 plus staff level
+  1; reputation 75, three profitable weeks, and 15 phase rounds by W44 plus
+  the club match.
+- Championship: one published course and 18 holes by W20 plus nine Player Pro
+  points; rating 72/reputation 80 by W40 plus skill average 40 and one design
+  evidence record; $150K and 25 phase rounds by W60 plus the championship
+  match.
+
+Medals also remain one chapter-wide contract: Back Nine Silver W24 / Gold W18
+plus three design records; Muni Silver reputation 60 / Gold reputation 68 plus
+one regular; Swamp Silver $10K / Gold $25K plus six design records; Links
+Silver five design records / Gold ten plus condition 75; Members Silver
+reputation 80 / Gold reputation 88 plus two regulars; Championship Silver W52
+plus 12 Pro points / Gold W44 plus 20 Pro points and one scheduled tournament.
+Bronze remains unconditional recovery after legitimate campaign completion.
+
+Chapter 6 curriculum is cumulative presentation/navigation only:
+
+- Phase 1: maintenance, localized turf, irrigation, drainage, staffing.
+- Phase 2: all phase-1 systems plus pace, memberships, tournaments, property,
+  mobility.
+- Phase 3: all phase-2 systems plus financing, resort, community (all 13).
+
+Simulation's existing System Control policy remains full/manual for all 13
+systems from the first frame. Curriculum never changes visibility, control,
+availability, save overrides, commands, or economics; its buttons only call
+the existing ZK-689 specialist-surface navigator.
+
+Chosen player-participation design:
+
+- CampaignRunState becomes nested version 3 and gains one bounded/versioned
+  `participation` carrier (`version: 1`, at most 18 receipts).
+- A successful explicit choice on a phase's authored intro scene appends the
+  deterministic receipt `phase-scene:<chapter>:<phase>:<scene>` with phase,
+  scene, choice, and week. Existing settlement IDs make this exact-once.
+- Failed/rejected duplicate choices, previews, advisor actions, and curriculum
+  navigation never call this transition and cannot write a receipt.
+- Campaign v1/v2 choices on the matching authored intro scene remain truthful
+  direct participation evidence without being copied into/fabricated as a new
+  receipt. Resolved-scene IDs alone are insufficient.
+- A phase cannot advance until its own phase-scene participation is proven.
+  Silver/Gold additionally require participation across all three phases;
+  otherwise a legitimately completed migrated run recovers to Bronze. Existing
+  design evidence, Pro rounds/points, and completed campaign matches remain the
+  other direct authoritative gates; no management command family is hooked.
+
+Migration design:
+
+- Recognize raw campaign v1/v2 and normalize deterministically to v3 with an
+  empty receipt list; preserve every existing objective/progress, choice,
+  relationship, callback, match, settlement, Player Pro, and epilogue field.
+- Change legacy chapter axes only when the raw campaign is v1/v2, the active
+  scenario/campaign IDs agree, World profile and pressure exactly equal that
+  chapter's old authored defaults, and strict System Control evidence has the
+  same highest profile with no graduations, sparse overrides, or recovery.
+- The three deliberate maps are Muni Classic/Balanced → Relaxed/Friendly,
+  Members Simulation/Tight → Classic/Balanced, and Championship
+  Simulation/Tight → Simulation/Balanced. The other three rows are identity.
+- Ambiguous/mismatched axes, v3 campaigns, graduations, overrides, recovery,
+  malformed control state, Sandbox continuations, prior career medals/unlocks,
+  and completed history are preserved. The migration is idempotent because
+  normalized output is v3; no top-level save-schema bump is planned.
+
+### ZK-690 participation/provenance repair checkpoint
+
+- Independent review correctly rejected choice-only participation as a
+  vacuous automation boundary. The final bounded v3 contract binds every
+  direct receipt byte-for-byte to its matching persisted authored choice
+  (chapter, phase, intro scene, choice, week, and baseline). A choice captures
+  the exact bounded set of pre-existing authoritative IDs: player-owned
+  `source: playerPro` architecture evidence for Back 1/2, Swamp 1/2, Links
+  1/2, and Championship 2; Player Pro round IDs for Muni 1/2, Members 1/2,
+  and Championship 1; each phase 3 uses only its exact authored campaign-match
+  ID. A genuinely new ID after the choice is required. Regular guest evidence,
+  aggregate objective progress, reordered/reset histories, changed/lowered
+  baselines, wrong scenes/choices/weeks, failed actions, previews, advisor
+  navigation, and automation cannot satisfy mastery.
+- ID-set baselines remain usable at the existing 480-evidence/40-round caps:
+  an appended new authoritative ID survives the rolling slice and qualifies,
+  while reordering the exact baseline does not. Receipts remain bounded to the
+  18 authored phases. The all-18 unit matrix is explicitly classified as a
+  structural reducer matrix using direct fixtures, not gameplay reachability.
+- Raw v1/v2 provenance is explicit and bounded in
+  `legacyEligiblePhaseIds`. Legacy normalization forcibly discards injected
+  receipts and strips untrusted choice baselines. Genuine v3 normalization
+  never infers eligibility from resolved scenes or choices and drops any
+  receipt that is not exactly choice-bound. A resolved legacy intro with no
+  surviving choice offers a localized, keyboard-accessible, idempotent Bronze
+  recovery acknowledgment; it never counts as mastery. Completed v1/v2 active
+  runs reconcile to Bronze without downgrading the separate monotonic Career
+  best medal.
+- Match readiness no longer circularly blocks every authored finale. The
+  production `startPlayerCampaignMatch` path exempts only the current
+  `exact-campaign-match` direct-evidence blocker; intro choice, objective,
+  numeric/requirement, points, setup, and every other blocker remain intact.
+  Focused proof rejects before the final choice, starts/registers the exact
+  match after readiness, and advances/awards Bronze only after that exact match
+  completes.
+- Campaign scene presentation derives the owning phase from the scene ID.
+  Completion scenes retain the prior phase label and suppress the next phase's
+  curriculum; the following intro then presents the cumulative 5/10/13
+  guidance. Campaign cards preserve their visible descendant semantics and add
+  a responsibility description rather than overriding locked/completed/medal/
+  best-result accessible names. Shared profile/pressure names remain localized
+  after the deferred New Game catalog unmounts.
+- Current focused evidence is 24/24 campaign+migration tests. `npx tsc -b`
+  passes; `npm run lint -- --quiet` passes both i18n guards with zero errors and
+  the same 12 inherited Hook warnings. Browser acceptance currently passes the
+  repaired Championship 5/10/13 + all-13-full/manual/navigation case (2.0m),
+  the real post-choice Player Pro round → player-owned architecture evidence →
+  exact-once phase transition → save/reload/relationship case (1.3m), and the
+  legacy recovery → owning-phase boundary → exact-match reload → Bronze
+  epilogue → Sandbox case (1.4m). A complete dedicated-file rerun and broader
+  compatibility/full gates remain pending.
+- The required bundled web-game client reached live gameplay with a clean
+  Relaxed/Friendly structured state and no error artifact. Its rendered
+  isometric course canvas was visually inspected. Dedicated browser captures
+  inspected so far include readable completed/locked cards, cumulative
+  Championship guidance, real Player Pro controls, the correctly owned phase-2
+  intro, and the generic Bronze completion handoff; final retained captures
+  will be inspected after the complete dedicated rerun.
+
+### ZK-690 final local validation checkpoint
+
+- The final dedicated browser file passes 5/5 serially in 6.8 minutes: exact
+  six-card axes plus Relaxed/Friendly start (35.6s), representative
+  Classic/Balanced start (2.2s), Championship 5/10/13 curriculum plus all 13
+  full/manual systems and navigation-only focus (2.5m), true post-choice
+  automation-negative plus a real Player Pro round/exact-once transition/
+  relationship save-reload (1.6m), and legacy recovery/exact finale/Bronze
+  epilogue/Sandbox (2.0m). Explicit console and page-error collections are
+  empty. These are targeted browser paths, not broad campaign-playtime or
+  human-playtest certification; that remains outside ZK-690 with ZK-691.
+- Final visually inspected captures are coherent and localized: Back Nine
+  authored scene with Relaxed/Friendly active axes
+  (`daa549a598eccf2f7ae95e3f3b03ebbd73c0e8b78597926ef626e4bed4907078`),
+  Championship phase-3 panel with all 13 guidance targets
+  (`8c5d6c0fbd29e7209cfe6e68a3549518b9b078fd4ed270bed8502f756738524e`),
+  restored Phase 2 panel with relationship/direct-evidence state
+  (`2461c180710540368e73159c2d983f20072897e22b18bd7778b822a9a34ab089`),
+  and the scrolled Bronze epilogue
+  (`03da37406e2c57dc7ad110427facb8fb92e5eb71f1ea6cc7c432ef29f958b92c`).
+  The bundled web-game client ran one two-frame iteration after Quick Start;
+  its canvas (`ba02a68ddcfef2dfe00ea379e6f14394cbaff3946adc8400c377e38d2de0c3f9`)
+  and structured state (`6f0dfbac714b911a1104964cb0a7e43d9b3ac6f471900f1fcfe88d3c25d0e498`)
+  were inspected, with no error artifact.
+- Affected compatibility is green for 20 browser cases: M40 1/1 (39.0s),
+  selected M14 keyboard/modal/responsive/Simulation JIT 1/1 (2.7m), M36 1/1
+  (1.4m), M39 1/1 (58.4s), ZK-684 8/8 (17.2s), ZK-685 3/3 (1.8m),
+  selected ZK-688 control/focus paths 3/3 (2.8m), and ZK-689 2/2 (5.6m).
+  ZK-684 initially exposed an additive nested render-text `mode` field; mode
+  was moved to the renderer's top level, restoring the exact legacy
+  `experience` shape, and the complete file then passed.
+- Focused campaign/scenario proof passes 36/36. Full `npm run test:ci` passes
+  196 files with 1,549 passed and 1 skipped (1,550 total) in 159.78s; the
+  audio audit passes 5/5. Final `npx tsc -b` passes in 9.2s. Final lint plus
+  both localization guards passes in 15.9s with zero errors and the same 12
+  inherited Hook warnings.
+- Performance smoke passes with 0.38ms tick work against the 8ms budget,
+  1.023s cold start, and 2.906s 36-hole fixture load. PWA smoke passes strict
+  CSP gameplay, cache-on-demand/isolation, scoped install, offline reload,
+  deferred HUD/New Game, and local-save persistence in 40.3s.
+- Two audited production builds are byte-identical at aggregate dist digest
+  `df3a9b4a6669ff0b7628205d432b56d880631201403528daf5854a14ba8dab22`.
+  Main JS is 1,606,881 bytes (`index-BhnQO91H.js`, SHA-256
+  `d9ba43201b2ffc33228eb769a0a62f85bccc8c3548038de353158da87363a658`),
+  leaving 1,838 bytes of its 1,608,719-byte budget. Initial critical transfer
+  is 3,805,341 bytes (388,963 bytes headroom); dist is 116,419,258 bytes
+  (556,753 bytes headroom). All asset/delivery audits report `ok: true`.
+- This checkpoint establishes local integration readiness, not release
+  completion. Broad human campaign certification, ZK-691, ZK-739 tournament
+  lifecycle expansion, and inherited ZK-811/ZK-812 remain out of scope.

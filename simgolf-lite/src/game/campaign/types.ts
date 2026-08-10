@@ -1,6 +1,7 @@
 import type { MessageKey } from "../../i18n/catalog";
 import type { GoalDefinition } from "../models/objectives";
 import type { ClubCharter } from "../seasons/types";
+import type { AdvancedSystemId } from "../experience/systemControl";
 
 export type CampaignCharacterId =
   | "rowan"
@@ -117,6 +118,8 @@ export interface CampaignPhaseDefinition {
   match?: CampaignMatchDefinition;
   introSceneId: string;
   completionSceneId?: string;
+  /** Cumulative guidance topics only. This never gates system visibility or authority. */
+  curriculumSystems: readonly AdvancedSystemId[];
 }
 
 export interface CampaignComplicationDefinition {
@@ -153,7 +156,14 @@ export interface CampaignChoiceRecord {
   week: number;
   facts: Record<string, number>;
   callbackFact?: string;
+  participationBaseline?: CampaignParticipationBaselineV1;
 }
+
+export type CampaignParticipationBaselineV1 =
+  | { kind: "architecture-evidence"; ids: string[] }
+  | { kind: "player-pro-round"; ids: string[] }
+  | { kind: "exact-campaign-match"; definitionId: string }
+  | { kind: "legacy-recovery" };
 
 export interface CampaignScheduledScene {
   sceneId: string;
@@ -169,8 +179,25 @@ export interface CampaignMatchRecord {
   result?: "won" | "lost" | "tied" | "conceded" | "complete";
 }
 
+export interface CampaignParticipationReceiptV1 {
+  id: string;
+  phaseId: string;
+  sceneId: string;
+  choiceId: string;
+  week: number;
+  source: "player-choice" | "legacy-recovery";
+  baseline: CampaignParticipationBaselineV1;
+}
+
+export interface CampaignParticipationStateV1 {
+  version: 1;
+  receipts: CampaignParticipationReceiptV1[];
+  /** Explicit migration provenance; never inferred from choices in a v3 run. */
+  legacyEligiblePhaseIds: string[];
+}
+
 export interface CampaignRunState {
-  version: 2;
+  version: 3;
   chapterId: string;
   phaseIndex: 0 | 1 | 2;
   completedPhaseIds: string[];
@@ -191,4 +218,6 @@ export interface CampaignRunState {
   charter: ClubCharter;
   startedWeek: number;
   continuedInSandbox: boolean;
+  /** Bounded direct-player provenance. Legacy choices remain independently verifiable. */
+  participation: CampaignParticipationStateV1;
 }

@@ -8,7 +8,7 @@ import { activatePlayerChallenge, activatePlayerTournament, createPlayerChalleng
 import type { TournamentEvent } from "../tournaments/types";
 import { createM48DesignTestSession } from "../architecture/comparison";
 import { activeCourseLayout } from "../models/courseLayouts";
-import { activeCampaignMatch, campaignPhaseBlockers, registerCampaignMatch } from "../campaign/campaign";
+import { activeCampaignMatch, campaignPhaseBlockers, campaignPhaseEvidenceKind, registerCampaignMatch } from "../campaign/campaign";
 import { createTournamentEvent, scheduleTournament } from "../tournaments/tournaments";
 
 const EQUIPMENT_SIDEGRADE_MIN = .88;
@@ -203,8 +203,10 @@ export function startPlayerCampaignMatch(args: {
 } {
   const match = activeCampaignMatch(args.world.campaign);
   if (!match || !args.world.campaign) return { ok: false, reason: "unavailable" };
+  const exactMatchEvidencePending = campaignPhaseEvidenceKind(args.world.campaign, args.world.campaign.phaseIndex) === "exact-campaign-match";
   const blocked = campaignPhaseBlockers(args.course, args.world)
-    .some((reason) => !reason.startsWith("campaign.blocker.match:"));
+    .some((reason) => !reason.startsWith("campaign.blocker.match:")
+      && !(exactMatchEvidencePending && reason.endsWith(":exact-campaign-match")));
   if (blocked) return { ok: false, reason: "objectives" };
   const career = normalizePlayerPro(args.world.playerPro, {
     seed: args.world.runSeed,

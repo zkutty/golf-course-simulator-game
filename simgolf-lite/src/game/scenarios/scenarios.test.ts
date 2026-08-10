@@ -35,6 +35,21 @@ describe("scenario definitions (ZKU-164)", () => {
     expect(new Set(SCENARIOS.map((s) => s.id)).size).toBe(6);
   });
 
+  it("uses the exact ZK-690 chapter profile and pressure map without retuning goals", () => {
+    expect(SCENARIOS.map(({ id, experienceProfile, economicPressure }) => ({ id, experienceProfile, economicPressure }))).toEqual([
+      { id: "back-nine", experienceProfile: "relaxed", economicPressure: "friendly" },
+      { id: "muni-rescue", experienceProfile: "relaxed", economicPressure: "friendly" },
+      { id: "swamp-deal", experienceProfile: "classic", economicPressure: "balanced" },
+      { id: "links-by-the-sea", experienceProfile: "classic", economicPressure: "balanced" },
+      { id: "members-club", experienceProfile: "classic", economicPressure: "balanced" },
+      { id: "championship-dream", experienceProfile: "simulation", economicPressure: "balanced" },
+    ]);
+    for (const scenario of SCENARIOS) {
+      expect(CAMPAIGN_CHAPTER_BY_ID.get(scenario.id)?.phases).toHaveLength(3);
+      expect(scenario.goals.length).toBeGreaterThan(0);
+    }
+  });
+
   it("every goal uses the objective-engine vocabulary", () => {
     for (const s of SCENARIOS) {
       expect(s.goals.length).toBeGreaterThan(0);

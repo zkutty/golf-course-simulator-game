@@ -52,6 +52,7 @@ import {
   normalizeSeasonalState,
 } from "../game/seasons/seasons";
 import { normalizeCampaignRun } from "../game/campaign/campaign";
+import { migrateLegacyCampaignAxes } from "../game/campaign/migration";
 import { normalizePaceOperationsState } from "../game/live/paceHistory";
 import {
   migratePlayerProActiveRoundGreenSnapshotV26,
@@ -1302,6 +1303,8 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
     if (migrated.migratedFrom != null && migrated.migratedFrom <= 18) {
       course = upgradeUntouchedLegacyLinksEstate(course, world);
     }
+    const campaignAxesMigration = migrateLegacyCampaignAxes(world, rawWorld.campaign);
+    world = campaignAxesMigration.world;
     world.staffRoster = normalizedStaff(world, course);
     world = reconcileSystemControlWorld(world);
     const history = Array.isArray(parsed.history) ? parsed.history as WeekResult[] : undefined;
@@ -1320,7 +1323,12 @@ export function normalizeLoadedSaveResult(input: unknown): SaveLoadResult {
       void _legacyLiveDifficulty;
       live = {
         ...snapshot,
-        state: { ...liveState, economicPressure: liveExperience.economicPressure },
+        state: {
+          ...liveState,
+          economicPressure: campaignAxesMigration.migrated
+            ? world.economicPressure ?? liveExperience.economicPressure
+            : liveExperience.economicPressure,
+        },
       };
     }
     return {
