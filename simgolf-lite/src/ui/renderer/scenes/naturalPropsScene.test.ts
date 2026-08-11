@@ -101,6 +101,7 @@ function snapshot(overrides: Partial<RenderSnapshot> = {}): RenderSnapshot {
       atmosphere: 0,
       surfaceCare: 0,
       structuresProps: 0,
+      playerProCollection: 0,
       naturalProps: 1,
       overlaysDiagnostics: 0,
       estateSurvey: 0,

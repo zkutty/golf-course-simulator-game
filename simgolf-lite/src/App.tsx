@@ -3408,6 +3408,22 @@ export default function App() {
         setShowPlayerPro(false);
         setPlayerShotAim(null);
       },
+      setZk731DisplayFixture: async () => {
+        const { createZk731DisplayBrowserFixture } = await import("./game/testing/zk731DisplayBrowserFixture");
+        const fixture = createZk731DisplayBrowserFixture(gameSession.getState().world);
+        dispatch({ type: "LOAD_GAME", course: fixture.course, world: fixture.world });
+        live.restoreSnapshot(snapshotLiveSimulation({ state: createLiveState(fixture.course, fixture.world, 0), pendingCash: 0, speed: "paused", selectedGolferId: null }));
+        setShowPlayerPro(false);
+        setPlayerShotAim(null);
+      },
+      moveZk731DisplayVehicleToCustody: async () => {
+        const { moveZk731DisplayVehicleToCustody } = await import("./game/testing/zk731DisplayBrowserFixture");
+        gameSession.update((current) => ({
+          ...current,
+          world: moveZk731DisplayVehicleToCustody(current.world),
+          economyVersion: current.economyVersion + 1,
+        }));
+      },
       forceChallengeRivalWithdrawal: async () => {
         const { forceRivalWithdrawalFixture } = await import("./game/playerPro/challengePlayerProAdapter");
         gameSession.update((current) => {
@@ -5643,6 +5659,7 @@ export default function App() {
                 playerRound={activePlayerRound}
                 playerShotAim={playerShotAim}
                 playableShotMode={activePlayerRound?.phase === "awaiting_shot"}
+                playerProWorldDisplay={playerProSocialText?.worldDisplay ?? null}
                 sculptRadius={sculptRadius}
                 fineGreenBrush={fineGreenBrush}
                 fineGreenRadius={fineGreenRadius}

@@ -135,6 +135,7 @@ function snapshot(
       atmosphere: 0,
       surfaceCare: 0,
       structuresProps: revision,
+      playerProCollection: 0,
       naturalProps: 0,
       overlaysDiagnostics: 0,
       estateSurvey: 0,

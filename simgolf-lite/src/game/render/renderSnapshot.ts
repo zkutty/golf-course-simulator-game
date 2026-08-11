@@ -4,6 +4,7 @@ import type { Course, Hole, Obstacle, Point, Terrain } from "../models/types";
 import type { SeasonalVisualState } from "../presentation/seasonalVisualState";
 import type { PlayerPlayableRound, PlayerProPoint } from "../models/playerProTypes";
 import type { IsoRotation } from "./iso";
+import type { PlayerProWorldDisplayPresentation } from "../playerPro/socialPresentation";
 
 /** Stable ownership boundaries for the Pixi scene-system migration. */
 export const RENDER_SYSTEMS = [
@@ -82,6 +83,7 @@ export type RenderSceneId =
   | "atmosphere"
   | "surfaceCare"
   | "structuresProps"
+  | "playerProCollection"
   | "naturalProps"
   | "overlaysDiagnostics"
   | "estateSurvey";
@@ -108,6 +110,8 @@ export interface RenderSnapshot {
   readonly atlasRevision: number;
   readonly playerRound?: PlayerPlayableRound | null;
   readonly playerShotAim?: PlayerProPoint | null;
+  /** Player-visible inventory projection; never raw career or rival state. */
+  readonly playerProWorldDisplay?: PlayerProWorldDisplayPresentation | null;
   readonly surveyMode: boolean;
   readonly selectedParcelId?: string | null;
   readonly worldSeed: number;
@@ -129,6 +133,33 @@ export interface StructuresPropsRevisionInput {
   readonly graphicsQuality: RenderSnapshot["graphicsQuality"];
   readonly rotation: IsoRotation;
   readonly seasonalPlantsSignature: string;
+}
+
+export interface PlayerProCollectionRevisionInput {
+  readonly atlasRevision: number;
+  readonly course: Pick<Course, "buildings" | "elevations" | "height" | "theme" | "width">;
+  readonly graphicsQuality: RenderSnapshot["graphicsQuality"];
+  readonly rotation: IsoRotation;
+  readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+  readonly worldDisplay?: PlayerProWorldDisplayPresentation | null;
+}
+
+/** Exact visible and physical inputs consumed by the Player Pro display scene. */
+export function playerProCollectionRevisionDependencies(
+  input: PlayerProCollectionRevisionInput,
+): readonly unknown[] {
+  return [
+    input.atlasRevision,
+    input.course.buildings,
+    input.course.elevations,
+    input.course.height,
+    input.course.theme,
+    input.course.width,
+    input.graphicsQuality,
+    input.rotation,
+    input.surfaceHeightAt,
+    input.worldDisplay?.revision ?? "player-pro-display:none",
+  ];
 }
 
 /** Exact physical/presentation inputs consumed by the authored-props scene. */
@@ -171,6 +202,7 @@ export class RenderRevisionTracker {
     atmosphere: 0,
     surfaceCare: 0,
     structuresProps: 0,
+    playerProCollection: 0,
     naturalProps: 0,
     overlaysDiagnostics: 0,
     estateSurvey: 0,

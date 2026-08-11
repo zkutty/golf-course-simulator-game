@@ -37,6 +37,10 @@ interface Window {
       colors: Partial<Record<import("./game/models/types").Terrain, number>>;
     } | null;
     routeOverlay(): { points: number; visibleLayers: number };
+    playerProCollectionDisplay(): {
+      rebuilds: number;
+      items: readonly { label: string; x: number; y: number; zIndex: number }[];
+    };
     rendererAtlasState(): {
       requested: {
         biome: import("./game/models/types").LandTheme;
@@ -65,6 +69,7 @@ interface Window {
     };
     unrelatedObjectCountProbe(): { before: number; after: number };
     setZoomForTest(zoom: number): void;
+    focusTileForTest(x: number, y: number, zoom: number): void;
   };
   __coursecraftTest?: {
     setGraphicsQualityFixture(quality: "high" | "medium" | "low"): void;
@@ -134,6 +139,8 @@ interface Window {
     setPropertyFixture(): void;
     setPlayerProFixture(): void;
     setChallengeContractFixture(): Promise<void>;
+    setZk731DisplayFixture(): Promise<void>;
+    moveZk731DisplayVehicleToCustody(): Promise<void>;
     forceChallengeRivalWithdrawal(): Promise<void>;
     forceChallengeTieCompletion(): Promise<void>;
     setChallengeGroupRoundFixture(groupSize?: 2 | 3 | 4): void;

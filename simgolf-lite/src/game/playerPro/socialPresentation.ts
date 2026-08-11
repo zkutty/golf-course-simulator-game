@@ -47,6 +47,68 @@ export interface SocialPersonPresentation {
   grantedRewardConnections: readonly { id: string; name: string; kind: string; status: string }[];
 }
 
+export interface PlayerProWorldDisplayItem {
+  readonly id: string;
+  readonly name: string;
+  readonly category: "bag" | "outfit" | "watch" | "vehicle" | "trophy" | "keepsake" | "plant-stock";
+}
+
+/**
+ * Visibility-safe world-render input. Its source is already-filtered player
+ * presentation data rather than the career, rival profiles, or reward hooks.
+ */
+export interface PlayerProWorldDisplayPresentation {
+  readonly revision: string;
+  readonly vehicle: PlayerProWorldDisplayItem | null;
+  readonly equipped: readonly PlayerProWorldDisplayItem[];
+  readonly collection: readonly PlayerProWorldDisplayItem[];
+}
+
+export interface PlayerProWorldDisplaySource {
+  readonly items: readonly SocialItemPresentation[];
+  readonly selectedVehicleId?: string | null;
+  readonly displayItemIds: readonly string[];
+  readonly loadout: {
+    readonly bagItemId?: string | null;
+    readonly outfitItemId?: string | null;
+    readonly watchItemId?: string | null;
+  };
+}
+
+const WORLD_DISPLAY_COLLECTION_CATEGORIES = new Set<InventoryItem["category"]>([
+  "trophy", "keepsake", "plant-stock",
+]);
+
+export function buildPlayerProWorldDisplayPresentation(
+  source: PlayerProWorldDisplaySource,
+): PlayerProWorldDisplayPresentation {
+  const itemById = new Map(source.items.map((item) => [item.id, item]));
+  const visible = (id: string | null | undefined, category: PlayerProWorldDisplayItem["category"]): PlayerProWorldDisplayItem | null => {
+    const item = id ? itemById.get(id) : undefined;
+    return item?.category === category
+      ? { id: item.id, name: item.name, category }
+      : null;
+  };
+  const vehicle = visible(source.selectedVehicleId, "vehicle");
+  const equipped = [
+    visible(source.loadout.bagItemId, "bag"),
+    visible(source.loadout.outfitItemId, "outfit"),
+    visible(source.loadout.watchItemId, "watch"),
+  ].filter((item): item is PlayerProWorldDisplayItem => item !== null);
+  const collection = [...new Set(source.displayItemIds)]
+    .map((id) => itemById.get(id))
+    .filter((item): item is SocialItemPresentation => item !== undefined && WORLD_DISPLAY_COLLECTION_CATEGORIES.has(item.category))
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category as PlayerProWorldDisplayItem["category"],
+    }));
+  const revision = [vehicle, ...equipped, ...collection]
+    .map((item) => item ? `${item.category}:${item.id}` : "vehicle:none")
+    .join("|");
+  return { revision, vehicle, equipped, collection };
+}
+
 function isEquipped(career: PlayerProCareer, item: InventoryItem): boolean {
   const loadout = career.equipmentLoadout;
   return loadout.clubItemIds.includes(item.id)
@@ -141,6 +203,12 @@ export function buildPlayerProSocialPresentation(world: World, career: PlayerPro
   const runtime = career.activeChallengeRuntime;
   const playerEscrow = runtime?.escrow?.parties.find((party) => party.captainId === career.identity.id) ?? null;
   const activeGroup = career.activeChallengeGroupRound ? challengeGroupRoundTextState(career.activeChallengeGroupRound) : null;
+  const worldDisplay = buildPlayerProWorldDisplayPresentation({
+    items: owned,
+    selectedVehicleId: career.inventory.selectedVehicleId,
+    displayItemIds: career.inventory.displayItemIds,
+    loadout: career.equipmentLoadout,
+  });
   return {
     surfaces: ["people", "challenges", "teamBuilder", "equipment", "wardrobe", "collection", "custody"] as const,
     people,
@@ -155,6 +223,7 @@ export function buildPlayerProSocialPresentation(world: World, career: PlayerPro
       items: owned,
       escrowItemIds: [...career.inventory.escrowItemIds],
       displayItemIds: [...career.inventory.displayItemIds],
+      selectedVehicleId: career.inventory.selectedVehicleId ?? null,
     },
     loadout: { ...career.equipmentLoadout, clubItemIds: [...career.equipmentLoadout.clubItemIds] },
     escrow: playerEscrow ? {
@@ -187,6 +256,7 @@ export function buildPlayerProSocialPresentation(world: World, career: PlayerPro
         matchId: reward.provenance.matchId,
       })),
     },
+    worldDisplay,
     challenge: {
       runtime: runtime ? {
         id: runtime.id,

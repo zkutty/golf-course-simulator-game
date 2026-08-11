@@ -17,8 +17,9 @@ function dependencies(
   naturalProps: readonly unknown[] = [],
   overlaysDiagnostics: readonly unknown[] = [],
   estateSurvey: readonly unknown[] = [],
+  playerProCollection: readonly unknown[] = [],
 ): RenderRevisionDependencies {
-  return { atmosphere, surfaceCare, structuresProps, naturalProps, overlaysDiagnostics, estateSurvey };
+  return { atmosphere, surfaceCare, structuresProps, playerProCollection, naturalProps, overlaysDiagnostics, estateSurvey };
 }
 
 function snapshot(
@@ -26,7 +27,7 @@ function snapshot(
   surfaceCare: number,
 ): RenderSnapshot {
   return {
-    revisions: { atmosphere, surfaceCare, structuresProps: 0, naturalProps: 0, overlaysDiagnostics: 0, estateSurvey: 0 },
+    revisions: { atmosphere, surfaceCare, structuresProps: 0, playerProCollection: 0, naturalProps: 0, overlaysDiagnostics: 0, estateSurvey: 0 },
   } as RenderSnapshot;
 }
 
@@ -37,17 +38,17 @@ describe("RenderRevisionTracker", () => {
     const season = {};
 
     const first = tracker.update(dependencies([course, season], [course, "high"]));
-    expect(first).toEqual({ atmosphere: 1, surfaceCare: 1, structuresProps: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
+    expect(first).toEqual({ atmosphere: 1, surfaceCare: 1, structuresProps: 1, playerProCollection: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
 
     const unchanged = tracker.update(dependencies([course, season], [course, "high"]));
     expect(unchanged).toBe(first);
 
     const winter = {};
     const seasonalChange = tracker.update(dependencies([course, winter], [course, "high"]));
-    expect(seasonalChange).toEqual({ atmosphere: 2, surfaceCare: 1, structuresProps: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
+    expect(seasonalChange).toEqual({ atmosphere: 2, surfaceCare: 1, structuresProps: 1, playerProCollection: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
 
     const careChange = tracker.update(dependencies([course, winter], [course, "medium"]));
-    expect(careChange).toEqual({ atmosphere: 2, surfaceCare: 2, structuresProps: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
+    expect(careChange).toEqual({ atmosphere: 2, surfaceCare: 2, structuresProps: 1, playerProCollection: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
   });
 
   it("invalidates natural props only for their declared scene inputs", () => {

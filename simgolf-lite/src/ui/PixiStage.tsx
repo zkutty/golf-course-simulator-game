@@ -9,6 +9,7 @@ import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
 import { mobilityRenderUnits } from "../game/m51/mobilityRender";
 import type { PlayerPlayableRound, PlayerProPoint } from "../game/models/playerProTypes";
+import type { PlayerProWorldDisplayPresentation } from "../game/playerPro/socialPresentation";
 import type { SeasonName } from "../game/seasons/types";
 import type { SeasonalVisualState } from "../game/presentation/seasonalVisualState";
 import type { CameraState, IsoCameraSnapshot } from "../game/render/camera";
@@ -181,6 +182,7 @@ import {
 } from "../game/conditions/surfaceCare";
 import {
   RenderRevisionTracker,
+  playerProCollectionRevisionDependencies,
   structuresPropsRevisionDependencies,
   type RenderSnapshot,
 } from "../game/render/renderSnapshot";
@@ -195,6 +197,7 @@ import {
 } from "./renderer/scenes/surfaceCareScene";
 import type { StableSceneDecalLayers } from "./renderer/scenes/structuresPropsScene";
 import type { NaturalPropsSceneSystem } from "./renderer/scenes/naturalPropsScene";
+import type { PlayerProCollectionSceneSystem } from "./renderer/scenes/playerProCollectionScene";
 import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
 
@@ -653,6 +656,8 @@ export interface PixiStageProps {
   playerRound?: PlayerPlayableRound | null;
   playerShotAim?: PlayerProPoint | null;
   playableShotMode?: boolean;
+  /** Already-filtered, player-visible inventory dressing near the clubhouse. */
+  playerProWorldDisplay?: PlayerProWorldDisplayPresentation | null;
 }
 
 function resampleWorldLine(from: Point, to: Point, step = 0.25): Point[] {
@@ -1036,6 +1041,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const sceneSystemHostRef = useRef<SceneSystemHost | null>(null);
   const atmosphereSceneRef = useRef<AtmosphereSceneSystem | null>(null);
   const naturalPropsSceneRef = useRef<NaturalPropsSceneSystem | null>(null);
+  const playerProCollectionSceneRef = useRef<PlayerProCollectionSceneSystem | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
   const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
@@ -1371,6 +1377,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
       rotation,
       seasonalPlantsSignature,
     }),
+    playerProCollection: playerProCollectionRevisionDependencies({
+      atlasRevision,
+      course,
+      graphicsQuality: props.graphicsQuality,
+      rotation,
+      surfaceHeightAt,
+      worldDisplay: props.playerProWorldDisplay,
+    }),
     naturalProps: [
       atlasRevision,
       course.buildings,
@@ -1421,6 +1435,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     atlasRevision,
     playerRound: props.playerRound,
     playerShotAim: props.playerShotAim,
+    playerProWorldDisplay: props.playerProWorldDisplay,
     surveyMode: Boolean(props.surveyMode),
     selectedParcelId: props.selectedParcelId,
     worldSeed: props.worldSeed,
@@ -1439,6 +1454,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.graphicsQuality,
     props.playerRound,
     props.playerShotAim,
+    props.playerProWorldDisplay,
     props.reducedMotion,
     props.selectedParcelId,
     props.seasonalVisualState,
@@ -1857,6 +1873,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
         points: activePath?.length ?? 0,
         visibleLayers: layersRef.current?.terrainDecals.children.filter((child) => child.label === ROUTE_LABEL && child.visible).length ?? 0,
       }),
+      playerProCollectionDisplay: () => ({
+        rebuilds: playerProCollectionSceneRef.current?.rebuildCount() ?? 0,
+        items: layersRef.current?.objects.children
+          .filter((child) => child.label.startsWith("player-pro-display:"))
+          .map((child) => ({
+            label: child.label,
+            x: child.position.x,
+            y: child.position.y,
+            zIndex: child.zIndex,
+          })) ?? [],
+      }),
       rendererAtlasState: () => {
         const layers = layersRef.current;
         const world = layers?.world;
@@ -1934,6 +1961,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const next = Math.max(minimumZoom(), Math.min(MAX_ZOOM, zoom));
         camRef.current.zoom = next;
         camRef.current.tzoom = next;
+        applyCamera();
+      },
+      focusTileForTest: (x: number, y: number, zoom: number) => {
+        const next = Math.max(minimumZoom(), Math.min(MAX_ZOOM, zoom));
+        camRef.current.cx = camRef.current.tcx = x;
+        camRef.current.cy = camRef.current.tcy = y;
+        camRef.current.zoom = camRef.current.tzoom = next;
+        camRef.current.initialized = true;
         applyCamera();
       },
       screenToTile,
@@ -2081,6 +2116,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       sceneSystemHostRef.current = null;
       atmosphereSceneRef.current = null;
       naturalPropsSceneRef.current = null;
+      playerProCollectionSceneRef.current = null;
       deferredWorldScenesRef.current = null;
       layersRef.current = null;
       chunksRef.current = [];
@@ -3687,6 +3723,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       layers.objects,
       layers.sceneDecals.naturalProps,
     );
+    const playerProCollection = deferredWorldScenes.createPlayerProCollectionSceneSystem(layers.objects);
     const host = new SceneSystemHost([
       atmosphere,
       createSurfaceCareSceneSystem(
@@ -3698,6 +3735,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         layers.sceneDecals.structuresProps,
         (count) => { structureSpriteCountRef.current = count; },
       ),
+      playerProCollection,
       createPlayerShotOverlaySceneSystem(layers.fx),
       createEstateSurveySceneSystem(layers.sceneDecals.estateSurvey),
       // Keep host lifecycle order; fixed decal sublayers separately preserve
@@ -3706,11 +3744,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
     ]);
     atmosphereSceneRef.current = atmosphere;
     naturalPropsSceneRef.current = naturalProps;
+    playerProCollectionSceneRef.current = playerProCollection;
     sceneSystemHostRef.current = host;
     return () => {
       if (sceneSystemHostRef.current === host) sceneSystemHostRef.current = null;
       if (atmosphereSceneRef.current === atmosphere) atmosphereSceneRef.current = null;
       if (naturalPropsSceneRef.current === naturalProps) naturalPropsSceneRef.current = null;
+      if (playerProCollectionSceneRef.current === playerProCollection) playerProCollectionSceneRef.current = null;
       host.dispose();
     };
   }, [appReady]);
@@ -3727,6 +3767,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         stampAtlasGeneration(layers.surfaceCare, atlasRevision);
       }
       if (renderedScenes.includes("structuresProps")) {
+        stampAtlasGeneration(layers.objects, atlasRevision);
+      }
+      if (renderedScenes.includes("playerProCollection")) {
         stampAtlasGeneration(layers.objects, atlasRevision);
       }
       if (renderedScenes.includes("naturalProps")) {

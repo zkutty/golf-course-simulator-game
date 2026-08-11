@@ -37,6 +37,7 @@ function snapshot(atmosphere: number, overrides: Partial<RenderSnapshot> = {}): 
       atmosphere,
       surfaceCare: 0,
       structuresProps: 0,
+      playerProCollection: 0,
       naturalProps: 0,
       overlaysDiagnostics: 0,
       estateSurvey: 0,

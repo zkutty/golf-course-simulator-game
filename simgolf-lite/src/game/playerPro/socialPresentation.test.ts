@@ -6,7 +6,7 @@ import { normalizeLivingClub } from "../livingClub/livingClub";
 import type { InventoryItem, RewardEntitlement } from "../competition/types";
 import { createZk725BrowserFixture } from "../testing/zk725BrowserFixture";
 import { startPlayerChallengeContract, type PlayerChallengeContractDraft } from "./challengePlayerProAdapter";
-import { buildPlayerProSocialPresentation, visiblePlayerProPeople, visibleRivalHoldingIds } from "./socialPresentation";
+import { buildPlayerProSocialPresentation, buildPlayerProWorldDisplayPresentation, visiblePlayerProPeople, visibleRivalHoldingIds } from "./socialPresentation";
 
 const item = (id: string, name: string, ownerId: string, category: InventoryItem["category"] = "keepsake", prestige = 20): InventoryItem => ({
   id,
@@ -56,6 +56,80 @@ describe("ZK-731 Player Pro social presentation", () => {
     expect(serialized).not.toContain("DO NOT LEAK");
     expect(people[0]?.knownHoldings.map((entry) => entry.id)).toEqual([known.id]);
     expect([...visibleRivalHoldingIds(world).get(rival.id)!]).toEqual([known.id]);
+    expect(JSON.stringify(buildPlayerProSocialPresentation(world, world.playerPro!))).not.toContain("DO NOT LEAK");
+  });
+
+  it("derives world dressing only from owned/custodied visible selection and equipped carriers", () => {
+    const visible = (id: string, category: InventoryItem["category"], equipped = false) => ({
+      id,
+      name: id,
+      category,
+      value: 1,
+      prestige: 1,
+      unique: false,
+      confirmationRequired: false,
+      equipped,
+      escrowed: false,
+      displayed: true,
+      transferWarnings: [],
+    });
+    const display = buildPlayerProWorldDisplayPresentation({
+      items: [
+        visible("owned-vehicle", "vehicle"),
+        visible("equipped-bag", "bag", true),
+        visible("equipped-outfit", "outfit", true),
+        visible("equipped-watch", "watch", true),
+        visible("selected-trophy", "trophy"),
+        visible("selected-keepsake", "keepsake"),
+        visible("selected-stock", "plant-stock"),
+        visible("selected-credit", "service-credit"),
+      ],
+      selectedVehicleId: "owned-vehicle",
+      displayItemIds: ["selected-trophy", "selected-keepsake", "selected-stock", "selected-credit"],
+      loadout: { bagItemId: "equipped-bag", outfitItemId: "equipped-outfit", watchItemId: "equipped-watch" },
+    });
+
+    expect(display.vehicle).toMatchObject({ id: "owned-vehicle", category: "vehicle" });
+    expect(display.equipped.map((entry) => entry.category)).toEqual(["bag", "outfit", "watch"]);
+    expect(display.collection.map((entry) => entry.category)).toEqual(["trophy", "keepsake", "plant-stock"]);
+    expect(display.revision).not.toContain("service-credit");
+  });
+
+  it("removes a selected vehicle immediately when settlement moves it into rival custody", () => {
+    const fixture = createZk725BrowserFixture(DEFAULT_WORLD);
+    const career = fixture.world.playerPro!;
+    const vehicle = item("player-selected-vehicle", "Player Selected Vehicle", career.identity.id, "vehicle", 80);
+    const beforeCareer = {
+      ...career,
+      inventory: { ...career.inventory, items: [...career.inventory.items, vehicle], selectedVehicleId: vehicle.id },
+    };
+    const before = buildPlayerProSocialPresentation({ ...fixture.world, playerPro: beforeCareer }, beforeCareer)!;
+    expect(before.worldDisplay.vehicle?.id).toBe(vehicle.id);
+
+    const held = { ...vehicle, ownerId: "rival-one", custodianId: "rival-one" };
+    const afterCareer = {
+      ...beforeCareer,
+      inventory: {
+        ...beforeCareer.inventory,
+        items: beforeCareer.inventory.items.filter((entry) => entry.id !== vehicle.id),
+        selectedVehicleId: undefined,
+      },
+      rivalCustody: [{
+        id: `custody:${vehicle.id}`,
+        rivalId: "rival-one",
+        rivalName: "Rival One",
+        challengeId: "challenge-vehicle",
+        settlementId: "settlement-vehicle",
+        itemId: vehicle.id,
+        itemSnapshot: held,
+        acquiredWeek: 4,
+        acquiredDay: 1,
+        status: "held" as const,
+      }],
+    };
+    const after = buildPlayerProSocialPresentation({ ...fixture.world, playerPro: afterCareer }, afterCareer)!;
+    expect(after.worldDisplay.vehicle).toBeNull();
+    expect(after.custody).toEqual([expect.objectContaining({ itemName: vehicle.name, status: "held" })]);
   });
 
   it("reports owned inventory/loadout, escrow fallback, 2–4 group support, custody, relationships, and collection provenance", () => {

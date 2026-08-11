@@ -2134,3 +2134,68 @@ Migration design:
   state, a coherent inspected capture (SHA-256
   `c66183b34d09780c185aad2840136cb67bb01eaa7288c0c909687d74a995c465`),
   and no console/page-error artifact.
+
+## 2026-08-11 — ZK-731B Player Pro clubhouse display scene
+
+- Fresh isolated worktree `/private/tmp/golf-sim-zk731-display-scene` on
+  `codex/zk731-display-scene` starts at exact released SHA
+  `b43b5f9013b4cd5df96769991da29f18058146e0`. The original user worktree,
+  Linear, commits, pushes, and deployments are outside this packet.
+- The released `socialPresentation` is the visibility boundary: it already
+  filters inventory to the current player's owner/custodian identity and never
+  consults hidden facts, unknown rival holdings, or raw reward hooks. A new
+  `worldDisplay` projection uses only those filtered items plus visible
+  selection/loadout IDs. It includes the selected owned vehicle, equipped
+  bag/outfit/watch, and selected trophy/keepsake/plant-stock items; unsupported
+  display categories fail closed.
+- Added a `playerProCollection` revision domain and scene in the existing
+  deferred world-scenes module. The scene owns deterministic clubhouse-adjacent
+  display objects, borrows the biome parked-cart atlas texture when available,
+  uses a procedural vehicle fallback when absent, and owns/destroys only its
+  sprites and vector graphics. The snapshot revision is a stable visible-item
+  signature plus exact physical/atlas inputs, so unrelated world/panel updates
+  are no-ops while settlement or custody changes invalidate immediately.
+- Settled-review repairs make `surfaceHeightAt` an exact Player Pro collection
+  revision input and preserve its callback identity at the Pixi call site;
+  stable identity is a no-op and changed identity invalidates. Clubhouse display
+  layout now chooses its horizontal and vertical directions from available
+  span, preventing row/column clamping at bottom, right, and combined edges.
+  All three valid-edge fixtures retain seven distinct positions outside the
+  clubhouse's horizontal footprint.
+- Focused render/social/scene coverage passes 7 files / 40 tests, TypeScript
+  and lint/i18n pass (zero errors; 11 inherited Hook warnings), and the bounded
+  browser case passes after proving text/scene agreement, the hidden-rival
+  negative, unrelated-cash no-op, and immediate custody removal. The combined
+  browser regression is 10/10 across ZK-731B, M21 biome identity, and the full
+  golden path. Performance smoke passes at 0.4752 ms work, 946 ms cold startup,
+  and 624 ms fixture load for 100 golfers / 1,048 objects. Strict-CSP PWA smoke
+  also passes cache isolation, scoped install, offline reload, deferred HUD,
+  New Game, and save persistence.
+- Inspected browser captures show the owned vehicle plus six equipped/selected
+  cues, its immediate disappearance under rival custody, and an unobstructed
+  responsive 390x844 custody view. Evidence is retained under
+  `/private/tmp/zk731-display-evidence`: owned SHA-256
+  `19655fc140e4143fd7bb019cf9bb4b3e06616ea0ad0ac3b5e642585a17285f04`,
+  custody `d35ebe38d557352a3cda44ade6a7b6853c62d8434b67d10ada1b90fb756c3229`,
+  and mobile
+  `81eacd314ad2f095cd6af048b74528cc1cd63479ed9d5e4f949b7ebb02b90280`.
+  The required bundled web-game client completed two action iterations against
+  a live 220x140 game, emitted structured text state and stable inspected
+  captures (SHA-256
+  `ba02a68ddcfef2dfe00ea379e6f14394cbaff3946adc8400c377e38d2de0c3f9`),
+  and emitted no console/page-error artifact.
+- Two audited normal builds are byte-stable. Main
+  `assets/index-BXbmLEfD.js` is 1,607,436 bytes (SHA-256
+  `5d47d186cb61f9279675085607184b22d840f2dfe279d629aa9ad2315e47df5f`),
+  leaving 1,283 bytes under the immutable cap; deferred
+  `deferredWorldScenes-CUdXNZwh.js` is 12,477 bytes (SHA-256
+  `d4a90b91743ed49a0c34e4556d7dcc1787fd41800723f08651dafa98fe8d10c6`).
+  Initial critical transfer is 3,805,770 bytes. The Sentry-shaped build is
+  1,607,839 bytes (`assets/index-DmCxxlOF.js`, SHA-256
+  `fec4a01da9d7ce12c60be9655487201d55457371f66cfa8162731fc70591c7b0`),
+  leaving 880 bytes of headroom; its deferred chunk is 12,880 bytes (SHA-256
+  `63e9c14a8db5c32c74641b51949b4137a3cecb33f0564cfb900e762715b22a4f`).
+  The expected dummy local upload failure occurs after generation, every audit
+  passes, and zero source maps remain. No schema, assets, reward/prestige
+  chains, broader renderer extraction, inventory/save contract, bundle cap,
+  commit, push, deployment, or Linear state changed.

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_STATE, type GameState } from "../gameState";
+import type { PlayerProWorldDisplayPresentation } from "../playerPro/socialPresentation";
 import {
   changedRenderSystems,
   createRenderSnapshot,
+  playerProCollectionRevisionDependencies,
   RENDER_SYSTEMS,
   RenderRevisionTracker,
   structuresPropsRevisionDependencies,
@@ -44,6 +46,7 @@ describe("RenderSnapshot invalidation contract", () => {
         rotation: 0,
         seasonalPlantsSignature: "spring:full",
       }),
+      playerProCollection: [],
       naturalProps: [],
       overlaysDiagnostics: [],
       estateSurvey: [],
@@ -63,6 +66,50 @@ describe("RenderSnapshot invalidation contract", () => {
       ...unrelated,
       decorations: [...(unrelated.decorations ?? [])],
     })).structuresProps).toBe(initial.structuresProps + 1);
+  });
+
+  it("invalidates Player Pro dressing only for visible display or physical scene inputs", () => {
+    const tracker = new RenderRevisionTracker();
+    const course = DEFAULT_STATE.course;
+    const display: PlayerProWorldDisplayPresentation = {
+      revision: "vehicle:owned-cart|watch:owned-watch",
+      vehicle: { id: "owned-cart", name: "Owned cart", category: "vehicle" as const },
+      equipped: [{ id: "owned-watch", name: "Owned watch", category: "watch" as const }],
+      collection: [],
+    };
+    const stableSurfaceHeightAt = () => 0;
+    const dependencies = (
+      worldDisplay = display,
+      surfaceHeightAt = stableSurfaceHeightAt,
+    ) => ({
+      atmosphere: [],
+      surfaceCare: [],
+      structuresProps: [],
+      playerProCollection: playerProCollectionRevisionDependencies({
+        atlasRevision: 1,
+        course,
+        graphicsQuality: "high" as const,
+        rotation: 0 as const,
+        surfaceHeightAt,
+        worldDisplay,
+      }),
+      naturalProps: [],
+      overlaysDiagnostics: [],
+      estateSurvey: [],
+    });
+    const initial = tracker.update(dependencies());
+    const equivalentPresentation = { ...display, equipped: [...display.equipped] };
+    expect(tracker.update(dependencies(equivalentPresentation)).playerProCollection)
+      .toBe(initial.playerProCollection);
+    expect(tracker.update(dependencies(equivalentPresentation, stableSurfaceHeightAt)).playerProCollection)
+      .toBe(initial.playerProCollection);
+    expect(tracker.update(dependencies(equivalentPresentation, () => 0)).playerProCollection)
+      .toBe(initial.playerProCollection + 1);
+    expect(tracker.update(dependencies({
+      ...display,
+      revision: "vehicle:none|watch:owned-watch",
+      vehicle: null,
+    }, () => 0)).playerProCollection).toBe(initial.playerProCollection + 2);
   });
 
   it("isolates editor, terrain, marker, live, atmosphere, and viewport revisions", () => {
