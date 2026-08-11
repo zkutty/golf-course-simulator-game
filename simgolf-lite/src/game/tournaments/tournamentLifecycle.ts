@@ -4,6 +4,8 @@ import { activeCourseLayout, courseForLayout, layoutById } from "../models/cours
 import { getParSetting, resolveCourseSetup } from "../models/courseSetup";
 import { computeAutoPar } from "../sim/holeMetrics";
 import { courseHandicapUnrounded, playingHandicapFromUnrounded, strokesByHole } from "../competition/handicap";
+import { captureTeamHandicapSnapshots } from "../competition/teamAuthority";
+import type { CompetitionTeam } from "../competition/types";
 import { scoreStrokePlay } from "../competition/scoring";
 import { evaluateTournamentCourseQualification, revalidatePrescribedTournamentSetup } from "./eligibility";
 import { absoluteGameDay, tournamentCalendar } from "./tournaments";
@@ -16,6 +18,7 @@ import type {
   TournamentTeamFormat,
   TournamentTier,
 } from "./types";
+import { PRO_AM_MEMBER_ALLOWANCE, tournamentTemplate } from "./tournamentTemplates";
 
 export const TOURNAMENT_LIFECYCLE_DEFAULTS: Record<TournamentTier, { scoringMode: TournamentScoringMode; roundCount: 1 | 2 | 4; teamFormat: TournamentTeamFormat }> = {
   local: { scoringMode: "stableford", roundCount: 1, teamFormat: "individual" },
@@ -49,10 +52,10 @@ function roundSchedule(event: TournamentEvent) {
 }
 
 export type TournamentActivationResult = { ok: true; event: TournamentEvent } | { ok: false; reason: string };
+export type TournamentActivationPreviewResult = { ok: true; snapshot: TournamentActivationSnapshot; qualification: ReturnType<typeof revalidatePrescribedTournamentSetup> } | { ok: false; reason: string };
 
-/** Freezes the individual event contract exactly once; ZK-735 owns team formulas. */
-export function activateTournament(event: TournamentEvent, course: Course, week = event.scheduledWeek, day = event.scheduledDay): TournamentActivationResult {
-  if (event.status === "active" && event.activationSnapshot) return { ok: true, event };
+/** Builds the exact immutable contract consumed by activation; preview has no world mutation. */
+export function previewTournamentActivation(event: TournamentEvent, course: Course, week = event.scheduledWeek, day = event.scheduledDay): TournamentActivationPreviewResult {
   if (event.status !== "scheduled") return { ok: false, reason: "Only a scheduled tournament can be activated." };
   if (week !== event.scheduledWeek || day !== event.scheduledDay) return { ok: false, reason: "Tournament activation must occur on its first scheduled day." };
   const defaults = TOURNAMENT_LIFECYCLE_DEFAULTS[event.tier];
@@ -60,7 +63,11 @@ export function activateTournament(event: TournamentEvent, course: Course, week 
   if (roundCount < 1 || roundCount > 4) return { ok: false, reason: "A tournament requires between one and four rounds." };
   const scoringMode = event.scoringMode ?? defaults.scoringMode;
   const teamFormat = event.teamFormat ?? defaults.teamFormat;
-  if (teamFormat !== "individual") return { ok: false, reason: "Team tournament formulas are reserved for ZK-735." };
+  let template;
+  try { template = event.templateId ? tournamentTemplate(event.templateId) : undefined; }
+  catch { return { ok: false, reason: "The tournament template is not supported." }; }
+  if (teamFormat !== "individual" && !template) return { ok: false, reason: "Team tournaments require a reusable tournament template." };
+  if (template && (template.teamFormat !== teamFormat || !template.scoringModes.includes(scoringMode))) return { ok: false, reason: "The requested scoring mode is not defined by this tournament template." };
   if (!event.field.length || new Set(event.field.map((entrant) => entrant.id)).size !== event.field.length) return { ok: false, reason: "Tournament entrants require unique stable identities." };
   const layout = event.courseId ? layoutById(course, event.courseId) : activeCourseLayout(course);
   if (!layout || layout.state !== "open" || layout.publishedHoleIds.length !== 18) return { ok: false, reason: "Tournament activation requires an open, published 18-hole routing." };
@@ -87,18 +94,70 @@ export function activateTournament(event: TournamentEvent, course: Course, week 
   const par = frozenHoles.reduce((sum, hole) => sum + hole.par, 0);
   const handicapCourse = { courseRating: qualification.rating, slopeRating: qualification.slope, par };
   const competitionHoles = frozenHoles.map((hole) => ({ id: hole.id, par: hole.par, strokeIndex: hole.strokeIndex }));
-  const allowance = scoringMode === "gross-stroke" ? 0 : 1;
-  const entrants = event.field.map((entrant) => {
+  const baseEntrants = event.field.map((entrant) => {
     const handicapIndex = Number.isFinite(entrant.handicapIndex) ? Math.max(-10, Math.min(54, entrant.handicapIndex!)) : Math.max(-10, Math.min(54, (1 - entrant.skill) * 36));
     const unrounded = courseHandicapUnrounded(handicapIndex, handicapCourse);
-    const playingHandicap = playingHandicapFromUnrounded(unrounded, allowance).rounded;
-    return { entrantId: entrant.id, name: entrant.name, archetype: entrant.archetype, skill: entrant.skill, teamId: entrant.teamId ?? `individual:${entrant.id}`, handicapIndex, allowance, courseHandicapUnrounded: unrounded, playingHandicap, strokesByHole: strokesByHole(playingHandicap, competitionHoles) };
+    return { source: entrant, handicapIndex, unrounded };
   });
-  const teams = entrants.map((entrant) => ({ id: entrant.teamId, entrantIds: [entrant.entrantId] }));
-  if (new Set(teams.map((team) => team.id)).size !== teams.length) return { ok: false, reason: "Individual entrants require distinct team identities." };
-  const activationSnapshot: TournamentActivationSnapshot = freeze({ version: 1, activationId: `${event.id}:activation:${week}:${day}`, activatedWeek: week, activatedDay: day, scoringMode, teamFormat, courseId: layout.id, courseName: event.courseName ?? host.name, rating: qualification.rating, slope: qualification.slope, par, teeSet, pinRotation, holes: frozenHoles, entrants, teams });
+  let entrants: TournamentActivationSnapshot["entrants"];
+  let teams: TournamentActivationSnapshot["teams"];
+  let teamHandicaps: TournamentActivationSnapshot["teamHandicaps"];
+  if (!template || teamFormat === "individual") {
+    if (template && baseEntrants.some(({ source }) => source.teamRole !== "individual" || source.teamCaptain !== true)) return { ok: false, reason: "Individual template entrants must each captain their own team." };
+    const allowance = scoringMode === "gross-stroke" ? 0 : 1;
+    entrants = baseEntrants.map(({ source, handicapIndex, unrounded }) => {
+      const playingHandicap = playingHandicapFromUnrounded(unrounded, allowance).rounded;
+      return { entrantId: source.id, name: source.name, archetype: source.archetype, skill: source.skill, teamId: source.teamId ?? `individual:${source.id}`, ...(template ? { teamRole: source.teamRole ?? "individual" as const, teamOrder: 0, teamCaptain: true } : {}), handicapIndex, allowance, courseHandicapUnrounded: unrounded, playingHandicap, strokesByHole: strokesByHole(playingHandicap, competitionHoles) };
+    });
+    teams = entrants.map((entrant) => ({ id: entrant.teamId, entrantIds: [entrant.entrantId], ...(template ? { roles: [entrant.teamRole ?? "individual" as const], captainId: entrant.entrantId } : {}) }));
+    if (new Set(teams.map((team) => team.id)).size !== teams.length) return { ok: false, reason: "Individual entrants require distinct team identities." };
+  } else {
+    const grouped = new Map<string, typeof baseEntrants>();
+    for (const entrant of baseEntrants) {
+      if (!entrant.source.teamId) return { ok: false, reason: "Every team entrant requires a frozen team identity." };
+      grouped.set(entrant.source.teamId, [...(grouped.get(entrant.source.teamId) ?? []), entrant]);
+    }
+    const groups = [...grouped.entries()];
+    const expectedTeams = template.rules.teamCount;
+    if ((expectedTeams !== "field" && groups.length !== expectedTeams) || groups.some(([, members]) => members.length !== template.rules.teamSize)) return { ok: false, reason: `${template.label} requires ${expectedTeams === "field" ? "complete" : expectedTeams} teams of ${template.rules.teamSize}.` };
+    if (groups.some(([, members]) => members.some((member, index) => member.source.teamRole !== template.rules.roles[index]))) return { ok: false, reason: `${template.label} entrant roles must match the frozen template order.` };
+    if (groups.some(([, members]) => members.filter((member) => member.source.teamCaptain === true).length !== 1 || members[0].source.teamCaptain !== true)) return { ok: false, reason: `${template.label} requires its first rostered entrant to be the unique team captain.` };
+    teams = groups.map(([id, members]) => ({ id, entrantIds: members.map((member) => member.source.id), roles: members.map((member) => member.source.teamRole!), captainId: members[0].source.id }));
+    if (teamFormat === "pro-am") {
+      entrants = groups.flatMap(([, members]) => members.map(({ source, handicapIndex, unrounded }, teamOrder) => {
+        const allowance = PRO_AM_MEMBER_ALLOWANCE;
+        const playingHandicap = playingHandicapFromUnrounded(unrounded, allowance).rounded;
+        return { entrantId: source.id, name: source.name, archetype: source.archetype, skill: source.skill, teamId: source.teamId!, teamRole: source.teamRole!, teamOrder, teamCaptain: source.teamCaptain === true, handicapIndex, allowance, courseHandicapUnrounded: unrounded, playingHandicap, strokesByHole: strokesByHole(playingHandicap, competitionHoles) };
+      }));
+    } else {
+      const authorityTeams: CompetitionTeam[] = teams.map((team) => ({ id: team.id, playerIds: team.entrantIds }));
+      teamHandicaps = captureTeamHandicapSnapshots(authorityTeams, baseEntrants.map(({ source, handicapIndex }) => ({ id: source.id, handicapIndex })), teamFormat, "stroke", handicapCourse, competitionHoles);
+      const memberById = new Map(teamHandicaps.flatMap((snapshot) => snapshot.members).map((member) => [member.playerId, member]));
+      entrants = groups.flatMap(([, members]) => members.map(({ source }, teamOrder) => {
+        const member = memberById.get(source.id)!;
+        return { entrantId: source.id, name: source.name, archetype: source.archetype, skill: source.skill, teamId: source.teamId!, teamRole: source.teamRole!, teamOrder, teamCaptain: source.teamCaptain === true, handicapIndex: member.handicapIndex, allowance: member.allowance, courseHandicapUnrounded: member.courseHandicapUnrounded, playingHandicap: member.playingHandicap, strokesByHole: member.strokesByHole };
+      }));
+    }
+  }
+  const legacy = !template && teamFormat === "individual";
+  const activationSnapshot: TournamentActivationSnapshot = freeze({ version: legacy ? 1 : 2, activationId: `${event.id}:activation:${week}:${day}`, activatedWeek: week, activatedDay: day, scoringMode, teamFormat, courseId: layout.id, courseName: event.courseName ?? host.name, rating: qualification.rating, slope: qualification.slope, par, teeSet, pinRotation, holes: frozenHoles, entrants, teams, ...(!legacy && template ? { templateId: template.id, roundCount, supportedOverrides: template.supportedOverrides, appliedOverrides: Object.fromEntries(template.supportedOverrides.map((override) => [override, override === "scoringMode" ? scoringMode : override === "roundCount" ? roundCount : override === "teeSet" ? teeSet : pinRotation])), formatRules: template.rules, ...(teamHandicaps ? { teamHandicaps } : {}) } : {}) });
+  return { ok: true, snapshot: activationSnapshot, qualification };
+}
+
+/** Freezes the event contract exactly once from the same authority exposed by preview. */
+export function activateTournament(event: TournamentEvent, course: Course, week = event.scheduledWeek, day = event.scheduledDay): TournamentActivationResult {
+  if (event.status === "active" && event.activationSnapshot) return { ok: true, event };
+  const preview = previewTournamentActivation(event, course, week, day);
+  if (!preview.ok) return preview;
+  const activationSnapshot = preview.snapshot;
+  const { qualification } = preview;
+  const roundCount = activationSnapshot.roundCount ?? Math.floor(event.roundCount ?? TOURNAMENT_LIFECYCLE_DEFAULTS[event.tier].roundCount);
+  const { scoringMode, teamFormat, teeSet, pinRotation } = activationSnapshot;
+  const layoutId = activationSnapshot.courseId;
+  const courseName = activationSnapshot.courseName;
   const rounds = roundSchedule({ ...event, roundCount }).map((round, index) => index === 0 ? { ...round, status: "active" as const } : round);
-  return { ok: true, event: { ...event, status: "active", scoringMode, teamFormat, roundCount, currentRound: 1, rounds, activationSnapshot, courseId: layout.id, courseName: event.courseName ?? host.name, holeIds: frozenHoles.map((hole) => hole.id), teeSet, pinRotation, qualificationSnapshot: event.qualificationSnapshot ?? qualification, currentQualification: qualification, warning: undefined } };
+  const field = activationSnapshot.version === 2 ? event.field.map((entrant, index) => ({ ...entrant, handicapIndex: activationSnapshot.entrants[index].handicapIndex })) : event.field;
+  return { ok: true, event: { ...event, status: "active", scoringMode, teamFormat, roundCount, currentRound: 1, rounds, activationSnapshot, courseId: layoutId, courseName, holeIds: activationSnapshot.holes.map((hole) => hole.id), field, teeSet, pinRotation, qualificationSnapshot: event.qualificationSnapshot ?? qualification, currentQualification: qualification, warning: undefined } };
 }
 
 export function scoreTournamentRoundCard(event: TournamentEvent, entrantId: string, grossByHole: readonly number[], penalties = 0): TournamentRoundScorecard | null {
@@ -125,6 +184,7 @@ export function completeTournamentRoundEvidence(event: TournamentEvent, scorecar
   if (event.rounds?.some((round) => round.completionId === completionId)) return { ok: true, event, finalRound: event.status === "completed" };
   if (event.status === "completed" && event.activationSnapshot && event.rounds?.every((round) => round.status === "completed")) return { ok: true, event, finalRound: true };
   if (event.status !== "active" || !event.activationSnapshot || !event.rounds) return { ok: false, reason: "Tournament is not active." };
+  if (event.activationSnapshot.teamFormat !== "individual") return { ok: false, reason: event.activationSnapshot.teamFormat === "pro-am" ? "Pro-Am field simulation and best-two-net scoring are deferred." : "Team standings require the deferred tournament team-round scorer." };
   const roundNumber = event.currentRound ?? 1;
   const current = event.rounds.find((round) => round.roundNumber === roundNumber);
   if (current?.status !== "active") return { ok: false, reason: "Current tournament round is not playable." };

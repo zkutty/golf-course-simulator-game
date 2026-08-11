@@ -76,12 +76,12 @@ describe("ZK-733 tournament lifecycle core", () => {
     expect(replay).toEqual({ ok: true, event: first.event });
   });
 
-  it("rejects invalid rounds, duplicate identities, changed routing, and deferred team formats", () => {
+  it("rejects invalid rounds, duplicate identities, changed routing, and untemplated team formats", () => {
     const fixture = host();
     expect(activateTournament({ ...fixture.event, roundCount: 5 }, course)).toMatchObject({ ok: false });
     expect(activateTournament({ ...fixture.event, field: [fixture.event.field[0], fixture.event.field[0]] }, course)).toMatchObject({ ok: false, reason: expect.stringContaining("unique") });
     expect(activateTournament({ ...fixture.event, holeIds: ["wrong-route"] }, course)).toMatchObject({ ok: false, reason: expect.stringContaining("routing") });
-    expect(activateTournament({ ...fixture.event, teamFormat: "four-ball" }, course)).toEqual({ ok: false, reason: "Team tournament formulas are reserved for ZK-735." });
+    expect(activateTournament({ ...fixture.event, teamFormat: "four-ball" }, course)).toEqual({ ok: false, reason: "Team tournaments require a reusable tournament template." });
   });
 
   it.each([1, 2, 4] as const)("advances exactly %i rounds and makes duplicate completion inert", (roundCount) => {

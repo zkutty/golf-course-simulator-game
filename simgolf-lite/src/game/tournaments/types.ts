@@ -1,11 +1,37 @@
 import type { GolferArchetypeName } from "../live/types";
 import type { PinRotation, Point, TeeSet } from "../models/types";
 import type { M49StrategicIdentity } from "../m49/types";
+import type { TeamHandicapSnapshot } from "../competition/teamAuthority";
 
 export type TournamentTier = "local" | "regional" | "championship";
 export type TournamentStatus = "scheduled" | "active" | "completed" | "cancelled";
 export type TournamentScoringMode = "stableford" | "net-stroke" | "gross-stroke";
 export type TournamentTeamFormat = "individual" | "four-ball" | "alternate-shot" | "scramble" | "pro-am";
+export type TournamentTemplateId = "individual" | "two-v-two-four-ball" | "two-v-two-alternate-shot" | "two-person-scramble" | "four-person-pro-am";
+export type TournamentTeamRole = "individual" | "partner" | "pro" | "amateur";
+export type TournamentTemplateOverride = "scoringMode" | "roundCount" | "teeSet" | "pinRotation";
+
+export interface TournamentFormatRules {
+  version: 1;
+  teamSize: number;
+  teamCount: number | "field";
+  roles: readonly TournamentTeamRole[];
+  handicapFormula: "100%-individual" | "85%-per-player" | "50%-combined" | "35%-low+15%-high" | "85%-per-player-pro-am";
+  orderRule: "independent" | "roster-order" | "strict-alternation" | "parallel-then-select";
+  ballSelectionRule: "own-ball" | "best-net-member" | "shared-ball" | "deterministic-best-candidate" | "deferred-pro-am";
+  teamHoleRule: "individual" | "lowest-net-ball" | "single-shared-ball" | "selected-team-ball" | "deferred-best-two-net";
+  teamHoleScoringSupported: boolean;
+  captainRule: "first-in-roster";
+}
+
+export interface TournamentTemplate {
+  id: TournamentTemplateId;
+  label: string;
+  teamFormat: TournamentTeamFormat;
+  scoringModes: readonly TournamentScoringMode[];
+  supportedOverrides: readonly TournamentTemplateOverride[];
+  rules: TournamentFormatRules;
+}
 
 export type TournamentRequirementId =
   | "reputation" | "deposit" | "date" | "calendar" | "holes"
@@ -41,6 +67,8 @@ export interface TournamentEntrant {
   /** Optional authored index. Activation freezes the current value, never a later edit. */
   handicapIndex?: number;
   teamId?: string;
+  teamRole?: TournamentTeamRole;
+  teamCaptain?: boolean;
 }
 
 export interface TournamentActivationHoleSnapshot {
@@ -57,6 +85,9 @@ export interface TournamentActivationEntrantSnapshot {
   archetype: GolferArchetypeName;
   skill: number;
   teamId: string;
+  teamRole?: TournamentTeamRole;
+  teamOrder?: number;
+  teamCaptain?: boolean;
   handicapIndex: number;
   allowance: number;
   courseHandicapUnrounded: number;
@@ -72,10 +103,12 @@ export interface TournamentActivationEntrantSnapshot {
 export interface TournamentActivationTeamSnapshot {
   id: string;
   entrantIds: readonly string[];
+  roles?: readonly TournamentTeamRole[];
+  captainId?: string;
 }
 
 export interface TournamentActivationSnapshot {
-  version: 1;
+  version: 1 | 2;
   activationId: string;
   activatedWeek: number;
   activatedDay: number;
@@ -91,6 +124,14 @@ export interface TournamentActivationSnapshot {
   holes: readonly TournamentActivationHoleSnapshot[];
   entrants: readonly TournamentActivationEntrantSnapshot[];
   teams: readonly TournamentActivationTeamSnapshot[];
+  /** Present for reusable ZK-735 contracts; absent from byte-compatible legacy individual snapshots. */
+  templateId?: TournamentTemplateId;
+  roundCount?: number;
+  supportedOverrides?: readonly TournamentTemplateOverride[];
+  appliedOverrides?: Readonly<Partial<Record<TournamentTemplateOverride, string | number>>>;
+  formatRules?: TournamentFormatRules;
+  /** Exact M66 snapshots for the three released two-versus-two formats. */
+  teamHandicaps?: readonly TeamHandicapSnapshot[];
 }
 
 export interface TournamentRoundScorecard {
@@ -136,6 +177,7 @@ export interface TournamentEvent {
   status: TournamentStatus;
   scoringMode?: TournamentScoringMode;
   teamFormat?: TournamentTeamFormat;
+  templateId?: TournamentTemplateId;
   roundCount?: number;
   currentRound?: number;
   rounds?: readonly TournamentRoundState[];
