@@ -1910,3 +1910,36 @@ Migration design:
   issue or its human gates are complete. ZK-679 still owns later renderer seams;
   ZK-733 still has later team/standings/presentation/campaign work in the linked
   M68 issues.
+
+### CI-only release-budget repair
+
+- CI's authenticated Sentry build added debug IDs to the exact integration
+  artifact and measured 1,609,251 initial JavaScript bytes, 532 bytes over the
+  immutable 1,608,719-byte cap, while every preceding CI gate was green.
+- The extracted natural-props module now settles inside the existing renderer
+  initialization before `appReady`. Its factory is retained so the complete
+  scene host installs synchronously with readiness; an import failure follows
+  the renderer's existing error path and cancellation still destroys partial
+  initialization. Installation retains the exact scene order, synchronizes the
+  current render snapshot, stamps every rebuilt layer with that snapshot's
+  atomic atlas generation, and preserves scene-owned display/fallback teardown.
+  No renderer authority, visual treatment, validator, UI/i18n, asset, or budget
+  contract changed.
+- Two final normal production builds are byte-identical: main
+  `assets/index-COg6uX2R.js` is 1,601,301 bytes (SHA-256
+  `f4c234ee08e81fae3a02084adbf05d516574ccdc8d77f2c403812e63990a0ff0`),
+  leaving 7,418 bytes of headroom; aggregate dist digest is
+  `7baf6c646b0b3e7a5f4edd227dfb5b55cdf2ef74998ec856f84eba54255643ae`.
+  An exact-SHA Sentry-shaped build with dummy local upload credentials and
+  debug-ID injection is 1,601,845 bytes (`assets/index-D_Ud89NG.js`, SHA-256
+  `f7426fa97efaeff1bef1cd397a44591eeff4e9da260d1755f654ba4a35e73356`),
+  leaving 6,874 bytes of CI headroom. Its local upload fails after generation
+  as expected; no sourcemaps remain in the measured artifact.
+- TypeScript, focused scene/render coverage, tournament/Player Pro/M50/M66
+  regressions, lint/i18n, all production asset/residency/delivery audits, and
+  the focused ZK-674 atomic atlas reversal browser case pass. PWA smoke also
+  passes strict CSP, scoped installation, offline reload, selected-biome cache
+  isolation, deferred surfaces, and local persistence with the new scene chunk.
+  The bundled web-game client reached live Parkland gameplay after the final
+  repair; its inspected canvas is coherent, structured game state is present,
+  and no console/page-error artifact was emitted.

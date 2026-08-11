@@ -201,12 +201,11 @@ import {
   type SurfaceCareWorkerSprite,
 } from "./renderer/scenes/surfaceCareScene";
 import { createStructuresPropsSceneSystem } from "./renderer/scenes/structuresPropsScene";
-import {
-  createNaturalPropsSceneSystem,
-  type NaturalPropsSceneSystem,
-} from "./renderer/scenes/naturalPropsScene";
+import type { NaturalPropsSceneSystem } from "./renderer/scenes/naturalPropsScene";
 import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
+
+type NaturalPropsSceneFactory = typeof import("./renderer/scenes/naturalPropsScene").createNaturalPropsSceneSystem;
 
 const TERRAIN_LABEL_KEYS: Record<Terrain, MessageKey> = {
   fairway: "designDock.terrain.fairway",
@@ -1005,6 +1004,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const sceneSystemHostRef = useRef<SceneSystemHost | null>(null);
   const atmosphereSceneRef = useRef<AtmosphereSceneSystem | null>(null);
   const naturalPropsSceneRef = useRef<NaturalPropsSceneSystem | null>(null);
+  const naturalPropsSceneFactoryRef = useRef<NaturalPropsSceneFactory | null>(null);
   const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
   const atlasRevision = atlasContext.generation;
@@ -1389,7 +1389,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     rotation,
     surfaceHeightAt,
   ]);
-
   // ---------------------------------------------------------------------
   // Camera: world container transform + screen↔world mapping
   // ---------------------------------------------------------------------
@@ -1934,6 +1933,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
         app.destroy(true, { children: true, texture: true });
         return;
       }
+      const naturalPropsSceneModule = await import("./renderer/scenes/naturalPropsScene");
+      if (cancelled) {
+        app.destroy(true, { children: true, texture: true });
+        return;
+      }
 
       const activation = await loadAtlases(
         initialRendererConfigRef.current.theme,
@@ -1944,6 +1948,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         app.destroy(true, { children: true, texture: true });
         return;
       }
+      naturalPropsSceneFactoryRef.current = naturalPropsSceneModule.createNaturalPropsSceneSystem;
 
       app.canvas.style.display = "block";
       app.canvas.style.position = "absolute";
@@ -1995,8 +2000,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
     };
 
     void init().catch((error: unknown) => {
-      if (cancelled) return;
+      if (cancelled) {
+        try { app.destroy(true, { children: true, texture: true }); } catch { /* partial initialization */ }
+        return;
+      }
       console.error("[PixiStage] Course renderer initialization failed", error);
+      naturalPropsSceneFactoryRef.current = null;
       setRendererError(true);
       try { app.destroy(true, { children: true, texture: true }); } catch { /* partially initialized */ }
     });
@@ -2011,6 +2020,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       sceneSystemHostRef.current = null;
       atmosphereSceneRef.current = null;
       naturalPropsSceneRef.current = null;
+      naturalPropsSceneFactoryRef.current = null;
       layersRef.current = null;
       chunksRef.current = [];
       prevTilesRef.current = null;
@@ -3597,7 +3607,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
     if (!appReady) return;
     const app = appRef.current;
     const layers = layersRef.current;
-    if (!app || !layers) return;
+    const createNaturalPropsSceneSystem = naturalPropsSceneFactoryRef.current;
+    if (!app || !layers || !createNaturalPropsSceneSystem) {
+      console.error("[PixiStage] Renderer became ready without its complete scene host");
+      setRendererError(true);
+      return;
+    }
     const atmosphere = createAtmosphereSceneSystem({
       stage: app.stage,
       world: layers.world,
