@@ -2069,3 +2069,52 @@ Migration design:
   The bundled web-game client reached live Parkland gameplay after the final
   repair; its inspected canvas is coherent, structured game state is present,
   and no console/page-error artifact was emitted.
+
+### Combined ZK-679/ZK-735 integration-budget repair
+
+- The reviewed renderer and tournament packets were combined at exact SHA
+  `2e4f1e90d9d68d10ed575fc1a42549ee1434b83b`. Their normal production main
+  measured 1,609,385 bytes, 666 bytes over the immutable 1,608,719-byte cap.
+  Rollup contribution builds measured the exact-base entry at 1,599,164 bytes,
+  renderer-only at 1,600,360, and tournament-only at 1,606,058. The additive
+  expectation was therefore 1,607,254 bytes; the combined graph's whole-chunk
+  minification/name allocation cost another 2,131 bytes. No extra validator or
+  renderer module became eager, and no reviewed authority was weakened.
+- The existing renderer bootstrap boundary now imports one
+  `deferredWorldScenes` module containing both natural props and authored
+  structures. It replaces the prior natural-props-only chunk rather than adding
+  another bootstrap request. The module still settles during renderer
+  initialization before atlas activation and `appReady`; its factories build
+  the same fixed decal sublayers and install the same scene host synchronously
+  in the same order. Import failure and cancellation remain on the existing
+  renderer error/destruction path. Revision authority, display ownership,
+  shared-texture rules, layer order, and cleanup are unchanged. Tournament
+  catalog, templates, lifecycle, hostile normalization, M66 formulas, and all
+  associated assertions are byte-for-byte untouched by the final repair.
+- Two full audited normal builds are byte-identical. Main
+  `assets/index-DOTIJaig.js` is 1,606,773 bytes (SHA-256
+  `8e8166265f3c22fd6ca1289479424f7f5fec6b820fc23f03b2b7d5a2453f95bb`),
+  leaving 1,946 bytes of headroom; aggregate dist digest is
+  `de13138016b1b6151e0a157ae6d2857fc4a8a756d00eafebe0da579bf3fd486f`.
+  The deferred renderer chunk is 9,606 bytes (SHA-256
+  `6648d65bb8d845549d0e08a396aead8bfd7592d0e5cc41603a1acc7dc4d6fcd6`).
+  Initial critical transfer is 3,805,302 bytes and total dist is 116,475,047
+  bytes; every asset, residency, service-worker, and delivery audit passes.
+- The exact-SHA Sentry-shaped build with dummy local upload credentials and
+  debug-ID injection measures 1,607,317 bytes (`assets/index-FXeq5nV3.js`,
+  SHA-256
+  `dc07133346081f7ea95310cd037023fad92419e87772adb0ba961915ebcf5892`),
+  leaving 1,402 bytes of CI headroom. Its deferred renderer chunk is 10,016
+  bytes (SHA-256
+  `b10c6aecb630fd84a037a2e0e5843e422dd2570551148f5e194bb8b77c1bf606`);
+  the expected dummy upload failure occurs after generation and zero source
+  maps remain.
+- TypeScript passes; focused renderer coverage passes 5 files / 28 tests;
+  focused tournament authority passes 4 / 60; a broader tournament,
+  competition, Player Pro, and persistence superset passes 24 / 263; and M66
+  certification passes 8 / 118. Lint/i18n passes with zero errors and 11
+  inherited Hook warnings. Strict-CSP PWA/offline/cache/local-save smoke passes.
+  The bundled client reached a valid 220x140 Parkland game with structured
+  state, a coherent inspected capture (SHA-256
+  `c66183b34d09780c185aad2840136cb67bb01eaa7288c0c909687d74a995c465`),
+  and no console/page-error artifact.

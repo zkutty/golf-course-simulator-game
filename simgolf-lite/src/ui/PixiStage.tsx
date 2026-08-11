@@ -193,16 +193,12 @@ import {
   createSurfaceCareSceneSystem,
   type SurfaceCareWorkerSprite,
 } from "./renderer/scenes/surfaceCareScene";
-import {
-  createStableSceneDecalLayers,
-  createStructuresPropsSceneSystem,
-  type StableSceneDecalLayers,
-} from "./renderer/scenes/structuresPropsScene";
+import type { StableSceneDecalLayers } from "./renderer/scenes/structuresPropsScene";
 import type { NaturalPropsSceneSystem } from "./renderer/scenes/naturalPropsScene";
 import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
 
-type NaturalPropsSceneFactory = typeof import("./renderer/scenes/naturalPropsScene").createNaturalPropsSceneSystem;
+type DeferredWorldScenes = typeof import("./renderer/scenes/deferredWorldScenes");
 
 const TERRAIN_LABEL_KEYS: Record<Terrain, MessageKey> = {
   fairway: "designDock.terrain.fairway",
@@ -1040,7 +1036,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const sceneSystemHostRef = useRef<SceneSystemHost | null>(null);
   const atmosphereSceneRef = useRef<AtmosphereSceneSystem | null>(null);
   const naturalPropsSceneRef = useRef<NaturalPropsSceneSystem | null>(null);
-  const naturalPropsSceneFactoryRef = useRef<NaturalPropsSceneFactory | null>(null);
+  const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
   const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
   const atlasRevision = atlasContext.generation;
@@ -1997,7 +1993,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         app.destroy(true, { children: true, texture: true });
         return;
       }
-      const naturalPropsSceneModule = await import("./renderer/scenes/naturalPropsScene");
+      const deferredWorldScenes = await import("./renderer/scenes/deferredWorldScenes");
       if (cancelled) {
         app.destroy(true, { children: true, texture: true });
         return;
@@ -2012,7 +2008,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         app.destroy(true, { children: true, texture: true });
         return;
       }
-      naturalPropsSceneFactoryRef.current = naturalPropsSceneModule.createNaturalPropsSceneSystem;
+      deferredWorldScenesRef.current = deferredWorldScenes;
 
       app.canvas.style.display = "block";
       app.canvas.style.position = "absolute";
@@ -2037,7 +2033,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const surfaceCare = new PIXI.Container();
       const estateSeam = new PIXI.Container();
       const terrainDecals = new PIXI.Container();
-      const sceneDecals = createStableSceneDecalLayers(terrainDecals);
+      const sceneDecals = deferredWorldScenes.createStableSceneDecalLayers(terrainDecals);
       const surfaceEditor = new PIXI.Container();
       const objects = new PIXI.Container();
       objects.sortableChildren = true;
@@ -2070,7 +2066,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         return;
       }
       console.error("[PixiStage] Course renderer initialization failed", error);
-      naturalPropsSceneFactoryRef.current = null;
+      deferredWorldScenesRef.current = null;
       setRendererError(true);
       try { app.destroy(true, { children: true, texture: true }); } catch { /* partially initialized */ }
     });
@@ -2085,7 +2081,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       sceneSystemHostRef.current = null;
       atmosphereSceneRef.current = null;
       naturalPropsSceneRef.current = null;
-      naturalPropsSceneFactoryRef.current = null;
+      deferredWorldScenesRef.current = null;
       layersRef.current = null;
       chunksRef.current = [];
       prevTilesRef.current = null;
@@ -3672,8 +3668,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     if (!appReady) return;
     const app = appRef.current;
     const layers = layersRef.current;
-    const createNaturalPropsSceneSystem = naturalPropsSceneFactoryRef.current;
-    if (!app || !layers || !createNaturalPropsSceneSystem) {
+    const deferredWorldScenes = deferredWorldScenesRef.current;
+    if (!app || !layers || !deferredWorldScenes) {
       console.error("[PixiStage] Renderer became ready without its complete scene host");
       setRendererError(true);
       return;
@@ -3687,7 +3683,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       screenOverlay: layers.screenOverlay,
       screen: () => app.screen,
     });
-    const naturalProps = createNaturalPropsSceneSystem(
+    const naturalProps = deferredWorldScenes.createNaturalPropsSceneSystem(
       layers.objects,
       layers.sceneDecals.naturalProps,
     );
@@ -3697,7 +3693,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         layers.surfaceCare,
         (workers) => { surfaceCareWorkersRef.current = workers; },
       ),
-      createStructuresPropsSceneSystem(
+      deferredWorldScenes.createStructuresPropsSceneSystem(
         layers.objects,
         layers.sceneDecals.structuresProps,
         (count) => { structureSpriteCountRef.current = count; },
