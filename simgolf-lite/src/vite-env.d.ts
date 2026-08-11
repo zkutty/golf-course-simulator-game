@@ -136,7 +136,7 @@ interface Window {
     setChallengeContractFixture(): Promise<void>;
     forceChallengeRivalWithdrawal(): Promise<void>;
     forceChallengeTieCompletion(): Promise<void>;
-    setChallengeGroupRoundFixture(): void;
+    setChallengeGroupRoundFixture(groupSize?: 2 | 3 | 4): void;
     setM39Fixture(): void;
     setZk688ClassicFixture(): void;
     setZk689SimulationFixture(): void;

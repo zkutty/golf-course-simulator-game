@@ -7,6 +7,7 @@ import type { RegularGolfer } from "../livingClub/types";
 import { assignPersonProfile } from "../competition/characters";
 import { caddieRecommendation, createDefaultPlayerPro, normalizePlayerPro } from "./playerPro";
 import { withdrawChallengeGroupGolfer } from "../competition/challengeGroupRound";
+import { createZk725BrowserFixture } from "../testing/zk725BrowserFixture";
 import {
   autoGroup,
   cancelPlayerChallengeContract,
@@ -21,7 +22,7 @@ import {
 } from "./challengePlayerProAdapter";
 
 function regular(id: string, name: string, skill = .62): RegularGolfer {
-  return assignPersonProfile({
+  const assigned = assignPersonProfile({
     id,
     kind: "regular",
     name,
@@ -39,6 +40,12 @@ function regular(id: string, name: string, skill = .62): RegularGolfer {
     recentThoughts: [],
     history: [],
   }, 725_101);
+  const knownHoldingIds = assigned.backstory?.holdings.map((holding) => holding.id) ?? [];
+  return {
+    ...assigned,
+    backstory: assigned.backstory ? { ...assigned.backstory, knownHoldingIds } : assigned.backstory,
+    rivalProfile: assigned.rivalProfile ? { ...assigned.rivalProfile, knownHoldingIds } : assigned.rivalProfile,
+  };
 }
 
 function fixture() {
@@ -71,7 +78,41 @@ function fixture() {
   return { course, world, rival, draft };
 }
 
+function hiddenHoldingFixture() {
+  const fixture = createZk725BrowserFixture(DEFAULT_WORLD);
+  const setup = { teeSet: "member" as const, pinRotation: "A" as const };
+  const draft: PlayerChallengeContractDraft = {
+    opponentId: "rival-one",
+    layoutId: activeCourseLayout(fixture.course).id,
+    teamFormat: "individual",
+    scoring: "net-match",
+    participantSetups: { player: setup, rival: setup },
+    playerCash: 0,
+    rivalCash: 0,
+    playerItemIds: [],
+    rivalItemIds: ["rival-unrevealed-vault"],
+    sideBets: [],
+    ownerTransfersConfirmed: true,
+    prestigeTransfersConfirmed: true,
+    rivalTransfersConfirmed: true,
+  };
+  return { ...fixture, draft };
+}
+
 describe("ZK-725 deferred Player Pro challenge adapter", () => {
+  it("filters unrevealed holdings from player-facing rivals and rejects a direct hidden preview", () => {
+    const fixture = hiddenHoldingFixture();
+    expect(JSON.stringify(playerChallengeContractRivals(fixture.world))).not.toContain("UNREVEALED RIVAL VAULT");
+    expect(() => previewPlayerChallengeContract({ course: fixture.course, world: fixture.world, day: 2, draft: fixture.draft }))
+      .toThrow("The selected rival holding has not been revealed.");
+  });
+
+  it("rejects a direct hidden holding start before contract authority", () => {
+    const fixture = hiddenHoldingFixture();
+    expect(() => startPlayerChallengeContract({ course: fixture.course, world: fixture.world, day: 2, draft: fixture.draft }))
+      .toThrow("The selected rival holding has not been revealed.");
+  });
+
   it("uses authored rival holdings and validates participant tee/pin choices without fallback", () => {
     const f = fixture();
     expect(f.rival.holdings.length).toBeGreaterThan(0);

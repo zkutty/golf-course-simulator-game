@@ -11,7 +11,7 @@ function holding(id: string, name: string, ownerId: string, value: number, uniqu
   return { id, definitionId: id, name, category, ownerId, custodianId: ownerId, authoredValue: value, remainingValue: value, prestige: unique ? 90 : 20, unique, confirmationRequired: unique, transferable: true, transferHistory: [] };
 }
 
-function regular(id: string, name: string, holdings: readonly InventoryItem[] = []): RegularGolfer {
+function regular(id: string, name: string, holdings: readonly InventoryItem[] = [], hiddenHoldings: readonly InventoryItem[] = []): RegularGolfer {
   const profile = assignPersonProfile({
     id,
     kind: "regular",
@@ -30,7 +30,12 @@ function regular(id: string, name: string, holdings: readonly InventoryItem[] = 
     recentThoughts: [],
     history: [],
   }, 725_101);
-  return { ...profile, backstory: { ...profile.backstory!, holdings } };
+  const knownHoldingIds = holdings.map((item) => item.id);
+  return {
+    ...profile,
+    backstory: { ...profile.backstory!, holdings: [...holdings, ...hiddenHoldings], knownHoldingIds },
+    rivalProfile: profile.rivalProfile ? { ...profile.rivalProfile, knownHoldingIds } : profile.rivalProfile,
+  };
 }
 
 export function createZk725BrowserFixture(base: World) {
@@ -39,6 +44,7 @@ export function createZk725BrowserFixture(base: World) {
   const player = createDefaultPlayerPro({ seed: 725_101, name: "Contract Player" });
   const ordinary = holding("player-ordinary-keepsake", "Player Ordinary Keepsake", player.identity.id, 200);
   const prestige = holding("player-prestige-club", "Player High-Prestige Club", player.identity.id, 1_000, true, "club");
+  const bag = holding("player-practice-bag", "Player Practice Bag", player.identity.id, 150, false, "bag");
   const world: World = {
     ...base,
     cash: 10_000,
@@ -52,14 +58,14 @@ export function createZk725BrowserFixture(base: World) {
         regular("rival-one", "Rival One", [
           holding("rival-ordinary-keepsake", "Rival Ordinary Keepsake", "rival-one", 200),
           holding("rival-prestige-club", "Rival High-Prestige Club", "rival-one", 1_000, true, "club"),
-        ]),
+        ], [holding("rival-unrevealed-vault", "UNREVEALED RIVAL VAULT", "rival-one", 5_000, true)]),
         regular("partner-one", "Partner One"),
         regular("partner-two", "Partner Two"),
       ],
     },
     playerPro: {
       ...player,
-      inventory: { ...player.inventory, items: [ordinary, prestige], displayItemIds: [ordinary.id] },
+      inventory: { ...player.inventory, items: [ordinary, prestige, bag], displayItemIds: [ordinary.id] },
       equipmentLoadout: { ...player.equipmentLoadout, clubItemIds: [prestige.id] },
     },
   };

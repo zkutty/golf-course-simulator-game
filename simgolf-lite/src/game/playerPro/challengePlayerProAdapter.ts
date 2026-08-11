@@ -96,13 +96,17 @@ const inventoryFor = (ownerId: string, items: readonly InventoryItem[]): PlayerI
 
 export function playerChallengeContractRivals(world: World): readonly PlayerChallengeContractRival[] {
   const living = normalizePeopleProfiles(normalizeLivingClub(world.livingClub), world.runSeed);
-  return living.regulars.filter((regular) => regular.backstory).map((regular) => ({
-    id: regular.id,
-    name: regular.name,
-    skill: regular.skill,
-    relationship: regular.relationship.score,
-    holdings: regular.backstory!.holdings.filter((item) => item.transferable && item.ownerId === regular.id && item.custodianId === regular.id),
-  }));
+  return living.regulars.filter((regular) => regular.backstory).map((regular) => {
+    const knownHoldingIds = new Set(regular.backstory!.knownHoldingIds);
+    return {
+      id: regular.id,
+      name: regular.name,
+      skill: regular.skill,
+      relationship: regular.relationship.score,
+      holdings: regular.backstory!.holdings.filter((item) => knownHoldingIds.has(item.id)
+        && item.transferable && item.ownerId === regular.id && item.custodianId === regular.id),
+    };
+  });
 }
 
 function contractContext(world: World, draft: PlayerChallengeContractDraft) {
@@ -112,6 +116,10 @@ function contractContext(world: World, draft: PlayerChallengeContractDraft) {
   const rivals = playerChallengeContractRivals(world);
   const rival = rivals.find((candidate) => candidate.id === draft.opponentId);
   if (!rival) throw new Error("The selected authored rival is no longer in the club roster.");
+  const knownRivalHoldingIds = new Set(rival.holdings.map((item) => item.id));
+  if (draft.rivalItemIds.some((itemId) => !knownRivalHoldingIds.has(itemId))) {
+    throw new Error("The selected rival holding has not been revealed.");
+  }
   const rematch = draft.rematchChallengeId
     ? career.challenges.find((challenge) => challenge.id === draft.rematchChallengeId)
     : undefined;

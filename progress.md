@@ -1769,3 +1769,78 @@ Migration design:
 - This checkpoint establishes local integration readiness, not release
   completion. Broad human campaign certification, ZK-691, ZK-739 tournament
   lifecycle expansion, and inherited ZK-811/ZK-812 remain out of scope.
+
+## 2026-08-10 — ZK-731 non-Pixi social surfaces in progress
+
+- Fresh isolated worktree `/private/tmp/golf-sim-zk731-surfaces.tTk7y8` on
+  `codex/zk731-social-surfaces` starts exactly at released
+  `6d2e481e24e2d28aed54eeafe4868b878bd908d4`. No Linear, commit, push,
+  deploy, schema, save, Pixi, gameplay-policy, or excluded gameplay-path
+  mutation is in scope.
+- Pre-edit audit found complete persisted authority for the bounded packet:
+  living-club regulars and explicit backstory reveal/known-holding IDs;
+  Player Pro challenge runtime/escrow/settlement and 2–4 golfer group
+  snapshots; owned inventory/loadout/display IDs; granted reward entitlement
+  provenance; and immutable rival-custody snapshots/rematches. No model or
+  migration change is required, and the scope remains M-sized.
+- Added the pure `socialPresentation` read model and seven accessible Player
+  Pro surfaces: People, Challenges, Team Builder, Equipment, Wardrobe,
+  Collection, and Rival Custody. The read model never consults hidden facts or
+  raw reward hooks, intersects authored holdings with `knownHoldingIds`, and
+  exposes only granted reward connections. Challenge commands and settlement
+  policy remain unchanged.
+- Closed a pre-existing player-facing adapter leak where challenge rivals,
+  previews, and starts could accept raw authored holdings. The exported Player
+  Pro adapter now filters to explicit `knownHoldingIds` and rejects an unknown
+  selected rival item before low-level contract authority. Direct preview and
+  start negatives cover the hidden fixture. The E2E-only ZK-725 fixture marks
+  only its intended wager items known so existing contract tests remain
+  truthful.
+- Structured `render_game_to_text` now includes owned inventory, loadout,
+  player escrow/default fallback, custody, relationships, and collection
+  provenance without any hidden character carriers.
+- Final focused authority verification passes 6 files / 73 tests, including
+  literal hidden story/holding/reward negative tokens and existing challenge
+  runtime, settlement, inventory, and group-round policy. Transferred-away
+  entitlements are excluded from the current collection, while retained grant
+  provenance remains explicitly historical. Unique/high-prestige and equipped
+  default-fallback transfer warnings are independent. TypeScript passes.
+  Lint passes with zero errors and the same 12 inherited Hook warnings; both
+  i18n guards pass across 58 UI files and 4 authored-content files.
+- Dedicated ZK-731 Playwright coverage passes 3/3 serially in 3.6 minutes with empty console
+  and page-error collections: seven keyboard-navigable surfaces retain focus
+  and exact hidden negatives; 2/3/4 golfer snapshots fit 390/768/1440 widths
+  without panel overflow and expose exact derived `individual:<golferId>` team
+  authority; and real existing escrow, shot, concession, custody, and rematch
+  carriers remain truthful. Item toggles have item-specific accessible names,
+  stable warning descriptions, and freeze during an active round/group.
+  Affected compatibility passes 8/8 in 7.8 minutes: M36 1/1, ZK-720 2/2,
+  ZK-725 4/4, and ZK-726 1/1.
+- Inspected captures show public People cards and known holdings only, the
+  challenge preview's two visible rival items, distinct high-prestige/default
+  fallback warnings, truthful collection/custody, and legible 2/3/4 golfer
+  cards. Representative final hashes include People
+  `e670152a29e1d7a8a9cc153881bd50cce4068d90272c5cee49c381a48a084dbf`,
+  custody `1e90ca86c7db2bd66287396dbdfd58c2801da9930dbffc06171344bcc2fa7cd6`,
+  and 2-golfer/390px card
+  `0828083b0cd27b8321ccb513bda9efc73e16a56f51ac5d1922cb14040048c00a`.
+  The required bundled web-game client also produced an inspected rendered
+  course (`932ac7ad20f16539df2403b78ffebaf81774b6a7076f13b4db6f0bbbf4b6d6b7`)
+  and structured state with social inventory/loadout/escrow/custody/
+  relationships/collection
+  (`9b7341be659f8e175c957b44728f41255a39f13dfe0ac27f213e0d657b9a0d78`),
+  with no error artifact.
+- Two final production builds are byte-identical at aggregate dist digest
+  `5f41cd800c4294e3403a5ef97b160d6ca3e16ed627eff7c78a877c36ed962a4c`.
+  Initial JS is 1,608,667 bytes (`index-OY7aaT70.js`, SHA-256
+  `7b2a7122a8ca98dd674149acaaf7fb898d4f2dce3cf60d420a69507a7be3f7e2`),
+  52 bytes under the immutable 1,608,719-byte cap and 1,786 bytes above the
+  released 1,606,881-byte baseline. Initial critical transfer is 3,805,852
+  bytes (388,452 bytes headroom); dist is 116,437,759 bytes (538,252 bytes
+  headroom). All asset and delivery audits report `ok: true`.
+- This packet is locally integration-ready but does not complete all of
+  ZK-731: Pixi/world collection scenes and human approval remain later scope.
+  Automated accessibility/visual evidence is limited to keyboard focus,
+  accessible-name/description assertions, frozen controls, responsive
+  overflow checks, and inspected captures; it does not claim full screen-reader,
+  contrast, reduced-motion, or visual-regression acceptance.

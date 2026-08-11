@@ -971,6 +971,18 @@ export default function App() {
     () => world.playerPro ?? createDefaultPlayerPro({ seed: world.runSeed, name: world.founderName }),
     [world.founderName, world.playerPro, world.runSeed],
   );
+  const [playerProSocialBuilder, setPlayerProSocialBuilder] = useState<null | typeof import("./game/playerPro/socialPresentation")["buildPlayerProSocialPresentation"]>(null);
+  useEffect(() => {
+    let current = true;
+    void import("./game/playerPro/socialPresentation").then(({ buildPlayerProSocialPresentation }) => {
+      if (current) setPlayerProSocialBuilder(() => buildPlayerProSocialPresentation);
+    });
+    return () => { current = false; };
+  }, []);
+  const playerProSocialText = useMemo(
+    () => playerProSocialBuilder?.(world, playerPro) ?? null,
+    [playerPro, playerProSocialBuilder, world],
+  );
   const activePlayerRound = playerPro.activeRound;
   const playerRoundLocksEditing = (!!activePlayerRound && activePlayerRound.phase !== "round_complete" && activePlayerRound.phase !== "conceded") || Boolean(playerPro.activeChallengeGroupRound);
   const designDockVisible = workspace === "design"
@@ -3101,6 +3113,7 @@ export default function App() {
         rounds: playerPro.rounds.length,
         handicap: textHandicapProfile(playerPro.handicapProfile),
         latestCompletedRound: textCompletedRound(lastItem(playerPro.rounds)),
+        social: playerProSocialText,
         activeRound: activePlayerRound ? {
           id: activePlayerRound.id,
           kind: activePlayerRound.kind,
@@ -3186,7 +3199,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -3409,7 +3422,8 @@ export default function App() {
         setShowPlayerPro(true);
         live.setSpeed("paused");
       },
-      setChallengeGroupRoundFixture: async () => {
+      setChallengeGroupRoundFixture: async (groupSize = 4) => {
+        if (groupSize !== 2 && groupSize !== 3 && groupSize !== 4) throw new Error("Challenge group fixture supports 2, 3, or 4 golfers.");
         const { createZk758BrowserChallengeGroup } = await import("./game/testing/zk758BrowserFixture");
         const fixtureCourse = normalizeCourseLayouts(createRenderPerfCourse("parkland"));
         const playerPro = createDefaultPlayerPro({ seed: 726_001, name: "Casey Fairway", background: "architect" });
@@ -3424,7 +3438,7 @@ export default function App() {
         };
         const layout = fixtureCourse.layouts?.find((candidate) => candidate.state === "open");
         if (!layout) throw new Error("ChallengeGroupRound fixture requires an open course layout.");
-        const group = createZk758BrowserChallengeGroup(fixtureCourse, fixtureWorld, layout.id, playerPro);
+        const group = createZk758BrowserChallengeGroup(fixtureCourse, fixtureWorld, layout.id, playerPro, groupSize);
         const worldWithGroup = {
           ...fixtureWorld,
           playerPro: { ...playerPro, activeRound: null, activeChallengeGroupRound: group },

@@ -44,15 +44,20 @@ import {
   type PlayerChallengeContractDraft,
   type PlayerChallengeSideBetDraft,
 } from "../game/playerPro/challengePlayerProAdapter";
+import {
+  buildPlayerProSocialPresentation,
+  type PlayerProSocialSurface,
+  type SocialItemPresentation,
+} from "../game/playerPro/socialPresentation";
 
-type ProTab = "career" | "play" | "training" | "matches" | "tournaments";
+type ProTab = "career" | "play" | "training" | "matches" | "tournaments" | PlayerProSocialSurface;
 
 const panelStyle = {
   position: "absolute",
   top: 54,
   left: 10,
   zIndex: 205,
-  width: "min(470px,calc(100% - 20px))",
+  width: "min(640px,calc(100% - 20px))",
   maxHeight: "calc(100% - 126px)",
   overflow: "auto",
   borderRadius: 14,
@@ -207,6 +212,28 @@ function CompetitionScorecard({ career }: { career: PlayerProCareer }) {
       </div>
     </details>)}
   </section>;
+}
+
+function ItemCard({ item, onToggle, toggleDisabled = false }: { item: SocialItemPresentation; onToggle?: (itemId: string) => void; toggleDisabled?: boolean }) {
+  const { t } = useI18n();
+  const warningId = `social-item-${item.id}-warnings`;
+  const actionLabel = item.equipped ? t("playerPro.social.unequip") : t("playerPro.social.equip");
+  const warnings = item.transferWarnings.map((warning) => warning === "unique-high-prestige"
+    ? t("playerPro.social.transfer.unique")
+    : t("playerPro.social.transfer.default"));
+  return <article data-testid={`social-item-${item.id}`} style={cardStyle}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" }}>
+      <div><strong>{item.name}</strong><small style={{ display: "block" }}>{item.category} · {formatCurrency(item.value)} · {t("playerPro.social.prestige", { prestige: item.prestige })}</small></div>
+      {item.equipped && <span aria-hidden="true">✓</span>}
+    </div>
+    {item.escrowed && <strong>{t("playerPro.social.escrowed")}</strong>}
+    {warnings.length > 0 && <div id={warningId}>{warnings.map((warning, index) => <small key={item.transferWarnings[index]} style={{ display: "block" }}>{warning}</small>)}</div>}
+    {onToggle && <button type="button" aria-label={`${actionLabel} · ${item.name}`} aria-describedby={warnings.length > 0 ? warningId : undefined} aria-pressed={item.equipped} disabled={item.escrowed || toggleDisabled} onClick={() => onToggle(item.id)}>{actionLabel}</button>}
+  </article>;
+}
+
+function EmptySocial({ message }: { message: string }) {
+  return <p style={{ padding: 10, borderRadius: 8, background: "rgba(255,255,255,.48)" }}>{message}</p>;
 }
 
 const CHALLENGE_FORMATS = ["individual", "four-ball", "alternate-shot", "scramble"] as const;
@@ -374,6 +401,7 @@ export function PlayerProPanel(props: {
   const options = useMemo(() => playerTrainingOptions(props.course, props.world, props.day), [props.course, props.day, props.world]);
   const opponents = useMemo(() => eligiblePlayerOpponents(props.world), [props.world]);
   const events = tournamentCalendar(props.world).events.filter((event) => event.status === "scheduled");
+  const social = useMemo(() => buildPlayerProSocialPresentation(props.world, props.career), [props.career, props.world]);
   const functionalItems = props.career.inventory.items.filter((item) => authoredEquipmentModifiers(item).length > 0);
   const equippedItemIds = new Set([...
     props.career.equipmentLoadout.clubItemIds,
@@ -401,6 +429,7 @@ export function PlayerProPanel(props: {
   }, [layoutId, pinRotation, props.course, props.day, props.world, teeSet]);
 
   const tabs: ProTab[] = ["career", "play", "training", "matches", "tournaments"];
+  const socialTabs: PlayerProSocialSurface[] = ["people", "challenges", "teamBuilder", "equipment", "wardrobe", "collection", "custody"];
   return (
     <aside role="dialog" aria-modal="false" aria-labelledby="player-pro-title" data-testid="player-pro-panel" style={panelStyle}>
       <header style={{ position: "sticky", top: 0, zIndex: 1, display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "#314d36", color: "#fff8dc", borderBottom: "2px solid #c89c43" }}>
@@ -409,11 +438,14 @@ export function PlayerProPanel(props: {
         <button aria-label={t("playerPro.close")} onClick={props.onClose}>✕</button>
       </header>
 
-      <nav aria-label={t("playerPro.title")} style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 4, padding: 8, borderBottom: "1px solid rgba(62,48,24,.16)" }}>
-        {tabs.map((candidate) => <button key={candidate} aria-pressed={tab === candidate} onClick={() => setTab(candidate)} style={{ padding: "7px 3px", borderRadius: 7, border: tab === candidate ? "2px solid #466243" : "1px solid rgba(52,43,25,.15)", background: tab === candidate ? "#d9ebcf" : "rgba(255,255,255,.55)", fontSize: 10, fontWeight: 800 }}>{t(`playerPro.tab.${candidate}` as MessageKey)}</button>)}
+      <nav aria-label={t("playerPro.title")} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(76px,1fr))", gap: 4, padding: 8, borderBottom: "1px solid rgba(62,48,24,.16)" }}>
+        {tabs.map((candidate) => <button key={candidate} data-testid={`player-pro-tab-${candidate}`} aria-pressed={tab === candidate} onClick={() => setTab(candidate)} style={{ padding: "7px 3px", borderRadius: 7, border: tab === candidate ? "2px solid #466243" : "1px solid rgba(52,43,25,.15)", background: tab === candidate ? "#d9ebcf" : "rgba(255,255,255,.55)", fontSize: 10, fontWeight: 800 }}>{t(`playerPro.tab.${candidate}` as MessageKey)}</button>)}
+      </nav>
+      <nav aria-label={t("playerPro.social.nav")} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(78px,1fr))", gap: 4, padding: "0 8px 8px", borderBottom: "1px solid rgba(62,48,24,.16)" }}>
+        {socialTabs.map((candidate) => <button key={candidate} data-testid={`player-pro-tab-${candidate}`} aria-pressed={tab === candidate} onClick={() => setTab(candidate)} style={{ padding: "7px 3px", borderRadius: 7, border: tab === candidate ? "2px solid #466243" : "1px solid rgba(52,43,25,.15)", background: tab === candidate ? "#d9ebcf" : "rgba(255,255,255,.55)", fontSize: 10, fontWeight: 800 }}>{t(`playerPro.tab.${candidate}` as MessageKey)}</button>)}
       </nav>
 
-      <div style={{ padding: 14, display: "grid", gap: 14 }}>
+      <div id={`player-pro-surface-${tab}`} role="region" aria-label={t(`playerPro.tab.${tab}` as MessageKey)} style={{ padding: 14, display: "grid", gap: 14 }}>
         {notice && <div role="status" style={{ padding: 8, borderRadius: 8, background: notice.startsWith("✓") ? "#dfeeda" : "#f7dfd7", color: "#492b20" }}>{notice}</div>}
 
         {tab === "career" && <>
@@ -503,6 +535,69 @@ export function PlayerProPanel(props: {
             const mentor = mentorTechniqueEligibility(props.world, opponent.id);
             return <div key={opponent.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{opponent.name}</strong>{mentor.techniqueId && !props.career.learnedTechniques.includes(mentor.techniqueId) && <button data-testid={`start-mentor-${opponent.id}`} disabled={!mentor.eligible} title={mentor.blockers.join(" ")} onClick={() => { void props.onMentorChallenge(opponent).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }}>{t("playerPro.equipmentMentor.startObjective")}</button>}</div>;
           })}</div></details>}
+        </section>}
+
+        {tab === "people" && social && <section data-testid="player-pro-people" style={{ display: "grid", gap: 9 }}>
+          <h3 style={{ margin: 0 }}>{t("playerPro.tab.people")}</h3>
+          {social.people.length === 0 ? <EmptySocial message={t("livingClub.people.empty")} /> : social.people.map((person) => <article key={person.id} data-testid={`player-pro-person-${person.id}`} style={cardStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}><strong>{person.name}</strong><span>{person.relationship.tier} · {person.relationship.score}</span></div>
+            {person.biography && <p style={{ margin: 0 }}>{person.biography}</p>}
+            {person.occupation && <small>{person.occupation} · {person.communityRole}</small>}
+            <div>{t("retention.roundCount", { count: person.rounds })} · {t("playerPro.handicap.title")} {person.handicap ?? "—"}</div>
+            {person.preferredFormats.length > 0 && <div>{t("challenge.format")}: {person.preferredFormats.join(" · ")}</div>}
+            {person.revealedHistory.length > 0 && <details><summary>{t("livingClub.history")} ({person.revealedHistory.length})</summary>{person.revealedHistory.map((fact) => <div key={fact.id}>{fact.text} <small>· {fact.revealedBy}</small></div>)}</details>}
+            {person.knownHoldings.length > 0 && <details><summary>{t("playerPro.social.people.holdings", { count: person.knownHoldings.length })}</summary>{person.knownHoldings.map((item) => <ItemCard key={item.id} item={item} />)}</details>}
+            {person.pastMatches.length > 0 && <details><summary>{t("playerPro.tab.matches")} ({person.pastMatches.length})</summary>{person.pastMatches.map((match) => <div key={match.id}>{match.kind} · {match.status} · {match.result ?? "—"}</div>)}</details>}
+            {person.grantedRewardConnections.length > 0 && <details><summary>{t("playerPro.social.people.rewards", { count: person.grantedRewardConnections.length })}</summary>{person.grantedRewardConnections.map((reward) => <div key={reward.id}>{reward.name} · {reward.kind} · {reward.status}</div>)}</details>}
+          </article>)}
+        </section>}
+
+        {tab === "challenges" && social && <section data-testid="player-pro-challenges" style={{ display: "grid", gap: 9 }}>
+          <h3 style={{ margin: 0 }}>{t("playerPro.tab.challenges")}</h3>
+          {social.challenge.runtime ? <article data-testid="social-challenge-runtime" style={cardStyle}>
+            <strong>{social.challenge.runtime.phase} · {social.challenge.runtime.format.teamFormat} · {social.challenge.runtime.format.scoring}</strong>
+            {social.challenge.runtime.escrow && <div data-testid="social-challenge-escrow">{t("playerPro.social.challenges.escrow", { status: social.challenge.runtime.escrow.status, cash: formatCurrency(social.challenge.runtime.escrow.player?.reservedCash ?? 0), items: social.challenge.runtime.escrow.player?.itemIds.length ?? 0 })}</div>}
+            <div>{social.challenge.runtime.firstShot ? t("playerPro.social.locked", { shot: social.challenge.runtime.firstShot.shotId }) : t("challenge.cancel")}</div>
+          </article> : <EmptySocial message={t("playerPro.social.noContract")} />}
+          {social.challenge.history.length > 0 && <details><summary>{t("challenge.history")} ({social.challenge.history.length})</summary>{social.challenge.history.slice().reverse().map((entry) => <div key={entry.id} style={{ padding: "6px 0", borderTop: "1px solid rgba(60,50,30,.14)" }}>{entry.opponentName} · {entry.status} · {entry.result ?? "—"}{entry.settlement && <small style={{ display: "block" }}>{entry.settlement.kind} · {entry.settlement.transferredItemIds.length}</small>}</div>)}</details>}
+          <ChallengeContractBuilder career={props.career} course={props.course} world={props.world} day={props.day} onChallenge={props.onChallenge} onCancel={() => props.onChallenge(null)} onNotice={setNotice} />
+        </section>}
+
+        {tab === "teamBuilder" && social && <section data-testid="player-pro-team-builder" style={{ display: "grid", gap: 9 }}>
+          <h3 style={{ margin: 0 }}>{t("playerPro.tab.teamBuilder")}</h3>
+          {social.teamBuilder.activeGroup && <article data-testid="social-active-group" style={cardStyle}>
+            <strong>{social.teamBuilder.activeGroup.golfers.length} · {social.teamBuilder.activeGroup.match.scoringMode} · {social.teamBuilder.activeGroup.phase}</strong>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(135px,1fr))", gap: 7 }}>
+              {social.teamBuilder.activeGroup.golfers.map((golfer) => <div key={golfer.id} style={{ padding: 7, borderRadius: 7, background: "rgba(255,255,255,.62)" }}><strong>{golfer.name}</strong><small style={{ display: "block" }}>{golfer.teamId || t("golfer.none")} · {t("playerPro.handicap.title")} {formatHandicapIndex(golfer.handicap.handicapIndex)}</small><small>{golfer.setup.teeSet} / {golfer.setup.pinRotation} · {golfer.controller}</small></div>)}
+            </div>
+          </article>}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 7 }}>
+            {social.teamBuilder.candidates.map((candidate) => <article key={candidate.id} style={cardStyle}><strong>{candidate.name}</strong><small>{candidate.relationship.tier} · {t("playerPro.handicap.title")} {candidate.handicap == null ? "—" : formatHandicapIndex(candidate.handicap)}</small><small>{candidate.preferredFormats.join(" · ") || t("golfer.none")}</small></article>)}
+          </div>
+        </section>}
+
+        {tab === "equipment" && social && <section data-testid="player-pro-equipment" style={{ display: "grid", gap: 9 }}>
+          <h3 style={{ margin: 0 }}>{t("playerPro.tab.equipment")}</h3>
+          {social.equipment.items.length === 0 ? <EmptySocial message={t("playerPro.social.items.empty")} /> : social.equipment.items.map((item) => <ItemCard key={item.id} item={item} onToggle={toggleEquipment} toggleDisabled={Boolean(props.career.activeRound || props.career.activeChallengeGroupRound)} />)}
+          <label>{t("playerPro.equipmentMentor.techniqueLabel")}<select disabled={Boolean(props.career.activeRound || props.career.activeChallengeGroupRound)} value={props.career.equipmentLoadout.techniqueId ?? ""} onChange={(event) => { void props.onLoadout({ ...props.career.equipmentLoadout, techniqueId: event.target.value ? event.target.value as EquipmentLoadout["techniqueId"] : undefined }).then((message) => setNotice(message ?? `✓ ${t("playerPro.equipmentMentor.updated")}`)); }} style={{ display: "block", width: "100%", padding: 7 }}><option value="">{t("playerPro.equipmentMentor.noTechnique")}</option>{props.career.learnedTechniques.map((id) => <option key={id} value={id}>{mentorTechniqueDefinition(id).name}</option>)}</select></label>
+        </section>}
+
+        {tab === "wardrobe" && social && <section data-testid="player-pro-wardrobe" style={{ display: "grid", gap: 9 }}>
+          <h3 style={{ margin: 0 }}>{t("playerPro.tab.wardrobe")}</h3>
+          {social.wardrobe.items.length === 0 ? <EmptySocial message={t("playerPro.social.items.empty")} /> : social.wardrobe.items.map((item) => <ItemCard key={item.id} item={item} onToggle={toggleEquipment} toggleDisabled={Boolean(props.career.activeRound || props.career.activeChallengeGroupRound)} />)}
+        </section>}
+
+        {tab === "collection" && social && <section data-testid="player-pro-collection" style={{ display: "grid", gap: 9 }}>
+          <h3 style={{ margin: 0 }}>{t("playerPro.tab.collection")}</h3>
+          {social.collection.items.map((item) => <ItemCard key={item.id} item={item} />)}
+          {social.collection.careerTrophies.map((trophy) => <article key={trophy.id} style={cardStyle}><strong>{trophy.name}</strong><small>{t("playerPro.social.collection.trophyMeta", { course: trophy.courseName, week: trophy.week })}</small></article>)}
+          {social.collection.rewards.map((reward) => <article key={reward.id} style={cardStyle}><strong>{reward.name}</strong><small>{reward.kind} · {reward.status} · {reward.grantingPersonName}</small><small>{reward.remainingQuantity} · {formatCurrency(reward.remainingValue)}</small></article>)}
+          {social.collection.items.length + social.collection.careerTrophies.length + social.collection.rewards.length === 0 && <EmptySocial message={t("retention.emptyHall")} />}
+        </section>}
+
+        {tab === "custody" && social && <section data-testid="player-pro-custody" style={{ display: "grid", gap: 9 }}>
+          <h3 style={{ margin: 0 }}>{t("playerPro.tab.custody")}</h3>
+          {social.custody.length === 0 ? <EmptySocial message={t("playerPro.social.noCustody")} /> : social.custody.map((entry) => <article key={entry.id} style={cardStyle}><strong>{entry.item.name} · {entry.status}</strong><div>{entry.rivalName} · {t("property.ledger.when", { week: entry.acquiredWeek, day: entry.acquiredDay + 1 })}</div>{entry.rematchChallengeId && <small>{t("challenge.rematchReady")}</small>}</article>)}
         </section>}
 
         {tab === "tournaments" && <section>
