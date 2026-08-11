@@ -29,6 +29,7 @@ import type { TournamentEvent } from "../game/tournaments/types";
 import { formatCurrency } from "../i18n/format";
 import type { Translator } from "../i18n/context";
 import { useI18n } from "../i18n/useI18n";
+import { registerPlayerProSocialCatalog } from "../i18n/playerProSocialCatalog";
 import type { MessageKey } from "../i18n/catalog";
 import { formatHandicapIndex } from "../game/competition/persistence";
 import { courseHandicap, playingHandicapFromUnrounded, strokesByHole } from "../game/competition/handicap";
@@ -49,6 +50,8 @@ import {
   type PlayerProSocialSurface,
   type SocialItemPresentation,
 } from "../game/playerPro/socialPresentation";
+
+registerPlayerProSocialCatalog();
 
 type ProTab = "career" | "play" | "training" | "matches" | "tournaments" | PlayerProSocialSurface;
 

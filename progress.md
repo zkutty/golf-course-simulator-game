@@ -1830,14 +1830,23 @@ Migration design:
   relationships/collection
   (`9b7341be659f8e175c957b44728f41255a39f13dfe0ac27f213e0d657b9a0d78`),
   with no error artifact.
-- Two final production builds are byte-identical at aggregate dist digest
-  `5f41cd800c4294e3403a5ef97b160d6ca3e16ed627eff7c78a877c36ed962a4c`.
-  Initial JS is 1,608,667 bytes (`index-OY7aaT70.js`, SHA-256
-  `7b2a7122a8ca98dd674149acaaf7fb898d4f2dce3cf60d420a69507a7be3f7e2`),
-  52 bytes under the immutable 1,608,719-byte cap and 1,786 bytes above the
-  released 1,606,881-byte baseline. Initial critical transfer is 3,805,852
-  bytes (388,452 bytes headroom); dist is 116,437,759 bytes (538,252 bytes
-  headroom). All asset and delivery audits report `ok: true`.
+- After the Sentry-enabled release build exposed a 492-byte CI-only overage,
+  Player Pro panel copy moved from the eager global catalog into the existing
+  deferred-catalog registration pattern used by New Game and Vision. MessageKey
+  typing, parameter interpolation, English copy, and pseudo-localization remain
+  unchanged, while the copy now travels with the already-lazy Player Pro panel.
+  Two normal production builds are byte-identical at aggregate dist digest
+  `658fee0fcefe5e36455c52330add6a9f575b9ac0b278ab5f4bf5bf6cd900e282`.
+  Initial JS is 1,606,803 bytes (`index-CVCJhQsQ.js`, SHA-256
+  `e53cff6eb126f247743e986c767a5a3f6fb29ffff099042d53560e9fd423c829`),
+  1,916 bytes under the immutable 1,608,719-byte cap. An exact Sentry-shaped
+  build with debug-ID injection is 1,607,206 bytes (`index-DnG7_k37.js`,
+  SHA-256 `3a3cee89a7961689ebba988d4710c8afb014e109771a43befc7b743893990ada`),
+  leaving 1,513 bytes of CI headroom; its dummy local upload endpoint fails as
+  expected after bundle generation, without affecting the measured artifact.
+  Initial critical transfer is 3,805,348 bytes (388,956 bytes headroom); normal
+  dist is 116,438,114 bytes (537,897 bytes headroom). All local asset and
+  delivery audits report `ok: true`.
 - This packet is locally integration-ready but does not complete all of
   ZK-731: Pixi/world collection scenes and human approval remain later scope.
   Automated accessibility/visual evidence is limited to keyboard focus,

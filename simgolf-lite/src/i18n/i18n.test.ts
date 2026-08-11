@@ -3,6 +3,7 @@ import { loadLocale, translate } from "./core";
 import { formatCurrency, formatDayLabel, formatNumber, formatWeekLabel } from "./format";
 import { registerSetupCatalog } from "./setupCatalog";
 import { registerVisionIntroCatalog } from "./visionIntroCatalog";
+import { registerPlayerProSocialCatalog } from "./playerProSocialCatalog";
 
 describe("i18n", () => {
   it("interpolates typed parameters and ICU-style plurals", () => {
@@ -30,6 +31,14 @@ describe("i18n", () => {
     expect(translate("en", "vision.hero.title")).toBe("vision.hero.title");
     const unregister = registerVisionIntroCatalog();
     expect(translate("en", "vision.hero.title")).toBe("Build the course. Shape the world.");
+    unregister();
+  });
+
+  it("localizes the deferred Player Pro panel catalog in both locales", () => {
+    expect(translate("en", "playerPro.social.transfer.default")).toBe("playerPro.social.transfer.default");
+    const unregister = registerPlayerProSocialCatalog();
+    expect(translate("en", "playerPro.social.people.holdings", { count: 2 })).toBe("Known holdings (2)");
+    expect(translate("pseudo", "playerPro.social.transfer.default")).toMatch(/^⟦Tráñs/);
     unregister();
   });
 
