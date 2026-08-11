@@ -1,8 +1,15 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_WORLD } from "../models/defaults";
+import {
+  challengeGroupPlayerRound,
+  challengeGroupPlayerSkills,
+  commitChallengeGroupPlayerShot,
+  startChallengeGroupRound,
+} from "../competition/challengeGroupRound";
 import { scoreTeamNetHole } from "../competition/scoring";
 import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
+import { caddieRecommendation } from "../playerPro/playerPro";
 import { startPlayableRound } from "../playerPro/playerProRoundStart";
 import { createTournamentStandardsCourse } from "../testing/referenceCourse";
 import { activateTournament, scoreTournamentRoundCard } from "./tournamentLifecycle";
@@ -153,6 +160,92 @@ describe("ZK-734A deterministic four-person Pro-Am field core", () => {
     expect(JSON.stringify(replay)).toBe(JSON.stringify(first));
     const forged = { ...visible, grossTotal: visible.grossTotal + 1 };
     expect(simulateProAmFieldRound({ snapshot, course: roundCourse, roundNumber: 1, seed: 734_101, visibleScorecards: [forged] })).toEqual({ ok: false, reason: "Visible Pro-Am gross evidence is duplicated, forged, or malformed." });
+  }, 120_000);
+
+  it("compacts only settled transcripts without changing shared authority results", () => {
+    const { snapshot, roundCourse } = fixture();
+    const team = snapshot.teams[0];
+    const stableSeed = (source: string) => {
+      let hash = 0x811c9dc5;
+      for (let index = 0; index < source.length; index += 1) hash = Math.imul(hash ^ source.charCodeAt(index), 0x01000193);
+      return hash >>> 0;
+    };
+    const participants = team.entrantIds.map((entrantId, index) => {
+      const entrant = snapshot.entrants.find((candidate) => candidate.entrantId === entrantId)!;
+      const skill = Math.max(0, Math.min(100, Math.round(entrant.skill * 100)));
+      return {
+        id: entrant.entrantId,
+        name: entrant.name,
+        controller: index === 0 ? "player" as const : "ai" as const,
+        teamId: `individual:${entrant.entrantId}`,
+        handedness: stableSeed(entrant.entrantId) % 2 ? "right" as const : "left" as const,
+        skills: { power: skill, driving: skill, irons: skill, recovery: skill, putting: skill, shortGame: skill },
+        handicapIndex: entrant.handicapIndex,
+        handicapAllowance: 0.85,
+        setup: { course: roundCourse, teeSet: snapshot.teeSet, pinRotation: snapshot.pinRotation },
+      };
+    });
+    const play = (compact: boolean) => {
+      let round = startChallengeGroupRound({
+        id: "zk734-compaction-proof",
+        course: roundCourse,
+        rulesSnapshot: roundCourse.rulesSnapshot,
+        teeSet: snapshot.teeSet,
+        pinRotation: snapshot.pinRotation,
+        participants,
+        individualFormat: "net-stroke",
+        rngSeed: (734_303 ^ stableSeed(`${snapshot.activationId}:1:${team.id}`)) >>> 0,
+        startedWeek: snapshot.activatedWeek,
+        startedDay: snapshot.activatedDay,
+      });
+      let guard = 0;
+      while (round.phase !== "complete" && guard++ < 480) {
+        const view = challengeGroupPlayerRound(round);
+        if (!view || round.phase !== "awaiting_player") throw new Error("Shared authority did not yield a player turn.");
+        round = commitChallengeGroupPlayerShot(round, round.playerGolferId, caddieRecommendation(view, challengeGroupPlayerSkills(round)));
+        if (compact) round = {
+          ...round,
+          golfers: round.golfers.map((golfer) => ({ ...golfer, shots: [] })),
+          turnEvidence: [],
+        };
+      }
+      if (round.phase !== "complete") throw new Error("Shared authority did not complete the compaction proof.");
+      return round;
+    };
+    const reference = play(false);
+    const compacted = play(true);
+    const authoritativeProjection = (round: typeof reference) => ({
+      phase: round.phase,
+      courseId: round.course.courseId,
+      currentHoleIndex: round.currentHoleIndex,
+      activeGolferId: round.activeGolferId,
+      playerGolferId: round.playerGolferId,
+      honorsOrder: round.honorsOrder,
+      rngSeed: round.rngSeed,
+      rngCursor: round.rngCursor,
+      match: round.match,
+      golfers: round.golfers.map((golfer) => ({
+        id: golfer.id,
+        ball: golfer.ball,
+        lie: golfer.lie,
+        handicap: golfer.handicap,
+        scorecard: golfer.scorecard,
+        withdrawn: golfer.withdrawn,
+      })),
+    });
+    expect(authoritativeProjection(compacted)).toEqual(authoritativeProjection(reference));
+    expect(reference.turnEvidence.length).toBeGreaterThan(0);
+    expect(reference.golfers.some((golfer) => golfer.shots.length > 0)).toBe(true);
+    expect(compacted.turnEvidence).toEqual([]);
+    expect(compacted.golfers.every((golfer) => golfer.shots.length === 0)).toBe(true);
+    const production = simulateProAmFieldRound({ snapshot, course: roundCourse, roundNumber: 1, seed: 734_303 });
+    expect(production.ok).toBe(true);
+    if (!production.ok) return;
+    for (const golfer of reference.golfers) {
+      const card = production.evidence.scorecards.find((candidate) => candidate.entrantId === golfer.id)!;
+      expect(card.grossByHole).toEqual(golfer.scorecard.map((hole) => hole.gross));
+      expect(card.penalties).toBe(golfer.scorecard.reduce((sum, hole) => sum + hole.penalties, 0));
+    }
   }, 120_000);
 
   it("rejects course authority drift and is immune to later live Course edits", () => {

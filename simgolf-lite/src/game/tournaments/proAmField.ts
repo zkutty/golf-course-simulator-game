@@ -300,6 +300,19 @@ function participant(
   };
 }
 
+/** Private score-only state; never returned, validated as a group round, or persisted. */
+function compactProAmSimulationBurst(round: ReturnType<typeof startChallengeGroupRound>): ReturnType<typeof startChallengeGroupRound> {
+  if ((round.phase !== "awaiting_player" && round.phase !== "complete")
+    || round.teamAuthority || round.individualAuthority?.contests.length) {
+    throw new Error("Only a settled own-ball Pro-Am simulation burst can be compacted.");
+  }
+  return {
+    ...round,
+    golfers: round.golfers.map((golfer) => ({ ...golfer, shots: [] })),
+    turnEvidence: [],
+  };
+}
+
 function simulateTeam(snapshot: TournamentActivationSnapshot, course: PlayerRoundCourseSnapshot, teamId: string, roundNumber: number, seed: number): TournamentRoundScorecard[] | null {
   const team = snapshot.teams.find((candidate) => candidate.id === teamId)!;
   const entrants = team.entrantIds.map((id) => snapshot.entrants.find((entrant) => entrant.entrantId === id)!);
@@ -322,6 +335,12 @@ function simulateTeam(snapshot: TournamentActivationSnapshot, course: PlayerRoun
       const view = challengeGroupPlayerRound(round);
       if (!view || round.phase !== "awaiting_player") return null;
       round = commitChallengeGroupPlayerShot(round, round.playerGolferId, caddieRecommendation(view, challengeGroupPlayerSkills(round)));
+      // This deferred field simulation retains canonical gross-by-hole evidence,
+      // not a replayable ChallengeGroup shot history. The shared authority has
+      // already settled every emitted shot before control returns here, so drop
+      // the otherwise quadratic transient history while preserving scorecards,
+      // routing state, and the authoritative RNG cursor.
+      round = compactProAmSimulationBurst(round);
     }
     if (round.phase !== "complete") return null;
   } catch {
