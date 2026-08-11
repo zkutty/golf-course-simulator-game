@@ -119,6 +119,39 @@ export type RenderRevisionDependencies = Readonly<
   Record<RenderSceneId, readonly unknown[]>
 >;
 
+export interface StructuresPropsRevisionInput {
+  readonly atlasRevision: number;
+  readonly course: Pick<
+    Course,
+    "buildings" | "decorations" | "elevations" | "height" | "property" | "theme" | "width"
+  >;
+  readonly effectiveTiles: readonly Terrain[];
+  readonly graphicsQuality: RenderSnapshot["graphicsQuality"];
+  readonly rotation: IsoRotation;
+  readonly seasonalPlantsSignature: string;
+}
+
+/** Exact physical/presentation inputs consumed by the authored-props scene. */
+export function structuresPropsRevisionDependencies(
+  input: StructuresPropsRevisionInput,
+): readonly unknown[] {
+  const { course } = input;
+  return [
+    input.atlasRevision,
+    course.buildings,
+    course.decorations,
+    course.elevations,
+    course.height,
+    course.property?.assets,
+    course.theme,
+    course.width,
+    input.effectiveTiles,
+    input.graphicsQuality,
+    input.rotation,
+    input.seasonalPlantsSignature,
+  ];
+}
+
 function dependenciesChanged(
   previous: readonly unknown[] | undefined,
   next: readonly unknown[],

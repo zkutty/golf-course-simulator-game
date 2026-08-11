@@ -56,7 +56,7 @@ import { formatCurrency } from "../i18n/format";
 import type { MessageKey } from "../i18n/catalog";
 import { useI18n } from "../i18n/useI18n";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
-import { entityDepth, frontCorner, placeObject } from "../game/render/objectPlacement";
+import { entityDepth } from "../game/render/objectPlacement";
 import {
   GOLFER_DISPLAY_W,
   GOLFER_FEET_Y,
@@ -102,17 +102,11 @@ import {
 import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import {
   decorationTiles,
-  decorationVisual,
   normalizedDecoration,
 } from "../game/models/decorations";
 import { getBiomeDefinition } from "../game/models/biomes";
-import {
-  plantDefinition,
-  resolvedDecorationPlantId,
-} from "../game/models/plantRegistry";
 import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
 import type { ArchitectureReferencePlan } from "../game/architecture/referencePlan";
-import type { AtlasFrame } from "../render/atlas";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
 import {
   TERRAIN_KINDS,
@@ -153,12 +147,10 @@ import {
   pickNaturalProp,
 } from "../game/render/naturalProps";
 import {
-  seasonalDecorationPlantForm,
   seasonalPlantClimate,
   seasonalPlantPresentation,
   seasonalPlantSceneSignature,
 } from "../game/render/seasonalPlants";
-import { isWaterHazard } from "../game/models/terrainRules";
 import { T } from "../i18n/T";
 import type { ArchitectureWarning } from "../game/architecture/architecture";
 import type { ArchitectureOverlayRender } from "../game/architecture/reviewTypes";
@@ -189,6 +181,7 @@ import {
 } from "../game/conditions/surfaceCare";
 import {
   RenderRevisionTracker,
+  structuresPropsRevisionDependencies,
   type RenderSnapshot,
 } from "../game/render/renderSnapshot";
 import { SceneSystemHost } from "./renderer/SceneSystemHost";
@@ -200,7 +193,11 @@ import {
   createSurfaceCareSceneSystem,
   type SurfaceCareWorkerSprite,
 } from "./renderer/scenes/surfaceCareScene";
-import { createStructuresPropsSceneSystem } from "./renderer/scenes/structuresPropsScene";
+import {
+  createStableSceneDecalLayers,
+  createStructuresPropsSceneSystem,
+  type StableSceneDecalLayers,
+} from "./renderer/scenes/structuresPropsScene";
 import type { NaturalPropsSceneSystem } from "./renderer/scenes/naturalPropsScene";
 import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
@@ -824,10 +821,49 @@ interface Layers {
   surfaceCare: PIXI.Container;
   estateSeam: PIXI.Container;
   terrainDecals: PIXI.Container;
+  sceneDecals: StableSceneDecalLayers;
   surfaceEditor: PIXI.Container;
   objects: PIXI.Container;
   fx: PIXI.Container;
   screenOverlay: PIXI.Container;
+}
+
+function effectiveSurfaceTilesForRenderer(
+  tiles: Course["tiles"],
+  width: number,
+  height: number,
+  surfaceCare: Course["surfaceCare"],
+  surfaceIntent: Course["surfaceIntent"],
+  estate: Course["estate"],
+): Course["tiles"] {
+  return courseWithEffectiveSurfaces({
+    tiles,
+    width,
+    height,
+    surfaceCare,
+    surfaceIntent,
+    estate,
+  } as Course).tiles;
+}
+
+function visualHeightfieldForRenderer(
+  tiles: Course["tiles"],
+  elevations: Course["elevations"],
+  width: number,
+  height: number,
+  buildings: Course["buildings"],
+  propertyAssets: NonNullable<Course["property"]>["assets"] | undefined,
+  theme: Course["theme"],
+) {
+  return buildVisualHeightfield({
+    tiles,
+    elevations,
+    width,
+    height,
+    buildings,
+    property: propertyAssets ? { assets: propertyAssets } : undefined,
+    theme,
+  } as Course);
 }
 
 /**
@@ -1027,7 +1063,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
   const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
   const propertyGraphicsRef = useRef<PIXI.Graphics[]>([]);
-  const decorationSpritesRef = useRef<Array<{ sprite: PIXI.Sprite; shadow: PIXI.Graphics }>>([]);
   const surfaceCareWorkersRef = useRef<SurfaceCareWorkerSprite[]>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
   const surfaceWaterSpritesRef = useRef<Array<{
@@ -1152,11 +1187,25 @@ export function PixiStage(requestedProps: PixiStageProps) {
     onPickGolfer,
     onViewChange,
   } = props;
+  const effectiveTiles = useMemo(() => effectiveSurfaceTilesForRenderer(
+    course.tiles,
+    course.width,
+    course.height,
+    course.surfaceCare,
+    course.surfaceIntent,
+    course.estate,
+  ), [
+    course.estate,
+    course.height,
+    course.surfaceCare,
+    course.surfaceIntent,
+    course.tiles,
+    course.width,
+  ]);
   const effectiveRenderCourse = useMemo(
-    () => courseWithEffectiveSurfaces(course),
-    [course],
+    () => effectiveTiles === course.tiles ? course : { ...course, tiles: effectiveTiles },
+    [course, effectiveTiles],
   );
-  const effectiveTiles = effectiveRenderCourse.tiles;
   const careVisualSignatures = useMemo(
     () => surfaceCareVisualSignatures(course),
     [course],
@@ -1212,10 +1261,23 @@ export function PixiStage(requestedProps: PixiStageProps) {
     ) updateSelectedSurface(null);
   }, [course.surfaceIntent, selectedSurfaceFeatureId, updateSelectedSurface]);
 
-  const visualHeightfield = useMemo(
-    () => buildVisualHeightfield(course),
-    [course],
-  );
+  const visualHeightfield = useMemo(() => visualHeightfieldForRenderer(
+    course.tiles,
+    course.elevations,
+    course.width,
+    course.height,
+    course.buildings,
+    course.property?.assets,
+    course.theme,
+  ), [
+    course.buildings,
+    course.elevations,
+    course.height,
+    course.property?.assets,
+    course.theme,
+    course.tiles,
+    course.width,
+  ]);
   const landscapeComponentCacheRef = useRef(createLandscapeComponentCache());
   const landscapeComponents = useMemo(() => {
     if (props.graphicsQuality === "low") return [];
@@ -1247,11 +1309,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
   }, [effectiveTiles.length, landscapeComponents]);
   const surfaceHeightAt = useCallback((x: number, y: number) => (
     props.graphicsQuality === "low"
-      ? getElevation(
-        course,
-        Math.max(0, Math.min(course.width - 1, Math.floor(x))),
-        Math.max(0, Math.min(course.height - 1, Math.floor(y))),
-      )
+      ? course.elevations[
+        Math.max(0, Math.min(course.height - 1, Math.floor(y))) * course.width
+        + Math.max(0, Math.min(course.width - 1, Math.floor(x)))
+      ] ?? 0
       : sampleLandscapeSurfaceHeight(
         visualHeightfield,
         landscapeComponentByCell[
@@ -1262,7 +1323,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         y,
       )
   ), [
-    course,
+    course.elevations,
+    course.height,
+    course.width,
     landscapeComponentByCell,
     props.graphicsQuality,
     visualHeightfield,
@@ -1304,13 +1367,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
       rotation,
       surfaceHeightAt,
     ],
-    structuresProps: [
+    structuresProps: structuresPropsRevisionDependencies({
       atlasRevision,
-      course.buildings,
-      course.theme,
+      course,
+      effectiveTiles,
+      graphicsQuality: props.graphicsQuality,
       rotation,
-      surfaceHeightAt,
-    ],
+      seasonalPlantsSignature,
+    }),
     naturalProps: [
       atlasRevision,
       course.buildings,
@@ -1973,6 +2037,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const surfaceCare = new PIXI.Container();
       const estateSeam = new PIXI.Container();
       const terrainDecals = new PIXI.Container();
+      const sceneDecals = createStableSceneDecalLayers(terrainDecals);
       const surfaceEditor = new PIXI.Container();
       const objects = new PIXI.Container();
       objects.sortableChildren = true;
@@ -1987,7 +2052,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       app.stage.hitArea = app.screen;
 
       appRef.current = app;
-      layersRef.current = { world, surround, terrain, smoothSurfaces, seasonalTerrain, surfaceCare, estateSeam, terrainDecals, surfaceEditor, objects, fx, screenOverlay };
+      layersRef.current = { world, surround, terrain, smoothSurfaces, seasonalTerrain, surfaceCare, estateSeam, terrainDecals, sceneDecals, surfaceEditor, objects, fx, screenOverlay };
       if (activation.context) {
         setRenderContext({
           atlas: activation.context,
@@ -3624,7 +3689,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     });
     const naturalProps = createNaturalPropsSceneSystem(
       layers.objects,
-      layers.terrainDecals,
+      layers.sceneDecals.naturalProps,
     );
     const host = new SceneSystemHost([
       atmosphere,
@@ -3634,12 +3699,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ),
       createStructuresPropsSceneSystem(
         layers.objects,
+        layers.sceneDecals.structuresProps,
         (count) => { structureSpriteCountRef.current = count; },
       ),
       createPlayerShotOverlaySceneSystem(layers.fx),
-      createEstateSurveySceneSystem(layers.terrainDecals),
-      // Natural habitat/shadows historically rebuilt after every extracted
-      // decal scene, so retain that exact child order during the migration.
+      createEstateSurveySceneSystem(layers.sceneDecals.estateSurvey),
+      // Keep host lifecycle order; fixed decal sublayers separately preserve
+      // the legacy estate -> natural -> authored-decoration compositing order.
       naturalProps,
     ]);
     atmosphereSceneRef.current = atmosphere;
@@ -3910,108 +3976,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
       propertyGraphicsRef.current.push(graphic);
     }
   }, [appReady, course, props.resortOperations, rotation, surfaceHeightAt]);
-
-  // ---------------------------------------------------------------------
-  // Objects layer — player-authored furniture, bridges, and boardwalks
-  // ---------------------------------------------------------------------
-
-  useEffect(() => {
-    if (!appReady) return;
-    const layers = layersRef.current;
-    if (!layers) return;
-    for (const entry of decorationSpritesRef.current) {
-      entry.sprite.parent?.removeChild(entry.sprite);
-      entry.shadow.parent?.removeChild(entry.shadow);
-      entry.sprite.destroy();
-      entry.shadow.destroy();
-    }
-    decorationSpritesRef.current = [];
-
-    const seasonalClimate = seasonalPlantClimate(props.seasonalVisualState);
-    const terrainNearWater = (x: number, y: number) => {
-      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-        const tx = x + dx;
-        const ty = y + dy;
-        if (tx < 0 || ty < 0 || tx >= course.width || ty >= course.height) continue;
-        if (isWaterHazard(effectiveTiles[ty * course.width + tx])) return true;
-      }
-      return false;
-    };
-    for (const decoration of course.decorations ?? []) {
-      const visual = decorationVisual(decoration, getBiomeDefinition(course.theme).key);
-      const plantId = resolvedDecorationPlantId(course.theme, decoration);
-      const plant = plantId ? plantDefinition(plantId) : undefined;
-      const seasonal = plant
-        ? seasonalPlantPresentation({
-          identity: plant.id,
-          profile: plant.seasonalProfile,
-          form: seasonalDecorationPlantForm(
-            decoration.kind,
-            plant.seasonalProfile,
-          ),
-          x: decoration.x,
-          y: decoration.y,
-          cultivated: decoration.origin === "player",
-          elevation: course.elevations[
-            decoration.y * course.width + decoration.x
-          ] ?? 0,
-          nearWater: terrainNearWater(decoration.x, decoration.y),
-          ecologicalFit: plant.ecologicalFit[
-            getBiomeDefinition(course.theme).key
-          ],
-          climate: seasonalClimate,
-        })
-        : null;
-      const texture = getPropFrame(course.theme, props.graphicsQuality, visual.frame as AtlasFrame);
-      if (!texture) continue;
-      const tiles = decorationTiles(decoration);
-      const xs = tiles.map((tile) => tile.x);
-      const ys = tiles.map((tile) => tile.y);
-      const minX = Math.min(...xs); const maxX = Math.max(...xs);
-      const minY = Math.min(...ys); const maxY = Math.max(...ys);
-      const footprint = { x: minX, y: minY, w: maxX - minX + 1, d: maxY - minY + 1 };
-      const anchor = frontCorner(footprint, rotation);
-      const elevation = surfaceHeightAt(anchor.x, anchor.y);
-      const placement = placeObject(footprint, elevation, rotation);
-      const sprite = new PIXI.Sprite(texture);
-      sprite.anchor.set(visual.anchor[0], visual.anchor[1]);
-      sprite.position.set(placement.position.x, placement.position.y);
-      const structure = decoration.kind === "bridge" || decoration.kind === "boardwalk";
-      const logicalWidth = structure ? Math.max(2, tiles.length * .72) * TILE_W : TILE_W * visual.scale;
-      sprite.width = logicalWidth * (seasonal?.scaleX ?? 1);
-      sprite.height = logicalWidth * texture.height / texture.width
-        * (seasonal?.scaleY ?? 1);
-      sprite.tint = seasonal?.tint ?? 0xffffff;
-      sprite.alpha = seasonal?.alpha ?? 1;
-      if ((decoration.rotation + rotation) % 2 === 1) sprite.scale.x *= -1;
-      sprite.zIndex = placement.zIndex + .05;
-      sprite.eventMode = "none";
-      layers.objects.addChild(sprite);
-
-      const shadow = new PIXI.Graphics();
-      shadow.ellipse(
-        0,
-        0,
-        (structure ? logicalWidth * .38 : visual.shadow.radiusX)
-          * (seasonal?.shadowScale ?? 1),
-        visual.shadow.radiusY * (seasonal?.shadowScale ?? 1),
-      );
-      shadow.fill({ color: 0x000000, alpha: visual.shadow.alpha });
-      shadow.position.set(placement.position.x + 3, placement.position.y - TILE_H / 2 + 2);
-      shadow.eventMode = "none";
-      layers.terrainDecals.addChild(shadow);
-      decorationSpritesRef.current.push({ sprite, shadow });
-    }
-  }, [
-    appReady,
-    course,
-    effectiveTiles,
-    props.graphicsQuality,
-    rotation,
-    props.seasonalVisualState,
-    seasonalPlantsSignature,
-    surfaceHeightAt,
-  ]);
 
   // ---------------------------------------------------------------------
   // Decals layer — tee/green markers (incl. wizard drafts) + route overlays

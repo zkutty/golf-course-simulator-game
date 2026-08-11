@@ -4,6 +4,8 @@ import {
   changedRenderSystems,
   createRenderSnapshot,
   RENDER_SYSTEMS,
+  RenderRevisionTracker,
+  structuresPropsRevisionDependencies,
 } from "./renderSnapshot";
 
 function snapshot(state: GameState, revisions: Partial<{
@@ -24,6 +26,43 @@ describe("RenderSnapshot invalidation contract", () => {
 
     expect(changedRenderSystems(null, first)).toEqual(RENDER_SYSTEMS);
     expect(changedRenderSystems(first, cashOnly)).toEqual([]);
+  });
+
+  it("keeps real authored-props dependencies stable across unrelated course state", () => {
+    const tracker = new RenderRevisionTracker();
+    const baseCourse = DEFAULT_STATE.course;
+    expect(baseCourse.property).toBeDefined();
+    const effectiveTiles = baseCourse.tiles;
+    const dependencies = (course: GameState["course"]) => ({
+      atmosphere: [],
+      surfaceCare: [],
+      structuresProps: structuresPropsRevisionDependencies({
+        atlasRevision: 1,
+        course,
+        effectiveTiles,
+        graphicsQuality: "high",
+        rotation: 0,
+        seasonalPlantsSignature: "spring:full",
+      }),
+      naturalProps: [],
+      overlaysDiagnostics: [],
+      estateSurvey: [],
+    });
+    const initial = tracker.update(dependencies(baseCourse));
+    const unrelated = {
+      ...baseCourse,
+      property: baseCourse.property
+        ? { ...baseCourse.property }
+        : undefined,
+    };
+
+    expect(tracker.update(dependencies(unrelated)).structuresProps).toBe(
+      initial.structuresProps,
+    );
+    expect(tracker.update(dependencies({
+      ...unrelated,
+      decorations: [...(unrelated.decorations ?? [])],
+    })).structuresProps).toBe(initial.structuresProps + 1);
   });
 
   it("isolates editor, terrain, marker, live, atmosphere, and viewport revisions", () => {
