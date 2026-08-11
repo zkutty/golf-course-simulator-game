@@ -30,7 +30,7 @@ import type { ClubSpec, GolferProfile } from "../sim/golferProfiles";
 import { evalShotExpectedCost } from "../sim/shots/evalShotExpectedCost";
 import { mulberry32 } from "../../utils/rng";
 import { tournamentCalendar, TOURNAMENT_TIERS } from "../tournaments/tournaments";
-import type { TournamentEvent, TournamentStanding, TournamentTier } from "../tournaments/types";
+import type { TournamentEvent, TournamentStanding } from "../tournaments/types";
 import {
   isValidReliefResolution,
   isValidSharedShotOutcome,
@@ -424,6 +424,27 @@ function normalizeCareerRound(value: unknown): PlayerCareerRound | null {
   };
 }
 
+function normalizeTournamentRecord(value: unknown): PlayerTournamentRecord | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as PlayerTournamentRecord;
+  if (typeof record.id !== "string" || typeof record.eventId !== "string" || typeof record.name !== "string"
+    || !["local", "regional", "championship"].includes(record.tier) || !["registered", "active", "complete", "withdrawn"].includes(record.status)) return null;
+  const safeArray = <T>(candidate: unknown, predicate: (item: unknown) => item is T): T[] => Array.isArray(candidate) ? candidate.filter(predicate).slice(-4) : [];
+  const boundedInteger = (candidate: unknown, min: number, max: number) => Number.isInteger(candidate) && (candidate as number) >= min && (candidate as number) <= max ? candidate as number : undefined;
+  const hasRoundIds = record.roundIds !== undefined;
+  const hasCompletedRounds = record.completedRounds !== undefined;
+  const hasTotalRounds = record.totalRounds !== undefined;
+  const hasCurrentRound = record.currentRound !== undefined;
+  if (!hasRoundIds && !hasCompletedRounds && !hasTotalRounds && !hasCurrentRound) return record;
+  const normalized = { ...record };
+  if (hasRoundIds) normalized.roundIds = safeArray(record.roundIds, (id): id is string => typeof id === "string");
+  if (hasCompletedRounds) normalized.completedRounds = safeArray(record.completedRounds, Number.isInteger as (item: unknown) => item is number);
+  const totalRounds = boundedInteger(record.totalRounds, 1, 4);
+  if (hasTotalRounds) normalized.totalRounds = totalRounds;
+  if (hasCurrentRound) normalized.currentRound = boundedInteger(record.currentRound, 0, totalRounds ?? 4);
+  return normalized;
+}
+
 export function normalizePlayerPro(raw: unknown, args: { seed: number; founderName?: string }): PlayerProCareer {
   const fallback = createDefaultPlayerPro({ seed: args.seed, name: args.founderName });
   if (!raw || typeof raw !== "object") return fallback;
@@ -506,7 +527,7 @@ export function normalizePlayerPro(raw: unknown, args: { seed: number; founderNa
       : [],
     training: Array.isArray(candidate.training) ? candidate.training.slice(-MAX_TRAINING) : [],
     challenges: Array.isArray(candidate.challenges) ? candidate.challenges.slice(-30) : [],
-    tournaments: Array.isArray(candidate.tournaments) ? candidate.tournaments.slice(-30) : [],
+    tournaments: Array.isArray(candidate.tournaments) ? candidate.tournaments.slice(-30).map(normalizeTournamentRecord).filter((record): record is PlayerTournamentRecord => Boolean(record)) : [],
     trophies: Array.isArray(candidate.trophies) ? candidate.trophies.slice(-40) : [],
     earnings: finite(candidate.earnings),
     reputation: clamp(finite(candidate.reputation), 0, 100),
@@ -1434,43 +1455,6 @@ export function activatePlayerChallenge(career: PlayerProCareer, challengeId: st
     challenges: career.challenges.map((challenge) => challenge.id === challengeId
       ? { ...challenge, status: "active", roundId }
       : challenge),
-  };
-}
-
-export function playerTournamentEligibility(career: PlayerProCareer, event: TournamentEvent): { eligible: boolean; reason: string | null } {
-  const average = PLAYER_PRO_SKILLS.reduce((sum, skill) => sum + career.skills[skill], 0) / PLAYER_PRO_SKILLS.length;
-  const minimum: Record<TournamentTier, number> = { local: 35, regional: 52, championship: 68 };
-  if (event.status !== "scheduled") return { eligible: false, reason: "event_status" };
-  if (average < minimum[event.tier]) return { eligible: false, reason: `skill:${minimum[event.tier]}` };
-  if (career.tournaments.some((record) => record.eventId === event.id && record.status !== "withdrawn")) return { eligible: false, reason: "already_entered" };
-  return { eligible: true, reason: null };
-}
-
-export function registerPlayerTournament(
-  career: PlayerProCareer,
-  event: TournamentEvent,
-  options: { campaignQualified?: boolean } = {},
-): PlayerProCareer {
-  const eligibility = options.campaignQualified && event.status === "scheduled"
-    ? { eligible: true, reason: null }
-    : playerTournamentEligibility(career, event);
-  if (!eligibility.eligible) return career;
-  const record: PlayerTournamentRecord = {
-    id: `pro-event-${event.id}`,
-    eventId: event.id,
-    name: event.name,
-    tier: event.tier,
-    status: "registered",
-  };
-  return { ...career, tournaments: [...career.tournaments, record].slice(-30) };
-}
-
-export function activatePlayerTournament(career: PlayerProCareer, eventId: string, roundId: string): PlayerProCareer {
-  return {
-    ...career,
-    tournaments: career.tournaments.map((record) => record.eventId === eventId
-      ? { ...record, status: "active", roundId }
-      : record),
   };
 }
 

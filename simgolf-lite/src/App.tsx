@@ -196,7 +196,7 @@ import {
   reputationTier,
   terrainMinReputation,
 } from "./game/progression/progression";
-import { createTournamentEvent, prepareTournamentDay, revalidateScheduledTournaments, scheduleTournament, tournamentCalendar } from "./game/tournaments/tournaments";
+import { prepareTournamentDay, revalidateScheduledTournaments, tournamentCalendar } from "./game/tournaments/tournaments";
 import { evaluateTournamentCourseQualification } from "./game/tournaments/eligibility";
 import type { TournamentTier } from "./game/tournaments/types";
 import { debugLog } from "./utils/debugLog";
@@ -1460,10 +1460,10 @@ export default function App() {
     const current = gameSession.getState();
     const started = startPlayerProTournamentRound({ course: current.course, world: current.world, event, layoutId: activeCourseLayout(current.course).id, day: live.status.dayIndex });
     if (!started.ok) return started.reason;
-    updatePlayerPro(() => started.career);
+    if (!await commitChallengeWorld(current, started.world)) return (await import("./game/playerPro/challengePlayerProAdapter")).RETRY;
     enterPlayerRoundView(started.career);
     return null;
-  }, [enterPlayerRoundView, gameSession, live.status.dayIndex, updatePlayerPro]);
+  }, [commitChallengeWorld, enterPlayerRoundView, gameSession, live.status.dayIndex]);
 
   const commitControlledShot = useCallback((selection: PlayerShotSelection) => {
     const current = gameSession.getState();
@@ -1672,7 +1672,8 @@ export default function App() {
     }
   }, [gameSession, live, setWorld]);
 
-  const bookTournament = useCallback((tier: TournamentTier, daysAhead: number): string | null => {
+  const bookTournament = useCallback(async (tier: TournamentTier, daysAhead: number): Promise<string | null> => {
+    const { createTournamentEvent, scheduleTournament } = await import("./game/tournaments/tournamentScheduling");
     const current = gameSession.getState();
     const created = createTournamentEvent({
       course: current.course,
@@ -4012,7 +4013,8 @@ export default function App() {
           ? { ok: true as const, migratedFrom: result.migratedFrom ?? null }
           : { ok: false as const, error: result.error.message };
       },
-      startTournamentFixture: () => {
+      startTournamentFixture: async () => {
+        const { createTournamentEvent, scheduleTournament } = await import("./game/tournaments/tournamentScheduling");
         const current = gameSession.getState();
         const fixtureWorld = { ...current.world, tournaments: { version: 2 as const, events: [] } };
         const created = createTournamentEvent({ course: current.course, world: fixtureWorld, tier: "local", currentDay: live.status.dayIndex, daysAhead: 1 });

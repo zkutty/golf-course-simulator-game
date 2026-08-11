@@ -1,6 +1,6 @@
 import type { GameState } from "../gameState";
 import type { ColorVisionMode } from "../onboarding/profile";
-import type { Course, Hole, Point, Terrain } from "../models/types";
+import type { Course, Hole, Obstacle, Point, Terrain } from "../models/types";
 import type { SeasonalVisualState } from "../presentation/seasonalVisualState";
 import type { PlayerPlayableRound, PlayerProPoint } from "../models/playerProTypes";
 import type { IsoRotation } from "./iso";
@@ -82,6 +82,7 @@ export type RenderSceneId =
   | "atmosphere"
   | "surfaceCare"
   | "structuresProps"
+  | "naturalProps"
   | "overlaysDiagnostics"
   | "estateSurvey";
 
@@ -90,6 +91,8 @@ export type RenderRevisions = Readonly<Record<RenderSceneId, number>>;
 /** Canonical typed payload consumed by every hosted Pixi scene system. */
 export interface RenderSnapshot {
   readonly course: Course;
+  /** Natural obstacles may be previewed independently of the persisted course object. */
+  readonly obstacles: readonly Obstacle[];
   readonly effectiveTiles: readonly Terrain[];
   readonly holes: readonly Hole[];
   readonly draftTee: Point | null;
@@ -100,6 +103,7 @@ export interface RenderSnapshot {
   readonly colorVision: ColorVisionMode;
   readonly reducedMotion: boolean;
   readonly animationsEnabled: boolean;
+  readonly showObstacles: boolean;
   /** Asset completion is a declared input for systems that resolve atlas frames. */
   readonly atlasRevision: number;
   readonly playerRound?: PlayerPlayableRound | null;
@@ -134,6 +138,7 @@ export class RenderRevisionTracker {
     atmosphere: 0,
     surfaceCare: 0,
     structuresProps: 0,
+    naturalProps: 0,
     overlaysDiagnostics: 0,
     estateSurvey: 0,
   };

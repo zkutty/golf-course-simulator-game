@@ -1853,3 +1853,60 @@ Migration design:
   accessible-name/description assertions, frozen controls, responsive
   overflow checks, and inspected captures; it does not claim full screen-reader,
   contrast, reduced-motion, or visual-regression acceptance.
+
+## 2026-08-11 — AI next wave: ZK-679 natural props + ZK-733 lifecycle core
+
+- Linear review selected two file-disjoint machine packets from exact released
+  SHA `58e4c10425b7a8ed7da43b0a1e4675bc2d6450d1`. Human approvals remain
+  deferred: ZK-679 and ZK-733 stay open after this bounded release, ZK-721 is
+  not treated as human-approved, and no ZK-735/737/738/739 scope is absorbed.
+- ZK-679 moves natural-obstacle sprites, shadows, habitats, owned procedural
+  fallback textures, sway, selected-focus occlusion, rebuild diagnostics, and
+  teardown into the revision-driven `naturalProps` scene. Atlas textures remain
+  shared and are never destroyed. The revision uses authoritative `BIOME_KEYS`
+  and every actual render dependency while cash, panels, mobile entities, and
+  unrelated scene revisions do not rebuild it. Independent review closed the
+  copied-biome-list defect and found no remaining P0-P2.
+- ZK-733 adds an additive 1-4-round tournament activation lifecycle. Tier
+  defaults are local Stableford/1, regional net stroke/2, and championship
+  gross stroke/4. Entrants, course identity/routing, tees, pins, rating/slope,
+  handicap allowances, and stroke allocations freeze at activation. Later
+  rounds rebuild from that frozen authority after reload even if the current
+  course changes. Gross evidence is rescored through M66 authority; supplied
+  aggregate totals and mutable entrant fields cannot forge results.
+- Player Pro activation/continuation atomically commits career and event through
+  the existing App transaction. Scheduled and active actions share exact-day
+  gating. Concession is terminal: DNF evidence propagates, the remaining field
+  finishes deterministically through the same lifecycle authority, the event
+  completes, the withdrawn player receives no prize/reputation/trophy, and
+  future entry is rejected. Team formats fail closed pending ZK-735. Hostile
+  calendar and Player Pro records normalize safely while valid legacy records
+  retain exact shape and historical winner/economic evidence. Independent
+  adversarial reviews found and closed forged totals, hostile-shape crashes,
+  non-transactional settlement, mutable withdrawal, mutable entrant projection,
+  unreachable active rounds, frozen-route drift, withdrawal dead ends, early
+  date eligibility, and M50 legacy-hash drift; final review is clean.
+- Combined static/unit evidence passes TypeScript, lint/i18n with zero errors
+  and 11 inherited Hook warnings, `git diff --check`, 201 Vitest files with
+  1,581 passed and one intentional skip, plus audio audit 5/5. Affected browser
+  evidence passes 8/8 serially in 6.8m across M21 biome identity, M36 Player
+  Pro, M6 tournaments, and ZK-674 atlas reversals/fallback, with no test
+  failure. Performance passes at 0.40ms renderer work against the 8ms budget,
+  926ms cold startup, and 2,864ms 36-hole/100-golfer fixture load. PWA smoke
+  passes strict CSP, cache isolation, scoped install, offline reload, deferred
+  surfaces, and local-save persistence.
+- The required bundled web-game client completed two Quick Start iterations.
+  The inspected Parkland canvas is coherent, both captures are byte-identical
+  (`70d45b6fd774732705d8d5be21421f17c092cfc794f356308c6fd3ef66b98c38`),
+  structured game state is present, and no errors artifact was emitted.
+- Two final audited production builds are byte-identical. Main
+  `assets/index-Cal1bf4h.js` is 1,608,707 bytes, SHA-256
+  `82d18ef439225db5cd1f98956af9668e53585a3153272abf341c9a19f391c7a9`,
+  leaving 12 bytes under the immutable 1,608,719-byte cap. Aggregate dist
+  digest is `8cb4412edbaa98e29dc530154d2352547cb78edc4d5d8c2e99e2fe250484a822`;
+  initial critical transfer is 3,806,105 bytes and dist is 116,459,415 bytes.
+  Every asset, residency, service-worker, and delivery audit reports `ok`.
+- This checkpoint is locally integration-ready, not a claim that either broad
+  issue or its human gates are complete. ZK-679 still owns later renderer seams;
+  ZK-733 still has later team/standings/presentation/campaign work in the linked
+  M68 issues.

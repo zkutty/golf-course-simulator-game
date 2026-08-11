@@ -18,6 +18,7 @@ function snapshot(atmosphere: number, overrides: Partial<RenderSnapshot> = {}): 
   const activeCourse = overrides.course ?? course();
   return {
     course: activeCourse,
+    obstacles: [],
     effectiveTiles: activeCourse.tiles,
     holes: [],
     draftTee: null,
@@ -27,6 +28,7 @@ function snapshot(atmosphere: number, overrides: Partial<RenderSnapshot> = {}): 
     colorVision: "standard",
     reducedMotion: false,
     animationsEnabled: true,
+    showObstacles: true,
     atlasRevision: 1,
     surveyMode: false,
     worldSeed: 17,
@@ -35,6 +37,7 @@ function snapshot(atmosphere: number, overrides: Partial<RenderSnapshot> = {}): 
       atmosphere,
       surfaceCare: 0,
       structuresProps: 0,
+      naturalProps: 0,
       overlaysDiagnostics: 0,
       estateSurvey: 0,
     },

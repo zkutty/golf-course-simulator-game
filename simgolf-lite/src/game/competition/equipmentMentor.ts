@@ -1,20 +1,32 @@
 import type { Course, PinRotation, TeeSet, World } from "../models/types";
-import type { PlayerPlayableRound, PlayerProCareer, PlayerShotTrace } from "../models/playerProTypes";
+import type { PlayerPlayableRound, PlayerProCareer, PlayerShotTrace, PlayerTournamentRecord } from "../models/playerProTypes";
 import { normalizeLivingClub } from "../livingClub/livingClub";
 import type { EquipmentLoadout, EquipmentModifier, InventoryItem, LearnedTechnique, MentorTechniqueChallenge } from "./types";
 import { normalizePerformanceLoadoutSnapshot } from "./equipmentRuntime";
 import { startPlayableRound, type StartPlayableRoundArgs } from "../playerPro/playerProRoundStart";
-import { activatePlayerChallenge, activatePlayerTournament, createPlayerChallenge, normalizePlayerPro, registerPlayerTournament, type PlayerOpponent } from "../playerPro/playerPro";
+import { activatePlayerChallenge, createPlayerChallenge, normalizePlayerPro, type PlayerOpponent } from "../playerPro/playerPro";
 import type { TournamentEvent } from "../tournaments/types";
 import { createM48DesignTestSession } from "../architecture/comparison";
 import { activeCourseLayout } from "../models/courseLayouts";
 import { activeCampaignMatch, campaignPhaseBlockers, campaignPhaseEvidenceKind, registerCampaignMatch } from "../campaign/campaign";
-import { createTournamentEvent, scheduleTournament } from "../tournaments/tournaments";
+import { createTournamentEvent, scheduleTournament } from "../tournaments/tournamentScheduling";
+import { activateTournament, playerTournamentEligibility } from "../tournaments/tournamentLifecycle";
 
 const EQUIPMENT_SIDEGRADE_MIN = .88;
 const EQUIPMENT_SIDEGRADE_MAX = 1.12;
 export const MENTOR_MATCHES_REQUIRED = 2;
 export const MENTOR_RELATIONSHIP_REQUIRED = 25;
+
+function registerPlayerTournament(career: PlayerProCareer, event: TournamentEvent, options: { campaignQualified?: boolean } = {}): PlayerProCareer {
+  const eligibility = options.campaignQualified && event.status === "scheduled" ? { eligible: true } : playerTournamentEligibility(career, event);
+  if (!eligibility.eligible) return career;
+  const record: PlayerTournamentRecord = { id: `pro-event-${event.id}`, eventId: event.id, name: event.name, tier: event.tier, status: "registered" };
+  return { ...career, tournaments: [...career.tournaments, record].slice(-30) };
+}
+
+function activatePlayerTournament(career: PlayerProCareer, eventId: string, roundId: string): PlayerProCareer {
+  return { ...career, tournaments: career.tournaments.map((record) => record.eventId === eventId ? { ...record, status: "active", roundId } : record) };
+}
 
 interface AuthoredEquipmentEffect { definitionId: string; label: string; restriction: string; downside: string; modifiers: readonly EquipmentModifier[] }
 export interface MentorTechniqueDefinition { id: LearnedTechnique; name: string; restriction: string; downside: string; objectiveId: string; objective: string; modifiers: readonly EquipmentModifier[] }
@@ -163,13 +175,63 @@ export function startPlayerProCareerRound(args: StartPlayableRoundArgs): { ok: t
   return { ok: true, career: { ...career, activeRound: started.round } };
 }
 
-export function startPlayerProTournamentRound(args: { course: Course; world: World; event: TournamentEvent; layoutId: string; day: number }): { ok: true; career: PlayerProCareer } | { ok: false; reason: string } {
+export function startPlayerProTournamentRound(args: { course: Course; world: World; event: TournamentEvent; layoutId: string; day: number }): { ok: true; career: PlayerProCareer; event: TournamentEvent; world: World } | { ok: false; reason: string } {
   const career = normalizePlayerPro(args.world.playerPro, { seed: args.world.runSeed, founderName: args.world.founderName });
-  const registered = registerPlayerTournament(career, args.event);
-  if (registered === career) return { ok: false, reason: "eligibility" };
-  const started = startEquippedPlayableRound({ course: args.course, world: args.world, kind: "tournament", layoutId: args.event.courseId ?? args.layoutId, teeSet: args.event.teeSet ?? "member", pinRotation: args.event.pinRotation ?? args.course.activePinRotation ?? "A", day: args.day, tournament: { id: args.event.id, name: args.event.name } });
+  if (career.activeRound) return { ok: false, reason: "active_round" };
+  const prior = career.tournaments.find((record) => record.eventId === args.event.id);
+  if (prior?.status === "withdrawn") return { ok: false, reason: "withdrawn" };
+  let event = args.event;
+  if (event.status === "scheduled") {
+    const entrant = { id: career.identity.id, name: career.identity.name, archetype: "pro" as const, skill: Object.values(career.skills).reduce((sum, value) => sum + value, 0) / 600, handicapIndex: career.handicapProfile.handicapIndex };
+    const field = event.field.filter((candidate) => candidate.id !== entrant.id).slice(0, Math.max(0, event.field.length - 1));
+    const activated = activateTournament({ ...event, field: [...field, entrant] }, args.course, args.world.week, args.day);
+    if (!activated.ok) return activated;
+    event = activated.event;
+  }
+  const roundNumber = event.currentRound ?? 1;
+  const totalRounds = event.roundCount ?? 1;
+  const scheduledRound = event.rounds?.find((round) => round.roundNumber === roundNumber);
+  if (event.activationSnapshot && !event.activationSnapshot.entrants.some((entrant) => entrant.entrantId === career.identity.id)) return { ok: false, reason: "entrant_snapshot" };
+  if (event.status === "active" && scheduledRound?.status !== "active") return { ok: false, reason: "round_status" };
+  if (event.status === "active" && (scheduledRound!.scheduledWeek !== args.world.week || scheduledRound!.scheduledDay !== args.day)) return { ok: false, reason: "round_date" };
+  const existing = career.tournaments.find((record) => record.eventId === event.id);
+  if (existing?.completedRounds?.includes(roundNumber)) return { ok: false, reason: "duplicate_round" };
+  const expectedRound = (existing?.completedRounds?.length ?? 0) + 1;
+  if (roundNumber !== expectedRound) return { ok: false, reason: roundNumber > expectedRound ? "future_round" : "duplicate_round" };
+  const registered = existing ? career : registerPlayerTournament(career, { ...event, status: "scheduled" });
+  if (!existing && registered === career) return { ok: false, reason: "eligibility" };
+  const started = startEquippedPlayableRound({ course: args.course, world: args.world, kind: "tournament", layoutId: event.courseId ?? args.layoutId, teeSet: event.teeSet ?? "member", pinRotation: event.pinRotation ?? args.course.activePinRotation ?? "A", day: args.day, tournament: { id: event.id, name: event.name, roundNumber }, tournamentSnapshot: event.activationSnapshot });
   if (!started.ok) return started;
-  return { ok: true, career: { ...activatePlayerTournament(registered, args.event.id, started.round.id), activeRound: started.round } };
+  if (event.activationSnapshot) {
+    const frozen = event.activationSnapshot;
+    const sameCard = started.round.course.courseId === frozen.courseId
+      && started.round.teeSet === frozen.teeSet && started.round.pinRotation === frozen.pinRotation
+      && started.round.course.rating?.courseRating === frozen.rating && started.round.course.rating.slope === frozen.slope
+      && started.round.course.holes.length === frozen.holes.length
+      && started.round.course.holes.every((hole, index) => {
+        const expected = frozen.holes[index];
+        return hole.id === expected.id && hole.par === expected.par && hole.strokeIndex === expected.strokeIndex
+          && hole.tee.x === expected.tee.x && hole.tee.y === expected.tee.y
+          && hole.pin.x === expected.pin.x && hole.pin.y === expected.pin.y;
+      });
+    if (!sameCard) return { ok: false, reason: "activation_snapshot" };
+  }
+  const activated = event.activationSnapshot ? {
+    ...registered,
+    tournaments: registered.tournaments.map((record) => record.eventId === event.id ? {
+      ...record,
+      status: "active" as const,
+      roundId: started.round.id,
+      roundIds: [...new Set([...(record.roundIds ?? (record.roundId ? [record.roundId] : [])), started.round.id])],
+      currentRound: roundNumber,
+      totalRounds,
+    } : record),
+  } : activatePlayerTournament(registered, event.id, started.round.id);
+  const nextCareer = { ...activated, activeRound: started.round };
+  const priorEvents = args.world.tournaments?.events ?? [];
+  const events = priorEvents.some((candidate) => candidate.id === event.id) ? priorEvents.map((candidate) => candidate.id === event.id ? event : candidate) : [...priorEvents, event];
+  const world = { ...args.world, playerPro: nextCareer, tournaments: { version: 2 as const, events } };
+  return { ok: true, career: nextCareer, event, world };
 }
 
 export function startArchitectureTestPlayerRound(args: {

@@ -8,11 +8,12 @@ import {
   type PlayerShotTechnique,
   type PlayerTournamentRecord,
 } from "../models/playerProTypes";
-import type { TournamentEvent, TournamentStanding } from "../tournaments/types";
+import type { TournamentEvent, TournamentRoundScorecard, TournamentStanding } from "../tournaments/types";
 import { mulberry32 } from "../../utils/rng";
 import { absoluteDayFor } from "../seasons/seasons";
 import { createHandicapScoreRecord, postCompletedHandicapRound } from "../competition/persistence";
 import { applyRoundConfidence, confidenceAtDay } from "./confidence";
+import { completeTournamentRoundEvidence, scoreTournamentRoundCard } from "../tournaments/tournamentLifecycle";
 
 const XP_PER_LEVEL = 12;
 const MAX_HISTORY = 40;
@@ -49,6 +50,51 @@ function projectedOpponentStrokes(round: PlayerPlayableRound, skill: number, sal
   return Math.max(round.scorecard.length, par + handicap + Math.floor(rng() * 5) - 2);
 }
 
+function projectedOpponentGrossByHole(round: PlayerPlayableRound, skill: number, salt: number): number[] {
+  const total = projectedOpponentStrokes(round, skill, salt);
+  const scores = round.scorecard.map((hole) => Math.max(1, hole.par));
+  let delta = total - scores.reduce((sum, score) => sum + score, 0);
+  const offset = Math.abs(salt) % scores.length;
+  for (let cursor = 0; delta !== 0 && cursor < scores.length * Math.max(total, 20); cursor += 1) {
+    const index = (offset + cursor) % scores.length;
+    if (delta > 0) { scores[index] += 1; delta -= 1; }
+    else if (scores[index] > 1) { scores[index] -= 1; delta += 1; }
+  }
+  return scores;
+}
+
+function completeLifecycleRound(career: PlayerProCareer, round: PlayerPlayableRound, event: TournamentEvent) {
+  const snapshot = event.activationSnapshot!;
+  if (round.tournamentRound !== (event.currentRound ?? 1) || !snapshot.entrants.some((entrant) => entrant.entrantId === career.identity.id)
+    || round.course.courseId !== snapshot.courseId || round.scorecard.length !== snapshot.holes.length
+    || round.scorecard.some((hole, index) => hole.holeId !== snapshot.holes[index].id || hole.par !== snapshot.holes[index].par)) return null;
+  const withdrawn = new Set(event.rounds?.find((entry) => entry.roundNumber === event.currentRound)?.scorecards.filter((card) => card.status === "withdrawn").map((card) => card.entrantId));
+  const scorecards = snapshot.entrants.filter((entrant) => !withdrawn.has(entrant.entrantId)).map((entrant, index) => {
+    if (entrant.entrantId === career.identity.id) {
+      if (round.phase === "conceded") return { entrantId: entrant.entrantId, status: "withdrawn" as const, grossByHole: [], penalties: 0, grossTotal: 0 };
+      return scoreTournamentRoundCard(event, entrant.entrantId, round.scorecard.map((hole) => hole.strokes + hole.penalties), round.penalties);
+    }
+    return scoreTournamentRoundCard(event, entrant.entrantId, projectedOpponentGrossByHole(round, entrant.skill, index * 977 + entrant.entrantId.length));
+  });
+  if (scorecards.some((card) => !card)) return null;
+  const first = completeTournamentRoundEvidence(event, scorecards as TournamentRoundScorecard[], `${event.id}:player-round:${event.currentRound ?? 1}:${round.id}`);
+  if (!first.ok) return null;
+  let advancedEvent = first.event;
+  let finalRound = first.finalRound;
+  while (round.phase === "conceded" && !finalRound) {
+    const nextRound = advancedEvent.currentRound ?? 1;
+    const remaining = snapshot.entrants.filter((entrant) => entrant.entrantId !== career.identity.id).map((entrant, index) =>
+      scoreTournamentRoundCard(advancedEvent, entrant.entrantId, projectedOpponentGrossByHole(round, entrant.skill, nextRound * 733 + index * 977 + entrant.entrantId.length))
+    );
+    if (remaining.some((card) => !card)) return null;
+    const next = completeTournamentRoundEvidence(advancedEvent, remaining as TournamentRoundScorecard[], `${event.id}:withdrawal:${nextRound}:${round.id}`);
+    if (!next.ok) return null;
+    advancedEvent = next.event;
+    finalRound = next.finalRound;
+  }
+  return { ok: true as const, event: advancedEvent, finalRound };
+}
+
 export interface PlayerRoundSettlement {
   career: PlayerProCareer;
   cashDelta: number;
@@ -62,6 +108,10 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
   if ((round.phase !== "round_complete" && round.phase !== "conceded") || career.settlementLedger.includes(ledgerId)) {
     return { career, cashDelta: 0, reputationDelta: 0, round: null };
   }
+  const lifecycle = event?.status === "active" && event.activationSnapshot
+    ? round.tournamentId === event.id ? completeLifecycleRound(career, round, event) : null
+    : undefined;
+  if (lifecycle === null) return { career, cashDelta: 0, reputationDelta: 0, round: null };
   const evidence = round.shots.flatMap((shot) => shot.evidence);
   const skillXp = { ...career.skillXp };
   const skills = { ...career.skills };
@@ -98,6 +148,50 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
   let tournamentEvent: TournamentEvent | undefined;
   let trophy = null;
   if (event && round.tournamentId === event.id) {
+    if (event.status === "active" && event.activationSnapshot) {
+      const roundNumber = round.tournamentRound ?? 1;
+      if (lifecycle) {
+        const advanced = lifecycle;
+        tournamentEvent = advanced.event;
+        const finish = tournamentEvent.results!.findIndex((standing) => standing.entrantId === career.identity.id) + 1;
+        const existing = career.tournaments.find((record) => record.eventId === event.id);
+        const completedRounds = [...new Set([...(existing?.completedRounds ?? []), roundNumber])].sort((a, b) => a - b);
+        const roundIds = [...new Set([...(existing?.roundIds ?? []), round.id])];
+        const withdrew = round.phase === "conceded";
+        let prize = 0;
+        if (advanced.finalRound && !withdrew) {
+          const prizeShare = finish === 1 ? 1 : finish <= 3 ? 0.45 : finish <= Math.ceil(event.activationSnapshot.entrants.length / 2) ? 0.12 : 0;
+          prize = Math.round(event.revenueAward * prizeShare);
+          cashDelta += prize;
+          reputationDelta += finish === 1 ? event.reputationAward : finish <= 3 ? Math.ceil(event.reputationAward / 2) : 0;
+          result = finish === 1 ? "won" : "complete";
+        }
+        tournamentRecord = {
+          id: `pro-event-${event.id}`,
+          eventId: event.id,
+          name: event.name,
+          tier: event.tier,
+          status: withdrew ? "withdrawn" : advanced.finalRound ? "complete" : "active",
+          roundId: round.id,
+          roundIds,
+          completedRounds,
+          currentRound: advanced.event.currentRound,
+          totalRounds: event.roundCount ?? 1,
+          finish: advanced.finalRound && !withdrew ? finish : undefined,
+          fieldSize: event.activationSnapshot.entrants.length,
+          prize,
+          settled: withdrew || advanced.finalRound,
+        };
+        if (advanced.finalRound && !withdrew && finish === 1) trophy = {
+          id: `trophy-${event.id}`,
+          name: event.name,
+          courseId: round.course.courseId,
+          courseName: round.course.courseName,
+          week: round.startedWeek,
+          tournamentId: event.id,
+        };
+      }
+    } else {
     const playerTotal = round.strokes + round.penalties;
     const existingPlayer = event.field.some((entrant) => entrant.id === career.identity.id);
     const eligibleOpponents = event.field.filter((entrant) => entrant.id !== career.identity.id);
@@ -171,6 +265,7 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
       week: round.startedWeek,
       tournamentId: event.id,
     };
+    }
   }
   const careerRound: PlayerCareerRound = {
     id: round.id,
@@ -187,6 +282,7 @@ export function settlePlayerRound(career: PlayerProCareer, round: PlayerPlayable
     opponentName: round.opponent?.name,
     tournamentId: round.tournamentId,
     tournamentName: round.tournamentName,
+    tournamentRound: round.tournamentRound,
     earnings: cashDelta,
     scorecard: round.scorecard.map((hole) => ({ ...hole })),
     shots: round.shots.map((shot) => ({

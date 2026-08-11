@@ -33,7 +33,7 @@ export function TournamentPanel(props: {
   currentDay: number;
   liveTournament: LiveStatus["tournament"];
   operationsFocus?: { system: "tournaments"; nonce: number };
-  onSchedule: (tier: TournamentTier, daysAhead: number) => string | null;
+  onSchedule: (tier: TournamentTier, daysAhead: number) => Promise<string | null>;
   onClose: () => void;
 }) {
   const { t } = useI18n();
@@ -54,7 +54,7 @@ export function TournamentPanel(props: {
     const unmet = event.currentQualification?.requirements.find((item) => !item.passed);
     return unmet ? `${t(requirementKey(unmet.id))}: ${t("tournament.currentRequired", { current: unmet.current, required: unmet.required })}` : event.warning ?? event.cancellationReason ?? "";
   };
-  const scheduleSelectedTournament = () => {
+  const scheduleSelectedTournament = async () => {
     if (!eligibility.eligible) {
       setNotice(t("tournament.notEligible", { reason: eligibility.blockingReasons[0] ?? t("tournament.requirements") }));
       return;
@@ -66,7 +66,7 @@ export function TournamentPanel(props: {
       revenue: formatCurrency(spec.revenueAward),
       reputation: spec.reputationAward,
     }));
-    if (confirmed) setNotice(props.onSchedule(tier, daysAhead) ?? t("tournament.booked"));
+    if (confirmed) setNotice(await props.onSchedule(tier, daysAhead) ?? t("tournament.booked"));
   };
   useEffect(() => {
     if (cancelled[0]) panelRef.current?.scrollTo({ top: 0, behavior: "auto" });

@@ -1,32 +1,16 @@
-import { mulberry32 } from "../../utils/rng";
 import type { Course, World } from "../models/types";
-import { golferName } from "../live/archetypes";
-import type { Arrival, Golfer, GolferArchetypeName, LiveState } from "../live/types";
+import type { Arrival, Golfer, LiveState } from "../live/types";
 import type {
   LiveTournamentState,
   TournamentCalendar,
-  TournamentEntrant,
   TournamentEvent,
+  TournamentRoundScorecard,
   TournamentStanding,
-  TournamentTier,
 } from "./types";
-import { evaluateTournamentCourseQualification, evaluateTournamentEligibility, revalidatePrescribedTournamentSetup } from "./eligibility";
+import { evaluateTournamentCourseQualification, revalidatePrescribedTournamentSetup } from "./eligibility";
 import { activeCourseLayout, courseForLayout, layoutById } from "../models/courseLayouts";
-
-export const TOURNAMENT_TIERS: Record<TournamentTier, {
-  label: string;
-  fieldSize: number;
-  minReputation: number;
-  bookingCost: number;
-  revenueAward: number;
-  reputationAward: number;
-  skillMin: number;
-  skillMax: number;
-}> = {
-  local: { label: "Club Open", fieldSize: 8, minReputation: 25, bookingCost: 1_500, revenueAward: 6_000, reputationAward: 2, skillMin: .42, skillMax: .72 },
-  regional: { label: "Regional Invitational", fieldSize: 12, minReputation: 45, bookingCost: 3_500, revenueAward: 14_000, reputationAward: 4, skillMin: .62, skillMax: .88 },
-  championship: { label: "CourseCraft Championship", fieldSize: 16, minReputation: 65, bookingCost: 7_000, revenueAward: 30_000, reputationAward: 7, skillMin: .78, skillMax: .99 },
-};
+export { TOURNAMENT_TIERS } from "./tournamentCatalog";
+export { createTournamentEvent, scheduleTournament } from "./tournamentScheduling";
 
 const EMPTY_CALENDAR: TournamentCalendar = { version: 2, events: [] };
 
@@ -43,92 +27,6 @@ export function gameDateAfter(week: number, dayIndex: number, daysAhead: number)
   return { week: Math.floor(absolute / 7) + 1, day: absolute % 7 };
 }
 
-function archetypeForTier(tier: TournamentTier, roll: number): GolferArchetypeName {
-  if (tier === "championship") return roll < .68 ? "pro" : "lowHandicap";
-  if (tier === "regional") return roll < .18 ? "pro" : roll < .8 ? "lowHandicap" : "casual";
-  return roll < .1 ? "pro" : roll < .42 ? "lowHandicap" : roll < .78 ? "casual" : "senior";
-}
-
-function eventSeed(world: World, tier: TournamentTier, week: number, day: number): number {
-  const tierOffset = tier === "local" ? 101 : tier === "regional" ? 503 : 997;
-  return (world.runSeed | 0) + week * 7919 + day * 431 + tierOffset;
-}
-
-export function createTournamentEvent(args: {
-  course: Course;
-  world: World;
-  tier: TournamentTier;
-  currentDay: number;
-  daysAhead: number;
-  courseId?: string;
-}): { ok: true; event: TournamentEvent } | { ok: false; reason: string } {
-  const spec = TOURNAMENT_TIERS[args.tier];
-  const layout = args.courseId ? layoutById(args.course, args.courseId) : undefined;
-  if (args.courseId && (!layout || layout.state !== "open" || layout.publishedHoleIds.length !== 18)) {
-    return { ok: false, reason: "Tournament hosts must be an open, published 18-hole course." };
-  }
-  const hostCourse = layout ? courseForLayout(args.course, layout.id) : args.course;
-  const qualification = evaluateTournamentEligibility({
-    course: hostCourse,
-    world: args.world,
-    tier: args.tier,
-    currentDay: args.currentDay,
-    daysAhead: args.daysAhead,
-    minReputation: spec.minReputation,
-    bookingCost: spec.bookingCost,
-  });
-  if (!qualification.eligible) return { ok: false, reason: qualification.blockingReasons[0] ?? "This course does not meet the event standard." };
-  const date = gameDateAfter(args.world.week, args.currentDay, args.daysAhead);
-
-  const seed = eventSeed(args.world, args.tier, date.week, date.day);
-  const rng = mulberry32(seed);
-  const field: TournamentEntrant[] = Array.from({ length: spec.fieldSize }, (_, index) => ({
-    id: `entrant-${seed}-${index + 1}`,
-    name: golferName(rng(), rng()),
-    archetype: archetypeForTier(args.tier, rng()),
-    skill: spec.skillMin + rng() * (spec.skillMax - spec.skillMin),
-  }));
-  const id = `tournament-${seed}`;
-  const eventName = args.tier === "local"
-    ? `${hostCourse.name} Open`
-    : args.tier === "regional"
-      ? `${hostCourse.name} Regional Invitational`
-      : `${hostCourse.name} Championship`;
-  return {
-    ok: true,
-    event: {
-      id,
-      name: eventName,
-      tier: args.tier,
-      courseId: layout?.id,
-      courseName: hostCourse.name,
-      holeIds: hostCourse.holes.map((hole) => hole.id!).filter(Boolean),
-      scheduledWeek: date.week,
-      scheduledDay: date.day,
-      status: "scheduled",
-      bookingCost: spec.bookingCost,
-      revenueAward: spec.revenueAward,
-      reputationAward: spec.reputationAward,
-      field,
-      teeSet: qualification.teeSet,
-      pinRotation: qualification.pinRotation,
-      qualificationSnapshot: qualification,
-      currentQualification: qualification,
-    },
-  };
-}
-
-export function scheduleTournament(world: World, event: TournamentEvent): World {
-  const calendar = tournamentCalendar(world);
-  if (world.cash < event.bookingCost || calendar.events.some((candidate) =>
-    candidate.id === event.id || (candidate.status === "scheduled" && candidate.scheduledWeek === event.scheduledWeek && candidate.scheduledDay === event.scheduledDay)
-  )) return world;
-  return {
-    ...world,
-    cash: world.cash - event.bookingCost,
-    tournaments: { version: 2, events: [...calendar.events, event] },
-  };
-}
 
 export function tournamentForDate(world: World, dayIndex: number, course?: Course): TournamentEvent | undefined {
   const event = tournamentCalendar(world).events.find((event) =>
@@ -272,6 +170,7 @@ export function completeTournament(world: World, live: LiveState): { world: Worl
   const calendar = tournamentCalendar(world);
   const event = calendar.events.find((candidate) => candidate.id === active.eventId);
   if (!event || event.status === "completed") return { world, revenue: 0, reputation: 0, event };
+  if (event.activationSnapshot) return { world, revenue: 0, reputation: 0, event };
   const results = sortedStandings(active.standings);
   const completed: TournamentEvent = { ...event, status: "completed", results, winnerName: results[0]?.name };
   const evidence = (live.observedRounds ?? []).filter((observation) => observation.tournamentId === event.id && observation.completed && observation.holesPlayed > 0);
@@ -292,24 +191,73 @@ export function completeTournament(world: World, live: LiveState): { world: Worl
   };
 }
 
+const finiteNumber = (value: unknown): value is number => Number.isFinite(value);
+const integer = (value: unknown): value is number => Number.isInteger(value);
+const array = Array.isArray;
+
+function validLifecycleEvent(event: TournamentEvent): boolean {
+  const s = event.activationSnapshot;
+  if (!s) return event.status !== "active";
+  const text = (value: unknown) => typeof value === "string" && Boolean(value);
+  const point = (value: unknown) => Boolean(value && typeof value === "object" && finiteNumber((value as { x?: number }).x) && finiteNumber((value as { y?: number }).y));
+  const holes = s.holes; const entrants = s.entrants; const teams = s.teams; const rounds = event.rounds;
+  if (!/^(active|completed)$/.test(event.status) || s.version !== 1 || s.teamFormat !== "individual" || !/^(stableford|net-stroke|gross-stroke)$/.test(s.scoringMode)
+    || ![s.activationId, s.courseId, s.courseName, s.teeSet, s.pinRotation].every(text) || ![s.rating, s.slope, s.par].every(finiteNumber)
+    || !array(holes) || holes.length !== 18 || !array(entrants) || !array(teams) || teams.length !== entrants.length
+    || !array(rounds) || !integer(event.roundCount) || event.roundCount! < 1 || event.roundCount! > 4 || rounds.length !== event.roundCount || !integer(event.currentRound) || event.currentRound! < 1 || event.currentRound! > event.roundCount!) return false;
+  if (new Set(holes.map((hole) => hole?.id)).size !== 18 || new Set(holes.map((hole) => hole?.strokeIndex)).size !== 18
+    || holes.some((hole) => !hole || !text(hole.id) || !integer(hole.par) || !integer(hole.strokeIndex) || !point(hole.tee) || !point(hole.pin))) return false;
+  const entrantIds = new Set(entrants.map((entrant) => entrant?.entrantId));
+  if (entrantIds.size !== entrants.length || entrants.some((entrant) => !entrant || ![entrant.entrantId, entrant.name, entrant.archetype, entrant.teamId].every(text)
+    || ![entrant.skill, entrant.handicapIndex, entrant.allowance, entrant.courseHandicapUnrounded].every(finiteNumber) || !integer(entrant.playingHandicap)
+    || !array(entrant.strokesByHole) || entrant.strokesByHole.length !== 18 || entrant.strokesByHole.some((stroke: number) => !integer(stroke)))) return false;
+  if (new Set(teams.map((team) => team?.id)).size !== teams.length
+    || teams.some((team) => !team || !array(team.entrantIds) || team.entrantIds.length !== 1)
+    || entrants.some((entrant) => !teams.some((team) => team.id === entrant.teamId && team.entrantIds[0] === entrant.entrantId))) return false;
+  const entrantById = new Map(entrants.map((entrant) => [entrant.entrantId, entrant]));
+  if (!rounds.every((round, index) => round && round.roundNumber === index + 1 && integer(round.scheduledWeek) && integer(round.scheduledDay) && array(round.scorecards)
+    && /^(scheduled|active|interrupted|completed)$/.test(round.status) && new Set(round.scorecards.map((card: TournamentRoundScorecard) => card?.entrantId)).size === round.scorecards.length
+    && round.scorecards.every((card: TournamentRoundScorecard) => {
+      const entrant = card && entrantById.get(card.entrantId);
+      if (!entrant || !array(card.grossByHole) || !integer(card.penalties)) return false;
+      if (card.status === "withdrawn") return card.grossByHole.length === 0 && card.grossTotal === 0;
+      if (card.status !== "completed" || card.grossByHole.length !== 18) return false;
+      let gross = 0; let net = 0; let points = 0;
+      for (let hole = 0; hole < 18; hole += 1) {
+        const score = card.grossByHole[hole];
+        if (!integer(score) || score <= 0) return false;
+        gross += score;
+        net += score - entrant.strokesByHole[hole];
+        points += Math.max(0, Math.min(5, 2 - score + entrant.strokesByHole[hole] + holes[hole].par));
+      }
+      return card.grossTotal === gross && card.netTotal === net && card.stablefordPoints === points;
+    }))) return false;
+  return (!event.results || event.results.every((row) => entrantById.get(row.entrantId)?.name === row.name)) && (!event.winnerName || event.results?.[0]?.name === event.winnerName);
+}
+
 export function normalizeTournamentCalendar(raw: unknown, course?: Course): TournamentCalendar {
-  if (!raw || typeof raw !== "object" || !Array.isArray((raw as TournamentCalendar).events)) return { version: 2, events: [] };
+  if (!raw || typeof raw !== "object" || !array((raw as TournamentCalendar).events)) return { version: 2, events: [] };
   const events = (raw as TournamentCalendar).events.filter((event) => {
     if (!event || typeof event !== "object") return false;
     return typeof event.id === "string" && typeof event.name === "string" &&
-      (event.tier === "local" || event.tier === "regional" || event.tier === "championship") &&
-      (event.status === "scheduled" || event.status === "completed" || event.status === "cancelled") &&
-      Number.isFinite(event.scheduledWeek) && Number.isFinite(event.scheduledDay) &&
-      Number.isFinite(event.bookingCost) && Number.isFinite(event.revenueAward) && Number.isFinite(event.reputationAward) &&
+      /^(local|regional|championship)$/.test(event.tier) && /^(scheduled|active|completed|cancelled)$/.test(event.status) &&
+      [event.scheduledWeek, event.scheduledDay, event.bookingCost, event.revenueAward, event.reputationAward].every(finiteNumber) &&
       event.scheduledWeek >= 1 && event.scheduledDay >= 0 && event.scheduledDay <= 6 &&
-      Array.isArray(event.field) && event.field.length > 0 && event.field.length <= 64 &&
+      array(event.field) && event.field.length > 0 && event.field.length <= 64 &&
       event.field.every((entrant) => entrant && typeof entrant.id === "string" && typeof entrant.name === "string" &&
-        typeof entrant.archetype === "string" && Number.isFinite(entrant.skill)) &&
-      (event.results == null || (Array.isArray(event.results) && event.results.length <= 64 && event.results.every((row) =>
+        typeof entrant.archetype === "string" && finiteNumber(entrant.skill)) &&
+      (event.results == null || (array(event.results) && event.results.length <= 64 && event.results.every((row) =>
         row && typeof row.entrantId === "string" && typeof row.name === "string" && typeof row.archetype === "string" &&
-        (row.golferId === null || Number.isInteger(row.golferId)) && Number.isFinite(row.holesCompleted) &&
-        Number.isFinite(row.score) && Number.isFinite(row.scoreToPar) && typeof row.finished === "boolean"
+        (row.golferId === null || integer(row.golferId)) && [row.holesCompleted, row.score, row.scoreToPar].every(finiteNumber) && typeof row.finished === "boolean"
       )));
+  }).filter(validLifecycleEvent).map((event) => {
+    if (event.activationSnapshot) {
+      return {
+        ...event,
+        activationSnapshot: JSON.parse(JSON.stringify(event.activationSnapshot), (_key, value) => value && typeof value === "object" ? Object.freeze(value) : value),
+      };
+    }
+    return event;
   }).slice(-24);
   if (!course) return { version: 2, events };
   const starter = activeCourseLayout(course);

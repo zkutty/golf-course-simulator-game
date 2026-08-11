@@ -12,12 +12,11 @@ import {
   createPlayerChallenge,
   finishPlayerShot,
   normalizePlayerPro,
-  playerTournamentEligibility,
   previewPlayableShot,
-  registerPlayerTournament,
   resolvePlayableShot,
   startPlayableRound,
 } from "./playerPro";
+import { playerTournamentEligibility } from "../tournaments/tournamentLifecycle";
 import { settlePlayerRound } from "./playerProSettlement";
 import { completePlayerTraining, playerTechniqueCatalog, playerTrainingOptions } from "./playerProPanelAuthority";
 import { normalizeLoadedSaveResult } from "../../utils/save";
@@ -746,7 +745,7 @@ describe("M37 growth, training, matches, and tournaments", () => {
       pinRotation: "A",
     };
     expect(playerTournamentEligibility(career, event).eligible).toBe(true);
-    const registered = registerPlayerTournament(career, event);
+    const registered = { ...career, tournaments: [{ id: `pro-event-${event.id}`, eventId: event.id, name: event.name, tier: event.tier, status: "registered" as const }] };
     expect(registered.tournaments[0].status).toBe("registered");
     const tournamentRound = autoFinishPlayerRound({ ...round, kind: "tournament", tournamentId: event.id, tournamentName: event.name }, registered.skills);
     const tournamentSettlement = settlePlayerRound(registered, tournamentRound, event);

@@ -14,6 +14,7 @@ import { createControlledRoundSnapshotV2, decodeControlledRoundSnapshotV2 } from
 import { createGreenRoundSnapshot } from "../greens/greenSurface";
 import { captureRoundHandicapSnapshot, createHandicapProfile } from "../competition/persistence";
 import { confidenceAtDay, createPlayerConfidence } from "./confidence";
+import type { TournamentActivationSnapshot } from "../tournaments/types";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const ARCHITECT_SKILLS: PlayerProSkills = { power: 40, driving: 40, irons: 44, shortGame: 42, putting: 40, recovery: 40 };
@@ -72,6 +73,31 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
   };
 }
 
+/** Rebuilds playable authority from the activation contract; later course edits are environmental only. */
+function tournamentCourseSnapshot(course: Course, world: World, day: number, authority: TournamentActivationSnapshot): PlayerRoundCourseSnapshot {
+  const season = seasonalState(world, course, day);
+  const weather = activeWeather(world, course, day);
+  const modifiers = weatherModifiers(weather, season.operations.drainageLevel);
+  const theme = getBiomeDefinition(course.theme).compatibility.saveKey;
+  return {
+    courseId: authority.courseId,
+    courseName: authority.courseName,
+    geometryVersion: authority.activationId,
+    theme,
+    biomeCompatibility: biomeCompatibilityMetadataFor(theme),
+    width: course.width,
+    height: course.height,
+    yardsPerTile: course.yardsPerTile,
+    tiles: effectiveSurfaceTiles(course).slice(),
+    elevations: course.elevations.slice(),
+    obstacles: course.obstacles.map((obstacle) => ({ ...obstacle })),
+    holes: authority.holes.map((hole, index) => ({ ...hole, name: `Hole ${index + 1}`, waypoints: [], teeSet: authority.teeSet, pinRotation: authority.pinRotation })),
+    rating: { courseRating: authority.rating, slope: authority.slope },
+    greenDrainageLevel: season.operations.drainageLevel,
+    weather: { kind: weather.kind, temperatureF: weather.temperatureF, windMph: weather.windMph, rainInches: weather.rainInches, carryMultiplier: modifiers.carryMultiplier, dispersionMultiplier: modifiers.dispersionMultiplier, paceMultiplier: modifiers.paceMultiplier },
+  };
+}
+
 function rulesSnapshotForRound(course: Course, snapshot: PlayerRoundCourseSnapshot) {
   const cells = snapshot.width * snapshot.height;
   const inBounds = new Array<boolean>(cells);
@@ -119,19 +145,23 @@ export interface StartPlayableRoundArgs {
   teeSet?: TeeSet;
   pinRotation?: PinRotation;
   opponent?: PlayerPlayableRound["opponent"];
-  tournament?: { id: string; name: string };
+  tournament?: { id: string; name: string; roundNumber?: number };
+  /** Frozen tournament routing authority captured at activation. */
+  tournamentSnapshot?: TournamentActivationSnapshot;
   day?: number;
   /** Immutable authority captured by the deferred equipment boundary in the same start transaction. */
   performanceLoadout?: PlayerPlayableRound["performanceLoadout"];
 }
 
 export function startPlayableRound(args: StartPlayableRoundArgs): { ok: true; round: PlayerPlayableRound } | { ok: false; reason: string } {
-  const layout = args.layoutId ? layoutById(args.course, args.layoutId) : activeCourseLayout(args.course);
-  if (!layout) return { ok: false, reason: "The selected routing no longer exists." };
-  if (layout.publishedHoleIds.length < 3) return { ok: false, reason: "Publish at least three complete holes before starting a Player Pro round." };
-  const teeSet = args.teeSet ?? "member";
-  const pinRotation = args.pinRotation ?? args.course.activePinRotation ?? "A";
-  const snapshot = snapshotCourse(args.course, args.world, args.day ?? 0, layout.id, teeSet, pinRotation);
+  const layout = args.tournamentSnapshot ? undefined : args.layoutId ? layoutById(args.course, args.layoutId) : activeCourseLayout(args.course);
+  if (!args.tournamentSnapshot && !layout) return { ok: false, reason: "The selected routing no longer exists." };
+  if (layout && layout.publishedHoleIds.length < 3) return { ok: false, reason: "Publish at least three complete holes before starting a Player Pro round." };
+  const teeSet = args.tournamentSnapshot?.teeSet ?? args.teeSet ?? "member";
+  const pinRotation = args.tournamentSnapshot?.pinRotation ?? args.pinRotation ?? args.course.activePinRotation ?? "A";
+  const snapshot = args.tournamentSnapshot
+    ? tournamentCourseSnapshot(args.course, args.world, args.day ?? 0, args.tournamentSnapshot)
+    : snapshotCourse(args.course, args.world, args.day ?? 0, layout!.id, teeSet, pinRotation);
   if (!snapshot) return { ok: false, reason: "Every routed hole needs a valid tee, pin, and playable setup." };
   const rulesSnapshot = rulesSnapshotForRound(args.course, snapshot);
   const frozenCourse = rulesSnapshot ? { ...snapshot, rulesSnapshot } : snapshot;
@@ -184,5 +214,6 @@ export function startPlayableRound(args: StartPlayableRoundArgs): { ok: true; ro
     opponent: args.opponent,
     tournamentId: args.tournament?.id,
     tournamentName: args.tournament?.name,
+    tournamentRound: args.tournament?.roundNumber,
   } };
 }

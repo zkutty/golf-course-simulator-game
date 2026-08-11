@@ -184,6 +184,7 @@ export interface PlayerPlayableRound {
   opponent?: PlayerRoundOpponent;
   tournamentId?: string;
   tournamentName?: string;
+  tournamentRound?: number;
 }
 
 export interface PlayerCareerRound {
@@ -201,6 +202,7 @@ export interface PlayerCareerRound {
   opponentName?: string;
   tournamentId?: string;
   tournamentName?: string;
+  tournamentRound?: number;
   earnings: number;
   scorecard: PlayerRoundScorecardHole[];
   shots: PlayerShotTrace[];
@@ -266,6 +268,10 @@ export interface PlayerTournamentRecord {
   tier: "local" | "regional" | "championship";
   status: "registered" | "active" | "complete" | "withdrawn";
   roundId?: string;
+  roundIds?: string[];
+  completedRounds?: number[];
+  currentRound?: number;
+  totalRounds?: number;
   finish?: number;
   fieldSize?: number;
   prize?: number;

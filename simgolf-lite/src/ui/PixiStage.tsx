@@ -105,11 +105,10 @@ import {
   decorationVisual,
   normalizedDecoration,
 } from "../game/models/decorations";
-import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
+import { getBiomeDefinition } from "../game/models/biomes";
 import {
   plantDefinition,
   resolvedDecorationPlantId,
-  resolvedObstaclePlantId,
 } from "../game/models/plantRegistry";
 import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
 import type { ArchitectureReferencePlan } from "../game/architecture/referencePlan";
@@ -151,22 +150,14 @@ import {
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
 import {
-  isCultivatedNaturalProp,
   pickNaturalProp,
-  shouldFadeTallProp,
-  type NaturalPropVariant,
 } from "../game/render/naturalProps";
 import {
   seasonalDecorationPlantForm,
   seasonalPlantClimate,
   seasonalPlantPresentation,
   seasonalPlantSceneSignature,
-  type SeasonalPlantPresentation,
 } from "../game/render/seasonalPlants";
-import {
-  deriveTreeHabitat,
-  type TreeHabitatPatch,
-} from "../game/render/treeHabitat";
 import { isWaterHazard } from "../game/models/terrainRules";
 import { T } from "../i18n/T";
 import type { ArchitectureWarning } from "../game/architecture/architecture";
@@ -210,6 +201,10 @@ import {
   type SurfaceCareWorkerSprite,
 } from "./renderer/scenes/surfaceCareScene";
 import { createStructuresPropsSceneSystem } from "./renderer/scenes/structuresPropsScene";
+import {
+  createNaturalPropsSceneSystem,
+  type NaturalPropsSceneSystem,
+} from "./renderer/scenes/naturalPropsScene";
 import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
 
@@ -962,107 +957,6 @@ function fitZoomForTileBounds(
   return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom));
 }
 
-/**
- * Synchronous last-resort natural-prop art. The regular path is always the
- * selected biome atlas, but a missing frame must not start a hidden React DOM
- * render and reject two seconds later. A small canvas texture is deterministic,
- * CSP-safe, immediately available, and visually coherent enough to preserve
- * the course while the atlas warning identifies the missing source frame.
- */
-function createFallbackObstacleTexture(
-  type: Obstacle["type"],
-  frame: string,
-): PIXI.Texture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const context = canvas.getContext("2d");
-  if (!context) return PIXI.Texture.WHITE;
-  const biomeKey = BIOME_KEYS.find((key) => frame.startsWith(`${key}_`));
-  if (!biomeKey) throw new Error(`[renderer] fallback frame has no registered biome owner: ${frame}`);
-  const propTints = getBiomeDefinition(biomeKey).presentation.preview.propTints;
-  const base = propTints[type];
-  const css = (color: number) => `#${color.toString(16).padStart(6, "0")}`;
-  const dark = css(darken(base, 0.72));
-  const mid = css(base);
-  const light = css(shade(base, 1.28));
-  const trunk = css(darken(propTints.rock, 0.78));
-
-  if (type === "tree") {
-    context.fillStyle = trunk;
-    context.fillRect(29, 35, 6, 22);
-    const conifer = /pine|fir/.test(frame);
-    if (conifer) {
-      context.fillStyle = dark;
-      context.beginPath();
-      context.moveTo(32, 5);
-      context.lineTo(16, 42);
-      context.lineTo(48, 42);
-      context.closePath();
-      context.fill();
-      context.fillStyle = mid;
-      context.beginPath();
-      context.moveTo(32, 11);
-      context.lineTo(21, 35);
-      context.lineTo(43, 35);
-      context.closePath();
-      context.fill();
-      context.fillStyle = light;
-      context.beginPath();
-      context.moveTo(29, 13);
-      context.lineTo(25, 29);
-      context.lineTo(33, 27);
-      context.closePath();
-      context.fill();
-    } else {
-      for (const [x, y, radius, color] of [
-        [23, 29, 12, dark],
-        [40, 29, 12, dark],
-        [31, 19, 15, mid],
-        [26, 17, 8, light],
-      ] as const) {
-        context.fillStyle = color;
-        context.beginPath();
-        context.arc(x, y, radius, 0, Math.PI * 2);
-        context.fill();
-      }
-    }
-  } else if (type === "bush") {
-    for (const [x, y, radius, color] of [
-      [19, 43, 10, dark],
-      [32, 39, 13, mid],
-      [45, 43, 10, dark],
-      [27, 34, 9, light],
-      [39, 35, 8, light],
-    ] as const) {
-      context.fillStyle = color;
-      context.beginPath();
-      context.arc(x, y, radius, 0, Math.PI * 2);
-      context.fill();
-    }
-  } else {
-    context.fillStyle = css(darken(propTints.rock, 0.82));
-    context.beginPath();
-    context.moveTo(13, 53);
-    context.lineTo(18, 31);
-    context.lineTo(31, 20);
-    context.lineTo(47, 27);
-    context.lineTo(53, 50);
-    context.closePath();
-    context.fill();
-    context.fillStyle = css(shade(propTints.rock, 1.24));
-    context.beginPath();
-    context.moveTo(21, 42);
-    context.lineTo(29, 27);
-    context.lineTo(42, 31);
-    context.lineTo(47, 43);
-    context.closePath();
-    context.fill();
-  }
-
-  return PIXI.Texture.from(canvas);
-}
-
 export function PixiStage(requestedProps: PixiStageProps) {
   const { t } = useI18n();
   const initialRendererConfigRef = useRef({
@@ -1110,6 +1004,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const architectureOverlayTestLayerRef = useRef<ArchitectureOverlayTestLayer>("all");
   const sceneSystemHostRef = useRef<SceneSystemHost | null>(null);
   const atmosphereSceneRef = useRef<AtmosphereSceneSystem | null>(null);
+  const naturalPropsSceneRef = useRef<NaturalPropsSceneSystem | null>(null);
   const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
   const atlasRevision = atlasContext.generation;
@@ -1127,19 +1022,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const builtAtlasGenerationRef = useRef<number | null>(null);
   const chunkRebuildsRef = useRef(0);
   const landscapeMaterialTexturesRef = useRef<Map<string, PIXI.Texture>>(new Map());
-  const fallbackObstacleTexturesRef = useRef<Map<string, PIXI.Texture>>(new Map());
-  const obstacleSpritesRef = useRef<
-    Map<string, {
-      sprite: PIXI.Sprite;
-      shadow: PIXI.Graphics;
-      habitat: PIXI.Graphics | null;
-      swayPhase: number | null;
-      sway: NaturalPropVariant["sway"];
-      tall: boolean;
-      fadeAlpha: number;
-      baseAlpha: number;
-    }>
-  >(new Map());
   const structureSpriteCountRef = useRef(0);
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
@@ -1248,7 +1130,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     obstacles,
     activeHoleIndex,
     activePath,
-    tileSize,
     onClickTile,
     onPreviewTerrainStroke,
     onCommitTerrainStroke,
@@ -1430,6 +1311,22 @@ export function PixiStage(requestedProps: PixiStageProps) {
       rotation,
       surfaceHeightAt,
     ],
+    naturalProps: [
+      atlasRevision,
+      course.buildings,
+      course.elevations,
+      course.height,
+      course.theme,
+      course.width,
+      effectiveTiles,
+      obstacles,
+      props.graphicsQuality,
+      Boolean(props.showObstacles),
+      props.worldSeed,
+      rotation,
+      seasonalPlantsSignature,
+      surfaceHeightAt,
+    ],
     overlaysDiagnostics: [
       props.playerRound,
       props.playerShotAim,
@@ -1449,6 +1346,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   });
   const renderSnapshot = useMemo<RenderSnapshot>(() => ({
     course,
+    obstacles,
     effectiveTiles,
     holes,
     draftTee,
@@ -1459,6 +1357,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     colorVision: props.colorVision,
     reducedMotion: Boolean(props.reducedMotion),
     animationsEnabled: props.animationsEnabled,
+    showObstacles: Boolean(props.showObstacles),
     atlasRevision,
     playerRound: props.playerRound,
     playerShotAim: props.playerShotAim,
@@ -1473,6 +1372,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     draftTee,
     effectiveTiles,
     holes,
+    obstacles,
     atlasRevision,
     props.animationsEnabled,
     props.colorVision,
@@ -1482,6 +1382,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.reducedMotion,
     props.selectedParcelId,
     props.seasonalVisualState,
+    props.showObstacles,
     props.surveyMode,
     props.worldSeed,
     renderRevisions,
@@ -1946,19 +1847,27 @@ export function PixiStage(requestedProps: PixiStageProps) {
             terrainChunks: layers.terrain.children.length,
             terrainRebuilds: chunkRebuildsRef.current,
             connectedSurfaces: layers.smoothSurfaces.children.length,
-            structuresAndProps: structureSpriteCountRef.current + obstacleSpritesRef.current.size,
+            structuresAndProps: structureSpriteCountRef.current
+              + (naturalPropsSceneRef.current?.contentCount() ?? 0),
+            naturalProps: {
+              content: naturalPropsSceneRef.current?.contentCount() ?? 0,
+              rebuilds: naturalPropsSceneRef.current?.rebuildCount() ?? 0,
+              fallbackTextures: naturalPropsSceneRef.current?.fallbackTextureCount() ?? 0,
+            },
             dressing: layers.seasonalTerrain.children.length + layers.surfaceCare.children.length,
           } : null,
         };
       },
       unrelatedObjectCountProbe: () => {
         const layers = layersRef.current;
-        const before = structureSpriteCountRef.current + obstacleSpritesRef.current.size;
+        const before = structureSpriteCountRef.current
+          + (naturalPropsSceneRef.current?.contentCount() ?? 0);
         if (!layers) return { before, after: before };
         const unrelated = new PIXI.Container();
         unrelated.label = "zk674-unrelated-object-probe";
         layers.objects.addChild(unrelated);
-        const after = structureSpriteCountRef.current + obstacleSpritesRef.current.size;
+        const after = structureSpriteCountRef.current
+          + (naturalPropsSceneRef.current?.contentCount() ?? 0);
         unrelated.destroy();
         return { before, after };
       },
@@ -2004,7 +1913,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     // These ref objects are stable for the app's lifetime.
     const emoteSprites = emoteSpritesRef.current;
     const perfState = perfRef.current;
-    const fallbackObstacleTextures = fallbackObstacleTexturesRef.current;
 
     const app = new PIXI.Application();
     setRendererError(false);
@@ -2097,13 +2005,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
       cancelled = true;
       supersedePendingAtlasLoad();
       setAppReady(false);
+      // Scene-owned display objects and fallback textures must be released
+      // before the application recursively tears down the shared layer tree.
+      sceneSystemHostRef.current?.dispose();
+      sceneSystemHostRef.current = null;
+      atmosphereSceneRef.current = null;
+      naturalPropsSceneRef.current = null;
       layersRef.current = null;
       chunksRef.current = [];
       prevTilesRef.current = null;
       prevElevationsRef.current = null;
       builtSeasonalTerrainSignatureRef.current = null;
       builtAtlasGenerationRef.current = null;
-      obstacleSpritesRef.current.clear();
       structureSpriteCountRef.current = 0;
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
@@ -2123,7 +2036,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
       waterAnimRef.current = { last: 0, wasAnimating: false };
       diamondTextureRef.current = null;
       landscapeMaterialTexturesRef.current.clear();
-      fallbackObstacleTextures.clear();
       if (appRef.current) {
         appRef.current.destroy(true, { children: true, texture: true });
         appRef.current = null;
@@ -3695,6 +3607,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
       screenOverlay: layers.screenOverlay,
       screen: () => app.screen,
     });
+    const naturalProps = createNaturalPropsSceneSystem(
+      layers.objects,
+      layers.terrainDecals,
+    );
     const host = new SceneSystemHost([
       atmosphere,
       createSurfaceCareSceneSystem(
@@ -3707,12 +3623,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ),
       createPlayerShotOverlaySceneSystem(layers.fx),
       createEstateSurveySceneSystem(layers.terrainDecals),
+      // Natural habitat/shadows historically rebuilt after every extracted
+      // decal scene, so retain that exact child order during the migration.
+      naturalProps,
     ]);
     atmosphereSceneRef.current = atmosphere;
+    naturalPropsSceneRef.current = naturalProps;
     sceneSystemHostRef.current = host;
     return () => {
       if (sceneSystemHostRef.current === host) sceneSystemHostRef.current = null;
       if (atmosphereSceneRef.current === atmosphere) atmosphereSceneRef.current = null;
+      if (naturalPropsSceneRef.current === naturalProps) naturalPropsSceneRef.current = null;
       host.dispose();
     };
   }, [appReady]);
@@ -3731,295 +3652,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (renderedScenes.includes("structuresProps")) {
         stampAtlasGeneration(layers.objects, atlasRevision);
       }
+      if (renderedScenes.includes("naturalProps")) {
+        stampAtlasGeneration(layers.objects, atlasRevision);
+      }
     }
   }, [appReady, atlasRevision, renderSnapshot]);
-
-  // ---------------------------------------------------------------------
-  // Objects layer — obstacles, ground-anchored and depth-sorted
-  // ---------------------------------------------------------------------
-
-  useEffect(() => {
-    if (!appReady) return;
-    const layers = layersRef.current;
-    if (!layers) return;
-
-    obstacleSpritesRef.current.forEach((entry) => {
-      layers.objects.removeChild(entry.sprite);
-      entry.sprite.destroy();
-      entry.shadow.parent?.removeChild(entry.shadow);
-      entry.shadow.destroy();
-      entry.habitat?.parent?.removeChild(entry.habitat);
-      entry.habitat?.destroy();
-    });
-    obstacleSpritesRef.current.clear();
-
-    if (!props.showObstacles) return;
-
-    const terrainNearWater = (x: number, y: number) => {
-      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-        const tx = x + dx;
-        const ty = y + dy;
-        if (tx < 0 || ty < 0 || tx >= course.width || ty >= course.height) continue;
-        if (isWaterHazard(effectiveTiles[ty * course.width + tx])) return true;
-      }
-      return false;
-    };
-
-    const addSprite = (
-      obs: Obstacle,
-      texture: PIXI.Texture,
-      variant: NaturalPropVariant,
-      scale: number,
-      habitatPatch: TreeHabitatPatch | null,
-      seasonal: SeasonalPlantPresentation | null,
-    ) => {
-      const layersNow = layersRef.current;
-      if (!layersNow) return;
-      const key = `${obs.x},${obs.y}`;
-      if (obstacleSpritesRef.current.has(key)) return;
-      const sprite = new PIXI.Sprite(texture);
-      sprite.label = `structure-prop:natural:${key}`;
-      // Ground-anchored via the shared placement helper (ZKU-140).
-      const footprint = { x: obs.x, y: obs.y, w: 1, d: 1 };
-      const anchor = frontCorner(footprint, rotation);
-      const e = surfaceHeightAt(anchor.x, anchor.y);
-      const placement = placeObject(footprint, e, rotation);
-      sprite.anchor.set(variant.anchor[0], variant.anchor[1]);
-      sprite.position.set(placement.position.x, placement.position.y);
-      const size = TILE_W * 0.72 * scale;
-      sprite.width = size * (seasonal?.scaleX ?? 1);
-      sprite.height = (size * texture.height) / texture.width
-        * (seasonal?.scaleY ?? 1);
-      sprite.tint = seasonal?.tint ?? 0xffffff;
-      sprite.alpha = seasonal?.alpha ?? 1;
-      sprite.zIndex = placement.zIndex;
-      layersNow.objects.addChild(sprite);
-
-      const habitat = habitatPatch ? new PIXI.Graphics() : null;
-      if (habitat && habitatPatch) {
-        const palettes = {
-          pine_straw: [0x68472b, 0x875b31, 0xaa783f],
-          leaf_litter: [0x6c4e32, 0x896039, 0xac804c],
-          dry_soil: [0x876343, 0xa77a4f, 0xc29661],
-        } as const;
-        const tones = palettes[habitatPatch.kind];
-        for (const lobe of habitatPatch.lobes) {
-          habitat.ellipse(
-            lobe.offsetX,
-            lobe.offsetY,
-            lobe.radiusX + 1.8,
-            lobe.radiusY + 0.8,
-          );
-          habitat.fill({
-            color: habitatPatch.kind === "dry_soil" ? 0x665039 : 0x3d542f,
-            alpha: 0.16,
-          });
-          habitat.ellipse(
-            lobe.offsetX,
-            lobe.offsetY,
-            lobe.radiusX,
-            lobe.radiusY,
-          );
-          habitat.fill({ color: tones[lobe.tone], alpha: 0.54 });
-        }
-        for (const root of habitatPatch.roots) {
-          habitat.moveTo(0, 0);
-          habitat.lineTo(
-            Math.cos(root.angle) * root.length,
-            Math.sin(root.angle) * root.length * 0.4,
-          );
-          habitat.stroke({
-            width: root.width,
-            color: habitatPatch.kind === "dry_soil" ? 0x60462f : 0x4d3929,
-            alpha: 0.4,
-            cap: "round",
-          });
-        }
-        for (const detail of habitatPatch.details) {
-          if (habitatPatch.kind === "pine_straw") {
-            const length = detail.size * 2.7;
-            habitat.moveTo(
-              detail.x - Math.cos(detail.angle) * length / 2,
-              detail.y - Math.sin(detail.angle) * length * 0.22,
-            );
-            habitat.lineTo(
-              detail.x + Math.cos(detail.angle) * length / 2,
-              detail.y + Math.sin(detail.angle) * length * 0.22,
-            );
-            habitat.stroke({
-              width: Math.max(0.65, detail.size * 0.55),
-              color: tones[detail.tone],
-              alpha: 0.72,
-              cap: "round",
-            });
-          } else if (habitatPatch.kind === "leaf_litter") {
-            habitat.ellipse(
-              detail.x,
-              detail.y,
-              detail.size * 1.35,
-              detail.size * 0.62,
-            );
-            habitat.fill({ color: tones[detail.tone], alpha: 0.74 });
-          } else {
-            habitat.circle(detail.x, detail.y, detail.size * 0.72);
-            habitat.fill({ color: tones[detail.tone], alpha: 0.7 });
-          }
-        }
-        habitat.position.set(
-          placement.position.x,
-          placement.position.y - TILE_H / 2 + 1,
-        );
-        layersNow.terrainDecals.addChild(habitat);
-      }
-
-      // Drop shadow (ZKU-151): soft ellipse at the base, offset SE to match
-      // the fixed NW sun; lives in the decal layer under all objects.
-      const shadow = new PIXI.Graphics();
-      const habitatShadowScale = habitatPatch ? 0.68 : 1;
-      shadow.ellipse(
-        variant.shadow.offsetX,
-        variant.shadow.offsetY,
-        variant.shadow.radiusX * scale * habitatShadowScale
-          * (seasonal?.shadowScale ?? 1),
-        variant.shadow.radiusY * scale * habitatShadowScale
-          * (seasonal?.shadowScale ?? 1)
-      );
-      shadow.fill({
-        color: 0x000000,
-        alpha: variant.shadow.alpha * (habitatPatch ? 0.46 : 1),
-      });
-      shadow.position.set(placement.position.x, placement.position.y - TILE_H / 2 + 1);
-      layersNow.terrainDecals.addChild(shadow);
-
-      obstacleSpritesRef.current.set(key, {
-        sprite,
-        shadow,
-        habitat,
-        swayPhase: variant.sway ? ((obs.x * 17 + obs.y * 29) % 32) / 32 * Math.PI * 2 : null,
-        sway: variant.sway
-          ? {
-            amplitude: variant.sway.amplitude * (seasonal?.swayScale ?? 1),
-            speed: variant.sway.speed,
-          }
-          : null,
-        tall: variant.occlusion.tall,
-        fadeAlpha: variant.occlusion.fadeAlpha,
-        baseAlpha: seasonal?.alpha ?? 1,
-      });
-    };
-
-    const seasonalClimate = seasonalPlantClimate(props.seasonalVisualState);
-    const preparedObstacles = obstacles.map((obs) => {
-      const index = obs.y * course.width + obs.x;
-      const context = {
-        theme: course.theme,
-        runSeed: props.worldSeed,
-        obstacle: obs,
-        terrain: effectiveTiles[index] ?? "rough" as Terrain,
-        elevation: course.elevations[index] ?? 0,
-        nearWater: terrainNearWater(obs.x, obs.y),
-        cultivated: isCultivatedNaturalProp(
-          obs,
-          course.buildings ?? [],
-        ),
-      };
-      const selected = pickNaturalProp(context);
-      const semanticPlantId = obs.origin === "player"
-        ? resolvedObstaclePlantId(course.theme, obs)
-        : undefined;
-      const semanticPlant = semanticPlantId
-        ? plantDefinition(semanticPlantId)
-        : undefined;
-      const seasonal = selected.variant.plantForm === "non-plant"
-        ? null
-        : seasonalPlantPresentation({
-          identity: semanticPlantId ?? selected.variant.frame,
-          profile: semanticPlant?.seasonalProfile
-            ?? selected.variant.seasonalProfile,
-          form: semanticPlant
-            ? (obs.type === "tree" ? "canopy" : "shrub")
-            : selected.variant.plantForm,
-          x: obs.x,
-          y: obs.y,
-          cultivated: context.cultivated,
-          elevation: context.elevation,
-          nearWater: context.nearWater,
-          ecologicalFit: semanticPlant?.ecologicalFit[
-            getBiomeDefinition(course.theme).key
-          ] ?? "native",
-          climate: seasonalClimate,
-        });
-      const habitat = deriveTreeHabitat(
-        selected.variant.frame,
-        obs,
-        props.worldSeed,
-        selected.scale,
-      );
-      return { obs, selected, habitat, seasonal };
-    });
-    const habitatBudget = props.graphicsQuality === "high"
-      ? 110
-      : props.graphicsQuality === "medium"
-        ? 70
-        : 30;
-    const habitatKeys = new Set(
-      preparedObstacles
-        .filter((entry) => entry.habitat)
-        .sort((a, b) => a.habitat!.rank - b.habitat!.rank)
-        .slice(0, habitatBudget)
-        .map((entry) => `${entry.obs.x},${entry.obs.y}`),
-    );
-
-    preparedObstacles.forEach(({ obs, selected, habitat, seasonal }) => {
-      const selectedHabitat = habitatKeys.has(`${obs.x},${obs.y}`)
-        ? habitat
-        : null;
-      const atlasTex = getPropFrame(course.theme, props.graphicsQuality, selected.variant.frame);
-      if (atlasTex) {
-        addSprite(
-          obs,
-          atlasTex,
-          selected.variant,
-          selected.scale,
-          selectedHabitat,
-          seasonal,
-        );
-        return;
-      }
-      // Immediate renderer-native fallback. This cannot reject later or leave
-      // a missing obstacle because requestAnimationFrame was throttled.
-      const fallbackKey = `${obs.type}:${selected.variant.frame}`;
-      let fallbackTexture = fallbackObstacleTexturesRef.current.get(fallbackKey);
-      if (!fallbackTexture) {
-        fallbackTexture = createFallbackObstacleTexture(
-          obs.type,
-          selected.variant.frame,
-        );
-        fallbackObstacleTexturesRef.current.set(fallbackKey, fallbackTexture);
-      }
-      addSprite(
-        obs,
-        fallbackTexture,
-        selected.variant,
-        selected.scale,
-        selectedHabitat,
-        seasonal,
-      );
-    });
-  }, [
-    appReady,
-    obstacles,
-    tileSize,
-    props.graphicsQuality,
-    props.showObstacles,
-    props.worldSeed,
-    course,
-    effectiveTiles,
-    rotation,
-    props.seasonalVisualState,
-    seasonalPlantsSignature,
-    surfaceHeightAt,
-  ]);
 
   // M31-M33 property assets use lightweight deterministic vector footprints.
   // They rotate/zoom/depth-sort with the world and never create one entity per
@@ -5314,19 +4951,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
         for (const ws of surfaceWaterSpritesRef.current) ws.sprite.tint = ws.baseTint;
       }
 
-      // Wind sway (ZKU-151): subtle skew oscillation on tree canopies.
-      if (props.animationsEnabled && props.treeSway) {
-        const t = nowMs / 1000;
-        for (const entry of obstacleSpritesRef.current.values()) {
-          if (entry.swayPhase === null || !entry.sway) continue;
-          entry.sprite.skew.x = Math.sin(t * entry.sway.speed + entry.swayPhase) * entry.sway.amplitude;
-        }
-      } else {
-        for (const entry of obstacleSpritesRef.current.values()) {
-          if (entry.swayPhase !== null && entry.sprite.skew.x !== 0) entry.sprite.skew.x = 0;
-        }
-      }
-
       // Repair workers are shown only when the observed care record reports
       // an active task and sufficient allocated service. Motion is cosmetic,
       // bounded, and snaps to the stable anchor when animation is disabled.
@@ -5358,20 +4982,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
             rotation
           )
         : null;
-      for (const entry of obstacleSpritesRef.current.values()) {
-        const blocksSelection = selectedIso ? shouldFadeTallProp({
-          tall: entry.tall,
-          propX: entry.sprite.position.x,
-          propY: entry.sprite.position.y,
-          propWidth: entry.sprite.width,
-          propHeight: entry.sprite.height,
-          focusX: selectedIso.x,
-          focusY: selectedIso.y,
-        }) : false;
-        entry.sprite.alpha = blocksSelection
-          ? Math.min(entry.baseAlpha, entry.fadeAlpha)
-          : entry.baseAlpha;
-      }
+      naturalPropsSceneRef.current?.tick({
+        nowMs,
+        animationsEnabled: props.animationsEnabled,
+        treeSway: props.treeSway,
+        focus: selectedIso,
+      });
 
       perfMark("water+sway");
 

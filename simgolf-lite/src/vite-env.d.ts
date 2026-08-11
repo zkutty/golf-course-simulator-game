@@ -199,7 +199,7 @@ interface Window {
     validateFixture(text: string):
       | { ok: true; migratedFrom: number | null }
       | { ok: false; error: string };
-    startTournamentFixture(): void;
+    startTournamentFixture(): Promise<void>;
     invalidateAndCancelTournamentFixture(): void;
     setM53SeasonalFixture(season: "spring" | "summer" | "autumn" | "winter"): void;
     setM53SurfaceCareFixture(

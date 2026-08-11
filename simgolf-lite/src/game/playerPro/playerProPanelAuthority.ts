@@ -3,6 +3,9 @@ import { absoluteDayFor } from "../seasons/seasons";
 import type { PlayerProCareer, PlayerProSkills, PlayerShotTechnique, PlayerTrainingRecord } from "../models/playerProTypes";
 import { applyPracticeConfidence, confidenceAtDay } from "./confidence";
 import { techniqueRequirement, type PlayerOpponent, type PlayerTrainingOption } from "./playerPro";
+import { playerTournamentEligibility } from "../tournaments/tournamentLifecycle";
+import { tournamentCalendar } from "../tournaments/tournaments";
+import type { TournamentEvent } from "../tournaments/types";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const TRAINING_SKILLS = {
@@ -32,6 +35,21 @@ export function completePlayerTraining(career: PlayerProCareer, world: World, op
 export function eligiblePlayerOpponents(world: World): PlayerOpponent[] {
   const customers = (world.enterprise?.customers ?? []).filter((customer) => customer.visits >= 2 || customer.loyalty >= 40).slice(0, 12).map((customer) => ({ id: customer.id, name: customer.name, skill: clamp(customer.skill / 100, .2, .95), relationship: clamp(customer.loyalty - 50, -50, 50) }));
   return customers.length ? customers : (world.enterprise?.professionals ?? []).slice(0, 6).map((professional) => ({ id: professional.id, name: professional.name, skill: clamp(.5 + professional.tier * .08, .4, .95), relationship: 5 }));
+}
+
+export function playerProTournamentEntries(world: World, career: PlayerProCareer): TournamentEvent[] {
+  const entered = new Set(career.tournaments.filter((record) => record.status === "active").map((record) => record.eventId));
+  return tournamentCalendar(world).events.filter((event) => event.status === "scheduled" || (event.status === "active" && entered.has(event.id)));
+}
+
+export function playerProTournamentEntryEligibility(career: PlayerProCareer, event: TournamentEvent, world: World, day: number) {
+  if (event.status !== "active") {
+    const eligibility = playerTournamentEligibility(career, event);
+    return eligibility.eligible && (event.scheduledWeek !== world.week || event.scheduledDay !== day) ? { eligible: false, reason: "round_date" } : eligibility;
+  }
+  const entered = career.tournaments.some((record) => record.eventId === event.id && record.status === "active");
+  const round = event.rounds?.find((candidate) => candidate.roundNumber === event.currentRound);
+  return { eligible: entered && round?.status === "active" && round.scheduledWeek === world.week && round.scheduledDay === day, reason: "round_date" };
 }
 
 export function playerTechniqueCatalog(skills: PlayerProSkills): Array<{ technique: PlayerShotTechnique; unlocked: boolean; requirement: string | null }> {

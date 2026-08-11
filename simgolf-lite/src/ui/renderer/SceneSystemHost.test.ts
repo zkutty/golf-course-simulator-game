@@ -14,10 +14,11 @@ function dependencies(
   atmosphere: readonly unknown[],
   surfaceCare: readonly unknown[],
   structuresProps: readonly unknown[] = [],
+  naturalProps: readonly unknown[] = [],
   overlaysDiagnostics: readonly unknown[] = [],
   estateSurvey: readonly unknown[] = [],
 ): RenderRevisionDependencies {
-  return { atmosphere, surfaceCare, structuresProps, overlaysDiagnostics, estateSurvey };
+  return { atmosphere, surfaceCare, structuresProps, naturalProps, overlaysDiagnostics, estateSurvey };
 }
 
 function snapshot(
@@ -25,7 +26,7 @@ function snapshot(
   surfaceCare: number,
 ): RenderSnapshot {
   return {
-    revisions: { atmosphere, surfaceCare, structuresProps: 0, overlaysDiagnostics: 0, estateSurvey: 0 },
+    revisions: { atmosphere, surfaceCare, structuresProps: 0, naturalProps: 0, overlaysDiagnostics: 0, estateSurvey: 0 },
   } as RenderSnapshot;
 }
 
@@ -36,17 +37,43 @@ describe("RenderRevisionTracker", () => {
     const season = {};
 
     const first = tracker.update(dependencies([course, season], [course, "high"]));
-    expect(first).toEqual({ atmosphere: 1, surfaceCare: 1, structuresProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
+    expect(first).toEqual({ atmosphere: 1, surfaceCare: 1, structuresProps: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
 
     const unchanged = tracker.update(dependencies([course, season], [course, "high"]));
     expect(unchanged).toBe(first);
 
     const winter = {};
     const seasonalChange = tracker.update(dependencies([course, winter], [course, "high"]));
-    expect(seasonalChange).toEqual({ atmosphere: 2, surfaceCare: 1, structuresProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
+    expect(seasonalChange).toEqual({ atmosphere: 2, surfaceCare: 1, structuresProps: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
 
     const careChange = tracker.update(dependencies([course, winter], [course, "medium"]));
-    expect(careChange).toEqual({ atmosphere: 2, surfaceCare: 2, structuresProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
+    expect(careChange).toEqual({ atmosphere: 2, surfaceCare: 2, structuresProps: 1, naturalProps: 1, overlaysDiagnostics: 1, estateSurvey: 1 });
+  });
+
+  it("invalidates natural props only for their declared scene inputs", () => {
+    const tracker = new RenderRevisionTracker();
+    const obstacles = [{ x: 2, y: 3, type: "tree" }];
+    const base = tracker.update(dependencies([], [], [], [obstacles, "spring", 1]));
+
+    const unrelatedUi = tracker.update(dependencies(
+      ["cash-change"],
+      ["mobile-entities-change"],
+      ["building-scene-unchanged-for-props"],
+      [obstacles, "spring", 1],
+      ["panel-open"],
+      ["survey-selection"],
+    ));
+    expect(unrelatedUi.naturalProps).toBe(base.naturalProps);
+
+    const nextSeason = tracker.update(dependencies(
+      ["cash-change"],
+      ["mobile-entities-change"],
+      ["building-scene-unchanged-for-props"],
+      [obstacles, "winter", 1],
+      ["panel-open"],
+      ["survey-selection"],
+    ));
+    expect(nextSeason.naturalProps).toBe(base.naturalProps + 1);
   });
 
   it("copies dependency lists so caller mutation is observed", () => {

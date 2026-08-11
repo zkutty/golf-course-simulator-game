@@ -15,16 +15,14 @@ import {
   availablePlayerClubs,
   caddieShotGuidance,
   flightProfileForTechnique,
-  playerTournamentEligibility,
   previewPlayableShot,
   type PlayerOpponent,
   type PlayerShotSelection,
   type PlayerTrainingOption,
 } from "../game/playerPro/playerPro";
-import { eligiblePlayerOpponents, playerTechniqueCatalog, playerTrainingOptions } from "../game/playerPro/playerProPanelAuthority";
+import { eligiblePlayerOpponents, playerProTournamentEntries, playerProTournamentEntryEligibility, playerTechniqueCatalog, playerTrainingOptions } from "../game/playerPro/playerProPanelAuthority";
 import type { ShotClearanceEvidence, ShotCollision, ShotFlightProfile, ShotRuling } from "../game/rules/contracts";
 import { normalizeCourseLayouts } from "../game/models/courseLayouts";
-import { tournamentCalendar } from "../game/tournaments/tournaments";
 import type { TournamentEvent } from "../game/tournaments/types";
 import { formatCurrency } from "../i18n/format";
 import type { Translator } from "../i18n/context";
@@ -403,7 +401,7 @@ export function PlayerProPanel(props: {
   const [background, setBackground] = useState<PlayerProBackground>(props.career.identity.background);
   const options = useMemo(() => playerTrainingOptions(props.course, props.world, props.day), [props.course, props.day, props.world]);
   const opponents = useMemo(() => eligiblePlayerOpponents(props.world), [props.world]);
-  const events = tournamentCalendar(props.world).events.filter((event) => event.status === "scheduled");
+  const events = playerProTournamentEntries(props.world, props.career);
   const social = useMemo(() => buildPlayerProSocialPresentation(props.world, props.career), [props.career, props.world]);
   const functionalItems = props.career.inventory.items.filter((item) => authoredEquipmentModifiers(item).length > 0);
   const equippedItemIds = new Set([...
@@ -606,7 +604,7 @@ export function PlayerProPanel(props: {
         {tab === "tournaments" && <section>
           <h3 style={{ margin: 0 }}>{t("playerPro.tournament.title")}</h3><p style={{ fontSize: 12 }}>{t("playerPro.tournament.help")}</p>
           {events.length === 0 ? <p>{t("playerPro.tournament.none")}</p> : <div style={{ display: "grid", gap: 7 }}>{events.map((event) => {
-            const eligibility = playerTournamentEligibility(props.career, event);
+            const eligibility = playerProTournamentEntryEligibility(props.career, event, props.world, props.day);
             return <div key={event.id} style={{ padding: 8, borderRadius: 8, background: "rgba(255,255,255,.55)" }}><strong>{event.name}</strong><small style={{ display: "block" }}>{t("playerPro.tournament.meta", { tier: event.tier, week: event.scheduledWeek, day: event.scheduledDay + 1 })}</small>{!eligibility.eligible && <div style={{ color: "#873324", fontSize: 11 }}>{t("playerPro.tournament.blocked", { reason: eligibility.reason ?? "" })}</div>}<button disabled={!eligibility.eligible} onClick={() => { void props.onTournament(event).then((message) => setNotice(message ?? `✓ ${t("playerPro.play.resume")}`)); }} style={{ marginTop: 6 }}>{t("playerPro.tournament.enter")}</button></div>;
           })}</div>}
         </section>}
