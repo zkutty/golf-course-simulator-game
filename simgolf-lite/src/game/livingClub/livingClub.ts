@@ -9,7 +9,7 @@ import type { PlayerCareerRound, PlayerPlayableRound } from "../models/playerPro
 import type { CompletedRound } from "../retention/types";
 import { analyzeArchitecture } from "../architecture/architecture";
 import { normalizeM48DesignTestSession } from "../architecture/comparison";
-import { normalizeTournamentCalendar } from "../tournaments/tournaments";
+import { tournamentCalendar } from "../tournaments/tournaments";
 import { courseForLayout } from "../models/courseLayouts";
 import { STORY_DEFINITION_BY_ID, SYSTEMIC_EVENT_DEFINITIONS } from "./content";
 import { lastItem } from "../../utils/array";
@@ -735,7 +735,7 @@ export function setReturnToDesignContext(
 
 function storyFacts(course: Course, world: World, living: LivingClubState): StoryFactSnapshot {
   const staff = (world.staffRoster ?? []).map((item, index) => normalizeStaffCharacter(item, index, world.week));
-  const tournaments = normalizeTournamentCalendar(world.tournaments, course).events.filter((event) => event.status === "scheduled").length;
+  const tournaments = tournamentCalendar(world).events.filter((event) => event.status === "scheduled").length;
   const facts: Record<StoryFactKey, number> = {
     cash: world.cash,
     reputation: world.reputation,

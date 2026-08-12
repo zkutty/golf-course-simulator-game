@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { resetSave } from "../utils/save";
+import { resetLegacySave } from "../utils/saveFacade";
 import { T } from "../i18n/T";
 import { captureBugError } from "../bug-reporting/diagnostics";
 import { isBugReportingEnabled } from "../bug-reporting/feature";
@@ -21,7 +21,7 @@ function reloadPage(): void {
 }
 
 export function resetSaveAndReload(
-  reset: () => void = resetSave,
+  reset: () => void = resetLegacySave,
   reload: () => void = reloadPage
 ): void {
   reset();
@@ -53,7 +53,7 @@ export class AppErrorBoundary extends Component<
   };
 
   private resetAndReload = (): void => {
-    resetSaveAndReload(this.props.resetSaveFn ?? resetSave, this.props.reloadFn ?? reloadPage);
+    resetSaveAndReload(this.props.resetSaveFn ?? resetLegacySave, this.props.reloadFn ?? reloadPage);
   };
 
   render(): ReactNode {

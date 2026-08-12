@@ -1,14 +1,7 @@
 import type { Course, Difficulty, EconomicPressure, ExperienceProfile, LandTheme, WeekResult, World } from "../game/models/types";
 import type { LiveSimulationSnapshotV1 } from "../game/live/persistence";
-import {
-  CURRENT_SAVE_SCHEMA_VERSION,
-  normalizeLoadedSave,
-  parseSaveText,
-  payloadForPersistence,
-  type SaveLoadError,
-  type SaveLoadResult,
-  type SavePayload,
-} from "./save";
+import type { SaveLoadError, SaveLoadResult, SavePayload } from "./save";
+import { CURRENT_SAVE_SCHEMA_VERSION, LEGACY_SAVE_KEY } from "./saveFacade";
 import type { TutorialProgress } from "../game/onboarding/tutorial";
 import { loadAppProfile, type AppProfile } from "../game/onboarding/profile";
 import type { CourseRecords } from "../game/retention/types";
@@ -76,7 +69,7 @@ export interface SaveFile {
 
 const MANIFEST_KEY = "coursecraft_saves_manifest_v1";
 const SLOT_PREFIX = "coursecraft_save_";
-const LEGACY_KEY = "simgolf_lite_save_v1";
+const LEGACY_KEY = LEGACY_SAVE_KEY;
 const AUTOSAVE_SLOTS = 3;
 export const MAX_MANUAL_SLOTS = 8;
 
@@ -367,9 +360,10 @@ async function migrateLegacyOnce(): Promise<void> {
     if (!raw) return;
     const manifest = await readManifest();
     if (manifest.some((m) => m.id === "legacy")) return;
+    const { normalizeLoadedSave } = await import("./save");
     const normalized = normalizeLoadedSave(JSON.parse(raw));
     if (!normalized) return;
-    await kv.set(SLOT_PREFIX + "legacy", JSON.stringify(payloadToFile(normalized)));
+    await kv.set(SLOT_PREFIX + "legacy", JSON.stringify(await payloadToFile(normalized)));
     manifest.push(metaFor("legacy", "manual", "Migrated save", normalized));
     await writeManifest(manifest);
     // Leave the legacy key in place so downgrades still work; new saves go
@@ -379,7 +373,8 @@ async function migrateLegacyOnce(): Promise<void> {
   }
 }
 
-function payloadToFile(p: SavePayload): SaveFile {
+async function payloadToFile(p: SavePayload): Promise<SaveFile> {
+  const { payloadForPersistence } = await import("./save");
   const persisted = payloadForPersistence(p);
   return {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
@@ -413,7 +408,7 @@ export async function saveToSlot(
   const idx = manifest.findIndex((m) => m.id === slotId);
   const previous = idx >= 0 ? manifest[idx] : undefined;
   meta.storageKey = `${SLOT_PREFIX}${slotId}@${meta.savedAt.toString(36)}-${meta.seq.toString(36)}`;
-  await kv.set(meta.storageKey, JSON.stringify(payloadToFile(payload)));
+  await kv.set(meta.storageKey, JSON.stringify(await payloadToFile(payload)));
   if (idx >= 0) manifest[idx] = meta;
   else manifest.push(meta);
   try {
@@ -439,6 +434,7 @@ export async function loadSlotResult(id: string): Promise<SaveLoadResult> {
   if (!raw) {
     return { ok: false, error: { code: "INVALID_SHAPE", message: "That save slot is missing." } };
   }
+  const { parseSaveText } = await import("./save");
   return parseSaveText(raw);
 }
 
@@ -504,6 +500,7 @@ export type SaveImportResult =
   | { ok: false; error: SaveLoadError };
 
 export async function importSaveResult(text: string, name: string): Promise<SaveImportResult> {
+  const { parseSaveText } = await import("./save");
   const result = parseSaveText(text);
   if (!result.ok) return result;
   const meta = await saveToSlot(null, "manual", name, result.payload);

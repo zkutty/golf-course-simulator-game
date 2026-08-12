@@ -14,7 +14,8 @@ import {
 import { DEFAULT_STATE, type GameState } from "./game/gameState";
 import { GameSession, useGameSessionSelector } from "./game/session";
 import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, ParSetting, PinRotation, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool, WeekResult, World } from "./game/models/types";
-import { hasSavedGame, parseSaveText, resetSave, type SavePayload } from "./utils/save";
+import type { SavePayload } from "./utils/save";
+import { hasLegacySave, resetLegacySave } from "./utils/saveFacade";
 import {
   __deleteSlotPayloadForTests,
   __omitSlotThemeForTests,
@@ -2687,7 +2688,7 @@ export default function App() {
     let alive = true;
     void import("./utils/saveStore").then(({ listSlots }) =>
       listSlots().then((slots) => {
-        if (alive) setCanLoadFromMenu(slots.length > 0 || hasSavedGame());
+        if (alive) setCanLoadFromMenu(slots.length > 0 || hasLegacySave());
       })
     );
     return () => {
@@ -4023,7 +4024,8 @@ export default function App() {
           cash: finalWorld.cash,
         };
       },
-      validateFixture: (text: string) => {
+      validateFixture: async (text: string) => {
+        const { parseSaveText } = await import("./utils/save");
         const result = parseSaveText(text);
         return result.ok
           ? { ok: true as const, migratedFrom: result.migratedFrom ?? null }
@@ -5104,7 +5106,7 @@ export default function App() {
   }
 
   function onResetSave() {
-    resetSave();
+    resetLegacySave();
     // Fresh land, same run framing (mode/theme/difficulty), new seed.
     restartRun(currentRunSetup((Date.now() % 1_000_000) | 0));
   }

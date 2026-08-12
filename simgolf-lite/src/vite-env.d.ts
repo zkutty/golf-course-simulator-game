@@ -203,9 +203,9 @@ interface Window {
       residentMembers: number;
       cash: number;
     }>;
-    validateFixture(text: string):
+    validateFixture(text: string): Promise<
       | { ok: true; migratedFrom: number | null }
-      | { ok: false; error: string };
+      | { ok: false; error: string }>;
     startTournamentFixture(): Promise<void>;
     invalidateAndCancelTournamentFixture(): void;
     setM53SeasonalFixture(season: "spring" | "summer" | "autumn" | "winter"): void;

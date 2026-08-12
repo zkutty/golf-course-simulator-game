@@ -1,4 +1,4 @@
-import { CURRENT_SAVE_SCHEMA_VERSION } from "../../utils/save";
+import { CURRENT_SAVE_SCHEMA_VERSION } from "../../utils/saveFacade";
 import { normalizeCourseLayouts } from "../models/courseLayouts";
 import { normalizeM51CourseMobilityState, remapM51CourseMobilityBuildingIds, validateM51CourseMobilityInput } from "../m51/mobility";
 import { validateCoursePlayability, validateScenarioAuthoring } from "../scenarioAuthoring/authoring";

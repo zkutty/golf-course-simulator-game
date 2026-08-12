@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_WORLD } from "../models/defaults";
 import { createTournamentStandardsCourse } from "../testing/referenceCourse";
-import { createLiveTournament, normalizeTournamentCalendar, planTournamentDay, tournamentForDate } from "./tournaments";
+import { createLiveTournament, planTournamentDay, tournamentForDate } from "./tournaments";
+import { normalizeTournamentCalendar } from "./tournamentCalendarValidation";
 import { activateTournament, completeTournamentRoundEvidence, previewTournamentActivation, scoreTournamentRoundCard, withdrawTournamentEntrant } from "./tournamentLifecycle";
 import { createTournamentEvent } from "./tournamentScheduling";
 import { PRO_AM_MEMBER_ALLOWANCE, TOURNAMENT_TEMPLATES } from "./tournamentTemplates";

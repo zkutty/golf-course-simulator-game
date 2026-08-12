@@ -30,7 +30,7 @@ import { BUILDING_SPECS, normalizedBuilding } from "../game/models/buildings";
 import { normalizeTutorialProgress, type TutorialProgress } from "../game/onboarding/tutorial";
 import { emptyCourseRecords, seedRecordsFromHistory } from "../game/retention/records";
 import type { CourseRecords } from "../game/retention/types";
-import { normalizeTournamentCalendar } from "../game/tournaments/tournaments";
+import { normalizeTournamentCalendar } from "../game/tournaments/tournamentCalendarValidation";
 import { DECORATION_KINDS, normalizedDecoration } from "../game/models/decorations";
 import { PIN_ROTATIONS, TEE_SETS, validateHoleCourseSetup, withNormalizedHoleSetup } from "../game/models/courseSetup";
 import { generateWildLandWithObstacles } from "../game/gen/generateWildLand";
@@ -89,8 +89,9 @@ import {
   INVITED_PREVIEW_REWARD_REPUTATION,
 } from "../game/onboarding/invitedPreview";
 
-const KEY = "simgolf_lite_save_v1";
-export const CURRENT_SAVE_SCHEMA_VERSION = 31 as const;
+import { CURRENT_SAVE_SCHEMA_VERSION, LEGACY_SAVE_KEY } from "./saveFacade";
+export { CURRENT_SAVE_SCHEMA_VERSION } from "./saveFacade";
+const KEY = LEGACY_SAVE_KEY;
 const MAX_SAVE_GRID_DIMENSION = 256;
 const TERRAIN_VALUES = [
   "fairway",

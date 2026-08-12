@@ -14,11 +14,11 @@ import type {
   TournamentEvent,
   TournamentRoundScorecard,
   TournamentScoringMode,
-  TournamentStanding,
   TournamentTeamFormat,
   TournamentTier,
 } from "./types";
 import { PRO_AM_MEMBER_ALLOWANCE, tournamentTemplate } from "./tournamentTemplates";
+import { reconstructIndividualTournamentStandings } from "./tournamentStandings";
 
 export const TOURNAMENT_LIFECYCLE_DEFAULTS: Record<TournamentTier, { scoringMode: TournamentScoringMode; roundCount: 1 | 2 | 4; teamFormat: TournamentTeamFormat }> = {
   local: { scoringMode: "stableford", roundCount: 1, teamFormat: "individual" },
@@ -168,18 +168,6 @@ export function scoreTournamentRoundCard(event: TournamentEvent, entrantId: stri
   return { entrantId, status: "completed", grossByHole: [...grossByHole], penalties, grossTotal: scored.gross, netTotal: scored.net, stablefordPoints: scored.stableford };
 }
 
-function standings(event: TournamentEvent): TournamentStanding[] {
-  const snapshot = event.activationSnapshot!;
-  const completed = event.rounds?.filter((round) => round.status === "completed") ?? [];
-  return snapshot.entrants.map((entrant) => {
-    const cards = completed.flatMap((round) => round.scorecards.filter((card) => card.entrantId === entrant.entrantId));
-    const gross = cards.reduce((sum, card) => sum + card.grossTotal, 0);
-    const net = cards.reduce((sum, card) => sum + (card.netTotal ?? card.grossTotal), 0);
-    const points = cards.reduce((sum, card) => sum + (card.stablefordPoints ?? 0), 0);
-    return { entrantId: entrant.entrantId, golferId: null, name: entrant.name, archetype: entrant.archetype, holesCompleted: cards.reduce((sum, card) => sum + card.grossByHole.length, 0), score: gross, scoreToPar: snapshot.scoringMode === "stableford" ? -points : (snapshot.scoringMode === "net-stroke" ? net : gross) - snapshot.par * completed.length, finished: !cards.some((card) => card.status === "withdrawn") && cards.length === completed.length };
-  }).sort((a, b) => Number(b.finished) - Number(a.finished) || a.scoreToPar - b.scoreToPar || b.holesCompleted - a.holesCompleted || a.name.localeCompare(b.name));
-}
-
 export function completeTournamentRoundEvidence(event: TournamentEvent, scorecards: readonly TournamentRoundScorecard[], completionId = `${event.id}:round:${event.currentRound ?? 1}`): { ok: true; event: TournamentEvent; finalRound: boolean } | { ok: false; reason: string } {
   if (event.rounds?.some((round) => round.completionId === completionId)) return { ok: true, event, finalRound: event.status === "completed" };
   if (event.status === "completed" && event.activationSnapshot && event.rounds?.every((round) => round.status === "completed")) return { ok: true, event, finalRound: true };
@@ -210,9 +198,15 @@ export function completeTournamentRoundEvidence(event: TournamentEvent, scorecar
   });
   const finalRound = roundNumber >= (event.roundCount ?? 1);
   const advanced: TournamentEvent = { ...event, rounds, currentRound: finalRound ? roundNumber : roundNumber + 1, status: finalRound ? "completed" : "active" };
-  const results = standings(advanced);
-  advanced.results = results;
-  advanced.winnerName = finalRound ? results[0]?.name : undefined;
+  const reconstructed = reconstructIndividualTournamentStandings(advanced);
+  if (!reconstructed.ok) return reconstructed;
+  advanced.results = reconstructed.results;
+  delete advanced.winnerNames;
+  delete advanced.winnerName;
+  if (finalRound && reconstructed.winnerNames.length) {
+    advanced.winnerNames = [...reconstructed.winnerNames];
+    advanced.winnerName = reconstructed.winnerNames[0];
+  }
   return { ok: true, event: advanced, finalRound };
 }
 

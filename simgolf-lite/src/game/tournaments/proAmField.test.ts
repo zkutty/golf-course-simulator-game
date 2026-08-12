@@ -139,7 +139,42 @@ describe("ZK-734A deterministic four-person Pro-Am field core", () => {
     expect(cumulative.evidence.teams.map((team) => team.teamId)).toEqual(snapshot.teams.map((team) => team.id));
     expect(cumulative.evidence.teams.every((team) => team.completedRounds === roundCount && team.dnfRounds === 0 && team.status === "active")).toBe(true);
     expect(Object.keys(cumulative.evidence.teams[0])).toEqual(["teamId", "status", "completedRounds", "dnfRounds", "netTotal"]);
+    expect(cumulative.evidence.standings).toHaveLength(snapshot.teams.length);
+    expect(cumulative.evidence.standings.every((standing) => standing.completedRounds === roundCount && standing.place !== null)).toBe(true);
+    expect(cumulative.evidence.winnerTeamIds).toEqual(cumulative.evidence.standings.filter((standing) => standing.place === 1).map((standing) => standing.competitorId));
     expect(scoreProAmCumulativeEvidence(snapshot, rounds.slice(1))).toMatchObject({ ok: false, reason: expect.stringContaining("contiguous") });
+  }, 60_000);
+
+  it("preserves tied Pro-Am occupied places and reconstructs them from participant gross after reload", () => {
+    const { event, snapshot } = fixture(2);
+    const equalTeamCards = () => snapshot.entrants.map((entrant) => {
+      const gross = snapshot.holes.map((hole, holeIndex) => Math.max(1, hole.par + entrant.strokesByHole[holeIndex] + ((entrant.teamOrder ?? 0) < 2 ? 0 : 2)));
+      return scoreTournamentRoundCard(event, entrant.entrantId, gross)!;
+    });
+    const rounds = [1, 2].map((roundNumber) => {
+      const scored = scoreProAmRoundEvidence(snapshot, roundNumber, equalTeamCards());
+      if (!scored.ok) throw new Error(scored.reason);
+      return scored.evidence;
+    });
+    const cumulative = scoreProAmCumulativeEvidence(snapshot, rounds);
+    expect(cumulative.ok).toBe(true);
+    if (!cumulative.ok) return;
+    expect(cumulative.evidence.standings.every((standing) => standing.place === 1 && standing.tied && standing.status === "completed")).toBe(true);
+    expect(cumulative.evidence.winnerTeamIds).toEqual([...snapshot.teams.map((team) => team.id)].sort());
+    const reloaded = scoreProAmCumulativeEvidence(JSON.parse(JSON.stringify(snapshot)), JSON.parse(JSON.stringify(rounds)));
+    expect(JSON.stringify(reloaded)).toBe(JSON.stringify(cumulative));
+  }, 60_000);
+
+  it("keeps partial Pro-Am leaders ranked without exposing them as winners", () => {
+    const { event, snapshot } = fixture(4);
+    const lowGross = snapshot.entrants.map((entrant) => scoreTournamentRoundCard(event, entrant.entrantId, snapshot.holes.map(() => 1))!);
+    const first = scoreProAmRoundEvidence(snapshot, 1, lowGross);
+    if (!first.ok) throw new Error(first.reason);
+    const partial = scoreProAmCumulativeEvidence(snapshot, [first.evidence]);
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) return;
+    expect(partial.evidence.winnerTeamIds).toEqual([]);
+    expect(partial.evidence.standings.some((standing) => standing.place === 1)).toBe(true);
   }, 60_000);
 
   it("simulates fixed-seed field bytes through shared shot authority and accepts equivalent visible gross", () => {
@@ -158,6 +193,9 @@ describe("ZK-734A deterministic four-person Pro-Am field core", () => {
     const visible = first.evidence.scorecards[5];
     const replay = simulateProAmFieldRound({ snapshot, course: roundCourse, roundNumber: 1, seed: 734_101, visibleScorecards: [visible] });
     expect(JSON.stringify(replay)).toBe(JSON.stringify(first));
+    const firstCumulative = scoreProAmCumulativeEvidence(snapshot, [first.evidence]);
+    const replayCumulative = replay.ok ? scoreProAmCumulativeEvidence(snapshot, [replay.evidence]) : replay;
+    expect(JSON.stringify(replayCumulative)).toBe(JSON.stringify(firstCumulative));
     const forged = { ...visible, grossTotal: visible.grossTotal + 1 };
     expect(simulateProAmFieldRound({ snapshot, course: roundCourse, roundNumber: 1, seed: 734_101, visibleScorecards: [forged] })).toEqual({ ok: false, reason: "Visible Pro-Am gross evidence is duplicated, forged, or malformed." });
   }, 120_000);

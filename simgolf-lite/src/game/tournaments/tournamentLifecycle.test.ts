@@ -7,8 +7,8 @@ import { startPlayerProTournamentRound } from "../competition/equipmentMentor";
 import { createTournamentStandardsCourse } from "../testing/referenceCourse";
 import {
   createTournamentEvent,
-  normalizeTournamentCalendar,
 } from "./tournaments";
+import { normalizeTournamentCalendar } from "./tournamentCalendarValidation";
 import {
   TOURNAMENT_LIFECYCLE_DEFAULTS,
   activateTournament,
@@ -19,6 +19,7 @@ import {
   withdrawTournamentEntrant,
 } from "./tournamentLifecycle";
 import type { TournamentEvent } from "./types";
+import { reconstructIndividualTournamentStandings } from "./tournamentStandings";
 
 const course = createTournamentStandardsCourse();
 
@@ -104,8 +105,86 @@ describe("ZK-733 tournament lifecycle core", () => {
     }
     expect(event.results).toHaveLength(event.field.length);
     expect(event.winnerName).toBe(event.results?.[0].name);
+    expect(event.winnerNames?.[0]).toBe(event.winnerName);
     expect(event.rounds?.flatMap((round) => round.scorecards).every((card) => card.status === "withdrawn" || card.grossByHole.length === 18)).toBe(true);
     expect(completeTournamentRoundEvidence(event, cards(event))).toEqual({ ok: true, event, finalRound: true });
+  });
+
+  it("persists every tied winner and reconstructs cumulative places byte-exactly after reload", () => {
+    const fixture = host("regional");
+    const activated = activateTournament({ ...fixture.event, roundCount: 1 }, course);
+    if (!activated.ok) throw new Error(activated.reason);
+    const equalCards = activated.event.activationSnapshot!.entrants.map((entrant) => scoreTournamentRoundCard(
+      activated.event,
+      entrant.entrantId,
+      activated.event.activationSnapshot!.holes.map((hole, index) => Math.max(1, hole.par + entrant.strokesByHole[index])),
+    )!);
+    const completed = completeTournamentRoundEvidence(activated.event, equalCards);
+    expect(completed.ok).toBe(true);
+    if (!completed.ok) return;
+    expect(completed.event.winnerNames).toEqual(completed.event.results?.map((row) => row.name));
+    expect(completed.event.winnerName).toBe(completed.event.winnerNames?.[0]);
+
+    const before = reconstructIndividualTournamentStandings(completed.event);
+    expect(before.ok).toBe(true);
+    if (!before.ok) return;
+    expect(before.standings.every((standing) => standing.place === 1 && standing.tied)).toBe(true);
+    const reloaded = normalizeTournamentCalendar(JSON.parse(JSON.stringify({ version: 2, events: [completed.event] }))).events[0];
+    const after = reconstructIndividualTournamentStandings(reloaded);
+    expect(JSON.stringify(after)).toBe(JSON.stringify(before));
+    expect(reloaded.winnerNames).toEqual(completed.event.winnerNames);
+
+    const forgedTotal = structuredClone(completed.event);
+    forgedTotal.results![0].scoreToPar -= 99;
+    const reconstructed = reconstructIndividualTournamentStandings(forgedTotal);
+    expect(reconstructed.ok && reconstructed.results).toEqual(before.results);
+    const malformedWinners = structuredClone(completed.event);
+    malformedWinners.winnerNames = [];
+    expect(normalizeTournamentCalendar({ version: 2, events: [malformedWinners] }).events).toEqual([]);
+    const extraWinner = structuredClone(completed.event);
+    extraWinner.winnerNames = [...extraWinner.winnerNames!, extraWinner.winnerNames![0]];
+    expect(normalizeTournamentCalendar({ version: 2, events: [extraWinner] }).events).toEqual([]);
+    const reordered = structuredClone(completed.event);
+    reordered.winnerNames = [...reordered.winnerNames!].reverse();
+    reordered.winnerName = reordered.winnerNames[0];
+    expect(normalizeTournamentCalendar({ version: 2, events: [reordered] }).events).toEqual([]);
+
+    const forgedPoints = structuredClone(completed.event);
+    forgedPoints.rounds![0].scorecards[0].stablefordPoints! += 100;
+    expect(reconstructIndividualTournamentStandings(forgedPoints)).toMatchObject({ ok: false });
+    expect(normalizeTournamentCalendar({ version: 2, events: [forgedPoints] }).events).toEqual([]);
+    const forgedNet = structuredClone(completed.event);
+    forgedNet.rounds![0].scorecards[0].netTotal! -= 100;
+    expect(reconstructIndividualTournamentStandings(forgedNet)).toMatchObject({ ok: false });
+    expect(normalizeTournamentCalendar({ version: 2, events: [forgedNet] }).events).toEqual([]);
+    const missingCard = structuredClone(completed.event);
+    missingCard.rounds = missingCard.rounds!.map((round, index) => index ? round : { ...round, scorecards: round.scorecards.slice(0, -1) });
+    expect(() => normalizeTournamentCalendar({ version: 2, events: [missingCard] })).not.toThrow();
+    expect(normalizeTournamentCalendar({ version: 2, events: [missingCard] }).events).toEqual([]);
+    missingCard.winnerNames = [];
+    delete missingCard.winnerName;
+    delete missingCard.results;
+    expect(normalizeTournamentCalendar({ version: 2, events: [missingCard] }).events).toEqual([]);
+  });
+
+  it("completes and reloads an all-withdrawn field without inventing a winner", () => {
+    const fixture = active("local");
+    const withdrawals = fixture.event.activationSnapshot!.entrants.map((entrant) => ({
+      entrantId: entrant.entrantId,
+      status: "withdrawn" as const,
+      grossByHole: [],
+      penalties: 0,
+      grossTotal: 0,
+    }));
+    const completed = completeTournamentRoundEvidence(fixture.event, withdrawals);
+    expect(completed.ok).toBe(true);
+    if (!completed.ok) return;
+    expect(completed.event).not.toHaveProperty("winnerNames");
+    expect(completed.event).not.toHaveProperty("winnerName");
+    const restored = normalizeTournamentCalendar(JSON.parse(JSON.stringify({ version: 2, events: [completed.event] })));
+    expect(restored.events).toHaveLength(1);
+    expect(restored.events[0]).not.toHaveProperty("winnerNames");
+    expect(restored.events[0]).not.toHaveProperty("winnerName");
   });
 
   it("persists interruption and withdrawal idempotently without advancing the round", () => {

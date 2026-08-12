@@ -15,6 +15,7 @@ import type {
   TournamentActivationSnapshot,
   TournamentRoundScorecard,
 } from "./types";
+import { resolveTournamentStandings, type TournamentRankedStanding } from "./tournamentStandings";
 
 const PRO_AM_TEMPLATE = "four-person-pro-am";
 const PRO_AM_ROLES = ["pro", "amateur", "amateur", "amateur"] as const;
@@ -69,6 +70,9 @@ export interface ProAmCumulativeEvidence {
   activationId: string;
   completedRounds: number;
   teams: readonly ProAmCumulativeTeamEvidence[];
+  /** Reconstructed from the team totals above; DNF teams remain explicitly unplaced. */
+  standings: readonly TournamentRankedStanding[];
+  winnerTeamIds: readonly string[];
 }
 
 export type ProAmRoundResult = { ok: true; evidence: ProAmRoundEvidence } | ProAmFailure;
@@ -289,7 +293,21 @@ export function scoreProAmCumulativeEvidence(snapshot: TournamentActivationSnaps
     const dnfRounds = results.filter((result) => result.status === "dnf").length;
     return { teamId: team.id, status: dnfRounds ? "dnf" : "active", completedRounds: evidence.length, dnfRounds, netTotal: results.reduce((sum, result) => sum + (result.netTotal ?? 0), 0) };
   });
-  return { ok: true, evidence: deepFreeze({ version: 1, activationId: snapshot.activationId, completedRounds: evidence.length, teams }) };
+  const final = evidence.length === snapshot.roundCount;
+  const ranked = resolveTournamentStandings(teams.map((team) => ({
+    competitorId: team.teamId,
+    status: team.status === "dnf" ? "dnf" as const : final ? "completed" as const : "active" as const,
+    completedRounds: team.completedRounds,
+    holesCompleted: team.status === "dnf" ? 0 : team.completedRounds * snapshot.holes.length,
+    scoreTotal: team.status === "dnf" ? null : team.netTotal,
+    rankingTotal: team.status === "dnf" ? null : team.netTotal,
+    scoreToPar: team.status === "dnf" ? null : team.netTotal - snapshot.par * 2 * team.completedRounds,
+    rankEligible: team.status !== "dnf",
+    prizeEligible: team.status !== "dnf" && final,
+    tieBreakKey: team.teamId,
+  })));
+  if (!ranked.ok) return ranked;
+  return { ok: true, evidence: deepFreeze({ version: 1, activationId: snapshot.activationId, completedRounds: evidence.length, teams, standings: ranked.standings, winnerTeamIds: ranked.winnerIds }) };
 }
 
 function participant(

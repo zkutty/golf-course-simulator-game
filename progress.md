@@ -2300,3 +2300,145 @@ Migration design:
   The final affected set passes 5 files / 103 tests; the 73-action decode is
   1,147ms and settlement 2,947ms. TypeScript, scoped ESLint, and diff checks
   remain green with the 10-second gate unchanged.
+
+## 2026-08-12 — ZK-737A cumulative standings and purse-plan authority
+
+- Work is isolated on `codex/zk737-standings` from exact released production
+  SHA `83a2f19f514def2fa5eecf632fc85d1c9db973da`; the original user worktree,
+  Linear beyond its existing work lease, commits, pushes, and deployments are
+  outside this implementation packet.
+- Added one pure lower-is-better cumulative standings authority. Exact ties
+  retain competition places and every occupied place, deterministic ordering
+  never breaks a scoring tie, and withdrawn/DNF/incomplete/invalid carriers
+  remain unplaced with no invented score or prize eligibility.
+- Added a caller-configured purse planner: callers supply only integer purse
+  total and nonnegative occupied-place shares. The authority normalizes those
+  shares to exact integer place amounts, pools all shares crossed by a tie,
+  and deterministically divides remainders by stable competitor ID while
+  preserving the configured total. It does not define a payout curve, post to
+  a wallet, or mix entrant prizes with hosting revenue/reputation.
+- Individual lifecycle standings now reconstruct cumulative gross/net/
+  Stableford competition totals from frozen activation and 1–4 contiguous
+  completed-round scorecards through that authority. Final events persist all
+  tied `winnerNames` while retaining legacy `winnerName` as the first stable
+  projection. Pro-Am cumulative scoring feeds the same authority from its
+  recomputed best-two-net team evidence; visible and simulated participant
+  gross carriers therefore produce byte-identical cumulative standings.
+- `TournamentCalendar` remains version 2. `winnerNames` is additive and
+  optional, legacy `winnerName` remains readable, stored `TournamentStanding`
+  rows retain their exact eight-field shape, and place/tie/purse audit details
+  reconstruct after JSON reload instead of forcing a schema migration.
+- Hostile/property coverage includes 1–4 rounds, ties spanning occupied
+  places, DNF/withdrawn/incomplete/invalid evidence, unknown keys/non-finite
+  totals, exact purse preservation across 200 generated scenarios, all tied
+  winner names plus legacy projection, JSON reload/idempotence, forged stored
+  result immunity, and visible-versus-simulated Pro-Am compatibility.
+- Validation so far: TypeScript passes; scoped and full lint/i18n pass with
+  zero errors and 11 inherited Hook warnings; combined tournament, Player Pro,
+  save, and M47 regression passes 9 files / 134 tests in 39.36s; diff checks
+  pass. A normal production build passes all asset/audio/residency/delivery
+  audits with initial JS 1,607,687 bytes (SHA-256
+  `ff48230686a06acfe0c19714fc856e193475ea9615616107547db738d0309d74`),
+  1,032 bytes under the immutable cap. Deferred `tournamentLifecycle` is
+  16,098 bytes (SHA-256
+  `6f4079ed3249866c455319d5f31288452b1e0b35a5017523f58213ea326ce6b6`).
+  A Sentry-shaped build is 1,608,090 bytes (SHA-256
+  `73fa6ce0d8ceb1a8bf68cfc4807e745ebfc751896c634288628daf1ab1738f47`),
+  leaving 629 bytes of headroom; the expected dummy upload DNS failure did not
+  prevent generation/audits, and zero source maps remain.
+- The authority is attached only to the existing deferred tournament lifecycle
+  and Pro-Am engine paths. No visible route or interaction changed, so the
+  bundled browser client/screenshot loop is not meaningful for this packet.
+- Deferred by scope: payout-curve selection and economy posting, host revenue/
+  reputation, cancellation economics, deferred handicap posting, UI/text
+  surfaces, campaign/prestige, other team tournament scorers, schema bumps,
+  and all human validation. No new blocker or distinct work item was found.
+
+### Independent-review integrity repair
+
+- Generic standings now accept any finite display total, including a negative
+  team net total; individual gross remains nonnegative because individual
+  reconstruction separately validates every frozen gross hole/card.
+- Individual reconstruction no longer trusts persisted `netTotal` or
+  `stablefordPoints`: both must exactly match frozen entrant strokes and hole
+  pars before the card participates. Forged net/Stableford probes fail closed.
+- Lifecycle reload reconstructs exact final tied-winner names/order from frozen
+  individual rounds, rejecting extras, duplicates, or reordering. A completed
+  all-withdrawn field persists neither winner field and reloads successfully;
+  no-snapshot legacy events retain structural compatibility.
+- Zero-share purse tails no longer require nonexistent paid finishers. Every
+  positive occupied-place amount must still map to a prize-eligible tied group,
+  and generated/reload cases continue to preserve the exact configured total.
+- `winnerIds`/Pro-Am `winnerTeamIds` require completed first-place evidence;
+  partial standings keep current places but publish no winner identity. Purse
+  eligibility remains a separate whole-tied-group constraint.
+- Post-repair gates pass: targeted 3 files / 42 tests, combined 9 files / 138
+  tests in 39.75s, TypeScript, full lint/i18n (zero errors; 11 inherited Hook
+  warnings), and diff checks. The final normal production build and all asset/
+  audio/residency/delivery audits pass. The architecture recovery folds winner
+  accumulation into the existing exact card-validation pass and removes the
+  duplicate frozen-round scan. The final normal shape is 1,608,187 initial JS
+  bytes (SHA-256
+  `30ff5157413919a7371ac0c19c93be5824a953059e69f3cdd3e6413452ff868c`),
+  532 bytes under the immutable cap. The final Sentry-shaped build passes at
+  1,608,590 bytes (SHA-256
+  `e2500f384ca2f6d2d5e044109c75c4f1945aa29fa51e512b06c6367a95fbdd53`),
+  129 bytes under cap. That is below the requested 200-byte release headroom,
+  so the packet remains split-blocked without further authorized architecture
+  work. Its dummy upload produced the expected DNS warning and zero source maps
+  remain. Host disk exhaustion required deleting only
+  temporary `dist` plus temporarily removing two tracked reproducible
+  certification outputs; `dist` was deleted after measurement and every
+  tracked output/audit was restored from HEAD before handoff.
+- Final re-review repair makes missing completed entrant cards an explicit
+  fail-closed normalizer result without throwing. Completed place-one rows are
+  winner identities independently of prize eligibility, active partial leaders
+  remain non-winners, and a positive occupied-place pool rejects a tied group
+  unless every member is prize eligible. The exact hostile regressions bring
+  the focused set to 3 files / 43 tests.
+
+## 2026-08-12 — ZK-838 deferred tournament-save validation boundary
+
+- Root cause: extracting the exact tournament calendar validator from
+  `tournaments.ts` did not recover durable delivery headroom because production
+  still imported the full `save.ts` normalizer eagerly through startup,
+  crash-recovery, package-version, and `saveStore` edges. The intermediate
+  normal build was 1,608,261 initial-JS bytes, only 458 bytes under the
+  immutable 1,608,719-byte cap.
+- Added a lightweight save facade containing only schema/key constants and
+  legacy reset/presence helpers. Startup, AppErrorBoundary, and package checks
+  now use that facade. Save payload types remain type-only. Existing
+  save/load, legacy migration, write normalization, and import paths dynamically
+  load the unchanged full save authority before parsing or persistence; the E2E
+  fixture hook is correspondingly asynchronous. All public synchronous save
+  APIs remain available for compatibility and tests.
+- Tournament normalization is an exact extraction into
+  `tournamentCalendarValidation.ts`; the compatibility export remains in
+  `tournaments.ts`, every production save caller targets the extracted module,
+  and the mechanically commented duplicate implementation was removed. No
+  validator predicate, hostile-save rejection, schema, formula, UI, content,
+  budget, or manual chunk rule changed.
+- Focused validation passes 8 files / 129 tests across save, save-store,
+  crash recovery, tournament lifecycle/templates/M24, Pro-Am, and standings;
+  content-package compatibility adds 14/14 and Living Club adds 10/10.
+  TypeScript passes through the full builds. Full ESLint/i18n passes with zero
+  errors and 11 inherited Hook
+  warnings. Two audited normal builds are byte-identical: main
+  `index-CgRc1eAV.js` is 1,565,215 bytes, SHA-256
+  `2e7c93da27c24da091550819dfd49c3cbe5137b8052d1381200d4f7a2f86049a`,
+  43,504 bytes under cap; deferred `save-D9jjWiIX.js` is 33,618 bytes,
+  SHA-256 `ff2d605abcecf0293ffd8a1de1cc30a0c040cda9d39ad9c85f7bfd927f132466`.
+  Both complete dist trees hash to
+  `f6dc3cb41f3397643cc37335a0eb10b8aa1914b3e827b06d3abf9cbef88dd165`.
+- The exact-HEAD dummy-target Sentry-shaped build succeeds with zero maps:
+  main `index-CMaXOTZh.js` is 1,565,759 bytes, SHA-256
+  `3aa3f745cb049b159f17861c22145df405765f2c8236d4bdfc2206abb226d34c`,
+  leaving 42,960 bytes of headroom; deferred `save-D_Bhxp_P.js` is 34,028
+  bytes, SHA-256
+  `16e23dbd01bfe6aeb33ba2c374bb019f25093ae04550eb939cf66984846daf25`.
+- Offline PWA smoke passes. Browser proofs pass for every checked-in historical
+  save migration fixture and the keyboard save/load round trip (2/2). The
+  bundled game client reached an unpaused Quick Start sandbox, rendered the
+  Parkland canvas, produced structured game state, and emitted no console/page
+  error artifact. This proves the async boundary loads before the existing
+  normalization and persistence authority without changing gameplay behavior.

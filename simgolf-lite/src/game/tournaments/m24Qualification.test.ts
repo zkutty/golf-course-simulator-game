@@ -12,12 +12,12 @@ import {
 import {
   completeTournament,
   createTournamentEvent,
-  normalizeTournamentCalendar,
   prepareTournamentDay,
   revalidateScheduledTournaments,
   scheduleTournament,
   tournamentCalendar,
 } from "./tournaments";
+import { normalizeTournamentCalendar } from "./tournamentCalendarValidation";
 
 describe("M24 tournament course qualification", () => {
   const course = createTournamentStandardsCourse();

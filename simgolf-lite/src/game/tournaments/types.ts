@@ -196,6 +196,9 @@ export interface TournamentEvent {
   cancellationReason?: string;
   depositForfeited?: boolean;
   results?: TournamentStanding[];
+  /** All first-place names in deterministic display order; absent on legacy saves. */
+  winnerNames?: string[];
+  /** Legacy single-winner projection retained for existing UI/save consumers. */
   winnerName?: string;
   /** Observed event quality, retained separately from the contracted award. */
   observedQuality?: number;
