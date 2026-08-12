@@ -2199,3 +2199,83 @@ Migration design:
   passes, and zero source maps remain. No schema, assets, reward/prestige
   chains, broader renderer extraction, inventory/save contract, bundle cap,
   commit, push, deployment, or Linear state changed.
+
+## 2026-08-11 — ZK-734B visible Pro-Am ChallengeGroup adapter
+
+- Work is isolated on `codex/zk734-visible-adapter` at exact released SHA
+  `777cf847cf5586576267d82534ef5c12fd632657`; the original user worktree,
+  Linear, commits, pushes, and deployments are outside this packet.
+- Added a strict, versioned `ProAmVisibleRound` wrapper around the existing
+  `ChallengeGroupRound`. Start freezes the exact ZK-735 four-player roster,
+  one pro / three amateur order, 85% handicap inputs, Player-controlled pro,
+  AI-controlled amateurs, persisted round-course snapshot, and the same
+  per-team round ID/derived RNG seed used by `simulateProAmFieldRound`.
+- Encode/decode retains the complete ChallengeGroup transcript without
+  compaction: current turn, honors, reactions, shots, rulings, RNG cursor, and
+  turn evidence survive byte-exact JSON reload. Normalization reuses the
+  ChallengeGroup codec, rejects unknown wrapper keys, and verifies exact
+  activation, roster/controller/handicap/setup, and external persisted-course
+  authority before accepting state.
+- Completion converts only played participant gross/penalty cards or explicit
+  whole-round withdrawal markers. ChallengeGroup concessions fail closed and
+  never become invented Pro-Am gross evidence. Settlement overlays the four
+  visible cards into the existing field simulator/scorer; repeated settlement
+  is pure and byte-identical, while actions after completion are inert.
+- Focused adapter coverage passes 6/6, including fixed-seed visible versus
+  simulated byte equality, JSON normalization, current-turn survival, source
+  course mutation immunity, external persisted-course drift rejection,
+  three-amateur withdrawal DNF, concession rejection, and duplicate actions.
+  The broader affected set passes 5 files / 100 tests across Pro-Am field,
+  ChallengeGroup, tournament lifecycle, and ZK-735 templates. TypeScript,
+  scoped ESLint, i18n guards, and `git diff --check` pass.
+- Production compilation succeeds and all asset/audio/residency/surface audits
+  pass. With the exact released ZK-680 performance input supplied to the sparse
+  checkout, delivery evidence also passes: initial JS is 1,607,436 bytes,
+  SHA-256 `5d47d186cb61f9279675085607184b22d840f2dfe279d629aa9ad2315e47df5f`,
+  exactly matching the released build and leaving 1,283 bytes under the
+  immutable cap; initial critical transfer is 3,805,770 bytes and total dist is
+  116,479,456 bytes. The new adapter is not imported by App/UI and remains
+  tree-shaken, so no browser-visible route changed and the game-client loop is
+  not applicable to this bounded engine/persistence packet.
+- Deferred by scope: ZK-736 UI/read-model wiring, career/global save-schema
+  ownership, standings/ties/prizes/winner names, handicap posting, club
+  economics, campaign, and prestige. No scoring or handicap formula changed.
+
+### Independent-review integrity repair
+
+- Review reproduced three hostile carriers that the generic ChallengeGroup
+  codec does not claim to authenticate: an injected equipment modifier, a
+  completed amateur flipped to withdrawn without withdrawal evidence, and a
+  coherently edited completed gross/strokes/net hole. The adapter no longer
+  treats a structurally valid ChallengeGroup transcript as sufficient Pro-Am
+  evidence.
+- `ProAmVisibleRound` now persists the required `playerEntrantId` and an
+  exact-shape action log containing only player shot selections and explicit
+  withdrawals. Start requires that player ID to be the unique frozen pro,
+  captain, and member of the selected team. Unknown, cross-team, amateur,
+  duplicate-roster, duplicate-pro, and moved-captain cases fail closed.
+- Decode and settlement reconstruct the ChallengeGroup from the immutable
+  activation, persisted course, raw field seed, and explicit player ID, replay
+  every logged action through the existing ChallengeGroup commit/withdraw
+  transactions, and require byte equality with the persisted transcript. This
+  derives equipment, absent confidence, cards, withdrawals, turns, reactions,
+  honors, shots, rulings, and RNG state without duplicating any formula or
+  physics authority. All three reproduced hostile carriers now fail both load
+  and settlement.
+- The action log rejects unknown keys and malformed selections/withdrawals and
+  is capped at 512 entries. That exceeds the existing Pro-Am 480-player-turn
+  guard plus four possible effective withdrawals; duplicate, unknown, and
+  post-completion actions are inert and unlogged. The completed reference
+  18-hole route stays below the cap.
+- Post-repair focused coverage passes 6/6. The affected set passes 5 files /
+  100 tests in 79.19s. The final focused rerun passes 6/6 in 84.09s with
+  73 logged actions. One completed 18-hole action replay measured 6,649ms
+  against a new 10,000ms gate; replay plus full-field settlement measured
+  8,348ms against the existing 30,000ms field bound. TypeScript, scoped ESLint,
+  and i18n guards pass. No shared ChallengeGroup, physics, schema, UI, budget,
+  or formula file changed.
+- Final P2 hardening requires the nested shot `aim` object to contain exactly
+  `x` and `y`. Both direct commit and a coherently edited persisted action plus
+  turn transcript reject an added nested key. The post-P2 focused suite passes
+  6/6 in 78.85s; the 73-action reference replay measured 6,431ms and replay plus
+  full-field settlement measured 8,154ms.

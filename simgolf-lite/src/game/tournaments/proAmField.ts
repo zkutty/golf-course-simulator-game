@@ -73,6 +73,7 @@ export interface ProAmCumulativeEvidence {
 
 export type ProAmRoundResult = { ok: true; evidence: ProAmRoundEvidence } | ProAmFailure;
 export type ProAmCumulativeResult = { ok: true; evidence: ProAmCumulativeEvidence } | ProAmFailure;
+export type ProAmSetupValidationResult = { ok: true } | ProAmFailure;
 
 const json = JSON.stringify;
 const finite = Number.isFinite;
@@ -196,6 +197,19 @@ function courseProblem(snapshot: TournamentActivationSnapshot, course: PlayerRou
     }
   }
   return null;
+}
+
+/** Shared fail-closed boundary for adapters that consume the frozen Pro-Am setup. */
+export function validateProAmRoundSetup(
+  snapshot: TournamentActivationSnapshot,
+  course: PlayerRoundCourseSnapshot,
+): ProAmSetupValidationResult {
+  try {
+    const problem = snapshotProblem(snapshot) ?? courseProblem(snapshot, course);
+    return problem ? { ok: false, reason: problem } : { ok: true };
+  } catch {
+    return { ok: false, reason: "The Pro-Am activation or immutable round course is malformed." };
+  }
 }
 
 function canonicalCard(snapshot: TournamentActivationSnapshot, card: TournamentRoundScorecard | undefined): TournamentRoundScorecard | null {
@@ -372,10 +386,8 @@ export interface SimulateProAmFieldArgs {
 
 /** Deterministically simulates non-visible evidence through the shared Player Pro shot authority. */
 export function simulateProAmFieldRound(args: SimulateProAmFieldArgs): ProAmRoundResult {
-  let problem: string | null;
-  try { problem = snapshotProblem(args.snapshot) ?? courseProblem(args.snapshot, args.course); }
-  catch { return { ok: false, reason: "The Pro-Am activation or immutable round course is malformed." }; }
-  if (problem) return { ok: false, reason: problem };
+  const setup = validateProAmRoundSetup(args.snapshot, args.course);
+  if (!setup.ok) return setup;
   if (!integer(args.roundNumber) || args.roundNumber < 1 || args.roundNumber > args.snapshot.roundCount! || !integer(args.seed)) {
     return { ok: false, reason: "Pro-Am simulation requires a valid frozen round number and integer seed." };
   }
