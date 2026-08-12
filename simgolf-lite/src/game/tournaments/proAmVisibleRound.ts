@@ -17,11 +17,8 @@ import type {
 } from "../models/playerProTypes";
 import type { PlayerShotSelection } from "../playerPro/playerPro";
 import { PRO_AM_MEMBER_ALLOWANCE } from "./tournamentTemplates";
-import {
-  simulateProAmFieldRound,
-  validateProAmRoundSetup,
-  type ProAmRoundEvidence,
-} from "./proAmField";
+import { validateProAmRoundSetup, type ProAmRoundEvidence } from "./proAmField";
+import { simulateProAmFieldRound } from "./proAmFieldSimulation";
 import type {
   TournamentActivationEntrantSnapshot,
   TournamentActivationSnapshot,

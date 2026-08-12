@@ -132,7 +132,7 @@ describe("ZK-735 reusable tournament team-event authority", () => {
     expect(JSON.stringify(preview.snapshot)).toBe(before);
   }, 60_000);
 
-  it("freezes Pro-Am 85% roles and allowances but refuses deferred team scoring", () => {
+  it("freezes Pro-Am 85% roles and allowances and completes canonical evidence through the lifecycle", () => {
     const event = scheduled("four-person-pro-am", { roundCount: 1 });
     const activated = activateTournament(event, course);
     if (!activated.ok) throw new Error(activated.reason);
@@ -141,7 +141,11 @@ describe("ZK-735 reusable tournament team-event authority", () => {
     expect(activated.event.activationSnapshot!.entrants.every((entrant) => entrant.allowance === PRO_AM_MEMBER_ALLOWANCE)).toBe(true);
     const cards = activated.event.activationSnapshot!.entrants.map((entrant) => scoreTournamentRoundCard(activated.event, entrant.entrantId, activated.event.activationSnapshot!.holes.map((hole) => hole.par))!);
     expect(cards.every((card) => card.grossByHole.length === 18)).toBe(true);
-    expect(completeTournamentRoundEvidence(activated.event, cards)).toEqual({ ok: false, reason: "Pro-Am field simulation and best-two-net scoring are deferred." });
+    const completed = completeTournamentRoundEvidence(activated.event, cards);
+    expect(completed.ok).toBe(true);
+    if (!completed.ok) return;
+    expect(completed.event.teamStandings).toHaveLength(activated.event.activationSnapshot!.teams.length);
+    expect(completed.event.winnerTeamIds).toEqual(completed.event.teamStandings?.filter((row) => row.place === 1).map((row) => row.teamId));
     const scheduledWorld = { ...world, week: event.scheduledWeek, tournaments: { version: 2 as const, events: [event] } };
     expect(tournamentForDate(scheduledWorld, event.scheduledDay, course)).toBeUndefined();
     expect(planTournamentDay(event, 480, 10)).toEqual([]);

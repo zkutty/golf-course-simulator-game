@@ -19,6 +19,7 @@ import type {
 } from "./types";
 import { PRO_AM_MEMBER_ALLOWANCE, tournamentTemplate } from "./tournamentTemplates";
 import { reconstructIndividualTournamentStandings } from "./tournamentStandings";
+import { projectProAmTeamStandings, reconstructProAmTournamentEvidence, scoreProAmRoundEvidence } from "./proAmField";
 
 export const TOURNAMENT_LIFECYCLE_DEFAULTS: Record<TournamentTier, { scoringMode: TournamentScoringMode; roundCount: 1 | 2 | 4; teamFormat: TournamentTeamFormat }> = {
   local: { scoringMode: "stableford", roundCount: 1, teamFormat: "individual" },
@@ -163,16 +164,22 @@ export function activateTournament(event: TournamentEvent, course: Course, week 
 export function scoreTournamentRoundCard(event: TournamentEvent, entrantId: string, grossByHole: readonly number[], penalties = 0): TournamentRoundScorecard | null {
   const snapshot = event.activationSnapshot;
   const entrant = snapshot?.entrants.find((candidate) => candidate.entrantId === entrantId);
-  if (!snapshot || !entrant || grossByHole.length !== snapshot.holes.length || grossByHole.some((score) => !Number.isInteger(score) || score <= 0) || !Number.isInteger(penalties) || penalties < 0) return null;
-  const scored = scoreStrokePlay({ id: entrantId, playingHandicap: entrant.playingHandicap, holeScores: grossByHole.map((gross) => ({ playerId: entrantId, gross, status: "played" as const })) }, snapshot.holes);
-  return { entrantId, status: "completed", grossByHole: [...grossByHole], penalties, grossTotal: scored.gross, netTotal: scored.net, stablefordPoints: scored.stableford };
+  if (!snapshot || !entrant || !Array.isArray(grossByHole) || grossByHole.length !== snapshot.holes.length
+    || grossByHole.some((score) => !Number.isSafeInteger(score) || score <= 0) || !Number.isSafeInteger(penalties) || penalties < 0) return null;
+  try {
+    const scored = scoreStrokePlay({ id: entrantId, playingHandicap: entrant.playingHandicap, holeScores: grossByHole.map((gross) => ({ playerId: entrantId, gross, status: "played" as const })) }, snapshot.holes);
+    if (![scored.gross, scored.net, scored.stableford].every(Number.isSafeInteger)) return null;
+    return { entrantId, status: "completed", grossByHole: [...grossByHole], penalties, grossTotal: scored.gross, netTotal: scored.net, stablefordPoints: scored.stableford };
+  } catch {
+    return null;
+  }
 }
 
 export function completeTournamentRoundEvidence(event: TournamentEvent, scorecards: readonly TournamentRoundScorecard[], completionId = `${event.id}:round:${event.currentRound ?? 1}`): { ok: true; event: TournamentEvent; finalRound: boolean } | { ok: false; reason: string } {
   if (event.rounds?.some((round) => round.completionId === completionId)) return { ok: true, event, finalRound: event.status === "completed" };
   if (event.status === "completed" && event.activationSnapshot && event.rounds?.every((round) => round.status === "completed")) return { ok: true, event, finalRound: true };
   if (event.status !== "active" || !event.activationSnapshot || !event.rounds) return { ok: false, reason: "Tournament is not active." };
-  if (event.activationSnapshot.teamFormat !== "individual") return { ok: false, reason: event.activationSnapshot.teamFormat === "pro-am" ? "Pro-Am field simulation and best-two-net scoring are deferred." : "Team standings require the deferred tournament team-round scorer." };
+  if (event.activationSnapshot.teamFormat !== "individual" && event.activationSnapshot.teamFormat !== "pro-am") return { ok: false, reason: "Team standings require the deferred tournament team-round scorer." };
   const roundNumber = event.currentRound ?? 1;
   const current = event.rounds.find((round) => round.roundNumber === roundNumber);
   if (current?.status !== "active") return { ok: false, reason: "Current tournament round is not playable." };
@@ -198,14 +205,27 @@ export function completeTournamentRoundEvidence(event: TournamentEvent, scorecar
   });
   const finalRound = roundNumber >= (event.roundCount ?? 1);
   const advanced: TournamentEvent = { ...event, rounds, currentRound: finalRound ? roundNumber : roundNumber + 1, status: finalRound ? "completed" : "active" };
-  const reconstructed = reconstructIndividualTournamentStandings(advanced);
-  if (!reconstructed.ok) return reconstructed;
-  advanced.results = reconstructed.results;
-  delete advanced.winnerNames;
-  delete advanced.winnerName;
-  if (finalRound && reconstructed.winnerNames.length) {
-    advanced.winnerNames = [...reconstructed.winnerNames];
-    advanced.winnerName = reconstructed.winnerNames[0];
+  if (event.activationSnapshot.teamFormat === "pro-am") {
+    const currentEvidence = scoreProAmRoundEvidence(event.activationSnapshot, roundNumber, authoritative as TournamentRoundScorecard[]);
+    if (!currentEvidence.ok) return currentEvidence;
+    const reconstructed = reconstructProAmTournamentEvidence(advanced);
+    if (!reconstructed.ok) return reconstructed;
+    advanced.teamStandings = projectProAmTeamStandings(reconstructed.evidence, finalRound);
+    delete advanced.winnerTeamIds;
+    if (finalRound && reconstructed.evidence.winnerTeamIds.length) advanced.winnerTeamIds = [...reconstructed.evidence.winnerTeamIds];
+    delete advanced.results;
+    delete advanced.winnerNames;
+    delete advanced.winnerName;
+  } else {
+    const reconstructed = reconstructIndividualTournamentStandings(advanced);
+    if (!reconstructed.ok) return reconstructed;
+    advanced.results = reconstructed.results;
+    delete advanced.winnerNames;
+    delete advanced.winnerName;
+    if (finalRound && reconstructed.winnerNames.length) {
+      advanced.winnerNames = [...reconstructed.winnerNames];
+      advanced.winnerName = reconstructed.winnerNames[0];
+    }
   }
   return { ok: true, event: advanced, finalRound };
 }

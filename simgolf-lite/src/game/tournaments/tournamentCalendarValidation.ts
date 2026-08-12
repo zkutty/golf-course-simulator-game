@@ -4,6 +4,7 @@ import { captureTeamHandicapSnapshots } from "../competition/teamAuthority";
 import { courseHandicapUnrounded, playingHandicapFromUnrounded, strokesByHole } from "../competition/handicap";
 import { PRO_AM_MEMBER_ALLOWANCE, tournamentTemplate } from "./tournamentTemplates";
 import type { TournamentCalendar, TournamentEvent, TournamentRoundScorecard } from "./types";
+import { projectProAmTeamStandings, reconstructProAmTournamentEvidence } from "./proAmField";
 
 const INDIVIDUAL = "individual";
 const ACTIVE = "active";
@@ -26,6 +27,7 @@ function validLegacyWinnerNames(event: TournamentEvent): boolean {
 
 function validLifecycleEvent(event: TournamentEvent): boolean {
   const s = event.activationSnapshot;
+  if ((event.teamStandings !== undefined || event.winnerTeamIds !== undefined) && (!s || s.teamFormat !== "pro-am")) return false;
   if (!s) {
     if (!validLegacyWinnerNames(event)) return false;
     if (event.status === ACTIVE) return false;
@@ -126,7 +128,7 @@ function validLifecycleEvent(event: TournamentEvent): boolean {
     && ROUND_STATES.includes(round.status) && new Set(round.scorecards.map((card: TournamentRoundScorecard) => card?.entrantId)).size === round.scorecards.length
     && round.scorecards.every((card: TournamentRoundScorecard) => {
       const entrant = card && entrantById.get(card.entrantId);
-      if (!entrant || !array(card.grossByHole) || !integer(card.penalties)) return false;
+      if (!entrant || !array(card.grossByHole) || !Number.isSafeInteger(card.penalties)) return false;
       const total = totals?.get(card.entrantId);
       if (total) total[3] += 1;
       if (card.status === "withdrawn") {
@@ -137,11 +139,12 @@ function validLifecycleEvent(event: TournamentEvent): boolean {
       let gross = 0; let net = 0; let points = 0;
       for (let hole = 0; hole < 18; hole += 1) {
         const score = card.grossByHole[hole];
-        if (!integer(score) || score <= 0) return false;
+        if (!Number.isSafeInteger(score) || score <= 0) return false;
         gross += score;
         net += score - entrant.strokesByHole[hole];
         points += Math.max(0, Math.min(5, 2 - score + entrant.strokesByHole[hole] + holes[hole].par));
       }
+      if (![gross, net, points].every(Number.isSafeInteger)) return false;
       if (total) { total[0] += gross; total[1] += net; total[2] += points; }
       return card.grossTotal === gross && card.netTotal === net && card.stablefordPoints === points;
     }))) return false;
@@ -162,6 +165,20 @@ function validLifecycleEvent(event: TournamentEvent): boolean {
       expected = winners.length ? winners.sort((a, b) => a.name.localeCompare(b.name) || a.entrantId.localeCompare(b.entrantId)).map((entrant) => entrant.name) : undefined;
     }
     if (!same(event.winnerNames, expected) || event.winnerName !== expected?.[0]) return false;
+  } else if (s.teamFormat === "pro-am") {
+    const completed = rounds.filter((round) => round.status === COMPLETED);
+    if (!completed.length) {
+      if (event.teamStandings !== undefined || event.winnerTeamIds !== undefined) return false;
+    } else {
+      const reconstructed = reconstructProAmTournamentEvidence(event);
+      if (!reconstructed.ok) return false;
+      const expectedStandings = projectProAmTeamStandings(reconstructed.evidence, event.status === COMPLETED);
+      const expectedWinners = event.status === COMPLETED && reconstructed.evidence.winnerTeamIds.length
+        ? reconstructed.evidence.winnerTeamIds
+        : undefined;
+      if (!same(event.teamStandings, expectedStandings) || !same(event.winnerTeamIds, expectedWinners)) return false;
+    }
+    if (event.results !== undefined || event.winnerNames !== undefined || event.winnerName !== undefined) return false;
   }
   return (!event.results || event.results.every((row) => entrantById.get(row.entrantId)?.name === row.name && (!v2 || sized(row, 8)))) && (!event.winnerName || event.results?.[0]?.name === event.winnerName);
 }

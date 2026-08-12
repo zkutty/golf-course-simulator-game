@@ -6,7 +6,7 @@ import { concedeChallengeGroupHole } from "../competition/challengeGroupRound";
 import { caddieRecommendation } from "../playerPro/playerPro";
 import { startPlayableRound } from "../playerPro/playerProRoundStart";
 import { createTournamentStandardsCourse } from "../testing/referenceCourse";
-import { simulateProAmFieldRound } from "./proAmField";
+import { simulateProAmFieldRound } from "./proAmFieldSimulation";
 import {
   commitProAmVisiblePlayerShot,
   decodeProAmVisibleRound,

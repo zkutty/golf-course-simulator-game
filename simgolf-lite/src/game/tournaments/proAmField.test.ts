@@ -17,8 +17,8 @@ import { createTournamentEvent } from "./tournamentScheduling";
 import {
   scoreProAmCumulativeEvidence,
   scoreProAmRoundEvidence,
-  simulateProAmFieldRound,
 } from "./proAmField";
+import { simulateProAmFieldRound } from "./proAmFieldSimulation";
 import type { TournamentEvent, TournamentRoundScorecard } from "./types";
 
 const course = createTournamentStandardsCourse();

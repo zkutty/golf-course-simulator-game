@@ -110,6 +110,83 @@ describe("ZK-733 tournament lifecycle core", () => {
     expect(completeTournamentRoundEvidence(event, cards(event))).toEqual({ ok: true, event, finalRound: true });
   });
 
+  it.each([1, 2, 3, 4] as const)("persists and reconstructs a %i-round Pro-Am team event", (roundCount) => {
+    const fixture = host("regional");
+    const created = createTournamentEvent({
+      course,
+      world: fixture.world,
+      tier: "regional",
+      currentDay: 0,
+      daysAhead: 1,
+      templateId: "four-person-pro-am",
+    });
+    if (!created.ok) throw new Error(created.reason);
+    const activated = activateTournament({ ...created.event, roundCount }, course);
+    if (!activated.ok) throw new Error(activated.reason);
+    let event = activated.event;
+    for (let round = 1; round <= roundCount; round += 1) {
+      const completed = completeTournamentRoundEvidence(event, cards(event, round - 1));
+      expect(completed.ok).toBe(true);
+      if (!completed.ok) return;
+      event = completed.event;
+      expect(event.teamStandings).toHaveLength(event.activationSnapshot!.teams.length);
+      expect(event.rounds?.[round - 1].scorecards).toHaveLength(event.activationSnapshot!.entrants.length);
+      const reloaded = normalizeTournamentCalendar(JSON.parse(JSON.stringify({ version: 2, events: [event] }))).events[0];
+      expect(reloaded).toBeDefined();
+      expect(reloaded.teamStandings).toEqual(event.teamStandings);
+      event = reloaded;
+    }
+    expect(event.status).toBe("completed");
+    expect(event.winnerTeamIds).toEqual(event.teamStandings?.filter((row) => row.place === 1).map((row) => row.teamId));
+    expect(event.results).toBeUndefined();
+    expect(event.winnerNames).toBeUndefined();
+  });
+
+  it("fails closed on forged or incomplete Pro-Am gross evidence and keeps non-Pro-Am team formats deferred", () => {
+    const fixture = host("regional");
+    const created = createTournamentEvent({ course, world: fixture.world, tier: "regional", currentDay: 0, daysAhead: 1, templateId: "four-person-pro-am" });
+    if (!created.ok) throw new Error(created.reason);
+    const activated = activateTournament(created.event, course);
+    if (!activated.ok) throw new Error(activated.reason);
+    const evidence = cards(activated.event);
+    expect(completeTournamentRoundEvidence(activated.event, evidence.slice(1))).toMatchObject({ ok: false });
+    expect(completeTournamentRoundEvidence(activated.event, evidence.map((card, index) => index ? card : { ...card, grossByHole: [0, ...card.grossByHole.slice(1)] }))).toMatchObject({ ok: false });
+    const overflow = evidence.map((card, index) => index ? card : { ...card, grossByHole: card.grossByHole.map(() => Number.MAX_VALUE) });
+    expect(() => completeTournamentRoundEvidence(activated.event, overflow)).not.toThrow();
+    expect(completeTournamentRoundEvidence(activated.event, overflow)).toMatchObject({ ok: false });
+    const hugeGross = Math.floor(Number.MAX_SAFE_INTEGER / 40);
+    const hugeEvidence = activated.event.activationSnapshot!.entrants.map((entrant) => scoreTournamentRoundCard(
+      activated.event,
+      entrant.entrantId,
+      activated.event.activationSnapshot!.holes.map(() => hugeGross),
+    )!);
+    const hugeFirst = completeTournamentRoundEvidence(activated.event, hugeEvidence);
+    expect(hugeFirst.ok).toBe(true);
+    if (hugeFirst.ok) {
+      expect(() => completeTournamentRoundEvidence(hugeFirst.event, hugeEvidence)).not.toThrow();
+      expect(completeTournamentRoundEvidence(hugeFirst.event, hugeEvidence)).toMatchObject({ ok: false });
+    }
+
+    const completed = completeTournamentRoundEvidence(activated.event, evidence);
+    if (!completed.ok) throw new Error(completed.reason);
+    const hostileReload = structuredClone(completed.event);
+    const hostileCard = (hostileReload as unknown as { rounds: Array<{ scorecards: Array<{ grossByHole: number[] }> }> }).rounds[0].scorecards[0];
+    hostileCard.grossByHole[0] = Number.MAX_VALUE;
+    expect(() => normalizeTournamentCalendar({ version: 2, events: [hostileReload] })).not.toThrow();
+    expect(normalizeTournamentCalendar({ version: 2, events: [hostileReload] }).events).toEqual([]);
+
+    const forgedProjection = [{ teamId: "forged", status: "active" as const, completedRounds: 0, dnfRounds: 0, netTotal: -999, place: 1, tied: false, occupiedPlaces: [1] }];
+    expect(normalizeTournamentCalendar({ version: 2, events: [{ ...created.event, teamStandings: forgedProjection, winnerTeamIds: ["forged"] }] }).events).toEqual([]);
+    expect(normalizeTournamentCalendar({ version: 2, events: [{ ...activated.event, teamStandings: forgedProjection }] }).events).toEqual([]);
+
+    const pair = createTournamentEvent({ course, world: fixture.world, tier: "regional", currentDay: 0, daysAhead: 1, templateId: "two-v-two-four-ball" });
+    if (!pair.ok) throw new Error(pair.reason);
+    const pairActive = activateTournament(pair.event, course);
+    if (!pairActive.ok) throw new Error(pairActive.reason);
+    expect(completeTournamentRoundEvidence(pairActive.event, cards(pairActive.event))).toEqual({ ok: false, reason: "Team standings require the deferred tournament team-round scorer." });
+    expect(normalizeTournamentCalendar({ version: 2, events: [{ ...pairActive.event, teamStandings: forgedProjection }] }).events).toEqual([]);
+  });
+
   it("persists every tied winner and reconstructs cumulative places byte-exactly after reload", () => {
     const fixture = host("regional");
     const activated = activateTournament({ ...fixture.event, roundCount: 1 }, course);

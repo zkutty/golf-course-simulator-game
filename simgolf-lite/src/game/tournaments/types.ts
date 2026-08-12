@@ -165,6 +165,18 @@ export interface TournamentStanding {
   finished: boolean;
 }
 
+/** Recomputable team projection derived only from frozen participant gross cards. */
+export interface TournamentTeamStanding {
+  teamId: string;
+  status: "active" | "completed" | "dnf";
+  completedRounds: number;
+  dnfRounds: number;
+  netTotal: number;
+  place: number | null;
+  tied: boolean;
+  occupiedPlaces: readonly number[];
+}
+
 export interface TournamentEvent {
   id: string;
   name: string;
@@ -196,6 +208,10 @@ export interface TournamentEvent {
   cancellationReason?: string;
   depositForfeited?: boolean;
   results?: TournamentStanding[];
+  /** Current cumulative team projection; never accepted as scoring authority. */
+  teamStandings?: TournamentTeamStanding[];
+  /** All first-place team identities after final-round evidence is complete. */
+  winnerTeamIds?: string[];
   /** All first-place names in deterministic display order; absent on legacy saves. */
   winnerNames?: string[];
   /** Legacy single-winner projection retained for existing UI/save consumers. */
