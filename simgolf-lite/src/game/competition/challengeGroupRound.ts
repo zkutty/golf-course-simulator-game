@@ -1056,7 +1056,7 @@ function commitTurn(round: ChallengeGroupRound, golferId: string, selection: Pla
   }, golfers);
 }
 
-function runAiUntilPlayer(round: ChallengeGroupRound): ChallengeGroupRound {
+function runAiUntilPlayer(round: ChallengeGroupRound, freezeResult = true): ChallengeGroupRound {
   let next = round;
   let guard = 0;
   while (next.phase !== "complete" && guard++ < MAX_AI_TURNS) {
@@ -1098,7 +1098,7 @@ function runAiUntilPlayer(round: ChallengeGroupRound): ChallengeGroupRound {
     }, golfers);
   }
   if (guard >= MAX_AI_TURNS) throw new Error("Challenge group exceeded the deterministic AI turn bound.");
-  return freeze(next);
+  return freezeResult ? freeze(next) : next;
 }
 
 export function startChallengeGroupRound(args: StartChallengeGroupRoundArgs): ChallengeGroupRound {
@@ -1224,7 +1224,29 @@ export function challengeGroupPlayerSkills(round: ChallengeGroupRound): PlayerPr
 export function commitChallengeGroupPlayerShot(round: ChallengeGroupRound, golferId: string, selection: PlayerShotSelection): ChallengeGroupRound {
   if (golferId !== round.playerGolferId) throw new Error("Only the player-controlled golfer accepts player shot input.");
   if (round.activeGolferId !== golferId) throw new Error("The player-controlled golfer does not own the current turn.");
-  return runAiUntilPlayer(commitTurn(round, golferId, selection));
+  const committed = commitTurn(round, golferId, selection);
+  return committed === round ? round : runAiUntilPlayer(committed);
+}
+
+/**
+ * Replays persisted player selections through the same turn and AI authority as
+ * individual commits, while deferring the immutable clone until the batch end.
+ */
+export function replayChallengeGroupPlayerShots(
+  round: ChallengeGroupRound,
+  golferId: string,
+  selections: readonly PlayerShotSelection[],
+): ChallengeGroupRound | null {
+  if (selections.length === 0) return round;
+  let next = round;
+  for (const selection of selections) {
+    if (golferId !== next.playerGolferId) throw new Error("Only the player-controlled golfer accepts player shot input.");
+    if (next.activeGolferId !== golferId) throw new Error("The player-controlled golfer does not own the current turn.");
+    const committed = commitTurn(next, golferId, selection);
+    if (committed === next) return null;
+    next = runAiUntilPlayer(committed, false);
+  }
+  return freeze(next);
 }
 
 /** The human captain must explicitly choose either partner's completed scramble shot. */

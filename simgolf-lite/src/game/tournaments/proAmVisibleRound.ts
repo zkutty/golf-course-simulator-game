@@ -4,6 +4,7 @@ import {
   commitChallengeGroupPlayerShot,
   decodeChallengeGroupRound,
   encodeChallengeGroupRound,
+  replayChallengeGroupPlayerShots,
   startChallengeGroupRound,
   withdrawChallengeGroupGolfer,
   type ChallengeGroupParticipantInput,
@@ -231,13 +232,26 @@ function replayActions(
       state.playerEntrantId,
       state.seed,
     );
+    let selections: PlayerShotSelection[] = [];
+    const flushSelections = (): boolean => {
+      if (!selections.length) return true;
+      const replayed = replayChallengeGroupPlayerShots(round, state.playerEntrantId, selections);
+      selections = [];
+      if (!replayed) return false;
+      round = replayed;
+      return true;
+    };
     for (const action of state.actions) {
+      if (action.type === "player-shot") {
+        selections.push(action.selection);
+        continue;
+      }
+      if (!flushSelections()) return null;
       const prior = round;
-      round = action.type === "player-shot"
-        ? commitChallengeGroupPlayerShot(round, state.playerEntrantId, action.selection)
-        : withdrawChallengeGroupGolfer(round, action.entrantId, action.reason);
+      round = withdrawChallengeGroupGolfer(round, action.entrantId, action.reason);
       if (round === prior) return null;
     }
+    if (!flushSelections()) return null;
   } catch {
     return null;
   }

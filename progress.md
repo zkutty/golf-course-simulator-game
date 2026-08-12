@@ -2279,3 +2279,24 @@ Migration design:
   turn transcript reject an added nested key. The post-P2 focused suite passes
   6/6 in 78.85s; the 73-action reference replay measured 6,431ms and replay plus
   full-field settlement measured 8,154ms.
+- Development CI run `31550360276` passed 205 other files / 1,644 other tests
+  and failed only the adapter's 10-second replay gate: completed-route decode
+  took 17,882ms on the slower serial runner. The 10-second gate remains intact.
+  A narrow ChallengeGroup batch helper now invokes the same `commitTurn` and AI
+  authority for every persisted selection but defers the immutable whole-round
+  clone until the batch end; ordinary one-shot commits are unchanged. Direct
+  tests prove byte equality for 1-, 3-, and 8-shot batches and across a
+  withdrawal boundary. The affected set passes 5 files / 101 tests; the
+  73-action reference decode now measures 1,194ms and settlement 3,034ms.
+  TypeScript, scoped ESLint, and `git diff --check` pass.
+- A follow-up review found that an unavailable but well-shaped selection made
+  `commitTurn` return the original round, after which the public single-shot
+  API still froze a byte-equal clone. The Pro-Am wrapper consequently logged
+  an action that authoritative batch replay correctly rejected. The public
+  commit now returns the original round whenever `commitTurn` is inert; batch
+  replay still returns `null` for an impossible persisted action. Shared and
+  Pro-Am tee-box-putter regressions prove the single/wrapper calls are inert,
+  no action is logged, and the encoded unchanged wrapper decodes byte-exactly.
+  The final affected set passes 5 files / 103 tests; the 73-action decode is
+  1,147ms and settlement 2,947ms. TypeScript, scoped ESLint, and diff checks
+  remain green with the 10-second gate unchanged.

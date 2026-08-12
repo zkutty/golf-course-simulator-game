@@ -62,6 +62,23 @@ function play(round: ProAmVisibleRound): ProAmVisibleRound {
 }
 
 describe("ZK-734B visible Pro-Am ChallengeGroup adapter", () => {
+  it("does not persist an unavailable well-shaped player shot", () => {
+    const { snapshot, roundCourse, round } = started();
+    const unavailable = {
+      club: "Putter",
+      aim: { ...round.challengeRound.course.holes[round.challengeRound.currentHoleIndex].pin },
+      power: .5,
+      technique: "normal" as const,
+    };
+    const unchanged = commitProAmVisiblePlayerShot(round, unavailable);
+    expect(unchanged).toBe(round);
+    expect(unchanged.actions).toEqual([]);
+    const encoded = encodeProAmVisibleRound(unchanged);
+    const decoded = decodeProAmVisibleRound(encoded, snapshot, roundCourse);
+    expect(decoded.ok).toBe(true);
+    if (decoded.ok) expect(JSON.stringify(decoded.round)).toBe(encoded);
+  });
+
   it("starts the exact frozen one-pro/three-amateur roster and owns an immutable course clone", () => {
     const { snapshot, roundCourse, team } = fixture();
     const mutableCourse = structuredClone(roundCourse);

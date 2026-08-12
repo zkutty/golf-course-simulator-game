@@ -13,6 +13,7 @@ import {
   encodeChallengeGroupRound,
   previewChallengeGroupPlayerShot,
   recordChallengeGroupMeasurement,
+  replayChallengeGroupPlayerShots,
   renderChallengeGroupRoundToText,
   scoreChallengeNassauSegment,
   startChallengeGroupRound,
@@ -141,6 +142,59 @@ function selection(round: ChallengeGroupRound) {
 }
 
 describe("ZK-726 ChallengeGroupRound", () => {
+  it("keeps an unavailable well-shaped player shot inert", () => {
+    const round = start();
+    const unavailable = {
+      club: "Putter",
+      aim: { ...round.course.holes[round.currentHoleIndex].pin },
+      power: .5,
+      technique: "normal" as const,
+    };
+    expect(previewChallengeGroupPlayerShot(round, round.playerGolferId, unavailable)).toMatchObject({
+      available: false,
+      blocker: "lie:tee",
+    });
+    expect(commitChallengeGroupPlayerShot(round, round.playerGolferId, unavailable)).toBe(round);
+    expect(replayChallengeGroupPlayerShots(round, round.playerGolferId, [unavailable])).toBeNull();
+  });
+
+  it("batch-replays player shots byte-identically across lengths and withdrawal boundaries", () => {
+    for (const count of [1, 3, 8]) {
+      const initial = start();
+      const selections = [];
+      let expected = initial;
+      for (let index = 0; index < count; index += 1) {
+        const nextSelection = selection(expected);
+        selections.push(nextSelection);
+        expected = commitChallengeGroupPlayerShot(expected, expected.playerGolferId, nextSelection);
+      }
+      const replayed = replayChallengeGroupPlayerShots(initial, initial.playerGolferId, selections);
+      expect(replayed).not.toBeNull();
+      expect(JSON.stringify(replayed)).toBe(JSON.stringify(expected));
+      expect(Object.isFrozen(replayed)).toBe(true);
+    }
+
+    const initial = start();
+    const beforeWithdrawal = [];
+    let expected = initial;
+    for (let index = 0; index < 2; index += 1) {
+      const nextSelection = selection(expected);
+      beforeWithdrawal.push(nextSelection);
+      expected = commitChallengeGroupPlayerShot(expected, expected.playerGolferId, nextSelection);
+    }
+    expected = withdrawChallengeGroupGolfer(expected, "devon", "Injury.");
+    const afterWithdrawal = [];
+    for (let index = 0; index < 2; index += 1) {
+      const nextSelection = selection(expected);
+      afterWithdrawal.push(nextSelection);
+      expected = commitChallengeGroupPlayerShot(expected, expected.playerGolferId, nextSelection);
+    }
+    const firstBatch = replayChallengeGroupPlayerShots(initial, initial.playerGolferId, beforeWithdrawal)!;
+    const withdrawn = withdrawChallengeGroupGolfer(firstBatch, "devon", "Injury.");
+    const replayed = replayChallengeGroupPlayerShots(withdrawn, withdrawn.playerGolferId, afterWithdrawal);
+    expect(JSON.stringify(replayed)).toBe(JSON.stringify(expected));
+  });
+
   it.each([2, 3, 4])("starts and exposes a supported %i-golfer group", (count) => {
     const round = start({ participants: participants().slice(0, count) });
     expect(round.golfers).toHaveLength(count);
