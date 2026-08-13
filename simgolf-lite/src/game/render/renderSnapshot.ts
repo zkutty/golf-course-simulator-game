@@ -1,6 +1,7 @@
 import type { GameState } from "../gameState";
 import type { ColorVisionMode } from "../onboarding/profile";
-import type { Course, Hole, Obstacle, Point, TeeSet, Terrain } from "../models/types";
+import type { Course, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../models/types";
+import type { GreenSurfaceV1 } from "../greens/greenSurface";
 import type { SeasonalVisualState } from "../presentation/seasonalVisualState";
 import type { PlayerPlayableRound, PlayerProPoint } from "../models/playerProTypes";
 import type { IsoRotation } from "./iso";
@@ -90,13 +91,14 @@ export type RenderSceneId =
   | "naturalProps"
   | "propertyAssets"
   | "holeMarkers"
+  | "surfaceEditor"
   | "architectureOverlay"
   | "overlaysDiagnostics"
   | "estateSurvey";
 
 type LegacyRenderSceneId = Exclude<
   RenderSceneId,
-  "holeMarkers" | "architectureOverlay" | "propertyAssets"
+  "holeMarkers" | "surfaceEditor" | "architectureOverlay" | "propertyAssets"
 >;
 
 /** New bounded scenes stay optional for compatibility with older test fixtures. */
@@ -142,6 +144,8 @@ export interface RenderSnapshot {
   readonly selectedParcelId?: string | null;
   readonly worldSeed: number;
   readonly surfaceHeightAt: (x: number, y: number) => number;
+  /** Optional while older scene fixtures migrate to the editor-owned payload. */
+  readonly surfaceEditor?: SurfaceEditorRenderSnapshot;
   readonly revisions: RenderRevisions;
 }
 
@@ -205,6 +209,55 @@ export interface PropertyAssetsRevisionInput {
   readonly hasResortServicePressure: boolean;
   readonly rotation: IsoRotation;
   readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+}
+
+export type SurfaceEditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
+
+/** Exact persisted, preview, editor, and projection inputs read by the surface-editor scene. */
+export interface SurfaceEditorRenderSnapshot {
+  readonly width: number;
+  readonly height: number;
+  readonly tiles: readonly Terrain[];
+  readonly elevations: readonly number[];
+  readonly greenSurface?: GreenSurfaceV1;
+  readonly previewSurface?: GreenSurfaceV1;
+  readonly editorMode: SurfaceEditorMode;
+  readonly showGridOverlays: boolean;
+  readonly graphicsQuality: RenderSnapshot["graphicsQuality"];
+  readonly colorVision: ColorVisionMode;
+  readonly terrainTool: TerrainAuthoringTool;
+  readonly splineDraft: readonly Point[];
+  readonly splineHover: Point | null;
+  readonly selectedFeature: SurfaceFeature | null;
+  readonly selectedNode: number | null;
+  readonly rotation: IsoRotation;
+  readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+}
+
+export type SurfaceEditorRevisionInput = SurfaceEditorRenderSnapshot;
+
+export function surfaceEditorRevisionDependencies(
+  input: SurfaceEditorRevisionInput,
+): readonly unknown[] {
+  return [
+    input.width,
+    input.height,
+    input.tiles,
+    input.elevations,
+    input.greenSurface,
+    input.previewSurface,
+    input.editorMode,
+    input.showGridOverlays,
+    input.graphicsQuality,
+    input.colorVision,
+    input.terrainTool,
+    input.splineDraft,
+    input.splineHover,
+    input.selectedFeature,
+    input.selectedNode,
+    input.rotation,
+    input.surfaceHeightAt,
+  ];
 }
 
 /** Exact physical/presentation inputs consumed by property asset footprints. */

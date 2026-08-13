@@ -11,6 +11,7 @@ import {
   RENDER_SYSTEMS,
   RenderRevisionTracker,
   structuresPropsRevisionDependencies,
+  surfaceEditorRevisionDependencies,
 } from "./renderSnapshot";
 
 function snapshot(state: GameState, revisions: Partial<{
@@ -257,6 +258,59 @@ describe("RenderSnapshot invalidation contract", () => {
       .toBe((initial.propertyAssets ?? 0) + 5);
     expect(tracker.update(dependencies(course, false, 0, () => 0)).propertyAssets)
       .toBe((initial.propertyAssets ?? 0) + 6);
+  });
+
+  it("invalidates the surface editor only for its consumed persisted, preview, editor, and projection inputs", () => {
+    const tracker = new RenderRevisionTracker();
+    const course = DEFAULT_STATE.course;
+    const stableHeight = () => 0;
+    const stableDraft = [{ x: 1, y: 1 }];
+    const dependencies = (
+      overrides: Partial<Parameters<typeof surfaceEditorRevisionDependencies>[0]> = {},
+    ) => ({
+      atmosphere: [],
+      surfaceCare: [],
+      structuresProps: [],
+      playerProCollection: [],
+      naturalProps: [],
+      surfaceEditor: surfaceEditorRevisionDependencies({
+        width: course.width,
+        height: course.height,
+        tiles: course.tiles,
+        elevations: course.elevations,
+        greenSurface: course.greenSurface,
+        previewSurface: undefined,
+        editorMode: "PAINT",
+        showGridOverlays: false,
+        graphicsQuality: "high",
+        colorVision: "standard",
+        terrainTool: "curve",
+        splineDraft: stableDraft,
+        splineHover: null,
+        selectedFeature: null,
+        selectedNode: null,
+        rotation: 0,
+        surfaceHeightAt: stableHeight,
+        ...overrides,
+      }),
+      overlaysDiagnostics: [],
+      estateSurvey: [],
+    });
+    const initial = tracker.update(dependencies());
+
+    expect(tracker.update(dependencies()).surfaceEditor).toBe(initial.surfaceEditor);
+    expect(tracker.update({
+      ...dependencies(),
+      architectureOverlay: ["unrelated"],
+    }).surfaceEditor).toBe(initial.surfaceEditor);
+    expect(tracker.update(dependencies({ showGridOverlays: true })).surfaceEditor)
+      .toBe((initial.surfaceEditor ?? 0) + 1);
+    expect(tracker.update(dependencies({ splineHover: { x: 2, y: 3 } })).surfaceEditor)
+      .toBe((initial.surfaceEditor ?? 0) + 2);
+    expect(tracker.update(dependencies({ surfaceHeightAt: () => 0 })).surfaceEditor)
+      .toBe((initial.surfaceEditor ?? 0) + 3);
+    expect(tracker.update(dependencies({ elevations: [...course.elevations] })).surfaceEditor)
+      .toBe((initial.surfaceEditor ?? 0) + 4);
   });
 
   it("isolates editor, terrain, marker, live, atmosphere, and viewport revisions", () => {

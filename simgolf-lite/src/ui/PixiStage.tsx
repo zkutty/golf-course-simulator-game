@@ -46,11 +46,8 @@ import type {
   FineGreenRadius,
   FineGreenSculptPreview,
 } from "../game/greens/fineGreenSculpt";
-import { buildGreenSurfaceOverlayCommands } from "../game/greens/greenSurfaceRender";
 import {
   defaultSurfaceTangents,
-  sampleCorridor,
-  sampleRegion,
   withDefaultSurfaceTangents,
 } from "../game/models/surfaceIntent";
 import { formatCurrency } from "../i18n/format";
@@ -186,6 +183,7 @@ import {
   playerProCollectionRevisionDependencies,
   propertyAssetsRevisionDependencies,
   structuresPropsRevisionDependencies,
+  surfaceEditorRevisionDependencies,
   type RenderSnapshot,
 } from "../game/render/renderSnapshot";
 import { SceneSystemHost } from "./renderer/SceneSystemHost";
@@ -205,6 +203,7 @@ import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShot
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
 import { createArchitectureOverlaySceneSystem } from "./renderer/scenes/architectureOverlayScene";
 import { createPropertyAssetsSceneSystem } from "./renderer/scenes/propertyAssetsScene";
+import { createSurfaceEditorSceneSystem } from "./renderer/scenes/surfaceEditorScene";
 
 type DeferredWorldScenes = typeof import("./renderer/scenes/deferredWorldScenes");
 
@@ -674,12 +673,6 @@ function surfaceFeaturePoints(feature: SurfaceFeature): Point[] {
     : feature.geometry.ring;
 }
 
-function sampledSurfacePath(feature: SurfaceFeature): Point[] {
-  return feature.geometry.kind === "corridor"
-    ? sampleCorridor(feature.geometry.knots, 0.2, feature.geometry.tangents)
-    : sampleRegion(feature.geometry.ring, feature.geometry.tangents);
-}
-
 function moveSurfaceNode(feature: SurfaceFeature, nodeIndex: number, point: Point): SurfaceFeature {
   const previous = surfaceFeaturePoints(feature)[nodeIndex];
   if (!previous) return feature;
@@ -1147,7 +1140,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     nodeIndex: number;
     target: "node" | "in" | "out";
   } | null>(null);
-  const surfaceEditorGraphicsRef = useRef<PIXI.Graphics | null>(null);
   const camRef = useRef({ cx: 0, cy: 0, zoom: 1, tcx: 0, tcy: 0, tzoom: 1, initialized: false });
   const rotTweenRef = useRef<{ start: number; toDeg: number; next: IsoRotation } | null>(null);
   const keysRef = useRef<Set<string>>(new Set());
@@ -1332,6 +1324,43 @@ export function PixiStage(requestedProps: PixiStageProps) {
   // ZK-679 first slice: scene systems consume one typed snapshot. Each
   // revision list mirrors only the inputs read by that system, so unrelated
   // React renders no longer imply that every extracted layer must rebuild.
+  const surfaceEditorSnapshot = useMemo(() => ({
+    width: course.width,
+    height: course.height,
+    tiles: course.tiles,
+    elevations: course.elevations,
+    greenSurface: course.greenSurface,
+    previewSurface: fineGreenStrokePreview?.surface,
+    editorMode,
+    showGridOverlays: props.showGridOverlays,
+    graphicsQuality: props.graphicsQuality,
+    colorVision: props.colorVision,
+    terrainTool,
+    splineDraft: clickSplineDraft,
+    splineHover: clickSplineHover,
+    selectedFeature: selectedSurfaceFeature,
+    selectedNode: selectedSurfaceNode,
+    rotation,
+    surfaceHeightAt,
+  }), [
+    clickSplineDraft,
+    clickSplineHover,
+    course.elevations,
+    course.greenSurface,
+    course.height,
+    course.tiles,
+    course.width,
+    editorMode,
+    fineGreenStrokePreview?.surface,
+    props.colorVision,
+    props.graphicsQuality,
+    props.showGridOverlays,
+    rotation,
+    selectedSurfaceFeature,
+    selectedSurfaceNode,
+    surfaceHeightAt,
+    terrainTool,
+  ]);
   const renderRevisions = renderRevisionTrackerRef.current.update({
     atmosphere: [
       atlasRevision,
@@ -1416,6 +1445,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       animationsEnabled: props.animationsEnabled,
       reducedMotion: Boolean(props.reducedMotion),
     }),
+    surfaceEditor: surfaceEditorRevisionDependencies(surfaceEditorSnapshot),
     architectureOverlay: architectureOverlayRevisionDependencies({
       activePath,
       activePinRotation: course.activePinRotation,
@@ -1480,6 +1510,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     selectedParcelId: props.selectedParcelId,
     worldSeed: props.worldSeed,
     surfaceHeightAt,
+    surfaceEditor: surfaceEditorSnapshot,
     revisions: renderRevisions,
   }), [
     course,
@@ -1515,6 +1546,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     renderRevisions,
     rotation,
     surfaceHeightAt,
+    surfaceEditorSnapshot,
   ]);
   // ---------------------------------------------------------------------
   // Camera: world container transform + screen↔world mapping
@@ -2179,7 +2211,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
       structureSpriteCountRef.current = 0;
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
-      surfaceEditorGraphicsRef.current = null;
       golferPoolRef.current.clear();
       mobilityUnitPoolRef.current.clear();
       surfaceCareWorkersRef.current = [];
@@ -3784,6 +3815,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         layers.surfaceCare,
         (workers) => { surfaceCareWorkersRef.current = workers; },
       ),
+      createSurfaceEditorSceneSystem(layers.surfaceEditor),
       deferredWorldScenes.createStructuresPropsSceneSystem(
         layers.objects,
         layers.sceneDecals.structuresProps,
@@ -3838,175 +3870,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
   }, [appReady, atlasRevision, renderSnapshot]);
 
   // Tee/cup/draft markers and live pin flags are owned by holeMarkersScene.
-
-  useEffect(() => {
-    if (!appReady || surfaceEditorGraphicsRef.current) return;
-    const layer = layersRef.current?.surfaceEditor;
-    if (!layer) return;
-    const graphics = new PIXI.Graphics();
-    layer.addChild(graphics);
-    surfaceEditorGraphicsRef.current = graphics;
-    return () => {
-      if (surfaceEditorGraphicsRef.current === graphics) surfaceEditorGraphicsRef.current = null;
-      if (graphics.parent) graphics.parent.removeChild(graphics);
-      graphics.destroy();
-    };
-  }, [appReady]);
-
-  useEffect(() => {
-    const graphics = surfaceEditorGraphicsRef.current;
-    if (!graphics) return;
-    graphics.clear();
-
-    const project = (point: Point) => worldToIso(
-      point.x,
-      point.y,
-      surfaceHeightAt(point.x, point.y),
-      rotation,
-    );
-
-    if (editorMode === "SCULPT" || props.showGridOverlays) {
-      const overlay = buildGreenSurfaceOverlayCommands({
-        course,
-        surface: fineGreenStrokePreview?.surface,
-        colorVision: props.colorVision,
-        quality: props.graphicsQuality,
-      });
-      for (const shade of overlay.shades) {
-        const corners = [
-          project({ x: shade.x + 0.5, y: shade.y }),
-          project({ x: shade.x + 1, y: shade.y + 0.5 }),
-          project({ x: shade.x + 0.5, y: shade.y + 1 }),
-          project({ x: shade.x, y: shade.y + 0.5 }),
-        ];
-        graphics.poly(corners.flatMap((point) => [point.x, point.y]));
-        graphics.fill({
-          color: shade.uphill ? overlay.palette.uphill : overlay.palette.downhill,
-          alpha: shade.intensity,
-        });
-      }
-      for (const contour of overlay.contours) {
-        const from = project(contour.from);
-        const to = project(contour.to);
-        graphics.moveTo(from.x, from.y);
-        graphics.lineTo(to.x, to.y);
-        graphics.stroke({ width: contour.major ? 2.5 : 1.7, color: overlay.palette.outline, alpha: 0.58, cap: "round" });
-        graphics.moveTo(from.x, from.y);
-        graphics.lineTo(to.x, to.y);
-        graphics.stroke({ width: contour.major ? 1.2 : 0.75, color: overlay.palette.contour, alpha: 0.92, cap: "round" });
-      }
-      for (const line of overlay.fallLines) {
-        const from = project(line.from);
-        const to = project(line.to);
-        graphics.moveTo(from.x, from.y);
-        graphics.lineTo(to.x, to.y);
-        graphics.stroke({ width: 2.6, color: overlay.palette.outline, alpha: 0.72, cap: "round" });
-        // Alternating light dots make fall direction legible without hue.
-        for (const fraction of [0.2, 0.5, 0.8]) {
-          graphics.circle(from.x + (to.x - from.x) * fraction, from.y + (to.y - from.y) * fraction, 1.5);
-          graphics.fill({ color: overlay.palette.contour, alpha: 0.95 });
-        }
-      }
-      for (const arrow of overlay.arrows) {
-        const at = project(arrow.at);
-        const tip = project({
-          x: arrow.at.x + arrow.downhill.x * 0.22,
-          y: arrow.at.y + arrow.downhill.y * 0.22,
-        });
-        const tail = project({
-          x: arrow.at.x - arrow.downhill.x * 0.12,
-          y: arrow.at.y - arrow.downhill.y * 0.12,
-        });
-        graphics.moveTo(tail.x, tail.y);
-        graphics.lineTo(tip.x, tip.y);
-        graphics.stroke({ width: 2.2, color: overlay.palette.downhill, alpha: 0.96, cap: "round" });
-        const angle = Math.atan2(tip.y - at.y, tip.x - at.x);
-        for (const side of [-1, 1]) {
-          graphics.moveTo(tip.x, tip.y);
-          graphics.lineTo(tip.x - Math.cos(angle + side * 0.55) * 6, tip.y - Math.sin(angle + side * 0.55) * 6);
-          graphics.stroke({ width: 2, color: overlay.palette.downhill, alpha: 0.96, cap: "round" });
-        }
-      }
-    }
-
-    if (editorMode !== "PAINT") return;
-    const drawPath = (points: readonly Point[], closed: boolean, color: number, alpha: number) => {
-      if (points.length < 2) return;
-      const first = project(points[0]);
-      graphics.moveTo(first.x, first.y);
-      for (let index = 1; index < points.length; index++) {
-        const current = project(points[index]);
-        graphics.lineTo(current.x, current.y);
-      }
-      if (closed) graphics.lineTo(first.x, first.y);
-      graphics.stroke({ width: 2.2, color, alpha, cap: "round", join: "round" });
-    };
-
-    if (terrainTool === "spline" && clickSplineDraft.length > 0) {
-      const previewPoints = clickSplineHover
-        ? [...clickSplineDraft, clickSplineHover]
-        : clickSplineDraft;
-      drawPath(sampleCorridor(previewPoints), false, 0xffe28a, 0.95);
-      for (const point of clickSplineDraft) {
-        const projected = project(point);
-        graphics.circle(projected.x, projected.y, 4.5);
-        graphics.fill({ color: 0xfff4bf, alpha: 0.98 });
-        graphics.stroke({ width: 1.5, color: 0x493712, alpha: 0.95 });
-      }
-    }
-
-    if (terrainTool === "edit" && selectedSurfaceFeature) {
-      drawPath(
-        sampledSurfacePath(selectedSurfaceFeature),
-        selectedSurfaceFeature.geometry.kind === "region",
-        0xffe28a,
-        0.95,
-      );
-      const points = surfaceFeaturePoints(selectedSurfaceFeature);
-      points.forEach((point, index) => {
-        const projected = project(point);
-        graphics.circle(projected.x, projected.y, index === selectedSurfaceNode ? 6 : 4.5);
-        graphics.fill({
-          color: index === selectedSurfaceNode ? 0xffc64c : 0xfff4bf,
-          alpha: 0.98,
-        });
-        graphics.stroke({ width: 1.5, color: 0x493712, alpha: 0.95 });
-      });
-      if (selectedSurfaceNode != null && points[selectedSurfaceNode]) {
-        const tangents = selectedSurfaceFeature.geometry.tangents
-          ?? defaultSurfaceTangents(
-            points,
-            selectedSurfaceFeature.geometry.kind === "region",
-          );
-        const handles = tangents[selectedSurfaceNode];
-        const node = project(points[selectedSurfaceNode]);
-        for (const handle of [handles.in, handles.out]) {
-          const projected = project(handle);
-          graphics.moveTo(node.x, node.y);
-          graphics.lineTo(projected.x, projected.y);
-          graphics.stroke({ width: 1.2, color: 0xfff0b0, alpha: 0.85 });
-          graphics.circle(projected.x, projected.y, 3.8);
-          graphics.fill({ color: 0x5ea8ff, alpha: 0.98 });
-          graphics.stroke({ width: 1.2, color: 0x17385d, alpha: 0.95 });
-        }
-      }
-    }
-  }, [
-    appReady,
-    clickSplineDraft,
-    clickSplineHover,
-    editorMode,
-    course,
-    fineGreenStrokePreview,
-    props.colorVision,
-    props.graphicsQuality,
-    props.showGridOverlays,
-    rotation,
-    selectedSurfaceFeature,
-    selectedSurfaceNode,
-    surfaceHeightAt,
-    terrainTool,
-  ]);
 
   // ---------------------------------------------------------------------
   // Ticker pass — hover highlight/line + live golfer dots
