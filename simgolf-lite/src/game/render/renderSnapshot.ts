@@ -5,6 +5,9 @@ import type { SeasonalVisualState } from "../presentation/seasonalVisualState";
 import type { PlayerPlayableRound, PlayerProPoint } from "../models/playerProTypes";
 import type { IsoRotation } from "./iso";
 import type { PlayerProWorldDisplayPresentation } from "../playerPro/socialPresentation";
+import type { ArchitectureWarning } from "../architecture/architecture";
+import type { ArchitectureOverlayRender } from "../architecture/reviewTypes";
+import type { PaceAdvisorFinding } from "../live/paceHistory";
 
 /** Stable ownership boundaries for the Pixi scene-system migration. */
 export const RENDER_SYSTEMS = [
@@ -86,10 +89,11 @@ export type RenderSceneId =
   | "playerProCollection"
   | "naturalProps"
   | "holeMarkers"
+  | "architectureOverlay"
   | "overlaysDiagnostics"
   | "estateSurvey";
 
-type LegacyRenderSceneId = Exclude<RenderSceneId, "holeMarkers">;
+type LegacyRenderSceneId = Exclude<RenderSceneId, "holeMarkers" | "architectureOverlay">;
 
 /** New bounded scenes stay optional for compatibility with older test fixtures. */
 export type RenderRevisions = Readonly<
@@ -115,6 +119,13 @@ export interface RenderSnapshot {
   readonly showMarkers?: boolean;
   readonly selectedTeeSet?: TeeSet;
   readonly flagColor?: string;
+  readonly activePath?: readonly Point[];
+  readonly architectureWarnings?: readonly ArchitectureWarning[];
+  readonly architectureOverlay?: ArchitectureOverlayRender | null;
+  readonly paceBottlenecks?: readonly PaceAdvisorFinding[];
+  readonly showFixOverlay?: boolean;
+  readonly failingCorridorSegments?: readonly Point[];
+  readonly showShotPlan?: boolean;
   /** Asset completion is a declared input for systems that resolve atlas frames. */
   readonly atlasRevision: number;
   readonly playerRound?: PlayerPlayableRound | null;
@@ -166,6 +177,41 @@ export interface HoleMarkersRevisionInput {
   readonly flagColor?: string;
   readonly animationsEnabled: boolean;
   readonly reducedMotion: boolean;
+}
+
+export interface ArchitectureOverlayRevisionInput {
+  readonly activePath?: readonly Point[];
+  readonly activePinRotation: Course["activePinRotation"];
+  readonly failingCorridorSegments?: readonly Point[];
+  readonly holes: readonly Hole[];
+  readonly architectureOverlay?: ArchitectureOverlayRender | null;
+  readonly architectureWarnings?: readonly ArchitectureWarning[];
+  readonly paceBottlenecks?: readonly PaceAdvisorFinding[];
+  readonly showMarkers?: boolean;
+  readonly showFixOverlay?: boolean;
+  readonly showShotPlan?: boolean;
+  readonly rotation: IsoRotation;
+  readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+}
+
+/** Exact inputs consumed by route, Architecture-review, pace, and corridor decals. */
+export function architectureOverlayRevisionDependencies(
+  input: ArchitectureOverlayRevisionInput,
+): readonly unknown[] {
+  return [
+    input.activePath,
+    input.activePinRotation ?? "A",
+    input.failingCorridorSegments,
+    input.holes,
+    input.architectureOverlay,
+    input.architectureWarnings,
+    input.paceBottlenecks,
+    input.showMarkers !== false,
+    Boolean(input.showFixOverlay),
+    Boolean(input.showShotPlan),
+    input.rotation,
+    input.surfaceHeightAt,
+  ];
 }
 
 /** Exact physical/presentation inputs consumed by tee, cup, draft, and flag visuals. */

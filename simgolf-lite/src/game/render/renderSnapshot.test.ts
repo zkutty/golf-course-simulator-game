@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_STATE, type GameState } from "../gameState";
 import type { PlayerProWorldDisplayPresentation } from "../playerPro/socialPresentation";
 import {
+  architectureOverlayRevisionDependencies,
   changedRenderSystems,
   createRenderSnapshot,
   holeMarkersRevisionDependencies,
@@ -154,6 +155,48 @@ describe("RenderSnapshot invalidation contract", () => {
       .toBe((initial.holeMarkers ?? 0) + 2);
     expect(tracker.update(dependencies({ surfaceHeightAt: () => 0 })).holeMarkers)
       .toBe((initial.holeMarkers ?? 0) + 3);
+  });
+
+  it("invalidates Architecture overlays only for normalized visible inputs", () => {
+    const tracker = new RenderRevisionTracker();
+    const course = DEFAULT_STATE.course;
+    const stableHeight = () => 0;
+    const dependencies = (overrides: Partial<Parameters<typeof architectureOverlayRevisionDependencies>[0]> = {}) => ({
+      atmosphere: [],
+      surfaceCare: [],
+      structuresProps: [],
+      playerProCollection: [],
+      naturalProps: [],
+      architectureOverlay: architectureOverlayRevisionDependencies({
+        activePath: undefined,
+        activePinRotation: undefined,
+        failingCorridorSegments: undefined,
+        holes: course.holes,
+        architectureOverlay: null,
+        architectureWarnings: undefined,
+        paceBottlenecks: undefined,
+        showMarkers: undefined,
+        showFixOverlay: undefined,
+        showShotPlan: undefined,
+        rotation: 0,
+        surfaceHeightAt: stableHeight,
+        ...overrides,
+      }),
+      overlaysDiagnostics: [],
+      estateSurvey: [],
+    });
+    const initial = tracker.update(dependencies());
+
+    expect(tracker.update(dependencies({
+      activePinRotation: "A",
+      showMarkers: true,
+      showFixOverlay: false,
+      showShotPlan: false,
+    })).architectureOverlay).toBe(initial.architectureOverlay);
+    expect(tracker.update(dependencies({ activePath: [{ x: 1, y: 1 }, { x: 2, y: 2 }] })).architectureOverlay)
+      .toBe((initial.architectureOverlay ?? 0) + 1);
+    expect(tracker.update(dependencies({ rotation: 90 })).architectureOverlay)
+      .toBe((initial.architectureOverlay ?? 0) + 2);
   });
 
   it("isolates editor, terrain, marker, live, atmosphere, and viewport revisions", () => {

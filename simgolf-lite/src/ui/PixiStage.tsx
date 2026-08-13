@@ -106,7 +106,6 @@ import {
   normalizedDecoration,
 } from "../game/models/decorations";
 import { getBiomeDefinition } from "../game/models/biomes";
-import { getPinPosition } from "../game/models/courseSetup";
 import type { ArchitectureReferencePlan } from "../game/architecture/referencePlan";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
 import {
@@ -182,6 +181,7 @@ import {
 } from "../game/conditions/surfaceCare";
 import {
   RenderRevisionTracker,
+  architectureOverlayRevisionDependencies,
   holeMarkersRevisionDependencies,
   playerProCollectionRevisionDependencies,
   structuresPropsRevisionDependencies,
@@ -202,6 +202,7 @@ import type { PlayerProCollectionSceneSystem } from "./renderer/scenes/playerPro
 import type { HoleMarkersSceneSystem } from "./renderer/scenes/holeMarkersScene";
 import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
+import { createArchitectureOverlaySceneSystem } from "./renderer/scenes/architectureOverlayScene";
 
 type DeferredWorldScenes = typeof import("./renderer/scenes/deferredWorldScenes");
 
@@ -288,15 +289,6 @@ const COLORS: Record<Terrain, number> = {
 const EDGE_DARKEN = 0.88;
 
 const ROUTE_LABEL = "route-overlay";
-type ArchitectureOverlayTestLayer = "all" | "traces" | "points" | "none";
-interface ArchitectureOverlayTestState {
-  layer: ArchitectureOverlayTestLayer;
-  visibleRouteLayers: number;
-  cellsVisible: boolean;
-  tracesVisible: boolean;
-  pointsVisible: boolean;
-}
-
 const MIN_ZOOM = 0.15;
 const MAX_ZOOM = 8;
 const ROTATE_TWEEN_MS = 250;
@@ -1038,7 +1030,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<PIXI.Application | null>(null);
   const layersRef = useRef<Layers | null>(null);
-  const architectureOverlayTestLayerRef = useRef<ArchitectureOverlayTestLayer>("all");
   const sceneSystemHostRef = useRef<SceneSystemHost | null>(null);
   const atmosphereSceneRef = useRef<AtmosphereSceneSystem | null>(null);
   const naturalPropsSceneRef = useRef<NaturalPropsSceneSystem | null>(null);
@@ -1415,6 +1406,20 @@ export function PixiStage(requestedProps: PixiStageProps) {
       animationsEnabled: props.animationsEnabled,
       reducedMotion: Boolean(props.reducedMotion),
     }),
+    architectureOverlay: architectureOverlayRevisionDependencies({
+      activePath,
+      activePinRotation: course.activePinRotation,
+      failingCorridorSegments,
+      holes,
+      architectureOverlay: props.architectureOverlay,
+      architectureWarnings: props.architectureWarnings,
+      paceBottlenecks: props.paceBottlenecks,
+      showMarkers: props.showMarkers,
+      showFixOverlay,
+      showShotPlan,
+      rotation,
+      surfaceHeightAt,
+    }),
     overlaysDiagnostics: [
       props.playerRound,
       props.playerShotAim,
@@ -1449,6 +1454,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
     showMarkers: props.showMarkers !== false,
     selectedTeeSet: props.selectedTeeSet,
     flagColor: props.flagColor,
+    activePath,
+    architectureWarnings: props.architectureWarnings,
+    architectureOverlay: props.architectureOverlay,
+    paceBottlenecks: props.paceBottlenecks,
+    showFixOverlay,
+    failingCorridorSegments,
+    showShotPlan,
     atlasRevision,
     playerRound: props.playerRound,
     playerShotAim: props.playerShotAim,
@@ -1479,6 +1491,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.showMarkers,
     props.selectedTeeSet,
     props.flagColor,
+    activePath,
+    props.architectureWarnings,
+    props.architectureOverlay,
+    props.paceBottlenecks,
+    showFixOverlay,
+    failingCorridorSegments,
+    showShotPlan,
     props.surveyMode,
     props.worldSeed,
     renderRevisions,
@@ -3761,6 +3780,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ),
       playerProCollection,
       holeMarkers,
+      createArchitectureOverlaySceneSystem(layers.terrainDecals, () => app.render()),
       createPlayerShotOverlaySceneSystem(layers.fx),
       createEstateSurveySceneSystem(layers.sceneDecals.estateSurvey),
       // Keep host lifecycle order; fixed decal sublayers separately preserve
@@ -4044,269 +4064,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
   }, [appReady, course, props.resortOperations, rotation, surfaceHeightAt]);
 
   // Tee/cup/draft markers and live pin flags are owned by holeMarkersScene.
-
-  useEffect(() => {
-    if (!appReady) return;
-    const layers = layersRef.current;
-    if (!layers) return;
-
-    const stale = layers.terrainDecals.children.filter((c) => c.label === ROUTE_LABEL);
-    stale.forEach((c) => {
-      layers.terrainDecals.removeChild(c);
-      c.destroy();
-    });
-    if (props.showMarkers === false) return;
-    let referenceLayerGraphics: { cells: PIXI.Graphics; traces: PIXI.Graphics; points: PIXI.Graphics } | null = null;
-
-    // Architect Report overlay: warnings remain advisory and use both shape
-    // and color so crossings/transfers stay legible in color-vision modes.
-    if (props.architectureWarnings?.length) {
-      const g = new PIXI.Graphics();
-      const warningPoint = (point: Point) => {
-        return tileCenterIso(
-          point.x,
-          point.y,
-          surfaceHeightAt(point.x + 0.5, point.y + 0.5),
-          rotation,
-        );
-      };
-      for (const warning of props.architectureWarnings) {
-        const points = warning.geometry?.length ? warning.geometry : warning.location ? [warning.location] : [];
-        if (points.length > 1) {
-          const first = warningPoint(points[0]);
-          g.moveTo(first.x, first.y);
-          for (let index = 1; index < points.length; index++) {
-            const point = points[index];
-            const projected = warningPoint(point);
-            g.lineTo(projected.x, projected.y);
-          }
-          g.stroke({ width: warning.severity === "warning" ? 4 : 2, color: 0xf3a712, alpha: .86 });
-        }
-        if (warning.location) {
-          const projected = warningPoint(warning.location);
-          g.circle(projected.x, projected.y, warning.severity === "warning" ? 8 : 5);
-          g.stroke({ width: 3, color: 0x3f2200, alpha: .95 });
-          g.circle(projected.x, projected.y, warning.severity === "warning" ? 5 : 3);
-          g.fill({ color: 0xffc857, alpha: .95 });
-        }
-      }
-      g.label = ROUTE_LABEL;
-      layers.terrainDecals.addChild(g);
-    }
-
-    if (props.architectureOverlay) {
-      const isolateReferenceLayers = import.meta.env.DEV && props.architectureOverlay.kind === "reference";
-      const cellGraphics = new PIXI.Graphics();
-      const traceGraphics = isolateReferenceLayers ? new PIXI.Graphics() : cellGraphics;
-      const pointGraphics = isolateReferenceLayers ? new PIXI.Graphics() : cellGraphics;
-      const patternMark = (g: PIXI.Graphics, x: number, y: number, pattern: "solid" | "dots" | "cross" | "diagonal" | undefined, radius: number, color = 0xffffff) => {
-        if (pattern === "dots") {
-          g.circle(x - radius * .32, y, Math.max(1.2, radius * .11));
-          g.circle(x + radius * .32, y, Math.max(1.2, radius * .11));
-          g.fill({ color, alpha: .95 });
-        } else if (pattern === "cross") {
-          g.moveTo(x - radius * .45, y); g.lineTo(x + radius * .45, y);
-          g.moveTo(x, y - radius * .45); g.lineTo(x, y + radius * .45);
-          g.stroke({ width: 2, color, alpha: .95 });
-        } else if (pattern === "diagonal") {
-          g.moveTo(x - radius * .5, y + radius * .3); g.lineTo(x + radius * .1, y - radius * .3);
-          g.moveTo(x - radius * .1, y + radius * .3); g.lineTo(x + radius * .5, y - radius * .3);
-          g.stroke({ width: 1.8, color, alpha: .95 });
-        }
-      };
-      const project = (point: Point) => {
-        return tileCenterIso(
-          point.x,
-          point.y,
-          surfaceHeightAt(point.x + 0.5, point.y + 0.5),
-          rotation,
-        );
-      };
-      for (const cell of props.architectureOverlay.cells) {
-        const top = worldToIso(
-          cell.x + 0.5,
-          cell.y,
-          surfaceHeightAt(cell.x + 0.5, cell.y),
-          rotation,
-        );
-        const intensity = Math.min(1, 0.22 + Math.log2(cell.value + 1) * 0.16);
-        cellGraphics.poly([
-          top.x, top.y,
-          top.x + TILE_W / 2, top.y + TILE_H / 2,
-          top.x, top.y + TILE_H,
-          top.x - TILE_W / 2, top.y + TILE_H / 2,
-        ]);
-        const cellColor = cell.source === "predicted" ? 0xf0a51a : cell.current ? 0x28a69a : 0x7b6aa8;
-        cellGraphics.fill({
-          color: cellColor,
-          alpha: cell.current ? intensity : Math.min(0.48, intensity),
-        });
-        if (!cell.current) cellGraphics.stroke({ width: 1, color: 0xf6e8ff, alpha: 0.75 });
-        patternMark(cellGraphics, top.x, top.y + TILE_H / 2, cell.pattern, Math.max(7, TILE_H * .35));
-      }
-      for (const trace of props.architectureOverlay.traces) {
-        const from = project(trace.from);
-        const to = project(trace.to);
-        traceGraphics.moveTo(from.x, from.y);
-        traceGraphics.lineTo(to.x, to.y);
-        const traceColor = trace.source === "reference" ? 0x4b78c2 : trace.source === "predicted" ? 0xf0a51a : trace.emphasized ? 0xfff08a : trace.current ? 0x29d7c0 : 0x9a7bc1;
-        traceGraphics.stroke({
-          width: trace.emphasized ? 5 : 2.5,
-          color: traceColor,
-          alpha: trace.current ? 0.9 : 0.6,
-        });
-        traceGraphics.circle(to.x, to.y, trace.emphasized ? 6 : 3);
-        traceGraphics.fill({ color: traceColor, alpha: 0.9 });
-        patternMark(traceGraphics, (from.x + to.x) / 2, (from.y + to.y) / 2, trace.pattern, trace.emphasized ? 8 : 6);
-      }
-      for (const point of props.architectureOverlay.points) {
-        const projected = project(point);
-        const radius = Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35));
-        const pointColor = point.source === "reference" ? 0x6e96da : point.source === "predicted" ? 0xf0a51a : point.current ? 0x36cfc9 : 0x8d77b7;
-        pointGraphics.circle(projected.x, projected.y, radius);
-        pointGraphics.fill({ color: pointColor, alpha: 0.35 });
-        pointGraphics.stroke({ width: 2, color: point.current ? 0xeafffb : 0xf1e9ff, alpha: 0.9 });
-        patternMark(pointGraphics, projected.x, projected.y, point.pattern, radius);
-      }
-      const overlayGraphics = isolateReferenceLayers ? [cellGraphics, traceGraphics, pointGraphics] : [cellGraphics];
-      for (const g of overlayGraphics) g.label = ROUTE_LABEL;
-      layers.terrainDecals.addChild(...overlayGraphics);
-      if (isolateReferenceLayers) referenceLayerGraphics = { cells: cellGraphics, traces: traceGraphics, points: pointGraphics };
-      if (import.meta.env.DEV && props.architectureOverlay.kind === "reference" && typeof window !== "undefined") {
-        const screenPoint = (point: Point) => {
-          const local = project(point);
-          const global = traceGraphics.toGlobal(local);
-          return { x: global.x, y: global.y };
-        };
-        const testWindow = window as unknown as {
-          __ccArchitectureOverlayProjection?: object;
-        };
-        testWindow.__ccArchitectureOverlayProjection = {
-          traces: props.architectureOverlay.traces.map((trace) => ({
-            id: trace.id,
-            from: screenPoint(trace.from),
-            to: screenPoint(trace.to),
-          })),
-          points: props.architectureOverlay.points.map((point) => ({
-            id: point.id,
-            center: screenPoint(point),
-            radius: Math.min(13, Math.max(4, 4 + Math.abs(point.value) * 0.35)),
-          })),
-        };
-      }
-    }
-
-    if (props.paceBottlenecks?.length) {
-      const g = new PIXI.Graphics();
-      for (const finding of props.paceBottlenecks) {
-        const hole = holes.find((candidate) => candidate.id === finding.holeId);
-        const point = hole ? getPinPosition(hole, course.activePinRotation ?? "A") ?? hole.green ?? hole.tee : null;
-        if (!point) continue;
-        const center = tileCenterIso(
-          point.x,
-          point.y,
-          surfaceHeightAt(point.x + 0.5, point.y + 0.5),
-          rotation,
-        );
-        const radius = Math.min(18, 8 + finding.intensity * 0.6);
-        const color = finding.severity === "severe" ? 0xd8563a : finding.severity === "high" ? 0xe7a83e : 0xf2d36f;
-        g.circle(center.x, center.y, radius);
-        g.fill({ color, alpha: 0.18 });
-        g.stroke({ width: finding.severity === "severe" ? 4 : 2.5, color, alpha: 0.95 });
-        // Radial ticks keep severity/intensity legible when hue differences
-        // disappear under a color-vision palette.
-        const ticks = finding.severity === "severe" ? 6 : finding.severity === "high" ? 4 : 2;
-        for (let index = 0; index < ticks; index++) {
-          const angle = (Math.PI * 2 * index) / ticks;
-          g.moveTo(center.x + Math.cos(angle) * (radius + 2), center.y + Math.sin(angle) * (radius + 2));
-          g.lineTo(center.x + Math.cos(angle) * (radius + 7), center.y + Math.sin(angle) * (radius + 7));
-        }
-        g.stroke({ width: 2, color: 0xffffff, alpha: 0.92 });
-      }
-      g.label = ROUTE_LABEL;
-      layers.terrainDecals.addChild(g);
-    }
-
-    // Failing-corridor overlay: red translucent diamonds.
-    if (showFixOverlay && failingCorridorSegments && failingCorridorSegments.length > 0) {
-      const g = new PIXI.Graphics();
-      for (const seg of failingCorridorSegments) {
-        const top = worldToIso(
-          seg.x + 0.5,
-          seg.y,
-          surfaceHeightAt(seg.x + 0.5, seg.y),
-          rotation,
-        );
-        g.poly([
-          top.x, top.y,
-          top.x + TILE_W / 2, top.y + TILE_H / 2,
-          top.x, top.y + TILE_H,
-          top.x - TILE_W / 2, top.y + TILE_H / 2,
-        ]);
-        g.fill({ color: 0xd23b2f, alpha: 0.35 });
-      }
-      g.label = ROUTE_LABEL;
-      layers.terrainDecals.addChild(g);
-    }
-
-    // Active-hole route polyline.
-    if (showShotPlan && activePath && activePath.length > 1) {
-      const g = new PIXI.Graphics();
-      const pathPoint = (pt: Point) =>
-        tileCenterIso(pt.x, pt.y, surfaceHeightAt(pt.x + 0.5, pt.y + 0.5), rotation);
-      const first = pathPoint(activePath[0]);
-      g.moveTo(first.x, first.y);
-      for (let i = 1; i < activePath.length; i++) {
-        const p = pathPoint(activePath[i]);
-        g.lineTo(p.x, p.y);
-      }
-      g.stroke({ width: 6, color: 0x173f31, alpha: 0.9 });
-      g.moveTo(first.x, first.y);
-      for (let i = 1; i < activePath.length; i++) {
-        const p = pathPoint(activePath[i]);
-        g.lineTo(p.x, p.y);
-      }
-      g.stroke({ width: 3, color: 0xf7cf62, alpha: 1 });
-      for (const point of activePath) {
-        const p = pathPoint(point);
-        g.circle(p.x, p.y, 4);
-        g.fill({ color: 0xfff4ba, alpha: 1 });
-        g.stroke({ width: 2, color: 0x173f31, alpha: 1 });
-      }
-      g.label = ROUTE_LABEL;
-      layers.terrainDecals.addChild(g);
-    }
-
-    if (import.meta.env.DEV && referenceLayerGraphics && typeof window !== "undefined") {
-      const testWindow = window as unknown as {
-        __ccArchitectureOverlayTestLayer?: ArchitectureOverlayTestLayer;
-        __ccArchitectureOverlayTestState?: ArchitectureOverlayTestState;
-        __ccSetArchitectureOverlayTestLayer?: (layer: ArchitectureOverlayTestLayer) => ArchitectureOverlayTestState;
-      };
-      const applyTestLayer = (layer: ArchitectureOverlayTestLayer): ArchitectureOverlayTestState => {
-        architectureOverlayTestLayerRef.current = layer;
-        testWindow.__ccArchitectureOverlayTestLayer = layer;
-        for (const child of layers.terrainDecals.children) {
-          if (child.label === ROUTE_LABEL) child.visible = layer === "all";
-        }
-        referenceLayerGraphics.cells.visible = layer === "all";
-        referenceLayerGraphics.traces.visible = layer === "all" || layer === "traces";
-        referenceLayerGraphics.points.visible = layer === "all" || layer === "points";
-        const state = {
-          layer,
-          visibleRouteLayers: layers.terrainDecals.children.filter((child) => child.label === ROUTE_LABEL && child.visible).length,
-          cellsVisible: referenceLayerGraphics.cells.visible,
-          tracesVisible: referenceLayerGraphics.traces.visible,
-          pointsVisible: referenceLayerGraphics.points.visible,
-        };
-        testWindow.__ccArchitectureOverlayTestState = state;
-        appRef.current?.render();
-        return state;
-      };
-      testWindow.__ccSetArchitectureOverlayTestLayer = applyTestLayer;
-      applyTestLayer(architectureOverlayTestLayerRef.current);
-    }
-  }, [appReady, showFixOverlay, failingCorridorSegments, showShotPlan, activePath, course, holes, rotation, props.showMarkers, props.architectureWarnings, props.architectureOverlay, props.paceBottlenecks, surfaceHeightAt]);
 
   useEffect(() => {
     if (!appReady || surfaceEditorGraphicsRef.current) return;
