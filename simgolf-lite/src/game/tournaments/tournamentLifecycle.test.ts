@@ -142,7 +142,7 @@ describe("ZK-733 tournament lifecycle core", () => {
     expect(event.winnerNames).toBeUndefined();
   });
 
-  it("fails closed on forged or incomplete Pro-Am gross evidence and keeps non-Pro-Am team formats deferred", () => {
+  it("fails closed on forged or incomplete Pro-Am gross evidence and accepts canonical non-Pro-Am team evidence", () => {
     const fixture = host("regional");
     const created = createTournamentEvent({ course, world: fixture.world, tier: "regional", currentDay: 0, daysAhead: 1, templateId: "four-person-pro-am" });
     if (!created.ok) throw new Error(created.reason);
@@ -183,7 +183,9 @@ describe("ZK-733 tournament lifecycle core", () => {
     if (!pair.ok) throw new Error(pair.reason);
     const pairActive = activateTournament(pair.event, course);
     if (!pairActive.ok) throw new Error(pairActive.reason);
-    expect(completeTournamentRoundEvidence(pairActive.event, cards(pairActive.event))).toEqual({ ok: false, reason: "Team standings require the deferred tournament team-round scorer." });
+    const pairCompleted = completeTournamentRoundEvidence(pairActive.event, cards(pairActive.event));
+    expect(pairCompleted.ok).toBe(true);
+    if (pairCompleted.ok) expect(pairCompleted.event.teamStandings).toHaveLength(2);
     expect(normalizeTournamentCalendar({ version: 2, events: [{ ...pairActive.event, teamStandings: forgedProjection }] }).events).toEqual([]);
   });
 

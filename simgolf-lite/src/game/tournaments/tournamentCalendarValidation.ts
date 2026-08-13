@@ -5,6 +5,7 @@ import { courseHandicapUnrounded, playingHandicapFromUnrounded, strokesByHole } 
 import { PRO_AM_MEMBER_ALLOWANCE, tournamentTemplate } from "./tournamentTemplates";
 import type { TournamentCalendar, TournamentEvent, TournamentRoundScorecard } from "./types";
 import { projectProAmTeamStandings, reconstructProAmTournamentEvidence } from "./proAmField";
+import { projectTournamentTeamStandings, reconstructTournamentTeamEvidence } from "./tournamentTeamRound";
 
 const INDIVIDUAL = "individual";
 const ACTIVE = "active";
@@ -27,7 +28,7 @@ function validLegacyWinnerNames(event: TournamentEvent): boolean {
 
 function validLifecycleEvent(event: TournamentEvent): boolean {
   const s = event.activationSnapshot;
-  if ((event.teamStandings !== undefined || event.winnerTeamIds !== undefined) && (!s || s.teamFormat !== "pro-am")) return false;
+  if ((event.teamStandings !== undefined || event.winnerTeamIds !== undefined) && (!s || s.teamFormat === INDIVIDUAL)) return false;
   if (!s) {
     if (!validLegacyWinnerNames(event)) return false;
     if (event.status === ACTIVE) return false;
@@ -51,16 +52,17 @@ function validLifecycleEvent(event: TournamentEvent): boolean {
   const holes = s.holes; const entrants = s.entrants; const teams = s.teams; const rounds = event.rounds;
   if (!/^(active|completed)$/.test(event.status) || ![1, 2].includes(s.version) || !/^(individual|four-ball|alternate-shot|scramble|pro-am)$/.test(s.teamFormat) || !/^(stableford|net-stroke|gross-stroke)$/.test(s.scoringMode)
     || ![s.activationId, s.courseId, s.courseName, s.teeSet, s.pinRotation].every(text) || ![s.rating, s.slope, s.par].every(finiteNumber)
+    || s.rating < 0 || s.rating > 100 || s.slope < 55 || s.slope > 155 || !integer(s.par) || s.par < 54 || s.par > 90
     || !array(holes) || holes.length !== 18 || !array(entrants) || !array(teams)
     || !integer(s.activatedWeek) || !integer(s.activatedDay) || !array(rounds) || !integer(event.roundCount) || event.roundCount! < 1 || event.roundCount! > 4 || rounds.length !== event.roundCount || !integer(event.currentRound) || event.currentRound! < 1 || event.currentRound! > event.roundCount!) return false;
   if (event.teamFormat !== s.teamFormat || event.scoringMode !== s.scoringMode || event.courseId !== s.courseId || event.courseName !== s.courseName
     || event.teeSet !== s.teeSet || event.pinRotation !== s.pinRotation || !array(event.holeIds) || !same(event.holeIds, holes.map((hole) => hole.id))) return false;
   if (new Set(holes.map((hole) => hole?.id)).size !== 18 || new Set(holes.map((hole) => hole?.strokeIndex)).size !== 18
-    || holes.some((hole) => !hole || !text(hole.id) || !integer(hole.par) || !integer(hole.strokeIndex) || !point(hole.tee) || !point(hole.pin))
+    || holes.some((hole) => !hole || !text(hole.id) || !integer(hole.par) || hole.par < 3 || hole.par > 5 || !integer(hole.strokeIndex) || !point(hole.tee) || !point(hole.pin))
     || s.par !== holes.reduce((total, hole) => total + hole.par, 0)) return false;
   const entrantIds = new Set(entrants.map((entrant) => entrant?.entrantId));
   if (entrantIds.size !== entrants.length || entrants.some((entrant) => !entrant || ![entrant.entrantId, entrant.name, entrant.archetype, entrant.teamId].every(text)
-    || ![entrant.skill, entrant.handicapIndex, entrant.allowance, entrant.courseHandicapUnrounded].every(finiteNumber) || !integer(entrant.playingHandicap)
+    || ![entrant.skill, entrant.handicapIndex, entrant.allowance, entrant.courseHandicapUnrounded].every(finiteNumber) || entrant.handicapIndex < -10 || entrant.handicapIndex > 54 || !integer(entrant.playingHandicap)
     || !array(entrant.strokesByHole) || entrant.strokesByHole.length !== 18 || entrant.strokesByHole.some((stroke: number) => !integer(stroke)))) return false;
   if (new Set(teams.map((team) => team?.id)).size !== teams.length
     || teams.some((team) => !team || !array(team.entrantIds) || !team.entrantIds.length || new Set(team.entrantIds).size !== team.entrantIds.length)
@@ -122,6 +124,8 @@ function validLifecycleEvent(event: TournamentEvent): boolean {
     }
   }
   const entrantById = new Map(entrants.map((entrant) => [entrant.entrantId, entrant]));
+  const sharedTeamBall = s.teamFormat === "alternate-shot" || s.teamFormat === "scramble";
+  const participantStrokes = new Map(entrants.map((entrant) => [entrant.entrantId, sharedTeamBall ? strokesByHole(entrant.playingHandicap, holes) : entrant.strokesByHole]));
   const totals = event.status === COMPLETED && s.teamFormat === INDIVIDUAL ? new Map(entrants.map((entrant) => [entrant.entrantId, [0, 0, 0, 0, 0]])) : undefined;
   if (!rounds.every((round, index) => round && round.roundNumber === index + 1 && integer(round.scheduledWeek) && integer(round.scheduledDay) && array(round.scorecards)
     && (!v2 || sized(round, 5 + Number("completionId" in round))) && (!("completionId" in round) || text(round.completionId))
@@ -141,8 +145,9 @@ function validLifecycleEvent(event: TournamentEvent): boolean {
         const score = card.grossByHole[hole];
         if (!Number.isSafeInteger(score) || score <= 0) return false;
         gross += score;
-        net += score - entrant.strokesByHole[hole];
-        points += Math.max(0, Math.min(5, 2 - score + entrant.strokesByHole[hole] + holes[hole].par));
+        const strokes = participantStrokes.get(entrant.entrantId)![hole];
+        net += score - strokes;
+        points += Math.max(0, Math.min(5, 2 - score + strokes + holes[hole].par));
       }
       if (![gross, net, points].every(Number.isSafeInteger)) return false;
       if (total) { total[0] += gross; total[1] += net; total[2] += points; }
@@ -173,6 +178,20 @@ function validLifecycleEvent(event: TournamentEvent): boolean {
       const reconstructed = reconstructProAmTournamentEvidence(event);
       if (!reconstructed.ok) return false;
       const expectedStandings = projectProAmTeamStandings(reconstructed.evidence, event.status === COMPLETED);
+      const expectedWinners = event.status === COMPLETED && reconstructed.evidence.winnerTeamIds.length
+        ? reconstructed.evidence.winnerTeamIds
+        : undefined;
+      if (!same(event.teamStandings, expectedStandings) || !same(event.winnerTeamIds, expectedWinners)) return false;
+    }
+    if (event.results !== undefined || event.winnerNames !== undefined || event.winnerName !== undefined) return false;
+  } else {
+    const completed = rounds.filter((round) => round.status === COMPLETED);
+    if (!completed.length) {
+      if (event.teamStandings !== undefined || event.winnerTeamIds !== undefined) return false;
+    } else {
+      const reconstructed = reconstructTournamentTeamEvidence(event);
+      if (!reconstructed.ok) return false;
+      const expectedStandings = projectTournamentTeamStandings(reconstructed.evidence, event.status === COMPLETED);
       const expectedWinners = event.status === COMPLETED && reconstructed.evidence.winnerTeamIds.length
         ? reconstructed.evidence.winnerTeamIds
         : undefined;

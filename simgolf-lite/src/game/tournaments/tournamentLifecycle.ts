@@ -20,6 +20,7 @@ import type {
 import { PRO_AM_MEMBER_ALLOWANCE, tournamentTemplate } from "./tournamentTemplates";
 import { reconstructIndividualTournamentStandings } from "./tournamentStandings";
 import { projectProAmTeamStandings, reconstructProAmTournamentEvidence, scoreProAmRoundEvidence } from "./proAmField";
+import { projectTournamentTeamStandings, reconstructTournamentTeamEvidence, validateTournamentTeamActivation } from "./tournamentTeamRound";
 
 export const TOURNAMENT_LIFECYCLE_DEFAULTS: Record<TournamentTier, { scoringMode: TournamentScoringMode; roundCount: 1 | 2 | 4; teamFormat: TournamentTeamFormat }> = {
   local: { scoringMode: "stableford", roundCount: 1, teamFormat: "individual" },
@@ -179,7 +180,10 @@ export function completeTournamentRoundEvidence(event: TournamentEvent, scorecar
   if (event.rounds?.some((round) => round.completionId === completionId)) return { ok: true, event, finalRound: event.status === "completed" };
   if (event.status === "completed" && event.activationSnapshot && event.rounds?.every((round) => round.status === "completed")) return { ok: true, event, finalRound: true };
   if (event.status !== "active" || !event.activationSnapshot || !event.rounds) return { ok: false, reason: "Tournament is not active." };
-  if (event.activationSnapshot.teamFormat !== "individual" && event.activationSnapshot.teamFormat !== "pro-am") return { ok: false, reason: "Team standings require the deferred tournament team-round scorer." };
+  if (["four-ball", "alternate-shot", "scramble"].includes(event.activationSnapshot.teamFormat)) {
+    const validation = validateTournamentTeamActivation(event.activationSnapshot);
+    if (!validation.ok) return validation;
+  }
   const roundNumber = event.currentRound ?? 1;
   const current = event.rounds.find((round) => round.roundNumber === roundNumber);
   if (current?.status !== "active") return { ok: false, reason: "Current tournament round is not playable." };
@@ -211,6 +215,15 @@ export function completeTournamentRoundEvidence(event: TournamentEvent, scorecar
     const reconstructed = reconstructProAmTournamentEvidence(advanced);
     if (!reconstructed.ok) return reconstructed;
     advanced.teamStandings = projectProAmTeamStandings(reconstructed.evidence, finalRound);
+    delete advanced.winnerTeamIds;
+    if (finalRound && reconstructed.evidence.winnerTeamIds.length) advanced.winnerTeamIds = [...reconstructed.evidence.winnerTeamIds];
+    delete advanced.results;
+    delete advanced.winnerNames;
+    delete advanced.winnerName;
+  } else if (event.activationSnapshot.teamFormat !== "individual") {
+    const reconstructed = reconstructTournamentTeamEvidence(advanced);
+    if (!reconstructed.ok) return reconstructed;
+    advanced.teamStandings = projectTournamentTeamStandings(reconstructed.evidence, finalRound);
     delete advanced.winnerTeamIds;
     if (finalRound && reconstructed.evidence.winnerTeamIds.length) advanced.winnerTeamIds = [...reconstructed.evidence.winnerTeamIds];
     delete advanced.results;

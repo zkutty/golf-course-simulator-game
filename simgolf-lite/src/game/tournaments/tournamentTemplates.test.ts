@@ -152,16 +152,22 @@ describe("ZK-735 reusable tournament team-event authority", () => {
     expect(() => createLiveTournament(event, course)).toThrow("Team tournament field simulation is deferred.");
   }, 60_000);
 
-  it.each(["two-v-two-four-ball", "two-v-two-alternate-shot", "two-person-scramble"] as const)("retains participant gross carriers without inventing %s standings", (templateId) => {
+  it.each(["two-v-two-four-ball", "two-v-two-alternate-shot", "two-person-scramble"] as const)("retains participant gross carriers and derives %s standings", (templateId) => {
     const activated = activateTournament(scheduled(templateId, { roundCount: 1 }), course);
     if (!activated.ok) throw new Error(activated.reason);
     const cards = activated.event.activationSnapshot!.entrants.map((entrant, entrantIndex) => {
-      const gross = activated.event.activationSnapshot!.holes.map((hole, holeIndex) => hole.par + ((entrantIndex + holeIndex) % 2));
+      const shared = templateId !== "two-v-two-four-ball";
+      const teamIndex = activated.event.activationSnapshot!.teams.findIndex((team) => team.id === entrant.teamId);
+      const gross = activated.event.activationSnapshot!.holes.map((hole, holeIndex) => hole.par + (shared ? teamIndex : (entrantIndex + holeIndex) % 2));
       return scoreTournamentRoundCard(activated.event, entrant.entrantId, gross)!;
     });
     expect(cards.map((card) => card.entrantId)).toEqual(activated.event.activationSnapshot!.entrants.map((entrant) => entrant.entrantId));
     expect(cards.every((card) => card.grossByHole.length === 18 && card.grossTotal > 0)).toBe(true);
-    expect(completeTournamentRoundEvidence(activated.event, cards)).toEqual({ ok: false, reason: "Team standings require the deferred tournament team-round scorer." });
+    const completed = completeTournamentRoundEvidence(activated.event, cards);
+    expect(completed.ok).toBe(true);
+    if (!completed.ok) return;
+    expect(completed.event.teamStandings).toHaveLength(2);
+    expect(completed.event.winnerTeamIds).toEqual(completed.event.teamStandings?.filter((team) => team.place === 1).map((team) => team.teamId));
   }, 60_000);
 
   it("fails closed for unsupported scoring, malformed teams/roles, and untemplated team events", () => {
