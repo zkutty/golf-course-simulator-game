@@ -106,7 +106,7 @@ import {
   normalizedDecoration,
 } from "../game/models/decorations";
 import { getBiomeDefinition } from "../game/models/biomes";
-import { getPinPosition, getTeeBox, PIN_ROTATIONS, TEE_SETS } from "../game/models/courseSetup";
+import { getPinPosition } from "../game/models/courseSetup";
 import type { ArchitectureReferencePlan } from "../game/architecture/referencePlan";
 import { AUTOTILE_DIRECTIONS, autotileFeatures, rotateAutotileMask } from "../game/render/autotile";
 import {
@@ -182,6 +182,7 @@ import {
 } from "../game/conditions/surfaceCare";
 import {
   RenderRevisionTracker,
+  holeMarkersRevisionDependencies,
   playerProCollectionRevisionDependencies,
   structuresPropsRevisionDependencies,
   type RenderSnapshot,
@@ -198,6 +199,7 @@ import {
 import type { StableSceneDecalLayers } from "./renderer/scenes/structuresPropsScene";
 import type { NaturalPropsSceneSystem } from "./renderer/scenes/naturalPropsScene";
 import type { PlayerProCollectionSceneSystem } from "./renderer/scenes/playerProCollectionScene";
+import type { HoleMarkersSceneSystem } from "./renderer/scenes/holeMarkersScene";
 import { createPlayerShotOverlaySceneSystem } from "./renderer/scenes/playerShotOverlayScene";
 import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveyScene";
 
@@ -285,7 +287,6 @@ const COLORS: Record<Terrain, number> = {
 // Legacy/error fallback shading; normal parkland rendering uses authored art.
 const EDGE_DARKEN = 0.88;
 
-const MARKER_LABEL = "hole-marker";
 const ROUTE_LABEL = "route-overlay";
 type ArchitectureOverlayTestLayer = "all" | "traces" | "points" | "none";
 interface ArchitectureOverlayTestState {
@@ -1042,6 +1043,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const atmosphereSceneRef = useRef<AtmosphereSceneSystem | null>(null);
   const naturalPropsSceneRef = useRef<NaturalPropsSceneSystem | null>(null);
   const playerProCollectionSceneRef = useRef<PlayerProCollectionSceneSystem | null>(null);
+  const holeMarkersSceneRef = useRef<HoleMarkersSceneSystem | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
   const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
@@ -1063,7 +1065,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const structureSpriteCountRef = useRef(0);
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
-  const flagPoolRef = useRef<Map<number, PIXI.Graphics>>(new Map());
   const propertyGraphicsRef = useRef<PIXI.Graphics[]>([]);
   const surfaceCareWorkersRef = useRef<SurfaceCareWorkerSprite[]>([]);
   const waterAnimRef = useRef({ last: 0, wasAnimating: false });
@@ -1401,6 +1402,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
       seasonalPlantsSignature,
       surfaceHeightAt,
     ],
+    holeMarkers: holeMarkersRevisionDependencies({
+      holes,
+      activePinRotation: course.activePinRotation,
+      draftTee,
+      draftGreen,
+      selectedTeeSet: props.selectedTeeSet,
+      showMarkers: props.showMarkers,
+      rotation,
+      surfaceHeightAt,
+      flagColor: props.flagColor,
+      animationsEnabled: props.animationsEnabled,
+      reducedMotion: Boolean(props.reducedMotion),
+    }),
     overlaysDiagnostics: [
       props.playerRound,
       props.playerShotAim,
@@ -1432,6 +1446,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     reducedMotion: Boolean(props.reducedMotion),
     animationsEnabled: props.animationsEnabled,
     showObstacles: Boolean(props.showObstacles),
+    showMarkers: props.showMarkers !== false,
+    selectedTeeSet: props.selectedTeeSet,
+    flagColor: props.flagColor,
     atlasRevision,
     playerRound: props.playerRound,
     playerShotAim: props.playerShotAim,
@@ -1459,6 +1476,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.selectedParcelId,
     props.seasonalVisualState,
     props.showObstacles,
+    props.showMarkers,
+    props.selectedTeeSet,
+    props.flagColor,
     props.surveyMode,
     props.worldSeed,
     renderRevisions,
@@ -2117,6 +2137,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       atmosphereSceneRef.current = null;
       naturalPropsSceneRef.current = null;
       playerProCollectionSceneRef.current = null;
+      holeMarkersSceneRef.current = null;
       deferredWorldScenesRef.current = null;
       layersRef.current = null;
       chunksRef.current = [];
@@ -2130,7 +2151,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
       surfaceEditorGraphicsRef.current = null;
       golferPoolRef.current.clear();
       mobilityUnitPoolRef.current.clear();
-      flagPoolRef.current.clear();
       propertyGraphicsRef.current = [];
       surfaceCareWorkersRef.current = [];
       rippleGraphicsRef.current = null;
@@ -3724,6 +3744,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
       layers.sceneDecals.naturalProps,
     );
     const playerProCollection = deferredWorldScenes.createPlayerProCollectionSceneSystem(layers.objects);
+    const holeMarkers = deferredWorldScenes.createHoleMarkersSceneSystem(
+      layers.terrainDecals,
+      layers.objects,
+    );
     const host = new SceneSystemHost([
       atmosphere,
       createSurfaceCareSceneSystem(
@@ -3736,6 +3760,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         (count) => { structureSpriteCountRef.current = count; },
       ),
       playerProCollection,
+      holeMarkers,
       createPlayerShotOverlaySceneSystem(layers.fx),
       createEstateSurveySceneSystem(layers.sceneDecals.estateSurvey),
       // Keep host lifecycle order; fixed decal sublayers separately preserve
@@ -3745,12 +3770,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
     atmosphereSceneRef.current = atmosphere;
     naturalPropsSceneRef.current = naturalProps;
     playerProCollectionSceneRef.current = playerProCollection;
+    holeMarkersSceneRef.current = holeMarkers;
     sceneSystemHostRef.current = host;
     return () => {
       if (sceneSystemHostRef.current === host) sceneSystemHostRef.current = null;
       if (atmosphereSceneRef.current === atmosphere) atmosphereSceneRef.current = null;
       if (naturalPropsSceneRef.current === naturalProps) naturalPropsSceneRef.current = null;
       if (playerProCollectionSceneRef.current === playerProCollection) playerProCollectionSceneRef.current = null;
+      if (holeMarkersSceneRef.current === holeMarkers) holeMarkersSceneRef.current = null;
       host.dispose();
     };
   }, [appReady]);
@@ -4016,91 +4043,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     }
   }, [appReady, course, props.resortOperations, rotation, surfaceHeightAt]);
 
-  // ---------------------------------------------------------------------
-  // Decals layer — tee/green markers (incl. wizard drafts) + route overlays
-  // ---------------------------------------------------------------------
-
-  useEffect(() => {
-    if (!appReady) return;
-    const layers = layersRef.current;
-    if (!layers) return;
-
-    const stale = layers.terrainDecals.children.filter((c) => c.label === MARKER_LABEL);
-    stale.forEach((c) => {
-      layers.terrainDecals.removeChild(c);
-      c.destroy();
-    });
-    if (props.showMarkers === false) return;
-
-    const drawMarker = (p: Point, fill: number, alpha = 1) => {
-      const g = new PIXI.Graphics();
-      const c = tileCenterIso(p.x, p.y, surfaceHeightAt(p.x + 0.5, p.y + 0.5), rotation);
-      g.ellipse(c.x, c.y, TILE_W * 0.18, TILE_H * 0.36);
-      g.fill({ color: fill, alpha });
-      g.stroke({ width: 2, color: 0xffffff, alpha });
-      g.label = MARKER_LABEL;
-      layers.terrainDecals.addChild(g);
-    };
-
-    // Tee box (ZKU-149): pad diamond + two tee markers set perpendicular to
-    // the shot direction (toward the green).
-    const drawTee = (tee: Point, green: Point | null, alpha = 1) => {
-      const g = new PIXI.Graphics();
-      const e = surfaceHeightAt(tee.x + 0.5, tee.y + 0.5);
-      const c = tileCenterIso(tee.x, tee.y, e, rotation);
-      g.ellipse(c.x, c.y, TILE_W * 0.3, TILE_H * 0.3);
-      g.fill({ color: 0x9a7a58, alpha: 0.9 * alpha });
-      // Perpendicular offset in world space, projected.
-      let px = 0.7;
-      let py = -0.7;
-      if (green) {
-        const dx = green.x - tee.x;
-        const dy = green.y - tee.y;
-        const len = Math.max(1e-6, Math.hypot(dx, dy));
-        px = -dy / len;
-        py = dx / len;
-      }
-      for (const side of [-0.28, 0.28]) {
-        const m = worldToIso(tee.x + 0.5 + px * side, tee.y + 0.5 + py * side, e, rotation);
-        g.circle(m.x, m.y - 2, 2.2);
-        g.fill({ color: 0xe8c15a, alpha });
-        g.stroke({ width: 1, color: 0x6b5426, alpha });
-      }
-      g.label = MARKER_LABEL;
-      layers.terrainDecals.addChild(g);
-    };
-
-    // Cup (ZKU-149): small dark hole with a light rim on the green tile.
-    const drawCup = (green: Point, alpha = 1) => {
-      const g = new PIXI.Graphics();
-      const c = tileCenterIso(
-        green.x,
-        green.y,
-        surfaceHeightAt(green.x + 0.5, green.y + 0.5),
-        rotation,
-      );
-      g.ellipse(c.x, c.y, 4.5, 2.2);
-      g.fill({ color: 0x1c2b1c, alpha });
-      g.stroke({ width: 1, color: 0xe9efe4, alpha: 0.85 * alpha });
-      g.label = MARKER_LABEL;
-      layers.terrainDecals.addChild(g);
-    };
-
-    holes.forEach((hole) => {
-      const activeRotation = course.activePinRotation ?? "A";
-      const activePin = getPinPosition(hole, activeRotation) ?? getPinPosition(hole, "A");
-      TEE_SETS.forEach((set) => {
-        const tee = getTeeBox(hole, set);
-        if (tee) drawTee(tee, activePin, set === (props.selectedTeeSet ?? "member") ? 1 : 0.34);
-      });
-      PIN_ROTATIONS.forEach((pinRotation) => {
-        const pin = getPinPosition(hole, pinRotation);
-        if (pin) drawCup(pin, pinRotation === activeRotation || (!getPinPosition(hole, activeRotation) && pinRotation === "A") ? 1 : 0.28);
-      });
-    });
-    if (draftTee) drawTee(draftTee, draftGreen, 0.55);
-    if (draftGreen) drawMarker(draftGreen, 0x1b5e20, 0.55);
-  }, [appReady, holes, draftTee, draftGreen, course, rotation, props.showMarkers, props.selectedTeeSet, surfaceHeightAt]);
+  // Tee/cup/draft markers and live pin flags are owned by holeMarkersScene.
 
   useEffect(() => {
     if (!appReady) return;
@@ -4889,47 +4832,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         }
       }
 
-      // Pin flags (ZKU-149): one pole+flag per placed green, depth-sorted
-      // with the world; the cloth flutters on a time-based wave (static
-      // first frame when animations are off).
-      const flags = flagPoolRef.current;
-      const liveHoles = new Set<number>();
-      const flagColor = props.flagColor ?? "#d9534f";
-      holes.forEach((hole, hi) => {
-        if (!hole.green) return;
-        liveHoles.add(hi);
-        let g = flags.get(hi);
-        if (!g) {
-          g = new PIXI.Graphics();
-          layers.objects.addChild(g);
-          flags.set(hi, g);
-        }
-        const e = surfaceHeightAt(hole.green.x + 0.5, hole.green.y + 0.5);
-        const c = tileCenterIso(hole.green.x, hole.green.y, e, rotation);
-        g.position.set(c.x, c.y);
-        const z = entityDepth(hole.green.x + 0.5, hole.green.y + 0.5, e, rotation) + 0.05;
-        if (g.zIndex !== z) g.zIndex = z;
-        const phase = props.animationsEnabled ? performance.now() / 160 + hi * 1.3 : 0;
-        g.clear();
-        // pole
-        g.moveTo(0, 0);
-        g.lineTo(0, -34);
-        g.stroke({ width: 1.5, color: 0xe9efe4 });
-        // cloth: triangle with a fluttering tip
-        const w1 = Math.sin(phase) * 2.2;
-        const w2 = Math.sin(phase + 0.9) * 3.2;
-        g.poly([0, -34, 13, -30.5 + w1, 0, -26]);
-        g.fill(flagColor);
-        g.poly([9, -31.5 + w1 * 0.8, 13, -30.5 + w1, 15.5, -29.5 + w2, 9, -29]);
-        g.fill({ color: flagColor, alpha: 0.85 });
-      });
-      for (const [hi, g] of flags) {
-        if (!liveHoles.has(hi)) {
-          layers.objects.removeChild(g);
-          g.destroy();
-          flags.delete(hi);
-        }
-      }
+      holeMarkersSceneRef.current?.tick(nowMs);
 
       // Water shimmer + shore foam (ZKU-150): throttled tint/alpha
       // oscillation over the chunk-registered water sprites; visible chunks

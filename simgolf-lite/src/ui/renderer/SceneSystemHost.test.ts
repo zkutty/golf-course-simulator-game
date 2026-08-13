@@ -148,6 +148,25 @@ describe("SceneSystemHost", () => {
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 
+  it("cleans up a failed create before retrying the same revision", () => {
+    const create = vi.fn()
+      .mockImplementationOnce(() => { throw new Error("create failed"); })
+      .mockImplementationOnce(() => undefined);
+    const update = vi.fn();
+    const destroy = vi.fn();
+    const host = new SceneSystemHost([{ id: "holeMarkers", create, update, destroy }]);
+    const next = {
+      ...snapshot(0, 0),
+      revisions: { ...snapshot(0, 0).revisions, holeMarkers: 1 },
+    };
+
+    expect(() => host.sync(next)).toThrow("create failed");
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(host.sync(next)).toEqual(["holeMarkers"]);
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(update).not.toHaveBeenCalled();
+  });
+
   it("rejects duplicate system ownership", () => {
     const systems: RenderSceneSystem[] = [
       { id: "surfaceCare", render: vi.fn() },

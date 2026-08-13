@@ -4,6 +4,7 @@ import type { PlayerProWorldDisplayPresentation } from "../playerPro/socialPrese
 import {
   changedRenderSystems,
   createRenderSnapshot,
+  holeMarkersRevisionDependencies,
   playerProCollectionRevisionDependencies,
   RENDER_SYSTEMS,
   RenderRevisionTracker,
@@ -110,6 +111,49 @@ describe("RenderSnapshot invalidation contract", () => {
       revision: "vehicle:none|watch:owned-watch",
       vehicle: null,
     }, () => 0)).playerProCollection).toBe(initial.playerProCollection + 2);
+  });
+
+  it("invalidates hole markers only for normalized visual and physical inputs", () => {
+    const tracker = new RenderRevisionTracker();
+    const course = DEFAULT_STATE.course;
+    const stableHeight = () => 0;
+    const dependencies = (overrides: Partial<Parameters<typeof holeMarkersRevisionDependencies>[0]> = {}) => ({
+      atmosphere: [],
+      surfaceCare: [],
+      structuresProps: [],
+      playerProCollection: [],
+      naturalProps: [],
+      holeMarkers: holeMarkersRevisionDependencies({
+        holes: course.holes,
+        activePinRotation: course.activePinRotation,
+        draftTee: null,
+        draftGreen: null,
+        selectedTeeSet: undefined,
+        showMarkers: undefined,
+        rotation: 0,
+        surfaceHeightAt: stableHeight,
+        flagColor: undefined,
+        animationsEnabled: true,
+        reducedMotion: false,
+        ...overrides,
+      }),
+      overlaysDiagnostics: [],
+      estateSurvey: [],
+    });
+    const initial = tracker.update(dependencies());
+
+    expect(tracker.update(dependencies({
+      selectedTeeSet: "member",
+      showMarkers: true,
+      flagColor: "#d9534f",
+      activePinRotation: "A",
+    })).holeMarkers).toBe(initial.holeMarkers);
+    expect(tracker.update(dependencies({ selectedTeeSet: "forward" })).holeMarkers)
+      .toBe((initial.holeMarkers ?? 0) + 1);
+    expect(tracker.update(dependencies({ rotation: 90 })).holeMarkers)
+      .toBe((initial.holeMarkers ?? 0) + 2);
+    expect(tracker.update(dependencies({ surfaceHeightAt: () => 0 })).holeMarkers)
+      .toBe((initial.holeMarkers ?? 0) + 3);
   });
 
   it("isolates editor, terrain, marker, live, atmosphere, and viewport revisions", () => {

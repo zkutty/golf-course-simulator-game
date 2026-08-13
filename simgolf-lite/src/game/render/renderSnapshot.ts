@@ -1,6 +1,6 @@
 import type { GameState } from "../gameState";
 import type { ColorVisionMode } from "../onboarding/profile";
-import type { Course, Hole, Obstacle, Point, Terrain } from "../models/types";
+import type { Course, Hole, Obstacle, Point, TeeSet, Terrain } from "../models/types";
 import type { SeasonalVisualState } from "../presentation/seasonalVisualState";
 import type { PlayerPlayableRound, PlayerProPoint } from "../models/playerProTypes";
 import type { IsoRotation } from "./iso";
@@ -85,10 +85,16 @@ export type RenderSceneId =
   | "structuresProps"
   | "playerProCollection"
   | "naturalProps"
+  | "holeMarkers"
   | "overlaysDiagnostics"
   | "estateSurvey";
 
-export type RenderRevisions = Readonly<Record<RenderSceneId, number>>;
+type LegacyRenderSceneId = Exclude<RenderSceneId, "holeMarkers">;
+
+/** New bounded scenes stay optional for compatibility with older test fixtures. */
+export type RenderRevisions = Readonly<
+  Record<LegacyRenderSceneId, number> & Partial<Record<RenderSceneId, number>>
+>;
 
 /** Canonical typed payload consumed by every hosted Pixi scene system. */
 export interface RenderSnapshot {
@@ -106,6 +112,9 @@ export interface RenderSnapshot {
   readonly reducedMotion: boolean;
   readonly animationsEnabled: boolean;
   readonly showObstacles: boolean;
+  readonly showMarkers?: boolean;
+  readonly selectedTeeSet?: TeeSet;
+  readonly flagColor?: string;
   /** Asset completion is a declared input for systems that resolve atlas frames. */
   readonly atlasRevision: number;
   readonly playerRound?: PlayerPlayableRound | null;
@@ -120,7 +129,8 @@ export interface RenderSnapshot {
 }
 
 export type RenderRevisionDependencies = Readonly<
-  Record<RenderSceneId, readonly unknown[]>
+  Record<LegacyRenderSceneId, readonly unknown[]> &
+  Partial<Record<RenderSceneId, readonly unknown[]>>
 >;
 
 export interface StructuresPropsRevisionInput {
@@ -142,6 +152,39 @@ export interface PlayerProCollectionRevisionInput {
   readonly rotation: IsoRotation;
   readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
   readonly worldDisplay?: PlayerProWorldDisplayPresentation | null;
+}
+
+export interface HoleMarkersRevisionInput {
+  readonly holes: readonly Hole[];
+  readonly activePinRotation: Course["activePinRotation"];
+  readonly draftTee: Point | null;
+  readonly draftGreen: Point | null;
+  readonly selectedTeeSet?: TeeSet;
+  readonly showMarkers?: boolean;
+  readonly rotation: IsoRotation;
+  readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+  readonly flagColor?: string;
+  readonly animationsEnabled: boolean;
+  readonly reducedMotion: boolean;
+}
+
+/** Exact physical/presentation inputs consumed by tee, cup, draft, and flag visuals. */
+export function holeMarkersRevisionDependencies(
+  input: HoleMarkersRevisionInput,
+): readonly unknown[] {
+  return [
+    input.holes,
+    input.activePinRotation ?? "A",
+    input.draftTee,
+    input.draftGreen,
+    input.selectedTeeSet ?? "member",
+    input.showMarkers !== false,
+    input.rotation,
+    input.surfaceHeightAt,
+    input.flagColor ?? "#d9534f",
+    input.animationsEnabled,
+    input.reducedMotion,
+  ];
 }
 
 /** Exact visible and physical inputs consumed by the Player Pro display scene. */
@@ -211,10 +254,12 @@ export class RenderRevisionTracker {
   update(next: RenderRevisionDependencies): RenderRevisions {
     let revisions = this.revisions;
     for (const scene of Object.keys(next) as RenderSceneId[]) {
-      if (!dependenciesChanged(this.dependencies[scene], next[scene])) continue;
+      const sceneDependencies = next[scene];
+      if (!sceneDependencies) continue;
+      if (!dependenciesChanged(this.dependencies[scene], sceneDependencies)) continue;
       if (revisions === this.revisions) revisions = { ...this.revisions };
-      revisions = { ...revisions, [scene]: revisions[scene] + 1 };
-      this.dependencies[scene] = [...next[scene]];
+      revisions = { ...revisions, [scene]: (revisions[scene] ?? 0) + 1 };
+      this.dependencies[scene] = [...sceneDependencies];
     }
     this.revisions = revisions;
     return revisions;

@@ -38,12 +38,24 @@ export class SceneSystemHost {
     const rendered: RenderSceneId[] = [];
     for (const system of this.systems) {
       const revision = snapshot.revisions[system.id];
+      if (revision === undefined) continue;
       if (this.renderedRevisions.get(system.id) === revision) continue;
       const alreadyCreated = this.activeSystems.has(system.id);
-      if (!alreadyCreated && system.create) system.create(snapshot);
-      else if (alreadyCreated && system.update) system.update(snapshot);
-      else if (system.render) system.render(snapshot);
-      else throw new Error(`Render scene system has no ${alreadyCreated ? "update" : "create"} lifecycle: ${system.id}`);
+      try {
+        if (!alreadyCreated && system.create) {
+          this.activeSystems.add(system.id);
+          system.create(snapshot);
+        } else if (alreadyCreated && system.update) system.update(snapshot);
+        else if (system.render) system.render(snapshot);
+        else throw new Error(`Render scene system has no ${alreadyCreated ? "update" : "create"} lifecycle: ${system.id}`);
+      } catch (error) {
+        if (!alreadyCreated && this.activeSystems.has(system.id)) {
+          if (system.destroy) system.destroy();
+          else system.dispose?.();
+          this.activeSystems.delete(system.id);
+        }
+        throw error;
+      }
       this.activeSystems.add(system.id);
       this.renderedRevisions.set(system.id, revision);
       rendered.push(system.id);
