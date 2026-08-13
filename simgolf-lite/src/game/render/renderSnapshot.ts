@@ -88,12 +88,16 @@ export type RenderSceneId =
   | "structuresProps"
   | "playerProCollection"
   | "naturalProps"
+  | "propertyAssets"
   | "holeMarkers"
   | "architectureOverlay"
   | "overlaysDiagnostics"
   | "estateSurvey";
 
-type LegacyRenderSceneId = Exclude<RenderSceneId, "holeMarkers" | "architectureOverlay">;
+type LegacyRenderSceneId = Exclude<
+  RenderSceneId,
+  "holeMarkers" | "architectureOverlay" | "propertyAssets"
+>;
 
 /** New bounded scenes stay optional for compatibility with older test fixtures. */
 export type RenderRevisions = Readonly<
@@ -126,6 +130,8 @@ export interface RenderSnapshot {
   readonly showFixOverlay?: boolean;
   readonly failingCorridorSegments?: readonly Point[];
   readonly showShotPlan?: boolean;
+  /** Narrow renderer-only projection; raw resort operations stay outside the snapshot. */
+  readonly hasResortServicePressure?: boolean;
   /** Asset completion is a declared input for systems that resolve atlas frames. */
   readonly atlasRevision: number;
   readonly playerRound?: PlayerPlayableRound | null;
@@ -192,6 +198,27 @@ export interface ArchitectureOverlayRevisionInput {
   readonly showShotPlan?: boolean;
   readonly rotation: IsoRotation;
   readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+}
+
+export interface PropertyAssetsRevisionInput {
+  readonly course: Pick<Course, "property" | "theme">;
+  readonly hasResortServicePressure: boolean;
+  readonly rotation: IsoRotation;
+  readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+}
+
+/** Exact physical/presentation inputs consumed by property asset footprints. */
+export function propertyAssetsRevisionDependencies(
+  input: PropertyAssetsRevisionInput,
+): readonly unknown[] {
+  return [
+    input.course.property?.assets,
+    input.course.property?.units,
+    input.course.theme,
+    Boolean(input.hasResortServicePressure),
+    input.rotation,
+    input.surfaceHeightAt,
+  ];
 }
 
 /** Exact inputs consumed by route, Architecture-review, pace, and corridor decals. */

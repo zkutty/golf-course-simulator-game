@@ -7,6 +7,7 @@ import {
   createRenderSnapshot,
   holeMarkersRevisionDependencies,
   playerProCollectionRevisionDependencies,
+  propertyAssetsRevisionDependencies,
   RENDER_SYSTEMS,
   RenderRevisionTracker,
   structuresPropsRevisionDependencies,
@@ -64,10 +65,17 @@ describe("RenderSnapshot invalidation contract", () => {
     expect(tracker.update(dependencies(unrelated)).structuresProps).toBe(
       initial.structuresProps,
     );
+    const replacedPropertyAssets = tracker.update(dependencies({
+      ...unrelated,
+      property: unrelated.property
+        ? { ...unrelated.property, assets: [...unrelated.property.assets] }
+        : undefined,
+    }));
+    expect(replacedPropertyAssets.structuresProps).toBe(initial.structuresProps + 1);
     expect(tracker.update(dependencies({
       ...unrelated,
       decorations: [...(unrelated.decorations ?? [])],
-    })).structuresProps).toBe(initial.structuresProps + 1);
+    })).structuresProps).toBe(initial.structuresProps + 2);
   });
 
   it("invalidates Player Pro dressing only for visible display or physical scene inputs", () => {
@@ -197,6 +205,58 @@ describe("RenderSnapshot invalidation contract", () => {
       .toBe((initial.architectureOverlay ?? 0) + 1);
     expect(tracker.update(dependencies({ rotation: 90 })).architectureOverlay)
       .toBe((initial.architectureOverlay ?? 0) + 2);
+  });
+
+  it("invalidates property assets only for exact normalized scene inputs", () => {
+    const tracker = new RenderRevisionTracker();
+    const course = DEFAULT_STATE.course;
+    const stableHeight = () => 0;
+    const dependencies = (
+      nextCourse: GameState["course"] = course,
+      hasResortServicePressure: boolean = false,
+      rotation: Parameters<typeof propertyAssetsRevisionDependencies>[0]["rotation"] = 0,
+      surfaceHeightAt = stableHeight,
+    ) => ({
+      atmosphere: [],
+      surfaceCare: [],
+      structuresProps: [],
+      playerProCollection: [],
+      naturalProps: [],
+      propertyAssets: propertyAssetsRevisionDependencies({
+        course: nextCourse,
+        hasResortServicePressure,
+        rotation,
+        surfaceHeightAt,
+      }),
+      overlaysDiagnostics: [],
+      estateSurvey: [],
+    });
+    const initial = tracker.update(dependencies());
+
+    expect(tracker.update(dependencies({ ...course, name: `${course.name} renamed` })).propertyAssets)
+      .toBe(initial.propertyAssets);
+    expect(tracker.update(dependencies({
+      ...course,
+      property: course.property ? { ...course.property, developments: [...course.property.developments] } : undefined,
+    })).propertyAssets).toBe(initial.propertyAssets);
+    expect(tracker.update(dependencies({
+      ...course,
+      property: course.property ? { ...course.property, assets: [...course.property.assets] } : undefined,
+    })).propertyAssets).toBe((initial.propertyAssets ?? 0) + 1);
+    expect(tracker.update(dependencies({
+      ...course,
+      property: course.property ? { ...course.property, units: [...course.property.units] } : undefined,
+    })).propertyAssets).toBe((initial.propertyAssets ?? 0) + 2);
+    expect(tracker.update(dependencies({ ...course, theme: "links" })).propertyAssets)
+      .toBe((initial.propertyAssets ?? 0) + 3);
+    expect(tracker.update(dependencies(course, true)).propertyAssets)
+      .toBe((initial.propertyAssets ?? 0) + 4);
+    expect(tracker.update(dependencies(course, Boolean(7))).propertyAssets)
+      .toBe((initial.propertyAssets ?? 0) + 4);
+    expect(tracker.update(dependencies(course, false, 90)).propertyAssets)
+      .toBe((initial.propertyAssets ?? 0) + 5);
+    expect(tracker.update(dependencies(course, false, 0, () => 0)).propertyAssets)
+      .toBe((initial.propertyAssets ?? 0) + 6);
   });
 
   it("isolates editor, terrain, marker, live, atmosphere, and viewport revisions", () => {
