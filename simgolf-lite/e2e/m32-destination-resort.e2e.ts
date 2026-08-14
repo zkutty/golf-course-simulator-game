@@ -12,6 +12,16 @@ test("M32 resort package survives a mid-stay save and completes its itinerary", 
   expect(result).toMatchObject({ status: "checked_out", fulfilled: 3, total: 3, serviceQueue: 0 });
   expect(result.folioTotal).toBe(result.value);
 
+  await page.getByTestId("workspace-legacy").click();
+  await page.getByTestId("open-seasons-legacy").click();
+  const seasons = page.getByTestId("seasons-legacy-panel");
+  await expect(seasons).toBeVisible({ timeout: 45_000 });
+  await seasons.getByRole("button", { name: "Club identity", exact: true }).click();
+  await seasons.getByText("Manual system overrides", { exact: true }).click();
+  await seasons.getByTestId("system-policy-resort").getByRole("button", { name: "Take control", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").systemControl.systems.find((system: { id: string }) => system.id === "resort"))).toMatchObject({ visibility: "full", mode: "manual", source: "save-override" });
+  await seasons.getByRole("button", { name: "Close", exact: true }).click();
+
   await page.getByTestId("workspace-operate").click();
   await page.getByTestId("open-property-management").click();
   await page.getByTestId("property-tab-resort").click();
