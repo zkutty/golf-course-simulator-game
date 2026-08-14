@@ -2048,3 +2048,26 @@ classic course-builder references.
   leaving 31,241 bytes below the fixed initial-JavaScript budget. The required
   bundled client reached the Classic operate fixture without an error artifact;
   its final 18-hole Parkland WebGL capture was visually inspected and coherent.
+
+### ZK-332 / ZK-679 next-agent wave — 2026-08-14
+
+- Repaired three stale M35 browser fixtures to use the released Design Dock:
+  expand the dock, select `design-tool-*`, set the labeled Brush width range,
+  and choose the typed terrain cards. Global save shortcuts now deliberately
+  return focus to a non-control surface first, matching the product contract.
+  The three M35 scenarios pass serially 3/3 with their original authoring,
+  performance, save/reload, screenshot, and clean-console assertions intact.
+- Extracted the M51 mobility visual pass into the typed `mobilityEntities`
+  scene. PixiStage retains its single ticker and exact golfer/cull inputs;
+  direct objects-layer ownership, pooled unit lifecycle, depth, culling,
+  parked rendering, shapes, colors, and update ordering are preserved.
+- Focused mobility/render/host/M51 tests pass 37/37; the combined suite passes
+  1,713 tests with one intentional skip and audio audit 5/5. TypeScript, lint,
+  build/delivery budgets, PWA, and performance pass; the integrated 36-hole,
+  100-golfer smoke measured 0.33 ms against the fixed 8 ms budget.
+- The serialized browser matrix passes 11/11 across golden paths, all three
+  repaired M35 scenarios, and M51 certification. The bundled client reached
+  coherent Pixi gameplay for the M20 and M30 fixtures with matching text state,
+  no error artifact, and visually inspected canvas captures. Independent
+  reviews found no release-blocking issue. Promotion remains the next step;
+  ZK-332 and ZK-679 stay open for broader human/architecture acceptance.
