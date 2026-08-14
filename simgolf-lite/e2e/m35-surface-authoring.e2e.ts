@@ -15,10 +15,12 @@ test("M35 click spline and post-commit node/tangent editing stay atomic", async 
   }).toBe("game");
   await page.evaluate(() => window.__coursecraftTest?.setPaintCash(1_000_000));
 
-  await page.getByTestId("terrain-tool-spline").click();
-  await page.getByTestId("terrain-width-5").click();
+  await page.getByRole("button", { name: "Expand design dock" }).click();
+  await expect(page.getByTestId("design-dock")).toHaveAttribute("data-collapsed", "false");
+  await page.getByTestId("design-tool-spline").click();
+  await page.getByLabel("Brush width").fill("5");
   await expect(page.getByLabel("Brush width")).toHaveValue("5");
-  await page.locator("button").filter({ hasText: /^fairway$/ }).last().click();
+  await page.getByTestId("design-card-terrain-fairway").click();
 
   const canvas = page.locator(".cc-pixi-stage canvas");
   await expect(canvas).toBeVisible();
@@ -47,7 +49,7 @@ test("M35 click spline and post-commit node/tangent editing stay atomic", async 
   expect(created.points).toHaveLength(3);
   expect(created.width).toBe(5);
 
-  await page.getByTestId("terrain-tool-edit").click();
+  await page.getByTestId("design-tool-edit").click();
   await expect(page.getByTestId("surface-authoring-instructions")).toContainText("Click a persisted");
   await page.evaluate(() => window.__coursecraftTest!.resetM35Metrics());
 
@@ -118,6 +120,10 @@ test("M35 click spline and post-commit node/tangent editing stay atomic", async 
     ))).toEqual(edited);
   }
 
+  await page.getByTestId("design-dock").locator(".cc-design-toolbar strong").click();
+  await expect.poll(() => page.evaluate(() => document.activeElement?.matches(
+    "input, textarea, select, button, a[href], [role='button'], [contenteditable='true']",
+  ) ?? false)).toBe(false);
   await page.keyboard.press("Control+KeyS");
   await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
   // Edit mode owns the first Escape to clear its selected control point.

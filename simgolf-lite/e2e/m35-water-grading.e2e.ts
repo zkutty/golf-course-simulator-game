@@ -15,9 +15,11 @@ test("painting water automatically commits a flat excavated basin", async ({ pag
   }).toBe("game");
   await page.evaluate(() => window.__coursecraftTest?.setPaintCash(1_000_000));
 
-  await page.getByTestId("terrain-tool-spline").click();
-  await page.getByTestId("terrain-width-9").click();
-  await page.locator("button").filter({ hasText: /^water$/i }).last().click();
+  await page.getByRole("button", { name: "Expand design dock" }).click();
+  await expect(page.getByTestId("design-dock")).toHaveAttribute("data-collapsed", "false");
+  await page.getByTestId("design-tool-spline").click();
+  await page.getByLabel("Brush width").fill("9");
+  await page.getByTestId("design-card-terrain-water").click();
 
   const before = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
   const beforeVersion = await page.evaluate(() => window.__coursecraftTest!.state().terrainVersion);
@@ -109,6 +111,10 @@ test("painting water automatically commits a flat excavated basin", async ({ pag
   expect((await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState())).obstacles)
     .toEqual(after.obstacles);
 
+  await page.getByTestId("design-dock").locator(".cc-design-toolbar strong").click();
+  await expect.poll(() => page.evaluate(() => document.activeElement?.matches(
+    "input, textarea, select, button, a[href], [role='button'], [contenteditable='true']",
+  ) ?? false)).toBe(false);
   await page.keyboard.press("Control+KeyS");
   await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
   await page.keyboard.press("Escape");

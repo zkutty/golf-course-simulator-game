@@ -15,12 +15,14 @@ test("single-cell bunker and natural detail render as organic landscape", async 
   }).toBe("game");
   await page.evaluate(() => window.__coursecraftTest?.setPaintCash(1_000_000));
 
-  await page.getByTestId("terrain-tool-curve").click();
+  await page.getByRole("button", { name: "Expand design dock" }).click();
+  await expect(page.getByTestId("design-dock")).toHaveAttribute("data-collapsed", "false");
+  await page.getByTestId("design-tool-curve").click();
   const width = page.getByLabel("Brush width");
   await width.focus();
   await width.press("Home");
   await expect(width).toHaveValue("1");
-  await page.locator("button").filter({ hasText: /^sand$/i }).last().click();
+  await page.getByTestId("design-card-terrain-sand").click();
 
   const canvas = page.locator(".cc-pixi-stage canvas");
   await expect(canvas).toBeVisible();
