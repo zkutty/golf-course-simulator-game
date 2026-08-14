@@ -6,6 +6,7 @@ import {
   changedRenderSystems,
   createRenderSnapshot,
   holeMarkersRevisionDependencies,
+  mobilityEntitiesRevisionDependencies,
   playerProCollectionRevisionDependencies,
   propertyAssetsRevisionDependencies,
   RENDER_SYSTEMS,
@@ -258,6 +259,53 @@ describe("RenderSnapshot invalidation contract", () => {
       .toBe((initial.propertyAssets ?? 0) + 5);
     expect(tracker.update(dependencies(course, false, 0, () => 0)).propertyAssets)
       .toBe((initial.propertyAssets ?? 0) + 6);
+  });
+
+  it("invalidates mobility entities only for exact static authority inputs", () => {
+    const tracker = new RenderRevisionTracker();
+    const course = DEFAULT_STATE.course;
+    const stableHeight = () => 0;
+    const dependencies = (
+      nextCourse: GameState["course"] = course,
+      rotation: Parameters<typeof mobilityEntitiesRevisionDependencies>[0]["rotation"] = 0,
+      surfaceHeightAt = stableHeight,
+    ) => ({
+      atmosphere: [],
+      surfaceCare: [],
+      structuresProps: [],
+      playerProCollection: [],
+      mobilityEntities: mobilityEntitiesRevisionDependencies({
+        course: nextCourse,
+        rotation,
+        surfaceHeightAt,
+      }),
+      naturalProps: [],
+      overlaysDiagnostics: [],
+      estateSurvey: [],
+    });
+    const initial = tracker.update(dependencies());
+
+    expect(tracker.update(dependencies({ ...course, name: `${course.name} renamed` })).mobilityEntities)
+      .toBe(initial.mobilityEntities);
+    const m51Changed = { ...course, m51: course.m51 ? { ...course.m51 } : undefined };
+    expect(tracker.update(dependencies(m51Changed)).mobilityEntities)
+      .toBe((initial.mobilityEntities ?? 0) + 1);
+    const buildingsChanged = { ...m51Changed, buildings: [...m51Changed.buildings] };
+    expect(tracker.update(dependencies(buildingsChanged)).mobilityEntities)
+      .toBe((initial.mobilityEntities ?? 0) + 2);
+    const identityChanged = { ...buildingsChanged, activeCourseId: "mobility-secondary" };
+    expect(tracker.update(dependencies(identityChanged)).mobilityEntities)
+      .toBe((initial.mobilityEntities ?? 0) + 3);
+    expect(tracker.update(dependencies(identityChanged, 90)).mobilityEntities)
+      .toBe((initial.mobilityEntities ?? 0) + 4);
+    expect(tracker.update(dependencies(identityChanged, 90, () => 0)).mobilityEntities)
+      .toBe((initial.mobilityEntities ?? 0) + 5);
+
+    expect(mobilityEntitiesRevisionDependencies({
+      course: { ...course, activeCourseId: undefined },
+      rotation: 0,
+      surfaceHeightAt: stableHeight,
+    })[2]).toBe(course.layouts?.[0]?.id ?? "course-primary");
   });
 
   it("invalidates the surface editor only for its consumed persisted, preview, editor, and projection inputs", () => {

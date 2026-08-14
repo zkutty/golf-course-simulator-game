@@ -7,7 +7,6 @@ import * as PIXI from "pixi.js";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../game/models/types";
 import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
 import type { GolferRenderData } from "../game/live/types";
-import { mobilityRenderUnits } from "../game/m51/mobilityRender";
 import type { PlayerPlayableRound, PlayerProPoint } from "../game/models/playerProTypes";
 import type { PlayerProWorldDisplayPresentation } from "../game/playerPro/socialPresentation";
 import type { SeasonName } from "../game/seasons/types";
@@ -180,6 +179,7 @@ import {
   RenderRevisionTracker,
   architectureOverlayRevisionDependencies,
   holeMarkersRevisionDependencies,
+  mobilityEntitiesRevisionDependencies,
   playerProCollectionRevisionDependencies,
   propertyAssetsRevisionDependencies,
   structuresPropsRevisionDependencies,
@@ -204,6 +204,10 @@ import { createEstateSurveySceneSystem } from "./renderer/scenes/estateSurveySce
 import { createArchitectureOverlaySceneSystem } from "./renderer/scenes/architectureOverlayScene";
 import { createPropertyAssetsSceneSystem } from "./renderer/scenes/propertyAssetsScene";
 import { createSurfaceEditorSceneSystem } from "./renderer/scenes/surfaceEditorScene";
+import {
+  createMobilityEntitiesSceneSystem,
+  type MobilityEntitiesSceneSystem,
+} from "./renderer/scenes/mobilityEntitiesScene";
 
 type DeferredWorldScenes = typeof import("./renderer/scenes/deferredWorldScenes");
 
@@ -905,8 +909,6 @@ interface GolferEntry {
   } | null;
 }
 
-interface MobilityUnitEntry { holder: PIXI.Container; graphic: PIXI.Graphics; state: string; }
-
 /**
  * Chunked terrain (ZKU-142): the map is partitioned into CHUNK_TILES²-tile
  * chunks, each a static container rebuilt only when one of its tiles (or a
@@ -1030,6 +1032,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const naturalPropsSceneRef = useRef<NaturalPropsSceneSystem | null>(null);
   const playerProCollectionSceneRef = useRef<PlayerProCollectionSceneSystem | null>(null);
   const holeMarkersSceneRef = useRef<HoleMarkersSceneSystem | null>(null);
+  const mobilityEntitiesSceneRef = useRef<MobilityEntitiesSceneSystem | null>(null);
   const deferredWorldScenesRef = useRef<DeferredWorldScenes | null>(null);
   const renderRevisionTrackerRef = useRef(new RenderRevisionTracker());
   const [appReady, setAppReady] = useState(false);
@@ -1088,7 +1091,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     sections: Record<string, number>;
   }>({ win: new PerfWindow(180), enabled: false, lastPollMs: 0, lastHudMs: 0, text: null, sections: {} });
   const golferPoolRef = useRef<Map<number, GolferEntry>>(new Map());
-  const mobilityUnitPoolRef = useRef<Map<string, MobilityUnitEntry>>(new Map());
   const hoverTileRef = useRef<{ x: number; y: number } | null>(null);
   const overlayDirtyRef = useRef(false);
   const terrainPreviewRenderRef = useRef<{
@@ -1409,6 +1411,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
       rotation,
       surfaceHeightAt,
       worldDisplay: props.playerProWorldDisplay,
+    }),
+    mobilityEntities: mobilityEntitiesRevisionDependencies({
+      course,
+      rotation,
+      surfaceHeightAt,
     }),
     naturalProps: [
       atlasRevision,
@@ -2201,6 +2208,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       naturalPropsSceneRef.current = null;
       playerProCollectionSceneRef.current = null;
       holeMarkersSceneRef.current = null;
+      mobilityEntitiesSceneRef.current = null;
       deferredWorldScenesRef.current = null;
       layersRef.current = null;
       chunksRef.current = [];
@@ -2212,7 +2220,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
       hoverLineRef.current = null;
       hoverHighlightRef.current = null;
       golferPoolRef.current.clear();
-      mobilityUnitPoolRef.current.clear();
       surfaceCareWorkersRef.current = [];
       rippleGraphicsRef.current = null;
       ripplesRef.current = [];
@@ -3809,6 +3816,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       layers.terrainDecals,
       layers.objects,
     );
+    const mobilityEntities = createMobilityEntitiesSceneSystem(layers.objects);
     const host = new SceneSystemHost([
       atmosphere,
       createSurfaceCareSceneSystem(
@@ -3823,6 +3831,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ),
       playerProCollection,
       holeMarkers,
+      mobilityEntities,
       createArchitectureOverlaySceneSystem(layers.terrainDecals, () => app.render()),
       createPlayerShotOverlaySceneSystem(layers.fx),
       createEstateSurveySceneSystem(layers.sceneDecals.estateSurvey),
@@ -3835,6 +3844,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     naturalPropsSceneRef.current = naturalProps;
     playerProCollectionSceneRef.current = playerProCollection;
     holeMarkersSceneRef.current = holeMarkers;
+    mobilityEntitiesSceneRef.current = mobilityEntities;
     sceneSystemHostRef.current = host;
     return () => {
       if (sceneSystemHostRef.current === host) sceneSystemHostRef.current = null;
@@ -3842,6 +3852,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (naturalPropsSceneRef.current === naturalProps) naturalPropsSceneRef.current = null;
       if (playerProCollectionSceneRef.current === playerProCollection) playerProCollectionSceneRef.current = null;
       if (holeMarkersSceneRef.current === holeMarkers) holeMarkersSceneRef.current = null;
+      if (mobilityEntitiesSceneRef.current === mobilityEntities) mobilityEntitiesSceneRef.current = null;
       host.dispose();
     };
   }, [appReady]);
@@ -4376,7 +4387,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // sprites (ZKU-153) when the golfers atlas is loaded; legacy dots
       // otherwise.
       const pool = golferPoolRef.current;
-      const list = liveActive && props.showGolfers !== false ? golfersRef?.current : null;
+      const list = liveActive && props.showGolfers !== false ? golfersRef?.current ?? [] : [];
       const seen = new Set<number>();
       const golferById = new Map<number, GolferRenderData>();
       // Entity culling bounds (ZKU-160): golfers outside the viewport skip
@@ -4396,7 +4407,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         cullT = worldCull.pivot.y - halfH - m;
         cullB = worldCull.pivot.y + halfH + m;
       }
-      if (list) {
+      if (list.length > 0) {
         for (const golfer of list) {
           seen.add(golfer.id);
           let entry = pool.get(golfer.id);
@@ -4737,49 +4748,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         }
       }
 
-      // M51 mobility equipment is a shared physical unit, never a second
-      // sprite per golfer. Vector fallbacks keep the view safe when optional
-      // cart art is absent and remain legible without color alone.
-      const mobilityPool = mobilityUnitPoolRef.current;
-      const mobilitySeen = new Set<string>();
-      for (const unit of mobilityRenderUnits(course, list ?? [])) {
-        mobilitySeen.add(unit.id);
-        let entry = mobilityPool.get(unit.id);
-        if (!entry) {
-          const holder = new PIXI.Container();
-          const graphic = new PIXI.Graphics();
-          holder.addChild(graphic);
-          layers.objects.addChild(holder);
-          entry = { holder, graphic, state: "" };
-          mobilityPool.set(unit.id, entry);
-        }
-        const elevation = surfaceHeightAt(unit.x + .5, unit.y + .5);
-        const projected = tileCenterIso(unit.x, unit.y, elevation, rotation);
-        entry.holder.position.set(projected.x, projected.y + 2);
-        const offscreen = projected.x < cullL || projected.x > cullR || projected.y < cullT || projected.y > cullB;
-        entry.holder.visible = !offscreen;
-        const depth = Math.round((entityDepth(unit.x, unit.y, elevation, rotation) - .05) * 10) / 10;
-        if (entry.holder.zIndex !== depth) entry.holder.zIndex = depth;
-        const signature = `${unit.state}:${unit.mode}`;
-        if (entry.state !== signature) {
-          entry.state = signature;
-          const graphic = entry.graphic;
-          graphic.clear();
-          if (unit.state === "walking_connection") {
-            graphic.circle(0, -4, 7); graphic.stroke({ width: 1.5, color: 0xf4f1db, alpha: .85 });
-            graphic.moveTo(-5, -4); graphic.lineTo(5, -4); graphic.stroke({ width: 1.5, color: 0x385d45, alpha: .9 });
-          } else if (unit.mode === "riding_cart") {
-            graphic.roundRect(-10, -9, 20, 10, 3); graphic.fill({ color: 0xe7dfba, alpha: unit.state === "parked" ? .62 : .95 }); graphic.stroke({ width: 1.5, color: 0x374438, alpha: .95 });
-            graphic.circle(-6, 2, 2.5); graphic.circle(6, 2, 2.5); graphic.fill({ color: 0x263126, alpha: .95 });
-          } else {
-            graphic.circle(-3, 0, 3.5); graphic.circle(4, 0, 3.5); graphic.stroke({ width: 1.5, color: 0x263126, alpha: .95 });
-            graphic.moveTo(0, -1); graphic.lineTo(0, -11); graphic.lineTo(5, -14); graphic.stroke({ width: 2, color: 0xead99b, alpha: unit.state === "parked" ? .62 : .95 });
-          }
-        }
-      }
-      for (const [id, entry] of mobilityPool) if (!mobilitySeen.has(id)) {
-        layers.objects.removeChild(entry.holder); entry.holder.destroy({ children: true }); mobilityPool.delete(id);
-      }
+      mobilityEntitiesSceneRef.current?.tick({
+        golfers: list,
+        cullBounds: { left: cullL, right: cullR, top: cullT, bottom: cullB },
+      });
 
       // --- Emote bubble pass (ZKU-155): screen overlay, fixed screen size
       // (clamped anchor height), fanned out horizontally on collisions.

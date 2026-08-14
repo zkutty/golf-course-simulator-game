@@ -88,6 +88,7 @@ export type RenderSceneId =
   | "surfaceCare"
   | "structuresProps"
   | "playerProCollection"
+  | "mobilityEntities"
   | "naturalProps"
   | "propertyAssets"
   | "holeMarkers"
@@ -98,7 +99,7 @@ export type RenderSceneId =
 
 type LegacyRenderSceneId = Exclude<
   RenderSceneId,
-  "holeMarkers" | "surfaceEditor" | "architectureOverlay" | "propertyAssets"
+  "holeMarkers" | "surfaceEditor" | "architectureOverlay" | "propertyAssets" | "mobilityEntities"
 >;
 
 /** New bounded scenes stay optional for compatibility with older test fixtures. */
@@ -211,6 +212,12 @@ export interface PropertyAssetsRevisionInput {
   readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
 }
 
+export interface MobilityEntitiesRevisionInput {
+  readonly course: Pick<Course, "activeCourseId" | "buildings" | "layouts" | "m51">;
+  readonly rotation: IsoRotation;
+  readonly surfaceHeightAt: RenderSnapshot["surfaceHeightAt"];
+}
+
 export type SurfaceEditorMode = "PAINT" | "HOLE_WIZARD" | "OBSTACLE" | "SCULPT" | "BUILDING" | "DECOR";
 
 /** Exact persisted, preview, editor, and projection inputs read by the surface-editor scene. */
@@ -269,6 +276,19 @@ export function propertyAssetsRevisionDependencies(
     input.course.property?.units,
     input.course.theme,
     Boolean(input.hasResortServicePressure),
+    input.rotation,
+    input.surfaceHeightAt,
+  ];
+}
+
+/** Exact static authority consumed by the tick-driven M51 mobility scene. */
+export function mobilityEntitiesRevisionDependencies(
+  input: MobilityEntitiesRevisionInput,
+): readonly unknown[] {
+  return [
+    input.course.m51,
+    input.course.buildings,
+    input.course.activeCourseId ?? input.course.layouts?.[0]?.id ?? "course-primary",
     input.rotation,
     input.surfaceHeightAt,
   ];
