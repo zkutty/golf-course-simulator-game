@@ -15,6 +15,18 @@ test("ZK-642 green programs expose persistent advanced targets and realized trad
     await exitHoleEditor.evaluate((button: HTMLButtonElement) => button.click());
     await expect(exitHoleEditor).toHaveCount(0);
   }
+  await page.getByTestId("workspace-legacy").click();
+  await page.getByTestId("open-seasons-legacy").click();
+  const seasons = page.getByTestId("seasons-legacy-panel");
+  await seasons.getByRole("button", { name: "Club identity", exact: true }).click();
+  await seasons.getByText("Back-office systems", { exact: true }).click();
+  const localizedTurf = seasons.getByTestId("back-office-policy-localized-turf");
+  await localizedTurf.getByRole("button", { name: "Take control", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => {
+    const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
+    return state.systemControl.systems.find((system: { id: string }) => system.id === "localized-turf");
+  })).toMatchObject({ visibility: "full", mode: "manual", source: "save-override" });
+  await seasons.getByRole("button", { name: "Close", exact: true }).click();
   const architect = page.getByRole("button", { name: "Architect", exact: true });
   if (await architect.isVisible()) await architect.click();
   await page.getByRole("button", { name: "Upgrades", exact: true }).click();
