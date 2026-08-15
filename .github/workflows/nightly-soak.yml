@@ -55,6 +55,8 @@ jobs:
           cache: npm
           cache-dependency-path: simgolf-lite/package-lock.json
       - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
       - name: Run renderer performance fixture
         run: npm run test:perf | tee renderer-performance-report.log
       - name: Upload renderer performance report
