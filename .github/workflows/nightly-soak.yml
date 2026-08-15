@@ -12,13 +12,13 @@ defaults:
 
 jobs:
   browser:
-    name: Browser suite (shard ${{ matrix.shard }}/8)
+    name: Browser suite (shard ${{ matrix.shard }}/21)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,7 +30,7 @@ jobs:
       - name: Install browser
         run: npx playwright install --with-deps chromium
       - name: Run full browser suite shard
-        run: npm run test:e2e -- --shard=${{ matrix.shard }}/8 | tee browser-shard-${{ matrix.shard }}.log
+        run: npm run test:e2e -- --shard=${{ matrix.shard }}/21 | tee browser-shard-${{ matrix.shard }}.log
       - name: Upload browser shard report
         if: always()
         uses: actions/upload-artifact@v4
