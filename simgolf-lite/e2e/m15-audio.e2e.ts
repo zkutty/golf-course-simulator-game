@@ -348,10 +348,10 @@ test("ZK-443 bounds tournament, tension, victory, pause, and rapid context chang
   // than dispatching from the panel's just-unmounted close button.
   await page.getByRole("button", { name: "Open pause menu" }).focus();
   await page.keyboard.press("Escape");
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().paused)).toBe(true);
+  await expect(page.getByTestId("pause-overlay")).toBeVisible();
   await sampleAudio(page, samples, "pause");
   await page.keyboard.press("Escape");
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().paused)).toBe(false);
+  await expect(page.getByTestId("pause-overlay")).toHaveCount(0);
   await sampleAudio(page, samples, "resume");
 
   for (const context of ["title", "build-links", "live", "play", "tournament-regional", "tension", "victory"] as const) {
