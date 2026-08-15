@@ -9,7 +9,8 @@ test("ZK-644 green forecasts, retained evidence, and responsive text state stay 
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").architectureReview?.currentEvidence), { timeout: 60_000 }).toBeGreaterThan(0);
 
   const livingClub = page.getByTestId("living-club-panel");
-  if (await livingClub.isVisible()) await livingClub.getByRole("button", { name: "Close" }).click();
+  await expect(livingClub).toBeVisible({ timeout: 60_000 });
+  await livingClub.getByRole("button", { name: "Close" }).click();
   await page.getByTestId("open-architecture-review").click();
   const review = page.getByTestId("architecture-review");
   await expect(review).toBeVisible({ timeout: 60_000 });
