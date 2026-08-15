@@ -7,7 +7,7 @@ on:
 
 defaults:
   run:
-    shell: bash
+    shell: bash -eo pipefail {0}
     working-directory: simgolf-lite
 
 jobs:
@@ -30,7 +30,10 @@ jobs:
       - name: Install browser
         run: npx playwright install --with-deps chromium
       - name: Run full browser suite shard
-        run: npm run test:e2e -- --shard=${{ matrix.shard }}/21 | tee browser-shard-${{ matrix.shard }}.log
+        run: >-
+          npm run test:e2e --
+          --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$'
+          --shard=${{ matrix.shard }}/21 | tee browser-shard-${{ matrix.shard }}.log
       - name: Upload browser shard report
         if: always()
         uses: actions/upload-artifact@v4
@@ -38,6 +41,68 @@ jobs:
           name: nightly-browser-shard-${{ matrix.shard }}
           path: |
             simgolf-lite/browser-shard-${{ matrix.shard }}.log
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  zk765_visual:
+    name: ZK-765 visual reference (${{ matrix.visual_id }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - visual_id: parkland-summer-drought-r0-high
+            visual_biome: parkland
+          - visual_id: parkland-summer-drought-r1-high
+            visual_biome: parkland
+          - visual_id: parkland-summer-drought-r2-high
+            visual_biome: parkland
+          - visual_id: parkland-summer-drought-r3-high
+            visual_biome: parkland
+          - visual_id: links-summer-storm-r0-high
+            visual_biome: links
+          - visual_id: links-summer-storm-r1-high
+            visual_biome: links
+          - visual_id: links-summer-storm-r2-high
+            visual_biome: links
+          - visual_id: links-summer-storm-r3-high
+            visual_biome: links
+          - visual_id: desert-summer-drought-r0-high
+            visual_biome: desert
+          - visual_id: desert-summer-drought-r1-high
+            visual_biome: desert
+          - visual_id: desert-summer-drought-r2-high
+            visual_biome: desert
+          - visual_id: desert-summer-drought-r3-high
+            visual_biome: desert
+    env:
+      ZK765_VISUAL_IDS: ${{ matrix.visual_id }}
+      ZK765_VISUAL_BIOME: ${{ matrix.visual_biome }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Run isolated ZK-765 visual reference case
+        run: >-
+          npm run test:e2e -- e2e/zk765-m69-certification.e2e.ts
+          --grep "ZK-765 reference overlays remain populated: ${ZK765_VISUAL_IDS}$"
+          | tee zk765-visual-${{ matrix.visual_id }}.log
+      - name: Upload ZK-765 visual reference report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-zk765-visual-${{ matrix.visual_id }}
+          path: |
+            simgolf-lite/zk765-visual-${{ matrix.visual_id }}.log
             simgolf-lite/playwright-report
             simgolf-lite/test-results
           if-no-files-found: ignore
@@ -96,6 +161,7 @@ jobs:
     if: always()
     needs:
       - browser
+      - zk765_visual
       - renderer_performance
       - simulation_soak
     runs-on: ubuntu-latest
@@ -105,13 +171,18 @@ jobs:
         working-directory: .
         env:
           BROWSER_RESULT: ${{ needs.browser.result }}
+          ZK765_VISUAL_RESULT: ${{ needs.zk765_visual.result }}
           RENDERER_PERFORMANCE_RESULT: ${{ needs.renderer_performance.result }}
           SIMULATION_SOAK_RESULT: ${{ needs.simulation_soak.result }}
         run: |
           echo "Browser suite result: $BROWSER_RESULT"
+          echo "ZK-765 visual reference result: $ZK765_VISUAL_RESULT"
           echo "Renderer performance result: $RENDERER_PERFORMANCE_RESULT"
           echo "Simulation soak result: $SIMULATION_SOAK_RESULT"
           if [[ "$BROWSER_RESULT" != "success" ]]; then
+            exit 1
+          fi
+          if [[ "$ZK765_VISUAL_RESULT" != "success" ]]; then
             exit 1
           fi
           if [[ "$RENDERER_PERFORMANCE_RESULT" != "success" ]]; then
