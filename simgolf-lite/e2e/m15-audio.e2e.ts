@@ -343,6 +343,10 @@ test("ZK-443 bounds tournament, tension, victory, pause, and rapid context chang
   await expectTrack(page, "/audio/music/suno/victory-01.mp3");
   await sampleAudio(page, samples, "victory");
 
+  // The tournament panel is closed above. Return keyboard focus to a visible
+  // in-game control before exercising the app-wide Escape shortcut, rather
+  // than dispatching from the panel's just-unmounted close button.
+  await page.getByRole("button", { name: "Open pause menu" }).focus();
   await page.keyboard.press("Escape");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().paused)).toBe(true);
   await sampleAudio(page, samples, "pause");
