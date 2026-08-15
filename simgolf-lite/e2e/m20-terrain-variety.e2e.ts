@@ -13,13 +13,16 @@ test("M20 surfaces, editor catalog, themes, rotations, and zoom detail", async (
 
     const canvas = page.locator(".cc-pixi-stage canvas");
     await expect(canvas).toBeVisible();
+    const designDock = page.getByTestId("design-dock");
+    await designDock.getByRole("button", { name: "Expand design dock" }).click();
+    await expect(designDock).toHaveAttribute("data-collapsed", "false");
+    await designDock.getByRole("tab", { name: "Terrain" }).click();
     if (theme === "parkland") {
-      await expect(page.getByText("Playing surfaces", { exact: true })).toBeVisible();
-      await expect(page.getByText("Hazards", { exact: true })).toBeVisible();
-      await expect(page.getByText("Natural ground", { exact: true })).toBeVisible();
-      await page.getByRole("button", { name: "waste_area", exact: true }).click();
+      const terrainPalette = page.getByTestId("design-palette-terrain");
+      await expect(terrainPalette.getByRole("option")).toHaveCount(10);
+      await page.getByTestId("design-card-terrain-waste_area").click();
       await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").editor?.selectedTerrain)).toBe("waste_area");
-      await page.getByRole("button", { name: "wetland", exact: true }).click();
+      await page.getByTestId("design-card-terrain-wetland").click();
       await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").editor?.selectedTerrain)).toBe("wetland");
     }
 

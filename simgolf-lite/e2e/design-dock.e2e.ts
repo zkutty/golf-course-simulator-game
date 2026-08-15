@@ -12,6 +12,10 @@ async function enterGame(page: Page) {
   if (await tutorialOffer.count()) {
     await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
   }
+  const designDock = page.getByTestId("design-dock");
+  await expect(designDock).toBeVisible();
+  await designDock.getByRole("button", { name: "Expand design dock" }).click();
+  await expect(designDock).toHaveAttribute("data-collapsed", "false");
 }
 
 test("registry Design dock supports keyboard, touch, responsive layout, and exact inspector facts", async ({ page }) => {
@@ -177,10 +181,7 @@ test("tool and new-run activation keep the full design selection coherent", asyn
     selectedDecoration: "bridge",
   });
 
-  await page.locator(".cc-hud").getByRole("button", {
-    name: "Design",
-    exact: true,
-  }).click();
+  await dock.getByTestId("design-tool-curve").click();
   await expect.poll(
     () => page.evaluate(() => JSON.parse(window.render_game_to_text!()).editor),
   ).toMatchObject({
@@ -208,7 +209,8 @@ test("tool and new-run activation keep the full design selection coherent", asyn
   await expect(page.getByTestId("design-card-terrain-fairway"))
     .toHaveAttribute("aria-selected", "true");
 
-  await page.keyboard.press("KeyO");
+  await dock.getByRole("tab", { name: "Nature" }).click();
+  await page.getByTestId("design-card-plant-parkland-oak").click();
   await expect.poll(
     () => page.evaluate(() => JSON.parse(window.render_game_to_text!()).editor),
   ).toMatchObject({
@@ -216,7 +218,7 @@ test("tool and new-run activation keep the full design selection coherent", asyn
     selectedDesignItem: "plant:parkland-oak",
     selectedPlantId: "parkland-oak",
   });
-  await page.keyboard.press("KeyT");
+  await dock.getByTestId("design-tool-curve").click();
   await expect.poll(
     () => page.evaluate(() => JSON.parse(window.render_game_to_text!()).editor),
   ).toMatchObject({

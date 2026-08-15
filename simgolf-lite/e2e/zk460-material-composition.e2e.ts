@@ -19,8 +19,12 @@ test("ZK-460 painted areas retain authored material texture at overview and deta
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().cash)).toBe(1_000_000);
 
   const initial = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}"));
-  await page.getByRole("button", { name: "Area", exact: true }).click();
-  await page.locator("button").filter({ hasText: /^fairway$/ }).last().click();
+  const designDock = page.getByTestId("design-dock");
+  await designDock.getByRole("button", { name: "Expand design dock" }).click();
+  await expect(designDock).toHaveAttribute("data-collapsed", "false");
+  await designDock.getByTestId("design-tool-area").click();
+  await designDock.getByRole("tab", { name: "Terrain" }).click();
+  await page.getByTestId("design-card-terrain-fairway").click();
 
   const canvas = page.locator(".cc-pixi-stage canvas");
   await expect(canvas).toBeVisible();

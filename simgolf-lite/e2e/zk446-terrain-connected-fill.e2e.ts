@@ -53,9 +53,13 @@ test("ZK-446 Area brush commits one connected filled mask and round-trips it exa
 
   const before = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
   const beforeTerrainVersion = await page.evaluate(() => window.__coursecraftTest!.state().terrainVersion);
-  await page.getByRole("button", { name: "Area", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Area", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await page.locator("button").filter({ hasText: /^sand$/ }).last().click();
+  const designDock = page.getByTestId("design-dock");
+  await designDock.getByRole("button", { name: "Expand design dock" }).click();
+  await expect(designDock).toHaveAttribute("data-collapsed", "false");
+  await designDock.getByTestId("design-tool-area").click();
+  await expect(designDock.getByTestId("design-tool-area")).toHaveAttribute("aria-pressed", "true");
+  await designDock.getByRole("tab", { name: "Terrain" }).click();
+  await page.getByTestId("design-card-terrain-sand").click();
 
   const canvas = page.locator(".cc-pixi-stage canvas");
   await expect(canvas).toBeVisible();
