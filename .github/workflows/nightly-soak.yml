@@ -7,12 +7,18 @@ on:
 
 defaults:
   run:
+    shell: bash
     working-directory: simgolf-lite
 
 jobs:
-  soak:
+  browser:
+    name: Browser suite (shard ${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -23,20 +29,92 @@ jobs:
       - run: npm ci
       - name: Install browser
         run: npx playwright install --with-deps chromium
-      - name: Browser golden path and error-boundary guard
-        run: npm run test:e2e
-      - name: Renderer performance fixture
-        run: npm run test:perf
-      - name: 30-week deterministic simulation soak
-        run: npm run test:soak | tee soak-report.json
-      - name: Upload QA reports
+      - name: Run full browser suite shard
+        run: npm run test:e2e -- --shard=${{ matrix.shard }}/8 | tee browser-shard-${{ matrix.shard }}.log
+      - name: Upload browser shard report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-qa-reports
+          name: nightly-browser-shard-${{ matrix.shard }}
           path: |
-            simgolf-lite/soak-report.json
+            simgolf-lite/browser-shard-${{ matrix.shard }}.log
             simgolf-lite/playwright-report
             simgolf-lite/test-results
           if-no-files-found: ignore
           retention-days: 14
+
+  renderer_performance:
+    name: Renderer performance fixture
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Run renderer performance fixture
+        run: npm run test:perf | tee renderer-performance-report.log
+      - name: Upload renderer performance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-renderer-performance
+          path: simgolf-lite/renderer-performance-report.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  simulation_soak:
+    name: 30-week deterministic simulation soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Run 30-week deterministic simulation soak
+        run: npm run test:soak | tee soak-report.json
+      - name: Upload simulation soak report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-simulation-soak
+          path: simgolf-lite/soak-report.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+  nightly_qa_result:
+    name: Nightly QA result
+    if: always()
+    needs:
+      - browser
+      - renderer_performance
+      - simulation_soak
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every nightly QA gate
+        working-directory: .
+        env:
+          BROWSER_RESULT: ${{ needs.browser.result }}
+          RENDERER_PERFORMANCE_RESULT: ${{ needs.renderer_performance.result }}
+          SIMULATION_SOAK_RESULT: ${{ needs.simulation_soak.result }}
+        run: |
+          echo "Browser suite result: $BROWSER_RESULT"
+          echo "Renderer performance result: $RENDERER_PERFORMANCE_RESULT"
+          echo "Simulation soak result: $SIMULATION_SOAK_RESULT"
+          if [[ "$BROWSER_RESULT" != "success" ]]; then
+            exit 1
+          fi
+          if [[ "$RENDERER_PERFORMANCE_RESULT" != "success" ]]; then
+            exit 1
+          fi
+          if [[ "$SIMULATION_SOAK_RESULT" != "success" ]]; then
+            exit 1
+          fi
