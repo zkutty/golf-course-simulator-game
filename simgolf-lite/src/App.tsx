@@ -396,6 +396,7 @@ const WeekCloseReport = lazy(() => import("./ui/WeekCloseReport").then(({ WeekCl
 const PropertyManagementPanel = lazy(() => import("./ui/PropertyManagementPanel").then(({ PropertyManagementPanel }) => ({ default: PropertyManagementPanel })));
 const LivingClubPanel = lazy(() => import("./ui/LivingClubPanel").then(({ LivingClubPanel }) => ({ default: LivingClubPanel })));
 const SeasonsLegacyPanel = lazy(() => import("./ui/SeasonsLegacyPanel").then(({ SeasonsLegacyPanel }) => ({ default: SeasonsLegacyPanel })));
+const QUICK_SAVE_ANNOUNCEMENT_DURATION_MS = 2_500;
 
 export default function App() {
   const { t } = useI18n();
@@ -773,6 +774,10 @@ export default function App() {
   const seenAdvisorMessagesRef = useRef(new Set(loadAppProfile().advisorSeen));
   const advisorCooldownUntilRef = useRef(0);
   const [a11yMessage, setA11yMessage] = useState("");
+  const [quickSaveAnnouncement, setQuickSaveAnnouncement] = useState<{ sequence: number; message: string } | null>(null);
+  const quickSaveAnnouncementSequenceRef = useRef(0);
+  const quickSaveAnnouncementPublishTimeoutRef = useRef<number | null>(null);
+  const quickSaveAnnouncementClearTimeoutRef = useRef<number | null>(null);
   const perfFixtureLoadedRef = useRef(false);
   const audio = useAudio();
   const [showRetention, setShowRetention] = useState(false);
@@ -2030,6 +2035,37 @@ export default function App() {
       live.setSpeed("paused");
     }
   }, [flow.base, flow.modal, flow.paused, live]);
+
+  const announceQuickSaveComplete = useCallback(() => {
+    const sequence = ++quickSaveAnnouncementSequenceRef.current;
+    if (quickSaveAnnouncementPublishTimeoutRef.current !== null) {
+      window.clearTimeout(quickSaveAnnouncementPublishTimeoutRef.current);
+    }
+    if (quickSaveAnnouncementClearTimeoutRef.current !== null) {
+      window.clearTimeout(quickSaveAnnouncementClearTimeoutRef.current);
+    }
+    setA11yMessage("");
+    setQuickSaveAnnouncement(null);
+    quickSaveAnnouncementPublishTimeoutRef.current = window.setTimeout(() => {
+      quickSaveAnnouncementPublishTimeoutRef.current = null;
+      if (quickSaveAnnouncementSequenceRef.current !== sequence) return;
+      setQuickSaveAnnouncement({ sequence, message: t("save.quickComplete") });
+      quickSaveAnnouncementClearTimeoutRef.current = window.setTimeout(() => {
+        quickSaveAnnouncementClearTimeoutRef.current = null;
+        if (quickSaveAnnouncementSequenceRef.current === sequence) setQuickSaveAnnouncement(null);
+      }, QUICK_SAVE_ANNOUNCEMENT_DURATION_MS);
+    }, 0);
+  }, [t]);
+
+  useEffect(() => () => {
+    if (quickSaveAnnouncementPublishTimeoutRef.current !== null) {
+      window.clearTimeout(quickSaveAnnouncementPublishTimeoutRef.current);
+    }
+    if (quickSaveAnnouncementClearTimeoutRef.current !== null) {
+      window.clearTimeout(quickSaveAnnouncementClearTimeoutRef.current);
+    }
+  }, []);
+
   const quickSave = useCallback(async () => {
     if (flow.base !== "in-game") return;
     const sequence = changeSequenceRef.current;
@@ -2038,8 +2074,8 @@ export default function App() {
       { history: historyRef.current, records: recordsRef.current, live: live.getSnapshot(), tutorial: tutorialProgress },
     );
     markClean(sequence);
-    setA11yMessage(t("save.quickComplete"));
-  }, [flow.base, gameSession, live, markClean, t, tutorialProgress]);
+    announceQuickSaveComplete();
+  }, [announceQuickSaveComplete, flow.base, gameSession, live, markClean, t, tutorialProgress]);
 
 
   const quitToTitle = useCallback(() => {
@@ -2376,7 +2412,6 @@ export default function App() {
     );
     if (next) {
       setAdvisorMessage(next);
-      setA11yMessage(`${next.title}. ${next.body}`);
     }
   }, [screen, activeTutorial, showTutorialOffer, advisorMessage, flow.modal, flow.paused, showVictory, showBridgePrompt, activeOperatingCourse, world, last, history, advisorWake, t]);
 
@@ -5448,7 +5483,13 @@ export default function App() {
       style={biomeUiStyle(contextualUiTheme) as CSSProperties}
     >
       <TooltipSurface>
-      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{a11yMessage}</div>
+      <div
+        className="sr-only"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        data-announcement-sequence={quickSaveAnnouncement?.sequence}
+      >{quickSaveAnnouncement?.message ?? a11yMessage}</div>
         <GameBackground />
         {saveLoadModal}
       {showRetention && <DeferredSurface label={t("deferredSurface.achievements")}><RetentionHub records={records} profile={appProfile} context={achievementContext(records)} onClose={() => setShowRetention(false)} /></DeferredSurface>}

@@ -117,8 +117,56 @@ test("ZK-446 Area brush commits one connected filled mask and round-trips it exa
   const redone = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
   expect(featureSnapshot(redone)).toEqual(feature);
 
+  const announcement = page.locator('.sr-only[role="status"]');
+  await expect(announcement).toHaveCount(1);
+  const advisorLiveRegion = page.getByTestId("advisor-card").locator('[aria-live="polite"]');
+  await expect(advisorLiveRegion).toHaveCount(1);
+  const advisorText = (await advisorLiveRegion.innerText()).trim();
+  expect(advisorText.length).toBeGreaterThan(0);
+  await expect(announcement).toBeEmpty();
+  await page.evaluate(() => {
+    const status = document.querySelector<HTMLElement>('.sr-only[role="status"]');
+    if (!status) throw new Error("Missing shared accessibility status");
+    const testWindow = window as typeof window & {
+      __zk923Announcements?: string[];
+      __zk923AnnouncementObserver?: MutationObserver;
+    };
+    testWindow.__zk923Announcements = [];
+    testWindow.__zk923AnnouncementObserver = new MutationObserver(() => {
+      testWindow.__zk923Announcements?.push(status.textContent ?? "");
+    });
+    testWindow.__zk923AnnouncementObserver.observe(status, { childList: true, characterData: true, subtree: true });
+  });
+
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.keyboard.press("Control+KeyS");
-  await expect(page.locator('.sr-only[role="status"]')).toContainText("Quick save complete");
+  await expect(announcement).toHaveText("Quick save complete.");
+  await expect(advisorLiveRegion).toHaveCount(1);
+  const firstAnnouncementSequence = Number(await announcement.getAttribute("data-announcement-sequence"));
+  expect(firstAnnouncementSequence).toBeGreaterThan(0);
+  await expect(announcement).toBeEmpty();
+
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+  await page.keyboard.press("Control+KeyS");
+  await expect(announcement).toHaveText("Quick save complete.");
+  const secondAnnouncementSequence = Number(await announcement.getAttribute("data-announcement-sequence"));
+  expect(secondAnnouncementSequence).toBeGreaterThan(firstAnnouncementSequence);
+  await expect.poll(() => page.evaluate(() => {
+    const testWindow = window as typeof window & { __zk923Announcements?: string[] };
+    return testWindow.__zk923Announcements?.filter((message) => message === "Quick save complete.").length ?? 0;
+  })).toBe(2);
+  await expect(announcement).toBeEmpty();
+
+  await page.evaluate(() => {
+    const key = "coursecraft_app_profile_v5";
+    const profile = JSON.parse(localStorage.getItem(key)!);
+    profile.accessibility.reducedMotion = true;
+    localStorage.setItem(key, JSON.stringify(profile));
+    window.dispatchEvent(new CustomEvent("coursecraft-profile-change"));
+  });
+  await expect.poll(() => page.evaluate(() => document.documentElement.dataset.reducedMotion)).toBe("true");
+  await page.getByRole("button", { name: "Flyover", exact: true }).click();
+  await expect(announcement).toHaveText("Flyover is disabled while reduced motion is on.");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: /load game/i }).click();
   await expect(page.getByTestId("save-slot-quick-save")).toContainText("Quick Save");
