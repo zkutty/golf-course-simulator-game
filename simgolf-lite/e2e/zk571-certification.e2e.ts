@@ -77,6 +77,8 @@ test("ZK-571 publishes a versioned machine-only screenshot/state matrix", async 
     const dock = page.getByTestId("design-dock");
     await expect(dock).toBeVisible();
     await expect(dock).toHaveAttribute("aria-label", /.+/);
+    await dock.getByRole("button", { name: "Expand design dock" }).click();
+    await expect(dock).toHaveAttribute("data-collapsed", "false");
     await expect(dock.getByRole("tab")).toHaveCount(3);
     await expect(dock.locator('[role="tabpanel"]')).toHaveCount(3);
     const visibleButtonsMissingName = await page.locator("button:visible").evaluateAll((buttons) =>

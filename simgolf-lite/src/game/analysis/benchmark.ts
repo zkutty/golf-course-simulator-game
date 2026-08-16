@@ -84,7 +84,11 @@ function rendererHeapBytes(): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-async function measureInputDelay<T>(task: () => T | Promise<T>): Promise<{ result: T; delayMs: number }> {
+async function measureInputDelay<T>(task: () => T | Promise<T>): Promise<{
+  result: T;
+  delayMs: number;
+  synchronousTaskMs: number;
+}> {
   const scheduledAt = performance.now();
   let handledAt = scheduledAt;
   const inputTask = new Promise<void>((resolve) => {
@@ -93,9 +97,16 @@ async function measureInputDelay<T>(task: () => T | Promise<T>): Promise<{ resul
       resolve();
     }, 0);
   });
-  const result = await task();
+  const taskStartedAt = performance.now();
+  const taskResult = task();
+  const synchronousTaskMs = Math.max(0, performance.now() - taskStartedAt);
+  const result = await taskResult;
   await inputTask;
-  return { result, delayMs: Math.max(0, handledAt - scheduledAt) };
+  return {
+    result,
+    delayMs: Math.max(0, handledAt - scheduledAt),
+    synchronousTaskMs,
+  };
 }
 
 function createSurfacePayload(): SurfaceHabitatPayload {
@@ -165,10 +176,9 @@ async function runMeasurement(
     0,
   );
   const mainHeapBeforeBytes = rendererHeapBytes();
-  const mainStartedAt = performance.now();
   const mainResult = await measureInputDelay(() => runAnalysisWorkload(mainPayload));
   const mainOutput = mainResult.result;
-  const mainComputeMs = performance.now() - mainStartedAt;
+  const mainComputeMs = mainResult.synchronousTaskMs;
   const mainHeapAfterBytes = rendererHeapBytes();
   const workerHeapBeforeBytes = rendererHeapBytes();
   const workerStartedAt = performance.now();

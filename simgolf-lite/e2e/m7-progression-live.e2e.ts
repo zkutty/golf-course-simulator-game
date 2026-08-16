@@ -48,9 +48,12 @@ test("M7 progression locks unavailable build content", async ({ page }) => {
     { timeout: 30_000 },
   ).toBe("local");
   await page.getByRole("button", { name: "Architect" }).click();
+  const designDock = page.getByTestId("design-dock");
+  await designDock.getByRole("button", { name: "Expand design dock" }).click();
+  await expect(designDock).toHaveAttribute("data-collapsed", "false");
   await expect(page.getByRole("option", { name: /Deep rough.*Locked until reputation 45/ })).toHaveAttribute("aria-disabled", "true");
-  await page.getByRole("button", { name: /Obstacle/ }).click();
-  await expect(page.getByRole("button", { name: /rock/ })).toBeDisabled();
+  await designDock.getByRole("tab", { name: "Nature" }).click();
+  await expect(designDock.getByRole("option", { name: /rock.*Locked until reputation/ })).toHaveAttribute("aria-disabled", "true");
   await page.getByRole("button", { name: /Shop/ }).click();
   await expect(page.getByRole("button", { name: /Pro Shop/ })).toBeDisabled();
 });
