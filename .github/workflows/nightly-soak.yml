@@ -32,7 +32,7 @@ jobs:
       - name: Run full browser suite shard
         run: >-
           npm run test:e2e --
-          --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$'
+          --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$|ZK-571 publishes a versioned machine-only screenshot/state matrix$'
           --shard=${{ matrix.shard }}/21 | tee browser-shard-${{ matrix.shard }}.log
       - name: Upload browser shard report
         if: always()
@@ -43,6 +43,40 @@ jobs:
             simgolf-lite/browser-shard-${{ matrix.shard }}.log
             simgolf-lite/playwright-report
             simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  zk571_matrix:
+    name: ZK-571 machine-only screenshot/state matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Run isolated ZK-571 machine-only screenshot/state matrix
+        run: >-
+          npm run test:e2e -- e2e/zk571-certification.e2e.ts
+          --grep 'ZK-571 publishes a versioned machine-only screenshot/state matrix$'
+          | tee zk571-matrix.log
+      - name: Upload ZK-571 matrix report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-zk571-matrix
+          path: |
+            simgolf-lite/zk571-matrix.log
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+            simgolf-lite/artifacts/zk-571/v1
           if-no-files-found: ignore
           retention-days: 14
 
@@ -161,6 +195,7 @@ jobs:
     if: always()
     needs:
       - browser
+      - zk571_matrix
       - zk765_visual
       - renderer_performance
       - simulation_soak
@@ -171,15 +206,20 @@ jobs:
         working-directory: .
         env:
           BROWSER_RESULT: ${{ needs.browser.result }}
+          ZK571_MATRIX_RESULT: ${{ needs.zk571_matrix.result }}
           ZK765_VISUAL_RESULT: ${{ needs.zk765_visual.result }}
           RENDERER_PERFORMANCE_RESULT: ${{ needs.renderer_performance.result }}
           SIMULATION_SOAK_RESULT: ${{ needs.simulation_soak.result }}
         run: |
           echo "Browser suite result: $BROWSER_RESULT"
+          echo "ZK-571 matrix result: $ZK571_MATRIX_RESULT"
           echo "ZK-765 visual reference result: $ZK765_VISUAL_RESULT"
           echo "Renderer performance result: $RENDERER_PERFORMANCE_RESULT"
           echo "Simulation soak result: $SIMULATION_SOAK_RESULT"
           if [[ "$BROWSER_RESULT" != "success" ]]; then
+            exit 1
+          fi
+          if [[ "$ZK571_MATRIX_RESULT" != "success" ]]; then
             exit 1
           fi
           if [[ "$ZK765_VISUAL_RESULT" != "success" ]]; then
