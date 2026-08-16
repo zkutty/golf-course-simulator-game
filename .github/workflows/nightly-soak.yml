@@ -49,6 +49,8 @@ jobs:
   zk765_visual:
     name: ZK-765 visual reference (${{ matrix.visual_id }})
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble@sha256:cf0daee9b994042e011bc29f20cdff1a9f682a039b43fcd738f7d8a9d3bcd9d6
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -89,8 +91,6 @@ jobs:
           cache: npm
           cache-dependency-path: simgolf-lite/package-lock.json
       - run: npm ci
-      - name: Install browser
-        run: npx playwright install --with-deps chromium
       - name: Run isolated ZK-765 visual reference case
         run: >-
           npm run test:e2e -- e2e/zk765-m69-certification.e2e.ts

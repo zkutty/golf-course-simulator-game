@@ -16,7 +16,7 @@ interface DecisionTarget {
 async function enterPlayerProRound(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Quick Start" }).click();
-  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen)).toBe("game");
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").screen)).toBe("game");
   const tutorialOffer = page.getByRole("dialog", { name: "First-launch tutorial" });
   if (await tutorialOffer.count()) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
   await page.evaluate(() => window.__coursecraftTest!.setPlayerProFixture());
@@ -24,7 +24,13 @@ async function enterPlayerProRound(page: Page) {
   await page.getByTestId("open-player-pro").click();
   await page.getByTestId("player-pro-panel").getByRole("button", { name: "Play", exact: true }).click();
   await page.getByTestId("start-player-round").click();
-  await expect(page.getByTestId("player-shot-hud")).toBeVisible();
+  const hud = page.getByTestId("player-shot-hud");
+  await expect.poll(() => page.evaluate(() => {
+    const round = JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro?.activeRound;
+    return round?.phase === "awaiting_shot" && Boolean(round.aim);
+  })).toBe(true);
+  await expect(hud).toBeVisible();
+  await expect(hud.getByTestId("commit-player-shot")).toBeEnabled();
   await expect.poll(() => page.evaluate(() => Boolean(window.__coursecraftPixiTest))).toBe(true);
   await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
 }
