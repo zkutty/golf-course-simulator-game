@@ -25,7 +25,7 @@ test("ZK-569 projects and clears bounded care evidence on the mounted course", a
     const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
     return {
       screen: state.screen,
-      quality: state.graphics?.resolvedQuality,
+      quality: state.graphics?.quality,
       fixture: typeof window.__coursecraftTest?.setM53SurfaceCareFixture,
       pixi: typeof window.__coursecraftPixiTest?.surfaceCareLayer,
     };

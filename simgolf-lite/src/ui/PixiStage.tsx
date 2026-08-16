@@ -1149,6 +1149,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const lastReportedCameraStateRef = useRef<CameraState | null>(null);
   const lastAmbientReportAtRef = useRef(0);
   const lastCameraStateRef = useRef<CameraState | null | undefined>(undefined);
+  // Reference fixtures establish their bookmarked camera once. Subsequent
+  // free-camera input (including F fit) owns its current cardinal rotation.
+  const lastReferenceCameraRef = useRef<typeof props.referenceCamera | undefined>(undefined);
   const lastAutoFitSignatureRef = useRef<string | null>(null);
 
   const {
@@ -1857,7 +1860,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
   useEffect(() => {
     const reference = props.referenceCamera;
-    if (!appReady || !reference) return;
+    if (!appReady || lastReferenceCameraRef.current === reference) return;
+    lastReferenceCameraRef.current = reference;
+    if (!reference) return;
     const cam = camRef.current;
     const center = clampCenter(reference.center.x, reference.center.y);
     cam.initialized = true;

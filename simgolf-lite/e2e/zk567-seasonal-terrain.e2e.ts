@@ -40,7 +40,7 @@ test("ZK-567 seasonal terrain machine matrix keeps typed state and populated pix
         weather: state.seasons?.weather?.kind,
         quality: state.seasons?.presentation?.terrain?.quality,
         profileQuality: state.graphics?.quality,
-        resolvedQuality: state.graphics?.resolvedQuality,
+        resolvedQuality: state.graphics?.quality,
         decalBudget: state.seasons?.presentation?.terrain?.decalBudget,
         profile: state.seasons?.presentation?.terrain?.profile,
         rotation: state.camera?.rotation,
@@ -114,7 +114,7 @@ test("ZK-567 Low chunks retint across a same-mounted authoritative season transi
     return {
       screen: state.screen,
       season: state.seasons?.calendar?.season,
-      quality: state.graphics?.resolvedQuality,
+      quality: state.graphics?.quality,
     };
   }), { timeout: 120_000 }).toEqual({
     screen: "game",
@@ -141,7 +141,7 @@ test("ZK-567 Low chunks retint across a same-mounted authoritative season transi
     return {
       season: state.seasons?.calendar?.season,
       weather: state.seasons?.weather?.kind,
-      quality: state.graphics?.resolvedQuality,
+      quality: state.graphics?.quality,
       droughtPositive:
         (state.seasons?.presentation?.terrain?.terrains?.rough?.channels?.drought ?? 0) > 0,
       chunkRebuildPositive: (() => {

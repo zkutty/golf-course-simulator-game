@@ -62,7 +62,7 @@ test("ZK-571 publishes a versioned machine-only screenshot/state matrix", async 
         theme: state.course?.theme,
         season: state.seasons?.calendar?.season,
         weather: state.seasons?.weather?.kind,
-        quality: state.graphics?.resolvedQuality,
+        quality: state.graphics?.quality,
         rotation: state.camera?.rotation,
       };
     }), { timeout: 120_000 }).toEqual({
