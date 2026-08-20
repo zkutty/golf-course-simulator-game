@@ -1,31 +1,23 @@
 import { expect, test } from "@playwright/test";
+import { bookTournament, openTournamentPanel } from "./tournament-readiness";
 
 test("M6 schedules events and presents live tournament standings", async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?m24Fixture=1");
-  await expect.poll(
-    () => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").screen),
-    { timeout: 30_000 },
-  ).toBe("game");
-
-  await page.getByTestId("workspace-operate").click();
-  await page.getByTestId("open-tournaments").click();
-  await expect(page.getByTestId("tournament-panel")).toBeVisible();
-  await page.getByTestId("tournament-tier").selectOption("regional");
+  const panel = await openTournamentPanel(page, "M24 Tournament Standards Club");
+  await panel.getByTestId("tournament-tier").selectOption("regional");
   const cashBefore = await page.evaluate(() => window.__coursecraftTest!.state().cash);
-  await page.getByTestId("schedule-tournament").click();
-  await expect(page.getByTestId("tournament-panel").getByText("Tournament booked.")).toBeVisible();
+  await bookTournament(page, panel);
   await expect(page.getByText("Upcoming")).toBeVisible();
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.scheduled)).toBe(1);
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().cash)).toBe(cashBefore - 3_500);
 
   await page.getByLabel("Close tournaments").click();
   await page.evaluate(() => window.__coursecraftTest!.startTournamentFixture());
-  await page.getByTestId("open-tournaments").click();
-  await expect(page.getByTestId("active-tournament")).toBeVisible();
-  await expect(page.getByTestId("tournament-leaderboard").locator("li")).toHaveCount(8);
+  const livePanel = await openTournamentPanel(page, "M24 Tournament Standards Club", false);
+  await expect(livePanel.getByTestId("active-tournament")).toBeVisible();
+  await expect(livePanel.getByTestId("tournament-leaderboard").locator("li")).toHaveCount(8);
   await page.evaluate(() => { for (let index = 0; index < 5; index++) window.advanceTime?.(2_000); });
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active?.standings.some((row: { holesCompleted: number }) => row.holesCompleted > 0))).toBe(true);
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active?.standings.length)).toBe(5);
