@@ -32,11 +32,21 @@ test("M22 structures, furniture, crossings, rotations, and editor controls", asy
   expect(themeCaptures[0].equals(themeCaptures[1])).toBe(false);
   expect(themeCaptures[1].equals(themeCaptures[2])).toBe(false);
 
-  await page.getByTestId("decor-tool").click();
-  await expect(page.getByTestId("decor-kind-bridge")).toBeVisible();
-  await page.getByTestId("decor-kind-boardwalk").click();
-  await page.getByTestId("decor-action-rotate").click();
-  await page.getByTestId("decor-action-remove").click();
+  const designDock = page.getByTestId("design-dock");
+  await designDock.getByRole("button", { name: "Expand design dock" }).click();
+  await expect(designDock).toHaveAttribute("data-collapsed", "false");
+  await designDock.getByRole("tab", { name: "Nature" }).click();
+  await expect(designDock.getByTestId("design-palette-nature")).toBeVisible();
+  await designDock.getByRole("tab", { name: "Decor" }).click();
+  const bridgeCard = designDock.getByTestId("design-card-decor-bridge");
+  await expect(bridgeCard).toBeVisible();
+  await bridgeCard.focus();
+  await page.keyboard.press("Enter");
+  await designDock.getByTestId("design-card-decor-boardwalk").focus();
+  await page.keyboard.press("Enter");
+  const decorationActions = designDock.getByRole("group", { name: "Decoration action" });
+  await decorationActions.getByRole("button", { name: "Rotate" }).click();
+  await decorationActions.getByRole("button", { name: "Remove" }).click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").editor?.decorationAction)).toBe("remove");
   expect(failedAssets).toEqual([]);
   expect(errors).toEqual([]);
