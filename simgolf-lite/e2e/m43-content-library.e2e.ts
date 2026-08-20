@@ -4,7 +4,7 @@ test("M43 packages a course locally and test plays an isolated copy", async ({ p
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/?m25Fixture=1");
+  await page.goto("/?m26Fixture=1");
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").screen), { timeout: 45_000 }).toBe("game");
   const originalName = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course.name);
 
