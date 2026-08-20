@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { waitForLegacyBiomeFixture } from "./legacy-biome-fixture";
 
 test("M21 biome packs, rotations, density, and course-only captures", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -17,6 +18,11 @@ test("M21 biome packs, rotations, density, and course-only captures", async ({ p
 
   for (const theme of ["parkland", "links", "desert"] as const) {
     await page.goto(`/?m21Fixture=1&m21Theme=${theme}`);
+    await waitForLegacyBiomeFixture(page, {
+      theme,
+      courseName: `M21 ${theme} Biome Preserve`,
+      minimumObstacleCount: 21,
+    });
     await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course?.theme)).toBe(theme);
     const state = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}"));
     expect(state.course.name).toBe(`M21 ${theme} Biome Preserve`);

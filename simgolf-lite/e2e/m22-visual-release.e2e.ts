@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { waitForLegacyBiomeFixture } from "./legacy-biome-fixture";
 
 test("M22 structures, furniture, crossings, rotations, and editor controls", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -9,6 +10,11 @@ test("M22 structures, furniture, crossings, rotations, and editor controls", asy
   const themeCaptures: Buffer[] = [];
   for (const theme of ["parkland", "links", "desert"] as const) {
     await page.goto(`/?m22Fixture=1&m22Theme=${theme}`);
+    await waitForLegacyBiomeFixture(page, {
+      theme,
+      courseName: `M22 ${theme} Visual Release Club`,
+      decorationCount: 11,
+    });
     await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course?.theme)).toBe(theme);
     const state = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}"));
     expect(state.course.decorations).toHaveLength(11);

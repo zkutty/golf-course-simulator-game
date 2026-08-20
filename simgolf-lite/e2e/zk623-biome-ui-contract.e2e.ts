@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { BIOME_KEYS, getBiomeDefinition } from "../src/game/models/biomes";
+import { waitForLegacyBiomeFixture } from "./legacy-biome-fixture";
 
 test("ZK-623 keeps one CourseCraft shell while biome context follows selection", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -28,6 +29,11 @@ test("ZK-623 keeps one CourseCraft shell while biome context follows selection",
     // A deterministic, populated fixture makes the UI reference meaningful:
     // do not accept a merely-visible Pixi canvas before its terrain has drawn.
     await page.goto(`/?m21Fixture=1&m21Theme=${theme}`);
+    await waitForLegacyBiomeFixture(page, {
+      theme,
+      courseName: `M21 ${theme} Biome Preserve`,
+      minimumObstacleCount: 21,
+    });
     await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").course?.theme)).toBe(theme);
     await expect.poll(() => page.evaluate(() => {
       const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
