@@ -13,9 +13,13 @@ test("M35 curved terrain authoring persists connected material intent", async ({
     message: "render hook did not reach game",
   }).toBe("game");
 
-  await expect(page.getByRole("button", { name: "Curve", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const designDock = page.getByTestId("design-dock");
+  await designDock.getByRole("button", { name: "Expand design dock" }).click();
+  await expect(designDock).toHaveAttribute("data-collapsed", "false");
+  await designDock.getByTestId("design-tool-curve").click();
+  await expect(designDock.getByTestId("design-tool-curve")).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("Brush width").fill("5");
-  await page.locator("button").filter({ hasText: /^water$/ }).last().click();
+  await page.getByTestId("design-card-terrain-water").click();
 
   const canvas = page.locator(".cc-pixi-stage canvas");
   await expect(canvas).toBeVisible();
