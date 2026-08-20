@@ -32,7 +32,7 @@ jobs:
       - name: Run full browser suite shard
         run: >-
           npm run test:e2e --
-          --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$|ZK-571 publishes a versioned machine-only screenshot/state matrix$'
+          --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$|ZK-571 publishes a versioned machine-only screenshot/state matrix$|M27 reports architecture for a live 36-hole, two-course estate$|M27 report remains usable with pseudo locale, text scaling, reduced motion, and color-safe terrain$|M43 packages a course locally and test plays an isolated copy$|manual reporter sends only the previewed, consented payload$|React crash boundary hands bounded crash context to an opt-in report$'
           --shard=${{ matrix.shard }}/21 | tee browser-shard-${{ matrix.shard }}.log
       - name: Upload browser shard report
         if: always()
@@ -43,6 +43,75 @@ jobs:
             simgolf-lite/browser-shard-${{ matrix.shard }}.log
             simgolf-lite/playwright-report
             simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
+  m27_architecture:
+    name: M27 36-hole architecture certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Run isolated M27 architecture certifications
+        run: >-
+          npm run test:e2e -- e2e/m27-architecture-release.e2e.ts
+          --grep 'M27 reports architecture for a live 36-hole, two-course estate$|M27 report remains usable with pseudo locale, text scaling, reduced motion, and color-safe terrain$'
+          | tee m27-architecture.log
+      - name: Upload M27 architecture report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-m27-architecture
+          path: |
+            simgolf-lite/m27-architecture.log
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+            simgolf-lite/artifacts/m27-architect-report.png
+            simgolf-lite/artifacts/m27-pseudo-130.png
+          if-no-files-found: ignore
+          retention-days: 14
+
+  m43_m45_reporting:
+    name: M43 content package and M45 reporting certifications
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Run isolated M43 and M45 reporting certifications
+        run: >-
+          npm run test:e2e -- e2e/m43-content-library.e2e.ts e2e/m45-bug-reporting.e2e.ts
+          --grep 'M43 packages a course locally and test plays an isolated copy$|manual reporter sends only the previewed, consented payload$|React crash boundary hands bounded crash context to an opt-in report$'
+          | tee m43-m45-reporting.log
+      - name: Upload M43 and M45 reporting report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-m43-m45-reporting
+          path: |
+            simgolf-lite/m43-m45-reporting.log
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+            simgolf-lite/artifacts/m43-content-library.png
           if-no-files-found: ignore
           retention-days: 14
 
@@ -195,6 +264,8 @@ jobs:
     if: always()
     needs:
       - browser
+      - m27_architecture
+      - m43_m45_reporting
       - zk571_matrix
       - zk765_visual
       - renderer_performance
@@ -206,17 +277,27 @@ jobs:
         working-directory: .
         env:
           BROWSER_RESULT: ${{ needs.browser.result }}
+          M27_ARCHITECTURE_RESULT: ${{ needs.m27_architecture.result }}
+          M43_M45_REPORTING_RESULT: ${{ needs.m43_m45_reporting.result }}
           ZK571_MATRIX_RESULT: ${{ needs.zk571_matrix.result }}
           ZK765_VISUAL_RESULT: ${{ needs.zk765_visual.result }}
           RENDERER_PERFORMANCE_RESULT: ${{ needs.renderer_performance.result }}
           SIMULATION_SOAK_RESULT: ${{ needs.simulation_soak.result }}
         run: |
           echo "Browser suite result: $BROWSER_RESULT"
+          echo "M27 architecture result: $M27_ARCHITECTURE_RESULT"
+          echo "M43/M45 reporting result: $M43_M45_REPORTING_RESULT"
           echo "ZK-571 matrix result: $ZK571_MATRIX_RESULT"
           echo "ZK-765 visual reference result: $ZK765_VISUAL_RESULT"
           echo "Renderer performance result: $RENDERER_PERFORMANCE_RESULT"
           echo "Simulation soak result: $SIMULATION_SOAK_RESULT"
           if [[ "$BROWSER_RESULT" != "success" ]]; then
+            exit 1
+          fi
+          if [[ "$M27_ARCHITECTURE_RESULT" != "success" ]]; then
+            exit 1
+          fi
+          if [[ "$M43_M45_REPORTING_RESULT" != "success" ]]; then
             exit 1
           fi
           if [[ "$ZK571_MATRIX_RESULT" != "success" ]]; then
