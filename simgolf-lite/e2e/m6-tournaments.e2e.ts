@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bookTournament, openTournamentPanel } from "./tournament-readiness";
+import { bookTournament, openTournamentPanel, TOURNAMENT_FIXTURE_READY_TIMEOUT_MS } from "./tournament-readiness";
 
 test("M6 schedules events and presents live tournament standings", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -20,7 +20,10 @@ test("M6 schedules events and presents live tournament standings", async ({ page
   await expect(livePanel.getByTestId("tournament-leaderboard").locator("li")).toHaveCount(8);
   await page.evaluate(() => { for (let index = 0; index < 5; index++) window.advanceTime?.(2_000); });
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active?.standings.some((row: { holesCompleted: number }) => row.holesCompleted > 0))).toBe(true);
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active?.standings.length)).toBe(5);
+  await expect.poll(
+    () => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active?.standings.length),
+    { timeout: TOURNAMENT_FIXTURE_READY_TIMEOUT_MS },
+  ).toBe(5);
   const shot = await page.screenshot({ fullPage: true, path: "artifacts/m6-tournament-live.png" });
   await testInfo.attach("m6-tournament-live", { body: shot, contentType: "image/png" });
 
