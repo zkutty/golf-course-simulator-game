@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react'
+import { Component, useEffect, useState, type ReactNode } from 'react'
 import type { BugReportSource } from '../bug-reporting/contracts'
 import { BUG_REPORT_OPEN_EVENT } from '../bug-reporting/events'
 import { isBugReportingEnabled, resolveBugReportingEnabled } from '../bug-reporting/feature'
@@ -6,7 +6,14 @@ import { useI18n } from '../i18n/useI18n'
 import { loadBugReportDialog } from './bugReportDialogLoader'
 import './bugReportLauncher.css'
 
-const BugReportDialog = lazy(() => loadBugReportDialog())
+type LoadedBugReportDialog = Awaited<ReturnType<typeof loadBugReportDialog>>['default']
+
+let bugReportDialogPromise: ReturnType<typeof loadBugReportDialog> | undefined
+
+function preloadBugReportDialog() {
+  bugReportDialogPromise ??= loadBugReportDialog()
+  return bugReportDialogPromise
+}
 
 export class DeferredSurfaceErrorBoundary extends Component<{
   children: ReactNode
@@ -22,6 +29,8 @@ export function BugReportLauncher() {
   const [enabled, setEnabled] = useState(isBugReportingEnabled)
   const [open, setOpen] = useState(false)
   const [source, setSource] = useState<BugReportSource>('manual')
+  const [Dialog, setDialog] = useState<LoadedBugReportDialog>()
+  const [loadFailed, setLoadFailed] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -30,6 +39,19 @@ export function BugReportLauncher() {
     })
     return () => { active = false }
   }, [])
+
+  useEffect(() => {
+    if (!enabled) return
+    let active = true
+    void preloadBugReportDialog()
+      .then((module) => {
+        if (active) setDialog(() => module.default)
+      })
+      .catch(() => {
+        if (active) setLoadFailed(true)
+      })
+    return () => { active = false }
+  }, [enabled])
 
   useEffect(() => {
     const onOpen = (event: Event): void => {
@@ -53,18 +75,18 @@ export function BugReportLauncher() {
   }, [])
 
   if (!enabled) return null
+  const loadError = <div className="cc-bug-report-load-error" role="alert">
+    <span>{t('bugReporter.error.generic')}</span>
+    <button onClick={() => window.location.reload()} type="button">{t('auto.ui.apperrorboundary.reload')}</button>
+  </div>
+
   return <>
     <button aria-keyshortcuts="Alt+Shift+B" className="cc-bug-report-launcher" data-testid="bug-report-launcher" onClick={() => {
       setSource('manual')
       setOpen(true)
     }} title={t('bugReporter.launcherTitle')} type="button">{t('bugReporter.launcher')}</button>
-    {open && <DeferredSurfaceErrorBoundary fallback={<div className="cc-bug-report-load-error" role="alert">
-      <span>{t('bugReporter.error.generic')}</span>
-      <button onClick={() => window.location.reload()} type="button">{t('auto.ui.apperrorboundary.reload')}</button>
-    </div>}>
-      <Suspense fallback={null}>
-        <BugReportDialog initialSource={source} onClose={() => setOpen(false)} open />
-      </Suspense>
-    </DeferredSurfaceErrorBoundary>}
+    {open && (loadFailed ? loadError : Dialog ? <DeferredSurfaceErrorBoundary fallback={loadError}>
+      <Dialog initialSource={source} onClose={() => setOpen(false)} open />
+    </DeferredSurfaceErrorBoundary> : null)}
   </>
 }

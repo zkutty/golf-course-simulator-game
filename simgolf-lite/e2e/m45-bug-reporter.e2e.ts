@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { enterGameThroughQuickStart } from './reporter-readiness'
 
 async function fillRequiredReport(page: Page): Promise<void> {
   await page.getByLabel('Short title').fill('Golfer stops near the green')
@@ -75,12 +76,7 @@ test('diagnostics and renderer screenshot require separate explicit consent', as
   })
 
   await page.goto('/')
-  await page.getByRole('button', { name: 'Quick Start' }).click()
-  const tutorial = page.getByTestId('tutorial-offer')
-  if (await tutorial.count()) {
-    await tutorial.getByRole('button', { name: 'Skip tutorial' }).click()
-  }
-  await expect(page.locator('#root canvas').first()).toBeVisible()
+  await enterGameThroughQuickStart(page)
 
   await page.getByTestId('bug-report-launcher').click()
   const dialog = page.getByTestId('bug-report-dialog')

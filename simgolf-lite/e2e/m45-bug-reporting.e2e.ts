@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { enterGameThroughQuickStart } from './reporter-readiness'
 
 interface CapturedReport {
   consent?: { diagnostics?: boolean; screenshot?: boolean }
@@ -40,14 +41,7 @@ test('manual reporter sends only the previewed, consented payload', async ({ pag
     document.cookie = 'm45_private=must-not-copy-cookie; SameSite=Strict'
   })
   await page.goto('/?private=must-not-copy-query')
-  await page.getByRole('button', { name: 'Quick Start' }).click()
-  await expect
-    .poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen))
-    .toBe('game')
-  const tutorial = page.getByRole('dialog', { name: 'First-launch tutorial' })
-  if (await tutorial.count()) {
-    await tutorial.getByRole('button', { name: 'Skip tutorial' }).click()
-  }
+  await enterGameThroughQuickStart(page)
 
   await page.keyboard.press('Alt+Shift+B')
   const dialog = page.getByTestId('bug-report-dialog')
