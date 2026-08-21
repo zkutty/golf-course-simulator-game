@@ -3414,6 +3414,19 @@ export default function App() {
       setPaintCash: (cash: number) => {
         gameSession.update((current) => ({ ...current, world: { ...current.world, cash } }));
       },
+      advanceLiveClock: (realMs, speed) => {
+        const previousSpeed = live.getSnapshot()?.speed ?? live.speed;
+        live.setSpeed(speed);
+        live.advanceTime(realMs);
+        live.setSpeed(previousSpeed);
+        const snapshot = live.getSnapshot();
+        if (!snapshot) throw new Error("Live simulation is unavailable");
+        return {
+          dayMinute: snapshot.state.dayMinute,
+          speed: snapshot.speed,
+          clockRemainderMinutes: snapshot.clockRemainderMinutes ?? 0,
+        };
+      },
       setPropertyFixture: () => {
         const fixtureCourse = { ...createReferenceCourse(), property: starterPropertyCourse() };
         const fixtureWorld = { ...gameSession.getState().world, cash: 1_000_000, reputation: 82, enterprise: emptyPropertyEnterprise(), isBankrupt: false, distressWeeks: 0 };

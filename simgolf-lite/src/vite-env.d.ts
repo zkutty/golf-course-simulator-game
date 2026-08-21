@@ -136,6 +136,11 @@ interface Window {
     m35Metrics(): import("./game/render/m35Telemetry").M35TelemetrySnapshot;
     resetM35Metrics(): void;
     setPaintCash(cash: number): void;
+    advanceLiveClock(realMs: number, speed: "1x" | "2x" | "4x"): {
+      dayMinute: number;
+      speed: "paused" | "1x" | "2x" | "4x";
+      clockRemainderMinutes: number;
+    };
     setPropertyFixture(): void;
     setPlayerProFixture(): void;
     setChallengeContractFixture(): Promise<void>;

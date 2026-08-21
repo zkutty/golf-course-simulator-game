@@ -16,16 +16,25 @@ test("ZK-720 renders frozen handicap scorecards on compact and desktop surfaces"
   await dismissTutorial(page);
   await page.evaluate(() => window.__coursecraftTest!.setPlayerProFixture());
 
-  await page.getByTestId("speed-1x").click();
-  await page.evaluate(() => window.advanceTime?.(1_000));
+  const firstAdvance = await page.evaluate(() => window.__coursecraftTest!.advanceLiveClock(1_000, "1x"));
+  await expect.poll(() => page.evaluate(() => {
+    const rendered = JSON.parse(window.render_game_to_text?.() ?? "{}");
+    const state = window.__coursecraftTest!.state();
+    return { dayMinute: rendered.simulation?.dayMinute, speed: state.speed };
+  })).toEqual({ dayMinute: firstAdvance.dayMinute, speed: firstAdvance.speed });
   const firstTick = await page.evaluate(() => {
     const rendered = JSON.parse(window.render_game_to_text?.() ?? "{}");
     const state = window.__coursecraftTest!.state();
     return { simulation: rendered.simulation, state: { dayMinute: state.dayMinute, golferPositions: state.golferPositions, courseHash: state.courseHash, cash: state.cash, week: state.week, speed: state.speed } };
   });
   await page.evaluate(() => window.__coursecraftTest!.setPlayerProFixture());
-  await page.getByTestId("speed-1x").click();
-  await page.evaluate(() => window.advanceTime?.(1_000));
+  const replayedAdvance = await page.evaluate(() => window.__coursecraftTest!.advanceLiveClock(1_000, "1x"));
+  expect(replayedAdvance).toEqual(firstAdvance);
+  await expect.poll(() => page.evaluate(() => {
+    const rendered = JSON.parse(window.render_game_to_text?.() ?? "{}");
+    const state = window.__coursecraftTest!.state();
+    return { dayMinute: rendered.simulation?.dayMinute, speed: state.speed };
+  })).toEqual({ dayMinute: replayedAdvance.dayMinute, speed: replayedAdvance.speed });
   const replayedTick = await page.evaluate(() => {
     const rendered = JSON.parse(window.render_game_to_text?.() ?? "{}");
     const state = window.__coursecraftTest!.state();
@@ -51,6 +60,10 @@ test("ZK-720 renders frozen handicap scorecards on compact and desktop surfaces"
   await page.screenshot({ path: "artifacts/zk720-desktop-scorecard.png", fullPage: true });
 
   await page.getByTestId("start-player-round").click();
+  await expect.poll(() => page.evaluate(() => {
+    const round = JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro?.activeRound;
+    return round ? { phase: round.phase, hasAim: round.aim != null } : null;
+  })).toEqual({ phase: "awaiting_shot", hasAim: true });
   await expect(page.getByTestId("player-shot-hud")).toBeVisible();
   await expect(page.getByTestId("player-round-scorecard")).toContainText("Format: casual");
   const state = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}"));
