@@ -1276,7 +1276,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const landscapeComponentCacheRef = useRef(createLandscapeComponentCache());
   const landscapeComponents = useMemo(() => {
     if (props.graphicsQuality === "low") return [];
-    const startedAt = performance.now();
     const options = {
       cornerRadius: props.graphicsQuality === "high" ? 0.4 : 0.32,
       cornerSegments: props.graphicsQuality === "high" ? 4 : 2,
@@ -1287,7 +1286,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
       course.height,
       options,
     );
-    recordM35Metric("connectedRebuild", performance.now() - startedAt);
     return snapshot.components;
   }, [
     course.height,

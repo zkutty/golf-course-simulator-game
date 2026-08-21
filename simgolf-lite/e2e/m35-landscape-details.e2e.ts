@@ -13,7 +13,15 @@ test("single-cell bunker and natural detail render as organic landscape", async 
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), {
     timeout: 90_000,
   }).toBe("game");
+  await page.evaluate(() => window.__coursecraftTest?.setGraphicsQualityFixture("high"));
+  await expect.poll(() => page.evaluate(() => (
+    JSON.parse(window.render_game_to_text?.() ?? "{}").graphics?.quality
+  ))).toBe("high");
   await page.evaluate(() => window.__coursecraftTest?.setPaintCash(1_000_000));
+  await page.evaluate(() => window.__coursecraftTest?.resetM35Metrics());
+  await expect.poll(() => page.evaluate(() => (
+    window.__coursecraftTest!.m35Metrics().connectedRebuild.count
+  ))).toBe(0);
 
   await page.getByRole("button", { name: "Expand design dock" }).click();
   await expect(page.getByTestId("design-dock")).toHaveAttribute("data-collapsed", "false");

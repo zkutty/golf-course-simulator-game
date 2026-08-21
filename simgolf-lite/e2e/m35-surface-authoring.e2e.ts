@@ -56,6 +56,11 @@ test("M35 click spline and post-commit node/tangent editing stay atomic", async 
   await page.getByTestId("design-tool-edit").click();
   await expect(page.getByTestId("surface-authoring-instructions")).toContainText("Click a persisted");
   await page.evaluate(() => window.__coursecraftTest!.resetM35Metrics());
+  await page.evaluate(() => window.__coursecraftTest!.setPaintCash(1_000_001));
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest!.state().cash)).toBe(1_000_001);
+  await expect.poll(() => page.evaluate(() => (
+    window.__coursecraftTest!.m35Metrics().connectedRebuild.count
+  ))).toBe(0);
 
   const movedFirst = { x: authored[0].x + 28, y: authored[0].y - 12 };
   await page.mouse.move(authored[0].x, authored[0].y);
