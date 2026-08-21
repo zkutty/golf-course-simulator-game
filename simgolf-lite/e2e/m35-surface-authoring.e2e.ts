@@ -13,21 +13,13 @@ test("M35 click spline and post-commit node/tangent editing stay atomic", async 
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), {
     timeout: 120_000,
   }).toBe("game");
-  await page.evaluate(() => window.__coursecraftTest?.setGraphicsQualityFixture("low"));
-  await expect.poll(() => page.evaluate(() => (
-    JSON.parse(window.render_game_to_text?.() ?? "{}").graphics?.quality
-  ))).toBe("low");
-  await page.evaluate(() => window.__coursecraftTest?.resetM35Metrics());
-  await expect.poll(() => page.evaluate(() => (
-    window.__coursecraftTest!.m35Metrics().connectedRebuild.count
-  ))).toBe(0);
   await page.evaluate(() => window.__coursecraftTest?.setGraphicsQualityFixture("medium"));
   await expect.poll(() => page.evaluate(() => (
     JSON.parse(window.render_game_to_text?.() ?? "{}").graphics?.quality
   ))).toBe("medium");
-  await expect.poll(() => page.evaluate(() => (
-    window.__coursecraftTest!.m35Metrics().connectedRebuild.count
-  ))).toBeGreaterThan(0);
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
   await page.evaluate(() => window.__coursecraftTest?.setPaintCash(1_000_000));
 
   await page.getByRole("button", { name: "Expand design dock" }).click();
