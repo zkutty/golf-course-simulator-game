@@ -13,10 +13,13 @@ test("M35 click spline and post-commit node/tangent editing stay atomic", async 
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), {
     timeout: 120_000,
   }).toBe("game");
-  await page.evaluate(() => window.__coursecraftTest?.setGraphicsQualityFixture("high"));
+  await page.evaluate(() => window.__coursecraftTest?.setGraphicsQualityFixture("medium"));
   await expect.poll(() => page.evaluate(() => (
     JSON.parse(window.render_game_to_text?.() ?? "{}").graphics?.quality
-  ))).toBe("high");
+  ))).toBe("medium");
+  await expect.poll(() => page.evaluate(() => (
+    window.__coursecraftTest!.m35Metrics().connectedRebuild.count
+  ))).toBeGreaterThan(0);
   await page.evaluate(() => window.__coursecraftTest?.setPaintCash(1_000_000));
 
   await page.getByRole("button", { name: "Expand design dock" }).click();
@@ -74,6 +77,9 @@ test("M35 click spline and post-commit node/tangent editing stay atomic", async 
       current.points[0].y - created.points[0].y,
     );
   }).toBeGreaterThan(0.25);
+  await expect.poll(() => page.evaluate(() => (
+    window.__coursecraftTest!.m35Metrics().connectedRebuild.count
+  ))).toBeGreaterThan(0);
   await expect(page.getByTestId("surface-authoring-instructions")).toContainText("Drag gold nodes");
 
   // The default outgoing handle projects approximately one third of the way
