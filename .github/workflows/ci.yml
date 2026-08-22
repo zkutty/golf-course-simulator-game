@@ -54,6 +54,17 @@ jobs:
       - name: Golden-path E2E
         run: npm run test:e2e:golden
 
+      - name: Upload Golden-path E2E report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-path-e2e-report
+          path: |
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Build
         run: npm run build
         env:
