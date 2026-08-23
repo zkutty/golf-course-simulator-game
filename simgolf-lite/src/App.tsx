@@ -1806,6 +1806,10 @@ export default function App() {
         staffLevel: 5,
         staffRoster: staffFromLevel(5, activeCourseLayout(fixtureCourse).id),
       } : {}),
+      ...(isM30Fixture ? {
+        experienceProfile: "simulation" as const,
+        systemControl: createSystemControlState("simulation"),
+      } : {}),
       ...(isZk689Fixture ? {
         week: 9,
         cash: 750_000,

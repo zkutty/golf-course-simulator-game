@@ -34,6 +34,15 @@ test("Pixi requests the current season and a missing optional overlay preserves 
   });
 
   await page.setViewportSize({ width: 1440, height: 900 });
+  // Seasonal overlays are intentionally absent from the Low atlas contract.
+  // Select the same High tier whose manifest entries this fixture replaces,
+  // independent of the hosted runner's adaptive hardware classification.
+  await page.addInitScript(() => {
+    localStorage.setItem("coursecraft_app_profile_v5", JSON.stringify({
+      version: 5,
+      graphics: { quality: "high" },
+    }));
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "Quick Start" }).click();
   const tutorial = page.getByRole("dialog", { name: "First-launch tutorial" });
@@ -41,9 +50,10 @@ test("Pixi requests the current season and a missing optional overlay preserves 
 
   const canvas = page.locator(".cc-pixi-stage canvas");
   await expect(canvas).toBeVisible();
-  await expect.poll(() => page.evaluate(() => (
-    JSON.parse(window.render_game_to_text?.() ?? "{}").seasons?.calendar?.season
-  ))).toBe("spring");
+  await expect.poll(() => page.evaluate(() => {
+    const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
+    return { season: state.seasons?.calendar?.season, quality: state.graphics?.quality };
+  })).toEqual({ season: "spring", quality: "high" });
   await expect.poll(() => overlayRequests.some((url) => url.includes("seasonal-missing-spring"))).toBe(true);
 
   // The production M39 fixture advances the same world-owned calendar to
