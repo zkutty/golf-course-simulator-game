@@ -19,6 +19,8 @@ jobs:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]
+    env:
+      PLAYWRIGHT_JSON_OUTPUT_FILE: nightly-evidence/browser-shard-${{ matrix.shard }}-results.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,7 +35,71 @@ jobs:
         run: >-
           npm run test:e2e --
           --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$|ZK-571 publishes a versioned machine-only screenshot/state matrix$|M27 reports architecture for a live 36-hole, two-course estate$|M27 report remains usable with pseudo locale, text scaling, reduced motion, and color-safe terrain$|M43 packages a course locally and test plays an isolated copy$|manual reporter sends only the previewed, consented payload$|React crash boundary hands bounded crash context to an opt-in report$|terrain strokes preview and commit atomically, cancel safely, and reject unaffordable work$|M30 pace history exposes identity, local bottlenecks, and multi-course reports$|single-cell bunker and natural detail render as organic landscape$|M35 click spline and post-commit node/tangent editing stay atomic$|painting water automatically commits a flat excavated basin$|M36-M37 Player Pro aims, resolves, progresses, and returns to design$|manual reporter sends only required fields when optional evidence is off$|diagnostics and renderer screenshot require separate explicit consent$|keyboard close restores focus to the launcher$|canceling an in-flight submission keeps one report ID for a safe retry$'
-          --shard=${{ matrix.shard }}/21 | tee browser-shard-${{ matrix.shard }}.log
+          --shard=${{ matrix.shard }}/21
+          --trace retain-on-failure-and-retries
+          --reporter=github,html,json | tee browser-shard-${{ matrix.shard }}.log
+      - name: Build selected browser retry-evidence manifest
+        if: always()
+        env:
+          ZK987_RESULTS: nightly-evidence/browser-shard-${{ matrix.shard }}-results.json
+          ZK987_MANIFEST: nightly-evidence/browser-shard-${{ matrix.shard }}-manifest.json
+          ZK987_TITLES: >-
+            ["Pixi requests the current season and a missing optional overlay preserves the base","ZK-443 bounds Player Pro audio","M6 schedules events and presents live tournament standings","M24 explains readiness, books a prescribed setup, and runs it"]
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const resultsPath = process.env.ZK987_RESULTS;
+          const manifestPath = process.env.ZK987_MANIFEST;
+          const selectedTitles = JSON.parse(process.env.ZK987_TITLES);
+          if (!fs.existsSync(resultsPath)) throw new Error(`ZK-987 missing Playwright JSON results: ${resultsPath}`);
+          const report = JSON.parse(fs.readFileSync(resultsPath, "utf8"));
+          const specs = [];
+          const visit = (suite) => {
+            for (const spec of suite.specs || []) specs.push(spec);
+            for (const child of suite.suites || []) visit(child);
+          };
+          for (const suite of report.suites || []) visit(suite);
+          const attempts = specs.flatMap((spec) => spec.tests.flatMap((test) => test.results.map((result) => {
+            const trace = (result.attachments || []).find((attachment) => attachment.name === "trace");
+            return {
+              title: spec.title,
+              retry: result.retry,
+              outcome: result.status,
+              startedAt: result.startTime,
+              tracePath: trace && trace.path,
+            };
+          }))).filter((attempt) => selectedTitles.includes(attempt.title));
+          const manifest = {
+            schema: "zk987-nightly-retry-evidence/v1",
+            sha: process.env.GITHUB_SHA,
+            runId: process.env.GITHUB_RUN_ID,
+            runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+            generatedAt: new Date().toISOString(),
+            selectedTitles,
+            attempts,
+          };
+          if (specs.length === 0) throw new Error("ZK-987 browser shard produced no Playwright test results.");
+          for (const attempt of attempts) {
+            const traceRequired = attempt.retry > 0 || attempt.outcome !== "passed";
+            if (traceRequired && (!attempt.tracePath || !fs.existsSync(attempt.tracePath))) {
+              throw new Error(`ZK-987 missing retained trace for ${attempt.title} retry ${attempt.retry} (${attempt.outcome}).`);
+            }
+          }
+          fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+          fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+      - name: Upload selected browser retry evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-browser-retry-evidence-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            simgolf-lite/nightly-evidence/browser-shard-${{ matrix.shard }}-results.json
+            simgolf-lite/nightly-evidence/browser-shard-${{ matrix.shard }}-manifest.json
+            simgolf-lite/test-results
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload browser shard report
         if: always()
         uses: actions/upload-artifact@v4
@@ -189,6 +255,7 @@ jobs:
     timeout-minutes: 20
     env:
       CI: 1
+      PLAYWRIGHT_JSON_OUTPUT_FILE: nightly-evidence/m35-authoring-results.json
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -203,7 +270,74 @@ jobs:
         run: >-
           npm run test:e2e -- e2e/m35-landscape-details.e2e.ts e2e/m35-surface-authoring.e2e.ts e2e/m35-water-grading.e2e.ts
           --grep 'single-cell bunker and natural detail render as organic landscape$|M35 click spline and post-commit node/tangent editing stay atomic$|painting water automatically commits a flat excavated basin$'
-          | tee m35-authoring.log
+          --trace retain-on-failure-and-retries
+          --reporter=github,html,json | tee m35-authoring.log
+      - name: Build M35 retry-evidence manifest
+        if: always()
+        env:
+          ZK987_RESULTS: nightly-evidence/m35-authoring-results.json
+          ZK987_MANIFEST: nightly-evidence/m35-authoring-manifest.json
+          ZK987_TITLES: >-
+            ["single-cell bunker and natural detail render as organic landscape","M35 click spline and post-commit node/tangent editing stay atomic","painting water automatically commits a flat excavated basin"]
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const resultsPath = process.env.ZK987_RESULTS;
+          const manifestPath = process.env.ZK987_MANIFEST;
+          const selectedTitles = JSON.parse(process.env.ZK987_TITLES);
+          if (!fs.existsSync(resultsPath)) throw new Error(`ZK-987 missing Playwright JSON results: ${resultsPath}`);
+          const report = JSON.parse(fs.readFileSync(resultsPath, "utf8"));
+          const specs = [];
+          const visit = (suite) => {
+            for (const spec of suite.specs || []) specs.push(spec);
+            for (const child of suite.suites || []) visit(child);
+          };
+          for (const suite of report.suites || []) visit(suite);
+          const attempts = specs.flatMap((spec) => spec.tests.flatMap((test) => test.results.map((result) => {
+            const trace = (result.attachments || []).find((attachment) => attachment.name === "trace");
+            return {
+              title: spec.title,
+              retry: result.retry,
+              outcome: result.status,
+              startedAt: result.startTime,
+              tracePath: trace && trace.path,
+            };
+          }))).filter((attempt) => selectedTitles.includes(attempt.title));
+          const manifest = {
+            schema: "zk987-nightly-retry-evidence/v1",
+            sha: process.env.GITHUB_SHA,
+            runId: process.env.GITHUB_RUN_ID,
+            runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+            generatedAt: new Date().toISOString(),
+            selectedTitles,
+            attempts,
+          };
+          for (const title of selectedTitles) {
+            if (!attempts.some((attempt) => attempt.title === title && attempt.retry === 0)) {
+              throw new Error(`ZK-987 missing original M35 attempt for ${title}.`);
+            }
+          }
+          for (const attempt of attempts) {
+            const traceRequired = attempt.retry > 0 || attempt.outcome !== "passed";
+            if (traceRequired && (!attempt.tracePath || !fs.existsSync(attempt.tracePath))) {
+              throw new Error(`ZK-987 missing retained trace for ${attempt.title} retry ${attempt.retry} (${attempt.outcome}).`);
+            }
+          }
+          fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+          fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+      - name: Upload M35 retry evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-m35-retry-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            simgolf-lite/nightly-evidence/m35-authoring-results.json
+            simgolf-lite/nightly-evidence/m35-authoring-manifest.json
+            simgolf-lite/test-results
+          if-no-files-found: error
+          retention-days: 14
       - name: Upload M35 landscape-authoring report
         if: always()
         uses: actions/upload-artifact@v4
@@ -427,6 +561,109 @@ jobs:
           name: nightly-simulation-soak
           path: simgolf-lite/soak-report.json
           if-no-files-found: ignore
+          retention-days: 14
+
+  m35_pointer_profile:
+    name: M35 pointer-drag browser main-thread profile
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CI: 1
+      ZK987_CAPTURE_BROWSER_PROFILE: 1
+      PLAYWRIGHT_JSON_OUTPUT_FILE: nightly-evidence/m35-pointer-profile-results.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Run retry-disabled M35 pointer-drag diagnostic
+        run: |
+          set +e
+          npm run test:e2e -- e2e/m35-surface-authoring.e2e.ts \
+            --grep 'M35 click spline and post-commit node/tangent editing stay atomic$' \
+            --retries=0 \
+            --trace=on \
+            --reporter=github,html,json | tee m35-pointer-profile.log
+          test_status=${PIPESTATUS[0]}
+          set -e
+          mkdir -p nightly-evidence
+          printf '%s\n' "$test_status" > nightly-evidence/m35-pointer-profile-exit-code.txt
+      - name: Build and validate M35 pointer-profile evidence
+        if: always()
+        env:
+          ZK987_RESULTS: nightly-evidence/m35-pointer-profile-results.json
+          ZK987_MANIFEST: nightly-evidence/m35-pointer-profile-manifest.json
+          ZK987_EXIT_CODE: nightly-evidence/m35-pointer-profile-exit-code.txt
+          ZK987_TITLE: M35 click spline and post-commit node/tangent editing stay atomic
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const resultsPath = process.env.ZK987_RESULTS;
+          const manifestPath = process.env.ZK987_MANIFEST;
+          const exitCodePath = process.env.ZK987_EXIT_CODE;
+          if (!fs.existsSync(resultsPath)) throw new Error(`ZK-987 missing Playwright JSON results: ${resultsPath}`);
+          if (!fs.existsSync(exitCodePath)) throw new Error(`ZK-987 missing diagnostic exit-code record: ${exitCodePath}`);
+          const report = JSON.parse(fs.readFileSync(resultsPath, "utf8"));
+          const specs = [];
+          const visit = (suite) => {
+            for (const spec of suite.specs || []) specs.push(spec);
+            for (const child of suite.suites || []) visit(child);
+          };
+          for (const suite of report.suites || []) visit(suite);
+          const matching = specs.filter((spec) => spec.title === process.env.ZK987_TITLE);
+          if (matching.length !== 1 || matching[0].tests.length !== 1 || matching[0].tests[0].results.length !== 1) {
+            throw new Error("ZK-987 diagnostic must report exactly one retry-disabled M35 pointer-drag attempt.");
+          }
+          const result = matching[0].tests[0].results[0];
+          if (result.retry !== 0) throw new Error(`ZK-987 diagnostic retry must be 0, received ${result.retry}.`);
+          const trace = (result.attachments || []).find((attachment) => attachment.name === "trace");
+          const profile = (result.attachments || []).find((attachment) => attachment.name === "browser-main-thread.cpuprofile");
+          if (!trace?.path || !fs.existsSync(trace.path)) throw new Error("ZK-987 diagnostic trace is missing.");
+          if (!profile?.path || !fs.existsSync(profile.path)) throw new Error("ZK-987 Chromium page-main-thread profile is missing.");
+          const parsedProfile = JSON.parse(fs.readFileSync(profile.path, "utf8"));
+          if (!Array.isArray(parsedProfile.nodes) || parsedProfile.nodes.length === 0) {
+            throw new Error("ZK-987 Chromium page-main-thread profile is not parseable.");
+          }
+          const manifest = {
+            schema: "zk987-m35-browser-main-thread-profile/v1",
+            sha: process.env.GITHUB_SHA,
+            runId: process.env.GITHUB_RUN_ID,
+            runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+            generatedAt: new Date().toISOString(),
+            title: matching[0].title,
+            retry: result.retry,
+            outcome: result.status,
+            startedAt: result.startTime,
+            tracePath: trace.path,
+            browserMainThreadCpuProfilePath: profile.path,
+            profiler: "Chromium page-target CDP Profiler",
+          };
+          fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+          fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+          const testExitCode = Number(fs.readFileSync(exitCodePath, "utf8").trim());
+          if (!Number.isInteger(testExitCode) || testExitCode < 0) {
+            throw new Error("ZK-987 diagnostic exit-code record is invalid.");
+          }
+          process.exit(testExitCode);
+          NODE
+      - name: Upload M35 pointer-profile evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-m35-pointer-profile-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            simgolf-lite/m35-pointer-profile.log
+            simgolf-lite/nightly-evidence/m35-pointer-profile-results.json
+            simgolf-lite/nightly-evidence/m35-pointer-profile-manifest.json
+            simgolf-lite/nightly-evidence/m35-pointer-profile-exit-code.txt
+            simgolf-lite/test-results
+          if-no-files-found: error
           retention-days: 14
 
   nightly_qa_result:

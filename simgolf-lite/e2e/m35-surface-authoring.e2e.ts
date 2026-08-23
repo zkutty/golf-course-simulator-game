@@ -1,4 +1,58 @@
+import { readFile, writeFile } from "node:fs/promises";
 import { expect, test } from "@playwright/test";
+import type { CDPSession, TestInfo } from "@playwright/test";
+
+type BrowserMainThreadProfile = {
+  readonly session: CDPSession;
+  readonly startedAt: string;
+};
+
+const browserMainThreadProfiles = new WeakMap<TestInfo, BrowserMainThreadProfile>();
+
+test.beforeEach(async ({ page }, testInfo) => {
+  if (process.env.ZK987_CAPTURE_BROWSER_PROFILE !== "1") return;
+
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send("Profiler.enable");
+    await session.send("Profiler.start");
+  } catch (error) {
+    await session.detach();
+    throw new Error(`ZK-987 could not start the Chromium page-main-thread profiler: ${String(error)}`);
+  }
+  browserMainThreadProfiles.set(testInfo, { session, startedAt: new Date().toISOString() });
+});
+
+test.afterEach(async ({ page: _page }, testInfo) => {
+  const activeProfile = browserMainThreadProfiles.get(testInfo);
+  if (!activeProfile) return;
+
+  try {
+    const stopped = await activeProfile.session.send("Profiler.stop") as { profile?: unknown };
+    const profilePath = testInfo.outputPath("browser-main-thread.cpuprofile");
+    await writeFile(profilePath, JSON.stringify(stopped.profile));
+    const profile = JSON.parse(await readFile(profilePath, "utf8")) as { nodes?: unknown[] };
+    if (!Array.isArray(profile.nodes) || profile.nodes.length === 0) {
+      throw new Error("Profiler.stop did not return a parseable Chromium page-main-thread profile.");
+    }
+    await testInfo.attach("browser-main-thread.cpuprofile", {
+      path: profilePath,
+      contentType: "application/json",
+    });
+    await testInfo.attach("browser-main-thread-profile-metadata", {
+      body: Buffer.from(JSON.stringify({
+        capture: "Chromium page-target CDP Profiler",
+        startedAt: activeProfile.startedAt,
+        stoppedAt: new Date().toISOString(),
+        title: testInfo.title,
+        retry: testInfo.retry,
+      }, null, 2)),
+      contentType: "application/json",
+    });
+  } finally {
+    await activeProfile.session.detach();
+  }
+});
 
 test("M35 click spline and post-commit node/tangent editing stay atomic", async ({ page }, testInfo) => {
   test.setTimeout(180_000);
