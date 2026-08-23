@@ -215,6 +215,31 @@ let migrated = false;
 let writeSeq = 0;
 let failNextManifestWrite = false;
 const manifestListeners = new Set<() => void>();
+
+type SaveModule = typeof import("./save");
+
+let importSaveModule: () => Promise<SaveModule> = () => import("./save");
+let saveModulePromise: Promise<SaveModule> | null = null;
+
+/**
+ * Start loading the save helpers while the store module initializes, rather
+ * than making the first quicksave wait for its whole dependency graph. A
+ * rejected import is deliberately discarded so a later save can retry.
+ */
+function loadSaveModule(): Promise<SaveModule> {
+  if (saveModulePromise) return saveModulePromise;
+  const pending = importSaveModule();
+  saveModulePromise = pending;
+  void pending.catch(() => {
+    if (saveModulePromise === pending) saveModulePromise = null;
+  });
+  return pending;
+}
+
+// Keep the first quicksave off the import critical path. The rejection
+// handler above means an optional transient loader failure cannot become an
+// unhandled rejection or poison later save attempts.
+void loadSaveModule();
 /**
  * A same-runtime snapshot of the last durably committed manifest. The save
  * flow writes the payload, then the manifest; once the manifest transaction
@@ -245,7 +270,15 @@ export function __resetSaveStoreForTests(): void {
   migrated = false;
   writeSeq = 0;
   failNextManifestWrite = false;
+  importSaveModule = () => import("./save");
+  saveModulePromise = null;
   delete (globalThis as ManifestCacheHost).__coursecraftSaveStoreManifestV1;
+}
+
+/** Test hook: replace the dynamic save import to cover transient loader failures. */
+export function __setSaveModuleImporterForTests(importer: () => Promise<SaveModule>): void {
+  importSaveModule = importer;
+  saveModulePromise = null;
 }
 
 /** Test hook: exercise the store against a deliberately slow KV driver. */
@@ -360,7 +393,7 @@ async function migrateLegacyOnce(): Promise<void> {
     if (!raw) return;
     const manifest = await readManifest();
     if (manifest.some((m) => m.id === "legacy")) return;
-    const { normalizeLoadedSave } = await import("./save");
+    const { normalizeLoadedSave } = await loadSaveModule();
     const normalized = normalizeLoadedSave(JSON.parse(raw));
     if (!normalized) return;
     await kv.set(SLOT_PREFIX + "legacy", JSON.stringify(await payloadToFile(normalized)));
@@ -374,7 +407,7 @@ async function migrateLegacyOnce(): Promise<void> {
 }
 
 async function payloadToFile(p: SavePayload): Promise<SaveFile> {
-  const { payloadForPersistence } = await import("./save");
+  const { payloadForPersistence } = await loadSaveModule();
   const persisted = payloadForPersistence(p);
   return {
     schemaVersion: CURRENT_SAVE_SCHEMA_VERSION,
@@ -434,7 +467,7 @@ export async function loadSlotResult(id: string): Promise<SaveLoadResult> {
   if (!raw) {
     return { ok: false, error: { code: "INVALID_SHAPE", message: "That save slot is missing." } };
   }
-  const { parseSaveText } = await import("./save");
+  const { parseSaveText } = await loadSaveModule();
   return parseSaveText(raw);
 }
 
@@ -500,7 +533,7 @@ export type SaveImportResult =
   | { ok: false; error: SaveLoadError };
 
 export async function importSaveResult(text: string, name: string): Promise<SaveImportResult> {
-  const { parseSaveText } = await import("./save");
+  const { parseSaveText } = await loadSaveModule();
   const result = parseSaveText(text);
   if (!result.ok) return result;
   const meta = await saveToSlot(null, "manual", name, result.payload);

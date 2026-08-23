@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   __createIndexedDbKVForTests,
   __resetSaveStoreForTests,
+  __setSaveModuleImporterForTests,
   __setSaveStoreKVForTests,
   __failNextManifestWriteForTests,
   autosave,
@@ -291,6 +292,19 @@ describe("saveStore", () => {
     await deleteSlot("quick");
     expect(await listSlots()).toHaveLength(0);
     expect(await loadSlot("quick")).toBeNull();
+  });
+
+  it("retries a transient warmed save-module import instead of caching its rejection", async () => {
+    let attempts = 0;
+    __setSaveModuleImporterForTests(async () => {
+      attempts++;
+      if (attempts === 1) throw new Error("transient save module load failure");
+      return import("./save");
+    });
+
+    await expect(quicksave(payload(2))).rejects.toThrow("transient save module load failure");
+    await expect(quicksave(payload(3))).resolves.toMatchObject({ id: "quick", week: 3 });
+    expect(attempts).toBe(2);
   });
 
   it("mostRecentSlot returns the newest of any kind", async () => {
