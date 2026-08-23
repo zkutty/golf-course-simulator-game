@@ -49,12 +49,12 @@ test("Pixi requests the current season and a missing optional overlay preserves 
   if (await tutorial.count()) await tutorial.getByRole("button", { name: "Skip tutorial" }).click();
 
   const canvas = page.locator(".cc-pixi-stage canvas");
-  await expect(canvas).toBeVisible();
   await expect.poll(() => page.evaluate(() => {
     const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
     return { season: state.seasons?.calendar?.season, quality: state.graphics?.quality };
   })).toEqual({ season: "spring", quality: "high" });
   await expect.poll(() => overlayRequests.some((url) => url.includes("seasonal-missing-spring"))).toBe(true);
+  await expect(canvas).toBeVisible();
 
   // The production M39 fixture advances the same world-owned calendar to
   // winter. This must invalidate the Pixi atlas effect without duplicating
