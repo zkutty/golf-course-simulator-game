@@ -1308,6 +1308,10 @@ export default function App() {
     const round = career.activeRound ?? projectedRound;
     const group = career.activeChallengeGroupRound;
     if (!round && !group) return;
+    // Begin the known Player Pro score transition with the initiating gesture,
+    // ahead of the expensive round-view React commit. The app-state effect
+    // below remains the single reconciliation path for later state changes.
+    if (round) void audio.setMusicContext("play");
     setPlayerShotAim(round
       ? caddieRecommendation(round, career.skills).aim
       : { ...group!.course.holes[group!.currentHoleIndex].pin });
@@ -1317,7 +1321,7 @@ export default function App() {
     setShowLandOffice(false);
     playerRoundResumeSpeedRef.current = live.speed === "paused" ? "1x" : live.speed;
     live.setSpeed("paused");
-  }, [live]);
+  }, [audio, live]);
 
   const beginPlayerRound = useCallback(async (layoutId: string, teeSet: TeeSet, pinRotation: PinRotation): Promise<string | null> => {
     const { startPlayerProCareerRound } = await import("./game/competition/equipmentMentor");
