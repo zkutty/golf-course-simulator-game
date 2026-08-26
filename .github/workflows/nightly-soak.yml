@@ -34,7 +34,7 @@ jobs:
       - name: Run full browser suite shard
         run: >-
           npm run test:e2e --
-          --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$|ZK-571 publishes a versioned machine-only screenshot/state matrix$|M27 reports architecture for a live 36-hole, two-course estate$|M27 report remains usable with pseudo locale, text scaling, reduced motion, and color-safe terrain$|M43 packages a course locally and test plays an isolated copy$|manual reporter sends only the previewed, consented payload$|React crash boundary hands bounded crash context to an opt-in report$|terrain strokes preview and commit atomically, cancel safely, and reject unaffordable work$|M30 pace history exposes identity, local bottlenecks, and multi-course reports$|single-cell bunker and natural detail render as organic landscape$|M35 click spline and post-commit node/tangent editing stay atomic$|painting water automatically commits a flat excavated basin$|M36-M37 Player Pro aims, resolves, progresses, and returns to design$|manual reporter sends only required fields when optional evidence is off$|diagnostics and renderer screenshot require separate explicit consent$|keyboard close restores focus to the launcher$|canceling an in-flight submission keeps one report ID for a safe retry$'
+          --grep-invert 'ZK-765 reference overlays remain populated: (parkland-summer-drought-r[0-3]-high|links-summer-storm-r[0-3]-high|desert-summer-drought-r[0-3]-high)$|ZK-571 publishes a versioned machine-only screenshot/state matrix$|M27 reports architecture for a live 36-hole, two-course estate$|M27 report remains usable with pseudo locale, text scaling, reduced motion, and color-safe terrain$|M43 packages a course locally and test plays an isolated copy$|manual reporter sends only the previewed, consented payload$|React crash boundary hands bounded crash context to an opt-in report$|terrain strokes preview and commit atomically, cancel safely, and reject unaffordable work$|M30 pace history exposes identity, local bottlenecks, and multi-course reports$|Classic completes three-hole public operations through weekly results and graduation$|single-cell bunker and natural detail render as organic landscape$|M35 click spline and post-commit node/tangent editing stay atomic$|painting water automatically commits a flat excavated basin$|M36-M37 Player Pro aims, resolves, progresses, and returns to design$|manual reporter sends only required fields when optional evidence is off$|diagnostics and renderer screenshot require separate explicit consent$|keyboard close restores focus to the launcher$|canceling an in-flight submission keeps one report ID for a safe retry$'
           --shard=${{ matrix.shard }}/21
           --trace retain-on-failure-and-retries
           --reporter=github,html,json | tee browser-shard-${{ matrix.shard }}.log
@@ -246,6 +246,40 @@ jobs:
             simgolf-lite/playwright-report
             simgolf-lite/test-results
             simgolf-lite/artifacts
+          if-no-files-found: ignore
+          retention-days: 14
+
+  m14_classic_onboarding:
+    name: M14 Classic onboarding certification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CI: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Run isolated M14 Classic onboarding certification
+        run: >-
+          npm run test:e2e -- e2e/m14-onboarding.e2e.ts
+          --grep 'Classic completes three-hole public operations through weekly results and graduation$'
+          | tee m14-classic-onboarding.log
+      - name: Upload M14 Classic onboarding report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-m14-classic-onboarding
+          path: |
+            simgolf-lite/m14-classic-onboarding.log
+            simgolf-lite/playwright-report
+            simgolf-lite/test-results
+            simgolf-lite/artifacts/m14-onboarding
           if-no-files-found: ignore
           retention-days: 14
 
@@ -675,6 +709,7 @@ jobs:
       - m43_m45_reporting
       - m28_terrain_stroke
       - m30_pace_history
+      - m14_classic_onboarding
       - m35_authoring
       - m36_player_pro
       - m45_bug_reporter
@@ -693,6 +728,7 @@ jobs:
           M43_M45_REPORTING_RESULT: ${{ needs.m43_m45_reporting.result }}
           M28_TERRAIN_STROKE_RESULT: ${{ needs.m28_terrain_stroke.result }}
           M30_PACE_HISTORY_RESULT: ${{ needs.m30_pace_history.result }}
+          M14_CLASSIC_ONBOARDING_RESULT: ${{ needs.m14_classic_onboarding.result }}
           M35_AUTHORING_RESULT: ${{ needs.m35_authoring.result }}
           M36_PLAYER_PRO_RESULT: ${{ needs.m36_player_pro.result }}
           M45_BUG_REPORTER_RESULT: ${{ needs.m45_bug_reporter.result }}
@@ -706,6 +742,7 @@ jobs:
           echo "M43/M45 reporting result: $M43_M45_REPORTING_RESULT"
           echo "M28 terrain stroke result: $M28_TERRAIN_STROKE_RESULT"
           echo "M30 pace-history result: $M30_PACE_HISTORY_RESULT"
+          echo "M14 Classic onboarding result: $M14_CLASSIC_ONBOARDING_RESULT"
           echo "M35 landscape-authoring result: $M35_AUTHORING_RESULT"
           echo "M36 Player Pro result: $M36_PLAYER_PRO_RESULT"
           echo "M45 bug-reporter result: $M45_BUG_REPORTER_RESULT"
@@ -726,6 +763,9 @@ jobs:
             exit 1
           fi
           if [[ "$M30_PACE_HISTORY_RESULT" != "success" ]]; then
+            exit 1
+          fi
+          if [[ "$M14_CLASSIC_ONBOARDING_RESULT" != "success" ]]; then
             exit 1
           fi
           if [[ "$M35_AUTHORING_RESULT" != "success" ]]; then
