@@ -775,6 +775,7 @@ export default function App() {
   const advisorCooldownUntilRef = useRef(0);
   const [a11yMessage, setA11yMessage] = useState("");
   const [quickSaveAnnouncement, setQuickSaveAnnouncement] = useState<{ sequence: number; message: string } | null>(null);
+  const [lastQuickSaveAnnouncementSequence, setLastQuickSaveAnnouncementSequence] = useState<number | null>(null);
   const quickSaveAnnouncementSequenceRef = useRef(0);
   const quickSaveAnnouncementPublishTimeoutRef = useRef<number | null>(null);
   const quickSaveAnnouncementClearTimeoutRef = useRef<number | null>(null);
@@ -2042,6 +2043,7 @@ export default function App() {
 
   const announceQuickSaveComplete = useCallback(() => {
     const sequence = ++quickSaveAnnouncementSequenceRef.current;
+    setLastQuickSaveAnnouncementSequence(sequence);
     if (quickSaveAnnouncementPublishTimeoutRef.current !== null) {
       window.clearTimeout(quickSaveAnnouncementPublishTimeoutRef.current);
     }
@@ -5505,7 +5507,7 @@ export default function App() {
         role="status"
         aria-live="polite"
         aria-atomic="true"
-        data-announcement-sequence={quickSaveAnnouncement?.sequence}
+        data-announcement-sequence={quickSaveAnnouncement?.sequence ?? lastQuickSaveAnnouncementSequence ?? undefined}
       >{quickSaveAnnouncement?.message ?? a11yMessage}</div>
         <GameBackground />
         {saveLoadModal}
