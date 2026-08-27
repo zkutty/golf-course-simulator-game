@@ -62,6 +62,7 @@ import {
 } from "./game/balance/experience";
 import { GameBackground } from "./ui/gameui";
 import { useAudio } from "./audio/audioContext";
+import { audioManager } from "./audio/AudioManager";
 const HoleInspector = lazy(() => import("./ui/HoleInspector").then((module) => ({ default: module.HoleInspector })));
 const HUD = lazy(() => import("./ui/HUD").then((module) => ({ default: module.HUD })));
 import { evaluateHole } from "./game/eval/evaluateHole";
@@ -909,7 +910,10 @@ export default function App() {
       setShowLandOffice((open) => !open);
       setSelectedParcelId((current) => current ?? course.estate?.starterParcelId ?? null);
     }
-    if (action === "player") setShowPlayerPro((open) => !open);
+    if (action === "player") {
+      if (!showPlayerPro) audioManager.prepareMusicContext("play");
+      setShowPlayerPro((open) => !open);
+    }
     if (action === "tournaments") setShowTournaments((open) => !open);
     if (action === "property") setShowPropertyManagement((open) => !open);
     if (action === "people") setShowLivingClub(true);
