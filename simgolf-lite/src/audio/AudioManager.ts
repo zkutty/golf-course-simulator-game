@@ -470,9 +470,11 @@ class AudioManager {
     // ever advancing the track.
     next.load();
     this.musicPlayClaims.set(next, switchVersion);
+    const targetVolume = this.establishFadeStart(next, this.effective("musicVolume"));
     try {
       await next.play();
     } catch {
+      if (this.musicPlayClaims.get(next) === switchVersion) this.stopElement(next);
       return;
     }
     if (switchVersion !== this.musicSwitchVersion) {
@@ -484,7 +486,18 @@ class AudioManager {
     }
     this.activeSlot = nextSlot;
     this.playingContext = context;
-    this.fadeElement(next, this.effective("musicVolume"), 350, false);
+    this.fadeElement(next, targetVolume, 350, false);
+  }
+
+  private establishFadeStart(audio: HTMLAudioElement, target: number): number {
+    const clampedTarget = clamp01(target);
+    // Set gain after exclusive ownership is established but before play().
+    // Hosted Chromium can advance media while its play promise is still
+    // pending, so waiting for resolution would leave that stream silent.
+    if (audio.volume === 0 && clampedTarget > 0) {
+      audio.volume = clampedTarget * SYNCHRONOUS_FADE_START_RATIO;
+    }
+    return clampedTarget;
   }
 
   private fadeElement(
@@ -495,15 +508,7 @@ class AudioManager {
   ): void {
     const version = (this.fadeVersions.get(audio) ?? 0) + 1;
     this.fadeVersions.set(audio, version);
-    const clampedTarget = clamp01(target);
-    // A busy hosted canvas can delay requestAnimationFrame long after play()
-    // resolves. Establish a bounded first gain step synchronously so the
-    // already-authorized stream is audible while the normal fade catches up.
-    // Outgoing slots take the pauseAtEnd path and are still stopped at zero
-    // before an incoming stream reaches this handoff.
-    if (!pauseAtEnd && audio.volume === 0 && clampedTarget > 0) {
-      audio.volume = clampedTarget * SYNCHRONOUS_FADE_START_RATIO;
-    }
+    const clampedTarget = pauseAtEnd ? clamp01(target) : this.establishFadeStart(audio, target);
     const from = audio.volume;
     const start = nowMs();
     const tick = () => {
