@@ -152,6 +152,12 @@ class AudioManager {
   private musicPlayClaims = new WeakMap<HTMLAudioElement, number>();
   private musicSwitchTarget: MusicContext | null = null;
   private musicSwitchPromise: Promise<void> | null = null;
+  private preparedMusic: {
+    context: SunoMusicContext;
+    slot: number;
+    trackId: string;
+    src: string;
+  } | null = null;
   private ambienceSlots: [HTMLAudioElement, HTMLAudioElement] | null = null;
   private activeAmbienceSlot = 0;
   private ambienceSwitchVersion = 0;
@@ -394,6 +400,40 @@ class AudioManager {
     return this.requestPlaylist(next);
   }
 
+  prepareMusicContext(context: SunoMusicContext): void {
+    if (!this.musicSlots) return;
+    const list = MUSIC_PLAYLISTS[context];
+    const index = this.trackIndex.get(context) ?? 0;
+    const selected = list[index % list.length];
+    const active = this.musicSlots[this.activeSlot];
+    if (active.dataset.trackId === selected.id && !active.paused) return;
+
+    const slotIndex = this.activeSlot === 0 ? 1 : 0;
+    const slot = this.musicSlots[slotIndex];
+    if (
+      this.preparedMusic?.context === context
+      && this.preparedMusic.slot === slotIndex
+      && this.preparedMusic.trackId === selected.id
+      && this.preparedMusic.src === selected.src
+    ) return;
+    // Never reserve a slot currently claimed by an unresolved transition.
+    if (!slot.paused) return;
+
+    this.clearPreparedMusic();
+    this.stopElement(slot);
+    slot.preload = "auto";
+    slot.src = selected.src;
+    slot.dataset.trackId = selected.id;
+    slot.currentTime = this.contextPositions.get(context) ?? 0;
+    slot.load();
+    this.preparedMusic = {
+      context,
+      slot: slotIndex,
+      trackId: selected.id,
+      src: selected.src,
+    };
+  }
+
   private requestPlaylist(context: MusicContext): Promise<void> {
     if (this.musicSwitchTarget === context && this.musicSwitchPromise) return this.musicSwitchPromise;
     this.musicSwitchTarget = context;
@@ -430,6 +470,13 @@ class AudioManager {
     this.musicSlots?.forEach((slot) => this.stopElement(slot));
   }
 
+  private clearPreparedMusic(): void {
+    if (this.preparedMusic && this.musicSlots) {
+      this.musicSlots[this.preparedMusic.slot].preload = "none";
+    }
+    this.preparedMusic = null;
+  }
+
   private async switchPlaylist(context: MusicContext): Promise<void> {
     if (!this.unlocked || !this.musicSlots) return;
     const switchVersion = ++this.musicSwitchVersion;
@@ -450,6 +497,7 @@ class AudioManager {
     const selected = list[index % list.length];
     const src = selected.src;
     if (old.dataset.trackId === selected.id && !old.paused) {
+      this.clearPreparedMusic();
       this.musicSlots.forEach((slot, slotIndex) => {
         if (slotIndex !== this.activeSlot) this.stopElement(slot);
       });
@@ -460,15 +508,23 @@ class AudioManager {
     this.stopMusicSlots();
     const nextSlot = this.activeSlot === 0 ? 1 : 0;
     const next = this.musicSlots[nextSlot];
-    next.src = src;
-    next.dataset.trackId = selected.id;
-    next.currentTime = this.contextPositions.get(context) ?? 0;
+    const usesPreparedMusic = this.preparedMusic?.context === context
+      && this.preparedMusic.slot === nextSlot
+      && this.preparedMusic.trackId === selected.id
+      && this.preparedMusic.src === src
+      && next.dataset.trackId === selected.id;
+    this.clearPreparedMusic();
+    if (!usesPreparedMusic) {
+      next.src = src;
+      next.dataset.trackId = selected.id;
+      next.currentTime = this.contextPositions.get(context) ?? 0;
+      // Reused slots are created with preload=none. Explicitly restart resource
+      // selection when a slot receives a new source; otherwise Chromium can keep
+      // the recycled element in NETWORK_NO_SOURCE and resolve play() without
+      // ever advancing the track.
+      next.load();
+    }
     next.volume = 0;
-    // Reused slots are created with preload=none. Explicitly restart resource
-    // selection when a slot receives a new source; otherwise Chromium can keep
-    // the recycled element in NETWORK_NO_SOURCE and resolve play() without
-    // ever advancing the track.
-    next.load();
     this.musicPlayClaims.set(next, switchVersion);
     const targetVolume = this.establishFadeStart(next, this.effective("musicVolume"));
     try {

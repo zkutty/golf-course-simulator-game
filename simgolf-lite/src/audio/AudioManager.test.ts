@@ -13,7 +13,9 @@ class MockAudio {
   static pendingPlayResolvers: Array<() => void> = [];
 
   preload = "";
-  src = "";
+  private source = "";
+  srcAssignments = 0;
+  loadCount = 0;
   currentTime = 0;
   ended = false;
   paused = true;
@@ -33,8 +35,19 @@ class MockAudio {
     MockAudio.events.push({ audio: this, type: "volume", value });
   }
 
+  get src(): string {
+    return this.source;
+  }
+
+  set src(value: string) {
+    this.source = new URL(value, "https://coursecraft.test").href;
+    this.srcAssignments += 1;
+  }
+
   addEventListener(): void {}
-  load(): void {}
+  load(): void {
+    this.loadCount += 1;
+  }
 
   play(): Promise<void> {
     this.paused = false;
@@ -88,6 +101,33 @@ afterEach(() => {
 });
 
 describe("AudioManager media handoff", () => {
+  it("prepares only the requested Player Pro track and consumes it without restarting resource selection", async () => {
+    const { audioManager } = await managerWithDelayedAnimationFrames();
+    await audioManager.setMusicContext("title");
+    await audioManager.unlock();
+
+    expect(MockAudio.instances.some((audio) => audio.src.endsWith("/player-pro-01.mp3"))).toBe(false);
+    const outgoing = MockAudio.instances.find((audio) => audio.src.endsWith("/title-01.mp3"));
+    audioManager.prepareMusicContext("play");
+    const prepared = MockAudio.instances.find((audio) => audio.src.endsWith("/player-pro-01.mp3"));
+
+    expect(prepared).toMatchObject({ paused: true, volume: 0, preload: "auto", loadCount: 1, srcAssignments: 1 });
+    expect(activeStreams()).toEqual([outgoing]);
+    audioManager.prepareMusicContext("play");
+    expect(prepared).toMatchObject({ loadCount: 1, srcAssignments: 1 });
+
+    MockAudio.holdPlayPromises = true;
+    const transition = audioManager.setMusicContext("play");
+    expect(prepared).toMatchObject({ paused: false, currentTime: 0, volume: 0.025, preload: "none" });
+    expect(prepared).toMatchObject({ loadCount: 1, srcAssignments: 1 });
+    expect(outgoing).toMatchObject({ paused: true, volume: 0 });
+
+    MockAudio.holdPlayPromises = false;
+    MockAudio.resolvePendingPlays();
+    await transition;
+    expect(activeStreams()).toEqual([prepared]);
+  });
+
   it("establishes exclusive Player Pro gain while play remains pending", async () => {
     const { audioManager } = await managerWithDelayedAnimationFrames();
     await audioManager.setMusicContext("title");
