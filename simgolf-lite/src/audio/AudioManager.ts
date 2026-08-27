@@ -129,6 +129,8 @@ const PROCEDURAL_FAMILIES: readonly ProceduralAmbienceFamily[] = [
   "rain",
 ];
 
+const SYNCHRONOUS_FADE_START_RATIO = 0.1;
+
 class AudioManager {
   private static instance: AudioManager | null = null;
   private unlocked = false;
@@ -493,12 +495,21 @@ class AudioManager {
   ): void {
     const version = (this.fadeVersions.get(audio) ?? 0) + 1;
     this.fadeVersions.set(audio, version);
+    const clampedTarget = clamp01(target);
+    // A busy hosted canvas can delay requestAnimationFrame long after play()
+    // resolves. Establish a bounded first gain step synchronously so the
+    // already-authorized stream is audible while the normal fade catches up.
+    // Outgoing slots take the pauseAtEnd path and are still stopped at zero
+    // before an incoming stream reaches this handoff.
+    if (!pauseAtEnd && audio.volume === 0 && clampedTarget > 0) {
+      audio.volume = clampedTarget * SYNCHRONOUS_FADE_START_RATIO;
+    }
     const from = audio.volume;
     const start = nowMs();
     const tick = () => {
       if (this.fadeVersions.get(audio) !== version) return;
       const p = Math.min(1, (nowMs() - start) / Math.max(1, durationMs));
-      audio.volume = clamp01(from + (target - from) * (p * p * (3 - 2 * p)));
+      audio.volume = clamp01(from + (clampedTarget - from) * (p * p * (3 - 2 * p)));
       if (p < 1) requestAnimationFrame(tick);
       else if (pauseAtEnd) audio.pause();
     };
