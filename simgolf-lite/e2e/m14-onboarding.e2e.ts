@@ -420,6 +420,10 @@ test("Classic completes three-hole public operations through weekly results and 
   await expect(overlay(page).getByRole("button", { name: "Continue" })).toBeEnabled();
   await overlay(page).getByRole("button", { name: "Continue" }).click();
   await expectStep(page, "graduation");
+  const graduationWeekClose = page.getByTestId("week-close-report");
+  await expect(graduationWeekClose).toBeVisible();
+  await graduationWeekClose.getByTestId("week-close-continue").click();
+  await expect(graduationWeekClose).toHaveCount(0);
   await overlay(page).getByTestId("tutorial-primary-action").click();
   await expect(overlay(page)).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text!()).onboarding)).toMatchObject({
@@ -445,4 +449,42 @@ test("Classic completes three-hole public operations through weekly results and 
     validHoles: 9,
   });
   await page.screenshot({ path: path.join(evidenceDir, "03-classic-nine-hole-management-cycle.png"), fullPage: true });
+});
+
+test("week-close report owns pointer and keyboard input across supported viewports", async ({ page }) => {
+  for (const viewport of [{ width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto("/");
+    await page.getByRole("button", { name: "Quick Start" }).click();
+    const tutorialOffer = page.getByRole("dialog", { name: "First-launch tutorial" });
+    if (await tutorialOffer.count()) await tutorialOffer.getByRole("button", { name: "Skip tutorial" }).click();
+
+    const pause = page.getByRole("button", { name: "Open pause menu" });
+    await pause.focus();
+    await expect(pause).toBeFocused();
+    await page.evaluate(() => window.__coursecraftTest!.startWeekCloseFixture(3));
+
+    const report = page.getByTestId("week-close-report");
+    const continueButton = report.getByTestId("week-close-continue");
+    await expect(report).toBeVisible({ timeout: 15_000 });
+    await expect(continueButton).toBeFocused();
+    await expect.poll(() => page.evaluate(() => document.querySelector<HTMLElement>(".cc-main")?.inert)).toBe(true);
+
+    const main = await page.locator(".cc-main").boundingBox();
+    if (!main) throw new Error("Main game surface is unavailable");
+    const blockedPoint = { x: main.x + 4, y: main.y + 4 };
+    await expect.poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('[data-testid="week-close-report"]') !== null, blockedPoint)).toBe(true);
+    await page.mouse.click(blockedPoint.x, blockedPoint.y);
+    await expect(report).toBeVisible();
+    await expect(page.getByTestId("pause-overlay")).toHaveCount(0);
+
+    await page.keyboard.press("Tab");
+    await expect(continueButton).toBeFocused();
+    await page.keyboard.press("Shift+Tab");
+    await expect(continueButton).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(report).toHaveCount(0);
+    await expect(pause).toBeFocused();
+    await expect.poll(() => page.evaluate(() => document.querySelector<HTMLElement>(".cc-main")?.inert)).toBe(false);
+  }
 });
