@@ -51,6 +51,7 @@ import {
   type CalculatedShotEffects,
   type ShotClubId,
 } from "../rules/shotEffects";
+import { DISPERSION_CLUBS, dispersionClubIdForLabel } from "../rules/dispersionRegistry";
 import {
   analyzeShotSlope,
   elevationAdjustedCarryYards,
@@ -129,30 +130,21 @@ const TECHNIQUE_GATES: Record<Exclude<PlayerShotTechnique, "normal">, { skill: P
   backspin: { skill: "irons", value: 62 },
 };
 
-const CLUBS: ReadonlyArray<ClubSpec & { skill: PlayerProSkill; lies: string[] }> = [
-  { name: "Driver", carryYards: 270, dispersionTilesBase: 3.7, skill: "driving", lies: ["tee", "fairway"] },
-  { name: "3 Wood", carryYards: 235, dispersionTilesBase: 3.2, skill: "driving", lies: ["tee", "fairway", "rough"] },
-  { name: "5 Iron", carryYards: 185, dispersionTilesBase: 2.55, skill: "irons", lies: ["tee", "fairway", "rough", "waste_area"] },
-  { name: "7 Iron", carryYards: 155, dispersionTilesBase: 2.1, skill: "irons", lies: ["tee", "fairway", "rough", "waste_area", "sand"] },
-  { name: "Pitching Wedge", carryYards: 115, dispersionTilesBase: 1.55, skill: "shortGame", lies: ["tee", "fairway", "rough", "deep_rough", "waste_area", "sand"] },
-  { name: "Sand Wedge", carryYards: 78, dispersionTilesBase: 1.35, skill: "recovery", lies: ["fairway", "rough", "deep_rough", "sand", "waste_area"] },
-  { name: "Chip", carryYards: 38, dispersionTilesBase: 0.82, skill: "shortGame", lies: ["fairway", "rough", "deep_rough", "green", "sand", "waste_area"] },
-  { name: "Putter", carryYards: 28, dispersionTilesBase: 0.38, skill: "putting", lies: ["green", "fairway"] },
-];
-
-const CLUB_ID_BY_LABEL: Readonly<Record<string, ShotClubId>> = {
-  Driver: "driver",
-  "3 Wood": "three_wood",
-  "5 Iron": "five_iron",
-  "7 Iron": "seven_iron",
-  "Pitching Wedge": "pitching_wedge",
-  "Sand Wedge": "sand_wedge",
-  Chip: "chip",
-  Putter: "putter",
+const CLUB_SKILLS: Readonly<Record<ShotClubId, PlayerProSkill>> = {
+  driver: "driving", three_wood: "driving", five_iron: "irons", seven_iron: "irons",
+  pitching_wedge: "shortGame", sand_wedge: "recovery", chip: "shortGame", putter: "putting",
 };
 
+const CLUBS: ReadonlyArray<ClubSpec & { skill: PlayerProSkill; lies: string[] }> = DISPERSION_CLUBS.map((club) => ({
+  name: club.label,
+  carryYards: club.carryYards,
+  dispersionTilesBase: club.dispersionTiles,
+  skill: CLUB_SKILLS[club.id],
+  lies: [...club.allowedLies],
+}));
+
 export function shotClubIdForLabel(label: string): ShotClubId | null {
-  return CLUB_ID_BY_LABEL[label] ?? null;
+  return dispersionClubIdForLabel(label);
 }
 
 export function flightProfileForTechnique(

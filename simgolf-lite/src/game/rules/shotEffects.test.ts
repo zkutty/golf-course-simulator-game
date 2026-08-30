@@ -278,6 +278,14 @@ describe("M50 pure shot effects", () => {
         code: "unknown_club",
       },
       {
+        selection: { clubId: "toString", lie: "fairway" as const, technique: "normal", flightProfile: "standard" },
+        code: "unknown_club",
+      },
+      {
+        selection: { clubId: "__proto__", lie: "fairway" as const, technique: "normal", flightProfile: "standard" },
+        code: "unknown_club",
+      },
+      {
         selection: { clubId: "driver", lie: "water" as const, technique: "normal", flightProfile: "standard" },
         code: "unplayable_lie",
       },

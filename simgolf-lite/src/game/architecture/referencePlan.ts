@@ -9,6 +9,7 @@ import { computeRatingForSetup } from "../sim/courseRating";
 import { retainArchitectureReferencePlan, retainedArchitectureReferencePlan } from "./referencePlanEvidence";
 import type { ArchitectureReviewData } from "./review";
 import type { ArchitectureOverlayRender } from "./reviewTypes";
+import { REFERENCE_CLUB_ADAPTERS } from "../rules/dispersionRegistry";
 
 /**
  * The architecture reference is deliberately separate from live golfers.
@@ -138,13 +139,15 @@ function recordDiagnostic(metric: keyof typeof diagnostics): void {
 
 function referenceGolfer(course: Course, capability: ArchitectureReferenceCapability): GolferProfile {
   const runout = capability.teeTotalYards - capability.teeCarryYards;
-  const clubs: ClubSpec[] = [
-    { name: "Reference driver", carryYards: capability.teeCarryYards, dispersionTilesBase: capability.dispersionTiles },
-    { name: "Reference fairway wood", carryYards: Math.round(capability.teeCarryYards * .88), dispersionTilesBase: capability.dispersionTiles * .88 },
-    { name: "Reference long iron", carryYards: capability.approachCarryYards, dispersionTilesBase: capability.dispersionTiles * .72 },
-    { name: "Reference mid iron", carryYards: Math.round(capability.approachCarryYards * .8), dispersionTilesBase: capability.dispersionTiles * .58 },
-    { name: "Reference wedge", carryYards: Math.round(capability.approachCarryYards * .61), dispersionTilesBase: capability.dispersionTiles * .43 },
-  ];
+  const clubs: ClubSpec[] = REFERENCE_CLUB_ADAPTERS.map((adapter) => {
+    const carrySource = adapter.carry === "tee" ? capability.teeCarryYards : capability.approachCarryYards;
+    const carryYards = carrySource * adapter.carryScale;
+    return {
+      name: adapter.label,
+      carryYards: adapter.roundCarry ? Math.round(carryYards) : carryYards,
+      dispersionTilesBase: capability.dispersionTiles * adapter.dispersionScale,
+    };
+  });
   return {
     name: "SCRATCH",
     yardsPerTile: course.yardsPerTile,
