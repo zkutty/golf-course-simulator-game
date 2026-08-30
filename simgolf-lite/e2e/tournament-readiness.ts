@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 export const TOURNAMENT_FIXTURE_READY_TIMEOUT_MS = 45_000;
+export const TOURNAMENT_FIXTURE_ADVANCE_STEPS = 5;
 
 export interface PublicTournamentFieldEvidence {
   readonly active: boolean;
@@ -36,6 +37,17 @@ export async function bookTournament(page: Page, panel: Locator): Promise<void> 
     { timeout: TOURNAMENT_FIXTURE_READY_TIMEOUT_MS },
   ).toBe(1);
   await expect(panel.getByText("Tournament booked.")).toBeVisible({ timeout: TOURNAMENT_FIXTURE_READY_TIMEOUT_MS });
+}
+
+/**
+ * Advance the public fixture in one browser turn so React publishes only the
+ * resulting state instead of serializing an intermediate full game envelope
+ * between each deterministic two-second step.
+ */
+export async function advanceTournamentFixture(page: Page, steps = TOURNAMENT_FIXTURE_ADVANCE_STEPS): Promise<void> {
+  await page.evaluate((count) => {
+    for (let index = 0; index < count; index++) window.advanceTime?.(2_000);
+  }, steps);
 }
 
 /**

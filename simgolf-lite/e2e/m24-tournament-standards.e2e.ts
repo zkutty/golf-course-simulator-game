@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bookTournament, openTournamentPanel } from "./tournament-readiness";
+import { advanceTournamentFixture, bookTournament, openTournamentPanel, publicTournamentFieldEvidence } from "./tournament-readiness";
 
 test("M24 explains readiness, books a prescribed setup, and runs it", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -34,13 +34,21 @@ test("M24 explains readiness, books a prescribed setup, and runs it", async ({ p
   await page.getByLabel("Close tournaments").click();
   await page.evaluate(() => window.__coursecraftTest!.startTournamentFixture());
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active?.teeSet)).toBe("member");
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").golfers.length), { timeout: 15_000 }).toBeGreaterThan(0);
+  await page.getByTestId("workspace-operate").click();
+  await page.getByTestId("open-tournaments").click();
+  await expect(page.getByTestId("active-tournament")).toBeVisible();
+  await advanceTournamentFixture(page);
+  await expect.poll(
+    () => publicTournamentFieldEvidence(page).then(({ rows }) => rows.some((row) => /\b(?:[1-9]|1[0-8]) thru\b/.test(row))),
+    { timeout: 15_000 },
+  ).toBe(true);
   const setup = await page.evaluate(() => {
     const state = JSON.parse(window.render_game_to_text?.() ?? "{}");
     return { pin: state.tournament.active.pinRotation, golfers: state.golfers };
   });
+  expect(setup.golfers.length).toBeGreaterThan(0);
   expect(setup.golfers.every((golfer: { teeSet: string; pinRotation: string }) => golfer.teeSet === "member" && golfer.pinRotation === setup.pin)).toBe(true);
-  await openTournamentPanel(page, "M24 Tournament Standards Club", false);
+  await expect(page.getByTestId("tournament-panel")).toBeVisible();
   const liveShot = await page.screenshot({ path: "artifacts/m24-live.png", fullPage: true });
   await testInfo.attach("m24-live", { body: liveShot, contentType: "image/png" });
   expect(errors).toEqual([]);
