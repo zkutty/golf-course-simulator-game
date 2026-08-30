@@ -2,6 +2,11 @@ import { expect, type Locator, type Page } from "@playwright/test";
 
 export const TOURNAMENT_FIXTURE_READY_TIMEOUT_MS = 45_000;
 
+export interface PublicTournamentFieldEvidence {
+  readonly active: boolean;
+  readonly rows: readonly string[];
+}
+
 function tournamentTextState(page: Page) {
   return page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}"));
 }
@@ -31,4 +36,17 @@ export async function bookTournament(page: Page, panel: Locator): Promise<void> 
     { timeout: TOURNAMENT_FIXTURE_READY_TIMEOUT_MS },
   ).toBe(1);
   await expect(panel.getByText("Tournament booked.")).toBeVisible({ timeout: TOURNAMENT_FIXTURE_READY_TIMEOUT_MS });
+}
+
+/**
+ * Read the whole published leaderboard rather than the compact text-state
+ * summary, which deliberately retains only the leading five entrants.
+ */
+export async function publicTournamentFieldEvidence(page: Page): Promise<PublicTournamentFieldEvidence> {
+  const activeTournament = page.getByTestId("active-tournament");
+  if (!await activeTournament.isVisible()) return { active: false, rows: [] };
+  return {
+    active: true,
+    rows: await activeTournament.getByTestId("tournament-leaderboard").locator("li").allTextContents(),
+  };
 }

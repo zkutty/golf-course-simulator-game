@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bookTournament, openTournamentPanel, TOURNAMENT_FIXTURE_READY_TIMEOUT_MS } from "./tournament-readiness";
+import { bookTournament, openTournamentPanel, publicTournamentFieldEvidence, TOURNAMENT_FIXTURE_READY_TIMEOUT_MS } from "./tournament-readiness";
 
 test("M6 schedules events and presents live tournament standings", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -19,7 +19,10 @@ test("M6 schedules events and presents live tournament standings", async ({ page
   await expect(livePanel.getByTestId("active-tournament")).toBeVisible();
   await expect(livePanel.getByTestId("tournament-leaderboard").locator("li")).toHaveCount(8);
   await page.evaluate(() => { for (let index = 0; index < 5; index++) window.advanceTime?.(2_000); });
-  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active?.standings.some((row: { holesCompleted: number }) => row.holesCompleted > 0))).toBe(true);
+  await expect.poll(
+    () => publicTournamentFieldEvidence(page).then(({ rows }) => rows.some((row) => /\b(?:[1-9]|1[0-8]) thru\b/.test(row))),
+    { timeout: TOURNAMENT_FIXTURE_READY_TIMEOUT_MS },
+  ).toBe(true);
   await expect.poll(
     () => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active?.standings.length),
     { timeout: TOURNAMENT_FIXTURE_READY_TIMEOUT_MS },
@@ -27,10 +30,13 @@ test("M6 schedules events and presents live tournament standings", async ({ page
   const shot = await page.screenshot({ fullPage: true, path: "artifacts/m6-tournament-live.png" });
   await testInfo.attach("m6-tournament-live", { body: shot, contentType: "image/png" });
 
-  await expect.poll(async () => {
-    await page.evaluate(() => window.advanceTime?.(2_000));
-    return page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").tournament.active);
-  }, { timeout: 45_000 }).toBeNull();
+  await expect.poll(
+    async () => {
+      await page.evaluate(() => window.advanceTime?.(2_000));
+      return publicTournamentFieldEvidence(page);
+    },
+    { timeout: TOURNAMENT_FIXTURE_READY_TIMEOUT_MS },
+  ).toEqual({ active: false, rows: [] });
   await expect(page.getByTestId("active-tournament")).toBeHidden();
   await expect(page.getByText("Recent results")).toBeVisible();
   await expect(page.getByTestId("tournament-panel").locator("details")).toHaveCount(1);
