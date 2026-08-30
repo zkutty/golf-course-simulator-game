@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { bookTournament, openTournamentPanel, publicTournamentFieldEvidence, TOURNAMENT_FIXTURE_READY_TIMEOUT_MS } from "./tournament-readiness";
+import { advanceTournamentFixture, bookTournament, openTournamentPanel, publicTournamentFieldEvidence, TOURNAMENT_FIXTURE_READY_TIMEOUT_MS } from "./tournament-readiness";
 
 test("M6 schedules events and presents live tournament standings", async ({ page }, testInfo) => {
   const errors: string[] = [];
@@ -18,7 +18,7 @@ test("M6 schedules events and presents live tournament standings", async ({ page
   const livePanel = await openTournamentPanel(page, "M24 Tournament Standards Club", false);
   await expect(livePanel.getByTestId("active-tournament")).toBeVisible();
   await expect(livePanel.getByTestId("tournament-leaderboard").locator("li")).toHaveCount(8);
-  await page.evaluate(() => { for (let index = 0; index < 5; index++) window.advanceTime?.(2_000); });
+  await advanceTournamentFixture(page);
   await expect.poll(
     () => publicTournamentFieldEvidence(page).then(({ rows }) => rows.some((row) => /\b(?:[1-9]|1[0-8]) thru\b/.test(row))),
     { timeout: TOURNAMENT_FIXTURE_READY_TIMEOUT_MS },
@@ -32,7 +32,7 @@ test("M6 schedules events and presents live tournament standings", async ({ page
 
   await expect.poll(
     async () => {
-      await page.evaluate(() => window.advanceTime?.(2_000));
+      await advanceTournamentFixture(page);
       return publicTournamentFieldEvidence(page);
     },
     { timeout: TOURNAMENT_FIXTURE_READY_TIMEOUT_MS },
