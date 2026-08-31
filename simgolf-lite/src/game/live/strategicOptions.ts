@@ -11,6 +11,7 @@ import {
   type ShotClubDefinition,
   type ShotTechnique,
 } from "../rules/shotEffects";
+import { DISPERSION_CLUBS } from "../rules/dispersionRegistry";
 import { resolveObstacleCollision } from "../rules/obstacleCollision";
 import type { GolferCapabilities, RejectedAlternative, ShotIntent, StrategicHolePlan, StrategicIntentKind, StrategyFact } from "./m47Types";
 import type { Personality } from "./personality";
@@ -24,16 +25,9 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 const playable = new Set(["tee", "fairway", "rough", "deep_rough", "green", "sand", "waste_area"]);
 const recoveryLies = new Set(["rough", "deep_rough", "sand", "waste_area"]);
 const INTENTS: StrategicIntentKind[] = ["safe", "hero", "positional", "recovery", "approach"];
-const CLUBS: Record<string, { carry: number; dispersion: number }> = {
-  Driver: { carry: 270, dispersion: 3.7 },
-  "3 Wood": { carry: 235, dispersion: 3.2 },
-  "5 Iron": { carry: 185, dispersion: 2.55 },
-  "7 Iron": { carry: 155, dispersion: 2.1 },
-  "Pitching Wedge": { carry: 115, dispersion: 1.55 },
-  "Sand Wedge": { carry: 78, dispersion: 1.35 },
-  Chip: { carry: 38, dispersion: .82 },
-  Putter: { carry: 28, dispersion: .38 },
-};
+const CLUBS: Record<string, { carry: number; dispersion: number }> = Object.fromEntries(
+  DISPERSION_CLUBS.map((club) => [club.label, { carry: club.carryYards, dispersion: club.dispersionTiles }]),
+);
 
 function distance(a: Point, b: Point): number { return Math.hypot(a.x - b.x, a.y - b.y); }
 function unit(a: Point, b: Point): Point {
