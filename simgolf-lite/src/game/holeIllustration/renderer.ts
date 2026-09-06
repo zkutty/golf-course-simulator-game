@@ -6,6 +6,7 @@ import { isPlantId } from "../models/plantRegistry";
 import { PIN_ROTATIONS, TEE_SETS } from "../models/types";
 import { SEASONS, type SeasonName } from "../seasons/types";
 import {
+  HOLE_ILLUSTRATION_ENDPOINT_MARKER_MIN_INNER_DIAMETER,
   HOLE_ILLUSTRATION_LAYER_ORDER,
   HOLE_ILLUSTRATION_RENDER_LIMITS,
   type HoleIllustrationEllipsePrimitive,
@@ -66,8 +67,36 @@ export interface HoleIllustrationRgbaOutput {
   readonly data: Uint8ClampedArray;
 }
 
+export interface HoleIllustrationRenderBudgetReport {
+  readonly complete: true;
+  readonly version: typeof HOLE_ILLUSTRATION_RENDERER_VERSION;
+  readonly planHash: string;
+  readonly svg: {
+    readonly characters: number;
+    readonly characterLimit: number;
+    readonly withinLimit: boolean;
+  };
+  readonly rgba: {
+    readonly pixelRatio: number;
+    readonly width: number;
+    readonly height: number;
+    readonly pixels: number;
+    readonly rgbaBytes: number;
+    readonly coverageBytes: number;
+    readonly allocationBytes: number;
+    readonly estimatedPixelVisits: number;
+    /** False only when the estimate uses limit + 1 as a fail-closed exceeded sentinel. */
+    readonly pixelVisitEstimateExact: boolean;
+    readonly pixelLimit: number;
+    readonly allocationByteLimit: number;
+    readonly pixelVisitLimit: number;
+    readonly withinLimits: boolean;
+  };
+}
+
 export type HoleIllustrationSvgResult = HoleIllustrationSvgOutput | RendererFailure;
 export type HoleIllustrationRgbaResult = HoleIllustrationRgbaOutput | RendererFailure;
+export type HoleIllustrationRenderBudgetResult = HoleIllustrationRenderBudgetReport | RendererFailure;
 
 interface Paint {
   readonly fill?: string;
@@ -79,6 +108,10 @@ interface Paint {
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 const PLAN_HASH = /^[0-9a-f]{8}$/;
 const SNAPSHOT_HASH = /^[0-9a-f]{64}$/;
+// Exact extrema emitted by the Wave 2 producer at the legal one-pixel short axis.
+// validProducerPlan still reconstructs every accepted stroke and radius exactly.
+const MAX_PRODUCER_NORMALIZED_STROKE_WIDTH = 3;
+const MAX_PRODUCER_NORMALIZED_ELLIPSE_RADIUS = 2;
 // Snapshot courses are bounded by total area, not by either individual axis.
 // With a positive opposite axis, 65,536 cells is the tightest retained-data-safe
 // upper bound for a recovered zero-based course coordinate.
@@ -145,7 +178,8 @@ function paint(value: Record<string, unknown>, shortViewportAxis: number): Paint
   if (value.stroke !== undefined && !validColor(value.stroke)) return null;
   if (value.fill === undefined && value.stroke === undefined) return null;
   if (value.stroke === undefined && value.strokeWidth !== undefined) return null;
-  if (value.stroke !== undefined && (!finite(value.strokeWidth) || value.strokeWidth <= 0 || value.strokeWidth > 1
+  if (value.stroke !== undefined && (!finite(value.strokeWidth) || value.strokeWidth <= 0
+    || value.strokeWidth > MAX_PRODUCER_NORMALIZED_STROKE_WIDTH
     || value.strokeWidth * shortViewportAxis + 1e-9 < 1)) return null;
   if (value.opacity !== undefined && (!finite(value.opacity) || value.opacity < 0 || value.opacity > 1)) return null;
   return {
@@ -174,7 +208,8 @@ function primitive(value: unknown, shortViewportAxis: number): HoleIllustrationR
   if (value.kind === "ellipse") {
     const center = point(value.center);
     if (!center || !record(value.radius) || !finite(value.radius.x) || !finite(value.radius.y)
-      || value.radius.x <= 0 || value.radius.x > 1 || value.radius.y <= 0 || value.radius.y > 1) return null;
+      || value.radius.x <= 0 || value.radius.x > MAX_PRODUCER_NORMALIZED_ELLIPSE_RADIUS
+      || value.radius.y <= 0 || value.radius.y > MAX_PRODUCER_NORMALIZED_ELLIPSE_RADIUS) return null;
     return { ...base, kind: "ellipse", center, radius: { x: value.radius.x, y: value.radius.y } };
   }
   if (value.kind === "sample-grid") {
@@ -307,9 +342,12 @@ function primitiveMatchesLayer(
       && PIN_ROTATIONS.some((pin) => item.semantic === `pin:${pin}`)
       && filledAndStroked(palette.pin.fill, palette.pin.stroke) && item.opacity === undefined;
   }
-  return item.kind === "polyline" && !item.closed && item.id === "authoritative-route"
-    && item.semantic === "route:tee-waypoints-pin" && item.fill === undefined
-    && item.stroke === palette.route && item.strokeWidth !== undefined && item.opacity === 0.88;
+  if (item.kind !== "polyline" || item.closed || item.fill !== undefined || item.strokeWidth === undefined) return false;
+  return item.id === "authoritative-route-halo"
+    ? item.semantic === "route:tee-waypoints-pin:halo"
+      && item.stroke === palette.routeHalo && item.opacity === undefined
+    : item.id === "authoritative-route" && item.semantic === "route:tee-waypoints-pin"
+      && item.stroke === palette.route && item.opacity === 0.88;
 }
 
 interface ProducerProjection {
@@ -384,6 +422,18 @@ function producerStroke(projection: ProducerProjection, fraction: number): numbe
 
 function producerRadius(projection: ProducerProjection, fraction: number): HoleIllustrationRenderPoint {
   return { x: projection.scale * fraction / projection.width, y: projection.scale * fraction / projection.height };
+}
+
+function producerEndpointRadius(
+  projection: ProducerProjection,
+  fraction: number,
+  strokeWidth: number,
+): HoleIllustrationRenderPoint {
+  const naturalRadius = projection.scale * fraction;
+  const strokePixels = strokeWidth * Math.min(projection.width, projection.height);
+  const radiusPixels = Math.max(naturalRadius,
+    (strokePixels + HOLE_ILLUSTRATION_ENDPOINT_MARKER_MIN_INNER_DIAMETER) / 2);
+  return { x: radiusPixels / projection.width, y: radiusPixels / projection.height };
 }
 
 function projectedRaw(
@@ -625,19 +675,26 @@ function validProducerPlan(
   }
   if (plan.budget.sourceFeatures !== contours.length + obstacleCount + decorationCount + surroundingCount) return false;
 
-  const tee = plan.layers[5].primitives[0];
-  const pin = plan.layers[6].primitives[0];
-  const route = plan.layers[7].primitives[0];
-  if (tee.kind !== "ellipse" || pin.kind !== "ellipse" || route.kind !== "polyline") return false;
+  const routeHalo = plan.layers[5].primitives[0];
+  const route = plan.layers[5].primitives[1];
+  const tee = plan.layers[6].primitives[0];
+  const pin = plan.layers[7].primitives[0];
+  if (tee.kind !== "ellipse" || pin.kind !== "ellipse"
+    || routeHalo.kind !== "polyline" || route.kind !== "polyline") return false;
   const centers = terrainFacts.map((item) => projectedCoursePoint(projection, plan.frame, item, 0.5, 0.5));
+  const endpointStrokeWidth = producerStroke(projection, 0.08);
   if (!centers.some((center) => closePoint(tee.center, center))
     || !centers.some((center) => closePoint(pin.center, center))
-    || !closePoint(tee.radius, producerRadius(projection, 0.25))
-    || !closePoint(pin.radius, producerRadius(projection, 0.22))
-    || !closeNumber(tee.strokeWidth ?? 0, producerStroke(projection, 0.08))
-    || !closeNumber(pin.strokeWidth ?? 0, producerStroke(projection, 0.08))
+    || !closePoint(tee.radius, producerEndpointRadius(projection, 0.25, endpointStrokeWidth))
+    || !closePoint(pin.radius, producerEndpointRadius(projection, 0.22, endpointStrokeWidth))
+    || !closeNumber(tee.strokeWidth ?? 0, endpointStrokeWidth)
+    || !closeNumber(pin.strokeWidth ?? 0, endpointStrokeWidth)
     || !closeNumber(route.strokeWidth ?? 0, producerStroke(projection,
       plan.settings.contrast === "high-contrast" ? 0.1 : 0.065))
+    || !closeNumber(routeHalo.strokeWidth ?? 0,
+      (route.strokeWidth ?? 0) + 2 / Math.min(plan.settings.viewport.width, plan.settings.viewport.height))
+    || routeHalo.points.length !== route.points.length
+    || !routeHalo.points.every((point, index) => closePoint(point, route.points[index]))
     || !closePoint(route.points[0], tee.center) || !closePoint(route.points[route.points.length - 1], pin.center)
     || closePoint(tee.center, pin.center)
     || !route.points.every((point) => centers.some((center) => closePoint(point, center)))) return false;
@@ -702,7 +759,7 @@ function validatedPlan(value: unknown): HoleIllustrationRenderPlan | null {
     layers.push({ id: HOLE_ILLUSTRATION_LAYER_ORDER[index], z: index, primitives });
   }
   if (layers[0].primitives.length !== value.budget.sourceCells
-    || layers[5].primitives.length !== 1 || layers[6].primitives.length !== 1 || layers[7].primitives.length !== 1) return null;
+    || layers[5].primitives.length !== 2 || layers[6].primitives.length !== 1 || layers[7].primitives.length !== 1) return null;
   if (primitiveCount !== value.budget.primitiveCount || pointCount !== value.budget.pointCount) return null;
   const facts = {
     version: 1 as const,
@@ -780,11 +837,26 @@ function svgPrimitive(item: HoleIllustrationRenderPrimitive, width: number, heig
   return `<g ${metadata} ${paintAttributes}>${markers}</g>`;
 }
 
+function svgCharacterCount(plan: HoleIllustrationRenderPlan): number {
+  const { width, height } = plan.settings.viewport;
+  let characters = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" data-coursecraft-plan-hash="${plan.hash}" data-snapshot-hash="${plan.snapshotHash}">`.length
+    + `<rect width="${width}" height="${height}" fill="${plan.background}"/>`.length
+    + 6;
+  for (const layer of plan.layers) {
+    characters += `<g data-layer="${layer.id}" data-z="${layer.z}">`.length + 4;
+    for (const item of layer.primitives) characters += svgPrimitive(item, width, height).length;
+  }
+  return characters;
+}
+
 /** Deterministic DOM-free SVG serialization with the exact source plan hash embedded. */
 export function renderHoleIllustrationSvg(input: HoleIllustrationRenderPlan): HoleIllustrationSvgResult {
   try {
     const plan = validatedPlan(input);
     if (!plan) return failure("INVALID_PLAN", "The render plan is malformed or its canonical hash does not match.");
+    if (svgCharacterCount(plan) > HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxSvgCharacters) {
+      return failure("OUTPUT_TOO_LARGE", "The SVG would exceed the bounded output character budget.");
+    }
     const { width, height } = plan.settings.viewport;
     const chunks = [
       `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" data-coursecraft-plan-hash="${plan.hash}" data-snapshot-hash="${plan.snapshotHash}">`,
@@ -917,6 +989,70 @@ function estimatedPixelVisits(plan: HoleIllustrationRenderPlan, width: number, h
     if (visits > HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixelVisits) return visits;
   }
   return visits;
+}
+
+function budgetForPlan(
+  plan: HoleIllustrationRenderPlan,
+  pixelRatio: number,
+): HoleIllustrationRenderBudgetReport {
+  const width = plan.settings.viewport.width * pixelRatio;
+  const height = plan.settings.viewport.height * pixelRatio;
+  const pixels = width * height;
+  const rgbaBytes = pixels * 4;
+  const coverageBytes = pixels;
+  const allocationBytes = rgbaBytes + coverageBytes;
+  const estimatedVisits = estimatedPixelVisits(plan, width, height);
+  const exceededVisits = estimatedVisits > HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixelVisits;
+  const reportedVisits = exceededVisits
+    ? HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixelVisits + 1
+    : estimatedVisits;
+  const svgCharacters = svgCharacterCount(plan);
+  return {
+    complete: true,
+    version: HOLE_ILLUSTRATION_RENDERER_VERSION,
+    planHash: plan.hash,
+    svg: {
+      characters: svgCharacters,
+      characterLimit: HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxSvgCharacters,
+      withinLimit: svgCharacters <= HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxSvgCharacters,
+    },
+    rgba: {
+      pixelRatio,
+      width,
+      height,
+      pixels,
+      rgbaBytes,
+      coverageBytes,
+      allocationBytes,
+      estimatedPixelVisits: reportedVisits,
+      pixelVisitEstimateExact: !exceededVisits,
+      pixelLimit: HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixels,
+      allocationByteLimit: HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterBytes,
+      pixelVisitLimit: HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixelVisits,
+      withinLimits: Number.isSafeInteger(pixels)
+        && pixels <= HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixels
+        && allocationBytes <= HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterBytes
+        && !exceededVisits,
+    },
+  };
+}
+
+/** Deterministic output/work preflight without allocating the final SVG or raster buffers. */
+export function preflightHoleIllustrationRender(
+  input: HoleIllustrationRenderPlan,
+  options: HoleIllustrationRgbaOptions,
+): HoleIllustrationRenderBudgetResult {
+  try {
+    const plan = validatedPlan(input);
+    if (!plan) return failure("INVALID_PLAN", "The render plan is malformed or its canonical hash does not match.");
+    if (!record(options) || !Number.isInteger(options.pixelRatio) || options.pixelRatio < 1
+      || options.pixelRatio > HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixelRatio) {
+      return failure("INVALID_OPTIONS", "pixelRatio must be an integer from 1 through 4.");
+    }
+    return budgetForPlan(plan, options.pixelRatio);
+  } catch {
+    return failure("INVALID_PLAN", "The render plan could not be preflighted safely.");
+  }
 }
 
 function rgb(color: string): Rgb {
@@ -1080,16 +1216,11 @@ export function renderHoleIllustrationRgba(
       || options.pixelRatio > HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixelRatio) {
       return failure("INVALID_OPTIONS", "pixelRatio must be an integer from 1 through 4.");
     }
-    const width = plan.settings.viewport.width * options.pixelRatio;
-    const height = plan.settings.viewport.height * options.pixelRatio;
-    const pixels = width * height;
-    const bytes = pixels * 4;
-    const allocationBytes = bytes + pixels;
-    if (!Number.isSafeInteger(pixels) || pixels > HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixels
-      || allocationBytes > HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterBytes
-      || estimatedPixelVisits(plan, width, height) > HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixelVisits) {
+    const budget = budgetForPlan(plan, options.pixelRatio);
+    if (!budget.rgba.withinLimits) {
       return failure("ALLOCATION_EXCEEDED", "The requested raster exceeds pixel, byte, or bounded-work limits.");
     }
+    const { width, height, pixels, rgbaBytes: bytes } = budget.rgba;
     const data = new Uint8ClampedArray(bytes);
     const background = rgb(plan.background);
     for (let index = 0; index < data.length; index += 4) {

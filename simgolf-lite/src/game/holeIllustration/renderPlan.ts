@@ -37,10 +37,13 @@ export const HOLE_ILLUSTRATION_LAYER_ORDER = [
   "paths",
   "vegetation-obstacles",
   "surroundings",
+  "route",
   "tee",
   "pin",
-  "route",
 ] as const;
+
+/** Minimum fill-only diameter, in logical viewport pixels, inside endpoint marker strokes. */
+export const HOLE_ILLUSTRATION_ENDPOINT_MARKER_MIN_INNER_DIAMETER = 3;
 
 export type HoleIllustrationLayerId = (typeof HOLE_ILLUSTRATION_LAYER_ORDER)[number];
 export type HoleIllustrationFrameMode = HoleIllustrationFrame["mode"];
@@ -523,7 +526,7 @@ function estimateBudget(snapshot: HoleIllustrationSnapshot) {
     + snapshot.obstacles.length
     + decorationCells
     + surroundingCells
-    + 3;
+    + 4;
   const pointCount = snapshot.terrain.length * 4
     + (variableElevation ? snapshot.terrain.length * 4 : 0)
     + snapshot.contours.tiles.length * 16
@@ -532,7 +535,7 @@ function estimateBudget(snapshot: HoleIllustrationSnapshot) {
     + decorationCells * 4
     + surroundingCells * 4
     + 2
-    + snapshot.waypoints.length + 2;
+    + (snapshot.waypoints.length + 2) * 2;
   return {
     sourceCells: snapshot.terrain.length,
     sourceFeatures: snapshot.contours.tiles.length + snapshot.obstacles.length
@@ -547,6 +550,7 @@ interface Projection {
   point(source: HoleIllustrationLocalPoint, dx?: number, dy?: number): HoleIllustrationRenderPoint;
   cell(source: HoleIllustrationLocalPoint): readonly HoleIllustrationRenderPoint[];
   radius(cellFraction: number): { readonly x: number; readonly y: number };
+  endpointRadius(cellFraction: number, strokeWidth: number): { readonly x: number; readonly y: number };
   stroke(cellFraction: number): number;
 }
 
@@ -584,6 +588,13 @@ function projection(frame: HoleIllustrationFrame, settings: HoleIllustrationRend
     point,
     cell: (source) => [point(source), point(source, 1, 0), point(source, 1, 1), point(source, 0, 1)],
     radius: (cellFraction) => ({ x: scale * cellFraction / width, y: scale * cellFraction / height }),
+    endpointRadius: (cellFraction, strokeWidth) => {
+      const naturalRadius = scale * cellFraction;
+      const strokePixels = strokeWidth * Math.min(width, height);
+      const radiusPixels = Math.max(naturalRadius,
+        (strokePixels + HOLE_ILLUSTRATION_ENDPOINT_MARKER_MIN_INNER_DIAMETER) / 2);
+      return { x: radiusPixels / width, y: radiusPixels / height };
+    },
     stroke: (cellFraction) => Math.max(1, scale * cellFraction) / Math.min(width, height),
   };
 }
@@ -715,37 +726,49 @@ export function createHoleIllustrationRenderPlan(
       }
     }
 
+    const routePoints = [source.tee, ...source.waypoints, source.pin]
+      .map((point) => project.point(point, 0.5, 0.5));
+    const routeStrokeWidth = project.stroke(renderSettings.contrast === "high-contrast" ? 0.1 : 0.065);
+    add("route", {
+      id: "authoritative-route-halo",
+      kind: "polyline",
+      semantic: "route:tee-waypoints-pin:halo",
+      points: routePoints,
+      closed: false,
+      stroke: palette.routeHalo,
+      strokeWidth: routeStrokeWidth + 2 / Math.min(renderSettings.viewport.width, renderSettings.viewport.height),
+    });
+    add("route", {
+      id: "authoritative-route",
+      kind: "polyline",
+      semantic: "route:tee-waypoints-pin",
+      points: routePoints,
+      closed: false,
+      stroke: palette.route,
+      strokeWidth: routeStrokeWidth,
+      opacity: 0.88,
+    });
+    const endpointStrokeWidth = project.stroke(0.08);
     add("tee", {
       id: "selected-tee",
       kind: "ellipse",
       semantic: `tee:${source.selection.teeSet}`,
       center: project.point(source.tee, 0.5, 0.5),
-      radius: project.radius(0.25),
+      radius: project.endpointRadius(0.25, endpointStrokeWidth),
       fill: palette.tee.fill,
       stroke: palette.tee.stroke,
-      strokeWidth: project.stroke(0.08),
+      strokeWidth: endpointStrokeWidth,
     });
     add("pin", {
       id: "selected-pin",
       kind: "ellipse",
       semantic: `pin:${source.selection.pinRotation}`,
       center: project.point(source.pin, 0.5, 0.5),
-      radius: project.radius(0.22),
+      radius: project.endpointRadius(0.22, endpointStrokeWidth),
       fill: palette.pin.fill,
       stroke: palette.pin.stroke,
-      strokeWidth: project.stroke(0.08),
+      strokeWidth: endpointStrokeWidth,
     });
-    add("route", {
-      id: "authoritative-route",
-      kind: "polyline",
-      semantic: "route:tee-waypoints-pin",
-      points: [source.tee, ...source.waypoints, source.pin].map((point) => project.point(point, 0.5, 0.5)),
-      closed: false,
-      stroke: palette.route,
-      strokeWidth: project.stroke(renderSettings.contrast === "high-contrast" ? 0.1 : 0.065),
-      opacity: 0.88,
-    });
-
     const orderedLayers = HOLE_ILLUSTRATION_LAYER_ORDER.map((id, z): HoleIllustrationRenderLayer => ({
       id,
       z,

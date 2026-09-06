@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { hashCanonicalValue } from "../../utils/canonical";
+import { BIOME_KEYS } from "../models/biomes";
 import type { Course } from "../models/types";
+import { SEASONS } from "../seasons/types";
 import {
   createHoleIllustrationRenderPlan,
+  HOLE_ILLUSTRATION_ENDPOINT_MARKER_MIN_INNER_DIAMETER,
   HOLE_ILLUSTRATION_LAYER_ORDER,
   type HoleIllustrationRenderLayer,
   type HoleIllustrationRenderPlan,
@@ -11,9 +14,15 @@ import {
 import { createHoleIllustrationSnapshot } from "./snapshot";
 import {
   HOLE_ILLUSTRATION_OUTPUT_LIMITS,
+  preflightHoleIllustrationRender,
   renderHoleIllustrationRgba,
   renderHoleIllustrationSvg,
 } from "./renderer";
+import {
+  HOLE_ILLUSTRATION_NON_TEXT_CONTRAST_MINIMUM,
+  inspectHoleIllustrationGraphicContrast,
+  resolveHoleIllustrationStyle,
+} from "./style";
 
 function cell(x: number, y: number): Array<{ x: number; y: number }> {
   return [
@@ -27,7 +36,7 @@ function cell(x: number, y: number): Array<{ x: number; y: number }> {
 function layers(): HoleIllustrationRenderLayer[] {
   const cells = [cell(1, 1), cell(4, 4), cell(8, 6)];
   const terrainKinds = ["path", "fairway", "green"] as const;
-  const terrainFills = ["#806650", "#60b044", "#8ee36a"] as const;
+  const terrainFills = ["#a47e62", "#60b044", "#8ee36a"] as const;
   const terrain: HoleIllustrationRenderPrimitive[] = cells.map((points, index) => ({
     id: `terrain-${index}-${[1, 4, 8][index]}-${[1, 4, 6][index]}`,
     kind: "polygon",
@@ -74,7 +83,7 @@ function layers(): HoleIllustrationRenderLayer[] {
       semantic: "obstacle:tree",
       center: { x: 0.85, y: 0.8125 },
       radius: { x: 0.034, y: 0.0425 },
-      fill: "#003d19",
+      fill: "#287f45",
       stroke: "#000000",
       strokeWidth: 0.0125,
     }],
@@ -108,6 +117,14 @@ function layers(): HoleIllustrationRenderLayer[] {
       strokeWidth: 0.0125,
     }],
     route: [{
+      id: "authoritative-route-halo",
+      kind: "polyline",
+      semantic: "route:tee-waypoints-pin:halo",
+      points: [{ x: 0.15, y: 0.1875 }, { x: 0.45, y: 0.5625 }, { x: 0.85, y: 0.8125 }],
+      closed: false,
+      stroke: "#ffffff",
+      strokeWidth: 0.0375,
+    }, {
       id: "authoritative-route",
       kind: "polyline",
       semantic: "route:tee-waypoints-pin",
@@ -171,6 +188,19 @@ function fixture(): HoleIllustrationRenderPlan {
 function pixel(data: Uint8ClampedArray, width: number, x: number, y: number): number[] {
   const index = (y * width + x) * 4;
   return Array.from(data.slice(index, index + 4));
+}
+
+function hashBytes(data: Uint8ClampedArray): string {
+  let hash = 0x811c9dc5;
+  for (const byte of data) {
+    hash ^= byte;
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, "0");
+}
+
+function opaqueHex(color: string): number[] {
+  return [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16)).concat(255);
 }
 
 function courseFixture(
@@ -243,8 +273,45 @@ function wideAxisCourseFixture(): Course {
   };
 }
 
+function complexCourseFixture(): Course {
+  const course = courseFixture();
+  const tiles = [...course.tiles];
+  tiles[4 * course.width + 3] = "path";
+  return {
+    ...course,
+    tiles,
+    obstacles: [{ x: 5, y: 5, type: "tree" }, { x: 7, y: 3, type: "rock" }],
+    buildings: [{ type: "clubhouse", x: 4, y: 5 }],
+    decorations: [{ kind: "bench", x: 6, y: 5, rotation: 0 }],
+    greenSurface: {
+      version: 1,
+      samplesPerAxis: 4,
+      fixedPointScale: 1024,
+      interpolation: "bilinear",
+      tiles: [{
+        x: 10,
+        y: 1,
+        offsets: [128, 96, 64, 32, 96, 64, 32, 0, 64, 32, 0, -32, 32, 0, -32, -64],
+      }],
+    },
+  };
+}
+
 function releasedSnapshot() {
   const result = createHoleIllustrationSnapshot(courseFixture(), {
+    layoutId: "adapter-layout",
+    routeSource: "published",
+    holeId: "adapter-hole",
+    teeSet: "member",
+    pinRotation: "A",
+    marginTiles: 0,
+  });
+  if (!result.complete) throw new Error(result.message);
+  return result.snapshot;
+}
+
+function releasedComplexSnapshot() {
+  const result = createHoleIllustrationSnapshot(complexCourseFixture(), {
     layoutId: "adapter-layout",
     routeSource: "published",
     holeId: "adapter-hole",
@@ -287,31 +354,275 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
   });
 
   it("accepts the complete 48-case real producer matrix", () => {
-    const snapshot = releasedSnapshot();
+    const snapshot = releasedComplexSnapshot();
     let cases = 0;
+    const evidence: string[] = [];
     for (const frame of ["north-up", "tee-to-green"] as const) {
-      for (const biome of ["parkland", "links", "desert"] as const) {
-        for (const season of ["spring", "summer", "autumn", "winter"] as const) {
+      for (const biome of BIOME_KEYS) {
+        for (const season of SEASONS) {
           for (const contrast of ["standard", "high-contrast"] as const) {
-            const planned = createHoleIllustrationRenderPlan(snapshot, {
+            const settings = {
               frame,
               biome,
               season,
               contrast,
               viewport: { width: 96, height: 72, padding: 0.08 },
-            });
+            } as const;
+            const planned = createHoleIllustrationRenderPlan(snapshot, settings);
+            const repeated = createHoleIllustrationRenderPlan(snapshot, settings);
             expect(planned.complete).toBe(true);
-            if (!planned.complete) continue;
-            expect(renderHoleIllustrationSvg(planned.plan)).toMatchObject({
+            expect(repeated.complete).toBe(true);
+            if (!planned.complete || !repeated.complete) continue;
+            expect(repeated.plan.hash).toBe(planned.plan.hash);
+            for (const layerId of HOLE_ILLUSTRATION_LAYER_ORDER) {
+              expect(planned.plan.layers.find((layer) => layer.id === layerId)?.primitives.length).toBeGreaterThan(0);
+            }
+            const budget = preflightHoleIllustrationRender(planned.plan, { pixelRatio: 1 });
+            expect(budget).toMatchObject({
               complete: true,
               planHash: planned.plan.hash,
+              svg: { withinLimit: true },
+              rgba: { withinLimits: true, pixelVisitEstimateExact: true },
             });
+            const svg = renderHoleIllustrationSvg(planned.plan);
+            const repeatedSvg = renderHoleIllustrationSvg(planned.plan);
+            const rgba = renderHoleIllustrationRgba(planned.plan, { pixelRatio: 1 });
+            const repeatedRgba = renderHoleIllustrationRgba(planned.plan, { pixelRatio: 1 });
+            expect(svg).toEqual(repeatedSvg);
+            expect(rgba).toEqual(repeatedRgba);
+            expect(svg.complete && rgba.complete).toBe(true);
+            if (!svg.complete || !rgba.complete) continue;
+            if (budget.complete) expect(budget.svg.characters).toBe(svg.svg.length);
+            evidence.push([
+              frame, biome, season, contrast, planned.plan.hash,
+              hashCanonicalValue(svg.svg), hashBytes(rgba.data),
+            ].join(":"));
             cases++;
           }
         }
       }
     }
     expect(cases).toBe(48);
+    expect(hashCanonicalValue(evidence)).toBe("5747a09b");
+  });
+
+  it("reports every registered palette and certifies high-contrast graphic boundaries", () => {
+    const evidence: string[] = [];
+    let reports = 0;
+    let highContrastReports = 0;
+    let certifiedMinimum = Infinity;
+    for (const biome of BIOME_KEYS) for (const season of SEASONS) {
+      for (const contrast of ["standard", "high-contrast"] as const) {
+        const report = inspectHoleIllustrationGraphicContrast(biome, season, contrast);
+        expect(report.styleId).toBe(`${biome}:${season}`);
+        expect(report.threshold).toBe(HOLE_ILLUSTRATION_NON_TEXT_CONTRAST_MINIMUM);
+        expect(report.pairs).toHaveLength(contrast === "high-contrast" ? 31 : 20);
+        expect(Object.isFrozen(report)).toBe(true);
+        expect(report.pairs.some((pair) => pair.id.startsWith("terrain:") && pair.id.endsWith(":outline")))
+          .toBe(contrast === "high-contrast");
+        expect(report.pairs.find((pair) => pair.id === "route:core:halo"))
+          .toMatchObject({ requiredForCertification: true });
+        evidence.push(`${report.styleId}:${contrast}:${report.minimumRatio.toFixed(12)}:${report.meetsThreshold}`);
+        if (contrast === "high-contrast") {
+          expect(report.meetsThreshold).toBe(true);
+          expect(report.minimumRatio).toBeGreaterThanOrEqual(3);
+          expect(report.pairs.find((pair) => pair.id === "route:halo:outline"))
+            .toMatchObject({ ratio: 21, requiredForCertification: true });
+          certifiedMinimum = Math.min(certifiedMinimum, report.minimumRatio);
+          highContrastReports++;
+        }
+        reports++;
+      }
+    }
+    expect(reports).toBe(24);
+    expect(highContrastReports).toBe(12);
+    expect(certifiedMinimum).toBeCloseTo(3.681979343743816, 12);
+    expect(hashCanonicalValue(evidence)).toBe("338f2913");
+  });
+
+  it("preflights exact SVG and bounded RGBA budgets for pixel ratios 1 through 4", () => {
+    const snapshot = releasedComplexSnapshot();
+    const planned = createHoleIllustrationRenderPlan(snapshot, {
+      frame: "tee-to-green",
+      biome: "links",
+      season: "autumn",
+      contrast: "high-contrast",
+      viewport: { width: 96, height: 72, padding: 0.08 },
+    });
+    expect(planned.complete).toBe(true);
+    if (!planned.complete) return;
+    const svg = renderHoleIllustrationSvg(planned.plan);
+    expect(svg.complete).toBe(true);
+    if (!svg.complete) return;
+
+    const evidence: string[] = [];
+    for (const pixelRatio of [1, 2, 3, 4]) {
+      const budget = preflightHoleIllustrationRender(planned.plan, { pixelRatio });
+      expect(budget).toEqual(preflightHoleIllustrationRender(planned.plan, { pixelRatio }));
+      expect(budget.complete).toBe(true);
+      if (!budget.complete) continue;
+      expect(budget.svg).toMatchObject({ characters: svg.svg.length, withinLimit: true });
+      expect(budget.rgba).toMatchObject({
+        pixelRatio,
+        width: 96 * pixelRatio,
+        height: 72 * pixelRatio,
+        pixels: 96 * 72 * pixelRatio ** 2,
+        rgbaBytes: 96 * 72 * pixelRatio ** 2 * 4,
+        coverageBytes: 96 * 72 * pixelRatio ** 2,
+        allocationBytes: 96 * 72 * pixelRatio ** 2 * 5,
+        withinLimits: true,
+        pixelVisitEstimateExact: true,
+      });
+      const rgba = renderHoleIllustrationRgba(planned.plan, { pixelRatio });
+      expect(rgba.complete).toBe(true);
+      if (!rgba.complete) continue;
+      expect(rgba.data).toHaveLength(budget.rgba.rgbaBytes);
+      evidence.push(`${pixelRatio}:${budget.rgba.estimatedPixelVisits}:${hashBytes(rgba.data)}`);
+    }
+    expect(hashCanonicalValue(evidence)).toBe("69917a72");
+  });
+
+  it("keeps standard and high-contrast route halos below visible tee and pin endpoints at 1x through 4x", () => {
+    const snapshot = releasedComplexSnapshot();
+    for (const contrast of ["standard", "high-contrast"] as const) {
+      const planned = createHoleIllustrationRenderPlan(snapshot, {
+        frame: "tee-to-green",
+        biome: "links",
+        season: "autumn",
+        contrast,
+        viewport: { width: 96, height: 72, padding: 0.08 },
+      });
+      expect(planned.complete).toBe(true);
+      if (!planned.complete) continue;
+      const svg = renderHoleIllustrationSvg(planned.plan);
+      expect(svg.complete).toBe(true);
+      if (!svg.complete) continue;
+      expect(svg.svg.indexOf('data-layer="route"')).toBeLessThan(svg.svg.indexOf('data-layer="tee"'));
+      expect(svg.svg.indexOf('data-layer="tee"')).toBeLessThan(svg.svg.indexOf('data-layer="pin"'));
+      expect(svg.svg).toContain('id="authoritative-route-halo"');
+
+      const tee = planned.plan.layers.find((layer) => layer.id === "tee")?.primitives[0];
+      const pin = planned.plan.layers.find((layer) => layer.id === "pin")?.primitives[0];
+      expect(tee?.kind === "ellipse" && pin?.kind === "ellipse").toBe(true);
+      if (tee?.kind !== "ellipse" || pin?.kind !== "ellipse") continue;
+      const palette = resolveHoleIllustrationStyle("links", "autumn", contrast);
+      for (const marker of [tee, pin]) {
+        const strokePixels = marker.strokeWidth! * Math.min(
+          planned.plan.settings.viewport.width,
+          planned.plan.settings.viewport.height,
+        );
+        expect(marker.radius.x * planned.plan.settings.viewport.width * 2 - strokePixels)
+          .toBeGreaterThanOrEqual(HOLE_ILLUSTRATION_ENDPOINT_MARKER_MIN_INNER_DIAMETER);
+        expect(marker.radius.y * planned.plan.settings.viewport.height * 2 - strokePixels)
+          .toBeGreaterThanOrEqual(HOLE_ILLUSTRATION_ENDPOINT_MARKER_MIN_INNER_DIAMETER);
+      }
+      for (const pixelRatio of [1, 2, 3, 4]) {
+        const rgba = renderHoleIllustrationRgba(planned.plan, { pixelRatio });
+        expect(rgba.complete).toBe(true);
+        if (!rgba.complete) continue;
+        expect(pixel(rgba.data, rgba.width,
+          Math.floor(tee.center.x * rgba.width), Math.floor(tee.center.y * rgba.height)))
+          .toEqual(opaqueHex(palette.tee.fill));
+        expect(pixel(rgba.data, rgba.width,
+          Math.floor(pin.center.x * rgba.width), Math.floor(pin.center.y * rgba.height)))
+          .toEqual(opaqueHex(palette.pin.fill));
+      }
+    }
+  });
+
+  it("accepts the full tiny-axis producer viewport domain without weakening exact geometry", () => {
+    const snapshot = releasedComplexSnapshot();
+    const viewports = [
+      { width: 1, height: 1 },
+      { width: 1, height: 100 },
+      { width: 100, height: 1 },
+      { width: 2, height: 2 },
+      { width: 2, height: 100 },
+      { width: 100, height: 2 },
+      { width: 3, height: 3 },
+    ] as const;
+    const evidence: string[] = [];
+    let cases = 0;
+    let maximumStrokeWidth = 0;
+    let maximumEllipseRadius = 0;
+    for (const viewport of viewports) for (const frame of ["north-up", "tee-to-green"] as const) {
+      const planned = createHoleIllustrationRenderPlan(snapshot, {
+        frame,
+        biome: "links",
+        season: "autumn",
+        contrast: "high-contrast",
+        viewport: { ...viewport, padding: 0.08 },
+      });
+      expect(planned.complete).toBe(true);
+      if (!planned.complete) continue;
+      for (const item of planned.plan.layers.flatMap((layer) => layer.primitives)) {
+        maximumStrokeWidth = Math.max(maximumStrokeWidth, item.strokeWidth ?? 0);
+        if (item.kind === "ellipse") {
+          maximumEllipseRadius = Math.max(maximumEllipseRadius, item.radius.x, item.radius.y);
+        }
+      }
+      const budget = preflightHoleIllustrationRender(planned.plan, { pixelRatio: 1 });
+      const svg = renderHoleIllustrationSvg(planned.plan);
+      const rgba = renderHoleIllustrationRgba(planned.plan, { pixelRatio: 1 });
+      expect(budget).toMatchObject({ complete: true, svg: { withinLimit: true }, rgba: { withinLimits: true } });
+      expect(svg).toMatchObject({ complete: true, planHash: planned.plan.hash });
+      expect(rgba).toMatchObject({
+        complete: true,
+        width: viewport.width,
+        height: viewport.height,
+        planHash: planned.plan.hash,
+      });
+      if (budget.complete && svg.complete && rgba.complete) {
+        evidence.push([
+          viewport.width, viewport.height, frame, planned.plan.hash,
+          budget.rgba.estimatedPixelVisits, hashCanonicalValue(svg.svg), hashBytes(rgba.data),
+        ].join(":"));
+      }
+      cases++;
+    }
+    expect(cases).toBe(14);
+    expect(maximumStrokeWidth).toBe(3);
+    expect(maximumEllipseRadius).toBe(2);
+    expect(hashCanonicalValue(evidence)).toBe("c1dedb55");
+  });
+
+  it("rejects resealed geometry beyond the tight tiny-axis producer extrema", () => {
+    const planned = createHoleIllustrationRenderPlan(releasedComplexSnapshot(), {
+      frame: "north-up",
+      biome: "links",
+      season: "autumn",
+      contrast: "high-contrast",
+      viewport: { width: 1, height: 1, padding: 0.08 },
+    });
+    expect(planned.complete).toBe(true);
+    if (!planned.complete) return;
+    const oversizedStroke = sealPlan({
+      ...planned.plan,
+      layers: planned.plan.layers.map((layer) => ({
+        ...layer,
+        primitives: layer.primitives.map((item) => item.id === "authoritative-route-halo"
+          ? { ...item, strokeWidth: 3.000_001 }
+          : item),
+      })),
+      hash: undefined,
+    });
+    const oversizedRadius = sealPlan({
+      ...planned.plan,
+      layers: planned.plan.layers.map((layer) => ({
+        ...layer,
+        primitives: layer.primitives.map((item) => item.id === "selected-tee" && item.kind === "ellipse"
+          ? { ...item, radius: { ...item.radius, x: 2.000_001 } }
+          : item),
+      })),
+      hash: undefined,
+    });
+    for (const hostile of [oversizedStroke, oversizedRadius]) {
+      expect(preflightHoleIllustrationRender(hostile, { pixelRatio: 1 }))
+        .toMatchObject({ complete: false, code: "INVALID_PLAN" });
+      expect(renderHoleIllustrationSvg(hostile)).toMatchObject({ complete: false, code: "INVALID_PLAN" });
+      expect(renderHoleIllustrationRgba(hostile, { pixelRatio: 1 }))
+        .toMatchObject({ complete: false, code: "INVALID_PLAN" });
+    }
   });
 
   it("accepts real cardinal, diagonal, reverse, and dogleg projections in both frames", () => {
@@ -388,7 +699,7 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
         planHash: planned.plan.hash,
       });
     }
-    expect(hashes).toEqual(["815044c0", "a97c723d"]);
+    expect(hashes).toEqual(["bccefe31", "255fc713"]);
   });
 
   it("rejects a compensated tee-to-green origin outside the Wave 0 frame contract", () => {
@@ -455,7 +766,7 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
     expect(result.svg).toContain("opacity=\"0.12\"");
     expect(result.svg).toContain("stroke-width=\"1.2\"");
     expect(result.svg).toContain("stroke-linecap=\"round\" stroke-linejoin=\"round\"");
-    expect(hashCanonicalValue(result.svg)).toBe("415e435c");
+    expect(hashCanonicalValue(result.svg)).toBe("a06060bb");
   });
 
   it("is byte-stable across repeat SVG and RGBA renders", () => {
@@ -472,7 +783,7 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
     expect(result.data).toHaveLength(100 * 80 * 4);
     expect(pixel(result.data, result.width, 0, 0)).toEqual([255, 255, 255, 255]);
     expect(pixel(result.data, result.width, 42, 48)).toEqual([96, 176, 68, 255]);
-    expect(pixel(result.data, result.width, 81, 61)).toEqual([125, 200, 93, 255]);
+    expect(pixel(result.data, result.width, 81, 68)).toEqual([125, 200, 93, 255]);
     expect(pixel(result.data, result.width, 18, 12)).toEqual([224, 168, 92, 255]);
     expect(pixel(result.data, result.width, 85, 65)).toEqual([208, 0, 0, 255]);
   });
@@ -523,6 +834,8 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
     }));
     const outOfBounds = sealPlan({ ...source, layers: outOfBoundsLayers, hash: undefined });
     for (const plan of [tampered, forged, reordered, outOfBounds]) {
+      expect(preflightHoleIllustrationRender(plan, { pixelRatio: 1 }))
+        .toMatchObject({ complete: false, code: "INVALID_PLAN" });
       expect(renderHoleIllustrationSvg(plan)).toMatchObject({ complete: false, code: "INVALID_PLAN" });
       expect(renderHoleIllustrationRgba(plan, { pixelRatio: 1 })).toMatchObject({ complete: false, code: "INVALID_PLAN" });
     }
@@ -548,7 +861,7 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
     const paintless = sealPlan({
       ...source,
       layers: paintlessLayers,
-      budget: { ...source.budget, sourceFeatures: 402, primitiveCount: 412, pointCount: 453 },
+      budget: { ...source.budget, sourceFeatures: 402, primitiveCount: 413, pointCount: 456 },
       hash: undefined,
     });
     expect(renderHoleIllustrationRgba(paintless, { pixelRatio: 1 }))
@@ -569,6 +882,7 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
       primitives: layer.primitives.map((item) => {
         if (item.id.startsWith("terrain-")) return { ...item, strokeWidth: 0.003125 };
         if (item.id.startsWith("surrounding-")) return { ...item, strokeWidth: 0.006875 };
+        if (item.id === "authoritative-route-halo") return { ...item, strokeWidth: 0.0175 };
         if (item.id === "selected-tee" || item.id === "selected-pin") return { ...item, strokeWidth: 0.01 };
         return item;
       }),
@@ -577,8 +891,16 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
       ...source,
       settings: { ...source.settings, viewport: { ...source.settings.viewport, width: 500, height: 400 } },
       layers: scaledLayers,
-      budget: { ...source.budget, sourceFeatures: 4_002, primitiveCount: 4_012, pointCount: 4_053 },
+      budget: { ...source.budget, sourceFeatures: 4_002, primitiveCount: 4_013, pointCount: 4_056 },
       hash: undefined,
+    });
+    expect(preflightHoleIllustrationRender(dense, { pixelRatio: 4 })).toMatchObject({
+      complete: true,
+      rgba: {
+        estimatedPixelVisits: HOLE_ILLUSTRATION_OUTPUT_LIMITS.maxRasterPixelVisits + 1,
+        pixelVisitEstimateExact: false,
+        withinLimits: false,
+      },
     });
     expect(renderHoleIllustrationRgba(dense, { pixelRatio: 4 }))
       .toMatchObject({ complete: false, code: "ALLOCATION_EXCEEDED" });
@@ -589,9 +911,10 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
     const result = renderHoleIllustrationRgba(source, { pixelRatio: 2 });
     expect(result.complete).toBe(true);
     if (!result.complete) return;
-    expect(pixel(result.data, result.width, 84, 84)).toEqual([12, 21, 8, 255]);
-    expect(pixel(result.data, result.width, 89, 89)).toEqual([12, 21, 8, 255]);
-    expect(pixel(result.data, result.width, 29, 29)).toEqual([31, 31, 31, 255]);
+    expect(pixel(result.data, result.width, 84, 84)).toEqual([31, 31, 31, 255]);
+    expect(pixel(result.data, result.width, 89, 89)).toEqual([31, 31, 31, 255]);
+    expect(pixel(result.data, result.width, 29, 29)).toEqual([255, 255, 255, 255]);
+    expect(pixel(result.data, result.width, 170, 130)).toEqual([208, 0, 0, 255]);
     const svg = renderHoleIllustrationSvg(source);
     expect(svg.complete).toBe(true);
     if (svg.complete) {
@@ -704,6 +1027,8 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
   it("rejects unsafe dimensions, pixel ratios, and raster allocations before output", () => {
     const source = fixture();
     for (const pixelRatio of [0, 1.5, 5, Number.NaN]) {
+      expect(preflightHoleIllustrationRender(source, { pixelRatio }))
+        .toMatchObject({ complete: false, code: "INVALID_OPTIONS" });
       expect(renderHoleIllustrationRgba(source, { pixelRatio })).toMatchObject({ complete: false, code: "INVALID_OPTIONS" });
     }
     const hugeResult = createHoleIllustrationRenderPlan(releasedSnapshot(), {
@@ -717,6 +1042,11 @@ describe("ZK-768 DOM-free deterministic illustration adapters", () => {
     if (!hugeResult.complete) return;
     const huge = hugeResult.plan;
     expect(renderHoleIllustrationSvg(huge)).toMatchObject({ complete: true, width: 8_192, height: 8_192 });
+    expect(preflightHoleIllustrationRender(huge, { pixelRatio: 1 })).toMatchObject({
+      complete: true,
+      svg: { withinLimit: true },
+      rgba: { withinLimits: false },
+    });
     expect(renderHoleIllustrationRgba(huge, { pixelRatio: 1 })).toMatchObject({ complete: false, code: "ALLOCATION_EXCEEDED" });
 
     const invalidDimensions = sealPlan({
