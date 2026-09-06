@@ -151,6 +151,7 @@ import { TutorialOffer } from "./ui/onboarding/TutorialOffer";
 import {
   advanceTutorialProgress,
   claimTutorialPreviewReward,
+  createTutorialProgress,
   loadTutorialProgress,
   reconcileTutorialSession,
   reconcileTutorialRewardTransaction,
@@ -166,6 +167,7 @@ import {
   type TutorialProgress,
 } from "./game/onboarding/tutorial";
 import { validHoleCount } from "./game/onboarding/invitedPreview";
+import { newOpeningDemo, openingShots, openingTargetPoints } from "./game/onboarding/openingDemo";
 import { loadAppProfile, saveAppProfile, updateAppProfile, type AppProfile } from "./game/onboarding/profile";
 import { advisorMessages, allowsMessage, type AdvisorMessage } from "./game/advisor/advisor";
 import { INITIAL_SCREEN_FLOW, reduceScreenFlow } from "./app/screenFlow";
@@ -766,6 +768,15 @@ export default function App() {
   const [golfopediaEntry, setGolfopediaEntry] = useState<string | null | undefined>(undefined);
   const [tutorialProgress, setTutorialProgress] = useState<TutorialProgress | null>(() => loadTutorialProgress());
   const activeTutorial = tutorialProgress?.active === true ? tutorialProgress : null;
+  const openingReadOnly = !!activeTutorial?.opening && ["invite-group", "observe-play", "review-reaction", "creative-reward", "retest-play", "compare-preview"].includes(activeTutorial.stage);
+  const openingMarker = useMemo(() => {
+    if (!activeTutorial?.opening || !["observe-play", "retest-play"].includes(activeTutorial.stage)) return null;
+    const evidence = activeTutorial.stage === "retest-play" ? activeTutorial.opening.candidate : activeTutorial.receipts.preview.evidence;
+    const shots = openingShots(evidence);
+    return shots[Math.min(activeTutorial.opening.cursor, shots.length - 1)] ?? null;
+  }, [activeTutorial]);
+  const openingTargets = useMemo(() => activeTutorial?.opening && ["review-reaction", "creative-reward", "improve-hole"].includes(activeTutorial.stage)
+    ? openingTargetPoints(course, activeTutorial.opening) : [], [activeTutorial, course]);
   const [tutorialSaveStatus, setTutorialSaveStatus] = useState<"saving" | "saved">("saving");
   const [tutorialMilestoneQueue, setTutorialMilestoneQueue] = useState<Array<3 | 6 | 9>>([]);
   const tutorialSaveSequenceRef = useRef(0);
@@ -1085,7 +1096,7 @@ export default function App() {
 
   // Real-time "living course" simulation: golfers arrive, play, and pay live.
   const live = useLiveSimulation({
-    enabled: screen === "game" && !world.isBankrupt,
+    enabled: screen === "game" && !world.isBankrupt && !activeTutorial?.opening,
     course,
     world,
     setWorld,
@@ -2776,6 +2787,10 @@ export default function App() {
       playerRoundResumeSpeedRef.current = loaded.live?.speed === "paused" ? "1x" : loaded.live?.speed ?? "1x";
       live.setSpeed("paused");
     }
+    if (loaded.tutorial?.active && loaded.tutorial.opening) {
+      live.setSpeed("paused");
+      if (loaded.tutorial.stage === "improve-hole") prepareTutorialPaintCorridor();
+    }
     if (loaded.tutorial?.active && (loaded.tutorial.stage === "place-hole" || loaded.tutorial.stage === "public-three")) {
       const nextIncompleteHole = loaded.course.holes.findIndex((hole) => !hole.tee || !hole.green);
       if (nextIncompleteHole >= 0) {
@@ -2833,6 +2848,7 @@ export default function App() {
         stage: tutorialProgress?.stage ?? null,
         profile: tutorialProgress?.profile ?? null,
         completion: tutorialProgress?.completion ?? null,
+        opening: tutorialProgress?.opening ?? null,
         preview: tutorialProgress?.receipts.preview.evidence ? {
           id: tutorialProgress.receipts.preview.evidence.id,
           holeId: tutorialProgress.receipts.preview.evidence.holeId,
@@ -4132,14 +4148,23 @@ export default function App() {
     flowDispatch({ type: "OPEN_SETUP" });
   }
 
-  function startNewGame(setup: GameSetup) {
+  function startNewGame(setup: GameSetup, openingDemo = false) {
     void audio.unlock();
     void audio.playSfx("confirm");
     setPendingLoadingContext(neutralLoadingBiomeContext(setup.theme));
     flowDispatch({ type: "BEGIN_LOADING", label: t("loading.growCourse") });
     window.setTimeout(() => {
       restartRun(setup);
-      live.setSpeed(appProfile.gameplay.defaultGameSpeed);
+      if (openingDemo) {
+        const current = gameSession.getState();
+        const progress = { ...createTutorialProgress(current.course, current.world), opening: newOpeningDemo() };
+        setTutorialProgress(progress);
+        saveTutorialProgress(progress);
+        setShowTutorialOffer(false);
+        updateAppProfile({ tutorialOffered: true });
+        prepareTutorialPaintCorridor();
+      }
+      live.setSpeed(openingDemo ? "paused" : appProfile.gameplay.defaultGameSpeed);
       setPendingLoadingContext(null);
       flowDispatch({ type: "ENTER_GAME" });
     }, 0);
@@ -5355,6 +5380,11 @@ export default function App() {
     }
     if (next.stage === "public-three") exitHoleEditMode();
     if (next.stage === "paint-fairway") prepareTutorialPaintCorridor();
+    if (next.stage === "improve-hole") {
+      prepareTutorialPaintCorridor();
+      activateTerrainEditing("curve", "fairway");
+      setShowShotPlan(false);
+    }
     if (next.stage === "place-hole" || next.stage === "public-three") {
       const incompleteHole = course.holes.findIndex((hole) => !hole.tee || !hole.green);
       setActiveHoleIndex(incompleteHole >= 0 ? incompleteHole : 0);
@@ -5472,6 +5502,7 @@ export default function App() {
         canLoad={canLoadFromMenu}
         onNewGame={newGameFromMenu}
         onQuickStart={() => IS_DEMO ? startScenario(SCENARIOS[0]) : startNewGame(quickStartSetup())}
+        onOpeningDemo={!IS_DEMO ? () => startNewGame({ ...quickStartSetup(), experienceProfile: "classic", economicPressure: "balanced" }, true) : undefined}
         onLoadGame={loadFromMenu}
         onContinue={() => void continueFromMenu()}
         onOptions={() => flowDispatch({ type: "OPEN_MODAL", modal: "options" })}
@@ -5548,6 +5579,17 @@ export default function App() {
           onSkipModule={() => finishTutorial(skipTutorialModule(activeTutorial))}
           onRestart={restartTutorial}
           saveStatus={tutorialSaveStatus}
+          courseWidth={course.width}
+          onOpeningCursor={(cursor) => {
+            if (!activeTutorial.opening) return;
+            setTutorialProgress({ ...activeTutorial, opening: { ...activeTutorial.opening, cursor: Math.max(0, Math.min(24, cursor)) } });
+          }}
+          onOpeningRetry={() => {
+            if (!activeTutorial.opening) return;
+            setTutorialProgress({ ...activeTutorial, stage: "improve-hole", opening: { ...activeTutorial.opening, cursor: 0 } });
+            prepareTutorialPaintCorridor();
+            activateTerrainEditing("curve", "fairway");
+          }}
         />
       )}
       {showTutorialOffer && !flow.paused && (
@@ -5697,6 +5739,7 @@ export default function App() {
                 draftTee={draftTee}
                 draftGreen={draftGreen}
                 onClickTile={(x, y) => {
+                  if (openingReadOnly) return;
                   if (playerRoundLocksEditing) {
                     if (activePlayerRound?.phase === "awaiting_shot") setPlayerShotAim({ x, y });
                     return;
@@ -5704,12 +5747,12 @@ export default function App() {
                   handleCanvasClick(x, y);
                 }}
                 onPreviewTerrainStroke={getTerrainStrokePreview}
-                onCommitTerrainStroke={commitTerrainStroke}
+                onCommitTerrainStroke={openingReadOnly ? undefined : commitTerrainStroke}
                 terrainTool={terrainTool}
                 onPreviewSurfaceFeatureEdit={getSurfaceFeatureEditPreview}
-                onCommitSurfaceFeatureEdit={commitSurfaceFeatureEdit}
+                onCommitSurfaceFeatureEdit={openingReadOnly ? undefined : commitSurfaceFeatureEdit}
                 onPreviewFineGreenStroke={getFineGreenStrokePreview}
-                onCommitFineGreenStroke={commitFineGreenStroke}
+                onCommitFineGreenStroke={openingReadOnly ? undefined : commitFineGreenStroke}
                 selectedTerrain={selected}
                 worldCash={world.cash}
                 flagColor={legacy.selected.flagColor}
@@ -5728,6 +5771,8 @@ export default function App() {
                 resortOperations={world.enterprise?.resort}
                 playerRound={activePlayerRound}
                 playerShotAim={playerShotAim}
+                openingMarker={openingMarker}
+                openingTargets={openingTargets}
                 playableShotMode={activePlayerRound?.phase === "awaiting_shot"}
                 playerProWorldDisplay={playerProSocialText?.worldDisplay ?? null}
                 sculptRadius={sculptRadius}
