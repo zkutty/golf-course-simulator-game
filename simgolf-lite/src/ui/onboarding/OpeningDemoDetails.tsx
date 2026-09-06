@@ -3,11 +3,12 @@ import { openingShots } from "../../game/onboarding/openingDemo";
 import { useI18n } from "../../i18n/useI18n";
 import { presenterButtonStyle } from "./presenterStyles";
 
-export function OpeningDemoDetails({ progress, width, onCursor, onRetry }: {
+export function OpeningDemoDetails({ progress, width, onCursor, onRetry, onFocus }: {
   progress: TutorialProgress;
   width: number;
   onCursor: (cursor: number) => void;
   onRetry: () => void;
+  onFocus: () => void;
 }) {
   const { t } = useI18n();
   const opening = progress.opening;
@@ -19,6 +20,7 @@ export function OpeningDemoDetails({ progress, width, onCursor, onRetry }: {
   const marker = shots[Math.min(opening.cursor, shots.length - 1)];
   const target = opening.targetCells[0];
   return <div data-testid="opening-demo-details" style={{ display: "grid", gap: 8, fontSize: 13, lineHeight: 1.45 }}>
+    <button style={presenterButtonStyle} onClick={onFocus}>{t("opening.focus")}</button>
     {playing && <>
       <div role="status" aria-live="polite" data-testid="opening-current-shot">{marker && t("opening.shot", { name: marker.golferName, shot: marker.shot.shotNumber, intent: marker.shot.intent, club: marker.shot.club, lie: marker.shot.lieAfter })}</div>
       <p style={{ margin: 0 }}>{t("opening.markerLegend")}</p>

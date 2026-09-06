@@ -25,6 +25,7 @@ export function TutorialOverlay(props: {
   courseWidth: number;
   onOpeningCursor: (cursor: number) => void;
   onOpeningRetry: () => void;
+  onOpeningFocus: () => void;
 }) {
   const { t } = useI18n();
   const [rects, setRects] = useState<Rect[]>([]);
@@ -81,6 +82,16 @@ export function TutorialOverlay(props: {
       const active = document.activeElement;
       const first = items[0];
       const last = items[items.length - 1];
+      if (props.progress.opening) {
+        // Guide card + allowed editor controls are not adjacent in DOM order.
+        // Explicit traversal prevents Tab escaping through blocked controls.
+        event.preventDefault();
+        const index = items.indexOf(active as HTMLElement);
+        const next = index < 0 ? (event.shiftKey ? items.length - 1 : 0)
+          : (index + (event.shiftKey ? -1 : 1) + items.length) % items.length;
+        items[next].focus({ preventScroll: true });
+        return;
+      }
       if (!items.includes(active as HTMLElement)) {
         event.preventDefault();
         (event.shiftKey ? last : first).focus({ preventScroll: true });
@@ -201,7 +212,7 @@ export function TutorialOverlay(props: {
           body={t(props.step.bodyKey)}
           expression={props.step.expression}
           details={<>
-            <OpeningDemoDetails progress={props.progress} width={props.courseWidth} onCursor={props.onOpeningCursor} onRetry={props.onOpeningRetry} />
+            <OpeningDemoDetails progress={props.progress} width={props.courseWidth} onCursor={props.onOpeningCursor} onRetry={props.onOpeningRetry} onFocus={props.onOpeningFocus} />
             {showEvidence ? (
             <div data-testid="invited-preview-evidence" style={{ display: "grid", gap: 7, maxHeight: 190, overflowY: "auto", fontSize: 11, lineHeight: 1.35 }}>
               <b>{t("tutorial.preview.groupLabel")}</b>

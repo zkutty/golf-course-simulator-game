@@ -5580,6 +5580,18 @@ export default function App() {
           onRestart={restartTutorial}
           saveStatus={tutorialSaveStatus}
           courseWidth={course.width}
+          onOpeningFocus={() => {
+            const index = activeTutorial.receipts.preview.evidence?.holeIndex;
+            if (index === undefined) return;
+            const hole = course.holes[index];
+            if (!hole?.tee || !hole.green) return;
+            const camera = computeZoomPreset("fit", course, hole, index, paneSize.width, paneSize.height, tileSize);
+            if (!camera) return;
+            setActiveHoleIndex(index);
+            setHoleEditMode("hole");
+            holeEditCameraManualRef.current = true;
+            setHoleEditCamera(camera);
+          }}
           onOpeningCursor={(cursor) => {
             if (!activeTutorial.opening) return;
             setTutorialProgress({ ...activeTutorial, opening: { ...activeTutorial.opening, cursor: Math.max(0, Math.min(24, cursor)) } });

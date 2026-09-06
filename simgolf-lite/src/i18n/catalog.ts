@@ -7,6 +7,7 @@ export const en = {
   ...generatedEn,
   "app.name": "CourseCraft",
   "opening.entry": "First-hole operator demo",
+  "opening.focus": "Focus on preview hole",
   "opening.entryHint": "One hole · private group · design, watch, improve",
   "opening.improve.eyebrow": "Private preview · redesign",
   "opening.improve.title": "Give that landing more room",

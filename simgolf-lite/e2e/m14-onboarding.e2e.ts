@@ -136,6 +136,25 @@ async function setInGameLocale(page: Page, locale: "en" | "pseudo") {
   await expect(page.locator("html")).toHaveAttribute("data-locale", locale);
 }
 
+async function focusOpeningHole(page: Page) {
+  await page.getByRole("button", { name: "Focus on preview hole", exact: true }).click();
+  // Observe the real camera glide; never mutate the renderer to make a click pass.
+  await page.evaluate(async () => {
+    let previous: { x: number; y: number } | null = null;
+    let stable = 0;
+    const deadline = performance.now() + 15000;
+    while (performance.now() < deadline) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const point = window.__coursecraftPixiTest!.tileToScreen(0, 0);
+      if (point && previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 0.01) stable += 1;
+      else stable = 0;
+      if (stable >= 12) return;
+      previous = point;
+    }
+    throw new Error("Preview-hole camera did not settle");
+  });
+}
+
 async function pagePoint(page: Page, target: Locator, point: { x: number; y: number }) {
   const projection = await page.evaluate(({ x, y }) => {
     const renderer = window.__coursecraftPixiTest!;
@@ -249,6 +268,7 @@ test.describe("ZK-1106 private operator opening", () => {
     await page.getByRole("button", { name: "Invite group", exact: true }).click();
     await expectStep(page, "observe-play");
     await expect(page.getByTestId("opening-current-shot")).not.toBeEmpty();
+    await focusOpeningHole(page);
     await capture("03-recorded-shot-on-course");
     await page.getByRole("button", { name: "Next recorded shot", exact: true }).click();
     const observed = await state();
@@ -274,11 +294,19 @@ test.describe("ZK-1106 private operator opening", () => {
     expect(target).toBeDefined();
     const width = rewarded.course.width;
     const point = { x: target % width, y: Math.floor(target / width) };
+    await focusOpeningHole(page);
     await dragRoute(page, await canvas(page), point, { x: point.x + 1, y: point.y });
     await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
     await capture("05-real-fairway-edit");
     const edited = await state();
     expect(edited.economy.cash).toBeLessThan(rewarded.economy.cash);
+    await page.keyboard.press("Control+z");
+    await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeDisabled();
+    expect((await state()).economy).toEqual(rewarded.economy);
+    expect((await state()).onboarding.reward).toEqual(rewarded.onboarding.reward);
+    await page.keyboard.press("Control+Shift+z");
+    await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
+    expect((await state()).economy).toEqual(edited.economy);
     await page.getByRole("button", { name: "Retest the same group", exact: true }).click();
     await expectStep(page, "retest-play");
     await page.getByRole("button", { name: "Skip playback to summary", exact: true }).click();
@@ -292,6 +320,12 @@ test.describe("ZK-1106 private operator opening", () => {
     expect(compared.onboarding.opening.candidate.runSeed).toBe(before.onboarding.opening.candidate?.runSeed ?? 424242);
     await expectTutorialInViewport(page);
     await capture("06-honest-comparison");
+    await expect(overlay(page).getByText("Progress saved", { exact: true })).toBeVisible();
+    await page.reload();
+    await page.getByRole("button", { name: /Continue/ }).click();
+    await expectStep(page, "compare-preview");
+    expect((await state()).onboarding.opening.candidate).toEqual(compared.onboarding.opening.candidate);
+    expect((await state()).economy).toEqual(compared.economy);
     await testInfo.attach("opening-evidence-context", { body: JSON.stringify({ seed: 424242, viewport: page.viewportSize(), elapsedSeconds: (Date.now() - started) / 1000, before: observed.onboarding.preview, after: compared.onboarding.opening.candidate, economy: { before: before.economy, rewarded: rewarded.economy, edited: edited.economy } }, null, 2), contentType: "application/json" });
     await page.getByRole("button", { name: "Finish private demo", exact: true }).click();
     await expect(overlay(page)).toHaveCount(0);
