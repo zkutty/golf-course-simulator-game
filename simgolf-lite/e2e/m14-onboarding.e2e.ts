@@ -8,7 +8,8 @@ test.setTimeout(900_000);
 // The animated Pixi canvas makes retained traces/videos enormous during this
 // deliberately long real-authoring acceptance path. Stage screenshots and the
 // two intentional product-evidence captures remain available.
-test.use({ trace: "off", video: "off", screenshot: "only-on-failure" });
+const openingEvidence = process.env.COURSECRAFT_OPENING_EVIDENCE === "1";
+test.use({ trace: openingEvidence ? "retain-on-failure" : "off", video: openingEvidence ? "on" : "off", screenshot: "only-on-failure" });
 test.beforeEach(async ({ page }) => page.setDefaultTimeout(30_000));
 
 type Surface = ReturnType<NonNullable<Window["__coursecraftTest"]>["terrainSurfaceState"]>;
@@ -229,7 +230,6 @@ async function buildAdditionalHole(page: Page, freezeLive = false) {
 }
 
 test.describe("ZK-1106 private operator opening", () => {
-  test.use({ video: "on", trace: "retain-on-failure" });
   test("real UI builds, watches, edits and compares one private hole", async ({ page }, testInfo) => {
     const state = () => page.evaluate(() => JSON.parse(window.render_game_to_text!()));
     const capture = async (name: string) => {

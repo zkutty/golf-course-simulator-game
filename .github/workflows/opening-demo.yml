@@ -28,6 +28,8 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: Exercise the private opening through real UI controls
         run: npx playwright test e2e/m14-onboarding.e2e.ts --grep 'ZK-1106' --retries=0
+        env:
+          COURSECRAFT_OPENING_EVIDENCE: '1'
       - name: Retain opening video, screenshots and context
         if: always()
         uses: actions/upload-artifact@v4
