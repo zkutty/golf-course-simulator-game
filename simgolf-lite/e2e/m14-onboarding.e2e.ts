@@ -301,7 +301,8 @@ test.describe("ZK-1106 private operator opening", () => {
     const edited = await state();
     expect(edited.economy.cash).toBeLessThan(rewarded.economy.cash);
     await page.keyboard.press("Control+z");
-    await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeDisabled();
+    await expect(page.getByTestId("tutorial-primary-action")).toBeDisabled();
+    await expectStep(page, "improve-hole");
     expect((await state()).economy).toEqual(rewarded.economy);
     expect((await state()).onboarding.reward).toEqual(rewarded.onboarding.reward);
     await page.keyboard.press("Control+Shift+z");

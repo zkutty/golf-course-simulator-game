@@ -2,17 +2,18 @@ import { readFile, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { collectDesktopPackageEvidence } from "./desktop-package-evidence.mjs";
 import { assertDeliveryBudgets } from "./zk680-delivery-evidence.mjs";
 
-const output = path.resolve(new URL("../desktop-dist/", import.meta.url).pathname);
+const output = fileURLToPath(new URL("../desktop-dist/", import.meta.url));
 const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
 
 const evidence = await collectDesktopPackageEvidence(output);
 const delivery = await assertDeliveryBudgets({ desktopDirectory: output });
 const run = promisify(execFile);
 await run(process.execPath, ["scripts/zk681-packaged-worker-benchmark.mjs"], {
-  cwd: path.resolve(new URL("../", import.meta.url).pathname),
+  cwd: fileURLToPath(new URL("../", import.meta.url)),
   timeout: 150_000,
 });
 
