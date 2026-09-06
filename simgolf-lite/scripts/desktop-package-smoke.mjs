@@ -12,7 +12,9 @@ const packageJson = JSON.parse(await readFile(new URL("../package.json", import.
 const evidence = await collectDesktopPackageEvidence(output);
 const delivery = await assertDeliveryBudgets({ desktopDirectory: output });
 const run = promisify(execFile);
-await run(process.execPath, ["scripts/zk681-packaged-worker-benchmark.mjs"], {
+const benchmarkArgs = ["scripts/zk681-packaged-worker-benchmark.mjs"];
+if (process.platform === "win32") benchmarkArgs.push(path.join(output, "win-unpacked", "CourseCraft.exe"));
+await run(process.execPath, benchmarkArgs, {
   cwd: fileURLToPath(new URL("../", import.meta.url)),
   timeout: 150_000,
 });
