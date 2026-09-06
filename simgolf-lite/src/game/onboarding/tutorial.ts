@@ -1,5 +1,6 @@
 import type { Course, ExperienceProfile, WeekResult, World } from "../models/types";
 import type { MessageKey } from "../../i18n/catalog";
+import { hasOpeningEdit, normalizeOpeningDemo, openingShots, openingTargetCells, retestOpening, type OpeningDemo } from "./openingDemo";
 import {
   advancedJitLessons,
   applyInvitedPreviewReward,
@@ -37,6 +38,9 @@ export type TutorialStage =
   | "observe-play"
   | "review-reaction"
   | "creative-reward"
+  | "improve-hole"
+  | "retest-play"
+  | "compare-preview"
   | "public-three"
   | "course-pricing"
   | "staffing"
@@ -82,6 +86,7 @@ export interface TutorialProgress {
   jitQueue: string[];
   /** Retained only to explain compatibility recovery in diagnostics. */
   migratedLegacyStep?: number;
+  opening?: OpeningDemo;
 }
 
 export type TutorialViewMode = "COZY" | "ARCHITECT";
@@ -115,8 +120,13 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   { id: "graduation", eyebrowKey: "tutorial.operations.complete.eyebrow", titleKey: "tutorial.operations.complete.title", bodyKey: "tutorial.operations.complete.body", target: "course", expression: "excited", actionLabelKey: "tutorial.operations.complete.action" },
 ];
 
-const STEPS = Object.fromEntries(TUTORIAL_STEPS.map((step) => [step.id, step])) as Record<TutorialStage, TutorialStep>;
-const knownStages = new Set<TutorialStage>(TUTORIAL_STEPS.map((step) => step.id));
+const OPENING_STEPS: readonly TutorialStep[] = [
+  { id: "improve-hole", eyebrowKey: "opening.improve.eyebrow", titleKey: "opening.improve.title", bodyKey: "opening.improve.body", target: "terrain-palette", allowedTargets: ["terrain-palette", "editor-tools", "course"], expression: "neutral", actionLabelKey: "opening.retest.action" },
+  { id: "retest-play", eyebrowKey: "opening.retest.eyebrow", titleKey: "opening.retest.title", bodyKey: "opening.retest.body", target: "course", expression: "neutral", actionLabelKey: "opening.compare.action" },
+  { id: "compare-preview", eyebrowKey: "opening.compare.eyebrow", titleKey: "opening.compare.title", bodyKey: "opening.compare.body", target: "course", expression: "neutral", actionLabelKey: "opening.finish" },
+];
+const STEPS = Object.fromEntries([...TUTORIAL_STEPS, ...OPENING_STEPS].map((step) => [step.id, step])) as Record<TutorialStage, TutorialStep>;
+const knownStages = new Set<TutorialStage>([...TUTORIAL_STEPS, ...OPENING_STEPS].map((step) => step.id));
 
 function emptyReceipts(): OnboardingReceipts {
   return { preview: { status: "not-invited", evidence: null, rewardReceipt: null }, milestones: [] };
@@ -154,7 +164,8 @@ export function restartTutorialProgress(
 ): TutorialProgress {
   const fresh = createTutorialProgress(course, world, observedCompletedRounds);
   if (!previous) return fresh;
-  return { ...fresh, receipts: previous.receipts, jitQueue: previous.jitQueue };
+  // Restart the guide, not its immutable reward/baseline evidence.
+  return { ...fresh, receipts: previous.receipts, jitQueue: previous.jitQueue, ...(previous.opening ? { opening: { ...previous.opening, cursor: 0 } } : {}) };
 }
 
 export function resumeTutorialProgress(
@@ -172,6 +183,7 @@ export function resumeTutorialProgress(
 }
 
 export function tutorialStep(progress: TutorialProgress): TutorialStep {
+  if (progress.opening && progress.stage === "creative-reward") return { ...STEPS[progress.stage], actionLabelKey: progress.opening.targetCells.length ? "opening.improve.action" : "opening.finish", bodyKey: "opening.reward.body" };
   return STEPS[progress.stage];
 }
 
@@ -185,7 +197,12 @@ export function tutorialCanAdvance(progress: TutorialProgress, context: Tutorial
     case "place-hole": return context.course.holes.some((hole) => !!hole.tee && !!hole.green);
     case "validate-hole":
     case "invite-group": return validHoleCount(context.course) >= 1;
-    case "observe-play":
+    case "observe-play": return progress.opening
+      ? !!progress.receipts.preview.evidence && progress.opening.cursor >= openingShots(progress.receipts.preview.evidence).length
+      : progress.receipts.preview.evidence != null;
+    case "improve-hole": return !!progress.opening && hasOpeningEdit(context.course, progress.opening) && validHoleCount(context.course) === 1;
+    case "retest-play": return !!progress.opening?.candidate && progress.opening.cursor >= openingShots(progress.opening.candidate).length;
+    case "compare-preview": return !!progress.opening?.candidate;
     case "review-reaction": return progress.receipts.preview.evidence != null;
     case "public-three": return validHoleCount(context.course) >= 3;
     case "course-pricing": return context.course.baseGreenFee !== progress.baseline.greenFee;
@@ -209,8 +226,23 @@ export function advanceTutorialProgress(progress: TutorialProgress, context: Tut
     const retainedEvidence = progress.receipts.preview.evidence?.id === spentPreviewId ? progress.receipts.preview.evidence : null;
     const evidence = retainedEvidence ?? createInvitedPreviewEvidence(context.course, context.world);
     if (!evidence) return progress;
-    return { ...progress, stage: "observe-play", receipts: { ...progress.receipts, preview: { ...progress.receipts.preview, status: "observed", evidence } } };
+    return {
+      ...progress, stage: "observe-play",
+      receipts: { ...progress.receipts, preview: { ...progress.receipts.preview, status: "observed", evidence } },
+      ...(progress.opening ? { opening: { ...progress.opening, cursor: 0, targetCells: retainedEvidence ? progress.opening.targetCells : openingTargetCells(context.course, evidence) } } : {}),
+    };
   }
+  if (progress.opening && progress.stage === "creative-reward") return progress.opening.targetCells.length
+    ? { ...progress, stage: "improve-hole" }
+    : { ...progress, active: false, completion: "creative" };
+  if (progress.opening && progress.stage === "improve-hole") {
+    const baseline = progress.receipts.preview.evidence;
+    const candidate = baseline && retestOpening(context.course, context.world, baseline);
+    if (!candidate || candidate.holeFingerprint === baseline?.holeFingerprint) return progress;
+    return { ...progress, stage: "retest-play", opening: { ...progress.opening, candidate, cursor: 0 } };
+  }
+  if (progress.opening && progress.stage === "retest-play") return { ...progress, stage: "compare-preview" };
+  if (progress.opening && progress.stage === "compare-preview") return { ...progress, active: false, completion: "creative" };
   if (progress.stage === "review-reaction") {
     return progress;
   }
@@ -347,7 +379,8 @@ export function normalizeTutorialProgress(value: unknown): TutorialProgress | nu
       migratedLegacyStep: legacyIndex,
     };
   }
-  const stage = knownStages.has(candidate.stage as TutorialStage) ? candidate.stage as TutorialStage : "welcome";
+  const opening = normalizeOpeningDemo(candidate.opening);
+  const stage = knownStages.has(candidate.stage as TutorialStage) && (opening || !OPENING_STEPS.some((step) => step.id === candidate.stage)) ? candidate.stage as TutorialStage : "welcome";
   const profile = candidate.profile === "relaxed" || candidate.profile === "simulation" || candidate.profile === "classic" ? candidate.profile : "classic";
   const completion = candidate.completion === "creative" || candidate.completion === "full" || candidate.completion === "skipped" ? candidate.completion : "none";
   return {
@@ -359,6 +392,7 @@ export function normalizeTutorialProgress(value: unknown): TutorialProgress | nu
     baseline,
     receipts: normalizeOnboardingReceipts(candidate.receipts),
     jitQueue: Array.isArray(candidate.jitQueue) ? [...new Set(candidate.jitQueue.filter((item): item is string => typeof item === "string"))].slice(0, 8) : [],
+    ...(opening ? { opening } : {}),
     ...(Number.isInteger(candidate.migratedLegacyStep) ? { migratedLegacyStep: Math.max(0, Math.min(11, candidate.migratedLegacyStep as number)) } : {}),
   };
 }

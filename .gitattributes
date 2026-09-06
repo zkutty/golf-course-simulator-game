@@ -1,0 +1,2 @@
+# Hashed atlas JSON must retain its canonical bytes on Windows checkout.
+simgolf-lite/public/atlases/**/*.json text eol=lf

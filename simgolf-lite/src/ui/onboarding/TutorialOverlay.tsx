@@ -4,6 +4,7 @@ import { AdvisorPresenter } from "./AdvisorPresenter";
 import { presenterButtonStyle } from "./presenterStyles";
 import { T } from "../../i18n/T";
 import { useI18n } from "../../i18n/useI18n";
+import { OpeningDemoDetails } from "./OpeningDemoDetails";
 
 type Rect = { top: number; left: number; right: number; bottom: number; width: number; height: number };
 const FOCUSABLE = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])";
@@ -21,6 +22,10 @@ export function TutorialOverlay(props: {
   onSkipModule: () => void;
   onRestart: () => void;
   saveStatus?: "saving" | "saved";
+  courseWidth: number;
+  onOpeningCursor: (cursor: number) => void;
+  onOpeningRetry: () => void;
+  onOpeningFocus: () => void;
 }) {
   const { t } = useI18n();
   const [rects, setRects] = useState<Rect[]>([]);
@@ -65,7 +70,10 @@ export function TutorialOverlay(props: {
         return;
       }
       if (event.key !== "Tab") return;
-      const items = focusableItems(card);
+      const allowed = props.progress.opening
+        ? (props.step.allowedTargets ?? []).flatMap((target) => Array.from(document.querySelectorAll<HTMLElement>(`[data-tutorial-target="${target}"]`))).flatMap(focusableItems)
+        : [];
+      const items = [...new Set([...focusableItems(card), ...allowed])];
       if (items.length === 0) {
         event.preventDefault();
         card.focus({ preventScroll: true });
@@ -74,7 +82,17 @@ export function TutorialOverlay(props: {
       const active = document.activeElement;
       const first = items[0];
       const last = items[items.length - 1];
-      if (!card.contains(active)) {
+      if (props.progress.opening) {
+        // Guide card + allowed editor controls are not adjacent in DOM order.
+        // Explicit traversal prevents Tab escaping through blocked controls.
+        event.preventDefault();
+        const index = items.indexOf(active as HTMLElement);
+        const next = index < 0 ? (event.shiftKey ? items.length - 1 : 0)
+          : (index + (event.shiftKey ? -1 : 1) + items.length) % items.length;
+        items[next].focus({ preventScroll: true });
+        return;
+      }
+      if (!items.includes(active as HTMLElement)) {
         event.preventDefault();
         (event.shiftKey ? last : first).focus({ preventScroll: true });
       } else if (event.shiftKey && active === first) {
@@ -87,7 +105,7 @@ export function TutorialOverlay(props: {
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, []);
+  }, [props.progress.opening, props.step.allowedTargets]);
 
   useEffect(() => {
     const update = () => {
@@ -175,7 +193,7 @@ export function TutorialOverlay(props: {
       <div
         ref={cardRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal={props.progress.opening ? undefined : true}
         aria-label={t(props.step.titleKey)}
         tabIndex={-1}
         data-testid="tutorial-card"
@@ -193,7 +211,9 @@ export function TutorialOverlay(props: {
           title={t(props.step.titleKey)}
           body={t(props.step.bodyKey)}
           expression={props.step.expression}
-          details={showEvidence ? (
+          details={<>
+            <OpeningDemoDetails progress={props.progress} width={props.courseWidth} onCursor={props.onOpeningCursor} onRetry={props.onOpeningRetry} onFocus={props.onOpeningFocus} />
+            {showEvidence ? (
             <div data-testid="invited-preview-evidence" style={{ display: "grid", gap: 7, maxHeight: 190, overflowY: "auto", fontSize: 11, lineHeight: 1.35 }}>
               <b>{t("tutorial.preview.groupLabel")}</b>
               {evidence.group.map((golfer) => (
@@ -205,7 +225,7 @@ export function TutorialOverlay(props: {
               ))}
               {props.progress.receipts.preview.rewardReceipt && <b data-testid="invited-preview-reward-receipt">{t("tutorial.preview.rewardReceipt")}</b>}
             </div>
-          ) : undefined}
+          ) : null}</>}
           actions={
             <>
               <span role="status" style={{ alignSelf: "center", marginRight: "auto", fontSize: 11, color: "#647067" }}>

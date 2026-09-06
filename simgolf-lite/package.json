@@ -18,7 +18,7 @@
     "test:analysis-worker": "playwright test e2e/zk681-analysis-worker.e2e.ts",
     "test:release:browsers": "playwright test --config playwright.release.config.ts",
     "test:desktop": "node --test desktop/*.test.mjs",
-    "build:desktop": "VITE_BASE=./ npm run build",
+    "build:desktop": "node scripts/build-desktop.mjs",
     "desktop": "npm run build:desktop && electron .",
     "desktop:pack:dir": "npm run build:desktop && electron-builder --dir --publish never && npm run desktop:package:smoke",
     "desktop:dist": "npm run build:desktop && electron-builder --publish never && npm run desktop:package:smoke",

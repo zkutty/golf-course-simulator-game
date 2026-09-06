@@ -8,7 +8,8 @@ test.setTimeout(900_000);
 // The animated Pixi canvas makes retained traces/videos enormous during this
 // deliberately long real-authoring acceptance path. Stage screenshots and the
 // two intentional product-evidence captures remain available.
-test.use({ trace: "off", video: "off", screenshot: "only-on-failure" });
+const openingEvidence = process.env.COURSECRAFT_OPENING_EVIDENCE === "1";
+test.use({ trace: openingEvidence ? "retain-on-failure" : "off", video: openingEvidence ? "on" : "off", screenshot: "only-on-failure" });
 test.beforeEach(async ({ page }) => page.setDefaultTimeout(30_000));
 
 type Surface = ReturnType<NonNullable<Window["__coursecraftTest"]>["terrainSurfaceState"]>;
@@ -135,6 +136,25 @@ async function setInGameLocale(page: Page, locale: "en" | "pseudo") {
   await expect(page.locator("html")).toHaveAttribute("data-locale", locale);
 }
 
+async function focusOpeningHole(page: Page) {
+  await page.getByRole("button", { name: "Focus on preview hole", exact: true }).click();
+  // Observe the real camera glide; never mutate the renderer to make a click pass.
+  await page.evaluate(async () => {
+    let previous: { x: number; y: number } | null = null;
+    let stable = 0;
+    const deadline = performance.now() + 15000;
+    while (performance.now() < deadline) {
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const point = window.__coursecraftPixiTest!.tileToScreen(0, 0);
+      if (point && previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 0.01) stable += 1;
+      else stable = 0;
+      if (stable >= 12) return;
+      previous = point;
+    }
+    throw new Error("Preview-hole camera did not settle");
+  });
+}
+
 async function pagePoint(page: Page, target: Locator, point: { x: number; y: number }) {
   const projection = await page.evaluate(({ x, y }) => {
     const renderer = window.__coursecraftPixiTest!;
@@ -190,11 +210,12 @@ async function beginProfile(page: Page, profile: "classic" | "simulation", accep
   }
 }
 
-async function buildFirstHole(page: Page) {
+async function buildFirstHole(page: Page, operatorDemo = false) {
   await page.getByRole("button", { name: "Start designing" }).click();
   await expectStep(page, "paint-fairway");
   const courseCanvas = await canvas(page);
-  await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
+  if (operatorDemo) await page.keyboard.press("f");
+  else await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
   const surface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
   const [start, end] = candidateRoute(surface);
   await dragRoute(page, courseCanvas, start, end);
@@ -226,6 +247,92 @@ async function buildAdditionalHole(page: Page, freezeLive = false) {
   await expect(page.getByText("Click to place green", { exact: true })).toBeVisible();
   await clickTile(page, await canvas(page), end);
 }
+
+test.describe("ZK-1106 private operator opening", () => {
+  test("real UI builds, watches, edits and compares one private hole", async ({ page }, testInfo) => {
+    const state = () => page.evaluate(() => JSON.parse(window.render_game_to_text!()));
+    const capture = async (name: string) => {
+      const file = testInfo.outputPath(`${name}.png`);
+      await page.screenshot({ path: file });
+      await testInfo.attach(name, { path: file, contentType: "image/png" });
+    };
+    const started = Date.now();
+    await page.goto("/");
+    await page.getByRole("button", { name: /First-hole operator demo/ }).click();
+    await expectStep(page, "welcome");
+    expect((await state()).experience.profile).toBe("classic");
+    await capture("01-new-private-course");
+    await buildFirstHole(page, true);
+    await capture("02-built-and-ready-to-invite");
+    const before = await state();
+    await page.getByRole("button", { name: "Invite group", exact: true }).click();
+    await expectStep(page, "observe-play");
+    await expect(page.getByTestId("opening-current-shot")).not.toBeEmpty();
+    await focusOpeningHole(page);
+    await capture("03-recorded-shot-on-course");
+    await page.getByRole("button", { name: "Next recorded shot", exact: true }).click();
+    const observed = await state();
+    expect(observed.onboarding.opening.cursor).toBe(1);
+    expect(observed.economy).toEqual(before.economy);
+    expect(observed.simulation.arrivalsRemaining).toBe(0);
+    await expect(overlay(page).getByText("Progress saved", { exact: true })).toBeVisible();
+    await page.reload();
+    await page.getByRole("button", { name: /Continue/ }).click();
+    await expectStep(page, "observe-play");
+    expect((await state()).onboarding.opening.cursor).toBe(1);
+    await page.getByRole("button", { name: "Skip playback to summary", exact: true }).click();
+    await page.getByRole("button", { name: "Review reactions", exact: true }).click();
+    await expectStep(page, "review-reaction");
+    await expect(page.getByTestId("opening-diagnosis")).toContainText("Landing-area opportunity");
+    await capture("04-evidence-backed-opportunity");
+    await page.getByRole("button", { name: "Receive preview pennant", exact: true }).click();
+    await page.getByRole("button", { name: "Improve this hole", exact: true }).click();
+    await expectStep(page, "improve-hole");
+    const rewarded = await state();
+    expect(rewarded.economy.cash).toBe(before.economy.cash + 750);
+    const target = rewarded.onboarding.opening.targetCells[0];
+    expect(target).toBeDefined();
+    const width = rewarded.course.width;
+    const point = { x: target % width, y: Math.floor(target / width) };
+    await focusOpeningHole(page);
+    await dragRoute(page, await canvas(page), point, { x: point.x + 1, y: point.y });
+    await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
+    await capture("05-real-fairway-edit");
+    const edited = await state();
+    expect(edited.economy.cash).toBeLessThan(rewarded.economy.cash);
+    await page.keyboard.press("Control+z");
+    await expect(page.getByTestId("tutorial-primary-action")).toBeDisabled();
+    await expectStep(page, "improve-hole");
+    expect((await state()).economy).toEqual(rewarded.economy);
+    expect((await state()).onboarding.reward).toEqual(rewarded.onboarding.reward);
+    await page.keyboard.press("Control+Shift+z");
+    await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
+    expect((await state()).economy).toEqual(edited.economy);
+    await page.getByRole("button", { name: "Retest the same group", exact: true }).click();
+    await expectStep(page, "retest-play");
+    await page.getByRole("button", { name: "Skip playback to summary", exact: true }).click();
+    await page.getByRole("button", { name: "Compare visits", exact: true }).click();
+    await expectStep(page, "compare-preview");
+    await expect(page.getByTestId("opening-comparison")).toBeVisible();
+    const compared = await state();
+    expect(compared.economy).toEqual(edited.economy);
+    expect(compared.onboarding.preview).toEqual(observed.onboarding.preview);
+    expect(compared.onboarding.reward).toEqual(rewarded.onboarding.reward);
+    expect(compared.onboarding.opening.candidate.runSeed).toBe(before.onboarding.opening.candidate?.runSeed ?? 424242);
+    await expectTutorialInViewport(page);
+    await capture("06-honest-comparison");
+    await expect(overlay(page).getByText("Progress saved", { exact: true })).toBeVisible();
+    await page.reload();
+    await page.getByRole("button", { name: /Continue/ }).click();
+    await expectStep(page, "compare-preview");
+    expect((await state()).onboarding.opening.candidate).toEqual(compared.onboarding.opening.candidate);
+    expect((await state()).economy).toEqual(compared.economy);
+    await testInfo.attach("opening-evidence-context", { body: JSON.stringify({ seed: 424242, viewport: page.viewportSize(), elapsedSeconds: (Date.now() - started) / 1000, before: observed.onboarding.preview, after: compared.onboarding.opening.candidate, economy: { before: before.economy, rewarded: rewarded.economy, edited: edited.economy } }, null, 2), contentType: "application/json" });
+    await page.getByRole("button", { name: "Finish private demo", exact: true }).click();
+    await expect(overlay(page)).toHaveCount(0);
+    expect((await state()).onboarding).toMatchObject({ active: false, completion: "creative" });
+  });
+});
 
 test("one-hole invited preview is save-safe, evidence-backed, and rewards exactly once", async ({ page }) => {
   await begin(page);
