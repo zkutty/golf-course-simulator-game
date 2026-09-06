@@ -25,9 +25,9 @@ const EXPECTED_LAYER_ORDER = [
   "paths",
   "vegetation-obstacles",
   "surroundings",
+  "route",
   "tee",
   "pin",
-  "route",
 ] as const;
 
 function local(x: number, y: number): HoleIllustrationLocalPoint {
@@ -191,11 +191,22 @@ describe("ZK-768 deterministic top-down illustration render plan", () => {
     const firstContour = relief.findIndex((primitive) => primitive.semantic.startsWith("contour:"));
     expect(firstContour).toBeGreaterThan(0);
     expect(relief.slice(0, firstContour).every((primitive) => primitive.semantic.startsWith("elevation:"))).toBe(true);
-    expect(plan.layers.find((layer) => layer.id === "route")?.primitives[0]).toMatchObject({
-      kind: "polyline",
-      semantic: "route:tee-waypoints-pin",
-      closed: false,
-    });
+    expect(plan.version).toBe(1);
+    expect(plan.layers.find((layer) => layer.id === "route")?.primitives).toMatchObject([
+      {
+        id: "authoritative-route-halo",
+        kind: "polyline",
+        semantic: "route:tee-waypoints-pin:halo",
+        closed: false,
+      },
+      {
+        id: "authoritative-route",
+        kind: "polyline",
+        semantic: "route:tee-waypoints-pin",
+        closed: false,
+        opacity: 0.88,
+      },
+    ]);
     expect(new Set(plan.layers.flatMap((layer) => layer.primitives.map((primitive) => primitive.kind))))
       .toEqual(new Set(["polygon", "polyline", "ellipse", "sample-grid"]));
   });
@@ -493,7 +504,7 @@ describe("ZK-768 deterministic top-down illustration render plan", () => {
     expect(first.budget).toMatchObject({
       sourceCells: 65_536,
       sourceFeatures: 0,
-      primitiveCount: 65_539,
+      primitiveCount: 65_540,
       runtime: "bounded-n-log-n",
       memory: "bounded",
     });

@@ -17,6 +17,7 @@ export interface HoleIllustrationStylePalette {
   readonly tee: { readonly fill: string; readonly stroke: string };
   readonly pin: { readonly fill: string; readonly stroke: string };
   readonly route: string;
+  readonly routeHalo: string;
   readonly ink: string;
 }
 
@@ -28,6 +29,26 @@ export interface HoleIllustrationStyle {
   readonly name: string;
   readonly standard: HoleIllustrationStylePalette;
   readonly highContrast: HoleIllustrationStylePalette;
+}
+
+export const HOLE_ILLUSTRATION_NON_TEXT_CONTRAST_MINIMUM = 3;
+
+export interface HoleIllustrationGraphicContrastPair {
+  readonly id: string;
+  readonly foreground: string;
+  readonly background: string;
+  readonly ratio: number;
+  /** Whether this adjacency carries the certified visual distinction. */
+  readonly requiredForCertification: boolean;
+}
+
+export interface HoleIllustrationGraphicContrastReport {
+  readonly styleId: HoleIllustrationStyleId;
+  readonly contrast: HoleIllustrationContrast;
+  readonly threshold: typeof HOLE_ILLUSTRATION_NON_TEXT_CONTRAST_MINIMUM;
+  readonly minimumRatio: number;
+  readonly meetsThreshold: boolean;
+  readonly pairs: readonly HoleIllustrationGraphicContrastPair[];
 }
 
 function deepFreeze<T>(value: T): Readonly<T> {
@@ -89,9 +110,9 @@ const SEASON_WASH = {
 } as const satisfies Record<SeasonName, { color: string; amount: number }>;
 
 const HIGH_CONTRAST_TERRAIN: Readonly<Record<Terrain, string>> = deepFreeze({
-  fairway: "#60b044", rough: "#34752e", deep_rough: "#174d2a", sand: "#ffe08a",
-  waste_area: "#b86b25", water: "#1676a3", wetland: "#386b62", green: "#8ee36a",
-  tee: "#d3f29b", path: "#806650",
+  fairway: "#60b044", rough: "#4b963b", deep_rough: "#3c7a47", sand: "#ffe08a",
+  waste_area: "#d98232", water: "#2b8fbd", wetland: "#4b8175", green: "#8ee36a",
+  tee: "#d3f29b", path: "#a47e62",
 });
 
 function channel(hex: string, offset: number): number {
@@ -124,6 +145,7 @@ function standardPalette(biome: LandTheme, season: SeasonName): HoleIllustration
     tee: { fill: "#f8f3df", stroke: "#203b2f" },
     pin: { fill: "#d9493f", stroke: "#ffffff" },
     route: accent.route,
+    routeHalo: "#ffffff",
     ink: "#1e2922",
   });
 }
@@ -135,11 +157,12 @@ function highContrastPalette(): HoleIllustrationStylePalette {
     elevation: { low: "#ffffff", high: "#000000" },
     contour: "#000000",
     path: "#000000",
-    vegetation: { tree: "#003d19", bush: "#0c641f", rock: "#3f3f3f", decoration: "#7a2400" },
+    vegetation: { tree: "#287f45", bush: "#3d8c47", rock: "#777777", decoration: "#b84c1d" },
     surroundings: { fill: "#e0a85c", stroke: "#000000" },
     tee: { fill: "#ffffff", stroke: "#000000" },
     pin: { fill: "#d00000", stroke: "#000000" },
     route: "#000000",
+    routeHalo: "#ffffff",
     ink: "#000000",
   });
 }
@@ -174,4 +197,72 @@ export function resolveHoleIllustrationStyle(
 ): HoleIllustrationStylePalette {
   const style = HOLE_ILLUSTRATION_STYLE_REGISTRY[`${biome}:${season}`];
   return contrast === "high-contrast" ? style.highContrast : style.standard;
+}
+
+function relativeLuminance(color: string): number {
+  const channels = [1, 3, 5].map((offset) => channel(color, offset) / 255).map((value) =>
+    value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4,
+  );
+  return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+}
+
+function contrastRatio(left: string, right: string): number {
+  const a = relativeLuminance(left);
+  const b = relativeLuminance(right);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
+function compositeHex(foreground: string, background: string, opacity: number): string {
+  const mixed = [1, 3, 5].map((offset) =>
+    Math.round(channel(foreground, offset) * opacity + channel(background, offset) * (1 - opacity))
+      .toString(16)
+      .padStart(2, "0"),
+  );
+  return `#${mixed.join("")}`;
+}
+
+/** Deterministic WCAG non-text graphic-boundary measurements for a registered palette. */
+export function inspectHoleIllustrationGraphicContrast(
+  biome: LandTheme,
+  season: SeasonName,
+  contrast: HoleIllustrationContrast,
+): HoleIllustrationGraphicContrastReport {
+  const palette = resolveHoleIllustrationStyle(biome, season, contrast);
+  const rawPairs: Array<readonly [string, string, string, boolean]> = [];
+  for (const [kind, fill] of Object.entries(palette.terrain)) {
+    if (contrast === "high-contrast") rawPairs.push([`terrain:${kind}:outline`, palette.ink, fill, true]);
+    rawPairs.push([`route:halo:${kind}`, palette.routeHalo, fill, false]);
+  }
+  const compositedRoute = compositeHex(palette.route, palette.routeHalo, 0.88);
+  rawPairs.push(
+    ["route:core:halo", compositedRoute, palette.routeHalo, true],
+    ...(contrast === "high-contrast"
+      ? [["route:halo:outline", palette.routeHalo, palette.ink, true] as const]
+      : []),
+    ["path:authored-cell", palette.path, palette.terrain.path, true],
+    ["contour:green", palette.contour, palette.terrain.green, true],
+    ...Object.entries(palette.vegetation).map(([kind, fill]) =>
+      [`vegetation:${kind}:outline`, palette.ink, fill, true] as const),
+    ["surroundings:outline", palette.surroundings.stroke, palette.surroundings.fill, true],
+    ["tee:outline", palette.tee.stroke, palette.tee.fill, true],
+    ["pin:outline", palette.pin.stroke, palette.pin.fill, true],
+  );
+  const pairs = rawPairs.map(([id, foreground, background, requiredForCertification]) => ({
+    id,
+    foreground,
+    background,
+    ratio: contrastRatio(foreground, background),
+    requiredForCertification,
+  }));
+  const minimumRatio = pairs.reduce((minimum, pair) => pair.requiredForCertification
+    ? Math.min(minimum, pair.ratio)
+    : minimum, Infinity);
+  return deepFreeze({
+    styleId: `${biome}:${season}`,
+    contrast,
+    threshold: HOLE_ILLUSTRATION_NON_TEXT_CONTRAST_MINIMUM,
+    minimumRatio,
+    meetsThreshold: minimumRatio >= HOLE_ILLUSTRATION_NON_TEXT_CONTRAST_MINIMUM,
+    pairs,
+  }) as HoleIllustrationGraphicContrastReport;
 }
