@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Course } from "../game/models/types";
 import type { ArchitectureReviewData, ArchitectureReviewFilters } from "../game/architecture/review";
 import type { ArchitectureOverlayKind } from "../game/architecture/reviewTypes";
 import { courseLayouts } from "../game/models/courseLayouts";
 import { useI18n } from "../i18n/useI18n";
 import type { MessageKey } from "../i18n/catalog";
+import { HoleIllustrationPreviewPanel } from "./HoleIllustrationPreviewPanel";
 
 const OVERLAYS: ArchitectureOverlayKind[] = [
   "reference", "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "mobility", "congestion", "options", "advantage", "bailouts", "carries", "misses",
@@ -21,6 +22,12 @@ export function ArchitectureReviewPanel(props: {
 }) {
   const { t } = useI18n();
   const [message, setMessage] = useState("");
+  const [showHoleIllustration, setShowHoleIllustration] = useState(false);
+  const illustrationLauncherRef = useRef<HTMLButtonElement>(null);
+  const closeHoleIllustration = () => {
+    setShowHoleIllustration(false);
+    requestAnimationFrame(() => illustrationLauncherRef.current?.focus());
+  };
   const [comparisonId, setComparisonId] = useState(props.review.revisions[1]?.id ?? "");
   const selectedRevision = props.review.revisions.find((revision) => revision.id === comparisonId);
   const currentRevision = props.review.revisions.find((revision) => revision.geometryVersion === props.review.currentGeometryVersion);
@@ -41,6 +48,11 @@ export function ArchitectureReviewPanel(props: {
       <div><div id="architecture-review-title" style={{ fontSize: 20, fontWeight: 900 }}>{t("architecture.review.title")}</div><small>{t("architecture.review.subtitle")}</small></div>
       <button aria-label={t("common.close")} onClick={props.onClose}>✕</button>
     </header>
+
+    <section style={{ marginTop: 10 }}>
+      <button ref={illustrationLauncherRef} data-testid="architecture-create-hole-illustration" aria-expanded={showHoleIllustration} aria-controls="hole-illustration-preview" onClick={() => setShowHoleIllustration(true)}>{t("architecture.review.createHoleIllustration")}</button>
+      {showHoleIllustration && <HoleIllustrationPreviewPanel course={props.course} evidence={{ status: props.review.status, layoutId: props.review.filters.courseId, holeId: props.review.filters.holeId, teeSet: props.review.filters.teeSet === "all" ? "" : props.review.filters.teeSet, pinRotation: props.review.filters.pinRotation === "all" ? "" : props.review.filters.pinRotation }} onClose={closeHoleIllustration} />}
+    </section>
 
     <nav aria-label={t("architecture.review.overlays")} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(92px,1fr))", gap: 5, margin: "12px 0" }}>
       {OVERLAYS.map((kind) => <button
