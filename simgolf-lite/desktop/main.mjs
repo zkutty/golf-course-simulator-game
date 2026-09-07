@@ -106,7 +106,12 @@ function registerIpcHandlers() {
   ipcMain.handle("dialogs:export", async (_event, payload) => {
     const name = path.basename(stringField(payload, "name", 180));
     const text = stringField(payload, "text");
-    const result = await dialog.showSaveDialog(mainWindow, { defaultPath: name });
+    const mimeType = object(payload).mimeType;
+    if (mimeType !== undefined && mimeType !== "application/json" && mimeType !== "image/svg+xml") throw new Error("Invalid export MIME type.");
+    const filters = mimeType === "image/svg+xml"
+      ? [{ name: "SVG images", extensions: ["svg"] }]
+      : mimeType === "application/json" ? [{ name: "JSON files", extensions: ["json"] }] : undefined;
+    const result = await dialog.showSaveDialog(mainWindow, { defaultPath: name, ...(filters ? { filters } : {}) });
     if (result.canceled || !result.filePath) return false;
     await writeFile(result.filePath, text, { encoding: "utf8", mode: 0o600 });
     return true;

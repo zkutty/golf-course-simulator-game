@@ -14,7 +14,7 @@ export function createDesktopPlatform(bridge: CourseCraftDesktopBridge): Platfor
       delete: (key) => invoke(bridge, "files:delete", { key }),
       list: (prefix) => invoke(bridge, "files:list", { prefix }),
       chooseImport: (extensions) => invoke(bridge, "dialogs:import", { extensions }),
-      chooseExport: (name, text) => invoke(bridge, "dialogs:export", { name, text }),
+      chooseExport: (name, text, mimeType) => invoke(bridge, "dialogs:export", { name, text, mimeType }),
       exportSupportBundle: () => invoke(bridge, "support:export"),
     },
     app: {
