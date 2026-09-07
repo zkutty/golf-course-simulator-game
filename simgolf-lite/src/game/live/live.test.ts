@@ -489,6 +489,25 @@ describe("stepLive", () => {
     expect(live.greenFeeCollected).toBe(planned * course.baseGreenFee);
     expect(avgSatisfactionSoFar(live)).toBeGreaterThan(0);
   });
+
+  it("freezes the selected pin rotation onto every completed regular round", () => {
+    const base = makeTestCourse();
+    const course: Course = {
+      ...base,
+      activePinRotation: "C",
+      holes: base.holes.map((hole) => ({
+        ...hole,
+        teeBoxes: { member: hole.tee },
+        pinPositions: { A: hole.green, B: hole.green, C: hole.green },
+      })),
+    };
+    const live = createLiveState(course, { ...DEFAULT_WORLD, runSeed: 770 }, 0);
+    const completed = [];
+    let guard = 0;
+    while (!live.dayOver && guard++ < 100_000) completed.push(...stepLive(live, course, 1).completedRounds);
+    expect(completed.length).toBeGreaterThan(0);
+    expect(completed.every((round) => round.pinRotation === "C")).toBe(true);
+  });
 });
 
 describe("commitDay reputation from real reactions (ZKU-116)", () => {

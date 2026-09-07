@@ -791,6 +791,7 @@ export function stepLive(
         tournamentId: g.tournamentId,
         tournamentEntrantId: g.tournamentEntrantId,
         teeSet: g.teeSet,
+        pinRotation: g.pinRotation,
         waitMinutes: g.waitMinutes ?? 0,
         capabilities: g.capabilities,
         holePlans: g.holePlans?.slice(),

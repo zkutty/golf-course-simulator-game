@@ -2071,3 +2071,30 @@ classic course-builder references.
   no error artifact, and visually inspected canvas captures. Independent
   reviews found no release-blocking issue. Promotion remains the next step;
   ZK-332 and ZK-679 stay open for broader human/architecture acceptance.
+
+## ZK-770 illustrated-hole export execution — 2026-09-07
+
+- Execute-mode review selected ZK-770 as M70's next dependency-ready feature;
+  ZK-771 remains the later exhaustive certification boundary.
+- Independent Sol review found that retained architecture shot evidence lacked
+  pin identity, allowing one pin's evidence to authorize another pin's preview
+  annotations. Registered ZK-1119 in M70, linked it as a blocker of ZK-770,
+  and started a bounded Terra prerequisite packet on released development SHA
+  `7797d2ec051dfb273c4f4419a212acb90aa76a9b`.
+- Export planning is frozen around the exact ZK-769 final SVG: PNG must
+  rasterize that document rather than ZK-768's lower-level RGBA output, because
+  labels, visibility controls, and M69 annotations are presentation additions.
+- TODO: accept and integrate ZK-1119, then execute pure export composition,
+  bounded offline delivery, UI/browser integration, full gates, promotion, and
+  final Linear reconciliation.
+- ZK-1119 cleared independent Sol review on attempt 2/3 with 53/53 focused
+  tests plus TypeScript, scoped ESLint, and diff checks green. A separate,
+  non-blocking stale-status wording defect was deduplicated and registered as
+  ZK-1120; it remains in Backlog and is not part of this release.
+- NEXT: run the repository-wide local gates and promote the exact accepted
+  ZK-1119 prerequisite through development and production before opening the
+  dependent ZK-770 implementation lease.
+- Repository-wide pre-promotion gates passed: 220 Vitest files with 1,783
+  passing tests and one skip, 5/5 audio-audit tests, full lint with zero errors
+  (nine pre-existing hook warnings), and the production build plus asset and
+  delivery budgets. ZK-1119 is ready for a scoped commit and development push.
