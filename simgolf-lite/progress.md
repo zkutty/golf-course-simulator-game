@@ -2135,3 +2135,19 @@ classic course-builder references.
 - NEXT: commit the audited packet and promote that exact tree through
   development and production; release SHAs, CI runs, and health evidence will
   be recorded on ZK-770 before it is moved to Done.
+
+## ZK-1120 filtered-scope review correction — 2026-09-07
+
+- Linear reconciliation identified a distinct, non-blocking Architecture Review
+  wording defect: evidence outside the selected hole, tee, pin, or source scope
+  was incorrectly described as older geometry.
+- A bounded Luna packet separated scope matching from recency/geometry filters.
+  Attempt 2/3 cleared independent Sol review: `stale-only` now requires a
+  nonempty matching scope whose records are all from older geometry, while
+  wrong-scope and mixed-age empty results use accurate explanations.
+- Direct-consumer verification passed 52/52 tests with TypeScript, scoped lint,
+  and diff checks green. The change is persistence-neutral and preserves legacy
+  evidence without pin identity.
+- NEXT: run repository-wide release gates and promote this isolated two-file
+  behavior/test change through development and production before reconciling
+  ZK-1120 to Done.
