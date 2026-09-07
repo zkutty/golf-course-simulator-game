@@ -45,7 +45,11 @@ export function downloadBlob(blob: Blob, filename: string): void {
 
 export async function shareBlob(blob: Blob, filename: string, title: string): Promise<"shared" | "copied" | "downloaded"> {
   const file = new File([blob], filename, { type: "image/png" });
-  if (navigator.share && navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file], title }); return "shared"; }
-  if (navigator.clipboard && typeof ClipboardItem !== "undefined") { await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]); return "copied"; }
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title }); return "shared"; } catch { /* Continue to offline fallbacks. */ }
+  }
+  if (navigator.clipboard && typeof ClipboardItem !== "undefined") {
+    try { await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]); return "copied"; } catch { /* Continue to download. */ }
+  }
   downloadBlob(blob, filename); return "downloaded";
 }

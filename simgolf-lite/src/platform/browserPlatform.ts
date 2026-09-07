@@ -61,11 +61,11 @@ async function chooseImport(extensions: string[]): Promise<{ name: string; text:
   });
 }
 
-async function chooseExport(name: string, text: string): Promise<boolean> {
+async function chooseExport(name: string, text: string, mimeType: "application/json" | "image/svg+xml" = "application/json"): Promise<boolean> {
   if (typeof document === "undefined") return false;
   const link = document.createElement("a");
   link.download = name;
-  link.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  link.href = URL.createObjectURL(new Blob([text], { type: mimeType }));
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   return true;

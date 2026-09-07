@@ -17,7 +17,7 @@ export interface PlatformFileStore {
   delete(key: string): Promise<void>;
   list(prefix: string): Promise<string[]>;
   chooseImport(extensions: string[]): Promise<{ name: string; text: string } | null>;
-  chooseExport(name: string, text: string): Promise<boolean>;
+  chooseExport(name: string, text: string, mimeType?: "application/json" | "image/svg+xml"): Promise<boolean>;
   exportSupportBundle(): Promise<boolean>;
 }
 

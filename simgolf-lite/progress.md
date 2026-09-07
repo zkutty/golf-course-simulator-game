@@ -2098,3 +2098,40 @@ classic course-builder references.
   passing tests and one skip, 5/5 audio-audit tests, full lint with zero errors
   (nine pre-existing hook warnings), and the production build plus asset and
   delivery budgets. ZK-1119 is ready for a scoped commit and development push.
+- ZK-1119 shipped as development commit
+  `982aa91378ba12c8dade1f4775569b0470bdc383` and tree-identical production
+  merge `dae31f98dd915eaa5d27dac8ed6ca84158158ab1`. Development run
+  `34142445528` and production run `34147419433` passed CI, browser gates, and
+  Cloudflare deployment; staging and production each remained HTTP 200 across
+  bounded post-deploy checks. Linear was verified Done with release evidence.
+- With the exact pin-evidence contract released, ZK-770 moved from Backlog to
+  In Progress. Its attempt-1/3 Terra packet is now implementing bounded exact
+  preview SVG/PNG output, per-layout 9/18-hole atlas composition, offline
+  browser/desktop delivery, accessible UI actions, and focused evidence. Sol
+  retains the independent acceptance and integration gate.
+- Terra's first implementation attempt passed its focused checks, but Sol held
+  release because share/copy/download outcomes were not reported truthfully and
+  the failure-path assertions were too weak. The bounded second attempt split
+  every delivery result into shared, copied, downloaded, cancelled, or failed;
+  strengthened non-vacuous fallbacks; and cleared Sol's independent gate.
+- The accepted packet passes 81/81 focused export, preview, platform, metadata,
+  and persistence tests plus TypeScript, scoped lint, i18n, desktop, and diff
+  checks. A coordinator rerun extended that evidence to 91/91 relevant tests.
+- The real browser fixture downloaded a 3840x2560 SVG and PNG through the new
+  controls. The SVG retained the exact final preview body and allowlisted
+  metadata; the PNG signature, IHDR dimensions, embedded metadata, and rendered
+  labels/geometry were verified. Web Share and invalid-atlas paths also passed,
+  the saved course remained byte-equivalent, and no page or console error fired.
+- The required bundled gameplay client reached the fixture with the architecture
+  review open, preserved the live course state, produced a coherent canvas
+  capture, and emitted no error artifact.
+- NEXT: pass the complete repository gates, commit only this 16-file packet,
+  promote its exact tree through development and production, monitor both
+  deployments, and reconcile ZK-770 with immutable release evidence.
+- Complete pre-promotion gates passed: 223/223 Vitest files with 1,806 passing
+  tests and one intentional skip, 5/5 audio audits, full lint with zero errors
+  (nine pre-existing Hook warnings), and the production build with biome,
+  offline, asset, surface, startup, fixture-load, and delivery budgets green.
+- NEXT: commit the audited packet and promote that exact tree through
+  development and production; release SHAs, CI runs, and health evidence will
+  be recorded on ZK-770 before it is moved to Done.
