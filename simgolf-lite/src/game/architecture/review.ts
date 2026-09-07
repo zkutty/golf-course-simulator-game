@@ -90,6 +90,7 @@ function evidenceFilters(
   if (evidence.courseId !== filters.courseId) return false;
   if (filters.holeId !== "all" && evidence.holeId !== filters.holeId) return false;
   if (filters.teeSet !== "all" && evidence.teeSet !== filters.teeSet) return false;
+  if (filters.pinRotation !== "all" && evidence.pinRotation !== filters.pinRotation) return false;
   if (filters.sourceSegment !== "all" && evidence.sourceSegment !== filters.sourceSegment) return false;
   if (filters.recency === "recent" && evidence.week < currentWeek - 4) return false;
   if (filters.recency === "current" && evidence.geometryVersion !== currentGeometryVersion) return false;
