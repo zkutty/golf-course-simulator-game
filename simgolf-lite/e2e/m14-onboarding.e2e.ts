@@ -29,7 +29,7 @@ async function canvas(page: Page) {
   return target;
 }
 
-function candidateRoute(surface: Surface) {
+function candidateRoute(surface: Surface, boundaryMargin = 0) {
   const { width, height, owned, elevations } = surface;
   const occupied = surface.holes.flatMap((hole) => [hole.tee, hole.green].filter(Boolean));
   const flatMarkerSite = (point: { x: number; y: number }) => {
@@ -44,6 +44,15 @@ function candidateRoute(surface: Surface) {
       const start = { x, y };
       const end = { x: x + 10, y };
       if (!Array.from({ length: 11 }, (_, offset) => owned[y * width + x + offset]).every(Boolean)) continue;
+      // The operator demo teaches landing-area width, not estate-boundary relief.
+      // Select geometry before any shots are resolved; never search seeds/scores.
+      let hasOwnedMargin = true;
+      for (let row = y - boundaryMargin; row <= y + boundaryMargin; row++) {
+        for (let col = x - boundaryMargin; col <= end.x + boundaryMargin; col++) {
+          if (row < 0 || col < 0 || row >= height || col >= width || !owned[row * width + col]) hasOwnedMargin = false;
+        }
+      }
+      if (!hasOwnedMargin) continue;
       if (!flatMarkerSite(start) || !flatMarkerSite(end)) continue;
       if ([start, end].some((point) => occupied.some((known) => known && Math.hypot(known.x - point.x, known.y - point.y) < 3))) continue;
       return [start, end] as const;
@@ -217,7 +226,7 @@ async function buildFirstHole(page: Page, operatorDemo = false) {
   if (operatorDemo) await page.keyboard.press("f");
   else await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
   const surface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
-  const [start, end] = candidateRoute(surface);
+  const [start, end] = candidateRoute(surface, operatorDemo ? 4 : 0);
   await dragRoute(page, courseCanvas, start, end);
   await expect(overlay(page).getByRole("button", { name: "Continue" })).toBeEnabled();
   await overlay(page).getByRole("button", { name: "Continue" }).click();
