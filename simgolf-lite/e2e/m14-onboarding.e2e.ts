@@ -265,6 +265,19 @@ test.describe("ZK-1106 private operator opening", () => {
   test("real UI builds, watches, edits and compares one private hole", async ({ page }, testInfo) => {
     const state = () => page.evaluate(() => JSON.parse(window.render_game_to_text!()));
     const capture = async (name: string) => {
+      if (process.env.ZK1107_EVIDENCE) {
+        const original = page.viewportSize()!;
+        for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+          await page.setViewportSize(viewport);
+          await page.waitForTimeout(500);
+          const directory = `artifacts/zk-1107/${process.env.ZK1107_EVIDENCE}`;
+          mkdirSync(directory, { recursive: true });
+          await page.screenshot({ path: `${directory}/${name}-${viewport.width}x${viewport.height}.png` });
+          await expectTutorialInViewport(page);
+        }
+        await page.setViewportSize(original);
+        await page.waitForTimeout(500);
+      }
       const file = testInfo.outputPath(`${name}.png`);
       await page.screenshot({ path: file });
       await testInfo.attach(name, { path: file, contentType: "image/png" });

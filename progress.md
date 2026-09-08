@@ -1,5 +1,14 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-09-08 — ZK-1107 opening composition
+
+- Packet: lock the ZK-1106 opening hierarchy at 1440×900, 1280×720, and 390×844 without changing the seven-beat loop or gameplay authority.
+- Isolated branch `codex/zk1107-opening-composition-sep08`, exact origin/develop base `4ddc7af0a6014ab73cedb6e6dea42c7b026049af`. Main checkout untouched.
+- Capturing baseline evidence with the existing real-authoring opening certification before any production edit. Reuse ZK-377 state tokens, ZK-623 biome boundary and existing camera/atlas behavior.
+- Initial implementation: shared button state tokens and native CSS press feedback; current-shot readout, contextual wrapping and comparison separators; responsive 40px portrait and bounded scrollable guide.
+- Bounded repair 1: corrected pointer-versus-keyboard focus assertion and serialized browser workers; aligned IconButton with existing selected/ink tokens. Focused viewport tests passed 3/3; contracts passed 31/31. Full TypeScript/lint/build passed (nine inherited Hook warnings; 1,585,715 initial JS bytes).
+- Bounded repair 2: visual inspection found the pre-existing mobile live toolbar shrink-to-fit column still covered the shot corridor. Give it an explicit viewport-bounded width while retaining every control. Strengthen screenshot readiness with the existing Pixi canvas/hook and frame observation. No further repair iterations permitted in this packet.
+
 ## 2026-08-11 — ZK-734A deterministic Pro-Am field core
 
 - Started from exact released SHA `b43b5f9013b4cd5df96769991da29f18058146e0` in isolated worktree `/private/tmp/golf-sim-zk734-pro-am-core`; the original user worktree is out of scope.
