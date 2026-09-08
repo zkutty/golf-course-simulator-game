@@ -2148,6 +2148,40 @@ classic course-builder references.
 - Direct-consumer verification passed 52/52 tests with TypeScript, scoped lint,
   and diff checks green. The change is persistence-neutral and preserves legacy
   evidence without pin identity.
-- NEXT: run repository-wide release gates and promote this isolated two-file
-  behavior/test change through development and production before reconciling
-  ZK-1120 to Done.
+- ZK-1120 shipped as development commit
+  `b22684a240953a9f8353627a6b710e5d286ce223` and tree-identical production
+  merge `c8cab83e43ce120a7ecf3c6af7773ac869fe62c9`. Development run
+  `34168998706` and production run `34169895200` passed; staging and production
+  remained HTTP 200 across bounded health checks. Linear was verified Done.
+
+## ZK-771 M70 certification recovery — 2026-09-07
+
+- The original ZK-771 machine packet exhausted its three-attempt correction
+  loop. Its matrix, atlas, PNG, browser, and manifest scaffolding remains
+  reusable, but release was held because fixture topology, independent final-SVG
+  coordinate proof, real offline/platform delivery, and byte-bound visual
+  evidence required separate deterministic acceptance gates.
+- The work was decomposed into ZK-1131 through ZK-1138. ZK-1135's deterministic
+  accessible SVG naming, ZK-1133's lifecycle/cache/failure/budget/provenance
+  suite, and ZK-1132's browser/PWA/desktop delivery certification independently
+  passed their Sol gates. Physical GPU/device and signing/notarization boundaries
+  remain explicit external exclusions.
+- ZK-1136 exhausted its own correction loop with two residual assertions and
+  was decomposed into the one-file ZK-1138 child. ZK-1138 passed on attempt 1,
+  freezing genuine split, crossing, water-carry, elevation, wooded, alternate,
+  incomplete, long-title, and two-layout fixture semantics.
+- ZK-1137's structural projection oracle passed on attempt 3. It independently
+  checks single and nested-atlas tee, pin, route, hazard, obstacle, and M69
+  segment/landing coordinates, strict XML inputs, layout isolation, and named
+  serialized-coordinate tamper failures. The combined ZK-1131 integration gate
+  passed twice with no product changes.
+- Complete pre-integration gates passed in the certification worktree: 228
+  Vitest files with 1,820 passing tests and one intentional skip, 5/5 audio
+  audits, lint with zero errors and nine pre-existing Hook warnings, production
+  build and all asset/startup/delivery budgets, plus the real 18-hole browser,
+  service-worker-offline, desktop-file, and bundled-client checks.
+- NEXT: promote this exact 13-file machine-foundation packet through development
+  and production, reconcile the released prerequisite issues, then generate
+  ZK-1134's byte-bound SVG/PNG contact sheet against the immutable released SHA.
+  Human originality, hierarchy, and biome-cohesion approval remains mandatory
+  before ZK-771 or M70 can close.
