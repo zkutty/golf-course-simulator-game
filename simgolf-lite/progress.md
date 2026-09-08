@@ -2071,3 +2071,117 @@ classic course-builder references.
   no error artifact, and visually inspected canvas captures. Independent
   reviews found no release-blocking issue. Promotion remains the next step;
   ZK-332 and ZK-679 stay open for broader human/architecture acceptance.
+
+## ZK-770 illustrated-hole export execution — 2026-09-07
+
+- Execute-mode review selected ZK-770 as M70's next dependency-ready feature;
+  ZK-771 remains the later exhaustive certification boundary.
+- Independent Sol review found that retained architecture shot evidence lacked
+  pin identity, allowing one pin's evidence to authorize another pin's preview
+  annotations. Registered ZK-1119 in M70, linked it as a blocker of ZK-770,
+  and started a bounded Terra prerequisite packet on released development SHA
+  `7797d2ec051dfb273c4f4419a212acb90aa76a9b`.
+- Export planning is frozen around the exact ZK-769 final SVG: PNG must
+  rasterize that document rather than ZK-768's lower-level RGBA output, because
+  labels, visibility controls, and M69 annotations are presentation additions.
+- TODO: accept and integrate ZK-1119, then execute pure export composition,
+  bounded offline delivery, UI/browser integration, full gates, promotion, and
+  final Linear reconciliation.
+- ZK-1119 cleared independent Sol review on attempt 2/3 with 53/53 focused
+  tests plus TypeScript, scoped ESLint, and diff checks green. A separate,
+  non-blocking stale-status wording defect was deduplicated and registered as
+  ZK-1120; it remains in Backlog and is not part of this release.
+- NEXT: run the repository-wide local gates and promote the exact accepted
+  ZK-1119 prerequisite through development and production before opening the
+  dependent ZK-770 implementation lease.
+- Repository-wide pre-promotion gates passed: 220 Vitest files with 1,783
+  passing tests and one skip, 5/5 audio-audit tests, full lint with zero errors
+  (nine pre-existing hook warnings), and the production build plus asset and
+  delivery budgets. ZK-1119 is ready for a scoped commit and development push.
+- ZK-1119 shipped as development commit
+  `982aa91378ba12c8dade1f4775569b0470bdc383` and tree-identical production
+  merge `dae31f98dd915eaa5d27dac8ed6ca84158158ab1`. Development run
+  `34142445528` and production run `34147419433` passed CI, browser gates, and
+  Cloudflare deployment; staging and production each remained HTTP 200 across
+  bounded post-deploy checks. Linear was verified Done with release evidence.
+- With the exact pin-evidence contract released, ZK-770 moved from Backlog to
+  In Progress. Its attempt-1/3 Terra packet is now implementing bounded exact
+  preview SVG/PNG output, per-layout 9/18-hole atlas composition, offline
+  browser/desktop delivery, accessible UI actions, and focused evidence. Sol
+  retains the independent acceptance and integration gate.
+- Terra's first implementation attempt passed its focused checks, but Sol held
+  release because share/copy/download outcomes were not reported truthfully and
+  the failure-path assertions were too weak. The bounded second attempt split
+  every delivery result into shared, copied, downloaded, cancelled, or failed;
+  strengthened non-vacuous fallbacks; and cleared Sol's independent gate.
+- The accepted packet passes 81/81 focused export, preview, platform, metadata,
+  and persistence tests plus TypeScript, scoped lint, i18n, desktop, and diff
+  checks. A coordinator rerun extended that evidence to 91/91 relevant tests.
+- The real browser fixture downloaded a 3840x2560 SVG and PNG through the new
+  controls. The SVG retained the exact final preview body and allowlisted
+  metadata; the PNG signature, IHDR dimensions, embedded metadata, and rendered
+  labels/geometry were verified. Web Share and invalid-atlas paths also passed,
+  the saved course remained byte-equivalent, and no page or console error fired.
+- The required bundled gameplay client reached the fixture with the architecture
+  review open, preserved the live course state, produced a coherent canvas
+  capture, and emitted no error artifact.
+- NEXT: pass the complete repository gates, commit only this 16-file packet,
+  promote its exact tree through development and production, monitor both
+  deployments, and reconcile ZK-770 with immutable release evidence.
+- Complete pre-promotion gates passed: 223/223 Vitest files with 1,806 passing
+  tests and one intentional skip, 5/5 audio audits, full lint with zero errors
+  (nine pre-existing Hook warnings), and the production build with biome,
+  offline, asset, surface, startup, fixture-load, and delivery budgets green.
+- NEXT: commit the audited packet and promote that exact tree through
+  development and production; release SHAs, CI runs, and health evidence will
+  be recorded on ZK-770 before it is moved to Done.
+
+## ZK-1120 filtered-scope review correction — 2026-09-07
+
+- Linear reconciliation identified a distinct, non-blocking Architecture Review
+  wording defect: evidence outside the selected hole, tee, pin, or source scope
+  was incorrectly described as older geometry.
+- A bounded Luna packet separated scope matching from recency/geometry filters.
+  Attempt 2/3 cleared independent Sol review: `stale-only` now requires a
+  nonempty matching scope whose records are all from older geometry, while
+  wrong-scope and mixed-age empty results use accurate explanations.
+- Direct-consumer verification passed 52/52 tests with TypeScript, scoped lint,
+  and diff checks green. The change is persistence-neutral and preserves legacy
+  evidence without pin identity.
+- ZK-1120 shipped as development commit
+  `b22684a240953a9f8353627a6b710e5d286ce223` and tree-identical production
+  merge `c8cab83e43ce120a7ecf3c6af7773ac869fe62c9`. Development run
+  `34168998706` and production run `34169895200` passed; staging and production
+  remained HTTP 200 across bounded health checks. Linear was verified Done.
+
+## ZK-771 M70 certification recovery — 2026-09-07
+
+- The original ZK-771 machine packet exhausted its three-attempt correction
+  loop. Its matrix, atlas, PNG, browser, and manifest scaffolding remains
+  reusable, but release was held because fixture topology, independent final-SVG
+  coordinate proof, real offline/platform delivery, and byte-bound visual
+  evidence required separate deterministic acceptance gates.
+- The work was decomposed into ZK-1131 through ZK-1138. ZK-1135's deterministic
+  accessible SVG naming, ZK-1133's lifecycle/cache/failure/budget/provenance
+  suite, and ZK-1132's browser/PWA/desktop delivery certification independently
+  passed their Sol gates. Physical GPU/device and signing/notarization boundaries
+  remain explicit external exclusions.
+- ZK-1136 exhausted its own correction loop with two residual assertions and
+  was decomposed into the one-file ZK-1138 child. ZK-1138 passed on attempt 1,
+  freezing genuine split, crossing, water-carry, elevation, wooded, alternate,
+  incomplete, long-title, and two-layout fixture semantics.
+- ZK-1137's structural projection oracle passed on attempt 3. It independently
+  checks single and nested-atlas tee, pin, route, hazard, obstacle, and M69
+  segment/landing coordinates, strict XML inputs, layout isolation, and named
+  serialized-coordinate tamper failures. The combined ZK-1131 integration gate
+  passed twice with no product changes.
+- Complete pre-integration gates passed in the certification worktree: 228
+  Vitest files with 1,820 passing tests and one intentional skip, 5/5 audio
+  audits, lint with zero errors and nine pre-existing Hook warnings, production
+  build and all asset/startup/delivery budgets, plus the real 18-hole browser,
+  service-worker-offline, desktop-file, and bundled-client checks.
+- NEXT: promote this exact 13-file machine-foundation packet through development
+  and production, reconcile the released prerequisite issues, then generate
+  ZK-1134's byte-bound SVG/PNG contact sheet against the immutable released SHA.
+  Human originality, hierarchy, and biome-cohesion approval remains mandatory
+  before ZK-771 or M70 can close.

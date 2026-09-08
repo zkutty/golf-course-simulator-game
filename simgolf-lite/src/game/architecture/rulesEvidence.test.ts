@@ -55,6 +55,7 @@ function evidence(courseValue: Course, id: string, geometryVersion = courseGeome
     courseName: "Rules course",
     holeId: "rules-hole",
     teeSet: "member",
+    pinRotation: "A",
     geometryVersion,
     shotType: "recovery",
     shotNumber: 2,

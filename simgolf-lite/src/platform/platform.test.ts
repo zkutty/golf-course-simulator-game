@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { browserPlatform } from "./browserPlatform";
 import { createDesktopPlatform } from "./desktopPlatform";
 import type { CourseCraftDesktopBridge } from "./types";
@@ -8,6 +8,8 @@ import {
   normalizeLoadedSaveResult,
   payloadForPersistence,
 } from "../utils/save";
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("M42 PlatformServices", () => {
   it("keeps the browser build offline-capable with safe fallbacks", async () => {
@@ -30,6 +32,20 @@ describe("M42 PlatformServices", () => {
       visibility: "private",
       packageText: "{}",
     })).rejects.toThrow("unavailable");
+  });
+
+  it("downloads SVG with its exact MIME and revokes the object URL", async () => {
+    const click = vi.fn(), revokeObjectURL = vi.fn();
+    const createObjectURL = vi.fn((blob: Blob) => {
+      expect(blob.type).toBe("image/svg+xml");
+      return "blob:coursecraft-svg";
+    });
+    vi.stubGlobal("document", { createElement: () => ({ click, download: "", href: "" }) });
+    vi.stubGlobal("URL", { createObjectURL, revokeObjectURL });
+    vi.stubGlobal("window", { setTimeout: (callback: () => void) => { callback(); return 1; } });
+    await expect(browserPlatform.files.chooseExport("hole.svg", "<svg/>", "image/svg+xml")).resolves.toBe(true);
+    expect(click).toHaveBeenCalledOnce();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:coursecraft-svg");
   });
 
   it("maps renderer calls only onto the allowlisted typed desktop bridge", async () => {
@@ -56,10 +72,12 @@ describe("M42 PlatformServices", () => {
     const platform = createDesktopPlatform(bridge);
     expect(await platform.files.readText("slot")).toBe("value");
     expect(await platform.files.recovery?.("slot")).toBeUndefined();
+    await platform.files.chooseExport("hole.svg", "<svg/>", "image/svg+xml");
     expect(await platform.app.requestQuit({ dirty: true, resumableBoundary: false })).toBe("cancel");
     expect(calls).toEqual([
       { channel: "files:read", payload: { key: "slot" } },
       { channel: "files:recovery", payload: { key: "slot" } },
+      { channel: "dialogs:export", payload: { name: "hole.svg", text: "<svg/>", mimeType: "image/svg+xml" } },
       { channel: "app:requestQuit", payload: { dirty: true, resumableBoundary: false } },
     ]);
   });

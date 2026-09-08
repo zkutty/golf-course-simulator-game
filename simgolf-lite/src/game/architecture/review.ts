@@ -81,16 +81,25 @@ function bounded<T>(values: T[], max: number): T[] {
   return Array.from({ length: max }, (_, index) => values[Math.floor(index * stride)]);
 }
 
+function evidenceMatchesScope(
+  evidence: ArchitectureShotEvidence,
+  filters: ArchitectureReviewFilters,
+): boolean {
+  if (evidence.courseId !== filters.courseId) return false;
+  if (filters.holeId !== "all" && evidence.holeId !== filters.holeId) return false;
+  if (filters.teeSet !== "all" && evidence.teeSet !== filters.teeSet) return false;
+  if (filters.pinRotation !== "all" && evidence.pinRotation !== filters.pinRotation) return false;
+  if (filters.sourceSegment !== "all" && evidence.sourceSegment !== filters.sourceSegment) return false;
+  return true;
+}
+
 function evidenceFilters(
   evidence: ArchitectureShotEvidence,
   filters: ArchitectureReviewFilters,
   currentGeometryVersion: string,
   currentWeek: number,
 ): boolean {
-  if (evidence.courseId !== filters.courseId) return false;
-  if (filters.holeId !== "all" && evidence.holeId !== filters.holeId) return false;
-  if (filters.teeSet !== "all" && evidence.teeSet !== filters.teeSet) return false;
-  if (filters.sourceSegment !== "all" && evidence.sourceSegment !== filters.sourceSegment) return false;
+  if (!evidenceMatchesScope(evidence, filters)) return false;
   if (filters.recency === "recent" && evidence.week < currentWeek - 4) return false;
   if (filters.recency === "current" && evidence.geometryVersion !== currentGeometryVersion) return false;
   if (filters.recency === "historical" && evidence.geometryVersion === currentGeometryVersion) return false;
@@ -252,15 +261,23 @@ export function buildArchitectureReview(
         item.id.endsWith(living.architecture.returnContext!.shotId!)
       )?.id ?? null
     : null;
-  const evidence = living.architecture.evidence.filter((item) => evidenceFilters(item, filters, currentGeometryVersion, world.week));
+  // Keep the scope match independent from the age filter. Otherwise a hole/tee/pin/source
+  // mismatch is indistinguishable from a genuinely stale matching record, and the UI can
+  // incorrectly imply that the selected scope has historical evidence.
+  const scopedEvidence = living.architecture.evidence.filter((item) => evidenceMatchesScope(item, filters));
+  const evidence = scopedEvidence.filter((item) => evidenceFilters(item, filters, currentGeometryVersion, world.week));
   const currentEvidence = evidence.filter((item) => item.geometryVersion === currentGeometryVersion).length;
   const historicalEvidence = evidence.length - currentEvidence;
+  const hasHistoricalScopeEvidence = scopedEvidence.length > 0
+    && scopedEvidence.every((item) => item.geometryVersion !== currentGeometryVersion);
   const status: ArchitectureReviewData["status"] = evidence.length === 0
-    ? living.architecture.evidence.some((item) => item.courseId === filters.courseId) ? "stale-only" : "empty"
+    ? hasHistoricalScopeEvidence ? "stale-only" : "empty"
     : currentEvidence === 0 ? "stale-only"
       : evidence.length < 8 ? "sparse" : "ready";
   const explanation = status === "empty"
-    ? "Play a round on this routing to collect factual shot and scoring evidence."
+    ? scopedEvidence.length === 0
+      ? "No retained evidence matches the selected course, hole, tee, pin, and source filters."
+      : "No retained evidence matches the selected evidence-age filter for this scope."
     : status === "sparse"
       ? "Early evidence is shown, but more rounds will make the pattern more reliable."
       : status === "stale-only"

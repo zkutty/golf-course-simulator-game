@@ -37,6 +37,7 @@ function completedRound(course: Course, visit: number, shots = 6): CompletedRoun
     courseName: course.name,
     holeIds: holes.map((hole) => hole.id!),
     teeSet: "member",
+    pinRotation: "A",
     waitMinutes: 7,
     shots: Array.from({ length: shots }, (_, index) => {
       const hole = holes[index % holes.length];
@@ -93,6 +94,7 @@ describe("M38 living club and architecture certification", () => {
     expect(living.regulars).toHaveLength(1);
     expect(living.regulars[0]).toMatchObject({ name: "Morgan Links", visits: 2, rounds: 2 });
     expect(living.architecture.evidence.length).toBe(12);
+    expect(living.architecture.evidence.every((item) => item.pinRotation === "A")).toBe(true);
     const third = recordLivingClubRound(twice, course, completedRound(course, 3), 5);
     expect(normalizeLivingClub(third.livingClub).regulars[0].id).toBe(living.regulars[0].id);
     expect(new Set(normalizeLivingClub(third.livingClub).regulars.map((regular) => regular.id)).size).toBe(1);
@@ -118,13 +120,20 @@ describe("M38 living club and architecture certification", () => {
   });
 
   it("snapshots Player Pro architecture and restores an exact Return to Design context", () => {
-    const course = createPlayerProReferenceCourse();
+    const sourceCourse = createPlayerProReferenceCourse();
+    const course: Course = {
+      ...sourceCourse,
+      holes: sourceCourse.holes.map((hole) => ({
+        ...hole,
+        pinPositions: { ...hole.pinPositions, B: hole.pinPositions?.A ?? hole.green },
+      })),
+    };
     const world: World = {
       ...DEFAULT_WORLD,
       runSeed: 383838,
       playerPro: createDefaultPlayerPro({ seed: 383838, name: "Alex Architect" }),
     };
-    const started = startPlayableRound({ course, world, layoutId: "player-pro-slice", teeSet: "member", pinRotation: "A", day: 2 });
+    const started = startPlayableRound({ course, world, layoutId: "player-pro-slice", teeSet: "member", pinRotation: "B", day: 2 });
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     const completed = autoFinishPlayerRound(started.round, world.playerPro!.skills);
@@ -137,11 +146,13 @@ describe("M38 living club and architecture certification", () => {
     const review = buildArchitectureReview(course, recorded.world, {
       ...defaultArchitectureFilters(course),
       sourceSegment: "player-pro",
+      pinRotation: "B",
     });
     expect(review.currentEvidence).toBe(completed.shots.length);
     expect(review.historicalEvidence).toBe(0);
     expect(review.evidence.every((item) => item.shotSlope && item.slopeExplanation)).toBe(true);
     expect(review.evidence.every((item) => item.physicalRest)).toBe(true);
+    expect(review.evidence.every((item) => item.pinRotation === completed.pinRotation)).toBe(true);
     expect(review.overlay.traces.some((trace) => trace.label?.includes("plays-like:"))).toBe(true);
 
     const lastShot = completed.shots.at(-1)!;
@@ -152,6 +163,65 @@ describe("M38 living club and architecture certification", () => {
       holeId: lastShot.holeId,
       point: lastShot.rest,
     });
+  });
+
+  it("normalizes only valid optional pin identities without rewriting legacy evidence", () => {
+    const course = createPlayerProReferenceCourse();
+    const living = normalizeLivingClub(promotedWorld(course).livingClub);
+    const sample = living.architecture.evidence[0];
+    const normalized = normalizeLivingClub({
+      ...living,
+      architecture: {
+        ...living.architecture,
+        evidence: [
+          { ...sample, id: "pin-b", pinRotation: "B" },
+          { ...sample, id: "legacy", pinRotation: undefined },
+          { ...sample, id: "malformed", pinRotation: "D" },
+        ],
+      },
+    });
+    expect(normalized.architecture.evidence.map((item) => ({ id: item.id, pinRotation: item.pinRotation }))).toEqual([
+      { id: "pin-b", pinRotation: "B" },
+      { id: "legacy", pinRotation: undefined },
+      { id: "malformed", pinRotation: undefined },
+    ]);
+  });
+
+  it("requires exact pin evidence for review readiness and keeps stale geometry non-ready", () => {
+    const course = createPlayerProReferenceCourse();
+    const recorded = promotedWorld(course);
+    const filters = { ...defaultArchitectureFilters(course), teeSet: "member" as const, recency: "current" as const };
+    const pinA = buildArchitectureReview(course, recorded, { ...filters, pinRotation: "A" });
+    expect(pinA.status).toBe("ready");
+    expect(pinA.currentEvidence).toBeGreaterThanOrEqual(8);
+    expect(pinA.evidence.every((item) => item.pinRotation === "A")).toBe(true);
+
+    for (const pinRotation of ["B", "C"] as const) {
+      const otherPin = buildArchitectureReview(course, recorded, { ...filters, pinRotation });
+      expect(otherPin.currentEvidence).toBe(0);
+      expect(otherPin.status).not.toBe("ready");
+    }
+
+    const living = normalizeLivingClub(recorded.livingClub);
+    const legacyWorld = {
+      ...recorded,
+      livingClub: {
+        ...living,
+        architecture: {
+          ...living.architecture,
+          evidence: living.architecture.evidence.map(({ pinRotation: _pinRotation, ...item }) => item),
+        },
+      },
+    };
+    const legacy = buildArchitectureReview(course, legacyWorld, { ...filters, pinRotation: "A" });
+    expect(legacy.currentEvidence).toBe(0);
+    expect(legacy.status).not.toBe("ready");
+
+    const edited = { ...course, tiles: [...course.tiles] };
+    edited.tiles[0] = edited.tiles[0] === "water" ? "rough" : "water";
+    const stale = buildArchitectureReview(edited, recorded, { ...filters, pinRotation: "A" });
+    expect(stale.currentEvidence).toBe(0);
+    expect(stale.status).toBe("stale-only");
   });
 
   it("resolves deterministic choices and callbacks exactly once from immutable fact snapshots", () => {

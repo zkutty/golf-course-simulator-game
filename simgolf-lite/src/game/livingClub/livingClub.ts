@@ -254,8 +254,12 @@ function normalizeEvidence(raw: unknown): ArchitectureShotEvidence | null {
   };
   if (!evidence.id || !evidence.courseId || !evidence.holeId || !evidence.geometryVersion || !validPoint(evidence.from) || !validPoint(evidence.landing) || !validPoint(evidence.rest)) return null;
   const shotSlope = normalizeShotSlopeContext(evidence.shotSlope);
+  const pinRotation = evidence.pinRotation === "A" || evidence.pinRotation === "B" || evidence.pinRotation === "C"
+    ? evidence.pinRotation
+    : undefined;
   return {
     ...evidence,
+    pinRotation,
     ...(validPoint(evidence.aim) ? { aim: { ...evidence.aim } } : { aim: undefined }),
     ...(validPoint(evidence.physicalRest) ? { physicalRest: { ...evidence.physicalRest } } : { physicalRest: undefined }),
     ...(shotSlope
@@ -593,6 +597,7 @@ export function recordLivingClubRound(world: World, course: Course, round: Compl
     courseName,
     holeId: shot.holeId,
     teeSet: round.teeSet ?? "member",
+    pinRotation: round.pinRotation,
     geometryVersion,
     shotType: shot.shotType,
     shotNumber: shot.shotNumber,
@@ -658,6 +663,7 @@ export function recordPlayerRoundArchitecture(
     courseName: careerRound.courseName,
     holeId: shot.holeId,
     teeSet: playable.teeSet,
+    pinRotation: playable.pinRotation,
     geometryVersion,
     shotType: playerShotType(shot.club, shot.lieBefore, shot.shotNumber),
     shotNumber: shot.shotNumber,

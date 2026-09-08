@@ -23,9 +23,32 @@ async function run(command, args, options = {}) {
   });
 }
 
+async function downloadBytes(download) {
+  const stream = await download.createReadStream();
+  if (!stream) throw new Error("Browser delivery did not expose a download stream.");
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(chunk);
+  return Buffer.concat(chunks);
+}
+
+async function serializedCourseBytes(page) {
+  return page.evaluate(() => {
+    const course = JSON.parse(window.render_game_to_text?.() ?? "{}").course;
+    // Presentation budget is transient render telemetry, not persisted course
+    // state; retain every other field in this observable course-byte check.
+    const { presentation: _presentation, ...surfaceCare } = course.surfaceCare ?? {};
+    return JSON.stringify({ ...course, ...(course.surfaceCare ? { surfaceCare } : {}) });
+  });
+}
+
 let preview = null;
 if (!process.env.COURSECRAFT_PWA_URL) {
+  // The production bundle keeps the normal service-worker behavior, while the
+  // existing e2e-mode test seam supplies a deterministic complete course only
+  // after an offline reload. No release source path is changed for this probe.
   await run("npm", ["run", "build"], { env: { ...process.env, VITE_BASE: normalizedBase } });
+  await run("npx", ["vite", "build", "--mode", "e2e"], { env: { ...process.env, VITE_BASE: normalizedBase } });
+  await run(process.execPath, ["scripts/inject-sw-assets.mjs"], { env: { ...process.env, VITE_BASE: normalizedBase } });
   const dist = fileURLToPath(new URL("../dist", import.meta.url));
   const types = { ".css": "text/css", ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".png": "image/png", ".svg": "image/svg+xml", ".webmanifest": "application/manifest+json" };
   preview = createServer(async (request, response) => {
@@ -68,7 +91,17 @@ await context.addInitScript(() => localStorage.setItem("coursecraft_app_profile_
 })));
 const page = await context.newPage();
 const pageErrors = [];
+const externalRequestLedger = [];
 page.on("pageerror", (error) => pageErrors.push(error.message));
+page.on("request", (request) => {
+  const url = request.url();
+  if (url.startsWith("data:") || url.startsWith("blob:")) return;
+  try {
+    if (new URL(url).origin !== new URL(baseURL).origin) externalRequestLedger.push({ method: request.method(), url });
+  } catch {
+    externalRequestLedger.push({ method: request.method(), url });
+  }
+});
 try {
   await page.goto(baseURL, { waitUntil: "domcontentloaded" });
   await page.evaluate(async () => { await Promise.race([navigator.serviceWorker.ready, new Promise((_, reject) => setTimeout(() => reject(new Error("service-worker ready timeout")), 15_000))]); });
@@ -144,6 +177,10 @@ try {
     if (colors.size >= 16) break;
   }
   if (colors.size < 16) throw new Error(`Course canvas did not contain a rendered scene (${colors.size} sampled colors)`);
+  // Warm the review surface while online so the deployed worker must retain
+  // its actual lazy UI chunk for the later offline export.
+  await page.getByTestId("open-architecture-review").click();
+  await page.getByTestId("architecture-review").getByRole("button", { name: "Close" }).click();
   if (pageErrors.length) throw new Error(`Gameplay emitted page errors: ${pageErrors.join(" | ")}`);
   const hudChunkUrls = await page.evaluate(() => performance.getEntriesByType("resource")
     .map((entry) => entry.name)
@@ -183,16 +220,49 @@ try {
   await context.setOffline(true);
   await page.reload({ waitUntil: "domcontentloaded" });
   if (!(await page.title()).startsWith("CourseCraft")) throw new Error("Offline shell did not load");
+  const offlineController = await page.evaluate(() => Boolean(navigator.serviceWorker.controller));
+  if (!offlineController) throw new Error("Service worker no longer controlled the page after the offline reload");
   const saved = await page.evaluate(() => localStorage.getItem("coursecraft_pwa_probe"));
   if (saved !== "offline-save") throw new Error("Offline local save probe was lost");
-  await page.getByRole("button", { name: "New Game" }).click();
-  try {
-    await page.getByText("Choose your game", { exact: true }).waitFor({ state: "visible" });
-  } catch (error) {
-    const body = (await page.locator("body").innerText()).slice(0, 1_000);
-    throw new Error(`Offline New Game did not open: ${String(error)}; page errors: ${pageErrors.join(" | ") || "none"}; body: ${body}`);
+  await page.getByRole("button", { name: "Quick Start" }).click();
+  const offlineExportTutorial = page.getByRole("dialog", { name: "First-launch tutorial" });
+  if (await offlineExportTutorial.count()) await offlineExportTutorial.getByRole("button", { name: "Skip tutorial" }).click();
+  await courseCanvas.waitFor({ state: "visible", timeout: 15_000 });
+  await page.waitForFunction(() => typeof window.__coursecraftTest?.setPropertyFixture === "function", undefined, { timeout: 15_000 });
+  await page.evaluate(() => window.__coursecraftTest.setPropertyFixture());
+  const offlineCourseBefore = await serializedCourseBytes(page);
+  await page.getByTestId("open-architecture-review").focus();
+  await page.keyboard.press("Enter");
+  const offlineReview = page.getByTestId("architecture-review");
+  const offlineIllustration = offlineReview.getByTestId("architecture-create-hole-illustration");
+  await offlineIllustration.focus();
+  await page.keyboard.press("Enter");
+  const offlineIllustrationPreview = offlineReview.getByTestId("hole-illustration-preview");
+  await offlineIllustrationPreview.waitFor({ state: "visible" });
+  const offlineSvgDownload = page.waitForEvent("download");
+  const offlineSvgButton = offlineIllustrationPreview.getByRole("button", { name: "Download single SVG" });
+  await offlineSvgButton.focus();
+  await page.keyboard.press("Enter");
+  const offlineSvgBytes = await downloadBytes(await offlineSvgDownload);
+  const offlineSvg = offlineSvgBytes.toString("utf8");
+  const offlineSvgRoot = /^<svg\s+([^>]+)>/.exec(offlineSvg);
+  if (!offlineSvgRoot
+    || !offlineSvgRoot[1].includes('width="3840"')
+    || !offlineSvgRoot[1].includes('height="2560"')
+    || !offlineSvgRoot[1].includes('viewBox="0 0 960 640"')
+    || !offlineSvg.includes('<metadata id="coursecraft-export">')) {
+    throw new Error("Offline SVG delivery did not have a 3840 × 2560 single-export root and metadata.");
   }
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  const offlinePng = page.waitForEvent("download");
+  const offlinePngButton = offlineIllustrationPreview.getByRole("button", { name: "Download single PNG" });
+  await offlinePngButton.focus();
+  await page.keyboard.press("Enter");
+  const offlinePngBytes = await downloadBytes(await offlinePng);
+  if (!offlinePngBytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    || offlinePngBytes.readUInt32BE(16) !== 3840 || offlinePngBytes.readUInt32BE(20) !== 2560
+    || !offlinePngBytes.includes(Buffer.from("tEXtCourseCraft\0"))) {
+    throw new Error("Offline PNG delivery was not a truthful metadata-bearing 3840 × 2560 export.");
+  }
   const offlineBundleResponses = await page.evaluate(async (urls) => Promise.all(
     urls.map(async (url) => {
       try {
@@ -245,8 +315,11 @@ try {
     const body = (await page.locator("body").innerText()).slice(0, 1_000);
     throw new Error(`Deferred HUD did not mount during offline Quick Start: ${String(error)}; page errors: ${pageErrors.join(" | ") || "none"}; body: ${body}`);
   }
-  if (pageErrors.length) throw new Error(`Offline New Game emitted page errors: ${pageErrors.join(" | ")}`);
-  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, Vision cache-on-demand, selected-biome cache isolation, scoped install, offline reload, deferred HUD/New Game, and local save persistence`);
+  const offlineCourseAfter = await serializedCourseBytes(page);
+  if (offlineCourseAfter !== offlineCourseBefore) throw new Error("Offline illustration delivery changed serialized course bytes.");
+  if (externalRequestLedger.length) throw new Error(`PWA made external requests: ${JSON.stringify(externalRequestLedger)}`);
+  if (pageErrors.length) throw new Error(`Offline illustration export emitted page errors: ${pageErrors.join(" | ")}`);
+  console.log(`PWA smoke passed at ${baseURL}: strict-CSP gameplay render, Vision cache-on-demand, selected-biome cache isolation, scoped install, external-request ledger empty, service-worker-controlled offline reload, course-byte-preserving keyboard illustration SVG/PNG delivery, deferred HUD, and local save persistence`);
 } finally {
   await browser.close();
   preview?.close?.();

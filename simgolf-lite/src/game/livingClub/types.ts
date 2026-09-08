@@ -287,6 +287,8 @@ export interface ArchitectureShotEvidence {
   courseName: string;
   holeId: string;
   teeSet: "forward" | "member" | "championship";
+  /** Frozen round setup; absent on historical evidence. */
+  pinRotation?: "A" | "B" | "C";
   geometryVersion: string;
   shotType: ArchitectureShotType;
   shotNumber: number;
