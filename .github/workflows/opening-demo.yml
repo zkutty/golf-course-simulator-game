@@ -1,0 +1,42 @@
+name: Opening demo
+
+on:
+  pull_request:
+    paths:
+      - 'simgolf-lite/**'
+      - '.github/workflows/opening-demo.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  private-opening:
+    name: One-hole private opening browser evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: simgolf-lite
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: simgolf-lite/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Exercise the private opening through real UI controls
+        run: npx playwright test e2e/m14-onboarding.e2e.ts --grep 'ZK-1106' --retries=0
+        env:
+          COURSECRAFT_OPENING_EVIDENCE: '1'
+      - name: Retain opening video, screenshots and context
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-opening-evidence
+          path: |
+            simgolf-lite/test-results
+            simgolf-lite/playwright-report
+          if-no-files-found: warn
+          retention-days: 14
