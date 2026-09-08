@@ -42,19 +42,48 @@ function setup(course: Course) {
   return { settings, evidence };
 }
 
+function expectAccessibleStandaloneSvg(svg: string): { titleId: string; descriptionId: string; title: string; description: string } {
+  const document = new DOMParser().parseFromString(svg, "image/svg+xml");
+  const root = document.documentElement;
+  const labelledBy = (root.getAttribute("aria-labelledby") ?? "").trim().split(/\s+/).filter(Boolean);
+  expect(root.getAttribute("role")).toBe("img");
+  expect(labelledBy).toHaveLength(2);
+  expect(labelledBy[0]).not.toBe(labelledBy[1]);
+  const title = document.getElementById(labelledBy[0]);
+  const description = document.getElementById(labelledBy[1]);
+  expect(title?.tagName).toBe("title");
+  expect(description?.tagName).toBe("desc");
+  expect(title?.textContent?.trim()).toMatch(/\S/);
+  expect(description?.textContent?.trim()).toMatch(/\S/);
+  const ids: string[] = [];
+  const elements = document.getElementsByTagName("*");
+  for (let index = 0; index < elements.length; index++) {
+    const id = elements.item(index)?.getAttribute("id");
+    if (id) ids.push(id);
+  }
+  expect(new Set(ids).size).toBe(ids.length);
+  return { titleId: labelledBy[0], descriptionId: labelledBy[1], title: title!.textContent!.trim(), description: description!.textContent!.trim() };
+}
+
 describe("ZK-770 hole illustration export preparation", () => {
   it("preserves the exact final preview presentation in a truthful high-resolution SVG", () => {
     const course = estate(), before = JSON.stringify(course), { settings, evidence } = setup(course);
     const preview = buildHoleIllustrationPreview(course, settings, evidence);
     const result = buildHoleIllustrationExport(course, settings, evidence, { kind: "single" });
+    const repeated = buildHoleIllustrationExport(course, settings, evidence, { kind: "single" });
     expect(result.complete).toBe(true);
     if (!result.complete || !preview.complete) return;
+    expect(repeated).toEqual(result);
     const previewInner = preview.svg!.slice(preview.svg!.indexOf(">") + 1, preview.svg!.lastIndexOf("</svg>"));
     expect(result).toMatchObject({ width: 3840, height: 2560, viewBox: "0 0 960 640" });
     expect(result.svg).toContain('width="3840" height="2560" viewBox="0 0 960 640"');
     expect(result.svg).toContain(previewInner);
     expect(result.metadata).toMatchObject({ schema: "coursecraft-hole-illustration", version: 1, kind: "single", tee: "member", pin: "A", frame: "north-up", biome: "parkland", season: "summer", contrast: "standard", publishedHoleCount: 9 });
     expect(Object.keys(result.metadata).sort()).toEqual(["biome", "contrast", "courseName", "frame", "height", "holeId", "holeName", "kind", "layoutId", "layoutName", "pin", "planHashes", "publishedHoleCount", "schema", "season", "snapshotHashes", "tee", "version", "width"]);
+    const accessible = expectAccessibleStandaloneSvg(result.svg);
+    expect(accessible.title).toContain("Long & <unsafe>");
+    expect(accessible.description).toBe("member tee, Pin A, north-up, parkland, summer, standard.");
+    expect(result.svg).toContain("Long &amp; &lt;unsafe&gt;");
     expect(result.svg).not.toContain("<unsafe>");
     expect(new DOMParser().parseFromString(result.svg, "image/svg+xml").getElementsByTagName("parsererror")).toHaveLength(0);
     expect(JSON.stringify(course)).toBe(before);
@@ -80,6 +109,9 @@ describe("ZK-770 hole illustration export preparation", () => {
     expect(first.metadata.planHashes).toHaveLength(size);
     expect(first.width * first.height).toBeLessThanOrEqual(16_777_216);
     expect(new DOMParser().parseFromString(first.svg, "image/svg+xml").getElementsByTagName("parsererror")).toHaveLength(0);
+    const accessible = expectAccessibleStandaloneSvg(first.svg);
+    expect(accessible.title).toContain(`${size}-hole published atlas`);
+    expect(accessible.description).toBe("member tee, Pin A, north-up, parkland, summer, standard.");
     expect(JSON.stringify(course)).toBe(before);
   });
 
