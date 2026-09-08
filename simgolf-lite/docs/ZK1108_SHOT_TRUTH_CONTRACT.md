@@ -17,6 +17,7 @@ Base: `origin/develop` at `4ddc7af0a6014ab73cedb6e6dea42c7b026049af`.
 | Telemetry / replay / render contract | `projectCommittedShot` | Frozen detached derived projection, no save schema, clock, course, locale or RNG input. |
 | Animation adapter | `committedShotGroundPosition` | Read-only sampling of recorded geometry; stop at physical rest, never roll toward relief. No physical path on legacy traces means `null`, not invented geometry. |
 | Accessible labels | `shotTruthCues` | Existing typed English/pseudo catalog; text-equivalent ruling/penalty/position/schematic cues. Locale cannot modify the result. |
+| Current selected-golfer channel | `currentShotEvidence` + saved simulation itinerary cursor | Exactly one intent/result/reaction/unavailable channel in inspector and telemetry. No whole-round tail fallback. |
 
 ## Position distinctions
 
@@ -45,12 +46,36 @@ untrusted-input boundary. Returned projections are not accepted as new inputs
 to physics or scoring.
 
 Not claimed here: renderer migration, moving existing M47 flight endpoints,
-replacing cosmetic `ballFlightPose`, new telemetry/save fields, or retroactive
+replacing cosmetic `ballFlightPose`, new save fields, or retroactive
 reconstruction of old invited-preview receipts. `RenderSnapshot` scene ownership
 and revisions remain unchanged; a future renderer adapter must consume the
 projection without treating animation progress, camera, effects or locale as
-authority. Existing UI is unchanged: the new cues are adapter-ready, not newly
-mounted UI. Existing opening schematic legend remains truthful.
+authority. The selected golfer inspector mounts one localized, labelled live
+region; telemetry exposes the same discriminated channel. Existing compatibility
+ruling/outcome keys are null until an observed result is selected. The opening
+schematic legend remains truthful.
+
+## Current-shot compatibility association
+
+Existing saves have an itinerary cursor but no flight-to-outcome ID. The selector
+therefore joins the cursor-selected flight using hole identity and exact retained
+origin, endpoint, landing and complete rollout-path equality, requiring one unique
+match. This is a compatibility association, not a first-class identity link.
+Missing, malformed, duplicate or ambiguous evidence is unavailable. No geometry
+tolerance, nearest match, RNG replay or last-array-element fallback is used.
+Intent takes priority while addressing/in flight; only a crossed identified
+flight supplies a result. A reaction requires a scored crossed-hole boundary
+and the unique matching reaction. Newer stroke evidence outranks old reactions.
+Automatic putt phases without individual evidence remain unavailable; render-only
+`Segment.shot` never selects evidence. The future boundary is an explicit
+non-persisted observation link supplied by the simulation, with a separate
+compatibility decision for historical saves; this packet adds no save field.
+
+Supported flight coverage is normal (straight-intent), standard/high/low;
+the existing seeded lateral miss is retained, not rebalanced. Rollout and
+obstacle/penalty/relief cues carry retained facts, never reconstructed physics.
+The single-channel, null-compatibility, hostile-metadata, JSON legacy/new restart
+and actual live-action save/reload assertions cover the adapter boundary.
 
 ## Verification
 

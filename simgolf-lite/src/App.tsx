@@ -240,6 +240,7 @@ import {
   surfaceCareConditionSummary,
 } from "./game/conditions/surfaceCare";
 import { surfaceCarePresentationSummary } from "./game/render/surfaceCarePresentation";
+import { currentShotEvidence, currentShotEvidenceText } from "./game/live/currentShotEvidence";
 import {
   createM53SurfaceCareRoutineFixture,
   createM53SurfaceCarePresentationFixture,
@@ -3240,8 +3241,10 @@ export default function App() {
         readiness: tournamentReadiness,
         active: live.status.tournament ? { name: live.status.tournament.name, teeSet: live.status.tournament.teeSet, pinRotation: live.status.tournament.pinRotation, standings: live.status.tournament.standings.slice(0, 5) } : null,
       },
+      selectedGolferEvidence: live.status.selected ? { golferId: live.status.selected.id, channel: currentShotEvidenceText(currentShotEvidence(liveStateById.get(live.status.selected.id))) } : null,
       golfers: live.golfersRef.current.slice(0, 24).map((golfer) => {
-        const latestOutcome = lastItem(liveStateById.get(golfer.id)?.shotOutcomes);
+        const evidence = currentShotEvidence(liveStateById.get(golfer.id));
+        const latestOutcome = evidence.phase === "result" ? evidence.outcome : null;
         return {
           id: golfer.id,
           x: Number(golfer.x.toFixed(2)),
@@ -3251,6 +3254,7 @@ export default function App() {
           mood: Number(golfer.mood.toFixed(2)),
           teeSet: golfer.teeSet,
           pinRotation: golfer.pinRotation,
+          shotEvidence: currentShotEvidenceText(evidence),
           latestSharedOutcome: textSharedOutcome(latestOutcome?.sharedOutcome),
           latestRuling: latestOutcome?.sharedOutcome?.ruling ?? null,
           latestShotSlope: latestOutcome?.shotSlope ?? null,

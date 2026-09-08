@@ -1,5 +1,6 @@
 import type { LiveShotOutcome } from "../live/m47Types";
 import type { Point } from "../models/types";
+import type { ReliefType, ShotCollision, ShotFlightProfile, ShotPenaltyKind } from "./contracts";
 
 /** Read-only adapter, not a save carrier, solver, or permission to re-sample. */
 export type CommittedShotCarrier = Pick<LiveShotOutcome,
@@ -26,6 +27,10 @@ export interface ShotTruthProjection {
   readonly penaltyStrokes: number;
   readonly holed: boolean;
   readonly reliefStatus: "resolved" | "not_required" | "unavailable" | "unknown";
+  readonly flight: Readonly<{ profile: ShotFlightProfile; launchAngleDegrees: number; apexHeightYards: number }> | null;
+  readonly collisionKind: ShotCollision["kind"] | null;
+  readonly penaltyKind: ShotPenaltyKind | null;
+  readonly reliefType: ReliefType | null;
   readonly automaticPutts: number;
   readonly strokeCost: number;
   /** Recorded ground samples only; an absent path is not synthesized. */
@@ -61,6 +66,10 @@ export function projectCommittedShot(shot: CommittedShotCarrier): ShotTruthProje
     penaltyStrokes,
     holed: shared ? shared.ruling.status === "holed" : shot.holed,
     reliefStatus: shared?.relief.status ?? "unknown",
+    flight: shared ? Object.freeze({ profile: shared.flight.profile, launchAngleDegrees: shared.flight.launchAngleDegrees, apexHeightYards: shared.flight.apexHeightYards }) : null,
+    collisionKind: shared?.collision.kind ?? null,
+    penaltyKind: shared?.ruling.penaltyKind ?? null,
+    reliefType: shared?.relief.type ?? null,
     automaticPutts,
     strokeCost: committedShotStrokeCost(shot),
     rollPath: Object.freeze((shot.greenRollout?.path ?? []).map(point)),
