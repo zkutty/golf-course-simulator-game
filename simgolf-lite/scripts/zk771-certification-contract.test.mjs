@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { relative, sep } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { ZK771_INPUT_COMMIT, ZK771_INPUT_TREE, ZK771_PRODUCTION_COMMIT, ZK771_VERDICT, reportBytes, sourceBindings, validateEvidenceDescendant, validateManifest, validateReleasedProvenance } from "./zk771-certification-contract.mjs";
+import { ZK771_INPUT_COMMIT, ZK771_INPUT_TREE, ZK771_PRODUCTION_COMMIT, ZK771_VERDICT, normalizePackageGitPath, reportBytes, sourceBindings, validateEvidenceDescendant, validateManifest, validateReleasedProvenance } from "./zk771-certification-contract.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const manifest = JSON.parse(readFileSync(new URL("../release/zk771-certification-manifest.json", import.meta.url), "utf8"));
@@ -52,4 +54,22 @@ test("ZK-1134 permits an evidence-only descendant and rejects source or scope ta
   assert.match(validateEvidenceDescendant({ ...evidenceHead, changed: (range) => range.includes("..") ? ["src/game/holeIllustration/export.ts"] : [] }).join("\n"), /out-of-scope committed/);
   assert.match(validateEvidenceDescendant({ ...evidenceHead, isAncestor: () => false }).join("\n"), /not an ancestor/);
   assert.match(validateEvidenceDescendant({ ...evidenceHead, changed: (range) => range.includes("..") ? [] : ["src/game/holeIllustration/preview.ts"] }).join("\n"), /out-of-scope working-tree/);
+});
+
+test("ZK-1134 normalizes actual descendant paths from package and repository cwd contexts", () => {
+  const git = (cwd, args) => {
+    const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  const repository = git(root, ["rev-parse", "--show-toplevel"]);
+  const prefix = relative(repository, root).split(sep).join("/");
+  const actual = (cwd, range) => git(cwd, ["diff", "--name-only", range]).split("\n").filter(Boolean).map((path) => normalizePackageGitPath(path, prefix));
+  const packagePaths = actual(root, `${ZK771_INPUT_COMMIT}..HEAD`);
+  const repositoryPaths = actual(repository, `${ZK771_INPUT_COMMIT}..HEAD`);
+  assert.deepEqual(packagePaths, repositoryPaths);
+  assert.ok(packagePaths.includes("scripts/zk771-certify.mjs"));
+  const adapter = { isAncestor: (ancestor, head) => git(root, ["merge-base", "--is-ancestor", ancestor, head]) === "", changed: (range) => actual(root, range) };
+  assert.deepEqual(validateEvidenceDescendant(adapter), []);
+  assert.deepEqual(packagePaths.every((path) => !path.startsWith("simgolf-lite/")), true);
 });

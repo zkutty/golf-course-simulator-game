@@ -15,6 +15,11 @@ export const ZK1134_ALLOWED_PATHS = [
   "scripts/zk771-certification-contract.mjs",
   "scripts/zk771-certification-contract.test.mjs",
 ];
+export const normalizePackageGitPath = (path, packagePrefix) => {
+  const normalized = path.replaceAll("\\", "/").replace(/^\.\//, "");
+  const prefix = packagePrefix.replaceAll("\\", "/").replace(/\/$/, "");
+  return prefix && normalized.startsWith(`${prefix}/`) ? normalized.slice(prefix.length + 1) : normalized;
+};
 export const ZK771_SOURCES = [
   "scripts/zk771-certification-contract.mjs",
   "scripts/zk771-certify.mjs",

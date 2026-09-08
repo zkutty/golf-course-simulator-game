@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { reportBytes, sha256, sourceBindings, stableJson, validateEvidenceDescendant, validateReleasedProvenance } from "./zk771-certification-contract.mjs";
+import { normalizePackageGitPath, reportBytes, sha256, sourceBindings, stableJson, validateEvidenceDescendant, validateReleasedProvenance } from "./zk771-certification-contract.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const mode = process.argv[2];
@@ -102,7 +102,9 @@ const provenanceErrors = validateReleasedProvenance({
   resolve: (ref) => git(["rev-parse", ref]),
 });
 if (provenanceErrors.length) throw new Error(provenanceErrors.join("\n"));
-const changed = (range) => git(["diff", "--name-only", range]).split("\n").filter(Boolean);
+const repositoryRoot = git(["rev-parse", "--show-toplevel"]);
+const packagePrefix = relative(repositoryRoot, root).split(sep).join("/");
+const changed = (range) => git(["diff", "--name-only", range]).split("\n").filter(Boolean).map((path) => normalizePackageGitPath(path, packagePrefix));
 const descendantErrors = validateEvidenceDescendant({
   isAncestor: (ancestor, descendant) => spawnSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], { cwd: root }).status === 0,
   changed,
