@@ -1,8 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, screen, shell } from "electron";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { NativeStore } from "./nativeStore.mjs";
+import { createDesktopFileDeliveryHandlers } from "./fileDelivery.mjs";
 import { createSteamAdapter } from "./steamAdapter.mjs";
 import {
   isAllowedOverlayUrl,
@@ -81,6 +82,7 @@ function requestRendererQuit() {
 
 function registerIpcHandlers() {
   if (!store) throw new Error("Desktop storage is not initialized.");
+  const delivery = createDesktopFileDeliveryHandlers({ dialog, app, mainWindow: () => mainWindow });
   ipcMain.handle("files:read", (_event, payload) => store.readText(stringField(payload, "key", 180)));
   ipcMain.handle("files:recovery", (_event, payload) => store.recoveryStatus(stringField(payload, "key", 180)));
   ipcMain.handle("files:write", (_event, payload) => store.writeTextAtomic(stringField(payload, "key", 180), stringField(payload, "value")));
@@ -103,19 +105,7 @@ function registerIpcHandlers() {
     if (!details.isFile() || details.size > 64 * 1024 * 1024) throw new Error("The selected file is too large.");
     return { name: path.basename(selected), text: await readFile(selected, "utf8") };
   });
-  ipcMain.handle("dialogs:export", async (_event, payload) => {
-    const name = path.basename(stringField(payload, "name", 180));
-    const text = stringField(payload, "text");
-    const mimeType = object(payload).mimeType;
-    if (mimeType !== undefined && mimeType !== "application/json" && mimeType !== "image/svg+xml") throw new Error("Invalid export MIME type.");
-    const filters = mimeType === "image/svg+xml"
-      ? [{ name: "SVG images", extensions: ["svg"] }]
-      : mimeType === "application/json" ? [{ name: "JSON files", extensions: ["json"] }] : undefined;
-    const result = await dialog.showSaveDialog(mainWindow, { defaultPath: name, ...(filters ? { filters } : {}) });
-    if (result.canceled || !result.filePath) return false;
-    await writeFile(result.filePath, text, { encoding: "utf8", mode: 0o600 });
-    return true;
-  });
+  ipcMain.handle("dialogs:export", (_event, payload) => delivery.export(payload));
   ipcMain.handle("support:export", async () => {
     const result = await dialog.showSaveDialog(mainWindow, { defaultPath: "coursecraft-support.json" });
     if (result.canceled || !result.filePath) return false;
@@ -163,20 +153,7 @@ function registerIpcHandlers() {
     windowMode = mode;
     await persistWindowState();
   });
-  ipcMain.handle("screenshots:save", async (_event, payload) => {
-    const dataUrl = stringField(payload, "dataUrl", 32 * 1024 * 1024);
-    const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
-    if (!match) throw new Error("Only PNG screenshots are supported.");
-    const suggestedName = path.basename(stringField(payload, "suggestedName", 180)).replace(/[^A-Za-z0-9._-]/g, "-");
-    if (!suggestedName || suggestedName === "." || suggestedName === "..") throw new Error("Invalid screenshot name.");
-    const bytes = Buffer.from(match[1], "base64");
-    if (!bytes.length || bytes.length > 24 * 1024 * 1024) throw new Error("Screenshot is too large.");
-    const pictures = app.getPath("pictures");
-    await mkdir(pictures, { recursive: true });
-    const target = path.join(pictures, suggestedName.endsWith(".png") ? suggestedName : `${suggestedName}.png`);
-    await writeFile(target, bytes, { mode: 0o600 });
-    return target;
-  });
+  ipcMain.handle("screenshots:save", (_event, payload) => delivery.screenshot(payload));
   ipcMain.handle("steam:capabilities", () => steam.capabilities);
   ipcMain.handle("steam:achievements", (_event, payload) => steam.achievements(sanitizeAchievementIds(object(payload).ids)));
   ipcMain.handle("steam:cloudStatus", () => steam.cloudStatus());

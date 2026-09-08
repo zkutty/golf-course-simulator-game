@@ -94,6 +94,38 @@ function metadataSvg(metadata: HoleIllustrationExportMetadata): string {
   return `<metadata id="coursecraft-export">${xml(JSON.stringify(metadata))}</metadata>`;
 }
 
+function accessibleSvgMarkup(metadata: HoleIllustrationExportMetadata): { attributes: string; children: string } {
+  const fallback = "CourseCraft hole illustration";
+  const subject = metadata.kind === "single"
+    ? safeIllustrationText(metadata.holeName, 64) || "Hole illustration"
+    : `${metadata.publishedHoleCount}-hole published atlas`;
+  const context = safeIllustrationText(metadata.layoutName, 64) || safeIllustrationText(metadata.courseName, 64) || fallback;
+  const identity = safeFileStem(`${metadata.kind}-${metadata.snapshotHashes[0]?.slice(0, 12) ?? "export"}-${metadata.layoutId}-${metadata.holeId ?? metadata.publishedHoleCount}`);
+  const titleId = `coursecraft-${identity}-title`;
+  const descriptionId = `coursecraft-${identity}-description`;
+  const title = `${subject} — ${context}`;
+  const description = `${metadata.tee} tee, Pin ${metadata.pin}, ${metadata.frame}, ${metadata.biome}, ${metadata.season}, ${metadata.contrast}.`;
+  return {
+    attributes: `role="img" aria-labelledby="${titleId} ${descriptionId}"`,
+    children: `<title id="${titleId}">${xml(title)}</title><desc id="${descriptionId}">${xml(description)}</desc>`,
+  };
+}
+
+function namespaceNestedSvgIds(svg: string, panelIndex: number): string {
+  const replacements = new Map<string, string>();
+  let ordinal = 0;
+  let result = svg.replace(/\bid="([^"]+)"/g, (_match, id: string) => {
+    const replacement = `coursecraft-atlas-panel-${panelIndex}-${++ordinal}-${id.replace(/[^A-Za-z0-9_.:-]/g, "-")}`;
+    if (!replacements.has(id)) replacements.set(id, replacement);
+    return `id="${replacement}"`;
+  });
+  const replacementFor = (id: string) => replacements.get(id) ?? id;
+  result = result.replace(/url\(#([^)]+)\)/g, (_match, id: string) => `url(#${replacementFor(id)})`);
+  result = result.replace(/\b(href|xlink:href)="#([^"]+)"/g, (_match, attribute: string, id: string) => `${attribute}="#${replacementFor(id)}"`);
+  result = result.replace(/\b(aria-labelledby|aria-describedby)="([^"]+)"/g, (_match, attribute: string, ids: string) => `${attribute}="${ids.split(/\s+/).map(replacementFor).join(" ")}"`);
+  return result;
+}
+
 function svgInner(svg: string): string | null {
   const open = svg.indexOf(">");
   const close = svg.lastIndexOf("</svg>");
@@ -107,8 +139,11 @@ function singleSvg(preview: HoleIllustrationPreview, metadata: HoleIllustrationE
   const attributes = root[1]
     .replace(/\swidth="[^"]*"/, "")
     .replace(/\sheight="[^"]*"/, "")
-    .replace(/\sviewBox="[^"]*"/, "");
-  const replacement = `<svg ${attributes} width="3840" height="2560" viewBox="0 0 960 640" data-coursecraft-export-version="1" data-export-kind="single">${metadataSvg(metadata)}`;
+    .replace(/\sviewBox="[^"]*"/, "")
+    .replace(/\srole="[^"]*"/, "")
+    .replace(/\saria-labelledby="[^"]*"/, "");
+  const accessible = accessibleSvgMarkup(metadata);
+  const replacement = `<svg ${attributes} width="3840" height="2560" viewBox="0 0 960 640" data-coursecraft-export-version="1" data-export-kind="single" ${accessible.attributes}>${accessible.children}${metadataSvg(metadata)}`;
   return preview.svg.replace(root[0], replacement);
 }
 
@@ -182,7 +217,8 @@ function atlasSvg(
   const map = includeMap ? routeMap(course, holes, settings, width - margin - 520, 56, 520, 240) : "";
   const panels: string[] = [];
   for (let index = 0; index < previews.length; index++) {
-    const inner = previews[index].svg ? svgInner(previews[index].svg!) : null;
+    const previewInner = previews[index].svg ? svgInner(previews[index].svg!) : null;
+    const inner = previewInner ? namespaceNestedSvgIds(previewInner, index + 1) : null;
     if (!inner) return null;
     const column = index % columns;
     const row = Math.floor(index / columns);
@@ -191,7 +227,8 @@ function atlasSvg(
     const holeName = safeIllustrationText(previews[index].metadata?.holeName ?? holes[index]?.name ?? holes[index]?.id, 26);
     panels.push(`<g data-atlas-index="${index + 1}" data-hole-id="${xml(holes[index]?.id ?? "")}"><rect x="${left}" y="${top}" width="${cardWidth}" height="${titleHeight + imageHeight}" rx="10" fill="#fffdf6" stroke="#71917c"/><text x="${left + 12}" y="${top + 30}" font-size="24" font-weight="700" font-family="Arial,sans-serif" fill="#17231d">${index + 1}. ${xml(holeName)}</text><svg x="${left}" y="${top + titleHeight}" width="${cardWidth}" height="${imageHeight}" viewBox="0 0 960 640" preserveAspectRatio="xMidYMid meet">${inner}</svg></g>`);
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" data-coursecraft-export-version="1" data-export-kind="atlas">${metadataSvg(metadata)}<rect width="${width}" height="${height}" fill="#f4ead3"/><g data-cover-title-band="true"><rect width="${width}" height="336" fill="#e6d8b8"/><text x="${margin}" y="96" font-size="58" font-weight="700" font-family="Arial,sans-serif" fill="#17231d">${xml(title)}</text><text x="${margin}" y="152" font-size="28" font-family="Arial,sans-serif" fill="#26362d">${count}-hole published atlas · ${settings.teeSet} tee · Pin ${settings.pinRotation} · ${settings.frame}</text><g data-legend="true" font-family="Arial,sans-serif" font-size="23" fill="#26362d"><circle cx="${margin + 10}" cy="220" r="10" fill="#ffffff" stroke="#234633"/><text x="${margin + 30}" y="228">Tee</text><circle cx="${margin + 130}" cy="220" r="10" fill="#d00000"/><text x="${margin + 150}" y="228">Pin</text><rect x="${margin}" y="254" width="28" height="18" fill="#71a85b"/><text x="${margin + 38}" y="271">Playing surface, hazards, contours and details follow the selected preview style.</text></g>${map}</g>${panels.join("")}</svg>`;
+  const accessible = accessibleSvgMarkup(metadata);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" data-coursecraft-export-version="1" data-export-kind="atlas" ${accessible.attributes}>${accessible.children}${metadataSvg(metadata)}<rect width="${width}" height="${height}" fill="#f4ead3"/><g data-cover-title-band="true"><rect width="${width}" height="336" fill="#e6d8b8"/><text x="${margin}" y="96" font-size="58" font-weight="700" font-family="Arial,sans-serif" fill="#17231d">${xml(title)}</text><text x="${margin}" y="152" font-size="28" font-family="Arial,sans-serif" fill="#26362d">${count}-hole published atlas · ${settings.teeSet} tee · Pin ${settings.pinRotation} · ${settings.frame}</text><g data-legend="true" font-family="Arial,sans-serif" font-size="23" fill="#26362d"><circle cx="${margin + 10}" cy="220" r="10" fill="#ffffff" stroke="#234633"/><text x="${margin + 30}" y="228">Tee</text><circle cx="${margin + 130}" cy="220" r="10" fill="#d00000"/><text x="${margin + 150}" y="228">Pin</text><rect x="${margin}" y="254" width="28" height="18" fill="#71a85b"/><text x="${margin + 38}" y="271">Playing surface, hazards, contours and details follow the selected preview style.</text></g>${map}</g>${panels.join("")}</svg>`;
 }
 
 export function holeIllustrationSvgWithinLimit(svg: string, maximum = HOLE_ILLUSTRATION_EXPORT_LIMITS.maxSvgBytes): boolean {
