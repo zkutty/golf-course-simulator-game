@@ -9,6 +9,7 @@ export interface StartMenuProps {
   canLoad: boolean;
   onNewGame: () => void;
   onQuickStart: () => void;
+  onOpeningDemo?: () => void;
   onLoadGame: () => void;
   onContinue: () => void;
   onOptions: () => void;
@@ -55,8 +56,8 @@ export function StartMenu(props: StartMenuProps) {
         <span style={{ color: "#ead08b", fontSize: 9, fontWeight: 900, letterSpacing: ".05em", textTransform: "uppercase" }}>{t("title.visionHint")}</span>
       </button>
 
-      <div style={{ position: "relative", zIndex: 10, height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ width: "min(720px, 100%)", padding: 24 }}>
+      <div style={{ position: "relative", zIndex: 10, height: "100%", display: "flex", overflowY: "auto", alignItems: "safe center", justifyContent: "center" }}>
+        <div style={{ width: "min(720px, 100%)", padding: 24, flexShrink: 0 }}>
           {/* Decorative emblem */}
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 26 }}>
             <div style={{ position: "relative" }}>
@@ -197,6 +198,8 @@ export function StartMenu(props: StartMenuProps) {
             >
               {t("title.quickStart")}
             </MenuButton>
+
+            {props.onOpeningDemo && <MenuButton variant="secondary" icon="⛳" subtitle={t("opening.entryHint")} onClick={props.onOpeningDemo}>{t("opening.entry")}</MenuButton>}
 
             <MenuButton
               variant="secondary"

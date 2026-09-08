@@ -187,6 +187,7 @@ import {
   type RenderSnapshot,
 } from "../game/render/renderSnapshot";
 import { SceneSystemHost } from "./renderer/SceneSystemHost";
+import { createOpeningPreviewSceneSystem } from "./renderer/scenes/openingPreviewScene";
 import {
   createAtmosphereSceneSystem,
   type AtmosphereSceneSystem,
@@ -653,6 +654,8 @@ export interface PixiStageProps {
   /** M36 direct-play overlay and input seam. */
   playerRound?: PlayerPlayableRound | null;
   playerShotAim?: PlayerProPoint | null;
+  openingMarker?: RenderSnapshot["openingMarker"];
+  openingTargets?: RenderSnapshot["openingTargets"];
   playableShotMode?: boolean;
   /** Already-filtered, player-visible inventory dressing near the clubhouse. */
   playerProWorldDisplay?: PlayerProWorldDisplayPresentation | null;
@@ -1474,6 +1477,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       rotation,
       surfaceHeightAt,
     ],
+    openingPreview: [props.openingMarker, props.openingTargets, rotation, surfaceHeightAt],
     estateSurvey: [
       course.elevations,
       course.estate,
@@ -1513,6 +1517,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     atlasRevision,
     playerRound: props.playerRound,
     playerShotAim: props.playerShotAim,
+    openingMarker: props.openingMarker,
+    openingTargets: props.openingTargets,
     playerProWorldDisplay: props.playerProWorldDisplay,
     surveyMode: Boolean(props.surveyMode),
     selectedParcelId: props.selectedParcelId,
@@ -1533,6 +1539,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.graphicsQuality,
     props.playerRound,
     props.playerShotAim,
+    props.openingMarker,
+    props.openingTargets,
     props.playerProWorldDisplay,
     props.reducedMotion,
     props.selectedParcelId,
@@ -3837,6 +3845,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       mobilityEntities,
       createArchitectureOverlaySceneSystem(layers.terrainDecals, () => app.render()),
       createPlayerShotOverlaySceneSystem(layers.fx),
+      createOpeningPreviewSceneSystem(layers.fx),
       createEstateSurveySceneSystem(layers.sceneDecals.estateSurvey),
       // Keep host lifecycle order; fixed decal sublayers separately preserve
       // the legacy estate -> natural -> authored-decoration compositing order.
