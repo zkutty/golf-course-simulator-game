@@ -148,20 +148,24 @@ async function setInGameLocale(page: Page, locale: "en" | "pseudo") {
 async function focusOpeningHole(page: Page) {
   await page.getByRole("button", { name: "Focus on preview hole", exact: true }).click();
   // Observe the real camera glide; never mutate the renderer to make a click pass.
-  await page.evaluate(async () => {
+  await page.evaluate(() => new Promise<void>((resolve, reject) => {
     let previous: { x: number; y: number } | null = null;
     let stable = 0;
-    const deadline = performance.now() + 15000;
-    while (performance.now() < deadline) {
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const timeout = window.setTimeout(() => reject(new Error("Preview-hole camera did not settle within 15 seconds")), 15_000);
+    const sample = () => {
       const point = window.__coursecraftPixiTest!.tileToScreen(0, 0);
       if (point && previous && Math.hypot(point.x - previous.x, point.y - previous.y) < 0.01) stable += 1;
       else stable = 0;
-      if (stable >= 12) return;
+      if (stable >= 12) {
+        window.clearTimeout(timeout);
+        resolve();
+        return;
+      }
       previous = point;
-    }
-    throw new Error("Preview-hole camera did not settle");
-  });
+      window.requestAnimationFrame(sample);
+    };
+    window.requestAnimationFrame(sample);
+  }));
 }
 
 async function pagePoint(page: Page, target: Locator, point: { x: number; y: number }) {
@@ -265,6 +269,51 @@ test.describe("ZK-1106 private operator opening", () => {
       await page.screenshot({ path: file });
       await testInfo.attach(name, { path: file, contentType: "image/png" });
     };
+    type PreviewSummary = { id: string; holeId: string; group: Array<{ name: string; shots: number }> };
+    const previewSummary = (value: unknown): PreviewSummary => {
+      if (!value || typeof value !== "object") throw new Error("Expected a retained private-preview receipt");
+      const candidate = value as { id?: unknown; holeId?: unknown; group?: unknown };
+      if (typeof candidate.id !== "string" || typeof candidate.holeId !== "string" || !Array.isArray(candidate.group)) throw new Error("Private-preview receipt is malformed");
+      return {
+        id: candidate.id,
+        holeId: candidate.holeId,
+        group: candidate.group.map((golfer) => {
+          const item = golfer as { name?: unknown; shots?: unknown };
+          const shots = Array.isArray(item.shots) ? item.shots.length : item.shots;
+          if (typeof item.name !== "string" || !Number.isInteger(shots) || shots < 0) throw new Error("Private-preview golfer receipt is malformed");
+          return { name: item.name, shots };
+        }),
+      };
+    };
+    const recordedMarkers = (evidence: PreviewSummary) => evidence.group.flatMap((golfer) => Array.from({ length: golfer.shots }, (_, index) => ({ name: golfer.name, shotNumber: index + 1 })));
+    const visiblePenalty = async () => {
+      const penaltyText = await page.getByTestId("opening-shot-penalty").textContent();
+      const penaltyMatch = penaltyText?.match(/(\d+) penalty stroke/);
+      if (!penaltyMatch) throw new Error("Missing visible penalty evidence for the current shot");
+      return Number(penaltyMatch[1]);
+    };
+    const playEveryRecordedShot = async (evidence: PreviewSummary, intermediateCapture: string) => {
+      const shots = recordedMarkers(evidence);
+      expect(shots.length, "private preview must retain more than one resolved shot to prove manual playback").toBeGreaterThan(1);
+      let penaltyTotal = 0;
+      for (let cursor = (await state()).onboarding.opening.cursor; cursor < shots.length; cursor++) {
+        const beforeStep = await state();
+        const current = shots[cursor];
+        expect(beforeStep.onboarding.opening.cursor, "cursor must advance exactly once per visible recorded shot").toBe(cursor);
+        await expect(page.getByTestId("opening-current-shot")).toContainText(current.name);
+        await expect(page.getByTestId("opening-current-shot")).toContainText(`shot ${current.shotNumber}`);
+        await expect(page.getByTestId("opening-demo-details")).toContainText(`Recorded shots reviewed: ${cursor} / ${shots.length}`);
+        penaltyTotal += await visiblePenalty();
+        if (cursor === 1) {
+          await focusOpeningHole(page);
+          await capture(intermediateCapture);
+        }
+        await page.getByRole("button", { name: "Next recorded shot", exact: true }).click();
+        await expect.poll(() => state().then((next) => next.onboarding.opening.cursor)).toBe(cursor + 1);
+      }
+      expect((await state()).onboarding.opening.cursor).toBe(shots.length);
+      return penaltyTotal;
+    };
     const started = Date.now();
     await page.goto("/");
     await page.getByRole("button", { name: /First-hole operator demo/ }).click();
@@ -279,8 +328,12 @@ test.describe("ZK-1106 private operator opening", () => {
     await expect(page.getByTestId("opening-current-shot")).not.toBeEmpty();
     await focusOpeningHole(page);
     await capture("03-recorded-shot-on-course");
+    const firstBaselinePenalty = await visiblePenalty();
     await page.getByRole("button", { name: "Next recorded shot", exact: true }).click();
     const observed = await state();
+    const baselineStateReceipt = structuredClone(observed.onboarding.preview);
+    const baselineReceipt = previewSummary(baselineStateReceipt);
+    const baselineContext = await page.getByTestId("opening-evidence-context").textContent();
     expect(observed.onboarding.opening.cursor).toBe(1);
     expect(observed.economy).toEqual(before.economy);
     expect(observed.simulation.arrivalsRemaining).toBe(0);
@@ -289,7 +342,8 @@ test.describe("ZK-1106 private operator opening", () => {
     await page.getByRole("button", { name: /Continue/ }).click();
     await expectStep(page, "observe-play");
     expect((await state()).onboarding.opening.cursor).toBe(1);
-    await page.getByRole("button", { name: "Skip playback to summary", exact: true }).click();
+    const baselinePenalties = firstBaselinePenalty + await playEveryRecordedShot(baselineReceipt, "03b-intermediate-baseline-shot");
+    expect((await state()).onboarding.preview).toEqual(baselineStateReceipt);
     await page.getByRole("button", { name: "Review reactions", exact: true }).click();
     await expectStep(page, "review-reaction");
     await expect(page.getByTestId("opening-diagnosis")).toContainText("Landing-area opportunity");
@@ -309,6 +363,8 @@ test.describe("ZK-1106 private operator opening", () => {
     await capture("05-real-fairway-edit");
     const edited = await state();
     expect(edited.economy.cash).toBeLessThan(rewarded.economy.cash);
+    const editDebit = rewarded.economy.cash - edited.economy.cash;
+    expect(editDebit).toBeGreaterThan(0);
     await page.keyboard.press("Control+z");
     await expect(page.getByTestId("tutorial-primary-action")).toBeDisabled();
     await expectStep(page, "improve-hole");
@@ -319,24 +375,32 @@ test.describe("ZK-1106 private operator opening", () => {
     expect((await state()).economy).toEqual(edited.economy);
     await page.getByRole("button", { name: "Retest the same group", exact: true }).click();
     await expectStep(page, "retest-play");
-    await page.getByRole("button", { name: "Skip playback to summary", exact: true }).click();
+    const retestStarted = await state();
+    const retestReceipt = previewSummary(retestStarted.onboarding.opening.candidate);
+    expect(retestReceipt.holeId).toBe(baselineReceipt.holeId);
+    await expect(page.getByTestId("opening-evidence-context")).toHaveText(baselineContext ?? "");
+    const retestPenalties = await playEveryRecordedShot(retestReceipt, "05b-intermediate-retest-shot");
+    expect((await state()).onboarding.preview).toEqual(baselineStateReceipt);
     await page.getByRole("button", { name: "Compare visits", exact: true }).click();
     await expectStep(page, "compare-preview");
     await expect(page.getByTestId("opening-comparison")).toBeVisible();
     const compared = await state();
+    await expect(page.getByTestId("opening-comparison-penalties")).toContainText(`First visit: ${baselinePenalties}`);
+    const comparedReceipt = previewSummary(compared.onboarding.opening.candidate);
+    await expect(page.getByTestId("opening-comparison-penalties")).toContainText(`Retest: ${retestPenalties}`);
     expect(compared.economy).toEqual(edited.economy);
-    expect(compared.onboarding.preview).toEqual(observed.onboarding.preview);
+    expect(compared.onboarding.preview).toEqual(baselineStateReceipt);
     expect(compared.onboarding.reward).toEqual(rewarded.onboarding.reward);
-    expect(compared.onboarding.opening.candidate.runSeed).toBe(before.onboarding.opening.candidate?.runSeed ?? 424242);
+    expect(comparedReceipt.holeId).toBe(baselineReceipt.holeId);
     await expectTutorialInViewport(page);
-    await capture("06-honest-comparison");
+    await capture("06-honest-comparison-with-penalties");
     await expect(overlay(page).getByText("Progress saved", { exact: true })).toBeVisible();
     await page.reload();
     await page.getByRole("button", { name: /Continue/ }).click();
     await expectStep(page, "compare-preview");
     expect((await state()).onboarding.opening.candidate).toEqual(compared.onboarding.opening.candidate);
     expect((await state()).economy).toEqual(compared.economy);
-    await testInfo.attach("opening-evidence-context", { body: JSON.stringify({ seed: 424242, viewport: page.viewportSize(), elapsedSeconds: (Date.now() - started) / 1000, before: observed.onboarding.preview, after: compared.onboarding.opening.candidate, economy: { before: before.economy, rewarded: rewarded.economy, edited: edited.economy } }, null, 2), contentType: "application/json" });
+    await testInfo.attach("opening-evidence-context", { body: JSON.stringify({ context: baselineContext, viewport: page.viewportSize(), elapsedSeconds: (Date.now() - started) / 1000, before: baselineReceipt, after: comparedReceipt, penalties: { before: baselinePenalties, after: retestPenalties }, economy: { before: before.economy, rewardCredit: rewarded.economy.cash - before.economy.cash, editDebit, rewarded: rewarded.economy, edited: edited.economy } }, null, 2), contentType: "application/json" });
     await page.getByRole("button", { name: "Finish private demo", exact: true }).click();
     await expect(overlay(page)).toHaveCount(0);
     expect((await state()).onboarding).toMatchObject({ active: false, completion: "creative" });

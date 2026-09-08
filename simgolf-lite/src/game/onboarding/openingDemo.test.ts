@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import { createInvitedPreviewEvidence } from "./invitedPreview";
-import { hasOpeningEdit, newOpeningDemo, normalizeOpeningDemo, openingShots, openingTargetCells, retestOpening } from "./openingDemo";
+import { hasOpeningEdit, newOpeningDemo, normalizeOpeningDemo, openingPenaltyTotal, openingShots, openingTargetCells, retestOpening } from "./openingDemo";
 import { advanceTutorialProgress, claimTutorialPreviewReward, createTutorialProgress, normalizeTutorialProgress, restartTutorialProgress, tutorialCanAdvance } from "./tutorial";
 import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/save";
 
@@ -23,7 +23,9 @@ describe("ZK-1106 optional private operator opening", () => {
     let progress = advanceTutorialProgress({ ...fresh, stage: "invite-group" }, context);
     const baseline = progress.receipts.preview.evidence!;
     expect(baseline.group).toHaveLength(2);
+    expect(openingPenaltyTotal(baseline)).toBe(baseline.group.flatMap((golfer) => golfer.shots).reduce((total, shot) => total + shot.penaltyStrokes, 0));
     expect(progress.opening!.targetCells.length).toBeGreaterThan(0);
+    expect(progress.opening!.targetCells.length).toBeLessThanOrEqual(4);
     expect(tutorialCanAdvance(progress, context)).toBe(false);
     progress = { ...progress, opening: { ...progress.opening!, cursor: openingShots(baseline).length } };
     progress = advanceTutorialProgress(progress, context);
@@ -87,6 +89,6 @@ describe("ZK-1106 optional private operator opening", () => {
     const legacy = createTutorialProgress(course, world);
     expect(normalizeTutorialProgress(legacy)).toEqual(legacy);
     expect(normalizeTutorialProgress({ ...legacy, stage: "improve-hole" })?.stage).toBe("welcome");
-    expect(normalizeOpeningDemo({ version: 1, cursor: Infinity, targetCells: [-1, "bad", 4, 4], candidate: {} })).toEqual({ version: 1, cursor: 0, targetCells: [4], candidate: null });
+    expect(normalizeOpeningDemo({ version: 1, cursor: Infinity, targetCells: [-1, "bad", 4, 4, 5, 6, 7, 8], candidate: {} })).toEqual({ version: 1, cursor: 0, targetCells: [4, 5, 6, 7], candidate: null });
   });
 });

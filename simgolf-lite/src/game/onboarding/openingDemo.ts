@@ -26,6 +26,11 @@ export function openingShots(evidence: InvitedPreviewEvidence | null): OpeningSh
   return evidence?.group.flatMap((golfer) => golfer.shots.map((shot) => ({ golferName: golfer.name, shot }))) ?? [];
 }
 
+/** Read-only display reconciliation for the authoritative resolved-shot receipt. */
+export function openingPenaltyTotal(evidence: InvitedPreviewEvidence | null): number {
+  return openingShots(evidence).reduce((total, { shot }) => total + shot.penaltyStrokes, 0);
+}
+
 export function newOpeningDemo(): OpeningDemo {
   return { version: 1, cursor: 0, candidate: null, targetCells: [] };
 }
@@ -48,7 +53,7 @@ export function openingTargetCells(course: Course, evidence: InvitedPreviewEvide
         if (course.tiles[index] === "rough" || course.tiles[index] === "deep_rough") cells.push(index);
       }
     }
-    if (cells.length) return cells;
+    if (cells.length) return cells.slice(0, 4);
   }
   return [];
 }
@@ -82,6 +87,6 @@ export function normalizeOpeningDemo(value: unknown): OpeningDemo | undefined {
     version: 1,
     cursor: typeof candidate.cursor === "number" && Number.isFinite(candidate.cursor) ? Math.max(0, Math.min(24, Math.floor(candidate.cursor))) : 0,
     candidate: normalizeInvitedPreviewEvidence(candidate.candidate),
-    targetCells: Array.isArray(candidate.targetCells) ? [...new Set(candidate.targetCells.filter((cell) => Number.isInteger(cell) && cell >= 0 && cell < 1_000_000))].slice(0, 9) : [],
+    targetCells: Array.isArray(candidate.targetCells) ? [...new Set(candidate.targetCells.filter((cell) => Number.isInteger(cell) && cell >= 0 && cell < 1_000_000))].slice(0, 4) : [],
   };
 }
