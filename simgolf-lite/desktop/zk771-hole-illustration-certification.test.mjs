@@ -22,7 +22,7 @@ test("ZK-771 desktop filesystem delivery is bucketed, JSON-only, and atomic on i
   const first = JSON.stringify(deliveryReceipt);
   await store.writeTextAtomic(key, first);
   assert.equal(await store.readText(key), first);
-  assert.match(store.filePath(key), /\/state\/coursecraft_export_receipt\.json$/);
+  assert.match(store.filePath(key), /[\\/]state[\\/]coursecraft_export_receipt\.json$/);
   assert.throws(() => store.filePath("../outside"), /Invalid storage key/);
   await assert.rejects(() => store.writeTextAtomic(key, "not-json"), /valid JSON/);
 
@@ -48,13 +48,13 @@ test("ZK-771 desktop bridge handlers atomically write typed SVG and PNG payloads
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2560"></svg>';
   assert.equal(await handlers.export({ name: "../hole.svg", text: svg, mimeType: "image/svg+xml" }), true);
   assert.equal(await readFile(svgPath, "utf8"), svg);
-  assert.equal((await stat(svgPath)).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal((await stat(svgPath)).mode & 0o777, 0o600);
 
   const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   const savedPng = await handlers.screenshot({ dataUrl: `data:image/png;base64,${png.toString("base64")}`, suggestedName: "../hole illustration" });
   assert.equal(savedPng, path.join(pictureRoot, "hole-illustration.png"));
   assert.deepEqual(await readFile(savedPng), png);
-  assert.equal((await stat(savedPng)).mode & 0o777, 0o600);
+  if (process.platform !== "win32") assert.equal((await stat(savedPng)).mode & 0o777, 0o600);
 
   await writeFile(savedPng, "previous PNG", { mode: 0o600 });
   const interruptedScreenshot = createDesktopFileDeliveryHandlers({
