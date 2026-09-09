@@ -2195,3 +2195,59 @@ classic course-builder references.
   ZK-1134's byte-bound SVG/PNG contact sheet against the immutable released SHA.
   Human originality, hierarchy, and biome-cohesion approval remains mandatory
   before ZK-771 or M70 can close.
+
+## ZK-1141 private-preview widening-mask diagnostic — 2026-09-09
+
+- Started from production `43e1c557e6776255774e0f9ac1f6495898016c0e` in the
+  isolated `codex/zk1141-redesign-mask-sep09` worktree. The opening target
+  carried a row-major ID only in tutorial state, while the scene and general
+  painter consumed lossy coordinates/raster coverage. The exploratory patch
+  carries `{ id, x, y }` targets through the render snapshot, uses canonical
+  tile diamonds for the preview outline, narrows tutorial-mask apertures to
+  Design/Terrain/Fairway/curve/history/canvas, preserves Escape cancellation,
+  and limits preview/commit rasterization to the authoritative ID set.
+- TypeScript and focused opening/scene tests passed (2 files, 6 tests). Three
+  retries-disabled real-input browser attempts failed after an intentional
+  off-target recovery: the visible recovery message appeared and Retest stayed
+  disabled after a native target drag. The final attempt proved the viewport
+  transform itself is exact after dock expansion/recenter:
+  `tileToScreen -> CSS canvas coordinates -> screenToTile` equals the target
+  tile. Therefore the remaining defect is the allowed-index constrained
+  rasterization returning no accepted coverage for that exact native target,
+  not camera coordinates or a forced-click test path.
+- Preserve the diagnostics/artifacts for decomposition; do not tune the
+  raster further in this packet. Proposed follow-up: **ZK-1141b Make
+  authoritative target raster accept exact native pointer tiles** (medium
+  effort, high urgency; depends on the ZK-1141 diagnostic). Evidence:
+  `test-results/m14-onboarding.e2e.ts-ZK-1-7573e-d-compares-one-private-hole/`
+  includes the visible failure capture and error context.
+
+### ZK-1141 decomposed repair, attempt 1 correction
+
+- The required topmost-element diagnostic disproved the retained raster
+  conclusion. After Terrain/Fairway selection and visible recenter, target id
+  `7986` projected to page point `(538.24, 366.75)` and inverse-resolved to
+  `{66,36}`, but `document.elementFromPoint` returned the expanded Design dock
+  (`DesignCurveSplineAreaEdit nodesWidth1↖↗−`), not the canvas. Pixi never
+  received the gesture, so constrained rasterization was not reached.
+- The bounded repair keeps the Design palette visible for selection and makes
+  the existing guide action explicit: **Focus and clear the canvas** recenters
+  the preview hole and collapses the Design dock. No raster, filter, outline
+  transform, or global camera behavior changed. The guide copy documents the
+  interaction, and the collapse remains visibly reversible with the `+`
+  control.
+- The retries-disabled native-input gate passed at `1440×900`, `1280×720`,
+  and `390×844`. At each size `elementFromPoint` returned `CANVAS` for target
+  `{66,36}`. A native mouse click and a native touch tap each committed exact
+  coverage `[7986]` for exactly `$120`; off-target recovery, undo, redo, target
+  registration, same-group retest, persistence, and comparison all passed with
+  no browser console or page errors.
+- Gates: TypeScript passed; focused Vitest passed 2 files / 6 tests; full lint
+  passed with 10 pre-existing Hook warnings and no errors; the production build
+  and all chained asset/offline/startup/delivery audits passed. The bundled
+  web-game client reached the opening fixture, emitted coherent
+  `render_game_to_text`, and created no error artifact; both headless and headed
+  SwiftShader canvas-only captures were black, while Playwright's full-page
+  evidence was visible and inspected.
+- TODO: none for this bounded repair. Do not create a separate Linear issue;
+  integrate as ZK-1141 only after independent review.

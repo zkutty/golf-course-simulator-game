@@ -1980,6 +1980,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
           getElevation(course, Math.floor(x), Math.floor(y)),
         );
       },
+      openingPreview: (): { targetIds: number[]; outlineCount: number } | null => {
+        const graphic = layersRef.current?.fx.children.find((child) => child.label === "opening-preview-markers") as (PIXI.Graphics & {
+          __coursecraftOpeningPreview?: { targetIds: number[]; outlineCount: number };
+        }) | undefined;
+        return graphic?.__coursecraftOpeningPreview ?? null;
+      },
       surfaceCareLayer: () => {
         const layers = layersRef.current;
         if (!layers) return null;

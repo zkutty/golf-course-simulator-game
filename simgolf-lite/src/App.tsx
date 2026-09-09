@@ -167,7 +167,7 @@ import {
   type TutorialProgress,
 } from "./game/onboarding/tutorial";
 import { validHoleCount } from "./game/onboarding/invitedPreview";
-import { newOpeningDemo, openingPlaybackFrame, openingShots, openingTargetPoints } from "./game/onboarding/openingDemo";
+import { newOpeningDemo, openingPlaybackFrame, openingShots, openingTargetTiles } from "./game/onboarding/openingDemo";
 import { hashCanonicalValue } from "./utils/canonical";
 import { loadAppProfile, saveAppProfile, updateAppProfile, type AppProfile } from "./game/onboarding/profile";
 import { advisorMessages, allowsMessage, type AdvisorMessage } from "./game/advisor/advisor";
@@ -710,6 +710,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<"COZY" | "ARCHITECT">(() => appProfile.graphics.gridOverlays ? "ARCHITECT" : "COZY");
   const [holeEditMode, setHoleEditMode] = useState<ViewMode>("global"); // "global" or "hole"
   const [holeEditCamera, setHoleEditCamera] = useState<CameraState | null>(null);
+  const [designDockCollapseSignal, setDesignDockCollapseSignal] = useState(0);
   const [minimapView, setMinimapView] = useState<IsoCameraSnapshot | null>(null);
   const [minimapJump, setMinimapJump] = useState<{ center: Point; nonce: number } | null>(null);
   const [m52ReferenceCamera, setM52ReferenceCamera] = useState<BiomeCameraBookmark | null>(null);
@@ -778,7 +779,7 @@ export default function App() {
   }, [activeTutorial]);
   const openingMarker = useMemo(() => openingPlaybackFrame(openingEvidence, activeTutorial?.opening?.cursor ?? 0, openingPlaybackUi.phase), [activeTutorial?.opening?.cursor, openingEvidence, openingPlaybackUi.phase]);
   const openingTargets = useMemo(() => activeTutorial?.opening && ["review-reaction", "creative-reward", "improve-hole"].includes(activeTutorial.stage)
-    ? openingTargetPoints(course, activeTutorial.opening) : [], [activeTutorial, course]);
+    ? openingTargetTiles(course, activeTutorial.opening) : [], [activeTutorial, course]);
   const openingPlaybackKey = `${activeTutorial?.stage ?? "none"}:${openingEvidence?.id ?? "none"}`;
   useEffect(() => {
     setOpeningPlaybackUi((current) => ({ ...current, phase: 0, running: false, following: false }));
@@ -803,6 +804,14 @@ export default function App() {
     }, 50);
     return () => window.clearInterval(timer);
   }, [activeTutorial?.opening, activeTutorial?.stage, appProfile.accessibility.reducedMotion, openingEvidence, openingPlaybackUi.running]);
+  // The same persisted row-major ids drive the gold outlines and the terrain
+  // transaction. A gesture may pass over other tiles, but private-preview
+  // widening can only alter this bounded, evidence-backed set.
+  const openingPaintTargetIds = useMemo(() => (
+    activeTutorial?.opening && activeTutorial.stage === "improve-hole"
+      ? new Set(activeTutorial.opening.targetCells)
+      : null
+  ), [activeTutorial]);
   const [tutorialSaveStatus, setTutorialSaveStatus] = useState<"saving" | "saved">("saving");
   const [tutorialMilestoneQueue, setTutorialMilestoneQueue] = useState<Array<3 | 6 | 9>>([]);
   const tutorialSaveSequenceRef = useRef(0);
@@ -4352,7 +4361,7 @@ export default function App() {
     applyTileChange(idx, next, opts);
   }
 
-  const buildTerrainSurfaceFeature = useCallback((points: Point[]) => {
+  const buildTerrainSurfaceFeature = useCallback((points: Point[], allowedIndices?: ReadonlySet<number>) => {
     const maxKnots = 128;
     const stride = Math.max(1, Math.ceil(points.length / maxKnots));
     const sampled = points
@@ -4377,7 +4386,7 @@ export default function App() {
     const feature = terrainTool === "area" && knots.length >= 3
       ? regionFeature(course, selected, knots)
       : corridorFeature(course, selected, knots, Math.max(0.9, terrainBrushWidth));
-    const raster = rasterizeSurfaceFeatureDetailed(feature, course.width, course.height);
+    const raster = rasterizeSurfaceFeatureDetailed(feature, course.width, course.height, allowedIndices);
     const coveragePoints = raster.tiles;
     feature.coverage = coveragePoints.map((point) => point.y * course.width + point.x);
     feature.renderRings = raster.rings;
@@ -4385,7 +4394,7 @@ export default function App() {
   }, [course, selected, terrainBrushWidth, terrainTool]);
 
   const getTerrainStrokePreview = useCallback((points: Point[]): TerrainStrokePreview => {
-    const { coveragePoints } = buildTerrainSurfaceFeature(points);
+    const { coveragePoints } = buildTerrainSurfaceFeature(points, openingPaintTargetIds ?? undefined);
     return previewTerrainStroke(
       course,
       coveragePoints,
@@ -4403,6 +4412,7 @@ export default function App() {
     );
   }, [
     buildTerrainSurfaceFeature,
+    openingPaintTargetIds,
     course,
     selected,
     world.cash,
@@ -4436,13 +4446,15 @@ export default function App() {
         setPaintError(t("terrainStroke.protectedIsland"));
       } else if (preview.excluded.unowned > 0) {
         setPaintError(t("land.buildBlocked"));
+      } else if (openingPaintTargetIds) {
+        setPaintError(t("opening.paintRecovery"));
       } else {
         setPaintError(null);
       }
       return;
     }
 
-    const { feature } = buildTerrainSurfaceFeature(points);
+    const { feature } = buildTerrainSurfaceFeature(points, openingPaintTargetIds ?? undefined);
     const acceptedIndices = new Set(
       preview.acceptedTiles.map((point) => point.y * course.width + point.x),
     );
@@ -4477,7 +4489,7 @@ export default function App() {
       setPaintError(null);
     }
     void audio.playSfx("brush");
-  }, [world.isBankrupt, getTerrainStrokePreview, buildTerrainSurfaceFeature, selected, course.width, course.height, dispatch, audio, t]);
+  }, [world.isBankrupt, getTerrainStrokePreview, buildTerrainSurfaceFeature, openingPaintTargetIds, selected, course.width, course.height, dispatch, audio, t]);
 
   const getFineGreenStrokePreview = useCallback((points: Point[]): FineGreenSculptPreview => (
     computeFineGreenSculptPreview({
@@ -5645,9 +5657,14 @@ export default function App() {
             const camera = computeZoomPreset("fit", course, hole, index, paneSize.width, paneSize.height, tileSize);
             if (!camera) return;
             setActiveHoleIndex(index);
-            setHoleEditMode("hole");
+            // Keep the guided Design dock mounted. The focus action recenters
+            // the shared painter; it must not replace it with Hole Edit and
+            // strand the required Terrain/Fairway/undo controls.
             holeEditCameraManualRef.current = true;
             setHoleEditCamera(camera);
+            if (activeTutorial.stage === "improve-hole") {
+              setDesignDockCollapseSignal((signal) => signal + 1);
+            }
           }}
           onOpeningCursor={(cursor) => {
             if (!activeTutorial.opening) return;
@@ -5667,6 +5684,7 @@ export default function App() {
           onOpeningTogglePlaying={() => setOpeningPlaybackUi((current) => ({ ...current, running: !current.running }))}
           onOpeningSpeed={(speed) => setOpeningPlaybackUi((current) => ({ ...current, speed }))}
           onOpeningToggleFollow={() => setOpeningPlaybackUi((current) => ({ ...current, following: !current.following }))}
+          openingPaintRecovery={activeTutorial.stage === "improve-hole" ? paintError : null}
         />
       )}
       {showTutorialOffer && !flow.paused && (
@@ -5914,6 +5932,7 @@ export default function App() {
                   onTerrainBrushWidth={setTerrainBrushWidth}
                   onUndo={undoTerrainEdit}
                   onRedo={redoTerrainEdit}
+                  collapseSignal={designDockCollapseSignal}
                   onSelect={selectDesignItem}
                   decorationAction={decorationAction}
                   onDecorationAction={setDecorationAction}

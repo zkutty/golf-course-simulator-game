@@ -35,6 +35,7 @@ export function TutorialOverlay(props: {
   onOpeningTogglePlaying: () => void;
   onOpeningSpeed: (speed: 0.5 | 1 | 2) => void;
   onOpeningToggleFollow: () => void;
+  openingPaintRecovery?: string | null;
 }) {
   const { t } = useI18n();
   const [rects, setRects] = useState<Rect[]>([]);
@@ -72,7 +73,9 @@ export function TutorialOverlay(props: {
     const onKeyDown = (event: KeyboardEvent) => {
       const card = cardRef.current;
       if (!card) return;
-      if (event.key === "Escape") {
+      // A terrain gesture owns Escape while the private-preview repair is
+      // active. The guide must not swallow the native cancel path.
+      if (event.key === "Escape" && !(props.progress.opening && props.step.id === "improve-hole")) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -236,6 +239,11 @@ export function TutorialOverlay(props: {
               onSpeed={props.onOpeningSpeed}
               onToggleFollow={props.onOpeningToggleFollow}
             />
+            {props.progress.opening && props.step.id === "improve-hole" && props.openingPaintRecovery && (
+              <div role="status" data-testid="opening-paint-recovery" style={{ padding: 8, borderRadius: 8, background: "#fff1ed", color: "#8c2f1f", fontWeight: 700 }}>
+                {props.openingPaintRecovery}
+              </div>
+            )}
             {showEvidence ? (
             <div data-testid="invited-preview-evidence" style={{ display: "grid", gap: 7, maxHeight: 190, overflowY: "auto", fontSize: 11, lineHeight: 1.35 }}>
               <b>{t("tutorial.preview.groupLabel")}</b>

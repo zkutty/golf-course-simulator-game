@@ -75,6 +75,11 @@ export function openingShotId(previewId: string, golferId: string, shot: Invited
   return shot.id ?? `${previewId}:legacy-shot:${golferId}:${shot.shotNumber}`;
 }
 
+/** A row-major terrain id carried from invitation through paint and render. */
+export interface OpeningTargetTile extends Point {
+  id: number;
+}
+
 export function openingShots(evidence: InvitedPreviewEvidence | null): OpeningShotMarker[] {
   return evidence?.group.flatMap((golfer) => golfer.shots.map((shot) => ({
     previewId: evidence.id,
@@ -173,8 +178,8 @@ export function diagnoseOpening(course: Course, evidence: InvitedPreviewEvidence
   return { kind: "none", previewId: evidence.id, reason: "no-supported-region" };
 }
 
-export function openingTargetPoints(course: Course, opening?: OpeningDemo): Point[] {
-  return opening?.targetCells.map((index) => ({ x: index % course.width, y: Math.floor(index / course.width) })) ?? [];
+export function openingTargetTiles(course: Course, opening?: OpeningDemo): OpeningTargetTile[] {
+  return opening?.targetCells.map((id) => ({ id, x: id % course.width, y: Math.floor(id / course.width) })) ?? [];
 }
 
 export function hasOpeningEdit(course: Course, opening: OpeningDemo): boolean {

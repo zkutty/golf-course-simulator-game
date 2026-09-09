@@ -30,7 +30,7 @@ export function OpeningDemoDetails({ progress, width, playback, playing, playbac
   const target = opening.targetCells[0];
   const penaltiesFor = (visit: typeof baseline.group[number]) => visit.shots.reduce((total, shot) => total + shot.penaltyStrokes, 0);
   return <div data-testid="opening-demo-details" style={{ display: "grid", gap: 8, fontSize: 13, lineHeight: 1.45 }}>
-    <button style={presenterButtonStyle} onClick={onFocus}>{t("opening.focus")}</button>
+    <button style={presenterButtonStyle} onClick={onFocus}>{t(progress.stage === "improve-hole" ? "opening.focusForPaint" : "opening.focus")}</button>
     {playbackVisible && <>
       <div role="status" aria-live="polite" data-testid="opening-current-shot" data-preview-id={playback?.previewId} data-shot-id={playback?.shotId}>{marker && t("opening.shot", { name: marker.golferName, shot: marker.shot.shotNumber, intent: marker.shot.intent, club: marker.shot.club, lie: marker.shot.lieAfter })}</div>
       {playback && <div data-testid="opening-playback-frame">{t("opening.frame", { id: playback.shotId, fromX: playback.shot.from.x, fromY: playback.shot.from.y, landingX: playback.landing.x, landingY: playback.landing.y, restX: playback.rest.x, restY: playback.rest.y })}</div>}

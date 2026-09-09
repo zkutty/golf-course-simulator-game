@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import { createInvitedPreviewEvidence } from "./invitedPreview";
-import { compareOpening, diagnoseOpening, freezeOpeningContext, hasOpeningEdit, newOpeningDemo, normalizeOpeningDemo, openingPenaltyTotal, openingPlaybackFrame, openingShots, openingTargetCells, retestOpening } from "./openingDemo";
-import { advanceTutorialProgress, claimTutorialPreviewReward, createTutorialProgress, normalizeTutorialProgress, restartTutorialProgress, tutorialCanAdvance } from "./tutorial";
+import { compareOpening, diagnoseOpening, freezeOpeningContext, hasOpeningEdit, newOpeningDemo, normalizeOpeningDemo, openingPenaltyTotal, openingPlaybackFrame, openingShots, openingTargetCells, openingTargetTiles, retestOpening } from "./openingDemo";
+import { advanceTutorialProgress, claimTutorialPreviewReward, createTutorialProgress, normalizeTutorialProgress, restartTutorialProgress, tutorialCanAdvance, tutorialStep } from "./tutorial";
 import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/save";
 
 function fixture() {
@@ -113,6 +113,19 @@ describe("ZK-1106 optional private operator opening", () => {
     edited.tiles[opening.targetCells[0]] = "fairway";
     expect(hasOpeningEdit(edited, opening)).toBe(true);
     expect(hasOpeningEdit(course, opening)).toBe(false);
+  });
+
+  it("keeps outlined target ids equal to the persisted paint authority", () => {
+    const { course, world } = fixture();
+    const evidence = createInvitedPreviewEvidence(course, world)!;
+    const targetCells = openingTargetCells(course, evidence);
+    const targets = openingTargetTiles(course, { ...newOpeningDemo(), targetCells });
+    expect(targets.map((target) => target.id)).toEqual(targetCells);
+    expect(targets.map((target) => target.y * course.width + target.x)).toEqual(targetCells);
+    expect(targets.every((target) => course.tiles[target.id] === "rough" || course.tiles[target.id] === "deep_rough")).toBe(true);
+    expect(tutorialStep({ ...createTutorialProgress(course, world), stage: "improve-hole", opening: { ...newOpeningDemo(), targetCells } }).allowedTargets).toEqual([
+      "design-dock", "terrain-category", "fairway-card", "terrain-tool", "terrain-history", "course",
+    ]);
   });
 
   it("round-trips observation and comparison separately from the original receipt", () => {

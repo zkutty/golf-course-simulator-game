@@ -17,6 +17,11 @@ export const TUTORIAL_PROGRESS_VERSION = 2 as const;
 export type TutorialTarget =
   | "course"
   | "terrain-palette"
+  | "design-dock"
+  | "terrain-category"
+  | "fairway-card"
+  | "terrain-tool"
+  | "terrain-history"
   | "hole-wizard"
   | "editor-tools"
   | "hole-editor-nav"
@@ -121,7 +126,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
 ];
 
 const OPENING_STEPS: readonly TutorialStep[] = [
-  { id: "improve-hole", eyebrowKey: "opening.improve.eyebrow", titleKey: "opening.improve.title", bodyKey: "opening.improve.body", target: "terrain-palette", allowedTargets: ["terrain-palette", "editor-tools", "course"], expression: "neutral", actionLabelKey: "opening.retest.action" },
+  { id: "improve-hole", eyebrowKey: "opening.improve.eyebrow", titleKey: "opening.improve.title", bodyKey: "opening.improve.body", target: "fairway-card", allowedTargets: ["design-dock", "terrain-category", "fairway-card", "terrain-tool", "terrain-history", "course"], expression: "neutral", actionLabelKey: "opening.retest.action" },
   { id: "retest-play", eyebrowKey: "opening.retest.eyebrow", titleKey: "opening.retest.title", bodyKey: "opening.retest.body", target: "course", expression: "neutral", actionLabelKey: "opening.compare.action" },
   { id: "compare-preview", eyebrowKey: "opening.compare.eyebrow", titleKey: "opening.compare.title", bodyKey: "opening.compare.body", target: "course", expression: "neutral", actionLabelKey: "opening.finish" },
 ];

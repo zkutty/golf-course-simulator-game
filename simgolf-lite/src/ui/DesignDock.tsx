@@ -57,6 +57,7 @@ interface DesignDockProps {
   onTerrainBrushWidth: (width: number) => void;
   onUndo: () => void;
   onRedo: () => void;
+  collapseSignal?: number;
   onSelect: (item: DesignCatalogItem) => void;
   decorationAction: "place" | "rotate" | "remove";
   onDecorationAction: (action: "place" | "rotate" | "remove") => void;
@@ -283,6 +284,7 @@ export function DesignDock(props: DesignDockProps) {
   ) ?? "terrain";
   const [category, setCategory] = useState<DesignCategory>(selectedCategory);
   const [collapsed, setCollapsed] = useState(true);
+  const previousCollapseSignal = useRef(props.collapseSignal);
   const [inspectedId, setInspectedId] = useState<string | null>(null);
   const [focusedItemIds, setFocusedItemIds] = useState<
     Partial<Record<DesignCategory, string>>
@@ -302,6 +304,12 @@ export function DesignDock(props: DesignDockProps) {
     [props.catalog, props.selectedItemId],
   );
   const inspected = items.find((item) => item.id === inspectedId) ?? selected;
+
+  useEffect(() => {
+    if (props.collapseSignal === previousCollapseSignal.current) return;
+    previousCollapseSignal.current = props.collapseSignal;
+    setCollapsed(true);
+  }, [props.collapseSignal]);
 
   useEffect(() => {
     if (selectedCategory !== category) setCategory(selectedCategory);
@@ -433,6 +441,7 @@ export function DesignDock(props: DesignDockProps) {
                   <button
                     key={tool}
                     type="button"
+                    data-tutorial-target={tool === "curve" ? "terrain-tool" : undefined}
                     data-testid={`design-tool-${tool}`}
                     aria-pressed={props.terrainTool === tool}
                     onClick={() => props.onTerrainTool(tool)}
@@ -461,7 +470,7 @@ export function DesignDock(props: DesignDockProps) {
                 />
                 <output>{props.terrainBrushWidth}</output>
               </label>
-              <div className="cc-design-toolbar__history" role="group" aria-label={t("designDock.historyAria")}>
+              <div className="cc-design-toolbar__history" role="group" aria-label={t("designDock.historyAria")} data-tutorial-target="terrain-history">
                 <button type="button" aria-label={t("terrainEdit.undo")} onClick={props.onUndo}>↶</button>
                 <button type="button" aria-label={t("terrainEdit.redo")} onClick={props.onRedo}>↷</button>
               </div>
@@ -474,6 +483,7 @@ export function DesignDock(props: DesignDockProps) {
             aria-expanded={!collapsed}
             aria-controls="design-dock-content"
             onClick={() => setCollapsed((value) => !value)}
+            data-tutorial-target="design-dock"
           >
             <span aria-hidden="true">{collapsed ? "+" : "−"}</span>
           </button>
@@ -490,6 +500,7 @@ export function DesignDock(props: DesignDockProps) {
                 aria-selected={category === nextCategory}
                 aria-controls={`design-panel-${nextCategory}`}
                 tabIndex={category === nextCategory ? 0 : -1}
+                data-tutorial-target={nextCategory === "terrain" ? "terrain-category" : undefined}
                 onClick={() => activateCategory(nextCategory)}
                 onKeyDown={(event) => onCategoryKeyDown(event, nextCategory)}
               >
@@ -536,6 +547,7 @@ export function DesignDock(props: DesignDockProps) {
                   data-affordable={affordable}
                   data-locked={requiredReputation != null}
                   data-risk={item.seasonalRisk.level}
+                  data-tutorial-target={item.id === "terrain:fairway" ? "fairway-card" : undefined}
                   tabIndex={item.id === focusedItemId ? 0 : -1}
                   className="cc-design-card"
                   onClick={() => {

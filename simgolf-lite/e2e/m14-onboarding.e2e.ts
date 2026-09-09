@@ -154,7 +154,7 @@ async function focusOpeningHole(page: Page) {
   if (!bounds) throw new Error("Preview-hole canvas has no visible bounds");
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.evaluate(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
-  await page.getByRole("button", { name: "Focus on preview hole", exact: true }).click();
+  await page.getByRole("button", { name: /^Focus (?:on preview hole|and clear the canvas)$/ }).click();
   // Observe the real camera glide; never mutate the renderer to make a click pass.
   await page.evaluate(() => new Promise<void>((resolve, reject) => {
     let previous: { x: number; y: number } | null = null;
@@ -270,7 +270,12 @@ async function buildAdditionalHole(page: Page, freezeLive = false) {
 }
 
 test.describe("ZK-1106 private operator opening", () => {
+  test.use({ hasTouch: true });
+
   test("real UI builds, watches, edits and compares one private hole", async ({ page }, testInfo) => {
+    const browserErrors: string[] = [];
+    page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+    page.on("pageerror", (error) => browserErrors.push(error.message));
     const state = () => page.evaluate(() => JSON.parse(window.render_game_to_text!()));
     const capture = async (name: string) => {
       if (process.env.ZK1107_EVIDENCE) {
@@ -356,6 +361,9 @@ test.describe("ZK-1106 private operator opening", () => {
       return penaltyTotal;
     };
     const started = Date.now();
+    // Keep motion enabled while exercising retained playback, speed, and
+    // follow cancellation. Reduced-motion equivalence is covered separately.
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.goto("/");
     await page.getByRole("button", { name: /First-hole operator demo/ }).click();
     await expectStep(page, "welcome");
@@ -376,7 +384,12 @@ test.describe("ZK-1106 private operator opening", () => {
     await page.getByTestId("opening-speed-0.5").click();
     await page.getByTestId("opening-play-pause").click();
     await expect.poll(() => state().then((value) => value.onboarding.openingPlayback.progress)).toBeGreaterThan(0.12);
-    await page.getByTestId("opening-play-pause").click();
+    // Playback replaces the frame every 50 ms, so use the visible control's
+    // current screen position for genuine mouse input instead of retaining a
+    // DOM node across a render boundary.
+    const pauseBounds = await page.getByTestId("opening-play-pause").boundingBox();
+    if (!pauseBounds) throw new Error("Playback pause control has no visible bounds");
+    await page.mouse.click(pauseBounds.x + pauseBounds.width / 2, pauseBounds.y + pauseBounds.height / 2);
     const moving = await state();
     expect(moving.onboarding.openingPlayback.shotId).toBe(startFrame.shotId);
     expect(moving.onboarding.openingPlayback.ball).not.toEqual(startFrame.ball);
@@ -440,7 +453,7 @@ test.describe("ZK-1106 private operator opening", () => {
     await expect(page.getByTestId("opening-diagnosis")).toContainText("landing-region");
     await capture("04-evidence-backed-opportunity");
     await page.getByRole("button", { name: "Receive preview pennant", exact: true }).click();
-    await page.getByRole("button", { name: "Improve this area", exact: true }).click();
+    await page.getByRole("button", { name: "Improve this hole", exact: true }).click();
     await expectStep(page, "improve-hole");
     const rewarded = await state();
     expect(rewarded.economy.cash).toBe(before.economy.cash + 750);
@@ -449,13 +462,88 @@ test.describe("ZK-1106 private operator opening", () => {
     const width = rewarded.course.width;
     const point = { x: target % width, y: Math.floor(target / width) };
     await focusOpeningHole(page);
-    await dragRoute(page, await canvas(page), point, { x: point.x + 1, y: point.y });
+    const targetIds = rewarded.onboarding.opening.targetCells;
+    await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toEqual({
+      targetIds,
+      outlineCount: targetIds.length,
+    });
+    // The outline stays registered to the same authoritative ids while the
+    // actual camera rotates. The test only reads renderer diagnostics; all
+    // authoring below remains real keyboard and mouse input.
+    for (let rotation = 0; rotation < 4; rotation++) {
+      await page.keyboard.press("q");
+      await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toEqual({
+        targetIds,
+        outlineCount: targetIds.length,
+      });
+      const projected = await page.evaluate(({ x, y }) => window.__coursecraftPixiTest!.tileToScreen(x, y), point);
+      const viewport = await page.evaluate(() => window.__coursecraftPixiTest!.viewport());
+      expect(projected).not.toBeNull();
+      expect(viewport).not.toBeNull();
+      expect(projected!.x).toBeGreaterThan(0);
+      expect(projected!.x).toBeLessThan(viewport!.width);
+      expect(projected!.y).toBeGreaterThan(0);
+      expect(projected!.y).toBeLessThan(viewport!.height);
+    }
+    const dock = page.getByTestId("design-dock");
+    if (await dock.getAttribute("data-collapsed") === "true") await dock.getByRole("button", { name: "Expand Design dock" }).click();
+    await dock.getByRole("tab", { name: "Terrain", exact: true }).click();
+    await dock.getByTestId("design-card-terrain-fairway").click();
+    await dock.getByTestId("design-tool-curve").click();
+    // Expanding the dock changes the canvas bounds. The visible Focus action
+    // deliberately collapses it after material selection, then recenters the
+    // same camera. At every supported layout the authoritative target must be
+    // delivered to Pixi rather than a DOM overlay.
+    const originalViewport = page.viewportSize()!;
+    for (const viewportSize of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewportSize);
+      await focusOpeningHole(page);
+      await expect(dock).toHaveAttribute("data-collapsed", "true");
+      const focusedCanvas = await canvas(page);
+      const focusedBounds = await focusedCanvas.boundingBox();
+      if (!focusedBounds) throw new Error("Focused canvas has no bounds");
+      const targetScreen = await pagePoint(page, focusedCanvas, point);
+      const { resolvedTarget, targetHit } = await page.evaluate(({ x, y, bounds }) => {
+        const viewport = window.__coursecraftPixiTest!.viewport()!;
+        const element = document.elementFromPoint(x, y) as HTMLElement | null;
+        return {
+          resolvedTarget: window.__coursecraftPixiTest!.screenToTile(
+            (x - bounds.x) * viewport.width / bounds.width,
+            (y - bounds.y) * viewport.height / bounds.height,
+          ),
+          targetHit: element ? {
+            tagName: element.tagName,
+            testId: element.dataset.testid ?? null,
+            tutorialTarget: element.dataset.tutorialTarget ?? null,
+            role: element.getAttribute("role"),
+            text: element.textContent?.trim().slice(0, 120) ?? "",
+          } : null,
+        };
+      }, { x: targetScreen.x, y: targetScreen.y, bounds: focusedBounds });
+      console.log(`ZK-1141 target hit ${JSON.stringify({ viewportSize, target, point, targetScreen, targetHit })}`);
+      expect(resolvedTarget).toEqual(point);
+      expect(targetHit?.tagName, `projected target is occluded at ${viewportSize.width}x${viewportSize.height} by ${JSON.stringify(targetHit)}`).toBe("CANVAS");
+      const file = testInfo.outputPath(`05-focus-clear-${viewportSize.width}x${viewportSize.height}.png`);
+      await page.screenshot({ path: file });
+      await testInfo.attach(`focus-clear-${viewportSize.width}x${viewportSize.height}`, { path: file, contentType: "image/png" });
+    }
+    await page.setViewportSize(originalViewport);
+    await focusOpeningHole(page);
+    const beforeRejectedPaint = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState().tiles);
+    await clickTile(page, await canvas(page), { x: point.x + 3, y: point.y });
+    await expect(page.getByTestId("opening-paint-recovery")).toContainText("missed the highlighted widening tiles");
+    expect(await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState().tiles)).toEqual(beforeRejectedPaint);
+    await clickTile(page, await canvas(page), point);
     await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
     await capture("05-real-fairway-edit");
     const edited = await state();
+    const editedSurface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
+    const changedIds = editedSurface.tiles.flatMap((terrain, index) => terrain !== beforeRejectedPaint[index] ? [index] : []);
+    expect(changedIds).toEqual([target]);
+    expect(editedSurface.features.at(-1)?.coverage).toEqual([target]);
     expect(edited.economy.cash).toBeLessThan(rewarded.economy.cash);
     const editDebit = rewarded.economy.cash - edited.economy.cash;
-    expect(editDebit).toBeGreaterThan(0);
+    expect(editDebit).toBe(120);
     await page.keyboard.press("Control+z");
     await expect(page.getByTestId("tutorial-primary-action")).toBeDisabled();
     await expectStep(page, "improve-hole");
@@ -464,6 +552,19 @@ test.describe("ZK-1106 private operator opening", () => {
     await page.keyboard.press("Control+Shift+z");
     await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
     expect((await state()).economy).toEqual(edited.economy);
+    await page.keyboard.press("Control+z");
+    await expect(page.getByTestId("tutorial-primary-action")).toBeDisabled();
+    const touchTarget = await pagePoint(page, await canvas(page), point);
+    await page.touchscreen.tap(touchTarget.x, touchTarget.y);
+    await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
+    const touchEditedSurface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
+    expect(touchEditedSurface.tiles.flatMap((terrain, index) => terrain !== beforeRejectedPaint[index] ? [index] : [])).toEqual([target]);
+    expect(touchEditedSurface.features.at(-1)?.coverage).toEqual([target]);
+    expect((await state()).economy).toEqual(edited.economy);
+    await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toEqual({
+      targetIds,
+      outlineCount: targetIds.length,
+    });
     await page.getByRole("button", { name: "Retest the same group", exact: true }).click();
     await expectStep(page, "retest-play");
     const retestStarted = await state();
@@ -498,6 +599,7 @@ test.describe("ZK-1106 private operator opening", () => {
     await page.getByRole("button", { name: "Finish private demo", exact: true }).click();
     await expect(overlay(page)).toHaveCount(0);
     expect((await state()).onboarding).toMatchObject({ active: false, completion: "creative" });
+    expect(browserErrors).toEqual([]);
   });
 });
 
