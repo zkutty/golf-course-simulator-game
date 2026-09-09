@@ -82,9 +82,12 @@ test("current-shot channel follows actual live action and survives keyboard save
   await page.getByTestId("save-slot-quick-save").getByRole("button", { name: "Load", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screenBase)).toBe("in-game");
-  expect(await page.evaluate(() => window.__coursecraftTest?.state().golferPositions)).toEqual(
-    afterSave.live.state.golfers.map((g: { id: number; pos: { x: number; y: number } }) => [g.id, g.pos.x, g.pos.y]),
+  const savedPositions = afterSave.live.state.golfers.map(
+    (g: { id: number; pos: { x: number; y: number } }) => [g.id, g.pos.x, g.pos.y],
   );
+  // The screen shell becomes visible before the loaded live snapshot finishes
+  // its state/status refresh. Keep exact equality, but wait for that boundary.
+  await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().golferPositions)).toEqual(savedPositions);
   expect((await saved(page)).live.state.golfers.find((g: { id: number }) => g.id === flyingId).shotOutcomes).toEqual(after.shotOutcomes);
   const reloaded = await state(page);
   expect(reloaded.golfers.find((g: { id: number }) => g.id === selected.golferId).shotEvidence).toEqual(selected.channel);

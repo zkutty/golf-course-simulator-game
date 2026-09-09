@@ -1,5 +1,13 @@
 Original prompt: Complete ZK-177 and ZK-178, clean the worktree, commit, and push.
 
+## 2026-09-09 — ZK-1107 + ZK-1108 integration candidate
+
+- Combined the reviewed ZK-1107 opening-composition and corrected ZK-1108 shot-truth commits on exact `origin/develop` base `4ddc7af0a6014ab73cedb6e6dea42c7b026049af` in isolated branch `codex/zk1107-zk1108-integration-sep08`; the user's checkout remains untouched.
+- Combined non-browser validation passes 12 files / 91 tests, TypeScript, lint/i18n (nine inherited Hook warnings), and the audited production build. Initial JavaScript is 1,593,766 bytes, 14,953 bytes below the unchanged cap.
+- The serialized eight-test browser slice is fully green across the opening, responsive/keyboard, truthful live shot/save-reload, M47, M69, ZK-623, ZK-471, and M28 settings/save surfaces. Two test-only boundary hardenings neutralize a persisted edge-pan pointer before the existing camera-settle assertion and poll the asynchronous loaded live snapshot while preserving exact position equality; neither changes product timeouts or production behavior.
+- The required bundled-client loop completed five unpaused iterations with no error artifact and was visually inspected at the final live frame: coherent course crop, pin, route/landing trail, golfer markers, and boundary indicators without clipping or corruption.
+- Source/evidence generated during validation was restored to the committed candidate. Ready for scoped commit and develop/staging promotion. ZK-1108 has independent GO; ZK-1107 has independent GO for development integration but retains its declared human visual-signoff gate before production.
+
 ## 2026-09-08 — ZK-1107 opening composition
 
 - Packet: lock the ZK-1106 opening hierarchy at 1440×900, 1280×720, and 390×844 without changing the seven-beat loop or gameplay authority.

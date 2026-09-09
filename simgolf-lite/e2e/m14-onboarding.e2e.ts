@@ -146,6 +146,14 @@ async function setInGameLocale(page: Page, locale: "en" | "pseudo") {
 }
 
 async function focusOpeningHole(page: Page) {
+  // The previous real authoring drag can leave Pixi's edge-pan pointer at the
+  // course boundary. Re-establish an interior pointer position before the
+  // visible Focus action so the test observes only the requested camera glide.
+  const stage = await canvas(page);
+  const bounds = await stage.boundingBox();
+  if (!bounds) throw new Error("Preview-hole canvas has no visible bounds");
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.evaluate(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
   await page.getByRole("button", { name: "Focus on preview hole", exact: true }).click();
   // Observe the real camera glide; never mutate the renderer to make a click pass.
   await page.evaluate(() => new Promise<void>((resolve, reject) => {
