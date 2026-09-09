@@ -25,7 +25,8 @@ test("M47 Golfer Inspector exposes evidence and remains accessible/responsive", 
   const inspector = page.locator(".cc-golfer-inspector");
   await expect(inspector).toBeVisible();
   await expect(inspector).toContainText("Identity & approach");
-  await expect(inspector).toContainText("Rejected:");
+  await expect(inspector.getByTestId("golfer-shot-evidence")).toHaveCount(1);
+  await expect(inspector.getByTestId("golfer-shot-evidence")).toHaveAttribute("data-phase", /^(intent|result|reaction|unavailable)$/);
   const followButton = inspector.locator("button[aria-pressed]");
   const initialFollowing = await followButton.getAttribute("aria-pressed");
   expect(initialFollowing).toMatch(/^(true|false)$/);
@@ -45,6 +46,8 @@ test("M47 Golfer Inspector exposes evidence and remains accessible/responsive", 
   expect(mobileBounds!.x + mobileBounds!.width).toBeLessThanOrEqual(390);
   expect(mobileBounds!.y + mobileBounds!.height).toBeLessThanOrEqual(844);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await inspector.getByTestId("golfer-shot-evidence").scrollIntoViewIfNeeded();
+  await expect(inspector.getByTestId("golfer-shot-evidence")).toBeInViewport();
   const mobileShot = await page.screenshot({ path: "artifacts/m47/inspector-mobile.png", fullPage: true });
   await testInfo.attach("m47-inspector-mobile", { body: mobileShot, contentType: "image/png" });
 
@@ -72,5 +75,11 @@ test("M47 Golfer Inspector exposes evidence and remains accessible/responsive", 
   expect(pseudoBounds!.x + pseudoBounds!.width).toBeLessThanOrEqual(390);
   expect(pseudoBounds!.y + pseudoBounds!.height).toBeLessThanOrEqual(844);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const pseudoChannel = pseudoInspector.getByTestId("golfer-shot-evidence");
+  await pseudoChannel.scrollIntoViewIfNeeded();
+  await expect(pseudoChannel).toBeInViewport();
+  await expect(pseudoChannel).toHaveAccessibleName(/⟦/);
+  const pseudoShot = await page.screenshot({ path: testInfo.outputPath("m47-pseudo-channel.png"), fullPage: true });
+  await testInfo.attach("m47-pseudo-channel", { body: pseudoShot, contentType: "image/png" });
   expect(errors).toEqual([]);
 });

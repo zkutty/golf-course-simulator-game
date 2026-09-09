@@ -39,54 +39,19 @@ export function GameButton({
   };
 
   const variants: Record<Variant, CSSProperties> = {
-    primary: disabled
-      ? { background: "rgba(92,138,78,0.35)", color: "rgba(255,255,255,0.75)" }
-      : {
-          background: "var(--cc-forest)",
-          color: "#fff",
-          boxShadow: "0 10px 22px rgba(0,0,0,0.12)",
-        },
-    secondary: disabled
-      ? { background: "rgba(255,255,255,0.35)", color: "rgba(90,100,90,0.6)" }
-      : {
-          background: "rgba(255,255,255,0.8)",
-          color: "#4b5a4b",
-          boxShadow: "0 3px 10px rgba(0,0,0,0.08)",
-        },
-    success: disabled
-      ? { background: "rgba(139,197,115,0.35)", color: "rgba(255,255,255,0.75)" }
-      : {
-          background: "var(--cc-grass)",
-          color: "#fff",
-          boxShadow: "0 10px 22px rgba(0,0,0,0.12)",
-        },
-    danger: disabled
-      ? { background: "rgba(216,72,72,0.35)", color: "rgba(255,255,255,0.75)" }
-      : {
-          background: "#d84848",
-          color: "#fff",
-          boxShadow: "0 10px 22px rgba(0,0,0,0.12)",
-        },
+    primary: { background: "var(--ui-action-selected)", color: "var(--ui-action-selected-text)" },
+    secondary: { background: "var(--ui-action-surface)", color: "var(--ui-action-text)" },
+    success: { background: "var(--ui-action-selected)", color: "var(--ui-action-selected-text)" },
+    danger: { background: "var(--ui-danger-surface)", color: "var(--ui-danger-text)" },
   };
 
   return (
     <button
       data-gameui="button"
+      data-variant={variant}
       disabled={disabled}
       style={{ ...base, ...variants[variant], ...style }}
       {...props}
-      onMouseDown={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.98)";
-        props.onMouseDown?.(e);
-      }}
-      onMouseUp={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)";
-        props.onMouseUp?.(e);
-      }}
-      onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)";
-        props.onMouseLeave?.(e);
-      }}
     >
       {icon && <span style={{ display: "inline-flex", alignItems: "center" }}>{icon}</span>}
       {children}
@@ -109,15 +74,16 @@ export function IconButton({ icon, label, variant = "secondary", disabled, style
     padding: 12,
     borderRadius: 16,
     border: "1px solid rgba(0,0,0,0.06)",
-    background: "rgba(255,255,255,0.6)",
+    background: "var(--ui-action-surface)",
+    color: "var(--ui-action-text)",
     boxShadow: "0 3px 10px rgba(0,0,0,0.08)",
     transition: "transform 120ms ease, box-shadow 120ms ease, background 120ms ease",
     cursor: disabled ? "not-allowed" : "pointer",
   };
   const variantStyle: CSSProperties =
     variant === "primary"
-      ? { background: "rgba(92,138,78,0.18)" }
-      : { background: "rgba(255,255,255,0.6)" };
+      ? { background: "var(--ui-action-selected)", color: "var(--ui-action-selected-text)" }
+      : { background: "var(--ui-action-surface)", color: "var(--ui-action-text)" };
 
   return (
     <button
@@ -127,8 +93,7 @@ export function IconButton({ icon, label, variant = "secondary", disabled, style
       {...props}
     >
       <div style={{ display: "grid", placeItems: "center" }}>{icon}</div>
-      <div style={{ fontSize: 12, fontWeight: 800, color: disabled ? "#8b9a8b" : "#3d4a3e" }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 800, color: "inherit" }}>{label}</div>
     </button>
   );
 }
-

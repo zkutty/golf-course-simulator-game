@@ -13,6 +13,7 @@ import type { Personality } from "./personality";
 import type { ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import { TimedItineraryBuilder } from "../m51/timedItinerary";
 import type { PlayerRoundCourseSnapshot } from "../models/playerProTypes";
+import { committedShotStrokeCost } from "../rules/shotTruth";
 
 function distance(a: Point, b: Point): number { return Math.hypot(a.x - b.x, a.y - b.y); }
 
@@ -220,7 +221,7 @@ export function buildStrategicGolferRound(args: {
       condition: surfaceCareQualityForHole(course, hole),
     }));
     holePar.push(par);
-    holeStrokes.push(outcomes.reduce((sum, outcome) => sum + 1 + outcome.penaltyStrokes + (outcome.greenPutting?.putts ?? 0), 0));
+    holeStrokes.push(outcomes.reduce((sum, outcome) => sum + committedShotStrokeCost(outcome), 0));
     cursor = { ...from };
     itinerary.cursor = cursor;
     played++;

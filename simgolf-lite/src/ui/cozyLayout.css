@@ -1,10 +1,110 @@
 .cc-app {
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
   background: var(--ui-bg);
   padding: 14px;
   box-sizing: border-box;
+}
+
+/* ZK-1107 consumes ZK-377's state tokens; it is not a second theme system.
+ * Native :active applies equally to pointer and keyboard activation. */
+[data-gameui="button"],
+[data-gameui="icon-button"] {
+  min-height: 36px;
+  text-shadow: none;
+}
+
+[data-gameui="button"][data-variant="secondary"]:not(:disabled):hover,
+[data-gameui="icon-button"]:not(:disabled):hover {
+  background: var(--ui-action-hover) !important;
+  color: var(--ui-action-text) !important;
+}
+
+[data-gameui="button"][data-variant="danger"] {
+  border-color: var(--ui-danger-border) !important;
+}
+
+[data-gameui="button"]:disabled,
+[data-gameui="icon-button"]:disabled {
+  background: var(--ui-disabled-surface) !important;
+  color: var(--ui-disabled-text) !important;
+  opacity: 1 !important;
+  transform: none !important;
+  box-shadow: none !important;
+  border-color: var(--ui-state-border) !important;
+}
+
+/* The existing presenter hooks are shared by the opening guide. Only its
+ * presentation changes: all instructions, evidence and commands stay in DOM
+ * order, and camera/atlas/shot authority remain untouched. */
+[data-testid="tutorial-card"] > section {
+  max-width: 100%;
+}
+
+[data-testid="opening-current-shot"] {
+  padding: 8px 10px;
+  border: 1px solid var(--ui-state-border);
+  border-left: 3px solid var(--ui-action-selected);
+  border-radius: 4px;
+  background: var(--ui-surface-raised);
+  color: var(--ui-text);
+  font-weight: 700;
+}
+
+[data-testid="opening-evidence-context"] {
+  color: var(--ui-text-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+[data-testid="opening-comparison"] th,
+[data-testid="opening-comparison"] td {
+  border-bottom: 1px solid var(--ui-state-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+@media (max-width: 600px) {
+  .cc-live-controls {
+    /* Explicit width prevents left:50% shrink-to-fit from making a tall
+     * half-width column over the mobile shot corridor. Keep every control. */
+    width: calc(100% - 24px);
+    box-sizing: border-box;
+    gap: 8px !important;
+    padding: 6px 8px !important;
+  }
+
+  [data-testid="tutorial-card"] {
+    /* A bounded guide leaves the upper course available for the shot and
+     * authoring target; overflowing evidence remains keyboard-scrollable. */
+    max-height: min(46dvh, 390px) !important;
+    overscroll-behavior: contain;
+  }
+
+  [data-testid="tutorial-card"] > section {
+    gap: 8px !important;
+    align-items: flex-start !important;
+  }
+
+  [data-testid="tutorial-card"] > section > [role="img"] {
+    width: 40px !important;
+    height: 40px !important;
+    flex-basis: 40px !important;
+  }
+
+  [data-testid="tutorial-card"] > section > div:last-child {
+    padding: 12px !important;
+    border-radius: 7px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-gameui="button"],
+  [data-gameui="icon-button"] {
+    transition: none !important;
+  }
 }
 
 .cc-main {

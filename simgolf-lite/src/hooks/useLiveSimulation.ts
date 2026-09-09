@@ -38,6 +38,7 @@ import {
 } from "../game/live/paceHistory";
 import { buildMobilityOperationsReports } from "../game/m51/operationsReport";
 import { livePropertyShotTraces } from "../game/live/safetyEvidence";
+import { currentShotEvidence, type CurrentShotEvidence } from "../game/live/currentShotEvidence";
 
 const DAYS_PER_WEEK = 7;
 const STATUS_THROTTLE_MS = 150;
@@ -69,6 +70,7 @@ export interface SelectedGolferDetail {
   holePlans?: StrategicHolePlan[];
   shotOutcomes?: LiveShotOutcome[];
   holeReactions?: HoleReaction[];
+  currentShotEvidence?: CurrentShotEvidence;
   mobilityMode?: "walk" | "pushcart" | "riding_cart";
   mobilityPredictedWalkingMinutes?: number;
   mobilityActualTravelMinutes?: number;
@@ -193,6 +195,7 @@ function buildSelected(
     holePlans: g.holePlans,
     shotOutcomes: g.shotOutcomes,
     holeReactions: g.holeReactions,
+    currentShotEvidence: currentShotEvidence(g),
     mobilityMode: g.mobilityMode,
     mobilityPredictedWalkingMinutes: g.mobilityPredictedWalkingMinutes,
     mobilityActualTravelMinutes: g.mobilityActualTravelMinutes,
