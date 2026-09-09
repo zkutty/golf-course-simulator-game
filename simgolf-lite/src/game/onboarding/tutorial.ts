@@ -1,6 +1,6 @@
 import type { Course, ExperienceProfile, WeekResult, World } from "../models/types";
 import type { MessageKey } from "../../i18n/catalog";
-import { hasOpeningEdit, normalizeOpeningDemo, openingShots, openingTargetCells, retestOpening, type OpeningDemo } from "./openingDemo";
+import { compareOpening, diagnoseOpening, freezeOpeningContext, hasOpeningEdit, normalizeOpeningDemo, openingShots, openingTargetCells, retestOpening, type OpeningDemo } from "./openingDemo";
 import {
   advancedJitLessons,
   applyInvitedPreviewReward,
@@ -229,17 +229,33 @@ export function advanceTutorialProgress(progress: TutorialProgress, context: Tut
     return {
       ...progress, stage: "observe-play",
       receipts: { ...progress.receipts, preview: { ...progress.receipts.preview, status: "observed", evidence } },
-      ...(progress.opening ? { opening: { ...progress.opening, cursor: 0, targetCells: retainedEvidence ? progress.opening.targetCells : openingTargetCells(context.course, evidence) } } : {}),
+      ...(progress.opening ? { opening: {
+        ...progress.opening,
+        cursor: 0,
+        targetCells: retainedEvidence ? progress.opening.targetCells : openingTargetCells(context.course, evidence),
+        context: progress.opening.context ?? freezeOpeningContext(evidence),
+        diagnosis: progress.opening.diagnosis ?? diagnoseOpening(context.course, evidence),
+      } } : {}),
     };
   }
   if (progress.opening && progress.stage === "creative-reward") return progress.opening.targetCells.length
-    ? { ...progress, stage: "improve-hole" }
+    ? { ...progress, stage: "improve-hole", opening: { ...progress.opening, editBaselineCash: context.world.cash } }
     : { ...progress, active: false, completion: "creative" };
   if (progress.opening && progress.stage === "improve-hole") {
     const baseline = progress.receipts.preview.evidence;
     const candidate = baseline && retestOpening(context.course, context.world, baseline);
     if (!candidate || candidate.holeFingerprint === baseline?.holeFingerprint) return progress;
-    return { ...progress, stage: "retest-play", opening: { ...progress.opening, candidate, cursor: 0 } };
+    const contextFrozen = progress.opening.context ?? (baseline ? freezeOpeningContext(baseline) : undefined);
+    if (!baseline || !contextFrozen) return progress;
+    const editCost = progress.opening.editBaselineCash == null ? null : Math.max(0, progress.opening.editBaselineCash - context.world.cash);
+    return { ...progress, stage: "retest-play", opening: {
+      ...progress.opening,
+      candidate,
+      cursor: 0,
+      context: contextFrozen,
+      ...(editCost == null ? {} : { editCost }),
+      comparison: compareOpening(baseline, candidate, contextFrozen, editCost),
+    } };
   }
   if (progress.opening && progress.stage === "retest-play") return { ...progress, stage: "compare-preview" };
   if (progress.opening && progress.stage === "compare-preview") return { ...progress, active: false, completion: "creative" };

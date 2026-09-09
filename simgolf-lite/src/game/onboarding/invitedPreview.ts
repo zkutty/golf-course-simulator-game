@@ -18,6 +18,8 @@ export const INVITED_PREVIEW_REWARD_REPUTATION = 1 as const;
 export const PUBLIC_OPERATION_MILESTONES = [3, 6, 9] as const;
 
 export interface InvitedPreviewShotEvidence {
+  /** Exact retained resolver identity. Absent only on v1 saves created before playback. */
+  id?: string;
   shotNumber: number;
   intent: "safe" | "hero" | "positional" | "recovery" | "approach";
   club: string;
@@ -276,8 +278,8 @@ export function normalizeInvitedPreviewEvidence(value: unknown): InvitedPreviewE
     for (const itemShot of golfer.shots) {
       const shot = record(itemShot);
       const from = point(shot.from); const landing = point(shot.landing); const rest = point(shot.rest);
-      if (!Number.isInteger(shot.shotNumber) || !["safe", "hero", "positional", "recovery", "approach"].includes(String(shot.intent)) || typeof shot.club !== "string" || !from || !landing || !rest || typeof shot.lieAfter !== "string" || !finite(shot.penaltyStrokes)) return null;
-      shots.push({ shotNumber: shot.shotNumber as number, intent: shot.intent as InvitedPreviewShotEvidence["intent"], club: shot.club, from, landing, rest, lieAfter: shot.lieAfter, penaltyStrokes: shot.penaltyStrokes });
+      if ((shot.id != null && (typeof shot.id !== "string" || !shot.id)) || !Number.isInteger(shot.shotNumber) || !["safe", "hero", "positional", "recovery", "approach"].includes(String(shot.intent)) || typeof shot.club !== "string" || !from || !landing || !rest || typeof shot.lieAfter !== "string" || !finite(shot.penaltyStrokes)) return null;
+      shots.push({ ...(shot.id ? { id: shot.id } : {}), shotNumber: shot.shotNumber as number, intent: shot.intent as InvitedPreviewShotEvidence["intent"], club: shot.club, from, landing, rest, lieAfter: shot.lieAfter, penaltyStrokes: shot.penaltyStrokes });
     }
     group.push({ id: golfer.id, name: golfer.name, archetype: golfer.archetype as GolferArchetypeName, par: golfer.par, strokes: golfer.strokes, expectedScore: golfer.expectedScore, satisfaction: Math.max(0, Math.min(100, golfer.satisfaction)), reaction: golfer.reaction as InvitedPreviewGolferEvidence["reaction"], thought: golfer.thought, shots });
   }

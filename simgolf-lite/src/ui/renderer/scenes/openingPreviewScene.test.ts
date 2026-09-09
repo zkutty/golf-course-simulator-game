@@ -25,7 +25,11 @@ describe("Opening preview endpoint markers", () => {
     const host = new SceneSystemHost([createOpeningPreviewSceneSystem(layer)]);
     host.sync(snapshot(0));
     expect(layer.children).toEqual([sibling]);
-    const visible = snapshot(1, { openingMarker: { golferName: "Preview", shot: { shotNumber: 1, intent: "safe", club: "7i", from: { x: 1, y: 2 }, landing: { x: 8, y: 2 }, rest: { x: 4, y: 3 }, lieAfter: "rough", penaltyStrokes: 1 } } });
+    const shot = { id: "shot-1", shotNumber: 1, intent: "safe" as const, club: "7i", from: { x: 1, y: 2 }, landing: { x: 8, y: 2 }, rest: { x: 4, y: 3 }, lieAfter: "rough", penaltyStrokes: 1 };
+    const visible = snapshot(1, { openingMarker: {
+      previewId: "preview-1", golferId: "golfer-1", golferName: "Preview", shotId: shot.id,
+      shot, index: 0, total: 1, progress: 0.5, golfer: shot.from, ball: { x: 5, y: 2 }, landing: shot.landing, rest: shot.rest, complete: false,
+    } });
     const unchanged = JSON.stringify(visible);
     expect(host.sync(visible)).toEqual(["openingPreview"]);
     const graphic = layer.children[1];

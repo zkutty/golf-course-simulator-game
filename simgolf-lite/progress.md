@@ -1,5 +1,15 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-1110/ZK-1111 retained opening playback and frozen comparison — 2026-09-09
+
+- Started in `/private/tmp/golf-sim-zk1110-zk1111-sep09` on `codex/zk1110-zk1111-preview-sep09` at exact production SHA `43e1c557e6776255774e0f9ac1f6495898016c0e`; the user's main checkout and its Playwright artifacts remain untouched.
+- Extended the existing private-preview carrier with exact retained shot IDs (while preserving pre-ID save compatibility), pure bounded golfer/ball frames, coarse-only saved cursor, pause/resume/replay/skip/speed controls, reduced-motion step parity, structured frame evidence, and an opt-in Pixi camera follow that cancels on manual pan/zoom and restores the prior view on controlled exit without touching flyover state.
+- Added a frozen seed/hole/course/cohort context, shot-ID/region-only diagnosis, actual committed terrain-debit capture, changed fingerprints, and positive/neutral/negative/no-op/unsupported comparison states. Legacy saved comparisons explicitly report unavailable cost rather than inferring one.
+- Deterministic gates pass: 8 focused files / 116 tests; the complete CI suite at 233 files / 1,854 passing and one intentional skip; 5/5 audio audits; TypeScript; lint with zero errors and nine pre-existing Hook warnings; production build and every embedded asset/startup/delivery budget; and `git diff --check`.
+- A retries-disabled, real-input opening run passed 1/1 with exact baseline/retest preview and shot IDs, visible moving canvas pixels, replay/skip/follow-cancel and course/world/reward-ledger hash invariants, `$240` actual committed terrain debit, fingerprints `17549bbd` to `325ee6d1`, neutral authoritative measures, unchanged original receipt, and no console/page errors. Retained green-run captures are `03-recorded-shot-on-course.png`, `05b-intermediate-retest-shot.png`, and `06-honest-comparison-with-penalties.png`.
+- Reduced-motion composition passed 3/3 at 1440x900, 1280x720, and 390x844 with retries disabled and no console/page errors. The bundled web-game client also traversed the opening twice, exposed matching structured hashes/stages, produced coherent screenshots, and emitted no error artifact.
+- Final attempt-2 acceptance audit added the omitted middle/right-button drag-pan follow cancellation. Its affected gate passed TypeScript, 2 focused files / 7 tests, and the full retries-disabled 1/1 real-input opening flow (5.5 minutes), including controlled prior-view restoration plus drag-pan and wheel cancellation.
+
 ## ZK-765 M69 architectural reference-plan certification — 2026-08-08
 
 - Added one deterministic certification authority for the six canonical hole

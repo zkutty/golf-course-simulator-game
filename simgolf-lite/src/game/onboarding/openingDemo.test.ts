@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import { createInvitedPreviewEvidence } from "./invitedPreview";
-import { hasOpeningEdit, newOpeningDemo, normalizeOpeningDemo, openingPenaltyTotal, openingShots, openingTargetCells, retestOpening } from "./openingDemo";
+import { compareOpening, diagnoseOpening, freezeOpeningContext, hasOpeningEdit, newOpeningDemo, normalizeOpeningDemo, openingPenaltyTotal, openingPlaybackFrame, openingShots, openingTargetCells, retestOpening } from "./openingDemo";
 import { advanceTutorialProgress, claimTutorialPreviewReward, createTutorialProgress, normalizeTutorialProgress, restartTutorialProgress, tutorialCanAdvance } from "./tutorial";
 import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/save";
 
@@ -38,12 +38,13 @@ describe("ZK-1106 optional private operator opening", () => {
     expect(tutorialCanAdvance(progress, context)).toBe(false);
     const revised = structuredClone(context.course);
     revised.tiles[progress.opening!.targetCells[0]] = "fairway";
-    const edited = { ...context, course: revised, world: reward.world };
+    const edited = { ...context, course: revised, world: { ...reward.world, cash: reward.world.cash - 125 } };
     const economy = JSON.stringify(reward.world);
     progress = advanceTutorialProgress(progress, edited);
     expect(progress.stage).toBe("retest-play");
     expect(progress.receipts).toEqual(reward.progress.receipts);
     expect(progress.opening!.candidate!.holeFingerprint).not.toBe(baseline.holeFingerprint);
+    expect(progress.opening!.comparison).toMatchObject({ terrainCost: 125, beforeFingerprint: baseline.holeFingerprint, afterFingerprint: progress.opening!.candidate!.holeFingerprint });
     progress = { ...progress, opening: { ...progress.opening!, cursor: 24 } };
     progress = advanceTutorialProgress(progress, edited);
     expect(progress.stage).toBe("compare-preview");
@@ -64,6 +65,41 @@ describe("ZK-1106 optional private operator opening", () => {
     expect(a.group.map((golfer) => golfer.name)).toEqual(baseline.group.map((golfer) => golfer.name));
     expect(retestOpening(edited, { ...world, runSeed: world.runSeed + 1 }, baseline)).toBeNull();
     expect(retestOpening(edited, world, { ...baseline, holeId: "another-hole" })).toBeNull();
+  });
+
+  it("projects bounded moving frames from exact retained shot IDs and endpoints", () => {
+    const { course, world } = fixture();
+    const evidence = createInvitedPreviewEvidence(course, world)!;
+    const shots = openingShots(evidence);
+    expect(shots.length).toBeGreaterThan(1);
+    expect(shots.every((marker) => marker.shotId === marker.shot.id && marker.previewId === evidence.id)).toBe(true);
+    const start = openingPlaybackFrame(evidence, 0, 0)!;
+    const flight = openingPlaybackFrame(evidence, 0, 0.4)!;
+    const end = openingPlaybackFrame(evidence, 0, 1)!;
+    expect(start.ball).toEqual(start.shot.from);
+    expect(flight.ball).not.toEqual(start.ball);
+    expect(end.ball).toEqual(end.shot.rest);
+    expect(end.golfer).toEqual(end.shot.rest);
+    expect([start.shot.from, start.landing, start.rest]).toEqual([start.shot.from, start.shot.landing, start.shot.rest]);
+    expect(openingPlaybackFrame(evidence, shots.length, 0)).toMatchObject({ complete: true, index: shots.length - 1, progress: 1 });
+  });
+
+  it("diagnoses only a retained shot and region, then classifies truthful frozen comparisons", () => {
+    const { course, world } = fixture();
+    const baseline = createInvitedPreviewEvidence(course, world)!;
+    const diagnosis = diagnoseOpening(course, baseline);
+    expect(diagnosis).toMatchObject({ kind: "supported", previewId: baseline.id, shotId: expect.any(String), regionId: expect.stringContaining(baseline.holeId) });
+    const context = freezeOpeningContext(baseline);
+    const changed = { ...baseline, id: `${baseline.id}:candidate`, holeFingerprint: "1234abcd" };
+    expect(compareOpening(baseline, changed, context, 140)).toMatchObject({ status: "neutral", terrainCost: 140, contextHash: context.hash });
+    const positive = { ...changed, group: changed.group.map((golfer, index) => index === 0 ? { ...golfer, strokes: golfer.strokes - 1 } : golfer) };
+    const negative = { ...changed, group: changed.group.map((golfer, index) => index === 0 ? { ...golfer, satisfaction: golfer.satisfaction - 1 } : golfer) };
+    expect(compareOpening(baseline, positive, context, 140).status).toBe("positive");
+    expect(compareOpening(baseline, negative, context, 140).status).toBe("negative");
+    expect(compareOpening(baseline, baseline, context, null)).toMatchObject({ status: "no-meaningful-change", terrainCost: null });
+    expect(compareOpening(baseline, { ...changed, runSeed: changed.runSeed + 1 }, context, 140).status).toBe("unsupported");
+    const generous = { ...course, tiles: course.tiles.map((terrain) => terrain === "rough" || terrain === "deep_rough" ? "fairway" as const : terrain) };
+    expect(diagnoseOpening(generous, baseline)).toEqual({ kind: "none", previewId: baseline.id, reason: "no-supported-region" });
   });
 
   it("undo/canceled edits do not unlock retest, and targets never replace tee/green/hazards", () => {

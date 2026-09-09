@@ -5,6 +5,7 @@ import { presenterButtonStyle } from "./presenterStyles";
 import { T } from "../../i18n/T";
 import { useI18n } from "../../i18n/useI18n";
 import { OpeningDemoDetails } from "./OpeningDemoDetails";
+import type { OpeningPlaybackFrame } from "../../game/onboarding/openingDemo";
 
 type Rect = { top: number; left: number; right: number; bottom: number; width: number; height: number };
 const FOCUSABLE = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])";
@@ -26,6 +27,14 @@ export function TutorialOverlay(props: {
   onOpeningCursor: (cursor: number) => void;
   onOpeningRetry: () => void;
   onOpeningFocus: () => void;
+  openingPlayback: OpeningPlaybackFrame | null;
+  openingPlaying: boolean;
+  openingPlaybackSpeed: 0.5 | 1 | 2;
+  openingFollowing: boolean;
+  reducedMotion: boolean;
+  onOpeningTogglePlaying: () => void;
+  onOpeningSpeed: (speed: 0.5 | 1 | 2) => void;
+  onOpeningToggleFollow: () => void;
 }) {
   const { t } = useI18n();
   const [rects, setRects] = useState<Rect[]>([]);
@@ -212,7 +221,21 @@ export function TutorialOverlay(props: {
           body={t(props.step.bodyKey)}
           expression={props.step.expression}
           details={<>
-            <OpeningDemoDetails progress={props.progress} width={props.courseWidth} onCursor={props.onOpeningCursor} onRetry={props.onOpeningRetry} onFocus={props.onOpeningFocus} />
+            <OpeningDemoDetails
+              progress={props.progress}
+              width={props.courseWidth}
+              playback={props.openingPlayback}
+              playing={props.openingPlaying}
+              playbackSpeed={props.openingPlaybackSpeed}
+              following={props.openingFollowing}
+              reducedMotion={props.reducedMotion}
+              onCursor={props.onOpeningCursor}
+              onRetry={props.onOpeningRetry}
+              onFocus={props.onOpeningFocus}
+              onTogglePlaying={props.onOpeningTogglePlaying}
+              onSpeed={props.onOpeningSpeed}
+              onToggleFollow={props.onOpeningToggleFollow}
+            />
             {showEvidence ? (
             <div data-testid="invited-preview-evidence" style={{ display: "grid", gap: 7, maxHeight: 190, overflowY: "auto", fontSize: 11, lineHeight: 1.35 }}>
               <b>{t("tutorial.preview.groupLabel")}</b>

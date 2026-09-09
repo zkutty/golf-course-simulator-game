@@ -167,7 +167,8 @@ import {
   type TutorialProgress,
 } from "./game/onboarding/tutorial";
 import { validHoleCount } from "./game/onboarding/invitedPreview";
-import { newOpeningDemo, openingShots, openingTargetPoints } from "./game/onboarding/openingDemo";
+import { newOpeningDemo, openingPlaybackFrame, openingShots, openingTargetPoints } from "./game/onboarding/openingDemo";
+import { hashCanonicalValue } from "./utils/canonical";
 import { loadAppProfile, saveAppProfile, updateAppProfile, type AppProfile } from "./game/onboarding/profile";
 import { advisorMessages, allowsMessage, type AdvisorMessage } from "./game/advisor/advisor";
 import { INITIAL_SCREEN_FLOW, reduceScreenFlow } from "./app/screenFlow";
@@ -769,15 +770,39 @@ export default function App() {
   const [golfopediaEntry, setGolfopediaEntry] = useState<string | null | undefined>(undefined);
   const [tutorialProgress, setTutorialProgress] = useState<TutorialProgress | null>(() => loadTutorialProgress());
   const activeTutorial = tutorialProgress?.active === true ? tutorialProgress : null;
+  const [openingPlaybackUi, setOpeningPlaybackUi] = useState<{ phase: number; running: boolean; speed: 0.5 | 1 | 2; following: boolean }>({ phase: 0, running: false, speed: 1, following: false });
   const openingReadOnly = !!activeTutorial?.opening && ["invite-group", "observe-play", "review-reaction", "creative-reward", "retest-play", "compare-preview"].includes(activeTutorial.stage);
-  const openingMarker = useMemo(() => {
+  const openingEvidence = useMemo(() => {
     if (!activeTutorial?.opening || !["observe-play", "retest-play"].includes(activeTutorial.stage)) return null;
-    const evidence = activeTutorial.stage === "retest-play" ? activeTutorial.opening.candidate : activeTutorial.receipts.preview.evidence;
-    const shots = openingShots(evidence);
-    return shots[Math.min(activeTutorial.opening.cursor, shots.length - 1)] ?? null;
+    return activeTutorial.stage === "retest-play" ? activeTutorial.opening.candidate : activeTutorial.receipts.preview.evidence;
   }, [activeTutorial]);
+  const openingMarker = useMemo(() => openingPlaybackFrame(openingEvidence, activeTutorial?.opening?.cursor ?? 0, openingPlaybackUi.phase), [activeTutorial?.opening?.cursor, openingEvidence, openingPlaybackUi.phase]);
   const openingTargets = useMemo(() => activeTutorial?.opening && ["review-reaction", "creative-reward", "improve-hole"].includes(activeTutorial.stage)
     ? openingTargetPoints(course, activeTutorial.opening) : [], [activeTutorial, course]);
+  const openingPlaybackKey = `${activeTutorial?.stage ?? "none"}:${openingEvidence?.id ?? "none"}`;
+  useEffect(() => {
+    setOpeningPlaybackUi((current) => ({ ...current, phase: 0, running: false, following: false }));
+  }, [appProfile.accessibility.reducedMotion, openingPlaybackKey, openingEvidence]);
+  useEffect(() => {
+    if (!activeTutorial?.opening || !openingEvidence || !openingPlaybackUi.running || appProfile.accessibility.reducedMotion) return;
+    const total = openingShots(openingEvidence).length;
+    if (activeTutorial.opening.cursor >= total) {
+      setOpeningPlaybackUi((current) => ({ ...current, running: false, phase: 1 }));
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setOpeningPlaybackUi((current) => {
+        if (!current.running) return current;
+        const phase = current.phase + (50 * current.speed) / 1200;
+        if (phase < 1) return { ...current, phase };
+        setTutorialProgress((progress) => progress?.active && progress.opening && progress.stage === activeTutorial.stage
+          ? { ...progress, opening: { ...progress.opening, cursor: Math.min(total, progress.opening.cursor + 1) } }
+          : progress);
+        return { ...current, phase: 0 };
+      });
+    }, 50);
+    return () => window.clearInterval(timer);
+  }, [activeTutorial?.opening, activeTutorial?.stage, appProfile.accessibility.reducedMotion, openingEvidence, openingPlaybackUi.running]);
   const [tutorialSaveStatus, setTutorialSaveStatus] = useState<"saving" | "saved">("saving");
   const [tutorialMilestoneQueue, setTutorialMilestoneQueue] = useState<Array<3 | 6 | 9>>([]);
   const tutorialSaveSequenceRef = useRef(0);
@@ -2545,6 +2570,13 @@ export default function App() {
     activateTerrainEditing("curve", "fairway");
   }
 
+  function prepareOpeningImprovement() {
+    selectWorkspace("design");
+    setPhotoMode(false);
+    activateTerrainEditing("curve", "fairway");
+    setShowShotPlan(false);
+  }
+
   function beginTutorial(tutorialCourse = course, tutorialWorld = world) {
     const observedCompletedRounds = live.getSnapshot()?.state.observedRounds?.filter((round) =>
       round.completed && round.holesTotal > 0 && round.holesPlayed >= round.holesTotal
@@ -2790,7 +2822,7 @@ export default function App() {
     }
     if (loaded.tutorial?.active && loaded.tutorial.opening) {
       live.setSpeed("paused");
-      if (loaded.tutorial.stage === "improve-hole") prepareTutorialPaintCorridor();
+      if (loaded.tutorial.stage === "improve-hole") prepareOpeningImprovement();
     }
     if (loaded.tutorial?.active && (loaded.tutorial.stage === "place-hole" || loaded.tutorial.stage === "public-three")) {
       const nextIncompleteHole = loaded.course.holes.findIndex((hole) => !hole.tee || !hole.green);
@@ -2844,12 +2876,34 @@ export default function App() {
       },
       tutorialStep: activeTutorial ? tutorialStepIndex(activeTutorial) : null,
       onboarding: {
+        authorityHashes: {
+          course: hashCanonicalValue(course),
+          world: hashCanonicalValue(world),
+          rewardLedger: hashCanonicalValue(world.onboardingRewards ?? null),
+        },
         carrierVersion: tutorialProgress?.version ?? null,
         active: tutorialProgress?.active ?? false,
         stage: tutorialProgress?.stage ?? null,
         profile: tutorialProgress?.profile ?? null,
         completion: tutorialProgress?.completion ?? null,
         opening: tutorialProgress?.opening ?? null,
+        openingPlayback: openingMarker ? {
+          previewId: openingMarker.previewId,
+          shotId: openingMarker.shotId,
+          golferId: openingMarker.golferId,
+          golferName: openingMarker.golferName,
+          index: openingMarker.index,
+          total: openingMarker.total,
+          progress: Number(openingMarker.progress.toFixed(3)),
+          golfer: openingMarker.golfer,
+          ball: openingMarker.ball,
+          landing: openingMarker.landing,
+          rest: openingMarker.rest,
+          running: openingPlaybackUi.running,
+          speed: openingPlaybackUi.speed,
+          following: openingPlaybackUi.following,
+          reducedMotion: appProfile.accessibility.reducedMotion,
+        } : null,
         preview: tutorialProgress?.receipts.preview.evidence ? {
           id: tutorialProgress.receipts.preview.evidence.id,
           holeId: tutorialProgress.receipts.preview.evidence.holeId,
@@ -2860,6 +2914,7 @@ export default function App() {
             reaction: golfer.reaction,
             thought: golfer.thought,
             shots: golfer.shots.length,
+            shotEvidence: golfer.shots.map((shot) => ({ id: shot.id ?? null, number: shot.shotNumber, club: shot.club, intent: shot.intent, from: shot.from, landing: shot.landing, rest: shot.rest, lieAfter: shot.lieAfter, penalties: shot.penaltyStrokes })),
           })),
         } : null,
         reward: tutorialProgress?.receipts.preview.rewardReceipt ?? null,
@@ -3270,7 +3325,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
+  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -5385,9 +5440,7 @@ export default function App() {
     if (next.stage === "public-three") exitHoleEditMode();
     if (next.stage === "paint-fairway") prepareTutorialPaintCorridor();
     if (next.stage === "improve-hole") {
-      prepareTutorialPaintCorridor();
-      activateTerrainEditing("curve", "fairway");
-      setShowShotPlan(false);
+      prepareOpeningImprovement();
     }
     if (next.stage === "place-hole" || next.stage === "public-three") {
       const incompleteHole = course.holes.findIndex((hole) => !hole.tee || !hole.green);
@@ -5598,14 +5651,22 @@ export default function App() {
           }}
           onOpeningCursor={(cursor) => {
             if (!activeTutorial.opening) return;
+            setOpeningPlaybackUi((current) => ({ ...current, phase: cursor >= openingShots(openingEvidence).length ? 1 : 0 }));
             setTutorialProgress({ ...activeTutorial, opening: { ...activeTutorial.opening, cursor: Math.max(0, Math.min(24, cursor)) } });
           }}
           onOpeningRetry={() => {
             if (!activeTutorial.opening) return;
             setTutorialProgress({ ...activeTutorial, stage: "improve-hole", opening: { ...activeTutorial.opening, cursor: 0 } });
-            prepareTutorialPaintCorridor();
-            activateTerrainEditing("curve", "fairway");
+            prepareOpeningImprovement();
           }}
+          openingPlayback={openingMarker}
+          openingPlaying={openingPlaybackUi.running}
+          openingPlaybackSpeed={openingPlaybackUi.speed}
+          openingFollowing={openingPlaybackUi.following}
+          reducedMotion={appProfile.accessibility.reducedMotion}
+          onOpeningTogglePlaying={() => setOpeningPlaybackUi((current) => ({ ...current, running: !current.running }))}
+          onOpeningSpeed={(speed) => setOpeningPlaybackUi((current) => ({ ...current, speed }))}
+          onOpeningToggleFollow={() => setOpeningPlaybackUi((current) => ({ ...current, following: !current.following }))}
         />
       )}
       {showTutorialOffer && !flow.paused && (
@@ -5789,6 +5850,8 @@ export default function App() {
                 playerShotAim={playerShotAim}
                 openingMarker={openingMarker}
                 openingTargets={openingTargets}
+                openingFollow={openingPlaybackUi.following}
+                onOpeningFollowCanceled={() => setOpeningPlaybackUi((current) => ({ ...current, following: false }))}
                 playableShotMode={activePlayerRound?.phase === "awaiting_shot"}
                 playerProWorldDisplay={playerProSocialText?.worldDisplay ?? null}
                 sculptRadius={sculptRadius}

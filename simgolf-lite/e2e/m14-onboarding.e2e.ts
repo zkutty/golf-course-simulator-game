@@ -290,7 +290,8 @@ test.describe("ZK-1106 private operator opening", () => {
       await page.screenshot({ path: file });
       await testInfo.attach(name, { path: file, contentType: "image/png" });
     };
-    type PreviewSummary = { id: string; holeId: string; group: Array<{ name: string; shots: number }> };
+    type PreviewShot = { id: string; number: number; club: string; from: { x: number; y: number }; landing: { x: number; y: number }; rest: { x: number; y: number }; penalties: number };
+    type PreviewSummary = { id: string; holeId: string; group: Array<{ name: string; shots: number; shotEvidence: PreviewShot[] }> };
     const previewSummary = (value: unknown): PreviewSummary => {
       if (!value || typeof value !== "object") throw new Error("Expected a retained private-preview receipt");
       const candidate = value as { id?: unknown; holeId?: unknown; group?: unknown };
@@ -299,14 +300,26 @@ test.describe("ZK-1106 private operator opening", () => {
         id: candidate.id,
         holeId: candidate.holeId,
         group: candidate.group.map((golfer) => {
-          const item = golfer as { name?: unknown; shots?: unknown };
-          const shots = Array.isArray(item.shots) ? item.shots.length : item.shots;
-          if (typeof item.name !== "string" || !Number.isInteger(shots) || shots < 0) throw new Error("Private-preview golfer receipt is malformed");
-          return { name: item.name, shots };
+          const item = golfer as { name?: unknown; shots?: unknown; shotEvidence?: unknown };
+          const rawShots = Array.isArray(item.shots) ? item.shots as Array<Record<string, unknown>> : null;
+          const shots = rawShots?.length ?? item.shots;
+          const shotEvidence = Array.isArray(item.shotEvidence)
+            ? item.shotEvidence as PreviewShot[]
+            : rawShots?.map((shot) => ({
+              id: shot.id as string,
+              number: shot.shotNumber as number,
+              club: shot.club as string,
+              from: shot.from as PreviewShot["from"],
+              landing: shot.landing as PreviewShot["landing"],
+              rest: shot.rest as PreviewShot["rest"],
+              penalties: shot.penaltyStrokes as number,
+            }));
+          if (typeof item.name !== "string" || !Number.isInteger(shots) || shots < 0 || !shotEvidence) throw new Error("Private-preview golfer receipt is malformed");
+          return { name: item.name, shots, shotEvidence };
         }),
       };
     };
-    const recordedMarkers = (evidence: PreviewSummary) => evidence.group.flatMap((golfer) => Array.from({ length: golfer.shots }, (_, index) => ({ name: golfer.name, shotNumber: index + 1 })));
+    const recordedMarkers = (evidence: PreviewSummary) => evidence.group.flatMap((golfer) => golfer.shotEvidence.map((shot) => ({ name: golfer.name, ...shot })));
     const visiblePenalty = async () => {
       const penaltyText = await page.getByTestId("opening-shot-penalty").textContent();
       const penaltyMatch = penaltyText?.match(/(\d+) penalty stroke/);
@@ -322,9 +335,16 @@ test.describe("ZK-1106 private operator opening", () => {
         const current = shots[cursor];
         expect(beforeStep.onboarding.opening.cursor, "cursor must advance exactly once per visible recorded shot").toBe(cursor);
         await expect(page.getByTestId("opening-current-shot")).toContainText(current.name);
-        await expect(page.getByTestId("opening-current-shot")).toContainText(`shot ${current.shotNumber}`);
+        await expect(page.getByTestId("opening-current-shot")).toContainText(`shot ${current.number}`);
+        await expect(page.getByTestId("opening-current-shot")).toHaveAttribute("data-preview-id", evidence.id);
+        await expect(page.getByTestId("opening-current-shot")).toHaveAttribute("data-shot-id", current.id);
+        await expect(page.getByTestId("opening-playback-frame")).toContainText(`(${current.from.x}, ${current.from.y})`);
+        await expect(page.getByTestId("opening-playback-frame")).toContainText(`landing (${current.landing.x}, ${current.landing.y})`);
+        await expect(page.getByTestId("opening-playback-frame")).toContainText(`next lie (${current.rest.x}, ${current.rest.y})`);
         await expect(page.getByTestId("opening-demo-details")).toContainText(`Recorded shots reviewed: ${cursor} / ${shots.length}`);
-        penaltyTotal += await visiblePenalty();
+        const penalty = await visiblePenalty();
+        expect(penalty).toBe(current.penalties);
+        penaltyTotal += penalty;
         if (cursor === 1) {
           await focusOpeningHole(page);
           await capture(intermediateCapture);
@@ -347,6 +367,54 @@ test.describe("ZK-1106 private operator opening", () => {
     await page.getByRole("button", { name: "Invite group", exact: true }).click();
     await expectStep(page, "observe-play");
     await expect(page.getByTestId("opening-current-shot")).not.toBeEmpty();
+    const retainedAtStart = await state();
+    const authorityHashes = retainedAtStart.onboarding.authorityHashes;
+    const startFrame = retainedAtStart.onboarding.openingPlayback;
+    expect(startFrame.shotId).toBe(retainedAtStart.onboarding.preview.group[0].shotEvidence[0].id);
+    expect(startFrame.ball).toEqual(startFrame.shot?.from ?? retainedAtStart.onboarding.preview.group[0].shotEvidence[0].from);
+    const startPixels = await (await canvas(page)).screenshot();
+    await page.getByTestId("opening-speed-0.5").click();
+    await page.getByTestId("opening-play-pause").click();
+    await expect.poll(() => state().then((value) => value.onboarding.openingPlayback.progress)).toBeGreaterThan(0.12);
+    await page.getByTestId("opening-play-pause").click();
+    const moving = await state();
+    expect(moving.onboarding.openingPlayback.shotId).toBe(startFrame.shotId);
+    expect(moving.onboarding.openingPlayback.ball).not.toEqual(startFrame.ball);
+    expect(moving.onboarding.authorityHashes).toEqual(authorityHashes);
+    const movingPixels = await (await canvas(page)).screenshot();
+    expect(movingPixels.equals(startPixels), "retained playback must change visible canvas pixels").toBe(false);
+    await page.getByTestId("opening-replay").click();
+    expect((await state()).onboarding.authorityHashes).toEqual(authorityHashes);
+    await page.getByTestId("opening-skip").click();
+    const skipped = await state();
+    expect(skipped.onboarding.opening.cursor).toBe(startFrame.total);
+    expect(skipped.onboarding.authorityHashes).toEqual(authorityHashes);
+    await page.getByTestId("opening-replay").click();
+    expect((await state()).onboarding.opening.cursor).toBe(0);
+    await page.evaluate(() => window.__coursecraftPixiTest!.focusTileForTest(0, 0, 0.8));
+    const priorProjection = await page.evaluate(() => window.__coursecraftPixiTest!.tileToScreen(0, 0)!);
+    await page.getByTestId("opening-follow").click();
+    await expect(page.getByTestId("opening-follow")).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(async () => {
+      const current = await page.evaluate(() => window.__coursecraftPixiTest!.tileToScreen(0, 0)!);
+      return Math.abs(current.x - priorProjection.x) + Math.abs(current.y - priorProjection.y);
+    }).toBeGreaterThan(10);
+    await page.getByTestId("opening-follow").click();
+    await expect.poll(async () => {
+      const current = await page.evaluate(() => window.__coursecraftPixiTest!.tileToScreen(0, 0)!);
+      return Math.abs(current.x - priorProjection.x) + Math.abs(current.y - priorProjection.y);
+    }).toBeLessThan(2);
+    await page.getByTestId("opening-follow").click();
+    const panBox = await (await canvas(page)).boundingBox();
+    await page.mouse.move(panBox!.x + 300, panBox!.y + 260);
+    await page.mouse.down({ button: "middle" });
+    await page.mouse.move(panBox!.x + 340, panBox!.y + 300, { steps: 4 });
+    await page.mouse.up({ button: "middle" });
+    await expect(page.getByTestId("opening-follow")).toHaveAttribute("aria-pressed", "false");
+    await page.getByTestId("opening-follow").click();
+    await (await canvas(page)).dispatchEvent("wheel", { deltaY: -120, clientX: 400, clientY: 300 });
+    await expect(page.getByTestId("opening-follow")).toHaveAttribute("aria-pressed", "false");
+    expect((await state()).onboarding.authorityHashes).toEqual(authorityHashes);
     await focusOpeningHole(page);
     await capture("03-recorded-shot-on-course");
     const firstBaselinePenalty = await visiblePenalty();
@@ -367,10 +435,12 @@ test.describe("ZK-1106 private operator opening", () => {
     expect((await state()).onboarding.preview).toEqual(baselineStateReceipt);
     await page.getByRole("button", { name: "Review reactions", exact: true }).click();
     await expectStep(page, "review-reaction");
-    await expect(page.getByTestId("opening-diagnosis")).toContainText("Landing-area opportunity");
+    await expect(page.getByTestId("opening-diagnosis")).toContainText("Observed evidence only");
+    await expect(page.getByTestId("opening-diagnosis")).toContainText("shot");
+    await expect(page.getByTestId("opening-diagnosis")).toContainText("landing-region");
     await capture("04-evidence-backed-opportunity");
     await page.getByRole("button", { name: "Receive preview pennant", exact: true }).click();
-    await page.getByRole("button", { name: "Improve this hole", exact: true }).click();
+    await page.getByRole("button", { name: "Improve this area", exact: true }).click();
     await expectStep(page, "improve-hole");
     const rewarded = await state();
     expect(rewarded.economy.cash).toBe(before.economy.cash + 750);
@@ -399,12 +469,15 @@ test.describe("ZK-1106 private operator opening", () => {
     const retestStarted = await state();
     const retestReceipt = previewSummary(retestStarted.onboarding.opening.candidate);
     expect(retestReceipt.holeId).toBe(baselineReceipt.holeId);
-    await expect(page.getByTestId("opening-evidence-context")).toHaveText(baselineContext ?? "");
+    await expect(page.getByTestId("opening-evidence-context")).toContainText(`seed ${retestStarted.onboarding.opening.context.runSeed}`);
+    await expect(page.getByTestId("opening-current-shot")).toHaveAttribute("data-preview-id", retestStarted.onboarding.opening.candidate.id);
     const retestPenalties = await playEveryRecordedShot(retestReceipt, "05b-intermediate-retest-shot");
     expect((await state()).onboarding.preview).toEqual(baselineStateReceipt);
     await page.getByRole("button", { name: "Compare visits", exact: true }).click();
     await expectStep(page, "compare-preview");
     await expect(page.getByTestId("opening-comparison")).toBeVisible();
+    await expect(page.getByTestId("opening-comparison-state")).toHaveAttribute("data-state", /positive|neutral|negative/);
+    await expect(page.getByTestId("opening-comparison-cost")).toContainText(`$${editDebit}`);
     const compared = await state();
     await expect(page.getByTestId("opening-comparison-penalties")).toContainText(`First visit: ${baselinePenalties}`);
     const comparedReceipt = previewSummary(compared.onboarding.opening.candidate);
