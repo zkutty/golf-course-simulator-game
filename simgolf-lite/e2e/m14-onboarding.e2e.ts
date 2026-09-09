@@ -146,6 +146,14 @@ async function setInGameLocale(page: Page, locale: "en" | "pseudo") {
 }
 
 async function focusOpeningHole(page: Page) {
+  // The previous real authoring drag can leave Pixi's edge-pan pointer at the
+  // course boundary. Re-establish an interior pointer position before the
+  // visible Focus action so the test observes only the requested camera glide.
+  const stage = await canvas(page);
+  const bounds = await stage.boundingBox();
+  if (!bounds) throw new Error("Preview-hole canvas has no visible bounds");
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.evaluate(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
   await page.getByRole("button", { name: "Focus on preview hole", exact: true }).click();
   // Observe the real camera glide; never mutate the renderer to make a click pass.
   await page.evaluate(() => new Promise<void>((resolve, reject) => {
@@ -265,6 +273,19 @@ test.describe("ZK-1106 private operator opening", () => {
   test("real UI builds, watches, edits and compares one private hole", async ({ page }, testInfo) => {
     const state = () => page.evaluate(() => JSON.parse(window.render_game_to_text!()));
     const capture = async (name: string) => {
+      if (process.env.ZK1107_EVIDENCE) {
+        const original = page.viewportSize()!;
+        for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+          await page.setViewportSize(viewport);
+          await page.waitForTimeout(500);
+          const directory = `artifacts/zk-1107/${process.env.ZK1107_EVIDENCE}`;
+          mkdirSync(directory, { recursive: true });
+          await page.screenshot({ path: `${directory}/${name}-${viewport.width}x${viewport.height}.png` });
+          await expectTutorialInViewport(page);
+        }
+        await page.setViewportSize(original);
+        await page.waitForTimeout(500);
+      }
       const file = testInfo.outputPath(`${name}.png`);
       await page.screenshot({ path: file });
       await testInfo.attach(name, { path: file, contentType: "image/png" });

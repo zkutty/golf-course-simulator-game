@@ -1,5 +1,33 @@
 import type { Terrain } from "../models/types";
 import { BALANCE } from "../balance/balanceConfig";
+import type { ShotTruthProjection } from "../rules/shotTruth";
+import type { Point } from "../models/types";
+
+/**
+ * Contract for future renderer adapters: sample recorded ground geometry only.
+ * Relief is never animated as ball roll. Null means the legacy receipt does
+ * not contain a physical path; consumers must label its markers schematic.
+ * Existing ballFlightPose remains the legacy cosmetic compatibility export.
+ */
+export function committedShotGroundPosition(truth: ShotTruthProjection, progress: number): Point | null {
+  if (!truth.physicalRest || !Number.isFinite(progress)) return null;
+  const t = Math.max(0, Math.min(1, progress));
+  if (t === 0) return { ...truth.from };
+  if (t === 1) return { ...truth.physicalRest };
+  const airFraction = truth.club === "Putter" ? 0 : AIR_FRAC;
+  const lerp = (a: Readonly<Point>, b: Readonly<Point>, u: number): Point => ({ x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u });
+  if (t < airFraction) return lerp(truth.from, truth.landing, t / airFraction);
+  if (truth.rollPath.length === 0) return null;
+  const u = (t - airFraction) / (1 - airFraction);
+  const path = airFraction === 0 ? [truth.from, ...truth.rollPath] : truth.rollPath;
+  const lengths = path.slice(1).map((p, i) => Math.hypot(p.x - path[i].x, p.y - path[i].y));
+  let remaining = lengths.reduce((sum, length) => sum + length, 0) * u;
+  for (let i = 0; i < lengths.length; i++) {
+    if (lengths[i] > 0 && remaining <= lengths[i]) return lerp(path[i], path[i + 1], remaining / lengths[i]);
+    remaining -= lengths[i];
+  }
+  return { ...truth.physicalRest };
+}
 
 /**
  * Ball flight 2.0 (ZKU-154) — pure math, no PIXI.

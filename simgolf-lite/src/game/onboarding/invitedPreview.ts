@@ -9,6 +9,7 @@ import { scoreCourseHoles } from "../sim/holes";
 import { mulberry32 } from "../../utils/rng";
 import { hashCanonicalValue } from "../../utils/canonical";
 import { normalizedBuilding } from "../models/buildings";
+import { invitedPreviewShot } from "./invitedPreviewShot";
 
 export const INVITED_PREVIEW_VERSION = 1 as const;
 export const INVITED_PREVIEW_REWARD_ID = "founders-preview-pennant" as const;
@@ -145,16 +146,7 @@ function buildPreviewGolfer(
     satisfaction: reaction.satisfaction,
     reaction: reaction.outcome,
     thought: reaction.thought,
-    shots: (round.shotOutcomes ?? []).filter((shot) => shot.holeId === holeId).slice(0, 12).map((shot) => ({
-      shotNumber: shot.shotNumber,
-      intent: shot.intent,
-      club: shot.club,
-      from: { ...shot.from },
-      landing: { ...shot.landing },
-      rest: { ...shot.rest },
-      lieAfter: shot.lieAfter,
-      penaltyStrokes: shot.penaltyStrokes,
-    })),
+    shots: (round.shotOutcomes ?? []).filter((shot) => shot.holeId === holeId).slice(0, 12).map(invitedPreviewShot),
   };
 }
 

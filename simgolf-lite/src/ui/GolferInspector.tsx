@@ -6,6 +6,8 @@ import { recentEmotes } from "../game/render/emoteFeed";
 import type { EmoteKind } from "../game/render/emotes";
 import { T } from "../i18n/T";
 import { translateCurrent } from "../i18n/core";
+import { useI18n } from "../i18n/useI18n";
+import { currentShotEvidenceCues } from "../game/render/shotTruthCues";
 
 // Compact glyphs for the recent-thoughts strip (mirrors the on-course
 // bubbles, ZKU-155).
@@ -44,6 +46,7 @@ export function GolferInspector(props: {
   setupDifficulty?: number;
 }) {
   const { selected, onClose } = props;
+  const { locale } = useI18n();
   if (!selected) return null;
 
   const arch = ARCHETYPES[selected.archetype as GolferArchetypeName];
@@ -52,9 +55,7 @@ export function GolferInspector(props: {
     selected.currentHole >= 0 ? `Hole ${selected.currentHole + 1}` : "Clubhouse";
   const played = selected.scoredHoles;
   const capabilities = selected.capabilities;
-  const currentPlan = selected.currentHoleId ? selected.holePlans?.find((plan) => plan.holeId === selected.currentHoleId) : undefined;
-  const latestReaction = selected.scoredHoles > 0 ? selected.holeReactions?.[selected.scoredHoles - 1] : undefined;
-  const latestOutcome = selected.shotOutcomes?.[selected.shotOutcomes.length - 1];
+  const evidence = selected.currentShotEvidence ?? { phase: "unavailable" as const, reason: "missing" as const };
 
   return (
     <div className="cc-golfer-inspector"
@@ -186,21 +187,13 @@ export function GolferInspector(props: {
             <div>{translateCurrent("golfer.skillLine", { irons: Math.round(capabilities.irons), shortGame: Math.round(capabilities.shortGame), recovery: Math.round(capabilities.recovery) })}</div>
             <div style={{ opacity: .72 }}>{translateCurrent("golfer.strengths", { values: capabilities.strengths.join(", ") || translateCurrent("golfer.balanced") })}</div>
           </div>
-          {currentPlan && <div style={{ marginTop: 7, fontSize: 11 }}>
-            <div><strong>{translateCurrent("golfer.planLine", { kind: currentPlan.chosen.kind, club: currentPlan.chosen.club, risk: Math.round(currentPlan.chosen.hazardRisk * 100) })}</strong></div>
-            <div style={{ opacity: .72 }}>{translateCurrent("golfer.rejected", { values: currentPlan.rejected.map((alternative) => alternative.kind).join(", ") || translateCurrent("golfer.none") })}</div>
-            <div style={{ opacity: .72 }}>{currentPlan.chosen.facts.map((fact) => fact.detail).join(" · ")}</div>
-          </div>}
-          {latestReaction && <div style={{ marginTop: 7, fontSize: 11 }}>
-            <div><strong>{translateCurrent("golfer.reaction", { outcome: latestReaction.outcome, satisfaction: Math.round(latestReaction.satisfaction) })}</strong></div>
-            <div style={{ opacity: .72 }}>{latestReaction.thought}</div>
-            <div style={{ opacity: .72 }}>{latestReaction.facts.map((fact) => fact.detail).join(" · ")}</div>
-          </div>}
-          {latestOutcome && <div style={{ marginTop: 7, fontSize: 11, opacity: .72 }}>
-            {translateCurrent("golfer.outcomeLine", { club: latestOutcome.club, before: latestOutcome.lieBefore, after: latestOutcome.lieAfter, penalty: latestOutcome.penaltyStrokes })}
-          </div>}
         </div>
       )}
+
+      <div data-testid="golfer-shot-evidence" data-phase={evidence.phase} role="status" aria-live="polite" aria-atomic="true" aria-label={translateCurrent("shotTruth.channel")} style={{ marginTop: 10, fontSize: 11, lineHeight: 1.45 }}>
+        <strong>{translateCurrent(`shotTruth.phase.${evidence.phase}`)}</strong>
+        {currentShotEvidenceCues(evidence, locale).map((cue, index) => <div key={index}>{cue}</div>)}
+      </div>
 
       {played > 0 && (
         <div style={{ marginTop: 12 }}>
