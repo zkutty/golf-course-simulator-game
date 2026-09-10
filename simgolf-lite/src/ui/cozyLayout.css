@@ -74,12 +74,7 @@
   gap: 8px;
 }
 
-[data-testid="tutorial-card"][data-opening-treatment="true"] > section > [role="img"] {
-  image-rendering: pixelated;
-  filter: drop-shadow(4px 4px 0 #3a2715) !important;
-}
-
-[data-testid="tutorial-card"][data-opening-treatment="true"] > section > div {
+[data-testid="tutorial-card"][data-opening-treatment="true"] > section > div:not([role="img"]) {
   border: 3px solid #392719 !important;
   border-radius: 6px !important;
   background: #fff8df !important;
