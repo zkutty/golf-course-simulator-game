@@ -52,6 +52,107 @@ export function committedShotGroundPosition(truth: ShotTruthProjection, progress
 /** Fraction of the flight segment spent airborne (rest is bounce/roll). */
 export const AIR_FRAC = 0.72;
 
+/**
+ * The deliberately small preview receipt consumed by the opening renderer.
+ * `flight` and `rollPath` are optional so v1 receipts remain byte-compatible:
+ * absent data uses the documented standard arc / endpoint-only fallback, never
+ * a new shot solve. A penalized receipt may name a next lie after relief; that
+ * position is deliberately excluded from the moving ball path.
+ */
+export interface RetainedPreviewShot {
+  readonly club: string;
+  readonly from: Readonly<Point>;
+  readonly landing: Readonly<Point>;
+  readonly rest: Readonly<Point>;
+  readonly penaltyStrokes: number;
+  readonly flight?: Readonly<{
+    profile?: "low" | "standard" | "high";
+    apexHeightYards?: number;
+  }>;
+  readonly rollPath?: readonly Readonly<Point>[];
+}
+
+export interface RetainedPreviewPose {
+  readonly ball: Point;
+  readonly phase: "launch" | "airborne" | "touchdown" | "rollout" | "rest" | "relief";
+  /** Pixel lift is visual-only and has no impact on the retained ground path. */
+  readonly heightPx: number;
+  readonly landed: boolean;
+  /** A relief location is a static next-lie marker, never a ball destination. */
+  readonly hasReliefMarker: boolean;
+  /** Makes the old-save default auditable without changing saved receipt bytes. */
+  readonly profileSource: "retained" | "legacy-standard";
+  readonly profile: "low" | "standard" | "high";
+}
+
+const previewMix = (from: Readonly<Point>, to: Readonly<Point>, t: number): Point => ({
+  x: from.x + (to.x - from.x) * t,
+  y: from.y + (to.y - from.y) * t,
+});
+
+function previewRollPosition(shot: RetainedPreviewShot, t: number): Point {
+  const path = shot.rollPath && shot.rollPath.length > 0
+    ? [shot.landing, ...shot.rollPath]
+    : [shot.landing, shot.rest];
+  if (path.length < 2) return { ...shot.landing };
+  const lengths = path.slice(1).map((point, index) => Math.hypot(point.x - path[index].x, point.y - path[index].y));
+  let remaining = lengths.reduce((sum, length) => sum + length, 0) * t;
+  for (let index = 0; index < lengths.length; index++) {
+    if (lengths[index] > 0 && remaining <= lengths[index]) return previewMix(path[index], path[index + 1], remaining / lengths[index]);
+    remaining -= lengths[index];
+  }
+  return { ...path[path.length - 1] };
+}
+
+/**
+ * Pure selected-preview adapter. It samples only retained endpoints/path and
+ * optional authoritative flight metadata. Legacy v1 receipts get a stable
+ * standard arc; a penalty freezes the ball at its actual touchdown while the
+ * downstream relief position remains a distinct static marker.
+ */
+export function retainedPreviewShotPose(shot: RetainedPreviewShot, progress: number): RetainedPreviewPose {
+  const t = Math.max(0, Math.min(1, Number.isFinite(progress) ? progress : 0));
+  const retainedProfile = shot.flight?.profile;
+  const profile = retainedProfile ?? "standard";
+  const profileSource = retainedProfile ? "retained" as const : "legacy-standard" as const;
+  const putt = shot.club === "Putter";
+  const airFraction = putt ? 0 : AIR_FRAC;
+  const penalized = shot.penaltyStrokes > 0;
+  if (t === 0) return { ball: { ...shot.from }, phase: "launch", heightPx: 0, landed: putt, hasReliefMarker: penalized, profileSource, profile };
+  if (!putt && t < airFraction) {
+    const u = t / airFraction;
+    const distance = Math.hypot(shot.landing.x - shot.from.x, shot.landing.y - shot.from.y);
+    const fallbackApex = Math.min(20, 5 + distance * 1.15);
+    const profileScale = profile === "low" ? .62 : profile === "high" ? 1.38 : 1;
+    const apex = shot.flight?.apexHeightYards != null && Number.isFinite(shot.flight.apexHeightYards)
+      ? Math.max(2, Math.min(28, shot.flight.apexHeightYards * 1.6))
+      : fallbackApex * profileScale;
+    return {
+      ball: previewMix(shot.from, shot.landing, u),
+      phase: "airborne",
+      heightPx: 4 * apex * u * (1 - u),
+      landed: false,
+      hasReliefMarker: penalized,
+      profileSource,
+      profile,
+    };
+  }
+  if (penalized) {
+    return { ball: { ...shot.landing }, phase: "relief", heightPx: 0, landed: true, hasReliefMarker: true, profileSource, profile };
+  }
+  const groundT = airFraction === 0 ? t : (t - airFraction) / (1 - airFraction);
+  const clampedGroundT = Math.max(0, Math.min(1, groundT));
+  return {
+    ball: previewRollPosition(shot, clampedGroundT),
+    phase: clampedGroundT >= 1 ? "rest" : clampedGroundT <= 0 ? "touchdown" : "rollout",
+    heightPx: 0,
+    landed: true,
+    hasReliefMarker: false,
+    profileSource,
+    profile,
+  };
+}
+
 export interface LandingBehavior {
   /** How far short of the rest point the ball first touches down, in tiles. */
   rollTiles: number;

@@ -69,7 +69,7 @@ import {
   reactionFor,
   type GolferReaction,
 } from "../game/render/golferSprites";
-import { ballFlightPose, landingBehavior } from "../game/render/ballFlight";
+import { ballFlightPose, landingBehavior, retainedPreviewShotPose } from "../game/render/ballFlight";
 import {
   EMOTE_STALL_MS,
   createEmoteScheduler,
@@ -2706,7 +2706,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
       const openingMarker = openingMarkerRef.current;
       if (!flyover && openingFollowRef.current && openingMarker && !rotTweenRef.current) {
-        const focus = openingMarker.ball ?? openingMarker.golfer;
+        // Preserve the ZK-1141 opt-in/restore behavior, while ensuring a
+        // penalty's relief marker never becomes an animated camera target.
+        const focus = retainedPreviewShotPose(openingMarker.shot, openingMarker.progress).ball ?? openingMarker.golfer;
         const clamped = clampCenter(focus.x, focus.y);
         cam.tcx = clamped.x;
         cam.tcy = clamped.y;
