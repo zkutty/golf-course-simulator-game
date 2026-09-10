@@ -66,6 +66,172 @@
   vertical-align: top;
 }
 
+/* ZK-1112 deliberately scopes its art direction to a live private opening.
+ * It reuses DOM/evidence/command order from ZK-1107, so course authority,
+ * responsive geometry, and all normal game surfaces stay untouched. Crisp
+ * keylines and stepped shadows read as game UI without shrinking body copy. */
+[data-testid="tutorial-card"][data-opening-treatment="true"] > section {
+  gap: 8px;
+}
+
+[data-testid="tutorial-card"][data-opening-treatment="true"] > section > [role="img"] {
+  image-rendering: pixelated;
+  filter: drop-shadow(4px 4px 0 #3a2715) !important;
+}
+
+[data-testid="tutorial-card"][data-opening-treatment="true"] > section > div {
+  border: 3px solid #392719 !important;
+  border-radius: 6px !important;
+  background: #fff8df !important;
+  box-shadow: inset 0 0 0 2px #f9eab6, 4px 4px 0 #392719, 0 0 0 2px #c89d4f !important;
+}
+
+[data-testid="tutorial-card"][data-opening-treatment="true"] > section > div > div:first-child {
+  color: #745021 !important;
+  letter-spacing: .14em !important;
+}
+
+[data-testid="tutorial-card"][data-opening-treatment="true"] > section > div > div:nth-child(2) {
+  color: #263a2d;
+  text-shadow: 1px 1px 0 #fffdf0;
+}
+
+[data-testid="opening-demo-details"] {
+  min-width: 0;
+}
+
+[data-testid="opening-demo-details"] [role="status"],
+[data-testid="opening-demo-details"] [data-testid="opening-diagnosis"] {
+  border: 2px solid #a87b34;
+  border-radius: 4px;
+  background: #fffdf1;
+  box-shadow: inset 0 0 0 1px #f0ddb0;
+}
+
+[data-testid="opening-demo-details"] [data-testid="opening-diagnosis"] {
+  padding: 7px 8px;
+  color: #27382e;
+  font-weight: 700;
+}
+
+[data-testid="opening-demo-details"] button {
+  min-height: 34px;
+  border: 2px solid #25352a !important;
+  border-radius: 4px !important;
+  background: #435d43 !important;
+  box-shadow: inset 0 0 0 1px #78906a, 2px 2px 0 #26351f;
+  color: #fff9d7 !important;
+  font: 800 .82rem/1.15 var(--font-body) !important;
+}
+
+[data-testid="opening-demo-details"] button[aria-pressed="true"] {
+  background: #775221 !important;
+  border-color: #382617 !important;
+  box-shadow: inset 0 0 0 1px #f2d385, 2px 2px 0 #382617;
+}
+
+[data-testid="opening-demo-details"] button:not(:disabled):hover,
+[data-testid="opening-demo-details"] button:not(:disabled):focus-visible {
+  background: #587651 !important;
+  color: #fffde9 !important;
+}
+
+[data-testid="opening-demo-details"] button:active:not(:disabled) {
+  box-shadow: inset 0 0 0 1px #1f301f;
+  transform: translate(2px, 2px);
+}
+
+[data-testid="opening-demo-details"] button:disabled {
+  border-color: #7f7b69 !important;
+  background: #cfccb9 !important;
+  box-shadow: inset 0 0 0 1px #e9e5cf;
+}
+
+[data-testid="opening-demo-details"] div:has(> button[data-testid="opening-play-pause"]) {
+  padding: 6px;
+  border: 2px solid #b38c43;
+  border-radius: 5px;
+  background: #ede0b9;
+}
+
+[data-testid="opening-demo-details"]:has([data-testid="opening-comparison"]) {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 3px solid #3b2b1b;
+  border-radius: 5px;
+  background: #fff8df;
+  box-shadow: inset 0 0 0 2px #eddb9e;
+}
+
+[data-testid="opening-demo-details"] [data-testid="opening-comparison-state"] {
+  padding: 5px 7px;
+  border-left: 4px solid #745221;
+  background: #ede0b9;
+  font-weight: 800;
+}
+
+[data-testid="opening-demo-details"] [data-testid="opening-comparison"] {
+  border: 2px solid #aa803d;
+  background: #fffdf1;
+}
+
+[data-testid="opening-demo-details"] [data-testid="opening-comparison"] th,
+[data-testid="opening-demo-details"] [data-testid="opening-comparison"] td {
+  padding: 5px;
+  border-color: #d7bb78;
+}
+
+body:has([data-testid="tutorial-overlay"] [data-opening-treatment="true"]) .cc-course-frame {
+  border: 3px solid #3b2a19;
+  border-radius: 8px;
+  padding: 8px;
+  background: #ddc17a;
+  box-shadow: inset 0 0 0 2px #fff0ae, 5px 5px 0 #3b2a19, 0 12px 28px rgba(0, 0, 0, .24);
+}
+
+body:has([data-testid="tutorial-overlay"] [data-opening-treatment="true"]) .cc-course-frame::before {
+  background: linear-gradient(90deg, rgba(255,255,255,.2) 0 2px, transparent 2px 100%);
+  mix-blend-mode: screen;
+}
+
+body:has([data-testid="tutorial-overlay"] [data-opening-treatment="true"]) .cc-course-pane {
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 2px rgba(255, 247, 194, .75);
+}
+
+body:has([data-testid="tutorial-overlay"] [data-opening-treatment="true"]) .cc-design-dock__shell,
+body:has([data-testid="tutorial-overlay"] [data-opening-treatment="true"]) .cc-minimap {
+  border-radius: 4px;
+  backdrop-filter: none;
+}
+
+body:has([data-testid="tutorial-overlay"] [data-opening-treatment="true"]) .cc-design-dock__shell {
+  box-shadow: inset 0 0 0 2px #fff4c9, 4px 4px 0 #35271b, 0 10px 20px rgba(0, 0, 0, .26);
+}
+
+body:has([data-testid="tutorial-overlay"] [data-opening-treatment="true"]) .cc-design-card[aria-selected="true"] {
+  border-color: #b67a24;
+  background: #fff0b6;
+  box-shadow: inset 0 0 0 1px #5e3c17, 2px 2px 0 #5e3c17;
+}
+
+@media (max-width: 600px) {
+  [data-testid="tutorial-card"][data-opening-treatment="true"] > section {
+    gap: 6px;
+  }
+
+  [data-testid="opening-demo-details"] div:has(> button[data-testid="opening-play-pause"]) {
+    gap: 5px !important;
+    padding: 5px;
+  }
+
+  [data-testid="opening-demo-details"] button {
+    min-height: 32px;
+    padding: 7px 9px !important;
+  }
+}
+
 @media (max-width: 600px) {
   .cc-live-controls {
     /* Explicit width prevents left:50% shrink-to-fit from making a tall

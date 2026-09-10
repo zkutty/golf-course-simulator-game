@@ -209,6 +209,7 @@ export function TutorialOverlay(props: {
         aria-label={t(props.step.titleKey)}
         tabIndex={-1}
         data-testid="tutorial-card"
+        data-opening-treatment={props.progress.opening ? "true" : undefined}
         style={{
           position: "fixed",
           pointerEvents: "auto",
