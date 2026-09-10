@@ -10,11 +10,19 @@ test("ZK-1113 selected-preview flight remains bounded across display settings", 
 
   const evidence = await page.evaluate(async () => {
     localStorage.setItem("coursecraft_ambience", "off");
-    const [{ DEFAULT_STATE }, { retainedPreviewShotPose, AIR_FRAC }, { createOpeningPreviewSceneSystem }] = await Promise.all([
-      import("/src/game/gameState.ts"),
-      import("/src/game/render/ballFlight.ts"),
-      import("/src/ui/renderer/scenes/openingPreviewScene.ts"),
-    ]);
+    const { DEFAULT_STATE } = await import("/src/game/gameState.ts");
+    const { retainedPreviewShotPose, AIR_FRAC } = await import("/src/game/render/ballFlight.ts");
+    const { createOpeningPreviewSceneSystem } = await import("/src/ui/renderer/scenes/openingPreviewScene.ts");
+    const pixiUrl = performance.getEntriesByType("resource")
+      .map((entry) => entry.name)
+      .find((entry) => entry.includes("/pixi__js.js"));
+    if (!pixiUrl) throw new Error("Production Pixi module was not loaded by openingPreviewScene");
+    const PIXI = await import(pixiUrl);
+    const app = new PIXI.Application();
+    await app.init({ width: 800, height: 480, backgroundColor: 0x24515a, antialias: false, resolution: 1 });
+    app.canvas.id = "zk1113-production-preview";
+    app.canvas.style.cssText = "display:block !important;width:800px !important;height:480px !important;margin:20px auto;border:6px solid #172e30;image-rendering:pixelated";
+    document.body.replaceChildren(app.canvas);
     const shot = {
       id: "zk1113-retained-shot", shotNumber: 1, intent: "approach" as const, club: "8i",
       from: { x: 2, y: 2 }, landing: { x: 8, y: 2 }, rest: { x: 11, y: 4 }, lieAfter: "green", penaltyStrokes: 0,
@@ -29,36 +37,47 @@ test("ZK-1113 selected-preview flight remains bounded across display settings", 
       speeds: ([0.5, 1, 2] as const).map((speed) => ({ speed, pose: retainedPreviewShotPose(shot, Math.min(1, .35 * speed)) })),
       relief: retainedPreviewShotPose(relief, 1),
     };
+    const snapshotFor = (activeShot: typeof shot, progress: number, cue: "sand" | "water" | "green" | "obstacle", rotation = 0, graphicsQuality = "high", reducedMotion = false) => {
+      const tiles = [...DEFAULT_STATE.course.tiles];
+      tiles[Math.floor(activeShot.landing.y + .5) * DEFAULT_STATE.course.width + Math.floor(activeShot.landing.x + .5)] = cue === "water" ? "water" : cue === "sand" ? "sand" : "green";
+      return {
+        course: DEFAULT_STATE.course,
+        obstacles: cue === "obstacle" ? [...DEFAULT_STATE.course.obstacles, { x: activeShot.landing.x, y: activeShot.landing.y, type: "tree" }] : DEFAULT_STATE.course.obstacles,
+        effectiveTiles: tiles, holes: DEFAULT_STATE.course.holes, draftTee: null, draftGreen: null, rotation,
+        graphicsQuality, colorVision: "standard", reducedMotion, animationsEnabled: !reducedMotion,
+        showObstacles: true, atlasRevision: 0, surveyMode: false, worldSeed: 1113, surfaceHeightAt: () => 2,
+        openingMarker: { previewId: "zk1113", golferId: "g1", golferName: "Preview", shotId: activeShot.id, shot: activeShot, index: 0, total: 1, progress, golfer: activeShot.from, ball: activeShot.landing, landing: activeShot.landing, rest: activeShot.rest, complete: false },
+        revisions: { openingPreview: 1 },
+      } as never;
+    };
     const impactTypes: string[] = [];
     for (const cue of ["sand", "water", "green", "obstacle"] as const) {
       for (const rotation of [0, 90, 180, 270] as const) {
         for (const graphicsQuality of ["low", "medium", "high"] as const) {
-          const layer = {
-            children: [] as unknown[],
-            addChild(child: { parent?: unknown }) { child.parent = this; this.children.push(child); },
-            removeChild(child: unknown) { this.children = this.children.filter((item) => item !== child); },
-          };
-          const system = createOpeningPreviewSceneSystem(layer as never);
-          const tiles = [...DEFAULT_STATE.course.tiles];
-          tiles[Math.floor(shot.landing.y + .5) * DEFAULT_STATE.course.width + Math.floor(shot.landing.x + .5)] = cue === "water" ? "water" : cue === "sand" ? "sand" : "green";
-          system.render!({
-            course: DEFAULT_STATE.course,
-            obstacles: cue === "obstacle" ? [...DEFAULT_STATE.course.obstacles, { x: shot.landing.x, y: shot.landing.y, type: "tree" }] : DEFAULT_STATE.course.obstacles,
-            effectiveTiles: tiles, holes: DEFAULT_STATE.course.holes, draftTee: null, draftGreen: null, rotation,
-            graphicsQuality, colorVision: "standard", reducedMotion: graphicsQuality === "low", animationsEnabled: !graphicsQuality.startsWith("low"),
-            showObstacles: true, atlasRevision: 0, surveyMode: false, worldSeed: 1113, surfaceHeightAt: () => 2,
-            openingMarker: { previewId: "zk1113", golferId: "g1", golferName: "Preview", shotId: shot.id, shot, index: 0, total: 1, progress: .8, golfer: shot.from, ball: shot.landing, landing: shot.landing, rest: shot.rest, complete: false },
-            revisions: { openingPreview: 1 },
-          } as never);
+          const layer = new PIXI.Container(); app.stage.addChild(layer);
+          const system = createOpeningPreviewSceneSystem(layer);
+          system.render!(snapshotFor(shot, .8, cue, rotation, graphicsQuality, graphicsQuality === "low"));
+          app.renderer.render(app.stage);
           const debug = (layer.children[0] as { __coursecraftOpeningPreview?: { impact?: { type?: string }; impactCount?: number } }).__coursecraftOpeningPreview;
           if (!debug || debug.impactCount !== 1 || debug.impact?.type !== cue) throw new Error(`Missing single ${cue} impact at ${rotation}/${graphicsQuality}`);
           impactTypes.push(`${cue}:${rotation}:${graphicsQuality}`);
           system.dispose?.();
           if (layer.children.length) throw new Error("Opening-preview effect did not clean up");
+          app.stage.removeChild(layer); layer.destroy();
         }
       }
     }
-    return { canonicalBefore: canonical, canonicalAfter: JSON.stringify({ shot, relief }), poses, impactTypes };
+    const captureLayer = new PIXI.Container(); captureLayer.position.set(380, 120); app.stage.addChild(captureLayer);
+    const captureSystem = createOpeningPreviewSceneSystem(captureLayer);
+    const diagnostics = () => (captureLayer.children[0] as { __coursecraftOpeningPreview?: { impact?: { type?: string }; impactCount?: number } }).__coursecraftOpeningPreview;
+    captureSystem.render!(snapshotFor(shot, .5, "green")); app.renderer.render(app.stage);
+    (window as unknown as { __zk1113RenderImpact?: () => unknown }).__zk1113RenderImpact = () => {
+      captureLayer.position.set(380, 120); captureSystem.render!(snapshotFor(shot, .8, "green")); app.renderer.render(app.stage); return diagnostics();
+    };
+    (window as unknown as { __zk1113RenderRelief?: () => unknown }).__zk1113RenderRelief = () => {
+      captureLayer.position.set(380, 120); captureSystem.render!(snapshotFor(relief, 1, "water")); app.renderer.render(app.stage); return diagnostics();
+    };
+    return { canonicalBefore: canonical, canonicalAfter: JSON.stringify({ shot, relief }), poses, impactTypes, diagnostics: diagnostics() };
   });
 
   expect(evidence.canonicalAfter).toBe(evidence.canonicalBefore);
@@ -69,31 +88,18 @@ test("ZK-1113 selected-preview flight remains bounded across display settings", 
   expect(evidence.poses.relief.phase).toBe("relief");
   expect(evidence.poses.speeds.map((entry) => entry.speed)).toEqual([0.5, 1, 2]);
   expect(evidence.impactTypes).toHaveLength(48);
+  expect(evidence.diagnostics).toMatchObject({ impact: null, impactCount: 0 });
   await testInfo.attach("preview-flight-evidence", { body: JSON.stringify(evidence, null, 2), contentType: "application/json" });
-  await page.evaluate(() => {
-    const canvas = document.createElement("canvas");
-    canvas.width = 800; canvas.height = 420; canvas.id = "zk1113-preview-capture";
-    canvas.style.cssText = "display:block !important;width:800px !important;height:420px !important;margin:20px auto;border:6px solid #172e30;image-rendering:pixelated;background:#8fc4d3";
-    document.body.replaceChildren(canvas);
-    const context = canvas.getContext("2d")!;
-    context.fillStyle = "#74a95d"; context.fillRect(0, 230, 800, 190);
-    const project = (x: number, y: number) => ({ x: 260 + x * 38 - y * 18, y: 170 + x * 18 + y * 10 });
-    const from = project(2, 2); const landing = project(8, 2); const rest = project(1, 8);
-    context.strokeStyle = "#fff3b0"; context.lineWidth = 3; context.setLineDash([7, 6]);
-    context.beginPath(); context.moveTo(from.x, from.y); context.quadraticCurveTo((from.x + landing.x) / 2, 100, landing.x, landing.y); context.stroke(); context.setLineDash([]);
-    context.fillStyle = "rgba(23,46,48,.3)"; context.fillRect(landing.x - 9, landing.y - 2, 18, 5);
-    context.fillStyle = "#ffffff"; context.fillRect(landing.x - 6, landing.y - 36, 12, 12); context.strokeStyle = "#172e30"; context.lineWidth = 3; context.strokeRect(landing.x - 6, landing.y - 36, 12, 12);
-    context.strokeStyle = "#ffe6a3"; context.lineWidth = 3; context.strokeRect(rest.x - 11, rest.y - 11, 22, 22);
-    context.strokeStyle = "#172e30"; context.lineWidth = 2; context.strokeRect(rest.x - 14, rest.y - 14, 28, 28);
-    for (const [color, x] of [["#ffd26c", 530], ["#75def5", 590], ["#aef082", 650], ["#ff8d62", 710]] as const) {
-      context.fillStyle = color; context.fillRect(x, 74, 10, 10); context.strokeStyle = color; context.lineWidth = 3; context.beginPath(); context.arc(x + 5, 79, 18, 0, Math.PI * 2); context.stroke();
-    }
-    context.fillStyle = "#172e30"; context.font = "bold 18px sans-serif";
-    context.fillText("Selected preview • retained launch", 28, 34);
-    context.fillText("touchdown", landing.x - 40, landing.y + 36);
-    context.fillText("next lie (static relief marker)", rest.x - 92, rest.y + 42);
-    context.fillText("sand  water  green  obstacle", 500, 44);
-  });
-  await page.locator("#zk1113-preview-capture").screenshot({ path: testInfo.outputPath("selected-preview-flight.png") });
+  const settleCanvas = () => page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await settleCanvas();
+  await page.locator("#zk1113-production-preview").screenshot({ path: testInfo.outputPath("moving-ball.png") });
+  const impactDiagnostics = await page.evaluate(() => (window as unknown as { __zk1113RenderImpact: () => unknown }).__zk1113RenderImpact());
+  expect(impactDiagnostics).toMatchObject({ impact: { type: "green" }, impactCount: 1 });
+  await settleCanvas();
+  await page.locator("#zk1113-production-preview").screenshot({ path: testInfo.outputPath("green-impact.png") });
+  const reliefDiagnostics = await page.evaluate(() => (window as unknown as { __zk1113RenderRelief: () => unknown }).__zk1113RenderRelief());
+  expect(reliefDiagnostics).toMatchObject({ impact: { type: "water" }, impactCount: 1 });
+  await settleCanvas();
+  await page.locator("#zk1113-production-preview").screenshot({ path: testInfo.outputPath("penalty-touchdown-relief-marker.png") });
   expect(errors).toEqual([]);
 });
