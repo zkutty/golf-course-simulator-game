@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import { createInvitedPreviewEvidence } from "./invitedPreview";
-import { compareOpening, diagnoseOpening, freezeOpeningContext, hasOpeningEdit, newOpeningDemo, normalizeOpeningDemo, openingPenaltyTotal, openingPlaybackFrame, openingShots, openingTargetCells, openingTargetTiles, retestOpening } from "./openingDemo";
+import { compareOpening, diagnoseOpening, freezeOpeningContext, hasOpeningEdit, newOpeningDemo, normalizeOpeningDemo, openingPenaltyTotal, openingPlaybackFrame, openingRiskLeave, openingShots, openingTargetCells, openingTargetTiles, retestOpening } from "./openingDemo";
+import { validHoleCount } from "./invitedPreview";
 import { advanceTutorialProgress, claimTutorialPreviewReward, createTutorialProgress, normalizeTutorialProgress, restartTutorialProgress, tutorialCanAdvance, tutorialStep } from "./tutorial";
 import { CURRENT_SAVE_SCHEMA_VERSION, normalizeLoadedSave } from "../../utils/save";
 
@@ -45,6 +46,17 @@ describe("ZK-1106 optional private operator opening", () => {
     expect(progress.receipts).toEqual(reward.progress.receipts);
     expect(progress.opening!.candidate!.holeFingerprint).not.toBe(baseline.holeFingerprint);
     expect(progress.opening!.comparison).toMatchObject({ terrainCost: 125, beforeFingerprint: baseline.holeFingerprint, afterFingerprint: progress.opening!.candidate!.holeFingerprint });
+    expect(validHoleCount(context.course)).toBe(1);
+    expect(validHoleCount(revised)).toBe(1);
+    expect(progress.opening!.comparison!.measures.some((row) => row.riskBefore !== row.riskAfter || row.riskyLeavesBefore !== row.riskyLeavesAfter)).toBe(true);
+    const widened = structuredClone(context.course);
+    for (const cell of progress.opening!.targetCells) widened.tiles[cell] = "fairway";
+    const widenedCandidate = retestOpening(widened, reward.world, baseline);
+    expect(validHoleCount(widened)).toBe(1);
+    expect(widenedCandidate).not.toBeNull();
+    const beforeCohort = baseline.group.map(openingRiskLeave);
+    const widenedCohort = widenedCandidate!.group.map(openingRiskLeave);
+    expect(widenedCohort).not.toEqual(beforeCohort);
     progress = { ...progress, opening: { ...progress.opening!, cursor: 24 } };
     progress = advanceTutorialProgress(progress, edited);
     expect(progress.stage).toBe("compare-preview");
@@ -98,6 +110,7 @@ describe("ZK-1106 optional private operator opening", () => {
     expect(compareOpening(baseline, negative, context, 140).status).toBe("negative");
     expect(compareOpening(baseline, baseline, context, null)).toMatchObject({ status: "no-meaningful-change", terrainCost: null });
     expect(compareOpening(baseline, { ...changed, runSeed: changed.runSeed + 1 }, context, 140).status).toBe("unsupported");
+    expect(openingRiskLeave(baseline.group[0])).toMatchObject({ risk: expect.any(Number), riskyLeaves: expect.any(Number) });
     const generous = { ...course, tiles: course.tiles.map((terrain) => terrain === "rough" || terrain === "deep_rough" ? "fairway" as const : terrain) };
     expect(diagnoseOpening(generous, baseline)).toEqual({ kind: "none", previewId: baseline.id, reason: "no-supported-region" });
   });
@@ -108,6 +121,8 @@ describe("ZK-1106 optional private operator opening", () => {
     const opening = { ...newOpeningDemo(), targetCells: openingTargetCells(course, evidence) };
     expect(opening.targetCells.length).toBeGreaterThan(0);
     expect(opening.targetCells.every((i) => ["rough", "deep_rough"].includes(course.tiles[i]))).toBe(true);
+    const diagnosis = diagnoseOpening(course, evidence);
+    if (diagnosis.kind === "supported") expect(opening.targetCells[0]).toBe(Math.floor(diagnosis.anchor.y) * course.width + Math.floor(diagnosis.anchor.x));
     expect(hasOpeningEdit(course, opening)).toBe(false);
     const edited = structuredClone(course);
     edited.tiles[opening.targetCells[0]] = "fairway";

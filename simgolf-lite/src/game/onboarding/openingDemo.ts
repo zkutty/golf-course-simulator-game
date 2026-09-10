@@ -57,7 +57,22 @@ export interface OpeningComparison {
   afterFingerprint: string;
   /** Null only for a legacy save that predates the committed-debit baseline. */
   terrainCost: number | null;
-  measures: Array<{ golferId: string; golferName: string; strokesBefore: number; strokesAfter: number; satisfactionBefore: number; satisfactionAfter: number; penaltiesBefore: number; penaltiesAfter: number }>;
+  measures: Array<{
+    golferId: string;
+    golferName: string;
+    strokesBefore: number;
+    strokesAfter: number;
+    satisfactionBefore: number;
+    satisfactionAfter: number;
+    penaltiesBefore: number;
+    penaltiesAfter: number;
+    /** Resolved-shot risk only: penalties plus adverse next lies. */
+    riskBefore: number;
+    riskAfter: number;
+    /** Resolved shots which leave the golfer away from the green. */
+    riskyLeavesBefore: number;
+    riskyLeavesAfter: number;
+  }>;
 }
 
 export interface OpeningPlaybackFrame extends OpeningShotMarker {
@@ -162,7 +177,21 @@ export function diagnoseOpening(course: Course, evidence: InvitedPreviewEvidence
       }
     }
     if (cells.length) {
-      const bounded = cells.slice(0, 4);
+      // The suggested first tile must be the tile that owns the recorded next
+      // lie, not merely the first row-major tile in its surrounding box.  The
+      // old order could make a player buy an unrelated corner and see no
+      // routed decision change.  Preserve a small, paintable widening region
+      // after that center tile for a deliberate wider version.
+      const center = Math.floor(point.y) * course.width + Math.floor(point.x);
+      const bounded = cells.sort((a, b) => {
+        if (a === center) return -1;
+        if (b === center) return 1;
+        const ax = a % course.width + .5;
+        const ay = Math.floor(a / course.width) + .5;
+        const bx = b % course.width + .5;
+        const by = Math.floor(b / course.width) + .5;
+        return (ax - point.x) ** 2 + (ay - point.y) ** 2 - ((bx - point.x) ** 2 + (by - point.y) ** 2) || a - b;
+      }).slice(0, 4);
       return {
         kind: "supported",
         previewId: evidence.id,
@@ -201,6 +230,24 @@ export function retestOpening(course: Course, world: World, baseline: InvitedPre
 
 const penaltyTotal = (golfer: InvitedPreviewEvidence["group"][number]) => golfer.shots.reduce((total, shot) => total + shot.penaltyStrokes, 0);
 
+/**
+ * A read-only summary of the shared shot resolver's retained endpoints.  It
+ * is intentionally derived from evidence rather than becoming an economics
+ * or simulation authority: a risky leave is a non-green next lie and risk
+ * adds the existing penalty receipt plus a bounded terrain severity.
+ */
+export function openingRiskLeave(golfer: InvitedPreviewEvidence["group"][number]): { risk: number; riskyLeaves: number } {
+  return golfer.shots.reduce((measure, shot) => {
+    const severity = shot.lieAfter === "deep_rough" ? 2
+      : shot.lieAfter === "rough" || shot.lieAfter === "sand" || shot.lieAfter === "water" ? 1
+        : 0;
+    return {
+      risk: measure.risk + shot.penaltyStrokes + severity,
+      riskyLeaves: measure.riskyLeaves + Number(severity > 0),
+    };
+  }, { risk: 0, riskyLeaves: 0 });
+}
+
 export function compareOpening(
   baseline: InvitedPreviewEvidence,
   candidate: InvitedPreviewEvidence,
@@ -215,6 +262,8 @@ export function compareOpening(
     && candidateContext.hash === context.hash;
   const measures = baseline.group.map((before, index) => {
     const after = candidate.group[index] ?? before;
+    const beforeRisk = openingRiskLeave(before);
+    const afterRisk = openingRiskLeave(after);
     return {
       golferId: before.id,
       golferName: before.name,
@@ -224,14 +273,18 @@ export function compareOpening(
       satisfactionAfter: after.satisfaction,
       penaltiesBefore: penaltyTotal(before),
       penaltiesAfter: penaltyTotal(after),
+      riskBefore: beforeRisk.risk,
+      riskAfter: afterRisk.risk,
+      riskyLeavesBefore: beforeRisk.riskyLeaves,
+      riskyLeavesAfter: afterRisk.riskyLeaves,
     };
   });
   let status: OpeningComparison["status"] = "unsupported";
   if (contextMatches) {
     if (candidate.holeFingerprint === baseline.holeFingerprint) status = "no-meaningful-change";
     else {
-      const improvements = measures.reduce((count, row) => count + Number(row.strokesAfter < row.strokesBefore) + Number(row.satisfactionAfter > row.satisfactionBefore) + Number(row.penaltiesAfter < row.penaltiesBefore), 0);
-      const harms = measures.reduce((count, row) => count + Number(row.strokesAfter > row.strokesBefore) + Number(row.satisfactionAfter < row.satisfactionBefore) + Number(row.penaltiesAfter > row.penaltiesBefore), 0);
+      const improvements = measures.reduce((count, row) => count + Number(row.strokesAfter < row.strokesBefore) + Number(row.satisfactionAfter > row.satisfactionBefore) + Number(row.penaltiesAfter < row.penaltiesBefore) + Number(row.riskAfter < row.riskBefore) + Number(row.riskyLeavesAfter < row.riskyLeavesBefore), 0);
+      const harms = measures.reduce((count, row) => count + Number(row.strokesAfter > row.strokesBefore) + Number(row.satisfactionAfter < row.satisfactionBefore) + Number(row.penaltiesAfter > row.penaltiesBefore) + Number(row.riskAfter > row.riskBefore) + Number(row.riskyLeavesAfter > row.riskyLeavesBefore), 0);
       status = improvements > harms ? "positive" : harms > improvements ? "negative" : "neutral";
     }
   }
