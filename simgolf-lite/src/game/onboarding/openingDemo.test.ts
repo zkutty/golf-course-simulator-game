@@ -155,4 +155,26 @@ describe("ZK-1106 optional private operator opening", () => {
     expect(normalizeTutorialProgress({ ...legacy, stage: "improve-hole" })?.stage).toBe("welcome");
     expect(normalizeOpeningDemo({ version: 1, cursor: Infinity, targetCells: [-1, "bad", 4, 4, 5, 6, 7, 8], candidate: {} })).toEqual({ version: 1, cursor: 0, targetCells: [4, 5, 6, 7], candidate: null });
   });
+
+  it("keeps legacy saved comparisons honest while round-tripping current receipt-derived measures", () => {
+    const { course, world } = fixture();
+    const baseline = createInvitedPreviewEvidence(course, world)!;
+    const context = freezeOpeningContext(baseline);
+    const candidate = { ...baseline, id: `${baseline.id}:candidate`, holeFingerprint: "1234abcd" };
+    const current = compareOpening(baseline, candidate, context, 120);
+    const currentLoaded = normalizeOpeningDemo({ version: 1, cursor: 2, targetCells: [4], comparison: current });
+    expect(currentLoaded?.comparison).toEqual(current);
+    expect(currentLoaded?.comparison?.measures.every((row) => Number.isFinite(row.riskBefore) && Number.isFinite(row.riskyLeavesAfter))).toBe(true);
+
+    const { riskBefore: _riskBefore, riskAfter: _riskAfter, riskyLeavesBefore: _riskyLeavesBefore, riskyLeavesAfter: _riskyLeavesAfter, ...legacyMeasure } = current.measures[0];
+    const legacyLoaded = normalizeOpeningDemo({
+      version: 1,
+      cursor: 2,
+      targetCells: [4],
+      comparison: { ...current, measures: [legacyMeasure] },
+    });
+    expect(legacyLoaded?.comparison?.measures).toEqual([legacyMeasure]);
+    expect(legacyLoaded?.comparison?.measures[0]).not.toHaveProperty("riskBefore");
+    expect(legacyLoaded?.comparison?.measures[0]).not.toHaveProperty("riskyLeavesAfter");
+  });
 });

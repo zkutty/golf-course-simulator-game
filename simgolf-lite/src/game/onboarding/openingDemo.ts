@@ -66,12 +66,15 @@ export interface OpeningComparison {
     satisfactionAfter: number;
     penaltiesBefore: number;
     penaltiesAfter: number;
-    /** Resolved-shot risk only: penalties plus adverse next lies. */
-    riskBefore: number;
-    riskAfter: number;
-    /** Resolved shots which leave the golfer away from the green. */
-    riskyLeavesBefore: number;
-    riskyLeavesAfter: number;
+    /**
+     * Additive v1 presentation fields, derived only from retained resolved
+     * shot receipts. They are absent on older saved comparisons: never infer
+     * historical precision or treat them as a simulation/economy authority.
+     */
+    riskBefore?: number;
+    riskAfter?: number;
+    riskyLeavesBefore?: number;
+    riskyLeavesAfter?: number;
   }>;
 }
 
