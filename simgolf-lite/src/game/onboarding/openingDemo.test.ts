@@ -115,6 +115,44 @@ describe("ZK-1106 optional private operator opening", () => {
     expect(diagnoseOpening(generous, baseline)).toEqual({ kind: "none", previewId: baseline.id, reason: "no-supported-region" });
   });
 
+  it("counts mixed and risk-only retained measures with equal weight", () => {
+    const { course, world } = fixture();
+    const baseline = createInvitedPreviewEvidence(course, world)!;
+    const context = freezeOpeningContext(baseline);
+    const changed = { ...baseline, id: `${baseline.id}:changed`, holeFingerprint: "1234abcd" };
+    const mixed = {
+      ...changed,
+      group: changed.group.map((golfer, index) => index === 0 ? { ...golfer, strokes: golfer.strokes - 1, satisfaction: golfer.satisfaction - 1 } : golfer),
+    };
+    expect(compareOpening(baseline, mixed, context, 140).status).toBe("neutral");
+
+    const riskyBaseline = structuredClone(baseline);
+    riskyBaseline.group[0].shots[0].lieAfter = "deep_rough";
+    const safer = structuredClone(riskyBaseline);
+    safer.id = `${baseline.id}:safer`;
+    safer.holeFingerprint = "2345bcde";
+    safer.group[0].shots[0].lieAfter = "fairway";
+    const riskOnlyImprovement = compareOpening(riskyBaseline, safer, freezeOpeningContext(riskyBaseline), 140);
+    expect(riskOnlyImprovement.status).toBe("positive");
+    expect(riskOnlyImprovement.measures[0]).toMatchObject({
+      strokesBefore: riskyBaseline.group[0].strokes,
+      strokesAfter: safer.group[0].strokes,
+      satisfactionBefore: riskyBaseline.group[0].satisfaction,
+      satisfactionAfter: safer.group[0].satisfaction,
+      penaltiesBefore: expect.any(Number),
+      penaltiesAfter: expect.any(Number),
+      riskBefore: openingRiskLeave(riskyBaseline.group[0]).risk,
+      riskAfter: openingRiskLeave(safer.group[0]).risk,
+      riskyLeavesBefore: openingRiskLeave(riskyBaseline.group[0]).riskyLeaves,
+      riskyLeavesAfter: openingRiskLeave(safer.group[0]).riskyLeaves,
+    });
+    expect(riskOnlyImprovement.measures[0].riskAfter!).toBeLessThan(riskOnlyImprovement.measures[0].riskBefore!);
+    expect(riskOnlyImprovement.measures[0].riskyLeavesAfter!).toBeLessThan(riskOnlyImprovement.measures[0].riskyLeavesBefore!);
+
+    const riskOnlyHarm = compareOpening(safer, { ...riskyBaseline, id: `${baseline.id}:riskier`, holeFingerprint: "3456cdef" }, freezeOpeningContext(safer), 140);
+    expect(riskOnlyHarm.status).toBe("negative");
+  });
+
   it("undo/canceled edits do not unlock retest, and targets never replace tee/green/hazards", () => {
     const { course, world } = fixture();
     const evidence = createInvitedPreviewEvidence(course, world)!;

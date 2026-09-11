@@ -84,6 +84,27 @@ async function expectTutorialInViewport(page: Page) {
   expect(card.y + card.height).toBeLessThanOrEqual(viewport.height + 1);
 }
 
+async function expectComparisonReadable(page: Page) {
+  const summary = page.getByTestId("opening-comparison-summary");
+  const comparison = page.getByTestId("opening-comparison");
+  await expect(page.getByTestId("opening-comparison-state")).toBeVisible();
+  await expect(summary).toBeVisible();
+  await expect(comparison).toBeVisible();
+  await page.getByTestId("opening-comparison-risk").first().scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("opening-comparison-risk").first()).toBeVisible();
+  await expectTutorialInViewport(page);
+  const widths = await page.evaluate(() => {
+    const details = document.querySelector<HTMLElement>('[data-testid="opening-demo-details"]');
+    const table = document.querySelector<HTMLElement>('[data-testid="opening-comparison"]');
+    return {
+      documentFits: document.documentElement.scrollWidth <= window.innerWidth + 1,
+      detailsFit: details ? details.scrollWidth <= details.clientWidth + 1 : false,
+      tableFit: table ? table.scrollWidth <= table.clientWidth + 1 : false,
+    };
+  });
+  expect(widths).toEqual({ documentFits: true, detailsFit: true, tableFit: true });
+}
+
 async function dismissAchievementToasts(page: Page) {
   const toast = page.getByTestId("achievement-toast");
   for (let index = 0; index < 6 && await toast.count(); index++) {
@@ -345,8 +366,8 @@ test.describe("ZK-1106 private operator opening", () => {
         await expect(page.getByTestId("opening-current-shot")).toHaveAttribute("data-shot-id", current.id);
         await expect(page.getByTestId("opening-playback-frame")).toContainText(`(${current.from.x}, ${current.from.y})`);
         await expect(page.getByTestId("opening-playback-frame")).toContainText(`landing (${current.landing.x}, ${current.landing.y})`);
-        await expect(page.getByTestId("opening-playback-frame")).toContainText(`next lie (${current.rest.x}, ${current.rest.y})`);
-        await expect(page.getByTestId("opening-demo-details")).toContainText(`Recorded shots reviewed: ${cursor} / ${shots.length}`);
+        await expect(page.getByTestId("opening-playback-frame")).toContainText(`lie (${current.rest.x}, ${current.rest.y})`);
+        await expect(page.getByTestId("opening-demo-details")).toContainText(`Shots: ${cursor}/${shots.length}`);
         const penalty = await visiblePenalty();
         expect(penalty).toBe(current.penalties);
         penaltyTotal += penalty;
@@ -448,7 +469,7 @@ test.describe("ZK-1106 private operator opening", () => {
     expect((await state()).onboarding.preview).toEqual(baselineStateReceipt);
     await page.getByRole("button", { name: "Review reactions", exact: true }).click();
     await expectStep(page, "review-reaction");
-    await expect(page.getByTestId("opening-diagnosis")).toContainText("Observed evidence only");
+    await expect(page.getByTestId("opening-diagnosis")).toContainText("Observed:");
     await expect(page.getByTestId("opening-diagnosis")).toContainText("shot");
     await expect(page.getByTestId("opening-diagnosis")).toContainText("landing-region");
     await capture("04-evidence-backed-opportunity");
@@ -531,7 +552,7 @@ test.describe("ZK-1106 private operator opening", () => {
     await focusOpeningHole(page);
     const beforeRejectedPaint = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState().tiles);
     await clickTile(page, await canvas(page), { x: point.x + 3, y: point.y });
-    await expect(page.getByTestId("opening-paint-recovery")).toContainText("missed the highlighted widening tiles");
+    await expect(page.getByTestId("opening-paint-recovery")).toContainText("missed the highlighted tiles");
     expect(await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState().tiles)).toEqual(beforeRejectedPaint);
     await clickTile(page, await canvas(page), point);
     await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
@@ -605,6 +626,35 @@ test.describe("ZK-1106 private operator opening", () => {
     await expect(page.getByTestId("opening-comparison-penalties")).toContainText(`First visit: ${baselinePenalties}`);
     const comparedReceipt = previewSummary(compared.onboarding.opening.candidate);
     await expect(page.getByTestId("opening-comparison-penalties")).toContainText(`Retest: ${retestPenalties}`);
+    const comparisonMeasures = compared.onboarding.opening.comparison.measures;
+    const countChanges = (measures: typeof comparisonMeasures) => measures.reduce((counts, row) => {
+      const compare = (before: number | undefined, after: number | undefined, improvesWhen: "lower" | "higher") => {
+        if (!Number.isFinite(before) || !Number.isFinite(after) || before === after) return;
+        const improved = improvesWhen === "lower" ? after! < before! : after! > before!;
+        if (improved) counts.improved++;
+        else counts.worsened++;
+      };
+      compare(row.strokesBefore, row.strokesAfter, "lower");
+      compare(row.satisfactionBefore, row.satisfactionAfter, "higher");
+      compare(row.penaltiesBefore, row.penaltiesAfter, "lower");
+      compare(row.riskBefore, row.riskAfter, "lower");
+      compare(row.riskyLeavesBefore, row.riskyLeavesAfter, "lower");
+      return counts;
+    }, { improved: 0, worsened: 0 });
+    const comparisonCounts = countChanges(comparisonMeasures);
+    await expect(page.getByTestId("opening-comparison-summary")).toContainText(`${comparisonCounts.improved} improved, ${comparisonCounts.worsened} worsened`);
+    const comparisonRows = page.getByTestId("opening-comparison-row");
+    await expect(comparisonRows).toHaveCount(comparisonMeasures.length);
+    for (const [index, measure] of comparisonMeasures.entries()) {
+      const row = comparisonRows.nth(index);
+      await expect(row).toContainText(`${measure.strokesBefore} strokes · ${Math.round(measure.satisfactionBefore)}% satisfaction`);
+      await expect(row).toContainText(`${measure.strokesAfter} strokes · ${Math.round(measure.satisfactionAfter)}% satisfaction`);
+      await expect(row).toContainText(`Recorded penalties: ${measure.penaltiesBefore}.`);
+      await expect(row).toContainText(`Recorded penalties: ${measure.penaltiesAfter}.`);
+      await expect(row).toContainText(`${measure.riskBefore} risk · ${measure.riskyLeavesBefore} risky leaves.`);
+      await expect(row).toContainText(`${measure.riskAfter} risk · ${measure.riskyLeavesAfter} risky leaves.`);
+    }
+    await expect(page.getByTestId("opening-comparison-risk-note")).toContainText("Risk = penalties");
     expect(compared.economy).toEqual(edited.economy);
     expect(compared.onboarding.preview).toEqual(baselineStateReceipt);
     expect(compared.onboarding.reward).toEqual(rewarded.onboarding.reward);
@@ -617,6 +667,25 @@ test.describe("ZK-1106 private operator opening", () => {
     await expectStep(page, "compare-preview");
     expect((await state()).onboarding.opening.candidate).toEqual(compared.onboarding.opening.candidate);
     expect((await state()).economy).toEqual(compared.economy);
+    expect((await state()).onboarding.opening.comparison.measures).toEqual(comparisonMeasures);
+    await setInGameLocale(page, "pseudo");
+    await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await expectComparisonReadable(page);
+      const file = testInfo.outputPath(`06-comparison-pseudo-200-${viewport.width}x${viewport.height}.png`);
+      await page.screenshot({ path: file });
+      await testInfo.attach(`comparison-pseudo-200-${viewport.width}x${viewport.height}`, { path: file, contentType: "image/png" });
+      if (process.env.ZK1107_EVIDENCE) {
+        const directory = `artifacts/zk-1107/${process.env.ZK1107_EVIDENCE}`;
+        mkdirSync(directory, { recursive: true });
+        await page.screenshot({ path: `${directory}/06-comparison-pseudo-200-${viewport.width}x${viewport.height}.png` });
+      }
+    }
+    await page.evaluate(() => localStorage.setItem("coursecraft_locale", "en"));
+    await page.reload();
+    await page.getByRole("button", { name: /Continue/ }).click();
+    await expectStep(page, "compare-preview");
     await testInfo.attach("opening-evidence-context", { body: JSON.stringify({ context: baselineContext, viewport: page.viewportSize(), elapsedSeconds: (Date.now() - started) / 1000, before: baselineReceipt, after: comparedReceipt, penalties: { before: baselinePenalties, after: retestPenalties }, economy: { before: before.economy, rewardCredit: rewarded.economy.cash - before.economy.cash, editDebit, rewarded: rewarded.economy, edited: edited.economy } }, null, 2), contentType: "application/json" });
     await page.getByRole("button", { name: "Finish private demo", exact: true }).click();
     await expect(overlay(page)).toHaveCount(0);

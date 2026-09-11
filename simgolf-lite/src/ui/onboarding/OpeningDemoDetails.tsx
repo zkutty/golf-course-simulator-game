@@ -29,8 +29,15 @@ export function OpeningDemoDetails({ progress, width, playback, playing, playbac
   const evidenceContext = evidence ?? baseline;
   const target = opening.targetCells[0];
   const penaltiesFor = (visit: typeof baseline.group[number]) => visit.shots.reduce((total, shot) => total + shot.penaltyStrokes, 0);
+  const comparison = opening.comparison;
+  const countComparisonChanges = comparison?.measures.reduce((counts, row) => {
+    const deltas = [row.strokesBefore - row.strokesAfter, row.satisfactionAfter - row.satisfactionBefore, row.penaltiesBefore - row.penaltiesAfter, (row.riskBefore ?? NaN) - (row.riskAfter ?? NaN), (row.riskyLeavesBefore ?? NaN) - (row.riskyLeavesAfter ?? NaN)];
+    counts.improved += deltas.filter((delta) => delta > 0).length;
+    counts.worsened += deltas.filter((delta) => delta < 0).length;
+    return counts;
+  }, { improved: 0, worsened: 0 }) ?? { improved: 0, worsened: 0 };
   return <div data-testid="opening-demo-details" style={{ display: "grid", gap: 8, fontSize: 13, lineHeight: 1.45 }}>
-    <button style={presenterButtonStyle} onClick={onFocus}>{t(progress.stage === "improve-hole" ? "opening.focusForPaint" : "opening.focus")}</button>
+    {progress.stage !== "compare-preview" && <button style={presenterButtonStyle} onClick={onFocus}>{t(progress.stage === "improve-hole" ? "opening.focusForPaint" : "opening.focus")}</button>}
     {playbackVisible && <>
       <div role="status" aria-live="polite" data-testid="opening-current-shot" data-preview-id={playback?.previewId} data-shot-id={playback?.shotId}>{marker && t("opening.shot", { name: marker.golferName, shot: marker.shot.shotNumber, intent: marker.shot.intent, club: marker.shot.club, lie: marker.shot.lieAfter })}</div>
       {playback && <div data-testid="opening-playback-frame">{t("opening.frame", { id: playback.shotId, fromX: playback.shot.from.x, fromY: playback.shot.from.y, landingX: playback.landing.x, landingY: playback.landing.y, restX: playback.rest.x, restY: playback.rest.y })}</div>}
@@ -53,18 +60,24 @@ export function OpeningDemoDetails({ progress, width, playback, playing, playbac
       ? t("opening.noTarget")
       : t("opening.target", { x: target % width, y: Math.floor(target / width) })}</div>}
     {progress.stage === "compare-preview" && opening.candidate && <>
-      <div>{t("opening.revision", { before: baseline.holeFingerprint, after: opening.candidate.holeFingerprint })}</div>
-      <div data-testid="opening-comparison-state" data-state={opening.comparison?.status ?? "unsupported"}>{t(`opening.comparison.${opening.comparison?.status ?? "unsupported"}` as "opening.comparison.positive")}</div>
-      <div data-testid="opening-comparison-cost">{opening.comparison?.terrainCost == null ? t("opening.costUnavailable") : t("opening.cost", { cost: opening.comparison.terrainCost })}</div>
-      <div data-testid="opening-comparison-penalties">{t("opening.comparisonPenalties", { before: openingPenaltyTotal(baseline), after: openingPenaltyTotal(opening.candidate) })}</div>
-      <table data-testid="opening-comparison" style={{ width: "100%", borderCollapse: "collapse" }}>
+      <div data-testid="opening-comparison-state" data-state={comparison?.status ?? "unsupported"}>{t(`opening.comparison.${comparison?.status ?? "unsupported"}` as "opening.comparison.positive")}</div>
+      <div data-testid="opening-comparison-summary">{t("opening.comparisonSummary", countComparisonChanges)}</div>
+      <table data-testid="opening-comparison" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
         <thead><tr>{(["opening.golfer", "opening.before", "opening.after"] as const).map((key) => <th scope="col" key={key}>{t(key)}</th>)}</tr></thead>
-        <tbody>{baseline.group.map((golfer, index) => <tr key={golfer.id}>
-          <th scope="row">{golfer.name}</th>
-          {[golfer, opening.candidate!.group[index]].map((visit, i) => <td key={i} style={{ padding: 5 }}>{visit && <><div>{t("opening.score", { strokes: visit.strokes, satisfaction: Math.round(visit.satisfaction) })}</div><div>{t("opening.penaltyTotal", { penalties: penaltiesFor(visit) })}</div></>}</td>)}
-        </tr>)}</tbody>
+        <tbody>{baseline.group.map((golfer, index) => {
+          const measure = comparison?.measures[index];
+          return <tr key={golfer.id} data-testid="opening-comparison-row" data-golfer-id={golfer.id}>
+            <th scope="row" style={{ overflowWrap: "anywhere" }}>{golfer.name}</th>
+            {[golfer, opening.candidate!.group[index]].map((visit, i) => <td key={i} style={{ padding: 5, overflowWrap: "anywhere" }}>{visit && <><div>{t("opening.score", { strokes: visit.strokes, satisfaction: Math.round(visit.satisfaction) })}</div><div>{t("opening.penaltyTotal", { penalties: penaltiesFor(visit) })}</div>{measure && typeof measure.riskBefore === "number" && typeof measure.riskyLeavesBefore === "number" && <div data-testid="opening-comparison-risk">{t("opening.comparisonRisk", i ? { risk: measure.riskAfter!, riskyLeaves: measure.riskyLeavesAfter! } : { risk: measure.riskBefore, riskyLeaves: measure.riskyLeavesBefore })}</div>}</>}</td>)}
+          </tr>;
+        })}</tbody>
       </table>
+      <p data-testid="opening-comparison-risk-note" style={{ margin: 0, color: "#647067" }}>{t("opening.comparisonRiskNote")}</p>
+      <div>{t("opening.revision", { before: baseline.holeFingerprint, after: opening.candidate.holeFingerprint })}</div>
+      <div data-testid="opening-comparison-cost">{comparison?.terrainCost == null ? t("opening.costUnavailable") : t("opening.cost", { cost: comparison.terrainCost })}</div>
+      <div data-testid="opening-comparison-penalties">{t("opening.comparisonPenalties", { before: openingPenaltyTotal(baseline), after: openingPenaltyTotal(opening.candidate) })}</div>
       <p style={{ margin: 0, color: "#647067" }}>{t("opening.scoreNote")}</p>
+      <button style={presenterButtonStyle} onClick={onFocus}>{t("opening.focus")}</button>
       <button style={presenterButtonStyle} onClick={onRetry}>{t("opening.retry")}</button>
     </>}
   </div>;
