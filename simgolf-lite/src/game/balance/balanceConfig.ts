@@ -177,24 +177,10 @@ export const BALANCE = {
     scratch: {
       yardsPerTile: 10,
       ratingMultipliers: { hazard: 1.0, rough: 0.8, deepRough: 1.0, obstacle: 1.0 },
-      clubs: [
-        { name: "Driver", carryYards: 280, dispersionTilesBase: 3.5 },
-        { name: "3W", carryYards: 250, dispersionTilesBase: 3.0 },
-        { name: "5I", carryYards: 200, dispersionTilesBase: 2.4 },
-        { name: "7I", carryYards: 170, dispersionTilesBase: 2.0 },
-        { name: "PW", carryYards: 135, dispersionTilesBase: 1.5 },
-      ],
     },
     bogey: {
       yardsPerTile: 10,
       ratingMultipliers: { hazard: 1.5, rough: 1.4, deepRough: 1.8, obstacle: 1.3 },
-      clubs: [
-        { name: "Driver", carryYards: 220, dispersionTilesBase: 4.2 },
-        { name: "3W", carryYards: 200, dispersionTilesBase: 3.7 },
-        { name: "5I", carryYards: 160, dispersionTilesBase: 3.1 },
-        { name: "7I", carryYards: 140, dispersionTilesBase: 2.6 },
-        { name: "PW", carryYards: 110, dispersionTilesBase: 2.1 },
-      ],
     },
   },
 

@@ -8,7 +8,7 @@ import type { ShotFlightProfile, ShotLie } from "./contracts";
  * dataset. Consumers may apply their established player, lie, and weather
  * modifiers, but must not duplicate these base values.
  */
-export const DISPERSION_REGISTRY_VERSION = 1 as const;
+export const DISPERSION_REGISTRY_VERSION = 2 as const;
 
 export type ShotClubId =
   | "driver" | "three_wood" | "five_iron" | "seven_iron"
@@ -30,6 +30,20 @@ export interface ShotClubDefinition {
   allowedTechniques: readonly ShotTechnique[];
   allowedFlightProfiles: readonly ShotFlightProfile[];
 }
+
+/**
+ * Compatibility shape consumed by the deterministic course-rating solver.
+ * These retain the legacy five-club projection exactly while making the
+ * versioned dispersion registry its sole authority.
+ */
+export interface LegacySolverClubDefinition {
+  baseClubId: ShotClubId;
+  name: "Driver" | "3W" | "5I" | "7I" | "PW";
+  carryYards: number;
+  dispersionTilesBase: number;
+}
+
+export type LegacySolverProfileName = "SCRATCH" | "BOGEY";
 
 const ALL_FLIGHTS = ["low", "standard", "high"] as const;
 const STANDARD_ONLY = ["standard"] as const;
@@ -65,6 +79,29 @@ export function dispersionClubIdForLabel(label: string): ShotClubId | null {
   if (!Object.hasOwn(DISPERSION_CLUB_ID_BY_LABEL, label)) return null;
   return DISPERSION_CLUB_ID_BY_LABEL[label] ?? null;
 }
+
+/**
+ * Stable legacy solver projections. These are intentionally separate from
+ * player-facing club definitions: their values preserve pre-registry rating
+ * behavior exactly while their baseClubId keeps each projection traceable to
+ * the canonical club registry.
+ */
+export const LEGACY_SOLVER_CLUB_PROFILES: Readonly<Record<LegacySolverProfileName, readonly LegacySolverClubDefinition[]>> = {
+  SCRATCH: [
+    { baseClubId: "driver", name: "Driver", carryYards: 280, dispersionTilesBase: 3.5 },
+    { baseClubId: "three_wood", name: "3W", carryYards: 250, dispersionTilesBase: 3.0 },
+    { baseClubId: "five_iron", name: "5I", carryYards: 200, dispersionTilesBase: 2.4 },
+    { baseClubId: "seven_iron", name: "7I", carryYards: 170, dispersionTilesBase: 2.0 },
+    { baseClubId: "pitching_wedge", name: "PW", carryYards: 135, dispersionTilesBase: 1.5 },
+  ],
+  BOGEY: [
+    { baseClubId: "driver", name: "Driver", carryYards: 220, dispersionTilesBase: 4.2 },
+    { baseClubId: "three_wood", name: "3W", carryYards: 200, dispersionTilesBase: 3.7 },
+    { baseClubId: "five_iron", name: "5I", carryYards: 160, dispersionTilesBase: 3.1 },
+    { baseClubId: "seven_iron", name: "7I", carryYards: 140, dispersionTilesBase: 2.6 },
+    { baseClubId: "pitching_wedge", name: "PW", carryYards: 110, dispersionTilesBase: 2.1 },
+  ],
+};
 
 /** Reference-plan adapters retain its pre-existing neutral capability math. */
 export const REFERENCE_CLUB_ADAPTERS = [

@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   DISPERSION_CLUBS,
   DISPERSION_REGISTRY_VERSION,
+  LEGACY_SOLVER_CLUB_PROFILES,
   dispersionClub,
   dispersionClubIdForLabel,
 } from "./dispersionRegistry";
 
 describe("ZK-772 canonical dispersion registry", () => {
   it("keeps version, IDs, labels, aliases, and order stable", () => {
-    expect(DISPERSION_REGISTRY_VERSION).toBe(1);
+    expect(DISPERSION_REGISTRY_VERSION).toBe(2);
     expect(DISPERSION_CLUBS.map((club) => [club.id, club.label])).toEqual([
       ["driver", "Driver"], ["three_wood", "3 Wood"], ["five_iron", "5 Iron"], ["seven_iron", "7 Iron"],
       ["pitching_wedge", "Pitching Wedge"], ["sand_wedge", "Sand Wedge"], ["chip", "Chip"], ["putter", "Putter"],
@@ -39,5 +40,24 @@ describe("ZK-772 canonical dispersion registry", () => {
     for (const label of ["Nine Iron", "toString", "__proto__"]) {
       expect(dispersionClubIdForLabel(label)).toBeNull();
     }
+  });
+
+  it("owns the exact legacy scratch and bogey solver projections", () => {
+    expect(LEGACY_SOLVER_CLUB_PROFILES).toEqual({
+      SCRATCH: [
+        { baseClubId: "driver", name: "Driver", carryYards: 280, dispersionTilesBase: 3.5 },
+        { baseClubId: "three_wood", name: "3W", carryYards: 250, dispersionTilesBase: 3 },
+        { baseClubId: "five_iron", name: "5I", carryYards: 200, dispersionTilesBase: 2.4 },
+        { baseClubId: "seven_iron", name: "7I", carryYards: 170, dispersionTilesBase: 2 },
+        { baseClubId: "pitching_wedge", name: "PW", carryYards: 135, dispersionTilesBase: 1.5 },
+      ],
+      BOGEY: [
+        { baseClubId: "driver", name: "Driver", carryYards: 220, dispersionTilesBase: 4.2 },
+        { baseClubId: "three_wood", name: "3W", carryYards: 200, dispersionTilesBase: 3.7 },
+        { baseClubId: "five_iron", name: "5I", carryYards: 160, dispersionTilesBase: 3.1 },
+        { baseClubId: "seven_iron", name: "7I", carryYards: 140, dispersionTilesBase: 2.6 },
+        { baseClubId: "pitching_wedge", name: "PW", carryYards: 110, dispersionTilesBase: 2.1 },
+      ],
+    });
   });
 });
