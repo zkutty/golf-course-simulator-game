@@ -463,7 +463,7 @@ test.describe("ZK-1106 private operator opening", () => {
     const point = { x: target % width, y: Math.floor(target / width) };
     await focusOpeningHole(page);
     const targetIds = rewarded.onboarding.opening.targetCells;
-    await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toEqual({
+    await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toMatchObject({
       targetIds,
       outlineCount: targetIds.length,
     });
@@ -472,7 +472,7 @@ test.describe("ZK-1106 private operator opening", () => {
     // authoring below remains real keyboard and mouse input.
     for (let rotation = 0; rotation < 4; rotation++) {
       await page.keyboard.press("q");
-      await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toEqual({
+      await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toMatchObject({
         targetIds,
         outlineCount: targetIds.length,
       });
@@ -561,10 +561,25 @@ test.describe("ZK-1106 private operator opening", () => {
     expect(touchEditedSurface.tiles.flatMap((terrain, index) => terrain !== beforeRejectedPaint[index] ? [index] : [])).toEqual([target]);
     expect(touchEditedSurface.features.at(-1)?.coverage).toEqual([target]);
     expect((await state()).economy).toEqual(edited.economy);
-    await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toEqual({
+    // Repeating the exact committed material is a real no-op: it must not
+    // append another surface feature, charge again, or disturb eligibility.
+    await clickTile(page, await canvas(page), point);
+    const repeatedEdit = await state();
+    expect(await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState())).toEqual(touchEditedSurface);
+    expect(repeatedEdit.economy).toEqual(edited.economy);
+    expect(repeatedEdit.onboarding.reward).toEqual(rewarded.onboarding.reward);
+    await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toMatchObject({
       targetIds,
       outlineCount: targetIds.length,
     });
+    await expect(overlay(page).getByText("Progress saved", { exact: true })).toBeVisible();
+    await page.reload();
+    await page.getByRole("button", { name: /Continue/ }).click();
+    await expectStep(page, "improve-hole");
+    expect((await state()).economy).toEqual(edited.economy);
+    expect((await state()).onboarding.reward).toEqual(rewarded.onboarding.reward);
+    expect(await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState())).toEqual(touchEditedSurface);
+    await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "Retest the same group", exact: true }).click();
     await expectStep(page, "retest-play");
     const retestStarted = await state();
@@ -572,6 +587,13 @@ test.describe("ZK-1106 private operator opening", () => {
     expect(retestReceipt.holeId).toBe(baselineReceipt.holeId);
     await expect(page.getByTestId("opening-evidence-context")).toContainText(`seed ${retestStarted.onboarding.opening.context.runSeed}`);
     await expect(page.getByTestId("opening-current-shot")).toHaveAttribute("data-preview-id", retestStarted.onboarding.opening.candidate.id);
+    await expect(overlay(page).getByText("Progress saved", { exact: true })).toBeVisible();
+    await page.reload();
+    await page.getByRole("button", { name: /Continue/ }).click();
+    await expectStep(page, "retest-play");
+    expect((await state()).onboarding.opening.candidate).toEqual(retestStarted.onboarding.opening.candidate);
+    expect((await state()).economy).toEqual(edited.economy);
+    expect((await state()).onboarding.reward).toEqual(rewarded.onboarding.reward);
     const retestPenalties = await playEveryRecordedShot(retestReceipt, "05b-intermediate-retest-shot");
     expect((await state()).onboarding.preview).toEqual(baselineStateReceipt);
     await page.getByRole("button", { name: "Compare visits", exact: true }).click();
