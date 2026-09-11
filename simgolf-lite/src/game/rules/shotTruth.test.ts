@@ -74,7 +74,7 @@ describe("ZK-1108 committed-shot truth contract", () => {
     expect(truth.physicalRest).toBeNull();
     expect(truth.rollPath).toEqual([]);
     expect(committedShotGroundPosition(truth, .5)).toBeNull();
-    expect(shotTruthCues(truth, "en").join(" ")).toContain("Schematic markers");
+    expect(shotTruthCues(truth, "en").join(" ")).toContain("Circle: landing. Square: next lie. Retained endpoints animate; relief can move a lie.");
     expect(shotTruthCues(truth, "en").join(" ")).not.toContain("Final playable position");
     expect(shotTruthCues(truth, "pseudo").every((cue) => cue.startsWith("⟦"))).toBe(true);
     expect(projectCommittedShot(legacy)).toEqual(truth);
