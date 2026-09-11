@@ -651,10 +651,10 @@ test.describe("ZK-1106 private operator opening", () => {
       await expect(row).toContainText(`${measure.strokesAfter} strokes · ${Math.round(measure.satisfactionAfter)}% satisfaction`);
       await expect(row).toContainText(`Recorded penalties: ${measure.penaltiesBefore}.`);
       await expect(row).toContainText(`Recorded penalties: ${measure.penaltiesAfter}.`);
-      await expect(row).toContainText(`${measure.riskBefore} risk · ${measure.riskyLeavesBefore} risky leaves.`);
-      await expect(row).toContainText(`${measure.riskAfter} risk · ${measure.riskyLeavesAfter} risky leaves.`);
+      await expect(row).toContainText(`Risk ${measure.riskBefore} · risky leaves ${measure.riskyLeavesBefore}.`);
+      await expect(row).toContainText(`Risk ${measure.riskAfter} · risky leaves ${measure.riskyLeavesAfter}.`);
     }
-    await expect(page.getByTestId("opening-comparison-risk-note")).toHaveText("Risk: penalties + terrain (deep rough 2; rough/sand/water 1). Risky leaves: risky endpoints.");
+    await expect(page.getByTestId("opening-comparison-risk-note")).toHaveText("Risk = penalties + terrain: deep rough 2; rough/sand/water 1. Risky leaves count adverse endpoints.");
     expect(compared.economy).toEqual(edited.economy);
     expect(compared.onboarding.preview).toEqual(baselineStateReceipt);
     expect(compared.onboarding.reward).toEqual(rewarded.onboarding.reward);

@@ -3,6 +3,8 @@ import { openingPenaltyTotal, openingShots, type OpeningPlaybackFrame } from "..
 import { useI18n } from "../../i18n/useI18n";
 import { presenterButtonStyle } from "./presenterStyles";
 
+const noteStyle = { margin: 0, color: "#647067" };
+
 export function OpeningDemoDetails({ progress, width, playback, playing, playbackSpeed, following, reducedMotion, onCursor, onRetry, onFocus, onTogglePlaying, onSpeed, onToggleFollow }: {
   progress: TutorialProgress;
   width: number;
@@ -30,8 +32,11 @@ export function OpeningDemoDetails({ progress, width, playback, playing, playbac
   const target = opening.targetCells[0];
   const penaltiesFor = (visit: typeof baseline.group[number]) => visit.shots.reduce((total, shot) => total + shot.penaltyStrokes, 0);
   const comparison = opening.comparison;
+  const riskAvailable = comparison?.measures.length === baseline.group.length && comparison.measures.every((row) =>
+    ([row.riskBefore, row.riskAfter, row.riskyLeavesBefore, row.riskyLeavesAfter] as number[]).every(Number.isFinite));
   const countComparisonChanges = comparison?.measures.reduce((counts, row) => {
-    const deltas = [row.strokesBefore - row.strokesAfter, row.satisfactionAfter - row.satisfactionBefore, row.penaltiesBefore - row.penaltiesAfter, (row.riskBefore ?? NaN) - (row.riskAfter ?? NaN), (row.riskyLeavesBefore ?? NaN) - (row.riskyLeavesAfter ?? NaN)];
+    const deltas = [row.strokesBefore - row.strokesAfter, row.satisfactionAfter - row.satisfactionBefore, row.penaltiesBefore - row.penaltiesAfter];
+    if (riskAvailable) deltas.push(row.riskBefore! - row.riskAfter!, row.riskyLeavesBefore! - row.riskyLeavesAfter!);
     for (const delta of deltas) {
       if (delta > 0) counts.improved++;
       else if (delta < 0) counts.worsened++;
@@ -63,22 +68,22 @@ export function OpeningDemoDetails({ progress, width, playback, playing, playbac
       : t("opening.target", { x: target % width, y: Math.floor(target / width) })}</div>}
     {progress.stage === "compare-preview" && opening.candidate && <>
       <div data-testid="opening-comparison-state" data-state={comparison?.status ?? "unsupported"}>{t(`opening.comparison.${comparison?.status ?? "unsupported"}` as "opening.comparison.positive")}</div>
-      <div data-testid="opening-comparison-summary">{t("opening.comparisonSummary", countComparisonChanges)}</div>
+      <div data-testid="opening-comparison-summary">{t(riskAvailable ? "opening.comparisonSummary" : "opening.comparisonSummaryLegacy", countComparisonChanges)}</div>
       <table data-testid="opening-comparison" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
         <thead><tr>{(["opening.golfer", "opening.before", "opening.after"] as const).map((key) => <th scope="col" key={key}>{t(key)}</th>)}</tr></thead>
         <tbody>{baseline.group.map((golfer, index) => {
           const measure = comparison?.measures[index];
           return <tr key={golfer.id} data-testid="opening-comparison-row" data-golfer-id={golfer.id}>
             <th scope="row" style={{ overflowWrap: "anywhere" }}>{golfer.name}</th>
-            {[golfer, opening.candidate!.group[index]].map((visit, i) => <td key={i} style={{ padding: 5, overflowWrap: "anywhere" }}>{visit && <><div>{t("opening.score", { strokes: visit.strokes, satisfaction: Math.round(visit.satisfaction) })}</div><div>{t("opening.penaltyTotal", { penalties: penaltiesFor(visit) })}</div>{measure && typeof measure.riskBefore === "number" && typeof measure.riskyLeavesBefore === "number" && <div data-testid="opening-comparison-risk">{t("opening.comparisonRisk", i ? { risk: measure.riskAfter!, riskyLeaves: measure.riskyLeavesAfter! } : { risk: measure.riskBefore, riskyLeaves: measure.riskyLeavesBefore })}</div>}</>}</td>)}
+            {[golfer, opening.candidate!.group[index]].map((visit, i) => <td key={i} style={{ padding: 5, overflowWrap: "anywhere" }}>{visit && <><div>{t("opening.score", { strokes: visit.strokes, satisfaction: Math.round(visit.satisfaction) })}</div><div>{t("opening.penaltyTotal", { penalties: penaltiesFor(visit) })}</div>{riskAvailable && <div data-testid="opening-comparison-risk">{t("opening.comparisonRisk", i ? { risk: measure!.riskAfter!, riskyLeaves: measure!.riskyLeavesAfter! } : { risk: measure!.riskBefore!, riskyLeaves: measure!.riskyLeavesBefore! })}</div>}</>}</td>)}
           </tr>;
         })}</tbody>
       </table>
-      <p data-testid="opening-comparison-risk-note" style={{ margin: 0, color: "#647067" }}>{t("opening.comparisonRiskNote")}</p>
+      {riskAvailable && <p data-testid="opening-comparison-risk-note" style={noteStyle}>{t("opening.comparisonRiskNote")}</p>}
       <div>{t("opening.revision", { before: baseline.holeFingerprint, after: opening.candidate.holeFingerprint })}</div>
       <div data-testid="opening-comparison-cost">{comparison?.terrainCost == null ? t("opening.costUnavailable") : t("opening.cost", { cost: comparison.terrainCost })}</div>
       <div data-testid="opening-comparison-penalties">{t("opening.comparisonPenalties", { before: openingPenaltyTotal(baseline), after: openingPenaltyTotal(opening.candidate) })}</div>
-      <p style={{ margin: 0, color: "#647067" }}>{t("opening.scoreNote")}</p>
+      <p style={noteStyle}>{t("opening.scoreNote")}</p>
       <button style={presenterButtonStyle} onClick={onFocus}>{t("opening.focus")}</button>
       <button style={presenterButtonStyle} onClick={onRetry}>{t("opening.retry")}</button>
     </>}
