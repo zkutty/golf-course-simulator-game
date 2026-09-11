@@ -32,8 +32,10 @@ export function OpeningDemoDetails({ progress, width, playback, playing, playbac
   const comparison = opening.comparison;
   const countComparisonChanges = comparison?.measures.reduce((counts, row) => {
     const deltas = [row.strokesBefore - row.strokesAfter, row.satisfactionAfter - row.satisfactionBefore, row.penaltiesBefore - row.penaltiesAfter, (row.riskBefore ?? NaN) - (row.riskAfter ?? NaN), (row.riskyLeavesBefore ?? NaN) - (row.riskyLeavesAfter ?? NaN)];
-    counts.improved += deltas.filter((delta) => delta > 0).length;
-    counts.worsened += deltas.filter((delta) => delta < 0).length;
+    for (const delta of deltas) {
+      if (delta > 0) counts.improved++;
+      else if (delta < 0) counts.worsened++;
+    }
     return counts;
   }, { improved: 0, worsened: 0 }) ?? { improved: 0, worsened: 0 };
   return <div data-testid="opening-demo-details" style={{ display: "grid", gap: 8, fontSize: 13, lineHeight: 1.45 }}>
