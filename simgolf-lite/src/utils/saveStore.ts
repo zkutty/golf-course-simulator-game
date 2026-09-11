@@ -213,6 +213,7 @@ function pickKV(): KV {
 let kv: KV = pickKV();
 let migrated = false;
 let writeSeq = 0;
+let autosaveTail: Promise<unknown> = Promise.resolve();
 let failNextManifestWrite = false;
 const manifestListeners = new Set<() => void>();
 
@@ -269,6 +270,7 @@ export function __resetSaveStoreForTests(): void {
   kv = memoryKV();
   migrated = false;
   writeSeq = 0;
+  autosaveTail = Promise.resolve();
   failNextManifestWrite = false;
   importSaveModule = () => import("./save");
   saveModulePromise = null;
@@ -487,16 +489,20 @@ export async function renameSlot(id: string, name: string): Promise<void> {
 }
 
 /** Rotating autosave: auto-0..auto-N cycle by oldest-first replacement. */
-export async function autosave(payload: SavePayload): Promise<SaveSlotMeta> {
-  const manifest = await readManifest();
-  const autos = manifest
-    .filter((m) => m.kind === "auto")
-    .sort((a, b) => a.savedAt - b.savedAt || (a.seq ?? 0) - (b.seq ?? 0));
-  const id =
-    autos.length < AUTOSAVE_SLOTS
-      ? `auto-${autos.length}`
-      : autos[0].id; // replace the oldest
-  return saveToSlot(id, "auto", "Autosave", payload);
+export function autosave(payload: SavePayload): Promise<SaveSlotMeta> {
+  const save = autosaveTail.catch(() => undefined).then(async () => {
+    const manifest = await readManifest();
+    const autos = manifest
+      .filter((m) => m.kind === "auto")
+      .sort((a, b) => a.savedAt - b.savedAt || (a.seq ?? 0) - (b.seq ?? 0));
+    const id =
+      autos.length < AUTOSAVE_SLOTS
+        ? `auto-${autos.length}`
+        : autos[0].id; // replace the oldest
+    return saveToSlot(id, "auto", "Autosave", payload);
+  });
+  autosaveTail = save;
+  return save;
 }
 
 export async function quicksave(payload: SavePayload): Promise<SaveSlotMeta> {

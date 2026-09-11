@@ -250,6 +250,47 @@ describe("saveStore", () => {
     expect(weeks).toEqual([3, 4, 5]); // weeks 1-2 rotated out
   });
 
+  it("commits overlapping autosaves in request order", async () => {
+    const values = new Map<string, string>();
+    let releaseFirstPayload!: () => void;
+    let reportFirstPayload!: () => void;
+    let reportSecondPayload!: () => void;
+    const firstPayloadStarted = new Promise<void>((resolve) => { reportFirstPayload = resolve; });
+    const firstPayloadReleased = new Promise<void>((resolve) => { releaseFirstPayload = resolve; });
+    const secondPayloadStarted = new Promise<void>((resolve) => { reportSecondPayload = resolve; });
+    let payloadWrites = 0;
+    __setSaveStoreKVForTests({
+      get: async (key) => values.get(key) ?? null,
+      set: async (key, value) => {
+        if (key.startsWith("coursecraft_save_")) {
+          payloadWrites++;
+          if (payloadWrites === 1) {
+            reportFirstPayload();
+            await firstPayloadReleased;
+          } else if (payloadWrites === 2) {
+            reportSecondPayload();
+          }
+        }
+        values.set(key, value);
+      },
+      del: async (key) => void values.delete(key),
+    });
+
+    const older = autosave(payload(1));
+    await firstPayloadStarted;
+    const newer = autosave(payload(2));
+    await Promise.race([
+      secondPayloadStarted,
+      new Promise<void>((resolve) => setTimeout(resolve, 20)),
+    ]);
+    releaseFirstPayload();
+    await Promise.all([older, newer]);
+
+    const recent = await mostRecentSlot();
+    expect(recent?.week).toBe(2);
+    expect((await loadSlot(recent!.id))?.world.week).toBe(2);
+  });
+
   it("round-trips every registered biome through autosave, export, and fresh-profile import", async () => {
     for (const theme of BIOME_KEYS) {
       __resetSaveStoreForTests();
