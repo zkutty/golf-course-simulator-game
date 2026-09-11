@@ -654,7 +654,7 @@ test.describe("ZK-1106 private operator opening", () => {
       await expect(row).toContainText(`${measure.riskBefore} risk · ${measure.riskyLeavesBefore} risky leaves.`);
       await expect(row).toContainText(`${measure.riskAfter} risk · ${measure.riskyLeavesAfter} risky leaves.`);
     }
-    await expect(page.getByTestId("opening-comparison-risk-note")).toContainText("Risk = penalties");
+    await expect(page.getByTestId("opening-comparison-risk-note")).toHaveText("Risk: penalties + terrain (deep rough 2; rough/sand/water 1). Risky leaves: risky endpoints.");
     expect(compared.economy).toEqual(edited.economy);
     expect(compared.onboarding.preview).toEqual(baselineStateReceipt);
     expect(compared.onboarding.reward).toEqual(rewarded.onboarding.reward);
