@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { Course, Terrain } from "../models/types";
 import { DEFAULT_STATE } from "../gameState";
 import { BALANCE } from "../balance/balanceConfig";
+import { getGolferProfile } from "./golferProfiles";
 import { createRenderPerfCourse, createReferenceCourse } from "../testing/referenceCourse";
 import { applyAction } from "../../core/reducer";
 import { computeCourseRatingAndSlope } from "./courseRating";
@@ -12,12 +13,7 @@ import {
   scoreCourseHoles,
 } from "./holes";
 
-const originalScratchCarries = BALANCE.golfers.scratch.clubs.map((club) => club.carryYards);
-
 afterEach(() => {
-  BALANCE.golfers.scratch.clubs.forEach((club, index) => {
-    (club as { carryYards: number }).carryYards = originalScratchCarries[index];
-  });
   __resetHoleScoreCacheForTests();
 });
 
@@ -53,13 +49,20 @@ function separatedTwoHoleCourse(): Course {
 }
 
 describe("M18 core hardening", () => {
-  it("derives rating output from the shared BALANCE golfer profiles", () => {
+  it("derives fresh legacy solver profiles from the shared registry", () => {
     const baseline = computeCourseRatingAndSlope(createReferenceCourse());
-    BALANCE.golfers.scratch.clubs.forEach((club) => {
-      (club as { carryYards: number }).carryYards = Math.max(40, Math.round(club.carryYards * 0.55));
-    });
-    const retuned = computeCourseRatingAndSlope(createReferenceCourse());
-    expect(retuned.expectedScratchScore).not.toBe(baseline.expectedScratchScore);
+    const scratch = getGolferProfile("SCRATCH", createReferenceCourse());
+    const secondScratch = getGolferProfile("SCRATCH", createReferenceCourse());
+    expect(scratch.clubs).toEqual([
+      { name: "Driver", carryYards: 280, dispersionTilesBase: 3.5 },
+      { name: "3W", carryYards: 250, dispersionTilesBase: 3 },
+      { name: "5I", carryYards: 200, dispersionTilesBase: 2.4 },
+      { name: "7I", carryYards: 170, dispersionTilesBase: 2 },
+      { name: "PW", carryYards: 135, dispersionTilesBase: 1.5 },
+    ]);
+    scratch.clubs[0].carryYards = 40;
+    expect(secondScratch.clubs[0].carryYards).toBe(280);
+    expect(computeCourseRatingAndSlope(createReferenceCourse())).toEqual(baseline);
     expect(BALANCE.golfers.scratch.ratingMultipliers).toEqual({
       hazard: 1,
       rough: 0.8,

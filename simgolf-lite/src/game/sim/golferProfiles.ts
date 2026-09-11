@@ -1,5 +1,6 @@
 import type { Course } from "../models/types";
 import { BALANCE } from "../balance/balanceConfig";
+import { LEGACY_SOLVER_CLUB_PROFILES } from "../rules/dispersionRegistry";
 
 export interface ClubSpec {
   name: string;
@@ -28,11 +29,14 @@ export function getGolferProfile(name: GolferProfile["name"], course?: Course): 
   return {
     name,
     yardsPerTile,
-    clubs: base.clubs.slice(),
+    clubs: LEGACY_SOLVER_CLUB_PROFILES[name].map(({ name: clubName, carryYards, dispersionTilesBase }) => ({
+      name: clubName,
+      carryYards,
+      dispersionTilesBase,
+    })),
     ratingMultipliers: { ...base.ratingMultipliers },
   };
 }
-
 
 
 
