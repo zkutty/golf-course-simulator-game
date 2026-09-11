@@ -623,9 +623,8 @@ test.describe("ZK-1106 private operator opening", () => {
     await expect(page.getByTestId("opening-comparison-state")).toHaveAttribute("data-state", /positive|neutral|negative/);
     await expect(page.getByTestId("opening-comparison-cost")).toContainText(`$${editDebit}`);
     const compared = await state();
-    await expect(page.getByTestId("opening-comparison-penalties")).toContainText(`First visit: ${baselinePenalties}`);
+    await expect(page.getByTestId("opening-comparison-penalties")).toHaveText(`Recorded penalties: ${baselinePenalties} → ${retestPenalties}.`);
     const comparedReceipt = previewSummary(compared.onboarding.opening.candidate);
-    await expect(page.getByTestId("opening-comparison-penalties")).toContainText(`Retest: ${retestPenalties}`);
     const comparisonMeasures = compared.onboarding.opening.comparison.measures;
     const countChanges = (measures: typeof comparisonMeasures) => measures.reduce((counts, row) => {
       const compare = (before: number | undefined, after: number | undefined, improvesWhen: "lower" | "higher") => {

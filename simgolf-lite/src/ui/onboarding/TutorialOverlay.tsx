@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { TutorialProgress, TutorialStep } from "../../game/onboarding/tutorial";
 import { AdvisorPresenter } from "./AdvisorPresenter";
 import { presenterButtonStyle } from "./presenterStyles";
 import { T } from "../../i18n/T";
 import { useI18n } from "../../i18n/useI18n";
-import { OpeningDemoDetails } from "./OpeningDemoDetails";
 import type { OpeningPlaybackFrame } from "../../game/onboarding/openingDemo";
+
+const OpeningDemoDetails = lazy(() => import("./OpeningDemoDetails").then(({ OpeningDemoDetails }) => ({ default: OpeningDemoDetails })));
 
 type Rect = { top: number; left: number; right: number; bottom: number; width: number; height: number };
 const FOCUSABLE = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])";
@@ -225,21 +226,23 @@ export function TutorialOverlay(props: {
           body={t(props.step.bodyKey)}
           expression={props.step.expression}
           details={<>
-            <OpeningDemoDetails
-              progress={props.progress}
-              width={props.courseWidth}
-              playback={props.openingPlayback}
-              playing={props.openingPlaying}
-              playbackSpeed={props.openingPlaybackSpeed}
-              following={props.openingFollowing}
-              reducedMotion={props.reducedMotion}
-              onCursor={props.onOpeningCursor}
-              onRetry={props.onOpeningRetry}
-              onFocus={props.onOpeningFocus}
-              onTogglePlaying={props.onOpeningTogglePlaying}
-              onSpeed={props.onOpeningSpeed}
-              onToggleFollow={props.onOpeningToggleFollow}
-            />
+            {props.progress.opening && <Suspense fallback={<span role="status" aria-live="polite">{t("deferredSurface.loading", { surface: t(props.step.titleKey) })}</span>}>
+              <OpeningDemoDetails
+                progress={props.progress}
+                width={props.courseWidth}
+                playback={props.openingPlayback}
+                playing={props.openingPlaying}
+                playbackSpeed={props.openingPlaybackSpeed}
+                following={props.openingFollowing}
+                reducedMotion={props.reducedMotion}
+                onCursor={props.onOpeningCursor}
+                onRetry={props.onOpeningRetry}
+                onFocus={props.onOpeningFocus}
+                onTogglePlaying={props.onOpeningTogglePlaying}
+                onSpeed={props.onOpeningSpeed}
+                onToggleFollow={props.onOpeningToggleFollow}
+              />
+            </Suspense>}
             {props.progress.opening && props.step.id === "improve-hole" && props.openingPaintRecovery && (
               <div role="status" data-testid="opening-paint-recovery" style={{ padding: 8, borderRadius: 8, background: "#fff1ed", color: "#8c2f1f", fontWeight: 700 }}>
                 {props.openingPaintRecovery}
