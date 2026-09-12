@@ -10,6 +10,7 @@ import type { ChallengeGroupRound } from "../competition/challengeGroupRound";
 import type { ChallengeRuntimeState } from "../competition/challengeRuntime";
 import type { ChallengeSettlementRecord } from "../competition/challengeSettlement";
 import type { FrozenPerformanceLoadout, LearnedTechnique, MentorTechniqueChallenge } from "../competition/types";
+import type { ShotEnvironmentV1 } from "../rules/shotEnvironment";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -94,6 +95,8 @@ export interface PlayerRoundCourseSnapshot {
     carryMultiplier: number;
     dispersionMultiplier: number;
     paceMultiplier: number;
+    /** Frozen directional authority; legacy active rounds normalize to scalar mode. */
+    environment?: ShotEnvironmentV1;
   };
 }
 

@@ -39,6 +39,8 @@ export interface DailyWeather {
   kind: WeatherKind;
   temperatureF: number;
   windMph: number;
+  /** Deterministic wind travel bearing: 0° north/up, 90° east/right. */
+  windBearingDegrees?: number;
   rainInches: number;
   severity: number;
   theme: LandTheme;

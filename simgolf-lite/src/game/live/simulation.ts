@@ -36,6 +36,7 @@ import { observedM49MobilityEvidence } from "../m49/mobility";
 import { emptyM51LiveMobilityState } from "../m51/mobility";
 import { applyGolferMobilityReaction, reapplyGroupMobility, releaseFinishedMobilityGroups, reserveGroupMobility } from "../m51/operations";
 import { isCoursePlayable } from "../sim/isCoursePlayable";
+import { shotEnvironmentFromWeather } from "../rules/shotEnvironment";
 
 // A memoized walk router bound to a course + per-day cache. Golfers spawned the
 // same day share cached routes, so pathfinding runs at most once per (from,to).
@@ -199,7 +200,7 @@ export function createLiveState(
         ? { ...operations, daylightPolicy: "finish_started" as const }
         : operations];
     })),
-    weather: { daily: dailyWeather, modifiers: dailyWeatherModifiers },
+    weather: { daily: dailyWeather, modifiers: dailyWeatherModifiers, environment: shotEnvironmentFromWeather(dailyWeather) },
     greenDrainageLevel: seasonal.operations.drainageLevel,
     observedRounds: [],
     m51: emptyM51LiveMobilityState(seed),
@@ -331,6 +332,7 @@ function spawnGolfer(state: LiveState, course: Course, arrival: Arrival): Golfer
       carryMultiplier: state.weather.modifiers.carryMultiplier,
       dispersionMultiplier: state.weather.modifiers.dispersionMultiplier,
       paceMultiplier: state.weather.modifiers.paceMultiplier,
+      environment: state.weather.environment,
     } : undefined,
     drainageLevel: state.greenDrainageLevel,
   });
@@ -1048,6 +1050,7 @@ export function reconcileGolfers(state: LiveState, course: Course): void {
             carryMultiplier: state.weather.modifiers.carryMultiplier,
             dispersionMultiplier: state.weather.modifiers.dispersionMultiplier,
             paceMultiplier: state.weather.modifiers.paceMultiplier,
+            environment: state.weather.environment,
           } : undefined,
           drainageLevel: state.greenDrainageLevel,
         })

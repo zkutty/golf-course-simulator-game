@@ -66,6 +66,28 @@ describe("live simulation persistence", () => {
     expect(restored!.selectedGolferId).toBe(selectedGolferId);
   });
 
+  it("normalizes missing or malformed frozen wind to legacy scalar without touching completed shots", () => {
+    const { state } = midRound();
+    const snapshot = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });
+    const shotJson = JSON.stringify(snapshot.state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []));
+    const missing = structuredClone(snapshot);
+    delete missing.state.weather!.environment;
+    expect(restoreLiveSimulation(missing)?.state.weather?.environment).toEqual({
+      version: 1,
+      mode: "legacy_scalar",
+      speedMph: state.weather!.daily.windMph,
+    });
+    const malformed = structuredClone(snapshot);
+    malformed.state.weather!.environment = { version: 1, mode: "directional", speedMph: 8, bearingDegrees: 720 } as never;
+    const restored = restoreLiveSimulation(malformed);
+    expect(restored?.state.weather?.environment).toEqual({
+      version: 1,
+      mode: "legacy_scalar",
+      speedMph: state.weather!.daily.windMph,
+    });
+    expect(JSON.stringify(restored?.state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []))).toBe(shotJson);
+  });
+
   it("freezes economic pressure in new snapshots and migrates legacy live difficulty", () => {
     const course = playableCourse();
     const state = createLiveState(course, {

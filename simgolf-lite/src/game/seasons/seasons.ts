@@ -49,6 +49,20 @@ const strings = (value: unknown, max: number) =>
   Array.isArray(value) ? [...new Set(value.filter((item): item is string => typeof item === "string"))].slice(-max) : [];
 const AUTOMATION_SYSTEM_SET = new Set(["hours", "upkeep", "pricing", "staffing", "parking", "lodging", "community", "safety"]);
 
+/**
+ * Direction is runtime authority for newly frozen rounds, not a change to the
+ * long-standing serialized daily-weather record. Old seasonal payloads omit
+ * it and deterministically regenerate it from the same seed/day fallback.
+ */
+function withWindBearing(weather: Omit<DailyWeather, "windBearingDegrees">, windBearingDegrees: number): DailyWeather {
+  return Object.defineProperty(weather, "windBearingDegrees", {
+    value: clamp(integer(windBearingDegrees), 0, 359),
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  }) as DailyWeather;
+}
+
 function hash32(...values: number[]): number {
   let hash = 0x811c9dc5;
   for (const value of values) {
@@ -206,6 +220,8 @@ export function weatherForDay(runSeed: number, theme: LandTheme, absoluteDay: nu
   const wave = Math.sin(((day % DAYS_PER_YEAR) / DAYS_PER_YEAR) * Math.PI * 2 - Math.PI / 2) * 5;
   const temperatureF = Math.round(climate.temperature.baseF + climate.temperature.seasonalOffsetF + wave + (unit(runSeed, day, 11) - 0.5) * 15);
   const windMph = Math.round(clamp(climate.windBaseMph + unit(runSeed, day, 17) * 18, 2, 34));
+  // Independent salt preserves every established weather draw and value.
+  const windBearingDegrees = Math.floor(unit(runSeed, day, 37) * 360);
   const rainChance = climate.precipitation.chance;
   const wetRoll = unit(runSeed, day, 23);
   const storm = rawStormCandidate(runSeed, theme, day)
@@ -238,7 +254,7 @@ export function weatherForDay(runSeed: number, theme: LandTheme, absoluteDay: nu
     0,
     1,
   );
-  return { absoluteDay: day, kind, temperatureF, windMph, rainInches, severity, theme, season: date.season };
+  return withWindBearing({ absoluteDay: day, kind, temperatureF, windMph, rainInches, severity, theme, season: date.season }, windBearingDegrees);
 }
 
 export function forecastForDay(runSeed: number, theme: LandTheme, absoluteDay: number): DailyWeather[] {
@@ -316,7 +332,7 @@ function normalizeWeather(input: unknown, fallback: DailyWeather): DailyWeather 
   if (!input || typeof input !== "object") return fallback;
   const candidate = input as Partial<DailyWeather>;
   const kinds = new Set<WeatherKind>(["clear", "cloudy", "rain", "heavy_rain", "storm", "heat", "drought", "frost"]);
-  return {
+  return withWindBearing({
     ...fallback,
     absoluteDay: Math.max(0, integer(candidate.absoluteDay, fallback.absoluteDay)),
     kind: kinds.has(candidate.kind as WeatherKind) ? candidate.kind as WeatherKind : fallback.kind,
@@ -324,7 +340,7 @@ function normalizeWeather(input: unknown, fallback: DailyWeather): DailyWeather 
     windMph: clamp(integer(candidate.windMph, fallback.windMph), 0, 70),
     rainInches: clamp(finite(candidate.rainInches, fallback.rainInches), 0, 5),
     severity: clamp(finite(candidate.severity, fallback.severity), 0, 1),
-  };
+  }, integer(candidate.windBearingDegrees, fallback.windBearingDegrees));
 }
 
 function validCharter(value: unknown): value is ClubCharter {

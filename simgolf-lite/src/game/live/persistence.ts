@@ -10,6 +10,7 @@ import { normalizeShotSlopeContext } from "../models/shotSlope";
 import { isValidGreenRollout } from "../greens/greenRollout";
 import { isValidGreenPutting } from "../greens/greenPutting";
 import { normalizeExperienceAxes } from "../balance/experience";
+import { normalizeShotEnvironmentV1 } from "../rules/shotEnvironment";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
@@ -238,6 +239,12 @@ export function restoreLiveSimulation(input: unknown): RestoredLiveSimulation | 
   const serializable = cloneSerializableState(state as unknown as Omit<LiveState, "walkCache">);
   const liveExperience = normalizeExperienceAxes(serializable);
   serializable.economicPressure = liveExperience.economicPressure;
+  if (serializable.weather) {
+    serializable.weather.environment = normalizeShotEnvironmentV1(
+      serializable.weather.environment,
+      serializable.weather.daily.windMph,
+    );
+  }
   delete serializable.difficulty;
   const stateSeed = finite(state.seed) ? state.seed : 0;
   serializable.golfers = serializable.golfers.map((g) => {

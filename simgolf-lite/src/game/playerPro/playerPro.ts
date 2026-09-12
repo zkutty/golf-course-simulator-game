@@ -98,6 +98,7 @@ import {
   normalizedMentorCareerFields,
   resolvePerformanceModifiers,
 } from "../competition/equipmentRuntime";
+import { normalizeShotEnvironmentV1 } from "../rules/shotEnvironment";
 
 export { startPlayableRound } from "./playerProRoundStart";
 export type { StartPlayableRoundArgs } from "./playerProRoundStart";
@@ -376,6 +377,12 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
       biomeCompatibility: biomeCompatibility.metadata,
       ...(greenSnapshot?.ok ? { greenSnapshot: greenSnapshot.value } : {}),
       greenDrainageLevel: clamp(Math.round(finite(round.course.greenDrainageLevel)), 0, 3),
+      ...(round.course.weather ? {
+        weather: {
+          ...round.course.weather,
+          environment: normalizeShotEnvironmentV1(round.course.weather.environment, round.course.weather.windMph),
+        },
+      } : {}),
     },
     strokes: Math.max(0, Math.floor(finite(round.strokes))),
     penalties: Math.max(0, Math.floor(finite(round.penalties))),
