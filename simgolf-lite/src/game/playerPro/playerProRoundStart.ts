@@ -14,6 +14,7 @@ import { createControlledRoundSnapshotV2, decodeControlledRoundSnapshotV2 } from
 import { createGreenRoundSnapshot } from "../greens/greenSurface";
 import { captureRoundHandicapSnapshot, createHandicapProfile } from "../competition/persistence";
 import { confidenceAtDay, createPlayerConfidence } from "./confidence";
+import { shotEnvironmentFromWeather } from "../rules/shotEnvironment";
 import type { TournamentActivationSnapshot } from "../tournaments/types";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -69,6 +70,7 @@ function snapshotCourse(course: Course, world: World, day: number, layoutId: str
       carryMultiplier: modifiers.carryMultiplier,
       dispersionMultiplier: modifiers.dispersionMultiplier,
       paceMultiplier: modifiers.paceMultiplier,
+      environment: shotEnvironmentFromWeather(weather),
     },
   };
 }
@@ -94,7 +96,7 @@ function tournamentCourseSnapshot(course: Course, world: World, day: number, aut
     holes: authority.holes.map((hole, index) => ({ ...hole, name: `Hole ${index + 1}`, waypoints: [], teeSet: authority.teeSet, pinRotation: authority.pinRotation })),
     rating: { courseRating: authority.rating, slope: authority.slope },
     greenDrainageLevel: season.operations.drainageLevel,
-    weather: { kind: weather.kind, temperatureF: weather.temperatureF, windMph: weather.windMph, rainInches: weather.rainInches, carryMultiplier: modifiers.carryMultiplier, dispersionMultiplier: modifiers.dispersionMultiplier, paceMultiplier: modifiers.paceMultiplier },
+    weather: { kind: weather.kind, temperatureF: weather.temperatureF, windMph: weather.windMph, rainInches: weather.rainInches, carryMultiplier: modifiers.carryMultiplier, dispersionMultiplier: modifiers.dispersionMultiplier, paceMultiplier: modifiers.paceMultiplier, environment: shotEnvironmentFromWeather(weather) },
   };
 }
 

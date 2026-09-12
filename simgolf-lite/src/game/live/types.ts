@@ -7,6 +7,7 @@ import type { M49ObservedRound } from "../m49/types";
 import type { M51LiveMobilityState, M51MobilityAggregateSummary } from "../m51/types";
 import type { SurfaceCareDayReport } from "../conditions/surfaceCare";
 import type { GreenKeepingReport } from "../greens/greenMaintenance";
+import type { ShotEnvironmentV1 } from "../rules/shotEnvironment";
 
 export type SegmentKind = "walk" | "flight" | "pause";
 
@@ -247,7 +248,7 @@ export interface LiveState {
   beverageCoverageByCourse?: Record<string, number>;
   overtimeRateByCourse?: Record<string, number>;
   operationsByCourse?: Record<string, CourseOperations>;
-  weather?: { daily: DailyWeather; modifiers: WeatherModifiers };
+  weather?: { daily: DailyWeather; modifiers: WeatherModifiers; environment?: ShotEnvironmentV1 };
   /** Frozen seasonal drainage tier paired with the live day's weather. */
   greenDrainageLevel?: number;
   /** Bounded finished-round evidence retained until day commit. */

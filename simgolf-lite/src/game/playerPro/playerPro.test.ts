@@ -189,6 +189,54 @@ describe("M36 deterministic Player Pro play", () => {
     });
   });
 
+  it("freezes directional wind for new Player Pro and tournament rounds while legacy active payloads stay scalar", () => {
+    const { course, world: currentWorld, career, round } = started();
+    expect(round.course.weather?.environment).toMatchObject({ version: 1, mode: "directional", speedMph: round.course.weather?.windMph });
+
+    const completed = autoFinishPlayerRound(round, career.skills);
+    const historyCareer = settlePlayerRound(career, completed).career;
+    expect(historyCareer.rounds).toHaveLength(1);
+    expect(historyCareer.rounds[0]?.shots.length).toBeGreaterThan(0);
+    const completedHistoryJSON = JSON.stringify(historyCareer.rounds);
+
+    const legacy = structuredClone(round);
+    delete legacy.course.weather!.environment;
+    const normalizedLegacy = normalizePlayerPro({ ...historyCareer, activeRound: legacy }, { seed: currentWorld.runSeed });
+    expect(normalizedLegacy.activeRound?.course.weather?.environment).toEqual({ version: 1, mode: "legacy_scalar", speedMph: legacy.course.weather!.windMph });
+    const malformed = structuredClone(round);
+    malformed.course.weather!.environment = { version: 1, mode: "directional", speedMph: 999, bearingDegrees: 90 } as never;
+    const normalizedMalformed = normalizePlayerPro({ ...historyCareer, activeRound: malformed }, { seed: currentWorld.runSeed });
+    expect(normalizedMalformed.activeRound?.course.weather?.environment).toEqual({ version: 1, mode: "legacy_scalar", speedMph: malformed.course.weather!.windMph });
+    expect(JSON.stringify(normalizedLegacy.rounds)).toBe(completedHistoryJSON);
+    expect(JSON.stringify(normalizedMalformed.rounds)).toBe(completedHistoryJSON);
+
+    const tournament = startPlayableRound({
+      course,
+      world: currentWorld,
+      day: 2,
+      tournamentSnapshot: {
+        version: 1,
+        activationId: "wind-cup",
+        activatedWeek: currentWorld.week,
+        activatedDay: 2,
+        scoringMode: "gross-stroke",
+        teamFormat: "individual",
+        courseId: round.course.courseId,
+        courseName: round.course.courseName,
+        rating: round.course.rating!.courseRating,
+        slope: round.course.rating!.slope,
+        par: round.course.holes.reduce((sum, hole) => sum + hole.par, 0),
+        teeSet: "member",
+        pinRotation: "A",
+        holes: round.course.holes.map((hole) => ({ id: hole.id, par: hole.par, strokeIndex: hole.strokeIndex ?? 0, tee: hole.tee, pin: hole.pin })),
+        entrants: [],
+        teams: [],
+      },
+    });
+    expect(tournament.ok).toBe(true);
+    if (tournament.ok) expect(tournament.round.course.weather?.environment).toMatchObject({ version: 1, mode: "directional" });
+  });
+
   it("freezes fine contours, program, and local condition for the active round", () => {
     const course = threeHoleCourse();
     const target = course.holes[0].green!;

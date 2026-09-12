@@ -115,6 +115,14 @@ describe("M39 deterministic weather and shared golf inputs", () => {
     }
   });
 
+  it("exposes a deterministic bearing without changing legacy daily-weather serialization", () => {
+    const weather = weatherForDay(12345, "links", 80);
+    expect(weather.windBearingDegrees).toBe(weatherForDay(12345, "links", 80).windBearingDegrees);
+    expect(weather.windBearingDegrees).toBeGreaterThanOrEqual(0);
+    expect(weather.windBearingDegrees).toBeLessThan(360);
+    expect(JSON.stringify(weather)).not.toContain("windBearingDegrees");
+  });
+
   it("makes biomes distinct without chronically closing play", () => {
     const samples = (theme: LandTheme) => Array.from({ length: DAYS_PER_YEAR * 4 }, (_, day) => weatherForDay(222, theme, day));
     const links = samples("links");
@@ -140,6 +148,7 @@ describe("M39 deterministic weather and shared golf inputs", () => {
       windMph: weather.windMph,
       carryMultiplier: modifiers.carryMultiplier,
       dispersionMultiplier: modifiers.dispersionMultiplier,
+      environment: { version: 1, mode: "directional", speedMph: weather.windMph, bearingDegrees: weather.windBearingDegrees },
     });
   });
 });
@@ -157,8 +166,15 @@ describe("M52 biome climate and phenology projection", () => {
         weatherForDay(222, theme as LandTheme, absoluteDay)
       )
     );
-    expect(createHash("sha256").update(JSON.stringify(weather)).digest("hex"))
+    const establishedWeather = weather.map(({ windBearingDegrees: _bearing, ...existing }) => existing);
+    expect(createHash("sha256").update(JSON.stringify(establishedWeather)).digest("hex"))
       .toBe("57fde66c427db1bf4bb494a03d96e59103deed8630d16f648c0af0de5ba88cd7");
+    expect(weather.map((day) => day.windBearingDegrees)).toEqual(
+      ["parkland", "links", "desert"].flatMap((theme) => Array.from(
+        { length: DAYS_PER_YEAR * 4 },
+        (_, absoluteDay) => weatherForDay(222, theme as LandTheme, absoluteDay).windBearingDegrees,
+      )),
+    );
   });
 
   it("blends bounded climate and vegetation transitions across every calendar boundary", () => {
