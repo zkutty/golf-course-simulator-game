@@ -36,6 +36,16 @@ describe("ZK-1108 committed-shot truth contract", () => {
     expect(truth.from).not.toBe(shot.from);
   });
 
+  it("projects only stored directional wind as a deeply frozen copy", () => {
+    const shot = resolveLiveShot(committed());
+    shot.sharedOutcome = { ...shot.sharedOutcome!, appliedWind: { version: 1, sourceMode: "directional", headwindMph: 12, crosswindMph: -4, carryMultiplier: .97, lateralCenterlineTiles: -.2 } };
+    const truth = projectCommittedShot(shot);
+    expect(truth.appliedWind).toEqual(shot.sharedOutcome.appliedWind);
+    expect(truth.appliedWind).not.toBe(shot.sharedOutcome.appliedWind);
+    expect(Object.isFrozen(truth.appliedWind)).toBe(true);
+    expect(projectCommittedShot({ ...shot, sharedOutcome: { ...shot.sharedOutcome, appliedWind: undefined } }).appliedWind).toBeNull();
+  });
+
   it("preserves exact v1 invited receipt fields and never substitutes physical rest for next lie", () => {
     const shot = resolveLiveShot(committed());
     expect(invitedPreviewShot(shot)).toEqual({ shotNumber: shot.shotNumber, intent: shot.intent, club: shot.club, from: shot.from, landing: shot.landing, rest: shot.rest, lieAfter: shot.lieAfter, penaltyStrokes: shot.penaltyStrokes });

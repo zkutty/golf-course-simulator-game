@@ -20,9 +20,12 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   await expect(panel).toContainText("Six-skill profile");
   await panel.getByRole("button", { name: "Play", exact: true }).click();
   await expect(page.getByTestId("player-pro-route")).toHaveValue("player-pro-slice");
+  // The round-start handler is intentionally split with the equipment mentor;
+  // preload the existing module so this test observes the UI path, not import latency.
+  await page.evaluate(() => import("/src/game/competition/equipmentMentor.ts"));
   await page.getByTestId("start-player-round").click();
 
-  const hud = page.getByTestId("player-shot-hud");
+  const hud = page.getByRole("region", { name: "Shot decision" });
   await expect(hud).toBeVisible();
   await expect(hud).toContainText("Hole 1 of 3");
   const lowFlight = page.getByTestId("player-shot-flight-low");
@@ -113,6 +116,7 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   });
   expect(afterShot.recentTrace.ruling).toHaveProperty("referencePoint");
   expect(afterShot.recentTrace.ruling).toHaveProperty("crossingPoint");
+  expect(afterShot.recentTrace.sharedOutcome).toHaveProperty("appliedWind");
   expect(afterShot.recentTrace.relief).toHaveProperty("selectedCandidateId");
   await expect(page.getByTestId("player-shot-ruling")).toContainText("Ruling:");
   await expect(page.getByTestId("player-shot-ruling")).toContainText("Collision:");
@@ -159,6 +163,8 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
     },
   });
   expect(completed.automaticPutting.holes).toBeGreaterThan(0);
+  expect(completed.latestSharedOutcome).toHaveProperty("appliedWind");
+  expect(completed.latestShot.sharedOutcome.appliedWind).toEqual(completed.latestSharedOutcome.appliedWind);
   expect(completed.automaticPutting.putts).toBeGreaterThanOrEqual(completed.automaticPutting.holes);
   await expect(hud).toContainText("Career gains, records, and competition rewards were settled once.");
   const completeShot = await page.screenshot({ path: "artifacts/m36-player-pro-complete.png", fullPage: true });

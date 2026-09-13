@@ -33,13 +33,7 @@ test("current-shot channel follows actual live action and survives keyboard save
   const before = beforeSave.live.state.golfers.find((g: { id: number }) => g.id === flyingId);
   let observedResult = false;
   for (let i = 0; i < 100; i++) {
-    await page.getByTestId("speed-1x").focus();
-    await page.keyboard.press("Enter");
-    await page.evaluate(() => {
-      window.advanceTime?.(200);
-      window.__coursecraftTest?.pauseLiveSimulation();
-    });
-    await expect.poll(async () => (await state(page)).simulation.speed).toBe("paused");
+    await page.evaluate(() => window.__coursecraftTest!.advanceLiveClock(200, "1x"));
     observedResult = (await state(page)).golfers.find((g: { id: number }) => g.id === flyingId)?.shotEvidence.phase === "result";
     if (observedResult) break;
   }
@@ -67,6 +61,7 @@ test("current-shot channel follows actual live action and survives keyboard save
   expect(selectedTelemetry.shotEvidence).toEqual(selected.channel);
   if (selected.channel.phase === "result") {
     expect(selectedTelemetry.latestRuling).not.toBeNull();
+    expect(selected.channel.truth.appliedWind).toEqual(selectedTelemetry.latestSharedOutcome.appliedWind);
     await expect(channel).toContainText("penalty stroke(s)");
   } else {
     expect(selectedTelemetry.latestRuling).toBeNull();
@@ -91,6 +86,7 @@ test("current-shot channel follows actual live action and survives keyboard save
   expect((await saved(page)).live.state.golfers.find((g: { id: number }) => g.id === flyingId).shotOutcomes).toEqual(after.shotOutcomes);
   const reloaded = await state(page);
   expect(reloaded.golfers.find((g: { id: number }) => g.id === selected.golferId).shotEvidence).toEqual(selected.channel);
+  expect(reloaded.golfers.find((g: { id: number }) => g.id === selected.golferId).latestSharedOutcome.appliedWind).toEqual(selectedTelemetry.latestSharedOutcome.appliedWind);
   await page.screenshot({ path: info.outputPath("reloaded.png"), fullPage: true });
   writeFileSync(info.outputPath("evidence.json"), JSON.stringify({ during, before, after, selected, reloaded, errors }, null, 2));
   expect(errors).toEqual([]);
