@@ -49,7 +49,7 @@ const EXPECTATION_CONTRACTS = {
       "src/game/testing/zk813ProfileCertification.ts",
       "src/game/testing/zk813ProfileCertification.test.ts",
     ],
-    expected: { tests: 1, checks: 7, rows: 9, determinismHash: "c8da3467" },
+    expected: { tests: 1, checks: 7, rows: 9, determinismHash: "645298b3" },
     scope: "Observed semantic assertions cover exact legacy axes and policies, exact monotonic graduation edges, exact campaign receipts, canonical save-carrier hashes, and multi-week replay.",
   },
   "browser-interaction-certification": {

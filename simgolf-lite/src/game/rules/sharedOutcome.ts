@@ -1,6 +1,7 @@
 import type { Point } from "../models/types";
 import type { PlayerShotTrace } from "../models/playerProTypes";
 import type { CalculatedShotEffects } from "./shotEffects";
+import type { AppliedShotWindV1 } from "./shotEnvironment";
 import {
   deriveShotRuling,
   distanceBetween,
@@ -234,6 +235,7 @@ export function createSharedShotOutcome(args: {
   finalPosition?: Point;
   /** Optional frozen physical context for authoritative terrain/obstacle checks. */
   obstacleCollision?: Omit<ObstacleCollisionInput, "from" | "to" | "flight">;
+  appliedWind?: AppliedShotWindV1;
 }): SharedShotOutcome {
   const { trace, effects } = args;
   const ruling = args.ruling ?? fallbackRuling({ holed: trace.holed, legacyPenaltyStrokes: trace.penaltyStrokes });
@@ -270,5 +272,6 @@ export function createSharedShotOutcome(args: {
     ruling,
     relief,
     finalPosition: { ...finalPosition },
+    ...(args.appliedWind ? { appliedWind: args.appliedWind } : {}),
   };
 }

@@ -13,6 +13,7 @@ import {
 } from "../experience/systemControl";
 import { economicPressureForWorld, terrainCostMult } from "../balance/experience";
 import { quoteDrainageImprovement } from "../models/terrainEconomics";
+import { scalarWindCarryMultiplier } from "../rules/shotEnvironment";
 import {
   CLUB_CHARTERS,
   SEASONS,
@@ -266,7 +267,7 @@ export function weatherModifiers(weather: DailyWeather, drainageLevel = 0): Weat
   const drainage = clamp(integer(drainageLevel), 0, 3);
   const wetRelief = 1 - drainage * 0.11;
   const base: WeatherModifiers = {
-    carryMultiplier: clamp(1 - wind * 0.0025, 0.89, 1),
+    carryMultiplier: scalarWindCarryMultiplier(weather.windMph),
     dispersionMultiplier: clamp(1 + wind * 0.012, 1, 1.36),
     demandMultiplier: 1,
     paceMultiplier: 1,

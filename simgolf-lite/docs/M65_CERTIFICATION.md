@@ -25,11 +25,11 @@ dirty-worktree field, so identical inputs produce identical bytes and digest.
 | Browser | 5 cases cover the 9-axis matrix, 6 campaign assignments, Classic takeover save/reload, keyboard tutorial launch, pointer first-hole authoring, pseudo-localized content, and 390 × 640 overlay containment. | This bounded workflow is not proof of a fully keyboard-accessible design, nor is automated Chromium a human accessibility, authenticity, device, or packaged-desktop review. |
 | Native-save | The native-shaped in-memory carrier hashes identically to current and browser carriers. | No physical desktop file picker, filesystem, packaged application, operating system, or device was exercised by this evidence. |
 
-The headless determinism hash is `c8da3467`. Certification code remains under
+The headless determinism hash is `645298b3`. Certification code remains under
 `src/game/testing/` and is not imported by the production runtime.
 The generated report SHA-256 digest is
-`51f2579b9cd43e5ed45b44a08c66f7025d5b3b5f831c62a5db86beca16b8c79a`.
-<!-- m65-report-digest:51f2579b9cd43e5ed45b44a08c66f7025d5b3b5f831c62a5db86beca16b8c79a -->
+`d5b31094d8d0a47a22c2bf146bf8ff4822382a6f5472d06f92497f45e18355b3`.
+<!-- m65-report-digest:d5b31094d8d0a47a22c2bf146bf8ff4822382a6f5472d06f92497f45e18355b3 -->
 
 ## Deferred human gates
 

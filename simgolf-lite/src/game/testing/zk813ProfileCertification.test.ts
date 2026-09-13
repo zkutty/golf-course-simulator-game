@@ -59,7 +59,7 @@ describe("ZK-813 headless profile certification", () => {
     expect(report.campaign).toMatchObject({ chapterCount: 6, phaseEvidenceCount: 18, serializedReceipts: 6 });
     expect(report.campaign.receipts).toEqual(EXPECTED_RECEIPTS);
     expect(report.longSession).toMatchObject({ days: 8, courses: expect.any(Number), weatherKinds: expect.any(Number) });
-    expect(report.determinismHash).toBe("c8da3467");
+    expect(report.determinismHash).toBe("645298b3");
     expect(report.rows.every((row) => row.graduationHash.match(/^[0-9a-f]{8}$/))).toBe(true);
     expect(report.headlessGaps).toHaveLength(2);
     expect(report.headlessGaps.join(" ")).toContain("real Player Pro");

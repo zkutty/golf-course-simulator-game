@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { Course, Terrain, World } from "../models/types";
 import { DEFAULT_WORLD } from "../models/defaults";
@@ -142,6 +143,51 @@ function started() {
 }
 
 describe("M36 deterministic Player Pro play", () => {
+  it("freezes legacy scalar shot compatibility and directional preview/commit authority", () => {
+    const { career, round } = started();
+    const selection = { club: "Driver", aim: { x: 34, y: 7 }, power: 0.86, technique: "normal" as const };
+    const legacyRound = {
+      ...round,
+      course: {
+        ...round.course,
+        weather: { ...round.course.weather!, environment: { version: 1 as const, mode: "legacy_scalar" as const, speedMph: round.course.weather!.windMph } },
+      },
+    };
+    const legacyShot = resolvePlayableShot({ snapshot: legacyRound.course, holeId: "hole-1", shotNumber: 1, from: legacyRound.ball, lie: legacyRound.lie, skills: career.skills, selection, seed: 1152 });
+    const legacyPreview = previewPlayableShot(legacyRound, career.skills, selection);
+    expect(legacyShot.sharedOutcome?.appliedWind).toBeUndefined();
+    expect(createHash("sha256").update(JSON.stringify(legacyShot)).digest("hex")).toBe("ebb1d708dbdefe1590ea6fa7a25cacc5b54cd082107c2072007bbf0dc8d8dfc4");
+    expect(legacyPreview.carryYards).toBe(206.36774999999997);
+
+    const directionalRound = (speedMph: number, bearingDegrees: number, carryMultiplier = 1) => ({
+      ...round,
+      course: {
+        ...round.course,
+        weather: { ...round.course.weather!, carryMultiplier, environment: { version: 1 as const, mode: "directional" as const, speedMph, bearingDegrees } },
+      },
+    });
+    const shotCases = [
+      ["head", directionalRound(34, 270)],
+      ["calm", directionalRound(0, 0, 1.02)],
+      ["tail", directionalRound(34, 90)],
+      ["right", directionalRound(34, 180)],
+      ["left", directionalRound(34, 0)],
+    ] as const;
+    const previews = new Map(shotCases.map(([name, scenario]) => [name, previewPlayableShot(scenario, career.skills, selection)]));
+    expect(previews.get("head")!.carryYards).toBeLessThan(previews.get("calm")!.carryYards);
+    expect(previews.get("calm")!.carryYards).toBeLessThan(previews.get("tail")!.carryYards);
+    for (const [, scenario] of shotCases) {
+      const preview = previewPlayableShot(scenario, career.skills, selection);
+      const committed = commitPlayerShot(scenario, career.skills, selection);
+      expect(preview.sharedOutcome).toEqual(committed.pendingShot?.sharedOutcome);
+      expect(preview.carryYards).toBe(committed.pendingShot?.sharedOutcome?.requestedCarryYards);
+    }
+    expect(previews.get("right")!.sharedOutcome?.appliedWind?.crosswindMph).toBeGreaterThan(0);
+    expect(previews.get("left")!.sharedOutcome?.appliedWind?.crosswindMph).toBeLessThan(0);
+    expect(previews.get("right")!.sharedOutcome?.appliedWind?.lateralCenterlineTiles).toBeGreaterThan(0);
+    expect(previews.get("left")!.sharedOutcome?.appliedWind?.lateralCenterlineTiles).toBeLessThan(0);
+  });
+
   it("freezes stroke indexes, setup, par, and rating at round start", () => {
     const course = threeHoleCourse();
     course.holes[0] = { ...course.holes[0], holeIndex: 7, holeIndexSource: "manual" };

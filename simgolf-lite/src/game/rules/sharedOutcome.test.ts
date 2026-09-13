@@ -5,6 +5,7 @@ import {
 } from "./roundSnapshot";
 import { calculateShotEffects } from "./shotEffects";
 import { createSharedShotOutcome, resolveSharedRules } from "./sharedOutcome";
+import { isValidSharedShotOutcome } from "./contracts";
 
 function snapshotFor(classification: "red" | "yellow") {
   const width = 10;
@@ -42,6 +43,21 @@ function snapshotFor(classification: "red" | "yellow") {
 }
 
 describe("ZK-549 shared runtime ruling adapter", () => {
+  it("accepts directional applied evidence and rejects hostile persisted variants", () => {
+    const base = {
+      rulesVersion: 1, lieEffect: { sourceLie: "fairway", effectiveLie: "fairway", carryMultiplier: 1, dispersionMultiplier: 1, rollMultiplier: 1 },
+      requestedCarryYards: 10, effectiveCarryYards: 10, requestedDispersionTiles: 1, effectiveDispersionTiles: 1,
+      flight: { profile: "standard", launchAngleDegrees: 1, apexHeightYards: 1, apexPosition: { x: 1, y: 1 }, carryEnd: { x: 2, y: 1 }, clearance: [] },
+      collision: { kind: "none" }, physicalRest: { x: 2, y: 1 }, ruling: { status: "in_play", penaltyKind: "none", penaltyStrokes: 0, penaltyComponentId: null, penaltyAreaClassification: null, referencePoint: null, crossingPoint: null },
+      relief: { status: "not_required", type: "none", candidates: [], selectedCandidateId: null, finalPosition: { x: 2, y: 1 } }, finalPosition: { x: 2, y: 1 },
+      appliedWind: { version: 1, sourceMode: "directional", headwindMph: 70, crosswindMph: -70, carryMultiplier: 1, lateralCenterlineTiles: 0 },
+    } as const;
+    expect(isValidSharedShotOutcome(base)).toBe(true);
+    expect(isValidSharedShotOutcome({ ...base, appliedWind: { ...base.appliedWind, sourceMode: "legacy_scalar" } })).toBe(false);
+    expect(isValidSharedShotOutcome({ ...base, appliedWind: { ...base.appliedWind, headwindMph: 71 } })).toBe(false);
+    expect(isValidSharedShotOutcome({ ...base, appliedWind: { ...base.appliedWind, crosswindMph: Infinity } })).toBe(false);
+    expect(isValidSharedShotOutcome({ ...base, appliedWind: { ...base.appliedWind, lateralCenterlineTiles: 9 } })).toBe(false);
+  });
   it("includes frozen obstacle collision evidence in the shared authoritative outcome", () => {
     const effects = calculateShotEffects({
       clubId: "chip",

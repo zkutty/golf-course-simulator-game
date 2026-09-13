@@ -66,6 +66,40 @@ describe("live simulation persistence", () => {
     expect(restored!.selectedGolferId).toBe(selectedGolferId);
   });
 
+  it("round-trips directional applied-wind evidence exactly", () => {
+    const { state } = midRound();
+    const outcome = state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []).find((shot) => shot.sharedOutcome?.appliedWind);
+    expect(outcome?.sharedOutcome?.appliedWind).toMatchObject({ version: 1, sourceMode: "directional" });
+    const snapshot = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });
+    const restored = restoreLiveSimulation(JSON.parse(JSON.stringify(snapshot)));
+    const restoredOutcome = restored?.state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []).find((shot) => shot.id === outcome?.id);
+    expect(restoredOutcome?.sharedOutcome?.appliedWind).toEqual(outcome?.sharedOutcome?.appliedWind);
+  });
+
+  it("drops only malformed applied-wind evidence while retaining its containing live outcome", () => {
+    const { state } = midRound();
+    const source = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });
+    const outcome = source.state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []).find((shot) => shot.sharedOutcome?.appliedWind);
+    expect(outcome?.sharedOutcome?.appliedWind).toBeDefined();
+    const mutations: Array<(wind: Record<string, unknown>) => void> = [
+      (wind) => { wind.sourceMode = "legacy_scalar"; },
+      (wind) => { wind.headwindMph = 71; },
+      (wind) => { wind.crosswindMph = -71; },
+      (wind) => { wind.headwindMph = Number.NaN; },
+      (wind) => { wind.carryMultiplier = 2; },
+      (wind) => { wind.lateralCenterlineTiles = 9; },
+    ];
+    for (const mutate of mutations) {
+      const snapshot = structuredClone(source);
+      const selected = snapshot.state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []).find((shot) => shot.id === outcome?.id)!;
+      mutate(selected.sharedOutcome!.appliedWind as unknown as Record<string, unknown>);
+      const restored = restoreLiveSimulation(snapshot);
+      const retained = restored?.state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []).find((shot) => shot.id === outcome?.id);
+      expect(retained).toBeDefined();
+      expect(retained?.sharedOutcome).toBeUndefined();
+    }
+  });
+
   it("normalizes missing or malformed frozen wind to legacy scalar without touching completed shots", () => {
     const { state } = midRound();
     const snapshot = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });

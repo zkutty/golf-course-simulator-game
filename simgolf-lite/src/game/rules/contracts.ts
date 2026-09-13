@@ -1,4 +1,5 @@
 import type { ObstacleType, Point, Terrain } from "../models/types";
+import type { AppliedShotWindV1 } from "./shotEnvironment";
 
 export const SHOT_RULES_CONTRACT_VERSION = 1 as const;
 
@@ -121,6 +122,8 @@ export interface ShotOutcome {
   ruling: ShotRuling;
   relief: ReliefResolution;
   finalPosition: Point;
+  /** Additive Wave 1 evidence; absent on historical outcomes. */
+  appliedWind?: AppliedShotWindV1;
 }
 
 export type SharedShotOutcome = ShotOutcome;
@@ -142,6 +145,14 @@ function boundedFinite(value: unknown, minimum = -SHARED_OUTCOME_MAX_ABS_NUMBER)
 
 function validPoint(value: unknown): value is Point {
   return record(value) && boundedFinite(value.x) && boundedFinite(value.y);
+}
+
+function validAppliedWind(value: unknown): value is AppliedShotWindV1 {
+  return record(value) && value.version === 1 && value.sourceMode === "directional"
+    && typeof value.headwindMph === "number" && value.headwindMph >= -70 && value.headwindMph <= 70
+    && typeof value.crosswindMph === "number" && value.crosswindMph >= -70 && value.crosswindMph <= 70
+    && boundedFinite(value.carryMultiplier, 0.25) && value.carryMultiplier <= 1.5
+    && boundedFinite(value.lateralCenterlineTiles, -8) && value.lateralCenterlineTiles <= 8;
 }
 
 function validNullablePoint(value: unknown): value is Point | null {
@@ -283,6 +294,7 @@ export function isValidSharedShotOutcome(value: unknown): value is SharedShotOut
   ) {
     return false;
   }
+  if (value.appliedWind != null && !validAppliedWind(value.appliedWind)) return false;
   return value.relief.status !== "resolved"
     || (
       value.relief.finalPosition?.x === value.finalPosition.x
