@@ -38,6 +38,7 @@ describe("current-shot evidence is owned by the simulation cursor", () => {
       const intent = currentShotEvidence({ ...g, segIndex: index });
       expect(intent).toMatchObject({ phase: "intent", holeId: snapshot.holes[0].id });
       expect(JSON.stringify(currentShotEvidenceText(intent))).not.toMatch(/penaltyStrokes|physicalRest|future-shot/);
+      expect(JSON.stringify(currentShotEvidenceText(intent))).not.toMatch(/appliedWind/);
     }
     const result = currentShotEvidence({ ...g, segIndex: 2 });
     expect(result.phase).toBe("result");
@@ -47,6 +48,14 @@ describe("current-shot evidence is owned by the simulation cursor", () => {
     }
     expect(JSON.stringify(g)).toBe(before);
     expect(currentShotEvidence(JSON.parse(before))).toEqual(currentShotEvidence(g));
+  });
+
+  it("retains only the committed directional applied-wind evidence", () => {
+    const s = shot();
+    s.sharedOutcome = { ...s.sharedOutcome!, appliedWind: { version: 1, sourceMode: "directional", headwindMph: 7, crosswindMph: -3, carryMultiplier: .98, lateralCenterlineTiles: -.1 } };
+    const evidence = currentShotEvidence({ ...carrier(s), segIndex: 2 });
+    expect(evidence).toMatchObject({ phase: "result", truth: { appliedWind: s.sharedOutcome.appliedWind } });
+    expect(currentShotEvidenceText(evidence)).toMatchObject({ truth: { appliedWind: s.sharedOutcome.appliedWind } });
   });
 
   it.each(["low", "standard", "high"] as const)("carries only retained %s flight and rollout into localized result cues", (profile) => {

@@ -263,6 +263,7 @@ function textSharedOutcome(outcome: SharedShotOutcome | null | undefined) {
     relief: outcome.relief,
     physicalRest: outcome.physicalRest,
     finalPosition: outcome.finalPosition,
+    appliedWind: outcome.appliedWind ?? null,
   };
 }
 

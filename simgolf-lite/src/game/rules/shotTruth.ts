@@ -1,5 +1,6 @@
 import type { LiveShotOutcome } from "../live/m47Types";
 import type { Point } from "../models/types";
+import type { AppliedShotWindV1 } from "./shotEnvironment";
 import type { ReliefType, ShotCollision, ShotFlightProfile, ShotPenaltyKind } from "./contracts";
 
 /** Read-only adapter, not a save carrier, solver, or permission to re-sample. */
@@ -33,11 +34,16 @@ export interface ShotTruthProjection {
   readonly reliefType: ReliefType | null;
   readonly automaticPutts: number;
   readonly strokeCost: number;
+  /** Exact retained directional evidence; never calculated by presentation. */
+  readonly appliedWind: Readonly<AppliedShotWindV1> | null;
   /** Recorded ground samples only; an absent path is not synthesized. */
   readonly rollPath: readonly Readonly<Point>[];
 }
 
 const point = (value: Point): Readonly<Point> => Object.freeze({ x: value.x, y: value.y });
+const appliedWind = (value: AppliedShotWindV1 | undefined): Readonly<AppliedShotWindV1> | null => value
+  ? Object.freeze({ version: value.version, sourceMode: value.sourceMode, headwindMph: value.headwindMph, crosswindMph: value.crosswindMph, carryMultiplier: value.carryMultiplier, lateralCenterlineTiles: value.lateralCenterlineTiles })
+  : null;
 
 /** One scoring projection for M47 totals, reaction and downstream telemetry. */
 export function committedShotStrokeCost(shot: Pick<CommittedShotCarrier, "sharedOutcome" | "penaltyStrokes" | "greenPutting">): number {
@@ -72,6 +78,7 @@ export function projectCommittedShot(shot: CommittedShotCarrier): ShotTruthProje
     reliefType: shared?.relief.type ?? null,
     automaticPutts,
     strokeCost: committedShotStrokeCost(shot),
+    appliedWind: appliedWind(shared?.appliedWind),
     rollPath: Object.freeze((shot.greenRollout?.path ?? []).map(point)),
   });
 }
