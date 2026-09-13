@@ -17,6 +17,8 @@ import { createM47CertificationCourse } from "../testing/m47Certification";
 import type { GolferCapabilities } from "./m47Types";
 import { courseForRoundSetup } from "../models/courseSetup";
 import { manualStrategicRoundHoleSummary } from "./m47Round";
+import { createLiveState } from "./simulation";
+import { DEFAULT_WORLD } from "../models/defaults";
 
 function testPersonality(over: Partial<Personality> = {}): Personality {
   return {
@@ -194,6 +196,53 @@ describe("M47 live golfer contracts", () => {
     expect(live.relief).toEqual(player.relief);
     expect(live.finalPosition).toEqual(player.finalPosition);
     expect(live.flightProfile).toBe(player.flightProfile);
+  });
+
+  it("carries directional applied-wind evidence through the live path", () => {
+    const c = course();
+    const state = createLiveState(c, DEFAULT_WORLD, 2);
+    const weather = {
+      kind: state.weather!.daily.kind,
+      temperatureF: state.weather!.daily.temperatureF,
+      windMph: state.weather!.daily.windMph,
+      rainInches: state.weather!.daily.rainInches,
+      carryMultiplier: state.weather!.modifiers.carryMultiplier,
+      dispersionMultiplier: state.weather!.modifiers.dispersionMultiplier,
+      paceMultiplier: state.weather!.modifiers.paceMultiplier,
+      environment: { version: 1 as const, mode: "directional" as const, speedMph: 24, bearingDegrees: 90 },
+    };
+    const snapshot = liveCourseSnapshot({ course: c, teeSet: "member", pinRotation: "A", weather });
+    const personality = testPersonality();
+    const capabilities = createGolferCapabilities({ personality, seed: 99 });
+    const intent = generateStrategicHolePlan({ course: c, hole: c.holes[0], par: 4, capabilities, personality }).chosen;
+    const outcome = resolveLiveShot({ snapshot, capabilities, holeId: "m47-hole-1", shotNumber: 1, from: intent.from, lie: "tee", intent, seed: 4781 });
+    const sharedOutcome = outcome.sharedOutcome;
+    expect(sharedOutcome).toBeDefined();
+    if (!sharedOutcome) throw new Error("live shot did not produce a shared outcome");
+    expect(sharedOutcome.appliedWind).toMatchObject({ version: 1, sourceMode: "directional" });
+    expect(sharedOutcome.appliedWind?.crosswindMph).toBeGreaterThan(0);
+    const player = resolvePlayableShot({
+      snapshot,
+      holeId: "m47-hole-1",
+      shotNumber: 1,
+      from: intent.from,
+      lie: "tee",
+      skills: capabilitiesToPlayerSkills(capabilities),
+      selection: {
+        club: intent.club,
+        aim: intent.target,
+        power: intent.power,
+        technique: intent.technique,
+        flightProfile: intent.flightProfile,
+      },
+      handedness: stableGolferHandedness(capabilities.seed),
+      seed: 4781,
+    });
+    const playerSharedOutcome = player.sharedOutcome;
+    expect(playerSharedOutcome).toBeDefined();
+    if (!playerSharedOutcome) throw new Error("Player Pro shot did not produce a shared outcome");
+    expect(playerSharedOutcome.appliedWind).toMatchObject({ version: 1, sourceMode: "directional" });
+    expect(sharedOutcome).toEqual(playerSharedOutcome);
   });
 
   it("derives stable live handedness from capability seed and mirrors sidehill draw flight", () => {

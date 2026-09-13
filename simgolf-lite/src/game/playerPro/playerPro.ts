@@ -98,7 +98,7 @@ import {
   normalizedMentorCareerFields,
   resolvePerformanceModifiers,
 } from "../competition/equipmentRuntime";
-import { normalizeShotEnvironmentV1 } from "../rules/shotEnvironment";
+import { normalizeShotEnvironmentV1, resolveAppliedShotWindV1 } from "../rules/shotEnvironment";
 
 export { startPlayableRound } from "./playerProRoundStart";
 export type { StartPlayableRoundArgs } from "./playerProRoundStart";
@@ -810,13 +810,13 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
   return {
     available: evaluation.isValid,
     blocker: evaluation.isValid ? null : "unreachable",
-    carryYards: baseCarry * clamp(selection.power, 0.25, 1.15),
+    carryYards: sharedOutcome?.appliedWind ? sharedOutcome.requestedCarryYards : baseCarry * clamp(selection.power, 0.25, 1.15),
     targetYards: evaluation.distanceYards,
     dispersionTiles,
     expectedPenalty,
     landingTerrain: lieAt(round.course, aim),
     risk: expectedPenalty > 0.75 ? "high" : expectedPenalty > 0.25 ? "medium" : "low",
-    recommended: Math.abs(baseCarry * clamp(selection.power, 0.25, 1.15) - evaluation.distanceYards) < 35 && expectedPenalty < 0.35,
+    recommended: Math.abs((sharedOutcome?.appliedWind ? sharedOutcome.requestedCarryYards : baseCarry * clamp(selection.power, 0.25, 1.15)) - evaluation.distanceYards) < 35 && expectedPenalty < 0.35,
     flightProfile,
     shotEffects: calculated.effects,
     sharedOutcome,
@@ -876,7 +876,20 @@ export function resolvePlayableShot(args: {
   const obstructionPenalty = obstacleClose && args.selection.technique !== "punch" && club.name !== "Sand Wedge" && club.name !== "Chip";
   const weatherCarry = args.snapshot.weather?.carryMultiplier ?? 1;
   const powerScale = 0.82 + args.skills.power / 500;
-  const requestedCarryYards = calculated.effects.carryYards * powerScale * weatherCarry * power * performance.carry;
+  const unweatheredCarryYards = calculated.effects.carryYards * powerScale * power * performance.carry;
+  const appliedWind = resolveAppliedShotWindV1({
+    environment: normalizeShotEnvironmentV1(args.snapshot.weather?.environment, args.snapshot.weather?.windMph ?? 0),
+    from: args.from,
+    to: args.selection.aim,
+    weatherCarryMultiplier: weatherCarry,
+    requestedCarryYards: unweatheredCarryYards,
+    yardsPerTile: args.snapshot.yardsPerTile,
+    isPutter: club.name === "Putter",
+  });
+  // Preserve the pre-Wave-1 operand order bit-for-bit for scalar saves.
+  const requestedCarryYards = appliedWind
+    ? unweatheredCarryYards * appliedWind.carryMultiplier
+    : calculated.effects.carryYards * powerScale * weatherCarry * power * performance.carry;
   const nominalPhysicalCarryYards = requestedCarryYards * (obstructionPenalty ? 0.78 : 1);
   const shotSlope = analyzeShotSlope({
     course: args.snapshot,
@@ -909,8 +922,8 @@ export function resolvePlayableShot(args: {
     technique: args.selection.technique,
   }).combinedCurveTiles;
   let landing: PlayerProPoint = {
-    x: args.from.x + ux * (intendedTiles + longitudinal) - uy * (lateral + curve),
-    y: args.from.y + uy * (intendedTiles + longitudinal) + ux * (lateral + curve),
+    x: args.from.x + ux * (intendedTiles + longitudinal) - uy * (lateral + curve + (appliedWind?.lateralCenterlineTiles ?? 0)),
+    y: args.from.y + uy * (intendedTiles + longitudinal) + ux * (lateral + curve + (appliedWind?.lateralCenterlineTiles ?? 0)),
   };
   const outside = landing.x < 0 || landing.y < 0 || landing.x >= args.snapshot.width || landing.y >= args.snapshot.height;
   const rawLanding = { ...landing };
@@ -1056,6 +1069,7 @@ export function resolvePlayableShot(args: {
     ruling: rules.ruling,
     relief: rules.relief,
     finalPosition,
+    ...(appliedWind ? { appliedWind } : {}),
     obstacleCollision: {
       width: args.snapshot.width,
       height: args.snapshot.height,

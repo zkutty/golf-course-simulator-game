@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeShotEnvironmentV1, projectShotEnvironment, shotEnvironmentFromWeather } from "./shotEnvironment";
+import { normalizeShotEnvironmentV1, projectShotEnvironment, resolveAppliedShotWindV1, scalarWindCarryMultiplier, shotEnvironmentFromWeather } from "./shotEnvironment";
 
 describe("ZK-1152 frozen directional shot environment", () => {
   it("projects cardinal bearings on the down-positive course map", () => {
@@ -27,5 +27,32 @@ describe("ZK-1152 frozen directional shot environment", () => {
     expect(b.crosswindMph).toBeCloseTo(-a.crosswindMph);
     expect(Math.abs(a.headwindMph)).toBeLessThanOrEqual(24);
     expect(Math.abs(a.crosswindMph)).toBeLessThanOrEqual(24);
+  });
+
+  it("applies the existing scalar response once as signed carry and rightward crosswind centerline", () => {
+    const base = { from: { x: 0, y: 0 }, to: { x: 10, y: 0 }, weatherCarryMultiplier: 0.9325, requestedCarryYards: 200, yardsPerTile: 10, isPutter: false };
+    const tail = resolveAppliedShotWindV1({ ...base, environment: shotEnvironmentFromWeather({ windMph: 34, windBearingDegrees: 90 }) });
+    const head = resolveAppliedShotWindV1({ ...base, environment: shotEnvironmentFromWeather({ windMph: 34, windBearingDegrees: 270 }) });
+    const right = resolveAppliedShotWindV1({ ...base, environment: shotEnvironmentFromWeather({ windMph: 34, windBearingDegrees: 180 }) });
+    const left = resolveAppliedShotWindV1({ ...base, environment: shotEnvironmentFromWeather({ windMph: 34, windBearingDegrees: 0 }) });
+    expect(tail!.carryMultiplier).toBeGreaterThan(head!.carryMultiplier);
+    expect(right!.lateralCenterlineTiles).toBeGreaterThan(0);
+    expect(left!.lateralCenterlineTiles).toBeCloseTo(-right!.lateralCenterlineTiles);
+    expect(resolveAppliedShotWindV1({ ...base, isPutter: true, environment: shotEnvironmentFromWeather({ windMph: 70, windBearingDegrees: 180 }) })!.lateralCenterlineTiles).toBe(0);
+  });
+
+  it("keeps 70mph head/tail and crosswind responses finite and symmetric", () => {
+    const args = { from: { x: 0, y: 0 }, to: { x: 20, y: 0 }, weatherCarryMultiplier: scalarWindCarryMultiplier(70), requestedCarryYards: 220, yardsPerTile: 10, isPutter: false };
+    const head = resolveAppliedShotWindV1({ ...args, environment: shotEnvironmentFromWeather({ windMph: 70, windBearingDegrees: 270 }) })!;
+    const calm = resolveAppliedShotWindV1({ ...args, weatherCarryMultiplier: 1, environment: shotEnvironmentFromWeather({ windMph: 0, windBearingDegrees: 0 }) })!;
+    const tail = resolveAppliedShotWindV1({ ...args, environment: shotEnvironmentFromWeather({ windMph: 70, windBearingDegrees: 90 }) })!;
+    const right = resolveAppliedShotWindV1({ ...args, environment: shotEnvironmentFromWeather({ windMph: 70, windBearingDegrees: 180 }) })!;
+    const left = resolveAppliedShotWindV1({ ...args, environment: shotEnvironmentFromWeather({ windMph: 70, windBearingDegrees: 0 }) })!;
+    expect(head.carryMultiplier).toBeLessThan(calm.carryMultiplier);
+    expect(calm.carryMultiplier).toBeLessThan(tail.carryMultiplier);
+    expect(tail.carryMultiplier - calm.carryMultiplier).toBeCloseTo(calm.carryMultiplier - head.carryMultiplier, 12);
+    expect(right.lateralCenterlineTiles).toBeGreaterThan(0);
+    expect(left.lateralCenterlineTiles).toBeCloseTo(-right.lateralCenterlineTiles, 12);
+    expect(Math.abs(right.lateralCenterlineTiles)).toBeLessThanOrEqual(8);
   });
 });

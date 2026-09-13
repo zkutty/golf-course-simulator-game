@@ -17,12 +17,29 @@ export interface ShotEnvironmentProjection {
   crosswindMph: number;
 }
 
+/** Persisted, applied (rather than merely observed) directional wind evidence. */
+export interface AppliedShotWindV1 {
+  readonly version: 1;
+  /** Persisted applied evidence is directional-only; scalar saves remain absent. */
+  readonly sourceMode: "directional";
+  readonly headwindMph: number;
+  readonly crosswindMph: number;
+  readonly carryMultiplier: number;
+  /** Positive is to the shot's right: (-uy, ux) on the down-positive map. */
+  readonly lateralCenterlineTiles: number;
+}
+
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 const boundedSpeed = (value: unknown) => clamp(finite(value) ? value : 0, 0, 70);
 const validSpeed = (value: unknown): value is number => finite(value) && value >= 0 && value <= 70;
 const normalizedBearing = (value: unknown): number | null =>
   finite(value) && value >= 0 && value < 360 ? value : null;
+
+/** Single frozen calibration authority shared by seasonal weather and shots. */
+export function scalarWindCarryMultiplier(windMph: number): number {
+  return clamp(1 - Math.max(0, windMph - 7) * 0.0025, 0.89, 1);
+}
 
 /** Old or malformed payloads deliberately retain scalar behavior and never invent a direction. */
 export function normalizeShotEnvironmentV1(value: unknown, legacySpeedMph = 0): ShotEnvironmentV1 {
@@ -77,4 +94,35 @@ export function projectShotEnvironment(
     headwindMph: signedFinite(-tailwindMph),
     crosswindMph: signedFinite(crosswindMph),
   };
+}
+
+/**
+ * The existing scalar wind carry loss is the sole calibration anchor.  For a
+ * directional weather record we first divide that old isotropic loss out of
+ * `weatherCarryMultiplier`, preserving rain/frost/etc., then apply the same
+ * magnitude with a signed along-shot projection.  Crosswind deliberately
+ * moves only the deterministic centerline; dispersion and RNG stay untouched.
+ */
+export function resolveAppliedShotWindV1(args: {
+  environment: ShotEnvironmentV1;
+  from: Readonly<{ x: number; y: number }>;
+  to: Readonly<{ x: number; y: number }>;
+  weatherCarryMultiplier: number;
+  requestedCarryYards: number;
+  yardsPerTile: number;
+  isPutter: boolean;
+}): AppliedShotWindV1 | null {
+  const projection = projectShotEnvironment(args.environment, args.from, args.to);
+  const speed = args.environment.mode === "directional" ? args.environment.speedMph : 0;
+  const scalarWindCarry = scalarWindCarryMultiplier(speed);
+  const weatherCarry = finite(args.weatherCarryMultiplier) && args.weatherCarryMultiplier > 0 ? args.weatherCarryMultiplier : 1;
+  if (args.environment.mode !== "directional") return null;
+  if (speed === 0) return Object.freeze({ version: 1, sourceMode: "directional", headwindMph: 0, crosswindMph: 0, carryMultiplier: weatherCarry, lateralCenterlineTiles: 0 });
+  const neutralCarry = weatherCarry / scalarWindCarry;
+  const response = 1 - scalarWindCarry;
+  const signedCarry = clamp(1 - (projection.headwindMph / speed) * response, 0.89, 1.11);
+  const carryMultiplier = clamp(neutralCarry * signedCarry, 0.25, 1.5);
+  const carryTiles = Math.max(0, args.requestedCarryYards * carryMultiplier / Math.max(1, args.yardsPerTile));
+  const lateralCenterlineTiles = args.isPutter ? 0 : clamp((projection.crosswindMph / speed) * response * carryTiles, -8, 8);
+  return Object.freeze({ version: 1, sourceMode: "directional", headwindMph: projection.headwindMph, crosswindMph: projection.crosswindMph, carryMultiplier, lateralCenterlineTiles: Number(lateralCenterlineTiles.toFixed(6)) });
 }
