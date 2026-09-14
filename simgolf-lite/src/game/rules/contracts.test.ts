@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isValidSharedShotOutcome,
+  isValidAppliedShotWindV1,
   SHOT_RULES_CONTRACT_VERSION,
   type LieEffect,
   type ReliefCandidate,
@@ -98,5 +99,16 @@ describe("authoritative shot-rules contracts", () => {
       ...outcome,
       ruling: { ...ruling, penaltyStrokes: 0 },
     })).toBe(false);
+
+    const appliedWind = {
+      version: 1 as const,
+      sourceMode: "directional" as const,
+      headwindMph: 12,
+      crosswindMph: -4,
+      carryMultiplier: .97,
+      lateralCenterlineTiles: -.2,
+    };
+    expect(isValidAppliedShotWindV1(appliedWind)).toBe(true);
+    expect(isValidAppliedShotWindV1({ ...appliedWind, headwindMph: 71 })).toBe(false);
   });
 });

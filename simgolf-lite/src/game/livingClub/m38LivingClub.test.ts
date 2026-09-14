@@ -100,6 +100,24 @@ describe("M38 living club and architecture certification", () => {
     expect(new Set(normalizeLivingClub(third.livingClub).regulars.map((regular) => regular.id)).size).toBe(1);
   });
 
+  it("retains only valid committed applied wind from completed live shots", () => {
+    const appliedWind = {
+      version: 1 as const,
+      sourceMode: "directional" as const,
+      headwindMph: 12,
+      crosswindMph: -4,
+      carryMultiplier: .97,
+      lateralCenterlineTiles: -.2,
+    };
+    const round = completedRound(createPlayerProReferenceCourse(), 1);
+    const shot = round.shots![0]!;
+    shot.sharedOutcome = { appliedWind } as NonNullable<typeof shot.sharedOutcome>;
+    const recorded = recordLivingClubRound(DEFAULT_WORLD, createPlayerProReferenceCourse(), round, 1);
+    const evidence = normalizeLivingClub(recorded.livingClub).architecture.evidence[0]!;
+    expect(evidence.appliedWind).toEqual(appliedWind);
+    expect(evidence.appliedWind).not.toBe(appliedWind);
+  });
+
   it("separates current and historical geometry without relabeling stale evidence", () => {
     const course = createPlayerProReferenceCourse();
     const world = promotedWorld(course);
@@ -137,9 +155,24 @@ describe("M38 living club and architecture certification", () => {
     expect(started.ok).toBe(true);
     if (!started.ok) return;
     const completed = autoFinishPlayerRound(started.round, world.playerPro!.skills);
-    const settlement = settlePlayerRound(world.playerPro!, completed);
+    const appliedWind = {
+      version: 1 as const,
+      sourceMode: "directional" as const,
+      headwindMph: 12,
+      crosswindMph: -4,
+      carryMultiplier: .97,
+      lateralCenterlineTiles: -.2,
+    };
+    const completedWithWind = {
+      ...completed,
+      shots: completed.shots.map((shot) => ({
+        ...shot,
+        sharedOutcome: shot.sharedOutcome ? { ...shot.sharedOutcome, appliedWind } : shot.sharedOutcome,
+      })),
+    };
+    const settlement = settlePlayerRound(world.playerPro!, completedWithWind);
     expect(settlement.round).toBeTruthy();
-    const recorded = recordPlayerRoundArchitecture(world, completed, settlement.round!);
+    const recorded = recordPlayerRoundArchitecture(world, completedWithWind, settlement.round!);
     expect(recorded.careerRound.geometryVersion).toBeTruthy();
     expect(recorded.careerRound.holeSnapshots).toEqual(completed.course.holes);
     expect(normalizeLivingClub(recorded.world.livingClub).architecture.evidence.length).toBe(completed.shots.length);
@@ -153,6 +186,7 @@ describe("M38 living club and architecture certification", () => {
     expect(review.evidence.every((item) => item.shotSlope && item.slopeExplanation)).toBe(true);
     expect(review.evidence.every((item) => item.physicalRest)).toBe(true);
     expect(review.evidence.every((item) => item.pinRotation === completed.pinRotation)).toBe(true);
+    expect(review.evidence.every((item) => item.appliedWind && JSON.stringify(item.appliedWind) === JSON.stringify(appliedWind))).toBe(true);
     expect(review.overlay.traces.some((trace) => trace.label?.includes("plays-like:"))).toBe(true);
 
     const lastShot = completed.shots.at(-1)!;
@@ -169,22 +203,34 @@ describe("M38 living club and architecture certification", () => {
     const course = createPlayerProReferenceCourse();
     const living = normalizeLivingClub(promotedWorld(course).livingClub);
     const sample = living.architecture.evidence[0];
-    const normalized = normalizeLivingClub({
+    const appliedWind = {
+      version: 1 as const,
+      sourceMode: "directional" as const,
+      headwindMph: 12,
+      crosswindMph: -4,
+      carryMultiplier: .97,
+      lateralCenterlineTiles: -.2,
+    };
+    const normalized = normalizeLivingClub(JSON.parse(JSON.stringify({
       ...living,
       architecture: {
         ...living.architecture,
         evidence: [
-          { ...sample, id: "pin-b", pinRotation: "B" },
+          { ...sample, id: "pin-b", pinRotation: "B", appliedWind: { ...appliedWind, extra: "discard" } as typeof appliedWind },
           { ...sample, id: "legacy", pinRotation: undefined },
-          { ...sample, id: "malformed", pinRotation: "D" },
+          { ...sample, id: "malformed", pinRotation: "D", appliedWind: { ...appliedWind, headwindMph: 71 } as typeof appliedWind },
         ],
       },
-    });
+    })));
     expect(normalized.architecture.evidence.map((item) => ({ id: item.id, pinRotation: item.pinRotation }))).toEqual([
       { id: "pin-b", pinRotation: "B" },
       { id: "legacy", pinRotation: undefined },
       { id: "malformed", pinRotation: undefined },
     ]);
+    expect(normalized.architecture.evidence[0]!.appliedWind).toEqual(appliedWind);
+    expect(normalized.architecture.evidence[0]!.appliedWind).not.toBe(appliedWind);
+    expect(normalized.architecture.evidence[0]!.appliedWind).not.toHaveProperty("extra");
+    expect(normalized.architecture.evidence.slice(1).every((item) => item.appliedWind === undefined)).toBe(true);
   });
 
   it("requires exact pin evidence for review readiness and keeps stale geometry non-ready", () => {

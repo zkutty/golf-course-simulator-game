@@ -1,4 +1,5 @@
 import type { MobilityMode } from "../m51/types";
+import type { AppliedShotWindV1 } from "../rules/shotEnvironment";
 
 export type GreenStrategyOverlayKind =
   | "green-preferred"
@@ -112,6 +113,8 @@ export interface ArchitectureRulesEvidence {
     type: "none" | "play_as_it_lies" | "stroke_and_distance" | "back_on_line" | "lateral" | "unknown";
     legalCandidates: number;
   };
+  /** Immutable copy of committed wind evidence; never reconstructed. */
+  appliedWind: Readonly<AppliedShotWindV1> | null;
 }
 
 export interface ArchitectureRulesFeedback {

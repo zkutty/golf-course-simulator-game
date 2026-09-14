@@ -100,7 +100,34 @@ describe("architecture rules evidence", () => {
     expect(review.status).toBe("stale-only");
     expect(review.rules.currentEvidence).toBe(0);
     expect(review.rules.historicalEvidence).toBe(1);
-    expect(review.rules.evidence[0]).toMatchObject({ geometry: "historical", status: "historical", penalty: null });
+    expect(review.rules.evidence[0]).toMatchObject({ geometry: "historical", status: "historical", penalty: null, appliedWind: null });
+  });
+
+  it("projects stored wind for current and historical rows without inventing it", () => {
+    const safe = course("safe");
+    const wind = {
+      version: 1 as const,
+      sourceMode: "directional" as const,
+      headwindMph: 12,
+      crosswindMph: -4,
+      carryMultiplier: .97,
+      lateralCenterlineTiles: -.2,
+    };
+    const current = { ...evidence(safe, "wind-current"), appliedWind: wind };
+    const historical = { ...evidence(safe, "wind-historical", "old-geometry"), appliedWind: wind };
+    const review = buildArchitectureReview(safe, world([current, historical]), { ...defaultArchitectureFilters(safe), recency: "all" });
+    expect(review.rules.evidence[0]).toMatchObject({ geometry: "current", status: "reconstructed", appliedWind: wind });
+    expect(review.rules.evidence[0]!.appliedWind).not.toBe(current.appliedWind);
+    expect(Object.isFrozen(review.rules.evidence[0]!.appliedWind)).toBe(true);
+    expect(review.rules.evidence[1]).toMatchObject({ geometry: "historical", status: "historical", appliedWind: wind });
+    expect(review.rules.evidence[1]!.appliedWind).not.toBe(historical.appliedWind);
+    expect(Object.isFrozen(review.rules.evidence[1]!.appliedWind)).toBe(true);
+
+    const legacy = buildArchitectureReview(safe, world([evidence(safe, "legacy-current")]), {
+      ...defaultArchitectureFilters(safe),
+      recency: "current",
+    });
+    expect(legacy.rules.evidence[0]).toMatchObject({ status: "reconstructed", appliedWind: null });
   });
 
   it("labels sparse and absent evidence as advice rather than a design verdict", () => {
