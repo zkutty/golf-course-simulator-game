@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  BIVARIATE_DISPERSION_MODEL_VERSION,
+  BIVARIATE_DISPERSION_PROFILES,
   DISPERSION_CLUBS,
   DISPERSION_REGISTRY_VERSION,
   LEGACY_SOLVER_CLUB_PROFILES,
@@ -9,7 +11,7 @@ import {
 
 describe("ZK-772 canonical dispersion registry", () => {
   it("keeps version, IDs, labels, aliases, and order stable", () => {
-    expect(DISPERSION_REGISTRY_VERSION).toBe(2);
+    expect(DISPERSION_REGISTRY_VERSION).toBe(3);
     expect(DISPERSION_CLUBS.map((club) => [club.id, club.label])).toEqual([
       ["driver", "Driver"], ["three_wood", "3 Wood"], ["five_iron", "5 Iron"], ["seven_iron", "7 Iron"],
       ["pitching_wedge", "Pitching Wedge"], ["sand_wedge", "Sand Wedge"], ["chip", "Chip"], ["putter", "Putter"],
@@ -31,6 +33,26 @@ describe("ZK-772 canonical dispersion registry", () => {
     expect(DISPERSION_CLUBS.map(({ carryYards, dispersionTiles }) => [carryYards, dispersionTiles])).toEqual([
       [270, 3.7], [235, 3.2], [185, 2.55], [155, 2.1], [115, 1.55], [78, 1.35], [38, .82], [28, .38],
     ]);
+  });
+
+  it("records a reviewable internal bivariate profile for every canonical club", () => {
+    expect(BIVARIATE_DISPERSION_MODEL_VERSION).toBe(1);
+    expect(Object.keys(BIVARIATE_DISPERSION_PROFILES)).toEqual(DISPERSION_CLUBS.map((club) => club.id));
+    for (const club of DISPERSION_CLUBS) {
+      const profile = BIVARIATE_DISPERSION_PROFILES[club.id];
+      expect(profile).toMatchObject({
+        version: 1,
+        provenance: "CourseCraft balance assumption",
+        defaultCorrelation: 0,
+      });
+      expect(profile.central68LongitudinalScale).toBeGreaterThan(0);
+      expect(profile.central68LateralScale).toBeGreaterThan(profile.central68LongitudinalScale);
+      expect(profile.skillFloorMultiplier).toBeGreaterThan(0);
+      expect(profile.skillFloorMultiplier).toBeLessThan(1);
+      expect(profile.tailProbability).toBeGreaterThan(0);
+      expect(profile.tailProbability).toBeLessThan(1);
+      expect(profile.tailScale).toBeGreaterThan(1);
+    }
   });
 
   it("rejects unknown and prototype-owned IDs and labels without a fallback", () => {
