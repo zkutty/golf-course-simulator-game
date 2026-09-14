@@ -5,20 +5,23 @@ import { isValidAppliedShotWindV1 } from "../rules/contracts";
 import type { AppliedShotWindV1 } from "../rules/shotEnvironment";
 
 const rounded = (value: number, places: number) => +value.toFixed(places) || 0;
-const signed = (display: number, places: number) => `${display > 0 ? "+" : ""}${display.toFixed(places)}`;
-const direction = (value: number, positive: string, negative: string) => value > 0 ? positive : value < 0 ? negative : "neutral";
+const windAxis = (value: number, places: number, positive: string, negative: string) => {
+  const display = rounded(value, places);
+  return [`${display > 0 ? "+" : ""}${display.toFixed(places)}`, display > 0 ? positive : display < 0 ? negative : "neutral"];
+};
 
 /** Text-only view of stored, validated directional wind evidence. */
 export function appliedWindCues(wind: AppliedShotWindV1 | null | undefined, locale: Locale): readonly string[] {
   if (!isValidAppliedShotWindV1(wind)) return [];
-  const headwind = rounded(wind.headwindMph, 1);
-  const crosswind = rounded(wind.crosswindMph, 1);
-  const lateralShift = rounded(wind.lateralCenterlineTiles, 2);
-  const cues = translate("en", "w", {
-    a: signed(headwind, 1), b: direction(headwind, "headwind", "tailwind"),
-    c: signed(crosswind, 1), d: direction(crosswind, "right", "left"),
-    m: wind.carryMultiplier.toFixed(2), s: signed(lateralShift, 2), t: direction(lateralShift, "right", "left"),
-  }).split("|");
+  const [along, alongDirection] = windAxis(wind.headwindMph, 1, "headwind", "tailwind");
+  const [across, crossDirection] = windAxis(wind.crosswindMph, 1, "right", "left");
+  const [shift, shiftDirection] = windAxis(wind.lateralCenterlineTiles, 2, "right", "left");
+  const cues = [
+    `Along shot: ${along} mph ${alongDirection}`,
+    `Crosswind: ${across} mph ${crossDirection}`,
+    `Applied carry response: ×${wind.carryMultiplier.toFixed(2)}`,
+    `Centerline shift: ${shift} tiles ${shiftDirection}`,
+  ];
   return locale === "pseudo" ? cues.map(pseudoLocalize) : cues;
 }
 

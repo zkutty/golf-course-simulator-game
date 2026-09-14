@@ -97,7 +97,6 @@ import {
 import { DEBUG_PERF, logReducerDispatch } from "./utils/performance";
 import { useLiveSimulation } from "./hooks/useLiveSimulation";
 import { LiveControls } from "./ui/LiveControls";
-import { GolferInspector } from "./ui/GolferInspector";
 import { DefeatModal } from "./ui/DefeatModal";
 import { VictoryModal } from "./ui/VictoryModal";
 import { createObjectiveState, type GoalDefinition, type RunOutcome } from "./game/models/objectives";
@@ -387,6 +386,7 @@ const SaveLoadModal = lazy(() => import("./ui/SaveLoadModal").then(({ SaveLoadMo
 const SettingsModal = lazy(() => import("./ui/SettingsModal").then(({ SettingsModal }) => ({ default: SettingsModal })));
 const RetentionHub = lazy(() => import("./ui/retention/RetentionHub").then(({ RetentionHub }) => ({ default: RetentionHub })));
 const GolfopediaModal = lazy(() => import("./ui/help/GolfopediaModal").then(({ GolfopediaModal }) => ({ default: GolfopediaModal })));
+const GolferInspector = lazy(() => import("./ui/GolferInspector").then(({ GolferInspector }) => ({ default: GolferInspector })));
 const PlayerProPanel = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerProPanel }) => ({ default: PlayerProPanel })));
 const PlayerShotHud = lazy(() => import("./ui/PlayerProPanel").then(({ PlayerShotHud }) => ({ default: PlayerShotHud })));
 const ChallengeGroupHud = lazy(() => import("./ui/PlayerProPanel").then(({ ChallengeGroupHud }) => ({ default: ChallengeGroupHud })));
@@ -6097,13 +6097,18 @@ export default function App() {
               activePinRotation={course.activePinRotation ?? "A"}
               onSetActivePinRotation={(pinRotation) => dispatch({ type: "SET_ACTIVE_PIN_ROTATION", pinRotation })}
             />
-            <GolferInspector
+            {live.status.selected && <Suspense fallback={<div
+              data-testid="golfer-inspector-loading"
+              role="status"
+              aria-live="polite"
+              style={{ position: "absolute", left: 14, top: 58, zIndex: 45, padding: "9px 12px", borderRadius: 10, background: "rgba(24, 33, 26, 0.92)", color: "#f5f5f0", boxShadow: "0 6px 22px rgba(0,0,0,0.35)", fontFamily: "Nunito, system-ui, sans-serif", fontSize: 12, fontWeight: 700 }}
+            >{t("loading.golferInspector")}</div>}><GolferInspector
               selected={live.status.selected}
-              setupDifficulty={live.status.selected ? computeRatingForSetup(course, live.status.selected.teeSet, live.status.selected.pinRotation).pinDifficultyDelta : undefined}
+              setupDifficulty={computeRatingForSetup(course, live.status.selected.teeSet, live.status.selected.pinRotation).pinDifficultyDelta}
               following={followSelected}
               onToggleFollow={() => setFollowSelected((following) => !following)}
               onClose={() => { live.selectGolfer(null); setFollowSelected(false); }}
-            />
+            /></Suspense>}
           </div>
         </div>
 
