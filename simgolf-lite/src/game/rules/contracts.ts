@@ -147,7 +147,8 @@ function validPoint(value: unknown): value is Point {
   return record(value) && boundedFinite(value.x) && boundedFinite(value.y);
 }
 
-function validAppliedWind(value: unknown): value is AppliedShotWindV1 {
+/** Strict runtime guard for additive persisted applied-wind evidence. */
+export function isValidAppliedShotWindV1(value: unknown): value is AppliedShotWindV1 {
   return record(value) && value.version === 1 && value.sourceMode === "directional"
     && typeof value.headwindMph === "number" && value.headwindMph >= -70 && value.headwindMph <= 70
     && typeof value.crosswindMph === "number" && value.crosswindMph >= -70 && value.crosswindMph <= 70
@@ -294,7 +295,7 @@ export function isValidSharedShotOutcome(value: unknown): value is SharedShotOut
   ) {
     return false;
   }
-  if (value.appliedWind != null && !validAppliedWind(value.appliedWind)) return false;
+  if (value.appliedWind != null && !isValidAppliedShotWindV1(value.appliedWind)) return false;
   return value.relief.status !== "resolved"
     || (
       value.relief.finalPosition?.x === value.finalPosition.x

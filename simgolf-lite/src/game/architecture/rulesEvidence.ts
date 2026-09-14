@@ -5,6 +5,8 @@ import type { ArchitectureShotEvidence } from "../livingClub/types";
 import { classifyPenaltyAreaComponents } from "../rules/penaltyAreas";
 import { createControlledRoundSnapshotV2, decodeControlledRoundSnapshotV2, type ControlledRoundSnapshotV2 } from "../rules/roundSnapshot";
 import { resolveSharedRules } from "../rules/sharedOutcome";
+import { isValidAppliedShotWindV1 } from "../rules/contracts";
+import type { AppliedShotWindV1 } from "../rules/shotEnvironment";
 import type { ArchitectureRulesEvidence, ArchitectureRulesFeedback, ArchitectureRulesReview } from "./reviewTypes";
 import type { M48StrategicHoleEvaluation } from "./m48Types";
 
@@ -74,6 +76,17 @@ function retainedShot(world: World, evidence: ArchitectureShotEvidence) {
   return round?.shots.find((shot) => evidence.id.endsWith(`-${shot.id}`)) ?? null;
 }
 
+function immutableAppliedWind(value: unknown): Readonly<AppliedShotWindV1> | null {
+  return isValidAppliedShotWindV1(value) ? Object.freeze({
+    version: value.version,
+    sourceMode: value.sourceMode,
+    headwindMph: value.headwindMph,
+    crosswindMph: value.crosswindMph,
+    carryMultiplier: value.carryMultiplier,
+    lateralCenterlineTiles: value.lateralCenterlineTiles,
+  }) : null;
+}
+
 function emptyEvidence(evidence: ArchitectureShotEvidence, geometry: "current" | "historical", status: ArchitectureRulesEvidence["status"]): ArchitectureRulesEvidence {
   return {
     evidenceId: evidence.id,
@@ -84,6 +97,7 @@ function emptyEvidence(evidence: ArchitectureShotEvidence, geometry: "current" |
     obstacle: { collision: "not-retained", type: null },
     recovery: { attempted: evidence.shotType === "recovery", troubleLie: TROUBLE_LIES.has(evidence.lieBefore ?? "") },
     relief: { required: false, status: "unknown", type: "unknown", legalCandidates: 0 },
+    appliedWind: immutableAppliedWind(evidence.appliedWind),
   };
 }
 

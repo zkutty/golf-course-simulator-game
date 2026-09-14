@@ -17,6 +17,8 @@ import { greenGeometryVersion } from "../greens/greenSurface";
 import { isValidGreenRollout } from "../greens/greenRollout";
 import { normalizeShotSlopeContext } from "../models/shotSlope";
 import { shotSlopeExplanation } from "../models/shotSlopeEvidence";
+import { isValidAppliedShotWindV1 } from "../rules/contracts";
+import type { AppliedShotWindV1 } from "../rules/shotEnvironment";
 import type {
   ArchitectureRevisionSummary,
   ArchitectureShotEvidence,
@@ -53,6 +55,17 @@ const STAFF_NAMES = ["Casey", "Taylor", "Drew", "Robin", "Emerson", "Quinn", "Sk
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const finite = (value: unknown, fallback = 0) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
+function cloneValidAppliedWind(value: unknown): AppliedShotWindV1 | undefined {
+  return isValidAppliedShotWindV1(value) ? {
+    version: value.version,
+    sourceMode: value.sourceMode,
+    headwindMph: value.headwindMph,
+    crosswindMph: value.crosswindMph,
+    carryMultiplier: value.carryMultiplier,
+    lateralCenterlineTiles: value.lateralCenterlineTiles,
+  } : undefined;
+}
 
 function hashText(text: string): number {
   let hash = 2166136261;
@@ -247,6 +260,7 @@ function normalizeStoryInstance(raw: unknown): StoryEventInstance | null {
 function normalizeEvidence(raw: unknown): ArchitectureShotEvidence | null {
   if (!raw || typeof raw !== "object") return null;
   const evidence = raw as ArchitectureShotEvidence;
+  const { appliedWind: _rawAppliedWind, ...baseEvidence } = evidence;
   const validPoint = (point: unknown): point is { x: number; y: number } => {
     if (!point || typeof point !== "object") return false;
     const { x, y } = point as { x?: unknown; y?: unknown };
@@ -257,14 +271,16 @@ function normalizeEvidence(raw: unknown): ArchitectureShotEvidence | null {
   const pinRotation = evidence.pinRotation === "A" || evidence.pinRotation === "B" || evidence.pinRotation === "C"
     ? evidence.pinRotation
     : undefined;
+  const appliedWind = cloneValidAppliedWind(evidence.appliedWind);
   return {
-    ...evidence,
+    ...baseEvidence,
     pinRotation,
     ...(validPoint(evidence.aim) ? { aim: { ...evidence.aim } } : { aim: undefined }),
     ...(validPoint(evidence.physicalRest) ? { physicalRest: { ...evidence.physicalRest } } : { physicalRest: undefined }),
     ...(shotSlope
       ? { shotSlope, slopeExplanation: shotSlopeExplanation(shotSlope) }
       : { shotSlope: undefined, slopeExplanation: undefined }),
+    ...(appliedWind ? { appliedWind } : {}),
     ...(evidence.greenRollout && isValidGreenRollout(evidence.greenRollout) ? { greenRollout: evidence.greenRollout } : { greenRollout: undefined }),
     week: Math.max(1, Math.floor(finite(evidence.week, 1))),
     day: clamp(Math.floor(finite(evidence.day)), 0, 6),
@@ -612,6 +628,7 @@ export function recordLivingClubRound(world: World, course: Course, round: Compl
     lieAfter: shot.lieAfter,
     shotSlope: shot.shotSlope,
     slopeExplanation: shot.slopeExplanation ?? shotSlopeExplanation(shot.shotSlope),
+    appliedWind: cloneValidAppliedWind(shot.sharedOutcome?.appliedWind),
     greenRollout: shot.greenRollout,
   }));
   living = {
@@ -678,6 +695,7 @@ export function recordPlayerRoundArchitecture(
     lieAfter: shot.lieAfter,
     shotSlope: shot.shotSlope,
     slopeExplanation: shotSlopeExplanation(shot.shotSlope),
+    appliedWind: cloneValidAppliedWind(shot.sharedOutcome?.appliedWind),
     greenRollout: shot.greenRollout,
   }));
   living = {

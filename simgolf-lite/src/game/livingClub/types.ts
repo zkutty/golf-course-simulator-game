@@ -1,6 +1,7 @@
 import type { M48DesignComparison, M48DesignTestSession } from "../architecture/m48Types";
 import type { GreenRolloutV1 } from "../greens/greenRollout";
 import type { ShotSlopeContext } from "../models/shotSlope";
+import type { AppliedShotWindV1 } from "../rules/shotEnvironment";
 import type { ChallengeRivalProfile, InventoryItem, RewardDefinition } from "../competition/types";
 
 export type LivingGolferArchetype =
@@ -304,6 +305,8 @@ export interface ArchitectureShotEvidence {
   /** Original immutable slope facts; absent on historical evidence. */
   shotSlope?: ShotSlopeContext;
   slopeExplanation?: string;
+  /** Exact committed wind facts when the completed shot retained them. */
+  appliedWind?: AppliedShotWindV1;
   /** Exact retained ground path used by the architecture trace overlay. */
   greenRollout?: GreenRolloutV1;
 }
