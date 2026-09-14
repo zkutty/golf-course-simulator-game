@@ -8,7 +8,8 @@ import type { ShotFlightProfile, ShotLie } from "./contracts";
  * dataset. Consumers may apply their established player, lie, and weather
  * modifiers, but must not duplicate these base values.
  */
-export const DISPERSION_REGISTRY_VERSION = 2 as const;
+export const DISPERSION_REGISTRY_VERSION = 3 as const;
+export const BIVARIATE_DISPERSION_MODEL_VERSION = 1 as const;
 
 export type ShotClubId =
   | "driver" | "three_wood" | "five_iron" | "seven_iron"
@@ -29,6 +30,28 @@ export interface ShotClubDefinition {
   allowedLies: readonly ShotLie[];
   allowedTechniques: readonly ShotTechnique[];
   allowedFlightProfiles: readonly ShotFlightProfile[];
+}
+
+/**
+ * CourseCraft's reviewable, internal calibration inputs for the first
+ * bivariate dispersion model.  These values intentionally do not claim a
+ * USGA, Arccos, TrackMan, or other external-data fit.  A later calibration
+ * wave may replace a value only together with its dated source note.
+ *
+ * The two central-68 scales are applied to a club's existing scalar
+ * `dispersionTiles` value.  A separate floor prevents accuracy/consistency
+ * from eliminating the club's inherent uncertainty.  The tail component is
+ * deliberately separate from the central covariance model.
+ */
+export interface BivariateDispersionProfile {
+  version: typeof BIVARIATE_DISPERSION_MODEL_VERSION;
+  provenance: "CourseCraft balance assumption";
+  central68LongitudinalScale: number;
+  central68LateralScale: number;
+  skillFloorMultiplier: number;
+  tailProbability: number;
+  tailScale: number;
+  defaultCorrelation: number;
 }
 
 /**
@@ -64,6 +87,23 @@ export const DISPERSION_CLUBS: readonly ShotClubDefinition[] = [
   { id: "chip", label: "Chip", family: "specialty", loftDegrees: 36, nativeLaunchAngleDegrees: 18, nativeApexHeightYards: 6, carryYards: 38, dispersionTiles: .82, rolloutYards: 8, allowedLies: ["fairway", "rough", "deep_rough", "green", "sand", "waste_area"], allowedTechniques: RECOVERY_TECHNIQUES, allowedFlightProfiles: ALL_FLIGHTS },
   { id: "putter", label: "Putter", family: "putter", loftDegrees: 3, nativeLaunchAngleDegrees: 0, nativeApexHeightYards: 0, carryYards: 28, dispersionTiles: .38, rolloutYards: 0, allowedLies: ["green", "fairway"], allowedTechniques: PUTTER_TECHNIQUES, allowedFlightProfiles: STANDARD_ONLY },
 ] as const;
+
+/**
+ * Versioned bivariate model profiles keyed by the canonical clubs above.
+ * Values are monotonically ordered through their canonical base dispersion;
+ * this layer changes the target-aligned shape, floors, and bounded tail
+ * policy, not the released club carry/legality tables.
+ */
+export const BIVARIATE_DISPERSION_PROFILES: Readonly<Record<ShotClubId, BivariateDispersionProfile>> = {
+  driver: { version: 1, provenance: "CourseCraft balance assumption", central68LongitudinalScale: .46, central68LateralScale: .7, skillFloorMultiplier: .56, tailProbability: .09, tailScale: 2.15, defaultCorrelation: 0 },
+  three_wood: { version: 1, provenance: "CourseCraft balance assumption", central68LongitudinalScale: .45, central68LateralScale: .68, skillFloorMultiplier: .55, tailProbability: .085, tailScale: 2.1, defaultCorrelation: 0 },
+  five_iron: { version: 1, provenance: "CourseCraft balance assumption", central68LongitudinalScale: .43, central68LateralScale: .65, skillFloorMultiplier: .54, tailProbability: .08, tailScale: 2.05, defaultCorrelation: 0 },
+  seven_iron: { version: 1, provenance: "CourseCraft balance assumption", central68LongitudinalScale: .41, central68LateralScale: .62, skillFloorMultiplier: .53, tailProbability: .075, tailScale: 2, defaultCorrelation: 0 },
+  pitching_wedge: { version: 1, provenance: "CourseCraft balance assumption", central68LongitudinalScale: .39, central68LateralScale: .58, skillFloorMultiplier: .52, tailProbability: .07, tailScale: 1.95, defaultCorrelation: 0 },
+  sand_wedge: { version: 1, provenance: "CourseCraft balance assumption", central68LongitudinalScale: .37, central68LateralScale: .55, skillFloorMultiplier: .51, tailProbability: .065, tailScale: 1.9, defaultCorrelation: 0 },
+  chip: { version: 1, provenance: "CourseCraft balance assumption", central68LongitudinalScale: .34, central68LateralScale: .5, skillFloorMultiplier: .5, tailProbability: .06, tailScale: 1.8, defaultCorrelation: 0 },
+  putter: { version: 1, provenance: "CourseCraft balance assumption", central68LongitudinalScale: .3, central68LateralScale: .42, skillFloorMultiplier: .5, tailProbability: .04, tailScale: 1.6, defaultCorrelation: 0 },
+};
 
 export const DISPERSION_CLUB_BY_ID: Readonly<Record<ShotClubId, ShotClubDefinition>> = Object.fromEntries(
   DISPERSION_CLUBS.map((club) => [club.id, club]),
