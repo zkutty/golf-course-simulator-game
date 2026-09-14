@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { currentShotEvidence, currentShotEvidenceText } from "./currentShotEvidence";
-import { currentShotEvidenceCues } from "../render/shotTruthCues";
+import { appliedWindCues, currentShotEvidenceCues } from "../render/shotTruthCues";
 import { createM47CertificationCourse } from "../testing/m47Certification";
 import { liveCourseSnapshot, resolveLiveShot } from "./livePhysics";
 import { createGolferCapabilities } from "./capabilities";
@@ -56,6 +56,55 @@ describe("current-shot evidence is owned by the simulation cursor", () => {
     const evidence = currentShotEvidence({ ...carrier(s), segIndex: 2 });
     expect(evidence).toMatchObject({ phase: "result", truth: { appliedWind: s.sharedOutcome.appliedWind } });
     expect(currentShotEvidenceText(evidence)).toMatchObject({ truth: { appliedWind: s.sharedOutcome.appliedWind } });
+    const cues = currentShotEvidenceCues(evidence, "en");
+    expect(cues).toEqual(expect.arrayContaining([
+      "Along shot: +7.0 mph headwind",
+      "Crosswind: -3.0 mph left",
+      "Applied carry response: ×0.98",
+      "Centerline shift: -0.10 tiles left",
+    ]));
+  });
+
+  it("formats only validated stored wind evidence with signed, localized, negative-zero-safe cues", () => {
+    const stored = { version: 1 as const, sourceMode: "directional" as const, headwindMph: -12, crosswindMph: 4, carryMultiplier: 1.03, lateralCenterlineTiles: .25 };
+    expect(appliedWindCues(stored, "en")).toEqual([
+      "Along shot: -12.0 mph tailwind",
+      "Crosswind: +4.0 mph right",
+      "Applied carry response: ×1.03",
+      "Centerline shift: +0.25 tiles right",
+    ]);
+    expect(appliedWindCues({ ...stored, headwindMph: -0, crosswindMph: -0, carryMultiplier: 1, lateralCenterlineTiles: -0 }, "en")).toEqual([
+      "Along shot: 0.0 mph neutral",
+      "Crosswind: 0.0 mph neutral",
+      "Applied carry response: ×1.00",
+      "Centerline shift: 0.00 tiles neutral",
+    ]);
+    expect(appliedWindCues(stored, "pseudo").every((cue) => cue.startsWith("⟦"))).toBe(true);
+    expect(appliedWindCues(null, "en")).toEqual([]);
+    expect(appliedWindCues({ ...stored, headwindMph: 71 }, "en")).toEqual([]);
+  });
+
+  it("uses rounded displayed wind values for neutral direction labels", () => {
+    const stored = { version: 1 as const, sourceMode: "directional" as const, headwindMph: 0, crosswindMph: 0, carryMultiplier: 1.03, lateralCenterlineTiles: 0 };
+    expect(appliedWindCues({ ...stored, headwindMph: 0.04, crosswindMph: -0.04, lateralCenterlineTiles: 0.004 }, "en")).toEqual([
+      "Along shot: 0.0 mph neutral",
+      "Crosswind: 0.0 mph neutral",
+      "Applied carry response: ×1.03",
+      "Centerline shift: 0.00 tiles neutral",
+    ]);
+    expect(appliedWindCues({ ...stored, headwindMph: -0.04, crosswindMph: 0.04, lateralCenterlineTiles: -0.004 }, "en")).toEqual([
+      "Along shot: 0.0 mph neutral",
+      "Crosswind: 0.0 mph neutral",
+      "Applied carry response: ×1.03",
+      "Centerline shift: 0.00 tiles neutral",
+    ]);
+  });
+
+  it("never leaks applied-wind result cues into intent, reaction, or unavailable phases", () => {
+    const g = carrier();
+    expect(currentShotEvidenceCues(currentShotEvidence({ ...g, segIndex: 0 }), "en").join(" ")).not.toMatch(/wind|carry response|centerline/i);
+    expect(currentShotEvidenceCues({ phase: "reaction", holeId: "hole-1", reaction: reaction("hole-1") }, "en").join(" ")).not.toMatch(/wind|carry response|centerline/i);
+    expect(currentShotEvidenceCues({ phase: "unavailable", reason: "missing" }, "en").join(" ")).not.toMatch(/wind|carry response|centerline/i);
   });
 
   it.each(["low", "standard", "high"] as const)("carries only retained %s flight and rollout into localized result cues", (profile) => {

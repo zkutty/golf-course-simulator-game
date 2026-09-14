@@ -32,6 +32,7 @@ import type { MessageKey } from "../i18n/catalog";
 import { formatHandicapIndex } from "../game/competition/persistence";
 import { courseHandicap, playingHandicapFromUnrounded, strokesByHole } from "../game/competition/handicap";
 import { authoredEquipmentModifiers, mentorTechniqueDefinition, mentorTechniqueEligibility, startEquippedPlayableRound } from "../game/competition/equipmentMentor";
+import { appliedWindCues } from "../game/render/shotTruthCues";
 import type { EquipmentLoadout } from "../game/competition/types";
 import type { ChallengeGroupRound } from "../game/competition/challengeGroupRound";
 import {
@@ -624,7 +625,7 @@ export function PlayerShotHud(props: {
   onConcede: () => void;
   onReturnToDesign: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const caddie = useMemo(() => caddieShotGuidance(props.round, props.career.skills), [props.career.skills, props.round]);
   const clubs = availablePlayerClubs(props.round.lie);
   const [club, setClub] = useState(caddie.selection.club);
@@ -646,6 +647,8 @@ export function PlayerShotHud(props: {
   const latestRuling = latestOutcome?.ruling ?? latestShot?.ruling ?? null;
   const latestRelief = latestOutcome?.relief ?? latestShot?.relief ?? null;
   const latestFinalPosition = latestOutcome?.finalPosition ?? latestShot?.finalPosition ?? latestShot?.rest ?? null;
+  const previewWindCues = appliedWindCues(preview.sharedOutcome?.appliedWind, locale);
+  const resultWindCues = appliedWindCues(latestOutcome?.appliedWind, locale);
 
   const useCaddie = () => {
     const next = caddie.selection;
@@ -725,6 +728,7 @@ export function PlayerShotHud(props: {
             {previewRouteEvidence && <div>{t("playerPro.shot.routeEvidence", { evidence: previewRouteEvidence })}</div>}
             <div>{t("playerPro.shot.penaltyRisk", { ruling: rulingLabel(preview.sharedOutcome.ruling, t) })}</div>
             <div>{t("playerPro.shot.reliefPreview", { type: preview.sharedOutcome.relief.type.replaceAll("_", " "), position: pointLabel(preview.sharedOutcome.finalPosition) })}</div>
+            {previewWindCues.length > 0 && <div data-testid="player-shot-wind-preview" style={{ display: "grid", gap: 2 }}>{previewWindCues.map((cue) => <span key={cue}>{cue}</span>)}</div>}
             {preview.greenRollout && <div data-testid="player-shot-green-rollout-preview">{t("playerPro.shot.greenRollout", { pace: preview.greenRollout.pace, speed: preview.greenRollout.evidence.realizedSpeedFeet.toFixed(1), roll: preview.greenRollout.rollYards.toFixed(1), break: preview.greenRollout.breakTiles.toFixed(2), lie: preview.greenRollout.lieAfter.replaceAll("_", " ") })}</div>}
           </div>}
           {preview.blocker && <div role="alert">{t("playerPro.shot.blocked", { reason: preview.blocker })}</div>}
@@ -738,6 +742,7 @@ export function PlayerShotHud(props: {
         <div>{t("playerPro.shot.collision", { collision: collisionLabel(latestOutcome?.collision, t) })}</div>
         <div>{t("playerPro.shot.relief", { relief: latestRelief ? `${latestRelief.type.replaceAll("_", " ")} (${latestRelief.status})` : t("playerPro.shot.legacyRelief") })}</div>
         <div>{t("playerPro.shot.finalPosition", { position: pointLabel(latestFinalPosition) })}</div>
+        {resultWindCues.length > 0 && <div data-testid="player-shot-wind-result" style={{ display: "grid", gap: 2 }}>{resultWindCues.map((cue) => <span key={cue}>{cue}</span>)}</div>}
         {latestShot.greenRollout && <div data-testid="player-shot-green-rollout-result">{t("playerPro.shot.greenRollout", { pace: latestShot.greenRollout.pace, speed: latestShot.greenRollout.evidence.realizedSpeedFeet.toFixed(1), roll: latestShot.greenRollout.rollYards.toFixed(1), break: latestShot.greenRollout.breakTiles.toFixed(2), lie: latestShot.greenRollout.lieAfter.replaceAll("_", " ") })}</div>}
         {latestShot.greenPutting && <div data-testid="player-shot-auto-putt-result">{t("playerPro.shot.autoPuttingResult", { putts: latestShot.greenPutting.putts, distance: latestShot.greenPutting.leaveDistanceYards.toFixed(1), break: latestShot.greenPutting.breakTiles.toFixed(2), speed: latestShot.greenPutting.realizedSpeedFeet.toFixed(1) })}</div>}
       </section>}

@@ -40,6 +40,7 @@ export const en = {
   "shotTruth.reaction.neutral": "Neutral",
   "shotTruth.reaction.frustrated": "Frustrated",
   "shotTruth.reaction.unfair": "Felt unfair",
+  "w": "Along shot: {a} mph {b}|Crosswind: {c} mph {d}|Applied carry response: ×{m}|Centerline shift: {s} tiles {t}",
   "opening.entry": "First-hole operator demo",
   "opening.focus": "Focus on preview hole",
   "opening.entryHint": "One hole · private group · design, watch, improve",

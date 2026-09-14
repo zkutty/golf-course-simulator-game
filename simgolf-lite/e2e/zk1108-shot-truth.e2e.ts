@@ -63,6 +63,9 @@ test("current-shot channel follows actual live action and survives keyboard save
     expect(selectedTelemetry.latestRuling).not.toBeNull();
     expect(selected.channel.truth.appliedWind).toEqual(selectedTelemetry.latestSharedOutcome.appliedWind);
     await expect(channel).toContainText("penalty stroke(s)");
+    await expect(channel).toContainText("Applied carry response:");
+    await expect(channel).toContainText(/(headwind|tailwind|neutral)/);
+    await expect(channel).toContainText("Centerline shift:");
   } else {
     expect(selectedTelemetry.latestRuling).toBeNull();
     expect(selectedTelemetry.latestSharedOutcome).toBeNull();

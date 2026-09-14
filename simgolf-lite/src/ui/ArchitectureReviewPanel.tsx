@@ -6,6 +6,7 @@ import { courseLayouts } from "../game/models/courseLayouts";
 import { useI18n } from "../i18n/useI18n";
 import type { MessageKey } from "../i18n/catalog";
 import { HoleIllustrationPreviewPanel } from "./HoleIllustrationPreviewPanel";
+import { appliedWindCues } from "../game/render/shotTruthCues";
 
 const OVERLAYS: ArchitectureOverlayKind[] = [
   "reference", "traces", "dispersion", "heatmap", "recovery", "scoring", "hazards", "walking", "mobility", "congestion", "options", "advantage", "bailouts", "carries", "misses",
@@ -20,7 +21,7 @@ export function ArchitectureReviewPanel(props: {
   onPracticeRound: (courseId: string) => Promise<string | null>;
   onClose: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [message, setMessage] = useState("");
   const [showHoleIllustration, setShowHoleIllustration] = useState(false);
   const illustrationLauncherRef = useRef<HTMLButtonElement>(null);
@@ -240,12 +241,15 @@ export function ArchitectureReviewPanel(props: {
 
     {props.review.evidence.length > 0 && <section style={{ marginTop: 12 }}>
       <strong>{t("architecture.review.recentEvidence")}</strong>
-      <div style={{ display: "grid", gap: 5, marginTop: 5 }}>{props.review.evidence.slice(-6).reverse().map((item) => <button
+      <div style={{ display: "grid", gap: 5, marginTop: 5 }}>{props.review.evidence.slice(-6).reverse().map((item) => {
+        const windCues = appliedWindCues(item.appliedWind, locale);
+        return <button
         key={item.id}
         data-current={item.geometryVersion === props.review.currentGeometryVersion}
         onClick={() => props.onJump(item.rest, item.holeId)}
         style={{ textAlign: "left", display: "grid", gridTemplateColumns: "1fr auto", gap: 8, background: item.id === props.review.selectedTraceId ? "#fff1a8" : "#fffdf6" }}
-      ><span><b>{item.golferName}</b> · {item.holeId} · {item.shotType}</span><small>{item.geometryVersion === props.review.currentGeometryVersion ? t("architecture.review.current") : t("architecture.review.historical")}</small></button>)}</div>
+      ><span><b>{item.golferName}</b> · {item.holeId} · {item.shotType}{windCues.map((cue) => <small key={cue} data-testid="architecture-evidence-wind" style={{ display: "block" }}>{cue}</small>)}</span><small>{item.geometryVersion === props.review.currentGeometryVersion ? t("architecture.review.current") : t("architecture.review.historical")}</small></button>;
+      })}</div>
     </section>}
 
     <div style={{ display: "flex", gap: 7, marginTop: 12 }}>
