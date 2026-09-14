@@ -53,6 +53,10 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   const picked = await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound.aim);
   expect(picked).toMatchObject({ x: expect.any(Number), y: expect.any(Number) });
   await hud.getByRole("button", { name: "Use caddie line" }).click();
+  const previewWind = page.getByTestId("player-shot-wind-preview");
+  await expect(previewWind).toContainText("Applied carry response:");
+  await expect(previewWind.locator("span")).toHaveCount(4);
+  const previewWindText = await previewWind.allTextContents();
   await page.getByTestId("commit-player-shot").click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound.phase), { timeout: 10_000 }).not.toBe("flight");
 
@@ -122,6 +126,9 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   await expect(page.getByTestId("player-shot-ruling")).toContainText("Collision:");
   await expect(page.getByTestId("player-shot-ruling")).toContainText("Relief:");
   await expect(page.getByTestId("player-shot-ruling")).toContainText("Final playable position:");
+  const resultWind = page.getByTestId("player-shot-wind-result");
+  await expect(resultWind.locator("span")).toHaveCount(4);
+  expect(await resultWind.allTextContents()).toEqual(previewWindText);
   await expect(page.getByTestId("player-shot-green-rollout-result")).toContainText("Ground path:");
   const repeatedText = await page.evaluate(() => {
     const readLatestTrace = () => {
@@ -170,8 +177,20 @@ test("M36-M37 Player Pro aims, resolves, progresses, and returns to design", asy
   const completeShot = await page.screenshot({ path: "artifacts/m36-player-pro-complete.png", fullPage: true });
   await testInfo.attach("player-pro-complete", { body: completeShot, contentType: "image/png" });
 
+  await page.evaluate(() => import("/src/ui/ArchitectureReviewPanel.tsx"));
   await page.getByTestId("return-to-design").click();
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}").playerPro.activeRound)).toBeNull();
   await expect(page.getByTestId("open-course-manager")).toBeEnabled();
+  const architecture = page.getByTestId("architecture-review");
+  await expect(architecture).toBeVisible();
+  const recentEvidence = architecture.locator('button:has([data-testid="architecture-evidence-wind"])').first();
+  const architectureWind = recentEvidence.getByTestId("architecture-evidence-wind");
+  await expect(architectureWind).toHaveCount(4);
+  const architectureWindText = (await architectureWind.allTextContents()).join(" ");
+  expect(architectureWindText).toContain("Applied carry response:");
+  expect(architectureWindText).toMatch(/(headwind|tailwind|neutral)/);
+  await recentEvidence.scrollIntoViewIfNeeded();
+  const architectureShot = await recentEvidence.screenshot({ path: testInfo.outputPath("player-pro-architecture-wind.png") });
+  await testInfo.attach("player-pro-architecture-wind", { body: architectureShot, contentType: "image/png" });
   expect(errors).toEqual([]);
 });
