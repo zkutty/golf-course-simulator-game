@@ -100,6 +100,18 @@ describe("live simulation persistence", () => {
     }
   });
 
+  it("drops incoherent bivariate evidence without discarding valid historical shot truth", () => {
+    const { state } = midRound();
+    const source = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });
+    const selected = source.state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []).find((shot) => shot.sharedOutcome?.appliedDispersion);
+    expect(selected?.sharedOutcome?.appliedDispersion).toBeDefined();
+    selected!.sharedOutcome!.appliedDispersion!.seed += 1;
+    const restored = restoreLiveSimulation(source);
+    const retained = restored?.state.golfers.flatMap((golfer) => golfer.shotOutcomes ?? []).find((shot) => shot.id === selected?.id);
+    expect(retained?.sharedOutcome).toBeDefined();
+    expect(retained?.sharedOutcome?.appliedDispersion).toBeUndefined();
+  });
+
   it("normalizes missing or malformed frozen wind to legacy scalar without touching completed shots", () => {
     const { state } = midRound();
     const snapshot = snapshotLiveSimulation({ state, pendingCash: 0, speed: "paused", selectedGolferId: null });

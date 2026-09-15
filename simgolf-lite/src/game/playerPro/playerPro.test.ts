@@ -36,6 +36,9 @@ import {
   normalizeGreenLocalState,
   normalizeGreenSurfaceV1,
 } from "../greens/greenSurface";
+import { calculateShotEffects } from "../rules/shotEffects";
+import { confidenceDispersionMultiplier } from "./confidence";
+import { resolveBivariateDispersion } from "../rules/dispersionModel";
 
 function threeHoleCourse(): Course {
   const width = 64;
@@ -143,6 +146,89 @@ function started() {
 }
 
 describe("M36 deterministic Player Pro play", () => {
+  it("freezes bivariate authority and records its one-pass factor ledger", () => {
+    const { career, round } = started();
+    expect(round.course.dispersionSnapshot).toEqual({ version: 1, mode: "bivariate_v1", modelVersion: 1 });
+    const snapshot = {
+      ...round.course,
+      obstacles: [{ type: "tree", x: round.ball.x + 1, y: round.ball.y }],
+      weather: {
+        ...round.course.weather!,
+        dispersionMultiplier: 1.18,
+        environment: { version: 1 as const, mode: "directional" as const, speedMph: 20, bearingDegrees: 180 },
+      },
+    };
+    const selection = { club: "7 Iron", aim: { x: 34, y: 10 }, power: .86, technique: "normal" as const, flightProfile: "low" as const };
+    const confidenceSnapshot = { version: 1 as const, current: 20, reason: "round_feedback" as const, trend: "falling" as const, lastUpdatedAbsoluteDay: 3 };
+    const performanceLoadout = {
+      version: 1 as const, frozenWeek: 1, frozenDay: 0, itemIds: ["ledger-dispersion"],
+      modifiers: [{ channel: "dispersion" as const, multiplier: 1.1, sourceKind: "equipment" as const, sourceId: "ledger-dispersion" }],
+    };
+    const trace = resolvePlayableShot({
+      snapshot, holeId: "hole-1", shotNumber: 1, from: round.ball, lie: "rough", skills: career.skills,
+      selection, confidenceSnapshot, performanceLoadout, seed: 29_311,
+    });
+    const applied = trace.sharedOutcome?.appliedDispersion;
+    expect(applied).toBeDefined();
+    if (!applied) throw new Error("missing bivariate evidence");
+    const effects = calculateShotEffects({
+      clubId: "seven_iron", lie: "rough", recoverySkill: career.skills.recovery, technique: "normal", flightProfile: "low",
+    });
+    expect(effects.ok).toBe(true);
+    if (!effects.ok) throw new Error("missing shot effects");
+    // lie/flight/technique are in effects once; weather, confidence,
+    // obstruction, and performance are then each applied once. Skill is
+    // evidence/model-only, never a second scalar base multiplier.
+    expect(applied.effectiveDispersionTiles).toBeCloseTo(
+      effects.value.dispersionTiles * 1.18 * confidenceDispersionMultiplier(confidenceSnapshot) * 1.55 * 1.1,
+      9,
+    );
+    expect(applied.accuracy).toBe(career.skills.irons);
+    expect(applied.consistency).toBe(career.skills.irons);
+    expect(applied.appliedWindLateralTiles).toBe(trace.sharedOutcome?.appliedWind?.lateralCenterlineTiles);
+    const reconstructed = resolveBivariateDispersion({
+      clubId: applied.clubId,
+      effectiveDispersionTiles: applied.effectiveDispersionTiles,
+      accuracy: applied.accuracy,
+      consistency: applied.consistency,
+      centerlineLongitudinalTiles: applied.centerlineLongitudinalTiles,
+      centerlineLateralTiles: applied.centerlineLateralInputTiles,
+      appliedWind: trace.sharedOutcome?.appliedWind,
+    });
+    expect(reconstructed.ok && reconstructed.value.centerline).toEqual({
+      longitudinalTiles: applied.centerlineLongitudinalTiles,
+      lateralTiles: applied.centerlineLateralTiles,
+    });
+    expect(createHash("sha256").update(JSON.stringify(trace)).digest("hex")).toBe("7ce84cb972a3aa6790c2c79239aac7af2c316fd64c66f0798048963b4853439c");
+  });
+
+  it("round-trips a bivariate active round while missing and malformed carriers diverge safely", () => {
+    const { career, round } = started();
+    const selection = { club: "Driver", aim: { x: 34, y: 10 }, power: .86, technique: "normal" as const };
+    const preview = previewPlayableShot(round, career.skills, selection);
+    const committed = commitPlayerShot(round, career.skills, selection);
+    expect(preview.sharedOutcome).toEqual(committed.pendingShot?.sharedOutcome);
+    const original = resolvePlayableShot({ snapshot: round.course, holeId: "hole-1", shotNumber: 1, from: round.ball, lie: round.lie, skills: career.skills, selection, seed: 7_711 });
+    const restoredCareer = normalizePlayerPro(JSON.parse(JSON.stringify({ ...career, activeRound: round })), { seed: round.rngSeed });
+    const restored = restoredCareer.activeRound;
+    expect(restored?.course.dispersionSnapshot).toEqual(round.course.dispersionSnapshot);
+    const replay = resolvePlayableShot({ snapshot: restored!.course, holeId: "hole-1", shotNumber: 1, from: restored!.ball, lie: restored!.lie, skills: restoredCareer.skills, selection, seed: 7_711 });
+    expect(replay).toEqual(original);
+    const missing = normalizePlayerPro({ ...career, activeRound: { ...round, course: { ...round.course, dispersionSnapshot: undefined } } }, { seed: round.rngSeed });
+    expect(missing.activeRound?.course.dispersionSnapshot).toEqual({ version: 1, mode: "legacy_scalar" });
+    const malformed = normalizePlayerPro({ ...career, activeRound: { ...round, course: { ...round.course, dispersionSnapshot: null } } }, { seed: round.rngSeed });
+    expect(malformed.activeRound).toBeNull();
+    const incoherent = structuredClone(round);
+    incoherent.shots = [{ ...original, sharedOutcome: { ...original.sharedOutcome!, appliedDispersion: { ...original.sharedOutcome!.appliedDispersion!, seed: original.seed + 1 } } }];
+    expect(normalizePlayerPro({ ...career, activeRound: incoherent }, { seed: round.rngSeed }).activeRound).toBeNull();
+    const highBitRound = { ...round, rngSeed: -40_555, rngCursor: 0 };
+    const highBitCommitted = commitPlayerShot(highBitRound, career.skills, selection);
+    expect(highBitCommitted.pendingShot?.seed).toBe(-40_555);
+    expect(highBitCommitted.pendingShot?.sharedOutcome?.appliedDispersion?.seed).toBe(4_294_926_741);
+    const highBitReloaded = normalizePlayerPro(JSON.parse(JSON.stringify({ ...career, activeRound: highBitCommitted })), { seed: round.rngSeed });
+    expect(highBitReloaded.activeRound?.pendingShot).toEqual(highBitCommitted.pendingShot);
+  });
+
   it("freezes legacy scalar shot compatibility and directional preview/commit authority", () => {
     const { career, round } = started();
     const selection = { club: "Driver", aim: { x: 34, y: 7 }, power: 0.86, technique: "normal" as const };
@@ -150,6 +236,7 @@ describe("M36 deterministic Player Pro play", () => {
       ...round,
       course: {
         ...round.course,
+        dispersionSnapshot: undefined,
         weather: { ...round.course.weather!, environment: { version: 1 as const, mode: "legacy_scalar" as const, speedMph: round.course.weather!.windMph } },
       },
     };
@@ -507,7 +594,7 @@ describe("M36 deterministic Player Pro play", () => {
     expect(preview.flightProfile).toBe("standard");
     expect(committed.pendingShot?.flightProfile).toBe("standard");
     expect(committed.pendingShot?.sharedOutcome?.requestedCarryYards).toBeCloseTo(preview.carryYards, 5);
-    expect(committed.pendingShot?.sharedOutcome?.ruling).toMatchObject({ status: "penalty", penaltyStrokes: 1 });
+    expect(committed.pendingShot?.sharedOutcome?.ruling).toMatchObject({ status: "in_play", penaltyStrokes: 0 });
     expect(preview.sharedOutcome).toEqual(committed.pendingShot?.sharedOutcome);
     expect(preview.greenRollout).toEqual(committed.pendingShot?.greenRollout);
     expect(preview.sharedOutcome).toMatchObject({

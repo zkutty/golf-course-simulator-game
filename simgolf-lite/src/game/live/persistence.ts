@@ -11,6 +11,7 @@ import { isValidGreenRollout } from "../greens/greenRollout";
 import { isValidGreenPutting } from "../greens/greenPutting";
 import { normalizeExperienceAxes } from "../balance/experience";
 import { normalizeShotEnvironmentV1 } from "../rules/shotEnvironment";
+import { dispersionClubIdForLabel } from "../rules/dispersionRegistry";
 
 const MAX_GOLFERS = 500;
 const MAX_ARRIVALS = 1_000;
@@ -114,7 +115,18 @@ function shotOutcome(value: unknown): boolean {
 }
 
 function normalizeShotOutcome(value: LiveShotOutcome): LiveShotOutcome {
-  if (value.sharedOutcome == null || isValidSharedShotOutcome(value.sharedOutcome)) return value;
+  if (value.sharedOutcome == null) return value;
+  const evidence = value.sharedOutcome.appliedDispersion;
+  const evidenceMatchesOwner = evidence == null || (
+    evidence.seed === (value.seed >>> 0) && evidence.clubId === dispersionClubIdForLabel(value.club)
+  );
+  if (isValidSharedShotOutcome(value.sharedOutcome) && evidenceMatchesOwner) return value;
+  // Bivariate evidence is additive. Discard only an incoherent certificate
+  // when its historical physical/rules payload remains valid without it.
+  if (evidence != null) {
+    const { appliedDispersion: _discarded, ...withoutEvidence } = value.sharedOutcome;
+    if (isValidSharedShotOutcome(withoutEvidence)) return { ...value, sharedOutcome: withoutEvidence };
+  }
   const { sharedOutcome: _discarded, ...legacy } = value;
   return legacy;
 }

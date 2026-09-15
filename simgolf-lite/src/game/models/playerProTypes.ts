@@ -11,6 +11,7 @@ import type { ChallengeRuntimeState } from "../competition/challengeRuntime";
 import type { ChallengeSettlementRecord } from "../competition/challengeSettlement";
 import type { FrozenPerformanceLoadout, LearnedTechnique, MentorTechniqueChallenge } from "../competition/types";
 import type { ShotEnvironmentV1 } from "../rules/shotEnvironment";
+import type { DispersionRoundSnapshotV1 } from "../rules/dispersionSnapshot";
 
 export const PLAYER_PRO_SKILLS = [
   "power",
@@ -87,6 +88,8 @@ export interface PlayerRoundCourseSnapshot {
   greenDrainageLevel?: number;
   /** Frozen M50 rules map used by Player Pro and live callers. */
   rulesSnapshot?: ControlledRoundSnapshotV2;
+  /** Immutable ZK-772 dispersion authority. Missing means legacy scalar. */
+  dispersionSnapshot?: DispersionRoundSnapshotV1;
   weather?: {
     kind: string;
     temperatureF: number;

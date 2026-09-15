@@ -15,6 +15,7 @@ import { createGreenRoundSnapshot } from "../greens/greenSurface";
 import { captureRoundHandicapSnapshot, createHandicapProfile } from "../competition/persistence";
 import { confidenceAtDay, createPlayerConfidence } from "./confidence";
 import { shotEnvironmentFromWeather } from "../rules/shotEnvironment";
+import { createBivariateDispersionRoundSnapshotV1 } from "../rules/dispersionSnapshot";
 import type { TournamentActivationSnapshot } from "../tournaments/types";
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
@@ -166,7 +167,10 @@ export function startPlayableRound(args: StartPlayableRoundArgs): { ok: true; ro
     : snapshotCourse(args.course, args.world, args.day ?? 0, layout!.id, teeSet, pinRotation);
   if (!snapshot) return { ok: false, reason: "Every routed hole needs a valid tee, pin, and playable setup." };
   const rulesSnapshot = rulesSnapshotForRound(args.course, snapshot);
-  const frozenCourse = rulesSnapshot ? { ...snapshot, rulesSnapshot } : snapshot;
+  const frozenCourse = {
+    ...(rulesSnapshot ? { ...snapshot, rulesSnapshot } : snapshot),
+    dispersionSnapshot: createBivariateDispersionRoundSnapshotV1(),
+  };
   const handicapProfile = args.world.playerPro?.handicapProfile ?? createHandicapProfile(args.world.playerPro?.skills ?? ARCHITECT_SKILLS);
   const confidence = confidenceAtDay(args.world.playerPro?.confidence ?? createPlayerConfidence(), absoluteDayFor(args.world.week, args.day ?? 0));
   const roundOrdinal = Math.max(args.world.playerPro?.rounds.length ?? 0, handicapProfile.scoreRecords.length) + 1;

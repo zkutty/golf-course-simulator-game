@@ -1,5 +1,10 @@
 import type { ObstacleType, Point, Terrain } from "../models/types";
 import type { AppliedShotWindV1 } from "./shotEnvironment";
+import { BIVARIATE_DISPERSION_MODEL_VERSION, dispersionClub, type ShotClubId } from "./dispersionRegistry";
+import {
+  isValidAppliedShotWindV1,
+  resolveBivariateDispersionShot,
+} from "./dispersionRuntime";
 
 export const SHOT_RULES_CONTRACT_VERSION = 1 as const;
 
@@ -124,9 +129,36 @@ export interface ShotOutcome {
   finalPosition: Point;
   /** Additive Wave 1 evidence; absent on historical outcomes. */
   appliedWind?: AppliedShotWindV1;
+  /** Additive ZK-772 bivariate audit evidence; absent on historical shots. */
+  appliedDispersion?: AppliedDispersionV1;
 }
 
 export type SharedShotOutcome = ShotOutcome;
+
+/** Compact replay certificate; registry geometry remains the single authority. */
+export interface AppliedDispersionV1 {
+  version: 1;
+  mode: "bivariate_v1";
+  modelVersion: typeof BIVARIATE_DISPERSION_MODEL_VERSION;
+  clubId: ShotClubId;
+  seed: number;
+  /** Canonical nine-decimal bivariate input; rounds to owning requestedDispersionTiles. */
+  effectiveDispersionTiles: number;
+  accuracy: number;
+  consistency: number;
+  centerlineLongitudinalTiles: number;
+  /** Curve/sidehill centerline before the separately-owned wind shift. */
+  centerlineLateralInputTiles: number;
+  centerlineLateralTiles: number;
+  /** Retained separately so a replay can reconstruct the wind-owned shift. */
+  appliedWindLateralTiles: number;
+  sample: {
+    isTail: boolean;
+    mahalanobisRadius: number;
+    longitudinalTiles: number;
+    lateralTiles: number;
+  };
+}
 
 const SHARED_OUTCOME_MAX_ABS_NUMBER = 1_000_000;
 const SHARED_OUTCOME_MAX_CLEARANCE = 30_800;
@@ -136,24 +168,72 @@ function record(value: unknown): value is Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
 
-function boundedFinite(value: unknown, minimum = -SHARED_OUTCOME_MAX_ABS_NUMBER): value is number {
+function boundedFinite(
+  value: unknown,
+  minimum = -SHARED_OUTCOME_MAX_ABS_NUMBER,
+  maximum = SHARED_OUTCOME_MAX_ABS_NUMBER,
+): value is number {
   return typeof value === "number"
     && Number.isFinite(value)
     && value >= minimum
-    && value <= SHARED_OUTCOME_MAX_ABS_NUMBER;
+    && value <= maximum;
 }
 
 function validPoint(value: unknown): value is Point {
   return record(value) && boundedFinite(value.x) && boundedFinite(value.y);
 }
 
-/** Strict runtime guard for additive persisted applied-wind evidence. */
-export function isValidAppliedShotWindV1(value: unknown): value is AppliedShotWindV1 {
-  return record(value) && value.version === 1 && value.sourceMode === "directional"
-    && typeof value.headwindMph === "number" && value.headwindMph >= -70 && value.headwindMph <= 70
-    && typeof value.crosswindMph === "number" && value.crosswindMph >= -70 && value.crosswindMph <= 70
-    && boundedFinite(value.carryMultiplier, 0.25) && value.carryMultiplier <= 1.5
-    && boundedFinite(value.lateralCenterlineTiles, -8) && value.lateralCenterlineTiles <= 8;
+export { isValidAppliedShotWindV1 } from "./dispersionRuntime";
+
+/** Strict guard for the additive bivariate replay certificate. */
+export function isValidAppliedDispersionV1(value: unknown): value is AppliedDispersionV1 {
+  if (!record(value) || value.version !== 1 || value.mode !== "bivariate_v1"
+    || value.modelVersion !== BIVARIATE_DISPERSION_MODEL_VERSION
+    || typeof value.clubId !== "string" || !dispersionClub(value.clubId)
+    || !Number.isSafeInteger(value.seed)
+    || !boundedFinite(value.effectiveDispersionTiles, .05, 16)
+    || !boundedFinite(value.accuracy, 0, 100)
+    || !boundedFinite(value.consistency, 0, 100)
+    || !boundedFinite(value.centerlineLongitudinalTiles, -8, 8)
+    || !boundedFinite(value.centerlineLateralInputTiles, -8, 8)
+    || !boundedFinite(value.centerlineLateralTiles, -24, 24)
+    || !boundedFinite(value.appliedWindLateralTiles, -8, 8)
+    || value.centerlineLateralTiles !== Number((value.centerlineLateralInputTiles + value.appliedWindLateralTiles).toFixed(9))
+    || !record(value.sample)
+    || typeof value.sample.isTail !== "boolean"
+    || !boundedFinite(value.sample.mahalanobisRadius, 0, 8)
+    || !boundedFinite(value.sample.longitudinalTiles, -32, 32)
+    || !boundedFinite(value.sample.lateralTiles, -32, 32)
+  ) return false;
+  return true;
+}
+
+/**
+ * Reconstruct the compact certificate through the released resolver/sampler.
+ * This keeps saved evidence fail-closed without storing a second copy of the
+ * registry covariance table on every shot.
+ */
+function isCoherentAppliedDispersionV1(
+  evidence: AppliedDispersionV1,
+  appliedWind: AppliedShotWindV1 | undefined,
+): boolean {
+  const resolved = resolveBivariateDispersionShot({
+    clubId: evidence.clubId,
+    effectiveDispersionTiles: evidence.effectiveDispersionTiles,
+    accuracy: evidence.accuracy,
+    consistency: evidence.consistency,
+    centerlineLongitudinalTiles: evidence.centerlineLongitudinalTiles,
+    centerlineLateralTiles: evidence.centerlineLateralInputTiles,
+    appliedWind,
+  }, evidence.seed);
+  return resolved != null
+    && resolved.centerline.longitudinalTiles === evidence.centerlineLongitudinalTiles
+    && resolved.centerline.lateralTiles === evidence.centerlineLateralTiles
+    && resolved.appliedWindLateralTiles === evidence.appliedWindLateralTiles
+    && resolved.sample.isTail === evidence.sample.isTail
+    && resolved.sample.mahalanobisRadius === evidence.sample.mahalanobisRadius
+    && resolved.sample.offset.longitudinalTiles === evidence.sample.longitudinalTiles
+    && resolved.sample.offset.lateralTiles === evidence.sample.lateralTiles;
 }
 
 function validNullablePoint(value: unknown): value is Point | null {
@@ -295,7 +375,17 @@ export function isValidSharedShotOutcome(value: unknown): value is SharedShotOut
   ) {
     return false;
   }
-  if (value.appliedWind != null && !isValidAppliedShotWindV1(value.appliedWind)) return false;
+  const appliedWind = value.appliedWind;
+  if (appliedWind === null) return false;
+  if (appliedWind !== undefined && !isValidAppliedShotWindV1(appliedWind)) return false;
+  const appliedDispersion = value.appliedDispersion;
+  if (appliedDispersion != null && (!isValidAppliedDispersionV1(appliedDispersion)
+    || Number(appliedDispersion.effectiveDispersionTiles.toFixed(6)) !== value.requestedDispersionTiles
+    || !isCoherentAppliedDispersionV1(appliedDispersion, appliedWind))) return false;
+  if (appliedDispersion != null && appliedWind == null
+    && appliedDispersion.appliedWindLateralTiles !== 0) return false;
+  if (appliedDispersion != null && appliedWind != null
+    && appliedDispersion.appliedWindLateralTiles !== appliedWind.lateralCenterlineTiles) return false;
   return value.relief.status !== "resolved"
     || (
       value.relief.finalPosition?.x === value.finalPosition.x

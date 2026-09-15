@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { calculateShotEffects } from "./shotEffects";
-import { DISPERSION_CLUBS } from "./dispersionRegistry";
+import { BIVARIATE_DISPERSION_PROFILES, DISPERSION_CLUBS } from "./dispersionRegistry";
 import {
   BIVARIATE_DISPERSION_CENTRAL_68_RADIUS,
   BIVARIATE_DISPERSION_MAX_STANDARD_RADIUS,
   isValidBivariateDispersionModel,
   resolveBivariateDispersion,
   sampleBivariateDispersion,
+  type BivariateDispersionInput,
 } from "./dispersionModel";
+import {
+  resolveBivariateDispersionRuntime,
+  resolveBivariateDispersionShot,
+  sampleBivariateDispersionRuntime,
+} from "./dispersionRuntime";
 
 const appliedWind = {
   version: 1 as const,
@@ -112,6 +118,126 @@ describe("ZK-772 bivariate dispersion foundation", () => {
     expect(sampleBivariateDispersion(current, tail.value.seed)).toEqual(tail);
     expect(tail.value.mahalanobisRadius).toBeLessThanOrEqual(current.outerTail.maxMahalanobisRadius);
     expect(declaredEllipseSquared(tail.value.offset, current, true)).toBeLessThanOrEqual(1.000001);
+  });
+
+  it("quantizes the effective input once before covariance and JSON replay", () => {
+    const current = model({ effectiveDispersionTiles: 1.28456789123, centerlineLongitudinalTiles: .069736442 });
+    expect(current.resolvedFrom.effectiveDispersionTiles).toBe(1.284567891);
+    const first = sampleBivariateDispersion(current, 1);
+    const restored = JSON.parse(JSON.stringify(current));
+    const replay = sampleBivariateDispersion(restored, 1);
+    expect(replay).toEqual(first);
+    expect(first).toMatchObject({ ok: true, value: { landing: { longitudinalTiles: -0.898605534 } } });
+  });
+
+  it("keeps the compact gameplay path byte-identical to the analytical model", () => {
+    const inputs: BivariateDispersionInput[] = [
+      { clubId: "driver", effectiveDispersionTiles: 1.28456789123, accuracy: 50, consistency: 50, centerlineLongitudinalTiles: .069736442 },
+      { clubId: "putter", effectiveDispersionTiles: .05, accuracy: 100, consistency: 100, correlation: .92, centerlineLateralTiles: -8 },
+      { clubId: "driver", effectiveDispersionTiles: 16, accuracy: 0, consistency: 0, correlation: -.92, centerlineLongitudinalTiles: 8, centerlineLateralTiles: 8, directionalBiasLateralTiles: 8, appliedWind: { ...appliedWind, lateralCenterlineTiles: 8 } },
+      ...DISPERSION_CLUBS.flatMap((club) => [
+        { clubId: club.id, effectiveDispersionTiles: .05, accuracy: 0, consistency: 0, centerlineLongitudinalTiles: -8, centerlineLateralTiles: -8, appliedWind: { ...appliedWind, lateralCenterlineTiles: -8 } },
+        { clubId: club.id, effectiveDispersionTiles: 16, accuracy: 100, consistency: 100, centerlineLongitudinalTiles: 8, centerlineLateralTiles: 8, appliedWind: { ...appliedWind, lateralCenterlineTiles: 8 } },
+      ]),
+    ];
+    for (const input of inputs) {
+      const analytical = resolveBivariateDispersion(input);
+      const runtime = resolveBivariateDispersionRuntime(input);
+      expect(analytical.ok).toBe(true);
+      expect(runtime.ok).toBe(true);
+      if (!analytical.ok || !runtime.ok) continue;
+      expect(runtime.value).toEqual({
+        version: analytical.value.version,
+        clubId: analytical.value.clubId,
+        resolvedFrom: analytical.value.resolvedFrom,
+        centerline: analytical.value.centerline,
+        directionalBiasLateralTiles: analytical.value.directionalBiasLateralTiles,
+        appliedWindLateralTiles: analytical.value.appliedWindLateralTiles,
+        skillMultiplier: analytical.value.skillMultiplier,
+        correlation: analytical.value.correlation,
+        covariance: analytical.value.covariance,
+        outerTail: {
+          probability: analytical.value.outerTail.probability,
+          scale: analytical.value.outerTail.scale,
+          maxMahalanobisRadius: analytical.value.outerTail.maxMahalanobisRadius,
+        },
+      });
+      for (const seed of [1, 7, 42, 91_337, 4_294_926_741]) {
+        const analyticalSample = sampleBivariateDispersion(analytical.value, seed);
+        expect(sampleBivariateDispersionRuntime(runtime.value, seed)).toEqual(analyticalSample);
+        const { correlation: _analyticalCorrelation, directionalBiasLateralTiles: _analyticalBias, ...shotInput } = input;
+        const shotAnalytical = resolveBivariateDispersion(shotInput);
+        const shot = resolveBivariateDispersionShot(shotInput, seed);
+        expect(shotAnalytical.ok).toBe(true);
+        expect(shot).not.toBeNull();
+        if (!shotAnalytical.ok || !shot) continue;
+        const shotAnalyticalSample = sampleBivariateDispersion(shotAnalytical.value, seed);
+        expect(shotAnalyticalSample.ok).toBe(true);
+        if (!shotAnalyticalSample.ok) continue;
+        const { seed: _ownedSeed, ...sample } = shotAnalyticalSample.value;
+        expect(shot).toMatchObject({
+          resolvedFrom: {
+            effectiveDispersionTiles: shotAnalytical.value.resolvedFrom.effectiveDispersionTiles,
+            accuracy: shotAnalytical.value.resolvedFrom.accuracy,
+            consistency: shotAnalytical.value.resolvedFrom.consistency,
+            centerlineLateralTiles: shotAnalytical.value.resolvedFrom.centerlineLateralTiles,
+          },
+          centerline: shotAnalytical.value.centerline,
+          appliedWindLateralTiles: shotAnalytical.value.appliedWindLateralTiles,
+          sample,
+        });
+      }
+    }
+    expect(Object.values(BIVARIATE_DISPERSION_PROFILES).every((profile) => profile.defaultCorrelation === 0)).toBe(true);
+  });
+
+  it("canonicalizes every persisted input before central, tail, and wind replay math", () => {
+    const centralInput = {
+      clubId: "driver", effectiveDispersionTiles: 1.28456789123,
+      accuracy: 50.1234568013, consistency: 45.987654330699996,
+      centerlineLongitudinalTiles: .0697364423, centerlineLateralTiles: .3456789123,
+    };
+    const tailInput = { ...centralInput, accuracy: 50.1234567996, consistency: 45.987654329399994 };
+    const windInput = {
+      clubId: "driver", effectiveDispersionTiles: 1.2, accuracy: 50, consistency: 50,
+      centerlineLongitudinalTiles: .0697364423, centerlineLateralTiles: .1234568115,
+      appliedWind,
+    };
+    const cases = [
+      { input: centralInput, seed: 129, field: "longitudinalTiles" as const, expected: -.468320333 },
+      { input: tailInput, seed: 6_507, field: "lateralTiles" as const, expected: .935909218 },
+      { input: windInput, seed: 1, field: null, expected: -.296543189 },
+    ];
+    for (const current of cases) {
+      const resolved = resolveBivariateDispersionShot(current.input, current.seed);
+      expect(resolved).not.toBeNull();
+      if (!resolved) continue;
+      if (current.field) expect(resolved.sample.offset[current.field]).toBe(current.expected);
+      else expect(resolved.centerline.lateralTiles).toBe(current.expected);
+      const replay = resolveBivariateDispersionShot({
+        clubId: current.input.clubId,
+        effectiveDispersionTiles: resolved.resolvedFrom.effectiveDispersionTiles,
+        accuracy: resolved.resolvedFrom.accuracy,
+        consistency: resolved.resolvedFrom.consistency,
+        centerlineLongitudinalTiles: resolved.centerline.longitudinalTiles,
+        centerlineLateralTiles: resolved.resolvedFrom.centerlineLateralTiles,
+        ...("appliedWind" in current.input ? { appliedWind: current.input.appliedWind } : {}),
+      }, current.seed);
+      expect(replay).toEqual(resolved);
+    }
+  });
+
+  it("rejects analytical-only overrides at the compact type and runtime boundaries", () => {
+    const input = { clubId: "driver", effectiveDispersionTiles: 2, accuracy: 50, consistency: 50 };
+    // @ts-expect-error correlation is deliberately absent from the compact authority.
+    expect(resolveBivariateDispersionShot({ ...input, correlation: .92 }, 1)).toBeNull();
+    // Optional-never permits undefined without exactOptionalPropertyTypes;
+    // the runtime boundary still rejects property presence.
+    expect(resolveBivariateDispersionShot({ ...input, correlation: undefined }, 1)).toBeNull();
+    // @ts-expect-error directional bias belongs only to the analytical authority.
+    expect(resolveBivariateDispersionShot({ ...input, directionalBiasLateralTiles: 1.5 }, 1)).toBeNull();
+    const analytical = resolveBivariateDispersion({ ...input, correlation: .92, directionalBiasLateralTiles: 1.5 });
+    expect(analytical).toMatchObject({ ok: true, value: { correlation: .92, directionalBiasLateralTiles: 1.5 } });
   });
 
   it("keeps controlled club envelopes monotonic and skill tightening bounded by explicit floors", () => {

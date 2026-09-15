@@ -1,21 +1,30 @@
-import { mulberry32 } from "../../utils/rng";
-import { isValidAppliedShotWindV1 } from "./contracts";
 import {
   BIVARIATE_DISPERSION_MODEL_VERSION,
   BIVARIATE_DISPERSION_PROFILES,
   dispersionClub,
-  type ShotClubId,
 } from "./dispersionRegistry";
-import type { AppliedShotWindV1 } from "./shotEnvironment";
+import {
+  BIVARIATE_DISPERSION_CENTRAL_68_RADIUS,
+  BIVARIATE_DISPERSION_MAX_STANDARD_RADIUS,
+  resolveBivariateDispersionRuntime,
+  roundBivariateValue,
+  sampleBivariateDispersionRuntime,
+  skillMultiplierForBivariateProfile,
+  type BivariateDispersionInput,
+  type BivariateDispersionRuntime,
+  type BivariateDispersionSample,
+} from "./dispersionRuntime";
 
-/** A bivariate standard normal contains 68% of its mass inside this radius. */
-export const BIVARIATE_DISPERSION_CENTRAL_68_RADIUS = Math.sqrt(-2 * Math.log(.32));
-export const BIVARIATE_DISPERSION_MAX_STANDARD_RADIUS = 3.5;
-
-export interface TargetAlignedDispersionPoint {
-  longitudinalTiles: number;
-  lateralTiles: number;
-}
+export {
+  BIVARIATE_DISPERSION_CENTRAL_68_RADIUS,
+  BIVARIATE_DISPERSION_MAX_STANDARD_RADIUS,
+  isValidAppliedShotWindV1,
+} from "./dispersionRuntime";
+export type {
+  BivariateDispersionInput,
+  BivariateDispersionSample,
+  TargetAlignedDispersionPoint,
+} from "./dispersionRuntime";
 
 /**
  * Principal-axis geometry for a covariance ellipse. `orientationRadians` is
@@ -29,51 +38,8 @@ export interface PrincipalEllipseGeometry {
   orientationRadians: number;
 }
 
-export interface BivariateDispersionInput {
-  clubId: string;
-  /**
-   * The already-effective scalar from the existing shot-effects authority.
-   * This is the sole lie/flight/technique scaling input; callers must not also
-   * pass a modifier, which prevents the historical effect from applying twice.
-   */
-  effectiveDispersionTiles: number;
-  accuracy: number;
-  consistency: number;
-  /** Future curve/elevation owners may shift the expected centerline directly. */
-  centerlineLongitudinalTiles?: number;
-  centerlineLateralTiles?: number;
-  /** A persistent golfer tendency. Zero is valid and is the default. */
-  directionalBiasLateralTiles?: number;
-  /** A supplied covariance orientation; omitted uses the club's neutral value. */
-  correlation?: number;
-  /** Already-validated stored evidence only; this model never projects wind. */
-  appliedWind?: AppliedShotWindV1 | null;
-}
-
-export interface BivariateDispersionModel {
-  version: typeof BIVARIATE_DISPERSION_MODEL_VERSION;
-  clubId: ShotClubId;
+export interface BivariateDispersionModel extends Omit<BivariateDispersionRuntime, "outerTail"> {
   provenance: "CourseCraft balance assumption";
-  /** Inputs retained so restored models can be verified against this version's profile. */
-  resolvedFrom: {
-    effectiveDispersionTiles: number;
-    accuracy: number;
-    consistency: number;
-    centerlineLongitudinalTiles: number;
-    centerlineLateralTiles: number;
-  };
-  centerline: TargetAlignedDispersionPoint;
-  directionalBiasLateralTiles: number;
-  appliedWindLateralTiles: number;
-  skillMultiplier: number;
-  correlation: number;
-  /** Symmetric positive-definite covariance in target-aligned tile units. */
-  covariance: {
-    longitudinalVariance: number;
-    lateralVariance: number;
-    covariance: number;
-    determinant: number;
-  };
   /** Actual rotated 68%-confidence ellipse for the central component. */
   central68: PrincipalEllipseGeometry & { mahalanobisRadius: number };
   /** Bounded rare-mishit mixture, with its own actual rotated outer geometry. */
@@ -84,14 +50,6 @@ export interface BivariateDispersionModel {
   };
 }
 
-export interface BivariateDispersionSample {
-  seed: number;
-  isTail: boolean;
-  mahalanobisRadius: number;
-  offset: TargetAlignedDispersionPoint;
-  landing: TargetAlignedDispersionPoint;
-}
-
 export type BivariateDispersionResult =
   | { ok: true; value: BivariateDispersionModel }
   | { ok: false; reason: "unknown_club" | "invalid_input" | "invalid_applied_wind" };
@@ -100,42 +58,11 @@ export type BivariateDispersionSampleResult =
   | { ok: true; value: BivariateDispersionSample }
   | { ok: false; reason: "invalid_seed" | "invalid_model" };
 
-function rounded(value: number): number {
-  return Number(value.toFixed(9));
-}
-
-/** Covariance certificates retain enough precision that a valid tiny model is never rounded to zero. */
-function covarianceCertificate(value: number): number {
-  return Number(value.toPrecision(15));
-}
-
-function bounded(value: number | undefined, fallback: number, minimum: number, maximum: number): number | null {
-  const resolved = value ?? fallback;
-  return Number.isFinite(resolved) && resolved >= minimum && resolved <= maximum ? resolved : null;
-}
+const rounded = roundBivariateValue;
 
 function nearlyEqual(actual: number, expected: number, relativeTolerance = 2e-6): boolean {
   return Number.isFinite(actual) && Number.isFinite(expected)
     && Math.abs(actual - expected) <= Math.max(1e-9, Math.abs(expected) * relativeTolerance);
-}
-
-function gaussian(rng: () => number): number {
-  const u = Math.max(1e-12, rng());
-  const v = Math.max(1e-12, rng());
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-
-function boundedPair(rng: () => number): { longitudinal: number; lateral: number; radius: number } {
-  let longitudinal = gaussian(rng);
-  let lateral = gaussian(rng);
-  let radius = Math.hypot(longitudinal, lateral);
-  if (radius > BIVARIATE_DISPERSION_MAX_STANDARD_RADIUS) {
-    const scale = BIVARIATE_DISPERSION_MAX_STANDARD_RADIUS / radius;
-    longitudinal *= scale;
-    lateral *= scale;
-    radius = BIVARIATE_DISPERSION_MAX_STANDARD_RADIUS;
-  }
-  return { longitudinal, lateral, radius };
 }
 
 function principalGeometry(
@@ -156,9 +83,7 @@ function principalGeometry(
   };
 }
 
-function skillMultiplierFor(profile: typeof BIVARIATE_DISPERSION_PROFILES[ShotClubId], accuracy: number, consistency: number): number {
-  return Math.max(profile.skillFloorMultiplier, (1 - accuracy * .0031) * (1 - consistency * .0027));
-}
+const skillMultiplierFor = skillMultiplierForBivariateProfile;
 
 /**
  * Resolves a fail-closed model only. It consumes the existing already-
@@ -167,87 +92,29 @@ function skillMultiplierFor(profile: typeof BIVARIATE_DISPERSION_PROFILES[ShotCl
  * scoped resolver cutover.
  */
 export function resolveBivariateDispersion(input: BivariateDispersionInput): BivariateDispersionResult {
-  if (!input || typeof input !== "object") return { ok: false, reason: "invalid_input" };
-  const candidate = input as Partial<BivariateDispersionInput>;
-  if (typeof candidate.clubId !== "string") return { ok: false, reason: "invalid_input" };
-  const club = dispersionClub(candidate.clubId);
-  if (!club) return { ok: false, reason: "unknown_club" };
-  const profile = BIVARIATE_DISPERSION_PROFILES[club.id];
-  const base = bounded(candidate.effectiveDispersionTiles, 0, .05, 16);
-  const accuracy = bounded(candidate.accuracy, 0, 0, 100);
-  const consistency = bounded(candidate.consistency, 0, 0, 100);
-  const longitudinalShift = bounded(candidate.centerlineLongitudinalTiles, 0, -8, 8);
-  const lateralShift = bounded(candidate.centerlineLateralTiles, 0, -8, 8);
-  const directionalBias = bounded(candidate.directionalBiasLateralTiles, 0, -8, 8);
-  const correlation = bounded(candidate.correlation, profile.defaultCorrelation, -.92, .92);
-  if (
-    base === null || accuracy === null || consistency === null || longitudinalShift === null
-    || lateralShift === null || directionalBias === null || correlation === null
-  ) return { ok: false, reason: "invalid_input" };
-  if (candidate.appliedWind != null && !isValidAppliedShotWindV1(candidate.appliedWind)) {
-    return { ok: false, reason: "invalid_applied_wind" };
-  }
-
-  const skillMultiplier = skillMultiplierFor(profile, accuracy, consistency);
-  const centralLongitudinal = base * profile.central68LongitudinalScale * skillMultiplier;
-  const centralLateral = base * profile.central68LateralScale * skillMultiplier;
-  const sigmaLongitudinal = centralLongitudinal / BIVARIATE_DISPERSION_CENTRAL_68_RADIUS;
-  const sigmaLateral = centralLateral / BIVARIATE_DISPERSION_CENTRAL_68_RADIUS;
-  const covariance = correlation * sigmaLongitudinal * sigmaLateral;
-  const determinant = sigmaLongitudinal ** 2 * sigmaLateral ** 2 - covariance ** 2;
-  const roundedDeterminant = covarianceCertificate(determinant);
-  // Both raw and stored determinants must remain positive: a rounded zero can
-  // never be emitted as a valid covariance certificate.
-  if (!Number.isFinite(determinant) || determinant <= 1e-12 || roundedDeterminant <= 0) return { ok: false, reason: "invalid_input" };
-
-  const appliedWindLateralTiles = candidate.appliedWind?.lateralCenterlineTiles ?? 0;
-  const tailProbability = profile.tailProbability * (1 - consistency / 100 * .55);
-  const tailScale = Math.max(1.25, profile.tailScale * (1 - consistency / 100 * .25));
-  const longitudinalVariance = sigmaLongitudinal ** 2;
-  const lateralVariance = sigmaLateral ** 2;
+  const runtime = resolveBivariateDispersionRuntime(input);
+  if (!runtime.ok) return runtime;
+  const profile = BIVARIATE_DISPERSION_PROFILES[runtime.value.clubId];
+  const { covariance, outerTail } = runtime.value;
   const central68 = principalGeometry(
-    longitudinalVariance,
-    lateralVariance,
-    covariance,
+    covariance.longitudinalVariance,
+    covariance.lateralVariance,
+    covariance.covariance,
     BIVARIATE_DISPERSION_CENTRAL_68_RADIUS,
   );
-  const outerTail = principalGeometry(
-    longitudinalVariance,
-    lateralVariance,
-    covariance,
-    BIVARIATE_DISPERSION_MAX_STANDARD_RADIUS * tailScale,
+  const outerTailGeometry = principalGeometry(
+    covariance.longitudinalVariance,
+    covariance.lateralVariance,
+    covariance.covariance,
+    BIVARIATE_DISPERSION_MAX_STANDARD_RADIUS * outerTail.scale,
   );
   const value: BivariateDispersionModel = {
-    version: BIVARIATE_DISPERSION_MODEL_VERSION,
-    clubId: club.id,
+    ...runtime.value,
     provenance: profile.provenance,
-    resolvedFrom: {
-      effectiveDispersionTiles: rounded(base),
-      accuracy: rounded(accuracy),
-      consistency: rounded(consistency),
-      centerlineLongitudinalTiles: rounded(longitudinalShift),
-      centerlineLateralTiles: rounded(lateralShift),
-    },
-    centerline: {
-      longitudinalTiles: rounded(longitudinalShift),
-      lateralTiles: rounded(lateralShift + directionalBias + appliedWindLateralTiles),
-    },
-    directionalBiasLateralTiles: rounded(directionalBias),
-    appliedWindLateralTiles: rounded(appliedWindLateralTiles),
-    skillMultiplier: rounded(skillMultiplier),
-    correlation: rounded(correlation),
-    covariance: {
-      longitudinalVariance: covarianceCertificate(longitudinalVariance),
-      lateralVariance: covarianceCertificate(lateralVariance),
-      covariance: covarianceCertificate(covariance),
-      determinant: roundedDeterminant,
-    },
     central68: { ...central68, mahalanobisRadius: rounded(BIVARIATE_DISPERSION_CENTRAL_68_RADIUS) },
     outerTail: {
-      probability: rounded(tailProbability),
-      scale: rounded(tailScale),
-      maxMahalanobisRadius: rounded(BIVARIATE_DISPERSION_MAX_STANDARD_RADIUS * tailScale),
       ...outerTail,
+      ...outerTailGeometry,
     },
   };
   // Resolver and sampler have one strict contract. This should be unreachable
@@ -261,29 +128,7 @@ export function resolveBivariateDispersion(input: BivariateDispersionInput): Biv
 export function sampleBivariateDispersion(model: BivariateDispersionModel, seed: number): BivariateDispersionSampleResult {
   if (!Number.isSafeInteger(seed)) return { ok: false, reason: "invalid_seed" };
   if (!isValidBivariateDispersionModel(model)) return { ok: false, reason: "invalid_model" };
-  const rng = mulberry32(seed >>> 0);
-  const isTail = rng() < model.outerTail.probability;
-  const pair = boundedPair(rng);
-  const componentScale = isTail ? model.outerTail.scale : 1;
-  const sigmaLongitudinal = Math.sqrt(model.covariance.longitudinalVariance);
-  const sigmaLateral = Math.sqrt(model.covariance.lateralVariance);
-  const independentLateral = Math.sqrt(1 - model.correlation ** 2);
-  const longitudinal = pair.longitudinal * sigmaLongitudinal * componentScale;
-  const lateral = (model.correlation * pair.longitudinal + independentLateral * pair.lateral) * sigmaLateral * componentScale;
-  const offset = { longitudinalTiles: rounded(longitudinal), lateralTiles: rounded(lateral) };
-  return {
-    ok: true,
-    value: {
-      seed: seed >>> 0,
-      isTail,
-      mahalanobisRadius: rounded(pair.radius * componentScale),
-      offset,
-      landing: {
-        longitudinalTiles: rounded(model.centerline.longitudinalTiles + offset.longitudinalTiles),
-        lateralTiles: rounded(model.centerline.lateralTiles + offset.lateralTiles),
-      },
-    },
-  };
+  return sampleBivariateDispersionRuntime(model, seed);
 }
 
 /** Strict structural guard for models restored from an untrusted save or tool. */

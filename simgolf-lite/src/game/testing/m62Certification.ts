@@ -506,6 +506,7 @@ function parityEvidence(sourceCourse: Course) {
     skills: capabilitiesToPlayerSkills(liveCapabilities),
     selection: { club: liveIntent.club, aim: liveIntent.target, power: liveIntent.power, technique: liveIntent.technique },
     handedness: stableGolferHandedness(liveCapabilities.seed),
+    dispersionConsistency: liveCapabilities.consistency,
     seed: sharedSeed,
   });
   return {

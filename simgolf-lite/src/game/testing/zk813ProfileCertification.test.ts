@@ -33,6 +33,11 @@ const EXPECTED_RECEIPTS = [
 describe("ZK-813 headless profile certification", () => {
   it("certifies the nine fresh-start axes, normalization carriers, authority, campaign receipts, and replay", { timeout: 120_000 }, () => {
     const report = runZK813ProfileCertification();
+    // The profile report includes newly-started Player Pro/live simulations.
+    // Their frozen bivariate certificates intentionally replace only that
+    // deterministic physical stream; all profile policy/receipt controls
+    // below remain exact and make this hash delta reviewable.
+    const repeated = runZK813ProfileCertification();
     expect(report.certificationId).toBe(ZK813_CERTIFICATION_ID);
     expect(report.checks.filter((entry) => !entry.passed), JSON.stringify(report.checks)).toEqual([]);
     expect(report.passed).toBe(true);
@@ -59,7 +64,8 @@ describe("ZK-813 headless profile certification", () => {
     expect(report.campaign).toMatchObject({ chapterCount: 6, phaseEvidenceCount: 18, serializedReceipts: 6 });
     expect(report.campaign.receipts).toEqual(EXPECTED_RECEIPTS);
     expect(report.longSession).toMatchObject({ days: 8, courses: expect.any(Number), weatherKinds: expect.any(Number) });
-    expect(report.determinismHash).toBe("645298b3");
+    expect(repeated).toEqual(report);
+    expect(report.determinismHash).toBe("25e6c333");
     expect(report.rows.every((row) => row.graduationHash.match(/^[0-9a-f]{8}$/))).toBe(true);
     expect(report.headlessGaps).toHaveLength(2);
     expect(report.headlessGaps.join(" ")).toContain("real Player Pro");

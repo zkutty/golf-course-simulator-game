@@ -51,7 +51,7 @@ import {
   type CalculatedShotEffects,
   type ShotClubId,
 } from "../rules/shotEffects";
-import { DISPERSION_CLUBS, dispersionClubIdForLabel } from "../rules/dispersionRegistry";
+import { BIVARIATE_DISPERSION_MODEL_VERSION, DISPERSION_CLUBS, dispersionClubIdForLabel } from "../rules/dispersionRegistry";
 import {
   analyzeShotSlope,
   elevationAdjustedCarryYards,
@@ -99,6 +99,8 @@ import {
   resolvePerformanceModifiers,
 } from "../competition/equipmentRuntime";
 import { normalizeShotEnvironmentV1, resolveAppliedShotWindV1 } from "../rules/shotEnvironment";
+import { decodeDispersionRoundSnapshotV1 } from "../rules/dispersionSnapshot";
+import { resolveBivariateDispersionShot } from "../rules/dispersionRuntime";
 
 export { startPlayableRound } from "./playerProRoundStart";
 export type { StartPlayableRoundArgs } from "./playerProRoundStart";
@@ -255,6 +257,10 @@ function validActiveShotTrace(value: unknown): value is PlayerShotTrace {
     return false;
   }
   if (trace.sharedOutcome != null && !isValidSharedShotOutcome(trace.sharedOutcome)) return false;
+  if (trace.sharedOutcome?.appliedDispersion != null && (
+    (trace.seed >>> 0) !== trace.sharedOutcome.appliedDispersion.seed
+    || dispersionClubIdForLabel(trace.club) !== trace.sharedOutcome.appliedDispersion.clubId
+  )) return false;
   if (trace.shotSlope != null && !normalizeShotSlopeContext(trace.shotSlope)) return false;
   if (trace.greenRollout != null && !isValidGreenRollout(trace.greenRollout)) return false;
   if (trace.greenPutting != null && !isValidGreenPutting(trace.greenPutting)) return false;
@@ -348,6 +354,8 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
   if (!point(round.ball) || !Array.isArray(round.scorecard) || !Array.isArray(round.shots) || round.shots.length > MAX_SHOTS) return null;
   if (!["awaiting_shot", "flight", "hole_complete", "round_complete", "conceded"].includes(round.phase)) return null;
   if (round.rulesSnapshot != null && !decodeControlledRoundSnapshotV2(round.rulesSnapshot).ok) return null;
+  const dispersionSnapshot = decodeDispersionRoundSnapshotV1(round.course.dispersionSnapshot);
+  if (!dispersionSnapshot.ok) return null;
   const greenSnapshot = round.course.greenSnapshot == null
     ? null
     : decodeGreenRoundSnapshot(round.course.greenSnapshot, round.course);
@@ -377,6 +385,7 @@ function normalizeActiveRound(value: unknown): PlayerPlayableRound | null {
       biomeCompatibility: biomeCompatibility.metadata,
       ...(greenSnapshot?.ok ? { greenSnapshot: greenSnapshot.value } : {}),
       greenDrainageLevel: clamp(Math.round(finite(round.course.greenDrainageLevel)), 0, 3),
+      dispersionSnapshot: dispersionSnapshot.value,
       ...(round.course.weather ? {
         weather: {
           ...round.course.weather,
@@ -770,12 +779,20 @@ export function previewPlayableShot(round: PlayerPlayableRound, skills: PlayerPr
   const obstacleClose = round.course.obstacles.some((obstacle) => Math.hypot(obstacle.x - round.ball.x, obstacle.y - round.ball.y) < 1.6);
   const obstructionPenalty = obstacleClose && selection.technique !== "punch" && club.name !== "Sand Wedge" && club.name !== "Chip" ? 0.65 : 0;
   const expectedPenalty = Math.max(0, evaluation.expectedShotCost - 1) + obstructionPenalty;
-  const dispersionTiles = calculated.effects.dispersionTiles
+  const legacyPreviewDispersionTiles = calculated.effects.dispersionTiles
     * (1.42 - skills[skillForClub(club.name, round.lie)] / 180)
     * (round.course.weather?.dispersionMultiplier ?? 1)
     * confidenceDispersionMultiplier(round.confidenceSnapshot)
     * (obstructionPenalty > 0 ? 1.55 : 1)
     * performance.dispersion;
+  const previewDispersionAuthority = decodeDispersionRoundSnapshotV1(round.course.dispersionSnapshot);
+  const dispersionTiles = previewDispersionAuthority.ok && previewDispersionAuthority.value.mode === "bivariate_v1"
+    ? calculated.effects.dispersionTiles
+      * (round.course.weather?.dispersionMultiplier ?? 1)
+      * confidenceDispersionMultiplier(round.confidenceSnapshot)
+      * (obstructionPenalty > 0 ? 1.55 : 1)
+      * performance.dispersion
+    : legacyPreviewDispersionTiles;
   const resolved = evaluation.isValid
     ? resolvePlayableShot({
       snapshot: round.course,
@@ -850,6 +867,8 @@ export function resolvePlayableShot(args: {
   confidenceSnapshot?: PlayerConfidenceState;
   /** Frozen ZK-730 equipment and learned-technique authority. */
   performanceLoadout?: PlayerPlayableRound["performanceLoadout"];
+  /** Live callers carry their persisted consistency through this shared seam. */
+  dispersionConsistency?: number;
   seed: number;
 }): PlayerShotTrace {
   const club = CLUBS.find((candidate) => candidate.name === args.selection.club) ?? CLUBS[4];
@@ -903,28 +922,87 @@ export function resolvePlayableShot(args: {
   const evaluation = evalShotExpectedCost({ course, from: args.from, to: args.selection.aim, golfer: profile, club: adjustedClub, shotSlope });
   const clubSkill = args.skills[skillForClub(club.name, args.lie)];
   const weatherDispersion = args.snapshot.weather?.dispersionMultiplier ?? 1;
-  const dispersion = Math.max(
-    0.12,
-    calculated.effects.dispersionTiles
-      * (1.42 - clubSkill / 180)
-      * weatherDispersion
-      * confidenceDispersionMultiplier(args.confidenceSnapshot)
-      * (obstructionPenalty ? 1.55 : 1)
-      * performance.dispersion,
-  );
-  const rng = mulberry32(args.seed | 0);
-  const lateral = gaussian(rng) * dispersion * 0.42;
-  const longitudinal = gaussian(rng) * dispersion * 0.22;
+  const dispersionAuthority = decodeDispersionRoundSnapshotV1(args.snapshot.dispersionSnapshot);
+  if (!dispersionAuthority.ok) throw new Error(`Invalid dispersion snapshot: ${dispersionAuthority.reason}`);
+  // Keep the scalar's historical multiplication and RNG inputs entirely
+  // isolated. In bivariate mode the old club-skill scalar is never a base.
+  const legacyDispersion = dispersionAuthority.value.mode === "legacy_scalar"
+    ? Math.max(
+      0.12,
+      calculated.effects.dispersionTiles
+        * (1.42 - clubSkill / 180)
+        * weatherDispersion
+        * confidenceDispersionMultiplier(args.confidenceSnapshot)
+        * (obstructionPenalty ? 1.55 : 1)
+        * performance.dispersion,
+    )
+    : 0;
+  const bivariateDispersion = dispersionAuthority.value.mode === "bivariate_v1"
+    ? Math.max(
+      .05,
+      calculated.effects.dispersionTiles
+        * weatherDispersion
+        * confidenceDispersionMultiplier(args.confidenceSnapshot)
+        * (obstructionPenalty ? 1.55 : 1)
+        * performance.dispersion,
+    )
+    : 0;
+  const dispersion = dispersionAuthority.value.mode === "bivariate_v1" ? bivariateDispersion : legacyDispersion;
   const curve = resolveShotCurve({
     shotSlope,
     shotLengthTiles: intendedTiles,
     club: club.name,
     technique: args.selection.technique,
   }).combinedCurveTiles;
-  let landing: PlayerProPoint = {
-    x: args.from.x + ux * (intendedTiles + longitudinal) - uy * (lateral + curve + (appliedWind?.lateralCenterlineTiles ?? 0)),
-    y: args.from.y + uy * (intendedTiles + longitudinal) + ux * (lateral + curve + (appliedWind?.lateralCenterlineTiles ?? 0)),
-  };
+  let appliedDispersion: SharedShotOutcome["appliedDispersion"];
+  let landing: PlayerProPoint;
+  if (dispersionAuthority.value.mode === "bivariate_v1") {
+    // This is the sole bivariate resolve/sample. The existing shot seed is
+    // deliberately reused so preview, commit, replay, and live agree.
+    const resolved = resolveBivariateDispersionShot({
+      clubId,
+      effectiveDispersionTiles: bivariateDispersion,
+      accuracy: clubSkill,
+      consistency: args.dispersionConsistency ?? clubSkill,
+      centerlineLateralTiles: curve,
+      appliedWind,
+    }, args.seed);
+    if (!resolved) throw new Error("Invalid bivariate dispersion");
+    const { sample } = resolved;
+    landing = {
+      x: args.from.x + ux * (intendedTiles + sample.landing.longitudinalTiles) - uy * sample.landing.lateralTiles,
+      y: args.from.y + uy * (intendedTiles + sample.landing.longitudinalTiles) + ux * sample.landing.lateralTiles,
+    };
+    appliedDispersion = {
+      version: 1,
+      mode: "bivariate_v1",
+      modelVersion: BIVARIATE_DISPERSION_MODEL_VERSION,
+      clubId,
+      seed: args.seed >>> 0,
+      effectiveDispersionTiles: resolved.resolvedFrom.effectiveDispersionTiles,
+      accuracy: resolved.resolvedFrom.accuracy,
+      consistency: resolved.resolvedFrom.consistency,
+      centerlineLongitudinalTiles: resolved.centerline.longitudinalTiles,
+      centerlineLateralInputTiles: resolved.resolvedFrom.centerlineLateralTiles,
+      centerlineLateralTiles: resolved.centerline.lateralTiles,
+      appliedWindLateralTiles: resolved.appliedWindLateralTiles,
+      sample: {
+        isTail: sample.isTail,
+        mahalanobisRadius: sample.mahalanobisRadius,
+        longitudinalTiles: sample.offset.longitudinalTiles,
+        lateralTiles: sample.offset.lateralTiles,
+      },
+    };
+  } else {
+    // Isolated legacy path: preserve RNG call order and scalar arithmetic.
+    const rng = mulberry32(args.seed | 0);
+    const lateral = gaussian(rng) * legacyDispersion * 0.42;
+    const longitudinal = gaussian(rng) * legacyDispersion * 0.22;
+    landing = {
+      x: args.from.x + ux * (intendedTiles + longitudinal) - uy * (lateral + curve + (appliedWind?.lateralCenterlineTiles ?? 0)),
+      y: args.from.y + uy * (intendedTiles + longitudinal) + ux * (lateral + curve + (appliedWind?.lateralCenterlineTiles ?? 0)),
+    };
+  }
   const outside = landing.x < 0 || landing.y < 0 || landing.x >= args.snapshot.width || landing.y >= args.snapshot.height;
   const rawLanding = { ...landing };
   landing = {
@@ -1070,6 +1148,7 @@ export function resolvePlayableShot(args: {
     relief: rules.relief,
     finalPosition,
     ...(appliedWind ? { appliedWind } : {}),
+    ...(appliedDispersion ? { appliedDispersion } : {}),
     obstacleCollision: {
       width: args.snapshot.width,
       height: args.snapshot.height,

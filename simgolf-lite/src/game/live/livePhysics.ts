@@ -12,6 +12,7 @@ import { biomeCompatibilityMetadataFor, getBiomeDefinition } from "../models/bio
 import { effectiveSurfaceTiles, resolveEffectiveSurface } from "../conditions/surfaceCare";
 import { createGreenRoundSnapshot } from "../greens/greenSurface";
 import { shotSlopeEvidenceFacts, shotSlopeExplanation } from "../models/shotSlopeEvidence";
+import { createBivariateDispersionRoundSnapshotV1 } from "../rules/dispersionSnapshot";
 
 function parFor(hole: Course["holes"][number]): number {
   const setting = getParSetting(hole, "member");
@@ -91,6 +92,7 @@ export function liveCourseSnapshot(args: {
     greenSnapshot: createGreenRoundSnapshot(args.course),
     greenDrainageLevel: Math.max(0, Math.min(3, Math.round(args.drainageLevel ?? 0))),
     rulesSnapshot: args.rulesSnapshot ?? deriveRulesSnapshot(args.course, holes),
+    dispersionSnapshot: createBivariateDispersionRoundSnapshotV1(),
     weather: args.weather,
   };
 }
@@ -121,6 +123,7 @@ export function resolveLiveShot(args: {
     skills: capabilitiesToPlayerSkills(args.capabilities),
     selection,
     handedness: stableGolferHandedness(args.capabilities.seed),
+    dispersionConsistency: args.capabilities.consistency,
     seed: args.seed,
   });
   const facts = args.intent.facts.slice();
