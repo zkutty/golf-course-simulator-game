@@ -294,8 +294,8 @@ export function resolveBivariateDispersionShot(
   }
   const componentScale = isTail ? tailScale : 1;
   const offset = {
-    longitudinalTiles: roundBivariateValue(longitudinal * Math.sqrt(covarianceCertificate(sigmaLongitudinal ** 2)) * componentScale),
-    lateralTiles: roundBivariateValue(lateral * Math.sqrt(covarianceCertificate(sigmaLateral ** 2)) * componentScale),
+    longitudinalTiles: roundBivariateValue(longitudinal * sigmaLongitudinal * componentScale),
+    lateralTiles: roundBivariateValue(lateral * sigmaLateral * componentScale),
   };
   return {
       resolvedFrom: {
