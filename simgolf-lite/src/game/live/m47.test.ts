@@ -56,6 +56,29 @@ function course(): Course {
 }
 
 describe("M47 live golfer contracts", () => {
+  it("freezes bivariate live snapshots and supplies explicit capability consistency", () => {
+    const c = course();
+    const personality = testPersonality({ skill: .7, consistency: .45 });
+    const capabilities = createGolferCapabilities({ personality, seed: 99 });
+    const snapshot = liveCourseSnapshot({ course: c, teeSet: "member", pinRotation: "A" });
+    expect(snapshot.dispersionSnapshot).toEqual({ version: 1, mode: "bivariate_v1", modelVersion: 1 });
+    const intent = generateStrategicHolePlan({ course: c, hole: c.holes[0], par: 4, capabilities, personality }).chosen;
+    const common = { snapshot, holeId: "m47-hole-1", shotNumber: 1, from: intent.from, lie: "tee", intent, seed: 91_337 } as const;
+    const first = resolveLiveShot({ ...common, capabilities });
+    const replay = resolveLiveShot({ ...common, snapshot: JSON.parse(JSON.stringify(snapshot)), capabilities });
+    expect(replay).toEqual(first);
+    expect(first.sharedOutcome?.appliedDispersion?.consistency).toBeCloseTo(capabilities.consistency, 9);
+    const steadier = { ...capabilities, consistency: Math.min(100, capabilities.consistency + 25) };
+    const changed = resolveLiveShot({ ...common, capabilities: steadier });
+    expect(changed.sharedOutcome?.appliedDispersion?.consistency).toBeCloseTo(steadier.consistency, 9);
+    expect(changed.sharedOutcome?.appliedDispersion?.effectiveDispersionTiles)
+      .toBe(first.sharedOutcome?.appliedDispersion?.effectiveDispersionTiles);
+    expect(changed.sharedOutcome?.appliedDispersion?.sample).not.toEqual(first.sharedOutcome?.appliedDispersion?.sample);
+    const highBit = resolveLiveShot({ ...common, capabilities, seed: -40_555 });
+    expect(highBit.seed).toBe(-40_555);
+    expect(highBit.sharedOutcome?.appliedDispersion?.seed).toBe(4_294_926_741);
+  });
+
   it("uses only explicit, unambiguous manual setup for the round-summary fast path", () => {
     const source = createM47CertificationCourse(9);
     const setup = courseForRoundSetup(source, "member", "A");
@@ -187,6 +210,7 @@ describe("M47 live golfer contracts", () => {
         flightProfile: intent.flightProfile,
       },
       handedness: stableGolferHandedness(capabilities.seed),
+      dispersionConsistency: capabilities.consistency,
       seed: sharedArgs.seed,
     });
     expect(live.sharedOutcome).toEqual(player.sharedOutcome);
@@ -236,6 +260,7 @@ describe("M47 live golfer contracts", () => {
         flightProfile: intent.flightProfile,
       },
       handedness: stableGolferHandedness(capabilities.seed),
+      dispersionConsistency: capabilities.consistency,
       seed: 4781,
     });
     const playerSharedOutcome = player.sharedOutcome;
@@ -331,7 +356,11 @@ describe("M47 live golfer contracts", () => {
       strengths: ["recovery", "accuracy"],
       weaknesses: ["power", "shortGame"],
     };
-    const snapshot = liveCourseSnapshot({ course: c, teeSet: "member", pinRotation: "A" });
+    const snapshot = {
+      ...liveCourseSnapshot({ course: c, teeSet: "member", pinRotation: "A" }),
+      // This is an existing active-round boundary fixture, not a new round.
+      dispersionSnapshot: { version: 1 as const, mode: "legacy_scalar" as const },
+    };
     const hole = c.holes[24];
     const from = { x: 18.397, y: 76.425 };
     const intent = followUpIntent({

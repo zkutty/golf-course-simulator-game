@@ -13,6 +13,9 @@ function fixture() {
   for (let y = 11; y <= 13; y++) for (let x = 29; x <= 31; x++) course.tiles[y * course.width + x] = "green";
   course.holes[0] = { ...course.holes[0], tee: { x: 12, y: 12 }, green: { x: 30, y: 12 }, parMode: "MANUAL", parManual: 3 };
   const world = structuredClone(DEFAULT_WORLD);
+  // This deterministic cohort keeps the prescribed first editable rough
+  // cell on a retained bivariate leave, so the tutorial proof remains real.
+  world.runSeed = 2;
   return { course, world, onCourse: 0 };
 }
 

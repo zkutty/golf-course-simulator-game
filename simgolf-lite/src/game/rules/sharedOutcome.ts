@@ -16,6 +16,7 @@ import type {
   ReliefResolution,
   ShotRuling,
   SharedShotOutcome,
+  AppliedDispersionV1,
 } from "./contracts";
 import {
   resolveObstacleCollision,
@@ -236,6 +237,7 @@ export function createSharedShotOutcome(args: {
   /** Optional frozen physical context for authoritative terrain/obstacle checks. */
   obstacleCollision?: Omit<ObstacleCollisionInput, "from" | "to" | "flight">;
   appliedWind?: AppliedShotWindV1;
+  appliedDispersion?: AppliedDispersionV1;
 }): SharedShotOutcome {
   const { trace, effects } = args;
   const ruling = args.ruling ?? fallbackRuling({ holed: trace.holed, legacyPenaltyStrokes: trace.penaltyStrokes });
@@ -273,5 +275,6 @@ export function createSharedShotOutcome(args: {
     relief,
     finalPosition: { ...finalPosition },
     ...(args.appliedWind ? { appliedWind: args.appliedWind } : {}),
+    ...(args.appliedDispersion ? { appliedDispersion: args.appliedDispersion } : {}),
   };
 }

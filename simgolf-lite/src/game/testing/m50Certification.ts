@@ -578,6 +578,7 @@ function runLiveRecoveryCheck() {
       technique: selected.technique,
       flightProfile: selected.flightProfile,
     },
+    dispersionConsistency: RECOVERY_CAPABILITIES.consistency,
     seed: 50_553,
   });
   const candidateClubsLegal = candidates.every((candidate) =>

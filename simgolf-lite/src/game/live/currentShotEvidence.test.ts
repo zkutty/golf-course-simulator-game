@@ -52,7 +52,8 @@ describe("current-shot evidence is owned by the simulation cursor", () => {
 
   it("retains only the committed directional applied-wind evidence", () => {
     const s = shot();
-    s.sharedOutcome = { ...s.sharedOutcome!, appliedWind: { version: 1, sourceMode: "directional", headwindMph: 7, crosswindMph: -3, carryMultiplier: .98, lateralCenterlineTiles: -.1 } };
+    const { appliedDispersion: _historicalAbsence, ...windOnly } = s.sharedOutcome!;
+    s.sharedOutcome = { ...windOnly, appliedWind: { version: 1, sourceMode: "directional", headwindMph: 7, crosswindMph: -3, carryMultiplier: .98, lateralCenterlineTiles: -.1 } };
     const evidence = currentShotEvidence({ ...carrier(s), segIndex: 2 });
     expect(evidence).toMatchObject({ phase: "result", truth: { appliedWind: s.sharedOutcome.appliedWind } });
     expect(currentShotEvidenceText(evidence)).toMatchObject({ truth: { appliedWind: s.sharedOutcome.appliedWind } });
@@ -63,6 +64,10 @@ describe("current-shot evidence is owned by the simulation cursor", () => {
       "Applied carry response: ×0.98",
       "Centerline shift: -0.10 tiles left",
     ]));
+
+    const paired = shot();
+    paired.sharedOutcome = { ...paired.sharedOutcome!, appliedWind: s.sharedOutcome.appliedWind };
+    expect(currentShotEvidence({ ...carrier(paired), segIndex: 2 })).toEqual({ phase: "unavailable", reason: "malformed" });
   });
 
   it("formats only validated stored wind evidence with signed, localized, negative-zero-safe cues", () => {
