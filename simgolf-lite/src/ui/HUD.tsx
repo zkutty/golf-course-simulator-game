@@ -24,7 +24,7 @@ import { useAudio } from "../audio/audioContext";
 import type { BuildingTier, ConcessionType, Course, DecorationKind, DecorationRotation, Point, Terrain, WeekResult, World } from "../game/models/types";
 import { demandBreakdown, priceAttractiveness } from "../game/sim/score";
 import { scoreCourseHoles } from "../game/sim/holes";
-import { computeAutoPar, computeHoleDistanceTiles } from "../game/sim/holeMetrics";
+import { computeHoleDistanceTiles } from "../game/sim/holeMetrics";
 import { computeCourseRatingAndSlope, computeRatingsByTee } from "../game/sim/courseRating";
 import { canTakeBridgeLoan, canTakeExpansionLoan } from "../game/sim/loanEligibility";
 import { computeWeeklyPayment } from "../game/sim/loans";
@@ -267,9 +267,6 @@ export function HUD(props: {
   const holeDef = course.holes[activeHoleIndex];
   const distanceTiles =
     holeDef?.tee && holeDef?.green ? computeHoleDistanceTiles(holeDef.tee, holeDef.green) : null;
-  const autoPar = distanceTiles != null ? computeAutoPar(distanceTiles) : null;
-  const effectivePar =
-    holeDef?.parMode === "MANUAL" ? (holeDef.parManual ?? 4) : autoPar ?? 4;
 
   const tabs: Tab[] = viewMode === "ARCHITECT" ? ["Editor", "Metrics", "Results", "Upgrades"] : ["Editor", "Results", "Upgrades"];
   const terrainCounts = useMemo(() => {
@@ -839,10 +836,12 @@ export function HUD(props: {
                     <b><T id="auto.ui.hud.hole" />{activeHoleIndex + 1}</b>:{" "}
                     {activeHole.isComplete ? (
                       <>
-                        <T id="auto.ui.hud.score" />{Math.round(activeHole.score)}<T id="auto.ui.hud.100.par" />{activeHole.par}{" "}
-                        <span style={{ color: "#6b7280" }}>
-                          {Number.isFinite(activeHole.autoPar) ? ` (auto ${activeHole.autoPar})` : ""}
-                        </span>
+                        <T id="auto.ui.hud.score" />{Math.round(activeHole.score)}<span data-testid="active-hole-summary-par"><T id="auto.ui.hud.100.par" />{activeHole.par}</span>{" "}
+                        {Number.isFinite(activeHole.autoPar) && (
+                          <span data-testid="active-hole-summary-auto-par" style={{ color: "#6b7280" }}>
+                            {" ("}<T id="auto.ui.holeinspector.auto.par" /> {activeHole.autoPar}{")"}
+                          </span>
+                        )}
                       </>
                     ) : (
                       <><T id="auto.ui.hud.place.tee.green" /></>
@@ -857,7 +856,7 @@ export function HUD(props: {
                     {activeHole.isComplete
                       ? `${Math.round(activeHole.effectiveDistance * course.yardsPerTile)} yds (${activeHole.effectiveDistance.toFixed(1)} tiles)`
                       : "—"}{" "}
-                    <T id="auto.ui.hud.par" />{effectivePar}{" "}
+                    <span data-testid="active-hole-distance-par"><T id="auto.ui.hud.par" />{activeHole.par}</span>{" "}
                     <span style={{ color: "#777" }}>({holeDef?.parMode === "MANUAL" ? "manual" : "auto"})</span>
                   </div>
                   {activeHole.isComplete && Number.isFinite(activeHole.scratchShotsToGreen) && (
@@ -1083,9 +1082,15 @@ export function HUD(props: {
                     </div>
                   )}
 
-                  {holeDef?.parMode === "AUTO" && (
-                    <div style={{ marginTop: 8, fontSize: 12, color: "#555" }}>
-                      <T id="auto.ui.hud.auto.par.thresholds.14.3.15.30.4.31.5" /></div>
+                  {activeHole && (
+                    <div data-testid="active-hole-auto-par-explanation" style={{ marginTop: 8, fontSize: 12, color: "#555" }}>
+                      <T id="auto.ui.holeinspector.auto.par" /> {activeHole.autoPar}
+                      {activeHole.isComplete && Number.isFinite(activeHole.scratchShotsToGreen) && (
+                        <>
+                          {" • "}<T id="auto.ui.hud.scratch.to.green" /> {activeHole.scratchShotsToGreen.toFixed(2)}
+                        </>
+                      )}
+                    </div>
                   )}
                 </Section>
                 )}
@@ -1146,7 +1151,7 @@ export function HUD(props: {
                           {h.holeIndex + 1}
                           {!h.isComplete && <span style={{ color: "#a40000" }}> *</span>}
                         </button>
-                        <div>{h.isComplete ? h.par : "—"}</div>
+                        <div data-testid={`hole-list-par-${h.holeIndex}`}>{h.isComplete ? h.par : "—"}</div>
                         <div style={{ color: "#555" }}>
                           {h.isComplete
                             ? `${Math.round(h.effectiveDistance * course.yardsPerTile)} yds`
