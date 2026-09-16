@@ -16,7 +16,7 @@ import type { Personality } from "./personality";
 import { createM47CertificationCourse } from "../testing/m47Certification";
 import type { GolferCapabilities } from "./m47Types";
 import { courseForRoundSetup } from "../models/courseSetup";
-import { manualStrategicRoundHoleSummary } from "./m47Round";
+import { buildStrategicGolferRound, manualStrategicRoundHoleSummary } from "./m47Round";
 import { createLiveState } from "./simulation";
 import { DEFAULT_WORLD } from "../models/defaults";
 
@@ -56,6 +56,46 @@ function course(): Course {
 }
 
 describe("M47 live golfer contracts", () => {
+  it("ZK-1156 targets the cup and converges instead of alternating greenside recoveries", () => {
+    const width = 30;
+    const height = 20;
+    const tiles: Terrain[] = Array.from({ length: width * height }, () => "rough");
+    const tee = { x: 4, y: 10 };
+    const green = { x: 13, y: 10 };
+    tiles[tee.y * width + tee.x] = "deep_rough";
+    for (let y = green.y - 1; y <= green.y + 1; y++) for (let x = green.x - 1; x <= green.x + 1; x++) tiles[y * width + x] = "green";
+    const c: Course = {
+      name: "Maple Commons recovery trace", width, height, tiles,
+      elevations: new Array(width * height).fill(0),
+      holes: [{ id: "zk-1156-hole", tee, green, parMode: "MANUAL", parManual: 4 }],
+      obstacles: [], buildings: [], yardsPerTile: 10, baseGreenFee: 60, condition: .85,
+    };
+    const personality = testPersonality({ skill: .55, consistency: .5, prefs: { difficulty: -.5, scenery: 0, price: 0 } });
+    const golfer = createGolferCapabilities({ personality, seed: 491648 });
+    const build = () => buildStrategicGolferRound({ course: c, entry: tee, exit: tee, rng: mulberry32(491648), personality, capabilities: golfer, skipPreRoundPurchases: true });
+    const first = build();
+    const replay = build();
+    const trace = first.shotOutcomes!.map((shot) => ({
+      n: shot.shotNumber,
+      club: shot.club,
+      aim: shot.aim,
+      rest: shot.rest,
+      distanceToCup: Number(Math.hypot(shot.rest.x - green.x, shot.rest.y - green.y).toFixed(2)),
+      intent: shot.intent,
+    }));
+
+    expect(trace.map((shot) => shot.distanceToCup)).toEqual([1.54, .59]);
+    expect(trace.map((shot, index) => Number((shot.distanceToCup - (trace[index - 1]?.distanceToCup ?? 9)).toFixed(2)))).toEqual([-7.46, -.95]);
+    expect(trace.every((shot) => shot.aim.x === green.x && shot.aim.y === green.y)).toBe(true);
+    expect(trace.map((shot) => shot.club)).toEqual(["Pitching Wedge", "Chip"]);
+    expect(first.shotOutcomes).toEqual(replay.shotOutcomes);
+    expect(first.shotOutcomes!.length).toBeLessThan(9);
+    expect(first.shotOutcomes![0].facts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ detail: expect.stringContaining("target:cup") }),
+      expect.objectContaining({ detail: expect.stringContaining("expected-leave:") }),
+      expect.objectContaining({ detail: expect.stringContaining("rest:") }),
+    ]));
+  });
   it("freezes bivariate live snapshots and supplies explicit capability consistency", () => {
     const c = course();
     const personality = testPersonality({ skill: .7, consistency: .45 });

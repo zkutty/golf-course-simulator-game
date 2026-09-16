@@ -165,6 +165,7 @@ export function buildStrategicGolferRound(args: {
             shotNumber,
             snapshot,
             obstacleRecoveryContext: outcomes[shotNumber - 1]?.sharedOutcome?.collision.kind === "obstacle",
+            recentOutcomes: outcomes.slice(-2),
           });
       const outcome = resolveLiveShot({
         snapshot,

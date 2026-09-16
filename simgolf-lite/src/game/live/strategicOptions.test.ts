@@ -319,6 +319,130 @@ describe("ZK-551 M50 recovery strategy", () => {
       personality,
     })).toEqual([]);
   });
+
+  it("aims an open near-green recovery at the cup with a legal proportional short-game club", () => {
+    const course = recoveryCourse([]);
+    const from = { x: 39, y: 12 };
+    const candidates = generateRecoveryCandidates({
+      course,
+      hole: course.holes[0],
+      from,
+      lie: "deep_rough",
+      capabilities: capabilities({ seed: 1156 }),
+      personality,
+      shotNumber: 3,
+    });
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({ target: course.holes[0].green, kind: "recovery" });
+    expect(["Chip", "Sand Wedge", "Pitching Wedge"]).toContain(candidates[0].club);
+    expect(candidates[0].power).toBeGreaterThanOrEqual(.25);
+    expect(candidates[0].power).toBeLessThanOrEqual(1.15);
+    expect(fact(candidates[0], "context")).toContain("target:cup");
+    expect(fact(candidates[0], "context")).toContain("power:");
+    expect(fact(candidates[0], "next-shot")).toContain("expected-leave:");
+  });
+
+  it("keeps a 187-yard recovery out of the short-game cup-only branch", () => {
+    const course = recoveryCourse([]);
+    course.yardsPerTile = 17;
+    const candidates = generateRecoveryCandidates({
+      course,
+      hole: course.holes[0],
+      from: { x: 36, y: 12 },
+      lie: "deep_rough",
+      capabilities: capabilities({ seed: 1156 }),
+      personality,
+      shotNumber: 3,
+    });
+
+    expect(Math.hypot(47 - 36, 12 - 12) * course.yardsPerTile).toBe(187);
+    expect(candidates).toHaveLength(5);
+    expect(candidates.some((candidate) => candidate.target.x !== course.holes[0].green!.x || candidate.target.y !== course.holes[0].green!.y)).toBe(true);
+    expect(candidates.some((candidate) => fact(candidate, "context").includes("shape:green"))).toBe(false);
+  });
+
+  it("demotes an ordinary in-play no-progress recovery behind a materially advancing alternative", () => {
+    const course = recoveryCourse([]);
+    const snapshot = {
+      ...liveCourseSnapshot({ course, teeSet: "member", pinRotation: "A" }),
+      weather: { kind: "test", temperatureF: 60, windMph: 0, rainInches: 0, carryMultiplier: .05, dispersionMultiplier: 1, paceMultiplier: 1 },
+    };
+    const from = { x: 30, y: 12 };
+    const candidates = generateRecoveryCandidates({
+      course,
+      hole: course.holes[0],
+      from,
+      lie: "deep_rough",
+      capabilities: capabilities({ seed: 22, power: 20, accuracy: 20, recovery: 20, consistency: 20, riskStyle: "conservative", riskTolerance: .2 }),
+      personality,
+      shotNumber: 2,
+      snapshot,
+    });
+    const safe = candidates.find((candidate) => route(candidate) === "safe")!;
+    const currentYards = Math.hypot(course.holes[0].green!.x - from.x, course.holes[0].green!.y - from.y) * course.yardsPerTile;
+    const expectedLeave = Number(fact(safe, "next-shot").match(/expected-leave:(\d+)yd/)?.[1]);
+
+    expect(safe.facts.some((item) => item.code === "outcome" && item.detail.includes("rules:in_play relief:none"))).toBe(true);
+    expect(expectedLeave).toBeGreaterThanOrEqual(currentYards - 4);
+    expect(route(candidates[0])).toBe("advance");
+    expect(Number(fact(candidates[0], "next-shot").match(/expected-leave:(\d+)yd/)?.[1])).toBeLessThan(currentYards - 4);
+  });
+
+  it("retains a history-aware forced punch-out when an obstacle blocks the cup", () => {
+    const course = recoveryCourse([{ type: "tree", x: 31, y: 12 }]);
+    const from = { x: 28, y: 12 };
+    const candidates = generateRecoveryCandidates({
+      course,
+      hole: course.holes[0],
+      from,
+      lie: "deep_rough",
+      capabilities: capabilities({ seed: 1157 }),
+      personality,
+      shotNumber: 3,
+      recentOutcomes: [{ from, rest: from }],
+    });
+    const punch = candidates.find((candidate) => shape(candidate) === "under");
+    const selected = followUpIntent({
+      course,
+      hole: course.holes[0],
+      from,
+      lie: "deep_rough",
+      capabilities: capabilities({ seed: 1157, riskStyle: "conservative", riskTolerance: .15 }),
+      personality,
+      shotNumber: 4,
+      recentOutcomes: [{ from, rest: from }],
+    });
+
+    expect(punch).toMatchObject({ technique: "punch", flightProfile: "low" });
+    expect(punch!.target).not.toEqual(course.holes[0].green);
+    expect(Math.hypot(punch!.target.x - course.holes[0].green!.x, punch!.target.y - course.holes[0].green!.y)).toBeGreaterThan(9.5);
+    expect(fact(punch!, "outcome")).toContain("relationship:through");
+    expect(selected.target).not.toEqual(course.holes[0].green);
+    expect(fact(selected, "context")).toContain("recovery:safe");
+  });
+
+  it("breaks a repeated open recovery stall with a materially converging cup target", () => {
+    const course = recoveryCourse([]);
+    const from = { x: 28, y: 12 };
+    const intent = followUpIntent({
+      course,
+      hole: course.holes[0],
+      from,
+      lie: "deep_rough",
+      capabilities: capabilities({ seed: 1158, riskStyle: "conservative", riskTolerance: .15 }),
+      personality,
+      shotNumber: 4,
+      recentOutcomes: [
+        { from: { x: 27, y: 12 }, rest: from },
+        { from, rest: from },
+      ],
+    });
+
+    expect(intent.target).toEqual(course.holes[0].green);
+    expect(fact(intent, "next-shot")).toContain("expected-leave:");
+    expect(Math.hypot(intent.target.x - from.x, intent.target.y - from.y)).toBeGreaterThan(12);
+  });
 });
 
 describe("ZK-632 elevation-aware live strategy", () => {
