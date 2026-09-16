@@ -179,6 +179,7 @@ describe("RenderSnapshot invalidation contract", () => {
       naturalProps: [],
       architectureOverlay: architectureOverlayRevisionDependencies({
         activePath: undefined,
+        activeShotDestinations: undefined,
         activePinRotation: undefined,
         failingCorridorSegments: undefined,
         holes: course.holes,
@@ -205,8 +206,10 @@ describe("RenderSnapshot invalidation contract", () => {
     })).architectureOverlay).toBe(initial.architectureOverlay);
     expect(tracker.update(dependencies({ activePath: [{ x: 1, y: 1 }, { x: 2, y: 2 }] })).architectureOverlay)
       .toBe((initial.architectureOverlay ?? 0) + 1);
-    expect(tracker.update(dependencies({ rotation: 90 })).architectureOverlay)
+    expect(tracker.update(dependencies({ activeShotDestinations: [{ x: 2, y: 2 }] })).architectureOverlay)
       .toBe((initial.architectureOverlay ?? 0) + 2);
+    expect(tracker.update(dependencies({ rotation: 90 })).architectureOverlay)
+      .toBe((initial.architectureOverlay ?? 0) + 3);
   });
 
   it("invalidates property assets only for exact normalized scene inputs", () => {

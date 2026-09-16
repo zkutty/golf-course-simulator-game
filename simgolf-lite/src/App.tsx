@@ -121,6 +121,7 @@ import { runLiveDaysHeadless } from "./game/live/headless";
 import { snapshotLiveSimulation } from "./game/live/persistence";
 import { hashGameState } from "./utils/stateHash";
 import { seasonalVisualState } from "./game/presentation/seasonalVisualState";
+import { presentCompleteShotRoute } from "./game/presentation/shotRoutePresentation";
 import { seasonalTerrainSummary } from "./game/render/seasonalTerrainPresentation";
 import {
   M53_SEVERE_WEATHER_FIXTURES,
@@ -2271,7 +2272,10 @@ export default function App() {
   const activeSetupSummary = useMemo(() => scoreCourseHoles(activeHoleAuthorityCourse), [activeHoleAuthorityCourse]);
   const activeHoleScore = activeSetupSummary.holes[activeHoleIndex];
   const activePath = activeHoleScore?.path ?? [];
-  const activeShotPlan = activeHoleScore?.shotPlan ?? [];
+  const activeShotRoute = useMemo(
+    () => presentCompleteShotRoute(activeHoleScore),
+    [activeHoleScore],
+  );
 
   // Extract failing corridor segments for overlay
   const activeHoleEvaluation = useMemo(
@@ -3346,6 +3350,19 @@ export default function App() {
         decorationSpan,
         decorationAction,
         activeHole: activeHoleIndex + 1,
+        activeRoute: activeShotRoute ? {
+          teeSet: selectedTeeSet,
+          pinRotation: activeHoleAuthorityCourse.activePinRotation ?? "A",
+          tee: activeHoleAuthorityCourse.holes[activeHoleIndex]?.tee ?? null,
+          pin: activeHoleAuthorityCourse.holes[activeHoleIndex]?.green ?? null,
+          par: activeHoleScore?.par ?? null,
+          fullShots: activeShotRoute.fullShots,
+          segments: activeShotRoute.fullShots,
+          semanticTargets: activeShotRoute.destinations.length,
+          geometrySamples: activeShotRoute.geometry.length,
+          expectedPutts: activeShotRoute.expectedPutts,
+          plannedStrokes: activeShotRoute.plannedStrokes,
+        } : null,
         selectedTeeSet,
         setupPlacement: setupPlacement ? { kind: setupPlacement.kind, key: setupPlacement.key } : null,
         teePlacementPending: pendingTeePlacement ? { teeSet: pendingTeePlacement.teeSet, point: pendingTeePlacement.point, netCost: pendingTeePlacement.netCost } : null,
@@ -3400,7 +3417,7 @@ export default function App() {
       if (window.render_game_to_text === renderText) delete window.render_game_to_text;
       if (window.advanceTime === live.advanceTime) delete window.advanceTime;
     };
-  }, [activeHoleIndex, activeLayout.id, activeOperatingCourse, activePlayerRound, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
+  }, [activeHoleAuthorityCourse.activePinRotation, activeHoleAuthorityCourse.holes, activeHoleIndex, activeHoleScore?.par, activeLayout.id, activeOperatingCourse, activePlayerRound, activeShotRoute, activeTutorial, architectureReport, architectureReview, appProfile.accessibility.colorVision, appProfile.accessibility.reducedMotion, appProfile.achievements.earned.length, appProfile.gameplay.tickerVisible, appProfile.graphics.quality, appProfile.graphics.treeSway, appProfile.graphics.waterAnimation, appProfile.tutorialCompleted, audioCameraCenter, course, decorationAction, decorationKind, decorationRotation, decorationSpan, designDockVisible, economicPressure, editorMode, effectiveAnimations, fineGreenBrush, fineGreenRadius, fixtureGraphicsQuality, flow.base, flow.modal, flow.paused, followSelected, holeEditMode, live, m52ReferenceCamera, minimapView, openingMarker, openingPlaybackUi.following, openingPlaybackUi.running, openingPlaybackUi.speed, pendingTeePlacement, pendingWeekReport, photoMode, playerPro, playerProSocialText, playerRoundLocksEditing, playerShotAim, records, resolvedGraphicsQuality, screen, seasonalPresentation, selected, selectedDesignItemId, selectedParcelId, selectedPlantId, selectedTeeSet, setupPlacement, showArchitectureReview, showCampaign, showCourseManager, showLandOffice, showLivingClub, showLiveOverview, showPlayerPro, showProgression, showPropertyManagement, showRetention, showSeasonsLegacy, showTournaments, terrainTool, tutorialProgress, viewMode, workspace, world]);
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
@@ -5868,8 +5885,7 @@ export default function App() {
                 holes={course.holes}
                 obstacles={course.obstacles}
                 activeHoleIndex={activeHoleIndex}
-                activePath={activePath}
-                activeShotPlan={activeShotPlan}
+                activeShotRoute={activeShotRoute}
                 selectedTeeSet={selectedTeeSet}
                 tileSize={tileSize}
                 showGridOverlays={viewMode === "ARCHITECT"}

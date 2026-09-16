@@ -201,7 +201,10 @@ export function createArchitectureOverlaySceneSystem(
           graphics.lineTo(projected.x, projected.y);
         }
         graphics.stroke({ width: 3, color: 0xf7cf62, alpha: 1 });
-        for (const point of snapshot.activePath) {
+        // The smooth line is sampled geometry, while markers remain one-per
+        // solver-selected full-shot destination. Never infer a shot from a
+        // draw sample: sampling density is a visual implementation detail.
+        for (const point of snapshot.activeShotDestinations ?? []) {
           const projected = project(point);
           graphics.circle(projected.x, projected.y, 4);
           graphics.fill({ color: 0xfff4ba, alpha: 1 });

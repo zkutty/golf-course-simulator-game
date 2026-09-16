@@ -128,7 +128,9 @@ export interface RenderSnapshot {
   readonly showMarkers?: boolean;
   readonly selectedTeeSet?: TeeSet;
   readonly flagColor?: string;
+  /** Sampled geometry stays visual-only; semantic targets come from shotPlan. */
   readonly activePath?: readonly Point[];
+  readonly activeShotDestinations?: readonly Point[];
   readonly architectureWarnings?: readonly ArchitectureWarning[];
   readonly architectureOverlay?: ArchitectureOverlayRender | null;
   readonly paceBottlenecks?: readonly PaceAdvisorFinding[];
@@ -196,6 +198,7 @@ export interface HoleMarkersRevisionInput {
 
 export interface ArchitectureOverlayRevisionInput {
   readonly activePath?: readonly Point[];
+  readonly activeShotDestinations?: readonly Point[];
   readonly activePinRotation: Course["activePinRotation"];
   readonly failingCorridorSegments?: readonly Point[];
   readonly holes: readonly Hole[];
@@ -304,6 +307,7 @@ export function architectureOverlayRevisionDependencies(
 ): readonly unknown[] {
   return [
     input.activePath,
+    input.activeShotDestinations,
     input.activePinRotation ?? "A",
     input.failingCorridorSegments,
     input.holes,

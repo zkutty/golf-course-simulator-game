@@ -741,11 +741,30 @@ test.describe("ZK-1106 private operator opening", () => {
 
 test("one-hole invited preview is save-safe, evidence-backed, and rewards exactly once", async ({ page }) => {
   await begin(page);
+  await canvas(page);
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text!()).editor.activeRoute)).toBeNull();
+  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.routeOverlay())).toMatchObject({
+    geometrySamples: 0,
+    semanticTargets: 0,
+    fullShotSegments: 0,
+    expectedPutts: 0,
+  });
   await buildFirstHole(page);
   await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text!()).editor.activeHole)).toBe(1);
   await expect(page.getByRole("heading", { name: "Hole 1" })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.routeOverlay())).toMatchObject({ visibleLayers: 1 });
-  expect((await page.evaluate(() => window.__coursecraftPixiTest!.routeOverlay())).points).toBeGreaterThan(1);
+  await expect.poll(() => page.evaluate(() => JSON.parse(window.render_game_to_text!()).editor.activeRoute)).toMatchObject({
+    par: 3,
+    fullShots: 1,
+    segments: 1,
+    semanticTargets: 1,
+    expectedPutts: 2,
+    plannedStrokes: 3,
+  });
+  const routeOverlay = await page.evaluate(() => window.__coursecraftPixiTest!.routeOverlay());
+  expect(routeOverlay).toMatchObject({ visibleLayers: 1, semanticTargets: 1, fullShotSegments: 1, expectedPutts: 2 });
+  expect(routeOverlay.geometrySamples).toBeGreaterThan(routeOverlay.semanticTargets);
+  const activeRoute = await page.evaluate(() => JSON.parse(window.render_game_to_text!()).editor.activeRoute);
+  expect(activeRoute.geometrySamples).toBeGreaterThan(activeRoute.semanticTargets);
   await expectTutorialInViewport(page);
   await expectLauncherClear(page);
   const beforePreview = await page.evaluate(() => JSON.parse(window.render_game_to_text!()).economy);
