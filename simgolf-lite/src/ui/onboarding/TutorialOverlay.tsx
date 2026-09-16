@@ -5,6 +5,7 @@ import { presenterButtonStyle } from "./presenterStyles";
 import { T } from "../../i18n/T";
 import { useI18n } from "../../i18n/useI18n";
 import type { OpeningPlaybackFrame } from "../../game/onboarding/openingDemo";
+import { useFocusTrap } from "../accessibility/useFocusTrap";
 
 const OpeningDemoDetails = lazy(() => import("./OpeningDemoDetails").then(({ OpeningDemoDetails }) => ({ default: OpeningDemoDetails })));
 
@@ -44,8 +45,11 @@ export function TutorialOverlay(props: {
   const { t } = useI18n();
   const [rects, setRects] = useState<Rect[]>([]);
   const [launcherRect, setLauncherRect] = useState<Rect | null>(null);
+  const [skipConfirmationOpen, setSkipConfirmationOpen] = useState(false);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+  const skipConfirmedRef = useRef(false);
+  const skipDialogRef = useFocusTrap<HTMLDivElement>(skipConfirmationOpen, () => setSkipConfirmationOpen(false));
   const evidence = props.progress.receipts.preview.evidence;
   const showEvidence = evidence && ["observe-play", "review-reaction", "creative-reward"].includes(props.step.id);
 
@@ -75,6 +79,10 @@ export function TutorialOverlay(props: {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // The nested confirmation owns keyboard interaction while it is open.
+      // In particular, do not let this guide-level capture handler swallow its
+      // Escape cancel path or interfere with the dialog's focus trap.
+      if (skipConfirmationOpen) return;
       const card = cardRef.current;
       if (!card) return;
       // Validation repair deliberately leaves the editor and its native
@@ -124,7 +132,19 @@ export function TutorialOverlay(props: {
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [props.progress.opening, props.step.allowedTargets, props.step.id]);
+  }, [props.progress.opening, props.step.allowedTargets, props.step.id, skipConfirmationOpen]);
+
+  const openSkipConfirmation = () => {
+    skipConfirmedRef.current = false;
+    setSkipConfirmationOpen(true);
+  };
+
+  const confirmSkip = () => {
+    if (skipConfirmedRef.current) return;
+    skipConfirmedRef.current = true;
+    setSkipConfirmationOpen(false);
+    props.onSkip();
+  };
 
   useEffect(() => {
     const update = () => {
@@ -222,6 +242,7 @@ export function TutorialOverlay(props: {
         role="dialog"
         aria-modal={props.progress.opening || props.step.id === "validate-hole" ? undefined : true}
         aria-label={t(props.step.titleKey)}
+        aria-hidden={skipConfirmationOpen ? true : undefined}
         tabIndex={-1}
         data-testid="tutorial-card"
         data-opening-treatment={props.progress.opening ? "true" : undefined}
@@ -289,9 +310,9 @@ export function TutorialOverlay(props: {
                 </button>
               )}
               <button
-                onClick={() => {
-                  if (window.confirm(t("tutorial.skipConfirm"))) props.onSkip();
-                }}
+                type="button"
+                data-testid="tutorial-skip-trigger"
+                onClick={openSkipConfirmation}
                 style={{ ...presenterButtonStyle, background: "transparent", color: "#465349", borderColor: "rgba(39,54,43,.35)" }}
               >
                 <T id="auto.ui.onboarding.tutorialoverlay.skip.tutorial" /></button>
@@ -305,8 +326,37 @@ export function TutorialOverlay(props: {
               </button>
             </>
           }
-        />
+          />
       </div>
+      {skipConfirmationOpen && (
+        <div
+          role="presentation"
+          data-testid="tutorial-skip-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setSkipConfirmationOpen(false);
+          }}
+          style={{ position: "fixed", inset: 0, zIndex: 100000, pointerEvents: "auto", display: "grid", placeItems: "center", padding: 16, background: "rgba(18, 25, 18, .72)" }}
+        >
+          <div
+            ref={skipDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tutorial-skip-title"
+            aria-describedby="tutorial-skip-description"
+            data-testid="tutorial-skip-dialog"
+            style={{ boxSizing: "border-box", width: "min(440px, calc(100vw - 32px))", maxWidth: "calc(100vw - 32px)", minWidth: 0, maxHeight: "min(500px, calc(100vh - 32px))", overflowY: "auto", padding: 20, border: "2px solid #3d4a3e", borderRadius: 16, background: "linear-gradient(180deg, #fffdf5, #f4ead3)", color: "#263329", boxShadow: "0 24px 64px rgba(22, 31, 22, .42)" }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <h2 id="tutorial-skip-title" style={{ margin: 0, fontFamily: "var(--font-heading)", fontSize: "1.35rem", lineHeight: 1.15 }}>{t("tutorial.skipDialog.title")}</h2>
+            <p id="tutorial-skip-description" style={{ margin: "12px 0 18px", color: "#465349", lineHeight: 1.5 }}>{t("tutorial.skipDialog.body")}</p>
+            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 8 }}>
+              <button type="button" data-testid="tutorial-skip-cancel" onClick={() => setSkipConfirmationOpen(false)} style={{ ...presenterButtonStyle, font: "inherit", fontSize: "1rem", background: "transparent", color: "#465349", borderColor: "rgba(39,54,43,.35)" }}>{t("tutorial.skipDialog.keepLearning")}</button>
+              <button type="button" data-testid="tutorial-skip-confirm" onClick={confirmSkip} style={{ ...presenterButtonStyle, font: "inherit", fontSize: "1rem", background: "#8c2f1f", borderColor: "#692517" }}>{t("tutorial.skipDialog.confirm")}</button>
+              <button type="button" data-testid="tutorial-skip-close" aria-label={t("tutorial.skipDialog.close")} onClick={() => setSkipConfirmationOpen(false)} style={{ ...presenterButtonStyle, font: "inherit", fontSize: "1rem", background: "transparent", color: "#465349", borderColor: "rgba(39,54,43,.35)" }}>×</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
