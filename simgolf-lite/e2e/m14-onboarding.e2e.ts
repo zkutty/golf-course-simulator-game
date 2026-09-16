@@ -29,7 +29,7 @@ async function canvas(page: Page) {
   return target;
 }
 
-function candidateRoute(surface: Surface, boundaryMargin = 0) {
+function candidateRoute(surface: Surface, boundaryMargin = 0, length = 10) {
   const { width, height, owned, elevations } = surface;
   const occupied = surface.holes.flatMap((hole) => [hole.tee, hole.green].filter(Boolean));
   const flatMarkerSite = (point: { x: number; y: number }) => {
@@ -40,10 +40,10 @@ function candidateRoute(surface: Surface, boundaryMargin = 0) {
     return Math.max(...footprint) - Math.min(...footprint) <= 1;
   };
   for (let y = 4; y < height - 4; y += 2) {
-    for (let x = 4; x + 12 < width - 4; x++) {
+    for (let x = 4; x + length + 2 < width - 4; x++) {
       const start = { x, y };
-      const end = { x: x + 10, y };
-      if (!Array.from({ length: 11 }, (_, offset) => owned[y * width + x + offset]).every(Boolean)) continue;
+      const end = { x: x + length, y };
+      if (!Array.from({ length: length + 1 }, (_, offset) => owned[y * width + x + offset]).every(Boolean)) continue;
       // The operator demo teaches landing-area width, not estate-boundary relief.
       // Select geometry before any shots are resolved; never search seeds/scores.
       let hasOwnedMargin = true;
@@ -289,6 +289,52 @@ async function buildAdditionalHole(page: Page, freezeLive = false) {
   await expect(page.getByText("Click to place green", { exact: true })).toBeVisible();
   await clickTile(page, await canvas(page), end);
 }
+
+test("ZK-1155 repairs an invalid first hole through the authoritative fix overlay", async ({ page }) => {
+  await begin(page);
+  await page.getByRole("button", { name: "Start designing" }).click();
+  await expectStep(page, "paint-fairway");
+  const courseCanvas = await canvas(page);
+  await page.evaluate(() => window.__coursecraftPixiTest!.fitWholeCourse());
+  const surface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
+  const [start, end] = candidateRoute(surface, 0, 30);
+  // Four tiles satisfy the lesson's first paint threshold but deliberately
+  // leave most of the tee-to-green corridor rough.
+  await dragRoute(page, courseCanvas, start, { x: start.x + 3, y: start.y });
+  await expect(overlay(page).getByRole("button", { name: "Continue" })).toBeEnabled();
+  await overlay(page).getByRole("button", { name: "Continue" }).click();
+  await expectStep(page, "place-hole");
+  await clickTile(page, await canvas(page), start);
+  await clickTile(page, await canvas(page), end);
+  await expect(overlay(page).getByRole("button", { name: "Continue" })).toBeEnabled();
+  await overlay(page).getByRole("button", { name: "Continue" }).click();
+  await expectStep(page, "route-readability");
+  await page.getByRole("button", { name: "The route reads clearly" }).click();
+  await expectStep(page, "validate-hole");
+
+  await expect(overlay(page).getByTestId("tutorial-primary-action")).toBeDisabled();
+  await expect(page.getByTestId("tutorial-show-fix-overlay")).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectTutorialInViewport(page);
+  // Selecting an unplaced alternate tee used to swap the inspector evaluation
+  // away from tutorial authority and hide the repair route.
+  await page.getByTestId("tee-row-forward").click();
+  await expect(page.getByTestId("tutorial-show-fix-overlay")).toBeVisible();
+  // Escape remains an editor exit, and the guide action safely restores the
+  // authoritative hole and its real control.
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("fix-overlay-toggle")).toHaveCount(0);
+  await page.getByTestId("tutorial-show-fix-overlay").click();
+  await expect(page.getByTestId("fix-overlay-toggle")).toBeChecked();
+  await expect(page.getByTestId("fix-overlay-toggle")).toBeFocused();
+  const toggleBox = await page.getByTestId("fix-overlay-toggle").boundingBox();
+  expect(toggleBox && toggleBox.y >= 0 && toggleBox.y + toggleBox.height <= 844, "direct recovery must reveal the off-screen toggle").toBeTruthy();
+
+  await page.getByRole("button", { name: "Paint fairway along centerline" }).click();
+  await expect(overlay(page).getByTestId("tutorial-primary-action")).toBeEnabled();
+  await overlay(page).getByRole("button", { name: "Continue" }).click();
+  await expectStep(page, "invite-group");
+});
 
 test.describe("ZK-1106 private operator opening", () => {
   test.use({ hasTouch: true });

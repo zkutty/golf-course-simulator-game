@@ -90,6 +90,9 @@ export function HoleInspector({
     warn: issues.filter((i) => i.severity === "warn"),
     info: issues.filter((i) => i.severity === "info"),
   };
+  const actionableFairwayIssue = issues.find((issue) =>
+    issue.code === "FAIRWAY_CONTINUITY" && (issue.metadata?.failingSegments?.length ?? 0) > 0,
+  );
 
   const isPlayable = issues.filter((i) => i.code === "BLOCKED_ROUTE" || i.code === "MISSING_MARKERS").length === 0;
 
@@ -360,27 +363,12 @@ export function HoleInspector({
         </div>
       </div>
 
-      {/* Fix Overlay Toggle */}
-      <div data-tutorial-target="fix-overlay" style={{ marginBottom: 16 }}>
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            cursor: "pointer",
-            fontSize: 13,
-            userSelect: "none",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={showFixOverlay}
-            onChange={(e) => setShowFixOverlay(e.target.checked)}
-            style={{ cursor: "pointer" }}
-          />
+      {actionableFairwayIssue && <div data-tutorial-target="fix-overlay" style={{ marginBottom: 16 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, userSelect: "none" }}>
+          <input data-testid="fix-overlay-toggle" type="checkbox" checked={showFixOverlay} onChange={(e) => setShowFixOverlay(e.target.checked)} style={{ cursor: "pointer" }} />
           <span><T id="auto.ui.holeinspector.show.fix.overlay" /></span>
         </label>
-      </div>
+      </div>}
 
       {/* Issues */}
       {issues.length === 0 && (

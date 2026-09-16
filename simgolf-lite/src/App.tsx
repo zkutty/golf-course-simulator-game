@@ -65,6 +65,10 @@ import { useAudio } from "./audio/audioContext";
 import { audioManager } from "./audio/AudioManager";
 const HoleInspector = lazy(() => import("./ui/HoleInspector").then((module) => ({ default: module.HoleInspector })));
 const HUD = lazy(() => import("./ui/HUD").then((module) => ({ default: module.HUD })));
+const holeEditorNavButtonStyle: CSSProperties = {
+  padding: "8px 16px", borderRadius: 6, border: "1px solid #ddd", background: "#fff",
+  fontWeight: 600, fontSize: 13, cursor: "pointer",
+};
 import { evaluateHole } from "./game/eval/evaluateHole";
 import type { CameraState, IsoCameraSnapshot } from "./game/render/camera";
 import { computeHoleCamera, computeZoomPreset } from "./game/render/camera";
@@ -145,7 +149,7 @@ import {
 import type { PlantId } from "./game/models/plantTypes";
 import { TooltipSurface } from "./ui/help/TooltipSurface";
 import { AdvisorCard } from "./ui/onboarding/AdvisorCard";
-import { TutorialOverlay } from "./ui/onboarding/TutorialOverlay";
+const TutorialOverlay = lazy(() => import("./ui/onboarding/TutorialOverlay").then((module) => ({ default: module.TutorialOverlay })));
 import { TutorialOffer } from "./ui/onboarding/TutorialOffer";
 import {
   advanceTutorialProgress,
@@ -160,6 +164,7 @@ import {
   skipTutorial,
   skipTutorialModule,
   tutorialCanAdvance,
+  tutorialValidationHoleIndex,
   tutorialPublicThreeHoleOperation,
   tutorialStep,
   tutorialStepIndex,
@@ -2259,30 +2264,55 @@ export default function App() {
     () => courseForCourseSetup(course, selectedTeeSet, course.activePinRotation ?? "A"),
     [course, selectedTeeSet],
   );
-  const activeSetupSummary = useMemo(() => scoreCourseHoles(activeSetupCourse), [activeSetupCourse]);
-  const activePath = useMemo(() => activeSetupSummary.holes[activeHoleIndex]?.path ?? [], [activeSetupSummary, activeHoleIndex]);
-  const activeShotPlan = useMemo(
-    () => activeSetupSummary.holes[activeHoleIndex]?.shotPlan ?? [],
-    [activeSetupSummary, activeHoleIndex]
-  );
+  // Validate-hole deliberately uses the same persisted member/A course view
+  // as tutorialCanAdvance. Inspector tee/pin exploration must not change the
+  // issue, overlay cells, or repair action that the guide is describing.
+  const activeHoleAuthorityCourse = activeTutorial?.stage === "validate-hole" ? course : activeSetupCourse;
+  const activeSetupSummary = useMemo(() => scoreCourseHoles(activeHoleAuthorityCourse), [activeHoleAuthorityCourse]);
+  const activeHoleScore = activeSetupSummary.holes[activeHoleIndex];
+  const activePath = activeHoleScore?.path ?? [];
+  const activeShotPlan = activeHoleScore?.shotPlan ?? [];
 
   // Extract failing corridor segments for overlay
   const activeHoleEvaluation = useMemo(
     () =>
       perfProfiler.measure('evaluateHole', () =>
         evaluateHole(
-          activeSetupCourse,
-          activeSetupCourse.holes[activeHoleIndex],
+          activeHoleAuthorityCourse,
+          activeHoleAuthorityCourse.holes[activeHoleIndex],
           activeHoleIndex,
           costMult,
         )
       ),
-    [activeSetupCourse, activeHoleIndex, costMult]
+    [activeHoleAuthorityCourse, activeHoleIndex, costMult]
   );
   const failingCorridorSegments = useMemo(() => {
     const fairwayIssue = activeHoleEvaluation.issues.find((i) => i.code === "FAIRWAY_CONTINUITY");
     return fairwayIssue?.metadata?.failingSegments ?? [];
   }, [activeHoleEvaluation]);
+
+  // The validation lesson is driven by the same score authority that enables
+  // Continue. Pick the incomplete/invalid hole it reports, rather than
+  // assuming the currently selected inspector happens to be the problem.
+  const tutorialValidation = useMemo(() => {
+    if (activeTutorial?.stage !== "validate-hole") return null;
+    const summary = scoreCourseHoles(course);
+    if (summary.holes.some((hole) => hole.isComplete && hole.isValid)) {
+      return { canContinue: true, holeIndex: null, issue: null, canShowFixOverlay: false };
+    }
+    const holeIndex = tutorialValidationHoleIndex(summary.holes, activeHoleIndex);
+    if (holeIndex < 0) return { canContinue: false, holeIndex: null, issue: null, canShowFixOverlay: false };
+    const evaluation = evaluateHole(course, course.holes[holeIndex], holeIndex, costMult);
+    const fairwayIssue = evaluation.issues.find((issue) =>
+      issue.code === "FAIRWAY_CONTINUITY" && (issue.metadata?.failingSegments?.length ?? 0) > 0,
+    );
+    return {
+      canContinue: false,
+      holeIndex,
+      issue: summary.holes[holeIndex].issues[0] ?? evaluation.issues[0]?.title ?? "This hole",
+      canShowFixOverlay: !!fairwayIssue,
+    };
+  }, [activeHoleIndex, activeTutorial?.stage, costMult, course]);
 
   const eligibleBridge = useMemo(() => {
     return canTakeBridgeLoan(course, world, BALANCE);
@@ -2292,13 +2322,16 @@ export default function App() {
   function enterHoleEditMode(holeIndex: number, teeSet: TeeSet = selectedTeeSet) {
     const hole = course.holes[holeIndex];
     const framingTee = getTeeBox(hole, teeSet) ?? TEE_SETS.map((set) => getTeeBox(hole, set)).find(Boolean) ?? null;
-    if (!framingTee || !hole.green) {
-      // Cannot enter hole edit mode without tee and green
-      return;
-    }
     setActiveHoleIndex(holeIndex);
     setHoleEditMode("hole");
     holeEditCameraManualRef.current = false; // Reset manual flag on entry
+    // Missing markers are themselves an actionable validation failure. The
+    // inspector remains useful for its placement controls even without a
+    // camera framing pair.
+    if (!framingTee || !hole.green) {
+      setHoleEditCamera(null);
+      return;
+    }
     // Compute camera state with auto-fit (zoom = null)
     // Convert 12% of viewport to approximate tiles for padding
     const paddingPercent = 0.12;
@@ -2339,6 +2372,38 @@ export default function App() {
   function navigateHole(delta: number) {
     const nextIndex = (activeHoleIndex + delta + 9) % 9;
     enterHoleEditMode(nextIndex);
+  }
+
+  const preparedValidateHoleRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (activeTutorial?.stage !== "validate-hole" || tutorialValidation?.canContinue || tutorialValidation?.holeIndex == null) {
+      preparedValidateHoleRef.current = null;
+      if (activeTutorial?.stage === "validate-hole") setShowFixOverlay(false);
+      return;
+    }
+    const key = `${activeTutorial.stage}:${tutorialValidation.holeIndex}`;
+    if (preparedValidateHoleRef.current === key) return;
+    preparedValidateHoleRef.current = key;
+    setShowFixOverlay(false);
+    enterHoleEditMode(tutorialValidation.holeIndex);
+    // Activation is deliberately keyed to a stage/hole transition. Including
+    // the event helper would re-run it on unrelated editor renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTutorial?.stage, tutorialValidation?.canContinue, tutorialValidation?.holeIndex]);
+
+  function showTutorialFixOverlay() {
+    if (!tutorialValidation?.canShowFixOverlay || tutorialValidation.holeIndex == null) return;
+    if (activeHoleIndex !== tutorialValidation.holeIndex || holeEditMode !== "hole") {
+      enterHoleEditMode(tutorialValidation.holeIndex);
+    }
+    setShowFixOverlay(true);
+    // A second frame accounts for the lazy inspector mounting and responsive
+    // reflow before the authoritative control is scrolled and focused.
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>('[data-tutorial-target="fix-overlay"]');
+      target?.scrollIntoView({ block: "center", inline: "nearest" });
+      target?.querySelector<HTMLInputElement>('input:not([disabled])')?.focus({ preventScroll: true });
+    }));
   }
 
   // Update camera when pane size changes in hole edit mode (re-fit)
@@ -5640,6 +5705,7 @@ export default function App() {
         /></DeferredSurface>
       )}
       {activeTutorial && (
+        <Suspense fallback={<div role="status" aria-live="polite" aria-label={t("deferredSurface.loading", { surface: t(tutorialStep(activeTutorial).titleKey) })} style={{ position: "fixed", inset: 0, zIndex: 99990, pointerEvents: "auto", display: "grid", placeItems: "center", background: "rgba(18, 25, 18, .62)" }}><div style={{ padding: "12px 16px", borderRadius: 10, background: "#fff", color: "#27362b", fontWeight: 700 }}>{t("deferredSurface.loading", { surface: t(tutorialStep(activeTutorial).titleKey) })}</div></div>}>
         <TutorialOverlay
           step={tutorialStep(activeTutorial)}
           progress={activeTutorial}
@@ -5682,11 +5748,15 @@ export default function App() {
           openingPlaybackSpeed={openingPlaybackUi.speed}
           openingFollowing={openingPlaybackUi.following}
           reducedMotion={appProfile.accessibility.reducedMotion}
+          validateIssue={tutorialValidation?.issue}
+          canShowFixOverlay={tutorialValidation?.canShowFixOverlay}
+          onShowFixOverlay={showTutorialFixOverlay}
           onOpeningTogglePlaying={() => setOpeningPlaybackUi((current) => ({ ...current, running: !current.running }))}
           onOpeningSpeed={(speed) => setOpeningPlaybackUi((current) => ({ ...current, speed }))}
           onOpeningToggleFollow={() => setOpeningPlaybackUi((current) => ({ ...current, following: !current.following }))}
           openingPaintRecovery={activeTutorial.stage === "improve-hole" ? paintError : null}
         />
+        </Suspense>
       )}
       {showTutorialOffer && !flow.paused && (
         <TutorialOffer
@@ -6218,41 +6288,17 @@ export default function App() {
               >
                 <button
                   onClick={exitHoleEditMode}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: 6,
-                    border: "1px solid #ddd",
-                    background: "#fff",
-                    fontWeight: 600,
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
+                  style={holeEditorNavButtonStyle}
                 >
                   <T id="auto.app.exit" /></button>
                 <button
                   onClick={() => navigateHole(-1)}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: 6,
-                    border: "1px solid #ddd",
-                    background: "#fff",
-                    fontWeight: 600,
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
+                  style={holeEditorNavButtonStyle}
                 >
                   <T id="auto.app.prev" /></button>
                 <button
                   onClick={() => navigateHole(1)}
-                  style={{
-                    padding: "8px 16px",
-                    borderRadius: 6,
-                    border: "1px solid #ddd",
-                    background: "#fff",
-                    fontWeight: 600,
-                    fontSize: 13,
-                    cursor: "pointer",
-                  }}
+                  style={holeEditorNavButtonStyle}
                 >
                   <T id="auto.app.next" /></button>
               </div>

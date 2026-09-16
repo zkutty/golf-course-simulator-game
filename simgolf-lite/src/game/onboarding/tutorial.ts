@@ -1,4 +1,5 @@
 import type { Course, ExperienceProfile, WeekResult, World } from "../models/types";
+import type { HoleScore } from "../sim/holes";
 import type { MessageKey } from "../../i18n/catalog";
 import { compareOpening, diagnoseOpening, freezeOpeningContext, hasOpeningEdit, normalizeOpeningDemo, openingShots, openingTargetCells, retestOpening, type OpeningDemo } from "./openingDemo";
 import {
@@ -80,6 +81,22 @@ export interface TutorialBaseline {
   observedCompletedRounds: number;
 }
 
+/**
+ * Keep the guide focused on a real authored repair before sending the player
+ * to an empty slot. The active complete-but-invalid authored hole wins;
+ * otherwise any complete-but-invalid hole is the most useful repair target.
+ */
+export function tutorialValidationHoleIndex(
+  holes: readonly Pick<HoleScore, "isComplete" | "isValid">[],
+  activeHoleIndex: number,
+): number {
+  const active = holes[activeHoleIndex];
+  if (active?.isComplete && !active.isValid) return activeHoleIndex;
+  const completeInvalid = holes.findIndex((hole) => hole.isComplete && !hole.isValid);
+  if (completeInvalid >= 0) return completeInvalid;
+  return holes.findIndex((hole) => !hole.isComplete || !hole.isValid);
+}
+
 export interface TutorialProgress {
   version: typeof TUTORIAL_PROGRESS_VERSION;
   active: boolean;
@@ -112,7 +129,7 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
   { id: "paint-fairway", eyebrowKey: "tutorial.preview.paint.eyebrow", titleKey: "tutorial.preview.paint.title", bodyKey: "tutorial.preview.paint.body", target: "terrain-palette", allowedTargets: ["terrain-palette", "course"], expression: "pleased" },
   { id: "place-hole", eyebrowKey: "tutorial.preview.place.eyebrow", titleKey: "tutorial.preview.place.title", bodyKey: "tutorial.preview.place.body", target: "hole-wizard", allowedTargets: ["hole-wizard", "editor-tools", "course"], expression: "neutral" },
   { id: "route-readability", eyebrowKey: "tutorial.preview.route.eyebrow", titleKey: "tutorial.preview.route.title", bodyKey: "tutorial.preview.route.body", target: "shot-plan", allowedTargets: ["shot-plan", "course"], expression: "neutral", actionLabelKey: "tutorial.preview.route.action" },
-  { id: "validate-hole", eyebrowKey: "tutorial.preview.validate.eyebrow", titleKey: "tutorial.preview.validate.title", bodyKey: "tutorial.preview.validate.body", target: "fix-overlay", allowedTargets: ["fix-overlay", "hole-editor-nav", "hole-wizard", "editor-tools", "course", "terrain-palette"], expression: "worried" },
+  { id: "validate-hole", eyebrowKey: "tutorial.preview.validate.eyebrow", titleKey: "tutorial.preview.validate.title", bodyKey: "tutorial.preview.validate.body", target: "fix-overlay", expression: "worried" },
   { id: "invite-group", eyebrowKey: "tutorial.preview.invite.eyebrow", titleKey: "tutorial.preview.invite.title", bodyKey: "tutorial.preview.invite.body", target: "course", expression: "excited", actionLabelKey: "tutorial.preview.invite.action" },
   { id: "observe-play", eyebrowKey: "tutorial.preview.observe.eyebrow", titleKey: "tutorial.preview.observe.title", bodyKey: "tutorial.preview.observe.body", target: "course", expression: "neutral", actionLabelKey: "tutorial.preview.observe.action" },
   { id: "review-reaction", eyebrowKey: "tutorial.preview.reaction.eyebrow", titleKey: "tutorial.preview.reaction.title", bodyKey: "tutorial.preview.reaction.body", target: "course", expression: "pleased", actionLabelKey: "tutorial.preview.reaction.action" },
