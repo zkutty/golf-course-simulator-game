@@ -24,6 +24,7 @@ import { shotSlopeEvidenceFacts } from "../models/shotSlopeEvidence";
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const playable = new Set(["tee", "fairway", "rough", "deep_rough", "green", "sand", "waste_area"]);
 const recoveryLies = new Set(["rough", "deep_rough", "sand", "waste_area"]);
+const SHORT_GAME_CUP_WINDOW_YARDS = 90;
 const INTENTS: StrategicIntentKind[] = ["safe", "hero", "positional", "recovery", "approach"];
 const CLUBS: Record<string, { carry: number; dispersion: number }> = Object.fromEntries(
   DISPERSION_CLUBS.map((club) => [club.label, { carry: club.carryYards, dispersion: club.dispersionTiles }]),
@@ -192,7 +193,7 @@ export type RecoveryShape = "around" | "under" | "over";
 
 interface RecoveryCandidateSpec {
   route: RecoveryRoute;
-  shape: RecoveryShape;
+  shape: RecoveryShape | "green";
   target: Point;
   technique: ShotTechnique;
   flightProfile: ShotFlightProfile;
@@ -255,6 +256,20 @@ function recoverySpecs(course: Course, hole: Hole, from: Point): RecoveryCandida
   const route = routeObstacle(course, from, green);
   const obstacle = route?.obstacle ?? null;
   const remaining = distance(from, green);
+  // Once the cup is inside a credible short-game window, a lateral advance is
+  // not a recovery: it is the exact pattern that can bounce a golfer between
+  // two greenside rough tiles.  Keep obstruction-driven routes below, but on
+  // an open line make the green the explicit target and let the legal-club
+  // selector proportion the chip, wedge, or pitch.
+  if (!route && remaining * course.yardsPerTile <= SHORT_GAME_CUP_WINDOW_YARDS) {
+    return [{
+      route: "safe",
+      shape: "green",
+      target: green,
+      technique: "normal",
+      flightProfile: "standard",
+    }];
+  }
   const safeAdvance = Math.min(Math.max(3, remaining * .16), 7);
   const positionalAdvance = Math.min(Math.max(7, remaining * .36), 16);
   const safeLeft = saferAroundTarget(course, from, green, obstacle, safeAdvance, -1);
@@ -469,8 +484,8 @@ function recoveryCandidate(args: {
     { code: "capability-fit", detail: `recovery:${Math.round(args.capabilities.recovery)} accuracy:${Math.round(args.capabilities.accuracy)} consistency:${Math.round(args.capabilities.consistency)}` },
     { code: "risk", detail: `hazard:${Math.round(hazardRisk * 100)}% collision:${Math.round(collisionRisk * 100)}% penalty:${Math.round(penaltyCost * 100)}%` },
     { code: "terrain", detail: `source:${args.lie} expected-landing:${terrainAt(args.course, args.spec.target)}` },
-    { code: "next-shot", detail: `quality:${Math.round(nextShotQuality * 100)}% remaining:${Math.round(averageRemaining * args.course.yardsPerTile)}yd` },
-    { code: "context", detail: `recovery:${args.spec.route} shape:${args.spec.shape} flight:${args.spec.flightProfile} technique:${args.spec.technique} club:${selection.club.label}` },
+    { code: "next-shot", detail: `quality:${Math.round(nextShotQuality * 100)}% remaining:${Math.round(averageRemaining * args.course.yardsPerTile)}yd expected-leave:${Math.round(averageRemaining * args.course.yardsPerTile)}yd` },
+    { code: "context", detail: `recovery:${args.spec.route} shape:${args.spec.shape} target:${args.spec.shape === "green" ? "cup" : "recovery-lane"} flight:${args.spec.flightProfile} technique:${args.spec.technique} club:${selection.club.label} power:${selection.power.toFixed(2)}` },
     { code: "outcome", detail: collisionDetail },
     { code: "outcome", detail: `rules:${firstRules?.ruling.status ?? "legacy"} relief:${firstRules?.relief.type ?? "none"} relief-rate:${Math.round(reliefCount / samples.length * 100)}%` },
     { code: "outcome", detail: `expected-cost:${expectedStrokes.toFixed(3)}` },
@@ -489,6 +504,32 @@ function recoveryCandidate(args: {
   };
 }
 
+function expectedLeaveYards(intent: ShotIntent): number | null {
+  const detail = intent.facts.find((fact) => fact.code === "next-shot")?.detail ?? "";
+  const match = detail.match(/expected-leave:(\d+(?:\.\d+)?)yd/);
+  return match ? Number(match[1]) : null;
+}
+
+function justifiedRecoveryDetour(intent: ShotIntent): boolean {
+  const hazard = intent.facts.find((fact) => fact.code === "risk")?.detail.match(/hazard:(\d+)%/)?.[1];
+  const outcomeDetails = intent.facts.filter((fact) => fact.code === "outcome").map((fact) => fact.detail);
+  const explicitObstacle = outcomeDetails.some((detail) => detail.startsWith("obstacle:") && !detail.startsWith("obstacle:clear"));
+  const rules = outcomeDetails.find((detail) => detail.startsWith("rules:"))?.match(/^rules:([^\s]+) relief:([^\s]+)/);
+  const adverseRuling = rules?.[1] !== undefined && !["legacy", "in_play", "holed"].includes(rules[1]);
+  const nonNoneRelief = rules?.[2] !== undefined && rules[2] !== "none";
+  return Number(hazard ?? 0) >= 50 || explicitObstacle || adverseRuling || nonNoneRelief;
+}
+
+function recoveryProgressPenalty(intent: ShotIntent, currentDistanceYards: number, cycleRisk: boolean): number {
+  const expectedLeave = expectedLeaveYards(intent);
+  if (expectedLeave === null || expectedLeave < currentDistanceYards - 4 || justifiedRecoveryDetour(intent)) return 0;
+  // A candidate that cannot project at least a small step toward the cup is
+  // still visible for inspection, but cannot win an ordinary recovery rank.
+  // Repeated realized stalls receive a decisive extra penalty so the same
+  // deterministic route cannot consume the hole's shot budget.
+  return 2.4 + (cycleRisk ? 3.6 : 0);
+}
+
 /**
  * Build a stable, legal M50 recovery set from the current ball state. The
  * candidates retain the old M47 intent vocabulary while adding explicit
@@ -504,6 +545,8 @@ export function generateRecoveryCandidates(args: {
   shotNumber?: number;
   sampleCount?: number;
   snapshot?: PlayerRoundCourseSnapshot;
+  /** The round loop supplies recent immutable outcomes to break recovery stalls. */
+  recentOutcomes?: readonly { from: Point; rest: Point }[];
 }): ShotIntent[] {
   if (!args.hole.green || !hasRecoveryContext(args.course, args.from, args.hole.green, args.lie)) return [];
   const lie = args.lie as ShotLie;
@@ -513,7 +556,13 @@ export function generateRecoveryCandidates(args: {
     teeSet: "member",
     pinRotation: args.course.activePinRotation ?? "A",
   });
-  return recoverySpecs(args.course, args.hole, args.from)
+  const currentDistanceYards = distance(args.from, args.hole.green) * args.course.yardsPerTile;
+  const latest = args.recentOutcomes?.at(-1);
+  const prior = args.recentOutcomes?.at(-2);
+  const priorDistanceYards = distance(prior?.rest ?? latest?.from ?? args.from, args.hole.green) * args.course.yardsPerTile;
+  const cycleRisk = !!latest && currentDistanceYards >= priorDistanceYards - 4;
+  const openCycleGuard = cycleRisk && routeObstacle(args.course, args.from, args.hole.green) === null;
+  const candidates = recoverySpecs(args.course, args.hole, args.from)
     .map((spec) => recoveryCandidate({
       ...args,
       lie,
@@ -523,8 +572,19 @@ export function generateRecoveryCandidates(args: {
       spec,
       sampleCount: args.sampleCount,
     }))
-    .filter((candidate): candidate is ShotIntent => candidate !== null)
-    .sort((a, b) => recoveryScore(a, args.capabilities) - recoveryScore(b, args.capabilities) || a.id.localeCompare(b.id));
+    .filter((candidate): candidate is ShotIntent => candidate !== null);
+  // An open repeated stall consumes only candidates that materially shorten
+  // the intended leave. Obstructed routes retain their sideways choices.
+  const converging = openCycleGuard
+    ? candidates.filter((candidate) => distance(candidate.target, args.hole.green!) <= Math.max(3, distance(args.from, args.hole.green!) * .5))
+    : candidates;
+  return (converging.length > 0 ? converging : candidates)
+    .sort((a, b) =>
+      recoveryScore(a, args.capabilities)
+        + recoveryProgressPenalty(a, currentDistanceYards, cycleRisk)
+        - recoveryScore(b, args.capabilities)
+        - recoveryProgressPenalty(b, currentDistanceYards, cycleRisk)
+        || a.id.localeCompare(b.id));
 }
 
 function chooseClub(course: Course, kind: StrategicIntentKind, from: Point, target: Point, capabilities: GolferCapabilities, lie: string): { name: string; power: number } {
@@ -810,6 +870,7 @@ export function followUpIntent(args: {
   shotNumber: number;
   snapshot?: PlayerRoundCourseSnapshot;
   obstacleRecoveryContext?: boolean;
+  recentOutcomes?: readonly { from: Point; rest: Point }[];
 }): ShotIntent {
   const target = { ...args.hole.green! };
   const ordinaryLie = args.lie === "tee" || args.lie === "fairway" || args.lie === "green";
@@ -817,7 +878,12 @@ export function followUpIntent(args: {
     ? generateRecoveryCandidates({ ...args, sampleCount: 1 })
     : [];
   if (recoveryCandidates.length > 0) {
-    const chosen = args.capabilities.riskStyle === "conservative"
+    const latest = args.recentOutcomes?.at(-1);
+    const prior = args.recentOutcomes?.at(-2);
+    const stalledOpenRecovery = !!latest
+      && distance(args.from, target) >= distance(prior?.rest ?? latest.from, target) - .4
+      && routeObstacle(args.course, args.from, target) === null;
+    const chosen = args.capabilities.riskStyle === "conservative" && !stalledOpenRecovery
       ? recoveryCandidates.find((candidate) => candidate.facts.some((fact) => fact.code === "context" && fact.detail.includes("recovery:safe"))) ?? recoveryCandidates[0]
       : recoveryCandidates[0];
     return {
