@@ -16,6 +16,7 @@ import {
   skipTutorialModule,
   tutorialCanAdvance,
   tutorialPublicThreeHoleOperation,
+  tutorialValidationHoleIndex,
 } from "./tutorial";
 import { GOLFOPEDIA_ENTRIES } from "../../ui/help/golfopediaData";
 import {
@@ -90,6 +91,22 @@ describe("M14 onboarding data", () => {
   it("keeps Design reachable while the three-hole lesson awaits another hole", () => {
     const openCourse = TUTORIAL_STEPS.find((step) => step.id === "public-three")!;
     expect(openCourse.allowedTargets).toContain("editor-tools");
+  });
+
+  it("keeps validation repair unmasked so scrolling and editor recovery remain available", () => {
+    const validate = TUTORIAL_STEPS.find((step) => step.id === "validate-hole")!;
+    expect(validate.target).toBe("fix-overlay");
+    expect(validate.allowedTargets).toBeUndefined();
+  });
+
+  it("prefers a complete invalid authored hole over an earlier empty slot", () => {
+    const holes = [
+      { isComplete: false, isValid: false },
+      { isComplete: true, isValid: false },
+      { isComplete: true, isValid: true },
+    ];
+    expect(tutorialValidationHoleIndex(holes, 0)).toBe(1);
+    expect(tutorialValidationHoleIndex(holes, 1)).toBe(1);
   });
 
   it("captures a run baseline and accepts threshold-based painting", () => {

@@ -26,6 +26,9 @@ export function TutorialOverlay(props: {
   onOpeningCursor: (cursor: number) => void;
   onOpeningRetry: () => void;
   onOpeningFocus: () => void;
+  validateIssue?: string | null;
+  canShowFixOverlay?: boolean;
+  onShowFixOverlay?: () => void;
 }) {
   const { t } = useI18n();
   const [rects, setRects] = useState<Rect[]>([]);
@@ -63,6 +66,9 @@ export function TutorialOverlay(props: {
     const onKeyDown = (event: KeyboardEvent) => {
       const card = cardRef.current;
       if (!card) return;
+      // Validation repair deliberately leaves the editor and its native
+      // Escape/cancel path alone; this is a guide card, not a modal trap.
+      if (props.step.id === "validate-hole") return;
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
@@ -105,7 +111,7 @@ export function TutorialOverlay(props: {
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [props.progress.opening, props.step.allowedTargets]);
+  }, [props.progress.opening, props.step.allowedTargets, props.step.id]);
 
   useEffect(() => {
     const update = () => {
@@ -149,6 +155,7 @@ export function TutorialOverlay(props: {
     bottom: Math.min(window.innerHeight, rect.bottom + 7),
   }));
   const blockers = useMemo(() => {
+    if (props.step.id === "validate-hole") return [];
     if (paddedRects.length === 0) return [{ inset: 0 }];
     const xs = [...new Set([0, window.innerWidth, ...paddedRects.flatMap((rect) => [rect.left, rect.right])])].sort((a, b) => a - b);
     const ys = [...new Set([0, window.innerHeight, ...paddedRects.flatMap((rect) => [rect.top, rect.bottom])])].sort((a, b) => a - b);
@@ -166,7 +173,14 @@ export function TutorialOverlay(props: {
       }
     }
     return cells;
-  }, [paddedRects]);
+  }, [paddedRects, props.step.id]);
+  const body = props.step.id === "validate-hole"
+    ? props.canShowFixOverlay
+      ? t("tutorial.preview.validate.continuity")
+      : props.validateIssue
+        ? t("tutorial.preview.validate.blocking", { issue: props.validateIssue })
+        : t(props.step.bodyKey)
+    : t(props.step.bodyKey);
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 99990, pointerEvents: "none" }} data-rich-tooltip data-testid="tutorial-overlay" data-step-id={props.step.id}>
@@ -193,7 +207,7 @@ export function TutorialOverlay(props: {
       <div
         ref={cardRef}
         role="dialog"
-        aria-modal={props.progress.opening ? undefined : true}
+        aria-modal={props.progress.opening || props.step.id === "validate-hole" ? undefined : true}
         aria-label={t(props.step.titleKey)}
         tabIndex={-1}
         data-testid="tutorial-card"
@@ -209,7 +223,7 @@ export function TutorialOverlay(props: {
         <AdvisorPresenter
           eyebrow={t(props.step.eyebrowKey)}
           title={t(props.step.titleKey)}
-          body={t(props.step.bodyKey)}
+          body={body}
           expression={props.step.expression}
           details={<>
             <OpeningDemoDetails progress={props.progress} width={props.courseWidth} onCursor={props.onOpeningCursor} onRetry={props.onOpeningRetry} onFocus={props.onOpeningFocus} />
@@ -246,6 +260,11 @@ export function TutorialOverlay(props: {
                 style={{ ...presenterButtonStyle, background: "transparent", color: "#465349", borderColor: "rgba(39,54,43,.35)" }}
               >
                 <T id="auto.ui.onboarding.tutorialoverlay.skip.tutorial" /></button>
+              {props.step.id === "validate-hole" && props.canShowFixOverlay && props.onShowFixOverlay && (
+                <button data-testid="tutorial-show-fix-overlay" onClick={props.onShowFixOverlay} style={presenterButtonStyle}>
+                  {t("tutorial.preview.validate.showFix")}
+                </button>
+              )}
               <button data-testid="tutorial-primary-action" onClick={props.onAdvance} disabled={!props.canAdvance} style={{ ...presenterButtonStyle, opacity: props.canAdvance ? 1 : .45 }}>
                 {props.canAdvance ? t(props.step.actionLabelKey ?? "tutorial.continue") : t("tutorial.completeTask")}
               </button>
