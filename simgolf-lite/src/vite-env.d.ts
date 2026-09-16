@@ -36,7 +36,13 @@ interface Window {
       materials: import("./game/models/types").Terrain[];
       colors: Partial<Record<import("./game/models/types").Terrain, number>>;
     } | null;
-    routeOverlay(): { points: number; visibleLayers: number };
+    routeOverlay(): {
+      geometrySamples: number;
+      semanticTargets: number;
+      fullShotSegments: number;
+      expectedPutts: number;
+      visibleLayers: number;
+    };
     playerProCollectionDisplay(): {
       rebuilds: number;
       items: readonly { label: string; x: number; y: number; zIndex: number }[];

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "pixi.js/unsafe-eval";
 import * as PIXI from "pixi.js";
 import type { Course, DecorationKind, DecorationRotation, Hole, Obstacle, Point, SurfaceFeature, TeeSet, Terrain, TerrainAuthoringTool } from "../game/models/types";
-import type { ShotPlanStep } from "../game/sim/shots/solveShotsToGreen";
+import type { ShotRoutePresentation } from "../game/presentation/shotRoutePresentation";
 import type { GolferRenderData } from "../game/live/types";
 import type { PlayerPlayableRound, PlayerProPoint } from "../game/models/playerProTypes";
 import type { PlayerProWorldDisplayPresentation } from "../game/playerPro/socialPresentation";
@@ -569,8 +569,8 @@ export interface PixiStageProps {
   holes: Hole[];
   obstacles: Obstacle[];
   activeHoleIndex: number;
-  activePath?: Point[];
-  activeShotPlan?: ShotPlanStep[];
+  /** Route geometry and destination markers have distinct simulation authority. */
+  activeShotRoute?: ShotRoutePresentation | null;
   selectedTeeSet?: TeeSet;
   tileSize: number;
   showGridOverlays: boolean;
@@ -1162,7 +1162,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     holes,
     obstacles,
     activeHoleIndex,
-    activePath,
+    activeShotRoute,
     onClickTile,
     onPreviewTerrainStroke,
     onCommitTerrainStroke,
@@ -1458,7 +1458,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     }),
     surfaceEditor: surfaceEditorRevisionDependencies(surfaceEditorSnapshot),
     architectureOverlay: architectureOverlayRevisionDependencies({
-      activePath,
+      activePath: activeShotRoute?.geometry,
+      activeShotDestinations: activeShotRoute?.destinations,
       activePinRotation: course.activePinRotation,
       failingCorridorSegments,
       holes,
@@ -1506,7 +1507,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     showMarkers: props.showMarkers !== false,
     selectedTeeSet: props.selectedTeeSet,
     flagColor: props.flagColor,
-    activePath,
+    activePath: activeShotRoute?.geometry,
+    activeShotDestinations: activeShotRoute?.destinations,
     architectureWarnings: props.architectureWarnings,
     architectureOverlay: props.architectureOverlay,
     paceBottlenecks: props.paceBottlenecks,
@@ -1549,7 +1551,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.showMarkers,
     props.selectedTeeSet,
     props.flagColor,
-    activePath,
+    activeShotRoute,
     props.architectureWarnings,
     props.architectureOverlay,
     props.paceBottlenecks,
@@ -1789,7 +1791,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const green = referencePlan?.pin ?? hole?.green;
       if (!app || !hole || !tee || !green) return;
       const cam = camRef.current;
-      const corridor = referencePlan?.segments.map((segment) => segment.to) ?? (props.activeShotPlan ?? []).map((segment) => segment.to);
+      const corridor = referencePlan?.segments.map((segment) => segment.to) ?? (activeShotRoute?.destinations ?? []);
       const referencePoints = [tee, ...corridor, green];
       const minX = Math.min(...referencePoints.map((point) => point.x)) - 5;
       const maxX = Math.max(...referencePoints.map((point) => point.x)) + 5;
@@ -1971,7 +1973,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         }
         : null,
       routeOverlay: () => ({
-        points: activePath?.length ?? 0,
+        geometrySamples: activeShotRoute?.geometry.length ?? 0,
+        semanticTargets: activeShotRoute?.destinations.length ?? 0,
+        fullShotSegments: activeShotRoute?.fullShots ?? 0,
+        expectedPutts: activeShotRoute?.expectedPutts ?? 0,
         visibleLayers: layersRef.current?.terrainDecals.children.filter((child) => child.label === ROUTE_LABEL && child.visible).length ?? 0,
       }),
       playerProCollectionDisplay: () => ({
@@ -2079,7 +2084,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (window.__coursecraftPixiTest === api) delete window.__coursecraftPixiTest;
     };
   }, [
-    activePath,
+    activeShotRoute,
     appReady,
     applyCamera,
     atlasContext,

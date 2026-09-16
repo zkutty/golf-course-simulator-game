@@ -26,6 +26,7 @@ function snapshot(revision: number, overrides: Partial<RenderSnapshot> = {}): Re
     worldSeed: 42,
     surfaceHeightAt: () => 0,
     activePath: [{ x: 1, y: 1 }, { x: 3, y: 3 }],
+    activeShotDestinations: [{ x: 3, y: 3 }],
     showShotPlan: true,
     revisions: {
       atmosphere: 0,
@@ -43,6 +44,33 @@ function snapshot(revision: number, overrides: Partial<RenderSnapshot> = {}): Re
 }
 
 describe("Architecture overlay scene ownership", () => {
+  it("draws one marker per semantic target regardless of route sampling", () => {
+    const layer = new PIXI.Container();
+    const scene = createArchitectureOverlaySceneSystem(layer);
+    const targets = [{ x: 4, y: 3 }, { x: 8, y: 2 }];
+    const markerCenters = () => {
+      const route = layer.children.find((child) => child.label === "route-overlay") as PIXI.Graphics;
+      return route.context.instructions
+        .filter((instruction) => instruction.action === "fill")
+        .flatMap((instruction) => "path" in instruction.data ? instruction.data.path.instructions : [])
+        .filter((instruction) => instruction.action === "circle")
+        .map((instruction) => instruction.data.slice(0, 2));
+    };
+
+    scene.render?.(snapshot(1, {
+      activePath: [{ x: 0, y: 5 }, { x: 4, y: 3 }, { x: 8, y: 2 }],
+      activeShotDestinations: targets,
+    }));
+    const sparse = markerCenters();
+    scene.render?.(snapshot(2, {
+      activePath: [{ x: 0, y: 5 }, { x: 1, y: 5 }, { x: 2, y: 4 }, { x: 3, y: 4 }, { x: 4, y: 3 }, { x: 5, y: 3 }, { x: 6, y: 3 }, { x: 7, y: 2 }, { x: 8, y: 2 }],
+      activeShotDestinations: targets,
+    }));
+
+    expect(sparse).toHaveLength(2);
+    expect(markerCenters()).toEqual(sparse);
+  });
+
   it("rebuilds only its labeled decals and preserves sibling order", () => {
     const layer = new PIXI.Container();
     const marker = new PIXI.Graphics();
@@ -59,7 +87,7 @@ describe("Architecture overlay scene ownership", () => {
     expect(host.sync({ ...snapshot(1), course: { ...DEFAULT_STATE.course } })).toEqual([]);
     expect(layer.children.find((child) => child.label === "route-overlay")).toBe(firstRoute);
 
-    expect(host.sync(snapshot(2, { activePath: [{ x: 2, y: 2 }, { x: 4, y: 3 }] }))).toEqual(["architectureOverlay"]);
+    expect(host.sync(snapshot(2, { activeShotDestinations: [{ x: 4, y: 3 }] }))).toEqual(["architectureOverlay"]);
     expect(layer.children[0]).toBe(marker);
     expect(firstRoute?.destroyed).toBe(true);
 

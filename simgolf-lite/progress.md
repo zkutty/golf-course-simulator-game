@@ -2185,3 +2185,31 @@ classic course-builder references.
   ZK-1134's byte-bound SVG/PNG contact sheet against the immutable released SHA.
   Human originality, hierarchy, and biome-cohesion approval remains mandatory
   before ZK-771 or M70 can close.
+
+## ZK-1154 semantic shot-route execution — 2026-09-16
+
+- Linear reconciliation selected ZK-1154 as the next unblocked M69 packet and
+  moved only that issue to In Progress with execution lease attempt 1/3.
+- Exact-origin/main worktree created at commit `8a723046d7eae39899742a94677250ab8bffeeda`;
+  the original checkout and held development work remain untouched.
+- Root cause confirmed: the route renderer draws the sampled `HoleScore.path`
+  as a smooth polyline, then also circles every sampled point, visually turning
+  geometry samples into apparent strokes. The existing discrete `shotPlan`
+  already carries the authoritative semantic destinations.
+- NEXT: carry semantic targets through the shared renderer snapshot and text
+  diagnostics, add sampling-invariance/Par 3-5 tests, then run focused, browser,
+  visual, full, and release gates before any promotion.
+- Terra attempt 1 passed its build and focused tests, but independent Sol review
+  requested bounded correction attempt 2/3: expose geometry sample count in text,
+  update the stale route-overlay E2E field, exercise real scored Par 3/4/5
+  fixtures, prove incomplete holes expose no fake putts, and describe the solid
+  route line truthfully. The accepted line-vs-destination renderer is frozen.
+- Attempt 2 passed independent Sol review. Root verification passed 40 focused
+  tests, the real one-hole tutorial browser flow, production build and delivery
+  budgets, full lint with zero errors (nine known Hook warnings), and the complete
+  M69 certification: 7 unit/performance checks plus all 13 browser cases across
+  every tee/pin selector and all parkland, links, and desert rotations.
+- Visual inspection confirmed one continuous route line and one semantic green
+  destination for the guided Par 3. NEXT: freeze the scoped commit, verify it on
+  development, promote the exact main-based patch, and monitor production before
+  reconciling ZK-1154; ZK-1114/ZK-1115 and milestone M69 remain open.
