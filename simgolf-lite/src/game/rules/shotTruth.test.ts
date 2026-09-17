@@ -48,7 +48,7 @@ describe("ZK-1108 committed-shot truth contract", () => {
 
   it("preserves exact v1 invited receipt fields and never substitutes physical rest for next lie", () => {
     const shot = resolveLiveShot(committed());
-    expect(invitedPreviewShot(shot)).toEqual({ shotNumber: shot.shotNumber, intent: shot.intent, club: shot.club, from: shot.from, landing: shot.landing, rest: shot.rest, lieAfter: shot.lieAfter, penaltyStrokes: shot.penaltyStrokes });
+    expect(invitedPreviewShot(shot)).toEqual({ id: shot.id, shotNumber: shot.shotNumber, intent: shot.intent, club: shot.club, from: shot.from, landing: shot.landing, rest: shot.rest, lieAfter: shot.lieAfter, penaltyStrokes: shot.penaltyStrokes });
   });
 
   it("follows the recorded bent roll and stops at physical rest, never the relief drop", () => {
@@ -84,7 +84,7 @@ describe("ZK-1108 committed-shot truth contract", () => {
     expect(truth.physicalRest).toBeNull();
     expect(truth.rollPath).toEqual([]);
     expect(committedShotGroundPosition(truth, .5)).toBeNull();
-    expect(shotTruthCues(truth, "en").join(" ")).toContain("Schematic markers");
+    expect(shotTruthCues(truth, "en").join(" ")).toContain("Circle: landing. Square: next lie. Retained endpoints animate; relief can move a lie.");
     expect(shotTruthCues(truth, "en").join(" ")).not.toContain("Final playable position");
     expect(shotTruthCues(truth, "pseudo").every((cue) => cue.startsWith("⟦"))).toBe(true);
     expect(projectCommittedShot(legacy)).toEqual(truth);

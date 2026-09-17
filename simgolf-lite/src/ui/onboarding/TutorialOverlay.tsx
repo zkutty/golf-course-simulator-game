@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { TutorialProgress, TutorialStep } from "../../game/onboarding/tutorial";
 import { AdvisorPresenter } from "./AdvisorPresenter";
 import { presenterButtonStyle } from "./presenterStyles";
 import { T } from "../../i18n/T";
 import { useI18n } from "../../i18n/useI18n";
-import { OpeningDemoDetails } from "./OpeningDemoDetails";
+import type { OpeningPlaybackFrame } from "../../game/onboarding/openingDemo";
 import { useFocusTrap } from "../accessibility/useFocusTrap";
+
+const OpeningDemoDetails = lazy(() => import("./OpeningDemoDetails").then(({ OpeningDemoDetails }) => ({ default: OpeningDemoDetails })));
 
 type Rect = { top: number; left: number; right: number; bottom: number; width: number; height: number };
 const FOCUSABLE = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])";
@@ -27,6 +29,15 @@ export function TutorialOverlay(props: {
   onOpeningCursor: (cursor: number) => void;
   onOpeningRetry: () => void;
   onOpeningFocus: () => void;
+  openingPlayback: OpeningPlaybackFrame | null;
+  openingPlaying: boolean;
+  openingPlaybackSpeed: 0.5 | 1 | 2;
+  openingFollowing: boolean;
+  reducedMotion: boolean;
+  onOpeningTogglePlaying: () => void;
+  onOpeningSpeed: (speed: 0.5 | 1 | 2) => void;
+  onOpeningToggleFollow: () => void;
+  openingPaintRecovery?: string | null;
   validateIssue?: string | null;
   canShowFixOverlay?: boolean;
   onShowFixOverlay?: () => void;
@@ -69,15 +80,17 @@ export function TutorialOverlay(props: {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       // The nested confirmation owns keyboard interaction while it is open.
-      // Do not let this guide-level capture handler swallow its Escape path or
-      // interfere with the dialog's focus trap.
+      // In particular, do not let this guide-level capture handler swallow its
+      // Escape cancel path or interfere with the dialog's focus trap.
       if (skipConfirmationOpen) return;
       const card = cardRef.current;
       if (!card) return;
       // Validation repair deliberately leaves the editor and its native
       // Escape/cancel path alone; this is a guide card, not a modal trap.
       if (props.step.id === "validate-hole") return;
-      if (event.key === "Escape") {
+      // A terrain gesture owns Escape while the private-preview repair is
+      // active. The guide must not swallow the native cancel path.
+      if (event.key === "Escape" && !(props.progress.opening && props.step.id === "improve-hole")) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
@@ -232,6 +245,7 @@ export function TutorialOverlay(props: {
         aria-hidden={skipConfirmationOpen ? true : undefined}
         tabIndex={-1}
         data-testid="tutorial-card"
+        data-opening-treatment={props.progress.opening ? "true" : undefined}
         style={{
           position: "fixed",
           pointerEvents: "auto",
@@ -247,7 +261,28 @@ export function TutorialOverlay(props: {
           body={body}
           expression={props.step.expression}
           details={<>
-            <OpeningDemoDetails progress={props.progress} width={props.courseWidth} onCursor={props.onOpeningCursor} onRetry={props.onOpeningRetry} onFocus={props.onOpeningFocus} />
+            {props.progress.opening && <Suspense fallback={<span role="status" aria-live="polite">{t("deferredSurface.loading", { surface: t(props.step.titleKey) })}</span>}>
+              <OpeningDemoDetails
+                progress={props.progress}
+                width={props.courseWidth}
+                playback={props.openingPlayback}
+                playing={props.openingPlaying}
+                playbackSpeed={props.openingPlaybackSpeed}
+                following={props.openingFollowing}
+                reducedMotion={props.reducedMotion}
+                onCursor={props.onOpeningCursor}
+                onRetry={props.onOpeningRetry}
+                onFocus={props.onOpeningFocus}
+                onTogglePlaying={props.onOpeningTogglePlaying}
+                onSpeed={props.onOpeningSpeed}
+                onToggleFollow={props.onOpeningToggleFollow}
+              />
+            </Suspense>}
+            {props.progress.opening && props.step.id === "improve-hole" && props.openingPaintRecovery && (
+              <div role="status" data-testid="opening-paint-recovery" style={{ padding: 8, borderRadius: 8, background: "#fff1ed", color: "#8c2f1f", fontWeight: 700 }}>
+                {props.openingPaintRecovery}
+              </div>
+            )}
             {showEvidence ? (
             <div data-testid="invited-preview-evidence" style={{ display: "grid", gap: 7, maxHeight: 190, overflowY: "auto", fontSize: 11, lineHeight: 1.35 }}>
               <b>{t("tutorial.preview.groupLabel")}</b>
@@ -291,7 +326,7 @@ export function TutorialOverlay(props: {
               </button>
             </>
           }
-        />
+          />
       </div>
       {skipConfirmationOpen && (
         <div

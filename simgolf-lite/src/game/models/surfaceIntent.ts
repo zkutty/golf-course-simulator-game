@@ -146,7 +146,7 @@ export function normalizeSurfaceIntent(
       const knots = feature.geometry.knots?.filter(finitePoint).slice(0, MAX_POINTS).map(
         (point) => clampPoint(point, width, height),
       );
-      if (knots.length < 2 || !Number.isFinite(feature.geometry.width)) continue;
+      if (!knots.length || !Number.isFinite(feature.geometry.width)) continue;
       features.push({
         id: feature.id,
         terrain: feature.terrain,

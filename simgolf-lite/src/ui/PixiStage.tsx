@@ -69,7 +69,7 @@ import {
   reactionFor,
   type GolferReaction,
 } from "../game/render/golferSprites";
-import { ballFlightPose, landingBehavior } from "../game/render/ballFlight";
+import { ballFlightPose, landingBehavior, retainedPreviewShotPose } from "../game/render/ballFlight";
 import {
   EMOTE_STALL_MS,
   createEmoteScheduler,
@@ -656,6 +656,8 @@ export interface PixiStageProps {
   playerShotAim?: PlayerProPoint | null;
   openingMarker?: RenderSnapshot["openingMarker"];
   openingTargets?: RenderSnapshot["openingTargets"];
+  openingFollow?: boolean;
+  onOpeningFollowCanceled?: () => void;
   playableShotMode?: boolean;
   /** Already-filtered, player-visible inventory dressing near the clubhouse. */
   playerProWorldDisplay?: PlayerProWorldDisplayPresentation | null;
@@ -1114,6 +1116,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
     t0: number;
     saved: { cx: number; cy: number; zoom: number };
   } | null>(null);
+  const openingFollowCameraRef = useRef<{ cx: number; cy: number; zoom: number } | null>(null);
+  const openingMarkerRef = useRef(props.openingMarker);
+  const openingFollowRef = useRef(Boolean(props.openingFollow));
+  const openingFollowCanceledRef = useRef(props.onOpeningFollowCanceled);
+  openingMarkerRef.current = props.openingMarker;
+  openingFollowRef.current = Boolean(props.openingFollow);
+  openingFollowCanceledRef.current = props.onOpeningFollowCanceled;
+  const hasOpeningMarker = Boolean(props.openingMarker);
   const [flyoverCard, setFlyoverCard] = useState<{ hole: number; par: number; yards: number } | null>(null);
   const [rendererError, setRendererError] = useState(false);
   const [terrainStrokePreview, setTerrainStrokePreview] = useState<TerrainStrokePreview | null>(null);
@@ -1773,6 +1783,25 @@ export function PixiStage(requestedProps: PixiStageProps) {
     setFlyoverCard(null);
   }, []);
 
+  // Opening playback follow is renderer-only and opt-in. Exiting through the
+  // control restores the exact prior view; direct camera input cancels follow
+  // and keeps the user's newly chosen view.
+  useEffect(() => {
+    if (!appReady) return;
+    const cam = camRef.current;
+    if (props.openingFollow && openingMarkerRef.current) {
+      if (!openingFollowCameraRef.current) openingFollowCameraRef.current = { cx: cam.tcx, cy: cam.tcy, zoom: cam.tzoom };
+      return;
+    }
+    const saved = openingFollowCameraRef.current;
+    if (!saved) return;
+    cam.tcx = saved.cx;
+    cam.tcy = saved.cy;
+    cam.tzoom = saved.zoom;
+    openingFollowCameraRef.current = null;
+    overlayDirtyRef.current = true;
+  }, [appReady, hasOpeningMarker, props.openingFollow]);
+
   // Flyover trigger: the shared flyoverNonce contract (HUD button, wizard
   // confirm, hole inspector). Needs a complete active hole.
   useEffect(() => {
@@ -1952,6 +1981,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
           y + 0.5,
           getElevation(course, Math.floor(x), Math.floor(y)),
         );
+      },
+      openingPreview: (): { targetIds: number[]; outlineCount: number } | null => {
+        const graphic = layersRef.current?.fx.children.find((child) => child.label === "opening-preview-markers") as (PIXI.Graphics & {
+          __coursecraftOpeningPreview?: { targetIds: number[]; outlineCount: number };
+        }) | undefined;
+        return graphic?.__coursecraftOpeningPreview ?? null;
       },
       surfaceCareLayer: () => {
         const layers = layersRef.current;
@@ -2512,12 +2547,19 @@ export function PixiStage(requestedProps: PixiStageProps) {
       reportCamera();
     };
 
+    const cancelOpeningFollow = () => {
+      if (!openingFollowCameraRef.current) return;
+      openingFollowCameraRef.current = null;
+      openingFollowCanceledRef.current?.();
+    };
+
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
       if (flyoverRef.current) {
         endFlyover(); // any input skips the flyover
         return;
       }
+      cancelOpeningFollow();
       applyZoomInput(
         normalizeWheelDelta(e.deltaY, e.deltaMode, app.screen.height),
         e.clientX,
@@ -2536,6 +2578,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const gesture = event as SafariGestureEvent;
       gestureScale = Number.isFinite(gesture.scale) && gesture.scale! > 0 ? gesture.scale! : 1;
       if (flyoverRef.current) endFlyover();
+      cancelOpeningFollow();
     };
     const handleGestureChange = (event: Event) => {
       event.preventDefault();
@@ -2543,6 +2586,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         endFlyover();
         return;
       }
+      cancelOpeningFollow();
       const gesture = event as SafariGestureEvent;
       const nextScale = Number.isFinite(gesture.scale) && gesture.scale! > 0 ? gesture.scale! : gestureScale;
       const rect = el.getBoundingClientRect();
@@ -2567,6 +2611,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         endFlyover();
         return;
       }
+      cancelOpeningFollow();
       const cam = camRef.current;
       panState = { gx: e.clientX, gy: e.clientY, cx: cam.cx, cy: cam.cy };
       el.setPointerCapture(e.pointerId);
@@ -2613,6 +2658,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         }
         return;
       }
+      if (panAction || binding === props.keybindings.rotateLeft || binding === props.keybindings.rotateRight) cancelOpeningFollow();
       if (!cameraState && !e.repeat && e.code === "KeyF") {
         fitWholeCourse(false);
         e.preventDefault();
@@ -2661,6 +2707,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
           cam.tzoom = Math.max(minimumZoom(), Math.min(MAX_ZOOM, s.zoom));
           moved = true;
         }
+      }
+
+      const openingMarker = openingMarkerRef.current;
+      if (!flyover && openingFollowRef.current && openingMarker && !rotTweenRef.current) {
+        // Preserve the ZK-1141 opt-in/restore behavior, while ensuring a
+        // penalty's relief marker never becomes an animated camera target.
+        const focus = retainedPreviewShotPose(openingMarker.shot, openingMarker.progress).ball ?? openingMarker.golfer;
+        const clamped = clampCenter(focus.x, focus.y);
+        cam.tcx = clamped.x;
+        cam.tcy = clamped.y;
+        moved = true;
       }
 
       // Keyboard pan in screen space → iso plane → tile space.

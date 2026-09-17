@@ -20,6 +20,7 @@ interface Window {
     fitWholeCourse(): void;
     viewport(): { width: number; height: number } | null;
     tileToScreen(x: number, y: number): { x: number; y: number } | null;
+    openingPreview(): { targetIds: number[]; outlineCount: number } | null;
     screenToTile(x: number, y: number): { x: number; y: number } | null;
     surfaceCareLayer(): {
       children: number;

@@ -84,6 +84,27 @@ async function expectTutorialInViewport(page: Page) {
   expect(card.y + card.height).toBeLessThanOrEqual(viewport.height + 1);
 }
 
+async function expectComparisonReadable(page: Page) {
+  const summary = page.getByTestId("opening-comparison-summary");
+  const comparison = page.getByTestId("opening-comparison");
+  await expect(page.getByTestId("opening-comparison-state")).toBeVisible();
+  await expect(summary).toBeVisible();
+  await expect(comparison).toBeVisible();
+  await page.getByTestId("opening-comparison-risk").first().scrollIntoViewIfNeeded();
+  await expect(page.getByTestId("opening-comparison-risk").first()).toBeVisible();
+  await expectTutorialInViewport(page);
+  const widths = await page.evaluate(() => {
+    const details = document.querySelector<HTMLElement>('[data-testid="opening-demo-details"]');
+    const table = document.querySelector<HTMLElement>('[data-testid="opening-comparison"]');
+    return {
+      documentFits: document.documentElement.scrollWidth <= window.innerWidth + 1,
+      detailsFit: details ? details.scrollWidth <= details.clientWidth + 1 : false,
+      tableFit: table ? table.scrollWidth <= table.clientWidth + 1 : false,
+    };
+  });
+  expect(widths).toEqual({ documentFits: true, detailsFit: true, tableFit: true });
+}
+
 async function dismissAchievementToasts(page: Page) {
   const toast = page.getByTestId("achievement-toast");
   for (let index = 0; index < 6 && await toast.count(); index++) {
@@ -154,7 +175,7 @@ async function focusOpeningHole(page: Page) {
   if (!bounds) throw new Error("Preview-hole canvas has no visible bounds");
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.evaluate(() => new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve())));
-  await page.getByRole("button", { name: "Focus on preview hole", exact: true }).click();
+  await page.getByRole("button", { name: /^Focus (?:on preview hole|and clear the canvas)$/ }).click();
   // Observe the real camera glide; never mutate the renderer to make a click pass.
   await page.evaluate(() => new Promise<void>((resolve, reject) => {
     let previous: { x: number; y: number } | null = null;
@@ -316,7 +337,12 @@ test("ZK-1155 repairs an invalid first hole through the authoritative fix overla
 });
 
 test.describe("ZK-1106 private operator opening", () => {
+  test.use({ hasTouch: true });
+
   test("real UI builds, watches, edits and compares one private hole", async ({ page }, testInfo) => {
+    const browserErrors: string[] = [];
+    page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+    page.on("pageerror", (error) => browserErrors.push(error.message));
     const state = () => page.evaluate(() => JSON.parse(window.render_game_to_text!()));
     const capture = async (name: string) => {
       if (process.env.ZK1107_EVIDENCE) {
@@ -336,7 +362,8 @@ test.describe("ZK-1106 private operator opening", () => {
       await page.screenshot({ path: file });
       await testInfo.attach(name, { path: file, contentType: "image/png" });
     };
-    type PreviewSummary = { id: string; holeId: string; group: Array<{ name: string; shots: number }> };
+    type PreviewShot = { id: string; number: number; club: string; from: { x: number; y: number }; landing: { x: number; y: number }; rest: { x: number; y: number }; penalties: number };
+    type PreviewSummary = { id: string; holeId: string; group: Array<{ name: string; shots: number; shotEvidence: PreviewShot[] }> };
     const previewSummary = (value: unknown): PreviewSummary => {
       if (!value || typeof value !== "object") throw new Error("Expected a retained private-preview receipt");
       const candidate = value as { id?: unknown; holeId?: unknown; group?: unknown };
@@ -345,14 +372,26 @@ test.describe("ZK-1106 private operator opening", () => {
         id: candidate.id,
         holeId: candidate.holeId,
         group: candidate.group.map((golfer) => {
-          const item = golfer as { name?: unknown; shots?: unknown };
-          const shots = Array.isArray(item.shots) ? item.shots.length : item.shots;
-          if (typeof item.name !== "string" || !Number.isInteger(shots) || shots < 0) throw new Error("Private-preview golfer receipt is malformed");
-          return { name: item.name, shots };
+          const item = golfer as { name?: unknown; shots?: unknown; shotEvidence?: unknown };
+          const rawShots = Array.isArray(item.shots) ? item.shots as Array<Record<string, unknown>> : null;
+          const shots = rawShots?.length ?? item.shots;
+          const shotEvidence = Array.isArray(item.shotEvidence)
+            ? item.shotEvidence as PreviewShot[]
+            : rawShots?.map((shot) => ({
+              id: shot.id as string,
+              number: shot.shotNumber as number,
+              club: shot.club as string,
+              from: shot.from as PreviewShot["from"],
+              landing: shot.landing as PreviewShot["landing"],
+              rest: shot.rest as PreviewShot["rest"],
+              penalties: shot.penaltyStrokes as number,
+            }));
+          if (typeof item.name !== "string" || !Number.isInteger(shots) || shots < 0 || !shotEvidence) throw new Error("Private-preview golfer receipt is malformed");
+          return { name: item.name, shots, shotEvidence };
         }),
       };
     };
-    const recordedMarkers = (evidence: PreviewSummary) => evidence.group.flatMap((golfer) => Array.from({ length: golfer.shots }, (_, index) => ({ name: golfer.name, shotNumber: index + 1 })));
+    const recordedMarkers = (evidence: PreviewSummary) => evidence.group.flatMap((golfer) => golfer.shotEvidence.map((shot) => ({ name: golfer.name, ...shot })));
     const visiblePenalty = async () => {
       const penaltyText = await page.getByTestId("opening-shot-penalty").textContent();
       const penaltyMatch = penaltyText?.match(/(\d+) penalty stroke/);
@@ -368,9 +407,16 @@ test.describe("ZK-1106 private operator opening", () => {
         const current = shots[cursor];
         expect(beforeStep.onboarding.opening.cursor, "cursor must advance exactly once per visible recorded shot").toBe(cursor);
         await expect(page.getByTestId("opening-current-shot")).toContainText(current.name);
-        await expect(page.getByTestId("opening-current-shot")).toContainText(`shot ${current.shotNumber}`);
-        await expect(page.getByTestId("opening-demo-details")).toContainText(`Recorded shots reviewed: ${cursor} / ${shots.length}`);
-        penaltyTotal += await visiblePenalty();
+        await expect(page.getByTestId("opening-current-shot")).toContainText(`shot ${current.number}`);
+        await expect(page.getByTestId("opening-current-shot")).toHaveAttribute("data-preview-id", evidence.id);
+        await expect(page.getByTestId("opening-current-shot")).toHaveAttribute("data-shot-id", current.id);
+        await expect(page.getByTestId("opening-playback-frame")).toContainText(`(${current.from.x}, ${current.from.y})`);
+        await expect(page.getByTestId("opening-playback-frame")).toContainText(`landing (${current.landing.x}, ${current.landing.y})`);
+        await expect(page.getByTestId("opening-playback-frame")).toContainText(`lie (${current.rest.x}, ${current.rest.y})`);
+        await expect(page.getByTestId("opening-demo-details")).toContainText(`Shots: ${cursor}/${shots.length}`);
+        const penalty = await visiblePenalty();
+        expect(penalty).toBe(current.penalties);
+        penaltyTotal += penalty;
         if (cursor === 1) {
           await focusOpeningHole(page);
           await capture(intermediateCapture);
@@ -382,6 +428,9 @@ test.describe("ZK-1106 private operator opening", () => {
       return penaltyTotal;
     };
     const started = Date.now();
+    // Keep motion enabled while exercising retained playback, speed, and
+    // follow cancellation. Reduced-motion equivalence is covered separately.
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.goto("/");
     await page.getByRole("button", { name: /First-hole operator demo/ }).click();
     await expectStep(page, "welcome");
@@ -393,6 +442,59 @@ test.describe("ZK-1106 private operator opening", () => {
     await page.getByRole("button", { name: "Invite group", exact: true }).click();
     await expectStep(page, "observe-play");
     await expect(page.getByTestId("opening-current-shot")).not.toBeEmpty();
+    const retainedAtStart = await state();
+    const authorityHashes = retainedAtStart.onboarding.authorityHashes;
+    const startFrame = retainedAtStart.onboarding.openingPlayback;
+    expect(startFrame.shotId).toBe(retainedAtStart.onboarding.preview.group[0].shotEvidence[0].id);
+    expect(startFrame.ball).toEqual(startFrame.shot?.from ?? retainedAtStart.onboarding.preview.group[0].shotEvidence[0].from);
+    const startPixels = await (await canvas(page)).screenshot();
+    await page.getByTestId("opening-speed-0.5").click();
+    await page.getByTestId("opening-play-pause").click();
+    await expect.poll(() => state().then((value) => value.onboarding.openingPlayback.progress)).toBeGreaterThan(0.12);
+    // Playback replaces the frame every 50 ms, so use the visible control's
+    // current screen position for genuine mouse input instead of retaining a
+    // DOM node across a render boundary.
+    const pauseBounds = await page.getByTestId("opening-play-pause").boundingBox();
+    if (!pauseBounds) throw new Error("Playback pause control has no visible bounds");
+    await page.mouse.click(pauseBounds.x + pauseBounds.width / 2, pauseBounds.y + pauseBounds.height / 2);
+    const moving = await state();
+    expect(moving.onboarding.openingPlayback.shotId).toBe(startFrame.shotId);
+    expect(moving.onboarding.openingPlayback.ball).not.toEqual(startFrame.ball);
+    expect(moving.onboarding.authorityHashes).toEqual(authorityHashes);
+    const movingPixels = await (await canvas(page)).screenshot();
+    expect(movingPixels.equals(startPixels), "retained playback must change visible canvas pixels").toBe(false);
+    await page.getByTestId("opening-replay").click();
+    expect((await state()).onboarding.authorityHashes).toEqual(authorityHashes);
+    await page.getByTestId("opening-skip").click();
+    const skipped = await state();
+    expect(skipped.onboarding.opening.cursor).toBe(startFrame.total);
+    expect(skipped.onboarding.authorityHashes).toEqual(authorityHashes);
+    await page.getByTestId("opening-replay").click();
+    expect((await state()).onboarding.opening.cursor).toBe(0);
+    await page.evaluate(() => window.__coursecraftPixiTest!.focusTileForTest(0, 0, 0.8));
+    const priorProjection = await page.evaluate(() => window.__coursecraftPixiTest!.tileToScreen(0, 0)!);
+    await page.getByTestId("opening-follow").click();
+    await expect(page.getByTestId("opening-follow")).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(async () => {
+      const current = await page.evaluate(() => window.__coursecraftPixiTest!.tileToScreen(0, 0)!);
+      return Math.abs(current.x - priorProjection.x) + Math.abs(current.y - priorProjection.y);
+    }).toBeGreaterThan(10);
+    await page.getByTestId("opening-follow").click();
+    await expect.poll(async () => {
+      const current = await page.evaluate(() => window.__coursecraftPixiTest!.tileToScreen(0, 0)!);
+      return Math.abs(current.x - priorProjection.x) + Math.abs(current.y - priorProjection.y);
+    }).toBeLessThan(2);
+    await page.getByTestId("opening-follow").click();
+    const panBox = await (await canvas(page)).boundingBox();
+    await page.mouse.move(panBox!.x + 300, panBox!.y + 260);
+    await page.mouse.down({ button: "middle" });
+    await page.mouse.move(panBox!.x + 340, panBox!.y + 300, { steps: 4 });
+    await page.mouse.up({ button: "middle" });
+    await expect(page.getByTestId("opening-follow")).toHaveAttribute("aria-pressed", "false");
+    await page.getByTestId("opening-follow").click();
+    await (await canvas(page)).dispatchEvent("wheel", { deltaY: -120, clientX: 400, clientY: 300 });
+    await expect(page.getByTestId("opening-follow")).toHaveAttribute("aria-pressed", "false");
+    expect((await state()).onboarding.authorityHashes).toEqual(authorityHashes);
     await focusOpeningHole(page);
     await capture("03-recorded-shot-on-course");
     const firstBaselinePenalty = await visiblePenalty();
@@ -413,7 +515,9 @@ test.describe("ZK-1106 private operator opening", () => {
     expect((await state()).onboarding.preview).toEqual(baselineStateReceipt);
     await page.getByRole("button", { name: "Review reactions", exact: true }).click();
     await expectStep(page, "review-reaction");
-    await expect(page.getByTestId("opening-diagnosis")).toContainText("Landing-area opportunity");
+    await expect(page.getByTestId("opening-diagnosis")).toContainText("Observed:");
+    await expect(page.getByTestId("opening-diagnosis")).toContainText("shot");
+    await expect(page.getByTestId("opening-diagnosis")).toContainText("landing-region");
     await capture("04-evidence-backed-opportunity");
     await page.getByRole("button", { name: "Receive preview pennant", exact: true }).click();
     await page.getByRole("button", { name: "Improve this hole", exact: true }).click();
@@ -425,13 +529,88 @@ test.describe("ZK-1106 private operator opening", () => {
     const width = rewarded.course.width;
     const point = { x: target % width, y: Math.floor(target / width) };
     await focusOpeningHole(page);
-    await dragRoute(page, await canvas(page), point, { x: point.x + 1, y: point.y });
+    const targetIds = rewarded.onboarding.opening.targetCells;
+    await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toMatchObject({
+      targetIds,
+      outlineCount: targetIds.length,
+    });
+    // The outline stays registered to the same authoritative ids while the
+    // actual camera rotates. The test only reads renderer diagnostics; all
+    // authoring below remains real keyboard and mouse input.
+    for (let rotation = 0; rotation < 4; rotation++) {
+      await page.keyboard.press("q");
+      await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toMatchObject({
+        targetIds,
+        outlineCount: targetIds.length,
+      });
+      const projected = await page.evaluate(({ x, y }) => window.__coursecraftPixiTest!.tileToScreen(x, y), point);
+      const viewport = await page.evaluate(() => window.__coursecraftPixiTest!.viewport());
+      expect(projected).not.toBeNull();
+      expect(viewport).not.toBeNull();
+      expect(projected!.x).toBeGreaterThan(0);
+      expect(projected!.x).toBeLessThan(viewport!.width);
+      expect(projected!.y).toBeGreaterThan(0);
+      expect(projected!.y).toBeLessThan(viewport!.height);
+    }
+    const dock = page.getByTestId("design-dock");
+    if (await dock.getAttribute("data-collapsed") === "true") await dock.getByRole("button", { name: "Expand Design dock" }).click();
+    await dock.getByRole("tab", { name: "Terrain", exact: true }).click();
+    await dock.getByTestId("design-card-terrain-fairway").click();
+    await dock.getByTestId("design-tool-curve").click();
+    // Expanding the dock changes the canvas bounds. The visible Focus action
+    // deliberately collapses it after material selection, then recenters the
+    // same camera. At every supported layout the authoritative target must be
+    // delivered to Pixi rather than a DOM overlay.
+    const originalViewport = page.viewportSize()!;
+    for (const viewportSize of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewportSize);
+      await focusOpeningHole(page);
+      await expect(dock).toHaveAttribute("data-collapsed", "true");
+      const focusedCanvas = await canvas(page);
+      const focusedBounds = await focusedCanvas.boundingBox();
+      if (!focusedBounds) throw new Error("Focused canvas has no bounds");
+      const targetScreen = await pagePoint(page, focusedCanvas, point);
+      const { resolvedTarget, targetHit } = await page.evaluate(({ x, y, bounds }) => {
+        const viewport = window.__coursecraftPixiTest!.viewport()!;
+        const element = document.elementFromPoint(x, y) as HTMLElement | null;
+        return {
+          resolvedTarget: window.__coursecraftPixiTest!.screenToTile(
+            (x - bounds.x) * viewport.width / bounds.width,
+            (y - bounds.y) * viewport.height / bounds.height,
+          ),
+          targetHit: element ? {
+            tagName: element.tagName,
+            testId: element.dataset.testid ?? null,
+            tutorialTarget: element.dataset.tutorialTarget ?? null,
+            role: element.getAttribute("role"),
+            text: element.textContent?.trim().slice(0, 120) ?? "",
+          } : null,
+        };
+      }, { x: targetScreen.x, y: targetScreen.y, bounds: focusedBounds });
+      console.log(`ZK-1141 target hit ${JSON.stringify({ viewportSize, target, point, targetScreen, targetHit })}`);
+      expect(resolvedTarget).toEqual(point);
+      expect(targetHit?.tagName, `projected target is occluded at ${viewportSize.width}x${viewportSize.height} by ${JSON.stringify(targetHit)}`).toBe("CANVAS");
+      const file = testInfo.outputPath(`05-focus-clear-${viewportSize.width}x${viewportSize.height}.png`);
+      await page.screenshot({ path: file });
+      await testInfo.attach(`focus-clear-${viewportSize.width}x${viewportSize.height}`, { path: file, contentType: "image/png" });
+    }
+    await page.setViewportSize(originalViewport);
+    await focusOpeningHole(page);
+    const beforeRejectedPaint = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState().tiles);
+    await clickTile(page, await canvas(page), { x: point.x + 3, y: point.y });
+    await expect(page.getByTestId("opening-paint-recovery")).toContainText("missed the highlighted tiles");
+    expect(await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState().tiles)).toEqual(beforeRejectedPaint);
+    await clickTile(page, await canvas(page), point);
     await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
     await capture("05-real-fairway-edit");
     const edited = await state();
+    const editedSurface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
+    const changedIds = editedSurface.tiles.flatMap((terrain, index) => terrain !== beforeRejectedPaint[index] ? [index] : []);
+    expect(changedIds).toEqual([target]);
+    expect(editedSurface.features.at(-1)?.coverage).toEqual([target]);
     expect(edited.economy.cash).toBeLessThan(rewarded.economy.cash);
     const editDebit = rewarded.economy.cash - edited.economy.cash;
-    expect(editDebit).toBeGreaterThan(0);
+    expect(editDebit).toBe(120);
     await page.keyboard.press("Control+z");
     await expect(page.getByTestId("tutorial-primary-action")).toBeDisabled();
     await expectStep(page, "improve-hole");
@@ -440,21 +619,87 @@ test.describe("ZK-1106 private operator opening", () => {
     await page.keyboard.press("Control+Shift+z");
     await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
     expect((await state()).economy).toEqual(edited.economy);
+    await page.keyboard.press("Control+z");
+    await expect(page.getByTestId("tutorial-primary-action")).toBeDisabled();
+    const touchTarget = await pagePoint(page, await canvas(page), point);
+    await page.touchscreen.tap(touchTarget.x, touchTarget.y);
+    await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
+    const touchEditedSurface = await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState());
+    expect(touchEditedSurface.tiles.flatMap((terrain, index) => terrain !== beforeRejectedPaint[index] ? [index] : [])).toEqual([target]);
+    expect(touchEditedSurface.features.at(-1)?.coverage).toEqual([target]);
+    expect((await state()).economy).toEqual(edited.economy);
+    // Repeating the exact committed material is a real no-op: it must not
+    // append another surface feature, charge again, or disturb eligibility.
+    await clickTile(page, await canvas(page), point);
+    const repeatedEdit = await state();
+    expect(await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState())).toEqual(touchEditedSurface);
+    expect(repeatedEdit.economy).toEqual(edited.economy);
+    expect(repeatedEdit.onboarding.reward).toEqual(rewarded.onboarding.reward);
+    await expect.poll(() => page.evaluate(() => window.__coursecraftPixiTest!.openingPreview())).toMatchObject({
+      targetIds,
+      outlineCount: targetIds.length,
+    });
+    await expect(overlay(page).getByText("Progress saved", { exact: true })).toBeVisible();
+    await page.reload();
+    await page.getByRole("button", { name: /Continue/ }).click();
+    await expectStep(page, "improve-hole");
+    expect((await state()).economy).toEqual(edited.economy);
+    expect((await state()).onboarding.reward).toEqual(rewarded.onboarding.reward);
+    expect(await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState())).toEqual(touchEditedSurface);
+    await expect(page.getByRole("button", { name: "Retest the same group", exact: true })).toBeEnabled();
     await page.getByRole("button", { name: "Retest the same group", exact: true }).click();
     await expectStep(page, "retest-play");
     const retestStarted = await state();
     const retestReceipt = previewSummary(retestStarted.onboarding.opening.candidate);
     expect(retestReceipt.holeId).toBe(baselineReceipt.holeId);
-    await expect(page.getByTestId("opening-evidence-context")).toHaveText(baselineContext ?? "");
+    await expect(page.getByTestId("opening-evidence-context")).toContainText(`seed ${retestStarted.onboarding.opening.context.runSeed}`);
+    await expect(page.getByTestId("opening-current-shot")).toHaveAttribute("data-preview-id", retestStarted.onboarding.opening.candidate.id);
+    await expect(overlay(page).getByText("Progress saved", { exact: true })).toBeVisible();
+    await page.reload();
+    await page.getByRole("button", { name: /Continue/ }).click();
+    await expectStep(page, "retest-play");
+    expect((await state()).onboarding.opening.candidate).toEqual(retestStarted.onboarding.opening.candidate);
+    expect((await state()).economy).toEqual(edited.economy);
+    expect((await state()).onboarding.reward).toEqual(rewarded.onboarding.reward);
     const retestPenalties = await playEveryRecordedShot(retestReceipt, "05b-intermediate-retest-shot");
     expect((await state()).onboarding.preview).toEqual(baselineStateReceipt);
     await page.getByRole("button", { name: "Compare visits", exact: true }).click();
     await expectStep(page, "compare-preview");
     await expect(page.getByTestId("opening-comparison")).toBeVisible();
+    await expect(page.getByTestId("opening-comparison-state")).toHaveAttribute("data-state", /positive|neutral|negative/);
+    await expect(page.getByTestId("opening-comparison-cost")).toContainText(`$${editDebit}`);
     const compared = await state();
-    await expect(page.getByTestId("opening-comparison-penalties")).toContainText(`First visit: ${baselinePenalties}`);
+    await expect(page.getByTestId("opening-comparison-penalties")).toHaveText(`Recorded penalties: ${baselinePenalties} → ${retestPenalties}.`);
     const comparedReceipt = previewSummary(compared.onboarding.opening.candidate);
-    await expect(page.getByTestId("opening-comparison-penalties")).toContainText(`Retest: ${retestPenalties}`);
+    const comparisonMeasures = compared.onboarding.opening.comparison.measures;
+    const countChanges = (measures: typeof comparisonMeasures) => measures.reduce((counts, row) => {
+      const compare = (before: number | undefined, after: number | undefined, improvesWhen: "lower" | "higher") => {
+        if (!Number.isFinite(before) || !Number.isFinite(after) || before === after) return;
+        const improved = improvesWhen === "lower" ? after! < before! : after! > before!;
+        if (improved) counts.improved++;
+        else counts.worsened++;
+      };
+      compare(row.strokesBefore, row.strokesAfter, "lower");
+      compare(row.satisfactionBefore, row.satisfactionAfter, "higher");
+      compare(row.penaltiesBefore, row.penaltiesAfter, "lower");
+      compare(row.riskBefore, row.riskAfter, "lower");
+      compare(row.riskyLeavesBefore, row.riskyLeavesAfter, "lower");
+      return counts;
+    }, { improved: 0, worsened: 0 });
+    const comparisonCounts = countChanges(comparisonMeasures);
+    await expect(page.getByTestId("opening-comparison-summary")).toContainText(`${comparisonCounts.improved} improved, ${comparisonCounts.worsened} worsened`);
+    const comparisonRows = page.getByTestId("opening-comparison-row");
+    await expect(comparisonRows).toHaveCount(comparisonMeasures.length);
+    for (const [index, measure] of comparisonMeasures.entries()) {
+      const row = comparisonRows.nth(index);
+      await expect(row).toContainText(`${measure.strokesBefore} strokes · ${Math.round(measure.satisfactionBefore)}% satisfaction`);
+      await expect(row).toContainText(`${measure.strokesAfter} strokes · ${Math.round(measure.satisfactionAfter)}% satisfaction`);
+      await expect(row).toContainText(`Recorded penalties: ${measure.penaltiesBefore}.`);
+      await expect(row).toContainText(`Recorded penalties: ${measure.penaltiesAfter}.`);
+      await expect(row).toContainText(`Risk ${measure.riskBefore} · risky leaves ${measure.riskyLeavesBefore}.`);
+      await expect(row).toContainText(`Risk ${measure.riskAfter} · risky leaves ${measure.riskyLeavesAfter}.`);
+    }
+    await expect(page.getByTestId("opening-comparison-risk-note")).toHaveText("Risk = penalties + terrain: deep rough 2; rough/sand/water 1. Risky leaves count adverse endpoints.");
     expect(compared.economy).toEqual(edited.economy);
     expect(compared.onboarding.preview).toEqual(baselineStateReceipt);
     expect(compared.onboarding.reward).toEqual(rewarded.onboarding.reward);
@@ -467,10 +712,30 @@ test.describe("ZK-1106 private operator opening", () => {
     await expectStep(page, "compare-preview");
     expect((await state()).onboarding.opening.candidate).toEqual(compared.onboarding.opening.candidate);
     expect((await state()).economy).toEqual(compared.economy);
+    expect((await state()).onboarding.opening.comparison.measures).toEqual(comparisonMeasures);
+    await setInGameLocale(page, "pseudo");
+    await page.evaluate(() => { document.documentElement.style.fontSize = "200%"; });
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      await expectComparisonReadable(page);
+      const file = testInfo.outputPath(`06-comparison-pseudo-200-${viewport.width}x${viewport.height}.png`);
+      await page.screenshot({ path: file });
+      await testInfo.attach(`comparison-pseudo-200-${viewport.width}x${viewport.height}`, { path: file, contentType: "image/png" });
+      if (process.env.ZK1107_EVIDENCE) {
+        const directory = `artifacts/zk-1107/${process.env.ZK1107_EVIDENCE}`;
+        mkdirSync(directory, { recursive: true });
+        await page.screenshot({ path: `${directory}/06-comparison-pseudo-200-${viewport.width}x${viewport.height}.png` });
+      }
+    }
+    await page.evaluate(() => localStorage.setItem("coursecraft_locale", "en"));
+    await page.reload();
+    await page.getByRole("button", { name: /Continue/ }).click();
+    await expectStep(page, "compare-preview");
     await testInfo.attach("opening-evidence-context", { body: JSON.stringify({ context: baselineContext, viewport: page.viewportSize(), elapsedSeconds: (Date.now() - started) / 1000, before: baselineReceipt, after: comparedReceipt, penalties: { before: baselinePenalties, after: retestPenalties }, economy: { before: before.economy, rewardCredit: rewarded.economy.cash - before.economy.cash, editDebit, rewarded: rewarded.economy, edited: edited.economy } }, null, 2), contentType: "application/json" });
     await page.getByRole("button", { name: "Finish private demo", exact: true }).click();
     await expect(overlay(page)).toHaveCount(0);
     expect((await state()).onboarding).toMatchObject({ active: false, completion: "creative" });
+    expect(browserErrors).toEqual([]);
   });
 });
 

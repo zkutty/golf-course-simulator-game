@@ -4,6 +4,7 @@ import {
   apexHeightPx,
   ballFlightPose,
   landingBehavior,
+  retainedPreviewShotPose,
 } from "./ballFlight";
 
 const fairway = landingBehavior("fairway");
@@ -106,5 +107,41 @@ describe("ballFlightPose — putts and apex scaling", () => {
     expect(p.groundFrac).toBeGreaterThanOrEqual(0);
     expect(p.groundFrac).toBeLessThanOrEqual(1);
     expect(Number.isFinite(p.heightPx)).toBe(true);
+  });
+});
+
+describe("retainedPreviewShotPose", () => {
+  const shot = {
+    club: "7i",
+    from: { x: 2, y: 4 },
+    landing: { x: 10, y: 4 },
+    rest: { x: 13, y: 6 },
+    penaltyStrokes: 0,
+  } as const;
+
+  it("samples exact launch, touchdown, endpoint rollout, and rest without a solve", () => {
+    expect(retainedPreviewShotPose(shot, 0)).toMatchObject({ ball: shot.from, phase: "launch", heightPx: 0, profile: "standard", profileSource: "legacy-standard" });
+    expect(retainedPreviewShotPose(shot, AIR_FRAC)).toMatchObject({ ball: shot.landing, phase: "touchdown", heightPx: 0, landed: true });
+    expect(retainedPreviewShotPose(shot, .86).ball).not.toEqual(shot.landing);
+    expect(retainedPreviewShotPose(shot, 1)).toMatchObject({ ball: shot.rest, phase: "rest", heightPx: 0 });
+  });
+
+  it("uses only retained high/low metadata and follows a retained bent rollout", () => {
+    const retained = {
+      ...shot,
+      flight: { profile: "high" as const },
+      rollPath: [{ x: 10, y: 7 }, shot.rest],
+    };
+    expect(retainedPreviewShotPose(retained, AIR_FRAC / 2)).toMatchObject({ profile: "high", profileSource: "retained" });
+    const cornerT = 3 / (3 + Math.hypot(3, -1));
+    expect(retainedPreviewShotPose(retained, AIR_FRAC + (1 - AIR_FRAC) * cornerT).ball).toEqual({ x: 10, y: 7 });
+    expect(retainedPreviewShotPose({ ...retained, flight: { profile: "low" } }, AIR_FRAC / 2).heightPx)
+      .toBeLessThan(retainedPreviewShotPose(retained, AIR_FRAC / 2).heightPx);
+  });
+
+  it("never renders a relief relocation as ground travel", () => {
+    const relief = { ...shot, rest: { x: 1, y: 1 }, penaltyStrokes: 1 };
+    expect(retainedPreviewShotPose(relief, AIR_FRAC)).toMatchObject({ ball: relief.landing, phase: "relief", hasReliefMarker: true });
+    expect(retainedPreviewShotPose(relief, 1)).toMatchObject({ ball: relief.landing, phase: "relief", hasReliefMarker: true });
   });
 });

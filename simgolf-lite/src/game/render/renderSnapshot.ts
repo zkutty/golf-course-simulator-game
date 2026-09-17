@@ -9,7 +9,7 @@ import type { PlayerProWorldDisplayPresentation } from "../playerPro/socialPrese
 import type { ArchitectureWarning } from "../architecture/architecture";
 import type { ArchitectureOverlayRender } from "../architecture/reviewTypes";
 import type { PaceAdvisorFinding } from "../live/paceHistory";
-import type { OpeningShotMarker } from "../onboarding/openingDemo";
+import type { OpeningPlaybackFrame, OpeningTargetTile } from "../onboarding/openingDemo";
 
 /** Stable ownership boundaries for the Pixi scene-system migration. */
 export const RENDER_SYSTEMS = [
@@ -143,8 +143,8 @@ export interface RenderSnapshot {
   readonly atlasRevision: number;
   readonly playerRound?: PlayerPlayableRound | null;
   readonly playerShotAim?: PlayerProPoint | null;
-  readonly openingMarker?: OpeningShotMarker | null;
-  readonly openingTargets?: readonly Point[];
+  readonly openingMarker?: OpeningPlaybackFrame | null;
+  readonly openingTargets?: readonly OpeningTargetTile[];
   /** Player-visible inventory projection; never raw career or rival state. */
   readonly playerProWorldDisplay?: PlayerProWorldDisplayPresentation | null;
   readonly surveyMode: boolean;

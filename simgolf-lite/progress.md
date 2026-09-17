@@ -1,5 +1,22 @@
 Original prompt: Update my vision HTML for the new features from the new milestones added to linear
 
+## ZK-1141 opening-release production candidate — 2026-09-17
+
+- Built the candidate from exact production `origin/main` `640ae1636ec17184381bb856e7c01e456b4806c7` by applying only the final 29-file opening delta retained on `origin/develop`; later ZK-1152/ZK-772/ZK-1155/ZK-1156/ZK-1184/ZK-1157/ZK-1154 development commits are not replayed.
+- Focused validation passes: 8 Vitest files / 72 tests; TypeScript; lint and i18n with zero errors and the existing nine Hook warnings; production build and all unchanged asset, startup, and delivery budgets.
+- Retries-disabled browser evidence passes the one-hole invited-preview flow 1/1 and the dedicated ZK-1113 Pixi flight/impact flow 1/1. The bundled web-game client completed two gameplay iterations with matching in-game text state and no error artifact; its inspected capture is preserved at `/private/tmp/zk1141-opening-release-client/shot-0.png`.
+- Next: independent Sol scope/semantics review, then the parent workflow owns any push, deployment, production monitoring, and Linear reconciliation.
+
+## ZK-1110/ZK-1111 retained opening playback and frozen comparison — 2026-09-09
+
+- Started in `/private/tmp/golf-sim-zk1110-zk1111-sep09` on `codex/zk1110-zk1111-preview-sep09` at exact production SHA `43e1c557e6776255774e0f9ac1f6495898016c0e`; the user's main checkout and its Playwright artifacts remain untouched.
+- Extended the existing private-preview carrier with exact retained shot IDs (while preserving pre-ID save compatibility), pure bounded golfer/ball frames, coarse-only saved cursor, pause/resume/replay/skip/speed controls, reduced-motion step parity, structured frame evidence, and an opt-in Pixi camera follow that cancels on manual pan/zoom and restores the prior view on controlled exit without touching flyover state.
+- Added a frozen seed/hole/course/cohort context, shot-ID/region-only diagnosis, actual committed terrain-debit capture, changed fingerprints, and positive/neutral/negative/no-op/unsupported comparison states. Legacy saved comparisons explicitly report unavailable cost rather than inferring one.
+- Deterministic gates pass: 8 focused files / 116 tests; the complete CI suite at 233 files / 1,854 passing and one intentional skip; 5/5 audio audits; TypeScript; lint with zero errors and nine pre-existing Hook warnings; production build and every embedded asset/startup/delivery budget; and `git diff --check`.
+- A retries-disabled, real-input opening run passed 1/1 with exact baseline/retest preview and shot IDs, visible moving canvas pixels, replay/skip/follow-cancel and course/world/reward-ledger hash invariants, `$240` actual committed terrain debit, fingerprints `17549bbd` to `325ee6d1`, neutral authoritative measures, unchanged original receipt, and no console/page errors. Retained green-run captures are `03-recorded-shot-on-course.png`, `05b-intermediate-retest-shot.png`, and `06-honest-comparison-with-penalties.png`.
+- Reduced-motion composition passed 3/3 at 1440x900, 1280x720, and 390x844 with retries disabled and no console/page errors. The bundled web-game client also traversed the opening twice, exposed matching structured hashes/stages, produced coherent screenshots, and emitted no error artifact.
+- Final attempt-2 acceptance audit added the omitted middle/right-button drag-pan follow cancellation. Its affected gate passed TypeScript, 2 focused files / 7 tests, and the full retries-disabled 1/1 real-input opening flow (5.5 minutes), including controlled prior-view restoration plus drag-pan and wheel cancellation.
+
 ## ZK-765 M69 architectural reference-plan certification — 2026-08-08
 
 - Added one deterministic certification authority for the six canonical hole
@@ -2186,6 +2203,61 @@ classic course-builder references.
   Human originality, hierarchy, and biome-cohesion approval remains mandatory
   before ZK-771 or M70 can close.
 
+## ZK-1141 private-preview widening-mask diagnostic — 2026-09-09
+
+- Started from production `43e1c557e6776255774e0f9ac1f6495898016c0e` in the
+  isolated `codex/zk1141-redesign-mask-sep09` worktree. The opening target
+  carried a row-major ID only in tutorial state, while the scene and general
+  painter consumed lossy coordinates/raster coverage. The exploratory patch
+  carries `{ id, x, y }` targets through the render snapshot, uses canonical
+  tile diamonds for the preview outline, narrows tutorial-mask apertures to
+  Design/Terrain/Fairway/curve/history/canvas, preserves Escape cancellation,
+  and limits preview/commit rasterization to the authoritative ID set.
+- TypeScript and focused opening/scene tests passed (2 files, 6 tests). Three
+  retries-disabled real-input browser attempts failed after an intentional
+  off-target recovery: the visible recovery message appeared and Retest stayed
+  disabled after a native target drag. The final attempt proved the viewport
+  transform itself is exact after dock expansion/recenter:
+  `tileToScreen -> CSS canvas coordinates -> screenToTile` equals the target
+  tile. Therefore the remaining defect is the allowed-index constrained
+  rasterization returning no accepted coverage for that exact native target,
+  not camera coordinates or a forced-click test path.
+- Preserve the diagnostics/artifacts for decomposition; do not tune the
+  raster further in this packet. Proposed follow-up: **ZK-1141b Make
+  authoritative target raster accept exact native pointer tiles** (medium
+  effort, high urgency; depends on the ZK-1141 diagnostic). Evidence:
+  `test-results/m14-onboarding.e2e.ts-ZK-1-7573e-d-compares-one-private-hole/`
+  includes the visible failure capture and error context.
+
+### ZK-1141 decomposed repair, attempt 1 correction
+
+- The required topmost-element diagnostic disproved the retained raster
+  conclusion. After Terrain/Fairway selection and visible recenter, target id
+  `7986` projected to page point `(538.24, 366.75)` and inverse-resolved to
+  `{66,36}`, but `document.elementFromPoint` returned the expanded Design dock
+  (`DesignCurveSplineAreaEdit nodesWidth1↖↗−`), not the canvas. Pixi never
+  received the gesture, so constrained rasterization was not reached.
+- The bounded repair keeps the Design palette visible for selection and makes
+  the existing guide action explicit: **Focus and clear the canvas** recenters
+  the preview hole and collapses the Design dock. No raster, filter, outline
+  transform, or global camera behavior changed. The guide copy documents the
+  interaction, and the collapse remains visibly reversible with the `+`
+  control.
+- The retries-disabled native-input gate passed at `1440×900`, `1280×720`,
+  and `390×844`. At each size `elementFromPoint` returned `CANVAS` for target
+  `{66,36}`. A native mouse click and a native touch tap each committed exact
+  coverage `[7986]` for exactly `$120`; off-target recovery, undo, redo, target
+  registration, same-group retest, persistence, and comparison all passed with
+  no browser console or page errors.
+- Gates: TypeScript passed; focused Vitest passed 2 files / 6 tests; full lint
+  passed with 10 pre-existing Hook warnings and no errors; the production build
+  and all chained asset/offline/startup/delivery audits passed. The bundled
+  web-game client reached the opening fixture, emitted coherent
+  `render_game_to_text`, and created no error artifact; both headless and headed
+  SwiftShader canvas-only captures were black, while Playwright's full-page
+  evidence was visible and inspected.
+- TODO: none for this bounded repair. Do not create a separate Linear issue;
+  integrate as ZK-1141 only after independent review.
 ## ZK-1154 semantic shot-route execution — 2026-09-16
 
 - Linear reconciliation selected ZK-1154 as the next unblocked M69 packet and

@@ -65,6 +65,24 @@ describe("surface intent", () => {
     expect(first).toContainEqual({ x: 10, y: 2 });
   });
 
+  it("normalizes the one-knot corridor produced by a tap", () => {
+    const normalized = normalizeSurfaceIntent({
+      version: 1,
+      nextId: 2,
+      features: [{
+        id: "surface-1",
+        terrain: "fairway",
+        order: 1,
+        coverage: [21],
+        geometry: { kind: "corridor", knots: [{ x: 1.5, y: 2.5 }], width: 1 },
+      }],
+    }, 8, 8, ["fairway"]);
+
+    expect(normalized?.features).toHaveLength(1);
+    expect(normalized?.features[0].coverage).toEqual([21]);
+    expect(rasterizeSurfaceFeature(normalized!.features[0], 8, 8)).toContainEqual({ x: 1, y: 2 });
+  });
+
   it("keeps fixed-step spline endpoints", () => {
     const points = sampleCorridor([{ x: 2, y: 3 }, { x: 7, y: 8 }]);
     expect(points[0]).toEqual({ x: 2, y: 3 });

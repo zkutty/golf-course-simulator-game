@@ -6,6 +6,7 @@ import { projectCommittedShot } from "../rules/shotTruth";
 export function invitedPreviewShot(shot: LiveShotOutcome): InvitedPreviewShotEvidence {
   const truth = projectCommittedShot(shot);
   return {
+    id: truth.id,
     shotNumber: truth.shotNumber,
     intent: shot.intent,
     club: truth.club,
