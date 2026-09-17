@@ -71,8 +71,13 @@ test("ZK-1114 opening presentation survives muted reduced-motion pseudo UI at 20
 
 test("ZK-1114 visible restart and skip leave the opening economy and reward untouched", async ({ page }) => {
   const browserErrors: string[] = [];
+  const nativeDialogs: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
   page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("dialog", (dialog) => {
+    nativeDialogs.push(dialog.message());
+    void dialog.dismiss();
+  });
   await page.goto("/");
   await page.getByRole("button", { name: /First-hole operator demo/ }).click();
   const before = await page.evaluate(() => JSON.parse(window.render_game_to_text!()));
@@ -81,11 +86,15 @@ test("ZK-1114 visible restart and skip leave the opening economy and reward unto
   const restarted = await page.evaluate(() => JSON.parse(window.render_game_to_text!()));
   expect(restarted.economy).toEqual(before.economy);
   expect(restarted.onboarding.reward).toBeNull();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Skip tutorial", exact: true }).click();
+  const skipDialog = page.getByTestId("tutorial-skip-dialog");
+  await expect(skipDialog).toBeVisible();
+  await expect(skipDialog).toHaveAccessibleName(/.+/);
+  await page.getByTestId("tutorial-skip-confirm").click();
   await expect(page.getByTestId("tutorial-overlay")).toHaveCount(0);
   const skipped = await page.evaluate(() => JSON.parse(window.render_game_to_text!()));
   expect(skipped.economy).toEqual(before.economy);
   expect(skipped.onboarding).toMatchObject({ active: false, completion: "skipped", reward: null });
+  expect(nativeDialogs).toEqual([]);
   expect(browserErrors).toEqual([]);
 });
