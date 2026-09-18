@@ -969,6 +969,17 @@ interface PathMaterialRenderDiagnostics {
   ownership: readonly string[];
 }
 
+interface SharedContourRenderDiagnostics {
+  /** Authoritative singleton cells; this must remain stable across quality. */
+  authoritativeSingletonDeepRough: number;
+  /** Singleton cells still rendered as a separate deep-rough field. */
+  distinctSingletonDeepRoughFields: number;
+  /** Singleton deep-rough components that emitted a contour-band presentation. */
+  distinctSingletonDeepRoughBands: number;
+  /** Medium/High presentation-only coalescing into the rough material field. */
+  coalescedSingletonDeepRough: number;
+}
+
 function effectiveSurfaceTilesForRenderer(
   tiles: Course["tiles"],
   width: number,
@@ -1212,6 +1223,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
     textureIds: ["legacy:path"],
     widths: { shoulder: 0, edge: 0 },
     ownership: [],
+  });
+  const sharedContourDiagnosticsRef = useRef<SharedContourRenderDiagnostics>({
+    authoritativeSingletonDeepRough: 0,
+    distinctSingletonDeepRoughFields: 0,
+    distinctSingletonDeepRoughBands: 0,
+    coalescedSingletonDeepRough: 0,
   });
   const structureSpriteCountRef = useRef(0);
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
@@ -2224,6 +2241,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
               targetZoom: camRef.current.tzoom,
             },
           },
+          sharedContours: { ...sharedContourDiagnosticsRef.current },
           layers: layers ? {
             surround: stampedAtlasGeneration(layers.surround),
             terrain: stampedAtlasGeneration(layers.terrain),
@@ -3748,6 +3766,12 @@ export function PixiStage(requestedProps: PixiStageProps) {
         widths: { shoulder: 0, edge: 0 },
         ownership: [],
       };
+      sharedContourDiagnosticsRef.current = {
+        authoritativeSingletonDeepRough: 0,
+        distinctSingletonDeepRoughFields: 0,
+        distinctSingletonDeepRoughBands: 0,
+        coalescedSingletonDeepRough: 0,
+      };
       stampAtlasGeneration(layer, atlasRevision);
       return;
     }
@@ -3883,8 +3907,24 @@ export function PixiStage(requestedProps: PixiStageProps) {
     let pathShoulderWidth = 0;
     let pathEdgeWidth = 0;
     const pathOwnership = new Set<string>();
+    const sharedContourDiagnostics: SharedContourRenderDiagnostics = {
+      authoritativeSingletonDeepRough: 0,
+      distinctSingletonDeepRoughFields: 0,
+      distinctSingletonDeepRoughBands: 0,
+      coalescedSingletonDeepRough: 0,
+    };
     const sortedComponents = [...components].sort((a, b) => componentDepth(a) - componentDepth(b));
     for (const component of sortedComponents) {
+      // The course remains authoritative: this is strictly a Medium/High
+      // material choice for isolated deep-rough cells. Rendering their mask
+      // with the surrounding rough field removes the 49 independent dark
+      // stamps without changing cells, picking, simulation, or Low.
+      const coalescedSingletonDeepRough = component.terrain === "deep_rough" && component.cells.length === 1;
+      if (coalescedSingletonDeepRough) {
+        sharedContourDiagnostics.authoritativeSingletonDeepRough++;
+        sharedContourDiagnostics.coalescedSingletonDeepRough++;
+      }
+      const presentationTerrain: Terrain = coalescedSingletonDeepRough ? "rough" : component.terrain;
       const positions: number[] = [];
       const uvs: number[] = [];
       const indices: number[] = [];
@@ -3957,9 +3997,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // connected mesh remains the gameplay/picking authority.
       const mesh = new PIXI.Mesh({
         geometry,
-        texture: textureFor(component.terrain, pathCompositorActive),
+        texture: textureFor(presentationTerrain, pathCompositorActive),
       });
-      mesh.tint = seasonalByTerrain[component.terrain]?.textureTint ?? 0xffffff;
+      mesh.tint = seasonalByTerrain[presentationTerrain]?.textureTint ?? 0xffffff;
       mesh.eventMode = "none";
       const mask = buildMask(visualRings);
       mesh.mask = mask;
@@ -4100,7 +4140,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         recessedLayer.addChild(bank);
       }
 
-      const boundaryRuns = buildLandscapeBoundaryRuns(
+      const boundaryRuns = coalescedSingletonDeepRough ? [] : buildLandscapeBoundaryRuns(
         component.rings,
         component.terrain,
         effectiveTiles,
@@ -4361,6 +4401,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       widths: { shoulder: pathShoulderWidth, edge: pathEdgeWidth },
       ownership: [...pathOwnership].sort(),
     };
+    sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
     stampAtlasGeneration(layer, atlasRevision);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
     return () => {

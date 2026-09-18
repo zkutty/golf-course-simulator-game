@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { SurfacePoint, Terrain } from "../models/types";
 import {
   buildSharedBoundaryContours,
+  SHARED_CONTOUR_MAXIMUM_TURN_RADIANS,
+  sharedContourMaximumSegmentLength,
   type SharedBoundaryComponentInput,
 } from "./sharedBoundaryContours";
 import { createParklandVisualReferenceCourse } from "../testing/referenceCourse";
@@ -114,6 +116,36 @@ function longestAlternatingUnitRun(ring: readonly SurfacePoint[]): number {
   return longest;
 }
 
+function maximumSegmentLength(ring: readonly SurfacePoint[], closed: boolean): number {
+  let maximum = 0;
+  const count = closed ? ring.length : ring.length - 1;
+  for (let index = 0; index < count; index++) {
+    const a = ring[index];
+    const b = ring[(index + 1) % ring.length];
+    maximum = Math.max(maximum, Math.hypot(b.x - a.x, b.y - a.y));
+  }
+  return maximum;
+}
+
+function maximumTurnRadians(ring: readonly SurfacePoint[], closed: boolean): number {
+  let maximum = 0;
+  const start = closed ? 0 : 1;
+  const end = closed ? ring.length : ring.length - 1;
+  for (let index = start; index < end; index++) {
+    const previous = ring[(index - 1 + ring.length) % ring.length];
+    const current = ring[index % ring.length];
+    const next = ring[(index + 1) % ring.length];
+    const ax = current.x - previous.x;
+    const ay = current.y - previous.y;
+    const bx = next.x - current.x;
+    const by = next.y - current.y;
+    const length = Math.hypot(ax, ay) * Math.hypot(bx, by);
+    if (length <= 1e-10) continue;
+    maximum = Math.max(maximum, Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by) / length))));
+  }
+  return maximum;
+}
+
 describe("shared presentation boundary graph", () => {
   it("traces every physical grid seam once and assigns reverse reuse", () => {
     const input = fixture([
@@ -195,6 +227,48 @@ describe("shared presentation boundary graph", () => {
     }
   });
 
+  it("uses corner radius and segments for dense, bounded canonical curves", () => {
+    const input = fixture([
+      "RRRRRR",
+      "RFFFFR",
+      "RFFFFR",
+      "RRRRRR",
+    ]);
+    const medium = buildSharedBoundaryContours(
+      input.tiles,
+      input.width,
+      input.height,
+      input.components,
+      { cornerRadius: 0.2, cornerSegments: 2 },
+    );
+    const high = buildSharedBoundaryContours(
+      input.tiles,
+      input.width,
+      input.height,
+      input.components,
+      { cornerRadius: 0.4, cornerSegments: 4 },
+    );
+    const fairway = input.components.find((component) => component.terrain === "fairway")!;
+    const mediumRing = medium.ringsByComponent.get(fairway.id)![0];
+    const highRing = high.ringsByComponent.get(fairway.id)![0];
+    expect(highRing.length).toBeGreaterThan(mediumRing.length);
+    expect(JSON.stringify(highRing)).not.toBe(JSON.stringify(mediumRing));
+    expect(maximumSegmentLength(mediumRing, true)).toBeLessThanOrEqual(
+      sharedContourMaximumSegmentLength({ cornerRadius: 0.2, cornerSegments: 2 }) + 1e-9,
+    );
+    expect(maximumSegmentLength(highRing, true)).toBeLessThanOrEqual(
+      sharedContourMaximumSegmentLength({ cornerRadius: 0.4, cornerSegments: 4 }) + 1e-9,
+    );
+    expect(maximumTurnRadians(mediumRing, true)).toBeLessThanOrEqual(
+      SHARED_CONTOUR_MAXIMUM_TURN_RADIANS + 1e-7,
+    );
+    expect(cyclicReverseEquals(
+      highRing,
+      high.ringsByComponent.get(input.components.find((component) => component.terrain === "rough")!.id)!
+        .find((ring) => ring.length === highRing.length)!,
+    )).toBe(true);
+  });
+
   it("removes long alternating stairs from the M19 lake, fairway, green, and bunker seams", () => {
     const course = createParklandVisualReferenceCourse();
     const input = fixture(Array.from({ length: course.height }, (_, y) => course.tiles
@@ -217,6 +291,39 @@ describe("shared presentation boundary graph", () => {
     )).map((component) => component.id));
     for (const seam of result.seams.filter((candidate) => candidate.componentIds.some((id) => targetIds.has(id)))) {
       expect(longestAlternatingUnitRun(seam.samples)).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("keeps M19's 49 authoritative singleton deep-rough cells while densifying their seams", () => {
+    const course = createParklandVisualReferenceCourse();
+    const input = fixture(Array.from({ length: course.height }, (_, y) => course.tiles
+      .slice(y * course.width, (y + 1) * course.width)
+      .map((terrain) => ({
+        rough: "R", fairway: "F", sand: "S", water: "W", path: "P",
+        green: "G", tee: "T", deep_rough: "D",
+      } as Partial<Record<Terrain, string>>)[terrain] ?? "R")
+      .join("")));
+    const singletonDeepRough = input.components.filter((component) => (
+      component.terrain === "deep_rough" && component.cells.length === 1
+    ));
+    expect(singletonDeepRough).toHaveLength(49);
+    const result = buildSharedBoundaryContours(
+      input.tiles,
+      input.width,
+      input.height,
+      input.components,
+      { cornerRadius: 0.4, cornerSegments: 4 },
+    );
+    for (const component of singletonDeepRough) {
+      const ring = result.ringsByComponent.get(component.id)![0];
+      expect(ring.length).toBeGreaterThan(4);
+      expect(maximumSegmentLength(ring, true)).toBeLessThanOrEqual(
+        sharedContourMaximumSegmentLength({ cornerRadius: 0.4, cornerSegments: 4 }) + 1e-9,
+      );
+      expect(contains([ring], {
+        x: component.cells[0] % input.width + 0.5,
+        y: Math.floor(component.cells[0] / input.width) + 0.5,
+      })).toBe(true);
     }
   });
 
