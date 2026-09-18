@@ -299,6 +299,8 @@ export interface ContourBand {
   color: number;
   alpha: number;
   detail: ContourDetailMotif;
+  /** Sparse multiplier for this role's deterministic contour motifs. */
+  detailSpacing: number;
   /** Lowest quality tier that still draws this band. */
   minProfile: DetailProfile;
 }
@@ -341,6 +343,7 @@ interface BandRecipe {
   factor: number;
   alpha: number;
   detail: ContourDetailMotif;
+  detailSpacing: number;
   minProfile: DetailProfile;
 }
 
@@ -350,41 +353,46 @@ interface BandRecipe {
  * table exhaustive without enumerating 45 pairs by hand.
  */
 const BAND_RECIPES: Record<TerrainBoundaryRole, BandRecipe[]> = {
-  // Water and wetland: turf shelf → dark soil/stone bank → reeds → lowered water.
+  // Water and wetland: a light turf cue, a narrow bank and two transparent
+  // water-depth cues. The plane beneath remains the water read; the bands only
+  // explain its shoreline and depth without outlining the whole pond.
   shore: [
-    { role: "turf-shelf", offset: -0.34, width: 0.34, depth: 0, tone: "other", factor: 0.9, alpha: 1, detail: "none", minProfile: "low" },
-    { role: "soil-bank", offset: 0, width: 0.24, depth: 1, tone: "soil", factor: 0.82, alpha: 1, detail: "stones", minProfile: "medium" },
-    { role: "reed-fringe", offset: 0.14, width: 0.26, depth: 1, tone: "reed", factor: 1, alpha: 0.9, detail: "reeds", minProfile: "high" },
-    { role: "water-shallow", offset: 0.22, width: 0.44, depth: 2, tone: "owner", factor: 1.22, alpha: 1, detail: "none", minProfile: "low" },
-    { role: "water-deep", offset: 0.6, width: 0.6, depth: 3, tone: "owner", factor: 0.78, alpha: 1, detail: "none", minProfile: "low" },
+    { role: "turf-shelf", offset: -0.13, width: 0.09, depth: 0, tone: "other", factor: 0.96, alpha: 0.18, detail: "none", detailSpacing: 1, minProfile: "low" },
+    { role: "soil-bank", offset: -0.02, width: 0.10, depth: 1, tone: "soil", factor: 0.92, alpha: 0.42, detail: "stones", detailSpacing: 4.2, minProfile: "high" },
+    { role: "reed-fringe", offset: 0.08, width: 0.07, depth: 1, tone: "reed", factor: 1, alpha: 0.2, detail: "reeds", detailSpacing: 4.8, minProfile: "high" },
+    { role: "water-shallow", offset: 0.12, width: 0.13, depth: 2, tone: "owner", factor: 1.10, alpha: 0.35, detail: "none", detailSpacing: 1, minProfile: "low" },
+    { role: "water-deep", offset: 0.27, width: 0.18, depth: 3, tone: "owner", factor: 0.9, alpha: 0.23, detail: "none", detailSpacing: 1, minProfile: "low" },
   ],
-  // Bunkers: grass overhang → exposed soil face → recessed sand.
+  // Bunkers: the existing classified bank supplies the main relief. These are
+  // intentionally quiet material cues so sand, rather than concentric rings,
+  // remains visible at normal zoom.
   "bunker-lip": [
-    { role: "grass-overhang", offset: -0.3, width: 0.3, depth: 0, tone: "other", factor: 0.86, alpha: 1, detail: "blades", minProfile: "medium" },
-    { role: "soil-face", offset: 0, width: 0.2, depth: 1, tone: "soil", factor: 0.9, alpha: 1, detail: "none", minProfile: "low" },
-    { role: "sand-lip", offset: 0.16, width: 0.3, depth: 2, tone: "owner", factor: 1.16, alpha: 1, detail: "pebbles", minProfile: "medium" },
-    { role: "sand-floor", offset: 0.42, width: 0.5, depth: 3, tone: "owner", factor: 0.94, alpha: 1, detail: "none", minProfile: "low" },
+    { role: "grass-overhang", offset: -0.13, width: 0.09, depth: 0, tone: "other", factor: 0.94, alpha: 0.18, detail: "blades", detailSpacing: 4.5, minProfile: "high" },
+    { role: "soil-face", offset: -0.02, width: 0.08, depth: 1, tone: "soil", factor: 0.9, alpha: 0.4, detail: "none", detailSpacing: 1, minProfile: "low" },
+    { role: "sand-lip", offset: 0.08, width: 0.11, depth: 2, tone: "owner", factor: 1.08, alpha: 0.26, detail: "pebbles", detailSpacing: 3.8, minProfile: "medium" },
+    { role: "sand-floor", offset: 0.21, width: 0.17, depth: 3, tone: "owner", factor: 0.98, alpha: 0.16, detail: "none", detailSpacing: 1, minProfile: "low" },
   ],
-  // Paths: natural shoulder → gravel edge → compact core.
+  // Paths retain their field-textured gravel core; a restrained shoulder and
+  // edge make the route read without filling it with an opaque grey ribbon.
   "path-shoulder": [
-    { role: "natural-shoulder", offset: -0.24, width: 0.24, depth: 0, tone: "other", factor: 0.92, alpha: 1, detail: "tufts", minProfile: "high" },
-    { role: "gravel-edge", offset: 0, width: 0.18, depth: 0, tone: "gravel", factor: 1, alpha: 1, detail: "pebbles", minProfile: "medium" },
-    { role: "path-core", offset: 0.14, width: 0.4, depth: 0, tone: "owner", factor: 1.06, alpha: 1, detail: "none", minProfile: "low" },
+    { role: "natural-shoulder", offset: -0.13, width: 0.09, depth: 0, tone: "other", factor: 0.92, alpha: 0.25, detail: "tufts", detailSpacing: 4.8, minProfile: "high" },
+    { role: "gravel-edge", offset: -0.01, width: 0.09, depth: 0, tone: "gravel", factor: 0.92, alpha: 0.52, detail: "pebbles", detailSpacing: 2.8, minProfile: "medium" },
+    { role: "path-core", offset: 0.10, width: 0.10, depth: 0, tone: "owner", factor: 1.02, alpha: 0.2, detail: "pebbles", detailSpacing: 3.6, minProfile: "low" },
   ],
   // Maintained turf: the neighbour's own apron → dark fringe → mown collar.
   // The apron is what keeps rough, deep rough and waste distinguishable across
   // a mown edge; without it the owner would draw the same strip against all
   // three, which is the thin single-strip failure this issue is about.
   fringe: [
-    { role: "wild-apron", offset: -0.3, width: 0.26, depth: 0, tone: "other", factor: 0.9, alpha: 1, detail: "none", minProfile: "low" },
-    { role: "fringe", offset: -0.16, width: 0.22, depth: 0, tone: "owner", factor: 0.72, alpha: 1, detail: "none", minProfile: "low" },
-    { role: "collar", offset: 0.04, width: 0.2, depth: 0, tone: "owner", factor: 0.88, alpha: 1, detail: "none", minProfile: "medium" },
+    { role: "wild-apron", offset: -0.13, width: 0.09, depth: 0, tone: "other", factor: 0.96, alpha: 0.18, detail: "none", detailSpacing: 1, minProfile: "low" },
+    { role: "fringe", offset: -0.03, width: 0.08, depth: 0, tone: "owner", factor: 0.84, alpha: 0.3, detail: "none", detailSpacing: 1, minProfile: "low" },
+    { role: "collar", offset: 0.07, width: 0.09, depth: 0, tone: "owner", factor: 0.96, alpha: 0.2, detail: "none", detailSpacing: 1, minProfile: "medium" },
   ],
   // Wild surfaces: progressively taller, noisier silhouettes.
   "natural-feather": [
-    { role: "wild-apron", offset: -0.28, width: 0.24, depth: 0, tone: "other", factor: 0.92, alpha: 1, detail: "none", minProfile: "low" },
-    { role: "wild-fringe", offset: -0.12, width: 0.28, depth: 0, tone: "owner", factor: 0.84, alpha: 0.95, detail: "none", minProfile: "low" },
-    { role: "tuft-fringe", offset: 0.1, width: 0.3, depth: 0, tone: "owner", factor: 1.08, alpha: 0.85, detail: "tufts", minProfile: "high" },
+    { role: "wild-apron", offset: -0.13, width: 0.09, depth: 0, tone: "other", factor: 0.96, alpha: 0.16, detail: "none", detailSpacing: 1, minProfile: "low" },
+    { role: "wild-fringe", offset: -0.03, width: 0.10, depth: 0, tone: "owner", factor: 0.92, alpha: 0.24, detail: "none", detailSpacing: 1, minProfile: "low" },
+    { role: "tuft-fringe", offset: 0.09, width: 0.10, depth: 0, tone: "owner", factor: 1.04, alpha: 0.18, detail: "tufts", detailSpacing: 4.5, minProfile: "high" },
   ],
 };
 
@@ -435,6 +443,7 @@ export function contourProfileFor(
         color: scaleColor(base, recipe.factor),
         alpha: recipe.alpha,
         detail: recipe.detail,
+        detailSpacing: recipe.detailSpacing,
         minProfile: recipe.minProfile,
       } satisfies ContourBand;
     });
