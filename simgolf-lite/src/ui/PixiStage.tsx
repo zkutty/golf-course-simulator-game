@@ -136,11 +136,8 @@ import {
   sampleVisualHeight,
   type LandscapeComponent,
 } from "../game/render/landscapeGeometry";
-import {
-  buildLandscapeBoundaryRuns,
-  buildShoreRockPlacements,
-  landscapeEdgeStyle,
-} from "../game/render/landscapeEdges";
+import { buildLandscapeBoundaryRuns } from "../game/render/landscapeEdges";
+import { buildSignedContourRibbons } from "../game/render/contourRibbons";
 import {
   buildBunkerVisualRings,
   classifyBunkerVisualType,
@@ -3693,10 +3690,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     recessedLayer.eventMode = "none";
     const landformLayer = new PIXI.Container();
     landformLayer.eventMode = "none";
-    let remainingShoreRocks = quality === "high" ? 280 : 180;
-    let remainingWaterComponents = components.filter(
-      (component) => component.terrain === "water",
-    ).length;
+    // Boundary motifs are globally bounded. Habitat composition owns only
+    // interior clearings, so shoreline reeds/stones have one renderer owner.
+    let remainingContourDetails = quality === "high" ? 440 : quality === "medium" ? 220 : 0;
     const sortedComponents = [...components].sort((a, b) => componentDepth(a) - componentDepth(b));
     for (const component of sortedComponents) {
       const positions: number[] = [];
@@ -3845,77 +3841,82 @@ export function PixiStage(requestedProps: PixiStageProps) {
         course.width,
         course.height,
       );
-      let hasOwnedRockyShore = false;
       for (const run of boundaryRuns) {
-        const edgeStyle = landscapeEdgeStyle(
+        const ribbons = buildSignedContourRibbons(
           component.terrain,
           run.outsideTerrain,
-          bunkerVisualType ?? "greenside",
+          run.points,
+          {
+            theme: getBiomeDefinition(course.theme).key,
+            colorVision: props.colorVision,
+            profile: quality,
+          },
         );
-        if (!edgeStyle) continue;
-        hasOwnedRockyShore ||= Boolean(edgeStyle.shoreRocks);
-        // Draw broad-to-narrow semantic bands only on the pair-owned run so
-        // adjacent components cannot double-stroke the same boundary.
-        for (let strokeIndex = 0; strokeIndex < edgeStyle.bands.length; strokeIndex++) {
-          const stroke = edgeStyle.bands[strokeIndex];
-          const color = "color" in stroke.color
-            ? stroke.color.color
-            : shade(themedColors[stroke.color.terrain], stroke.color.shade);
+        // `buildSignedContourRibbons` returns no result unless the profile's
+        // semantic owner is this component. That is the single seam authority:
+        // the adjacent component never gets a second chance to paint it.
+        for (const ribbon of ribbons) {
           const graphics = new PIXI.Graphics();
           graphics.eventMode = "none";
-          graphics.zIndex = edgeStyle.priority + strokeIndex / 100;
-          const points = run.points.map(project);
-          if (points.length < 2) continue;
-          graphics.moveTo(points[0].x, points[0].y);
-          for (let index = 1; index < points.length; index++) {
-            graphics.lineTo(points[index].x, points[index].y);
+          const projectRibbon = (point: Point) => worldToIso(
+            point.x,
+            point.y,
+            // The current shared heightfield (and its macro geometry) owns
+            // every ribbon vertex. Band depth is a restrained visual recess,
+            // not an elevation edit or a second terrain mesh.
+            sampleVisualHeight(heightfield, point.x, point.y) - ribbon.band.depth * 0.045,
+            rotation,
+          );
+          for (let index = 0; index + 1 < ribbon.outer.length; index++) {
+            const outerA = projectRibbon(ribbon.outer[index]);
+            const outerB = projectRibbon(ribbon.outer[index + 1]);
+            const innerB = projectRibbon(ribbon.inner[index + 1]);
+            const innerA = projectRibbon(ribbon.inner[index]);
+            graphics.poly([
+              outerA.x, outerA.y,
+              outerB.x, outerB.y,
+              innerB.x, innerB.y,
+              innerA.x, innerA.y,
+            ]);
+            graphics.fill({ color: ribbon.band.color, alpha: ribbon.band.alpha });
           }
-          graphics.stroke({
-            width: stroke.width,
-            color,
-            alpha: stroke.alpha,
-            join: "round",
-            cap: "round",
-          });
           bandLayer.addChild(graphics);
-        }
-      }
-      if (hasOwnedRockyShore && remainingShoreRocks > 0) {
-        const componentBudget = Math.ceil(
-          remainingShoreRocks / Math.max(1, remainingWaterComponents),
-        );
-        remainingWaterComponents--;
-        const placements = buildShoreRockPlacements(
-          component.rings,
-          component.topologyKey,
-          componentBudget,
-        );
-        remainingShoreRocks -= placements.length;
-        if (placements.length > 0) {
-          const rocks = new PIXI.Graphics();
-          rocks.eventMode = "none";
-          rocks.zIndex = 71;
-          const rockTones = [0x70736a, 0x89877a, 0x9f9986] as const;
-          for (const placement of placements) {
-            const point = project(placement);
-            rocks.ellipse(
-              point.x,
-              point.y + placement.ry * 0.12,
-              placement.rx + 0.9,
-              placement.ry + 0.55,
-            );
-            rocks.fill({ color: 0x3d443e, alpha: 0.78 });
-            rocks.ellipse(point.x, point.y, placement.rx, placement.ry);
-            rocks.fill({ color: rockTones[placement.tone], alpha: 0.94 });
-            rocks.ellipse(
-              point.x - placement.rx * 0.2,
-              point.y - placement.ry * 0.28,
-              placement.rx * 0.38,
-              placement.ry * 0.3,
-            );
-            rocks.fill({ color: 0xc8c1a7, alpha: 0.44 });
+
+          if (ribbon.details.length > 0 && remainingContourDetails > 0) {
+            const motifs = new PIXI.Graphics();
+            motifs.eventMode = "none";
+            const selected = ribbon.details.slice(0, remainingContourDetails);
+            remainingContourDetails -= selected.length;
+            for (const detail of selected) {
+              const point = projectRibbon({
+                x: detail.x + detail.nx * (ribbon.band.offset + ribbon.band.width * 0.5),
+                y: detail.y + detail.ny * (ribbon.band.offset + ribbon.band.width * 0.5),
+              });
+              const scale = detail.scale;
+              if (ribbon.band.detail === "reeds" || ribbon.band.detail === "tufts" || ribbon.band.detail === "blades") {
+                const strokes = ribbon.band.detail === "reeds" ? 2 : 3;
+                for (let stroke = 0; stroke < strokes; stroke++) {
+                  const spread = (stroke - (strokes - 1) / 2) * 1.7;
+                  motifs.moveTo(point.x + spread, point.y + 1.2);
+                  motifs.lineTo(point.x + spread + detail.lean * 5, point.y - (ribbon.band.detail === "reeds" ? 5.5 : 3.5) * scale);
+                  motifs.stroke({
+                    width: ribbon.band.detail === "reeds" ? 1.2 : 0.9,
+                    color: ribbon.band.detail === "reeds" ? 0x65753d : ribbon.band.color,
+                    alpha: 0.72,
+                    cap: "round",
+                  });
+                }
+              } else {
+                const radius = ribbon.band.detail === "stones" ? 2.4 : 1.55;
+                motifs.ellipse(point.x, point.y, radius * scale, radius * 0.62 * scale);
+                motifs.fill({
+                  color: ribbon.band.detail === "stones" ? 0x777064 : ribbon.band.color,
+                  alpha: 0.78,
+                });
+              }
+            }
+            bandLayer.addChild(motifs);
           }
-          bandLayer.addChild(rocks);
         }
       }
     }
