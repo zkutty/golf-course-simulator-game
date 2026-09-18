@@ -41,6 +41,47 @@ function colorDistance(a: readonly number[], b: readonly number[]) {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
+function compactedCoreTextureStats(image: PNG, center: ScreenPoint, radius: number) {
+  const luminance = (x: number, y: number) => {
+    const offset = (y * image.width + x) * 4;
+    return image.data[offset] * 0.2126 + image.data[offset + 1] * 0.7152 + image.data[offset + 2] * 0.0722;
+  };
+  const values: number[] = [];
+  const neighborDeltas: number[] = [];
+  const minX = Math.max(1, Math.floor(center.x - radius));
+  const maxX = Math.min(image.width - 2, Math.ceil(center.x + radius));
+  const minY = Math.max(1, Math.floor(center.y - radius));
+  const maxY = Math.min(image.height - 2, Math.ceil(center.y + radius));
+  const inside = (x: number, y: number) => (x - center.x) ** 2 + (y - center.y) ** 2 <= radius ** 2;
+  for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
+    if (!inside(x, y)) continue;
+    const value = luminance(x, y);
+    values.push(value);
+    if (inside(x + 1, y)) neighborDeltas.push(Math.abs(value - luminance(x + 1, y)));
+    if (inside(x, y + 1)) neighborDeltas.push(Math.abs(value - luminance(x, y + 1)));
+  }
+  const mean = values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+  const variance = values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / Math.max(1, values.length);
+  const meanNeighborDelta = neighborDeltas.reduce((sum, value) => sum + value, 0)
+    / Math.max(1, neighborDeltas.length);
+  return {
+    radius,
+    samples: values.length,
+    standardDeviation: Math.sqrt(variance),
+    meanNeighborDelta,
+    fineEdgeRatio: neighborDeltas.filter((value) => value >= 1.5).length / Math.max(1, neighborDeltas.length),
+    plateauRatio: neighborDeltas.filter((value) => value < 0.75).length / Math.max(1, neighborDeltas.length),
+  };
+}
+
+function median(values: readonly number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0
+    ? (sorted[middle - 1] + sorted[middle]) / 2
+    : sorted[middle];
+}
+
 function pointToSegmentDistanceSquared(point: ScreenPoint, a: ScreenPoint, b: ScreenPoint) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -165,6 +206,29 @@ test("ZK-1210 renders one three-material path cross-section through four rotatio
         const selected = probes.sort((a, b) => b.score - a.score)[0];
         expect(selected).toBeDefined();
         const { core, edge, shoulder } = selected;
+        const textureCandidates = probes.map((probe) => {
+          const center = {
+            x: probe.start.x + (probe.end.x - probe.start.x) * 0.14,
+            y: probe.start.y + (probe.end.y - probe.start.y) * 0.14,
+          };
+          return { tile: probe.tile, ...compactedCoreTextureStats(image, center, 9) };
+        });
+        const coreTexture = {
+          candidateCount: textureCandidates.length,
+          medianStandardDeviation: median(textureCandidates.map((sample) => sample.standardDeviation)),
+          medianNeighborDelta: median(textureCandidates.map((sample) => sample.meanNeighborDelta)),
+          medianFineEdgeRatio: median(textureCandidates.map((sample) => sample.fineEdgeRatio)),
+          medianPlateauRatio: median(textureCandidates.map((sample) => sample.plateauRatio)),
+          candidates: textureCandidates,
+        };
+        // Guard the vocabulary regression without prescribing exact artwork:
+        // dense local variation must occur across the straight core, while a
+        // broad flat or panel-only fill fails on edge density and plateaus.
+        expect(coreTexture.candidateCount).toBe(6);
+        expect(coreTexture.medianStandardDeviation).toBeGreaterThan(2.25);
+        expect(coreTexture.medianNeighborDelta).toBeGreaterThan(0.7);
+        expect(coreTexture.medianFineEdgeRatio).toBeGreaterThan(0.12);
+        expect(coreTexture.medianPlateauRatio).toBeLessThan(0.82);
         expect(core.samples).toBeGreaterThanOrEqual(4);
         expect(edge.samples).toBeGreaterThanOrEqual(4);
         expect(shoulder.samples).toBeGreaterThanOrEqual(4);
@@ -214,6 +278,7 @@ test("ZK-1210 renders one three-material path cross-section through four rotatio
           rotation,
           selectedTile: selected.tile,
           spans: { core, edge, shoulder },
+          coreTexture,
           adjacentColorDistance: [colorDistance(core.rgb, edge.rgb), colorDistance(edge.rgb, shoulder.rgb)],
           roi: { kind: "padded-path-polyline", paddingPx, points: pathRoi.length },
           outside,

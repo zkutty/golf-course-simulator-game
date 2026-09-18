@@ -360,6 +360,14 @@ function shade(color: number, factor: number): number {
   return (lerp(r) << 16) | (lerp(g) << 8) | lerp(b);
 }
 
+function mixColor(color: number, target: number, amount: number): number {
+  const t = Math.max(0, Math.min(1, amount));
+  const mix = (shift: number) => Math.round(
+    ((color >> shift) & 0xff) * (1 - t) + ((target >> shift) & 0xff) * t,
+  );
+  return (mix(16) << 16) | (mix(8) << 8) | mix(0);
+}
+
 const colorCss = (color: number, alpha = 1) => {
   const r = (color >> 16) & 0xff;
   const g = (color >> 8) & 0xff;
@@ -482,6 +490,119 @@ function createLandscapeMaterialTexture(
         context.fill();
       }
     }
+  }
+
+  const texture = PIXI.Texture.from(canvas);
+  texture.source.style.addressMode = "repeat";
+  texture.source.style.scaleMode = "linear";
+  return texture;
+}
+
+/**
+ * Fine, repeat-safe mineral grain for the path core. This intentionally skips
+ * the broad organic ellipses used by landscape fields: compacted aggregate
+ * should read as dense dust and irregular small stones, never as panels.
+ */
+function createCompactedPathCoreTexture(
+  baseColor: number,
+  quality: "high" | "medium",
+): PIXI.Texture {
+  const size = quality === "high" ? 512 : 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) return PIXI.Texture.WHITE;
+
+  const compactedBase = mixColor(baseColor, 0x9f957f, 0.1);
+  let state = (terrainMaterialSeed("path", compactedBase) ^ 0xc0a5e71d) >>> 0;
+  const nextRandom = () => {
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return state >>> 0;
+  };
+  const random = () => nextRandom() / 0x1_0000_0000;
+
+  // A bounded per-pixel mineral noise floor prevents broad flat plateaus.
+  // Linear texture sampling blends it into dust rather than square pixels.
+  const pixels = context.createImageData(size, size);
+  const baseRed = (compactedBase >> 16) & 0xff;
+  const baseGreen = (compactedBase >> 8) & 0xff;
+  const baseBlue = compactedBase & 0xff;
+  const clampChannel = (value: number) => Math.max(0, Math.min(255, Math.round(value)));
+  for (let offset = 0; offset < pixels.data.length; offset += 4) {
+    const sample = nextRandom();
+    const grain = ((sample & 0xff) / 255 - 0.5) * 14;
+    const warmth = (((sample >>> 8) & 0xff) / 255 - 0.5) * 3;
+    pixels.data[offset] = clampChannel(baseRed + grain + warmth);
+    pixels.data[offset + 1] = clampChannel(baseGreen + grain + warmth * 0.35);
+    pixels.data[offset + 2] = clampChannel(baseBlue + grain - warmth);
+    pixels.data[offset + 3] = 255;
+  }
+  context.putImageData(pixels, 0, 0);
+  const repeatShape = (
+    x: number,
+    y: number,
+    margin: number,
+    draw: (dx: number, dy: number) => void,
+  ) => {
+    const offsetsX = [0, ...(x < margin ? [size] : []), ...(x > size - margin ? [-size] : [])];
+    const offsetsY = [0, ...(y < margin ? [size] : []), ...(y > size - margin ? [-size] : [])];
+    for (const ox of offsetsX) for (const oy of offsetsY) {
+      draw(x + ox, y + oy);
+    }
+  };
+
+  // Low-contrast dust clumps give the core body without creating large blobs.
+  const dustCount = quality === "high" ? 950 : 520;
+  for (let index = 0; index < dustCount; index++) {
+    const x = random() * size;
+    const y = random() * size;
+    const radius = (quality === "high" ? 1.2 : 0.8) + random() * (quality === "high" ? 3.8 : 2.7);
+    const warm = random() > 0.42;
+    const color = mixColor(compactedBase, warm ? 0xc8b98f : 0x5f625f, 0.2 + random() * 0.16);
+    const alpha = 0.12 + random() * 0.11;
+    const stretch = 0.55 + random() * 0.75;
+    const angle = random() * Math.PI;
+    context.fillStyle = colorCss(color, alpha);
+    repeatShape(x, y, radius * 1.35, (dx, dy) => {
+      context.beginPath();
+      context.ellipse(dx, dy, radius, radius * stretch, angle, 0, Math.PI * 2);
+      context.fill();
+    });
+  }
+
+  // Dense sub-tile grains stay legible at 1x and 2.25x while their irregular
+  // silhouettes avoid square chips, aligned seams, and per-cell repetition.
+  const aggregateCount = quality === "high" ? 1800 : 1100;
+  for (let index = 0; index < aggregateCount; index++) {
+    const x = random() * size;
+    const y = random() * size;
+    const radius = (quality === "high" ? 0.65 : 0.5) + random() * (quality === "high" ? 1.7 : 1.3);
+    const colorRoll = random();
+    const color = mixColor(
+      compactedBase,
+      colorRoll < 0.4 ? 0xd8ceb4 : colorRoll < 0.77 ? 0x6b6961 : 0xa98e62,
+      0.38 + random() * 0.32,
+    );
+    const alpha = 0.36 + random() * 0.3;
+    const vertices = 3 + Math.floor(random() * 3);
+    const rotation = random() * Math.PI * 2;
+    const radii = Array.from({ length: vertices }, () => radius * (0.65 + random() * 0.55));
+    context.fillStyle = colorCss(color, alpha);
+    repeatShape(x, y, radius * 1.25, (dx, dy) => {
+      context.beginPath();
+      for (let vertex = 0; vertex < vertices; vertex++) {
+        const angle = rotation + vertex / vertices * Math.PI * 2;
+        const px = dx + Math.cos(angle) * radii[vertex];
+        const py = dy + Math.sin(angle) * radii[vertex];
+        if (vertex === 0) context.moveTo(px, py);
+        else context.lineTo(px, py);
+      }
+      context.closePath();
+      context.fill();
+    });
   }
 
   const texture = PIXI.Texture.from(canvas);
@@ -3712,12 +3833,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       ].join(":");
       let texture = landscapeMaterialTexturesRef.current.get(key);
       if (!texture || texture.destroyed) {
-        texture = createLandscapeMaterialTexture(
-          terrain,
-          baseColor,
-          quality,
-          finePathCore ? false : props.terrainPatterns,
-        );
+        texture = finePathCore
+          ? createCompactedPathCoreTexture(baseColor, quality)
+          : createLandscapeMaterialTexture(terrain, baseColor, quality, props.terrainPatterns);
         landscapeMaterialTexturesRef.current.set(key, texture);
       }
       return texture;
