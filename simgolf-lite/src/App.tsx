@@ -115,6 +115,12 @@ import {
   type BiomeReferenceView,
 } from "./game/testing/biomeAuthoring";
 import { createM47CertificationCourse } from "./game/testing/m47Certification";
+import {
+  createZk330GroundingCourse,
+  createZk330GroundingLiveState,
+  createZk330GroundingPausedLiveState,
+  zk330BankEvidence,
+} from "./game/testing/zk330GroundingBrowserFixture";
 import { createLiveState, createRenderPerfLiveState } from "./game/live/simulation";
 import { reservedMobilityFleetUnitIds } from "./game/m51/rentalBusiness";
 import { runLiveDaysHeadless } from "./game/live/headless";
@@ -4017,6 +4023,60 @@ export default function App() {
           selectedGolferId: null,
         }));
       },
+      setZk330GroundingFixture: () => {
+        const current = gameSession.getState();
+        const fixtureCourse = createZk330GroundingCourse();
+        const fixtureWorld = {
+          ...current.world,
+          runSeed: 330_330,
+          cash: 250_000,
+          isBankrupt: false,
+          distressWeeks: 0,
+        };
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createZk330GroundingLiveState(fixtureCourse, fixtureWorld, 0),
+          pendingCash: 0,
+          speed: "paused",
+          selectedGolferId: 330,
+        }));
+      },
+      setZk330GroundingProgress: (progress) => {
+        const current = gameSession.getState();
+        if (current.course.name !== "ZK-330 Grounded Golfer Traverse") {
+          throw new Error("ZK-330 grounding fixture is not active");
+        }
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createZk330GroundingLiveState(current.course, current.world, progress),
+          pendingCash: 0,
+          speed: "paused",
+          selectedGolferId: 330,
+        }));
+      },
+      setZk330GroundingPause: () => {
+        const current = gameSession.getState();
+        if (current.course.name !== "ZK-330 Grounded Golfer Traverse") {
+          throw new Error("ZK-330 grounding fixture is not active");
+        }
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createZk330GroundingPausedLiveState(current.course, current.world),
+          pendingCash: 0,
+          speed: "paused",
+          selectedGolferId: 330,
+        }));
+      },
+      setZk330CaptureState: (rotation, quality) => {
+        setFixtureGraphicsQualityOverride(quality);
+        setM52ReferenceCamera({
+          id: `golfer-follow-r${rotation}` as BiomeCameraBookmark["id"],
+          view: "golfer-follow",
+          rotation,
+          center: { x: 22, y: 20 },
+          zoom: 2.2,
+          focus: "golfer",
+        });
+      },
+      zk330GroundingEvidence: () => zk330BankEvidence(gameSession.getState().course),
       setM52ReferenceBookmark: (view, rotation) => {
         const bookmark = biomeCameraBookmarks(gameSession.getState().course).find((candidate) =>
           candidate.view === view && candidate.rotation === rotation);

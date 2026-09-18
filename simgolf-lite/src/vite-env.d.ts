@@ -77,11 +77,27 @@ interface Window {
     unrelatedObjectCountProbe(): { before: number; after: number };
     setZoomForTest(zoom: number): void;
     focusTileForTest(x: number, y: number, zoom: number): void;
+    golferGrounding(id: number): {
+      golfer: { x: number; y: number; segKind: string | null; segT: number };
+      sample: { x: number; y: number; elevation: number };
+      expected: { x: number; y: number; depth: number };
+      holder: { x: number; y: number; depth: number; visible: boolean };
+      feet: { x: number; y: number; anchorY: number } | null;
+      shadow: { label: string; x: number; y: number; alpha: number } | null;
+      sprite: { walkPhase: number; frame: string } | null;
+      poolCount: number;
+      activeEffects: number;
+    } | null;
   };
   __coursecraftTest?: {
     setGraphicsQualityFixture(quality: "high" | "medium" | "low"): void;
     setRendererThemeFixture(theme: import("./game/models/types").LandTheme): void;
     setRendererSeasonFixture(season: import("./game/seasons/types").SeasonName): void;
+    setZk330GroundingFixture(): void;
+    setZk330GroundingProgress(progress: number): void;
+    setZk330GroundingPause(): void;
+    setZk330CaptureState(rotation: 0 | 1 | 2 | 3, quality: "high" | "medium" | "low"): void;
+    zk330GroundingEvidence(): { validBridgeCrossing: boolean; blockedWaterBank: boolean };
     state(): {
       screen: string;
       screenBase: "title" | "setup-wizard" | "loading" | "in-game";
