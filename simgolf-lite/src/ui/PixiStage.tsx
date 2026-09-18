@@ -2117,6 +2117,24 @@ export function PixiStage(requestedProps: PixiStageProps) {
         camRef.current.initialized = true;
         applyCamera();
       },
+      golferGrounding: (id: number) => {
+        const golfer = golfersRef?.current?.find((candidate) => candidate.id === id);
+        const entry = golferPoolRef.current.get(id);
+        if (!golfer || !entry) return null;
+        const frame = groundedGolferFrame(golfer.x, golfer.y, rotation, surfaceHeightAt);
+        const shadow = entry.sprite?.shadow;
+        return {
+          golfer: { x: golfer.x, y: golfer.y, segKind: golfer.segKind, segT: golfer.segT },
+          sample: { x: golfer.x + .5, y: golfer.y + .5, elevation: frame.elevation },
+          expected: { x: frame.screen.x, y: frame.screen.y, depth: frame.depth },
+          holder: { x: entry.holder.position.x, y: entry.holder.position.y, depth: entry.holder.zIndex, visible: entry.holder.visible },
+          feet: entry.sprite ? { x: entry.sprite.base.position.x, y: entry.sprite.base.position.y, anchorY: entry.sprite.base.anchor.y } : null,
+          shadow: shadow ? { label: shadow.label, x: shadow.position.x, y: shadow.position.y, alpha: shadow.alpha } : null,
+          sprite: entry.sprite ? { walkPhase: entry.sprite.walkPhase, frame: entry.sprite.lastFrame } : null,
+          poolCount: golferPoolRef.current.size,
+          activeEffects: impactsRef.current.length + ripplesRef.current.length,
+        };
+      },
       screenToTile,
     };
     window.__coursecraftPixiTest = api;
@@ -2139,6 +2157,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     renderContext.resolutionScale,
     seasonalPlantsSignature,
     screenToTile,
+    surfaceHeightAt,
     worldPointToScreen,
   ]);
 
@@ -4526,12 +4545,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
               // Drop shadow at the feet, then selection ring, then the two
               // sprite layers (base colors + tinted grayscale clothing).
               const shadow = new PIXI.Graphics();
-              shadow.ellipse(
-                GOLFER_CONTACT_SHADOW.x,
-                GOLFER_CONTACT_SHADOW.y,
-                GOLFER_CONTACT_SHADOW.radiusX,
-                GOLFER_CONTACT_SHADOW.radiusY,
-              );
+              shadow.label = "golfer-contact-shadow";
+              shadow.position.set(GOLFER_CONTACT_SHADOW.x, GOLFER_CONTACT_SHADOW.y);
+              shadow.ellipse(0, 0, GOLFER_CONTACT_SHADOW.radiusX, GOLFER_CONTACT_SHADOW.radiusY);
               shadow.fill({ color: 0x000000, alpha: GOLFER_CONTACT_SHADOW.alpha });
               const ring = new PIXI.Graphics();
               ring.visible = false;
