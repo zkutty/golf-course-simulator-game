@@ -145,6 +145,10 @@ import {
   buildBunkerVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
+import {
+  buildOrganicTerrainMaskRings,
+  usesOrganicTerrainMask,
+} from "../game/render/organicTerrainMasks";
 import { buildMacroLandformRaster } from "../game/render/macroLandform";
 import { buildLandformShoulders } from "../game/render/landformGeometry";
 import {
@@ -3746,6 +3750,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           course.height,
         )
         : null;
+      const organicMaterialMask = usesOrganicTerrainMask(component.terrain, component.cells.length);
       const visualRings = bunkerVisualType
         ? buildBunkerVisualRings(
           component.rings,
@@ -3753,11 +3758,20 @@ export function PixiStage(requestedProps: PixiStageProps) {
           component.cells.length,
           bunkerVisualType,
         )
+        : organicMaterialMask
+        ? buildOrganicTerrainMaskRings(
+          component.rings,
+          component.cells,
+          course.width,
+          component.topologyKey,
+        )
         : component.rings;
-      if (component.terrain === "sand") {
-        // The authoritative sand cells stay whole for gameplay. Visually,
-        // replace their square base with world-anchored rough, then reveal
-        // sand through the organic bunker mask below.
+      if (bunkerVisualType || organicMaterialMask) {
+        // The authoritative material cells stay whole for gameplay. Visually,
+        // replace only small sand/ecological tile-unions with world-anchored
+        // rough, then reveal the same material through a deterministic organic
+        // mask. This is deliberately not a transition rule: ownership and the
+        // original component boundaries still drive all edge treatments.
         const roughUnderlay = new PIXI.Mesh({
           geometry,
           texture: textureFor("rough"),
@@ -3825,7 +3839,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
 
       const boundaryRuns = buildLandscapeBoundaryRuns(
-        visualRings,
+        bunkerVisualType ? visualRings : component.rings,
         component.terrain,
         effectiveTiles,
         course.width,

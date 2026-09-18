@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_STATE } from "../../game/gameState";
 import { restoreLiveSimulation, snapshotLiveSimulation } from "../live/persistence";
 import { createRenderPerfLiveState } from "../live/simulation";
+import { buildLandformShoulders } from "../render/landformGeometry";
+import { buildLandscapeComponents, buildVisualHeightfield } from "../render/landscapeGeometry";
+import { hashCanonicalValue } from "../../utils/stateHash";
 import { createM21BiomeReferenceCourse, createM22VisualReferenceCourse, createParklandVisualReferenceCourse, createRenderPerfCourse, PARKLAND_CAMERA_BOOKMARKS, PARKLAND_VISUAL_SEED } from "./referenceCourse";
 
 describe("M12 render performance fixture", () => {
@@ -47,10 +50,29 @@ describe("M19 visual reference fixture", () => {
     const first = createParklandVisualReferenceCourse();
     const second = createParklandVisualReferenceCourse();
     expect(first).toEqual(second);
+    const reloaded = JSON.parse(JSON.stringify(first));
+    expect(hashCanonicalValue(reloaded)).toBe(hashCanonicalValue(first));
     expect(PARKLAND_VISUAL_SEED).toBe(1900212);
     expect(Object.keys(PARKLAND_CAMERA_BOOKMARKS)).toEqual(["overview50", "hole100", "green200"]);
     expect(new Set(first.tiles)).toEqual(new Set(["rough", "deep_rough", "fairway", "tee", "green", "water", "sand", "path"]));
     expect(first.holes[0]).toMatchObject({ parManual: 4, name: "Founder's Bend" });
+  });
+
+  it("authors a three-level shoulder and one four-connected cart route without changing fixture determinism", () => {
+    const course = createParklandVisualReferenceCourse();
+    expect(new Set(course.elevations)).toEqual(new Set([0, 1, 2, 3]));
+    const pathComponents = buildLandscapeComponents(course.tiles, course.width, course.height)
+      .filter((component) => component.terrain === "path");
+    expect(pathComponents).toHaveLength(1);
+    expect(pathComponents[0].cells.length).toBeGreaterThan(42);
+    const shoulders = buildLandformShoulders(
+      buildVisualHeightfield(course),
+      course.tiles,
+      course.elevations,
+      3,
+    );
+    expect(shoulders.length).toBeGreaterThanOrEqual(3);
+    expect(shoulders.some((shoulder) => shoulder.closed && shoulder.worldLength > 20)).toBe(true);
   });
 });
 
