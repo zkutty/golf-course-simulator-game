@@ -339,13 +339,16 @@ export function quoteBuildingSiteRepair(
 }
 
 /**
- * Find a spot for the starter clubhouse on fresh land: spiral out from the
- * course center until placement validates. Deterministic (no randomness).
+ * Find a starter clubhouse site deterministically. A naturally stable site
+ * wins immediately in the center-out scan. If the generated course has no
+ * such site, choose the valid engineered site with the lowest site-work cost,
+ * then use row-major coordinates as a stable tie-break.
  */
 export function findClubhouseSpot(course: Course): { x: number; y: number } | null {
   const spec = BUILDING_SPECS.clubhouse;
   const cx = Math.floor(course.width / 2 - spec.w / 2);
   const cy = Math.floor(course.height / 2 - spec.d / 2);
+  const engineered: Array<{ x: number; y: number; siteCost: number }> = [];
   for (let r = 0; r < Math.max(course.width, course.height); r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
@@ -353,14 +356,21 @@ export function findClubhouseSpot(course: Course): { x: number; y: number } | nu
         const x = cx + dx;
         const y = cy + dy;
         const quote = quoteBuildingPlacement(course, "clubhouse", x, y);
-        // Fresh-run land is immutable setup evidence. Prefer only a naturally
-        // level full site so the included clubhouse never silently changes the
-        // generated landscape or starting cash.
+        // Preserve the center-out preference for a naturally stable full site.
         if (quote.ok && quote.grade?.mutations.length === 0) return { x, y };
+        if (quote.ok && quote.grade) {
+          engineered.push({
+            x,
+            y,
+            siteCost: quote.earthworkCost + quote.foundationCost,
+          });
+        }
       }
     }
   }
-  return null;
+  engineered.sort((a, b) => a.siteCost - b.siteCost || a.y - b.y || a.x - b.x);
+  const fallback = engineered[0];
+  return fallback ? { x: fallback.x, y: fallback.y } : null;
 }
 
 /** Grade and install the included starter structure without touching run cash. */
