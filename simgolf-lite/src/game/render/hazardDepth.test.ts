@@ -3,6 +3,7 @@ import {
   hazardDepthOffsets,
   hazardDepthProfile,
   hazardInteriorDropAt,
+  buildHazardBankFacePlan,
 } from "./hazardDepth";
 
 describe("hazard depth cross-sections", () => {
@@ -40,5 +41,33 @@ describe("hazard depth cross-sections", () => {
     const serialized = JSON.stringify(hazardDepthProfile("water"));
     expect(serialized).not.toMatch(/reed|stone|tuft|rotation|camera/i);
     expect(hazardDepthProfile("rough")).toBeNull();
+  });
+
+  it("plans exactly one bank face per canonical ring edge and no parallel fill strips", () => {
+    const ring = [
+      { x: 1.125, y: 2.25 },
+      { x: 4.75, y: 2.25 },
+      { x: 4.75, y: 5.625 },
+      { x: 1.125, y: 5.625 },
+    ];
+    for (const terrain of ["sand", "water", "wetland"] as const) {
+      const plan = buildHazardBankFacePlan(terrain, 6, ring)!;
+      expect(plan.bankFaces).toHaveLength(ring.length);
+      expect(plan.suppressedFillKinds).toEqual(["shelf", "contact", "shallow", "deep"]);
+      expect(plan.bankFaces.map(({ boundaryA, boundaryB }) => [boundaryA, boundaryB])).toEqual([
+        [ring[0], ring[1]], [ring[1], ring[2]], [ring[2], ring[3]], [ring[3], ring[0]],
+      ]);
+      expect(plan.bankFaces.every((face) => face.bankInnerOffset > 0)).toBe(true);
+      expect(plan.lip.offset).toBe(0);
+      expect(plan.lip.width).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps the same one-face plan through each camera rotation", () => {
+    const ring = [{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 2 }, { x: 0, y: 2 }];
+    const signature = JSON.stringify(buildHazardBankFacePlan("water", 8, ring));
+    for (const _rotation of [0, 90, 180, 270]) {
+      expect(JSON.stringify(buildHazardBankFacePlan("water", 8, ring))).toBe(signature);
+    }
   });
 });

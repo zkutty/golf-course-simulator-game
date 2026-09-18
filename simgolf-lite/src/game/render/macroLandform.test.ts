@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Course, Terrain } from "../models/types";
 import { buildVisualHeightfield } from "./landscapeGeometry";
 import { buildMacroLandformRaster } from "./macroLandform";
+import { createParklandVisualReferenceCourse } from "../testing/referenceCourse";
 
 function fixture(width = 14, height = 10): Course {
   const tiles = new Array<Terrain>(width * height).fill("rough");
@@ -69,5 +70,54 @@ describe("continuous macro-landform shading", () => {
     const links = buildMacroLandformRaster(field, course.tiles, "links", 3);
     expect(Array.from(second.shadow)).toEqual(Array.from(first.shadow));
     expect(Array.from(links.shadow)).not.toEqual(Array.from(first.shadow));
+  });
+
+  it("filters M19 ridge light into bounded, multi-tile gradients", () => {
+    const course = createParklandVisualReferenceCourse();
+    const density = 4;
+    const raster = buildMacroLandformRaster(
+      buildVisualHeightfield(course), course.tiles, course.theme, density,
+    );
+    const alphaAt = (x: number, y: number) => raster.shadow[(y * raster.width + x) * 4 + 3] +
+      raster.highlight[(y * raster.width + x) * 4 + 3];
+    const isShadedAt = (x: number, y: number) => {
+      const terrain = course.tiles[Math.floor(y / density) * course.width + Math.floor(x / density)];
+      return terrain !== "water" && terrain !== "wetland" && terrain !== "path";
+    };
+    let maximumAdjacentDelta = 0;
+    let gradedTransitions = 0;
+    const ridgeLevels = new Set<string>();
+    for (let y = 1; y < raster.height - 1; y++) for (let x = 1; x < raster.width - 1; x++) {
+      const center = alphaAt(x, y);
+      if (isShadedAt(x, y) && isShadedAt(x + 1, y)) {
+        maximumAdjacentDelta = Math.max(maximumAdjacentDelta, Math.abs(center - alphaAt(x + 1, y)));
+      }
+      if (isShadedAt(x, y) && isShadedAt(x, y + 1)) {
+        maximumAdjacentDelta = Math.max(maximumAdjacentDelta, Math.abs(center - alphaAt(x, y + 1)));
+      }
+      // A transition is only counted when its slope light persists through at
+      // least three samples, which rules out one-pixel contour bands.
+      if (center > 4 && alphaAt(x - 1, y) > 2 && alphaAt(x + 1, y) > 2) gradedTransitions++;
+    }
+    for (let y = 0; y < course.height; y++) for (let x = 0; x < course.width; x++) {
+      const index = y * course.width + x;
+      for (const [dx, dy] of [[1, 0], [0, 1]] as const) {
+        if (x + dx >= course.width || y + dy >= course.height) continue;
+        const adjacent = (y + dy) * course.width + x + dx;
+        const low = Math.min(course.elevations[index], course.elevations[adjacent]);
+        const high = Math.max(course.elevations[index], course.elevations[adjacent]);
+        if (high - low !== 1) continue;
+        const samples = dx
+          ? [alphaAt((x + 1) * density - 1, (y + 0.5) * density), alphaAt((x + 1) * density, (y + 0.5) * density), alphaAt((x + 1) * density + 1, (y + 0.5) * density)]
+          : [alphaAt((x + 0.5) * density, (y + 1) * density - 1), alphaAt((x + 0.5) * density, (y + 1) * density), alphaAt((x + 0.5) * density, (y + 1) * density + 1)];
+        if (samples.every((alpha) => alpha > 2)) ridgeLevels.add(`${low}-${high}`);
+      }
+    }
+    // Water remains intentionally transparent, so its hard material edge is
+    // outside the grade field. On contiguous land the filtered field has no
+    // one-sample contour jump.
+    expect(maximumAdjacentDelta).toBeLessThanOrEqual(48);
+    expect(gradedTransitions).toBeGreaterThan(3 * density);
+    expect(ridgeLevels).toEqual(new Set(["0-1", "1-2", "2-3"]));
   });
 });

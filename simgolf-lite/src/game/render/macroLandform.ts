@@ -40,6 +40,31 @@ function sampleTerrain(
 }
 
 /**
+ * A small world-space tent filter. Applying it before differentiating keeps
+ * slope light broad across authored ridges without turning a height step into
+ * adjacent contour bands. The same coordinates are used at every rotation.
+ */
+function filteredHeight(field: VisualHeightfield, x: number, y: number): number {
+  const center = sampleVisualHeight(field, x, y) * 4;
+  const cardinal =
+    sampleVisualHeight(field, x - 0.42, y) +
+    sampleVisualHeight(field, x + 0.42, y) +
+    sampleVisualHeight(field, x, y - 0.42) +
+    sampleVisualHeight(field, x, y + 0.42);
+  return (center + cardinal) / 8;
+}
+
+function filteredGradient(field: VisualHeightfield, x: number, y: number): { dx: number; dy: number } {
+  const derivativeRadius = 0.72;
+  return {
+    dx: (filteredHeight(field, x + derivativeRadius, y) - filteredHeight(field, x - derivativeRadius, y)) /
+      (derivativeRadius * 2),
+    dy: (filteredHeight(field, x, y + derivativeRadius) - filteredHeight(field, x, y - derivativeRadius)) /
+      (derivativeRadius * 2),
+  };
+}
+
+/**
  * Builds a world-anchored, continuous slope-light raster from the shared
  * presentation heightfield. The derivative is sampled across tile borders;
  * no tile edge or adjacency is emitted into the image. Water, wetlands and
@@ -58,7 +83,6 @@ export function buildMacroLandformRaster(
   const highlight = new Uint8ClampedArray(width * height * 4);
   const owner = getBiomeDefinition(theme).content.materials.terrain;
   const profile = SHADE_PROFILES[owner];
-  const derivativeRadius = 0.72;
   let maximumGrade = 0;
 
   for (let py = 0; py < height; py++) for (let px = 0; px < width; px++) {
@@ -70,14 +94,7 @@ export function buildMacroLandformRaster(
     highlight[offset + 3] = 0;
     if (!isShadedLand(terrain)) continue;
 
-    const dx = (
-      sampleVisualHeight(field, x + derivativeRadius, y) -
-      sampleVisualHeight(field, x - derivativeRadius, y)
-    ) / (derivativeRadius * 2);
-    const dy = (
-      sampleVisualHeight(field, x, y + derivativeRadius) -
-      sampleVisualHeight(field, x, y - derivativeRadius)
-    ) / (derivativeRadius * 2);
+    const { dx, dy } = filteredGradient(field, x, y);
     const grade = Math.min(1, Math.hypot(dx, dy) / 1.35);
     maximumGrade = Math.max(maximumGrade, Math.hypot(dx, dy));
 
