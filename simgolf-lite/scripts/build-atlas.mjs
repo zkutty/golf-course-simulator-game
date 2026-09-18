@@ -26,6 +26,7 @@ const BUILDING_SRC = process.env.COURSECRAFT_BUILDING_SOURCE_DIR
   : SRC;
 const NATURAL_SRC = path.join(ROOT, "src/assets/props/natural");
 const TERRAIN_SRC = path.join(ROOT, "src/assets/terrain/materials");
+const PARKLAND_4X_SRC = path.join(ROOT, "src/assets/terrain/parkland-4x");
 const TERRAIN_DETAILS_SRC = path.join(ROOT, "src/assets/terrain/details");
 const LANDSCAPE_FIELDS_SRC = path.join(ROOT, "src/assets/terrain/fields");
 // Optional authoring convention. A season can supply only the small, typed
@@ -48,8 +49,43 @@ const themePattern = themes.map((theme) => theme.replace(/[.*+?^${}()|[\]\\]/g, 
 const PAD = 2; // gutter to avoid bleeding when scaled
 const MAX_W = 1024;
 
+const PARKLAND_TERRAIN_MODE = process.env.COURSECRAFT_PARKLAND_TERRAIN_MODE || "production-4x";
+if (!new Set(["production-4x", "legacy-2x"]).has(PARKLAND_TERRAIN_MODE)) {
+  throw new Error(`COURSECRAFT_PARKLAND_TERRAIN_MODE must be production-4x or legacy-2x, got ${PARKLAND_TERRAIN_MODE}`);
+}
+
 function shortHash(buffer) {
   return createHash("sha256").update(buffer).digest("hex").slice(0, 12);
+}
+
+function fullHash(buffer) {
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+function boxDownsample(source, divisor) {
+  if (divisor === 1) return source;
+  if (!Number.isInteger(divisor) || divisor < 1 || source.width % divisor || source.height % divisor) {
+    throw new Error(`invalid deterministic mip divisor ${divisor} for ${source.width}x${source.height}`);
+  }
+  const target = new PNG({ width: source.width / divisor, height: source.height / divisor });
+  const samples = divisor * divisor;
+  for (let y = 0; y < target.height; y++) for (let x = 0; x < target.width; x++) {
+    let alpha = 0; let red = 0; let green = 0; let blue = 0;
+    for (let sy = 0; sy < divisor; sy++) for (let sx = 0; sx < divisor; sx++) {
+      const sourceOffset = ((((y * divisor) + sy) * source.width) + x * divisor + sx) * 4;
+      const a = source.data[sourceOffset + 3];
+      alpha += a;
+      red += source.data[sourceOffset] * a;
+      green += source.data[sourceOffset + 1] * a;
+      blue += source.data[sourceOffset + 2] * a;
+    }
+    const targetOffset = (y * target.width + x) * 4;
+    target.data[targetOffset] = alpha ? Math.round(red / alpha) : 0;
+    target.data[targetOffset + 1] = alpha ? Math.round(green / alpha) : 0;
+    target.data[targetOffset + 2] = alpha ? Math.round(blue / alpha) : 0;
+    target.data[targetOffset + 3] = Math.round(alpha / samples);
+  }
+  return target;
 }
 
 function buildAtlas(srcDir, outName, include = () => true, scale = "1", options = {}) {
@@ -67,7 +103,8 @@ function buildAtlas(srcDir, outName, include = () => true, scale = "1", options 
   }
 
   const sprites = files.map((f) => {
-    const png = PNG.sync.read(readFileSync(path.join(srcDir, f)));
+    const sourcePng = PNG.sync.read(readFileSync(path.join(srcDir, f)));
+    const png = boxDownsample(sourcePng, options.mipDivisor ?? 1);
     const gridMatch = /^(.*)\.grid(\d+)x(\d+)\.png$/.exec(f);
     if (gridMatch) {
       const cols = Number(gridMatch[2]);
@@ -82,12 +119,13 @@ function buildAtlas(srcDir, outName, include = () => true, scale = "1", options 
   });
 
   // Shelf packing (row by row) of whole sheets.
+  const maxWidth = options.maxWidth ?? MAX_W;
   let x = PAD;
   let y = PAD;
   let shelfH = 0;
   let atlasW = 0;
   for (const s of sprites) {
-    if (x + s.png.width + PAD > MAX_W) {
+    if (x + s.png.width + PAD > maxWidth) {
       x = PAD;
       y += shelfH + PAD;
       shelfH = 0;
@@ -120,7 +158,7 @@ function buildAtlas(srcDir, outName, include = () => true, scale = "1", options 
     }
   }
 
-  const pngBuffer = PNG.sync.write(atlas);
+  const pngBuffer = PNG.sync.write(atlas, options.pngWriteOptions);
   const imageName = options.hashed
     ? `${outName}.${shortHash(pngBuffer)}.png`
     : `${outName}.png`;
@@ -154,6 +192,8 @@ function buildAtlas(srcDir, outName, include = () => true, scale = "1", options 
     frames: Object.keys(frames).length,
     width: atlasW,
     height: atlasH,
+    scale,
+    mipDivisor: options.mipDivisor ?? 1,
   };
 }
 
@@ -184,9 +224,42 @@ const seasons = ["spring", "summer", "autumn", "winter"];
 const manifest = {
   version: 3,
   generatedBy: "scripts/build-atlas.mjs",
+  assetContracts: {},
   core: {},
   biomes: {},
 };
+if (PARKLAND_TERRAIN_MODE === "production-4x") {
+  const sourceManifestPath = path.join(PARKLAND_4X_SRC, "manifest.json");
+  if (!existsSync(sourceManifestPath)) {
+    throw new Error("Parkland 4x production source is absent; run npm run gen:terrain:parkland-4x or select COURSECRAFT_PARKLAND_TERRAIN_MODE=legacy-2x");
+  }
+  const sourceManifestBuffer = readFileSync(sourceManifestPath);
+  const sourceManifest = JSON.parse(sourceManifestBuffer.toString("utf8"));
+  manifest.assetContracts.parklandTerrain = {
+    id: "parkland-terrain-4x",
+    mode: "production-4x",
+    source: "src/assets/terrain/parkland-4x",
+    sourceManifestSha256: fullHash(sourceManifestBuffer),
+    frameSetSha256: fullHash(Buffer.from(JSON.stringify(sourceManifest.files ?? {}))),
+    lods: {
+      high: { name: "detail", sourceScale: 4, mipDivisor: 1 },
+      medium: { name: "normal", sourceScale: 4, mipDivisor: 2 },
+      low: { name: "overview", sourceScale: 4, mipDivisor: 4 },
+    },
+    rollback: {
+      mode: "legacy-2x",
+      source: "src/assets/terrain/materials",
+      environment: "COURSECRAFT_PARKLAND_TERRAIN_MODE=legacy-2x",
+    },
+  };
+} else {
+  manifest.assetContracts.parklandTerrain = {
+    id: "parkland-terrain-4x",
+    mode: "legacy-2x",
+    source: "src/assets/terrain/materials",
+    rollbackActive: true,
+  };
+}
 manifest.core.golfers = buildAtlas(
   path.join(SRC, "golfers"),
   "core-golfers",
@@ -271,12 +344,24 @@ for (const theme of themes) {
       "1",
       { hashed: true, outDir: BIOME_OUT_DIR },
     );
+    const productionParkland = theme === "parkland" && PARKLAND_TERRAIN_MODE === "production-4x";
+    const terrainSource = productionParkland ? PARKLAND_4X_SRC : TERRAIN_SRC;
+    const mipDivisor = productionParkland ? ({ high: 1, medium: 2, low: 4 })[quality] : 1;
+    const terrainScale = productionParkland ? ({ high: "4", medium: "2", low: "1" })[quality] : "2";
     const terrain = buildAtlas(
-      TERRAIN_SRC,
+      terrainSource,
       `terrain-${theme}-${quality}`,
       (name) => name.startsWith(`${theme}_`),
-      "2",
-      { hashed: true, outDir: BIOME_OUT_DIR },
+      terrainScale,
+      {
+        hashed: true,
+        outDir: BIOME_OUT_DIR,
+        mipDivisor,
+        maxWidth: productionParkland && quality === "high" ? 2048 : MAX_W,
+        // Filtered DEFLATE is materially smaller for the 4x clustered source
+        // than pngjs's RLE-biased default, without changing a decoded pixel.
+        pngWriteOptions: productionParkland ? { deflateLevel: 9, deflateStrategy: 0 } : undefined,
+      },
     );
     const details = quality === "low"
       ? null

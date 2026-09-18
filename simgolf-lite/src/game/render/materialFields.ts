@@ -45,11 +45,11 @@ const PROFILE_RANK: Record<DetailProfile, number> = { low: 0, medium: 1, high: 2
  * Source-art contract for the material fields.
  *
  * A patch spans `tileSpan` tiles in each world axis, so its phase repeats on a
- * 4-tile lattice that is independent of the cell grid. `target` is the Parkland
- * 4× contract in ZK-472; `shipped` describes the 2× art currently in the
- * repository. The renderer resolves the best available tier rather than
- * assuming either, and both downsample by an integer factor — the pixel-art-safe
- * case, where no source texel is resampled across a fractional boundary.
+ * 4-tile lattice that is independent of the cell grid. `target` is the shipped
+ * Parkland 4× production contract in ZK-472; `shipped` is retained as the
+ * verified legacy 2× rollback. The renderer resolves the best available tier,
+ * and every production LOD downsamples by an integer factor — the pixel-art-
+ * safe case, where no source texel is resampled across a fractional boundary.
  */
 export const MATERIAL_PATCH_TILE_SPAN = 4;
 

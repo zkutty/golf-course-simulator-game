@@ -195,6 +195,34 @@ try {
   if (loadedBiomeAssets.some((url) => url.includes("terrain-links") || url.includes("field-links") || url.includes("terrain-desert") || url.includes("field-desert"))) {
     throw new Error("Unselected biome assets were downloaded during Parkland startup");
   }
+  const parklandTerrainProof = await page.evaluate(async () => {
+    const manifestResponse = await fetch("atlases/biomes/manifest.json", { cache: "no-cache" });
+    const biomeManifest = await manifestResponse.json();
+    const terrainBundle = biomeManifest.biomes.parkland.high.base.terrain;
+    const terrainResponse = await fetch(`atlases/biomes/${terrainBundle.json}`);
+    const terrainAtlas = await terrainResponse.json();
+    const frame = terrainAtlas.frames.parkland_fairway_base_0;
+    return {
+      mode: biomeManifest.assetContracts?.parklandTerrain?.mode,
+      source: biomeManifest.assetContracts?.parklandTerrain?.source,
+      sourceManifestSha256: biomeManifest.assetContracts?.parklandTerrain?.sourceManifestSha256,
+      frameSetSha256: biomeManifest.assetContracts?.parklandTerrain?.frameSetSha256,
+      atlasScale: terrainAtlas.meta.scale,
+      width: frame?.sourceSize?.w,
+      height: frame?.sourceSize?.h,
+      image: terrainBundle.image,
+    };
+  });
+  if (parklandTerrainProof.mode !== "production-4x"
+    || parklandTerrainProof.source !== "src/assets/terrain/parkland-4x"
+    || parklandTerrainProof.atlasScale !== "4"
+    || parklandTerrainProof.width !== 256
+    || parklandTerrainProof.height !== 128
+    || !/^[a-f0-9]{64}$/.test(parklandTerrainProof.sourceManifestSha256 ?? "")
+    || !/^[a-f0-9]{64}$/.test(parklandTerrainProof.frameSetSha256 ?? "")
+    || !/^terrain-parkland-high\.[a-f0-9]{12}\.png$/.test(parklandTerrainProof.image ?? "")) {
+    throw new Error(`Parkland runtime did not adopt the content-hashed 4x atlas: ${JSON.stringify(parklandTerrainProof)}`);
+  }
   const cachedBiomeAssets = await page.evaluate(async () => {
     const keys = (await caches.keys()).filter((key) => key.startsWith("coursecraft-"));
     const requests = (await Promise.all(keys.map(async (key) => (await caches.open(key)).keys()))).flat();

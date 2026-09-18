@@ -1,23 +1,25 @@
 {
-  "version": 2,
+  "version": 3,
   "id": "parkland-terrain-4x",
   "theme": "parkland",
   "source": {
-    "root": "art/parkland-4x-fallback",
+    "root": "src/assets/terrain/parkland-4x",
     "manifest": "manifest.json",
-    "kind": "deterministic-coursecraft-fallback",
+    "kind": "deterministic-coursecraft-production-source",
     "authoredBy": "CourseCraft",
     "generator": "scripts/gen-parkland-4x-fallback.mjs",
     "algorithm": "scripts/gen-terrain-materials.mjs",
     "externalProvider": "none",
     "referencePixelsCopied": false,
-    "reviewStatus": "machine-contract-only"
+    "reviewStatus": "production-contract-adopted",
+    "contactSheet": "evidence/contact-sheet.png"
   },
   "determinism": {
     "hashAlgorithm": "sha256",
-    "manifestVersion": 1,
+    "manifestVersion": 2,
     "requiresRepeatableGeneration": true,
-    "runtimeAdoption": "prohibited"
+    "runtimeAdoption": "production-default",
+    "buildManifestField": "assetContracts.parklandTerrain"
   },
   "frame": {
     "width": 256,
@@ -32,6 +34,17 @@
     "transparentCorners": true,
     "visiblePixels": true,
     "allowPartialAlpha": true
+  },
+  "artDirection": {
+    "lightDirection": "north-west",
+    "pixelClusterPx": { "minimum": 2, "maximum": 6 },
+    "paletteRule": "bounded material hierarchy with fixed luminance separation",
+    "alphaFringe": "premultiplied-alpha box mip; transparent RGB is zero",
+    "anchor": "isometric diamond center; logical footprint 64x32",
+    "bleed": "2px transparent atlas gutter",
+    "mipRule": "high=native 4x; medium=2x premultiplied box; low=4x premultiplied box",
+    "naming": "parkland_{terrain}_{base|edge|outer|inner}_{variant-or-direction}.png",
+    "topologyOwner": "src/game/render/materialFields.ts"
   },
   "coverage": {
     "materials": [
@@ -59,9 +72,9 @@
   },
   "variants": {
     "quality": {
-      "high": { "terrainFrames": 180, "detailFrames": 20, "fields": 10 },
-      "medium": { "terrainFrames": 180, "detailFrames": 10, "fields": 10 },
-      "low": { "terrainFrames": 180, "detailFrames": 0, "fields": 0 }
+      "high": { "lod": "detail", "terrainFrames": 180, "frameWidth": 256, "frameHeight": 128, "atlasScale": 4, "mipDivisor": 1, "detailFrames": 22, "fields": 10 },
+      "medium": { "lod": "normal", "terrainFrames": 180, "frameWidth": 128, "frameHeight": 64, "atlasScale": 2, "mipDivisor": 2, "detailFrames": 11, "fields": 10 },
+      "low": { "lod": "overview", "terrainFrames": 180, "frameWidth": 64, "frameHeight": 32, "atlasScale": 1, "mipDivisor": 4, "detailFrames": 0, "fields": 0 }
     },
     "accessibility": {
       "file": "src/accessibility/terrainPalettes.ts",
@@ -81,9 +94,12 @@
   },
   "atlas": {
     "gutterPx": 2,
-    "maxWidth": 1024,
-    "maxHeight": 8192,
-    "name": "terrain-parkland-4x"
+    "maxWidth": 2048,
+    "maxHeight": 4096,
+    "name": "terrain-parkland",
+    "manifestVersion": 3,
+    "contentHashed": true,
+    "compression": "PNG DEFLATE level 9, strategy 0; lossless decoded pixels"
   },
   "fallback": {
     "root": "src/assets/terrain/materials",
@@ -91,7 +107,10 @@
     "height": 64,
     "presentationScale": 2,
     "generator": "scripts/gen-terrain-materials.mjs",
-    "runtimeAsset": true
+    "runtimeAsset": true,
+    "mode": "legacy-2x",
+    "environment": "COURSECRAFT_PARKLAND_TERRAIN_MODE=legacy-2x",
+    "default": false
   },
   "budgets": {
     "sourceBytesMax": 4194304,
