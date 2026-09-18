@@ -154,6 +154,20 @@
               "width": 512,
               "height": 512
             }
+          },
+          "pathMaterials": {
+            "shoulder": {
+              "image": "path-material-parkland-high-shoulder.15127702fdb2.png",
+              "bytes": 79812,
+              "width": 512,
+              "height": 512
+            },
+            "edge": {
+              "image": "path-material-parkland-high-edge.10417f6c94ad.png",
+              "bytes": 127121,
+              "width": 512,
+              "height": 512
+            }
           }
         },
         "seasonal": {}
@@ -265,6 +279,20 @@
               "width": 256,
               "height": 256
             }
+          },
+          "pathMaterials": {
+            "shoulder": {
+              "image": "path-material-parkland-medium-shoulder.2ceda5cebc64.png",
+              "bytes": 32664,
+              "width": 256,
+              "height": 256
+            },
+            "edge": {
+              "image": "path-material-parkland-medium-edge.5e57e0aee97a.png",
+              "bytes": 48485,
+              "width": 256,
+              "height": 256
+            }
           }
         },
         "seasonal": {}
@@ -295,7 +323,8 @@
           },
           "details": null,
           "props": null,
-          "fields": {}
+          "fields": {},
+          "pathMaterials": null
         },
         "seasonal": {}
       }
@@ -405,6 +434,20 @@
             "path": {
               "image": "field-links-high-path.92190c119f24.png",
               "bytes": 103748,
+              "width": 512,
+              "height": 512
+            }
+          },
+          "pathMaterials": {
+            "shoulder": {
+              "image": "path-material-links-high-shoulder.6648eb756ed4.png",
+              "bytes": 83046,
+              "width": 512,
+              "height": 512
+            },
+            "edge": {
+              "image": "path-material-links-high-edge.08aafd88ed34.png",
+              "bytes": 127184,
               "width": 512,
               "height": 512
             }
@@ -519,6 +562,20 @@
               "width": 256,
               "height": 256
             }
+          },
+          "pathMaterials": {
+            "shoulder": {
+              "image": "path-material-links-medium-shoulder.74258036d059.png",
+              "bytes": 33075,
+              "width": 256,
+              "height": 256
+            },
+            "edge": {
+              "image": "path-material-links-medium-edge.0f8c3b24e7f2.png",
+              "bytes": 49478,
+              "width": 256,
+              "height": 256
+            }
           }
         },
         "seasonal": {}
@@ -549,7 +606,8 @@
           },
           "details": null,
           "props": null,
-          "fields": {}
+          "fields": {},
+          "pathMaterials": null
         },
         "seasonal": {}
       }
@@ -659,6 +717,20 @@
             "path": {
               "image": "field-desert-high-path.e1bd88dabd11.png",
               "bytes": 107825,
+              "width": 512,
+              "height": 512
+            }
+          },
+          "pathMaterials": {
+            "shoulder": {
+              "image": "path-material-desert-high-shoulder.439f7acb103d.png",
+              "bytes": 81918,
+              "width": 512,
+              "height": 512
+            },
+            "edge": {
+              "image": "path-material-desert-high-edge.27959ff19d52.png",
+              "bytes": 128691,
               "width": 512,
               "height": 512
             }
@@ -773,6 +845,20 @@
               "width": 256,
               "height": 256
             }
+          },
+          "pathMaterials": {
+            "shoulder": {
+              "image": "path-material-desert-medium-shoulder.a108e94a1ece.png",
+              "bytes": 33268,
+              "width": 256,
+              "height": 256
+            },
+            "edge": {
+              "image": "path-material-desert-medium-edge.ccccefeb5b1b.png",
+              "bytes": 49888,
+              "width": 256,
+              "height": 256
+            }
           }
         },
         "seasonal": {}
@@ -803,7 +889,8 @@
           },
           "details": null,
           "props": null,
-          "fields": {}
+          "fields": {},
+          "pathMaterials": null
         },
         "seasonal": {}
       }

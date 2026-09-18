@@ -12,6 +12,7 @@ const TERRAIN_NAMES = [
 const EDGE_DIRECTIONS = ["n", "e", "s", "w"];
 const CORNER_DIRECTIONS = ["ne", "se", "sw", "nw"];
 const QUALITIES = ["high", "medium", "low"];
+const PATH_MATERIAL_ROLES = ["shoulder", "edge"];
 const DETAIL_KINDS = [
   "short_grass", "tall_grass", "fescue", "flowers", "leaf_litter",
   "reeds", "shore_stones", "pebbles", "bunker_tuft", "scrub", "worn_turf",
@@ -232,6 +233,13 @@ function validateRuntimeBundles(root, contract, errors) {
     const fieldNames = Object.keys(bundle?.fields ?? {}).sort();
     assert(fieldNames.length === target.fields, `parkland/${quality} material-field coverage is incomplete`, errors);
     assert(JSON.stringify(fieldNames) === JSON.stringify(quality === "low" ? [] : [...TERRAIN_NAMES].sort()), `parkland/${quality} material fields must cover exactly the ten required materials`, errors);
+    const pathMaterialNames = Object.keys(bundle?.pathMaterials ?? {}).sort();
+    assert(
+      JSON.stringify(pathMaterialNames) === JSON.stringify(quality === "low" ? [] : [...PATH_MATERIAL_ROLES].sort()),
+      `parkland/${quality} path materials must be ${quality === "low" ? "omitted" : "shoulder + edge"}`,
+      errors,
+    );
+    assert(quality !== "low" || bundle?.pathMaterials === null, "parkland/low must retain the explicit path-material fallback", errors);
     assert(quality === "low" ? bundle?.details === null && bundle?.props === null : Boolean(bundle?.details && bundle?.props), `parkland/${quality} optional-art policy is incorrect`, errors);
     if (quality === "low") {
       assert(Object.keys(tier?.seasonal ?? {}).length === 0, "parkland/low must not ship seasonal overlay detail", errors);
@@ -241,19 +249,22 @@ function validateRuntimeBundles(root, contract, errors) {
     const selectedBytes = [bundle?.buildings, bundle?.terrain, bundle?.details, bundle?.props]
       .filter(Boolean).reduce((total, asset) => total + (asset.jsonBytes ?? 0) + (asset.imageBytes ?? 0), 0)
       + Object.values(bundle?.fields ?? {}).reduce((total, asset) => total + asset.bytes, 0);
+    const pathMaterialBytes = Object.values(bundle?.pathMaterials ?? {}).reduce((total, asset) => total + asset.bytes, 0);
     assert((terrain?.bytes ?? 0) <= contract.budgets.atlasBytesMax, `parkland/${quality} terrain atlas exceeds its budget`, errors);
     assert(terrain?.json?.meta?.scale === String(target.atlasScale), `parkland/${quality} atlas scale is not ${target.atlasScale}`, errors);
     assert(terrain?.json?.meta?.size?.w <= contract.atlas.maxWidth && terrain?.json?.meta?.size?.h <= contract.atlas.maxHeight, `parkland/${quality} atlas dimensions exceed the contract`, errors);
     assert(adoption?.lods?.[quality]?.mipDivisor === target.mipDivisor, `parkland/${quality} runtime mip divisor is stale`, errors);
-    assert(selectedBytes <= contract.budgets.selectedTransferBytesMax, `parkland/${quality} selected bundle exceeds its budget`, errors);
-    if (quality === "high") assert(selectedBytes <= contract.budgets.criticalTransferBytesMax, "Parkland default critical bundle exceeds its budget", errors);
+    const totalSelectedBytes = selectedBytes + pathMaterialBytes;
+    assert(totalSelectedBytes <= contract.budgets.selectedTransferBytesMax, `parkland/${quality} selected bundle exceeds its budget`, errors);
+    if (quality === "high") assert(totalSelectedBytes <= contract.budgets.criticalTransferBytesMax, "Parkland default critical bundle exceeds its budget", errors);
     report[quality] = {
       lod: target.lod,
       frame: `${target.frameWidth}x${target.frameHeight}`,
       scale: target.atlasScale,
       terrainFrames: terrainFrames.length,
       detailFrames: detailFrames.length,
-      selectedBytes,
+      selectedBytes: totalSelectedBytes,
+      pathMaterialBytes,
       terrainAtlasBytes: terrain?.bytes ?? 0,
     };
   }
