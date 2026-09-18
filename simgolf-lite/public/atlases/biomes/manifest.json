@@ -157,16 +157,16 @@
           },
           "pathMaterials": {
             "shoulder": {
-              "image": "path-material-parkland-high-shoulder.15127702fdb2.png",
-              "bytes": 79812,
-              "width": 512,
-              "height": 512
+              "image": "path-material-parkland-high-shoulder.1613671c4e4b.png",
+              "bytes": 21273,
+              "width": 192,
+              "height": 192
             },
             "edge": {
-              "image": "path-material-parkland-high-edge.10417f6c94ad.png",
-              "bytes": 127121,
-              "width": 512,
-              "height": 512
+              "image": "path-material-parkland-high-edge.ca9783547183.png",
+              "bytes": 39925,
+              "width": 192,
+              "height": 192
             }
           }
         },
@@ -282,16 +282,16 @@
           },
           "pathMaterials": {
             "shoulder": {
-              "image": "path-material-parkland-medium-shoulder.2ceda5cebc64.png",
-              "bytes": 32664,
-              "width": 256,
-              "height": 256
+              "image": "path-material-parkland-medium-shoulder.11b030a1d2bf.png",
+              "bytes": 7788,
+              "width": 96,
+              "height": 96
             },
             "edge": {
-              "image": "path-material-parkland-medium-edge.5e57e0aee97a.png",
-              "bytes": 48485,
-              "width": 256,
-              "height": 256
+              "image": "path-material-parkland-medium-edge.ca2f428ea37f.png",
+              "bytes": 13399,
+              "width": 96,
+              "height": 96
             }
           }
         },
@@ -440,16 +440,16 @@
           },
           "pathMaterials": {
             "shoulder": {
-              "image": "path-material-links-high-shoulder.6648eb756ed4.png",
-              "bytes": 83046,
-              "width": 512,
-              "height": 512
+              "image": "path-material-links-high-shoulder.74820711e2f3.png",
+              "bytes": 21451,
+              "width": 192,
+              "height": 192
             },
             "edge": {
-              "image": "path-material-links-high-edge.08aafd88ed34.png",
-              "bytes": 127184,
-              "width": 512,
-              "height": 512
+              "image": "path-material-links-high-edge.342cb75dac80.png",
+              "bytes": 41260,
+              "width": 192,
+              "height": 192
             }
           }
         },
@@ -565,16 +565,16 @@
           },
           "pathMaterials": {
             "shoulder": {
-              "image": "path-material-links-medium-shoulder.74258036d059.png",
-              "bytes": 33075,
-              "width": 256,
-              "height": 256
+              "image": "path-material-links-medium-shoulder.afb82ffb2ede.png",
+              "bytes": 7696,
+              "width": 96,
+              "height": 96
             },
             "edge": {
-              "image": "path-material-links-medium-edge.0f8c3b24e7f2.png",
-              "bytes": 49478,
-              "width": 256,
-              "height": 256
+              "image": "path-material-links-medium-edge.48ba79cabf12.png",
+              "bytes": 13645,
+              "width": 96,
+              "height": 96
             }
           }
         },
@@ -723,16 +723,16 @@
           },
           "pathMaterials": {
             "shoulder": {
-              "image": "path-material-desert-high-shoulder.439f7acb103d.png",
-              "bytes": 81918,
-              "width": 512,
-              "height": 512
+              "image": "path-material-desert-high-shoulder.b8a2da8bab1a.png",
+              "bytes": 21654,
+              "width": 192,
+              "height": 192
             },
             "edge": {
-              "image": "path-material-desert-high-edge.27959ff19d52.png",
-              "bytes": 128691,
-              "width": 512,
-              "height": 512
+              "image": "path-material-desert-high-edge.d7bd90cf401f.png",
+              "bytes": 41411,
+              "width": 192,
+              "height": 192
             }
           }
         },
@@ -848,16 +848,16 @@
           },
           "pathMaterials": {
             "shoulder": {
-              "image": "path-material-desert-medium-shoulder.a108e94a1ece.png",
-              "bytes": 33268,
-              "width": 256,
-              "height": 256
+              "image": "path-material-desert-medium-shoulder.05eac028f819.png",
+              "bytes": 7929,
+              "width": 96,
+              "height": 96
             },
             "edge": {
-              "image": "path-material-desert-medium-edge.ccccefeb5b1b.png",
-              "bytes": 49888,
-              "width": 256,
-              "height": 256
+              "image": "path-material-desert-medium-edge.9a09596d09a2.png",
+              "bytes": 13516,
+              "width": 96,
+              "height": 96
             }
           }
         },

@@ -12,8 +12,12 @@ import { loadBiomeKeys } from "./biome-registry.mjs";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUTPUT = path.join(ROOT, "src/assets/terrain/fields");
 const QUALITIES = {
-  high: { size: 512, samples: 4 },
-  medium: { size: 256, samples: 2 },
+  // These fields repeat across a narrow cross-section rather than carry
+  // world-scale detail.  One 192px High tile and one 96px Medium tile keep
+  // the authored shoulder/edge language intact while staying inside the
+  // aggregate delivery ceiling.
+  high: { size: 192, samples: 4 },
+  medium: { size: 96, samples: 2 },
 };
 const ROLES = ["shoulder", "edge"];
 const PALETTES = {
