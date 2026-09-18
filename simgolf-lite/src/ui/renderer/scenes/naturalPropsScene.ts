@@ -58,6 +58,7 @@ export interface NaturalPropsSceneSystem extends RenderSceneSystem {
   tick(input: NaturalPropsTickInput): void;
   contentCount(): number;
   habitatDetailCount(): number;
+  habitatMassDiagnostics(): readonly HabitatMassDiagnostics[];
   fallbackTextureCount(): number;
   rebuildCount(): number;
 }
@@ -71,6 +72,7 @@ export interface NaturalPropsSceneDependencies {
   ) => { readonly texture: PIXI.Texture; readonly owned: boolean };
   readonly createSprite?: (texture: PIXI.Texture) => PIXI.Sprite;
   readonly createGraphics?: () => PIXI.Graphics;
+  readonly createContainer?: () => PIXI.Container;
 }
 
 const WET_SHORE_CAPS: Readonly<Record<ResolvedGraphicsQuality, number>> = {
@@ -105,6 +107,37 @@ interface EcologyPresentation {
   readonly verticalOffset: number;
 }
 
+export interface HabitatMassMemberPlan {
+  readonly id: string;
+  readonly order: number;
+  readonly tileX: number;
+  readonly tileY: number;
+  readonly worldX: number;
+  readonly worldY: number;
+  readonly scale: number;
+}
+
+export interface HabitatMassDiagnostics {
+  readonly massId: string;
+  readonly memberCount: number;
+  readonly retainedMemberCount: number;
+  /** World-space member coverage, independent of camera rotation. */
+  readonly bounds: Readonly<{ minX: number; minY: number; maxX: number; maxY: number }>;
+  /** Stable back-to-front member identities, never projection depth. */
+  readonly order: readonly string[];
+}
+
+interface HabitatMassPlan extends HabitatMassDiagnostics {
+  readonly centroid: Readonly<{ x: number; y: number }>;
+  readonly members: readonly (HabitatMassMemberPlan & { readonly detail: EcologyPlacement })[];
+  readonly rank: number;
+}
+
+interface HabitatMassRuntime {
+  readonly compositor: PIXI.Container;
+  readonly sprites: readonly PIXI.Sprite[];
+}
+
 const TIER_PRESENTATION: Readonly<Record<EcologyTier, EcologyPresentation>> = {
   // Medium/High habitat members are deliberately close in visual weight: a
   // three-to-five cell mass should read as one bed at normal M19 zoom.
@@ -121,6 +154,76 @@ const ROLE_SCALE: Readonly<Record<EcologyPlacement["role"], number>> = {
   rock_plant_cluster: 0.84,
   wet_shore: 1,
 };
+
+const HABITAT_MEMBER_JITTER = 0.16;
+const HABITAT_CENTROID_PULL = 0.72;
+const HABITAT_MAX_PULL = 0.16;
+const HABITAT_BED_SCALE = 1.7;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Builds the sole presentation plan for each existing planner mass. The plan
+ * only moves a member inside its accepted cell's existing +/- 0.16 jitter
+ * envelope, then increases overlap through sprite scale. That keeps the
+ * composition clear of every surface and obstacle excluded by the planner.
+ */
+export function deriveHabitatMassPlans(
+  details: readonly EcologyPlacement[],
+): readonly HabitatMassPlan[] {
+  const byMass = new Map<string, EcologyPlacement[]>();
+  for (const detail of details) {
+    const members = byMass.get(detail.massId);
+    if (members) members.push(detail);
+    else byMass.set(detail.massId, [detail]);
+  }
+  return [...byMass.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([massId, source], rank) => {
+    const centroid = {
+      x: source.reduce((sum, detail) => sum + detail.worldX, 0) / source.length,
+      y: source.reduce((sum, detail) => sum + detail.worldY, 0) / source.length,
+    };
+    // This ordering remains constant across rotations. It also makes the
+    // silhouette read as a layered bed rather than a camera-sorted scatter.
+    const ordered = source.slice().sort((left, right) =>
+      left.worldY - right.worldY || left.worldX - right.worldX || left.id.localeCompare(right.id),
+    );
+    const members = ordered.map((detail, order) => {
+      const pullX = clamp((centroid.x - detail.worldX) * HABITAT_CENTROID_PULL, -HABITAT_MAX_PULL, HABITAT_MAX_PULL);
+      const pullY = clamp((centroid.y - detail.worldY) * HABITAT_CENTROID_PULL, -HABITAT_MAX_PULL, HABITAT_MAX_PULL);
+      return {
+        id: detail.id,
+        order,
+        tileX: detail.tileX,
+        tileY: detail.tileY,
+        // Do not permit the compositor to leave the member's accepted cell.
+        worldX: clamp(detail.worldX + pullX, detail.tileX + 0.5 - HABITAT_MEMBER_JITTER, detail.tileX + 0.5 + HABITAT_MEMBER_JITTER),
+        worldY: clamp(detail.worldY + pullY, detail.tileY + 0.5 - HABITAT_MEMBER_JITTER, detail.tileY + 0.5 + HABITAT_MEMBER_JITTER),
+        // Reeds and shoreline stones keep their owned bank treatment; only
+        // compact interior habitat receives the overlap that forms a bed.
+        scale: detail.scale * (detail.role === "wet_shore" ? 1 : HABITAT_BED_SCALE),
+        detail,
+      };
+    });
+    const bounds = {
+      minX: Math.min(...members.map((member) => member.worldX)),
+      minY: Math.min(...members.map((member) => member.worldY)),
+      maxX: Math.max(...members.map((member) => member.worldX)),
+      maxY: Math.max(...members.map((member) => member.worldY)),
+    };
+    return {
+      massId,
+      memberCount: source.length,
+      retainedMemberCount: members.length,
+      bounds,
+      order: members.map((member) => member.id),
+      centroid,
+      members,
+      rank,
+    };
+  });
+}
 
 function mix32(value: number): number {
   value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
@@ -452,8 +555,11 @@ export function createNaturalPropsSceneSystem(
   const createFallbackTexture = dependencies.createFallbackTexture ?? createFallbackObstacleTexture;
   const createSprite = dependencies.createSprite ?? ((texture) => new PIXI.Sprite(texture));
   const createGraphics = dependencies.createGraphics ?? (() => new PIXI.Graphics());
+  const createContainer = dependencies.createContainer ?? (() => new PIXI.Container());
   const entries = new Map<string, NaturalPropSceneEntry>();
   const habitatDetails: PIXI.Sprite[] = [];
+  const habitatMasses: HabitatMassRuntime[] = [];
+  let habitatMassDiagnostics: readonly HabitatMassDiagnostics[] = [];
   const fallbackTextures = new Map<string, { texture: PIXI.Texture; owned: boolean }>();
   let rebuilds = 0;
 
@@ -472,6 +578,12 @@ export function createNaturalPropsSceneSystem(
       sprite.destroy();
     }
     habitatDetails.length = 0;
+    for (const mass of habitatMasses) {
+      mass.compositor.parent?.removeChild(mass.compositor);
+      mass.compositor.destroy({ children: false });
+    }
+    habitatMasses.length = 0;
+    habitatMassDiagnostics = [];
     for (const fallback of fallbackTextures.values()) {
       if (fallback.owned) fallback.texture.destroy(true);
     }
@@ -566,27 +678,63 @@ export function createNaturalPropsSceneSystem(
       ...detail,
       rank: composition.length + detail.rank,
     }))];
-    for (const detail of ecology) {
-      const texture = getHabitatAtlasTexture(course.theme, snapshot.graphicsQuality, detail.frame);
-      if (!texture) continue;
-      const presentation = ecologyPresentation(detail);
-      const sprite = createSprite(texture);
-      const position = worldToIso(
-        detail.worldX,
-        detail.worldY,
-        snapshot.surfaceHeightAt(detail.worldX, detail.worldY),
+    const massPlans = deriveHabitatMassPlans(ecology);
+    const renderedDiagnostics: HabitatMassDiagnostics[] = [];
+    for (const plan of massPlans) {
+      const anchor = worldToIso(
+        plan.centroid.x,
+        plan.centroid.y,
+        snapshot.surfaceHeightAt(plan.centroid.x, plan.centroid.y),
         snapshot.rotation,
       );
-      sprite.label = `habitat-composition:${detail.id}`;
-      sprite.eventMode = "none";
-      sprite.anchor.set(0.5, 1);
-      sprite.position.set(position.x, position.y + TILE_H * presentation.verticalOffset);
-      sprite.scale.set(detail.scale * presentation.scale);
-      sprite.alpha = presentation.alpha;
-      sprite.zIndex = detail.rank;
-      terrainDecals.addChild(sprite);
-      habitatDetails.push(sprite);
+      // One container is the only habitat compositor for this mass. Members
+      // are positioned relative to the world-space centroid, never emitted as
+      // a second, independent terrain-decal scatter.
+      const compositor = createContainer();
+      compositor.label = `habitat-mass:${plan.massId}`;
+      compositor.eventMode = "none";
+      compositor.position.set(anchor.x, anchor.y);
+      compositor.zIndex = plan.rank;
+      compositor.sortableChildren = true;
+      terrainDecals.addChild(compositor);
+      const sprites: PIXI.Sprite[] = [];
+      for (const member of plan.members) {
+        const detail = member.detail;
+        const texture = getHabitatAtlasTexture(course.theme, snapshot.graphicsQuality, detail.frame);
+        if (!texture) continue;
+        const presentation = ecologyPresentation(detail);
+        const position = worldToIso(
+          member.worldX,
+          member.worldY,
+          snapshot.surfaceHeightAt(member.worldX, member.worldY),
+          snapshot.rotation,
+        );
+        const sprite = createSprite(texture);
+        sprite.label = `habitat-composition:${detail.id}`;
+        sprite.eventMode = "none";
+        sprite.anchor.set(0.5, 1);
+        sprite.position.set(
+          position.x - anchor.x,
+          position.y - anchor.y + TILE_H * presentation.verticalOffset,
+        );
+        sprite.scale.set(member.scale * presentation.scale);
+        sprite.alpha = presentation.alpha;
+        sprite.zIndex = member.order;
+        compositor.addChild(sprite);
+        sprites.push(sprite);
+        habitatDetails.push(sprite);
+      }
+      compositor.sortChildren();
+      habitatMasses.push({ compositor, sprites });
+      renderedDiagnostics.push({
+        massId: plan.massId,
+        memberCount: plan.memberCount,
+        retainedMemberCount: sprites.length,
+        bounds: plan.bounds,
+        order: plan.order,
+      });
     }
+    habitatMassDiagnostics = renderedDiagnostics;
 
     for (const { obstacle, selected, seasonal, habitat } of prepared) {
       const key = `${obstacle.x},${obstacle.y}`;
@@ -699,6 +847,7 @@ export function createNaturalPropsSceneSystem(
     },
     contentCount: () => entries.size,
     habitatDetailCount: () => habitatDetails.length,
+    habitatMassDiagnostics: () => habitatMassDiagnostics,
     fallbackTextureCount: () => fallbackTextures.size,
     rebuildCount: () => rebuilds,
   };
