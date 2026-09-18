@@ -15,6 +15,7 @@ type Capture = {
   focus: { x: number; y: number };
   courseHash: string;
   obstacleHash: string;
+  naturalObstacleCount: number;
   renderer: unknown;
 };
 
@@ -29,7 +30,7 @@ function stableHash(value: string): string {
 
 async function capture(
   page: import("@playwright/test").Page,
-  input: Omit<Capture, "file" | "courseHash" | "obstacleHash" | "renderer">,
+  input: Omit<Capture, "file" | "courseHash" | "obstacleHash" | "naturalObstacleCount" | "renderer">,
 ): Promise<Capture> {
   const zoom = input.view === "detail" ? 2 : 1;
   await page.evaluate(({ quality, zoom, focus }) => {
@@ -56,6 +57,7 @@ async function capture(
     obstacleHash: stableHash(await page.evaluate(() => JSON.stringify(
       window.__coursecraftTest!.terrainSurfaceState().obstacles,
     ))),
+    naturalObstacleCount: await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState().obstacles.length),
     renderer: await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState()),
   };
 }
@@ -110,6 +112,7 @@ test("ZK-1202 certifies compact Parkland habitat against M19 authority views", a
   const scoped = captures.filter((item) => item.fixture === "m19");
   expect(new Set(scoped.map((item) => item.courseHash)).size).toBe(1);
   expect(new Set(scoped.map((item) => item.obstacleHash)).size).toBe(1);
+  expect(new Set(scoped.map((item) => item.naturalObstacleCount))).toEqual(new Set([63]));
   expect(captures.filter((item) => item.fixture === "m19" && item.view === "normal")).toHaveLength(4);
   expect(runtimeErrors).toEqual([]);
   await writeFile(resolve(outputRoot, "zk1202-habitat-normal-report.json"), `${JSON.stringify({
@@ -161,6 +164,8 @@ test("ZK-1202 certifies M19 Detail habitat and retains grove-fixture coverage", 
     expect(new Set(scoped.map((item) => item.courseHash)).size).toBe(1);
     expect(new Set(scoped.map((item) => item.obstacleHash)).size).toBe(1);
   }
+  expect(new Set(captures.filter((item) => item.fixture === "m19").map((item) => item.naturalObstacleCount)))
+    .toEqual(new Set([63]));
   expect(captures.filter((item) => item.fixture === "m19" && item.view === "detail")).toHaveLength(2);
   expect(captures.filter((item) => item.fixture === "zk1202-secondary")).toHaveLength(1);
   expect(runtimeErrors).toEqual([]);

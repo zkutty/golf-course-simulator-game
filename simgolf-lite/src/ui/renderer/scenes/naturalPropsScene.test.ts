@@ -8,6 +8,7 @@ import { createParklandVisualReferenceCourse } from "../../../game/testing/refer
 import type { RenderSnapshot } from "../RenderSnapshot";
 import {
   createNaturalPropsSceneSystem,
+  deriveHabitatMassPlans,
   deriveWetShoreComposition,
   naturalPropFallbackBiome,
 } from "./naturalPropsScene";
@@ -78,6 +79,36 @@ function fakeGraphics() {
     destroy: vi.fn(),
   };
   return graphics as unknown as PIXI.Graphics;
+}
+
+function fakeHabitatContainer() {
+  const container = new FakeContainer() as FakeContainer & {
+    label: string;
+    eventMode: string;
+    position: ReturnType<typeof point>;
+    zIndex: number;
+    sortableChildren: boolean;
+    sortChildren: ReturnType<typeof vi.fn>;
+    destroy: ReturnType<typeof vi.fn>;
+  };
+  Object.assign(container, {
+    label: "",
+    eventMode: "none",
+    position: point(),
+    zIndex: 0,
+    sortableChildren: false,
+    sortChildren: vi.fn(),
+    destroy: vi.fn(),
+  });
+  return container as unknown as PIXI.Container;
+}
+
+function habitatMemberSprites(children: readonly unknown[]): readonly { label: string; zIndex: number }[] {
+  return children.flatMap((child) => {
+    const mass = child as { label?: string; children?: readonly { label?: string; zIndex?: number }[] };
+    if (!mass.label?.startsWith("habitat-mass:")) return [];
+    return (mass.children ?? []).map((member) => ({ label: member.label ?? "", zIndex: member.zIndex ?? 0 }));
+  });
 }
 
 function snapshot(overrides: Partial<RenderSnapshot> = {}): RenderSnapshot {
@@ -350,6 +381,7 @@ describe("natural props scene ownership", () => {
         getHabitatAtlasTexture: detailTextures,
         createSprite: fakeSprite,
         createGraphics: fakeGraphics,
+        createContainer: fakeHabitatContainer,
       },
     );
 
@@ -363,15 +395,10 @@ describe("natural props scene ownership", () => {
     expect(scene.habitatDetailCount()).toBe(expectedHabitatDetails);
     expect(detailTextures).toHaveBeenCalledTimes(expectedHabitatDetails);
     expect(decals.children.some((child) =>
-      (child as { label?: string }).label?.startsWith("habitat-composition:"),
+      (child as { label?: string }).label?.startsWith("habitat-mass:"),
     )).toBe(true);
 
-    const firstPlan = decals.children
-      .filter((child) => (child as { label?: string }).label?.startsWith("habitat-composition:"))
-      .map((child) => ({
-        label: (child as { label: string }).label,
-        zIndex: (child as { zIndex: number }).zIndex,
-      }));
+    const firstPlan = habitatMemberSprites(decals.children);
     scene.update!(snapshot({
       course,
       obstacles: trees,
@@ -380,12 +407,7 @@ describe("natural props scene ownership", () => {
       rotation: 180,
       atlasRevision: 2,
     }));
-    const rotatedPlan = decals.children
-      .filter((child) => (child as { label?: string }).label?.startsWith("habitat-composition:"))
-      .map((child) => ({
-        label: (child as { label: string }).label,
-        zIndex: (child as { zIndex: number }).zIndex,
-      }));
+    const rotatedPlan = habitatMemberSprites(decals.children);
     expect(rotatedPlan).toEqual(firstPlan);
 
     scene.update!(snapshot({
@@ -397,7 +419,45 @@ describe("natural props scene ownership", () => {
     }));
     expect(scene.habitatDetailCount()).toBe(0);
     expect(decals.children.some((child) =>
-      (child as { label?: string }).label?.startsWith("habitat-composition:"),
+      (child as { label?: string }).label?.startsWith("habitat-mass:"),
     )).toBe(false);
+  });
+
+  it("uses one rotation-invariant compositor per compact M19 mass without leaving member cells", () => {
+    const course = createParklandVisualReferenceCourse();
+    const medium = deriveHabitatComposition({ course, worldSeed: 12_160, quality: "medium" });
+    const high = deriveHabitatComposition({ course, worldSeed: 12_160, quality: "high" });
+    const low = deriveHabitatComposition({ course, worldSeed: 12_160, quality: "low" });
+    const compact = (plans: ReturnType<typeof deriveHabitatMassPlans>) => plans.filter((plan) => plan.memberCount >= 3);
+    const mediumPlans = deriveHabitatMassPlans(medium);
+    const highPlans = deriveHabitatMassPlans(high);
+
+    expect({ members: medium.length, compactMasses: compact(mediumPlans).length })
+      .toEqual({ members: 84, compactMasses: 21 });
+    expect({ members: high.length, compactMasses: compact(highPlans).length })
+      .toEqual({ members: 160, compactMasses: 41 });
+    expect(deriveHabitatMassPlans(low)).toEqual([]);
+    expect(deriveHabitatMassPlans(medium)).toEqual(mediumPlans);
+    for (const plan of [...compact(mediumPlans), ...compact(highPlans)]) {
+      expect(plan.retainedMemberCount).toBeGreaterThanOrEqual(3);
+      expect(plan.order).toHaveLength(plan.memberCount);
+      for (const member of plan.members) {
+        expect(member.worldX).toBeGreaterThanOrEqual(member.tileX + 0.34);
+        expect(member.worldX).toBeLessThanOrEqual(member.tileX + 0.66);
+        expect(member.worldY).toBeGreaterThanOrEqual(member.tileY + 0.34);
+        expect(member.worldY).toBeLessThanOrEqual(member.tileY + 0.66);
+      }
+      const reached = new Set([0]);
+      while (reached.size < plan.members.length) {
+        const before = reached.size;
+        for (const index of [...reached]) for (let candidate = 0; candidate < plan.members.length; candidate++) {
+          const left = plan.members[index];
+          const right = plan.members[candidate];
+          if (Math.abs(left.tileX - right.tileX) <= 1 && Math.abs(left.tileY - right.tileY) <= 1) reached.add(candidate);
+        }
+        if (reached.size === before) break;
+      }
+      expect(reached.size).toBe(plan.members.length);
+    }
   });
 });
