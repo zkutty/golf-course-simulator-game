@@ -5,6 +5,8 @@ import {
   hazardInteriorDropAt,
   buildHazardBankFacePlan,
 } from "./hazardDepth";
+import { buildLandscapeComponents } from "./landscapeGeometry";
+import { createParklandVisualReferenceCourse } from "../testing/referenceCourse";
 
 describe("hazard depth cross-sections", () => {
   it("eases bunker grade monotonically into a lower sand floor", () => {
@@ -43,7 +45,7 @@ describe("hazard depth cross-sections", () => {
     expect(hazardDepthProfile("rough")).toBeNull();
   });
 
-  it("plans exactly one bank face per canonical ring edge and no parallel fill strips", () => {
+  it("plans one joined bank skirt with shared indexed inner vertices", () => {
     const ring = [
       { x: 1.125, y: 2.25 },
       { x: 4.75, y: 2.25 },
@@ -52,22 +54,75 @@ describe("hazard depth cross-sections", () => {
     ];
     for (const terrain of ["sand", "water", "wetland"] as const) {
       const plan = buildHazardBankFacePlan(terrain, 6, ring)!;
-      expect(plan.bankFaces).toHaveLength(ring.length);
       expect(plan.suppressedFillKinds).toEqual(["shelf", "contact", "shallow", "deep"]);
-      expect(plan.bankFaces.map(({ boundaryA, boundaryB }) => [boundaryA, boundaryB])).toEqual([
-        [ring[0], ring[1]], [ring[1], ring[2]], [ring[2], ring[3]], [ring[3], ring[0]],
-      ]);
-      expect(plan.bankFaces.every((face) => face.bankInnerOffset > 0)).toBe(true);
+      expect(plan.outerRing).toEqual(ring);
+      expect(plan.innerRing).toHaveLength(ring.length);
+      expect(plan.stripIndices).toHaveLength(ring.length * 6);
+      expect(new Set(plan.innerRing.map((point) => `${point.x},${point.y}`)).size).toBe(ring.length);
+      expect(plan.innerRing.every((point) => Number.isFinite(point.x) && Number.isFinite(point.y))).toBe(true);
       expect(plan.lip.offset).toBe(0);
       expect(plan.lip.width).toBeGreaterThan(0);
     }
   });
 
-  it("keeps the same one-face plan through each camera rotation", () => {
+  it("keeps a finite, consistently wound non-self-intersecting strip at concave turns", () => {
+    const ring = [
+      { x: 0, y: 0 }, { x: 4, y: 0 }, { x: 4, y: 1 },
+      { x: 1, y: 1 }, { x: 1, y: 4 }, { x: 0, y: 4 },
+    ];
+    const plan = buildHazardBankFacePlan("sand", 8, ring)!;
+    const vertices = plan.outerRing.flatMap((outer, index) => [outer, plan.innerRing[index]]);
+    const triangleAreas = plan.stripIndices.reduce<number[]>((areas, _, index) => {
+      if (index % 3 !== 0) return areas;
+      const [a, b, c] = plan.stripIndices.slice(index, index + 3).map((vertex) => vertices[vertex]);
+      areas.push((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x));
+      return areas;
+    }, []);
+    expect(triangleAreas.every((area) => Number.isFinite(area) && Math.abs(area) > 1e-6)).toBe(true);
+    expect(new Set(triangleAreas.map((area) => Math.sign(area))).size).toBe(1);
+    for (let first = 0; first < plan.innerRing.length; first++) {
+      const a = plan.innerRing[first];
+      const b = plan.innerRing[(first + 1) % plan.innerRing.length];
+      for (let second = first + 1; second < plan.innerRing.length; second++) {
+        const next = (second + 1) % plan.innerRing.length;
+        if ((first + 1) % plan.innerRing.length === second || next === first) continue;
+        const c = plan.innerRing[second];
+        const d = plan.innerRing[next];
+        const cross = (p: typeof a, q: typeof a, r: typeof a) => (
+          (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x)
+        );
+        const abC = cross(a, b, c);
+        const abD = cross(a, b, d);
+        const cdA = cross(c, d, a);
+        const cdB = cross(c, d, b);
+        expect((abC > 1e-6) !== (abD > 1e-6) && (cdA > 1e-6) !== (cdB > 1e-6)).toBe(false);
+      }
+    }
+  });
+
+  it("keeps the same joined world-space plan through each camera rotation", () => {
     const ring = [{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 3, y: 2 }, { x: 0, y: 2 }];
     const signature = JSON.stringify(buildHazardBankFacePlan("water", 8, ring));
     for (const _rotation of [0, 90, 180, 270]) {
       expect(JSON.stringify(buildHazardBankFacePlan("water", 8, ring))).toBe(signature);
+    }
+  });
+
+  it("accepts every dense M19 hazard ring as one joined strip", () => {
+    const course = createParklandVisualReferenceCourse();
+    const hazardComponents = buildLandscapeComponents(course.tiles, course.width, course.height, {
+      cornerRadius: 0.36,
+      cornerSegments: 3,
+    }).filter((component) => (
+      component.terrain === "sand" || component.terrain === "water" || component.terrain === "wetland"
+    ));
+    expect(hazardComponents.length).toBeGreaterThan(0);
+    for (const component of hazardComponents) for (const ring of component.rings) {
+      const plan = buildHazardBankFacePlan(component.terrain, component.cells.length, ring);
+      expect(plan, `${component.topologyKey} should have one valid joined bank`).not.toBeNull();
+      expect(plan!.outerRing).toHaveLength(plan!.innerRing.length);
+      expect(plan!.stripIndices).toHaveLength(plan!.outerRing.length * 6);
+      expect(new Set(plan!.innerRing.map((point) => `${point.x},${point.y}`)).size).toBe(plan!.innerRing.length);
     }
   });
 });
