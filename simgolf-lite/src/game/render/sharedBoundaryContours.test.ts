@@ -4,6 +4,7 @@ import {
   buildSharedBoundaryContours,
   type SharedBoundaryComponentInput,
 } from "./sharedBoundaryContours";
+import { createParklandVisualReferenceCourse } from "../testing/referenceCourse";
 
 function fixture(rows: readonly string[]) {
   const legend: Record<string, Terrain> = {
@@ -12,6 +13,9 @@ function fixture(rows: readonly string[]) {
     S: "sand",
     W: "water",
     P: "path",
+    G: "green",
+    T: "tee",
+    D: "deep_rough",
   };
   const width = rows[0].length;
   const height = rows.length;
@@ -89,6 +93,27 @@ function properIntersection(a: SurfacePoint, b: SurfacePoint, c: SurfacePoint, d
   return abC * abD < -1e-12 && cdA * cdB < -1e-12;
 }
 
+function longestAlternatingUnitRun(ring: readonly SurfacePoint[]): number {
+  const axes = ring.map((point, index) => {
+    const next = ring[(index + 1) % ring.length];
+    const dx = Math.abs(next.x - point.x);
+    const dy = Math.abs(next.y - point.y);
+    return dx === 1 && dy === 0 ? "h" : dx === 0 && dy === 1 ? "v" : null;
+  });
+  let longest = 0;
+  for (let start = 0; start < axes.length; start++) {
+    let length = 1;
+    while (
+      length < axes.length &&
+      axes[(start + length - 1) % axes.length] != null &&
+      axes[(start + length) % axes.length] != null &&
+      axes[(start + length - 1) % axes.length] !== axes[(start + length) % axes.length]
+    ) length++;
+    longest = Math.max(longest, length);
+  }
+  return longest;
+}
+
 describe("shared presentation boundary graph", () => {
   it("traces every physical grid seam once and assigns reverse reuse", () => {
     const input = fixture([
@@ -133,6 +158,66 @@ describe("shared presentation boundary graph", () => {
     const roughHole = result.ringsByComponent.get(rough.id)!
       .find((ring) => ring.length === fairwayRing.length)!;
     expect(cyclicReverseEquals(fairwayRing, roughHole)).toBe(true);
+  });
+
+  it("reconstructs a pair-owned alternating seam once with bounded shared samples", () => {
+    const input = fixture([
+      "RRRRRRRR",
+      "RFFRRRRR",
+      "RRFFRRRR",
+      "RRRFFRRR",
+      "RRRRFFRR",
+      "RRRRRRRR",
+    ]);
+    const result = buildSharedBoundaryContours(
+      input.tiles,
+      input.width,
+      input.height,
+      input.components,
+      { cornerRadius: 0.4, cornerSegments: 4 },
+    );
+    const fairway = input.components.find((component) => component.terrain === "fairway")!;
+    const rough = input.components.find((component) => component.terrain === "rough")!;
+    const fairwayRing = result.ringsByComponent.get(fairway.id)![0];
+    const roughHole = result.ringsByComponent.get(rough.id)!
+      .find((ring) => ring.length === fairwayRing.length)!;
+    const seam = result.seams.find((candidate) => candidate.componentIds.includes(fairway.id))!;
+    expect(cyclicReverseEquals(fairwayRing, roughHole)).toBe(true);
+    expect(seam.closed).toBe(true);
+    expect(seam.samples.some((point) => !Number.isInteger(point.x) || !Number.isInteger(point.y))).toBe(true);
+    expect(longestAlternatingUnitRun(seam.samples)).toBeLessThanOrEqual(2);
+    for (const point of seam.samples) {
+      const nearestVertexDistance = Math.min(...[
+        ...fairwayRing,
+        ...roughHole,
+      ].map((candidate) => Math.hypot(candidate.x - point.x, candidate.y - point.y)));
+      expect(nearestVertexDistance).toBeLessThan(0.5);
+    }
+  });
+
+  it("removes long alternating stairs from the M19 lake, fairway, green, and bunker seams", () => {
+    const course = createParklandVisualReferenceCourse();
+    const input = fixture(Array.from({ length: course.height }, (_, y) => course.tiles
+      .slice(y * course.width, (y + 1) * course.width)
+      .map((terrain) => ({
+        rough: "R", fairway: "F", sand: "S", water: "W", path: "P",
+        green: "G", tee: "T", deep_rough: "D",
+      } as Partial<Record<Terrain, string>>)[terrain] ?? "R")
+      .join("")));
+    const result = buildSharedBoundaryContours(
+      input.tiles,
+      input.width,
+      input.height,
+      input.components,
+      { cornerRadius: 0.4, cornerSegments: 4 },
+    );
+    const targetIds = new Set(input.components.filter((candidate) => (
+      candidate.terrain === "fairway" || candidate.terrain === "green" ||
+      candidate.terrain === "sand" || candidate.terrain === "water"
+    )).map((component) => component.id));
+    for (const seam of result.seams.filter((candidate) => candidate.componentIds.some((id) => targetIds.has(id)))) {
+      expect(longestAlternatingUnitRun(seam.samples)).toBeLessThanOrEqual(2);
+    }
   });
 
   it("preserves owned centers, diagonal separation, and a one-cell neck", () => {

@@ -22,11 +22,25 @@ export interface SharedBoundaryEdge {
   readonly reverseComponentId: number | null;
 }
 
+export interface SharedBoundarySeam {
+  /** The unordered component pair which owns this presentation seam. */
+  readonly componentIds: readonly [number, number];
+  /**
+   * Samples in the direction whose component id is the smaller member of the
+   * pair. The other component consumes this exact array in reverse.
+   */
+  readonly samples: readonly SurfacePoint[];
+  /** A pair can meet at a junction (open) or surround an island (closed). */
+  readonly closed: boolean;
+}
+
 export interface SharedBoundaryResult {
   /** Presentation rings keyed by the caller's component id. */
   readonly ringsByComponent: ReadonlyMap<number, SurfacePoint[][]>;
   /** One record per unordered grid seam, reused in reverse by its neighbour. */
   readonly edges: readonly SharedBoundaryEdge[];
+  /** Pair-owned, canonical presentation seams. Perimeter edges are omitted. */
+  readonly seams: readonly SharedBoundarySeam[];
 }
 
 interface DirectedEdgeUse {
@@ -131,7 +145,7 @@ function buildEdges(
   return { edges, ownerByCell, usesByComponent };
 }
 
-function chainRings(uses: readonly DirectedEdgeUse[]): SurfacePoint[][] {
+function chainUses(uses: readonly DirectedEdgeUse[]): DirectedEdgeUse[][] {
   const byStart = new Map<string, number[]>();
   uses.forEach((edge, index) => {
     const candidates = byStart.get(pointKey(edge.start)) ?? [];
@@ -139,16 +153,16 @@ function chainRings(uses: readonly DirectedEdgeUse[]): SurfacePoint[][] {
     byStart.set(pointKey(edge.start), candidates);
   });
   const unused = new Set(uses.map((_, index) => index));
-  const rings: SurfacePoint[][] = [];
+  const rings: DirectedEdgeUse[][] = [];
   while (unused.size > 0) {
     const firstIndex = unused.values().next().value as number;
     const first = uses[firstIndex];
-    const ring: SurfacePoint[] = [{ ...first.start }];
+    const ring: DirectedEdgeUse[] = [];
     let currentIndex = firstIndex;
     while (unused.delete(currentIndex)) {
       const current = uses[currentIndex];
+      ring.push(current);
       if (pointKey(current.end) === pointKey(first.start)) break;
-      ring.push({ ...current.end });
       const candidates = (byStart.get(pointKey(current.end)) ?? [])
         .filter((candidate) => unused.has(candidate));
       if (candidates.length === 0) break;
@@ -167,96 +181,173 @@ function chainRings(uses: readonly DirectedEdgeUse[]): SurfacePoint[][] {
   return rings;
 }
 
-function vertexHasSafeClearance(
-  ownerByCell: Int32Array,
-  width: number,
-  height: number,
-  vx: number,
-  vy: number,
-): boolean {
-  // The map perimeter remains exact so the surround can never show through.
-  if (vx <= 0 || vy <= 0 || vx >= width || vy >= height) return false;
-  const owners = new Set<number>();
-  for (const [dx, dy] of [[-1, -1], [0, -1], [-1, 0], [0, 0]] as const) {
-    owners.add(ownerByCell[(vy + dy) * width + vx + dx]);
-  }
-  // Exactly two component owners share a reversible corner. Checkerboard
-  // pinches have 3–4 owners and stay sharp, keeping diagonal islands apart.
-  return owners.size === 2;
+function pointsForUses(uses: readonly DirectedEdgeUse[]): SurfacePoint[] {
+  if (uses.length === 0) return [];
+  const points = [{ ...uses[0].start }];
+  for (const use of uses) points.push({ ...use.end });
+  return points;
 }
 
-function canonicalCornerArc(
-  entry: SurfacePoint,
-  corner: SurfacePoint,
-  exit: SurfacePoint,
-  segments: number,
-  cache: Map<string, SurfacePoint[]>,
-): SurfacePoint[] {
-  const entryKey = pointKey(entry);
-  const exitKey = pointKey(exit);
-  const flipped = entryKey > exitKey;
-  const start = flipped ? exit : entry;
-  const end = flipped ? entry : exit;
-  const key = `${pointKey(corner)}|${pointKey(start)}|${pointKey(end)}|${segments}`;
-  let canonical = cache.get(key);
-  if (!canonical) {
-    canonical = [];
-    for (let sample = 0; sample <= segments; sample++) {
-      const t = sample / segments;
-      const inverse = 1 - t;
-      canonical.push({
-        x: inverse * inverse * start.x + 2 * inverse * t * corner.x + t * t * end.x,
-        y: inverse * inverse * start.y + 2 * inverse * t * corner.y + t * t * end.y,
-      });
+function pairForUse(
+  use: DirectedEdgeUse,
+  edges: readonly SharedBoundaryEdge[],
+): string | null {
+  const edge = edges[use.edgeIndex];
+  if (edge.forwardComponentId == null || edge.reverseComponentId == null) return null;
+  const low = Math.min(edge.forwardComponentId, edge.reverseComponentId);
+  const high = Math.max(edge.forwardComponentId, edge.reverseComponentId);
+  return `${low}:${high}`;
+}
+
+function isUnitAxisEdge(start: SurfacePoint, end: SurfacePoint): "h" | "v" | null {
+  const dx = Math.abs(end.x - start.x);
+  const dy = Math.abs(end.y - start.y);
+  if (dx === 1 && dy === 0) return "h";
+  if (dx === 0 && dy === 1) return "v";
+  return null;
+}
+
+/**
+ * Collapse a run of alternating unit stair steps into a sub-cell polycurve.
+ * Each moved vertex is a 1/4, 1/2, 1/4 local blend, so an orthogonal corner
+ * moves by sqrt(1/8) tiles (< 0.5) and no authoritative cell changes owner.
+ */
+function smoothAlternatingOpenPath(path: readonly SurfacePoint[]): SurfacePoint[] {
+  if (path.length < 4) return path.map((point) => ({ ...point }));
+  const output: SurfacePoint[] = [{ ...path[0] }];
+  let start = 0;
+  while (start < path.length - 1) {
+    let end = start + 1;
+    let previousAxis = isUnitAxisEdge(path[start], path[end]);
+    while (previousAxis && end < path.length - 1) {
+      const nextAxis = isUnitAxisEdge(path[end], path[end + 1]);
+      if (!nextAxis || nextAxis === previousAxis) break;
+      previousAxis = nextAxis;
+      end++;
     }
-    cache.set(key, canonical);
-  }
-  return (flipped ? [...canonical].reverse() : canonical).map((point) => ({ ...point }));
-}
-
-function roundSharedRing(
-  ring: readonly SurfacePoint[],
-  ownerByCell: Int32Array,
-  width: number,
-  height: number,
-  options: SharedBoundaryOptions,
-  cornerCache: Map<string, SurfacePoint[]>,
-): SurfacePoint[] {
-  const requestedRadius = Math.min(0.49, Math.max(0, options.cornerRadius));
-  const segments = Math.max(1, Math.min(8, Math.round(options.cornerSegments)));
-  if (ring.length < 3 || requestedRadius <= 0) return ring.map((point) => ({ ...point }));
-  const rounded: SurfacePoint[] = [];
-  for (let index = 0; index < ring.length; index++) {
-    const previous = ring[(index - 1 + ring.length) % ring.length];
-    const current = ring[index];
-    const next = ring[(index + 1) % ring.length];
-    const incomingLength = Math.hypot(current.x - previous.x, current.y - previous.y);
-    const outgoingLength = Math.hypot(next.x - current.x, next.y - current.y);
-    if (incomingLength <= 1e-6 || outgoingLength <= 1e-6) continue;
-    if (!vertexHasSafeClearance(ownerByCell, width, height, current.x, current.y)) {
-      rounded.push({ ...current });
+    if (end - start >= 3) {
+      for (let index = start + 1; index < end; index++) {
+        const previous = path[index - 1];
+        const current = path[index];
+        const next = path[index + 1];
+        output.push({
+          x: previous.x * 0.25 + current.x * 0.5 + next.x * 0.25,
+          y: previous.y * 0.25 + current.y * 0.5 + next.y * 0.25,
+        });
+      }
+      output.push({ ...path[end] });
+      start = end;
       continue;
     }
-    const radius = Math.min(
-      requestedRadius,
-      incomingLength * 0.49,
-      outgoingLength * 0.49,
-    );
-    const entry = {
-      x: current.x + (previous.x - current.x) / incomingLength * radius,
-      y: current.y + (previous.y - current.y) / incomingLength * radius,
+    output.push({ ...path[end] });
+    start = end;
+  }
+  return output;
+}
+
+function smoothAlternatingClosedPath(path: readonly SurfacePoint[]): SurfacePoint[] {
+  if (path.length < 4) return path.map((point) => ({ ...point }));
+  const axes = path.map((point, index) => isUnitAxisEdge(point, path[(index + 1) % path.length]));
+  if (axes.some((axis) => axis == null)) {
+    return path.map((point) => ({ ...point }));
+  }
+  const breakAt = axes.findIndex((axis, index) => axis === axes[(index + 1) % axes.length]);
+  // Most closed component rings have at least one straight section. Rotate
+  // there, smooth only its alternating sub-runs, then restore an implicit
+  // closed ring. This avoids treating the entire island as one diagonal.
+  if (breakAt >= 0) {
+    const start = (breakAt + 1) % path.length;
+    const open = Array.from({ length: path.length + 1 }, (_, index) => ({
+      ...path[(start + index) % path.length],
+    }));
+    return smoothAlternatingOpenPath(open).slice(0, -1);
+  }
+  return path.map((current, index) => {
+    const previous = path[(index - 1 + path.length) % path.length];
+    const next = path[(index + 1) % path.length];
+    return {
+      x: previous.x * 0.25 + current.x * 0.5 + next.x * 0.25,
+      y: previous.y * 0.25 + current.y * 0.5 + next.y * 0.25,
     };
-    const exit = {
-      x: current.x + (next.x - current.x) / outgoingLength * radius,
-      y: current.y + (next.y - current.y) / outgoingLength * radius,
-    };
-    const arc = canonicalCornerArc(entry, current, exit, segments, cornerCache);
-    for (const point of arc) {
-      const last = rounded[rounded.length - 1];
-      if (!last || last.x !== point.x || last.y !== point.y) rounded.push(point);
+  });
+}
+
+function smoothSeamPoints(points: readonly SurfacePoint[], closed: boolean): SurfacePoint[] {
+  if (closed) return smoothAlternatingClosedPath(points);
+  return smoothAlternatingOpenPath(points);
+}
+
+function reconstructSharedRing(
+  uses: readonly DirectedEdgeUse[],
+  edges: readonly SharedBoundaryEdge[],
+): SurfacePoint[] {
+  if (uses.length === 0) return [];
+  const pairs = uses.map((use) => pairForUse(use, edges));
+  // Start at a pair boundary. This leaves every internal pair run as one
+  // contiguous slice, including seams that meet at a three-way junction.
+  let start = pairs.findIndex((pair, index) => pair !== pairs[(index - 1 + pairs.length) % pairs.length]);
+  if (start < 0) start = 0;
+  const ordered = uses.map((_, index) => uses[(start + index) % uses.length]);
+  const orderedPairs = pairs.map((_, index) => pairs[(start + index) % pairs.length]);
+  const output: SurfacePoint[] = [];
+  for (let cursor = 0; cursor < ordered.length;) {
+    const pair = orderedPairs[cursor];
+    let end = cursor + 1;
+    while (end < ordered.length && orderedPairs[end] === pair) end++;
+    const segment = ordered.slice(cursor, end);
+    const points = pointsForUses(segment);
+    const samples = pair == null
+      ? points
+      : smoothSeamPoints(points, segment.length === ordered.length && pair != null);
+    for (let index = 0; index < samples.length; index++) {
+      const point = samples[index];
+      const previous = output[output.length - 1];
+      if (!previous || previous.x !== point.x || previous.y !== point.y) output.push(point);
+    }
+    cursor = end;
+  }
+  // The assembled ring is implicit; do not retain a duplicated closing point.
+  if (output.length > 1) {
+    const first = output[0];
+    const last = output[output.length - 1];
+    if (first.x === last.x && first.y === last.y) output.pop();
+  }
+  return output;
+}
+
+function buildCanonicalSeams(edges: readonly SharedBoundaryEdge[]): SharedBoundarySeam[] {
+  const usesByPair = new Map<string, DirectedEdgeUse[]>();
+  for (let edgeIndex = 0; edgeIndex < edges.length; edgeIndex++) {
+    const edge = edges[edgeIndex];
+    if (edge.forwardComponentId == null || edge.reverseComponentId == null) continue;
+    const low = Math.min(edge.forwardComponentId, edge.reverseComponentId);
+    const high = Math.max(edge.forwardComponentId, edge.reverseComponentId);
+    const canonicalForward = edge.forwardComponentId === low;
+    const uses = usesByPair.get(`${low}:${high}`) ?? [];
+    uses.push({
+      edgeIndex,
+      start: canonicalForward ? edge.start : edge.end,
+      end: canonicalForward ? edge.end : edge.start,
+      direction: canonicalForward
+        ? directionOf(edge.start, edge.end)
+        : directionOf(edge.end, edge.start),
+    });
+    usesByPair.set(`${low}:${high}`, uses);
+  }
+  const seams: SharedBoundarySeam[] = [];
+  for (const [pair, uses] of [...usesByPair].sort(([a], [b]) => a.localeCompare(b))) {
+    const [low, high] = pair.split(":").map(Number) as [number, number];
+    for (const chain of chainUses(uses)) {
+      const closed = pointKey(chain[0].start) === pointKey(chain[chain.length - 1].end);
+      const raw = pointsForUses(chain);
+      seams.push({
+        componentIds: [low, high],
+        samples: smoothSeamPoints(closed ? raw.slice(0, -1) : raw, closed),
+        closed,
+      });
     }
   }
-  return rounded;
+  return seams;
 }
 
 /**
@@ -272,24 +363,19 @@ export function buildSharedBoundaryContours(
   components: readonly SharedBoundaryComponentInput[],
   options: SharedBoundaryOptions,
 ): SharedBoundaryResult {
+  // The options remain part of the public cache contract. Canonical seams do
+  // not independently round corners; their sub-cell reconstruction is fixed.
+  void options;
   if (width <= 0 || height <= 0 || tiles.length !== width * height) {
-    return { ringsByComponent: new Map(), edges: [] };
+    return { ringsByComponent: new Map(), edges: [], seams: [] };
   }
-  const { edges, ownerByCell, usesByComponent } = buildEdges(components, width, height);
+  const { edges, usesByComponent } = buildEdges(components, width, height);
   const ringsByComponent = new Map<number, SurfacePoint[][]>();
-  const cornerCache = new Map<string, SurfacePoint[]>();
   for (const component of components) {
-    const rings = chainRings(usesByComponent.get(component.id) ?? [])
-      .map((ring) => roundSharedRing(
-        ring,
-        ownerByCell,
-        width,
-        height,
-        options,
-        cornerCache,
-      ))
+    const rings = chainUses(usesByComponent.get(component.id) ?? [])
+      .map((uses) => reconstructSharedRing(uses, edges))
       .sort((a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)));
     ringsByComponent.set(component.id, rings);
   }
-  return { ringsByComponent, edges };
+  return { ringsByComponent, edges, seams: buildCanonicalSeams(edges) };
 }

@@ -4,6 +4,7 @@ import { getBiomeDefinition } from "../models/biomes";
 import { terrainSurfaceInsetPx } from "./terrainRelief";
 import { ELEVATION_STEP_PX } from "./iso";
 import { buildSharedBoundaryContours } from "./sharedBoundaryContours";
+import { buildLandscapeMeshCellSet } from "./landscapeMeshGeometry";
 import {
   hazardDepthOffsets,
   hazardDepthProfile,
@@ -21,6 +22,8 @@ export interface LandscapeComponent {
   terrain: Terrain;
   /** Sorted row-major authoritative cells in this connected component. */
   cells: number[];
+  /** Render-only one-cell halo for canonical displaced non-path seams. */
+  presentationCells: readonly number[];
   /** Rounded outer and hole rings in world tile coordinates. */
   rings: SurfacePoint[][];
   bounds: LandscapeBounds;
@@ -404,6 +407,12 @@ function materializeLandscapeComponent(
   return {
     terrain: skeleton.terrain,
     cells: skeleton.cells,
+    presentationCells: buildLandscapeMeshCellSet(
+      skeleton.cells,
+      skeleton.terrain,
+      width,
+      height,
+    ).presentationCells,
     bounds: skeleton.bounds,
     topologyKey: skeleton.topologyKey,
     rings,
