@@ -30,7 +30,8 @@ export type ObstacleMutationAction =
   | { type: "REMOVE_OBSTACLE"; x: number; y: number };
 
 export type BuildingMutationAction =
-  | { type: "PLACE_BUILDING"; buildingType: BuildingType; x: number; y: number }
+  | { type: "PLACE_BUILDING"; buildingType: BuildingType; x: number; y: number; quotedTotal?: number }
+  | { type: "REPAIR_BUILDING_SITE"; x: number; y: number; quotedTotal?: number }
   | { type: "REMOVE_BUILDING"; x: number; y: number }
   | { type: "CONFIGURE_BUILDING"; x: number; y: number; tier?: BuildingTier; price?: number };
 export type MobilityBusinessAction =
@@ -75,7 +76,8 @@ export type EconomyMutationAction =
   | { type: "REMOVE_TEE_BOX"; holeIndex: number; teeSet: TeeSet }
   | { type: "PLACE_OBSTACLE"; x: number; y: number; obstacleType: ObstacleType; plantId?: PlantId }
   | { type: "REMOVE_OBSTACLE"; x: number; y: number }
-  | { type: "PLACE_BUILDING"; buildingType: BuildingType; x: number; y: number }
+  | { type: "PLACE_BUILDING"; buildingType: BuildingType; x: number; y: number; quotedTotal?: number }
+  | { type: "REPAIR_BUILDING_SITE"; x: number; y: number; quotedTotal?: number }
   | { type: "REMOVE_BUILDING"; x: number; y: number }
   | { type: "PLACE_DECORATION"; decoration: Decoration }
   | { type: "REMOVE_DECORATION"; x: number; y: number }

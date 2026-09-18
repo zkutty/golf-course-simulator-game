@@ -330,6 +330,17 @@ export type ConcessionType = "pro_shop" | "snack_bar" | "cart_rental";
 export type BuildingType = "clubhouse" | ConcessionType;
 export type BuildingTier = 1 | 2 | 3;
 
+/** Compact optional provenance for engineered sites; legacy buildings omit it. */
+export interface BuildingSiteGradeRecordV1 {
+  version: 1;
+  supportElevation: number;
+  cutSteps: number;
+  fillSteps: number;
+  earthworkCost: number;
+  foundationCost: number;
+  totalSiteCost: number;
+}
+
 // Multi-tile structure anchored at its top-left footprint tile; footprint
 // dimensions come from BUILDING_SPECS (src/game/models/buildings.ts).
 export interface Building {
@@ -341,6 +352,8 @@ export interface Building {
   /** Concessions are configurable; clubhouse intentionally leaves these unset. */
   tier?: BuildingTier;
   price?: number;
+  /** Present only after an explicit engineered placement/repair transaction. */
+  siteGrade?: BuildingSiteGradeRecordV1;
 }
 
 export interface ConcessionTransaction {

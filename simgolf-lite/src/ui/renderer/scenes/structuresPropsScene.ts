@@ -13,6 +13,7 @@ import {
 import { isWaterHazard } from "../../../game/models/terrainRules";
 import { TILE_H, TILE_W } from "../../../game/render/iso";
 import { frontCorner, placeObject } from "../../../game/render/objectPlacement";
+import { buildingSitePresentation } from "../../../game/render/buildingSitePresentation";
 import {
   seasonalDecorationPlantForm,
   seasonalPlantClimate,
@@ -25,6 +26,7 @@ import type { RenderSceneSystem } from "../SceneSystemHost";
 interface StructuresPropsEntry {
   readonly sprite: PIXI.Sprite;
   shadow: PIXI.Graphics | null;
+  foundation: PIXI.Graphics | null;
 }
 
 export interface StructuresPropsSceneDependencies {
@@ -83,6 +85,8 @@ export function createStructuresPropsSceneSystem(
       entry.sprite.destroy();
       entry.shadow?.parent?.removeChild(entry.shadow);
       entry.shadow?.destroy();
+      entry.foundation?.parent?.removeChild(entry.foundation);
+      entry.foundation?.destroy();
     }
     entries = [];
     onContentCount(0);
@@ -101,21 +105,40 @@ export function createStructuresPropsSceneSystem(
           ?? getAtlasTexture(theme, snapshot.graphicsQuality, spec.frame as AtlasFrame)
           ?? getAtlasTexture(theme, snapshot.graphicsQuality, "clubhouse");
         if (!texture) continue;
-        const footprint = { x: building.x, y: building.y, w: spec.w, d: spec.d };
-        const anchor = frontCorner(footprint, snapshot.rotation);
-        const placement = placeObject(
-          footprint,
-          snapshot.surfaceHeightAt(anchor.x, anchor.y),
-          snapshot.rotation,
-        );
+        const presentation = buildingSitePresentation(course, building, snapshot.rotation, snapshot.graphicsQuality);
         const sprite = createSprite(texture);
-        entries.push({ sprite, shadow: null });
+        const shadow = createGraphics();
+        const foundation = createGraphics();
+        entries.push({ sprite, shadow, foundation });
         sprite.label = `structure-prop:building:${building.id}`;
         sprite.anchor.set(0.5, 1);
-        sprite.position.set(placement.position.x, placement.position.y);
+        sprite.position.set(presentation.anchor.x, presentation.anchor.y);
         sprite.width = spec.w * TILE_W;
         sprite.height = (sprite.width * texture.height) / texture.width;
-        sprite.zIndex = placement.zIndex;
+        sprite.zIndex = presentation.zIndex;
+        sprite.eventMode = "none";
+
+        shadow.ellipse(0, 0, spec.w * TILE_W * 0.38, spec.d * TILE_H * 0.42);
+        shadow.fill({ color: 0x000000, alpha: presentation.palette.shadowAlpha });
+        shadow.position.set(presentation.anchor.x + 4, presentation.anchor.y - TILE_H / 2 + 3);
+        shadow.eventMode = "none";
+        terrainDecals.addChild(shadow);
+
+        const polygon = (points: readonly { x: number; y: number }[]) => points.flatMap((point) => [point.x, point.y]);
+        foundation.poly(polygon([...presentation.top, ...presentation.lower.slice().reverse()]));
+        foundation.fill({ color: presentation.palette.plinth, alpha: snapshot.graphicsQuality === "low" ? 0.82 : 0.95 });
+        foundation.poly(polygon(presentation.top));
+        foundation.stroke({ color: presentation.palette.edge, width: snapshot.graphicsQuality === "high" ? 2 : 1, alpha: 0.92 });
+        for (const edge of presentation.retaining) {
+          foundation.moveTo(edge.from.x, edge.from.y);
+          foundation.lineTo(edge.to.x, edge.to.y);
+          foundation.stroke({ color: edge.kind === "fill" ? presentation.palette.edge : 0x4f463d, width: Math.min(4, 1 + edge.magnitude / 2), alpha: 0.9 });
+        }
+        const entranceSize = snapshot.graphicsQuality === "high" ? 5 : 4;
+        foundation.rect(presentation.entrance.x - entranceSize / 2, presentation.entrance.y - entranceSize / 3, entranceSize, entranceSize / 1.5);
+        foundation.fill({ color: presentation.palette.entrance, alpha: 0.95 });
+        foundation.eventMode = "none";
+        terrainDecals.addChild(foundation);
         objects.addChild(sprite);
       }
 
@@ -162,7 +185,7 @@ export function createStructuresPropsSceneSystem(
           snapshot.rotation,
         );
         const sprite = createSprite(texture);
-        const entry: StructuresPropsEntry = { sprite, shadow: null };
+        const entry: StructuresPropsEntry = { sprite, shadow: null, foundation: null };
         entries.push(entry);
         const shadow = createGraphics();
         entry.shadow = shadow;

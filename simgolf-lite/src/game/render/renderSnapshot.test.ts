@@ -80,6 +80,36 @@ describe("RenderSnapshot invalidation contract", () => {
     })).structuresProps).toBe(initial.structuresProps + 2);
   });
 
+  it("invalidates engineered structures for grade/tier, elevation, rotation, and LOD inputs", () => {
+    const tracker = new RenderRevisionTracker();
+    const baseCourse = DEFAULT_STATE.course;
+    const dependencies = (
+      course: GameState["course"],
+      rotation: 0 | 90 | 180 | 270 = 0,
+      graphicsQuality: "high" | "medium" | "low" = "high",
+    ) => ({
+      atmosphere: [], surfaceCare: [], playerProCollection: [], naturalProps: [], overlaysDiagnostics: [], estateSurvey: [],
+      structuresProps: structuresPropsRevisionDependencies({
+        atlasRevision: 1,
+        course,
+        effectiveTiles: course.tiles,
+        graphicsQuality,
+        rotation,
+        seasonalPlantsSignature: "spring:full",
+      }),
+    });
+    const initial = tracker.update(dependencies(baseCourse)).structuresProps;
+    const buildingChanged = {
+      ...baseCourse,
+      buildings: [{ type: "pro_shop" as const, x: 4, y: 4, tier: 3 as const, price: 30 }],
+    };
+    expect(tracker.update(dependencies(buildingChanged)).structuresProps).toBe((initial ?? 0) + 1);
+    const gradeChanged = { ...buildingChanged, elevations: [...buildingChanged.elevations] };
+    expect(tracker.update(dependencies(gradeChanged)).structuresProps).toBe((initial ?? 0) + 2);
+    expect(tracker.update(dependencies(gradeChanged, 90)).structuresProps).toBe((initial ?? 0) + 3);
+    expect(tracker.update(dependencies(gradeChanged, 90, "low")).structuresProps).toBe((initial ?? 0) + 4);
+  });
+
   it("invalidates Player Pro dressing only for visible display or physical scene inputs", () => {
     const tracker = new RenderRevisionTracker();
     const course = DEFAULT_STATE.course;

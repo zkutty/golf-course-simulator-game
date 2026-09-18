@@ -131,7 +131,7 @@ import {
   BUILDING_SPECS,
   CONCESSION_TYPES,
   buildingAtTile,
-  canPlaceBuilding,
+  quoteBuildingPlacement,
 } from "./game/models/buildings";
 import {
   canPlaceDecoration,
@@ -512,7 +512,7 @@ export default function App() {
     const physicalEdit = new Set([
       "PAINT_TILES", "EDIT_SURFACE_FEATURE", "SCULPT_TILES", "SCULPT_GREEN", "PLACE_TEE", "MOVE_TEE", "PLACE_GREEN", "MOVE_GREEN",
       "SET_TEE_BOX", "REMOVE_TEE_BOX", "SET_PIN_POSITION", "REMOVE_PIN_POSITION", "ADD_WAYPOINT",
-      "UPDATE_WAYPOINT", "REMOVE_WAYPOINT", "PLACE_OBSTACLE", "REMOVE_OBSTACLE", "PLACE_BUILDING",
+      "UPDATE_WAYPOINT", "REMOVE_WAYPOINT", "PLACE_OBSTACLE", "REMOVE_OBSTACLE", "PLACE_BUILDING", "REPAIR_BUILDING_SITE",
       "REMOVE_BUILDING", "PLACE_DECORATION", "REMOVE_DECORATION", "ROTATE_DECORATION", "SET_COURSE_LAYOUTS",
     ]).has(action.type);
     if (editingLocked && physicalEdit) return;
@@ -5142,17 +5142,17 @@ export default function App() {
         setPaintError(t("progression.locked", { reputation: concessionMinReputation(buildingType) }));
         return;
       }
-      const validation = canPlaceBuilding(course, buildingType, x, y);
-      if (!validation.ok) {
-        setPaintError(t("error.buildingPlacement", { building: BUILDING_SPECS[buildingType].name.toLowerCase(), reason: validation.reason ?? "unknown restriction" }));
+      const quote = quoteBuildingPlacement(course, buildingType, x, y, costMult);
+      if (!quote.ok) {
+        setPaintError(t("error.buildingPlacement", { building: BUILDING_SPECS[buildingType].name.toLowerCase(), reason: quote.reason ?? "unknown restriction" }));
         return;
       }
-      const cost = BUILDING_SPECS[buildingType].buildCost;
+      const cost = quote.totalCost;
       if (world.cash < cost) {
         setPaintError(t("error.insufficientFunds", { amount: formatCurrency(cost) }));
         return;
       }
-      dispatch({ type: "PLACE_BUILDING", buildingType, x, y });
+      dispatch({ type: "PLACE_BUILDING", buildingType, x, y, quotedTotal: quote.totalCost });
       setPaintError(null);
       void audio.playSfx("confirm");
       return;
