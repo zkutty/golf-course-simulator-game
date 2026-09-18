@@ -7,9 +7,9 @@ const outputRoot = resolve(process.env.ZK473_EVIDENCE_DIR ?? "../zk473-parity-ev
 const commit = process.env.ZK473_COMMIT ?? "unknown";
 
 const tiers = [
-  { label: "overview", zoom: 0.34, quality: "low" as const },
-  { label: "normal", zoom: 0.72, quality: "high" as const },
-  { label: "detail", zoom: 1.1, quality: "high" as const },
+  { label: "overview", zoom: 0.5, quality: "low" as const, focus: { x: 24, y: 18 } },
+  { label: "normal", zoom: 1, quality: "medium" as const, focus: { x: 24, y: 18 } },
+  { label: "detail", zoom: 2, quality: "high" as const, focus: { x: 39, y: 20 } },
 ];
 
 type Capture = {
@@ -19,7 +19,7 @@ type Capture = {
   zoom: number;
   quality: "high" | "medium" | "low";
   structuredState: unknown;
-  terrainState: unknown;
+  rendererState: unknown;
 };
 
 async function contactSheet(files: string[], output: string) {
@@ -53,7 +53,7 @@ test("ZK-473 retains the exact-candidate Parkland rotation and zoom matrix", asy
   test.setTimeout(240_000);
   await mkdir(outputRoot, { recursive: true });
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/?m20Fixture=1&m20Theme=parkland");
+  await page.goto("/?m19Fixture=1");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), { timeout: 90_000 }).toBe("game");
   await page.waitForFunction(() => Boolean(window.__coursecraftPixiTest));
 
@@ -67,14 +67,16 @@ test("ZK-473 retains the exact-candidate Parkland rotation and zoom matrix", asy
       ))).toBe(rotation);
     }
     for (const tier of tiers) {
-      await page.evaluate(({ quality, zoom }) => {
+      await page.evaluate(({ quality, zoom, focus }) => {
         window.__coursecraftTest!.setGraphicsQualityFixture(quality);
-        window.__coursecraftPixiTest!.focusTileForTest(32, 22, zoom);
+        window.__coursecraftPixiTest!.focusTileForTest(focus.x, focus.y, zoom);
       }, tier);
-      await expect.poll(() => page.evaluate((zoom) => {
-        const camera = JSON.parse(window.render_game_to_text?.() ?? "{}").camera;
-        return Math.abs((camera?.zoom ?? 0) - zoom) < 0.001;
-      }, tier.zoom)).toBe(true);
+      await expect.poll(() => page.evaluate(({ zoom, quality }) => {
+        const state = window.__coursecraftPixiTest!.rendererAtlasState();
+        return Math.abs(state.camera.zoom - zoom) < 0.001
+          && Math.abs(state.camera.targetZoom - zoom) < 0.001
+          && state.requested.quality === quality;
+      }, tier)).toBe(true);
       await page.waitForTimeout(500);
       const file = resolve(outputRoot, `parkland-r${rotation}-${tier.label}.png`);
       await writeFile(file, await page.screenshot({ fullPage: true }));
@@ -85,7 +87,7 @@ test("ZK-473 retains the exact-candidate Parkland rotation and zoom matrix", asy
         zoom: tier.zoom,
         quality: tier.quality,
         structuredState: await page.evaluate(() => JSON.parse(window.render_game_to_text?.() ?? "{}")),
-        terrainState: await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState()),
+        rendererState: await page.evaluate(() => window.__coursecraftPixiTest!.rendererAtlasState()),
       });
     }
   }
@@ -96,7 +98,8 @@ test("ZK-473 retains the exact-candidate Parkland rotation and zoom matrix", asy
     commit,
     viewport: { width: 1440, height: 900 },
     theme: "parkland",
-    fixture: "m20Fixture",
+    fixture: "m19Fixture",
+    terrainState: await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState()),
     command: "ZK473_EVIDENCE_DIR=<dir> ZK473_COMMIT=<sha> npx playwright test e2e/zk473-parity-capture.e2e.ts --workers=1 --retries=0",
     captures,
   };
