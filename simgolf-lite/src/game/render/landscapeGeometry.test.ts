@@ -81,6 +81,18 @@ describe("connected landscape geometry", () => {
       .toEqual(first.map((component) => component.topologyKey));
   });
 
+  it("keeps accepted path rings bit-for-bit while terrain uses shared contours", () => {
+    const options = { cornerRadius: 0.32, cornerSegments: 2 };
+    const path = buildLandscapeComponents(["path"], 1, 1, options)[0];
+    const accepted = roundLandscapeRing([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ], options.cornerRadius, options.cornerSegments);
+    expect(path.rings).toEqual([accepted]);
+  });
+
   it("reuses unchanged component geometry and reports only dirty topology", () => {
     const cache = createLandscapeComponentCache();
     const first = cache.update([
@@ -113,6 +125,25 @@ describe("connected landscape geometry", () => {
     const medium = cache.update(["fairway"], 1, 1, { cornerRadius: 0.32, cornerSegments: 2 });
     expect(medium.stats).toEqual({ hits: 0, misses: 1, components: 1 });
     expect(medium.components[0]).not.toBe(high.components[0]);
+  });
+
+  it("invalidates a stable component when its diagonal boundary context changes", () => {
+    const cache = createLandscapeComponentCache();
+    const first = cache.update([
+      "rough", "rough", "rough",
+      "rough", "fairway", "rough",
+      "rough", "rough", "rough",
+    ], 3, 3);
+    const firstFairway = first.components.find((component) => component.terrain === "fairway")!;
+    const repainted = cache.update([
+      "sand", "rough", "rough",
+      "rough", "fairway", "rough",
+      "rough", "rough", "rough",
+    ], 3, 3);
+    const nextFairway = repainted.components.find((component) => component.terrain === "fairway")!;
+    expect(nextFairway.cells).toEqual(firstFairway.cells);
+    expect(nextFairway).not.toBe(firstFairway);
+    expect(nextFairway.rings).not.toEqual(firstFairway.rings);
   });
 });
 
