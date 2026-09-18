@@ -13,6 +13,29 @@ const INTERIORS = [
   "fairway", "green", "tee", "rough", "deep_rough", "sand",
   "water", "wetland", "waste_area",
 ];
+// Decoded RGBA hashes from the rejected pre-attempt-2 field set.  Encoding
+// changes alone cannot satisfy this gate: each retained field must carry new
+// authored material information.
+const REJECTED_PIXEL_HASHES = {
+  "high/fairway": "998a1519e4fbcca2a6308b18e0052519abbdf7c834d9d839ff32c556fa784342",
+  "high/green": "3e77c3f780be18e08092d753de707ea8e63a2f36644ec2959043f5ebfb992731",
+  "high/tee": "75e721ffbadead51243e8a409270ca4f3a4cc7584993e7e94b45555be1d13cb5",
+  "high/rough": "ebadc635f84ca1ce0329102f2b46e48a1d3118a8b5f606e9b2b7d8b930c82ef5",
+  "high/deep_rough": "9a2a066d9b225d754a02bbd89de61efc5a40a93f73b5dd88694eed33360e5fd7",
+  "high/sand": "800c134f22c45c633a5b78f9fe49ba66bacc48d4e550f8ed1d08e452c4904907",
+  "high/water": "667e698a92452e13dd18c1f40beb8e4f3d2cf40b0397f450c140756a64876d6d",
+  "high/wetland": "9ebd99b7bfd2f249959af693d7b91fd5bb8a08b1ca2546349025a3e176e8ebea",
+  "high/waste_area": "6b8d55ef03c7900ab4866d7ae54dc518edfc80bc981f491e2b1fe6687ebce0ca",
+  "medium/fairway": "28ed70f6ea55a7e2290ffaa3417b5ff369c00e279d32af065770b5af6ace550a",
+  "medium/green": "5cc0a686b67ee2b069ec2c509b80efa8a7022195daeb88515a2f4378eb82859a",
+  "medium/tee": "34ed588ece08834d601cf8ac0f023b63591c5ba369e74527267b120c87f40c34",
+  "medium/rough": "29611a065eefaa6fa3060e18c51087660772211cce6d93a195017c8a9deeeee6",
+  "medium/deep_rough": "5705b724eed3b2a3b6b3f5ed536531100199299dbc2c25c27ac0c1984b4164f5",
+  "medium/sand": "1f7dc7286d8e59c536efe25d29941e1903f50a01815350b76495131e745ab8f9",
+  "medium/water": "c0f7c5ef351175fd168022fb86465c2baf5b8b8255455977837bac929419943c",
+  "medium/wetland": "6a05befe368dff5a680ec6a1c9ce664ca9b27e14c004a573c7846d51b0abb6d8",
+  "medium/waste_area": "67fd2954798dbc295d959cfa080f79da36679e25e93cf491bb02306152197672",
+};
 
 function sourcePath(quality, terrain) {
   return join(new URL(ROOT).pathname, "src/assets/terrain/fields/parkland", quality, `${terrain}.png`);
@@ -24,6 +47,10 @@ function image(quality, terrain) {
 
 function sourceBytes(quality, terrain) {
   return readFileSync(sourcePath(quality, terrain));
+}
+
+function pixelHash(png) {
+  return createHash("sha256").update(png.data).digest("hex");
 }
 
 function luminance(png, x, y) {
@@ -122,6 +149,16 @@ test("ZK-1203 Parkland high and medium fields retain the bounded interior set", 
       assert.equal(png.height, quality === "high" ? 512 : 256);
       for (let offset = 3; offset < png.data.length; offset += 4) assert.equal(png.data[offset], 255);
     }
+  }
+});
+
+test("ZK-1203 fields contain new decoded material information, not only new PNG encoding", () => {
+  for (const quality of QUALITIES) for (const terrain of INTERIORS) {
+    assert.notEqual(
+      pixelHash(image(quality, terrain)),
+      REJECTED_PIXEL_HASHES[`${quality}/${terrain}`],
+      `${quality}/${terrain} retained rejected decoded pixels`,
+    );
   }
 });
 

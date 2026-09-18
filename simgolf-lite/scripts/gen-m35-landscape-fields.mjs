@@ -129,9 +129,13 @@ function materialSample(theme, terrain, quality, x, y, seed) {
     // The old binary mowing bars took over the material at normal scale.  The
     // shorter, softly gated pass now reads as a maintenance cue beneath the
     // turf grain, rather than as the surface's primary pattern.
-    const mowingPhase = Math.sin((x * bands + periodicNoise(x, y, 4, seed ^ 0x43a0d8f1) * 0.12) * Math.PI * 2);
+    const mowingPhase = Math.sin((
+      x * bands
+      + periodicNoise(x, y, 4, seed ^ 0x43a0d8f1) * 0.18
+      + periodicNoise(x, y, 11, seed ^ 0x9ec2a80d) * 0.035
+    ) * Math.PI * 2);
     const stripe = isZk1203Interior
-      ? mowingPhase * (terrain === "green" ? 0.009 : terrain === "tee" ? 0.012 : 0.014)
+      ? mowingPhase * (terrain === "green" ? 0.012 : terrain === "tee" ? 0.015 : 0.018)
       : (Math.floor(x * bands) % 2 === 0 ? 0.045 : -0.035);
     factor += stripe;
     const wear = periodicNoise(x, y, 16, seed ^ 0x27d4eb2f);
@@ -148,15 +152,15 @@ function materialSample(theme, terrain, quality, x, y, seed) {
       // ripples remain subordinate so it cannot turn into a repeated stripe
       // sheet.  Wetland retains the same water logic under its reed tint.
       const depth = periodicNoise(x, y, 2, seed ^ 0x1bc47d59) - 0.5;
-      factor = 0.985 + depth * 0.075 + macro * 0.02 + grain * 0.01;
+      factor = 0.982 + depth * 0.09 + macro * 0.026 + grain * 0.014;
       const ripple = Math.sin((
-        y * 38
-        + periodicNoise(x, y, 7, seed ^ 0x4b7e913d) * 0.22
-        + Math.sin(x * Math.PI * 2) * 0.07
+        y * 42
+        + periodicNoise(x, y, 7, seed ^ 0x4b7e913d) * 0.28
+        + Math.sin(x * Math.PI * 2) * 0.1
       ) * Math.PI * 2);
       const rippleGate = periodicNoise(x, y, 23, seed ^ 0x7f4a7c15);
-      if (ripple > 0.8 && rippleGate > 0.58) {
-        factor += (ripple - 0.8) * (terrain === "water" ? 0.12 : 0.075);
+      if (ripple > 0.76 && rippleGate > 0.54) {
+        factor += (ripple - 0.76) * (terrain === "water" ? 0.13 : 0.085);
       }
     } else {
       factor = 0.99 + macro * 0.035 + grain * 0.018;
@@ -174,9 +178,10 @@ function materialSample(theme, terrain, quality, x, y, seed) {
     if (terrain === "water" && glint > 0.992) factor += 0.1;
     if (terrain === "wetland") {
       const reeds = periodicNoise(x, y, 24, seed ^ 0xa24baed5);
-      if (reeds > 0.72) {
+      const reedFlow = Math.sin((x * 19 + y * 5 + reeds * 0.4) * Math.PI * 2);
+      if (reeds > 0.68 && reedFlow > -0.15) {
         tint = 0x899047;
-        tintAmount = Math.min(0.32, (reeds - 0.72) * 1.1);
+        tintAmount = Math.min(0.36, (reeds - 0.68) * 1.15 * (reedFlow + 1) * 0.5);
       }
     }
   } else if (terrain === "sand") {
@@ -185,12 +190,12 @@ function materialSample(theme, terrain, quality, x, y, seed) {
       // 6%-coverage pebble threshold created repeated chips that dominated at
       // map scale; mineral flecks now sit inside the grain instead.
       const rake = Math.sin((
-        y * 46
-        + periodicNoise(x, y, 9, seed ^ 0x77c3ad19) * 0.3
-        + x * 1.7
+        y * 43
+        + periodicNoise(x, y, 9, seed ^ 0x77c3ad19) * 0.38
+        + x * 2.15
       ) * Math.PI * 2);
       const rakeGate = periodicNoise(x, y, 19, seed ^ 0x69e2a7b3);
-      if (rake > 0.86 && rakeGate > 0.46) factor += (rake - 0.86) * 0.11;
+      if (rake > 0.81 && rakeGate > 0.43) factor += (rake - 0.81) * 0.12;
       const mineral = randomCell(Math.floor(x * 192), Math.floor(y * 192), seed ^ 0x89f0a11d);
       if (mineral > 0.992) {
         tint = mineral > 0.998 ? 0x806f55 : 0xc7ac76;
@@ -210,6 +215,8 @@ function materialSample(theme, terrain, quality, x, y, seed) {
       // Waste keeps its dry, mineral identity, but as a fine granular field
       // rather than the same oversized gravel chips used by a path core.
       const gravel = randomCell(Math.floor(x * 192), Math.floor(y * 192), seed ^ 0x51d2b7a9);
+      const mineralFlow = Math.sin((x * 27 + y * 9 + periodicNoise(x, y, 10, seed ^ 0x7db9f0c3) * 0.32) * Math.PI * 2);
+      factor += mineralFlow * 0.01;
       if (gravel > 0.985) factor += gravel > 0.997 ? 0.065 : -0.035;
     } else {
       const gravel = randomCell(Math.floor(x * 128), Math.floor(y * 128), seed);
@@ -222,17 +229,19 @@ function materialSample(theme, terrain, quality, x, y, seed) {
       // isolated, repeated flecks from a different material family.
       const tall = terrain === "deep_rough";
       const flow = Math.sin((
-        x * (tall ? 30 : 24)
+        x * (tall ? 30 : 25)
         + y * (tall ? 11 : 8)
-        + periodicNoise(x, y, tall ? 11 : 9, seed ^ 0x2bd71a45) * 0.55
+        + periodicNoise(x, y, tall ? 11 : 9, seed ^ 0x2bd71a45) * 0.68
       ) * Math.PI * 2);
       const bladeGate = periodicNoise(x, y, tall ? 31 : 27, seed ^ 0x94a2cf71);
-      if (flow > (tall ? 0.2 : 0.45) && bladeGate > (tall ? 0.43 : 0.55)) {
+      const bladeLift = Math.max(0, flow) * (0.3 + bladeGate * 0.7);
+      factor += bladeLift * (tall ? 0.02 : 0.012);
+      if (flow > (tall ? 0.12 : 0.34) && bladeGate > (tall ? 0.38 : 0.5)) {
         tint = tall ? 0x87a84f : NATURAL_BLADE_TINT[theme];
         // Keep individual blades beneath the terrain read at normal zoom;
         // deep rough gets density and value separation, not loud hatching.
-        tintAmount = tall ? 0.055 : 0.035;
-        factor += tall ? -0.012 : 0.006;
+        tintAmount = tall ? 0.07 : 0.045;
+        factor += tall ? -0.009 : 0.008;
       }
     } else {
       const blade = randomCell(Math.floor(x * 96), Math.floor(y * 96), seed);
