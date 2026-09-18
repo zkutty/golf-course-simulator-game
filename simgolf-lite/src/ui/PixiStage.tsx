@@ -31,6 +31,7 @@ import {
   atlasResidencySnapshot,
   getGolferFrame,
   getLandscapeMaterialField,
+  getPathMaterialField,
   getPropFrame,
   getTerrainDetailFrame,
   getTerrainFrame,
@@ -148,6 +149,10 @@ import {
 } from "../game/render/organicTerrainMasks";
 import { buildMacroLandformRaster } from "../game/render/macroLandform";
 import { buildLandformShoulders } from "../game/render/landformGeometry";
+import {
+  buildPathMaterialScenePlan,
+  pathMaterialStripMesh,
+} from "./renderer/scenes/pathMaterialScene";
 import {
   pickNaturalProp,
 } from "../game/render/naturalProps";
@@ -835,6 +840,18 @@ interface Layers {
   screenOverlay: PIXI.Container;
 }
 
+interface PathMaterialRenderDiagnostics {
+  active: boolean;
+  mode: "legacy" | "cross-section";
+  quality: "high" | "medium" | "low";
+  componentCount: number;
+  stripCount: number;
+  roles: readonly ("shoulder" | "edge" | "core")[];
+  textureIds: readonly string[];
+  widths: { shoulder: number; edge: number };
+  ownership: readonly string[];
+}
+
 function effectiveSurfaceTilesForRenderer(
   tiles: Course["tiles"],
   width: number,
@@ -1068,6 +1085,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const builtAtlasGenerationRef = useRef<number | null>(null);
   const chunkRebuildsRef = useRef(0);
   const landscapeMaterialTexturesRef = useRef<Map<string, PIXI.Texture>>(new Map());
+  const pathMaterialDiagnosticsRef = useRef<PathMaterialRenderDiagnostics>({
+    active: false,
+    mode: "legacy",
+    quality: initialRendererConfigRef.current.graphicsQuality,
+    componentCount: 0,
+    stripCount: 0,
+    roles: ["core"],
+    textureIds: ["legacy:path"],
+    widths: { shoulder: 0, edge: 0 },
+    ownership: [],
+  });
   const structureSpriteCountRef = useRef(0);
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
@@ -2070,6 +2098,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
             targetZoom: camRef.current.tzoom,
             groundCoverTier: coverTier,
           },
+          pathMaterialCrossSection: {
+            ...pathMaterialDiagnosticsRef.current,
+            commit: __COMMIT_SHA__,
+            camera: {
+              rotation,
+              zoom: camRef.current.zoom,
+              targetZoom: camRef.current.tzoom,
+            },
+          },
           layers: layers ? {
             surround: stampedAtlasGeneration(layers.surround),
             terrain: stampedAtlasGeneration(layers.terrain),
@@ -2106,6 +2143,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
           + (naturalPropsSceneRef.current?.contentCount() ?? 0);
         unrelated.destroy();
         return { before, after };
+      },
+      setPathMaterialVisibilityForTest: (visible: boolean) => {
+        const layer = layersRef.current?.smoothSurfaces.children.find(
+          (child) => child.label === "path-material-cross-section",
+        );
+        if (!layer) return false;
+        layer.visible = visible;
+        appRef.current?.render();
+        return true;
       },
       setZoomForTest: (zoom: number) => {
         const next = Math.max(minimumZoom(), Math.min(MAX_ZOOM, zoom));
@@ -2159,6 +2205,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     requestedProps.season,
     requestedProps.seasonalVisualState,
     renderContext.resolutionScale,
+    rotation,
     seasonalPlantsSignature,
     screenToTile,
     surfaceHeightAt,
@@ -3573,6 +3620,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
     layer.removeChildren().forEach((child) => child.destroy({ children: true }));
     surfaceWaterSpritesRef.current = [];
     if (props.graphicsQuality === "low") {
+      pathMaterialDiagnosticsRef.current = {
+        active: false,
+        mode: "legacy",
+        quality: "low",
+        componentCount: 0,
+        stripCount: 0,
+        roles: ["core"],
+        textureIds: ["legacy:path"],
+        widths: { shoulder: 0, edge: 0 },
+        ownership: [],
+      };
       stampAtlasGeneration(layer, atlasRevision);
       return;
     }
@@ -3637,9 +3695,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       return mask;
     };
 
-    const textureFor = (terrain: Terrain) => {
+    const textureFor = (terrain: Terrain, finePathCore = false) => {
       const baseColor = themedColors[terrain];
-      const authored = props.colorVision === "standard" && !props.terrainPatterns
+      const authored = !finePathCore && props.colorVision === "standard" && !props.terrainPatterns
         ? getLandscapeMaterialField(course.theme, terrain, quality)
         : null;
       if (authored && !authored.destroyed) return authored;
@@ -3649,6 +3707,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         quality,
         props.colorVision,
         props.terrainPatterns ? "pattern" : "plain",
+        finePathCore ? "fine-compacted-core" : "standard",
         baseColor.toString(16),
       ].join(":");
       let texture = landscapeMaterialTexturesRef.current.get(key);
@@ -3657,7 +3716,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           terrain,
           baseColor,
           quality,
-          props.terrainPatterns,
+          finePathCore ? false : props.terrainPatterns,
         );
         landscapeMaterialTexturesRef.current.set(key, texture);
       }
@@ -3686,6 +3745,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const bandLayer = new PIXI.Container();
     bandLayer.eventMode = "none";
     bandLayer.sortableChildren = true;
+    const pathMaterialLayer = new PIXI.Container();
+    pathMaterialLayer.eventMode = "none";
+    pathMaterialLayer.label = "path-material-cross-section";
     const recessedLayer = new PIXI.Container();
     recessedLayer.eventMode = "none";
     const landformLayer = new PIXI.Container();
@@ -3693,6 +3755,20 @@ export function PixiStage(requestedProps: PixiStageProps) {
     // Boundary motifs are globally bounded. Habitat composition owns only
     // interior clearings, so shoreline reeds/stones have one renderer owner.
     let remainingContourDetails = quality === "high" ? 440 : quality === "medium" ? 220 : 0;
+    const pathShoulderTexture = props.colorVision === "standard" && !props.terrainPatterns
+      ? getPathMaterialField(course.theme, "shoulder", quality)
+      : null;
+    const pathEdgeTexture = props.colorVision === "standard" && !props.terrainPatterns
+      ? getPathMaterialField(course.theme, "edge", quality)
+      : null;
+    const hasPathMaterialTextures = Boolean(
+      pathShoulderTexture && !pathShoulderTexture.destroyed && pathEdgeTexture && !pathEdgeTexture.destroyed,
+    );
+    let pathComponentCount = 0;
+    let pathStripCount = 0;
+    let pathShoulderWidth = 0;
+    let pathEdgeWidth = 0;
+    const pathOwnership = new Set<string>();
     const sortedComponents = [...components].sort((a, b) => componentDepth(a) - componentDepth(b));
     for (const component of sortedComponents) {
       const positions: number[] = [];
@@ -3776,12 +3852,54 @@ export function PixiStage(requestedProps: PixiStageProps) {
         roughUnderlay.eventMode = "none";
         layer.addChild(roughUnderlay);
       }
-      const mesh = new PIXI.Mesh({ geometry, texture: textureFor(component.terrain) });
+      const pathMaterialPlan = buildPathMaterialScenePlan(
+        component,
+        effectiveTiles,
+        course.width,
+        course.height,
+        quality,
+      );
+      const pathCompositorActive = pathMaterialPlan.mode === "cross-section" && hasPathMaterialTextures;
+      // The generic field's large square chips made the route read as a gray
+      // speckled ribbon. The compositor's core uses the existing deterministic
+      // fine-grain generator instead; it remains world-anchored and the whole
+      // connected mesh remains the gameplay/picking authority.
+      const mesh = new PIXI.Mesh({
+        geometry,
+        texture: textureFor(component.terrain, pathCompositorActive),
+      });
       mesh.tint = seasonalByTerrain[component.terrain]?.textureTint ?? 0xffffff;
       mesh.eventMode = "none";
       const mask = buildMask(visualRings);
       mesh.mask = mask;
       layer.addChild(mesh, mask);
+      if (pathCompositorActive) {
+        pathComponentCount++;
+        pathShoulderWidth = pathMaterialPlan.shoulderWidth;
+        pathEdgeWidth = pathMaterialPlan.edgeWidth;
+        for (const strip of pathMaterialPlan.strips) {
+          const data = pathMaterialStripMesh(strip, (point) => worldToIso(
+            point.x,
+            point.y,
+            sampleVisualHeight(heightfield, point.x, point.y),
+            rotation,
+          ));
+          if (data.indices.length === 0) continue;
+          const stripMesh = new PIXI.Mesh({
+            geometry: new PIXI.MeshGeometry({
+              positions: data.positions,
+              uvs: data.uvs,
+              indices: data.indices,
+            }),
+            texture: data.role === "shoulder" ? pathShoulderTexture! : pathEdgeTexture!,
+          });
+          stripMesh.eventMode = "none";
+          stripMesh.label = `path-material:${data.role}:${component.topologyKey}`;
+          pathMaterialLayer.addChild(stripMesh);
+          pathStripCount++;
+          pathOwnership.add(`path>${strip.outsideTerrain}`);
+        }
+      }
       if (component.terrain === "water" || component.terrain === "wetland") {
         const firstCell = component.cells[0];
         const gx = firstCell % course.width;
@@ -3863,6 +3981,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         course.width,
         course.height,
       );
+      if (pathCompositorActive) continue;
       for (const run of boundaryRuns) {
         const ribbons = buildSignedContourRibbons(
           component.terrain,
@@ -4081,7 +4200,26 @@ export function PixiStage(requestedProps: PixiStageProps) {
     }
     layer.addChild(landformLayer);
     layer.addChild(recessedLayer);
+    layer.addChild(pathMaterialLayer);
     layer.addChild(bandLayer);
+    const pathActive = pathComponentCount > 0 && pathStripCount > 0;
+    pathMaterialDiagnosticsRef.current = {
+      active: pathActive,
+      mode: pathActive ? "cross-section" : "legacy",
+      quality,
+      componentCount: pathComponentCount,
+      stripCount: pathStripCount,
+      roles: pathActive ? ["shoulder", "edge", "core"] : ["core"],
+      textureIds: pathActive
+        ? [
+          `${getBiomeDefinition(course.theme).key}:${quality}:path-shoulder`,
+          `${getBiomeDefinition(course.theme).key}:${quality}:path-edge`,
+          `${getBiomeDefinition(course.theme).key}:${quality}:path-core:fine-compacted`,
+        ]
+        : ["legacy:path"],
+      widths: { shoulder: pathShoulderWidth, edge: pathEdgeWidth },
+      ownership: [...pathOwnership].sort(),
+    };
     stampAtlasGeneration(layer, atlasRevision);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
     return () => {
