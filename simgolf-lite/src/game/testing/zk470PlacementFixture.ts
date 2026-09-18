@@ -65,11 +65,27 @@ export function firstCanonicalDifference(before: unknown, after: unknown, path: 
   return { path, before, after };
 }
 
-export function persistenceProbe(payload: SavePayload): { slot: string; beforeHash: string; afterHash: string; firstDifference: ReturnType<typeof firstCanonicalDifference> } {
+export function persistenceProbe(payload: SavePayload): {
+  slot: string;
+  beforeHash: string;
+  afterHash: string;
+  firstDifference: ReturnType<typeof firstCanonicalDifference>;
+  cleanedUp: boolean;
+} {
   const before = payload;
   const storage = new Map<string, string>();
-  storage.set(ZK470_FIXTURE_SLOT, JSON.stringify(before));
-  const after = JSON.parse(storage.get(ZK470_FIXTURE_SLOT)!);
-  storage.delete(ZK470_FIXTURE_SLOT);
-  return { slot: ZK470_FIXTURE_SLOT, beforeHash: hashCanonicalValue(before), afterHash: hashCanonicalValue(after), firstDifference: firstCanonicalDifference(before, after) };
+  let after: unknown;
+  try {
+    storage.set(ZK470_FIXTURE_SLOT, JSON.stringify(before));
+    after = JSON.parse(storage.get(ZK470_FIXTURE_SLOT)!);
+  } finally {
+    storage.delete(ZK470_FIXTURE_SLOT);
+  }
+  return {
+    slot: ZK470_FIXTURE_SLOT,
+    beforeHash: hashCanonicalValue(before),
+    afterHash: hashCanonicalValue(after),
+    firstDifference: firstCanonicalDifference(before, after),
+    cleanedUp: storage.size === 0,
+  };
 }
