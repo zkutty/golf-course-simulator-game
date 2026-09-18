@@ -3801,7 +3801,29 @@ export function PixiStage(requestedProps: PixiStageProps) {
         bank.eventMode = "none";
         const bankLight = reliefStyle?.bankLight ?? 0xc9b477;
         const bankDark = reliefStyle?.bankDark ?? 0x6f5534;
-        for (const ring of visualRings) {
+        if (component.terrain === "sand" && bunkerVisualType) {
+          // The sand mesh is already physically recessed by the shared visual
+          // heightfield and the classified ring supplies its organic floor.
+          // A vertical quad bank over that scalloped ring can project acute
+          // brown fins at tight turns. Render its continuous bank/lip as two
+          // restrained strokes instead: dark outer grade, pale inner lip.
+          // This keeps the established floor/lip/bank vocabulary without a
+          // second acute polygon envelope around the bunker.
+          for (const ring of visualRings) {
+            if (ring.length < 3) continue;
+            const lip = ring.map((point) => worldToIso(
+              point.x,
+              point.y,
+              sampleLandscapeSurfaceHeight(heightfield, component, point.x, point.y),
+              rotation,
+            ));
+            bank.moveTo(lip[0].x, lip[0].y);
+            for (let index = 1; index < lip.length; index++) bank.lineTo(lip[index].x, lip[index].y);
+            bank.closePath();
+            bank.stroke({ width: 2.4, color: bankDark, alpha: 0.25, join: "round" });
+            bank.stroke({ width: 1.05, color: bankLight, alpha: 0.62, join: "round" });
+          }
+        } else for (const ring of visualRings) {
           const ribbon = buildRecessedLandformRibbon(heightfield, component, ring);
           if (ribbon.length < 3) continue;
           for (let index = 0; index < ribbon.length; index++) {
