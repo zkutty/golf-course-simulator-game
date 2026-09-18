@@ -3,6 +3,8 @@ import type * as PIXI from "pixi.js";
 import { DEFAULT_STATE } from "../../../game/gameState";
 import { BIOME_KEYS } from "../../../game/models/biomes";
 import type { Terrain } from "../../../game/models/types";
+import { deriveHabitatComposition } from "../../../game/render/habitatComposition";
+import { createParklandVisualReferenceCourse } from "../../../game/testing/referenceCourse";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import {
   createNaturalPropsSceneSystem,
@@ -152,6 +154,18 @@ describe("natural props scene ownership", () => {
       .toEqual(high.slice(0, medium.length).map(({ frame: _frame, ...detail }) => detail));
     expect(medium.every((detail) => detail.frame.endsWith("_0"))).toBe(true);
     expect(deriveWetShoreComposition({ ...input, quality: "low" })).toEqual([]);
+  });
+
+  it("keeps fixed M19 wet-shore detail counts at normal and detail quality", () => {
+    const course = createParklandVisualReferenceCourse();
+    const high = deriveWetShoreComposition({ course, tiles: course.tiles, worldSeed: 12_160, quality: "high" });
+    const medium = deriveWetShoreComposition({ course, tiles: course.tiles, worldSeed: 12_160, quality: "medium" });
+    expect({ rendered: medium.length, masses: new Set(medium.map((detail) => detail.massId)).size })
+      .toEqual({ rendered: 16, masses: 4 });
+    expect({ rendered: high.length, masses: new Set(high.map((detail) => detail.massId)).size })
+      .toEqual({ rendered: 16, masses: 4 });
+    expect(medium.map(({ frame: _frame, ...detail }) => detail))
+      .toEqual(high.slice(0, medium.length).map(({ frame: _frame, ...detail }) => detail));
   });
 
   it("derives procedural fallback ownership from every registered biome", () => {
@@ -315,6 +329,18 @@ describe("natural props scene ownership", () => {
       theme: "parkland" as const,
     };
     const detailTextures = vi.fn(() => detailTexture);
+    const expectedHabitatDetails = deriveHabitatComposition({
+      course,
+      tiles: course.tiles,
+      obstacles: trees,
+      worldSeed: 42,
+      quality: "high",
+    }).length + deriveWetShoreComposition({
+      course,
+      tiles: course.tiles,
+      worldSeed: 42,
+      quality: "high",
+    }).length;
     const scene = createNaturalPropsSceneSystem(
       objects as unknown as PIXI.Container,
       decals as unknown as PIXI.Container,
@@ -334,8 +360,8 @@ describe("natural props scene ownership", () => {
       graphicsQuality: "high",
     }));
     expect(scene.contentCount()).toBe(3);
-    expect(scene.habitatDetailCount()).toBeGreaterThan(0);
-    expect(detailTextures).toHaveBeenCalled();
+    expect(scene.habitatDetailCount()).toBe(expectedHabitatDetails);
+    expect(detailTextures).toHaveBeenCalledTimes(expectedHabitatDetails);
     expect(decals.children.some((child) =>
       (child as { label?: string }).label?.startsWith("habitat-composition:"),
     )).toBe(true);

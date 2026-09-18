@@ -106,16 +106,18 @@ interface EcologyPresentation {
 }
 
 const TIER_PRESENTATION: Readonly<Record<EcologyTier, EcologyPresentation>> = {
-  near: { scale: 1.1, alpha: 0.94, verticalOffset: 0.31 },
-  middle: { scale: 0.92, alpha: 0.8, verticalOffset: 0.29 },
-  far: { scale: 0.76, alpha: 0.66, verticalOffset: 0.26 },
+  // Medium/High habitat members are deliberately close in visual weight: a
+  // three-to-five cell mass should read as one bed at normal M19 zoom.
+  near: { scale: 1.28, alpha: 0.98, verticalOffset: 0.31 },
+  middle: { scale: 1.14, alpha: 0.94, verticalOffset: 0.29 },
+  far: { scale: 1.0, alpha: 0.88, verticalOffset: 0.26 },
   shore: { scale: 0.88, alpha: 0.86, verticalOffset: 0.34 },
 };
 
 const ROLE_SCALE: Readonly<Record<EcologyPlacement["role"], number>> = {
   woodland_floor: 0.9,
   understory: 1,
-  rough_mass: 1.06,
+  rough_mass: 1.12,
   rock_plant_cluster: 0.84,
   wet_shore: 1,
 };
