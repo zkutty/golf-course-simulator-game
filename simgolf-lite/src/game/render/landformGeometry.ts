@@ -2,6 +2,13 @@ import type { SurfacePoint, Terrain } from "../models/types";
 import type { VisualHeightfield } from "./landscapeGeometry";
 import { sampleVisualHeight } from "./landscapeGeometry";
 
+export interface LandformPresentationPlan {
+  /** Continuous raster slope-light is the sole Parkland relief treatment. */
+  readonly macroGrade: "spatially-filtered-slope-light";
+  /** No Parkland shoulder bands are emitted into the final scene plan. */
+  readonly shoulders: readonly LandformShoulder[];
+}
+
 export interface LandformShoulderPoint {
   upper: SurfacePoint;
   lower: SurfacePoint;
@@ -216,4 +223,25 @@ export function buildLandformShoulders(
     }
   }
   return result;
+}
+
+/**
+ * The renderer-facing relief policy. Parkland deliberately returns no
+ * shoulder primitives: its terrain grade is communicated by the continuous
+ * macro raster, not a second contour treatment. Other themes retain the
+ * existing stitched geometry until they receive their own art-direction pass.
+ */
+export function buildLandformPresentationPlan(
+  field: VisualHeightfield,
+  tiles: readonly Terrain[],
+  elevations: readonly number[],
+  theme: "parkland" | "links" | "desert" | undefined,
+  density = 2,
+): LandformPresentationPlan {
+  return Object.freeze({
+    macroGrade: "spatially-filtered-slope-light",
+    shoulders: Object.freeze(theme === "parkland"
+      ? []
+      : buildLandformShoulders(field, tiles, elevations, density)),
+  });
 }

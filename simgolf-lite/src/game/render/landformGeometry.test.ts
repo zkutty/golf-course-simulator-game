@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { worldToIso, type IsoRotation } from "./iso";
 import { buildVisualHeightfield } from "./landscapeGeometry";
-import { buildLandformShoulders } from "./landformGeometry";
+import { buildLandformPresentationPlan, buildLandformShoulders } from "./landformGeometry";
 import { createMacroLandformFixture } from "../testing/macroLandformFixture";
 import { createM20TerrainReferenceCourse, createParklandVisualReferenceCourse } from "../testing/referenceCourse";
 
@@ -50,5 +50,25 @@ describe("continuous landform geometry", () => {
       const upperFlat = worldToIso(sample.upper.x, sample.upper.y, sample.lowerHeight, rotation);
       expect(Math.abs(upper.y - upperFlat.y)).toBeGreaterThan(4);
     }
+  });
+
+  it("omits Parkland shoulder primitives from the renderer-facing plan", () => {
+    const parkland = createParklandVisualReferenceCourse();
+    const before = JSON.stringify(parkland);
+    const plan = buildLandformPresentationPlan(
+      buildVisualHeightfield(parkland),
+      parkland.tiles,
+      parkland.elevations,
+      parkland.theme,
+      3,
+    );
+    expect(plan.macroGrade).toBe("spatially-filtered-slope-light");
+    expect(plan.shoulders).toEqual([]);
+    expect(JSON.stringify(parkland)).toBe(before);
+
+    const links = { ...parkland, theme: "links" as const };
+    expect(buildLandformPresentationPlan(
+      buildVisualHeightfield(links), links.tiles, links.elevations, links.theme, 2,
+    ).shoulders.length).toBeGreaterThan(0);
   });
 });
