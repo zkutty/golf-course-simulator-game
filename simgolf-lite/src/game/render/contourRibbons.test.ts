@@ -54,4 +54,26 @@ describe("pair-owned signed contour ribbons", () => {
     expect(high.flatMap((ribbon) => ribbon.details).length)
       .toBeGreaterThan(medium.flatMap((ribbon) => ribbon.details).length);
   });
+
+  it("tapers offsets at concave corners instead of forming deep inset bulbs", () => {
+    const concaveShore = [
+      { x: 0, y: 0 }, { x: 5, y: 0 }, { x: 5, y: 1 },
+      { x: 1, y: 1 }, { x: 1, y: 5 }, { x: 0, y: 5 }, { x: 0, y: 0 },
+    ];
+    const deepest = buildSignedContourRibbons("water", "rough", concaveShore, {
+      theme: "parkland",
+      colorVision: "standard",
+      profile: "high",
+    }).find((ribbon) => ribbon.band.role === "water-deep")!;
+
+    // Tight L corners cannot safely host the old >1-tile water inset. The
+    // bounded presentation offset preserves a joined shore while preventing a
+    // self-crossing/peninsula-shaped ribbon.
+    for (let index = 0; index < concaveShore.length - 1; index++) {
+      expect(Math.hypot(
+        deepest.inner[index].x - concaveShore[index].x,
+        deepest.inner[index].y - concaveShore[index].y,
+      )).toBeLessThanOrEqual(0.241);
+    }
+  });
 });

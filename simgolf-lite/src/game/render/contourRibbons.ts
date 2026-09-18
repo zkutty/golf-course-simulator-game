@@ -43,13 +43,43 @@ function normalAt(points: readonly SurfacePoint[], index: number, closed: boolea
   return { x: -dy / length, y: dx / length };
 }
 
-function offsetContour(points: readonly SurfacePoint[], offset: number): SurfacePoint[] {
+/**
+ * A conventional offset can form large mitres/bulbs at concave tile corners.
+ * These seams are presentation cues, not a second surface outline, so clamp
+ * every vertex by its neighbouring edge lengths and a small global envelope.
+ * When a tight corner cannot accommodate the complete band, the band tapers
+ * there instead of folding across the water/sand interior.
+ */
+function safeOffsetAt(
+  points: readonly SurfacePoint[],
+  index: number,
+  offset: number,
+  envelope: number,
+  closed: boolean,
+): number {
+  const previous = points[closed ? (index - 1 + points.length) % points.length : Math.max(0, index - 1)];
+  const current = points[index];
+  const next = points[closed ? (index + 1) % points.length : Math.min(points.length - 1, index + 1)];
+  const nearby = Math.min(
+    Math.hypot(current.x - previous.x, current.y - previous.y) || Infinity,
+    Math.hypot(next.x - current.x, next.y - current.y) || Infinity,
+  );
+  // A quarter of the shortest neighbouring segment leaves room for a bevel on
+  // either side; the absolute ceiling keeps long concave shore runs quiet.
+  const limit = Math.min(0.24, nearby * 0.22);
+  // Apply one local scale to both sides of the band. That lets narrow bands
+  // taper at a tight corner while retaining a real outer→inner interval.
+  return offset * Math.min(1, limit / Math.max(1e-7, envelope));
+}
+
+function offsetContour(points: readonly SurfacePoint[], offset: number, envelope = Math.abs(offset)): SurfacePoint[] {
   const closed = isClosed(points);
   const source = normalizedContour(points);
   if (source.length < 2) return [];
   const offsetPoints = source.map((point, index) => {
     const normal = normalAt(source, index, closed);
-    return { x: point.x + normal.x * offset, y: point.y + normal.y * offset };
+    const safeOffset = safeOffsetAt(source, index, offset, envelope, closed);
+    return { x: point.x + normal.x * safeOffset, y: point.y + normal.y * safeOffset };
   });
   if (closed) offsetPoints.push({ ...offsetPoints[0] });
   return offsetPoints;
@@ -75,15 +105,21 @@ export function buildSignedContourRibbons(
   if (other == null || points.length < 2) return [];
   const profile = contourProfileFor(owner, other, options);
   if (!profile || profile.owner !== owner) return [];
-  return profile.bands.map((band) => ({
-    owner: profile.owner,
-    other: profile.other,
-    band,
-    outer: offsetContour(points, band.offset),
-    inner: offsetContour(points, band.offset + band.width),
-    details: detailsAlongContour(points, {
-      motif: band.detail,
-      profile: options.profile,
-    }),
-  })).filter((ribbon) => ribbon.outer.length >= 2 && ribbon.inner.length === ribbon.outer.length);
+  return profile.bands.map((band) => {
+    const outerOffset = band.offset;
+    const innerOffset = band.offset + band.width;
+    const envelope = Math.max(Math.abs(outerOffset), Math.abs(innerOffset));
+    return {
+      owner: profile.owner,
+      other: profile.other,
+      band,
+      outer: offsetContour(points, outerOffset, envelope),
+      inner: offsetContour(points, innerOffset, envelope),
+      details: detailsAlongContour(points, {
+        motif: band.detail,
+        profile: options.profile,
+        spacingScale: band.detailSpacing,
+      }),
+    };
+  }).filter((ribbon) => ribbon.outer.length >= 2 && ribbon.inner.length === ribbon.outer.length);
 }
