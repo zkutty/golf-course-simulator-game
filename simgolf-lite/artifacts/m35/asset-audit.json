@@ -191,11 +191,12 @@
     }
   },
   "initialCritical": {
-    "bytes": 3831161,
-    "mib": 3.654,
+    "bytes": 3835290,
+    "mib": 3.658,
     "files": [
+      "assets/building-sites-sA2JWQgX.js",
       "assets/index-B07k5n3O.css",
-      "assets/index-q7l03mwa.js",
+      "assets/index-D48XHPeD.js",
       "assets/pixi-WQLZ3lKS.js",
       "assets/react-CGmq1y7D.js",
       "assets/vendor-CAfNi7eK.js",
