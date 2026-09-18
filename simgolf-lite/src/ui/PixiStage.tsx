@@ -55,6 +55,11 @@ import { useI18n } from "../i18n/useI18n";
 import { ELEVATION_MAX, getElevation } from "../game/models/elevation";
 import { entityDepth } from "../game/render/objectPlacement";
 import {
+  GOLFER_CONTACT_SHADOW,
+  advanceGroundedWalkPhase,
+  groundedGolferFrame,
+} from "../game/render/golferGrounding";
+import {
   GOLFER_DISPLAY_W,
   GOLFER_FEET_Y,
   GOLFER_FRAME_H,
@@ -4521,8 +4526,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
               // Drop shadow at the feet, then selection ring, then the two
               // sprite layers (base colors + tinted grayscale clothing).
               const shadow = new PIXI.Graphics();
-              shadow.ellipse(1.5, 0.8, 8, 3.4);
-              shadow.fill({ color: 0x000000, alpha: 0.18 });
+              shadow.ellipse(
+                GOLFER_CONTACT_SHADOW.x,
+                GOLFER_CONTACT_SHADOW.y,
+                GOLFER_CONTACT_SHADOW.radiusX,
+                GOLFER_CONTACT_SHADOW.radiusY,
+              );
+              shadow.fill({ color: 0x000000, alpha: GOLFER_CONTACT_SHADOW.alpha });
               const ring = new PIXI.Graphics();
               ring.visible = false;
               const scale = GOLFER_DISPLAY_W / GOLFER_FRAME_W;
@@ -4597,16 +4607,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
           // Position + entity culling first: an offscreen golfer keeps its
           // trigger bookkeeping (above) but skips all visual work.
-          const ge = surfaceHeightAt(golfer.x + 0.5, golfer.y + 0.5);
-          const c = tileCenterIso(golfer.x, golfer.y, ge, rotation);
+          const grounded = groundedGolferFrame(golfer.x, golfer.y, rotation, surfaceHeightAt);
+          const { screen: c } = grounded;
           entry.holder.position.set(c.x, c.y);
           const offscreen = c.x < cullL || c.x > cullR || c.y < cullT || c.y > cullB;
           entry.holder.visible = !offscreen;
           if (!offscreen) {
             // Quantize the depth key so the container only re-sorts when the
             // golfer crosses a meaningful slice of a tile row, not per frame.
-            const z = Math.round(entityDepth(golfer.x, golfer.y, ge, rotation) * 10) / 10;
-            if (entry.holder.zIndex !== z) entry.holder.zIndex = z;
+            if (entry.holder.zIndex !== grounded.depth) entry.holder.zIndex = grounded.depth;
           }
 
           if (!offscreen && entry.sprite) {
@@ -4623,11 +4632,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
             if (sp.reaction && nowMs >= sp.reactionUntil) sp.reaction = null;
             // Stride phase advances with actual ground covered, so the walk
             // cycle tracks every sim speed for free.
-            if (golfer.segKind === "walk" && sp.lastPos) {
-              sp.walkPhase +=
-                Math.hypot(golfer.x - sp.lastPos.x, golfer.y - sp.lastPos.y) *
-                WALK_STRIDES_PER_TILE;
-            }
+            sp.walkPhase = advanceGroundedWalkPhase(
+              sp.walkPhase,
+              sp.lastPos,
+              golfer,
+              golfer.segKind,
+              WALK_STRIDES_PER_TILE,
+            );
             sp.lastPos = { x: golfer.x, y: golfer.y };
             // Keep the last real facing through pauses; stored in world space
             // so camera rotation re-resolves it naturally.

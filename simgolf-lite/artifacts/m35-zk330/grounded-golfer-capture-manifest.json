@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "seed": "zk330-grounded-golfer-v1",
+  "fixture": "src/game/render/golferGrounding.test.ts",
+  "traveller": { "id": 330, "start": [2, 2], "destination": [7, 2] },
+  "terrainSamples": [
+    [2, 2, "fairway", 0], [3, 2, "rough", 1], [4, 2, "fairway", 2],
+    [5, 2, "rough", 0], [7, 2, "green", 1]
+  ],
+  "bankCases": ["valid-bridge-crossing", "blocked-water-bank"],
+  "renderBudget": { "holdersPerGolfer": 1, "contactShadowsPerHolder": 1, "newWorldEffectsPerTick": 0 },
+  "captures": [
+    { "rotation": 0, "quality": "high", "reducedMotion": false },
+    { "rotation": 90, "quality": "medium", "reducedMotion": false },
+    { "rotation": 180, "quality": "low", "reducedMotion": true },
+    { "rotation": 270, "quality": "high", "reducedMotion": true }
+  ]
+}
