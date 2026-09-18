@@ -3570,6 +3570,8 @@ export default function App() {
             issues: [...(scoredHoles[index]?.issues ?? [])],
           })),
           obstacles: current.obstacles.map((obstacle) => ({ ...obstacle })),
+          buildings: (current.buildings ?? []).map((building) => ({ ...building })),
+          decorations: (current.decorations ?? []).map((decoration) => ({ ...decoration })),
           greenSurface: current.greenSurface
             ? structuredClone(current.greenSurface)
             : null,

@@ -125,6 +125,8 @@ interface Window {
         issues: string[];
       }>;
       obstacles: import("./game/models/types").Obstacle[];
+      buildings: import("./game/models/types").Building[];
+      decorations: import("./game/models/types").Decoration[];
       greenSurface: import("./game/greens/greenSurface").GreenSurfaceV1 | null;
       features: Array<{
         id: string;
