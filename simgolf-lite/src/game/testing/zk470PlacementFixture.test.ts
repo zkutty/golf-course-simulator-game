@@ -3,6 +3,7 @@ import { canonicalJson } from "../../utils/canonical";
 import {
   createZk470PlacementFixture,
   createZk470SavePayload,
+  firstCanonicalDifference,
   persistenceProbe,
   ZK470_TARGETS,
 } from "./zk470PlacementFixture";
@@ -55,5 +56,15 @@ describe("ZK-470A deterministic placement fixture", () => {
     expect(first.cleanedUp).toBe(true);
     expect(canonicalJson(payload)).toBe(before);
     expect(first).toEqual(second);
+  });
+
+  it("reports the first canonical path when a persisted payload drifts", () => {
+    const payload = createZk470SavePayload();
+    const changed = { ...payload, world: { ...payload.world, cash: payload.world.cash + 1 } };
+    expect(firstCanonicalDifference(payload, changed)).toEqual({
+      path: "$.world.cash",
+      before: 250_000,
+      after: 250_001,
+    });
   });
 });
