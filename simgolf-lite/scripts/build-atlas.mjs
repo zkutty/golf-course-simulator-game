@@ -278,6 +278,16 @@ function copyFieldAsset(theme, quality, terrain) {
   return { image: name, bytes: buffer.length, width: png.width, height: png.height };
 }
 
+function copyPathMaterialAsset(theme, quality, role) {
+  const source = path.join(LANDSCAPE_FIELDS_SRC, theme, quality, `path-${role}.png`);
+  if (!existsSync(source)) return null;
+  const buffer = readFileSync(source);
+  const name = `path-material-${theme}-${quality}-${role}.${shortHash(buffer)}.png`;
+  writeFileSync(path.join(BIOME_OUT_DIR, name), buffer);
+  const png = PNG.sync.read(buffer);
+  return { image: name, bytes: buffer.length, width: png.width, height: png.height };
+}
+
 function copySeasonalMaterials(theme, quality, season) {
   const sourceDirectory = path.join(
     SEASONAL_OVERLAYS_SRC,
@@ -388,8 +398,15 @@ for (const theme of themes) {
           .map((terrainName) => [terrainName, copyFieldAsset(theme, quality, terrainName)])
           .filter(([, asset]) => asset),
       );
+    const pathMaterials = quality === "low"
+      ? null
+      : Object.fromEntries(
+        ["shoulder", "edge"]
+          .map((role) => [role, copyPathMaterialAsset(theme, quality, role)])
+          .filter(([, asset]) => asset),
+      );
     manifest.biomes[theme][quality] = {
-      base: { buildings, terrain, details, props, fields },
+      base: { buildings, terrain, details, props, fields, pathMaterials },
       seasonal: buildSeasonalOverlays(theme, quality),
     };
   }

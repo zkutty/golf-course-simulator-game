@@ -13,6 +13,7 @@ import {
   atlasResidencySnapshot,
   atlasFallbackDiagnostics,
   getLandscapeMaterialField,
+  getPathMaterialField,
   getPropFrame,
   getSeasonalFrame,
   getTerrainDetailFrame,
@@ -36,6 +37,10 @@ function base(theme: string, quality: string) {
     props: quality === "low" ? null : sheet(`props-${theme}-${quality}`),
     fields: quality === "low" ? {} : {
       fairway: { image: `field-${theme}-${quality}-fairway.123456789abc.png` },
+    },
+    pathMaterials: quality === "low" ? null : {
+      shoulder: { image: `path-material-${theme}-${quality}-shoulder.123456789abc.png` },
+      edge: { image: `path-material-${theme}-${quality}-edge.123456789abc.png` },
     },
   };
 }
@@ -103,6 +108,8 @@ describe("incremental biome atlas loading", () => {
     expect(urls.some((url) => url.includes("parkland-high"))).toBe(true);
     expect(urls.some((url) => url.includes("autumn-"))).toBe(true);
     expect(urls.some((url) => url.includes("spring-"))).toBe(false);
+    expect(urls.some((url) => url.includes("path-material-parkland-high-shoulder"))).toBe(true);
+    expect(urls.some((url) => url.includes("path-material-parkland-high-edge"))).toBe(true);
     expect(urls.some((url) => url.includes("links-") || url.includes("desert-"))).toBe(false);
   });
 
@@ -174,9 +181,27 @@ describe("incremental biome atlas loading", () => {
 
     const urls = assetsLoad.mock.calls.map(([url]) => String(url));
     expect(urls.some((url) => url.includes("field-parkland-low"))).toBe(false);
+    expect(urls.some((url) => url.includes("path-material-parkland-low"))).toBe(false);
     expect(urls.some((url) => url.includes("details-parkland-low"))).toBe(false);
     expect(urls.some((url) => url.includes("props-parkland-low"))).toBe(false);
     expect(urls.some((url) => url.includes("autumn-"))).toBe(false);
+  });
+
+  it("loads repeat-safe path shoulder and edge fields only for supported qualities", async () => {
+    await loadAtlases("links", "medium");
+
+    const shoulder = getPathMaterialField("links", "shoulder", "medium") as unknown as {
+      source: { style: { addressMode: string; scaleMode: string } };
+    };
+    const edge = getPathMaterialField("links", "edge", "medium") as unknown as {
+      source: { style: { addressMode: string; scaleMode: string } };
+    };
+    expect(shoulder.source.style).toMatchObject({ addressMode: "repeat", scaleMode: "linear" });
+    expect(edge.source.style).toMatchObject({ addressMode: "repeat", scaleMode: "linear" });
+
+    await loadAtlases("links", "low");
+    expect(getPathMaterialField("links", "shoulder", "low")).toBeNull();
+    expect(getPathMaterialField("links", "edge", "low")).toBeNull();
   });
 
   it("does not let a late previous-season overlay replace the current season", async () => {

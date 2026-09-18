@@ -12,6 +12,7 @@ import type { SeasonName } from "../game/seasons/types";
 import {
   normalizeAtlasManifest,
   type AtlasManifest,
+  type AtlasPathMaterialRole,
   type AtlasQuality,
   type AtlasSeasonalFrameFamily,
   type AtlasSeasonalOverlay,
@@ -51,6 +52,7 @@ const terrainDetailsSheets = new Map<string, Spritesheet>();
 const naturalPropsSheets = new Map<string, Spritesheet>();
 const buildingsSheets = new Map<string, Spritesheet>();
 const landscapeFields = new Map<string, Texture>();
+const pathMaterialFields = new Map<string, Texture>();
 const seasonalFrameSheets = new Map<string, Spritesheet>();
 const seasonalLandscapeFields = new Map<string, Texture>();
 let golfersSheet: Spritesheet | null = null;
@@ -234,6 +236,17 @@ async function loadFields(
   }));
 }
 
+async function loadPathMaterialFields(
+  fields: NonNullable<AtlasManifest["biomes"][LandTheme][AtlasQuality]["base"]["pathMaterials"]>,
+): Promise<Array<readonly [AtlasPathMaterialRole, Texture]>> {
+  return Promise.all(Object.entries(fields).map(async ([role, asset]) => {
+    const texture = await Assets.load(`${bundleRoot()}${asset.image}`) as Texture;
+    texture.source.style.addressMode = "repeat";
+    texture.source.style.scaleMode = "linear";
+    return [role as AtlasPathMaterialRole, texture] as const;
+  }));
+}
+
 async function loadOptionalOverlay(
   overlay: AtlasSeasonalOverlay,
   overlayKey: string,
@@ -290,7 +303,7 @@ export async function loadAtlases(
         if (!buildingsBundle || !terrainBundle || !detailsBundle || !propsBundle || !fieldsBundle) {
           throw new Error(`manifest has no complete "${theme}" ${quality} content-owner route`);
         }
-        const [buildings, terrain, details, props, fields] = await Promise.all([
+        const [buildings, terrain, details, props, fields, pathMaterials] = await Promise.all([
           loadRequiredSheetUrl(`${bundleRoot()}${buildingsBundle.buildings.json}`),
           loadRequiredSheetUrl(`${bundleRoot()}${terrainBundle.terrain.json}`),
           detailsBundle.details
@@ -302,6 +315,9 @@ export async function loadAtlases(
           quality === "low"
             ? Promise.resolve([])
             : loadFields(fieldsBundle.fields),
+          quality === "low" || !fieldsBundle.pathMaterials
+            ? Promise.resolve([])
+            : loadPathMaterialFields(fieldsBundle.pathMaterials),
         ]);
         if (buildings) buildingsSheets.set(key, buildings);
         if (terrain) terrainSheets.set(key, terrain);
@@ -309,6 +325,9 @@ export async function loadAtlases(
         if (props) naturalPropsSheets.set(key, props);
         for (const [terrainName, texture] of fields) {
           landscapeFields.set(`${key}:${terrainName}`, texture);
+        }
+        for (const [role, texture] of pathMaterials) {
+          pathMaterialFields.set(`${key}:${role}`, texture);
         }
         loadedBiomeBundles.add(key);
       })();
@@ -429,6 +448,20 @@ export function getLandscapeMaterialField(
   return overlay ?? landscapeFields.get(`${key}:${terrain}`) ?? null;
 }
 
+/**
+ * Optional compositor material. Low intentionally returns null, preserving
+ * the existing safe/procedural path treatment until a renderer owns a lower
+ * fidelity implementation.
+ */
+export function getPathMaterialField(
+  theme: LandTheme | undefined,
+  role: AtlasPathMaterialRole,
+  quality: AtlasQuality,
+): Texture | null {
+  if (quality === "low") return null;
+  return pathMaterialFields.get(`${getBiomeDefinition(theme).key}:${quality}:${role}`) ?? null;
+}
+
 function requestedBundleKey(theme: LandTheme | undefined, quality: AtlasQuality): string {
   return `${getBiomeDefinition(theme).key}:${quality}`;
 }
@@ -475,6 +508,7 @@ export interface AtlasResidencySnapshot {
   readonly seasonalOverlays: readonly string[];
   readonly seasonalFrameMaps: readonly string[];
   readonly materialFields: number;
+  readonly pathMaterialFields: number;
   readonly seasonalMaterialFields: number;
 }
 
@@ -485,6 +519,7 @@ export function atlasResidencySnapshot(): AtlasResidencySnapshot {
     seasonalOverlays: [...loadedSeasonalOverlays].sort(),
     seasonalFrameMaps: [...seasonalFrameSheets.keys()].sort(),
     materialFields: landscapeFields.size,
+    pathMaterialFields: pathMaterialFields.size,
     seasonalMaterialFields: seasonalLandscapeFields.size,
   };
 }
@@ -606,6 +641,7 @@ export function __resetAtlasForTests(): void {
   naturalPropsSheets.clear();
   buildingsSheets.clear();
   landscapeFields.clear();
+  pathMaterialFields.clear();
   seasonalFrameSheets.clear();
   seasonalLandscapeFields.clear();
   golfersSheet = null;

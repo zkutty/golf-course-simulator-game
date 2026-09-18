@@ -46,6 +46,7 @@
     "gen:terrain": "node scripts/gen-terrain-materials.mjs && node scripts/gen-parkland-4x-fallback.mjs && node scripts/gen-terrain-details.mjs",
     "gen:terrain:parkland-4x": "node scripts/gen-parkland-4x-fallback.mjs",
     "gen:m35-art": "node scripts/gen-m35-landscape-fields.mjs",
+    "gen:path-material-fields": "node scripts/gen-path-material-fields.mjs",
     "audit:m35-assets": "node scripts/m35-asset-audit.mjs",
     "audit:surface-residency": "node scripts/zk680-surface-budget.mjs",
     "audit:delivery": "node scripts/zk680-delivery-evidence.mjs",

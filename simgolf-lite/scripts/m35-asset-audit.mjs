@@ -46,6 +46,7 @@ const REQUIRED_FIELDS = [
   "tee",
   "path",
 ];
+const REQUIRED_PATH_MATERIALS = ["shoulder", "edge"];
 
 const errors = [];
 const shortHash = (buffer) => createHash("sha256").update(buffer).digest("hex").slice(0, 12);
@@ -167,6 +168,16 @@ function validateTree(rootDirectory) {
       for (const [terrain, field] of Object.entries(fields)) {
         bytes += validateField(rootDirectory, field, `${theme}/${quality} ${terrain} field`);
       }
+      const pathMaterials = bundle.pathMaterials;
+      const pathMaterialNames = Object.keys(pathMaterials ?? {}).sort();
+      assert(
+        JSON.stringify(pathMaterialNames) === JSON.stringify(quality === "low" ? [] : [...REQUIRED_PATH_MATERIALS].sort()),
+        `${theme}/${quality} path material fields must be ${quality === "low" ? "omitted" : "shoulder + edge"}`,
+      );
+      assert(quality !== "low" || pathMaterials === null, `${theme}/low must explicitly retain the path material fallback`, errors);
+      for (const [role, field] of Object.entries(pathMaterials ?? {})) {
+        bytes += validateField(rootDirectory, field, `${theme}/${quality} path ${role} material`);
+      }
       assert(
         bytes < MAX_SELECTED_BIOME_BYTES,
         `${theme}/${quality} selected payload is ${toMiB(bytes)} MiB; limit is 6 MiB`,
@@ -239,6 +250,7 @@ function validateTree(rootDirectory) {
         mib: toMiB(bytes),
         frames: frameOwners.size,
         fields: fieldNames.length,
+        pathMaterials: pathMaterialNames.length,
         overlays,
         cumulativeResidencyBytes,
         cumulativeResidencyMiB: toMiB(cumulativeResidencyBytes),
@@ -293,6 +305,9 @@ if (distReport) {
     atlasFiles.add(`atlases/biomes/${atlas.image}`);
   }
   for (const field of Object.values(defaultBundle.fields)) {
+    atlasFiles.add(`atlases/biomes/${field.image}`);
+  }
+  for (const field of Object.values(defaultBundle.pathMaterials ?? {})) {
     atlasFiles.add(`atlases/biomes/${field.image}`);
   }
   const files = [...new Set([...appFiles, ...atlasFiles])];
