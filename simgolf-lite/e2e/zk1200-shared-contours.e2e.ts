@@ -45,13 +45,30 @@ test("ZK-1200 captures canonical medium seams and high-detail green rotations", 
     await expect.poll(() => page.evaluate(() => {
       const state = window.__coursecraftPixiTest!.rendererAtlasState() as unknown as {
         pathMaterialCrossSection: { quality: string; camera: { rotation: number; zoom: number } };
+        sharedContours: {
+          authoritativeSingletonDeepRough: number;
+          distinctSingletonDeepRoughFields: number;
+          distinctSingletonDeepRoughBands: number;
+          coalescedSingletonDeepRough: number;
+        };
       };
       return {
         quality: state.pathMaterialCrossSection.quality,
         rotation: state.pathMaterialCrossSection.camera.rotation,
         zoom: state.pathMaterialCrossSection.camera.zoom,
+        contours: state.sharedContours,
       };
-    })).toEqual({ quality: "medium", rotation, zoom: 1 });
+    })).toEqual({
+      quality: "medium",
+      rotation,
+      zoom: 1,
+      contours: {
+        authoritativeSingletonDeepRough: 49,
+        distinctSingletonDeepRoughFields: 0,
+        distinctSingletonDeepRoughBands: 0,
+        coalescedSingletonDeepRough: 49,
+      },
+    });
 
     const body = await canvas.screenshot();
     const image = PNG.sync.read(body);
@@ -87,13 +104,30 @@ test("ZK-1200 captures canonical medium seams and high-detail green rotations", 
     await expect.poll(() => page.evaluate(() => {
       const state = window.__coursecraftPixiTest!.rendererAtlasState() as unknown as {
         pathMaterialCrossSection: { quality: string; camera: { rotation: number; zoom: number } };
+        sharedContours: {
+          authoritativeSingletonDeepRough: number;
+          distinctSingletonDeepRoughFields: number;
+          distinctSingletonDeepRoughBands: number;
+          coalescedSingletonDeepRough: number;
+        };
       };
       return {
         quality: state.pathMaterialCrossSection.quality,
         rotation: state.pathMaterialCrossSection.camera.rotation,
         zoom: state.pathMaterialCrossSection.camera.zoom,
+        contours: state.sharedContours,
       };
-    })).toEqual({ quality: "high", rotation, zoom: 2 });
+    })).toEqual({
+      quality: "high",
+      rotation,
+      zoom: 2,
+      contours: {
+        authoritativeSingletonDeepRough: 49,
+        distinctSingletonDeepRoughFields: 0,
+        distinctSingletonDeepRoughBands: 0,
+        coalescedSingletonDeepRough: 49,
+      },
+    });
     const body = await canvas.screenshot();
     const image = PNG.sync.read(body);
     const cropWidth = Math.min(720, image.width);

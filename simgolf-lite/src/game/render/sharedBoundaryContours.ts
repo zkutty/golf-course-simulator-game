@@ -11,6 +11,14 @@ export interface SharedBoundaryOptions {
   readonly cornerSegments: number;
 }
 
+/** The dense sampler never permits a sharper visible turn than sixty degrees. */
+export const SHARED_CONTOUR_MAXIMUM_TURN_RADIANS = Math.PI / 3;
+
+/** Maximum chord length for the public corner-segment contract. */
+export function sharedContourMaximumSegmentLength(options: SharedBoundaryOptions): number {
+  return 1 / (Math.max(1, Math.min(8, Math.round(options.cornerSegments))) + 1);
+}
+
 export interface SharedBoundaryEdge {
   /** Stable grid-edge identity. Each physical terrain seam appears once. */
   readonly key: string;
@@ -199,87 +207,143 @@ function pairForUse(
   return `${low}:${high}`;
 }
 
-function isUnitAxisEdge(start: SurfacePoint, end: SurfacePoint): "h" | "v" | null {
-  const dx = Math.abs(end.x - start.x);
-  const dy = Math.abs(end.y - start.y);
-  if (dx === 1 && dy === 0) return "h";
-  if (dx === 0 && dy === 1) return "v";
-  return null;
+function samePoint(a: SurfacePoint, b: SurfacePoint): boolean {
+  return Math.abs(a.x - b.x) <= 1e-9 && Math.abs(a.y - b.y) <= 1e-9;
+}
+
+function appendPoint(output: SurfacePoint[], point: SurfacePoint) {
+  // Pair owners may traverse a quadratic in opposite floating-point order.
+  // Quantising only the render-space samples makes those two evaluations a
+  // byte-equal reverse without changing the bounded visible curve.
+  const stable = {
+    x: Math.round(point.x * 1e9) / 1e9,
+    y: Math.round(point.y * 1e9) / 1e9,
+  };
+  if (output.length === 0 || !samePoint(output[output.length - 1], stable)) output.push(stable);
+}
+
+function appendDenseLine(
+  output: SurfacePoint[],
+  from: SurfacePoint,
+  to: SurfacePoint,
+  maximumSegmentLength: number,
+) {
+  const length = Math.hypot(to.x - from.x, to.y - from.y);
+  const steps = Math.max(1, Math.ceil(length / maximumSegmentLength));
+  for (let step = 1; step <= steps; step++) {
+    const t = step / steps;
+    appendPoint(output, {
+      x: from.x + (to.x - from.x) * t,
+      y: from.y + (to.y - from.y) * t,
+    });
+  }
 }
 
 /**
- * Collapse a run of alternating unit stair steps into a sub-cell polycurve.
- * Each moved vertex is a 1/4, 1/2, 1/4 local blend, so an orthogonal corner
- * moves by sqrt(1/8) tiles (< 0.5) and no authoritative cell changes owner.
+ * Builds a local quadratic corner arc for every turn in a pair-owned seam.
+ * The radius is deliberately less than half of either adjacent edge, keeping
+ * the curve in the boundary's local cell envelope: ownership centers, narrow
+ * necks, and diagonal components remain unchanged. Straight spans are also
+ * sampled so a medium/high mask never falls back to a coarse staircase.
  */
-function smoothAlternatingOpenPath(path: readonly SurfacePoint[]): SurfacePoint[] {
-  if (path.length < 4) return path.map((point) => ({ ...point }));
-  const output: SurfacePoint[] = [{ ...path[0] }];
-  let start = 0;
-  while (start < path.length - 1) {
-    let end = start + 1;
-    let previousAxis = isUnitAxisEdge(path[start], path[end]);
-    while (previousAxis && end < path.length - 1) {
-      const nextAxis = isUnitAxisEdge(path[end], path[end + 1]);
-      if (!nextAxis || nextAxis === previousAxis) break;
-      previousAxis = nextAxis;
-      end++;
+function buildDenseSharedCurve(
+  path: readonly SurfacePoint[],
+  closed: boolean,
+  options: SharedBoundaryOptions,
+): SurfacePoint[] {
+  const source = path.length > 1 && samePoint(path[0], path[path.length - 1])
+    ? path.slice(0, -1)
+    : path;
+  if (source.length < (closed ? 3 : 2)) return source.map((point) => ({ ...point }));
+
+  const segments = Math.max(1, Math.min(8, Math.round(options.cornerSegments)));
+  // Retain a meaningful arc even if callers provide an out-of-range radius,
+  // while keeping it safely inside the half-cell containment envelope.
+  const requestedRadius = Math.max(0, Math.min(0.45, options.cornerRadius));
+  const maximumSegmentLength = sharedContourMaximumSegmentLength(options);
+  const entries: SurfacePoint[] = source.map((point) => ({ ...point }));
+  const exits: SurfacePoint[] = source.map((point) => ({ ...point }));
+  const rounded = new Uint8Array(source.length);
+
+  const firstTurn = closed ? 0 : 1;
+  const lastTurn = closed ? source.length - 1 : source.length - 2;
+  for (let index = firstTurn; index <= lastTurn; index++) {
+    const previous = source[(index - 1 + source.length) % source.length];
+    const current = source[index];
+    const next = source[(index + 1) % source.length];
+    const incomingLength = Math.hypot(current.x - previous.x, current.y - previous.y);
+    const outgoingLength = Math.hypot(next.x - current.x, next.y - current.y);
+    if (incomingLength <= 1e-8 || outgoingLength <= 1e-8) continue;
+    const incoming = {
+      x: (current.x - previous.x) / incomingLength,
+      y: (current.y - previous.y) / incomingLength,
+    };
+    const outgoing = {
+      x: (next.x - current.x) / outgoingLength,
+      y: (next.y - current.y) / outgoingLength,
+    };
+    if (Math.abs(incoming.x * outgoing.y - incoming.y * outgoing.x) <= 1e-8) continue;
+    const radius = Math.min(requestedRadius, incomingLength * 0.42, outgoingLength * 0.42);
+    if (radius <= 1e-8) continue;
+    entries[index] = {
+      x: current.x - incoming.x * radius,
+      y: current.y - incoming.y * radius,
+    };
+    exits[index] = {
+      x: current.x + outgoing.x * radius,
+      y: current.y + outgoing.y * radius,
+    };
+    rounded[index] = 1;
+  }
+
+  const output: SurfacePoint[] = [];
+  let last: SurfacePoint;
+  if (closed) {
+    last = exits[source.length - 1];
+    appendPoint(output, last);
+    for (let index = 0; index < source.length; index++) {
+      appendDenseLine(output, last, entries[index], maximumSegmentLength);
+      if (rounded[index]) {
+        const corner = source[index];
+        for (let step = 1; step <= segments; step++) {
+          const t = step / segments;
+          appendPoint(output, {
+            x: (1 - t) * (1 - t) * entries[index].x + 2 * (1 - t) * t * corner.x + t * t * exits[index].x,
+            y: (1 - t) * (1 - t) * entries[index].y + 2 * (1 - t) * t * corner.y + t * t * exits[index].y,
+          });
+        }
+      }
+      last = exits[index];
     }
-    if (end - start >= 3) {
-      for (let index = start + 1; index < end; index++) {
-        const previous = path[index - 1];
-        const current = path[index];
-        const next = path[index + 1];
-        output.push({
-          x: previous.x * 0.25 + current.x * 0.5 + next.x * 0.25,
-          y: previous.y * 0.25 + current.y * 0.5 + next.y * 0.25,
+    // The mask contract is an implicit ring; remove the repeated start point.
+    if (samePoint(output[0], output[output.length - 1])) output.pop();
+    return output;
+  }
+
+  last = source[0];
+  appendPoint(output, last);
+  for (let index = 1; index < source.length - 1; index++) {
+    appendDenseLine(output, last, entries[index], maximumSegmentLength);
+    if (rounded[index]) {
+      const corner = source[index];
+      for (let step = 1; step <= segments; step++) {
+        const t = step / segments;
+        appendPoint(output, {
+          x: (1 - t) * (1 - t) * entries[index].x + 2 * (1 - t) * t * corner.x + t * t * exits[index].x,
+          y: (1 - t) * (1 - t) * entries[index].y + 2 * (1 - t) * t * corner.y + t * t * exits[index].y,
         });
       }
-      output.push({ ...path[end] });
-      start = end;
-      continue;
     }
-    output.push({ ...path[end] });
-    start = end;
+    last = exits[index];
   }
+  appendDenseLine(output, last, source[source.length - 1], maximumSegmentLength);
   return output;
-}
-
-function smoothAlternatingClosedPath(path: readonly SurfacePoint[]): SurfacePoint[] {
-  if (path.length < 4) return path.map((point) => ({ ...point }));
-  const axes = path.map((point, index) => isUnitAxisEdge(point, path[(index + 1) % path.length]));
-  if (axes.some((axis) => axis == null)) {
-    return path.map((point) => ({ ...point }));
-  }
-  const breakAt = axes.findIndex((axis, index) => axis === axes[(index + 1) % axes.length]);
-  // Most closed component rings have at least one straight section. Rotate
-  // there, smooth only its alternating sub-runs, then restore an implicit
-  // closed ring. This avoids treating the entire island as one diagonal.
-  if (breakAt >= 0) {
-    const start = (breakAt + 1) % path.length;
-    const open = Array.from({ length: path.length + 1 }, (_, index) => ({
-      ...path[(start + index) % path.length],
-    }));
-    return smoothAlternatingOpenPath(open).slice(0, -1);
-  }
-  return path.map((current, index) => {
-    const previous = path[(index - 1 + path.length) % path.length];
-    const next = path[(index + 1) % path.length];
-    return {
-      x: previous.x * 0.25 + current.x * 0.5 + next.x * 0.25,
-      y: previous.y * 0.25 + current.y * 0.5 + next.y * 0.25,
-    };
-  });
-}
-
-function smoothSeamPoints(points: readonly SurfacePoint[], closed: boolean): SurfacePoint[] {
-  if (closed) return smoothAlternatingClosedPath(points);
-  return smoothAlternatingOpenPath(points);
 }
 
 function reconstructSharedRing(
   uses: readonly DirectedEdgeUse[],
   edges: readonly SharedBoundaryEdge[],
+  options: SharedBoundaryOptions,
 ): SurfacePoint[] {
   if (uses.length === 0) return [];
   const pairs = uses.map((use) => pairForUse(use, edges));
@@ -298,7 +362,7 @@ function reconstructSharedRing(
     const points = pointsForUses(segment);
     const samples = pair == null
       ? points
-      : smoothSeamPoints(points, segment.length === ordered.length && pair != null);
+      : buildDenseSharedCurve(points, segment.length === ordered.length && pair != null, options);
     for (let index = 0; index < samples.length; index++) {
       const point = samples[index];
       const previous = output[output.length - 1];
@@ -315,7 +379,10 @@ function reconstructSharedRing(
   return output;
 }
 
-function buildCanonicalSeams(edges: readonly SharedBoundaryEdge[]): SharedBoundarySeam[] {
+function buildCanonicalSeams(
+  edges: readonly SharedBoundaryEdge[],
+  options: SharedBoundaryOptions,
+): SharedBoundarySeam[] {
   const usesByPair = new Map<string, DirectedEdgeUse[]>();
   for (let edgeIndex = 0; edgeIndex < edges.length; edgeIndex++) {
     const edge = edges[edgeIndex];
@@ -342,7 +409,7 @@ function buildCanonicalSeams(edges: readonly SharedBoundaryEdge[]): SharedBounda
       const raw = pointsForUses(chain);
       seams.push({
         componentIds: [low, high],
-        samples: smoothSeamPoints(closed ? raw.slice(0, -1) : raw, closed),
+        samples: buildDenseSharedCurve(closed ? raw.slice(0, -1) : raw, closed, options),
         closed,
       });
     }
@@ -363,9 +430,6 @@ export function buildSharedBoundaryContours(
   components: readonly SharedBoundaryComponentInput[],
   options: SharedBoundaryOptions,
 ): SharedBoundaryResult {
-  // The options remain part of the public cache contract. Canonical seams do
-  // not independently round corners; their sub-cell reconstruction is fixed.
-  void options;
   if (width <= 0 || height <= 0 || tiles.length !== width * height) {
     return { ringsByComponent: new Map(), edges: [], seams: [] };
   }
@@ -373,9 +437,9 @@ export function buildSharedBoundaryContours(
   const ringsByComponent = new Map<number, SurfacePoint[][]>();
   for (const component of components) {
     const rings = chainUses(usesByComponent.get(component.id) ?? [])
-      .map((uses) => reconstructSharedRing(uses, edges))
+      .map((uses) => reconstructSharedRing(uses, edges, options))
       .sort((a, b) => Math.abs(signedArea(b)) - Math.abs(signedArea(a)));
     ringsByComponent.set(component.id, rings);
   }
-  return { ringsByComponent, edges, seams: buildCanonicalSeams(edges) };
+  return { ringsByComponent, edges, seams: buildCanonicalSeams(edges, options) };
 }
