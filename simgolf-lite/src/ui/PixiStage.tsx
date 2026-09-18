@@ -127,6 +127,7 @@ import {
 import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
 import {
   buildLandscapeComponents,
+  buildRecessedLandformRibbon,
   buildVisualHeightfield,
   createLandscapeComponentCache,
   pointInLandscapeRing,
@@ -144,6 +145,7 @@ import {
   buildBunkerVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
+import { buildMacroLandformRaster } from "../game/render/macroLandform";
 import {
   pickNaturalProp,
 } from "../game/render/naturalProps";
@@ -3682,6 +3684,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const bandLayer = new PIXI.Container();
     bandLayer.eventMode = "none";
     bandLayer.sortableChildren = true;
+    const recessedLayer = new PIXI.Container();
+    recessedLayer.eventMode = "none";
     let remainingShoreRocks = quality === "high" ? 280 : 180;
     let remainingWaterComponents = components.filter(
       (component) => component.terrain === "water",
@@ -3778,6 +3782,45 @@ export function PixiStage(requestedProps: PixiStageProps) {
         });
       }
 
+      const reliefStyle = terrainReliefStyle(course.theme, component.terrain);
+      if (reliefStyle || component.terrain === "sand") {
+        const bank = new PIXI.Graphics();
+        bank.eventMode = "none";
+        const bankLight = reliefStyle?.bankLight ?? 0xc9b477;
+        const bankDark = reliefStyle?.bankDark ?? 0x6f5534;
+        for (const ring of visualRings) {
+          const ribbon = buildRecessedLandformRibbon(heightfield, component, ring);
+          if (ribbon.length < 3) continue;
+          for (let index = 0; index < ribbon.length; index++) {
+            const current = ribbon[index];
+            const next = ribbon[(index + 1) % ribbon.length];
+            const topA = worldToIso(current.top.x, current.top.y, current.topHeight, rotation);
+            const topB = worldToIso(next.top.x, next.top.y, next.topHeight, rotation);
+            const bottomB = worldToIso(next.bottom.x, next.bottom.y, next.bottomHeight, rotation);
+            const bottomA = worldToIso(current.bottom.x, current.bottom.y, current.bottomHeight, rotation);
+            bank.poly([
+              topA.x, topA.y,
+              topB.x, topB.y,
+              bottomB.x, bottomB.y,
+              bottomA.x, bottomA.y,
+            ]);
+            const frontFacing = (bottomA.y + bottomB.y) > (topA.y + topB.y);
+            bank.fill({ color: frontFacing ? bankDark : bankLight, alpha: frontFacing ? 0.88 : 0.72 });
+          }
+          const lip = ribbon.map((point) => worldToIso(
+            point.top.x,
+            point.top.y,
+            point.topHeight,
+            rotation,
+          ));
+          bank.moveTo(lip[0].x, lip[0].y);
+          for (let index = 1; index < lip.length; index++) bank.lineTo(lip[index].x, lip[index].y);
+          bank.closePath();
+          bank.stroke({ width: component.terrain === "sand" ? 1.4 : 1.8, color: bankLight, alpha: 0.66, join: "round" });
+        }
+        recessedLayer.addChild(bank);
+      }
+
       const boundaryRuns = buildLandscapeBoundaryRuns(
         visualRings,
         component.terrain,
@@ -3859,9 +3902,83 @@ export function PixiStage(requestedProps: PixiStageProps) {
         }
       }
     }
+
+    // One world-anchored slope-light field spans every land component. It is
+    // derived from the same shared heightfield that projects surface meshes,
+    // so authored rises read as continuous landforms instead of per-cell
+    // adjacency bands. Hazard planes remain transparent in the raster.
+    const macroRaster = buildMacroLandformRaster(
+      heightfield,
+      effectiveTiles,
+      course.theme,
+      quality === "high" ? 6 : 4,
+    );
+    const textureFromRgba = (rgba: Uint8ClampedArray) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = macroRaster.width;
+      canvas.height = macroRaster.height;
+      const context = canvas.getContext("2d");
+      if (!context) return null;
+      const image = context.createImageData(macroRaster.width, macroRaster.height);
+      image.data.set(rgba);
+      context.putImageData(image, 0, 0);
+      return PIXI.Texture.from(canvas);
+    };
+    const macroPositions: number[] = [];
+    const macroUvs: number[] = [];
+    const macroIndices: number[] = [];
+    const macroSubdivisions = 2;
+    const macroColumns = course.width * macroSubdivisions + 1;
+    for (let sy = 0; sy <= course.height * macroSubdivisions; sy++) {
+      for (let sx = 0; sx <= course.width * macroSubdivisions; sx++) {
+        const x = sx / macroSubdivisions;
+        const y = sy / macroSubdivisions;
+        const point = project({ x, y });
+        macroPositions.push(point.x, point.y);
+        macroUvs.push(x / course.width, y / course.height);
+      }
+    }
+    for (let sy = 0; sy < course.height * macroSubdivisions; sy++) {
+      for (let sx = 0; sx < course.width * macroSubdivisions; sx++) {
+        const topLeft = sy * macroColumns + sx;
+        const topRight = topLeft + 1;
+        const bottomLeft = topLeft + macroColumns;
+        const bottomRight = bottomLeft + 1;
+        macroIndices.push(
+          topLeft, topRight, bottomRight,
+          topLeft, bottomRight, bottomLeft,
+        );
+      }
+    }
+    const macroGeometry = () => new PIXI.MeshGeometry({
+      positions: new Float32Array(macroPositions),
+      uvs: new Float32Array(macroUvs),
+      indices: new Uint32Array(macroIndices),
+    });
+    const generatedMacroTextures: PIXI.Texture[] = [];
+    const shadowTexture = textureFromRgba(macroRaster.shadow);
+    if (shadowTexture) {
+      generatedMacroTextures.push(shadowTexture);
+      const shadow = new PIXI.Mesh({ geometry: macroGeometry(), texture: shadowTexture });
+      shadow.eventMode = "none";
+      shadow.blendMode = "multiply";
+      layer.addChild(shadow);
+    }
+    const highlightTexture = textureFromRgba(macroRaster.highlight);
+    if (highlightTexture) {
+      generatedMacroTextures.push(highlightTexture);
+      const highlight = new PIXI.Mesh({ geometry: macroGeometry(), texture: highlightTexture });
+      highlight.eventMode = "none";
+      highlight.blendMode = "screen";
+      layer.addChild(highlight);
+    }
+    layer.addChild(recessedLayer);
     layer.addChild(bandLayer);
     stampAtlasGeneration(layer, atlasRevision);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
+    return () => {
+      for (const texture of generatedMacroTextures) texture.destroy(true);
+    };
   }, [
     appReady,
     atlasRevision,
