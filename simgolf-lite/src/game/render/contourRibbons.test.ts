@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSignedContourRibbons } from "./contourRibbons";
+import { buildSignedContourRibbons, shouldProjectContourRibbon } from "./contourRibbons";
 
 const clockwiseSquare = [
   { x: 0, y: 0 },
@@ -75,5 +75,16 @@ describe("pair-owned signed contour ribbons", () => {
         deepest.inner[index].y - concaveShore[index].y,
       )).toBeLessThanOrEqual(0.241);
     }
+  });
+
+  it("keeps classified bunker rings as the only sand-turn presentation owner", () => {
+    const sand = buildSignedContourRibbons("sand", "rough", clockwiseSquare, {
+      theme: "parkland",
+      colorVision: "standard",
+      profile: "high",
+    });
+    expect(sand).not.toHaveLength(0);
+    expect(sand.every((ribbon) => !shouldProjectContourRibbon(ribbon, true))).toBe(true);
+    expect(sand.every((ribbon) => shouldProjectContourRibbon(ribbon, false))).toBe(true);
   });
 });

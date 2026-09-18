@@ -19,6 +19,20 @@ export interface SignedContourRibbon {
   readonly details: readonly ContourDetail[];
 }
 
+/**
+ * Classified bunkers already own a continuous floor/lip/bank presentation in
+ * the bunker-ring renderer. Projecting a second signed polygon stack over an
+ * irregular classified turn can make acute, pointed fins. Keep the pair
+ * profile for ownership/coverage, but let that single classified renderer be
+ * the visual authority for sand transitions.
+ */
+export function shouldProjectContourRibbon(
+  ribbon: SignedContourRibbon,
+  hasClassifiedBunkerRings: boolean,
+): boolean {
+  return !(hasClassifiedBunkerRings && ribbon.owner === "sand");
+}
+
 function isClosed(points: readonly SurfacePoint[]): boolean {
   if (points.length < 3) return false;
   const first = points[0];

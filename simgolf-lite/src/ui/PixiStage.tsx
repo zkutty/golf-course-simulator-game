@@ -137,7 +137,7 @@ import {
   type LandscapeComponent,
 } from "../game/render/landscapeGeometry";
 import { buildLandscapeBoundaryRuns } from "../game/render/landscapeEdges";
-import { buildSignedContourRibbons } from "../game/render/contourRibbons";
+import { buildSignedContourRibbons, shouldProjectContourRibbon } from "../game/render/contourRibbons";
 import {
   buildBunkerVisualRings,
   classifyBunkerVisualType,
@@ -3856,6 +3856,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
         // semantic owner is this component. That is the single seam authority:
         // the adjacent component never gets a second chance to paint it.
         for (const ribbon of ribbons) {
+          // Classified bunker rings are the one continuous presentation owner
+          // for sand floor/lip/bank. Suppress the redundant signed quads and
+          // their motifs here: they create acute turn fins on organic bunker
+          // silhouettes without adding a material read.
+          if (!shouldProjectContourRibbon(ribbon, bunkerVisualType != null)) continue;
           const graphics = new PIXI.Graphics();
           graphics.eventMode = "none";
           const projectRibbon = (point: Point) => worldToIso(
