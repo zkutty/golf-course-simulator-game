@@ -146,6 +146,7 @@ import {
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
 import { buildMacroLandformRaster } from "../game/render/macroLandform";
+import { buildLandformShoulders } from "../game/render/landformGeometry";
 import {
   pickNaturalProp,
 } from "../game/render/naturalProps";
@@ -3686,6 +3687,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
     bandLayer.sortableChildren = true;
     const recessedLayer = new PIXI.Container();
     recessedLayer.eventMode = "none";
+    const landformLayer = new PIXI.Container();
+    landformLayer.eventMode = "none";
     let remainingShoreRocks = quality === "high" ? 280 : 180;
     let remainingWaterComponents = components.filter(
       (component) => component.terrain === "water",
@@ -3972,6 +3975,69 @@ export function PixiStage(requestedProps: PixiStageProps) {
       highlight.blendMode = "screen";
       layer.addChild(highlight);
     }
+    // ZK-1207: stitched isocontours create one broad render-only shoulder per
+    // authored height transition. The geometry comes from the shared field,
+    // not cell adjacency, and remains in world coordinates until this final
+    // projection so all four rotations consume the identical surface.
+    const landformShoulders = buildLandformShoulders(
+      heightfield,
+      effectiveTiles,
+      course.elevations,
+      quality === "high" ? 3 : 2,
+    );
+    for (const shoulder of landformShoulders) {
+      const graphics = new PIXI.Graphics();
+      graphics.eventMode = "none";
+      const segmentCount = shoulder.closed ? shoulder.points.length : shoulder.points.length - 1;
+      for (let index = 0; index < segmentCount; index++) {
+        const current = shoulder.points[index];
+        const next = shoulder.points[(index + 1) % shoulder.points.length];
+        const tangentX = next.upper.x - current.upper.x;
+        const tangentY = next.upper.y - current.upper.y;
+        const litFace = tangentX - tangentY >= 0;
+        const sampleBand = (point: typeof current, t: number) => worldToIso(
+          point.upper.x + (point.lower.x - point.upper.x) * t,
+          point.upper.y + (point.lower.y - point.upper.y) * t,
+          point.upperHeight + (point.lowerHeight - point.upperHeight) * t,
+          rotation,
+        );
+        for (const [start, end, colorScale, alpha] of [
+          [0, 0.34, 0.9, litFace ? 0.1 : 0.13],
+          [0.34, 0.68, 0.72, litFace ? 0.14 : 0.18],
+          [0.68, 1, 0.54, litFace ? 0.18 : 0.23],
+        ] as const) {
+          const upperA = sampleBand(current, start);
+          const upperB = sampleBand(next, start);
+          const lowerB = sampleBand(next, end);
+          const lowerA = sampleBand(current, end);
+          graphics.poly([
+            upperA.x, upperA.y,
+            upperB.x, upperB.y,
+            lowerB.x, lowerB.y,
+            lowerA.x, lowerA.y,
+          ]);
+          graphics.fill({ color: shade(themedColors.rough, colorScale), alpha });
+        }
+      }
+      const upper = shoulder.points.map((point) => worldToIso(
+        point.upper.x,
+        point.upper.y,
+        point.upperHeight,
+        rotation,
+      ));
+      graphics.moveTo(upper[0].x, upper[0].y);
+      for (let index = 1; index < upper.length; index++) graphics.lineTo(upper[index].x, upper[index].y);
+      if (shoulder.closed) graphics.closePath();
+      graphics.stroke({
+        width: 1,
+        color: shade(themedColors.rough, 1.18),
+        alpha: 0.18,
+        join: "round",
+        cap: "round",
+      });
+      landformLayer.addChild(graphics);
+    }
+    layer.addChild(landformLayer);
     layer.addChild(recessedLayer);
     layer.addChild(bandLayer);
     stampAtlasGeneration(layer, atlasRevision);
