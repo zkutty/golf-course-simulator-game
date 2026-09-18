@@ -92,6 +92,17 @@ describe("connected landscape geometry", () => {
       { x: 0, y: 1 },
     ], options.cornerRadius, options.cornerSegments);
     expect(path.rings).toEqual([accepted]);
+    expect(path.presentationCells).toEqual(path.cells);
+  });
+
+  it("exposes a one-cell presentation halo without changing component cells", () => {
+    const fairway = buildLandscapeComponents([
+      "rough", "rough", "rough",
+      "rough", "fairway", "rough",
+      "rough", "rough", "rough",
+    ], 3, 3).find((component) => component.terrain === "fairway")!;
+    expect(fairway.cells).toEqual([4]);
+    expect(fairway.presentationCells).toEqual([1, 3, 4, 5, 7]);
   });
 
   it("reuses unchanged component geometry and reports only dirty topology", () => {
@@ -128,7 +139,7 @@ describe("connected landscape geometry", () => {
     expect(medium.components[0]).not.toBe(high.components[0]);
   });
 
-  it("invalidates a stable component when its diagonal boundary context changes", () => {
+  it("keeps a stable component's canonical seam independent of diagonal context", () => {
     const cache = createLandscapeComponentCache();
     const first = cache.update([
       "rough", "rough", "rough",
@@ -144,7 +155,8 @@ describe("connected landscape geometry", () => {
     const nextFairway = repainted.components.find((component) => component.terrain === "fairway")!;
     expect(nextFairway.cells).toEqual(firstFairway.cells);
     expect(nextFairway).not.toBe(firstFairway);
-    expect(nextFairway.rings).not.toEqual(firstFairway.rings);
+    expect(nextFairway.rings).toEqual(firstFairway.rings);
+    expect(nextFairway.presentationCells).toEqual(firstFairway.presentationCells);
   });
 });
 
