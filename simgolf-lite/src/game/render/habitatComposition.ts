@@ -272,6 +272,98 @@ function definitionsFor(
   return eligible;
 }
 
+interface RankedHabitatTile extends HabitatTile {
+  readonly graphDistance: number;
+}
+
+function roleSalt(role: HabitatCompositionRole, tier: HabitatCompositionTier): number {
+  return (HABITAT_COMPOSITION_ROLES.indexOf(role) + 1) * 0x1f123bb5
+    ^ (TIER_ORDER.indexOf(tier) + 1) * 0x6c8e9cf5;
+}
+
+function candidateKey(tile: HabitatTile): number {
+  return tileKey(tile.x, tile.y);
+}
+
+/**
+ * Returns the 8-connected eligible component containing `anchor`. Habitat
+ * masses must be a patch in world space, not a hash sample of an annulus.
+ */
+function connectedCandidates(
+  anchor: HabitatTile,
+  available: ReadonlyMap<number, HabitatTile>,
+): readonly HabitatTile[] {
+  const component: HabitatTile[] = [];
+  const seen = new Set<number>([candidateKey(anchor)]);
+  const queue = [anchor];
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const tile = queue[cursor];
+    component.push(tile);
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const neighbor = available.get(tileKey(tile.x + dx, tile.y + dy));
+      if (!neighbor || seen.has(candidateKey(neighbor))) continue;
+      seen.add(candidateKey(neighbor));
+      queue.push(neighbor);
+    }
+  }
+  return component;
+}
+
+function compactMassTiles(
+  candidates: readonly HabitatTile[],
+  usedTiles: ReadonlySet<number>,
+  worldSeed: number,
+  role: HabitatCompositionRole,
+  tier: HabitatCompositionTier,
+  count: number,
+): readonly HabitatTile[] {
+  const available = new Map(candidates
+    .filter((tile) => !usedTiles.has(candidateKey(tile)))
+    .map((tile) => [candidateKey(tile), tile]));
+  if (available.size === 0) return [];
+
+  const salt = roleSalt(role, tier);
+  // Prefer an anchor whose connected eligibility can satisfy the whole mass;
+  // this avoids silently turning a mass into two distant fragments.
+  const anchors = [...available.values()].map((tile) => ({
+    tile,
+    component: connectedCandidates(tile, available),
+  })).sort((left, right) => {
+    const leftFits = left.component.length >= count ? 0 : 1;
+    const rightFits = right.component.length >= count ? 0 : 1;
+    return leftFits - rightFits
+      || right.component.length - left.component.length
+      || hash(worldSeed, left.tile.x, left.tile.y, salt, count) - hash(worldSeed, right.tile.x, right.tile.y, salt, count)
+      || left.tile.y - right.tile.y
+      || left.tile.x - right.tile.x;
+  });
+  const anchor = anchors[0].tile;
+  const ranked: RankedHabitatTile[] = [{ ...anchor, graphDistance: 0 }];
+  const seen = new Set<number>([candidateKey(anchor)]);
+  for (let cursor = 0; cursor < ranked.length; cursor++) {
+    const tile = ranked[cursor];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const neighbor = available.get(tileKey(tile.x + dx, tile.y + dy));
+      if (!neighbor || seen.has(candidateKey(neighbor))) continue;
+      seen.add(candidateKey(neighbor));
+      ranked.push({ ...neighbor, graphDistance: tile.graphDistance + 1 });
+    }
+  }
+  // A deterministic breadth-first order fills the nearest 8-connected cells
+  // around the anchor before a different mass can claim any other patch.
+  return ranked.sort((left, right) =>
+    left.graphDistance - right.graphDistance
+      || ((left.x - anchor.x) ** 2 + (left.y - anchor.y) ** 2)
+        - ((right.x - anchor.x) ** 2 + (right.y - anchor.y) ** 2)
+      || hash(worldSeed, left.x, left.y, salt, left.graphDistance)
+        - hash(worldSeed, right.x, right.y, salt, right.graphDistance)
+      || left.y - right.y
+      || left.x - right.x,
+  ).slice(0, count);
+}
+
 function planCluster(
   cluster: HabitatCluster,
   pool: readonly HabitatTile[],
@@ -282,18 +374,12 @@ function planCluster(
   const usedTiles = new Set<number>();
   const planned: HabitatCompositionPlacement[] = [];
   for (const role of HABITAT_COMPOSITION_ROLES) for (const tier of TIER_ORDER) {
-    const candidates = pool.filter((tile) => tierFor(tile.distance) === tier).slice()
-      .sort((left, right) => {
-        const leftHash = hash(worldSeed, left.x, left.y, role.length + tier.length, cluster.id.length);
-        const rightHash = hash(worldSeed, right.x, right.y, role.length + tier.length, cluster.id.length);
-        return leftHash - rightHash || left.y - right.y || left.x - right.x;
-      });
-    let member = 0;
-    for (const tile of candidates) {
-      if (member >= ROLE_PLAN[role][tier]) break;
-      if (usedTiles.has(tileKey(tile.x, tile.y))) continue;
+    const candidates = pool.filter((tile) =>
+      tierFor(tile.distance) === tier && definitionsFor(role, tile.terrain, detailOwner).length > 0,
+    );
+    const massTiles = compactMassTiles(candidates, usedTiles, worldSeed, role, tier, ROLE_PLAN[role][tier]);
+    for (const [member, tile] of massTiles.entries()) {
       const definitions = definitionsFor(role, tile.terrain, detailOwner);
-      if (definitions.length === 0) continue;
       const h = hash(worldSeed, tile.x, tile.y, member, role.length * 131 + tier.length);
       const definition = definitions[h % definitions.length];
       const massId = cluster.id + ":" + role + ":" + tier;
@@ -306,15 +392,16 @@ function planCluster(
         tier,
         tileX: tile.x,
         tileY: tile.y,
-        worldX: tile.x + 0.5 + (unit(hash(worldSeed, tile.x, tile.y, member, 0x2f6e2b1)) - 0.5) * 0.56,
-        worldY: tile.y + 0.5 + (unit(hash(worldSeed, tile.x, tile.y, member, 0x6d2b79f5)) - 0.5) * 0.56,
+        // Keep a mass visually inside its connected cells. Larger jitter made
+        // a valid tile patch read as isolated, annulus-scattered sprites.
+        worldX: tile.x + 0.5 + (unit(hash(worldSeed, tile.x, tile.y, member, 0x2f6e2b1)) - 0.5) * 0.32,
+        worldY: tile.y + 0.5 + (unit(hash(worldSeed, tile.x, tile.y, member, 0x6d2b79f5)) - 0.5) * 0.32,
         frame: quality === "medium" ? mediumFrame(definition.frames[(h >>> 27) & 1]) : definition.frames[(h >>> 27) & 1],
         kind: definition.kind,
         scale: definition.scaleRange[0] + (definition.scaleRange[1] - definition.scaleRange[0]) * scaleT,
         rank: 0,
       });
       usedTiles.add(tileKey(tile.x, tile.y));
-      member++;
     }
   }
   return planned;

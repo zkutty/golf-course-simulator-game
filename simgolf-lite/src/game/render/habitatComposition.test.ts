@@ -1,10 +1,39 @@
 import { describe, expect, it } from "vitest";
 import { hashCanonicalValue } from "../../utils/canonical";
+import { createParklandVisualReferenceCourse } from "../testing/referenceCourse";
 import { createZk1202HabitatReferenceCourse, ZK1202_HABITAT_SEED } from "../testing/zk1202HabitatFixture";
 import {
   deriveHabitatComposition,
   HABITAT_COMPOSITION_CAPS,
+  HABITAT_COMPOSITION_ROLES,
 } from "./habitatComposition";
+
+function massMembers<T extends { readonly massId: string }>(placements: readonly T[]) {
+  const output = new Map<string, T[]>();
+  for (const placement of placements) {
+    const members = output.get(placement.massId) ?? [];
+    members.push(placement);
+    output.set(placement.massId, members);
+  }
+  return output;
+}
+
+function isEightConnected(members: readonly { readonly tileX: number; readonly tileY: number }[]) {
+  if (members.length < 2) return true;
+  const remaining = new Map(members.map((member) => [`${member.tileX},${member.tileY}`, member]));
+  const first = members[0];
+  remaining.delete(`${first.tileX},${first.tileY}`);
+  const queue = [first];
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const member = queue[cursor];
+    for (const [key, neighbor] of remaining) {
+      if (Math.max(Math.abs(member.tileX - neighbor.tileX), Math.abs(member.tileY - neighbor.tileY)) > 1) continue;
+      remaining.delete(key);
+      queue.push(neighbor);
+    }
+  }
+  return remaining.size === 0;
+}
 
 describe("habitat composition", () => {
   it("is deterministic across reloads/rotations and uses strict semantic quality subsets", () => {
@@ -56,6 +85,9 @@ describe("habitat composition", () => {
     expect(new Set(placements.map((placement) => placement.clusterId)).size).toBeGreaterThanOrEqual(4);
     expect(new Set(placements.map((placement) => placement.tileX + "," + placement.tileY)).size)
       .toBe(placements.length);
+    for (const members of massMembers(placements).values()) {
+      if (members.length >= 3) expect(isEightConnected(members)).toBe(true);
+    }
   });
 
   it("keeps interiors clear of terrain, structures, and obstacle occupancy", () => {
@@ -88,5 +120,40 @@ describe("habitat composition", () => {
       worldSeed: ZK1202_HABITAT_SEED,
       quality: "high",
     })).toEqual([]);
+  });
+
+  it("keeps fixed M19 normal/detail habitat masses compact and rotation invariant", () => {
+    const course = createParklandVisualReferenceCourse();
+    const courseHash = hashCanonicalValue(course);
+    const obstacleHash = hashCanonicalValue(course.obstacles);
+    const high = deriveHabitatComposition({ course, worldSeed: 12_160, quality: "high" });
+    const medium = deriveHabitatComposition({ course, worldSeed: 12_160, quality: "medium" });
+    const summary = (placements: readonly typeof high[number][]) => ({
+      rendered: placements.length,
+      compactMasses: [...massMembers(placements).values()].filter((members) => members.length >= 3).length,
+      roles: Object.fromEntries(HABITAT_COMPOSITION_ROLES.map((role) => [
+        role,
+        placements.filter((placement) => placement.role === role).length,
+      ])),
+    });
+
+    // These values are a world-space contract for the real M19 fixture, not
+    // the dedicated secondary ecology fixture used by the earlier packet.
+    expect(summary(medium)).toEqual({ rendered: 84, compactMasses: 21, roles: {
+      woodland_floor: 28, understory: 27, rough_mass: 21, rock_plant_cluster: 8,
+    } });
+    expect(summary(high)).toEqual({ rendered: 160, compactMasses: 41, roles: {
+      woodland_floor: 58, understory: 43, rough_mass: 42, rock_plant_cluster: 17,
+    } });
+    expect(medium.map(({ frame: _frame, ...placement }) => placement))
+      .toEqual(high.slice(0, medium.length).map(({ frame: _frame, ...placement }) => placement));
+    expect(deriveHabitatComposition({
+      course: { ...course, activePinRotation: "C" }, worldSeed: 12_160, quality: "high",
+    })).toEqual(high);
+    for (const members of massMembers(high).values()) {
+      if (members.length >= 3) expect(isEightConnected(members)).toBe(true);
+    }
+    expect(hashCanonicalValue(course)).toBe(courseHash);
+    expect(hashCanonicalValue(course.obstacles)).toBe(obstacleHash);
   });
 });
