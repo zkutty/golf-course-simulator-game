@@ -375,9 +375,12 @@ const BAND_RECIPES: Record<TerrainBoundaryRole, BandRecipe[]> = {
   // Paths retain their field-textured gravel core; a restrained shoulder and
   // edge make the route read without filling it with an opaque grey ribbon.
   "path-shoulder": [
-    { role: "natural-shoulder", offset: -0.13, width: 0.09, depth: 0, tone: "other", factor: 0.92, alpha: 0.25, detail: "tufts", detailSpacing: 4.8, minProfile: "high" },
-    { role: "gravel-edge", offset: -0.01, width: 0.09, depth: 0, tone: "gravel", factor: 0.92, alpha: 0.52, detail: "pebbles", detailSpacing: 2.8, minProfile: "medium" },
-    { role: "path-core", offset: 0.10, width: 0.10, depth: 0, tone: "owner", factor: 1.02, alpha: 0.2, detail: "pebbles", detailSpacing: 3.6, minProfile: "low" },
+    // Three deliberately narrow value steps: a muted cut-grass shoulder,
+    // mineral gravel edge, then the field-textured/speckled path core. The
+    // core overlay stays transparent so it cannot turn into a flat ribbon.
+    { role: "natural-shoulder", offset: -0.14, width: 0.075, depth: 0, tone: "other", factor: 0.78, alpha: 0.38, detail: "tufts", detailSpacing: 5.6, minProfile: "high" },
+    { role: "gravel-edge", offset: -0.035, width: 0.075, depth: 0, tone: "gravel", factor: 0.9, alpha: 0.64, detail: "pebbles", detailSpacing: 2.4, minProfile: "medium" },
+    { role: "path-core", offset: 0.065, width: 0.075, depth: 0, tone: "owner", factor: 1.04, alpha: 0.11, detail: "pebbles", detailSpacing: 2.1, minProfile: "low" },
   ],
   // Maintained turf: the neighbour's own apron → dark fringe → mown collar.
   // The apron is what keeps rough, deep rough and waste distinguishable across
