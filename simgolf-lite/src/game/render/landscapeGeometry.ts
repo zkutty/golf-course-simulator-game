@@ -4,6 +4,11 @@ import { getBiomeDefinition } from "../models/biomes";
 import { terrainSurfaceInsetPx } from "./terrainRelief";
 import { ELEVATION_STEP_PX } from "./iso";
 import { buildSharedBoundaryContours } from "./sharedBoundaryContours";
+import {
+  hazardDepthOffsets,
+  hazardDepthProfile,
+  hazardInteriorDropAt,
+} from "./hazardDepth";
 
 export interface LandscapeBounds {
   minX: number;
@@ -68,6 +73,25 @@ export interface RecessedLandformRibbonPoint {
   bottom: SurfacePoint;
   topHeight: number;
   bottomHeight: number;
+}
+
+export interface HazardDepthSectionPoint extends SurfacePoint {
+  height: number;
+}
+
+export interface HazardDepthSectionSegment {
+  shelfOuterA: HazardDepthSectionPoint;
+  shelfOuterB: HazardDepthSectionPoint;
+  boundaryA: HazardDepthSectionPoint;
+  boundaryB: HazardDepthSectionPoint;
+  bankInnerA: HazardDepthSectionPoint;
+  bankInnerB: HazardDepthSectionPoint;
+  contactInnerA: HazardDepthSectionPoint;
+  contactInnerB: HazardDepthSectionPoint;
+  shallowInnerA: HazardDepthSectionPoint;
+  shallowInnerB: HazardDepthSectionPoint;
+  deepInnerA: HazardDepthSectionPoint;
+  deepInnerB: HazardDepthSectionPoint;
 }
 
 interface DirectedEdge {
@@ -725,14 +749,97 @@ export function sampleLandscapeSurfaceHeight(
   if (!pointInLandscapeComponent(component, point)) return base;
   const boundaryDistance = distanceToLandscapeBoundary(component, point);
   if (!Number.isFinite(boundaryDistance) || boundaryDistance <= 0) return base;
-  const t = Math.max(0, Math.min(1, boundaryDistance / 0.42));
-  const eased = t * t * (3 - 2 * t);
-  const maximumDrop = component.cells.length === 1
-    ? 0.34
-    : component.cells.length <= 4
-      ? 0.29
-      : 0.24;
-  return base - eased * maximumDrop;
+  const profile = hazardDepthProfile(component.terrain, component.cells.length);
+  return profile ? base - hazardInteriorDropAt(profile, boundaryDistance) : base;
+}
+
+const boundedPoint = (
+  field: VisualHeightfield,
+  point: SurfacePoint,
+): SurfacePoint => ({
+  x: Math.max(0, Math.min(field.width, point.x)),
+  y: Math.max(0, Math.min(field.height, point.y)),
+});
+
+/**
+ * Edge-local hazard sections consume the accepted shared contour verbatim.
+ * Each contour edge receives its own parallel offsets, so concave turns cannot
+ * create mitres, fins, or inverted quads. The result contains no camera or
+ * ecology state and is therefore identical under every view rotation.
+ */
+export function buildHazardDepthSections(
+  field: VisualHeightfield,
+  component: LandscapeComponent,
+  ring: readonly SurfacePoint[],
+): HazardDepthSectionSegment[] {
+  const profile = hazardDepthProfile(component.terrain, component.cells.length);
+  if (!profile || ring.length < 3) return [];
+  const sections: HazardDepthSectionSegment[] = [];
+  const atOffset = (
+    point: SurfacePoint,
+    inward: SurfacePoint,
+    offset: number,
+    height: number,
+  ): HazardDepthSectionPoint => ({
+    ...boundedPoint(field, {
+      x: point.x + inward.x * offset,
+      y: point.y + inward.y * offset,
+    }),
+    height,
+  });
+
+  for (let index = 0; index < ring.length; index++) {
+    const a = ring[index];
+    const b = ring[(index + 1) % ring.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const edgeLength = Math.hypot(dx, dy);
+    if (!Number.isFinite(edgeLength) || edgeLength <= 1e-6) continue;
+    const candidate = { x: -dy / edgeLength, y: dx / edgeLength };
+    const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const probe = { x: midpoint.x + candidate.x * 0.04, y: midpoint.y + candidate.y * 0.04 };
+    const inward = pointInLandscapeComponent(component, probe)
+      ? candidate
+      : { x: -candidate.x, y: -candidate.y };
+    const offsets = hazardDepthOffsets(profile, edgeLength);
+    const shelfSampleA = boundedPoint(field, {
+      x: a.x + inward.x * offsets.shelfOuter,
+      y: a.y + inward.y * offsets.shelfOuter,
+    });
+    const shelfSampleB = boundedPoint(field, {
+      x: b.x + inward.x * offsets.shelfOuter,
+      y: b.y + inward.y * offsets.shelfOuter,
+    });
+    const shelfHeightA = sampleVisualHeight(field, shelfSampleA.x, shelfSampleA.y);
+    const shelfHeightB = sampleVisualHeight(field, shelfSampleB.x, shelfSampleB.y);
+    const floorSampleA = boundedPoint(field, {
+      x: a.x + inward.x * offsets.deepInner,
+      y: a.y + inward.y * offsets.deepInner,
+    });
+    const floorSampleB = boundedPoint(field, {
+      x: b.x + inward.x * offsets.deepInner,
+      y: b.y + inward.y * offsets.deepInner,
+    });
+    const sampledFloorA = sampleLandscapeSurfaceHeight(field, component, floorSampleA.x, floorSampleA.y);
+    const sampledFloorB = sampleLandscapeSurfaceHeight(field, component, floorSampleB.x, floorSampleB.y);
+    const floorHeightA = Math.min(sampledFloorA, shelfHeightA - profile.minimumBankDrop);
+    const floorHeightB = Math.min(sampledFloorB, shelfHeightB - profile.minimumBankDrop);
+    sections.push({
+      shelfOuterA: atOffset(a, inward, offsets.shelfOuter, shelfHeightA),
+      shelfOuterB: atOffset(b, inward, offsets.shelfOuter, shelfHeightB),
+      boundaryA: atOffset(a, inward, offsets.boundary, shelfHeightA),
+      boundaryB: atOffset(b, inward, offsets.boundary, shelfHeightB),
+      bankInnerA: atOffset(a, inward, offsets.bankInner, floorHeightA),
+      bankInnerB: atOffset(b, inward, offsets.bankInner, floorHeightB),
+      contactInnerA: atOffset(a, inward, offsets.contactInner, floorHeightA),
+      contactInnerB: atOffset(b, inward, offsets.contactInner, floorHeightB),
+      shallowInnerA: atOffset(a, inward, offsets.shallowInner, floorHeightA),
+      shallowInnerB: atOffset(b, inward, offsets.shallowInner, floorHeightB),
+      deepInnerA: atOffset(a, inward, offsets.deepInner, floorHeightA),
+      deepInnerB: atOffset(b, inward, offsets.deepInner, floorHeightB),
+    });
+  }
+  return sections;
 }
 
 /**

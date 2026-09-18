@@ -128,7 +128,7 @@ import {
 import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
 import {
   buildLandscapeComponents,
-  buildRecessedLandformRibbon,
+  buildHazardDepthSections,
   buildVisualHeightfield,
   createLandscapeComponentCache,
   pointInLandscapeRing,
@@ -4037,57 +4037,100 @@ export function PixiStage(requestedProps: PixiStageProps) {
         bank.eventMode = "none";
         const bankLight = reliefStyle?.bankLight ?? 0xc9b477;
         const bankDark = reliefStyle?.bankDark ?? 0x6f5534;
-        if (component.terrain === "sand" && bunkerVisualType) {
-          // The sand mesh is already physically recessed by the shared visual
-          // heightfield and the classified ring supplies its organic floor.
-          // A vertical quad bank over that scalloped ring can project acute
-          // brown fins at tight turns. Render its continuous bank/lip as two
-          // restrained strokes instead: dark outer grade, pale inner lip.
-          // This keeps the established floor/lip/bank vocabulary without a
-          // second acute polygon envelope around the bunker.
-          for (const ring of visualRings) {
-            if (ring.length < 3) continue;
-            const lip = ring.map((point) => worldToIso(
-              point.x,
-              point.y,
-              sampleLandscapeSurfaceHeight(heightfield, component, point.x, point.y),
-              rotation,
-            ));
-            bank.moveTo(lip[0].x, lip[0].y);
-            for (let index = 1; index < lip.length; index++) bank.lineTo(lip[index].x, lip[index].y);
-            bank.closePath();
-            bank.stroke({ width: 2.4, color: bankDark, alpha: 0.25, join: "round" });
-            bank.stroke({ width: 1.05, color: bankLight, alpha: 0.62, join: "round" });
+        const projectDepthPoint = (point: { x: number; y: number; height: number }) => worldToIso(
+          point.x,
+          point.y,
+          point.height,
+          rotation,
+        );
+        const fillDepthQuad = (
+          outerA: { x: number; y: number; height: number },
+          outerB: { x: number; y: number; height: number },
+          innerB: { x: number; y: number; height: number },
+          innerA: { x: number; y: number; height: number },
+          color: number,
+          alpha: number,
+        ) => {
+          const a = projectDepthPoint(outerA);
+          const b = projectDepthPoint(outerB);
+          const c = projectDepthPoint(innerB);
+          const d = projectDepthPoint(innerA);
+          bank.poly([a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y]);
+          bank.fill({ color, alpha });
+        };
+        // ZK-1201 owns only depth: accepted shared contours supply the ring,
+        // the visual heightfield supplies grade/floor, and ecology retains all
+        // reeds, stones and bunker dressing. Edge-local parallel sections
+        // avoid the acute mitres that the former same-width ribbon produced.
+        for (const ring of component.rings) {
+          const sections = buildHazardDepthSections(heightfield, component, ring);
+          for (const section of sections) {
+            const dx = section.boundaryB.x - section.boundaryA.x;
+            const dy = section.boundaryB.y - section.boundaryA.y;
+            const litFace = dx - dy >= 0;
+            const shallowColor = component.terrain === "sand" ? bankLight : 0x79aeb4;
+            const deepColor = component.terrain === "sand" ? bankDark : 0x173f50;
+            // Deep and shallow planes sit behind a narrow contact shadow;
+            // neither translucent strip is asked to carry the depth read.
+            fillDepthQuad(
+              section.shallowInnerA,
+              section.shallowInnerB,
+              section.deepInnerB,
+              section.deepInnerA,
+              deepColor,
+              component.terrain === "sand" ? 0.08 : 0.18,
+            );
+            fillDepthQuad(
+              section.contactInnerA,
+              section.contactInnerB,
+              section.shallowInnerB,
+              section.shallowInnerA,
+              shallowColor,
+              component.terrain === "sand" ? 0.13 : 0.26,
+            );
+            fillDepthQuad(
+              section.bankInnerA,
+              section.bankInnerB,
+              section.contactInnerB,
+              section.contactInnerA,
+              bankDark,
+              component.terrain === "sand" ? 0.42 : 0.54,
+            );
+            fillDepthQuad(
+              section.boundaryA,
+              section.boundaryB,
+              section.bankInnerB,
+              section.bankInnerA,
+              litFace ? shade(bankDark, 1.24) : bankDark,
+              litFace ? 0.82 : 0.94,
+            );
+            fillDepthQuad(
+              section.shelfOuterA,
+              section.shelfOuterB,
+              section.boundaryB,
+              section.boundaryA,
+              bankLight,
+              component.terrain === "sand" ? 0.22 : 0.18,
+            );
+            const lipA = projectDepthPoint(section.boundaryA);
+            const lipB = projectDepthPoint(section.boundaryB);
+            bank.moveTo(lipA.x, lipA.y);
+            bank.lineTo(lipB.x, lipB.y);
+            bank.stroke({
+              width: component.terrain === "sand" ? 2.2 : 1.8,
+              color: bankDark,
+              alpha: component.terrain === "sand" ? 0.5 : 0.38,
+              cap: "round",
+            });
+            bank.moveTo(lipA.x, lipA.y - 0.7);
+            bank.lineTo(lipB.x, lipB.y - 0.7);
+            bank.stroke({
+              width: component.terrain === "sand" ? 1.05 : 0.9,
+              color: bankLight,
+              alpha: 0.82,
+              cap: "round",
+            });
           }
-        } else for (const ring of visualRings) {
-          const ribbon = buildRecessedLandformRibbon(heightfield, component, ring);
-          if (ribbon.length < 3) continue;
-          for (let index = 0; index < ribbon.length; index++) {
-            const current = ribbon[index];
-            const next = ribbon[(index + 1) % ribbon.length];
-            const topA = worldToIso(current.top.x, current.top.y, current.topHeight, rotation);
-            const topB = worldToIso(next.top.x, next.top.y, next.topHeight, rotation);
-            const bottomB = worldToIso(next.bottom.x, next.bottom.y, next.bottomHeight, rotation);
-            const bottomA = worldToIso(current.bottom.x, current.bottom.y, current.bottomHeight, rotation);
-            bank.poly([
-              topA.x, topA.y,
-              topB.x, topB.y,
-              bottomB.x, bottomB.y,
-              bottomA.x, bottomA.y,
-            ]);
-            const frontFacing = (bottomA.y + bottomB.y) > (topA.y + topB.y);
-            bank.fill({ color: frontFacing ? bankDark : bankLight, alpha: frontFacing ? 0.88 : 0.72 });
-          }
-          const lip = ribbon.map((point) => worldToIso(
-            point.top.x,
-            point.top.y,
-            point.topHeight,
-            rotation,
-          ));
-          bank.moveTo(lip[0].x, lip[0].y);
-          for (let index = 1; index < lip.length; index++) bank.lineTo(lip[index].x, lip[index].y);
-          bank.closePath();
-          bank.stroke({ width: component.terrain === "sand" ? 1.4 : 1.8, color: bankLight, alpha: 0.66, join: "round" });
         }
         recessedLayer.addChild(bank);
       }
@@ -4273,6 +4316,20 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const next = shoulder.points[(index + 1) % shoulder.points.length];
         const tangentX = next.upper.x - current.upper.x;
         const tangentY = next.upper.y - current.upper.y;
+        // The frozen ZK-1207 builder removes shoulder samples that land on a
+        // recessed hazard. Do not reconnect the two surviving sides across
+        // that intentional gap: the resulting long quad would paint a green
+        // landform bar through a bunker or lake.
+        if (Math.hypot(tangentX, tangentY) > 0.75) continue;
+        const crossesRecessedHazard = [0.25, 0.5, 0.75].some((t) => {
+          const x = current.upper.x + tangentX * t;
+          const y = current.upper.y + tangentY * t;
+          const cellX = Math.max(0, Math.min(course.width - 1, Math.floor(x)));
+          const cellY = Math.max(0, Math.min(course.height - 1, Math.floor(y)));
+          const terrain = effectiveTiles[cellY * course.width + cellX];
+          return terrain === "sand" || terrain === "water" || terrain === "wetland";
+        });
+        if (crossesRecessedHazard) continue;
         const litFace = tangentX - tangentY >= 0;
         const sampleBand = (point: typeof current, t: number) => worldToIso(
           point.upper.x + (point.lower.x - point.upper.x) * t,
@@ -4281,9 +4338,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
           rotation,
         );
         for (const [start, end, colorScale, alpha] of [
-          [0, 0.34, 0.9, litFace ? 0.1 : 0.13],
-          [0.34, 0.68, 0.72, litFace ? 0.14 : 0.18],
-          [0.68, 1, 0.54, litFace ? 0.18 : 0.23],
+          [0, 0.34, 0.94, litFace ? 0.14 : 0.18],
+          [0.34, 0.68, 0.72, litFace ? 0.2 : 0.25],
+          [0.68, 1, 0.5, litFace ? 0.25 : 0.31],
         ] as const) {
           const upperA = sampleBand(current, start);
           const upperB = sampleBand(next, start);
@@ -4308,9 +4365,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       for (let index = 1; index < upper.length; index++) graphics.lineTo(upper[index].x, upper[index].y);
       if (shoulder.closed) graphics.closePath();
       graphics.stroke({
-        width: 1,
+        width: 1.15,
         color: shade(themedColors.rough, 1.18),
-        alpha: 0.18,
+        alpha: 0.24,
         join: "round",
         cap: "round",
       });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Course, Terrain } from "../models/types";
 import {
   buildLandscapeComponents,
+  buildHazardDepthSections,
   buildRecessedLandformRibbon,
   buildVisualHeightfield,
   createLandscapeComponentCache,
@@ -225,6 +226,14 @@ describe("shared visual heightfield", () => {
     const centerBase = sampleVisualHeight(field, 1.5, 1.5);
     const center = sampleLandscapeSurfaceHeight(field, bunker, 1.5, 1.5);
     const edge = sampleLandscapeSurfaceHeight(field, bunker, 1.05, 1.5);
+    const rim = sampleLandscapeSurfaceHeight(field, bunker, 1, 1.5);
+    const rimBase = sampleVisualHeight(field, 1, 1.5);
+    const recession = [1, 1.08, 1.2, 1.34, 1.48]
+      .map((x) => sampleLandscapeSurfaceHeight(field, bunker, x, 1.5));
+    expect(rim).toBeCloseTo(rimBase, 7);
+    for (let index = 1; index < recession.length; index++) {
+      expect(recession[index]).toBeLessThanOrEqual(recession[index - 1] + 1e-7);
+    }
     expect(center).toBeLessThan(centerBase - 0.2);
     expect(center).toBeLessThan(edge - 0.1);
   });
@@ -246,6 +255,65 @@ describe("shared visual heightfield", () => {
       expect(Math.min(...drops)).toBeGreaterThan(terrain === "water" ? 0.519 : 0.379);
       expect(Math.max(...drops)).toBeLessThan(1.5);
       expect(ribbon.every((point) => Number.isFinite(point.topHeight + point.bottomHeight))).toBe(true);
+    }
+  });
+
+  it("builds ordered edge-local hazard sections without fins or inverted strips", () => {
+    const course = courseWith(9, 6, [
+      "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough",
+      "rough", "water", "water", "water", "rough", "sand", "sand", "sand", "rough",
+      "rough", "water", "water", "water", "rough", "sand", "sand", "sand", "rough",
+      "rough", "water", "water", "water", "rough", "sand", "sand", "sand", "rough",
+      "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough",
+      "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough", "rough",
+    ], new Array(54).fill(2));
+    const field = buildVisualHeightfield(course);
+    const components = buildLandscapeComponents(course.tiles, course.width, course.height);
+    const quadArea = (points: Array<{ x: number; y: number }>) => points.reduce((area, point, index) => {
+      const next = points[(index + 1) % points.length];
+      return area + point.x * next.y - next.x * point.y;
+    }, 0) / 2;
+
+    for (const terrain of ["water", "sand"] as const) {
+      const component = components.find((candidate) => candidate.terrain === terrain)!;
+      const sections = buildHazardDepthSections(field, component, component.rings[0]);
+      expect(sections.length).toBe(component.rings[0].length);
+      for (const section of sections) {
+        const values = Object.values(section).flatMap((point) => [point.x, point.y, point.height]);
+        expect(values.every(Number.isFinite)).toBe(true);
+        expect(section.boundaryA.height - section.bankInnerA.height)
+          .toBeGreaterThan(terrain === "water" ? 0.559 : 0.339);
+        const strips = [
+          [section.shelfOuterA, section.shelfOuterB, section.boundaryB, section.boundaryA],
+          [section.boundaryA, section.boundaryB, section.bankInnerB, section.bankInnerA],
+          [section.bankInnerA, section.bankInnerB, section.contactInnerB, section.contactInnerA],
+          [section.contactInnerA, section.contactInnerB, section.shallowInnerB, section.shallowInnerA],
+          [section.shallowInnerA, section.shallowInnerB, section.deepInnerB, section.deepInnerA],
+        ];
+        const areas = strips.map(quadArea);
+        expect(areas.every((area) => Math.abs(area) > 1e-8)).toBe(true);
+        expect(areas.every((area) => Math.sign(area) === Math.sign(areas[0]))).toBe(true);
+        expect(Math.hypot(
+          section.deepInnerA.x - section.boundaryA.x,
+          section.deepInnerA.y - section.boundaryA.y,
+        )).toBeLessThanOrEqual(0.721);
+      }
+    }
+  });
+
+  it("keeps hazard section geometry rotation-independent", () => {
+    const course = courseWith(4, 4, [
+      "rough", "rough", "rough", "rough",
+      "rough", "water", "water", "rough",
+      "rough", "water", "water", "rough",
+      "rough", "rough", "rough", "rough",
+    ], new Array(16).fill(1));
+    const field = buildVisualHeightfield(course);
+    const water = buildLandscapeComponents(course.tiles, 4, 4)
+      .find((component) => component.terrain === "water")!;
+    const signature = JSON.stringify(buildHazardDepthSections(field, water, water.rings[0]));
+    for (const _rotation of [0, 90, 180, 270]) {
+      expect(JSON.stringify(buildHazardDepthSections(field, water, water.rings[0]))).toBe(signature);
     }
   });
 
