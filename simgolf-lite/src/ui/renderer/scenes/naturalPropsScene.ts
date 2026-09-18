@@ -23,10 +23,15 @@ import {
   deriveTreeHabitat,
   type TreeHabitatPatch,
 } from "../../../game/render/treeHabitat";
-import { deriveHabitatComposition } from "../../../game/render/habitatComposition";
+import {
+  deriveHabitatComposition,
+  type HabitatCompositionPlacement,
+} from "../../../game/render/habitatComposition";
 import { isWaterHazard } from "../../../game/models/terrainRules";
-import { isoDepth, worldToIso } from "../../../game/render/iso";
+import { worldToIso } from "../../../game/render/iso";
 import { getPropFrame, getTerrainDetailFrame } from "../../../render/atlas";
+import type { ResolvedGraphicsQuality } from "../../../game/render/graphicsQuality";
+import type { TerrainDetailFrame, TerrainDetailKind } from "../../../game/render/terrainDetails";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import type { RenderSceneSystem } from "../SceneSystemHost";
 
@@ -66,6 +71,204 @@ export interface NaturalPropsSceneDependencies {
   ) => { readonly texture: PIXI.Texture; readonly owned: boolean };
   readonly createSprite?: (texture: PIXI.Texture) => PIXI.Sprite;
   readonly createGraphics?: () => PIXI.Graphics;
+}
+
+const WET_SHORE_CAPS: Readonly<Record<ResolvedGraphicsQuality, number>> = {
+  high: 42,
+  medium: 22,
+  low: 0,
+};
+
+type EcologyTier = "near" | "middle" | "far" | "shore";
+
+interface WetShorePlacement {
+  readonly id: string;
+  readonly clusterId: string;
+  readonly massId: string;
+  readonly role: "wet_shore";
+  readonly tier: "shore";
+  readonly tileX: number;
+  readonly tileY: number;
+  readonly worldX: number;
+  readonly worldY: number;
+  readonly frame: TerrainDetailFrame;
+  readonly kind: Extract<TerrainDetailKind, "reeds" | "shore_stones">;
+  readonly scale: number;
+  readonly rank: number;
+}
+
+type EcologyPlacement = HabitatCompositionPlacement | WetShorePlacement;
+
+interface EcologyPresentation {
+  readonly scale: number;
+  readonly alpha: number;
+  readonly verticalOffset: number;
+}
+
+const TIER_PRESENTATION: Readonly<Record<EcologyTier, EcologyPresentation>> = {
+  near: { scale: 1.1, alpha: 0.94, verticalOffset: 0.31 },
+  middle: { scale: 0.92, alpha: 0.8, verticalOffset: 0.29 },
+  far: { scale: 0.76, alpha: 0.66, verticalOffset: 0.26 },
+  shore: { scale: 0.88, alpha: 0.86, verticalOffset: 0.34 },
+};
+
+const ROLE_SCALE: Readonly<Record<EcologyPlacement["role"], number>> = {
+  woodland_floor: 0.9,
+  understory: 1,
+  rough_mass: 1.06,
+  rock_plant_cluster: 0.84,
+  wet_shore: 1,
+};
+
+function mix32(value: number): number {
+  value = Math.imul(value ^ (value >>> 16), 0x7feb352d);
+  value = Math.imul(value ^ (value >>> 15), 0x846ca68b);
+  return (value ^ (value >>> 16)) >>> 0;
+}
+
+function ecologyHash(seed: number, x: number, y: number, salt: number): number {
+  return mix32(seed
+    ^ Math.imul(x + 17, 0x45d9f3b)
+    ^ Math.imul(y + 31, 0x119de1f3)
+    ^ salt);
+}
+
+function wetShoreTileKey(x: number, y: number): string {
+  return `${x},${y}`;
+}
+
+function wetShoreNeighbors(
+  course: RenderSnapshot["course"],
+  tiles: readonly Terrain[],
+  x: number,
+  y: number,
+): readonly { readonly x: number; readonly y: number }[] {
+  const points: { x: number; y: number }[] = [];
+  for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= course.width || ny >= course.height) continue;
+    if (isWaterHazard(tiles[ny * course.width + nx])) points.push({ x: nx, y: ny });
+  }
+  return points;
+}
+
+function isClearWetShoreTile(
+  course: RenderSnapshot["course"],
+  tiles: readonly Terrain[],
+  x: number,
+  y: number,
+): boolean {
+  const terrain = tiles[y * course.width + x];
+  if (terrain !== "rough" && terrain !== "wetland") return false;
+  if (wetShoreNeighbors(course, tiles, x, y).length === 0) return false;
+  // The ecology scene may dress banks, never a maintained playing surface,
+  // bunker, cart path, or the water/depth treatment itself.
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+    const nx = x + dx;
+    const ny = y + dy;
+    if (nx < 0 || ny < 0 || nx >= course.width || ny >= course.height) continue;
+    const neighbor = tiles[ny * course.width + nx];
+    if (neighbor === "fairway" || neighbor === "green" || neighbor === "tee" || neighbor === "path" || neighbor === "sand" || neighbor === "waste_area") return false;
+  }
+  return true;
+}
+
+function wetShoreComponents(
+  course: RenderSnapshot["course"],
+  tiles: readonly Terrain[],
+): readonly (readonly { readonly x: number; readonly y: number }[])[] {
+  const candidates = new Map<string, { x: number; y: number }>();
+  for (let y = 0; y < course.height; y++) for (let x = 0; x < course.width; x++) {
+    if (isClearWetShoreTile(course, tiles, x, y)) candidates.set(wetShoreTileKey(x, y), { x, y });
+  }
+  const components: { x: number; y: number }[][] = [];
+  while (candidates.size > 0) {
+    const first = [...candidates.values()].sort((left, right) => left.y - right.y || left.x - right.x)[0];
+    candidates.delete(wetShoreTileKey(first.x, first.y));
+    const component = [first];
+    for (let cursor = 0; cursor < component.length; cursor++) {
+      const point = component[cursor];
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const key = wetShoreTileKey(point.x + dx, point.y + dy);
+        const neighbor = candidates.get(key);
+        if (!neighbor) continue;
+        candidates.delete(key);
+        component.push(neighbor);
+      }
+    }
+    if (component.length >= 2) components.push(component.sort((left, right) => left.y - right.y || left.x - right.x));
+  }
+  return components.sort((left, right) => left[0].y - right[0].y || left[0].x - right[0].x);
+}
+
+/**
+ * Scene-owned wet-bank groups. They deliberately use reeds and shore stones
+ * only: water bodies, shelves, banks, and contour relief remain depth-scene
+ * responsibilities. The plan is world-space and never observes a camera.
+ */
+export function deriveWetShoreComposition(input: {
+  readonly course: RenderSnapshot["course"];
+  readonly tiles: readonly Terrain[];
+  readonly worldSeed: number;
+  readonly quality: ResolvedGraphicsQuality;
+}): readonly WetShorePlacement[] {
+  const cap = WET_SHORE_CAPS[input.quality];
+  if (cap === 0 || input.course.theme !== "parkland" || input.tiles.length !== input.course.width * input.course.height) return [];
+  const output: WetShorePlacement[] = [];
+  for (const component of wetShoreComponents(input.course, input.tiles)) {
+    const available = new Map(component.map((point) => [wetShoreTileKey(point.x, point.y), point]));
+    const clusterLimit = Math.min(3, Math.max(1, Math.floor(component.length / 3)));
+    for (let clusterIndex = 0; clusterIndex < clusterLimit && available.size > 0; clusterIndex++) {
+      const anchor = [...available.values()].sort((left, right) => {
+        const leftHash = ecologyHash(input.worldSeed, left.x, left.y, 0x6b41 + clusterIndex);
+        const rightHash = ecologyHash(input.worldSeed, right.x, right.y, 0x6b41 + clusterIndex);
+        return leftHash - rightHash || left.y - right.y || left.x - right.x;
+      })[0];
+      const clusterId = `wet-shore:${component[0].x},${component[0].y}:${clusterIndex}`;
+      const massId = `${clusterId}:bank`;
+      const members = [...available.values()].sort((left, right) => {
+        const leftDistance = (left.x - anchor.x) ** 2 + (left.y - anchor.y) ** 2;
+        const rightDistance = (right.x - anchor.x) ** 2 + (right.y - anchor.y) ** 2;
+        const leftHash = ecologyHash(input.worldSeed, left.x, left.y, 0x2c17 + clusterIndex);
+        const rightHash = ecologyHash(input.worldSeed, right.x, right.y, 0x2c17 + clusterIndex);
+        return leftDistance - rightDistance || leftHash - rightHash || left.y - right.y || left.x - right.x;
+      }).slice(0, Math.min(4, available.size));
+      for (const [member, point] of members.entries()) {
+        available.delete(wetShoreTileKey(point.x, point.y));
+        const h = ecologyHash(input.worldSeed, point.x, point.y, 0x4d21 + member);
+        const terrain = input.tiles[point.y * input.course.width + point.x];
+        const kind = terrain === "wetland" || member % 3 !== 2 ? "reeds" : "shore_stones";
+        const variant = input.quality === "medium" ? 0 : (h >>> 30) & 1;
+        output.push({
+          id: `${massId}:${member}`,
+          clusterId,
+          massId,
+          role: "wet_shore",
+          tier: "shore",
+          tileX: point.x,
+          tileY: point.y,
+          worldX: point.x + 0.5 + (((h >>> 8) & 0xff) / 0xff - 0.5) * 0.36,
+          worldY: point.y + 0.5 + (((h >>> 16) & 0xff) / 0xff - 0.5) * 0.3,
+          frame: `parkland_${kind}_${variant}` as TerrainDetailFrame,
+          kind,
+          scale: 0.86 + ((h >>> 24) & 0x3f) / 0x3f * 0.24,
+          rank: output.length,
+        });
+      }
+    }
+  }
+  return output.slice(0, cap);
+}
+
+function ecologyPresentation(detail: EcologyPlacement): EcologyPresentation {
+  const tier = TIER_PRESENTATION[detail.tier];
+  return {
+    scale: tier.scale * ROLE_SCALE[detail.role],
+    alpha: tier.alpha,
+    verticalOffset: tier.verticalOffset,
+  };
 }
 
 function darken(color: number, factor: number): number {
@@ -349,9 +552,22 @@ export function createNaturalPropsSceneSystem(
       worldSeed: snapshot.worldSeed,
       quality: snapshot.graphicsQuality,
     });
-    for (const detail of composition) {
+    const wetShore = deriveWetShoreComposition({
+      course,
+      tiles: snapshot.effectiveTiles,
+      worldSeed: snapshot.worldSeed,
+      quality: snapshot.graphicsQuality,
+    });
+    // Composition order is a semantic world-space contract. Do not sort by
+    // camera depth: rebuilding at another rotation must retain member order.
+    const ecology = [...composition, ...wetShore.map((detail) => ({
+      ...detail,
+      rank: composition.length + detail.rank,
+    }))];
+    for (const detail of ecology) {
       const texture = getHabitatAtlasTexture(course.theme, snapshot.graphicsQuality, detail.frame);
       if (!texture) continue;
+      const presentation = ecologyPresentation(detail);
       const sprite = createSprite(texture);
       const position = worldToIso(
         detail.worldX,
@@ -362,9 +578,10 @@ export function createNaturalPropsSceneSystem(
       sprite.label = `habitat-composition:${detail.id}`;
       sprite.eventMode = "none";
       sprite.anchor.set(0.5, 1);
-      sprite.position.set(position.x, position.y + TILE_H * 0.34);
-      sprite.scale.set(detail.scale);
-      sprite.zIndex = isoDepth(detail.worldX, detail.worldY, 0, snapshot.rotation);
+      sprite.position.set(position.x, position.y + TILE_H * presentation.verticalOffset);
+      sprite.scale.set(detail.scale * presentation.scale);
+      sprite.alpha = presentation.alpha;
+      sprite.zIndex = detail.rank;
       terrainDecals.addChild(sprite);
       habitatDetails.push(sprite);
     }

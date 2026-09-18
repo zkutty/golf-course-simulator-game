@@ -2,9 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import type * as PIXI from "pixi.js";
 import { DEFAULT_STATE } from "../../../game/gameState";
 import { BIOME_KEYS } from "../../../game/models/biomes";
+import type { Terrain } from "../../../game/models/types";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import {
   createNaturalPropsSceneSystem,
+  deriveWetShoreComposition,
   naturalPropFallbackBiome,
 } from "./naturalPropsScene";
 
@@ -112,6 +114,46 @@ function snapshot(overrides: Partial<RenderSnapshot> = {}): RenderSnapshot {
 }
 
 describe("natural props scene ownership", () => {
+  it("groups Parkland wet-bank reeds and stones without entering course surfaces", () => {
+    const width = 24;
+    const height = 24;
+    const tiles: Terrain[] = Array.from({ length: width * height }, () => "rough" as const);
+    for (let y = 8; y <= 14; y++) for (let x = 8; x <= 14; x++) tiles[y * width + x] = "water";
+    // A maintained route adjacent to the south bank must remain undressed.
+    for (let x = 8; x <= 14; x++) tiles[16 * width + x] = "fairway";
+    const course = {
+      ...DEFAULT_STATE.course,
+      width,
+      height,
+      tiles,
+      elevations: Array.from({ length: width * height }, () => 0),
+      obstacles: [],
+      buildings: [],
+      holes: [],
+      theme: "parkland" as const,
+    };
+    const input = { course, tiles, worldSeed: 1202, quality: "high" as const };
+    const high = deriveWetShoreComposition(input);
+    const medium = deriveWetShoreComposition({ ...input, quality: "medium" });
+
+    expect(high).toEqual(deriveWetShoreComposition(input));
+    expect(high).not.toHaveLength(0);
+    expect(new Set(high.map((detail) => detail.kind))).toEqual(new Set(["reeds", "shore_stones"]));
+    expect(high.every((detail) => tiles[detail.tileY * width + detail.tileX] === "rough")).toBe(true);
+    expect(high.every((detail) => {
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const terrain = tiles[(detail.tileY + dy) * width + detail.tileX + dx];
+        if (["fairway", "green", "tee", "path", "sand", "waste_area"].includes(terrain)) return false;
+      }
+      return true;
+    })).toBe(true);
+    expect([...new Map(high.map((detail) => [detail.massId, detail])).keys()].length).toBeGreaterThan(0);
+    expect(medium.map(({ frame: _frame, ...detail }) => detail))
+      .toEqual(high.slice(0, medium.length).map(({ frame: _frame, ...detail }) => detail));
+    expect(medium.every((detail) => detail.frame.endsWith("_0"))).toBe(true);
+    expect(deriveWetShoreComposition({ ...input, quality: "low" })).toEqual([]);
+  });
+
   it("derives procedural fallback ownership from every registered biome", () => {
     for (const biome of BIOME_KEYS) {
       expect(naturalPropFallbackBiome(`${biome}_tree_registry_probe`)).toBe(biome);
@@ -298,12 +340,34 @@ describe("natural props scene ownership", () => {
       (child as { label?: string }).label?.startsWith("habitat-composition:"),
     )).toBe(true);
 
+    const firstPlan = decals.children
+      .filter((child) => (child as { label?: string }).label?.startsWith("habitat-composition:"))
+      .map((child) => ({
+        label: (child as { label: string }).label,
+        zIndex: (child as { zIndex: number }).zIndex,
+      }));
+    scene.update!(snapshot({
+      course,
+      obstacles: trees,
+      effectiveTiles: course.tiles,
+      graphicsQuality: "high",
+      rotation: 180,
+      atlasRevision: 2,
+    }));
+    const rotatedPlan = decals.children
+      .filter((child) => (child as { label?: string }).label?.startsWith("habitat-composition:"))
+      .map((child) => ({
+        label: (child as { label: string }).label,
+        zIndex: (child as { zIndex: number }).zIndex,
+      }));
+    expect(rotatedPlan).toEqual(firstPlan);
+
     scene.update!(snapshot({
       course,
       obstacles: trees,
       effectiveTiles: course.tiles,
       graphicsQuality: "low",
-      atlasRevision: 2,
+      atlasRevision: 3,
     }));
     expect(scene.habitatDetailCount()).toBe(0);
     expect(decals.children.some((child) =>
