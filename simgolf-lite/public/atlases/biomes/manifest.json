@@ -1,6 +1,37 @@
 {
-  "version": 2,
+  "version": 3,
   "generatedBy": "scripts/build-atlas.mjs",
+  "assetContracts": {
+    "parklandTerrain": {
+      "id": "parkland-terrain-4x",
+      "mode": "production-4x",
+      "source": "src/assets/terrain/parkland-4x",
+      "sourceManifestSha256": "486b99f09f953febd580c705930221da83abfa9cc8afc80cdc2a5651a8c3807b",
+      "frameSetSha256": "a6d8b363f21d5456be0cdeb818a22b4f93db709d079af687f1def7ce35c9ccb1",
+      "lods": {
+        "high": {
+          "name": "detail",
+          "sourceScale": 4,
+          "mipDivisor": 1
+        },
+        "medium": {
+          "name": "normal",
+          "sourceScale": 4,
+          "mipDivisor": 2
+        },
+        "low": {
+          "name": "overview",
+          "sourceScale": 4,
+          "mipDivisor": 4
+        }
+      },
+      "rollback": {
+        "mode": "legacy-2x",
+        "source": "src/assets/terrain/materials",
+        "environment": "COURSECRAFT_PARKLAND_TERRAIN_MODE=legacy-2x"
+      }
+    }
+  },
   "core": {
     "golfers": {
       "json": "core-golfers.d9ce70a9ebcf.json",
@@ -9,7 +40,9 @@
       "imageBytes": 501591,
       "frames": 648,
       "width": 974,
-      "height": 3260
+      "height": 3260,
+      "scale": "1",
+      "mipDivisor": 1
     }
   },
   "biomes": {
@@ -23,25 +56,31 @@
             "imageBytes": 1169073,
             "frames": 23,
             "width": 1010,
-            "height": 840
+            "height": 840,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "terrain": {
-            "json": "terrain-parkland-high.305de800f72a.json",
-            "image": "terrain-parkland-high.7d55990cac08.png",
-            "jsonBytes": 63383,
-            "imageBytes": 208221,
+            "json": "terrain-parkland-high.8a236ca8d745.json",
+            "image": "terrain-parkland-high.644f68909eff.png",
+            "jsonBytes": 64063,
+            "imageBytes": 231999,
             "frames": 180,
-            "width": 912,
-            "height": 1718
+            "width": 1808,
+            "height": 3382,
+            "scale": "4",
+            "mipDivisor": 1
           },
           "details": {
-            "json": "terrain-details-parkland-high.d0164ca35c8e.json",
-            "image": "terrain-details-parkland-high.169092f97646.png",
-            "jsonBytes": 7084,
-            "imageBytes": 9307,
-            "frames": 20,
+            "json": "terrain-details-parkland-high.2ba3cc79bf86.json",
+            "image": "terrain-details-parkland-high.55335cbf270b.png",
+            "jsonBytes": 7772,
+            "imageBytes": 10302,
+            "frames": 22,
             "width": 992,
-            "height": 134
+            "height": 134,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "props": {
             "json": "natural-props-parkland-high.63c1c05b9bab.json",
@@ -50,7 +89,9 @@
             "imageBytes": 395258,
             "frames": 12,
             "width": 912,
-            "height": 371
+            "height": 371,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "fields": {
             "fairway": {
@@ -126,25 +167,31 @@
             "imageBytes": 1169073,
             "frames": 23,
             "width": 1010,
-            "height": 840
+            "height": 840,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "terrain": {
-            "json": "terrain-parkland-medium.646445bf5455.json",
-            "image": "terrain-parkland-medium.7d55990cac08.png",
+            "json": "terrain-parkland-medium.f347c62547eb.json",
+            "image": "terrain-parkland-medium.3861b432d94d.png",
             "jsonBytes": 63385,
-            "imageBytes": 208221,
+            "imageBytes": 178572,
             "frames": 180,
             "width": 912,
-            "height": 1718
+            "height": 1718,
+            "scale": "2",
+            "mipDivisor": 2
           },
           "details": {
-            "json": "terrain-details-parkland-medium.9165d1d3e5f5.json",
-            "image": "terrain-details-parkland-medium.91b9748278ba.png",
-            "jsonBytes": 3658,
-            "imageBytes": 4788,
-            "frames": 10,
-            "width": 662,
-            "height": 68
+            "json": "terrain-details-parkland-medium.7447b891a0f1.json",
+            "image": "terrain-details-parkland-medium.40141cfb52f3.png",
+            "jsonBytes": 4001,
+            "imageBytes": 5365,
+            "frames": 11,
+            "width": 728,
+            "height": 68,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "props": {
             "json": "natural-props-parkland-medium.818ed6a0b873.json",
@@ -153,7 +200,9 @@
             "imageBytes": 395258,
             "frames": 12,
             "width": 912,
-            "height": 371
+            "height": 371,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "fields": {
             "fairway": {
@@ -229,16 +278,20 @@
             "imageBytes": 1169073,
             "frames": 23,
             "width": 1010,
-            "height": 840
+            "height": 840,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "terrain": {
-            "json": "terrain-parkland-low.e331a4c93904.json",
-            "image": "terrain-parkland-low.7d55990cac08.png",
-            "jsonBytes": 63382,
-            "imageBytes": 208221,
+            "json": "terrain-parkland-low.fce480f9042b.json",
+            "image": "terrain-parkland-low.17f257850aca.png",
+            "jsonBytes": 62750,
+            "imageBytes": 114976,
             "frames": 180,
-            "width": 912,
-            "height": 1718
+            "width": 992,
+            "height": 410,
+            "scale": "1",
+            "mipDivisor": 4
           },
           "details": null,
           "props": null,
@@ -257,7 +310,9 @@
             "imageBytes": 1174975,
             "frames": 23,
             "width": 1010,
-            "height": 840
+            "height": 840,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "terrain": {
             "json": "terrain-links-high.af54278d39cd.json",
@@ -266,7 +321,9 @@
             "imageBytes": 224232,
             "frames": 180,
             "width": 912,
-            "height": 1718
+            "height": 1718,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "details": {
             "json": "terrain-details-links-high.762bb6b1922d.json",
@@ -275,7 +332,9 @@
             "imageBytes": 9396,
             "frames": 20,
             "width": 992,
-            "height": 134
+            "height": 134,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "props": {
             "json": "natural-props-links-high.1a3ca393f2c7.json",
@@ -284,7 +343,9 @@
             "imageBytes": 325687,
             "frames": 12,
             "width": 912,
-            "height": 352
+            "height": 352,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "fields": {
             "fairway": {
@@ -360,7 +421,9 @@
             "imageBytes": 1174975,
             "frames": 23,
             "width": 1010,
-            "height": 840
+            "height": 840,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "terrain": {
             "json": "terrain-links-medium.7ab81d90b6ab.json",
@@ -369,7 +432,9 @@
             "imageBytes": 224232,
             "frames": 180,
             "width": 912,
-            "height": 1718
+            "height": 1718,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "details": {
             "json": "terrain-details-links-medium.71deb7b56e7e.json",
@@ -378,7 +443,9 @@
             "imageBytes": 4819,
             "frames": 10,
             "width": 662,
-            "height": 68
+            "height": 68,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "props": {
             "json": "natural-props-links-medium.068c0ed75a63.json",
@@ -387,7 +454,9 @@
             "imageBytes": 325687,
             "frames": 12,
             "width": 912,
-            "height": 352
+            "height": 352,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "fields": {
             "fairway": {
@@ -463,7 +532,9 @@
             "imageBytes": 1174975,
             "frames": 23,
             "width": 1010,
-            "height": 840
+            "height": 840,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "terrain": {
             "json": "terrain-links-low.d54a19016083.json",
@@ -472,7 +543,9 @@
             "imageBytes": 224232,
             "frames": 180,
             "width": 912,
-            "height": 1718
+            "height": 1718,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "details": null,
           "props": null,
@@ -491,7 +564,9 @@
             "imageBytes": 1169105,
             "frames": 23,
             "width": 1010,
-            "height": 840
+            "height": 840,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "terrain": {
             "json": "terrain-desert-high.ee9575111084.json",
@@ -500,7 +575,9 @@
             "imageBytes": 223432,
             "frames": 180,
             "width": 912,
-            "height": 1718
+            "height": 1718,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "details": {
             "json": "terrain-details-desert-high.f361939e7181.json",
@@ -509,7 +586,9 @@
             "imageBytes": 9263,
             "frames": 20,
             "width": 992,
-            "height": 134
+            "height": 134,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "props": {
             "json": "natural-props-desert-high.e52bf0b92023.json",
@@ -518,7 +597,9 @@
             "imageBytes": 335618,
             "frames": 12,
             "width": 912,
-            "height": 354
+            "height": 354,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "fields": {
             "fairway": {
@@ -594,7 +675,9 @@
             "imageBytes": 1169105,
             "frames": 23,
             "width": 1010,
-            "height": 840
+            "height": 840,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "terrain": {
             "json": "terrain-desert-medium.cee16cf28ffb.json",
@@ -603,7 +686,9 @@
             "imageBytes": 223432,
             "frames": 180,
             "width": 912,
-            "height": 1718
+            "height": 1718,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "details": {
             "json": "terrain-details-desert-medium.dd7a85b3e3cb.json",
@@ -612,7 +697,9 @@
             "imageBytes": 4751,
             "frames": 10,
             "width": 662,
-            "height": 68
+            "height": 68,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "props": {
             "json": "natural-props-desert-medium.148f932bb775.json",
@@ -621,7 +708,9 @@
             "imageBytes": 335618,
             "frames": 12,
             "width": 912,
-            "height": 354
+            "height": 354,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "fields": {
             "fairway": {
@@ -697,7 +786,9 @@
             "imageBytes": 1169105,
             "frames": 23,
             "width": 1010,
-            "height": 840
+            "height": 840,
+            "scale": "1",
+            "mipDivisor": 1
           },
           "terrain": {
             "json": "terrain-desert-low.d424002f5c1a.json",
@@ -706,7 +797,9 @@
             "imageBytes": 223432,
             "frames": 180,
             "width": 912,
-            "height": 1718
+            "height": 1718,
+            "scale": "2",
+            "mipDivisor": 1
           },
           "details": null,
           "props": null,

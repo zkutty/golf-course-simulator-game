@@ -1,0 +1,778 @@
+{
+  "version": 2,
+  "id": "parkland-terrain-4x-production-source",
+  "generatedBy": "scripts/gen-parkland-4x-fallback.mjs",
+  "algorithm": "scripts/gen-terrain-materials.mjs#parkland-4x-production",
+  "hashAlgorithm": "sha256",
+  "generatedImagePolicy": "coursecraft-authored-production-runtime",
+  "provenance": {
+    "author": "CourseCraft",
+    "externalProvider": "none",
+    "referencePixelsCopied": false
+  },
+  "review": {
+    "status": "production-contract-adopted",
+    "contactSheet": "evidence/contact-sheet.png",
+    "contactSheetBytes": 392134,
+    "contactSheetSha256": "0696be298f21d42c0777be14b32d6d26b5f4a0093534aae5d9a540647f6d2345",
+    "rows": [
+      "fairway",
+      "tee",
+      "green",
+      "rough",
+      "deep_rough",
+      "waste_area",
+      "path",
+      "wetland",
+      "water",
+      "sand"
+    ],
+    "columns": [
+      "base_0",
+      "base_1",
+      "base_2",
+      "base_3",
+      "base_4",
+      "base_5",
+      "edge_n",
+      "edge_e",
+      "edge_s",
+      "edge_w",
+      "outer_ne",
+      "inner_ne",
+      "outer_se",
+      "inner_se",
+      "outer_sw",
+      "inner_sw",
+      "outer_nw",
+      "inner_nw"
+    ],
+    "previewFrame": {
+      "width": 128,
+      "height": 64,
+      "downsample": "2x-premultiplied-box"
+    }
+  },
+  "files": {
+    "parkland_deep_rough_base_0.png": {
+      "bytes": 5093,
+      "sha256": "4ab3639e5f310500a2f3cc5d3ff7c11100a2280469ec09ef3c63c0315d4b1bf7"
+    },
+    "parkland_deep_rough_base_1.png": {
+      "bytes": 5046,
+      "sha256": "114b27aeef6cc8633dbaa780acb488e37c2847f44322cd3d173a4d0abafce4f3"
+    },
+    "parkland_deep_rough_base_2.png": {
+      "bytes": 5099,
+      "sha256": "9c66fe58aa18381aacb33313d415cce17031758d2b9c9629f82cb1cb7cf07497"
+    },
+    "parkland_deep_rough_base_3.png": {
+      "bytes": 4981,
+      "sha256": "9fcb6cfab4ebf10f7289a92ad03ca44383184ae947a561a229299bc43101d898"
+    },
+    "parkland_deep_rough_base_4.png": {
+      "bytes": 5089,
+      "sha256": "4a9c10e88d2bd969c86e77f50a6ac9846481fb85b8227a9824c3a614e52e220a"
+    },
+    "parkland_deep_rough_base_5.png": {
+      "bytes": 5050,
+      "sha256": "75aaaef1320313043b1c9ca77700fe697be127f341b68c3922bef2b979bc5f20"
+    },
+    "parkland_deep_rough_edge_e.png": {
+      "bytes": 1764,
+      "sha256": "860bbc44d6514c1e589f5785f282e3ffa270ef11125c993491561b72015d1cea"
+    },
+    "parkland_deep_rough_edge_n.png": {
+      "bytes": 1808,
+      "sha256": "5b61558f4381c4b8f58763811af330131caef0e1e3bee6443820500b6cf97b66"
+    },
+    "parkland_deep_rough_edge_s.png": {
+      "bytes": 1824,
+      "sha256": "2bf849f0279081beb13ef3c78ca661bc8171009ba0dfb558849a0c7299b41155"
+    },
+    "parkland_deep_rough_edge_w.png": {
+      "bytes": 1668,
+      "sha256": "903fef9e760032f2e730bd9cb93b920fff34c03c1dd3c1eaa64b94e15cc402b4"
+    },
+    "parkland_deep_rough_inner_ne.png": {
+      "bytes": 379,
+      "sha256": "3ba3ef09b7a0836a016801b4a4edabd31dc296362f831e0162b32dc85c7e23f7"
+    },
+    "parkland_deep_rough_inner_nw.png": {
+      "bytes": 320,
+      "sha256": "b3f2bc4c034302f508aae5726de2c8f779ffea59dec7086231cf5f4da1422280"
+    },
+    "parkland_deep_rough_inner_se.png": {
+      "bytes": 318,
+      "sha256": "07440644eba3e190b5b980f246ca4f7dc6f2f940c557779036749c79d479a1dd"
+    },
+    "parkland_deep_rough_inner_sw.png": {
+      "bytes": 380,
+      "sha256": "65a63f3d6a4a8ba8d91be5fded126d5cf97c17801322b2f3bc1b152ee9265b2b"
+    },
+    "parkland_deep_rough_outer_ne.png": {
+      "bytes": 383,
+      "sha256": "8f0b532e00dd04433f094dd82541f9c79efc14e2b76db9ff132050357c011690"
+    },
+    "parkland_deep_rough_outer_nw.png": {
+      "bytes": 346,
+      "sha256": "29d33f79f73c552d531789f0f9f7208d8260d43c6409ee7d147e66c4106dad95"
+    },
+    "parkland_deep_rough_outer_se.png": {
+      "bytes": 346,
+      "sha256": "0441456bf4af5481cef93298f369a68feca4f2d6a956320ec75094ba3e8e1168"
+    },
+    "parkland_deep_rough_outer_sw.png": {
+      "bytes": 426,
+      "sha256": "ee0a675b3c9b509f9943648cc8af90411d34225939e8ee12c5f33afba2ac23df"
+    },
+    "parkland_fairway_base_0.png": {
+      "bytes": 4567,
+      "sha256": "58150aaf7ec867518b86949f59d8acc8f1f91a7f4e557d9f9a377a547a8847ce"
+    },
+    "parkland_fairway_base_1.png": {
+      "bytes": 4404,
+      "sha256": "e1597b14de85b981db8af797f3b90aeded8df1c223d0b47f3781119d72b2e86e"
+    },
+    "parkland_fairway_base_2.png": {
+      "bytes": 4618,
+      "sha256": "1f66292c4639bc1de5a0485be754df0c90aeeaac64311bebe66f584ead9055c5"
+    },
+    "parkland_fairway_base_3.png": {
+      "bytes": 4561,
+      "sha256": "82e4f956f931bf8a8b9ce34e33ccb1a12c2d550085543caabb80afe2a5e24b14"
+    },
+    "parkland_fairway_base_4.png": {
+      "bytes": 4559,
+      "sha256": "69f16c2a257602fc7abecda8d1116e676a49a5d4321124a230e2df8f94fe355a"
+    },
+    "parkland_fairway_base_5.png": {
+      "bytes": 4764,
+      "sha256": "e2933bb93f10dcf6e8edf979a6a0f9d2ecfb67ec9ee79ab3ddd6d1d67b35938c"
+    },
+    "parkland_fairway_edge_e.png": {
+      "bytes": 1423,
+      "sha256": "b694d5a8901c7e27d0cadd698a758278ec95c4c25f0ca2cb8b52f814db62a1e3"
+    },
+    "parkland_fairway_edge_n.png": {
+      "bytes": 1413,
+      "sha256": "10d7f8ca9ac5055a35607aaca94a6845635c9ce245849f7845dd7bc8ec1254bd"
+    },
+    "parkland_fairway_edge_s.png": {
+      "bytes": 1442,
+      "sha256": "92af6b1dcb5090b026225ee924ad31abe3428caeaa1d00dbcc0fda3f2cb472ee"
+    },
+    "parkland_fairway_edge_w.png": {
+      "bytes": 1389,
+      "sha256": "8e4d6b7a91e0ad292c21866b320bdd0819a1cbc1f259db4008d965d3d9e74306"
+    },
+    "parkland_fairway_inner_ne.png": {
+      "bytes": 379,
+      "sha256": "8c17cdd0f3b061aa8c390231948342a509b909457b14570c76d2312a0ab24965"
+    },
+    "parkland_fairway_inner_nw.png": {
+      "bytes": 320,
+      "sha256": "2fe744a663fd49e04224d818927103b7a926756b0d04db014bacf3aa0c6035a7"
+    },
+    "parkland_fairway_inner_se.png": {
+      "bytes": 318,
+      "sha256": "9f766928dbe50180957b5b656b89abd04fbc3ef623b819234f55b1434d70363a"
+    },
+    "parkland_fairway_inner_sw.png": {
+      "bytes": 380,
+      "sha256": "cc1017b59d946653520521ecbee0924c608582f33aea7f8507c8375e716d172a"
+    },
+    "parkland_fairway_outer_ne.png": {
+      "bytes": 385,
+      "sha256": "a20ca866a10178713b1790585839021f5ccca3ca9c5cc099a63c058c2ee8012b"
+    },
+    "parkland_fairway_outer_nw.png": {
+      "bytes": 349,
+      "sha256": "f019249c7e024351e08651098630e65b1c6ed86eb440c89097a9633d9b96d67c"
+    },
+    "parkland_fairway_outer_se.png": {
+      "bytes": 349,
+      "sha256": "a1da369a33dd10583124aee7d2f683a42e15dfa0f2c8a83ce227d58c27c65d1f"
+    },
+    "parkland_fairway_outer_sw.png": {
+      "bytes": 427,
+      "sha256": "ad64687fafecbb93a07a01ff42377c27182f924cb0d56798a4c7c907cb02df61"
+    },
+    "parkland_green_base_0.png": {
+      "bytes": 4967,
+      "sha256": "b0a454c0da02332fabd36709515ff61730e931c426bcede249f9b7e4c0aa3793"
+    },
+    "parkland_green_base_1.png": {
+      "bytes": 5059,
+      "sha256": "ab554abe6761eeb3b1f64d6cfd019643fcd82ac4edc66ae0a1b2f1eeddeba4ad"
+    },
+    "parkland_green_base_2.png": {
+      "bytes": 5125,
+      "sha256": "646b457cb70110aeffb58dc7f32c59b389ae7d9f3c447df3adf0cad7560fbc45"
+    },
+    "parkland_green_base_3.png": {
+      "bytes": 4933,
+      "sha256": "a5328d20affcdeacbd36c4756ea052453e651ef163655d26d380db730cd2b1cc"
+    },
+    "parkland_green_base_4.png": {
+      "bytes": 4933,
+      "sha256": "46bdb8da76f84a9c2c25de79e0458be10e8062c73ddef418e8e0bfc4ee9a7965"
+    },
+    "parkland_green_base_5.png": {
+      "bytes": 4738,
+      "sha256": "9f4c27b0cc30141812ede842d21bbba547e77d4ec0a43cd342a9ce672a35a682"
+    },
+    "parkland_green_edge_e.png": {
+      "bytes": 1443,
+      "sha256": "9da6677f284a2aac5ca6964e1ccf68de80e89ec031d6a3ba1f02614dfd381c2a"
+    },
+    "parkland_green_edge_n.png": {
+      "bytes": 1385,
+      "sha256": "69957253cdea7f38a4bf89a2991d5cde5e94900bf7e51a07d060b6a3702aa634"
+    },
+    "parkland_green_edge_s.png": {
+      "bytes": 1386,
+      "sha256": "e2a0fff4490fd99ebbb44d7b013e6e5b9882215289b0b263dd3be75973edfb07"
+    },
+    "parkland_green_edge_w.png": {
+      "bytes": 1368,
+      "sha256": "e11691b4a668f03221aaa8f470f60796d745ace622bf63d5e1058d194c747fee"
+    },
+    "parkland_green_inner_ne.png": {
+      "bytes": 379,
+      "sha256": "e26c1df001ad587979142f408b9e4037842f4e7db7eb631caa8cae49fb2763a2"
+    },
+    "parkland_green_inner_nw.png": {
+      "bytes": 320,
+      "sha256": "7c110213a3030b663f44ebc26622194e453c53fe2008f9ec64ffa1484f5d0cd0"
+    },
+    "parkland_green_inner_se.png": {
+      "bytes": 318,
+      "sha256": "4b386c7636c6f51524af095fbe7e4f6fd5519d5e6715fb5101f479e6da5b8b55"
+    },
+    "parkland_green_inner_sw.png": {
+      "bytes": 380,
+      "sha256": "ca91d3cd4f4c667ee2bef9eee7258d98a9f4bc4005c86ec232bcd74f238a6767"
+    },
+    "parkland_green_outer_ne.png": {
+      "bytes": 384,
+      "sha256": "be45cb478c59e96d6d5bfe5f156c94433efc27172122680c60319edf15b708ba"
+    },
+    "parkland_green_outer_nw.png": {
+      "bytes": 348,
+      "sha256": "bf3ece16e214fe7083e6bbfcfff135462373aa99451871a2908874b9dd1f30f6"
+    },
+    "parkland_green_outer_se.png": {
+      "bytes": 348,
+      "sha256": "2110825bee439282269045f681d2d995139139248eecc595e502780f35e88b2e"
+    },
+    "parkland_green_outer_sw.png": {
+      "bytes": 425,
+      "sha256": "7f078996366da53961c594be831b9fb98bc58b67d83b436732556db0b98f0e56"
+    },
+    "parkland_path_base_0.png": {
+      "bytes": 7089,
+      "sha256": "28cc3df38b0d8646808cdb7e9109d0ac7818d459fd9404b01ac78bd758406a79"
+    },
+    "parkland_path_base_1.png": {
+      "bytes": 7432,
+      "sha256": "b627910d9d6a8b5060e871ffb40e5e7403973a525d53ca083d4d9a5c13a03ea4"
+    },
+    "parkland_path_base_2.png": {
+      "bytes": 7530,
+      "sha256": "d6174fd724b975aad94e0cdb3a5313b4a5f8725966ef74bcf62e23eaf851a016"
+    },
+    "parkland_path_base_3.png": {
+      "bytes": 7535,
+      "sha256": "5f01687d49a6a7170b26e6a6d45f5792244ad4db368918c758bfdd3a967fa80b"
+    },
+    "parkland_path_base_4.png": {
+      "bytes": 7532,
+      "sha256": "ee24f3de4fbbffb3fd7de175d6947e0c15d5d3e5c0ece351c96417925d146a6a"
+    },
+    "parkland_path_base_5.png": {
+      "bytes": 7725,
+      "sha256": "375e29366ffcab68741ba7857476502a8fe2b62f38d95ff641ce546df6301106"
+    },
+    "parkland_path_edge_e.png": {
+      "bytes": 1366,
+      "sha256": "f5f82c64624294e9ca3cb2b9657c5e76832f1491876872952aefd52e4b02b66a"
+    },
+    "parkland_path_edge_n.png": {
+      "bytes": 1386,
+      "sha256": "1f7ea5da4bae70399b80025943022cd9b2941d56fa8958ff219c02bcbd5afb81"
+    },
+    "parkland_path_edge_s.png": {
+      "bytes": 1373,
+      "sha256": "a1e8b10033dbc1f68fd534ce0aa2b7f9ecff84bcf8e16f96806c25bd47d0df7c"
+    },
+    "parkland_path_edge_w.png": {
+      "bytes": 1341,
+      "sha256": "2e1715bd60b8a9bbafed7532693c2a5c15ebc7f2b7a0770c32444f8421f93b03"
+    },
+    "parkland_path_inner_ne.png": {
+      "bytes": 378,
+      "sha256": "e4c187d6530c8e5d647f9aadd3c8bd7a3e8e84fdd597912bc3c0e668b9f39fab"
+    },
+    "parkland_path_inner_nw.png": {
+      "bytes": 319,
+      "sha256": "205858f9f0423d1a34af78ddb0373a6cb84d53cfc663cd36d8fc354fbbb887cb"
+    },
+    "parkland_path_inner_se.png": {
+      "bytes": 317,
+      "sha256": "15098b3e8a736f41421120328c03165c96f9ddfa95c5c3c8d5d25474d1bc7aea"
+    },
+    "parkland_path_inner_sw.png": {
+      "bytes": 379,
+      "sha256": "4f4a3b0fb38a6d2ce9d85a1b4178eb5c3c304dd358bf1af330e3a1218ebb72c6"
+    },
+    "parkland_path_outer_ne.png": {
+      "bytes": 384,
+      "sha256": "21c045f55b9c61b87bdabd97915e25fed8605e515140b48f103ee2256e348473"
+    },
+    "parkland_path_outer_nw.png": {
+      "bytes": 348,
+      "sha256": "d61be09812de2d67a41ff90b83515073a212a47cc1d64bc18e1d6c3cb7ea6a1a"
+    },
+    "parkland_path_outer_se.png": {
+      "bytes": 348,
+      "sha256": "6d5a4cd5bc205c5fa858fec5739d8911c23bf619acd1b5c42e3951ae7fa4adef"
+    },
+    "parkland_path_outer_sw.png": {
+      "bytes": 431,
+      "sha256": "cee919b1d05d6cda5e12a38aec5ccf4843f66eb39d703d8890ac968ec8648ae0"
+    },
+    "parkland_rough_base_0.png": {
+      "bytes": 3824,
+      "sha256": "44fdaf8c56cade6208afb2b4c4a70114268d55ee4405a342e85de0faab3c296d"
+    },
+    "parkland_rough_base_1.png": {
+      "bytes": 4001,
+      "sha256": "5d11b1d2ac485b96dd58dc1476ac7cf475d7b98fcc0714f061a4aae55f92b966"
+    },
+    "parkland_rough_base_2.png": {
+      "bytes": 4109,
+      "sha256": "aacb42a5a308d4c705a22363ad9816ed01cffcd92044316c9f8d876cbf8770ed"
+    },
+    "parkland_rough_base_3.png": {
+      "bytes": 3682,
+      "sha256": "7e43b6ac5687fa69eea2f39ba5b91bdcc189c54eff32c517122ee969e24b8e10"
+    },
+    "parkland_rough_base_4.png": {
+      "bytes": 3918,
+      "sha256": "e2954d7527ad1680f82107d2799471c479e46b25bda2a6573dce07abd0003c71"
+    },
+    "parkland_rough_base_5.png": {
+      "bytes": 3999,
+      "sha256": "18c5691826d7ed9837b197d3aefd20b5a119a7409d9ea6f120541618a87ccddf"
+    },
+    "parkland_rough_edge_e.png": {
+      "bytes": 1672,
+      "sha256": "3567d52a968ac3a36e36d69396ce6f4f1bd81cef7d09bffc0dc15c6d17540ad9"
+    },
+    "parkland_rough_edge_n.png": {
+      "bytes": 1758,
+      "sha256": "d3f01fbcfd6afad0c71ecdc1f95f308a7a76689739fc28616571b6e5ee10a0cc"
+    },
+    "parkland_rough_edge_s.png": {
+      "bytes": 1749,
+      "sha256": "c8a0f4f98c38af1a505ce3ee6da26a26a6548c34146201ac006eccf2ca9b686c"
+    },
+    "parkland_rough_edge_w.png": {
+      "bytes": 1675,
+      "sha256": "9a20e125a0daa72af3a6b40739e05f1487552ee009c5606dd41bdf4daf16cc5e"
+    },
+    "parkland_rough_inner_ne.png": {
+      "bytes": 379,
+      "sha256": "46b9c8df73d2ec516d6d0de07eadf3f188cab8bed33d1ebf5030265bae9b2e00"
+    },
+    "parkland_rough_inner_nw.png": {
+      "bytes": 320,
+      "sha256": "c260d46c19e38bc8e30cbbca9d0861f3276539242d6a0bcaffcf2abd4b7f90d6"
+    },
+    "parkland_rough_inner_se.png": {
+      "bytes": 318,
+      "sha256": "956c516944a87856074d413a5b7ac2257eb34c36e22da7ff85fa5212ed3f543f"
+    },
+    "parkland_rough_inner_sw.png": {
+      "bytes": 380,
+      "sha256": "b8567f6c907884853f66fd816d31cd0b6afe5a014eaa55d2e3f1f9dca72dd4f0"
+    },
+    "parkland_rough_outer_ne.png": {
+      "bytes": 384,
+      "sha256": "ef501bd2f7122d5e8656023198d7488d06a0db2d5f9925a92143302dd0aaa1de"
+    },
+    "parkland_rough_outer_nw.png": {
+      "bytes": 348,
+      "sha256": "e5242acb1263bcaf37d5ec5e280fa2cc396571fa911cd8903316777b203aee63"
+    },
+    "parkland_rough_outer_se.png": {
+      "bytes": 348,
+      "sha256": "ceede41285912c821dd46dd6229d8a683af22dcfba8293edbdcab192d8af5764"
+    },
+    "parkland_rough_outer_sw.png": {
+      "bytes": 427,
+      "sha256": "f505501c0328385c4fe889d1ba3106930eabad3ad495f540de48246e58202470"
+    },
+    "parkland_sand_base_0.png": {
+      "bytes": 7546,
+      "sha256": "18cd8d9a93cd3e195105342f7e8c0e05b9620f2f9ea71711bf7053507f6ebf5c"
+    },
+    "parkland_sand_base_1.png": {
+      "bytes": 7565,
+      "sha256": "e47f17db548501a879ca2cc275bb836fe7127661b0af5744f9c827396d62d6c5"
+    },
+    "parkland_sand_base_2.png": {
+      "bytes": 7548,
+      "sha256": "7205cc0d7e3c7ab77906044dbdcfab6cd68cf85bd0484dc4072e038eca7f0473"
+    },
+    "parkland_sand_base_3.png": {
+      "bytes": 7636,
+      "sha256": "8470536cade2fc7a63e36e72fb2967e4d1dda12a835f75b9ababbf308dbeff46"
+    },
+    "parkland_sand_base_4.png": {
+      "bytes": 7486,
+      "sha256": "32b5da3535715e1a1bde6574147c87026ad5796d5b116031531616b6e6f52e7a"
+    },
+    "parkland_sand_base_5.png": {
+      "bytes": 7569,
+      "sha256": "e648e15204b3a4eaa3af0ce9af4457a14968f7779b7a6326e2367091bddd5d4d"
+    },
+    "parkland_sand_edge_e.png": {
+      "bytes": 1979,
+      "sha256": "7539ce746cd34051f8560b87d68aab33bf7e1cc9189df0a2c7900e5170f687a1"
+    },
+    "parkland_sand_edge_n.png": {
+      "bytes": 2071,
+      "sha256": "62e97defdfd975f9119ec49c145682b6e0d6ceb91fc9ef3e8373a2dce44f0ced"
+    },
+    "parkland_sand_edge_s.png": {
+      "bytes": 1891,
+      "sha256": "ca2294181854fde8d893ea50dce22aa3b26064b803f7ac610f5325d69e63c41b"
+    },
+    "parkland_sand_edge_w.png": {
+      "bytes": 1986,
+      "sha256": "19c4870cc25955d232fe63eb706ac502b1eea95156cc10f2fe501ca1e5fc0e29"
+    },
+    "parkland_sand_inner_ne.png": {
+      "bytes": 374,
+      "sha256": "968c82ecfbdc01527dc8c0ba83a27e023afabcd01af0f9aece10a887b6ad4eb1"
+    },
+    "parkland_sand_inner_nw.png": {
+      "bytes": 315,
+      "sha256": "cb07b267173ee54fe9769ec518d51edd8204acac2d9a4b997e1eafed9bf8bde4"
+    },
+    "parkland_sand_inner_se.png": {
+      "bytes": 314,
+      "sha256": "e2559517200d73efdc9c504aa8d0f43567065d47660559208f282ea5f2b982fc"
+    },
+    "parkland_sand_inner_sw.png": {
+      "bytes": 375,
+      "sha256": "8ae9995746adb48bcbf3f7416c0f585499dc857a28d07ba4564820e9b77bfe39"
+    },
+    "parkland_sand_outer_ne.png": {
+      "bytes": 381,
+      "sha256": "54d7bdbe1d341fa1676b7d6fff7cc511a67fa7d29a5edaa477df0a743bbd1d58"
+    },
+    "parkland_sand_outer_nw.png": {
+      "bytes": 345,
+      "sha256": "23376cb18c12ce616ad9c924df03d477af1f7cea707891218a46c318d9542938"
+    },
+    "parkland_sand_outer_se.png": {
+      "bytes": 345,
+      "sha256": "5a402451740b8b1f735ab7f77f409d55b37cf3ad4b120ec5c5de7602ae96df81"
+    },
+    "parkland_sand_outer_sw.png": {
+      "bytes": 430,
+      "sha256": "a1b961f13734b20eaf2d885804c29f45cc6fe2a3ac037af1e8c837422bd9f886"
+    },
+    "parkland_tee_base_0.png": {
+      "bytes": 3434,
+      "sha256": "6d95a5d171c50d4497d37fca979a35a025650f144cadfcdb939a3646a2ada5f0"
+    },
+    "parkland_tee_base_1.png": {
+      "bytes": 3294,
+      "sha256": "704d6c8d745338edeeba6144d2fed521aea3c5c2d22f2d4a37a5a52eaa7d44c4"
+    },
+    "parkland_tee_base_2.png": {
+      "bytes": 3162,
+      "sha256": "f064a36b9eab7e4fc97900917b13ef6afa3b634303948ba6c77d699f08e04dfe"
+    },
+    "parkland_tee_base_3.png": {
+      "bytes": 3455,
+      "sha256": "958468600e6fe6ca2f5a4ad36165df506be620eb75b3acb057b010d965a65e02"
+    },
+    "parkland_tee_base_4.png": {
+      "bytes": 3450,
+      "sha256": "48e37589a91a23e40340880e951571d0ae23b5e03fb4f792e7334eb9daf29244"
+    },
+    "parkland_tee_base_5.png": {
+      "bytes": 3280,
+      "sha256": "f31ef8c3e1f3ab2c8ea26a30d3cd078d9999246c06089861a42e983632eb9b2d"
+    },
+    "parkland_tee_edge_e.png": {
+      "bytes": 1356,
+      "sha256": "14a1684b116a451d9d94c1869788ed734d300c1c154df688afab3d65090a9b0d"
+    },
+    "parkland_tee_edge_n.png": {
+      "bytes": 1376,
+      "sha256": "2155e835c9c743196edca0a2cec7e8200d391ebb7fd5dab5c73e2190af1bb98d"
+    },
+    "parkland_tee_edge_s.png": {
+      "bytes": 1373,
+      "sha256": "70c0e941a19cca2c302b7354807e1edf3f5d97f0c530e2a1dc4bfc1963f272ae"
+    },
+    "parkland_tee_edge_w.png": {
+      "bytes": 1346,
+      "sha256": "7398b9de0d9010148fe923ac1be1f6da8d83595acfc75c0defc491b2b87d7095"
+    },
+    "parkland_tee_inner_ne.png": {
+      "bytes": 379,
+      "sha256": "008a0abb9bf91e914d1f115665a45882bee9ad8a546e1d85325e4120d7690ccf"
+    },
+    "parkland_tee_inner_nw.png": {
+      "bytes": 320,
+      "sha256": "860f88c1c199fa7d411aa68d35c92d75366e5317f2b64fb6f086c068db25a775"
+    },
+    "parkland_tee_inner_se.png": {
+      "bytes": 318,
+      "sha256": "0dbfb4b3d3fab7c04c33a978a7a45890d74ec063fbc8a6b4ceaa5c2148d8985a"
+    },
+    "parkland_tee_inner_sw.png": {
+      "bytes": 380,
+      "sha256": "23d2a168590624f1c3b7d1f2bffb8baf408934c14991fa9aef29be66e6407d23"
+    },
+    "parkland_tee_outer_ne.png": {
+      "bytes": 385,
+      "sha256": "631e6d6edf2b2d8e648c772446d33107bf129c7cb9b19ba0748eedba6308ba0e"
+    },
+    "parkland_tee_outer_nw.png": {
+      "bytes": 349,
+      "sha256": "afbcf22aa261cece68127eea421c007f91efd0b0681609279a5524442d602172"
+    },
+    "parkland_tee_outer_se.png": {
+      "bytes": 349,
+      "sha256": "c3622e18e2357dbbf74bb3150ed67fd286964e703628f1a9a53b14452776d67b"
+    },
+    "parkland_tee_outer_sw.png": {
+      "bytes": 432,
+      "sha256": "61600e5fbbf493cffefceec4e467bbdf44a488ea0ff81b19e5a0bd51ccd75371"
+    },
+    "parkland_waste_area_base_0.png": {
+      "bytes": 5234,
+      "sha256": "c5e9f14e19d643de6006c91b3bae98ec1136e2f6fbe7338f162894ae1ed8dac1"
+    },
+    "parkland_waste_area_base_1.png": {
+      "bytes": 5371,
+      "sha256": "a76e61b17f0ab983066bfe60b7230c2e745cec9a8ab4c3ee7b0c5d42343a6094"
+    },
+    "parkland_waste_area_base_2.png": {
+      "bytes": 5336,
+      "sha256": "fd9b77c2952669d6db3a1194f1682f863528e4a640a122cf0dae5c5d3d3b7998"
+    },
+    "parkland_waste_area_base_3.png": {
+      "bytes": 5063,
+      "sha256": "2a7c5b216a152aea976abd8b5dee71a517828b83d5bf5120c301251099479943"
+    },
+    "parkland_waste_area_base_4.png": {
+      "bytes": 5243,
+      "sha256": "dee2a9f8f44ad577415293c32f30149e05f17a771a56692521acbc9cf0efe0fd"
+    },
+    "parkland_waste_area_base_5.png": {
+      "bytes": 5731,
+      "sha256": "c5e8d06c6be99388d237cbf227c070b704e71e07031d6cb2d0476b60f7cc7dcd"
+    },
+    "parkland_waste_area_edge_e.png": {
+      "bytes": 1689,
+      "sha256": "f80b5f7e29448b16a2b138c65bdf357de53fcdf68abb362b82ff99f349ae1b5e"
+    },
+    "parkland_waste_area_edge_n.png": {
+      "bytes": 1885,
+      "sha256": "bc92c699927ec77ea5f4c81a8f3b8462e0ff16c9c37b87b305570af6a4544eec"
+    },
+    "parkland_waste_area_edge_s.png": {
+      "bytes": 1764,
+      "sha256": "87ff56e822c9caff63cd1745c1378edabe5d6e8b79059f900fbf0e9c0f546e42"
+    },
+    "parkland_waste_area_edge_w.png": {
+      "bytes": 1679,
+      "sha256": "776ea715a62dd01f4db75a8b7b19e91f1d1b2e7c056ad645e1a3d118ca889d2a"
+    },
+    "parkland_waste_area_inner_ne.png": {
+      "bytes": 379,
+      "sha256": "b84cf1eb8c77fcd9b54691b5dc94b82ec58073b39636e0bc184cc14a58f72056"
+    },
+    "parkland_waste_area_inner_nw.png": {
+      "bytes": 320,
+      "sha256": "1486ac6e9efde8fca00a6c31852ab6479b15017d9438469f101e913d8ac4de5b"
+    },
+    "parkland_waste_area_inner_se.png": {
+      "bytes": 318,
+      "sha256": "89644644abb89ee97931d8bda1f4af069ba99ba527ad14be5fd07cd0d39c88bf"
+    },
+    "parkland_waste_area_inner_sw.png": {
+      "bytes": 380,
+      "sha256": "66504e1963b6058cf1d117d8ca51fe669f17228ef6cd17def633a82230a51f13"
+    },
+    "parkland_waste_area_outer_ne.png": {
+      "bytes": 386,
+      "sha256": "5c0cb5ed67f3c89304db1dd372b33bc294860facf150e2e518fcc822598d23ff"
+    },
+    "parkland_waste_area_outer_nw.png": {
+      "bytes": 349,
+      "sha256": "7e1b6ccefeb2e0c077626f6bb60245f9eea755cd6b2b84b0d6b1f6bd7e8d1e23"
+    },
+    "parkland_waste_area_outer_se.png": {
+      "bytes": 349,
+      "sha256": "087c2f24274db8a2c4e389506cca0a71cbb129cfd961ec7ebb42c15f6f26b3c4"
+    },
+    "parkland_waste_area_outer_sw.png": {
+      "bytes": 435,
+      "sha256": "c03e253185d411d345f29acffa269e89a48d4526550a12e9fffdbdddace32ca2"
+    },
+    "parkland_water_base_0.png": {
+      "bytes": 5741,
+      "sha256": "c709e09fece61c551754f0a43ab3aa12436595aad0b5b003641ca49c16dbb8a9"
+    },
+    "parkland_water_base_1.png": {
+      "bytes": 5471,
+      "sha256": "43097ad1f93cdf430d5dc8b97456e9c21542371fdf4038a98e75ba75f5c4224a"
+    },
+    "parkland_water_base_2.png": {
+      "bytes": 5779,
+      "sha256": "a29df1de40ff27f94bb038bc2956cd69c2627819d0a8236b3e0b85aeb5761f97"
+    },
+    "parkland_water_base_3.png": {
+      "bytes": 5599,
+      "sha256": "11453359fb331499248eadd0bbb929a2b8d10db36fb58ce44e6da602b4555cc9"
+    },
+    "parkland_water_base_4.png": {
+      "bytes": 5510,
+      "sha256": "324dc6269f59aded9a2d0f6fc2ac54d1d5df302948fdc9940c497bea04160d3e"
+    },
+    "parkland_water_base_5.png": {
+      "bytes": 5605,
+      "sha256": "f54603e6761409b7f4bf46203839289e905dda3b316500757b1bd4b0b289dca1"
+    },
+    "parkland_water_edge_e.png": {
+      "bytes": 1652,
+      "sha256": "71d179f059ab9d5dda51be7ffd7970422cd1ef6676be14182d95c83f06407d64"
+    },
+    "parkland_water_edge_n.png": {
+      "bytes": 1670,
+      "sha256": "de7cd8f98c84f8e34fa4aba0c48ad92ad8d7257fa96d6579b732dde6572662b9"
+    },
+    "parkland_water_edge_s.png": {
+      "bytes": 1734,
+      "sha256": "e118eb616ec5b4be5ad8451ea40c47ab8671f81fe9429e3348918eb51e73d02b"
+    },
+    "parkland_water_edge_w.png": {
+      "bytes": 1728,
+      "sha256": "012d37c16cb1dff58510a6d59172d7be12af5189536a16196d189f92b0e5ffd7"
+    },
+    "parkland_water_inner_ne.png": {
+      "bytes": 369,
+      "sha256": "843a5743f92331eda1869d20b88efe1f2c0a91035fb77b50c1403fcf39a4bfa6"
+    },
+    "parkland_water_inner_nw.png": {
+      "bytes": 312,
+      "sha256": "6643f91b132474bf002c0cd4669bd7f7dda719ea31575604fb340abd48039ee1"
+    },
+    "parkland_water_inner_se.png": {
+      "bytes": 310,
+      "sha256": "da86510868f794936207a398fcc8a698f6aed82a6ba96a0170d4b9606c077e6a"
+    },
+    "parkland_water_inner_sw.png": {
+      "bytes": 370,
+      "sha256": "2dada741a2fe2f00a14b8314035b36d4b7c2f1edb56b60180f7765d9fe8ad752"
+    },
+    "parkland_water_outer_ne.png": {
+      "bytes": 381,
+      "sha256": "ba3af548ef726e0d77f6a7aaf7f8d65f7f94b0d034b37f92e5d7284e16318a20"
+    },
+    "parkland_water_outer_nw.png": {
+      "bytes": 345,
+      "sha256": "464f1a6514d7003ef2237c8a15e8d365a374e2ec407ff65e8012c7b6d818ce68"
+    },
+    "parkland_water_outer_se.png": {
+      "bytes": 345,
+      "sha256": "446bb701bc107b2598710543a1caddf7f43849b1a708f947862df8e080c5fe52"
+    },
+    "parkland_water_outer_sw.png": {
+      "bytes": 429,
+      "sha256": "adc0b53c0a85289655d73944371849a92f3b940647b1c2091089e9e964683fda"
+    },
+    "parkland_wetland_base_0.png": {
+      "bytes": 6460,
+      "sha256": "4d89bce4b35b56d90a7020ef2489bb69d3ad3f2327b30176ec4bfb3b9df0981a"
+    },
+    "parkland_wetland_base_1.png": {
+      "bytes": 7094,
+      "sha256": "9c44ab48267a3209119bb1c3f8f8a86f49282257c089cfcbb47a31ebfee6a1f2"
+    },
+    "parkland_wetland_base_2.png": {
+      "bytes": 6915,
+      "sha256": "8b89e598278638449ec33525302c53ec4522e5b93bd66f4a8410ce40afff8ce4"
+    },
+    "parkland_wetland_base_3.png": {
+      "bytes": 6576,
+      "sha256": "06fc0e6074512e3100b1efcb3725583ba2f8d0df9fb80021f9beb127187f739e"
+    },
+    "parkland_wetland_base_4.png": {
+      "bytes": 6945,
+      "sha256": "197a87410d281de8f35554a2ee23e2be0410243a7026821f6cf6f5b3b6223cee"
+    },
+    "parkland_wetland_base_5.png": {
+      "bytes": 6941,
+      "sha256": "992815bd6a673a4661f1bf1e0fe10202062998f069b290fd14cd5c0fc8f237af"
+    },
+    "parkland_wetland_edge_e.png": {
+      "bytes": 1558,
+      "sha256": "42f841f8e36b60695e2fb5bebb387b17cdd0d544a967aa907af0d2d77adc5343"
+    },
+    "parkland_wetland_edge_n.png": {
+      "bytes": 1583,
+      "sha256": "c3ade133bd74371fc816b1fd20d8f3f991ab5f402432184670b1a81c0d59aee2"
+    },
+    "parkland_wetland_edge_s.png": {
+      "bytes": 1547,
+      "sha256": "2bf18ef4019e9238dba961fea1ba67dc76e3b739735c2a6e98334e93cee9e37e"
+    },
+    "parkland_wetland_edge_w.png": {
+      "bytes": 1561,
+      "sha256": "eda9c084cbfe09b47cd812b23136987c09ba1e3dd31a8de1a3f1507de940e9e3"
+    },
+    "parkland_wetland_inner_ne.png": {
+      "bytes": 379,
+      "sha256": "3da6f5bfdf4c393228b2aab7cdee452671ffdf6efeba3f516f498be2588aafb6"
+    },
+    "parkland_wetland_inner_nw.png": {
+      "bytes": 320,
+      "sha256": "6ee3a9c30d4895d61e51922b5147a753112e6535a5475740507dfb21f4862b13"
+    },
+    "parkland_wetland_inner_se.png": {
+      "bytes": 318,
+      "sha256": "71265bd72825ae23862bc29a48f566b74d04d02718d794c082edf402d91aa3fb"
+    },
+    "parkland_wetland_inner_sw.png": {
+      "bytes": 380,
+      "sha256": "4c1fe3eab83fe11d5c4fe40fe6a1dbffb0215553ff505a1c680a711ec95b4fb2"
+    },
+    "parkland_wetland_outer_ne.png": {
+      "bytes": 386,
+      "sha256": "7c5e4d8aeeb1f1e600d526c98e2627b6ca5f9de1ff162408bbf2c33692f787f3"
+    },
+    "parkland_wetland_outer_nw.png": {
+      "bytes": 349,
+      "sha256": "dfdb756fe966c1fe23ea419428c1734932f65ada9e13b8ce6e8dd268a1a15629"
+    },
+    "parkland_wetland_outer_se.png": {
+      "bytes": 349,
+      "sha256": "dae712a5ad07f14140150515ad861b7739bd1d9c25e75e3d9e4fc3c3f1261ecc"
+    },
+    "parkland_wetland_outer_sw.png": {
+      "bytes": 434,
+      "sha256": "e58ec2f3f60113efadb072ebfd4ed87a2714d01fc33c829daa890e745066534e"
+    }
+  }
+}
