@@ -1808,7 +1808,6 @@ export default function App() {
     const fixtureRep = fixtureRepParam == null ? Number.NaN : Number(fixtureRepParam);
     const requestedTheme = fixtureParams.get("m53Theme") ?? fixtureParams.get("m52Theme") ?? fixtureParams.get("m22Theme") ?? fixtureParams.get("m21Theme") ?? fixtureParams.get("m20Theme") ?? fixtureParams.get("perfTheme");
     const fixtureTheme = isLandTheme(requestedTheme) ? requestedTheme : BIOME_KEYS[0];
-<<<<<<< HEAD
     let fixtureCourse = isMacroLandformFixture
       ? createMacroLandformFixture()
       : isZk1202Fixture

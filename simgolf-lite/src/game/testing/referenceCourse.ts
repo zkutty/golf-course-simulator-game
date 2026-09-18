@@ -14,12 +14,18 @@ export function createParklandVisualReferenceCourse(): Course {
   const width = 48;
   const height = 36;
   const tiles = Array.from({ length: width * height }, () => "rough" as Terrain);
-  // A single broad clubhouse hill keeps the golf corridor seamless while
-  // still exercising authored elevation joins and exposed-earth faces.
+  // A three-level, deliberately asymmetric ridge sits behind the playable
+  // corridor. The levels are authored course data (not a camera trick) so the
+  // existing M19 normal bookmark exercises the same continuous shoulders from
+  // every rotation. The route remains on the low outer shoulder, keeping this
+  // a general playable fixture rather than a screenshot-only composition.
   const elevations: number[] = Array.from({ length: width * height }, (_, index) => {
     const x = index % width;
     const y = Math.floor(index / width);
-    return x < 15 && y < 12 ? 2 : 1;
+    const outer = ((x - 24) / 22) ** 2 + ((y - 17) / 15) ** 2;
+    const middle = ((x - 23) / 13) ** 2 + ((y - 11.5) / 8.2) ** 2;
+    const crest = ((x - 22.5) / 6.6) ** 2 + ((y - 10.5) / 3.9) ** 2;
+    return crest <= 1 ? 3 : middle <= 1 ? 2 : outer <= 1 ? 1 : 0;
   });
   const set = (x: number, y: number, terrain: Terrain) => {
     if (x >= 0 && y >= 0 && x < width && y < height) tiles[y * width + x] = terrain;
@@ -47,9 +53,18 @@ export function createParklandVisualReferenceCourse(): Course {
   }
   for (let y = 13; y <= 17; y++) for (let x = 29; x <= 34; x++) if ((x - 31.5) ** 2 / 10 + (y - 15) ** 2 / 5 <= 1) set(x, y, "sand");
   for (let y = 22; y <= 25; y++) for (let x = 37; x <= 41; x++) if ((x - 39) ** 2 / 7 + (y - 23.5) ** 2 / 3 <= 1) set(x, y, "sand");
+  let priorPathY: number | null = null;
   for (let x = 3; x <= 44; x++) {
     const y = 10 + Math.round(Math.sin(x / 6) * 2);
+    // The sinusoid can change rows between columns. Fill its deterministic
+    // cardinal bridge on the incoming column so the authored cart route is
+    // exactly one four-connected component without inventing a diagonal merge.
+    if (priorPathY != null) {
+      const direction = Math.sign(y - priorPathY);
+      for (let bridgeY: number = priorPathY; bridgeY !== y; bridgeY += direction || 1) set(x, bridgeY, "path");
+    }
     set(x, y, "path");
+    priorPathY = y;
   }
   for (let y = 2; y < height - 2; y++) for (let x = 2; x < width - 2; x++) {
     if (tiles[y * width + x] === "rough" && ((x * 41 + y * 67 + PARKLAND_VISUAL_SEED) % 79 < 4)) set(x, y, "deep_rough");
