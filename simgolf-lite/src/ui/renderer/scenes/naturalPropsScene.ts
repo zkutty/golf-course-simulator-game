@@ -23,8 +23,10 @@ import {
   deriveTreeHabitat,
   type TreeHabitatPatch,
 } from "../../../game/render/treeHabitat";
+import { deriveHabitatComposition } from "../../../game/render/habitatComposition";
 import { isWaterHazard } from "../../../game/models/terrainRules";
-import { getPropFrame } from "../../../render/atlas";
+import { isoDepth, worldToIso } from "../../../game/render/iso";
+import { getPropFrame, getTerrainDetailFrame } from "../../../render/atlas";
 import type { RenderSnapshot } from "../RenderSnapshot";
 import type { RenderSceneSystem } from "../SceneSystemHost";
 
@@ -50,12 +52,14 @@ export interface NaturalPropsSceneSystem extends RenderSceneSystem {
   readonly id: "naturalProps";
   tick(input: NaturalPropsTickInput): void;
   contentCount(): number;
+  habitatDetailCount(): number;
   fallbackTextureCount(): number;
   rebuildCount(): number;
 }
 
 export interface NaturalPropsSceneDependencies {
   readonly getAtlasTexture?: typeof getPropFrame;
+  readonly getHabitatAtlasTexture?: typeof getTerrainDetailFrame;
   readonly createFallbackTexture?: (
     type: Obstacle["type"],
     frame: NaturalPropFrame,
@@ -239,10 +243,12 @@ export function createNaturalPropsSceneSystem(
   dependencies: NaturalPropsSceneDependencies = {},
 ): NaturalPropsSceneSystem {
   const getAtlasTexture = dependencies.getAtlasTexture ?? getPropFrame;
+  const getHabitatAtlasTexture = dependencies.getHabitatAtlasTexture ?? getTerrainDetailFrame;
   const createFallbackTexture = dependencies.createFallbackTexture ?? createFallbackObstacleTexture;
   const createSprite = dependencies.createSprite ?? ((texture) => new PIXI.Sprite(texture));
   const createGraphics = dependencies.createGraphics ?? (() => new PIXI.Graphics());
   const entries = new Map<string, NaturalPropSceneEntry>();
+  const habitatDetails: PIXI.Sprite[] = [];
   const fallbackTextures = new Map<string, { texture: PIXI.Texture; owned: boolean }>();
   let rebuilds = 0;
 
@@ -256,6 +262,11 @@ export function createNaturalPropsSceneSystem(
       entry.habitat?.destroy();
     }
     entries.clear();
+    for (const sprite of habitatDetails) {
+      sprite.parent?.removeChild(sprite);
+      sprite.destroy();
+    }
+    habitatDetails.length = 0;
     for (const fallback of fallbackTextures.values()) {
       if (fallback.owned) fallback.texture.destroy(true);
     }
@@ -330,6 +341,33 @@ export function createNaturalPropsSceneSystem(
       .sort((a, b) => a.habitat!.rank - b.habitat!.rank)
       .slice(0, habitatBudget)
       .map((entry) => `${entry.obstacle.x},${entry.obstacle.y}`));
+
+    const composition = deriveHabitatComposition({
+      course,
+      tiles: snapshot.effectiveTiles,
+      obstacles: snapshot.obstacles,
+      worldSeed: snapshot.worldSeed,
+      quality: snapshot.graphicsQuality,
+    });
+    for (const detail of composition) {
+      const texture = getHabitatAtlasTexture(course.theme, snapshot.graphicsQuality, detail.frame);
+      if (!texture) continue;
+      const sprite = createSprite(texture);
+      const position = worldToIso(
+        detail.worldX,
+        detail.worldY,
+        snapshot.surfaceHeightAt(detail.worldX, detail.worldY),
+        snapshot.rotation,
+      );
+      sprite.label = `habitat-composition:${detail.id}`;
+      sprite.eventMode = "none";
+      sprite.anchor.set(0.5, 1);
+      sprite.position.set(position.x, position.y + TILE_H * 0.34);
+      sprite.scale.set(detail.scale);
+      sprite.zIndex = isoDepth(detail.worldX, detail.worldY, 0, snapshot.rotation);
+      terrainDecals.addChild(sprite);
+      habitatDetails.push(sprite);
+    }
 
     for (const { obstacle, selected, seasonal, habitat } of prepared) {
       const key = `${obstacle.x},${obstacle.y}`;
@@ -441,6 +479,7 @@ export function createNaturalPropsSceneSystem(
       }
     },
     contentCount: () => entries.size,
+    habitatDetailCount: () => habitatDetails.length,
     fallbackTextureCount: () => fallbackTextures.size,
     rebuildCount: () => rebuilds,
   };
