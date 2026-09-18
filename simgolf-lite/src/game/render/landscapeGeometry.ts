@@ -3,6 +3,7 @@ import type { Course, LandTheme, SurfacePoint, Terrain } from "../models/types";
 import { getBiomeDefinition } from "../models/biomes";
 import { terrainSurfaceInsetPx } from "./terrainRelief";
 import { ELEVATION_STEP_PX } from "./iso";
+import { buildSharedBoundaryContours } from "./sharedBoundaryContours";
 
 export interface LandscapeBounds {
   minX: number;
@@ -281,6 +282,8 @@ interface LandscapeComponentSkeleton {
   cells: number[];
   bounds: LandscapeBounds;
   topologyKey: string;
+  /** Presentation geometry also depends on the immediate terrain halo. */
+  boundaryContextKey: string;
 }
 
 function buildLandscapeComponentSkeletons(
@@ -330,7 +333,28 @@ function buildLandscapeComponentSkeletons(
       cells,
       bounds: { minX, minY, maxX, maxY },
       topologyKey: `${terrain}-${fnv1a(`${width}x${height}:${cells.join(",")}`)}`,
+      boundaryContextKey: "",
     });
+  }
+  for (const component of components) {
+    const owned = new Set(component.cells);
+    const halo = new Set<number>();
+    for (const index of component.cells) {
+      const x = index % width;
+      const y = Math.floor(index / width);
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+        const neighbor = ny * width + nx;
+        if (!owned.has(neighbor)) halo.add(neighbor);
+      }
+    }
+    component.boundaryContextKey = fnv1a([...halo]
+      .sort((a, b) => a - b)
+      .map((index) => `${index}:${tiles[index]}`)
+      .join("|"));
   }
   return components;
 }
@@ -340,16 +364,45 @@ function materializeLandscapeComponent(
   width: number,
   height: number,
   options: LandscapeOptions,
+  sharedRings?: readonly (readonly SurfacePoint[])[],
 ): LandscapeComponent {
-  const exactRings = traceComponentRings(skeleton.cells, width, height);
-  const rings = exactRings
-    .map((ring) => roundLandscapeRing(
-      ring,
-      options.cornerRadius ?? 0.36,
-      options.cornerSegments ?? 3,
-    ))
+  // The path compositor consumes the accepted ring verbatim. Other materials
+  // use the grid-wide shared boundary contract so the two sides of a seam can
+  // never expose independently rounded cell tips.
+  const rings = (skeleton.terrain === "path" || !sharedRings
+    ? traceComponentRings(skeleton.cells, width, height).map((ring) => roundLandscapeRing(
+        ring,
+        options.cornerRadius ?? 0.36,
+        options.cornerSegments ?? 3,
+      ))
+    : sharedRings.map((ring) => ring.map((point) => ({ ...point }))))
     .sort((a, b) => Math.abs(ringSignedArea(b)) - Math.abs(ringSignedArea(a)));
-  return { ...skeleton, rings };
+  return {
+    terrain: skeleton.terrain,
+    cells: skeleton.cells,
+    bounds: skeleton.bounds,
+    topologyKey: skeleton.topologyKey,
+    rings,
+  };
+}
+
+function sharedRingsForSkeletons(
+  tiles: readonly Terrain[],
+  width: number,
+  height: number,
+  skeletons: readonly LandscapeComponentSkeleton[],
+  options: LandscapeOptions,
+): ReadonlyMap<number, SurfacePoint[][]> {
+  return buildSharedBoundaryContours(
+    tiles,
+    width,
+    height,
+    skeletons.map((skeleton, id) => ({ id, terrain: skeleton.terrain, cells: skeleton.cells })),
+    {
+      cornerRadius: options.cornerRadius ?? 0.36,
+      cornerSegments: options.cornerSegments ?? 3,
+    },
+  ).ringsByComponent;
 }
 
 export function buildLandscapeComponents(
@@ -358,8 +411,15 @@ export function buildLandscapeComponents(
   height: number,
   options: LandscapeOptions = {},
 ): LandscapeComponent[] {
-  return buildLandscapeComponentSkeletons(tiles, width, height)
-    .map((skeleton) => materializeLandscapeComponent(skeleton, width, height, options));
+  const skeletons = buildLandscapeComponentSkeletons(tiles, width, height);
+  const sharedRings = sharedRingsForSkeletons(tiles, width, height, skeletons, options);
+  return skeletons.map((skeleton, index) => materializeLandscapeComponent(
+    skeleton,
+    width,
+    height,
+    options,
+    sharedRings.get(index),
+  ));
 }
 
 /**
@@ -375,19 +435,27 @@ export function createLandscapeComponentCache(): LandscapeComponentCache {
     update(tiles, width, height, options = {}) {
       const styleKey = `${width}x${height}:${options.cornerRadius ?? 0.36}:${options.cornerSegments ?? 3}`;
       const skeletons = buildLandscapeComponentSkeletons(tiles, width, height);
+      const sharedRings = sharedRingsForSkeletons(tiles, width, height, skeletons, options);
       const components: LandscapeComponent[] = [];
       const changed: LandscapeComponent[] = [];
       let hits = 0;
       const next = new Map<string, LandscapeComponent>();
-      for (const skeleton of skeletons) {
-        const key = `${styleKey}:${skeleton.topologyKey}`;
+      for (let index = 0; index < skeletons.length; index++) {
+        const skeleton = skeletons[index];
+        const key = `${styleKey}:${skeleton.topologyKey}:${skeleton.boundaryContextKey}`;
         const cached = previous.get(key);
         if (cached) {
           hits++;
           components.push(cached);
           next.set(key, cached);
         } else {
-          const component = materializeLandscapeComponent(skeleton, width, height, options);
+          const component = materializeLandscapeComponent(
+            skeleton,
+            width,
+            height,
+            options,
+            sharedRings.get(index),
+          );
           changed.push(component);
           components.push(component);
           next.set(key, component);
