@@ -65,7 +65,9 @@ describe("ZK-813 headless profile certification", () => {
     expect(report.campaign.receipts).toEqual(EXPECTED_RECEIPTS);
     expect(report.longSession).toMatchObject({ days: 8, courses: expect.any(Number), weatherKinds: expect.any(Number) });
     expect(repeated).toEqual(report);
-    expect(report.determinismHash).toBe("25e6c333");
+    // ZK-774 makes the starter clubhouse's deterministic engineered pad and
+    // compact site-grade provenance part of every fresh course certificate.
+    expect(report.determinismHash).toBe("37b1eb1d");
     expect(report.rows.every((row) => row.graduationHash.match(/^[0-9a-f]{8}$/))).toBe(true);
     expect(report.headlessGaps).toHaveLength(2);
     expect(report.headlessGaps.join(" ")).toContain("real Player Pro");
