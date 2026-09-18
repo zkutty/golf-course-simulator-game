@@ -128,7 +128,6 @@ import {
 import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
 import {
   buildLandscapeComponents,
-  buildHazardDepthSections,
   buildVisualHeightfield,
   createLandscapeComponentCache,
   pointInLandscapeRing,
@@ -137,18 +136,15 @@ import {
   sampleVisualHeight,
   type LandscapeComponent,
 } from "../game/render/landscapeGeometry";
+import { buildHazardBankFacePlan, hazardDepthProfile } from "../game/render/hazardDepth";
 import { buildLandscapeBoundaryRuns } from "../game/render/landscapeEdges";
 import { buildSignedContourRibbons, shouldProjectContourRibbon } from "../game/render/contourRibbons";
 import {
   buildBunkerVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
-import {
-  buildOrganicTerrainMaskRings,
-  usesOrganicTerrainMask,
-} from "../game/render/organicTerrainMasks";
 import { buildMacroLandformRaster } from "../game/render/macroLandform";
-import { buildLandformShoulders } from "../game/render/landformGeometry";
+import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
 import {
   buildPathMaterialScenePlan,
   pathMaterialStripMesh,
@@ -3913,7 +3909,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         vertexIndexes.set(key, index);
         return index;
       };
-      for (const cell of component.cells) {
+      // Canonical seams may displace slightly beyond authoritative ownership.
+      // The render-only halo guarantees that the accepted mask always has
+      // source geometry beneath it; paths intentionally expose no halo.
+      for (const cell of component.presentationCells) {
         const x = cell % course.width;
         const y = Math.floor(cell / course.width);
         for (let dy = 0; dy < subdivisions; dy++) for (let dx = 0; dx < subdivisions; dx++) {
@@ -3940,36 +3939,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
           course.height,
         )
         : null;
-      const organicMaterialMask = usesOrganicTerrainMask(component.terrain, component.cells.length);
-      const visualRings = bunkerVisualType
-        ? buildBunkerVisualRings(
-          component.rings,
-          component.topologyKey,
-          component.cells.length,
-          bunkerVisualType,
-        )
-        : organicMaterialMask
-        ? buildOrganicTerrainMaskRings(
-          component.rings,
-          component.cells,
-          course.width,
-          component.topologyKey,
-        )
-        : component.rings;
-      if (bunkerVisualType || organicMaterialMask) {
-        // The authoritative material cells stay whole for gameplay. Visually,
-        // replace only small sand/ecological tile-unions with world-anchored
-        // rough, then reveal the same material through a deterministic organic
-        // mask. This is deliberately not a transition rule: ownership and the
-        // original component boundaries still drive all edge treatments.
-        const roughUnderlay = new PIXI.Mesh({
-          geometry,
-          texture: textureFor("rough"),
-        });
-        roughUnderlay.tint = seasonalByTerrain.rough?.textureTint ?? 0xffffff;
-        roughUnderlay.eventMode = "none";
-        layer.addChild(roughUnderlay);
-      }
+      // ZK-1200's shared rings are the sole final-scene mask authority. The
+      // presentation-cell halo above replaces the obsolete organic-mask
+      // underlay workaround without changing authoritative ownership.
+      const visualRings = component.rings;
       const pathMaterialPlan = buildPathMaterialScenePlan(
         component,
         effectiveTiles,
@@ -4043,91 +4016,83 @@ export function PixiStage(requestedProps: PixiStageProps) {
           point.height,
           rotation,
         );
-        const fillDepthQuad = (
-          outerA: { x: number; y: number; height: number },
-          outerB: { x: number; y: number; height: number },
-          innerB: { x: number; y: number; height: number },
-          innerA: { x: number; y: number; height: number },
-          color: number,
-          alpha: number,
-        ) => {
-          const a = projectDepthPoint(outerA);
-          const b = projectDepthPoint(outerB);
-          const c = projectDepthPoint(innerB);
-          const d = projectDepthPoint(innerA);
-          bank.poly([a.x, a.y, b.x, b.y, c.x, c.y, d.x, d.y]);
-          bank.fill({ color, alpha });
-        };
-        // ZK-1201 owns only depth: accepted shared contours supply the ring,
-        // the visual heightfield supplies grade/floor, and ecology retains all
-        // reeds, stones and bunker dressing. Edge-local parallel sections
-        // avoid the acute mitres that the former same-width ribbon produced.
+        const depthProfile = hazardDepthProfile(component.terrain, component.cells.length);
+        // ZK-1201 owns one bank face and one stroke-only lip per canonical
+        // edge. The rejected shelf/contact/shallow/deep fills are absent;
+        // ecology retains all reeds, stones and bunker dressing.
         for (const ring of component.rings) {
-          const sections = buildHazardDepthSections(heightfield, component, ring);
-          for (const section of sections) {
-            const dx = section.boundaryB.x - section.boundaryA.x;
-            const dy = section.boundaryB.y - section.boundaryA.y;
-            const litFace = dx - dy >= 0;
-            const shallowColor = component.terrain === "sand" ? bankLight : 0x79aeb4;
-            const deepColor = component.terrain === "sand" ? bankDark : 0x173f50;
-            // Deep and shallow planes sit behind a narrow contact shadow;
-            // neither translucent strip is asked to carry the depth read.
-            fillDepthQuad(
-              section.shallowInnerA,
-              section.shallowInnerB,
-              section.deepInnerB,
-              section.deepInnerA,
-              deepColor,
-              component.terrain === "sand" ? 0.08 : 0.18,
-            );
-            fillDepthQuad(
-              section.contactInnerA,
-              section.contactInnerB,
-              section.shallowInnerB,
-              section.shallowInnerA,
-              shallowColor,
-              component.terrain === "sand" ? 0.13 : 0.26,
-            );
-            fillDepthQuad(
-              section.bankInnerA,
-              section.bankInnerB,
-              section.contactInnerB,
-              section.contactInnerA,
-              bankDark,
-              component.terrain === "sand" ? 0.42 : 0.54,
-            );
-            fillDepthQuad(
-              section.boundaryA,
-              section.boundaryB,
-              section.bankInnerB,
-              section.bankInnerA,
-              litFace ? shade(bankDark, 1.24) : bankDark,
-              litFace ? 0.82 : 0.94,
-            );
-            fillDepthQuad(
-              section.shelfOuterA,
-              section.shelfOuterB,
-              section.boundaryB,
-              section.boundaryA,
-              bankLight,
-              component.terrain === "sand" ? 0.22 : 0.18,
-            );
-            const lipA = projectDepthPoint(section.boundaryA);
-            const lipB = projectDepthPoint(section.boundaryB);
-            bank.moveTo(lipA.x, lipA.y);
-            bank.lineTo(lipB.x, lipB.y);
-            bank.stroke({
-              width: component.terrain === "sand" ? 2.2 : 1.8,
-              color: bankDark,
-              alpha: component.terrain === "sand" ? 0.5 : 0.38,
-              cap: "round",
+          const plan = buildHazardBankFacePlan(component.terrain, component.cells.length, ring);
+          if (!plan || !depthProfile) continue;
+          for (const face of plan.bankFaces) {
+            const dx = face.boundaryB.x - face.boundaryA.x;
+            const dy = face.boundaryB.y - face.boundaryA.y;
+            const edgeLength = Math.hypot(dx, dy);
+            const candidate = { x: -dy / edgeLength, y: dx / edgeLength };
+            const midpoint = {
+              x: (face.boundaryA.x + face.boundaryB.x) / 2,
+              y: (face.boundaryA.y + face.boundaryB.y) / 2,
+            };
+            const probe = {
+              x: midpoint.x + candidate.x * 0.04,
+              y: midpoint.y + candidate.y * 0.04,
+            };
+            const candidateInside = component.rings.reduce((count, candidateRing) => (
+              count + (pointInLandscapeRing(candidateRing, probe) ? 1 : 0)
+            ), 0) % 2 === 1;
+            const inward = candidateInside
+              ? candidate
+              : { x: -candidate.x, y: -candidate.y };
+            const bounded = (point: Point) => ({
+              x: Math.max(0, Math.min(course.width, point.x)),
+              y: Math.max(0, Math.min(course.height, point.y)),
             });
-            bank.moveTo(lipA.x, lipA.y - 0.7);
-            bank.lineTo(lipB.x, lipB.y - 0.7);
+            const innerA = bounded({
+              x: face.boundaryA.x + inward.x * face.bankInnerOffset,
+              y: face.boundaryA.y + inward.y * face.bankInnerOffset,
+            });
+            const innerB = bounded({
+              x: face.boundaryB.x + inward.x * face.bankInnerOffset,
+              y: face.boundaryB.y + inward.y * face.bankInnerOffset,
+            });
+            const gradeSampleA = bounded({
+              x: face.boundaryA.x - inward.x * face.bankInnerOffset,
+              y: face.boundaryA.y - inward.y * face.bankInnerOffset,
+            });
+            const gradeSampleB = bounded({
+              x: face.boundaryB.x - inward.x * face.bankInnerOffset,
+              y: face.boundaryB.y - inward.y * face.bankInnerOffset,
+            });
+            const gradeHeightA = sampleVisualHeight(heightfield, gradeSampleA.x, gradeSampleA.y);
+            const gradeHeightB = sampleVisualHeight(heightfield, gradeSampleB.x, gradeSampleB.y);
+            const floorHeightA = Math.min(
+              sampleLandscapeSurfaceHeight(heightfield, component, innerA.x, innerA.y),
+              gradeHeightA - depthProfile.minimumBankDrop,
+            );
+            const floorHeightB = Math.min(
+              sampleLandscapeSurfaceHeight(heightfield, component, innerB.x, innerB.y),
+              gradeHeightB - depthProfile.minimumBankDrop,
+            );
+            const boundaryA = projectDepthPoint({ ...face.boundaryA, height: gradeHeightA });
+            const boundaryB = projectDepthPoint({ ...face.boundaryB, height: gradeHeightB });
+            const bankInnerB = projectDepthPoint({ ...innerB, height: floorHeightB });
+            const bankInnerA = projectDepthPoint({ ...innerA, height: floorHeightA });
+            const litFace = dx - dy >= 0;
+            bank.poly([
+              boundaryA.x, boundaryA.y,
+              boundaryB.x, boundaryB.y,
+              bankInnerB.x, bankInnerB.y,
+              bankInnerA.x, bankInnerA.y,
+            ]);
+            bank.fill({
+              color: litFace ? shade(bankDark, 1.24) : bankDark,
+              alpha: litFace ? 0.82 : 0.94,
+            });
+            bank.moveTo(boundaryA.x, boundaryA.y);
+            bank.lineTo(boundaryB.x, boundaryB.y);
             bank.stroke({
-              width: component.terrain === "sand" ? 1.05 : 0.9,
+              width: plan.lip.width,
               color: bankLight,
-              alpha: 0.82,
+              alpha: plan.lip.alpha,
               cap: "round",
             });
           }
@@ -4136,7 +4101,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
 
       const boundaryRuns = buildLandscapeBoundaryRuns(
-        bunkerVisualType ? visualRings : component.rings,
+        component.rings,
         component.terrain,
         effectiveTiles,
         course.width,
@@ -4301,13 +4266,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
     // authored height transition. The geometry comes from the shared field,
     // not cell adjacency, and remains in world coordinates until this final
     // projection so all four rotations consume the identical surface.
-    const landformShoulders = buildLandformShoulders(
+    const landformPlan = buildLandformPresentationPlan(
       heightfield,
       effectiveTiles,
       course.elevations,
+      course.theme,
       quality === "high" ? 3 : 2,
     );
-    for (const shoulder of landformShoulders) {
+    for (const shoulder of landformPlan.shoulders) {
       const graphics = new PIXI.Graphics();
       graphics.eventMode = "none";
       const segmentCount = shoulder.closed ? shoulder.points.length : shoulder.points.length - 1;
