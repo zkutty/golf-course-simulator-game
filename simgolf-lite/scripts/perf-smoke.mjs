@@ -17,7 +17,8 @@
 //        CHROMIUM_PATH if the bundled browser isn't installed)
 // Env:   PERF_WORK_BUDGET_MS (default 8), PERF_BUDGET_MS (frame budget,
 //        default 33, enforced only with PERF_ASSERT_FRAME=1),
-//        PERF_MEASURE_S (default 20)
+//        PERF_MEASURE_S (default 20), PERF_HEADED=1 (visible GPU-backed run),
+//        PERF_HARDWARE_CLASS / PERF_POWER_STATE / PERF_RUN_LABEL (evidence labels)
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -26,6 +27,7 @@ import { loadBiomeKeys } from "./biome-registry.mjs";
 const WORK_BUDGET_MS = Number(process.env.PERF_WORK_BUDGET_MS || 8);
 const BUDGET_MS = Number(process.env.PERF_BUDGET_MS || 33);
 const ASSERT_FRAME = process.env.PERF_ASSERT_FRAME === "1";
+const HEADED = process.env.PERF_HEADED === "1";
 const MEASURE_S = Number(process.env.PERF_MEASURE_S || 20);
 const BIOME_KEYS = loadBiomeKeys();
 const PERF_THEME = BIOME_KEYS.includes(process.env.PERF_THEME) ? process.env.PERF_THEME : BIOME_KEYS[0];
@@ -77,7 +79,7 @@ const execCandidate = [
   "/opt/pw-browsers/chromium",
 ].find((candidate) => candidate && existsSync(candidate));
 const browser = await chromium.launch(
-  execCandidate ? { executablePath: execCandidate } : {}
+  { ...(execCandidate ? { executablePath: execCandidate } : {}), headless: !HEADED }
 );
 console.log("[perf-smoke] browser ready; loading fixture …");
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -130,6 +132,31 @@ while (Date.now() - t0 < MEASURE_S * 1000) {
   await sleep(400);
 }
 const perf = await page.evaluate(() => window.__ccPerf ?? null);
+const browserEvidence = await page.evaluate(() => {
+  const canvas = [...document.querySelectorAll("canvas")]
+    .sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
+  let renderer = null;
+  let vendor = null;
+  let context = null;
+  try {
+    const gl = canvas?.getContext("webgl2") ?? canvas?.getContext("webgl") ?? null;
+    const debug = gl?.getExtension("WEBGL_debug_renderer_info") ?? null;
+    renderer = debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : null;
+    vendor = debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : null;
+    context = gl ? (typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext ? "webgl2" : "webgl") : null;
+  } catch {
+    // Evidence stays explicitly unknown rather than failing an otherwise valid
+    // physical run on browsers that withhold debug renderer information.
+  }
+  return {
+    userAgent: navigator.userAgent,
+    viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
+    visibilityState: document.visibilityState,
+    renderer,
+    vendor,
+    context,
+  };
+});
 await browser.close();
 vite.kill();
 
@@ -171,11 +198,18 @@ const evidence = {
     measureSeconds: MEASURE_S,
     warmupSeconds: WARMUP_S,
     frameAssertion: ASSERT_FRAME,
+    browserMode: HEADED ? "headed" : "headless",
     budgets: {
       rendererWorkMilliseconds: WORK_BUDGET_MS,
       coldStartupMilliseconds: STARTUP_BUDGET_MS,
       frameMilliseconds: BUDGET_MS,
     },
+  },
+  physicalRun: {
+    hardwareClass: process.env.PERF_HARDWARE_CLASS || null,
+    powerState: process.env.PERF_POWER_STATE || null,
+    runLabel: process.env.PERF_RUN_LABEL || null,
+    browser: browserEvidence,
   },
   gateValidation,
 };
