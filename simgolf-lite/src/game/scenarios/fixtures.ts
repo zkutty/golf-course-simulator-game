@@ -1,7 +1,7 @@
 import type { Course, LandTheme, Point, Terrain } from "../models/types";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../models/constants";
 import { DEFAULT_COURSE } from "../models/defaults";
-import { findClubhouseSpot } from "../models/buildings";
+import { installStarterClubhouse } from "../models/buildings";
 import { generateWildLand, generateObstacles } from "../gen/generateWildLand";
 import { createEstate, starterParcelOffset } from "../estate/estate";
 import type { FixtureKey } from "./types";
@@ -92,10 +92,8 @@ function paintCourse(args: {
     condition: args.condition,
     baseGreenFee: args.baseGreenFee,
   };
-  const clubhouseSpot = findClubhouseSpot(course);
-  course.buildings = clubhouseSpot ? [{ type: "clubhouse" as const, ...clubhouseSpot }] : [];
   course.estate = createEstate(course, seed);
-  return course;
+  return installStarterClubhouse(course);
 }
 
 /** Run-down municipal 9-holer: narrow scruffy corridors, tired turf. */

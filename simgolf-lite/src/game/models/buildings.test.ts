@@ -33,7 +33,7 @@ describe("buildings", () => {
     expect(canPlaceBuilding(wet, "clubhouse", 5, 5).ok).toBe(false);
 
     const steep = flatCourse();
-    steep.elevations[6 * 20 + 6] = 2;
+    steep.elevations[6 * 20 + 6] = 9;
     expect(canPlaceBuilding(steep, "clubhouse", 5, 5).ok).toBe(false);
 
     const marked = flatCourse();

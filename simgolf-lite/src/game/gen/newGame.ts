@@ -4,7 +4,7 @@ import type { GoalDefinition } from "../models/objectives";
 import { createObjectiveState } from "../models/objectives";
 import { DEFAULT_COURSE, DEFAULT_WORLD } from "../models/defaults";
 import { COURSE_WIDTH, COURSE_HEIGHT } from "../models/constants";
-import { findClubhouseSpot } from "../models/buildings";
+import { installStarterClubhouse } from "../models/buildings";
 import { CHALLENGE_GOALS } from "../objectives/goals";
 import { normalizeExperienceAxes, startingCapitalForAxes } from "../balance/experience";
 import { generateNewGameLandscape } from "./generateWildLand";
@@ -63,9 +63,13 @@ export function createNewGame(
     }],
     activeCourseId: "course-primary",
   };
-  // Starter clubhouse (ZKU-152): anchor the course visually from day one.
-  const clubhouseSpot = findClubhouseSpot(course);
-  course.buildings = clubhouseSpot ? [{ type: "clubhouse" as const, ...clubhouseSpot }] : [];
+  // Survey first so the complete footprint + engineering ring stay inside
+  // the owned starter parcel. Starter installation does not change setup cash.
+  course.estate = createEstate(course, seed);
+  const installed = installStarterClubhouse(course);
+  course.elevations = installed.elevations;
+  course.buildings = installed.buildings;
+  const clubhouseSpot = course.buildings.find((building) => building.type === "clubhouse");
   if (clubhouseSpot) {
     // Deterministic cultivated planting ring. It decorates the arrival area
     // without entering the 3x3 building footprint or semantic golf surfaces.
@@ -88,8 +92,6 @@ export function createNewGame(
       course.obstacles.push({ ...point, type: index % 4 === 0 ? "tree" : "bush" });
     }
   }
-  course.estate = createEstate(course, seed);
-
   const effectiveGoals =
     goals !== undefined ? goals : setup.mode === "challenge" ? CHALLENGE_GOALS : null;
   const experience = normalizeExperienceAxes(setup);
