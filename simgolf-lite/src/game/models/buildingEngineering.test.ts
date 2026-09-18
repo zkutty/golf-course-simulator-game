@@ -9,8 +9,10 @@ import { planBuildingSiteGrade } from "./buildingSiteGrade";
 import type { Building, Course, Terrain } from "./types";
 import {
   BUILDING_SPECS,
+  buildingEntranceCandidates,
   buildingSiteNeedsRepair,
   buildingTiles,
+  installStarterClubhouse,
   quoteBuildingPlacement,
   quoteBuildingSiteRepair,
 } from "./buildings";
@@ -176,5 +178,59 @@ describe("ZK-774 engineered building sites", () => {
     expect(plan.mutations).toEqual([]);
     expect([...plan.footprint, ...plan.transitionRing].every((cell) => isOwnedTile(first.course, cell.x, cell.y))).toBe(true);
     expect(building.siteGrade).toMatchObject({ version: 1, supportElevation: plan.supportElevation });
+  });
+
+  it("deterministically grades the least-cost valid starter site when no natural site exists", () => {
+    const hostile = course(12, 12, 1);
+    const seed = 774;
+    hostile.elevations = hostile.elevations.map((_elevation, index) => {
+      const x = index % hostile.width;
+      const y = Math.floor(index / hostile.width);
+      return 1 + ((x + y + seed) % 2);
+    });
+
+    const candidates = [];
+    for (let y = 0; y < hostile.height; y++) for (let x = 0; x < hostile.width; x++) {
+      const quote = quoteBuildingPlacement(hostile, "clubhouse", x, y);
+      if (quote.ok && quote.grade) candidates.push({ x, y, quote });
+    }
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates.some(({ quote }) => quote.grade!.mutations.length === 0)).toBe(false);
+    candidates.sort((a, b) => (
+      (a.quote.earthworkCost + a.quote.foundationCost) - (b.quote.earthworkCost + b.quote.foundationCost)
+      || a.y - b.y
+      || a.x - b.x
+    ));
+    const expected = candidates[0];
+
+    const first = installStarterClubhouse(hostile);
+    const second = installStarterClubhouse(hostile);
+    expect(first).toEqual(second);
+    const building = first.buildings.find((candidate) => candidate.type === "clubhouse")!;
+    expect({ x: building.x, y: building.y }).toEqual({ x: expected.x, y: expected.y });
+    expect(building.siteGrade).toEqual({
+      version: 1,
+      supportElevation: expected.quote.grade!.supportElevation,
+      cutSteps: expected.quote.grade!.costBaseline.cutSteps,
+      fillSteps: expected.quote.grade!.costBaseline.fillSteps,
+      earthworkCost: expected.quote.earthworkCost,
+      foundationCost: expected.quote.foundationCost,
+      totalSiteCost: expected.quote.earthworkCost + expected.quote.foundationCost,
+    });
+    expect(building.siteGrade!.cutSteps + building.siteGrade!.fillSteps).toBeGreaterThan(0);
+    const appliedPlan = planBuildingSiteGrade(first, building);
+    expect(appliedPlan.mutations).toEqual([]);
+    expect([...appliedPlan.footprint, ...appliedPlan.transitionRing].every(({ x, y }) => {
+      const terrain = first.tiles[y * first.width + x];
+      return terrain !== "water" && terrain !== "wetland";
+    })).toBe(true);
+    expect(buildingTiles(building).map(({ x, y }) => first.elevations[y * first.width + x]))
+      .toEqual(new Array(BUILDING_SPECS.clubhouse.w * BUILDING_SPECS.clubhouse.d).fill(building.siteGrade!.supportElevation));
+    const entrances = buildingEntranceCandidates(first, building);
+    expect(entrances.length).toBeGreaterThan(0);
+    expect(entrances.every(({ x, y }) => {
+      const terrain = first.tiles[y * first.width + x];
+      return terrain !== "water" && terrain !== "wetland";
+    })).toBe(true);
   });
 });
