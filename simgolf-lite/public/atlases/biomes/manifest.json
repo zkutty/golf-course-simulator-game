@@ -95,56 +95,56 @@
           },
           "fields": {
             "fairway": {
-              "image": "field-parkland-high-fairway.e8ecdf0c2f6f.png",
-              "bytes": 84436,
+              "image": "field-parkland-high-fairway.9961341d1489.png",
+              "bytes": 69056,
               "width": 512,
               "height": 512
             },
             "rough": {
-              "image": "field-parkland-high-rough.fd6fa00811c9.png",
-              "bytes": 83302,
+              "image": "field-parkland-high-rough.f187454424df.png",
+              "bytes": 71648,
               "width": 512,
               "height": 512
             },
             "deep_rough": {
-              "image": "field-parkland-high-deep_rough.117a1a8489d9.png",
-              "bytes": 96422,
+              "image": "field-parkland-high-deep_rough.1daa64336c72.png",
+              "bytes": 81982,
               "width": 512,
               "height": 512
             },
             "sand": {
-              "image": "field-parkland-high-sand.1f0dd3d38e5a.png",
-              "bytes": 113124,
+              "image": "field-parkland-high-sand.9932580a45a2.png",
+              "bytes": 96074,
               "width": 512,
               "height": 512
             },
             "waste_area": {
-              "image": "field-parkland-high-waste_area.abb3da66cc7e.png",
-              "bytes": 92246,
+              "image": "field-parkland-high-waste_area.11de0d41748f.png",
+              "bytes": 76199,
               "width": 512,
               "height": 512
             },
             "water": {
-              "image": "field-parkland-high-water.71eb04c71186.png",
-              "bytes": 35951,
+              "image": "field-parkland-high-water.1ab964458cbe.png",
+              "bytes": 31380,
               "width": 512,
               "height": 512
             },
             "wetland": {
-              "image": "field-parkland-high-wetland.01cd7db80627.png",
-              "bytes": 51433,
+              "image": "field-parkland-high-wetland.e394f49b2865.png",
+              "bytes": 50305,
               "width": 512,
               "height": 512
             },
             "green": {
-              "image": "field-parkland-high-green.8b7a0e4ec2d1.png",
-              "bytes": 87414,
+              "image": "field-parkland-high-green.9b548a8f9e20.png",
+              "bytes": 71846,
               "width": 512,
               "height": 512
             },
             "tee": {
-              "image": "field-parkland-high-tee.0a68522d1984.png",
-              "bytes": 90213,
+              "image": "field-parkland-high-tee.6af42a9964dc.png",
+              "bytes": 74408,
               "width": 512,
               "height": 512
             },
@@ -220,56 +220,56 @@
           },
           "fields": {
             "fairway": {
-              "image": "field-parkland-medium-fairway.fd7323c4c23c.png",
-              "bytes": 30297,
+              "image": "field-parkland-medium-fairway.336a851035df.png",
+              "bytes": 26889,
               "width": 256,
               "height": 256
             },
             "rough": {
-              "image": "field-parkland-medium-rough.ea5295a38d7b.png",
-              "bytes": 32498,
+              "image": "field-parkland-medium-rough.3a68c507ce46.png",
+              "bytes": 28688,
               "width": 256,
               "height": 256
             },
             "deep_rough": {
-              "image": "field-parkland-medium-deep_rough.caab8c20ca4c.png",
-              "bytes": 37804,
+              "image": "field-parkland-medium-deep_rough.1695759909c4.png",
+              "bytes": 33186,
               "width": 256,
               "height": 256
             },
             "sand": {
-              "image": "field-parkland-medium-sand.5282587d63be.png",
-              "bytes": 38738,
+              "image": "field-parkland-medium-sand.4303c8fabd75.png",
+              "bytes": 35805,
               "width": 256,
               "height": 256
             },
             "waste_area": {
-              "image": "field-parkland-medium-waste_area.678c81b3e619.png",
-              "bytes": 35263,
+              "image": "field-parkland-medium-waste_area.685d158b72b9.png",
+              "bytes": 31383,
               "width": 256,
               "height": 256
             },
             "water": {
-              "image": "field-parkland-medium-water.c94f29aa7c45.png",
-              "bytes": 17541,
+              "image": "field-parkland-medium-water.29adde1d9691.png",
+              "bytes": 14953,
               "width": 256,
               "height": 256
             },
             "wetland": {
-              "image": "field-parkland-medium-wetland.556ee003bfcf.png",
-              "bytes": 21113,
+              "image": "field-parkland-medium-wetland.d271c53561d7.png",
+              "bytes": 20680,
               "width": 256,
               "height": 256
             },
             "green": {
-              "image": "field-parkland-medium-green.53e6bef0fa52.png",
-              "bytes": 31158,
+              "image": "field-parkland-medium-green.51cb339f083f.png",
+              "bytes": 27515,
               "width": 256,
               "height": 256
             },
             "tee": {
-              "image": "field-parkland-medium-tee.e84d42bac6b1.png",
-              "bytes": 31451,
+              "image": "field-parkland-medium-tee.bb304118df66.png",
+              "bytes": 28423,
               "width": 256,
               "height": 256
             },
