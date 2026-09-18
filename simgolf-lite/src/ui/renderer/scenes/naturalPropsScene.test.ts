@@ -50,6 +50,7 @@ function fakeSprite(texture: PIXI.Texture) {
     label: "",
     anchor: point(),
     position: point(),
+    scale: point(),
     skew: point(),
     width: 0,
     height: 0,
@@ -249,5 +250,64 @@ describe("natural props scene ownership", () => {
     expect(scene.contentCount()).toBe(0);
     expect(objects.children).toHaveLength(0);
     expect(decals.children).toHaveLength(0);
+  });
+
+  it("renders deterministic clustered understory above the surface and tears it down", () => {
+    const objects = new FakeContainer();
+    const decals = new FakeContainer();
+    const detailTexture = fakeTexture();
+    const trees = [
+      { x: 6, y: 6, type: "tree" as const },
+      { x: 9, y: 6, type: "tree" as const },
+      { x: 7, y: 9, type: "tree" as const },
+    ];
+    const course = {
+      ...DEFAULT_STATE.course,
+      width: 16,
+      height: 16,
+      tiles: Array.from({ length: 16 * 16 }, () => "rough" as const),
+      elevations: Array.from({ length: 16 * 16 }, () => 0),
+      obstacles: trees,
+      buildings: [],
+      holes: [],
+      theme: "parkland" as const,
+    };
+    const detailTextures = vi.fn(() => detailTexture);
+    const scene = createNaturalPropsSceneSystem(
+      objects as unknown as PIXI.Container,
+      decals as unknown as PIXI.Container,
+      undefined,
+      {
+        getAtlasTexture: () => fakeTexture(),
+        getHabitatAtlasTexture: detailTextures,
+        createSprite: fakeSprite,
+        createGraphics: fakeGraphics,
+      },
+    );
+
+    scene.create!(snapshot({
+      course,
+      obstacles: trees,
+      effectiveTiles: course.tiles,
+      graphicsQuality: "high",
+    }));
+    expect(scene.contentCount()).toBe(3);
+    expect(scene.habitatDetailCount()).toBeGreaterThan(0);
+    expect(detailTextures).toHaveBeenCalled();
+    expect(decals.children.some((child) =>
+      (child as { label?: string }).label?.startsWith("habitat-composition:"),
+    )).toBe(true);
+
+    scene.update!(snapshot({
+      course,
+      obstacles: trees,
+      effectiveTiles: course.tiles,
+      graphicsQuality: "low",
+      atlasRevision: 2,
+    }));
+    expect(scene.habitatDetailCount()).toBe(0);
+    expect(decals.children.some((child) =>
+      (child as { label?: string }).label?.startsWith("habitat-composition:"),
+    )).toBe(false);
   });
 });
