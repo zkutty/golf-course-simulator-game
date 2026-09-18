@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
@@ -14,6 +15,9 @@ const tiers = [
 
 type Capture = {
   file: string;
+  sha256: string;
+  width: number;
+  height: number;
   rotation: number;
   tier: string;
   zoom: number;
@@ -52,6 +56,13 @@ async function contactSheet(files: string[], output: string) {
 test("ZK-473 retains the exact-candidate Parkland rotation and zoom matrix", async ({ page }) => {
   test.setTimeout(240_000);
   await mkdir(outputRoot, { recursive: true });
+  const runtimeErrors: Array<{ source: "console" | "pageerror"; message: string }> = [];
+  page.on("console", (entry) => {
+    if (entry.type() === "error") runtimeErrors.push({ source: "console", message: entry.text() });
+  });
+  page.on("pageerror", (error) => {
+    runtimeErrors.push({ source: "pageerror", message: error.stack ?? error.message });
+  });
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/?m19Fixture=1");
   await expect.poll(() => page.evaluate(() => window.__coursecraftTest?.state().screen), { timeout: 90_000 }).toBe("game");
@@ -79,9 +90,15 @@ test("ZK-473 retains the exact-candidate Parkland rotation and zoom matrix", asy
       }, tier)).toBe(true);
       await page.waitForTimeout(500);
       const file = resolve(outputRoot, `parkland-r${rotation}-${tier.label}.png`);
-      await writeFile(file, await page.screenshot({ fullPage: true }));
+      const screenshot = await page.screenshot({ fullPage: true });
+      const image = PNG.sync.read(screenshot);
+      expect({ width: image.width, height: image.height }).toEqual({ width: 1440, height: 900 });
+      await writeFile(file, screenshot);
       captures.push({
         file,
+        sha256: createHash("sha256").update(screenshot).digest("hex"),
+        width: image.width,
+        height: image.height,
         rotation,
         tier: tier.label,
         zoom: tier.zoom,
@@ -92,13 +109,18 @@ test("ZK-473 retains the exact-candidate Parkland rotation and zoom matrix", asy
     }
   }
 
+  expect(captures).toHaveLength(12);
+  expect(new Set(captures.map((capture) => `${capture.rotation}:${capture.tier}`)).size).toBe(12);
+  expect(runtimeErrors).toEqual([]);
+
   const report = {
-    version: 1,
+    version: 2,
     issue: "ZK-473",
     commit,
     viewport: { width: 1440, height: 900 },
     theme: "parkland",
     fixture: "m19Fixture",
+    runtimeErrors,
     terrainState: await page.evaluate(() => window.__coursecraftTest!.terrainSurfaceState()),
     command: "ZK473_EVIDENCE_DIR=<dir> ZK473_COMMIT=<sha> npx playwright test e2e/zk473-parity-capture.e2e.ts --workers=1 --retries=0",
     captures,
