@@ -4046,8 +4046,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
       const reliefStyle = terrainReliefStyle(course.theme, component.terrain);
       if (reliefStyle || component.terrain === "sand") {
-        const bank = new PIXI.Graphics();
-        bank.eventMode = "none";
         const bankLight = reliefStyle?.bankLight ?? 0xc9b477;
         const bankDark = reliefStyle?.bankDark ?? 0x6f5534;
         const projectDepthPoint = (point: { x: number; y: number; height: number }) => worldToIso(
@@ -4057,87 +4055,71 @@ export function PixiStage(requestedProps: PixiStageProps) {
           rotation,
         );
         const depthProfile = hazardDepthProfile(component.terrain, component.cells.length);
-        // ZK-1201 owns one bank face and one stroke-only lip per canonical
-        // edge. The rejected shelf/contact/shallow/deep fills are absent;
-        // ecology retains all reeds, stones and bunker dressing.
+        // A bank is a single joined world-space skirt per canonical ring. The
+        // strip shares its inner endpoints at every turn; a restrained neutral
+        // material avoids screen-direction branches and edge-by-edge panels.
         for (const ring of component.rings) {
           const plan = buildHazardBankFacePlan(component.terrain, component.cells.length, ring);
           if (!plan || !depthProfile) continue;
-          for (const face of plan.bankFaces) {
-            const dx = face.boundaryB.x - face.boundaryA.x;
-            const dy = face.boundaryB.y - face.boundaryA.y;
-            const edgeLength = Math.hypot(dx, dy);
-            const candidate = { x: -dy / edgeLength, y: dx / edgeLength };
-            const midpoint = {
-              x: (face.boundaryA.x + face.boundaryB.x) / 2,
-              y: (face.boundaryA.y + face.boundaryB.y) / 2,
-            };
-            const probe = {
-              x: midpoint.x + candidate.x * 0.04,
-              y: midpoint.y + candidate.y * 0.04,
-            };
-            const candidateInside = component.rings.reduce((count, candidateRing) => (
-              count + (pointInLandscapeRing(candidateRing, probe) ? 1 : 0)
-            ), 0) % 2 === 1;
-            const inward = candidateInside
-              ? candidate
-              : { x: -candidate.x, y: -candidate.y };
+          const positions: number[] = [];
+          const uvs: number[] = [];
+          const lipPoints: Point[] = [];
+          for (let index = 0; index < plan.outerRing.length; index++) {
+            const outer = plan.outerRing[index];
+            const inner = plan.innerRing[index];
+            const inwardLength = Math.hypot(inner.x - outer.x, inner.y - outer.y);
+            if (inwardLength <= 1e-6) continue;
             const bounded = (point: Point) => ({
               x: Math.max(0, Math.min(course.width, point.x)),
               y: Math.max(0, Math.min(course.height, point.y)),
             });
-            const innerA = bounded({
-              x: face.boundaryA.x + inward.x * face.bankInnerOffset,
-              y: face.boundaryA.y + inward.y * face.bankInnerOffset,
+            const gradeSample = bounded({
+              x: outer.x - (inner.x - outer.x) / inwardLength * Math.min(inwardLength, depthProfile.bankWidth),
+              y: outer.y - (inner.y - outer.y) / inwardLength * Math.min(inwardLength, depthProfile.bankWidth),
             });
-            const innerB = bounded({
-              x: face.boundaryB.x + inward.x * face.bankInnerOffset,
-              y: face.boundaryB.y + inward.y * face.bankInnerOffset,
-            });
-            const gradeSampleA = bounded({
-              x: face.boundaryA.x - inward.x * face.bankInnerOffset,
-              y: face.boundaryA.y - inward.y * face.bankInnerOffset,
-            });
-            const gradeSampleB = bounded({
-              x: face.boundaryB.x - inward.x * face.bankInnerOffset,
-              y: face.boundaryB.y - inward.y * face.bankInnerOffset,
-            });
-            const gradeHeightA = sampleVisualHeight(heightfield, gradeSampleA.x, gradeSampleA.y);
-            const gradeHeightB = sampleVisualHeight(heightfield, gradeSampleB.x, gradeSampleB.y);
-            const floorHeightA = Math.min(
-              sampleLandscapeSurfaceHeight(heightfield, component, innerA.x, innerA.y),
-              gradeHeightA - depthProfile.minimumBankDrop,
+            const gradeHeight = sampleVisualHeight(heightfield, gradeSample.x, gradeSample.y);
+            const floorHeight = Math.min(
+              sampleLandscapeSurfaceHeight(heightfield, component, inner.x, inner.y),
+              gradeHeight - depthProfile.minimumBankDrop,
             );
-            const floorHeightB = Math.min(
-              sampleLandscapeSurfaceHeight(heightfield, component, innerB.x, innerB.y),
-              gradeHeightB - depthProfile.minimumBankDrop,
-            );
-            const boundaryA = projectDepthPoint({ ...face.boundaryA, height: gradeHeightA });
-            const boundaryB = projectDepthPoint({ ...face.boundaryB, height: gradeHeightB });
-            const bankInnerB = projectDepthPoint({ ...innerB, height: floorHeightB });
-            const bankInnerA = projectDepthPoint({ ...innerA, height: floorHeightA });
-            const litFace = dx - dy >= 0;
-            bank.poly([
-              boundaryA.x, boundaryA.y,
-              boundaryB.x, boundaryB.y,
-              bankInnerB.x, bankInnerB.y,
-              bankInnerA.x, bankInnerA.y,
-            ]);
-            bank.fill({
-              color: litFace ? shade(bankDark, 1.24) : bankDark,
-              alpha: litFace ? 0.82 : 0.94,
-            });
-            bank.moveTo(boundaryA.x, boundaryA.y);
-            bank.lineTo(boundaryB.x, boundaryB.y);
-            bank.stroke({
-              width: plan.lip.width,
-              color: bankLight,
-              alpha: plan.lip.alpha,
-              cap: "round",
-            });
+            const grade = projectDepthPoint({ ...outer, height: gradeHeight });
+            const floor = projectDepthPoint({ ...inner, height: floorHeight });
+            positions.push(grade.x, grade.y, floor.x, floor.y);
+            // The white texture is intentionally neutral; its uniform tint and
+            // alpha provide one continuous bank material across the strip.
+            uvs.push(0, 0, 1, 1);
+            lipPoints.push(grade);
           }
+          if (positions.length !== plan.outerRing.length * 4) continue;
+          const bank = new PIXI.Mesh({
+            geometry: new PIXI.MeshGeometry({
+              positions: new Float32Array(positions),
+              uvs: new Float32Array(uvs),
+              indices: new Uint32Array(plan.stripIndices),
+            }),
+            texture: PIXI.Texture.WHITE,
+          });
+          bank.eventMode = "none";
+          bank.tint = shade(bankDark, 1.08);
+          bank.alpha = component.terrain === "sand" ? 0.68 : 0.58;
+          bank.label = `hazard-bank-strip:${component.topologyKey}`;
+          recessedLayer.addChild(bank);
+
+          const lip = new PIXI.Graphics();
+          lip.eventMode = "none";
+          lip.moveTo(lipPoints[0].x, lipPoints[0].y);
+          for (let index = 1; index < lipPoints.length; index++) lip.lineTo(lipPoints[index].x, lipPoints[index].y);
+          lip.lineTo(lipPoints[0].x, lipPoints[0].y);
+          lip.stroke({
+            width: plan.lip.width,
+            color: bankLight,
+            alpha: plan.lip.alpha,
+            cap: "round",
+            join: "round",
+          });
+          lip.label = `hazard-bank-lip:${component.topologyKey}`;
+          recessedLayer.addChild(lip);
         }
-        recessedLayer.addChild(bank);
       }
 
       const boundaryRuns = coalescedSingletonDeepRough ? [] : buildLandscapeBoundaryRuns(
