@@ -62,6 +62,13 @@ export interface VisualHeightfield {
   vertices: Float32Array;
 }
 
+export interface RecessedLandformRibbonPoint {
+  top: SurfacePoint;
+  bottom: SurfacePoint;
+  topHeight: number;
+  bottomHeight: number;
+}
+
 interface DirectedEdge {
   start: SurfacePoint;
   end: SurfacePoint;
@@ -658,4 +665,54 @@ export function sampleLandscapeSurfaceHeight(
       ? 0.29
       : 0.24;
   return base - eased * maximumDrop;
+}
+
+/**
+ * Builds a continuous shoulder-to-floor ribbon around a recessed material.
+ * Normals are derived from the rounded component ring, not tile adjacency,
+ * and heights come from the shared field. The result is rotation-agnostic
+ * world geometry suitable for one connected bank/lip mesh.
+ */
+export function buildRecessedLandformRibbon(
+  field: VisualHeightfield,
+  component: LandscapeComponent,
+  ring: readonly SurfacePoint[],
+): RecessedLandformRibbonPoint[] {
+  if (ring.length < 3 || (component.terrain !== "water" && component.terrain !== "wetland" && component.terrain !== "sand")) return [];
+  const topWidth = component.terrain === "sand" ? 0.16 : 0.38;
+  const bottomWidth = component.terrain === "sand" ? 0.34 : 0.12;
+  const minimumDrop = component.terrain === "sand" ? 0.38 : 0.52;
+  const points: RecessedLandformRibbonPoint[] = [];
+
+  for (let index = 0; index < ring.length; index++) {
+    const previous = ring[(index - 1 + ring.length) % ring.length];
+    const point = ring[index];
+    const next = ring[(index + 1) % ring.length];
+    const tangentX = next.x - previous.x;
+    const tangentY = next.y - previous.y;
+    const tangentLength = Math.max(1e-6, Math.hypot(tangentX, tangentY));
+    const candidate = { x: tangentY / tangentLength, y: -tangentX / tangentLength };
+    const probe = { x: point.x + candidate.x * 0.08, y: point.y + candidate.y * 0.08 };
+    const candidateIsInside = pointInLandscapeComponent(component, probe);
+    const outward = candidateIsInside
+      ? { x: -candidate.x, y: -candidate.y }
+      : candidate;
+    const top = {
+      x: Math.max(0, Math.min(field.width, point.x + outward.x * topWidth)),
+      y: Math.max(0, Math.min(field.height, point.y + outward.y * topWidth)),
+    };
+    const bottom = {
+      x: Math.max(0, Math.min(field.width, point.x - outward.x * bottomWidth)),
+      y: Math.max(0, Math.min(field.height, point.y - outward.y * bottomWidth)),
+    };
+    const sampledBottom = sampleLandscapeSurfaceHeight(field, component, bottom.x, bottom.y);
+    const sampledTop = sampleVisualHeight(field, top.x, top.y);
+    points.push({
+      top,
+      bottom,
+      topHeight: Math.max(sampledTop, sampledBottom + minimumDrop),
+      bottomHeight: sampledBottom,
+    });
+  }
+  return points;
 }

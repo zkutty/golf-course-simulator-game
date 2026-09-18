@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Course, Terrain } from "../models/types";
 import {
   buildLandscapeComponents,
+  buildRecessedLandformRibbon,
   buildVisualHeightfield,
   createLandscapeComponentCache,
   ringSignedArea,
@@ -195,6 +196,26 @@ describe("shared visual heightfield", () => {
     const edge = sampleLandscapeSurfaceHeight(field, bunker, 1.05, 1.5);
     expect(center).toBeLessThan(centerBase - 0.2);
     expect(center).toBeLessThan(edge - 0.1);
+  });
+
+  it("builds bounded continuous water and bunker bank ribbons", () => {
+    const course = courseWith(6, 4, [
+      "rough", "rough", "rough", "rough", "rough", "rough",
+      "rough", "water", "water", "sand", "sand", "rough",
+      "rough", "water", "water", "sand", "sand", "rough",
+      "rough", "rough", "rough", "rough", "rough", "rough",
+    ], new Array(24).fill(1));
+    const field = buildVisualHeightfield(course);
+    const components = buildLandscapeComponents(course.tiles, course.width, course.height);
+    for (const terrain of ["water", "sand"] as const) {
+      const component = components.find((candidate) => candidate.terrain === terrain)!;
+      const ribbon = buildRecessedLandformRibbon(field, component, component.rings[0]);
+      expect(ribbon).toHaveLength(component.rings[0].length);
+      const drops = ribbon.map((point) => point.topHeight - point.bottomHeight);
+      expect(Math.min(...drops)).toBeGreaterThan(terrain === "water" ? 0.519 : 0.379);
+      expect(Math.max(...drops)).toBeLessThan(1.5);
+      expect(ribbon.every((point) => Number.isFinite(point.topHeight + point.bottomHeight))).toBe(true);
+    }
   });
 
   it("is deterministic presentation data and leaves the complete course contract intact", () => {
