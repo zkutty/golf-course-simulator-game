@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
@@ -17,6 +20,10 @@ function sourcePath(quality, terrain) {
 
 function image(quality, terrain) {
   return PNG.sync.read(readFileSync(sourcePath(quality, terrain)));
+}
+
+function sourceBytes(quality, terrain) {
+  return readFileSync(sourcePath(quality, terrain));
 }
 
 function luminance(png, x, y) {
@@ -38,6 +45,11 @@ function metrics(png) {
   let vertical = 0;
   let horizontalPairs = 0;
   let plateaus = 0;
+  let luminanceTotal = 0;
+  let luminanceSquaredTotal = 0;
+  let detailTotal = 0;
+  let detailX = 0;
+  let detailY = 0;
   const wrapX = [];
   const wrapY = [];
   const blockMeans = [];
@@ -46,13 +58,22 @@ function metrics(png) {
   for (let y = 0; y < png.height; y++) {
     wrapX.push(Math.abs(luminance(png, 0, y) - luminance(png, png.width - 1, y)));
     for (let x = 0; x < png.width; x++) {
+      const value = luminance(png, x, y);
+      luminanceTotal += value;
+      luminanceSquaredTotal += value ** 2;
       if (x < png.width - 1) {
-        const delta = Math.abs(luminance(png, x, y) - luminance(png, x + 1, y));
+        const delta = Math.abs(value - luminance(png, x + 1, y));
         horizontal += delta;
         horizontalPairs++;
         if (delta < 0.5) plateaus++;
+        if (y < png.height - 1) {
+          const weight = delta + Math.abs(value - luminance(png, x, y + 1));
+          detailTotal += weight;
+          detailX += (x + 0.5) * weight;
+          detailY += (y + 0.5) * weight;
+        }
       }
-      if (y < png.height - 1) vertical += Math.abs(luminance(png, x, y) - luminance(png, x, y + 1));
+      if (y < png.height - 1) vertical += Math.abs(value - luminance(png, x, y + 1));
     }
   }
   for (let x = 0; x < png.width; x++) wrapY.push(Math.abs(luminance(png, x, 0) - luminance(png, x, png.height - 1)));
@@ -64,6 +85,8 @@ function metrics(png) {
     blockMeans.push(total / (blockSize * blockSize));
   }
   const blockMean = mean(blockMeans);
+  const pixelCount = png.width * png.height;
+  const meanLuminance = luminanceTotal / pixelCount;
   return {
     horizontal: horizontal / horizontalPairs,
     vertical: vertical / horizontalPairs,
@@ -71,6 +94,9 @@ function metrics(png) {
     wrapX: mean(wrapX),
     wrapY: mean(wrapY),
     blockDeviation: Math.sqrt(mean(blockMeans.map((value) => (value - blockMean) ** 2))),
+    rmsContrast: Math.sqrt((luminanceSquaredTotal / pixelCount) - meanLuminance ** 2),
+    detailCentroidX: detailX / detailTotal / png.width,
+    detailCentroidY: detailY / detailTotal / png.height,
   };
 }
 
@@ -138,5 +164,75 @@ test("ZK-1203 keeps rough and deep rough continuous but materially distinct", ()
       distance(averageColor(image(quality, "rough")), averageColor(image(quality, "deep_rough"))) > 18,
       `${quality} rough tiers are not visually distinct`,
     );
+  }
+});
+
+test("ZK-1203 retains bounded contrast and fine-detail envelopes", () => {
+  for (const quality of QUALITIES) {
+    for (const terrain of ["fairway", "green", "tee"]) {
+      const result = metrics(image(quality, terrain));
+      assert.ok(result.rmsContrast > 4.5 && result.rmsContrast < 7.5, `${quality}/${terrain} turf contrast drifted`);
+      assert.ok(result.horizontal > 0.15 && result.vertical > 0.12, `${quality}/${terrain} turf detail flattened`);
+    }
+    for (const terrain of ["rough", "deep_rough"]) {
+      const result = metrics(image(quality, terrain));
+      assert.ok(result.rmsContrast > 2.8 && result.rmsContrast < 5, `${quality}/${terrain} wild-turf contrast drifted`);
+      assert.ok(result.horizontal > 0.15 && result.vertical > 0.12, `${quality}/${terrain} wild-turf detail flattened`);
+    }
+    const sand = metrics(image(quality, "sand"));
+    assert.ok(sand.rmsContrast > 5.8 && sand.rmsContrast < 7.5, `${quality}/sand contrast drifted`);
+    for (const terrain of ["water", "wetland"]) {
+      const result = metrics(image(quality, terrain));
+      assert.ok(result.rmsContrast > 1.25 && result.rmsContrast < 2.4, `${quality}/${terrain} depth contrast drifted`);
+      assert.ok(result.vertical > result.horizontal * 1.5, `${quality}/${terrain} lost directional fine detail`);
+    }
+  }
+});
+
+test("ZK-1203 keeps detail balanced instead of concentrating it on one edge", () => {
+  for (const quality of QUALITIES) for (const terrain of INTERIORS) {
+    const result = metrics(image(quality, terrain));
+    assert.ok(result.detailCentroidX > 0.45 && result.detailCentroidX < 0.55, `${quality}/${terrain} detail x centroid drifted`);
+    assert.ok(result.detailCentroidY > 0.45 && result.detailCentroidY < 0.55, `${quality}/${terrain} detail y centroid drifted`);
+  }
+});
+
+test("ZK-1203 public manifest references exact Parkland field bytes", () => {
+  const root = new URL(ROOT).pathname;
+  const manifest = JSON.parse(readFileSync(join(root, "public/atlases/biomes/manifest.json"), "utf8"));
+  for (const quality of QUALITIES) for (const terrain of INTERIORS) {
+    const field = manifest.biomes.parkland[quality].base.fields[terrain];
+    const publicPath = join(root, "public/atlases/biomes", field.image);
+    const source = sourceBytes(quality, terrain);
+    assert.ok(existsSync(publicPath), `${quality}/${terrain} public field is absent`);
+    assert.deepEqual(readFileSync(publicPath), source, `${quality}/${terrain} public field diverged from source`);
+    const hash = createHash("sha256").update(source).digest("hex").slice(0, 12);
+    assert.ok(field.image.includes(`.${hash}.png`), `${quality}/${terrain} manifest hash is stale`);
+  }
+});
+
+test("ZK-1203 generator is byte-identical and reproduces the approved fields", () => {
+  const root = new URL(ROOT).pathname;
+  const scratch = mkdtempSync(join(tmpdir(), "zk1203-fields-"));
+  try {
+    const generate = (name) => {
+      const output = join(scratch, name);
+      const result = spawnSync(process.execPath, [join(root, "scripts/gen-m35-landscape-fields.mjs")], {
+        env: { ...process.env, ZK1203_INTERIORS_ONLY: "1", COURSECRAFT_M35_FIELD_OUTPUT_DIR: output },
+        encoding: "utf8",
+      });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return output;
+    };
+    const first = generate("first");
+    const second = generate("second");
+    for (const quality of QUALITIES) for (const terrain of INTERIORS) {
+      const relative = join("parkland", quality, `${terrain}.png`);
+      const source = sourceBytes(quality, terrain);
+      assert.deepEqual(readFileSync(join(first, relative)), source, `${quality}/${terrain} generator bytes changed`);
+      assert.deepEqual(readFileSync(join(first, relative)), readFileSync(join(second, relative)), `${quality}/${terrain} generator is not deterministic`);
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
   }
 });

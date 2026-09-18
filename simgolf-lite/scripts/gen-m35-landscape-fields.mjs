@@ -5,13 +5,16 @@
 // compact palette-rich PNG. This is the reproducible CourseCraft-authored
 // fallback required before any reviewed generated-art candidate is adopted.
 import { PNG } from "pngjs";
-import { mkdirSync, writeFileSync } from "node:fs";
+import sharp from "sharp";
+import { mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { loadBiomeKeys } from "./biome-registry.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const OUTPUT = path.join(ROOT, "src/assets/terrain/fields");
+const OUTPUT = process.env.COURSECRAFT_M35_FIELD_OUTPUT_DIR
+  ? path.resolve(process.env.COURSECRAFT_M35_FIELD_OUTPUT_DIR)
+  : path.join(ROOT, "src/assets/terrain/fields");
 const QUALITIES = {
   high: { size: 512, workScale: 4 },
   medium: { size: 256, workScale: 2 },
@@ -243,7 +246,7 @@ function materialSample(theme, terrain, quality, x, y, seed) {
   return shadeColor(base, factor, tint, tintAmount);
 }
 
-function generateField(theme, terrain, quality, config) {
+async function generateField(theme, terrain, quality, config) {
   const png = new PNG({ width: config.size, height: config.size });
   const seed = terrainSeed(theme, terrain);
   const sampleCount = config.workScale * config.workScale;
@@ -270,11 +273,21 @@ function generateField(theme, terrain, quality, config) {
   const directory = path.join(OUTPUT, theme, quality);
   mkdirSync(directory, { recursive: true });
   const destination = path.join(directory, `${terrain}.png`);
-  writeFileSync(destination, PNG.sync.write(png, {
+  // The terrain fields are full-colour continuous materials, so palette
+  // reduction would visibly quantize them.  Sharp's lossless adaptive PNG
+  // encoder keeps the exact authored RGBA samples while avoiding the
+  // considerably larger PNG.js deflate stream.  Pin every encoder option so
+  // repeated authoring runs produce byte-identical source assets.
+  const source = PNG.sync.write(png, {
     colorType: 2,
     inputColorType: 6,
     inputHasAlpha: true,
-  }));
+  });
+  await sharp(source).png({
+    compressionLevel: 9,
+    adaptiveFiltering: true,
+    palette: false,
+  }).toFile(destination);
   return destination;
 }
 
@@ -282,7 +295,7 @@ for (const theme of Object.keys(PALETTES)) {
   for (const [quality, config] of Object.entries(QUALITIES)) {
     for (const terrain of TERRAINS) {
       if (ZK1203_INTERIORS_ONLY && !(theme === ZK1203_THEME && quality !== "low" && ZK1203_TERRAINS.has(terrain))) continue;
-      const destination = generateField(theme, terrain, quality, config);
+      const destination = await generateField(theme, terrain, quality, config);
       console.log(path.relative(ROOT, destination));
     }
   }
