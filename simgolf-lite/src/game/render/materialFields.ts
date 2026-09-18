@@ -378,8 +378,8 @@ const BAND_RECIPES: Record<TerrainBoundaryRole, BandRecipe[]> = {
     // Three deliberately narrow value steps: a muted cut-grass shoulder,
     // mineral gravel edge, then the field-textured/speckled path core. The
     // core overlay stays transparent so it cannot turn into a flat ribbon.
-    { role: "natural-shoulder", offset: -0.14, width: 0.075, depth: 0, tone: "other", factor: 0.78, alpha: 0.38, detail: "tufts", detailSpacing: 5.6, minProfile: "high" },
-    { role: "gravel-edge", offset: -0.035, width: 0.075, depth: 0, tone: "gravel", factor: 0.9, alpha: 0.64, detail: "pebbles", detailSpacing: 2.4, minProfile: "medium" },
+    { role: "natural-shoulder", offset: -0.14, width: 0.08, depth: 0, tone: "other", factor: 1.12, alpha: 0.5, detail: "tufts", detailSpacing: 5.6, minProfile: "high" },
+    { role: "gravel-edge", offset: -0.03, width: 0.09, depth: 0, tone: "gravel", factor: 1.03, alpha: 0.76, detail: "pebbles", detailSpacing: 2.4, minProfile: "medium" },
     { role: "path-core", offset: 0.065, width: 0.075, depth: 0, tone: "owner", factor: 1.04, alpha: 0.11, detail: "pebbles", detailSpacing: 2.1, minProfile: "low" },
   ],
   // Maintained turf: the neighbour's own apron → dark fringe → mown collar.
