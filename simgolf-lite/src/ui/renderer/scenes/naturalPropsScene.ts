@@ -121,6 +121,10 @@ export interface HabitatMassDiagnostics {
   readonly massId: string;
   readonly memberCount: number;
   readonly retainedMemberCount: number;
+  /** Two tonal lobes per accepted interior member make one readable bed. */
+  readonly bedLobeCount: number;
+  /** A mass owns its bed; no cell is allowed to create one independently. */
+  readonly bedLayerCount: number;
   /** World-space member coverage, independent of camera rotation. */
   readonly bounds: Readonly<{ minX: number; minY: number; maxX: number; maxY: number }>;
   /** Stable back-to-front member identities, never projection depth. */
@@ -136,6 +140,7 @@ interface HabitatMassPlan extends HabitatMassDiagnostics {
 interface HabitatMassRuntime {
   readonly compositor: PIXI.Container;
   readonly sprites: readonly PIXI.Sprite[];
+  readonly bed: PIXI.Graphics | null;
 }
 
 const TIER_PRESENTATION: Readonly<Record<EcologyTier, EcologyPresentation>> = {
@@ -159,6 +164,13 @@ const HABITAT_MEMBER_JITTER = 0.16;
 const HABITAT_CENTROID_PULL = 0.72;
 const HABITAT_MAX_PULL = 0.16;
 const HABITAT_BED_SCALE = 1.7;
+
+const HABITAT_BED_PALETTES: Readonly<Record<Exclude<EcologyPlacement["role"], "wet_shore">, readonly [number, number]>> = {
+  woodland_floor: [0x203f29, 0x4e733a],
+  understory: [0x294d2d, 0x5a813f],
+  rough_mass: [0x31542c, 0x6b8d43],
+  rock_plant_cluster: [0x3e5730, 0x748647],
+};
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -212,10 +224,17 @@ export function deriveHabitatMassPlans(
       maxX: Math.max(...members.map((member) => member.worldX)),
       maxY: Math.max(...members.map((member) => member.worldY)),
     };
+    const interiorMembers = members.filter((member) => member.detail.role !== "wet_shore");
     return {
       massId,
       memberCount: source.length,
       retainedMemberCount: members.length,
+      // This is deliberately derived from the existing member plan rather
+      // than an ecology sampling pass. A two-tone lobe pair turns the
+      // accepted cells into a single legible mass without creating a new
+      // placement, collider, or planner count.
+      bedLobeCount: interiorMembers.length * 2,
+      bedLayerCount: interiorMembers.length > 0 ? 2 : 0,
       bounds,
       order: members.map((member) => member.id),
       centroid,
@@ -223,6 +242,40 @@ export function deriveHabitatMassPlans(
       rank,
     };
   });
+}
+
+/**
+ * Draws a single world-space understorey bed inside its owning mass
+ * compositor. Every lobe is anchored to an already accepted member, keeping
+ * the visual treatment out of gameplay, terrain, and planner ownership.
+ */
+function drawHabitatMassBed(
+  graphics: PIXI.Graphics,
+  plan: HabitatMassPlan,
+  snapshot: RenderSnapshot,
+  anchor: Readonly<{ x: number; y: number }>,
+): void {
+  for (const member of plan.members) {
+    if (member.detail.role === "wet_shore") continue;
+    const position = worldToIso(
+      member.worldX,
+      member.worldY,
+      snapshot.surfaceHeightAt(member.worldX, member.worldY),
+      snapshot.rotation,
+    );
+    const presentation = ecologyPresentation(member.detail);
+    const [shadow, foliage] = HABITAT_BED_PALETTES[member.detail.role];
+    const scale = member.scale * presentation.scale;
+    const x = position.x - anchor.x;
+    const y = position.y - anchor.y + TILE_H * (presentation.verticalOffset + 0.13);
+    // The lower lobe is deliberately broad enough to overlap adjacent
+    // members of the same accepted mass. The lighter upper lobe retains a
+    // planted, layered read instead of a flat turf decal.
+    graphics.ellipse(x, y, TILE_W * 0.25 * scale, TILE_H * 0.29 * scale);
+    graphics.fill({ color: shadow, alpha: 0.38 });
+    graphics.ellipse(x - TILE_W * 0.025 * scale, y - TILE_H * 0.12 * scale, TILE_W * 0.18 * scale, TILE_H * 0.19 * scale);
+    graphics.fill({ color: foliage, alpha: 0.46 });
+  }
 }
 
 function mix32(value: number): number {
@@ -579,6 +632,8 @@ export function createNaturalPropsSceneSystem(
     }
     habitatDetails.length = 0;
     for (const mass of habitatMasses) {
+      mass.bed?.parent?.removeChild(mass.bed);
+      mass.bed?.destroy();
       mass.compositor.parent?.removeChild(mass.compositor);
       mass.compositor.destroy({ children: false });
     }
@@ -659,12 +714,17 @@ export function createNaturalPropsSceneSystem(
       .slice(0, habitatBudget)
       .map((entry) => `${entry.obstacle.x},${entry.obstacle.y}`));
 
+    // Overview has no detail atlas residency, but must still retain the
+    // authored Parkland mass silhouette. Reuse the Medium planner result as
+    // a graphics-only source: it is an existing accepted topology, not a
+    // lower-LOD sampling pass or new per-cell scatter.
+    const compositionQuality = snapshot.graphicsQuality === "low" ? "medium" : snapshot.graphicsQuality;
     const composition = deriveHabitatComposition({
       course,
       tiles: snapshot.effectiveTiles,
       obstacles: snapshot.obstacles,
       worldSeed: snapshot.worldSeed,
-      quality: snapshot.graphicsQuality,
+      quality: compositionQuality,
     });
     const wetShore = deriveWetShoreComposition({
       course,
@@ -697,8 +757,19 @@ export function createNaturalPropsSceneSystem(
       compositor.zIndex = plan.rank;
       compositor.sortableChildren = true;
       terrainDecals.addChild(compositor);
+      const bed = plan.bedLobeCount > 0 ? createGraphics() : null;
+      if (bed) {
+        bed.label = `habitat-mass-bed:${plan.massId}`;
+        bed.eventMode = "none";
+        bed.zIndex = -1;
+        drawHabitatMassBed(bed, plan, snapshot, anchor);
+        compositor.addChild(bed);
+      }
       const sprites: PIXI.Sprite[] = [];
       for (const member of plan.members) {
+        // The overview contract is graphics-only. Its retained mass bed is
+        // intentionally not an additional low-LOD sprite scatter.
+        if (snapshot.graphicsQuality === "low") continue;
         const detail = member.detail;
         const texture = getHabitatAtlasTexture(course.theme, snapshot.graphicsQuality, detail.frame);
         if (!texture) continue;
@@ -725,11 +796,13 @@ export function createNaturalPropsSceneSystem(
         habitatDetails.push(sprite);
       }
       compositor.sortChildren();
-      habitatMasses.push({ compositor, sprites });
+      habitatMasses.push({ compositor, sprites, bed });
       renderedDiagnostics.push({
         massId: plan.massId,
         memberCount: plan.memberCount,
         retainedMemberCount: sprites.length,
+        bedLobeCount: plan.bedLobeCount,
+        bedLayerCount: plan.bedLayerCount,
         bounds: plan.bounds,
         order: plan.order,
       });

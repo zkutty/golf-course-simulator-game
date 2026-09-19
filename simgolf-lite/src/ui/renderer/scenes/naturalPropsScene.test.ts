@@ -107,7 +107,18 @@ function habitatMemberSprites(children: readonly unknown[]): readonly { label: s
   return children.flatMap((child) => {
     const mass = child as { label?: string; children?: readonly { label?: string; zIndex?: number }[] };
     if (!mass.label?.startsWith("habitat-mass:")) return [];
-    return (mass.children ?? []).map((member) => ({ label: member.label ?? "", zIndex: member.zIndex ?? 0 }));
+    return (mass.children ?? [])
+      .filter((member) => member.label?.startsWith("habitat-composition:"))
+      .map((member) => ({ label: member.label ?? "", zIndex: member.zIndex ?? 0 }));
+  });
+}
+
+function habitatMassBeds(children: readonly unknown[]): readonly string[] {
+  return children.flatMap((child) => {
+    const mass = child as { children?: readonly { label?: string }[] };
+    return (mass.children ?? [])
+      .map((member) => member.label ?? "")
+      .filter((label) => label.startsWith("habitat-mass-bed:"));
   });
 }
 
@@ -397,6 +408,14 @@ describe("natural props scene ownership", () => {
     expect(decals.children.some((child) =>
       (child as { label?: string }).label?.startsWith("habitat-mass:"),
     )).toBe(true);
+    // Each accepted mass owns exactly one tonal bed. There is no second
+    // terrain-level scatter: the two lobe layers are derived only from the
+    // existing accepted members in that mass.
+    const initialMasses = scene.habitatMassDiagnostics();
+    expect(habitatMassBeds(decals.children)).toHaveLength(initialMasses.length);
+    expect(initialMasses.every((mass) => mass.bedLayerCount === 2)).toBe(true);
+    expect(initialMasses.reduce((total, mass) => total + mass.bedLobeCount, 0))
+      .toBe(expectedHabitatDetails * 2);
 
     const firstPlan = habitatMemberSprites(decals.children);
     scene.update!(snapshot({
@@ -417,10 +436,15 @@ describe("natural props scene ownership", () => {
       graphicsQuality: "low",
       atlasRevision: 3,
     }));
+    // Low has no detail-atlas sprites, but preserves the already accepted
+    // Medium mass topology as one graphics-only bed per mass so overview
+    // cannot collapse back to empty turf.
     expect(scene.habitatDetailCount()).toBe(0);
+    expect(habitatMassBeds(decals.children)).not.toHaveLength(0);
     expect(decals.children.some((child) =>
       (child as { label?: string }).label?.startsWith("habitat-mass:"),
-    )).toBe(false);
+    )).toBe(true);
+    expect(habitatMemberSprites(decals.children)).toEqual([]);
   });
 
   it("uses one rotation-invariant compositor per compact M19 mass without leaving member cells", () => {
@@ -438,8 +462,12 @@ describe("natural props scene ownership", () => {
       .toEqual({ members: 160, compactMasses: 41 });
     expect(deriveHabitatMassPlans(low)).toEqual([]);
     expect(deriveHabitatMassPlans(medium)).toEqual(mediumPlans);
+    expect(mediumPlans.reduce((total, plan) => total + plan.bedLobeCount, 0)).toBe(168);
+    expect(highPlans.reduce((total, plan) => total + plan.bedLobeCount, 0)).toBe(320);
     for (const plan of [...compact(mediumPlans), ...compact(highPlans)]) {
       expect(plan.retainedMemberCount).toBeGreaterThanOrEqual(3);
+      expect(plan.bedLayerCount).toBe(2);
+      expect(plan.bedLobeCount).toBe(plan.memberCount * 2);
       expect(plan.order).toHaveLength(plan.memberCount);
       for (const member of plan.members) {
         expect(member.worldX).toBeGreaterThanOrEqual(member.tileX + 0.34);
