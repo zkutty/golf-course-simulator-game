@@ -2435,3 +2435,13 @@ classic course-builder references.
   1,608,719 — a deliberately recorded razor-thin four-byte headroom.
 - NEXT: independent visual and scope review owns acceptance. This worktree is
   uncommitted; do not push, deploy, promote, or mutate Linear from this packet.
+
+## 2026-09-20 — ZK-1203 dependency-complete correction cycle 1
+
+- Exact failing-before layer isolation attributed the repeated pale maintained-turf strips to the fairway-only alpha-gradient branch in `transformParklandCuePixels`; common undercoat, rough, macro shadow/highlight, landform shoulders, and ZK-459 ownership were excluded by direct A/B captures.
+- The fairway cue now retains the frozen world-phase source as a broad residual-alpha mowing swath capped at High/Medium/Low 12/10/8 instead of converting swath boundaries into bright edge-only strips. Frozen assets/hashes and all authority remain unchanged.
+- The material contract now proves a 35–45% broad fairway signal, exact quality caps, and more than 28% five-neighbour interior coverage, while all other motif-ink density and plate-energy bounds remain intact.
+- Fresh M19 visual review supports provisional material continuity 3/5 and terrain vocabulary 3/5. Remaining faint tile-snap lines are the approved ZK-459 differing-presentation joins (104 strips/16 corners), not same-presentation resets. ZK-1207/ZK-1201 capture gates pass but their visual issues remain separately owned; bunker relief was not modified.
+- Focused ZK-1203 material tests pass 10/10 and focused render tests pass 207/207. TypeScript, lint/i18n (zero errors; 11 inherited Hook warnings), ZK-1200, both ZK-459 gates, ZK-1207, ZK-1201, ZK-473, full build/audits/budgets, and full `test:ci` all pass. Full suite: 260 files / 2,048 passed / one intentional skip; audio audit 5/5. Initial JavaScript remains 1,608,715 bytes, four bytes below cap.
+- Official client loop completed three M19 iterations with no error artifact; minimap captures were inspected, with full course pixels covered by the direct browser matrices. External evidence: `/private/tmp/zk1203-dependency-complete-cycle1-evidence`.
+- No commit, push, deploy, promotion, or Linear mutation. Ready for fresh independent visual review after generated build/test drift is cleaned.

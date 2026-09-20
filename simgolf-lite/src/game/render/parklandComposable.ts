@@ -48,9 +48,9 @@ export const PARKLAND_COMPOSABLE_PATTERNS: Readonly<Record<ParklandComposableSem
 };
 
 const MOTIF_ALPHA_CAPS: Readonly<Record<AtlasQuality, Readonly<Record<ParklandComposableSemantic, number>>>> = {
-  high: { fairway: 44, rough: 58, deep_rough: 70, green: 72, tee: 76 },
-  medium: { fairway: 38, rough: 52, deep_rough: 64, green: 64, tee: 68 },
-  low: { fairway: 28, rough: 36, deep_rough: 45, green: 46, tee: 48 },
+  high: { fairway: 12, rough: 58, deep_rough: 70, green: 72, tee: 76 },
+  medium: { fairway: 10, rough: 52, deep_rough: 64, green: 64, tee: 68 },
+  low: { fairway: 8, rough: 36, deep_rough: 45, green: 46, tee: 48 },
 };
 
 export interface ParklandMotifMetrics {
@@ -104,38 +104,24 @@ export function transformParklandCuePixels(
   const cap = MOTIF_ALPHA_CAPS[quality][semantic];
   let nonZero = 0;
   let alphaTotal = 0;
-  const sourceAlphaAt = (x: number, y: number) => source[
-    ((y + height) % height * width + (x + width) % width) * 4 + 3
-  ];
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const pixel = y * width + x;
     const offset = pixel * 4;
     const sourceAlpha = source[offset + 3];
     let colorOffset = offset;
-    let signal: number;
-    if (semantic === "fairway") {
-      const gradient = Math.max(
-        Math.abs(sourceAlpha - sourceAlphaAt(x - 1, y)),
-        Math.abs(sourceAlpha - sourceAlphaAt(x + 1, y)),
-        Math.abs(sourceAlpha - sourceAlphaAt(x, y - 1)),
-        Math.abs(sourceAlpha - sourceAlphaAt(x, y + 1)),
-      );
-      signal = gradient === 0 ? 0 : Math.min(cap, Math.round(gradient * cap / 24));
-    } else {
-      let motifAlpha = sourceAlpha;
-      if (semantic === "green") for (const [sampleX, sampleY] of [
-        [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
-      ] as const) {
-        const sampleOffset = ((sampleY + height) % height * width + (sampleX + width) % width) * 4;
-        if (source[sampleOffset + 3] <= motifAlpha) continue;
-        motifAlpha = source[sampleOffset + 3];
-        colorOffset = sampleOffset;
-      }
-      const residual = motifAlpha - alphaFloor;
-      signal = residual <= (quality === "low" ? 3 : 2)
-        ? 0
-        : Math.min(cap, residual);
+    let motifAlpha = sourceAlpha;
+    if (semantic === "green") for (const [sampleX, sampleY] of [
+      [x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1],
+    ] as const) {
+      const sampleOffset = ((sampleY + height) % height * width + (sampleX + width) % width) * 4;
+      if (source[sampleOffset + 3] <= motifAlpha) continue;
+      motifAlpha = source[sampleOffset + 3];
+      colorOffset = sampleOffset;
     }
+    const residual = motifAlpha - alphaFloor;
+    const signal = residual <= (quality === "low" ? 3 : 2)
+      ? 0
+      : Math.min(cap, residual);
     output[offset] = source[colorOffset];
     output[offset + 1] = source[colorOffset + 1];
     output[offset + 2] = source[colorOffset + 2];
