@@ -128,7 +128,11 @@ import {
   seasonalTerrainTreatment,
   type SeasonalTerrainTreatment,
 } from "../game/render/seasonalTerrainPresentation";
-import { hillReliefStrength, terrainReliefStyle, terrainSurfaceInsetPx } from "../game/render/terrainRelief";
+import {
+  hillReliefStrength,
+  terrainReliefStyle,
+  terrainSurfaceInsetPx,
+} from "../game/render/terrainRelief";
 import {
   buildLandscapeComponents,
   buildVisualHeightfield,
@@ -144,7 +148,6 @@ import {
   buildBunkerVisualRings,
   classifyBunkerVisualType,
 } from "../game/render/bunkerShapes";
-import { buildMacroLandformRaster } from "../game/render/macroLandform";
 import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
 import type { TerrainPresentationDiagnostics } from "../game/render/terrainPresentationPolicy";
 import {
@@ -3417,6 +3420,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       };
       const recessedFace = (x: number, y: number, d: Point) => {
         const terrain = visualTerrainAt(x, y);
+        if (composableTurfOwnsTransitions && terrain === "sand") return;
         const style = terrainReliefStyle(course.theme, terrain);
         if (!style) return;
         const nx = x + d.x;
@@ -3469,7 +3473,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
         });
       for (const { x, y } of order) {
         const terrain = visualTerrainAt(x, y);
-        const material = getTerrainMaterial(course.theme, terrain);
+        const underlayTerrain = composableTurfOwnsTransitions && terrain === "sand" ? "rough" : terrain;
+        const material = getTerrainMaterial(course.theme, underlayTerrain);
         const e = elev(x, y);
         const groundPosition = worldToIso(x + 0.5, y, e, rotation);
         const surfaceInset = terrainSurfaceInsetPx(terrain);
@@ -3484,9 +3489,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         ) {
           slopeShade *= mowingShadeAt(x, y, holeAxes);
         }
-        const seasonal = seasonalByTerrain[terrain];
+        const seasonal = seasonalByTerrain[underlayTerrain];
         const legacyTint = shade(
-          darken(seasonal?.color ?? THEMED_COLORS[terrain], EDGE_DARKEN),
+          darken(seasonal?.color ?? THEMED_COLORS[underlayTerrain], EDGE_DARKEN),
           slopeShade,
         );
 
@@ -3613,7 +3618,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           boundaryMask |= 1 << index;
         }
         const features = autotileFeatures(rotateAutotileMask(boundaryMask, rotation));
-        for (const feature of features) {
+        for (const feature of underlayTerrain === terrain ? features : []) {
           const transitionTexture = material.source === "atlas-2x"
             ? getTerrainFrame(course.theme, props.graphicsQuality, terrainTransitionFrame(material, feature))
             : null;
@@ -3994,7 +3999,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
         true,
       );
       if (!exactComposableCue && !mesh) continue;
-      const bunkerVisualType = component.terrain === "sand"
+      const isSand = component.terrain === "sand";
+      const bunkerVisualType = isSand
         ? classifyBunkerVisualType(
           component.cells,
           presentationTiles,
@@ -4013,7 +4019,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (mesh) {
         mesh.tint = seasonalByTerrain[presentationTerrain]?.textureTint ?? 0xffffff;
         mesh.eventMode = "none";
-        const mask = composableRuntime!.createLandscapeRingMask(component.terrain === "sand"
+        const mask = composableRuntime!.createLandscapeRingMask(isSand
           ? visualRings.map((ring) => buildHazardBankFacePlan("sand", component.cells.length, ring)?.innerRing ?? ring)
           : visualRings, project);
         mesh.mask = mask;
@@ -4077,7 +4083,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
           if (!plan || !depthProfile) continue;
           const positions: number[] = [];
           const uvs: number[] = [];
+          const indices = isSand ? [] : [...plan.stripIndices];
           const lipPoints: Point[] = [];
+          const lip = new PIXI.Graphics();
           for (let index = 0; index < plan.outerRing.length; index++) {
             const outer = plan.outerRing[index];
             const inner = plan.innerRing[index];
@@ -4099,36 +4107,46 @@ export function PixiStage(requestedProps: PixiStageProps) {
             const grade = projectDepthPoint({ ...outer, height: gradeHeight });
             const floor = projectDepthPoint({ ...inner, height: floorHeight });
             positions.push(grade.x, grade.y, floor.x, floor.y);
-            // The white texture is intentionally neutral; its uniform tint and
-            // alpha provide one continuous bank material across the strip.
             uvs.push(0, 0, 1, 1);
             lipPoints.push(floor);
           }
-          if (positions.length !== plan.outerRing.length * 4) continue;
+          if (isSand) {
+            // The grade edge owns a sparse, camera-facing turf occlusion.
+            // No tan wall or closed lip is emitted around the inset floor.
+            for (let index = 0; index < plan.outerRing.length; index++) {
+              const next = (index + 1) % plan.outerRing.length;
+              if (
+                positions[index * 4 + 3] + positions[next * 4 + 3]
+                < positions[index * 4 + 1] + positions[next * 4 + 1]
+              ) {
+                indices.push(...plan.stripIndices.slice(index * 6, index * 6 + 6));
+                lip.moveTo(positions[index * 4], positions[index * 4 + 1]);
+                lip.lineTo(positions[next * 4], positions[next * 4 + 1]);
+              }
+            }
+          } else {
+            lip.moveTo(lipPoints[0].x, lipPoints[0].y);
+            for (let index = 1; index < lipPoints.length; index++) lip.lineTo(lipPoints[index].x, lipPoints[index].y);
+            lip.lineTo(lipPoints[0].x, lipPoints[0].y);
+          }
           const bank = new PIXI.Mesh({
             geometry: new PIXI.MeshGeometry({
               positions: new Float32Array(positions),
               uvs: new Float32Array(uvs),
-              indices: new Uint32Array(plan.stripIndices),
+              indices: new Uint32Array(indices),
             }),
             texture: PIXI.Texture.WHITE,
           });
-          bank.eventMode = "none";
-          bank.tint = shade(bankDark, 1.08);
-          bank.alpha = component.terrain === "sand" ? 0.52 : 0.58;
+          bank.tint = isSand ? shade(themedColors.rough, 0.62) : shade(bankDark, 1.08);
+          bank.alpha = isSand ? 0.7 : 0.58;
           recessedLayer.addChild(bank);
 
-          const lip = new PIXI.Graphics();
-          lip.eventMode = "none";
-          lip.moveTo(lipPoints[0].x, lipPoints[0].y);
-          for (let index = 1; index < lipPoints.length; index++) lip.lineTo(lipPoints[index].x, lipPoints[index].y);
-          lip.lineTo(lipPoints[0].x, lipPoints[0].y);
           lip.stroke({
-            width: plan.lip.width,
-            color: bankLight,
-            alpha: plan.lip.alpha,
-            cap: "round",
-            join: "round",
+            width: isSand ? 1.35 : plan.lip.width,
+            color: isSand ? shade(themedColors.rough, 1.08) : bankLight,
+            alpha: isSand ? 0.8 : plan.lip.alpha,
+            cap: isSand ? "square" : "round",
+            join: isSand ? "miter" : "round",
           });
           recessedLayer.addChild(lip);
         }
@@ -4232,149 +4250,76 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
     }
 
-    // One world-anchored slope-light field spans every land component. It is
-    // derived from the same shared heightfield that projects surface meshes,
-    // so authored rises read as continuous landforms instead of per-cell
-    // adjacency bands. Hazard planes remain transparent in the raster.
-    const macroRaster = buildMacroLandformRaster(
-      heightfield,
-      effectiveTiles,
-      course.theme,
-      quality === "high" ? 6 : 4,
-    );
-    const textureFromRgba = (rgba: Uint8ClampedArray) => {
-      const canvas = document.createElement("canvas");
-      canvas.width = macroRaster.width;
-      canvas.height = macroRaster.height;
-      const context = canvas.getContext("2d");
-      if (!context) return null;
-      const image = context.createImageData(macroRaster.width, macroRaster.height);
-      image.data.set(rgba);
-      context.putImageData(image, 0, 0);
-      return PIXI.Texture.from(canvas);
-    };
-    const macroPositions: number[] = [];
-    const macroUvs: number[] = [];
-    const macroIndices: number[] = [];
-    const macroSubdivisions = 2;
-    const macroColumns = course.width * macroSubdivisions + 1;
-    for (let sy = 0; sy <= course.height * macroSubdivisions; sy++) {
-      for (let sx = 0; sx <= course.width * macroSubdivisions; sx++) {
-        const x = sx / macroSubdivisions;
-        const y = sy / macroSubdivisions;
-        const point = project({ x, y });
-        macroPositions.push(point.x, point.y);
-        macroUvs.push(x / course.width, y / course.height);
-      }
-    }
-    for (let sy = 0; sy < course.height * macroSubdivisions; sy++) {
-      for (let sx = 0; sx < course.width * macroSubdivisions; sx++) {
-        const topLeft = sy * macroColumns + sx;
-        const topRight = topLeft + 1;
-        const bottomLeft = topLeft + macroColumns;
-        const bottomRight = bottomLeft + 1;
-        macroIndices.push(
-          topLeft, topRight, bottomRight,
-          topLeft, bottomRight, bottomLeft,
-        );
-      }
-    }
-    const macroGeometry = () => new PIXI.MeshGeometry({
-      positions: new Float32Array(macroPositions),
-      uvs: new Float32Array(macroUvs),
-      indices: new Uint32Array(macroIndices),
-    });
-    const generatedMacroTextures: PIXI.Texture[] = [];
-    const shadowTexture = textureFromRgba(macroRaster.shadow);
-    if (shadowTexture) {
-      generatedMacroTextures.push(shadowTexture);
-      const shadow = new PIXI.Mesh({ geometry: macroGeometry(), texture: shadowTexture });
-      shadow.eventMode = "none";
-      shadow.blendMode = "multiply";
-      layer.addChild(shadow);
-    }
-    const highlightTexture = textureFromRgba(macroRaster.highlight);
-    if (highlightTexture) {
-      generatedMacroTextures.push(highlightTexture);
-      const highlight = new PIXI.Mesh({ geometry: macroGeometry(), texture: highlightTexture });
-      highlight.eventMode = "none";
-      highlight.blendMode = "screen";
-      layer.addChild(highlight);
-    }
-    // ZK-1207: stitched isocontours create one broad render-only shoulder per
-    // authored height transition. The geometry comes from the shared field,
-    // not cell adjacency, and remains in world coordinates until this final
-    // projection so all four rotations consume the identical surface.
+    // ZK-1207: crisp runs come from the actual multi-tile level boundary.
+    // Only the side facing the camera owns a face and crest; no closed contour,
+    // raster halo, or second parallel band is projected.
     const landformPlan = buildLandformPresentationPlan(
       heightfield,
       effectiveTiles,
       course.elevations,
       course.theme,
-      quality === "high" ? 3 : 2,
+      1,
     );
-    for (const shoulder of landformPlan.shoulders) {
-      const graphics = new PIXI.Graphics();
-      graphics.eventMode = "none";
-      const segmentCount = shoulder.closed ? shoulder.points.length : shoulder.points.length - 1;
-      for (let index = 0; index < segmentCount; index++) {
-        const current = shoulder.points[index];
-        const next = shoulder.points[(index + 1) % shoulder.points.length];
-        const tangentX = next.upper.x - current.upper.x;
-        const tangentY = next.upper.y - current.upper.y;
-        // The frozen ZK-1207 builder removes shoulder samples that land on a
-        // recessed hazard. Do not reconnect the two surviving sides across
-        // that intentional gap: the resulting long quad would paint a green
-        // landform bar through a bunker or lake.
-        if (Math.hypot(tangentX, tangentY) > 0.75) continue;
-        const crossesRecessedHazard = [0.25, 0.5, 0.75].some((t) => {
-          const x = current.upper.x + tangentX * t;
-          const y = current.upper.y + tangentY * t;
-          const cellX = Math.max(0, Math.min(course.width - 1, Math.floor(x)));
-          const cellY = Math.max(0, Math.min(course.height - 1, Math.floor(y)));
-          const terrain = effectiveTiles[cellY * course.width + cellX];
-          return terrain === "sand" || terrain === "water" || terrain === "wetland";
-        });
-        if (crossesRecessedHazard) continue;
-        const litFace = tangentX - tangentY >= 0;
-        const sampleBand = (point: typeof current, t: number) => worldToIso(
-          point.upper.x + (point.lower.x - point.upper.x) * t,
-          point.upper.y + (point.lower.y - point.upper.y) * t,
-          point.upperHeight + (point.lowerHeight - point.upperHeight) * t,
-          rotation,
-        );
-        for (const [start, end, colorScale, alpha] of [
-          [0, 0.34, 0.94, litFace ? 0.14 : 0.18],
-          [0.34, 0.68, 0.72, litFace ? 0.2 : 0.25],
-          [0.68, 1, 0.5, litFace ? 0.25 : 0.31],
-        ] as const) {
-          const upperA = sampleBand(current, start);
-          const upperB = sampleBand(next, start);
-          const lowerB = sampleBand(next, end);
-          const lowerA = sampleBand(current, end);
-          graphics.poly([
-            upperA.x, upperA.y,
-            upperB.x, upperB.y,
-            lowerB.x, lowerB.y,
-            lowerA.x, lowerA.y,
-          ]);
-          graphics.fill({ color: shade(themedColors.rough, colorScale), alpha });
+    const landformBoundary = (point: (typeof landformPlan.shoulders)[number]["points"][number]) => ({
+      x: (point.upper.x + point.lower.x) / 2,
+      y: (point.upper.y + point.lower.y) / 2,
+    });
+    const boundaryKey = (point: (typeof landformPlan.shoulders)[number]["points"][number]) => {
+      const boundary = landformBoundary(point);
+      return `${boundary.x}:${boundary.y}`;
+    };
+    const visibleShoulders = landformPlan.shoulders.filter((shoulder) => {
+      const [current, next] = shoulder.points;
+      const highA = worldToIso(current.upper.x, current.upper.y, current.lowerHeight, rotation);
+      const highB = worldToIso(next.upper.x, next.upper.y, next.lowerHeight, rotation);
+      const lowA = worldToIso(current.lower.x, current.lower.y, current.lowerHeight, rotation);
+      const lowB = worldToIso(next.lower.x, next.lower.y, next.lowerHeight, rotation);
+      return lowA.y + lowB.y > highA.y + highB.y;
+    });
+    const selectedShoulders: typeof visibleShoulders = [];
+    for (const level of new Set(visibleShoulders.map((shoulder) => shoulder.level))) {
+      const candidates = visibleShoulders.filter((shoulder) => shoulder.level === level);
+      const seed = candidates.reduce((longest, shoulder) => shoulder.worldLength > longest.worldLength ? shoulder : longest);
+      const connected = [seed];
+      const keys = new Set(seed.points.map(boundaryKey));
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const shoulder of candidates) {
+          if (connected.includes(shoulder) || !shoulder.points.some((point) => keys.has(boundaryKey(point)))) continue;
+          connected.push(shoulder);
+          for (const point of shoulder.points) keys.add(boundaryKey(point));
+          changed = true;
         }
       }
-      const upper = shoulder.points.map((point) => worldToIso(
-        point.upper.x,
-        point.upper.y,
-        point.upperHeight,
-        rotation,
-      ));
-      graphics.moveTo(upper[0].x, upper[0].y);
-      for (let index = 1; index < upper.length; index++) graphics.lineTo(upper[index].x, upper[index].y);
-      if (shoulder.closed) graphics.closePath();
+      selectedShoulders.push(...connected);
+    }
+    for (const shoulder of selectedShoulders) {
+      const graphics = new PIXI.Graphics();
+      graphics.eventMode = "none";
+      const [current, next] = shoulder.points;
+      const boundary = (point: typeof current, height: number) => {
+        const edge = landformBoundary(point);
+        return worldToIso(edge.x, edge.y, height, rotation);
+      };
+      const upperA = boundary(current, current.upperHeight);
+      const upperB = boundary(next, next.upperHeight);
+      const lowerB = boundary(next, next.lowerHeight);
+      const lowerA = boundary(current, current.lowerHeight);
+      graphics.poly([
+        upperA.x, upperA.y,
+        upperB.x, upperB.y,
+        lowerB.x, lowerB.y,
+        lowerA.x, lowerA.y,
+      ]);
+      graphics.fill({ color: shade(themedColors.rough, 0.62), alpha: 0.66 });
+      graphics.moveTo(upperA.x, upperA.y);
+      graphics.lineTo(upperB.x, upperB.y);
       graphics.stroke({
-        width: 1.15,
-        color: shade(themedColors.rough, 1.18),
-        alpha: 0.24,
-        join: "round",
-        cap: "round",
+        width: 1,
+        color: shade(themedColors.rough, 1.12),
+        alpha: 0.72,
+        join: "miter",
+        cap: "square",
       });
       landformLayer.addChild(graphics);
     }
@@ -4406,9 +4351,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
     sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
     stampAtlasGeneration(layer, atlasRevision);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
-    return () => {
-      for (const texture of generatedMacroTextures) texture.destroy(true);
-    };
   }, [
     appReady,
     atlasRevision,

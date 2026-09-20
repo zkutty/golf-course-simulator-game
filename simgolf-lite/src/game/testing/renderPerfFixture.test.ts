@@ -58,7 +58,7 @@ describe("M19 visual reference fixture", () => {
     expect(first.holes[0]).toMatchObject({ parManual: 4, name: "Founder's Bend" });
   });
 
-  it("authors a three-level shoulder and one four-connected cart route without changing fixture determinism", () => {
+  it("authors three tile-snapped level transitions and one four-connected cart route", () => {
     const course = createParklandVisualReferenceCourse();
     expect(new Set(course.elevations)).toEqual(new Set([0, 1, 2, 3]));
     const pathComponents = buildLandscapeComponents(course.tiles, course.width, course.height)
@@ -72,7 +72,8 @@ describe("M19 visual reference fixture", () => {
       3,
     );
     expect(shoulders.length).toBeGreaterThanOrEqual(3);
-    expect(shoulders.some((shoulder) => shoulder.closed && shoulder.worldLength > 20)).toBe(true);
+    expect(shoulders.every((shoulder) => !shoulder.closed)).toBe(true);
+    expect(shoulders.some((shoulder) => shoulder.worldLength > 10)).toBe(true);
   });
 });
 
