@@ -122,9 +122,7 @@ import {
   waterShimmerPhase,
 } from "../game/render/terrainMaterials";
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
-import type {
-  ParklandComposableDiagnostics,
-} from "../game/render/parklandComposable";
+import type { ParklandComposableDiagnostics } from "../game/render/parklandComposable";
 import { deriveTerrainDetail } from "../game/render/terrainDetails";
 import {
   seasonalTerrainTreatment,
@@ -3925,7 +3923,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
         layer,
         composableSources,
         sortedComponents,
-        course.width,
+        course,
+        effectiveTiles,
         subdivisions,
         heightfield,
         rotation,
@@ -4409,6 +4408,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     appReady,
     atlasRevision,
     effectiveTiles,
+    course.buildings,
     course.elevations,
     course.width,
     course.height,

@@ -11,4 +11,6 @@ const semantics: Readonly<Record<ParklandComposableSemantic, string>> = {
 export default {
   undercoat: new URL("../../assets/terrain/parkland-composable-v1/medium/undercoat.png", import.meta.url).href,
   semantics,
+  pairAtlas: new URL("../../assets/terrain/parkland-pair-atlas-v2/medium-pair-atlas.png", import.meta.url).href,
+  pairFrame: [128, 64] as const,
 } as const;
