@@ -9,6 +9,7 @@ import {
 import type { LandTheme, Terrain } from "../game/models/types";
 import { BIOME_KEYS, getBiomeDefinition } from "../game/models/biomes";
 import type { SeasonName } from "../game/seasons/types";
+import type { ParklandComposableRole } from "../game/render/parklandComposable";
 import {
   normalizeAtlasManifest,
   type AtlasManifest,
@@ -55,6 +56,9 @@ const landscapeFields = new Map<string, Texture>();
 const pathMaterialFields = new Map<string, Texture>();
 const seasonalFrameSheets = new Map<string, Spritesheet>();
 const seasonalLandscapeFields = new Map<string, Texture>();
+const parklandComposableFields = new Map<string, Texture>();
+export type ParklandComposableRuntime = typeof import("../game/render/parklandComposable");
+let parklandComposableRuntime: ParklandComposableRuntime | null = null;
 let golfersSheet: Spritesheet | null = null;
 let manifestPromise: Promise<AtlasManifest> | null = null;
 let corePromise: Promise<void> | null = null;
@@ -289,7 +293,11 @@ export async function loadAtlases(
   };
   try {
     const manifest = await loadManifest();
-    await loadCore(manifest);
+    const [, runtime] = await Promise.all([
+      loadCore(manifest),
+      import("../game/render/parklandComposable"),
+    ]);
+    parklandComposableRuntime = runtime;
     const key = bundleKey;
     const content = getBiomeDefinition(theme).content;
     let promise = bundlePromises.get(key);
@@ -318,6 +326,11 @@ export async function loadAtlases(
           quality === "low" || !fieldsBundle.pathMaterials
             ? Promise.resolve([])
             : loadPathMaterialFields(fieldsBundle.pathMaterials),
+          theme === "parkland"
+            ? import("./parklandComposableLoader").then((loader) => (
+              loader.loadParklandComposableFields(quality, key, parklandComposableFields)
+            ))
+            : Promise.resolve(),
         ]);
         if (buildings) buildingsSheets.set(key, buildings);
         if (terrain) terrainSheets.set(key, terrain);
@@ -448,6 +461,21 @@ export function getLandscapeMaterialField(
   return overlay ?? landscapeFields.get(`${key}:${terrain}`) ?? null;
 }
 
+export function getParklandComposableField(
+  theme: LandTheme | undefined,
+  quality: AtlasQuality,
+  role: ParklandComposableRole,
+): Texture | null {
+  const requested = getBiomeDefinition(theme).key;
+  if (requested !== "parkland") return null;
+  return parklandComposableFields.get(`${requested}:${quality}:${role}`) ?? null;
+}
+
+/** Runtime contract loaded atomically with the selected Parkland source tier. */
+export function getParklandComposableRuntime(): ParklandComposableRuntime | null {
+  return parklandComposableRuntime;
+}
+
 /**
  * Optional compositor material. Low intentionally returns null, preserving
  * the existing safe/procedural path treatment until a renderer owns a lower
@@ -510,6 +538,7 @@ export interface AtlasResidencySnapshot {
   readonly materialFields: number;
   readonly pathMaterialFields: number;
   readonly seasonalMaterialFields: number;
+  readonly parklandComposableFields: number;
 }
 
 /** Bounded key/count evidence; loaded textures remain cached across transitions. */
@@ -521,6 +550,7 @@ export function atlasResidencySnapshot(): AtlasResidencySnapshot {
     materialFields: landscapeFields.size,
     pathMaterialFields: pathMaterialFields.size,
     seasonalMaterialFields: seasonalLandscapeFields.size,
+    parklandComposableFields: parklandComposableFields.size,
   };
 }
 
@@ -644,6 +674,8 @@ export function __resetAtlasForTests(): void {
   pathMaterialFields.clear();
   seasonalFrameSheets.clear();
   seasonalLandscapeFields.clear();
+  parklandComposableFields.clear();
+  parklandComposableRuntime = null;
   golfersSheet = null;
   manifestPromise = null;
   corePromise = null;
