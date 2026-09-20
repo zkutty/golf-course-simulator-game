@@ -20,6 +20,7 @@ import {
   __deleteSlotPayloadForTests,
   __omitSlotThemeForTests,
   autosave,
+  deleteSlot,
   loadSlot,
   mostRecentSlot,
   saveToSlot,
@@ -593,6 +594,7 @@ export default function App() {
   const [decorationRotation, setDecorationRotation] = useState<DecorationRotation>(0);
   const [decorationSpan, setDecorationSpan] = useState(3);
   const [decorationAction, setDecorationAction] = useState<"place" | "rotate" | "remove">("place");
+  const zk470LastPointerCellRef = useRef<Point | null>(null);
 
   const activateTerrainEditing = useCallback((
     tool: TerrainAuthoringTool = terrainTool,
@@ -3435,6 +3437,37 @@ export default function App() {
 
   useEffect(() => {
     if (import.meta.env.MODE !== "e2e") return;
+    type Zk470ActionClass = "terrain-stroke" | "tee" | "pin" | "prop" | "structure" | "occlusion-selection";
+    const configureZk470PlacementAction = (actionClass: Zk470ActionClass) => {
+      setPendingTeePlacement(null);
+      setSetupPlacement(null);
+      setPaintError(null);
+      if (actionClass === "terrain-stroke") {
+        setTerrainTool("curve");
+        setTerrainBrushWidth(1);
+        setSelected("rough");
+        setSelectedPlantId(null);
+        setSelectedDesignItemId("terrain:rough");
+        setEditorMode("PAINT");
+      } else if (actionClass === "tee") {
+        setActiveHoleIndex(0);
+        setSelectedTeeSet("member");
+        setSetupPlacement({ kind: "tee", key: "member" });
+        setEditorMode("HOLE_WIZARD");
+      } else if (actionClass === "pin") {
+        setActiveHoleIndex(0);
+        setSetupPlacement({ kind: "pin", key: "A" });
+        setEditorMode("HOLE_WIZARD");
+      } else if (actionClass === "prop") {
+        setObstacleType("tree");
+        setSelectedPlantId(null);
+        setSelectedDesignItemId("plant:parkland-oak");
+        setEditorMode("OBSTACLE");
+      } else {
+        setBuildingType("pro_shop");
+        setEditorMode("BUILDING");
+      }
+    };
     window.__coursecraftTest = {
       setGraphicsQualityFixture: (quality) => {
         if (quality !== "high" && quality !== "medium" && quality !== "low") {
@@ -3608,6 +3641,109 @@ export default function App() {
       resetM35Metrics: resetM35Telemetry,
       setPaintCash: (cash: number) => {
         gameSession.update((current) => ({ ...current, world: { ...current.world, cash } }));
+      },
+      setZk470PlacementFixture: async (actionClass) => {
+        const { createZk470PlacementFixture, ZK470_TARGETS } = await import("./game/testing/zk470PlacementFixture");
+        const fixture = createZk470PlacementFixture();
+        const fixtureCourse = structuredClone(fixture.course);
+        const fixtureWorld = {
+          ...structuredClone(fixture.world),
+          cash: 1_000_000,
+          reputation: 100,
+          isBankrupt: false,
+        };
+        const hole = fixtureCourse.holes[0];
+        fixtureCourse.holes[0] = {
+          ...hole,
+          tee: { x: 8, y: 10 },
+          teeBoxes: { ...hole.teeBoxes, member: { x: 8, y: 10 } },
+          green: { x: 38, y: 20 },
+          pinPositions: { ...hole.pinPositions, A: { x: 38, y: 20 }, B: null, C: null },
+        };
+        fixtureCourse.tiles[20 * fixtureCourse.width + 38] = "green";
+        fixtureCourse.obstacles = fixtureCourse.obstacles.filter((obstacle) => !(obstacle.x === 45 && obstacle.y === 12));
+        fixtureCourse.buildings = fixtureCourse.buildings.filter((building) => building.id !== "zk470-engineering-ring");
+        dispatch({ type: "LOAD_GAME", course: fixtureCourse, world: fixtureWorld });
+        live.restoreSnapshot(snapshotLiveSimulation({
+          state: createLiveState(fixtureCourse, fixtureWorld, 0),
+          pendingCash: 0,
+          speed: "paused",
+          selectedGolferId: null,
+        }));
+        zk470LastPointerCellRef.current = null;
+        window.__coursecraftPixiTest?.resetTerrainStrokePointerDownCell();
+        configureZk470PlacementAction(actionClass);
+        const targetId: Record<Zk470ActionClass, string> = {
+          "terrain-stroke": "flat-center",
+          tee: "tee-forward",
+          pin: "pin-a",
+          prop: "prop-tree",
+          structure: "engineering-ring-valid",
+          "occlusion-selection": "occlusion-building",
+        };
+        const target = ZK470_TARGETS.find((candidate) => candidate.id === targetId[actionClass]);
+        if (!target) throw new Error(`Missing ZK-470 target for ${actionClass}`);
+        return structuredClone(target);
+      },
+      configureZk470PlacementAction,
+      zk470PlacementSnapshot: async (actionClass) => {
+        const { ZK470_TARGETS } = await import("./game/testing/zk470PlacementFixture");
+        const current = gameSession.getState();
+        const targetId: Record<Zk470ActionClass, string> = {
+          "terrain-stroke": "flat-center",
+          tee: "tee-forward",
+          pin: "pin-a",
+          prop: "prop-tree",
+          structure: "engineering-ring-valid",
+          "occlusion-selection": "occlusion-building",
+        };
+        const target = ZK470_TARGETS.find((candidate) => candidate.id === targetId[actionClass]);
+        if (!target) throw new Error(`Missing ZK-470 target for ${actionClass}`);
+        const same = (point: Point | null | undefined) => point?.x === target.point.x && point.y === target.point.y;
+        const index = target.point.y * current.course.width + target.point.x;
+        const committed = actionClass === "terrain-stroke"
+          ? current.course.tiles[index] === "rough"
+          : actionClass === "tee"
+            ? same(current.course.holes[0]?.tee)
+            : actionClass === "pin"
+              ? same(current.course.holes[0]?.green)
+              : actionClass === "prop"
+                ? current.course.obstacles.some((obstacle) => same(obstacle))
+                : current.course.buildings.some((building) => same(building));
+        return {
+          target: structuredClone(target),
+          selectedCell: zk470LastPointerCellRef.current ? { ...zk470LastPointerCellRef.current } : null,
+          handledPointerCell: actionClass === "terrain-stroke"
+            ? window.__coursecraftPixiTest?.terrainStrokePointerDownCell() ?? null
+            : zk470LastPointerCellRef.current ? { ...zk470LastPointerCellRef.current } : null,
+          committedCell: committed ? { ...target.point } : null,
+          courseHash: hashCanonicalValue(current.course),
+          worldHash: hashCanonicalValue(current.world),
+          authoritative: {
+            terrain: current.course.tiles[index],
+            tee: current.course.holes[0]?.tee ?? null,
+            pin: current.course.holes[0]?.green ?? null,
+            obstacle: current.course.obstacles.find((obstacle) => same(obstacle)) ?? null,
+            building: current.course.buildings.find((building) => same(building)) ?? null,
+          },
+        };
+      },
+      zk470Undo: () => undoTerrainEdit(),
+      zk470Redo: () => redoTerrainEdit(),
+      zk470PersistenceProbe: async (actionClass) => {
+        const { firstCanonicalDifference, ZK470_FIXTURE_SLOT } = await import("./game/testing/zk470PlacementFixture");
+        const current = gameSession.getState();
+        const payload: SavePayload = { course: current.course, world: current.world };
+        const id = `${ZK470_FIXTURE_SLOT}-${actionClass}`;
+        const beforeHash = hashCanonicalValue(payload);
+        await saveToSlot(id, "manual", `ZK-470 ${actionClass}`, payload);
+        const loaded = await loadSlot(id);
+        const afterHash = loaded ? hashCanonicalValue({ course: loaded.course, world: loaded.world }) : null;
+        const firstDifference = loaded
+          ? firstCanonicalDifference(payload, { course: loaded.course, world: loaded.world })
+          : { path: "$", before: "payload", after: null };
+        await deleteSlot(id);
+        return { id, beforeHash, afterHash, firstDifference, cleanedUp: !(await loadSlot(id)) };
       },
       advanceLiveClock: (realMs, speed) => {
         const previousSpeed = live.getSnapshot()?.speed ?? live.speed;
@@ -4360,7 +4496,7 @@ export default function App() {
     return () => {
       delete window.__coursecraftTest;
     };
-  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, gameSession, live, pendingLoadingContext, pendingWeekReport, runSeasonCommand, screen, setWorld, t, tutorialProgress]);
+  }, [dispatch, dirty, flow.base, flow.modal, flow.paused, gameSession, live, pendingLoadingContext, pendingWeekReport, redoTerrainEdit, runSeasonCommand, screen, setWorld, t, tutorialProgress, undoTerrainEdit]);
 
   function newGameFromMenu() {
     void audio.unlock();
@@ -5069,6 +5205,7 @@ export default function App() {
   }
 
   function handleCanvasClick(x: number, y: number) {
+    if (import.meta.env.MODE === "e2e") zk470LastPointerCellRef.current = { x, y };
     if (world.isBankrupt) return;
     // Unlock audio on first canvas interaction
     void audio.unlock();
