@@ -65,12 +65,22 @@ interface Window {
       residency: import("./render/atlas").AtlasResidencySnapshot;
       fallbacks: readonly import("./render/atlas").AtlasFallbackDiagnostic[];
       camera: { zoom: number; targetZoom: number; groundCoverTier: 0 | 1 | 2 };
+      parklandComposable: import("./game/render/parklandComposable").ParklandComposableDiagnostics & {
+        camera: { rotation: number; zoom: number; targetZoom: number };
+      };
       layers: Record<string, number | null> | null;
       counts: {
         terrainChunks: number;
         terrainRebuilds: number;
         connectedSurfaces: number;
         structuresAndProps: number;
+        naturalProps: {
+          content: number;
+          rebuilds: number;
+          fallbackTextures: number;
+          habitatMasses: number;
+          habitatBedLayers: number;
+        };
         dressing: number;
       } | null;
     };

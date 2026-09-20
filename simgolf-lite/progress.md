@@ -2285,3 +2285,30 @@ classic course-builder references.
   destination for the guided Par 3. NEXT: freeze the scoped commit, verify it on
   development, promote the exact main-based patch, and monitor production before
   reconciling ZK-1154; ZK-1114/ZK-1115 and milestone M69 remain open.
+
+## ZK-461 common-phase Parkland renderer — attempt 2/3 — 2026-09-20
+
+- Replaced the rejected role-wide alpha films with deterministic motif-only
+  transforms of the approved ZK-463 Parkland cues. Source alpha floors are
+  removed; fairway uses narrow authored mowing transitions, rough/deep rough/tee
+  retain sparse authored marks, and green care specks receive a bounded one-source-
+  pixel cross expansion. Direct tests cap low-frequency plate score, tile-boundary
+  energy, coverage, alpha, and motif expansion for all three quality tiers.
+- Medium/High draw one exact authoritative turf-union undercoat plus at most one
+  mesh per semantic role. Low uses the same union and reduced-density motifs, then
+  leaves water, sand, paths, and elevation on their existing renderer paths.
+  Gameplay cells, collision, selection, persistence, and pair-edge/corner work are
+  unchanged.
+- Native review accepted all eight preflight frames and all 13 final frames. The
+  full matrix, repeat, and post-budget-split matrix pass; every screenshot hash,
+  renderer diagnostic, scene-ownership count, and gameplay-authority hash is
+  identical between deterministic runs. Evidence is under
+  `/private/tmp/zk461-common-phase-attempt2-evidence`.
+- Gates pass: TypeScript; focused renderer/M35/Parkland tests (51/51); Parkland
+  composable and 4x contracts (10/10); residency (4/4); delivery evidence (3/3);
+  M35/ZK-1200/ZK-473 browser regressions (3/3); lint/i18n with zero errors and 10
+  existing Hook warnings; production build and audits; and full CI (258 files,
+  2,036 passed, one intentional skip, plus 5/5 audio audits). Initial JavaScript
+  is 1,608,674 bytes, 45 bytes under the fixed 1,608,719-byte budget.
+- NEXT: independent visual/scope review owns acceptance. This worktree remains
+  uncommitted; do not integrate, push, deploy, promote, or mutate Linear here.

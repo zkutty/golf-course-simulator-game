@@ -13,6 +13,7 @@ import {
   atlasResidencySnapshot,
   atlasFallbackDiagnostics,
   getLandscapeMaterialField,
+  getParklandComposableField,
   getPathMaterialField,
   getPropFrame,
   getSeasonalFrame,
@@ -110,6 +111,8 @@ describe("incremental biome atlas loading", () => {
     expect(urls.some((url) => url.includes("spring-"))).toBe(false);
     expect(urls.some((url) => url.includes("path-material-parkland-high-shoulder"))).toBe(true);
     expect(urls.some((url) => url.includes("path-material-parkland-high-edge"))).toBe(true);
+    expect(urls.filter((url) => url.includes("parkland-composable-v1/high/")).length).toBe(6);
+    expect(atlasResidencySnapshot().parklandComposableFields).toBe(6);
     expect(urls.some((url) => url.includes("links-") || url.includes("desert-"))).toBe(false);
   });
 
@@ -176,7 +179,7 @@ describe("incremental biome atlas loading", () => {
     expect(retried.some((url) => url.includes("buildings-parkland-high"))).toBe(false);
   });
 
-  it("keeps Low base-only and omits fields, details, props, and every overlay", async () => {
+  it("keeps Low base-only except for its bounded composable turf packet", async () => {
     await loadAtlases("parkland", "low", "autumn");
 
     const urls = assetsLoad.mock.calls.map(([url]) => String(url));
@@ -185,6 +188,16 @@ describe("incremental biome atlas loading", () => {
     expect(urls.some((url) => url.includes("details-parkland-low"))).toBe(false);
     expect(urls.some((url) => url.includes("props-parkland-low"))).toBe(false);
     expect(urls.some((url) => url.includes("autumn-"))).toBe(false);
+    expect(urls.filter((url) => url.includes("parkland-composable-v1/low/")).length).toBe(6);
+    expect(atlasResidencySnapshot().parklandComposableFields).toBe(6);
+    const undercoat = getParklandComposableField("parkland", "low", "undercoat") as unknown as {
+      source: { style: { addressMode: string; scaleMode: string } };
+    };
+    const fairway = getParklandComposableField("parkland", "low", "fairway") as unknown as {
+      source: { style: { addressMode: string; scaleMode: string } };
+    };
+    expect(undercoat.source.style).toMatchObject({ addressMode: "repeat", scaleMode: "nearest" });
+    expect(fairway.source.style).toMatchObject({ addressMode: "repeat", scaleMode: "nearest" });
   });
 
   it("loads repeat-safe path shoulder and edge fields only for supported qualities", async () => {

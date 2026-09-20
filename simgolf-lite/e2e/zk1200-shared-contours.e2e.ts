@@ -66,7 +66,7 @@ test("ZK-1200 captures canonical medium seams and high-detail green rotations", 
         authoritativeSingletonDeepRough: 49,
         distinctSingletonDeepRoughFields: 0,
         distinctSingletonDeepRoughBands: 0,
-        coalescedSingletonDeepRough: 49,
+        coalescedSingletonDeepRough: 0,
       },
     });
 
@@ -125,7 +125,7 @@ test("ZK-1200 captures canonical medium seams and high-detail green rotations", 
         authoritativeSingletonDeepRough: 49,
         distinctSingletonDeepRoughFields: 0,
         distinctSingletonDeepRoughBands: 0,
-        coalescedSingletonDeepRough: 49,
+        coalescedSingletonDeepRough: 0,
       },
     });
     const body = await canvas.screenshot();

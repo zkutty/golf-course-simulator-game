@@ -31,6 +31,8 @@ import {
   atlasResidencySnapshot,
   getGolferFrame,
   getLandscapeMaterialField,
+  getParklandComposableField,
+  getParklandComposableRuntime,
   getPathMaterialField,
   getPropFrame,
   getTerrainDetailFrame,
@@ -120,6 +122,9 @@ import {
   waterShimmerPhase,
 } from "../game/render/terrainMaterials";
 import { deriveGroundCover, visibleGroundCoverTier } from "../game/render/groundCover";
+import type {
+  ParklandComposableDiagnostics,
+} from "../game/render/parklandComposable";
 import { deriveTerrainDetail } from "../game/render/terrainDetails";
 import {
   seasonalTerrainTreatment,
@@ -130,8 +135,6 @@ import {
   buildLandscapeComponents,
   buildVisualHeightfield,
   createLandscapeComponentCache,
-  pointInLandscapeRing,
-  ringSignedArea,
   sampleLandscapeSurfaceHeight,
   sampleVisualHeight,
   type LandscapeComponent,
@@ -388,10 +391,10 @@ function terrainMaterialSeed(terrain: Terrain, color: number): number {
 function createLandscapeMaterialTexture(
   terrain: Terrain,
   baseColor: number,
-  quality: "high" | "medium",
+  quality: "high" | "medium" | "low",
   showPattern: boolean,
 ): PIXI.Texture {
-  const size = quality === "high" ? 512 : 256;
+  const size = quality === "high" ? 512 : quality === "medium" ? 256 : 128;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -413,7 +416,7 @@ function createLandscapeMaterialTexture(
     }
   };
 
-  const organicCount = quality === "high" ? 92 : 52;
+  const organicCount = quality === "high" ? 92 : quality === "medium" ? 52 : 24;
   for (let index = 0; index < organicCount; index++) {
     const x = random() * size;
     const y = random() * size;
@@ -446,7 +449,7 @@ function createLandscapeMaterialTexture(
       context.stroke();
     }
   } else {
-    const flecks = quality === "high" ? 260 : 120;
+    const flecks = quality === "high" ? 260 : quality === "medium" ? 120 : 48;
     for (let index = 0; index < flecks; index++) {
       const x = random() * size;
       const y = random() * size;
@@ -501,9 +504,9 @@ function createLandscapeMaterialTexture(
  */
 function createCompactedPathCoreTexture(
   baseColor: number,
-  quality: "high" | "medium",
+  quality: "high" | "medium" | "low",
 ): PIXI.Texture {
-  const size = quality === "high" ? 512 : 256;
+  const size = quality === "high" ? 512 : quality === "medium" ? 256 : 128;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -1230,6 +1233,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     distinctSingletonDeepRoughBands: 0,
     coalescedSingletonDeepRough: 0,
   });
+  const parklandComposableDiagnosticsRef = useRef<ParklandComposableDiagnostics>(
+    null as unknown as ParklandComposableDiagnostics,
+  );
   const structureSpriteCountRef = useRef(0);
   const hoverLineRef = useRef<PIXI.Graphics | null>(null);
   const hoverHighlightRef = useRef<PIXI.Graphics | null>(null);
@@ -1459,7 +1465,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
   ]);
   const landscapeComponentCacheRef = useRef(createLandscapeComponentCache());
   const landscapeComponents = useMemo(() => {
-    if (props.graphicsQuality === "low") return [];
+    const composableLow = props.graphicsQuality === "low"
+      && (course.theme ?? "parkland") === "parkland";
+    if (props.graphicsQuality === "low" && !composableLow) return [];
     const options = {
       cornerRadius: props.graphicsQuality === "high" ? 0.4 : 0.32,
       cornerSegments: props.graphicsQuality === "high" ? 4 : 2,
@@ -1473,6 +1481,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     return snapshot.components;
   }, [
     course.height,
+    course.theme,
     effectiveTiles,
     course.width,
     props.graphicsQuality,
@@ -2241,6 +2250,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
               targetZoom: camRef.current.tzoom,
             },
           },
+          parklandComposable: {
+            ...parklandComposableDiagnosticsRef.current,
+            camera: {
+              rotation,
+              zoom: camRef.current.zoom,
+              targetZoom: camRef.current.tzoom,
+            },
+          },
           sharedContours: { ...sharedContourDiagnosticsRef.current },
           layers: layers ? {
             surround: stampedAtlasGeneration(layers.surround),
@@ -2261,6 +2278,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
               content: naturalPropsSceneRef.current?.contentCount() ?? 0,
               rebuilds: naturalPropsSceneRef.current?.rebuildCount() ?? 0,
               fallbackTextures: naturalPropsSceneRef.current?.fallbackTextureCount() ?? 0,
+              habitatMasses: naturalPropsSceneRef.current?.habitatMassDiagnostics().length ?? 0,
+              habitatBedLayers: naturalPropsSceneRef.current?.habitatMassDiagnostics()
+                .reduce((total, mass) => total + mass.bedLayerCount, 0) ?? 0,
             },
             dressing: layers.seasonalTerrain.children.length + layers.surfaceCare.children.length,
           } : null,
@@ -3754,7 +3774,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
     if (!layer) return;
     layer.removeChildren().forEach((child) => child.destroy({ children: true }));
     surfaceWaterSpritesRef.current = [];
-    if (props.graphicsQuality === "low") {
+    const quality = props.graphicsQuality;
+    const composableRuntime = getParklandComposableRuntime();
+    const composableSources = composableRuntime?.resolveParklandComposableSources(
+      course.theme,
+      quality,
+      (role) => getParklandComposableField(course.theme, quality, role),
+    ) ?? null;
+    const composableActive = composableSources !== null;
+    if (composableRuntime) {
+      parklandComposableDiagnosticsRef.current = composableRuntime.inactiveParklandComposableDiagnostics(quality);
+    }
+    if (quality === "low" && !composableActive) {
       pathMaterialDiagnosticsRef.current = {
         active: false,
         mode: "legacy",
@@ -3776,8 +3807,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       return;
     }
 
-    const quality = props.graphicsQuality;
-    const subdivisions = quality === "high" ? 4 : 2;
+    const subdivisions = quality === "high" ? 4 : quality === "medium" ? 2 : 1;
     const components = landscapeComponents;
     const heightfield = visualHeightfield;
     const project = (point: Point) => worldToIso(
@@ -3803,42 +3833,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         : null,
     ])) as Record<Terrain, SeasonalTerrainTreatment | null>;
 
-    const buildMask = (rings: readonly (readonly Point[])[]) => {
-      const mask = new PIXI.Graphics();
-      mask.eventMode = "none";
-      const nodes = rings
-        .filter((ring) => ring.length >= 3)
-        .map((ring) => ({ ring, area: Math.abs(ringSignedArea(ring)), parent: -1, depth: 0 }))
-        .sort((a, b) => b.area - a.area);
-      for (let index = 0; index < nodes.length; index++) {
-        const point = nodes[index].ring[0];
-        for (let parent = index - 1; parent >= 0; parent--) {
-          if (!pointInLandscapeRing(nodes[parent].ring, point)) continue;
-          nodes[index].parent = parent;
-          nodes[index].depth = nodes[parent].depth + 1;
-          break;
-        }
-      }
-      for (let index = 0; index < nodes.length; index++) {
-        const node = nodes[index];
-        if (node.depth % 2 !== 0) continue;
-        const outer = node.ring.map(project);
-        mask.poly(outer.flatMap((point) => [point.x, point.y]));
-        mask.fill(0xffffff);
-        for (let holeIndex = 0; holeIndex < nodes.length; holeIndex++) {
-          const hole = nodes[holeIndex];
-          if (hole.parent !== index || hole.depth % 2 !== 1) continue;
-          const points = hole.ring.map(project);
-          mask.poly(points.flatMap((point) => [point.x, point.y]));
-          mask.cut();
-        }
-      }
-      return mask;
-    };
-
     const textureFor = (terrain: Terrain, finePathCore = false) => {
       const baseColor = themedColors[terrain];
-      const authored = !finePathCore && props.colorVision === "standard" && !props.terrainPatterns
+      const authored = quality !== "low" && !finePathCore && props.colorVision === "standard" && !props.terrainPatterns
         ? getLandscapeMaterialField(course.theme, terrain, quality)
         : null;
       if (authored && !authored.destroyed) return authored;
@@ -3914,63 +3911,84 @@ export function PixiStage(requestedProps: PixiStageProps) {
       coalescedSingletonDeepRough: 0,
     };
     const sortedComponents = [...components].sort((a, b) => componentDepth(a) - componentDepth(b));
+    const composableTrace = composableRuntime!.createParklandComposableTrace(
+      course.theme,
+      quality,
+      composableSources?.cues,
+    );
+
+    // One opaque undercoat spans the exact authoritative turf-cell union. The
+    // source phase is canonical world x/8,y/8 and therefore never restarts at
+    // a cell, component, chunk, camera rotation, or reload boundary.
+    if (composableSources) {
+      composableRuntime!.appendParklandComposablePresentation(
+        layer,
+        composableSources,
+        sortedComponents,
+        course.width,
+        subdivisions,
+        heightfield,
+        rotation,
+        props.colorVision === "standard",
+        themedColors,
+        composableTrace,
+      );
+    }
+    // Low owns only the composable turf overlay. Existing chunk rendering
+    // continues to own hazards, paths, and elevation; do not route those
+    // categories through the connected Medium/High presentation.
+    if (quality === "low" && composableActive) {
+      const diagnostics = composableRuntime!.lowParklandPresentationDiagnostics(composableTrace, components);
+      pathMaterialDiagnosticsRef.current = diagnostics.pathMaterial;
+      parklandComposableDiagnosticsRef.current = diagnostics.composable;
+      sharedContourDiagnosticsRef.current = diagnostics.sharedContours;
+      stampAtlasGeneration(layer, atlasRevision);
+      recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
+      return;
+    }
     for (const component of sortedComponents) {
       // The course remains authoritative: this is strictly a Medium/High
       // material choice for isolated deep-rough cells. Rendering their mask
       // with the surrounding rough field removes the 49 independent dark
       // stamps without changing cells, picking, simulation, or Low.
-      const coalescedSingletonDeepRough = component.terrain === "deep_rough" && component.cells.length === 1;
-      if (coalescedSingletonDeepRough) {
+      const authoritativeSingletonDeepRough = component.terrain === "deep_rough"
+        && component.cells.length === 1;
+      if (authoritativeSingletonDeepRough) {
         sharedContourDiagnostics.authoritativeSingletonDeepRough++;
+      }
+      const coalescedSingletonDeepRough = !composableActive && authoritativeSingletonDeepRough;
+      if (coalescedSingletonDeepRough) {
         sharedContourDiagnostics.coalescedSingletonDeepRough++;
       }
       const presentationTerrain: Terrain = coalescedSingletonDeepRough ? "rough" : component.terrain;
-      const positions: number[] = [];
-      const uvs: number[] = [];
-      const indices: number[] = [];
-      const vertexIndexes = new Map<number, number>();
-      const subWidth = course.width * subdivisions + 1;
-      const vertexAt = (sx: number, sy: number) => {
-        const key = sy * subWidth + sx;
-        const cached = vertexIndexes.get(key);
-        if (cached != null) return cached;
-        const x = sx / subdivisions;
-        const y = sy / subdivisions;
-        const point = worldToIso(
+      // Canonical seams may displace slightly beyond authoritative ownership.
+      // The render-only halo guarantees that the accepted mask always has
+      // source geometry beneath it; paths intentionally expose no halo.
+      const exactComposableCue = composableActive
+        && composableRuntime!.isParklandComposableSemantic(component.terrain);
+      const pathMaterialPlan = buildPathMaterialScenePlan(
+        component,
+        effectiveTiles,
+        course.width,
+        course.height,
+        quality,
+      );
+      const pathCompositorActive = pathMaterialPlan.mode === "cross-section" && hasPathMaterialTextures;
+      const mesh = exactComposableCue ? null : composableRuntime!.createParklandComposableMesh(
+        textureFor(presentationTerrain, pathCompositorActive),
+        component.presentationCells,
+        course.width,
+        subdivisions,
+        (cell) => cell,
+        (_cell, x, y) => worldToIso(
           x,
           y,
           sampleLandscapeSurfaceHeight(heightfield, component, x, y),
           rotation,
-        );
-        const index = positions.length / 2;
-        positions.push(point.x, point.y);
-        // Eight-tile period, anchored to unrotated world coordinates.
-        uvs.push(x / 8, y / 8);
-        vertexIndexes.set(key, index);
-        return index;
-      };
-      // Canonical seams may displace slightly beyond authoritative ownership.
-      // The render-only halo guarantees that the accepted mask always has
-      // source geometry beneath it; paths intentionally expose no halo.
-      for (const cell of component.presentationCells) {
-        const x = cell % course.width;
-        const y = Math.floor(cell / course.width);
-        for (let dy = 0; dy < subdivisions; dy++) for (let dx = 0; dx < subdivisions; dx++) {
-          const sx = x * subdivisions + dx;
-          const sy = y * subdivisions + dy;
-          const topLeft = vertexAt(sx, sy);
-          const topRight = vertexAt(sx + 1, sy);
-          const bottomRight = vertexAt(sx + 1, sy + 1);
-          const bottomLeft = vertexAt(sx, sy + 1);
-          indices.push(topLeft, topRight, bottomRight, topLeft, bottomRight, bottomLeft);
-        }
-      }
-      if (indices.length === 0) continue;
-      const geometry = new PIXI.MeshGeometry({
-        positions: new Float32Array(positions),
-        uvs: new Float32Array(uvs),
-        indices: new Uint32Array(indices),
-      });
+        ),
+        true,
+      );
+      if (!exactComposableCue && !mesh) continue;
       const bunkerVisualType = component.terrain === "sand"
         ? classifyBunkerVisualType(
           component.cells,
@@ -3983,27 +4001,17 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // presentation-cell halo above replaces the obsolete organic-mask
       // underlay workaround without changing authoritative ownership.
       const visualRings = component.rings;
-      const pathMaterialPlan = buildPathMaterialScenePlan(
-        component,
-        effectiveTiles,
-        course.width,
-        course.height,
-        quality,
-      );
-      const pathCompositorActive = pathMaterialPlan.mode === "cross-section" && hasPathMaterialTextures;
       // The generic field's large square chips made the route read as a gray
       // speckled ribbon. The compositor's core uses the existing deterministic
       // fine-grain generator instead; it remains world-anchored and the whole
       // connected mesh remains the gameplay/picking authority.
-      const mesh = new PIXI.Mesh({
-        geometry,
-        texture: textureFor(presentationTerrain, pathCompositorActive),
-      });
-      mesh.tint = seasonalByTerrain[presentationTerrain]?.textureTint ?? 0xffffff;
-      mesh.eventMode = "none";
-      const mask = buildMask(visualRings);
-      mesh.mask = mask;
-      layer.addChild(mesh, mask);
+      if (mesh) {
+        mesh.tint = seasonalByTerrain[presentationTerrain]?.textureTint ?? 0xffffff;
+        mesh.eventMode = "none";
+        const mask = composableRuntime!.createLandscapeRingMask(visualRings, project);
+        mesh.mask = mask;
+        layer.addChild(mesh, mask);
+      }
       if (pathCompositorActive) {
         pathComponentCount++;
         pathShoulderWidth = pathMaterialPlan.shoulderWidth;
@@ -4036,8 +4044,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
         const gx = firstCell % course.width;
         const gy = Math.floor(firstCell / course.width);
         surfaceWaterSpritesRef.current.push({
-          sprite: mesh,
-          baseTint: mesh.tint,
+          sprite: mesh!,
+          baseTint: mesh!.tint,
           phase: waterShimmerPhase(gx, gy),
           gx,
           gy,
@@ -4131,6 +4139,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
       );
       if (pathCompositorActive) continue;
       for (const run of boundaryRuns) {
+        // ZK-459 will own authored pair edges. Until then, two composable turf
+        // cues meet directly on their shared tile-snapped boundary; retaining
+        // the legacy ribbons here creates dark rounded plates and a second
+        // same-presentation seam owner. Hazard/path transitions are unchanged.
+        if (composableActive && composableTrace.suppressLegacyContour(component.terrain, run.outsideTerrain)) continue;
         const ribbons = buildSignedContourRibbons(
           component.terrain,
           run.outsideTerrain,
@@ -4383,6 +4396,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       widths: { shoulder: pathShoulderWidth, edge: pathEdgeWidth },
       ownership: [...pathOwnership].sort(),
     };
+    if (composableActive) {
+      parklandComposableDiagnosticsRef.current = composableTrace.diagnostics(landformLayer.children.length);
+    }
     sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
     stampAtlasGeneration(layer, atlasRevision);
     recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
