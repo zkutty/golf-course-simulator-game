@@ -68,6 +68,29 @@ interface Window {
       parklandComposable: import("./game/render/parklandComposable").ParklandComposableDiagnostics & {
         camera: { rotation: number; zoom: number; targetZoom: number };
       };
+      sharedContours: {
+        authoritativeSingletonDeepRough: number;
+        distinctSingletonDeepRoughFields: number;
+        distinctSingletonDeepRoughBands: number;
+        coalescedSingletonDeepRough: number;
+        enclosedSingletonRoughToFairway: number;
+        policy: {
+          classification: typeof import("./game/render/terrainPresentationPolicy").TERRAIN_PRESENTATION_POLICY;
+          tileSurface: readonly import("./game/models/types").Terrain[];
+          organicHazard: readonly import("./game/models/types").Terrain[];
+          route: readonly import("./game/models/types").Terrain[];
+        };
+        mappings: readonly import("./game/render/terrainPresentationPolicy").TerrainPresentationMapping[];
+        authoritativeBytes: string;
+        presentationBytes: string;
+        authoritativeCellCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        presentationCellCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        authoritativeComponentCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        presentationComponentCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        authoritativeRingCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        presentationRingCounts: Readonly<Record<import("./game/models/types").Terrain, number>>;
+        tileSurfaceConnectedMasks: number;
+      };
       layers: Record<string, number | null> | null;
       counts: {
         terrainChunks: number;

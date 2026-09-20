@@ -1,5 +1,9 @@
 import * as PIXI from "pixi.js";
 import type { Building, LandTheme, Point, Terrain } from "../models/types";
+export {
+  buildTerrainPresentationDiagnostics,
+  buildTerrainPresentationMap,
+} from "./terrainPresentationPolicy";
 import type { AtlasQuality } from "../../render/atlasManifest";
 import { isoDepth, worldToIso, type IsoRotation } from "./iso";
 import { buildingTiles } from "../models/buildings";
@@ -228,6 +232,16 @@ export const PARKLAND_COMPOSABLE_LOW_CONTRACT = {
 
 export function isParklandComposableSemantic(terrain: Terrain): terrain is ParklandComposableSemantic {
   return PARKLAND_COMPOSABLE_SEMANTICS.some((semantic) => semantic === terrain);
+}
+
+export function isParklandComposableTransition(owner: Terrain, outside: Terrain): boolean {
+  return isParklandComposableSemantic(owner) && isParklandComposableSemantic(outside);
+}
+
+export function destroyParklandPresentationLayer(layer: PIXI.Container | null): null {
+  layer?.removeFromParent();
+  layer?.destroy({ children: true });
+  return null;
 }
 
 export function usesParklandComposableMaterial(
@@ -501,16 +515,23 @@ export function appendParklandComposablePresentation(
     readonly elevations: readonly number[];
     readonly buildings: readonly Building[];
   },
-  tiles: readonly Terrain[],
+  presentationTiles: readonly Terrain[],
+  authoritativeTiles: readonly Terrain[],
   subdivisions: number,
   heightfield: VisualHeightfield,
   rotation: IsoRotation,
   standardColorVision: boolean,
   colors: Readonly<Record<ParklandComposableSemantic, number>>,
   trace: Pick<ReturnType<typeof createParklandComposableTrace>, "recordSemantic" | "recordPairFringes">,
-): void {
+): PIXI.Container {
+  const presentationLayer = sources.quality === "low" ? new PIXI.Container() : layer;
+  if (presentationLayer !== layer) {
+    presentationLayer.eventMode = "none";
+    presentationLayer.label = "parkland-common-phase:low";
+    layer.addChild(presentationLayer);
+  }
   appendParklandComposableUndercoat(
-    layer,
+    presentationLayer,
     sources.undercoat,
     components,
     course.width,
@@ -520,7 +541,7 @@ export function appendParklandComposablePresentation(
     standardColorVision ? 0xffffff : mixRgb(0xffffff, colors.rough, 0.35),
   );
   for (const semantic of appendParklandComposableCues(
-    layer,
+    presentationLayer,
     sources.cues,
     components,
     course.width,
@@ -530,13 +551,14 @@ export function appendParklandComposablePresentation(
     (role) => standardColorVision ? 0xffffff : mixRgb(0xffffff, colors[role], 0.28),
   )) trace.recordSemantic(semantic);
   trace.recordPairFringes(appendParklandPairFringes(
-    layer,
+    presentationLayer,
     sources.quality,
     sources.pair,
-    { ...course, tiles },
+    { ...course, tiles: presentationTiles, authoritativeTiles },
     heightfield,
     rotation,
   ));
+  return presentationLayer;
 }
 
 function fnv1aAuthority(values: readonly (string | number)[]): string {
@@ -614,6 +636,9 @@ export interface ParklandPairFringeRenderDiagnostics {
   readonly rotation: IsoRotation;
   readonly authoritativeDifferingTurfAdjacencies: number;
   readonly sameElevationDifferingTurfAdjacencies: number;
+  readonly presentationDifferingTurfAdjacencies: number;
+  readonly presentationSameElevationDifferingTurfAdjacencies: number;
+  readonly presentationOmittedDifferentElevation: number;
   readonly omittedDifferentElevation: number;
   readonly omittedSamePresentation: number;
   readonly omittedBlocked: number;
@@ -625,6 +650,7 @@ export interface ParklandPairFringeRenderDiagnostics {
   readonly pairCounts: Readonly<Record<string, number>>;
   readonly directionCounts: Readonly<Record<string, number>>;
   readonly exactlyOnceOwnerKeys: boolean;
+  readonly missingOwners: number;
   readonly mixedPairMasks: 0;
   readonly samePresentationEmitters: 0;
   readonly fullCellSprites: 0;
@@ -638,6 +664,8 @@ export interface ParklandPairFringeRenderDiagnostics {
   readonly authorityHashes: {
     readonly tilesBefore: string;
     readonly tilesAfter: string;
+    readonly presentationTilesBefore: string;
+    readonly presentationTilesAfter: string;
     readonly elevationsBefore: string;
     readonly elevationsAfter: string;
   };
@@ -649,6 +677,7 @@ export function appendParklandPairFringes(
   lookup: (role: ParklandPairFringeAssetRole) => PIXI.Texture | null,
   course: {
     readonly tiles: readonly Terrain[];
+    readonly authoritativeTiles?: readonly Terrain[];
     readonly elevations: readonly number[];
     readonly width: number;
     readonly height: number;
@@ -657,7 +686,9 @@ export function appendParklandPairFringes(
   heightfield: VisualHeightfield,
   rotation: IsoRotation,
 ): ParklandPairFringeRenderDiagnostics {
-  const tileHashBefore = fnv1aAuthority(course.tiles);
+  const authoritativeTiles = course.authoritativeTiles ?? course.tiles;
+  const tileHashBefore = fnv1aAuthority(authoritativeTiles);
+  const presentationTileHashBefore = fnv1aAuthority(course.tiles);
   const elevationHashBefore = fnv1aAuthority(course.elevations);
   const blockedCells = new Set<number>();
   for (const building of course.buildings) for (const tile of buildingTiles(building)) {
@@ -667,6 +698,14 @@ export function appendParklandPairFringes(
   }
   const plan = buildParklandPairFringePlan({
     tiles: course.tiles,
+    pairIdentityTiles: authoritativeTiles,
+    elevations: course.elevations,
+    width: course.width,
+    height: course.height,
+    blockedCells,
+  });
+  const authoritativePlan = buildParklandPairFringePlan({
+    tiles: authoritativeTiles,
     elevations: course.elevations,
     width: course.width,
     height: course.height,
@@ -704,9 +743,23 @@ export function appendParklandPairFringes(
     quality,
     rotation,
     ...plan.diagnostics,
+    authoritativeDifferingTurfAdjacencies:
+      authoritativePlan.diagnostics.authoritativeDifferingTurfAdjacencies,
+    sameElevationDifferingTurfAdjacencies:
+      authoritativePlan.diagnostics.sameElevationDifferingTurfAdjacencies,
+    omittedDifferentElevation: authoritativePlan.diagnostics.omittedDifferentElevation,
+    omittedSamePresentation: authoritativePlan.diagnostics.omittedSamePresentation,
+    presentationDifferingTurfAdjacencies: plan.diagnostics.authoritativeDifferingTurfAdjacencies,
+    presentationSameElevationDifferingTurfAdjacencies:
+      plan.diagnostics.sameElevationDifferingTurfAdjacencies,
+    presentationOmittedDifferentElevation: plan.diagnostics.omittedDifferentElevation,
     emittedStrips,
     emittedCorners,
-    exactlyOnceOwnerKeys: emittedOwnerKeys.size === emittedStrips + emittedCorners,
+    exactlyOnceOwnerKeys: emittedOwnerKeys.size === emittedStrips + emittedCorners
+      && emittedStrips === plan.diagnostics.plannedStrips
+      && emittedCorners === plan.diagnostics.plannedCorners,
+    missingOwners: plan.diagnostics.plannedStrips + plan.diagnostics.plannedCorners
+      - emittedStrips - emittedCorners,
     samePresentationEmitters: 0,
     missingAssetSourceIds: [...missingAssetSourceIds].sort(),
     assetSourceIds: entries.map(([id]) => id),
@@ -715,7 +768,9 @@ export function appendParklandPairFringes(
     rotationMapping: parklandPairFringeRotationMapping(rotation),
     authorityHashes: {
       tilesBefore: tileHashBefore,
-      tilesAfter: fnv1aAuthority(course.tiles),
+      tilesAfter: fnv1aAuthority(authoritativeTiles),
+      presentationTilesBefore: presentationTileHashBefore,
+      presentationTilesAfter: fnv1aAuthority(course.tiles),
       elevationsBefore: elevationHashBefore,
       elevationsAfter: fnv1aAuthority(course.elevations),
     },

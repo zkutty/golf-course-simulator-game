@@ -82,6 +82,8 @@ export interface ParklandPairFringeEdge {
   /** Stable physical adjacency identity. */
   readonly ownerKey: string;
   readonly pair: ParklandPairFringePair;
+  /** Original semantic pair used only to reject mixed-pair corner joins. */
+  readonly pairIdentity: ParklandPairFringePair;
   /** Cell whose terrain is the first member of the canonical manifest pair. */
   readonly ownerCell: number;
   readonly neighborCell: number;
@@ -116,6 +118,7 @@ export interface ParklandPairFringePlan {
     readonly plannedStrips: number;
     readonly cornerCandidates: number;
     readonly plannedCorners: number;
+    readonly omittedMixedPairCorners: number;
     readonly mixedPairMasks: 0;
     readonly fullCellSprites: 0;
     readonly ownershipOverlaps: 0;
@@ -132,6 +135,8 @@ export interface ParklandPairFringePlanInput {
   readonly height: number;
   /** Building/exclusion cells never own or consume a presentation strip. */
   readonly blockedCells?: ReadonlySet<number>;
+  /** Optional pre-presentation semantics used to preserve true pair corners. */
+  readonly pairIdentityTiles?: readonly Terrain[];
 }
 
 function directionBetween(ownerCell: number, neighborCell: number, width: number): ParklandPairFringeDirection {
@@ -154,7 +159,11 @@ function vertexForCorner(x: number, y: number, corner: ParklandPairFringeCorner)
 
 export function buildParklandPairFringePlan(input: ParklandPairFringePlanInput): ParklandPairFringePlan {
   const { tiles, elevations, width, height } = input;
-  if (tiles.length !== width * height || elevations.length !== tiles.length) {
+  if (
+    tiles.length !== width * height
+    || elevations.length !== tiles.length
+    || (input.pairIdentityTiles && input.pairIdentityTiles.length !== tiles.length)
+  ) {
     throw new Error("Parkland fringe input dimensions are inconsistent");
   }
   const blocked = input.blockedCells ?? new Set<number>();
@@ -197,6 +206,13 @@ export function buildParklandPairFringePlan(input: ParklandPairFringePlanInput):
         continue;
       }
       const canonical = canonicalParklandFringePair(a, b);
+      const identityA = input.pairIdentityTiles?.[cell] ?? a;
+      const identityB = input.pairIdentityTiles?.[neighbor] ?? b;
+      const pairIdentity = isParklandPairFringeSemantic(identityA)
+        && isParklandPairFringeSemantic(identityB)
+        && identityA !== identityB
+        ? canonicalParklandFringePair(identityA, identityB).pair
+        : canonical.pair;
       const ownerCell = a === canonical.first ? cell : neighbor;
       const neighborCell = ownerCell === cell ? neighbor : cell;
       const direction = directionBetween(ownerCell, neighborCell, width);
@@ -206,6 +222,7 @@ export function buildParklandPairFringePlan(input: ParklandPairFringePlanInput):
       edges.push({
         ownerKey,
         pair: canonical.pair,
+        pairIdentity,
         ownerCell,
         neighborCell,
         direction,
@@ -222,12 +239,24 @@ export function buildParklandPairFringePlan(input: ParklandPairFringePlanInput):
   const edgeByCellPairDirection = new Map<string, ParklandPairFringeEdge>();
   for (const edge of edges) edgeByCellPairDirection.set(`${edge.ownerCell}:${edge.pair}:${edge.direction}`, edge);
   const cornerCandidates: ParklandPairFringeCornerPatch[] = [];
+  let omittedMixedPairCorners = 0;
   for (const edge of edges) {
     for (const corner of PARKLAND_PAIR_FRINGE_CORNERS) {
       const [a, b] = cornerDirections[corner];
       if (edge.direction !== a) continue;
       const other = edgeByCellPairDirection.get(`${edge.ownerCell}:${edge.pair}:${b}`);
       if (!other) continue;
+      // Presentation coalescing may make differently authored pairs share one
+      // visible material pair. A single L join is still one exact presentation
+      // pair, but three incident sides would wrap a cell into the forbidden
+      // near-full-diamond enclosure. Reject both corners of that compound cap.
+      const incidentPairEdges = edges.filter((candidate) => (
+        candidate.ownerCell === edge.ownerCell && candidate.pair === edge.pair
+      )).length;
+      if (other.pairIdentity !== edge.pairIdentity && incidentPairEdges > 2) {
+        omittedMixedPairCorners++;
+        continue;
+      }
       const [vx, vy] = vertexForCorner(edge.x, edge.y, corner);
       cornerCandidates.push({
         ownerKey: `${edge.pair}:${vx},${vy}`,
@@ -263,6 +292,7 @@ export function buildParklandPairFringePlan(input: ParklandPairFringePlanInput):
       plannedStrips: edges.length,
       cornerCandidates: cornerCandidates.length,
       plannedCorners: corners.length,
+      omittedMixedPairCorners,
       mixedPairMasks: 0,
       fullCellSprites: 0,
       ownershipOverlaps: 0,
