@@ -23,6 +23,14 @@ describe("hazard depth cross-sections", () => {
     }
   });
 
+  it("finishes the bunker recession at its joined inner lip", () => {
+    for (const cellCount of [1, 3, 12]) {
+      const profile = hazardDepthProfile("sand", cellCount)!;
+      expect(profile.recessionRun).toBe(profile.bankWidth);
+      expect(hazardInteriorDropAt(profile, profile.bankWidth)).toBe(profile.floorDrop);
+    }
+  });
+
   it("orders a finite shelf, bank, contact, shallow, and deep section", () => {
     for (const terrain of ["sand", "water", "wetland"] as const) {
       const profile = hazardDepthProfile(terrain, 4)!;

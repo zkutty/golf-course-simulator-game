@@ -19,6 +19,12 @@ describe("terrain relief presentation", () => {
     }
   });
 
+  it("uses a terrain collar rather than a dark exterior wall around bunkers", () => {
+    expect(terrainReliefStyle("parkland", "sand")?.bankDark).toBe(0x3e823f);
+    expect(terrainReliefStyle("links", "sand")?.bankDark).toBe(0x668348);
+    expect(terrainReliefStyle("desert", "sand")?.bankDark).toBe(0x9b8052);
+  });
+
   it("makes rolling relief strongest on Links terrain", () => {
     expect(hillReliefStrength("links")).toBeGreaterThan(hillReliefStrength("parkland"));
     expect(hillReliefStrength("parkland")).toBeGreaterThan(hillReliefStrength("desert"));
