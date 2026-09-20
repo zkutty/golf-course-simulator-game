@@ -2394,3 +2394,44 @@ classic course-builder references.
 - NEXT: independent visual and scope review owns acceptance. This attempt-2
   worktree remains uncommitted; do not integrate, push, deploy, promote, or
   mutate Linear here.
+
+## 2026-09-20 — ZK-1200 dependency-complete renderer cycle 1
+
+- Added an exhaustive visual-only terrain presentation policy and deterministic
+  Parkland projection. Canonical M19 maps exactly 49 singleton
+  `deep_rough` cells to `rough` and the isolated rough cell `(16,18)` to
+  `fairway`; authoritative terrain remains byte-identical and the restored
+  final fixture hash is `92ce1852`.
+- Common turf composition, semantic/detail consumers, and both sides of the
+  pair-boundary planner now consume the same presentation projection. Medium
+  and High create zero connected tile-surface masks; Low uses the common turf
+  phase outside the connected-surface layer and reports `connectedSurfaces=0`.
+  Hazard meshes/banks, path cross-sections, elevation shoulders, shared
+  heightfields, habitat, care/seasonal layers, objects, picking, saves, and
+  gameplay authority remain on their accepted paths.
+- ZK-459 ownership is exact after projection: 108 differing joins, 104
+  same-elevation strips, four elevation omissions, and 16 true pair corners.
+  Diagnostics report zero missing/double/overlap/mixed/full-cell owners and
+  zero same-presentation emitters. Authoritative join diagnostics remain
+  separately visible at 289/261/28/157, with before/after authority and
+  presentation hashes unchanged.
+- The final native 1440x900 matrix contains 13 captures: the required ten
+  standard quality/zoom/rotation views plus three accessibility palettes.
+  Manual inspection found coherent grid-following turf, continuous routes,
+  retained recessed hazards and habitat, and no singleton diamonds,
+  same-presentation seams, missing/doubled joins, broad turf plates, haze, or
+  blur. Evidence is in
+  `/private/tmp/zk1200-dependency-complete-cycle1-evidence`.
+- Exact-base control evidence confirms the existing save/load normalization
+  changes the live state hash from `92ce1852` to `80465197` while preserving
+  terrain bytes/counts; the implementation restores the fixture and reasserts
+  `92ce1852` for the final captures.
+- Gates pass: focused renderer tests (41/41), TypeScript, M35/ZK-1200/ZK-459/
+  ZK-473 browser regressions, the post-refactor 13-shot deterministic matrix,
+  the official bundled web-game client, full lint/i18n with zero errors and 11
+  inherited Hook warnings, full CI (260 files, 2,048 passed, one intentional
+  skip, plus 5/5 audio audits), and the complete production build/audit chain.
+  The immutable initial-JavaScript budget passes at 1,608,715 bytes against
+  1,608,719 — a deliberately recorded razor-thin four-byte headroom.
+- NEXT: independent visual and scope review owns acceptance. This worktree is
+  uncommitted; do not push, deploy, promote, or mutate Linear from this packet.

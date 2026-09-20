@@ -146,6 +146,7 @@ import {
 } from "../game/render/bunkerShapes";
 import { buildMacroLandformRaster } from "../game/render/macroLandform";
 import { buildLandformPresentationPlan } from "../game/render/landformGeometry";
+import type { TerrainPresentationDiagnostics } from "../game/render/terrainPresentationPolicy";
 import {
   buildPathMaterialScenePlan,
   pathMaterialStripMesh,
@@ -970,15 +971,18 @@ interface PathMaterialRenderDiagnostics {
   ownership: readonly string[];
 }
 
-interface SharedContourRenderDiagnostics {
-  /** Authoritative singleton cells; this must remain stable across quality. */
-  authoritativeSingletonDeepRough: number;
-  /** Singleton cells still rendered as a separate deep-rough field. */
-  distinctSingletonDeepRoughFields: number;
-  /** Singleton deep-rough components that emitted a contour-band presentation. */
-  distinctSingletonDeepRoughBands: number;
-  /** Medium/High presentation-only coalescing into the rough material field. */
-  coalescedSingletonDeepRough: number;
+type SharedContourRenderDiagnostics = TerrainPresentationDiagnostics;
+
+const EMPTY_SHARED_CONTOUR_DIAGNOSTICS = {
+  authoritativeSingletonDeepRough: 0,
+  distinctSingletonDeepRoughFields: 0,
+  distinctSingletonDeepRoughBands: 0,
+  coalescedSingletonDeepRough: 0,
+} as SharedContourRenderDiagnostics;
+
+function landscapeOptionsForQuality(quality: "high" | "medium" | "low") {
+  const high = quality === "high";
+  return { cornerRadius: high ? 0.4 : 0.32, cornerSegments: high ? 4 : 2 };
 }
 
 function effectiveSurfaceTilesForRenderer(
@@ -1206,7 +1210,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
 
   const diamondTextureRef = useRef<PIXI.Texture | null>(null);
   const chunksRef = useRef<TerrainChunk[]>([]);
-  const prevTilesRef = useRef<Terrain[] | null>(null);
+  const prevTilesRef = useRef<readonly Terrain[] | null>(null);
   const prevCareVisualSignaturesRef = useRef<string[] | null>(null);
   const prevElevationsRef = useRef<number[] | null>(null);
   const builtRotationRef = useRef<IsoRotation | null>(null);
@@ -1214,6 +1218,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
   const builtAtlasGenerationRef = useRef<number | null>(null);
   const chunkRebuildsRef = useRef(0);
   const landscapeMaterialTexturesRef = useRef<Map<string, PIXI.Texture>>(new Map());
+  const lowParklandPresentationLayerRef = useRef<PIXI.Container | null>(null);
   const pathMaterialDiagnosticsRef = useRef<PathMaterialRenderDiagnostics>({
     active: false,
     mode: "legacy",
@@ -1225,12 +1230,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
     widths: { shoulder: 0, edge: 0 },
     ownership: [],
   });
-  const sharedContourDiagnosticsRef = useRef<SharedContourRenderDiagnostics>({
-    authoritativeSingletonDeepRough: 0,
-    distinctSingletonDeepRoughFields: 0,
-    distinctSingletonDeepRoughBands: 0,
-    coalescedSingletonDeepRough: 0,
-  });
+  const sharedContourDiagnosticsRef = useRef<SharedContourRenderDiagnostics>(
+    EMPTY_SHARED_CONTOUR_DIAGNOSTICS,
+  );
   const parklandComposableDiagnosticsRef = useRef<ParklandComposableDiagnostics>(
     null as unknown as ParklandComposableDiagnostics,
   );
@@ -1385,10 +1387,14 @@ export function PixiStage(requestedProps: PixiStageProps) {
     course.tiles,
     course.width,
   ]);
-  const effectiveRenderCourse = useMemo(
-    () => effectiveTiles === course.tiles ? course : { ...course, tiles: effectiveTiles },
-    [course, effectiveTiles],
+  const presentationRuntime = getParklandComposableRuntime();
+  const terrainPresentation = presentationRuntime?.buildTerrainPresentationMap(
+    effectiveTiles,
+    course.width,
+    course.height,
+    course.theme,
   );
+  const presentationTiles = terrainPresentation?.presentationTiles ?? effectiveTiles;
   const careVisualSignatures = useMemo(
     () => surfaceCareVisualSignatures(course),
     [course],
@@ -1466,10 +1472,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const composableLow = props.graphicsQuality === "low"
       && (course.theme ?? "parkland") === "parkland";
     if (props.graphicsQuality === "low" && !composableLow) return [];
-    const options = {
-      cornerRadius: props.graphicsQuality === "high" ? 0.4 : 0.32,
-      cornerSegments: props.graphicsQuality === "high" ? 4 : 2,
-    };
+    const options = landscapeOptionsForQuality(props.graphicsQuality);
     const snapshot = landscapeComponentCacheRef.current.update(
       effectiveTiles,
       course.width,
@@ -2267,7 +2270,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
             objects: stampedAtlasGeneration(layers.objects),
           } : null,
           counts: layers ? {
-            terrainChunks: layers.terrain.children.length,
+            terrainChunks: chunksRef.current.length,
             terrainRebuilds: chunkRebuildsRef.current,
             connectedSurfaces: layers.smoothSurfaces.children.length,
             structuresAndProps: structureSpriteCountRef.current
@@ -3318,6 +3321,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     const layers = layersRef.current;
     const diamond = diamondTextureRef.current;
     if (!layers || !diamond) return;
+    const presentationRenderCourse = { ...course, tiles: presentationTiles };
 
     const w = course.width;
     const h = course.height;
@@ -3327,10 +3331,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
     // Whole-tile terrain is the visual source of truth. Surface intent is
     // retained for editor history and backwards-compatible saves, but it no
     // longer substitutes an underlay or clips a second terrain layer.
-    const underlayTiles = effectiveTiles;
+    const composableRuntime = presentationRuntime;
+    // Composable assets are installed as one atomic bundle, so one field's
+    // presence is also the failure-safe readiness signal for its turf cues.
+    const composableTurfOwnsTransitions = Boolean(
+      getParklandComposableField(course.theme, props.graphicsQuality, "tee"),
+    );
     const visualTerrainAt = (x: number, y: number): Terrain => {
       const index = y * w + x;
-      return underlayTiles[index];
+      return presentationTiles[index];
     };
     const careTopology = surfaceCareTopology(course);
     const careState = normalizeSurfaceCareState(course.surfaceCare, course);
@@ -3519,7 +3528,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         }
 
         const terrainDetail = deriveTerrainDetail(
-          effectiveRenderCourse,
+          presentationRenderCourse,
           props.worldSeed,
           x,
           y,
@@ -3540,7 +3549,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           chunk.groundCoverSprites.push({ display: detail, tier: terrainDetail.detailTier });
         } else {
           const cover = deriveGroundCover(
-            effectiveRenderCourse,
+            presentationRenderCourse,
             props.worldSeed,
             x,
             y,
@@ -3594,6 +3603,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
           const ny = y + dy;
           if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
           const nTerrain = visualTerrainAt(nx, ny);
+          if (
+            composableTurfOwnsTransitions
+            && composableRuntime!.isParklandComposableTransition(terrain, nTerrain)
+          ) continue;
           const boundary = terrainBoundaryFor(terrain, nTerrain);
           if (!boundary || boundary.owner !== terrain) continue;
           if (elev(nx, ny) !== e) continue;
@@ -3678,7 +3691,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       builtAtlasGenerationRef.current !== atlasRevision ||
       builtSeasonalTerrainSignatureRef.current !== seasonalTerrainSignature ||
       !prevTiles ||
-      prevTiles.length !== effectiveTiles.length ||
+      prevTiles.length !== presentationTiles.length ||
       !prevCareVisualSignatures ||
       prevCareVisualSignatures.length !== careVisualSignatures.length;
 
@@ -3717,9 +3730,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       // Incremental: diff tiles+elevations, mark touched chunks (expanded by
       // one tile — shading and cliff faces read neighboring tiles).
       const dirty = new Set<number>();
-      for (let i = 0; i < effectiveTiles.length; i++) {
+      for (let i = 0; i < presentationTiles.length; i++) {
         if (
-          effectiveTiles[i] === prevTiles[i] &&
+          presentationTiles[i] === prevTiles[i] &&
           careVisualSignatures[i] === prevCareVisualSignatures[i] &&
           (course.elevations?.[i] ?? 0) === (prevElevations?.[i] ?? 0)
         ) {
@@ -3739,7 +3752,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (dirty.size > 0) devLog(`rebuilt ${dirty.size} dirty chunk(s), total rebuilds ${chunkRebuildsRef.current}`);
     }
 
-    prevTilesRef.current = effectiveTiles;
+    prevTilesRef.current = presentationTiles;
     prevCareVisualSignaturesRef.current = careVisualSignatures;
     prevElevationsRef.current = course.elevations;
     cullChunks();
@@ -3749,8 +3762,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
     atlasRevision,
     course,
     careVisualSignatures,
-    effectiveRenderCourse,
-    effectiveTiles,
+    presentationTiles,
     rotation,
     cullChunks,
     props.colorVision,
@@ -3759,27 +3771,33 @@ export function PixiStage(requestedProps: PixiStageProps) {
     props.seasonalVisualState,
     props.terrainPatterns,
     props.worldSeed,
+    presentationRuntime,
   ]);
 
-  // Connected landscape presentation. Gameplay remains whole-tile and the
-  // original chunk renderer stays underneath as the Low/failure fallback.
+  // Connected landscape presentation. Gameplay remains whole-tile. The
+  // original chunk renderer remains the failure fallback, while Low receives
+  // the same common turf field without creating connected-surface owners.
   // Medium/High replace the visible top plane with rounded component masks,
   // a shared visual heightfield, and world-anchored repeating materials.
   useEffect(() => {
     if (!appReady) return;
     const rebuildStartedAt = performance.now();
-    const layer = layersRef.current?.smoothSurfaces;
-    if (!layer) return;
+    const rendererLayers = layersRef.current;
+    const layer = rendererLayers?.smoothSurfaces;
+    if (!layer || !rendererLayers) return;
     layer.removeChildren().forEach((child) => child.destroy({ children: true }));
     surfaceWaterSpritesRef.current = [];
     const quality = props.graphicsQuality;
-    const composableRuntime = getParklandComposableRuntime();
+    const composableRuntime = presentationRuntime;
+    lowParklandPresentationLayerRef.current = composableRuntime
+      ? composableRuntime.destroyParklandPresentationLayer(lowParklandPresentationLayerRef.current)
+      : null;
     const composableSources = composableRuntime?.resolveParklandComposableSources(
       course.theme,
       quality,
       (role) => getParklandComposableField(course.theme, quality, role),
     ) ?? null;
-    const composableActive = composableSources !== null;
+    const composableActive = Boolean(composableSources);
     if (composableRuntime) {
       parklandComposableDiagnosticsRef.current = composableRuntime.inactiveParklandComposableDiagnostics(quality);
     }
@@ -3795,18 +3813,18 @@ export function PixiStage(requestedProps: PixiStageProps) {
         widths: { shoulder: 0, edge: 0 },
         ownership: [],
       };
-      sharedContourDiagnosticsRef.current = {
-        authoritativeSingletonDeepRough: 0,
-        distinctSingletonDeepRoughFields: 0,
-        distinctSingletonDeepRoughBands: 0,
-        coalescedSingletonDeepRough: 0,
-      };
+      sharedContourDiagnosticsRef.current = EMPTY_SHARED_CONTOUR_DIAGNOSTICS;
       stampAtlasGeneration(layer, atlasRevision);
       return;
     }
 
     const subdivisions = quality === "high" ? 4 : quality === "medium" ? 2 : 1;
-    const components = landscapeComponents;
+    const components = landscapeComponentCacheRef.current.update(
+      presentationTiles,
+      course.width,
+      course.height,
+      landscapeOptionsForQuality(quality),
+    ).components;
     const heightfield = visualHeightfield;
     const project = (point: Point) => worldToIso(
       point.x,
@@ -3902,12 +3920,11 @@ export function PixiStage(requestedProps: PixiStageProps) {
     let pathShoulderWidth = 0;
     let pathEdgeWidth = 0;
     const pathOwnership = new Set<string>();
-    const sharedContourDiagnostics: SharedContourRenderDiagnostics = {
-      authoritativeSingletonDeepRough: 0,
-      distinctSingletonDeepRoughFields: 0,
-      distinctSingletonDeepRoughBands: 0,
-      coalescedSingletonDeepRough: 0,
-    };
+    const sharedContourDiagnostics = composableRuntime!.buildTerrainPresentationDiagnostics(
+      terrainPresentation!,
+      landscapeComponents,
+      components,
+    );
     const sortedComponents = [...components].sort((a, b) => componentDepth(a) - componentDepth(b));
     const composableTrace = composableRuntime!.createParklandComposableTrace(
       course.theme,
@@ -3915,15 +3932,16 @@ export function PixiStage(requestedProps: PixiStageProps) {
       composableSources?.cues,
     );
 
-    // One opaque undercoat spans the exact authoritative turf-cell union. The
+    // One opaque undercoat spans the exact presentation turf-cell union. The
     // source phase is canonical world x/8,y/8 and therefore never restarts at
     // a cell, component, chunk, camera rotation, or reload boundary.
-    if (composableSources) {
-      composableRuntime!.appendParklandComposablePresentation(
-        layer,
+    const presentationLayer = composableSources
+      ? composableRuntime!.appendParklandComposablePresentation(
+        quality === "low" ? rendererLayers.terrain : layer,
         composableSources,
         sortedComponents,
         course,
+        presentationTiles,
         effectiveTiles,
         subdivisions,
         heightfield,
@@ -3931,8 +3949,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
         props.colorVision === "standard",
         themedColors,
         composableTrace,
-      );
-    }
+      )
+      : layer;
+    if (presentationLayer !== layer) lowParklandPresentationLayerRef.current = presentationLayer;
     // Low owns only the composable turf overlay. Existing chunk rendering
     // continues to own hazards, paths, and elevation; do not route those
     // categories through the connected Medium/High presentation.
@@ -3940,26 +3959,13 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const diagnostics = composableRuntime!.lowParklandPresentationDiagnostics(composableTrace, components);
       pathMaterialDiagnosticsRef.current = diagnostics.pathMaterial;
       parklandComposableDiagnosticsRef.current = diagnostics.composable;
-      sharedContourDiagnosticsRef.current = diagnostics.sharedContours;
-      stampAtlasGeneration(layer, atlasRevision);
+      sharedContourDiagnosticsRef.current = sharedContourDiagnostics;
+      stampAtlasGeneration(presentationLayer, atlasRevision);
       recordM35Metric("connectedRebuild", performance.now() - rebuildStartedAt);
       return;
     }
     for (const component of sortedComponents) {
-      // The course remains authoritative: this is strictly a Medium/High
-      // material choice for isolated deep-rough cells. Rendering their mask
-      // with the surrounding rough field removes the 49 independent dark
-      // stamps without changing cells, picking, simulation, or Low.
-      const authoritativeSingletonDeepRough = component.terrain === "deep_rough"
-        && component.cells.length === 1;
-      if (authoritativeSingletonDeepRough) {
-        sharedContourDiagnostics.authoritativeSingletonDeepRough++;
-      }
-      const coalescedSingletonDeepRough = !composableActive && authoritativeSingletonDeepRough;
-      if (coalescedSingletonDeepRough) {
-        sharedContourDiagnostics.coalescedSingletonDeepRough++;
-      }
-      const presentationTerrain: Terrain = coalescedSingletonDeepRough ? "rough" : component.terrain;
+      const presentationTerrain = component.terrain;
       // Canonical seams may displace slightly beyond authoritative ownership.
       // The render-only halo guarantees that the accepted mask always has
       // source geometry beneath it; paths intentionally expose no halo.
@@ -3967,7 +3973,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
         && composableRuntime!.isParklandComposableSemantic(component.terrain);
       const pathMaterialPlan = buildPathMaterialScenePlan(
         component,
-        effectiveTiles,
+        presentationTiles,
         course.width,
         course.height,
         quality,
@@ -3991,7 +3997,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
       const bunkerVisualType = component.terrain === "sand"
         ? classifyBunkerVisualType(
           component.cells,
-          effectiveTiles,
+          presentationTiles,
           course.width,
           course.height,
         )
@@ -4129,10 +4135,10 @@ export function PixiStage(requestedProps: PixiStageProps) {
         }
       }
 
-      const boundaryRuns = coalescedSingletonDeepRough ? [] : buildLandscapeBoundaryRuns(
+      const boundaryRuns = buildLandscapeBoundaryRuns(
         component.rings,
         component.terrain,
-        effectiveTiles,
+        presentationTiles,
         course.width,
         course.height,
       );
@@ -4416,12 +4422,15 @@ export function PixiStage(requestedProps: PixiStageProps) {
     course.surfaceIntent,
     course.theme,
     landscapeComponents,
+    presentationTiles,
     props.colorVision,
     props.graphicsQuality,
     props.reducedMotion,
     props.seasonalVisualState,
     props.terrainPatterns,
+    presentationRuntime,
     rotation,
+    terrainPresentation,
     visualHeightfield,
   ]);
 
@@ -4769,10 +4778,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
                   localTiles,
                   localWidth,
                   localHeight,
-                  {
-                    cornerRadius: props.graphicsQuality === "high" ? 0.4 : 0.32,
-                    cornerSegments: props.graphicsQuality === "high" ? 4 : 2,
-                  },
+                  landscapeOptionsForQuality(props.graphicsQuality),
                 ).filter((component) => (
                   component.terrain === selectedTerrain &&
                   component.cells.some((index) => {

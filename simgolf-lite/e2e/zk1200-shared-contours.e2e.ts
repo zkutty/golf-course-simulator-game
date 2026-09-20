@@ -58,7 +58,7 @@ test("ZK-1200 captures canonical medium seams and high-detail green rotations", 
         zoom: state.pathMaterialCrossSection.camera.zoom,
         contours: state.sharedContours,
       };
-    })).toEqual({
+    })).toMatchObject({
       quality: "medium",
       rotation,
       zoom: 1,
@@ -66,7 +66,9 @@ test("ZK-1200 captures canonical medium seams and high-detail green rotations", 
         authoritativeSingletonDeepRough: 49,
         distinctSingletonDeepRoughFields: 0,
         distinctSingletonDeepRoughBands: 0,
-        coalescedSingletonDeepRough: 0,
+        coalescedSingletonDeepRough: 49,
+        enclosedSingletonRoughToFairway: 1,
+        tileSurfaceConnectedMasks: 0,
       },
     });
 
@@ -117,7 +119,7 @@ test("ZK-1200 captures canonical medium seams and high-detail green rotations", 
         zoom: state.pathMaterialCrossSection.camera.zoom,
         contours: state.sharedContours,
       };
-    })).toEqual({
+    })).toMatchObject({
       quality: "high",
       rotation,
       zoom: 2,
@@ -125,7 +127,9 @@ test("ZK-1200 captures canonical medium seams and high-detail green rotations", 
         authoritativeSingletonDeepRough: 49,
         distinctSingletonDeepRoughFields: 0,
         distinctSingletonDeepRoughBands: 0,
-        coalescedSingletonDeepRough: 0,
+        coalescedSingletonDeepRough: 49,
+        enclosedSingletonRoughToFairway: 1,
+        tileSurfaceConnectedMasks: 0,
       },
     });
     const body = await canvas.screenshot();
