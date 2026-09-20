@@ -63,17 +63,17 @@ export function hazardDepthProfile(
     ? 0.42
     : componentCellCount <= 4
       ? 0.36
-      : 0.3;
+      : 0.33;
   return {
     terrain: "sand",
     shelfWidth: 0.12,
-    bankWidth: 0.14,
+    bankWidth: 0.22,
     contactWidth: 0.07,
     shallowWidth: 0.14,
     deepWidth: 0.11,
     minimumBankDrop: 0.34,
     floorDrop,
-    recessionRun: 0.48,
+    recessionRun: 0.22,
   };
 }
 

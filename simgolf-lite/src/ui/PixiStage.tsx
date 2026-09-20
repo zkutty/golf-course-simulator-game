@@ -4013,7 +4013,9 @@ export function PixiStage(requestedProps: PixiStageProps) {
       if (mesh) {
         mesh.tint = seasonalByTerrain[presentationTerrain]?.textureTint ?? 0xffffff;
         mesh.eventMode = "none";
-        const mask = composableRuntime!.createLandscapeRingMask(visualRings, project);
+        const mask = composableRuntime!.createLandscapeRingMask(component.terrain === "sand"
+          ? visualRings.map((ring) => buildHazardBankFacePlan("sand", component.cells.length, ring)?.innerRing ?? ring)
+          : visualRings, project);
         mesh.mask = mask;
         layer.addChild(mesh, mask);
       }
@@ -4058,9 +4060,8 @@ export function PixiStage(requestedProps: PixiStageProps) {
       }
 
       const reliefStyle = terrainReliefStyle(course.theme, component.terrain);
-      if (reliefStyle || component.terrain === "sand") {
-        const bankLight = reliefStyle?.bankLight ?? 0xc9b477;
-        const bankDark = reliefStyle?.bankDark ?? 0x6f5534;
+      if (reliefStyle) {
+        const { bankLight, bankDark } = reliefStyle;
         const projectDepthPoint = (point: { x: number; y: number; height: number }) => worldToIso(
           point.x,
           point.y,
@@ -4101,7 +4102,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
             // The white texture is intentionally neutral; its uniform tint and
             // alpha provide one continuous bank material across the strip.
             uvs.push(0, 0, 1, 1);
-            lipPoints.push(grade);
+            lipPoints.push(floor);
           }
           if (positions.length !== plan.outerRing.length * 4) continue;
           const bank = new PIXI.Mesh({
@@ -4114,8 +4115,7 @@ export function PixiStage(requestedProps: PixiStageProps) {
           });
           bank.eventMode = "none";
           bank.tint = shade(bankDark, 1.08);
-          bank.alpha = component.terrain === "sand" ? 0.68 : 0.58;
-          bank.label = `hazard-bank-strip:${component.topologyKey}`;
+          bank.alpha = component.terrain === "sand" ? 0.52 : 0.58;
           recessedLayer.addChild(bank);
 
           const lip = new PIXI.Graphics();
@@ -4130,7 +4130,6 @@ export function PixiStage(requestedProps: PixiStageProps) {
             cap: "round",
             join: "round",
           });
-          lip.label = `hazard-bank-lip:${component.topologyKey}`;
           recessedLayer.addChild(lip);
         }
       }
