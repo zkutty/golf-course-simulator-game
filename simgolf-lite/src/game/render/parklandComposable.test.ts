@@ -62,7 +62,7 @@ describe("ZK-461 Parkland common-phase material contract", () => {
     expect(suppressesLegacyComposableTurfContour("links", "medium", "green", "rough")).toBe(false);
   });
 
-  it("removes every semantic alpha floor and directly bounds plate energy", () => {
+  it("removes every semantic alpha floor while keeping fairway mowing broad and subordinate", () => {
     const signatures = new Set<string>();
     for (const quality of ["high", "medium", "low"] as const) {
       for (const semantic of PARKLAND_COMPOSABLE_SEMANTICS) {
@@ -80,7 +80,20 @@ describe("ZK-461 Parkland common-phase material contract", () => {
         expect(transformed.metrics.sourceAlphaFloor).toBeGreaterThan(0);
         expect(transformed.metrics.outputAlphaFloor).toBe(0);
         expect(transformed.metrics.maximumAlpha).toBeLessThanOrEqual(76);
-        expect(transformed.metrics.nonZeroAlphaFraction).toBeLessThan(0.23);
+        if (semantic === "fairway") {
+          expect(transformed.metrics.nonZeroAlphaFraction).toBeGreaterThan(0.35);
+          expect(transformed.metrics.nonZeroAlphaFraction).toBeLessThan(0.45);
+          expect(transformed.metrics.maximumAlpha).toBe({ high: 12, medium: 10, low: 8 }[quality]);
+          let interiorPixels = 0;
+          const alphaAt = (x: number, y: number) => transformed.pixels[(y * source.width + x) * 4 + 3];
+          for (let y = 1; y < source.height - 1; y++) for (let x = 1; x < source.width - 1; x++) {
+            if (alphaAt(x, y) > 0 && alphaAt(x - 1, y) > 0 && alphaAt(x + 1, y) > 0
+              && alphaAt(x, y - 1) > 0 && alphaAt(x, y + 1) > 0) interiorPixels++;
+          }
+          expect(interiorPixels / (source.width * source.height)).toBeGreaterThan(0.28);
+        } else {
+          expect(transformed.metrics.nonZeroAlphaFraction).toBeLessThan(0.23);
+        }
         expect(transformed.metrics.lowFrequencyPlateScore).toBeLessThan(0.04);
         expect(transformed.metrics.tileBoundaryEdgeEnergy).toBeLessThan(0.025);
         expect(transformed.metrics.motifExpansionPixels).toBe(semantic === "green" ? 1 : 0);
